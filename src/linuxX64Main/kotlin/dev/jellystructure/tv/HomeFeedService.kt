@@ -209,6 +209,7 @@ class HomeFeedService(
         }
         val playstateDeferred = async { PlaystateCache.get(userId) }
         applyPlaystate(feedDeferred.await(), playstateDeferred.await()).withGenreLabels(config.uiLanguage)  // Phase 271
+            .let { if (focusFactsReach(device.platform)) it else it.withoutFocusFacts() }  // R314 (FR-R314-3), after the cache
     }
 
     /**

@@ -6,8 +6,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Client (`ravilo-ui`), one server-side payload trim, one admin copy fix. **Numbering:**
+`✓ Built` 2026-09-26, not deployed (see *Build notes* at the end). Written 2026-09-26,
+**dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*). Client (`ravilo-ui`), one server-side payload trim, one admin copy fix. **Numbering:**
 verified against `STATUS.md` the same day — Ravilo taken through **R313**.
 
 Completes **R254** (row-open is TV-only) and **R298** (no focus visuals on a handset). Both stopped
@@ -133,3 +133,35 @@ Five items, no blocker.
 
 **Net effect.** One rule, one post-cache projection, two lines of admin copy, tests. No DTO change: the
 facts field is already optional.
+
+## Build notes (2026-09-26)
+
+Built on `main` after the R187 popover fix (`81bfbbc6`), as the dev review laid out.
+
+1. **The app.** `effectiveFocusDetailMode(resolvedMode, reduceMotion, isTv)` is now `!isTv -> "none"`,
+   then R240's reduced-motion downgrade of `rowOpen` to `line`. The `handset` parameter is gone, and both
+   Home call sites pass only `isTvPlatform`. No Home code reads the raw `feed.focusDetail` (checked):
+   the reserved band, the dwell, the line, the open row and the backdrop all follow the one function's
+   answer (FR-R314-2). `FocusDetailReducedMotionTest`: off a TV it is `none` for every mode, with and
+   without reduced motion; the TV cases are unchanged.
+2. **The server.** Two pure helpers in `tv/FocusFactsForPlatform.kt`:
+   - `focusFactsReach(platform)` is false for `phone` and `web` only;
+   - `HomeFeed.withoutFocusFacts()` copies only the rows that carry facts.
+
+   `getHomeFeed` applies them last, after the cache read, the playstate overlay and the genre labels.
+   The cache key is untouched.
+
+   `HomeFeedFocusFactsPlatformTest`, over a real `MediaStore` and a cached Continue row:
+   - `tv` and an unreported platform get facts on every card;
+   - `phone` and `web` get the same cards, with none, and the same top-level mode;
+   - a `tv` read after `phone` and `web` reads returns the very same cached instance.
+3. **The admin** (`RaviloConfig.kt`). The card's heading says *TVs only*, and its first line reads
+   *"TVs only — phones and the web app never show focus detail"*. The *row opens* caption's
+   *"a phone or the web app shows the status line instead"* is gone. The design mockup
+   (`design/app/ravilo-config.html`) got the same two edits, so it no longer promises the line off a
+   TV.
+
+**Not verified:** acceptance 1–4 on devices. They need the server deployed and a new app. The payload
+size (acceptance 4) is measured best with the Pixel 9's token once the server runs this build. An
+installed app keeps its own rule until it updates, but gets the smaller payload as soon as the server
+ships, because the facts field is optional.

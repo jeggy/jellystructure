@@ -2519,8 +2519,9 @@ private fun renderBehaviourGlobal(sect: Element) {
           </div>
         </div>
         <div class="card" style="padding:18px 20px;margin-bottom:18px" id="sect-focus">
-          <div style="font-weight:600;margin-bottom:2px">Focus detail <span class="tiny muted">· Phase 202/R240</span></div>
-          <div class="tiny muted" style="margin-bottom:14px">What a highlighted Home-row title says before you open it. Scoped to <b>Home rows</b> only —
+          <div style="font-weight:600;margin-bottom:2px">Focus detail <span class="tiny muted">· Phase 202/R240 · TVs only</span></div>
+          <div class="tiny muted" style="margin-bottom:14px"><b>TVs only</b> — phones and the web app never show focus detail (R314).
+            What a highlighted Home-row title says before you open it, on every TV in the household. Scoped to <b>Home rows</b> only —
             not the channel rail, hero, browse, search, Discover or Live TV. No viewer-facing setting anywhere in Ravilo.</div>
           <div style="display:grid;gap:14px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
@@ -2531,7 +2532,6 @@ private fun renderBehaviourGlobal(sect: Element) {
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-fd-rowopen"$focusRowOpenChecked>
               Row opens in place — the focused row grows to show a panel beside the tile
-              <span class="tiny muted">· TVs only — a phone or the web app shows the status line instead</span>
             </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Wait before it appears <span class="mono" id="beh-fd-delay-val">${currentConfig.focusDetailDelayMs}ms</span>

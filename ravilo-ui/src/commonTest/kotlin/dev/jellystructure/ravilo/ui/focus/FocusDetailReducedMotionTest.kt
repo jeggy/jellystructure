@@ -26,19 +26,14 @@ class FocusDetailReducedMotionTest {
     }
 
     // R254 (FR-R254-7) — J is a TV direction.
-    @Test fun rowOpenOnAPhoneOrTheWebIsTheLine() = assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = false, isTv = false))
     @Test fun rowOpenOnATvStaysRowOpen() = assertEquals("rowOpen", effectiveFocusDetailMode("rowOpen", reduceMotion = false, isTv = true))
-    @Test fun bothFlagsSetIsTheLine() = assertEquals("line", effectiveFocusDetailMode("rowOpen", reduceMotion = true, isTv = false))
-    @Test fun lineAndNoneAreUnchangedOffTv() {
-        assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = false))
-        assertEquals("none", effectiveFocusDetailMode("none", reduceMotion = false, isTv = false))
-    }
 
-    // R298 (FR-R298-3) — a handset has no focus detail: no remote moves focus there.
-    @Test fun aHandsetHasNoFocusDetail() {
-        for (mode in listOf("line", "rowOpen", "none")) {
-            assertEquals("none", effectiveFocusDetailMode(mode, reduceMotion = false, isTv = false, handset = true), mode)
+    // R314 (FR-R314-1/5) — off a TV there is no focus detail at all: the web app and a phone at any size,
+    // with or without reduced motion (R298's handset rule, now every non-TV platform).
+    @Test fun offATvThereIsNoFocusDetail() {
+        for (mode in listOf("line", "rowOpen", "none")) for (reduce in listOf(false, true)) {
+            assertEquals("none", effectiveFocusDetailMode(mode, reduceMotion = reduce, isTv = false), "$mode reduce=$reduce")
         }
     }
-    @Test fun notAHandsetKeepsTheOldRules() = assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = false, handset = false))
+    @Test fun aTvKeepsTheHouseholdsLine() = assertEquals("line", effectiveFocusDetailMode("line", reduceMotion = false, isTv = true))
 }
