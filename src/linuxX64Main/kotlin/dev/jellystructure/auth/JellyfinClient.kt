@@ -1157,6 +1157,30 @@ class JellyfinClient {
         }
     }
 
+    /** Phase 273 (FR-273-6) — [warmSubtitleExtraction]'s request, keeping the body: the extracted subtitle's text,
+     *  which becomes the file's timing reference. The same three outcomes, for the same reason (a timeout means
+     *  Jellyfin is still reading this file; stop asking about it). */
+    sealed interface SubtitleText {
+        data class Text(val body: String) : SubtitleText
+        data object TimedOut : SubtitleText
+        data class Failed(val reason: String?) : SubtitleText
+    }
+
+    suspend fun fetchSubtitleText(baseUrl: String, token: String, jellyfinId: String, streamIndex: Int): SubtitleText {
+        val url = baseUrl.trimEnd('/') + "/Videos/$jellyfinId/$jellyfinId/Subtitles/$streamIndex/0/Stream.vtt"
+        return try {
+            val r = httpGet(url) { jellyfinAuth(token) }
+            if (r.status.isSuccess()) SubtitleText.Text(r.bodyAsText()) else SubtitleText.Failed("HTTP ${r.status.value}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: io.ktor.client.plugins.HttpRequestTimeoutException) {
+            Logger.warn("Jellyfin subtitle fetch timed out (item=$jellyfinId index=$streamIndex) — Jellyfin is still busy on this file")
+            SubtitleText.TimedOut
+        } catch (e: Throwable) {
+            SubtitleText.Failed(e.message)
+        }
+    }
+
     /**
      * R82: Fetch per-episode static metadata (id, runtime, season name) without a user context —
      * uses the admin token so this can be called at scan time without a paired user session.

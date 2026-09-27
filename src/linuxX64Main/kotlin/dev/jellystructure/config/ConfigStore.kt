@@ -23,6 +23,8 @@ class ConfigStore(private val filePath: String) {
     suspend fun load() {
         val path = Path(filePath)
         if (!SystemFileSystem.exists(path)) {
+            // Phase 273 — a new install starts on `fix` and needs no seeding.
+            _config = _config.copy(scan = _config.scan.copy(subtitleCheckSeeded = true))
             persist()
             Logger.info("Created default config at $filePath")
             return
@@ -32,7 +34,7 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck() }
     }
 
     /** Phase 261 (FR-261-4, dev review item 8) — once: add `verify_files` / `check_track_lengths` to the
@@ -70,6 +72,23 @@ class ConfigStore(private val filePath: String) {
                 if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added",
             "config",
         )
+    }
+
+    /** Phase 273 (dev review item 8) — once: add `check_subtitles` to the operator's pipeline and start this
+     *  existing install's subtitle check on `report`, so its first run on production changes nothing a viewer sees
+     *  and the admin switches to *Fix it* from the Bazarr card. */
+    private suspend fun seedSubtitleCheck() {
+        val scan = _config.scan
+        if (scan.subtitleCheckSeeded) return
+        val seeded = FileCheckSteps.seedSubtitles(scan.pipeline)
+        _config = _config.copy(
+            scan = scan.copy(pipeline = seeded, subtitleCheckSeeded = true),
+            subtitleCheck = _config.subtitleCheck.copy(action = "report"),
+        )
+        persist()
+        Logger.info("Config: subtitles are checked against their video now — ${FileCheckSteps.SUBTITLES} " +
+            (if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added") +
+            ", starting on Only report", "config")
     }
 
     /** Phase 227 (FR-227-2) — 218's dev review had put `public_url` inside `[chromecast]`. Carry the

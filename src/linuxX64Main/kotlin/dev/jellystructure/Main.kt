@@ -309,7 +309,12 @@ fun main() = runBlocking {
     // Phase 261 (FR-261-9) — the last run of each pipeline step per title, behind the title page's Checks card.
     val stepRuns = dev.jellystructure.media.StepRunStore(db)
     dev.jellystructure.media.TrackCoverageFlags.service = trackCoverage
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns)
+    // Phase 273 — does each sidecar subtitle belong to its video; its references; the one rule for what viewers see.
+    val subtitleReferences = dev.jellystructure.subtitles.SubtitleReferences(db, jellyfinClient, configStore)
+    val subtitleChecks = dev.jellystructure.subtitles.SubtitleCheckService(db, mediaStore, configStore, subtitleReferences, mediaHistory)
+    dev.jellystructure.subtitles.SubtitleVerdicts.reportOnly = { configStore.current.subtitleCheck.reportOnly }
+    subtitleChecks.init()
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks)
     mediaJobQueue.start()
     // Phase 254/255's 15-minute sweep loop is gone (Phase 261, FR-261-4): the two file checks are pipeline
     // steps (`verify_files`, `check_track_lengths`) that queue one row per due file on their own cadence.

@@ -136,6 +136,7 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
             if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
             // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
             FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
+            add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
         }
     }
@@ -569,7 +570,7 @@ suspend fun runPipeline(
                 }
                 Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")
             }
-            FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS -> {
+            FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS, FileCheckSteps.SUBTITLES -> {
                 // Phase 261 (FR-261-3/8, dev review item 5) — enqueue-only, like detect_segments: one row per due
                 // file on the segments queue. A Library run reads the WHOLE library, not the scan's freshness-
                 // filtered working set (a file's cadence is its own); a SingleItem run — realtime ingest of a
@@ -578,7 +579,11 @@ suspend fun runPipeline(
                 val items = if (target is RunTarget.SingleItem) workingSet else store.allItems()
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, items.size))
                 val pass = mediaJobQueue.enqueueDueFileChecks(step, items) { scanTracker.stepStopRequested }
-                val noun = if (step.step == FileCheckSteps.VERIFY) "verification" else "a track-length check"
+                val noun = when (step.step) {
+                    FileCheckSteps.VERIFY -> "verification"
+                    FileCheckSteps.SUBTITLES -> "a subtitle check"
+                    else -> "a track-length check"
+                }
                 val summary = "${pass.queued} file${if (pass.queued == 1) "" else "s"} queued for $noun" +
                     (if (pass.queued > 0) " (${pass.newOrChanged} new or changed, ${pass.byCadence} due by cadence)" else "") +
                     (if (pass.alreadyQueued > 0) " · ${pass.alreadyQueued} already queued" else "") +

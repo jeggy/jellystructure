@@ -36,7 +36,27 @@ data class AppConfig(
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
     // Phase 270 — the AI tab. Off by default; off means no request leaves the server.
     val ai: AiConfig = AiConfig(),
+    // Phase 273 — what jellystructure does about a subtitle that does not fit its video (Bazarr card).
+    @SerialName("subtitle_check") val subtitleCheck: SubtitleCheckConfig = SubtitleCheckConfig(),
 )
+
+/**
+ * Phase 273 (FR-273-16) — one switch for what happens to a bad subtitle: `fix` (Bazarr is steered on its own for
+ * verdicts from a subtitle reference; a speech-only doubt waits for the admin), `ask` (every action waits for the
+ * admin) or `report` (verdicts and advice only, nothing hidden). A new install starts on `fix`; an existing one is
+ * seeded to `report` once (dev review item 8), so the first run on it changes nothing. [dailyDownloadBudget] caps
+ * the provider downloads jellystructure causes in a day. [bazarrReachUrl] is where Bazarr reaches this server for
+ * its post-processing hook; blank = the address Jellyfin uses (165's `jellyfin_reach_url`).
+ */
+@Serializable
+data class SubtitleCheckConfig(
+    val action: String = "fix",
+    @SerialName("daily_download_budget") val dailyDownloadBudget: Int = 100,
+    @SerialName("bazarr_reach_url") val bazarrReachUrl: String = "",
+) {
+    val reportOnly: Boolean get() = action == "report"
+    val actsAlone: Boolean get() = action == "fix"
+}
 
 /**
  * Phase 270 (FR-270-1/2, dev review item 1) — one provider (Anthropic) for now, drawn as a choice; one
@@ -96,6 +116,9 @@ data class ScanConfig(
     // Phase 269 (FR-269-8) — `build_recommendations` is added to an existing pipeline ONCE, the same way
     // and for the same reason as the file checks above. Server-owned; a Settings save keeps the stored value.
     @SerialName("recommendations_step_seeded") val recommendationsStepSeeded: Boolean = false,
+    // Phase 273 (dev review item 8) — `check_subtitles` joins an existing pipeline ONCE, and an existing install's
+    // subtitle check starts on `report`. Server-owned like the two flags above.
+    @SerialName("subtitle_check_seeded") val subtitleCheckSeeded: Boolean = false,
 )
 
 /** Phase 269 (FR-269-8) — the whole-library step that rebuilds every viewer's Recommended list. */
@@ -125,13 +148,28 @@ object RecommendationsStep {
 object FileCheckSteps {
     const val VERIFY = "verify_files"
     const val LENGTHS = "check_track_lengths"
+    /** Phase 273 — does each sidecar subtitle belong to its video (FR-273-8). Not in [ALL]: that list is 261's
+     *  one-time seed; this step has its own ([seedSubtitles]). */
+    const val SUBTITLES = "check_subtitles"
     val ALL = listOf(VERIFY, LENGTHS)
 
     fun defaultStep(step: String, enabled: Boolean = true): PipelineStep = when (step) {
         VERIFY -> PipelineStep(step = VERIFY, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "5years", refresh1To5y = "5years", refreshOlder = "5years")
+        SUBTITLES -> PipelineStep(step = SUBTITLES, enabled = enabled, recheckUnchanged = true,
+            refreshThisYear = "monthly", refresh1To5y = "monthly", refreshOlder = "monthly")
         else -> PipelineStep(step = LENGTHS, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
+    }
+
+    /** Phase 273 — `check_subtitles` placed after `prewarm_subtitles` (whose fetch it keeps as a reference) when that
+     *  step is there, else ahead of the trailing wait/notify steps. An empty pipeline stays empty (built-in default). */
+    fun seedSubtitles(pipeline: List<PipelineStep>): List<PipelineStep> {
+        if (pipeline.isEmpty() || pipeline.any { it.step == SUBTITLES }) return pipeline
+        val prewarm = pipeline.indexOfFirst { it.step == "prewarm_subtitles" }
+        var at = if (prewarm >= 0) prewarm + 1 else pipeline.size
+        if (prewarm < 0) while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
+        return pipeline.subList(0, at) + defaultStep(SUBTITLES) + pipeline.subList(at, pipeline.size)
     }
 
     /** The one-time seed: both steps added (enabled per the retired `behavior.verify_files`) ahead of any

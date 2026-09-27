@@ -786,7 +786,7 @@ fun Route.trackRoutes(
     // Phase 254 (FR-254-6) — an operator's "Check now", per file since Phase 261 (FR-261-1): each check takes
     // the files it has no current result for (every file with ?force=true), first in the segments lane and
     // never playback-deferred; a waiting cadence row for the same file is raised rather than duplicated.
-    // ?check=verify|lengths narrows it to one check (the Checks card's ↻); absent = both, as 255 made it.
+    // ?check=verify|lengths|subtitles narrows it to one check (the Checks card's ↻); absent = all, as 255 made it.
     post("/media/{mediaId}/health/integrity/check") {
         val mediaId = call.parameters["mediaId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         val item = store.resolve(mediaId) ?: return@post call.respond(HttpStatusCode.NotFound)
@@ -794,6 +794,7 @@ fun Route.trackRoutes(
         val types = when (call.request.queryParameters["check"]) {
             "verify" -> listOf(dev.jellystructure.media.FileCheckSchedule.VERIFY_JOB)
             "lengths" -> listOf(dev.jellystructure.media.FileCheckSchedule.LENGTHS_JOB)
+            "subtitles" -> listOf(dev.jellystructure.media.FileCheckSchedule.SUBTITLES_JOB)
             else -> dev.jellystructure.media.FileCheckSchedule.JOB_TYPES
         }
         val r = mediaJobQueue.enqueueTitleChecks(item, force = call.request.queryParameters["force"] == "true", jobTypes = types)

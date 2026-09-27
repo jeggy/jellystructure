@@ -59,6 +59,7 @@ class TitleChecks(
     private val stepRuns: StepRunStore?,
     private val integrity: FileIntegrityService?,
     private val coverage: TrackCoverageService?,
+    private val subtitles: dev.jellystructure.subtitles.SubtitleCheckService? = null,
 ) {
     fun forItem(item: MediaItem, config: AppConfig): TitleChecksDto {
         val nowMs = store.nowMs()
@@ -97,6 +98,7 @@ class TitleChecks(
                     outcome = lastScanMs?.let { StepRunStore.OK }, nextDueAt = nextScanMs?.div(1000), nextDue = nextScanText, action = "sync",
                 )
                 FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS -> fileStep(item, step, label, active, nowMs, currentYear)
+                FileCheckSteps.SUBTITLES -> subtitleStep(item, step, label, active, nowMs)
                 else -> StepCheckDto(
                     step = step.step, label = label, enabled = step.enabled,
                     lastAt = run?.ran_at, last = run?.ran_at?.let { dayText(it * 1000, nowMs) } ?: "not yet",
@@ -188,6 +190,63 @@ class TitleChecks(
         )
     }
 
+    /** Phase 273 — the subtitle check's line: only videos that have a sidecar, each with its verdicts in words. */
+    private fun subtitleStep(item: MediaItem, step: PipelineStep, label: String, active: Set<String>, nowMs: Long): StepCheckDto {
+        val service = subtitles
+        val checks = service?.checksForItem(item.id)?.groupBy { it.video_path } ?: emptyMap()
+        val rows = FileCheckSchedule.units(item).mapNotNull { unit ->
+            val sidecars = service?.sidecarsOf(unit.path) ?: return@mapNotNull null
+            if (sidecars.isEmpty()) return@mapNotNull null
+            val rs = checks[unit.path].orEmpty()
+            val queued = FileCheckSchedule.dedupeKey(FileCheckSchedule.SUBTITLES_JOB, unit.path) in active
+            val unchecked = service.isDue(unit.path)
+            val problems = rs.filter { it.verdict !in setOf("in_sync", "cant_tell") }
+            val state = when {
+                unchecked -> "unchecked"
+                problems.isNotEmpty() -> "finding"
+                else -> "clean"
+            }
+            val checkedAt = rs.maxOfOrNull { it.checked_at }
+            FileCheckRowDto(
+                path = unit.path, name = unit.path.substringAfterLast('/'), season = unit.season, episodeTag = unit.episodeTag,
+                state = state, checkedAt = checkedAt, checked = checkedAt?.let { dayText(it * 1000, nowMs) } ?: "not yet",
+                nextDue = when {
+                    queued -> "queued"
+                    !step.enabled -> "off"
+                    unchecked -> "next run"
+                    else -> "when a subtitle changes"
+                },
+                detail = rs.joinToString(" · ") { "${it.language ?: "?"}: ${service.verdictWords(it)}" }
+                    .ifEmpty { null },
+            )
+        }
+        val checked = rows.mapNotNull { it.checkedAt }
+        val findings = rows.count { it.state == "finding" }
+        val unchecked = rows.count { it.state == "unchecked" }
+        return StepCheckDto(
+            step = step.step, label = label, enabled = step.enabled,
+            lastAt = checked.maxOrNull(), last = checked.maxOrNull()?.let { dayText(it * 1000, nowMs) } ?: "not yet",
+            outcome = when {
+                rows.isEmpty() || checked.isEmpty() -> null
+                findings > 0 -> "finding"
+                unchecked > 0 -> "partial"
+                else -> "clean"
+            },
+            detail = listOfNotNull(
+                findings.takeIf { it > 0 }?.let { "$it with a subtitle that does not fit" },
+                unchecked.takeIf { it > 0 }?.let { "$it not yet checked" },
+            ).joinToString(" · ").ifEmpty { if (rows.isEmpty()) "no subtitle files beside the video" else null },
+            nextDue = when {
+                !step.enabled -> "off"
+                rows.any { it.nextDue == "queued" } -> "queued"
+                unchecked > 0 -> "next run"
+                else -> "when a subtitle changes"
+            },
+            action = "check_subtitles",
+            files = rows,
+        )
+    }
+
     private fun storedFor(jobType: String, path: String): Pair<StoredFileCheck?, String?> = when (jobType) {
         FileCheckSchedule.VERIFY_JOB -> {
             val r = integrity?.rowsFor(path)
@@ -207,6 +266,7 @@ class TitleChecks(
             "detect_segments" to "Intro & credits", "write_nfo" to "NFO files", "sync_jellyfin" to "Jellyfin sync",
             "rescan_arr" to "Radarr / Sonarr rescan", "detect_drift" to "Drift", "sync_imdb_ratings" to "IMDb rating",
             "prewarm_subtitles" to "Subtitle pre-warm", FileCheckSteps.VERIFY to "Verify files", FileCheckSteps.LENGTHS to "Track lengths",
+            FileCheckSteps.SUBTITLES to "Subtitles fit the video",
         )
 
         /** FR-261-10 — only actions a title already has; the page maps each key to the call it already makes. */

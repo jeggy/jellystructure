@@ -332,6 +332,7 @@ class HomeFeedService(
             audioLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
                 .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }.distinct(),
             subtitleLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
+                .filter { !it.external || dev.jellystructure.subtitles.SubtitleVerdicts.isOffered(it.externalPath) }  // Phase 273
                 .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }.distinct(),
             overview = overview,
         )

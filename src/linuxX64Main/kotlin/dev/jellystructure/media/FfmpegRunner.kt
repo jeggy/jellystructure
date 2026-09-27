@@ -279,6 +279,42 @@ object FfmpegRunner {
         }
     }
 
+    /**
+     * Phase 273 (FR-273-5) — the speech track of one audio stream ([audioOrdinal] = ffmpeg's `0:a:N`), for a file
+     * with no subtitle inside it to check a sidecar against. Decoded as 16 kHz stereo (a 5.1 mix is downmixed, which
+     * puts its centre channel in the middle where [dev.jellystructure.subtitles.SpeechAccumulator] looks for it),
+     * band-limited to speech, streamed through the accumulator so memory is two bytes per 10 ms. A separate decode
+     * from [computeEnvelope] on purpose: stereo 16 kHz is four times the PCM of the envelope's mono 8 kHz, and only the
+     * files without a usable embedded subtitle need it. Null on any ffmpeg failure.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    suspend fun computeSpeechTrack(filePath: String, audioOrdinal: Int): dev.jellystructure.subtitles.SpeechResult? {
+        val escaped = filePath.replace("'", "'\\''")
+        val sr = dev.jellystructure.subtitles.SpeechAccumulator.SAMPLE_RATE
+        val cmd = "nice -n 19 ionice -c3 ffmpeg -v error -nostdin -i '$escaped' -map 0:a:$audioOrdinal -vn -sn -dn " +
+            "-ac 2 -ar $sr -af highpass=f=200,lowpass=f=3500 -f s16le - 2>/dev/null"
+        Logger.info("ffmpeg (speech track): $filePath", "pipeline")
+        return dev.jellystructure.ops.SegmentProcessGate.withPermit {
+            memScoped {
+                val pipe = popen(cmd, "r")
+                if (pipe == null) {
+                    null
+                } else {
+                    val chunkSize = 65536
+                    val buf = allocArray<ByteVar>(chunkSize)
+                    val acc = dev.jellystructure.subtitles.SpeechAccumulator()
+                    while (true) {
+                        val n = platform.posix.fread(buf, 1u, chunkSize.toULong(), pipe).toInt()
+                        if (n <= 0) break
+                        acc.feed(buf, n)
+                    }
+                    val rc = pclose(pipe)
+                    if (rc != 0) null else acc.finish()
+                }
+            }
+        }
+    }
+
     /** R133: resize [input] into [output] for the Ravilo artwork service. Pass [width] OR [height] (the
      *  other side scales to preserve aspect; -2 keeps it even, required by some encoders). PNG output
      *  (logos) preserves alpha; JPEG gets `-q:v 3`. */

@@ -43,6 +43,8 @@ internal fun unionLanguagesInFirstSeenOrder(episodes: List<Episode>, kind: dev.j
     for (ep in episodes) {
         for (track in ep.tracks) {
             if (track.kind != kind) continue
+            // Phase 273 (FR-273-17) — a sidecar the player will not offer is not named here either.
+            if (track.external && !dev.jellystructure.subtitles.SubtitleVerdicts.isOffered(track.externalPath)) continue
             val lang = track.language?.lowercase()?.takeIf { it.isNotBlank() } ?: continue
             seen.add(lang)
         }
@@ -79,6 +81,7 @@ class DetailService(
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
         val movieSubLangs = item.tracks
             .filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
+            .filter { !it.external || dev.jellystructure.subtitles.SubtitleVerdicts.isOffered(it.externalPath) }  // Phase 273
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
         // Phase 185 (FR-185-5) — resolved for THIS requesting device, from THIS movie's own file.
         val movieVideoTrack = item.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }

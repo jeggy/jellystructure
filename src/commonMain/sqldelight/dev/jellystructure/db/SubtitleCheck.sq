@@ -1,0 +1,177 @@
+-- Phase 273 — does each sidecar subtitle belong to its video, and what jellystructure asked Bazarr to do about it.
+-- Must stay in sync with 58.sqm.
+
+-- FR-273-7 — one verdict per sidecar, current while both files keep their size and mtime.
+CREATE TABLE subtitle_check (
+    sidecar_path TEXT NOT NULL PRIMARY KEY,
+    video_path TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    language TEXT,
+    forced INTEGER NOT NULL DEFAULT 0,
+    hi INTEGER NOT NULL DEFAULT 0,
+    sidecar_size INTEGER NOT NULL,
+    sidecar_mtime INTEGER NOT NULL,
+    video_size INTEGER NOT NULL,
+    video_mtime INTEGER NOT NULL,
+    verdict TEXT NOT NULL,
+    reason TEXT,
+    reference TEXT,
+    rho REAL,
+    z REAL,
+    scale REAL,
+    shift_ms INTEGER,
+    worst_ms INTEGER,
+    drift_ms_per_hour INTEGER,
+    match_video_path TEXT,
+    match_label TEXT,
+    cues INTEGER NOT NULL DEFAULT 0,
+    last_cue_ms INTEGER,
+    content_hash TEXT NOT NULL DEFAULT '',
+    provider TEXT,
+    subs_id TEXT,
+    detail TEXT NOT NULL DEFAULT '',
+    checked_at INTEGER NOT NULL
+);
+CREATE INDEX subtitle_check_item ON subtitle_check(item_id);
+CREATE INDEX subtitle_check_video ON subtitle_check(video_path);
+
+-- FR-273-7 — a video's references: the cue times of one embedded text subtitle, or its speech track. A row
+-- with empty data records that there is none (so it is not fetched or decoded again for the same file).
+CREATE TABLE subtitle_reference (
+    video_path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    video_size INTEGER NOT NULL,
+    video_mtime INTEGER NOT NULL,
+    source TEXT,
+    hz INTEGER NOT NULL,
+    payload BLOB NOT NULL,
+    computed_at INTEGER NOT NULL,
+    PRIMARY KEY (video_path, kind)
+);
+
+-- FR-273-15 — a copy of every sidecar judged in sync, to put back if a blind upgrade replaces it.
+CREATE TABLE subtitle_settled (
+    sidecar_path TEXT NOT NULL PRIMARY KEY,
+    video_path TEXT NOT NULL,
+    language TEXT,
+    forced INTEGER NOT NULL DEFAULT 0,
+    hi INTEGER NOT NULL DEFAULT 0,
+    file_name TEXT NOT NULL,
+    content BLOB NOT NULL,
+    content_hash TEXT NOT NULL,
+    settled_at INTEGER NOT NULL
+);
+CREATE INDEX subtitle_settled_video ON subtitle_settled(video_path);
+
+-- FR-273-13/14/16 — what jellystructure did or proposes: a proposal waiting for the admin, an action taken (and
+-- whether it cost a provider download), and the candidates already tried for a target.
+CREATE TABLE subtitle_action (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    state TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    video_path TEXT NOT NULL,
+    sidecar_path TEXT,
+    language TEXT,
+    provider TEXT,
+    subs_id TEXT,
+    costs_download INTEGER NOT NULL DEFAULT 0,
+    detail TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER
+);
+CREATE INDEX subtitle_action_video ON subtitle_action(video_path, language);
+CREATE INDEX subtitle_action_state ON subtitle_action(state, created_at);
+CREATE INDEX subtitle_action_item ON subtitle_action(item_id);
+
+putCheck:
+INSERT OR REPLACE INTO subtitle_check(sidecar_path, video_path, item_id, language, forced, hi, sidecar_size, sidecar_mtime,
+    video_size, video_mtime, verdict, reason, reference, rho, z, scale, shift_ms, worst_ms, drift_ms_per_hour,
+    match_video_path, match_label, cues, last_cue_ms, content_hash, provider, subs_id, detail, checked_at)
+VALUES (:sidecarPath, :videoPath, :itemId, :language, :forced, :hi, :sidecarSize, :sidecarMtime, :videoSize, :videoMtime, :verdict, :reason, :reference, :rho, :z, :scale, :shiftMs, :worstMs, :driftMsPerHour, :matchVideoPath, :matchLabel, :cues, :lastCueMs, :contentHash, :provider, :subsId, :detail, :checkedAt);
+
+checkByPath:
+SELECT * FROM subtitle_check WHERE sidecar_path = :path;
+
+checksForVideo:
+SELECT * FROM subtitle_check WHERE video_path = :videoPath;
+
+checksForItem:
+SELECT * FROM subtitle_check WHERE item_id = :itemId ORDER BY video_path, sidecar_path;
+
+allChecks:
+SELECT * FROM subtitle_check;
+
+removeCheck:
+DELETE FROM subtitle_check WHERE sidecar_path = :path;
+
+setSource:
+UPDATE subtitle_check SET provider = :provider, subs_id = :subsId WHERE sidecar_path = :path;
+
+countByVerdict:
+SELECT verdict, COUNT(*) AS n FROM subtitle_check GROUP BY verdict;
+
+putReference:
+INSERT OR REPLACE INTO subtitle_reference(video_path, kind, video_size, video_mtime, source, hz, payload, computed_at)
+VALUES (:videoPath, :kind, :videoSize, :videoMtime, :source, :hz, :payload, :computedAt);
+
+referenceFor:
+SELECT * FROM subtitle_reference WHERE video_path = :videoPath AND kind = :kind;
+
+referencesFor:
+SELECT * FROM subtitle_reference WHERE video_path IN :videoPaths;
+
+putSettled:
+INSERT OR REPLACE INTO subtitle_settled(sidecar_path, video_path, language, forced, hi, file_name, content, content_hash, settled_at)
+VALUES (:sidecarPath, :videoPath, :language, :forced, :hi, :fileName, :content, :contentHash, :settledAt);
+
+settledForVideo:
+SELECT * FROM subtitle_settled WHERE video_path = :videoPath;
+
+settledByPath:
+SELECT * FROM subtitle_settled WHERE sidecar_path = :path;
+
+removeSettled:
+DELETE FROM subtitle_settled WHERE sidecar_path = :path;
+
+insertAction:
+INSERT INTO subtitle_action(action, state, item_id, video_path, sidecar_path, language, provider, subs_id, costs_download, detail, created_at, decided_at)
+VALUES (:action, :state, :itemId, :videoPath, :sidecarPath, :language, :provider, :subsId, :costsDownload, :detail, :createdAt, :decidedAt);
+
+lastActionId:
+SELECT last_insert_rowid();
+
+actionById:
+SELECT * FROM subtitle_action WHERE id = :id;
+
+actionsForItem:
+SELECT * FROM subtitle_action WHERE item_id = :itemId ORDER BY created_at DESC, id DESC LIMIT 200;
+
+waiting:
+SELECT * FROM subtitle_action WHERE state = 'waiting' ORDER BY created_at, id;
+
+waitingFor:
+SELECT * FROM subtitle_action WHERE state = 'waiting' AND sidecar_path = :path;
+
+decide:
+UPDATE subtitle_action SET state = :state, decided_at = :decidedAt, detail = :detail WHERE id = :id;
+
+downloadsSince:
+SELECT COUNT(*) FROM subtitle_action WHERE costs_download = 1 AND state IN ('done', 'failed') AND created_at >= :since;
+
+roundsSince:
+SELECT COUNT(*) FROM subtitle_action WHERE action = :action AND video_path = :videoPath AND language IS :language
+    AND state IN ('done', 'failed') AND created_at >= :since;
+
+triedFor:
+SELECT subs_id FROM subtitle_action WHERE action IN ('neighbour', 'blacklist') AND video_path = :videoPath AND language IS :language AND subs_id IS NOT NULL;
+
+actedOnContent:
+SELECT COUNT(*) FROM subtitle_action WHERE sidecar_path = :path AND action = :action AND detail LIKE :hashPattern;
+
+recentActions:
+SELECT * FROM subtitle_action WHERE state IN ('done', 'failed') ORDER BY created_at DESC, id DESC LIMIT :limit;
+
+-- The Jobs view's "N findings today" for the subtitle check, read from the verdicts (a check succeeds whatever it finds).
+problemsSince:
+SELECT COUNT(*) FROM subtitle_check WHERE checked_at >= :since AND verdict NOT IN ('in_sync', 'cant_tell');

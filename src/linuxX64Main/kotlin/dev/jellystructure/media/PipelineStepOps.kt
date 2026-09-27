@@ -126,10 +126,18 @@ object PipelineStepOps {
         cfg: AppConfig,
         onStreamWarmed: () -> Unit = {},
         isCancelled: () -> Boolean = { false },
+        // Phase 273 (FR-273-6) — keep one stream's text per video as the subtitle check's reference; null = discard.
+        references: dev.jellystructure.subtitles.SubtitleReferences? = null,
     ): PrewarmOutcome {
         val base = cfg.apiKeys.jellyfinUrl
         val token = cfg.apiKeys.jellyfinToken
         if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
+
+        // Phase 273 (FR-273-6) — each video of this item by its Jellyfin id: where its reference is stored, and the
+        // store's tracks (Jellyfin's stream index is ffprobe's, so a stream maps to its track by index).
+        val videoById: Map<String, Pair<String, List<dev.jellystructure.model.Track>>> = if (references == null) emptyMap() else
+            (item.episodes.mapNotNull { e -> e.jellyfinId?.let { it to (e.path to e.tracks) } } +
+                listOfNotNull(item.jellyfinId?.takeIf { item.kind == MediaKind.MOVIE }?.let { it to (item.path to item.tracks) })).toMap()
 
         suspend fun warmedCountOf(streams: List<dev.jellystructure.auth.JellyfinMediaStream>, jellyfinId: String): StreamWalkResult {
             val textSubs = streams.filter {
@@ -137,10 +145,26 @@ object PipelineStepOps {
                     !it.isExternal &&
                     (it.isTextSubtitleStream || dev.jellystructure.tv.isTextSubCodec(it.codec))
             }
+            val video = videoById[jellyfinId]
+            var needReference = video != null && references != null &&
+                references.stored(video.first, dev.jellystructure.subtitles.SubtitleReferences.EMBEDDED) is dev.jellystructure.subtitles.SubtitleReferences.Stored.Unknown
             var confirmed = 0
             for (s in textSubs) {
                 if (isCancelled()) return StreamWalkResult.Cancelled
                 if (dev.jellystructure.tv.isPlaybackActive()) return StreamWalkResult.Deferred(confirmed)
+                val track = if (needReference && !s.isForced) video!!.second.firstOrNull { it.streamIndex == s.index && it.kind == dev.jellystructure.model.TrackKind.SUBTITLE } else null
+                if (track != null) {
+                    // The same request as the warm, keeping the body: the text is this video's timing reference.
+                    when (val r = jellyfinClient.fetchSubtitleText(base, token, jellyfinId, s.index)) {
+                        is JellyfinClient.SubtitleText.Text -> {
+                            confirmed++; onStreamWarmed()
+                            if (references!!.offerEmbedded(video!!.first, track, r.body, video.second.fileDurationMs())) needReference = false
+                        }
+                        JellyfinClient.SubtitleText.TimedOut -> return StreamWalkResult.TimedOut(confirmed)
+                        is JellyfinClient.SubtitleText.Failed -> {}
+                    }
+                    continue
+                }
                 when (jellyfinClient.warmSubtitleExtraction(base, token, jellyfinId, s.index)) {
                     JellyfinClient.WarmResult.Success -> { confirmed++; onStreamWarmed() }
                     JellyfinClient.WarmResult.TimedOut -> return StreamWalkResult.TimedOut(confirmed)

@@ -29,13 +29,20 @@ object FileCheckSchedule {
     /** FR-261-1 — the queue's job type for each step. */
     const val VERIFY_JOB = "verify_file"
     const val LENGTHS_JOB = "check_track_lengths"
-    val JOB_TYPES = listOf(VERIFY_JOB, LENGTHS_JOB)
+    /** Phase 273 (FR-273-8) — one video's sidecar subtitles, checked against it. */
+    const val SUBTITLES_JOB = "check_subtitles"
+    val JOB_TYPES = listOf(VERIFY_JOB, LENGTHS_JOB, SUBTITLES_JOB)
     fun jobTypeFor(step: String): String? = when (step) {
         FileCheckSteps.VERIFY -> VERIFY_JOB
         FileCheckSteps.LENGTHS -> LENGTHS_JOB
+        FileCheckSteps.SUBTITLES -> SUBTITLES_JOB
         else -> null
     }
-    fun dedupeKey(jobType: String, path: String): String = (if (jobType == VERIFY_JOB) "verify:" else "lengths:") + path
+    fun dedupeKey(jobType: String, path: String): String = when (jobType) {
+        VERIFY_JOB -> "verify:"
+        SUBTITLES_JOB -> "subs:"
+        else -> "lengths:"
+    } + path
 
     /** FR-261-7 — null when the file is not due. A changed file is always due; a stored finding is never
      *  re-derived by the cadence (it stands until the file changes or the operator re-runs it). */
@@ -65,5 +72,6 @@ object FileCheckSchedule {
 
     /** FR-261-1 — *Verify · Title · S01E04*. */
     fun label(jobType: String, unit: FileUnit): String =
-        (if (jobType == VERIFY_JOB) "Verify" else "Track lengths") + " · ${unit.item.title}" + (unit.episodeTag?.let { " · $it" } ?: "")
+        when (jobType) { VERIFY_JOB -> "Verify"; SUBTITLES_JOB -> "Subtitles"; else -> "Track lengths" } +
+            " · ${unit.item.title}" + (unit.episodeTag?.let { " · $it" } ?: "")
 }

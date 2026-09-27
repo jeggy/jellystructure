@@ -1,0 +1,84 @@
+-- Phase 273 — subtitle verdicts, references, settled copies and actions. Must stay in sync with SubtitleCheck.sq.
+
+CREATE TABLE subtitle_check (
+    sidecar_path TEXT NOT NULL PRIMARY KEY,
+    video_path TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    language TEXT,
+    forced INTEGER NOT NULL DEFAULT 0,
+    hi INTEGER NOT NULL DEFAULT 0,
+    sidecar_size INTEGER NOT NULL,
+    sidecar_mtime INTEGER NOT NULL,
+    video_size INTEGER NOT NULL,
+    video_mtime INTEGER NOT NULL,
+    verdict TEXT NOT NULL,
+    reason TEXT,
+    reference TEXT,
+    rho REAL,
+    z REAL,
+    scale REAL,
+    shift_ms INTEGER,
+    worst_ms INTEGER,
+    drift_ms_per_hour INTEGER,
+    match_video_path TEXT,
+    match_label TEXT,
+    cues INTEGER NOT NULL DEFAULT 0,
+    last_cue_ms INTEGER,
+    content_hash TEXT NOT NULL DEFAULT '',
+    provider TEXT,
+    subs_id TEXT,
+    detail TEXT NOT NULL DEFAULT '',
+    checked_at INTEGER NOT NULL
+);
+
+CREATE INDEX subtitle_check_item ON subtitle_check(item_id);
+
+CREATE INDEX subtitle_check_video ON subtitle_check(video_path);
+
+CREATE TABLE subtitle_reference (
+    video_path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    video_size INTEGER NOT NULL,
+    video_mtime INTEGER NOT NULL,
+    source TEXT,
+    hz INTEGER NOT NULL,
+    payload BLOB NOT NULL,
+    computed_at INTEGER NOT NULL,
+    PRIMARY KEY (video_path, kind)
+);
+
+CREATE TABLE subtitle_settled (
+    sidecar_path TEXT NOT NULL PRIMARY KEY,
+    video_path TEXT NOT NULL,
+    language TEXT,
+    forced INTEGER NOT NULL DEFAULT 0,
+    hi INTEGER NOT NULL DEFAULT 0,
+    file_name TEXT NOT NULL,
+    content BLOB NOT NULL,
+    content_hash TEXT NOT NULL,
+    settled_at INTEGER NOT NULL
+);
+
+CREATE INDEX subtitle_settled_video ON subtitle_settled(video_path);
+
+CREATE TABLE subtitle_action (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    state TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    video_path TEXT NOT NULL,
+    sidecar_path TEXT,
+    language TEXT,
+    provider TEXT,
+    subs_id TEXT,
+    costs_download INTEGER NOT NULL DEFAULT 0,
+    detail TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER
+);
+
+CREATE INDEX subtitle_action_video ON subtitle_action(video_path, language);
+
+CREATE INDEX subtitle_action_state ON subtitle_action(state, created_at);
+
+CREATE INDEX subtitle_action_item ON subtitle_action(item_id);

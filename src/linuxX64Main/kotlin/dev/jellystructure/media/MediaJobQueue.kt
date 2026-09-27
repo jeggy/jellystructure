@@ -106,6 +106,8 @@ class MediaJobQueue(
     private val fileIntegrity: FileIntegrityService? = null,
     // Phase 255 — the coverage sweep and the title check's second half.
     private val trackCoverage: TrackCoverageService? = null,
+    // Phase 273 (FR-273-8) — the third per-file check; null in tests and contexts that build no subtitle check.
+    private val subtitleChecks: dev.jellystructure.subtitles.SubtitleCheckService? = null,
     // Phase 261 (FR-261-9) — the enqueue-only steps' per-title record, written when their job finishes.
     val stepRuns: StepRunStore? = null,
 ) {
@@ -319,14 +321,21 @@ class MediaJobQueue(
         return FileCheckSchedule.JOB_TYPES.map { type ->
             JobGroup(
                 type = type,
-                label = if (type == FileCheckSchedule.VERIFY_JOB) "Verify files" else "Check track lengths",
+                label = when (type) {
+                    FileCheckSchedule.VERIFY_JOB -> "Verify files"
+                    FileCheckSchedule.SUBTITLES_JOB -> "Check subtitles"
+                    else -> "Check track lengths"
+                },
                 waiting = counts[type to "queued"] ?: 0,
                 running = queries.listByTypeRunning(type).executeAsList().map { toSnapshot(it) },
                 doneToday = counts[type to "done"] ?: 0,
                 failedToday = counts[type to "failed"] ?: 0,
                 findingsToday = runCatching {
-                    if (type == FileCheckSchedule.VERIFY_JOB) db.fileIntegrityQueries.countFindingsSince(since).executeAsOne().toInt()
-                    else db.fileTrackCoverageQueries.countFindingsSince(since).executeAsOne().toInt()
+                    when (type) {
+                        FileCheckSchedule.VERIFY_JOB -> db.fileIntegrityQueries.countFindingsSince(since).executeAsOne().toInt()
+                        FileCheckSchedule.SUBTITLES_JOB -> db.subtitleCheckQueries.problemsSince(since).executeAsOne().toInt()
+                        else -> db.fileTrackCoverageQueries.countFindingsSince(since).executeAsOne().toInt()
+                    }
                 }.getOrDefault(0),
             )
         }
@@ -745,6 +754,10 @@ class MediaJobQueue(
                 val service = fileIntegrity ?: return Failure("File integrity service not available")
                 service.check(path) ?: return Failure("ffmpeg could not read the file")
             }
+            FileCheckSchedule.SUBTITLES_JOB -> {
+                val service = subtitleChecks ?: return Failure("Subtitle check not available")
+                service.runJob(row.media_id, path) ?: return Failure("Media item no longer exists")
+            }
             else -> {
                 val service = trackCoverage ?: return Failure("Track coverage service not available")
                 service.check(path) ?: return Failure("ffprobe could not read the file")
@@ -759,6 +772,8 @@ class MediaJobQueue(
     private fun storedChecks(jobType: String): Map<String, StoredFileCheck>? = when (jobType) {
         FileCheckSchedule.VERIFY_JOB -> fileIntegrity?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.damage_count > 0) }
         FileCheckSchedule.LENGTHS_JOB -> trackCoverage?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.findings != "[]") }
+        // Phase 273 — due-ness is the subtitle check's own (a new sidecar is due though the video is not changed).
+        FileCheckSchedule.SUBTITLES_JOB -> subtitleChecks?.let { emptyMap() }
         else -> null
     }
 
@@ -796,6 +811,7 @@ class MediaJobQueue(
     fun enqueueDueFileChecks(step: PipelineStep, items: List<MediaItem>, shouldStop: () -> Boolean = { false }): FileCheckPass {
         val jobType = FileCheckSchedule.jobTypeFor(step.step) ?: return FileCheckPass(0, 0, 0, false)
         val stored = storedChecks(jobType) ?: return FileCheckPass(0, 0, 0, false)
+        if (jobType == FileCheckSchedule.SUBTITLES_JOB) return enqueueDueSubtitleChecks(items, shouldStop)
         val nowMs = store.nowMs()
         val currentYear = yearFromEpochMs(nowMs)
         val due = ArrayList<Triple<FileUnit, FileCheckDue, Long>>()
@@ -817,9 +833,32 @@ class MediaJobQueue(
         return FileCheckPass(fresh, cadence, already, false)
     }
 
+    /** Phase 273 (FR-273-8) — every video with a sidecar that has no current verdict, or an unsettled one a reference
+     *  could now settle, queued as a new file (priority 0, waits while a TV plays). */
+    private fun enqueueDueSubtitleChecks(items: List<MediaItem>, shouldStop: () -> Boolean): FileCheckPass {
+        val service = subtitleChecks ?: return FileCheckPass(0, 0, 0, false)
+        var fresh = 0; var already = 0
+        for (item in items) for (unit in FileCheckSchedule.units(item)) {
+            if (shouldStop()) return FileCheckPass(fresh, 0, already, true)
+            if (!service.isDue(unit.path)) continue
+            when (enqueueFileCheck(FileCheckSchedule.SUBTITLES_JOB, unit, FileCheckSchedule.PRIORITY_NEW, defer = true)) {
+                FileEnqueue.INSERTED -> fresh++
+                else -> already++
+            }
+        }
+        return FileCheckPass(fresh, 0, already, false)
+    }
+
+    /** Phase 273 (FR-273-9) — the hook found a sidecar whose reference must be fetched or decoded first: queue that
+     *  video's check, waiting while a TV plays. */
+    fun enqueueSubtitleCheck(item: MediaItem, videoPath: String): FileEnqueue {
+        val unit = FileCheckSchedule.units(item).firstOrNull { it.path == videoPath } ?: FileUnit(item, videoPath, null)
+        return enqueueFileCheck(FileCheckSchedule.SUBTITLES_JOB, unit, FileCheckSchedule.PRIORITY_NEW, defer = true)
+    }
+
     /** Phase 261 (FR-261-10) — the title page's Checks card, from this queue's own collaborators. */
     fun titleChecks(item: MediaItem, config: dev.jellystructure.config.AppConfig): TitleChecksDto =
-        TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage).forItem(item, config)
+        TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage, subtitleChecks).forItem(item, config)
 
     /** Phase 261 — Check now's answer: how many files it looked at, rows it queued, waiting rows it raised. */
     @kotlinx.serialization.Serializable
@@ -834,7 +873,9 @@ class MediaJobQueue(
         for (jobType in jobTypes) {
             val stored = storedChecks(jobType) ?: continue
             for (unit in units) {
-                if (!force) {
+                if (jobType == FileCheckSchedule.SUBTITLES_JOB) {
+                    if (!subtitleChecks!!.isDue(unit.path, force)) continue
+                } else if (!force) {
                     val stamp = FileIntegrityService.stampOf(unit.path) ?: continue
                     val row = stored[unit.path]
                     if (row != null && row.size == stamp.size && row.mtime == stamp.mtime) continue
@@ -1090,6 +1131,7 @@ class MediaJobQueue(
             item, jellyfinClient, configStore.current,
             onStreamWarmed = { warmedCount++ },
             isCancelled = ::isCancelled,
+            references = subtitleChecks?.references,
         )
         return when (outcome) {
             is PipelineStepOps.PrewarmOutcome.Warmed -> {

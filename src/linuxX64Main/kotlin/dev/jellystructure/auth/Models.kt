@@ -253,6 +253,9 @@ data class JellyfinMediaStream(
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,
     @SerialName("IsTextSubtitleStream") val isTextSubtitleStream: Boolean = false,
+    // Phase 273 (dev review item 2) — an external stream's file, in Jellyfin's own view of the media; matched to a
+    // sidecar by file name, since Jellyfin, Bazarr and jellystructure each mount the media under a different root.
+    @SerialName("Path") val path: String? = null,
     // R56: per-stream delivery negotiated by PlaybackInfo (Embed | External | Hls | Encode).
     @SerialName("DeliveryMethod") val deliveryMethod: String? = null,
     @SerialName("DeliveryUrl") val deliveryUrl: String? = null,

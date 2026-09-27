@@ -873,6 +873,10 @@ class PlaybackService(
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
             .filter { it.type.equals("Subtitle", ignoreCase = true) }
+            // Phase 273 (FR-273-17) — a sidecar judged not to fit this video is not offered, and so never chosen by
+            // default or remembered either (the client picks only from this list). Matched by file name: Jellyfin
+            // sees the media under its own root.
+            .filter { !it.isExternal || dev.jellystructure.subtitles.SubtitleVerdicts.isOffered(it.path) }
             .mapNotNull { s ->
                 val codec = s.codec?.lowercase()
                 when {
