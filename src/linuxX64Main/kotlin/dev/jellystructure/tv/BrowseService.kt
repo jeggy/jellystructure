@@ -303,16 +303,20 @@ class BrowseService(
     /** Phase 271 (FR-271-4) — genres counted by id (one tile per genre, 24 not 41), a hand-added genre by
      *  its name under [TaxonomyKey] as before. A title counts once per genre, however many of its names
      *  say it. The cached name is the English label; [withGenreLabels] relabels per viewer. */
-    private class GenreCounter {
+    internal class GenreCounter {
         private val byId = LinkedHashMap<Int, Int>()
+        // A name a title stores for the id: shown when the catalog has no label for it yet (the genre lists
+        // never fetched — no TMDB key, or TMDB unreachable), rather than the bare `#16` key.
+        private val storedName = HashMap<Int, String>()
         private val named = TaxonomyKey.Counter()
         fun add(item: MediaItem) {
             for (r in GenreCatalog.refs(item)) {
-                if (r.id != null) byId[r.id] = (byId[r.id] ?: 0) + 1 else named.add(r.name)
+                if (r.id != null) { byId[r.id] = (byId[r.id] ?: 0) + 1; storedName.getOrPut(r.id) { TaxonomyKey.display(r.name) } }
+                else named.add(r.name)
             }
         }
         fun items(): List<FacetItem> =
-            (byId.map { (id, n) -> FacetItem(GenreCatalog.label(id, GenreCatalog.ENGLISH) ?: "#$id", n, id = id) } +
+            (byId.map { (id, n) -> FacetItem(GenreCatalog.label(id, GenreCatalog.ENGLISH) ?: storedName[id] ?: "#$id", n, id = id) } +
                 named.entries().map { FacetItem(it.name, it.count) })
                 .sortedWith(compareByDescending<FacetItem> { it.count }.thenBy { it.name.lowercase() })
     }

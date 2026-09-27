@@ -217,3 +217,11 @@ differs from the text above, the build is recorded here.
 
 **Not done here:** deploying, and the acceptance checks on production (they need a release and a restart,
 which need the owner's go-ahead).
+
+## Correction (2026-09-27): a genre without a label shows its stored name
+
+Found on the e2e stack's web app, whose TMDB mock serves no genre lists: the Genres wall read `#16` and
+`#878`. The facets' genre counter fell back to the key when the catalog had no label for an id, where the
+admin's Metadata page already fell back to the name the titles store. Any installation whose genre lists
+were never fetched (no TMDB key, TMDB unreachable at every refresh) would have shown the same. The counter
+now keeps the first stored name per id and shows it when there is no label; `GenreIdBrowseTest` holds it.

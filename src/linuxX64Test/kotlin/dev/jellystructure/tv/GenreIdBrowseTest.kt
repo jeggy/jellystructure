@@ -77,6 +77,14 @@ class GenreIdBrowseTest {
     }
 
     @Test
+    fun `a genre the catalog has no label for yet shows the name the titles store and not its key`() = runBlocking {
+        GenreCatalog.replaceForTest(emptyMap())   // the genre lists never fetched (no TMDB key, TMDB unreachable)
+        mediaStore.addOrUpdate(item("a1", listOf("Animation"), "en").copy(tmdbGenres = listOf("Animation"), tmdbGenreIds = listOf(16)))
+        val f = service.facets(device, null)
+        assertEquals(listOf("Animation" to 16), f.genres.map { it.name to it.id })
+    }
+
+    @Test
     fun `one tile per genre whatever language the titles came in and the grid agrees`() = runBlocking {
         seed()
         val f = service.facets(device, null)
