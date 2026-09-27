@@ -71,9 +71,14 @@ Five items, **Profile always fifth** (it is the way back), the same pill. Direct
 
 | | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|
-| **(a) mirror the video bar — lean** | Home | Library | Search | Playlists | Profile |
+| **(a) mirror the video bar — lean, amended by part 2** | Home | Library | Search | **Audiobooks** | Profile |
+| (a′) part 1's original | Home | Library | Search | Playlists | Profile |
 | (b) the catalogue up front | Home | Albums | Artists | Search | Profile |
 | (c) the player up front | Listen | Browse | Search | Queue | Profile |
+
+**Part 2 amendment (§M):** the household also has audiobooks, and a book shelf deserves the fourth item —
+*Continue listening* is the one row a listener opens the app for. **Playlists becomes a chip in Library**
+(Albums · Artists · Songs · Genres · Playlists). The mode card's second half reads **Music & audiobooks**.
 
 Why (a) leans: the shape is identical to the video bar (Home · Library · Search · Discover · Profile), so the
 pill position, R267 FR-R267-9's tap-on-active-scrolls-to-top, R275's Back ladder to Home, the mini bar's
@@ -255,8 +260,8 @@ R187's no-results sentence, the genre names from 271/R312 where a music genre co
 ## J. Round-1 questions (directions wanted, owner picks)
 
 1. **The switch's form** (§A2): a row · **a mode card (lean)** · a top-row segment.
-2. **The bar** (§B): **(a) Home · Library · Search · Playlists · Profile (lean)** · (b) Albums and Artists as
-   tabs · (c) the player up front.
+2. **The bar** (§B): **(a) Home · Library · Search · Audiobooks · Profile (lean, part 2)** · (a′) part 1's
+   Playlists in the fourth slot · (b) Albums and Artists as tabs · (c) the player up front.
 3. **A ♪ beside the brand in music mode** — draw or not? Lean: draw it small; it is the only reminder on the
    player, where the bar is hidden.
 4. **Now playing** (§D): **cover-first (lean)** · lyrics-first · queue-first — lyrics as a state of the winner.
@@ -265,6 +270,83 @@ R187's no-results sentence, the genre names from 271/R312 where a music genre co
    a screen.
 6. **Loudness — *Even out volume*:** a switch in Settings (on by default, lean) or not exposed at all.
 7. **Playlists in round 1:** two states only (lean) or the whole create/edit flow now.
+
+## M. Part 2 — Audiobooks (added 2026-09-27; source: `research-reports/audiobooks-library-and-player-2026-09-27.md`)
+
+**What changes the drawing:** a book is long, listened to once, in order, over weeks — so the shelf leads
+with *Continue listening*, the player gains **speed · sleep timer · chapters · bookmarks · ±30 s**, and the
+lock-screen card's side actions become ±30 s instead of previous/next. Everything else — the switch, the
+service, the mini bar, the sheets — is part 1's. **Speed exists here and only here**: the video player's
+*no speed* ruling (2026-09-16) stands where it was made; draw no speed control anywhere but the book player.
+
+### M1. The **Audiobooks** page (the bar's fourth item)
+- **Continue listening** at the top: one large card per book in progress (cover 1:1 · title · author · a
+  progress ring with *3 h 12 min left* · *Chapter 9 · Part 9 of 14* in `--ink-dim`); tap = **resume**, no
+  confirmation. Absent when nothing is in progress (then *All books* starts at the top — no empty banner).
+- **All books:** 2-up square covers, title (1 line) · author (1 line), a small ✓ on finished books, the
+  progress ring on started ones. Sort in the top row's page slot: *Recently added · Title · Author · Series*.
+- **Authors** and **Series** as chips under the heading, present only when the library has any (the
+  household has one book: draw the page with one card, unapologetic).
+- **Empty library:** *Nothing filed as audiobooks yet* — one sentence.
+
+### M2. The Book page
+Cover (1:1, large) · title · subtitle · **author** (link) · *Read by {narrator}* (absent when unknown) ·
+*5 h 24 min · 14 chapters* · series chip *Book 2 of 5* (link to the series list) when known. Actions:
+**Continue** (*from 2 h 11 min*) or **Start** when unstarted, and ⋯ (*Start over · Mark as finished · Add
+to My List · Go to author*). Description (3 lines + *More*). **Chapters** list: # · title · length, the
+current one lit with the bars glyph, finished ones dimmed; tap plays from there. Bar hidden (one title's
+detail), mini bar stays.
+
+### M3. Now playing — the book variant of the same screen
+Part 1's *Now playing* with these differences: **±30 s** replace previous/next (long-press repeats);
+**speed chip** (*1.0×* → a sheet: 0.8 · 0.9 · 1.0 · 1.1 · 1.2 · 1.5 · 1.75 · 2.0, remembered per book); a
+**sleep** glyph (sheet: *15 · 30 · 45 · 60 min · End of chapter*; when set, the glyph shows the remaining
+minutes; the last 10 s fade); **chapters** glyph (sheet as §M2's list); **bookmark** glyph (adds one at the
+position with an optional one-line note — system keyboard; long-press lists them); the seek bar shows the
+**chapter** (elapsed / chapter length) with the **book** progress as a thin second line and *3 h 12 min
+left* right-aligned; title = chapter, subtitle = book · author. No shuffle, no repeat, no lyrics. States:
+playing · paused · buffering (R218) · sleep set · at a chapter boundary (the title swaps, nothing else
+moves) · book finished (*Finished · Start over*) · failure (R237). Skip-silence lives in Settings, not here.
+
+### M4. The mini bar
+Same geometry as part 1: cover · *chapter title* / *book · author* · **−30 s · play/pause** (not next);
+the progress hairline is the **book's**. Swipe-down stops as for music.
+
+### M5. Settings (a small *Listening* group)
+*Even out volume* (music, part 1) · *Skip silences in audiobooks* (off) · *Sleep timer fade* (on). Nothing
+else; speed is per book on the player.
+
+### M6. Strings (× en · da · fo — drafts)
+| key | en | da | fo |
+|---|---|---|---|
+| `mnav.audiobooks` | Audiobooks | Lydbøger | Ljóðbøkur |
+| `mode.music_books` | Music & audiobooks | Musik og lydbøger | Tónleikur og ljóðbøkur |
+| `ab.continue` | Continue listening | Fortsæt med at lytte | Hald fram at lurta |
+| `ab.continue_from` | Continue · {t} | Fortsæt · {t} | Hald fram · {t} |
+| `ab.start` | Start | Start | Byrja |
+| `ab.start_over` | Start over | Start forfra | Byrja av nýggjum |
+| `ab.left` | {t} left | {t} tilbage | {t} eftir |
+| `ab.read_by` | Read by {narrator} | Indlæst af {narrator} | Lisin av {narrator} |
+| `ab.chapters_n` | {n} chapters | {n} kapitler | {n} kapitlar |
+| `ab.chapter_n` | Chapter {n} | Kapitel {n} | Kapittul {n} |
+| `ab.part_of` | Part {n} of {m} | Del {n} af {m} | Partur {n} av {m} |
+| `ab.book_of` | Book {n} of {m} | Bog {n} af {m} | Bók {n} av {m} |
+| `ab.authors` / `ab.series` | Authors / Series | Forfattere / Serier | Høvundar / Røðir |
+| `ab.finished` / `ab.mark_finished` | Finished / Mark as finished | Færdig / Markér som færdig | Liðugt / Merk sum liðugt |
+| `ab.speed` | Speed | Hastighed | Ferð |
+| `ab.sleep` / `ab.sleep_end_chapter` / `ab.sleep_min` | Sleep timer / End of chapter / {n} min | Sleep-timer / Kapitlets slutning / {n} min | Svøvnur / Enda á kapitli / {n} min |
+| `ab.bookmark_add` / `ab.bookmarks` | Add bookmark / Bookmarks | Tilføj bogmærke / Bogmærker | Legg bókamerki afturat / Bókamerki |
+| `ab.skip_back` / `ab.skip_fwd` | 30 s back / 30 s forward | 30 sek. tilbage / 30 sek. frem | 30 sek. aftur / 30 sek. fram |
+| `ab.skip_silence` | Skip silences in audiobooks | Spring over pauser i lydbøger | Leyp um tøgn í ljóðbókum |
+| `ab.empty` | Nothing filed as audiobooks yet | Ingen lydbøger endnu | Ongar ljóðbøkur enn |
+| `mlib.playlists` | Playlists | Playlister | Spælilistar |
+
+### M7. Round-1 questions (part 2)
+1. **Speed on the book player** — yes (lean) or the video ruling extends to audiobooks too.
+2. **The bar's fourth item:** Audiobooks (lean) or keep Playlists and put Books in Library.
+3. **Bookmarks in round 1** (lean yes) or later.
+4. **Lock-screen side actions ±30 s** (lean) or the platform default previous/next.
+5. **Skip silence** exposed at all (lean: Settings only, off).
 
 ## K. Deliverables and order
 
@@ -276,7 +358,10 @@ R187's no-results sentence, the genre names from 271/R312 where a music genre co
 5. The mini bar on a music page, on the Profile page, stacked under the cast bar, and on a **video-mode**
    page (§E); the ⋯ sheet and the queue sheet (§F).
 6. Strings × en/da/fo (§I) into `ravilo-i18n.js`.
-Then the specs (R320–R323 prospectively — verify against `main` first) are written from the mockups and
+7. **Part 2:** the Audiobooks page (Continue listening · All books · one-book state · empty), the Book page,
+   *Now playing*'s book variant with its six states and three sheets (speed · sleep · chapters/bookmarks),
+   the book mini bar, the *Listening* settings group, strings (§M).
+Then the specs (R320–R324 prospectively — verify against `main` first) are written from the mockups and
 dev-reviewed, and the phone build starts with R321's service.
 
 ## Non-goals (this round)
@@ -284,5 +369,5 @@ dev-reviewed, and the phone build starts with R321's service.
 The TV; the web app (a following brief — `<audio>` behind the same seam, iOS ≥ 17.5 background rules to
 verify on the household iPhone); casting music to a TV or Chromecast beyond one drawn state; **music videos and
 concert films inside the music player** — they are video files and stay video-mode content, reached from
-an artist's *Videos* row (§C4, phase 2); offline downloads; scrobbling; an audiobook mode; an admin editor for music Home rows; anything that names how a
+an artist's *Videos* row (§C4, phase 2); **ebooks** (the library has none and Ravilo has no reader); offline downloads; scrobbling; an audiobook mode; an admin editor for music Home rows; anything that names how a
 track is delivered.

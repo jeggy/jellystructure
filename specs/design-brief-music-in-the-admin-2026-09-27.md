@@ -43,7 +43,8 @@ starts with `adv-` (ad blockers hide it — 212's `jfa-*` lesson); write-through
 ## A. Library page — a fourth kind: **Music**
 
 ### A1. The kind picker
-*Movies · Series · Music videos · Music · All*. Keep *Music videos* as it is; the new tab is **Music**.
+*Movies · Series · Music videos · Music · **Audiobooks** · All*. Keep *Music videos* as it is; the new tabs
+are **Music** and — part 2, §M — **Audiobooks**.
 (Ravilo's phone Library dropdown currently says *Music* for music videos — that rename is the phone brief's
 §0; the admin already says *Music videos*.)
 
@@ -225,6 +226,75 @@ One sentence in the per-user row when the user's Jellyfin policy grants the musi
    drawn at all (lean: not drawn — nothing touches a media file without being asked, and NFO + sidecars are
    enough for Jellyfin and Kodi).
 
+## M. Part 2 — Audiobooks (added 2026-09-27; source: `research-reports/audiobooks-library-and-player-2026-09-27.md`)
+
+**What changes the drawing:** Jellyfin has no book entity (one item per file; the household's one book is
+14 MP3 parts), keeps resume per file and only after five minutes played, and has **no NFO for audiobooks**.
+No online provider covers a Danish shelf. So on the admin side **the book is assembled and edited here**:
+the folder is the book, the admin's own fields are first-class, providers are *suggestions*, and progress is
+a per-listener fact jellystructure holds.
+
+### M1. Library page — the **Audiobooks** kind
+Views: **Books** (default; 1:1 cover cells — title, author, *5 h 24 min · 14 parts*, a progress ring per
+listener is *not* shown here, a ✓ *finished by n* is), **Authors** (circles, *N books*), **Series** (present
+only when any book has a series). Filters: cover has/missing · narrator known/unknown · description
+has/missing · parts (single file / multi-file) · **needs you** (a folder that looks like two books, a gap in
+the part numbers) · format · language · Library. States: empty; one book (the household's real state —
+draw the grid with one cell and no apology); many.
+
+### M2. The Book page — `app/audiobook.html`
+- **Pagebar:** cover (1:1) · title · subtitle · **author** (link) · *read by {narrator}* · year · *5 h 24
+  min · 14 parts* · series chip *Book 2 of 5* when known · the **source chip**: *From the files* (tags only),
+  *Edited here*, *iTunes / Google Books / Open Library / Audnexus* when a suggestion was accepted, with the
+  same *Lock* toggle as music. Split button **Save → files / Sync Jellyfin / Save & Sync** — *files* means
+  `cover.jpg` always and **embedded tags only if the owner enabled it** (§M5); the button's label says
+  which.
+- **Details tab (the editor — primary, not secondary):** Title · Subtitle · Authors (chips, add) · Narrators
+  (chips, add) · Series + position · Year · Publisher · Language · Genres · Description — write-through as
+  today; a **Suggestions** rail on the right: each provider's answer as a card (cover thumb, title, author,
+  year, *what it would fill*: description · narrator · series · cover), an *Apply* per field or per card,
+  and the honest empty card *Nothing found for this title on {provider}* — the household's book gets four
+  of those, so draw that state first.
+- **Parts tab:** the files in order: # · title tag · length · codec · kbps · **Jellyfin position** (*saved
+  at 12:40* / *— under 5 minutes, Jellyfin never saves a position here*) — the trap made visible; a **gap**
+  row where a number is missing (*part 6 · not in the folder*); drag to reorder when the numbering is wrong,
+  which writes the order to jellystructure only.
+- **Chapters tab:** from embedded chapters (`.m4b`) or from file boundaries, with source stated; rename
+  inline; *Use file boundaries* / *Use embedded* switch when both exist.
+- **Artwork tab:** *Currently in use* (`cover.jpg` or the embedded art Jellyfin extracted), candidates
+  (iTunes 600 px · Google Books · Open Library · embedded), upload, lock.
+- **Listeners tab (read-only):** per household member — *3 h 12 min left · part 9 · last night* / *finished
+  in March* / *not started*; the admin never edits a listener's position.
+- **History** as today. **No NFO tab** — say why in one line under the pagebar (*Jellyfin reads no metadata
+  file for audiobooks*).
+
+### M3. The Author page — `app/author.html`
+Image (circle) · name · sort name · *N books*; biography (editable, provider suggestion when found); the
+books as 1:1 cells grouped by series when any; artwork (iTunes/Open Library/Commons candidates, upload).
+
+### M4. Settings
+- **Libraries:** the books library's mapping card (*Metadata: the files, then you · Suggestions: iTunes ·
+  Open Library · Audnexus (· Google Books with a key)*); advisor findings: *Jellyfin's online fetchers are
+  off* (✓ silent), *`SaveLocalMetadata` is on* (info: harmless for audio).
+- **Music providers card** gains rows: **iTunes** (no key; a *Store* dropdown — DK · NO · SE · GB · US),
+  **Google Books** (*API key* field; absent ⇒ the provider is skipped and the row says so), **Open Library**
+  (nothing to configure), **Audnexus** (*Region* dropdown of its ten; a sentence that it covers titles
+  Audible sells). Rename the card **Metadata providers** once it holds both.
+- A switch **Write tags into audiobook files** (off) with the sentence *The only way Jellyfin's own apps
+  show a narrator or a description* — §M5.
+
+### M5. Triage types
+*Folder holds two books* (different album tags) · *A part is missing* (gap in the numbering) · *No cover* ·
+*No narrator* (info, `--ink-dim`) · *Jellyfin can't save a position in {n} parts* (info — the 5-minute rule;
+one line, not a warning).
+
+### M6. Round-1 questions (part 2)
+1. **Tag writing:** the switch in §M4 (off by default) — draw it, or leave the files alone for good?
+2. **Suggestions rail:** per-field *Apply* (lean) vs whole-card apply only.
+3. **Series** as a first-class view (lean: yes, chips only when present) or a field on the book only.
+4. **Listeners tab:** show it (lean; read-only, the same idiom as *Recently watched*) or keep progress out of
+   the admin entirely.
+
 ## I. Deliverables and order
 
 1. `app/library.html` — the Music kind, its three views, the filters, the five states (§A).
@@ -234,4 +304,7 @@ One sentence in the per-user row when the user's Jellyfin policy grants the musi
 5. `app/activity.html` + `app/index.html` — steps, pacing rows, summary line, counters, attention entries (§F).
 6. `app/metadata.html` — Music genres (§D).
 7. The triage entries in the dock (§G) — drawn once on the Dashboard mock.
-Then the specs (274–278 prospectively; verify the numbers against `main` first) are written from the mockups.
+8. **Part 2:** `app/audiobook.html` (pagebar, Details with the Suggestions rail and its four empty cards,
+   Parts with the 5-minute note and a gap row, Chapters, Artwork, Listeners), `app/author.html`, the
+   Audiobooks kind in `library.html`, the provider rows and the tag-writing switch in `settings.html` (§M).
+Then the specs (274–280 prospectively; verify the numbers against `main` first) are written from the mockups.

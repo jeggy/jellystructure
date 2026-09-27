@@ -14,6 +14,10 @@ this report (`specs/design-brief-music-in-the-admin-2026-09-27.md`, admin surfac
 `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md`, the phone) go to the design project, its
 mockups come back, specs are written from the mockups and dev-reviewed, and only then is anything built.
 
+**Part 2 (audiobooks):** `audiobooks-library-and-player-2026-09-27.md` — written the same day at the owner's
+request; it reuses this report's storage model, provider client, service and phone mode, and amends the
+bar question (the fourth item becomes *Audiobooks*).
+
 Every number in §1–§3 was **measured on 2026-09-27** against the household server (Jellyfin **12.1.0**) with
 read-only calls, or read from the checkout at `c2a7a8ca`. Nothing here names a title, an artist or an album
 from the library (the repo is public); files are described by their properties.
