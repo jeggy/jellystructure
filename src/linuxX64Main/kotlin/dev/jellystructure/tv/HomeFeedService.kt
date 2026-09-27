@@ -1034,9 +1034,10 @@ class HomeFeedService(
             // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
             // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
             // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
-            val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
+            // R309 (FR-R309-7): a multi-episode file carries its range end (S1:E1–3).
+            val span = resolvedEpisodeSpan(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
             val ts = play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
-            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = s, episodeNumber = e), ts, play.id.takeIf { play.seriesId != null })
+            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = span.season, episodeNumber = span.episode, episodeNumberEnd = span.episodeEnd), ts, play.id.takeIf { play.seriesId != null })
         }
 
         // "Something left to watch" half of §2 — next-up candidate per title.
@@ -1046,9 +1047,9 @@ class HomeFeedService(
             val key = play.seriesId ?: play.id
             if (key in nextUpByKey) continue
             val mediaItem = byJellyfinId[key] ?: continue
-            val (s, e) = resolvedEpisodeNumbers(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
-            val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e), play.id.takeIf { play.seriesId != null })
+            val span = resolvedEpisodeSpan(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
+            val label = span.code?.let { "$it · ${play.name}" } ?: play.name  // R309: S1E4–6 · … for a multi-episode file
+            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = span.season, episodeNumber = span.episode, episodeNumberEnd = span.episodeEnd), play.id.takeIf { play.seriesId != null })
         }
 
         // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND
@@ -1083,16 +1084,6 @@ class HomeFeedService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    /** R199 — Jellyfin's IndexNumber/ParentIndexNumber parse can fail on scene-release filenames even
-     *  when jellystructure's own scanner already resolved the episode via Phase 152's filename fallback.
-     *  Each field falls back independently to the matching local [Episode] (by jellyfinId) so a badge
-     *  isn't suppressed just because Jellyfin's own metadata is incomplete for that one file. */
-    private fun resolvedEpisodeNumbers(mediaItem: MediaItem, jellyfinItemId: String, season: Int?, episode: Int?): Pair<Int?, Int?> {
-        if (season != null && episode != null) return season to episode
-        val local = mediaItem.episodes.firstOrNull { it.jellyfinId == jellyfinItemId } ?: return season to episode
-        return (season ?: local.seasonNumber) to (episode ?: local.episodeNumber)
-    }
-
     private fun MediaItem.toMediaCardOrNull(): MediaCard? {
         jellyfinId ?: return null
         return toMediaCard()
@@ -1103,6 +1094,7 @@ class HomeFeedService(
         nextUpLabel: String? = null,
         seasonNumber: Int? = null,
         episodeNumber: Int? = null,
+        episodeNumberEnd: Int? = null,
         badge: String? = null,
     ): MediaCard {
         val jId = jellyfinId
@@ -1125,6 +1117,7 @@ class HomeFeedService(
             nextUpLabel = nextUpLabel,
             seasonNumber = seasonNumber,
             episodeNumber = episodeNumber,
+            episodeNumberEnd = episodeNumberEnd,
             badge = badge,
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
                 sonarrStatus != "ended" && sonarrNextAiringDate != null &&

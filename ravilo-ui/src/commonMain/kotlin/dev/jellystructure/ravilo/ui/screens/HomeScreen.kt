@@ -601,8 +601,9 @@ private fun ContentRowItem(
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
         val isContinue = row.kind == RowKind.CONTINUE
+        // R309 (FR-R309-7): a multi-episode file reads S1:E1–3, as its series page does.
         val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
-            "S${card.seasonNumber}:E${card.episodeNumber}" else null
+            "S${card.seasonNumber}:E${card.episodeNumber}" + (card.episodeNumberEnd?.let { "–$it" } ?: "") else null
         Tile(
             title = card.title,
             subtitle = if (isContinue) null else card.nextUpLabel,

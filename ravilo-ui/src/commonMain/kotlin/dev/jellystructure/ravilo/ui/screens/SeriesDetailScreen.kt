@@ -76,7 +76,9 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
 import dev.jellystructure.ravilo.ui.components.TrailerOverlay
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.components.castConnectedDeviceName
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -96,6 +98,7 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SeriesDetail
+import dev.jellystructure.shared.tv.groupedByFile
 
 @Composable
 fun SeriesDetailScreen(
@@ -159,12 +162,21 @@ private fun episodeGroupRange(ep: Episode, episodes: List<Episode>): Pair<Int, I
 
 private fun episodeKicker(sNum: Int, ep: Episode, episodes: List<Episode>): String {
     val range = episodeGroupRange(ep, episodes)
-    return if (range != null) "S$sNum · E${range.first}-${range.second}" else "S$sNum · E${ep.episodeNumber}"
+    return if (range != null) "S$sNum · E${range.first}–${range.second}" else "S$sNum · E${ep.episodeNumber}"
 }
 
-private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>): String {
+/** R309 (FR-R309-4/5): `S1E1–3` for a multi-episode file, `S1E4` for a lone episode — the Resume button
+ *  and the hero's resume line, from the same [episodeGroupRange] the kicker uses. */
+private fun episodeCode(sNum: Int, ep: Episode, episodes: List<Episode>): String {
     val range = episodeGroupRange(ep, episodes)
-    return if (range != null) "Episodes ${range.first}-${range.second}" else ep.title
+    return if (range != null) "S${sNum}E${range.first}–${range.second}" else "S${sNum}E${ep.episodeNumber}"
+}
+
+/** R309 (FR-R309-5): a multi-episode file's title is `up.episodes_range` in the viewer's language
+ *  (*Partar 1–3*), the same string its card shows — it was a hard-coded English "Episodes 1-3". */
+private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>, lang: String): String {
+    val range = episodeGroupRange(ep, episodes)
+    return if (range != null) t("up.episodes_range", lang, mapOf("a" to "${range.first}", "b" to "${range.second}")) else ep.title
 }
 
 /** Groups consecutive episodes sharing a physical `file` (a multi-episode release) into one unit;
@@ -177,12 +189,12 @@ private fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
     // episode (a library folder extracted twice, or a mislabelled release) used to become two rail slots
     // carrying the SAME id — the "next" group after episode 1 was episode 1 again, the credits card
     // announced it, and requesting a jump to the id already playing could only be a no-op. It also fed
-    // duplicate keys to the rail's LazyRow. The backend now exposes one entry per (season, episode), but
-    // an unscanned/older library can still hand us a collision, so the id is deduped here too: whatever
+    // duplicate keys to the rail's LazyRow. The backend now exposes one id per file, but an
+    // unscanned/older library can still hand us a collision, so the id is deduped here too: whatever
     // the metadata says, an id occupies exactly one group.
-    episodes.distinctBy { it.id }
-        .groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }
-        .values.toList()
+    // R309: one id, one FILE — the parts of a multi-episode file share its one Jellyfin id on purpose,
+    // and a per-entry dedupe had kept only part 1 (every such file drew as one 7-minute episode).
+    episodes.groupedByFile()
 
 /** Picks the group's natural entry point: in-progress, else first unwatched, else the first episode. */
 private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayState>): Episode =
@@ -196,6 +208,7 @@ private fun buildEpisodeContext(
     episodes: List<Episode>,
     epId: String,
     overlay: Map<String, CardPlayState> = emptyMap(),
+    lang: String,
 ): EpisodePlayContext {
     val season = detail.seasons.getOrNull(seasonIdx)
     val sNum = season?.index ?: (seasonIdx + 1)
@@ -207,11 +220,11 @@ private fun buildEpisodeContext(
     val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
     return EpisodePlayContext(
         episodeId    = epId,
-        episodeTitle = episodeDisplayTitle(ep, episodes),
+        episodeTitle = episodeDisplayTitle(ep, episodes, lang),
         kicker       = episodeKicker(sNum, ep, episodes),
         nextEpId     = nextEp?.id,
         nextEpLabel  = nextEp?.let { episodeKicker(sNum, it, episodes) },
-        nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes) },
+        nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes, lang) },
         episodes     = groups.map { g ->
             val rep = groupEntryPoint(g, overlay)
             // R84: prefer overlay playstate; fall back to 0f/false (catalog carries null from R83)
@@ -221,7 +234,7 @@ private fun buildEpisodeContext(
             PlayerEpisodeEntry(
                 id            = rep.id,
                 numberLabel   = if (g.size > 1) null else rep.episodeNumber.toString(),
-                title         = episodeDisplayTitle(rep, episodes),
+                title         = episodeDisplayTitle(rep, episodes, lang),
                 kicker        = episodeKicker(sNum, rep, episodes),
                 durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
                 progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
@@ -262,6 +275,7 @@ private fun SeriesDetailLoaded(
     onSearch: (() -> Unit)?,
 ) {
     val colors = RaviloTheme.colors
+    val lang = LocalLang.current  // R309 (FR-R309-5): the player's title for a multi-episode file
     val spaceGrotesk = SpaceGrotesk
     val sora = Sora
     // R109: LazyColumn so below-hero rails (season picker, episodes, cast, related) compose only when
@@ -471,9 +485,14 @@ private fun SeriesDetailLoaded(
                                 ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
                         ) else null
                         val resumeKicker = resumeEpEntry?.let { ep ->
-                            val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == ep.id } }
-                            val sNum = detail.seasons.getOrNull(sIdx)?.index
-                            if (sNum != null) "S${sNum}E${ep.episodeNumber} · ${ep.title}" else ep.title
+                            val season = detail.seasons.firstOrNull { s -> s.episodes.any { it.id == ep.id } }
+                            // R309: a multi-episode file is named by its range alone (S1E1–3) — the
+                            // resume point sits somewhere in three episodes, so no one title is right.
+                            when {
+                                season == null -> ep.title
+                                episodeGroupRange(ep, season.episodes) != null -> episodeCode(season.index, ep, season.episodes)
+                                else -> "${episodeCode(season.index, ep, season.episodes)} · ${ep.title}"
+                            }
                         }
                         val kickerAlpha by animateFloatAsState(
                             targetValue = if (resumeKicker != null) 1f else 0f,
@@ -592,11 +611,11 @@ private fun SeriesDetailLoaded(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         // R84: overlay-derived resume; neutral "Play · E1" until playstate lands
+                        // R309 (FR-R309-5): a multi-episode file reads Resume · S1E1–3, matching its kicker.
                         val resumeShort = resumeEpId?.let { rid ->
-                            val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
-                            val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
-                            if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
-                            else ep?.let { "E${it.episodeNumber}" }
+                            val season = detail.seasons.firstOrNull { s -> s.episodes.any { it.id == rid } }
+                            val ep = season?.episodes?.firstOrNull { it.id == rid }
+                            if (season != null && ep != null) episodeCode(season.index, ep, season.episodes) else null
                         }
                         val hasResume = overlayLoaded && resumeEpId != null && watchedCount < allEps.size
                         val castDevice = castConnectedDeviceName()   // R245 (FR-R245-4)
@@ -623,7 +642,7 @@ private fun SeriesDetailLoaded(
                                     val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == epId } }
                                         .takeIf { it >= 0 } ?: selectedSeasonIdx
                                     val seasonEps = detail.seasons.getOrNull(sIdx)?.episodes ?: episodes
-                                    onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay))
+                                    onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay, lang))
                                 }
                             },
                         )
@@ -761,7 +780,7 @@ private fun SeriesDetailLoaded(
                                             episodes = group,
                                             isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
                                             playstateOverlay = overlay,
-                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay)) },
+                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay, lang)) },
                                         )
                                     }
                                     Spacer(Modifier.height(6.dp))
@@ -777,7 +796,7 @@ private fun SeriesDetailLoaded(
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
                                             isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
                                             playstateOverride = overlay[ep.id],
-                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
+                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
                                         )
                                     }
                                     Spacer(Modifier.height(6.dp))

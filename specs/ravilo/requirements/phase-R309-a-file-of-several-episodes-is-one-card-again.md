@@ -8,8 +8,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). **A regression of Phase 149 / R179**, not a new design: nothing new is drawn, and the
+`✓ Built` 2026-09-26, not yet deployed or on a device (see *Build notes* at the end). Written
+2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*). **A regression of Phase 149 / R179**, not a new design: nothing new is drawn, and the
 combined card, the triptych and the copy all still exist in the code. Needs **both halves**: backend
 (`DetailService`, `HomeFeedService`) and client (`SeriesDetailScreen`, `HomeScreen`). Either alone still
 shows one card per file (see FR-R309-2). **Open questions decided the same day**: the owner handed the
@@ -192,3 +192,48 @@ The two dedupes are the only ones, and the live payload is exactly what the code
 
 **Net effect.** One pure function on each side, a `lang` parameter, one helper reused, one additive
 `MediaCard` field, the badge and label. No migration.
+
+## Build notes (2026-09-26)
+
+Built on `main` after R318 (`fe0596cc`).
+
+1. **One rule, in `shared`, not two copies.** `oneIdPerFile()` and `groupedByFile()`
+   (`shared/.../tv/EpisodeFiles.kt`) are extension functions on the wire `Episode`, so the server and
+   the app cannot drift apart. An entry is dropped only when its id already belongs to a different file
+   earlier in the list. An entry with no `file` counts as its own file, so two file-less entries with
+   one id still collapse (the old client keyed those by id).
+   - Server: `DetailService.getSeriesDetail` uses `tvEpisodes.oneIdPerFile()`.
+   - App: `episodeGroups` is `episodes.groupedByFile()`. The rail, `buildEpisodeContext` and the
+     player's episode list all go through it, as the dev review found.
+2. **The player's title** (`episodeDisplayTitle`) takes the viewer's `lang`, captured once in
+   `SeriesDetailLoaded` (`LocalLang.current`) and passed to `buildEpisodeContext`. It uses
+   `t("up.episodes_range", …)`, so it reads *Partar 1–3* / *Afsnit 1–3* / *Episodes 1–3*. The player's
+   kicker went from a hyphen to the en dash the string uses (*S1 · E1–3*).
+3. **Resume** reads *Resume · S1E1–3* through a new `episodeCode()`, built on the same
+   `episodeGroupRange` as the kicker. The hero's resume line uses it too. For a file it names the range
+   **alone** (*S1E1–3*), with no episode title after it: the resume point is somewhere in three
+   episodes, so no single title is right. A lone episode still reads *S1E4 · {title}*.
+4. **Home (FR-R309-7).** `resolvedEpisodeNumbers` became `resolvedEpisodeSpan`
+   (`tv/EpisodeSpan.kt`, internal, pure). It returns season, episode, and the end of the range: the
+   highest episode number among the scanned entries with the played item's id **in the same file**, so a
+   duplicate copy elsewhere never widens it. Both candidates use it: the resume card
+   (`episode_number_end`) and the Next Up label (`S1E4–6 · …`). R199's fallback goes through it as well.
+   It now always looks up the scanned episode (it used to skip that when Jellyfin gave both numbers),
+   because the end of the range only exists there. That is one linear scan of the series' episodes per
+   candidate.
+5. **`MediaCard.episode_number_end`** is additive and nullable. The app's Continue badge reads
+   `S1:E1–3` when it is present. An older app ignores it and keeps `S1:E1`. The Next Up label is text,
+   so older apps show the range there too.
+6. **Tests (FR-R309-6), in production's shape:**
+   - `shared` `EpisodeFilesTest`: three entries with one id and one file are kept; two files with one id
+     keep the first; the two mixed in one season; file-less entries; one group of three; one group for
+     two claimants, with unique group keys.
+   - Server `SeriesDetailMultiEpisodeFileTest`: `getSeriesDetail` over a real `MediaStore` answers all
+     seven episodes of 3+3+1 with the shared ids, and drops a second file claiming episode 7's id.
+     `resolvedEpisodeSpan` gives `S1E1–3` for a resume, `S1E4–6` through R199's fallback, no end for a
+     lone episode, and no widening from a copy in another file.
+
+   The client's `episodeGroups` is a one-line call to `groupedByFile`, so the `shared` test is its test.
+
+**Not verified:** acceptance 1–7 need the server deployed and a new app release (dev review item 6). An
+app installed before this build keeps one card per file even once the server ships.

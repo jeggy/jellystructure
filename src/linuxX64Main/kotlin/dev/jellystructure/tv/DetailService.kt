@@ -21,6 +21,7 @@ import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.NextAiring
+import dev.jellystructure.shared.tv.oneIdPerFile
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvImdbRating
@@ -174,12 +175,14 @@ class DetailService(
                     playbackNote = epPlaybackNote,  // R222 (Phase 185, FR-185-9)
                 )
             }
-            // Last line of defence: whatever the metadata says, two episodes with the same id can never
+            // Last line of defence: whatever the metadata says, two FILES with the same id can never
             // reach a client — that is exactly what made the player's next-up card re-fire forever.
+            // R309: one id, one file — not one id, one entry. The parts of a multi-episode file share
+            // the file's Jellyfin id (Phase 152's path match), and all of them must reach the client.
             Season(
                 index = seasonNum,
                 name = seasonName,
-                episodes = tvEpisodes.distinctBy { it.id },
+                episodes = tvEpisodes.oneIdPerFile(),
                 // R194: null (not a URL that would 404) when this season has no poster on disk, so the
                 // client can do a plain `season.posterUrl ?: card.posterUrl` fallback — same pattern as
                 // every other image field here — with no need to speculatively probe for a 404.

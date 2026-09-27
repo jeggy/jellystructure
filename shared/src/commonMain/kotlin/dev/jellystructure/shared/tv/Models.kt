@@ -298,6 +298,10 @@ data class MediaCard(
     // surfaced as a small on-image badge for TV shows. Null for movies / when unknown.
     @SerialName("season_number") val seasonNumber: Int? = null,
     @SerialName("episode_number") val episodeNumber: Int? = null,
+    /** R309 (FR-R309-7): the highest episode a multi-episode file holds (Phase 149), so the badge reads
+     *  S1:E1–3 and not S1:E1. Present only when the card's file holds more than one episode; [episodeNumber]
+     *  stays the lowest. Additive: an app that predates it keeps drawing S1:E1. */
+    @SerialName("episode_number_end") val episodeNumberEnd: Int? = null,
     val badge: String? = null,
     val watched: Boolean = false,
     /** R149: true when Sonarr is enabled, the series is continuing, and a next-airing date exists. */
