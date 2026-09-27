@@ -316,6 +316,16 @@ fun main() = runBlocking {
     subtitleChecks.init()
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks)
     mediaJobQueue.start()
+    // Phase 273 (§B/§C/§E) — the Bazarr side: steering, the post-processing hook and its history poll, the advisor.
+    val bazarrSteering = dev.jellystructure.bazarr.BazarrSteering(db, mediaStore, configStore, bazarrClient,
+        dev.jellystructure.bazarr.BazarrService(configStore, bazarrClient), jellyfinClient, mediaHistory, rootScope)
+    bazarrSteering.checks = subtitleChecks
+    bazarrSteering.enqueueCheck = { item, path -> mediaJobQueue.enqueueSubtitleCheck(item, path) }
+    subtitleChecks.steering = bazarrSteering
+    bazarrSteering.start()
+    val subtitleHook = dev.jellystructure.bazarr.SubtitleHook(mediaStore, configStore, bazarrClient, bazarrSteering, subtitleChecks, jellyfinClient, rootScope)
+    subtitleHook.start()
+    val bazarrAdvisor = dev.jellystructure.advisor.BazarrAdvisorService(configStore, bazarrClient, db, mediaStore)
     // Phase 254/255's 15-minute sweep loop is gone (Phase 261, FR-261-4): the two file checks are pipeline
     // steps (`verify_files`, `check_track_lengths`) that queue one row per due file on their own cadence.
     // Phase 220 (FR-220-4) — once, in the background, until the marker exists: every served variant for
@@ -449,6 +459,7 @@ fun main() = runBlocking {
         screenPairingService = screenPairingService,
         devicePolicyReconciler = devicePolicyReconciler,
         playPushResolver = playPushResolver,
+        subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

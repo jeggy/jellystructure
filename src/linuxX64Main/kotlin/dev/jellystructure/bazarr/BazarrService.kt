@@ -16,7 +16,7 @@ import dev.jellystructure.nowEpochSec
  */
 class BazarrService(
     private val configStore: ConfigStore,
-    private val client: BazarrClient,
+    private val client: BazarrOps,
 ) {
     private val cacheTtlSec = 30L
     private var moviesCache: Pair<Long, List<BazarrMovie>>? = null

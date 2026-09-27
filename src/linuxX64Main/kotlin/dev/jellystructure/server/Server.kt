@@ -41,6 +41,7 @@ import dev.jellystructure.server.routes.acquisitionRoutes
 import dev.jellystructure.server.routes.remoteRoutes
 import dev.jellystructure.server.routes.apiKeyManagementRoutes
 import dev.jellystructure.server.routes.webhookRoutes
+import dev.jellystructure.server.routes.subtitleCheckRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -107,6 +108,15 @@ import platform.posix.pclose
 import platform.posix.popen
 
 
+/** Phase 273 — what the subtitle check's routes need, built in `Main.kt`. */
+class SubtitleCheckWiring(
+    val db: dev.jellystructure.db.JellystructureDb,
+    val checks: dev.jellystructure.subtitles.SubtitleCheckService,
+    val steering: dev.jellystructure.bazarr.BazarrSteering?,
+    val hook: dev.jellystructure.bazarr.SubtitleHook?,
+    val advisor: dev.jellystructure.advisor.BazarrAdvisorService?,
+)
+
 fun startServer(
     configStore: ConfigStore,
     sessionService: SessionService,
@@ -168,6 +178,8 @@ fun startServer(
     castDir: String? = null,
     // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow.
     screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
+    // Phase 273 — the subtitle check, its Bazarr side and their routes; null in contexts that build none.
+    subtitleCheckWiring: SubtitleCheckWiring? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -597,6 +609,7 @@ fun startServer(
                 remoteRoutes(deviceService, tvEventBus, mediaStore, apiKeyStore, screenPairingService, playPushResolver)
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
+                subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)

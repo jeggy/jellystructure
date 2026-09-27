@@ -257,7 +257,7 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                 MediaKind.MOVIE -> {
                     val movie = service.resolveMovie(item) ?: return@post call.respond(HttpStatusCode.NotFound)
                     val best = client.searchProvidersMovie(cfg.url, cfg.apiKey, movie.radarrId)
-                        .filter { it.language == req.language }.maxByOrNull { it.score?.toDoubleOrNull() ?: 0.0 }
+                        .filter { it.language == req.language }.maxByOrNull { it.score ?: 0 }
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     client.downloadProviderMovieSubtitle(cfg.url, cfg.apiKey, movie.radarrId, req.hi, req.forced, best.provider, best.subtitle)
                 }
@@ -268,9 +268,9 @@ fun Route.bazarrRoutes(mediaStore: MediaStore, service: BazarrService, client: B
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val bazarrEp = service.resolveEpisode(series.sonarrSeriesId, episode) ?: return@post call.respond(HttpStatusCode.NotFound)
                     val best = client.searchProvidersEpisode(cfg.url, cfg.apiKey, bazarrEp.sonarrEpisodeId)
-                        .filter { it.language == req.language }.maxByOrNull { it.score?.toDoubleOrNull() ?: 0.0 }
+                        .filter { it.language == req.language }.maxByOrNull { it.score ?: 0 }
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    client.downloadProviderEpisodeSubtitle(cfg.url, cfg.apiKey, bazarrEp.sonarrEpisodeId, req.hi, req.forced, best.provider, best.subtitle)
+                    client.downloadProviderEpisodeSubtitle(cfg.url, cfg.apiKey, series.sonarrSeriesId, bazarrEp.sonarrEpisodeId, req.hi, req.forced, best.provider, best.subtitle)
                 }
                 MediaKind.MUSIC_VIDEO -> false
             }

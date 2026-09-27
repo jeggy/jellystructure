@@ -175,3 +175,7 @@ SELECT * FROM subtitle_action WHERE state IN ('done', 'failed') ORDER BY created
 -- The Jobs view's "N findings today" for the subtitle check, read from the verdicts (a check succeeds whatever it finds).
 problemsSince:
 SELECT COUNT(*) FROM subtitle_check WHERE checked_at >= :since AND verdict NOT IN ('in_sync', 'cant_tell');
+
+-- When jellystructure last acted on one sidecar this way (a sync waits for a check after it before escalating).
+lastActionAt:
+SELECT MAX(created_at) AS at FROM subtitle_action WHERE sidecar_path = :path AND action = :action AND state IN ('done', 'failed');
