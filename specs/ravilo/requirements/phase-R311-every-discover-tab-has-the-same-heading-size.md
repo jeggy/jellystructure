@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Client only (`ravilo-ui`: TV, phone, web) plus one string key removed. **The open question
 was decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
 solutions for everything"*), so the heading's words change too (FR-R311-3). **Numbering:** verified
@@ -90,3 +90,11 @@ is where the next stale translation hides.
    is a device check (the TV and the Pixel 9), plus the web.
 
 **Net effect.** One file, three lines of Kotlin, one key removed in three files, the lexicon regenerated.
+
+## Build notes (2026-09-27)
+
+1. `DiscoverScreen.kt`: the heading is `str("nav.discover")` at 22 sp on every tab (and on R310's
+   no-segment page); `discoverHeaderTitle` is deleted; the subtitle function is unchanged.
+2. `nav.upcoming` is removed from `i18n/{en,da,fo}.json`; `check-i18n-spelling.sh --update-lexicon`
+   dropped *kommende* from the Danish lexicon (the Faroese *Komandi* is still used elsewhere).
+3. Built on R310 (same file): its no-segment page already used `nav.discover`.

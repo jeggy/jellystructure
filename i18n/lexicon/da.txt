@@ -203,7 +203,6 @@ knapper
 kode
 koden
 kodeord
-kommende
 kommentar
 kommer
 konfigurationen

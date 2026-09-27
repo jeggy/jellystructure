@@ -139,9 +139,12 @@ fun DiscoverScreen(
                 Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad).padding(bottom = 16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
+                            // R311 (FR-R311-1/3) — the page's name at one size on every tab: the frame above the
+                            // chips never changes on a chip press (R262 FR-R262-1). The subtitle says what the
+                            // selected tab holds.
                             Text(
-                                if (segment == null) str("nav.discover") else discoverHeaderTitle(segment), color = colors.text,
-                                fontSize = if (segment == DiscoverSegment.COMING_SOON) 26.sp else 22.sp,
+                                str("nav.discover"), color = colors.text,
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk,
                             )
                             if (segment != null) Text(discoverHeaderSubtitle(segment), color = colors.textSecondary, fontSize = 13.sp)
@@ -243,13 +246,6 @@ fun DiscoverScreen(
             )
         }
     }
-}
-
-@Composable
-private fun discoverHeaderTitle(segment: DiscoverSegment): String = when (segment) {
-    DiscoverSegment.COMING_SOON -> str("nav.upcoming")
-    DiscoverSegment.REQUEST -> str("seg.request")
-    DiscoverSegment.STUDIOS, DiscoverSegment.NETWORKS, DiscoverSegment.GENRES -> str("nav.discover")
 }
 
 @Composable
