@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). `ravilo-web` resources only; no Kotlin, no route, no backend change. **Numbering:**
 verified against `STATUS.md` the same day — Ravilo taken through **R312**.
 
@@ -75,3 +75,18 @@ precaches the shell's icons (R263), the two new files join that list.
    files and checks their headers.
 
 **Net effect.** Three resource files and two `<link>` lines. Nothing else.
+
+## Build notes (2026-09-27)
+
+1. **`favicon.svg`**: `ravilo-mark.svg`'s paths and gradient on a `#000B25` square with `rx=22`.
+   **Deviation from dev review item 3:** the mark fills about 72 % of the tile (`translate(14 14)
+   scale(0.9474)` of the 76-unit master), not `icon-192.png`'s 50 %. At `icon-192`'s inset the jellyfish
+   was 8 px tall in a 16 px tab and 16 px in a 32 px one (rendered and looked at). The installed icon's
+   inset leaves room for the OS's own masking, which a tab does not do. The admin's favicon (264) uses
+   the same tighter inset.
+2. **`favicon.ico`**: 16 and 32 px PNG frames rendered from that SVG in headless Chromium, committed.
+3. **`index.html`**: `favicon.svg` (SVG) and `icon-192.png` (192) as `rel=icon`, relative hrefs.
+   `web-static-server` already maps `svg` and `ico`; the service worker's precache list is generated
+   from the dist, so it picks both up.
+4. **E2E**: `ravilo-web-headers.spec.ts` gains *the web app has a tab icon*, run against both serving
+   paths (the `ravilo-web` container and the backend's `/tv/`).

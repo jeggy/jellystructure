@@ -7,6 +7,10 @@
     <title>Ravilo</title>
     <!-- FR-R263-2 -->
     <link rel="manifest" href="manifest.webmanifest">
+    <!-- R313 — the tab icon (a desktop browser does not use manifest icons for its tab); relative, so
+         the ravilo-web origin and the backend's /tv/ copy both resolve it. -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="icon-192.png" sizes="192x192">
     <!-- FR-R263-3 — iOS has never read <link rel="manifest"> for install metadata; these are what
          actually control the Home Screen name, icon and chrome on iOS. No launch-image set (iOS 26
          synthesises one from the manifest/meta already present). -->

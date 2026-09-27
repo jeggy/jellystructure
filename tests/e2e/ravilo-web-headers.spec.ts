@@ -92,6 +92,17 @@ for (const target of [
       expect(csp).not.toContain("cdn.jsdelivr.net");
     });
 
+    // R313 (FR-R313-4) — a tab icon on every path the web app is served from.
+    test("the web app has a tab icon", async ({ request }) => {
+      const base = target.base();
+      const html = await (await request.get(`${base}/`)).text();
+      expect(html).toContain('<link rel="icon" href="favicon.svg" type="image/svg+xml">');
+      const svg = await request.get(`${base}/favicon.svg`);
+      expect(svg.status()).toBe(200);
+      expect(svg.headers()["content-type"]).toContain("image/svg+xml");
+      expect((await request.get(`${base}/favicon.ico`)).status()).toBe(200);
+    });
+
     test("index.html carries no injected inline script (FR-235-8)", async ({ request }) => {
       const base = target.base();
       const html = await (await request.get(`${base}/`)).text();
