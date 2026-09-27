@@ -192,6 +192,49 @@ test.describe.serial("Fixture suite", () => {
     await expect(page.locator('.ep-toggle-row').nth(2)).toContainText('S01E03');
   });
 
+  // Phase 266 (FR-266-5) — the zoom button opens the preview on a logo (a 4:1 card, where the info pills
+  // used to cover it and the click saved the logo instead) and on a poster, and saves nothing. Candidates
+  // are served in the browser: the TMDB mock has no images route, and adding one would make the scan's
+  // artwork step try to download them. Clicking the button's centre by coordinates is the bug's own
+  // reproduction — whatever is painted there receives the click.
+  test("the artwork zoom button opens the preview on a logo and a poster — and saves nothing", async () => {
+    const saves: string[] = [];
+    const onRequest = (r: { url(): string }) => { if (r.url().includes('/artwork/candidates/save')) saves.push(r.url()); };
+    page.on('request', onRequest);
+    const candidates = '**/api/media/*/artwork/candidates?**';
+    await page.route(candidates, async (route) => {
+      const asset = new URL(route.request().url()).searchParams.get('asset') ?? 'poster';
+      const logo = asset === 'clearlogo';
+      await route.fulfill({ json: { asset, onDiskExists: false, resolvedLanguage: 'en', candidates: [
+        { filePath: `/e2e-${asset}-1.png`, lang: 'en', voteAverage: 5.3, width: logo ? 800 : 1000, height: logo ? 200 : 1500 },
+        { filePath: `/e2e-${asset}-2.png`, lang: null, voteAverage: 4.1, width: logo ? 1200 : 2000, height: logo ? 300 : 3000 },
+      ] } });
+    });
+    try {
+      await page.goto("/#/library");
+      await page.waitForSelector('.poster', { timeout: 30_000 });
+      await page.locator('.ttl', { hasText: 'Big Buck Bunny' }).first().click();
+      await page.locator('#detail-tabs span[data-tab="artwork"]').click();
+      for (const label of ['Clearlogo', 'Poster']) {
+        await page.locator('#art-rail .art-rail-row')
+          .filter({ has: page.locator('.art-rail-label', { hasText: new RegExp(`^${label}$`) }) }).click();
+        const card = page.locator('#art-gallery .art-card[data-lbidx]').first();
+        await expect(card).toBeVisible({ timeout: 10_000 });
+        await card.hover();
+        const box = await card.locator('.art-zoom').boundingBox();
+        expect(box, `${label}: the zoom button is laid out`).not.toBeNull();
+        await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+        await expect(page.locator('#art-lightbox'), `${label}: the preview opens`).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('#art-lightbox')).toHaveCount(0);
+      }
+      expect(saves, 'a click on the zoom button never saves').toEqual([]);
+    } finally {
+      page.off('request', onRequest);
+      await page.unroute(candidates);
+    }
+  });
+
   // Phase 265 (FR-265-2/4/5/8, acceptance 1) — Library's *Scan library* opens the same pre-run dialog as
   // Settings, listing the server's plan; an unticked step is skipped for this run and the run says so. The
   // test config has no pipeline, so the plan is the built-in default: there is no detect_segments to untick,

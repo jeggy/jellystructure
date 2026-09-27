@@ -3578,6 +3578,23 @@ private fun filteredCandidates(): List<ArtworkCandidate> {
     return list.sortedWith(if (artSort == "res") byRes else byVote)
 }
 
+/**
+ * Phase 266 (FR-266-2) — is a candidate card of [aspect] ("w / h") too short for its info pills to overlay
+ * it? Judged at the grid's narrowest column (`minmax(120px, 1fr)`): the pills take ~26 px and the zoom
+ * button ~25 px from the top, so a card under [ART_SHORT_CARD_PX] would have one covering the other.
+ * A 4:1 logo is 30 px there (short); 16:9 is 67 px and 2:3 is 180 px (overlay, as before).
+ */
+private const val ART_MIN_COL_PX = 120.0
+private const val ART_SHORT_CARD_PX = 60.0
+
+internal fun isShortArtCard(aspect: String): Boolean {
+    val parts = aspect.split("/").map { it.trim().toDoubleOrNull() }
+    val w = parts.getOrNull(0) ?: return false
+    val h = parts.getOrNull(1) ?: return false
+    if (w <= 0.0 || h <= 0.0) return false
+    return ART_MIN_COL_PX * h / w < ART_SHORT_CARD_PX
+}
+
 private fun renderArtGallery() {
     val gallery = document.getElementById("art-gallery") as? HTMLElement ?: return
     val t = artTargets.getOrNull(artSel) ?: return
@@ -3631,11 +3648,18 @@ private fun renderArtGallery() {
     // instead of the photographic cover crop every other asset uses (see .art-card.logo in the injected
     // CSS below); applied via one extra class rather than a second card template.
     val logoCls = if (t.asset == "clearlogo") " logo" else ""
+    // Phase 266 (FR-266-2) — a card too short for the info pills to sit under the zoom button without
+    // covering the artwork gets them below the image instead. Decided by the card's height at the grid's
+    // narrowest column, not by the target's name, so a future short target can't bring the bug back.
+    val short = isShortArtCard(t.aspect)
+    val shortCls = if (short) " short" else ""
     val localTile = if (t.kind == "asset" && t.onDisk) {
         val routeType = if (t.asset == "clearlogo") "logo" else t.asset
-        """<div class="art-card local$logoCls" style="aspect-ratio:${t.aspect};">
-              <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" loading="lazy" alt="current ${t.asset}">
-              <span class="art-ribbon local">Local</span>
+        """<div class="art-card local$logoCls$shortCls">
+              <div class="art-img" style="aspect-ratio:${t.aspect};">
+                <img src="/api/tv/image/$artId/$routeType?w=200&b=$artStillBust" loading="lazy" alt="current ${t.asset}">
+                <span class="art-ribbon local">Local</span>
+              </div>
            </div>"""
     } else ""
 
@@ -3645,16 +3669,22 @@ private fun renderArtGallery() {
         lbCandidates = shown
         localTile + shown.mapIndexed { idx, c ->
             val onDisk = c.onDisk
-            val cls = "art-card$logoCls" + (if (onDisk) " ondisk" else "")
-            """<div class="$cls" data-path="${c.filePath.esc()}" data-lbidx="$idx" style="aspect-ratio:${t.aspect};">
-                  <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
-                  ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
-                  <button class="art-zoom" data-lbidx="$idx" title="Zoom">⤢</button>
-                  <div class="art-card-meta">
+            val cls = "art-card$logoCls$shortCls" + (if (onDisk) " ondisk" else "")
+            val meta = """<div class="art-card-meta">
                     <span class="art-pill">${langLabel(c.lang)}</span>
                     <span class="art-pill">★ ${fmt1(c.voteAverage)}</span>
                     <span class="art-pill">${c.width}×${c.height}</span>
+                  </div>"""
+            // Phase 266 (FR-266-1/4) — the zoom button is stacked above the image, ribbon and pills, and has
+            // an accessible name; on a short card the pills are the caption below the image box.
+            """<div class="$cls" data-path="${c.filePath.esc()}" data-lbidx="$idx">
+                  <div class="art-img" style="aspect-ratio:${t.aspect};">
+                    <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
+                    ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
+                    ${if (short) "" else meta}
+                    <button type="button" class="art-zoom" data-lbidx="$idx" title="Zoom" aria-label="Preview">⤢</button>
                   </div>
+                  ${if (short) meta else ""}
                </div>"""
         }.joinToString("")
     }
@@ -3728,8 +3758,9 @@ private fun wireArtGallery() {
         for (i in 0 until els.length) {
             val el = els.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") { ev ->
-                // Don't trigger if the zoom button was clicked
-                if ((ev.target as? HTMLElement)?.classList?.contains("art-zoom") == true) return@addEventListener
+                // Phase 266 (FR-266-3) — a click that started inside any control of the card (the zoom button,
+                // a child of it, a future button) is never a selection. Selecting saves at once.
+                if ((ev.target as? org.w3c.dom.Element)?.closest(".art-zoom, button") != null) return@addEventListener
                 val path = el.getAttribute("data-path") ?: return@addEventListener
                 scope.launch {
                     el.style.opacity = "0.6"
@@ -3974,13 +4005,15 @@ private fun injectArtworkStyles() {
         .art-dropzone.over { border-color:var(--hi,#7c5cff); opacity:1; }
         .art-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:11px; }
         .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; transition:opacity .15s; }
+        /* Phase 266 — the image box carries the target's aspect ratio; a short card's pills sit below it. */
+        .art-img { position:relative; }
         .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
         .art-card.ondisk { border-color:var(--ok,#22c55e); }
         .art-card.local { border-color:var(--line,#2a2a3d); cursor:default; }
         /* Phase 192 (FR-192-5) — a logo is a wordmark: contain (never crop) on a neutral mid-tone
            checkerboard so a black logo and a white logo are both visible, in either admin theme. */
         .art-card.logo img { object-fit:contain; }
-        .art-card.logo {
+        .art-card.logo .art-img {
             background-color:#a3a3a3;
             background-image:
                 linear-gradient(45deg, #8a8a8a 25%, transparent 25%), linear-gradient(-45deg, #8a8a8a 25%, transparent 25%),
@@ -3988,11 +4021,15 @@ private fun injectArtworkStyles() {
             background-size:16px 16px;
             background-position:0 0, 0 8px, 8px -8px, -8px 0;
         }
-        .art-card:hover .art-zoom { opacity:1; }
-        .art-zoom { position:absolute; top:5px; right:5px; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
+        .art-card:hover .art-zoom, .art-zoom:focus-visible { opacity:1; }
+        /* Phase 266 (FR-266-1) — above the image, the ribbon and the pills by its own stacking order. */
+        .art-zoom { position:absolute; top:5px; right:5px; z-index:2; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
+        /* Phase 266 (FR-266-4) — no hover on a touch screen, so the button is always there. */
+        @media (hover: none) { .art-zoom { opacity:1; } }
         .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
         .art-ribbon.local { background:#000a; color:var(--muted,#9ca3af); font-weight:600; }
-        .art-card-meta { position:absolute; bottom:0; left:0; right:0; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
+        .art-card-meta { position:absolute; bottom:0; left:0; right:0; z-index:1; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
+        .art-card.short .art-card-meta { position:static; background:none; padding:5px 5px 6px; }
         .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
         #art-lightbox { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999; outline:none; }
         #lb-panel { background:var(--fill,#1a1a2e); border-radius:14px; padding:24px; max-width:90vw; max-height:92vh; overflow:auto; }

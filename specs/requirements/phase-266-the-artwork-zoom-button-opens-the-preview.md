@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Admin frontend only (`MediaDetail.kt`'s artwork tab and its inline stylesheet).
 **Numbering:** verified against `STATUS.md` the same day — admin taken through **265**.
 
@@ -116,3 +116,24 @@ The reproduction matches the code line for line. Five items.
 
 **Net effect.** One render function's markup, one handler's guard, a few inline CSS rules, one mock
 route, one e2e file. No backend change.
+
+## Build notes (2026-09-27)
+
+1. **Markup.** Every card (and the *Local* tile) is now an `.art-img` box carrying the target's aspect
+   ratio, holding the image, the ribbon and the zoom button; the pills are an overlay inside that box on
+   a tall card and the card's caption below it on a short one. The button comes last in the box and has
+   `z-index: 2` (pills `1`), `type="button"`, `title="Zoom"` and `aria-label="Preview"`.
+2. **"Short" is a height.** `isShortArtCard(aspect)`: the card's height at the grid's narrowest column
+   (120 px) under 60 px. A 4:1 logo is 30 px (short); 16:9 is 67.5 px and 2:3 is 180 px (overlay as
+   before). No name check and no layout measurement.
+3. **The checkerboard** moved from the logo card to its image box, so the caption sits on the card's
+   own dark ground, not on the transparency pattern.
+4. **Guard.** The card's handler returns when `closest(".art-zoom, button")` is not null; the button keeps
+   `stopPropagation`.
+5. **Touch.** `@media (hover: none)` shows the button always; `:focus-visible` shows it for the keyboard.
+6. **E2E, deviating from dev review item 5.** The case (in `scan-fixture.spec.ts`, after the library is
+   scanned) serves the candidates to the browser with `page.route` instead of adding `/movie/{id}/images`
+   to the TMDB mock: a mocked images answer would also reach the scan's `fetch_artwork` step, which picks
+   a logo from it and tries to download it from the real image CDN. It clicks the zoom button's centre by
+   coordinates on a Clearlogo card and on a Poster card, expects the lightbox each time, and expects no
+   `/artwork/candidates/save` request.
