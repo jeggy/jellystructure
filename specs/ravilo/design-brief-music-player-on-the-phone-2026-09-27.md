@@ -125,7 +125,9 @@ was opened. The bottom bar is **hidden** here (one title's detail — R278's rul
 Artist image as a circle over a soft background (fanart background when there is one; else the gradient),
 name, *Group · 1987–1994* (only what is known), a two-line biography with *More* → a sheet, **Play all** /
 **Shuffle**, then **Albums** (2-up grid grouped *Albums · Singles & EPs · Compilations · Live* — a header only
-for groups that exist), then **Songs** (top 5 by play count, *See all*). Bar hidden as on a title's detail.
+for groups that exist), then **Songs** (top 5 by play count, *See all*), then — **phase 2, draw once** — a **Videos** row: the
+artist's music videos and concert films from the video library as 16:9 tiles, which open the **video**
+player and come back here; **absent** when the artist has none. Bar hidden as on a title's detail.
 
 ### C5. Search (music)
 The system keyboard rises on re-tap only (R277's rule, unchanged). Results grouped **Songs · Albums ·
@@ -280,6 +282,7 @@ dev-reviewed, and the phone build starts with R321's service.
 ## Non-goals (this round)
 
 The TV; the web app (a following brief — `<audio>` behind the same seam, iOS ≥ 17.5 background rules to
-verify on the household iPhone); casting music to a TV or Chromecast beyond one drawn state; offline
-downloads; scrobbling; an audiobook mode; an admin editor for music Home rows; anything that names how a
+verify on the household iPhone); casting music to a TV or Chromecast beyond one drawn state; **music videos and
+concert films inside the music player** — they are video files and stay video-mode content, reached from
+an artist's *Videos* row (§C4, phase 2); offline downloads; scrobbling; an audiobook mode; an admin editor for music Home rows; anything that names how a
 track is delivered.

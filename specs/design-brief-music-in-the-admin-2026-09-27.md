@@ -140,6 +140,9 @@ button (*Save → NFO* writes `artist.nfo`).
   the empty state *No biography found* with an inline editor (write-through into `artist.nfo`).
 - **Albums** grouped by MusicBrainz type: *Albums · Singles & EPs · Compilations · Live* — square cells as
   §A2; a **greyed row of albums MusicBrainz knows but the library lacks** is a round-1 question (§H4).
+- **Videos** — the artist's music videos and concert films from the music-video library (168's
+  `MUSIC_VIDEO` items, matched by the filename's artist), 16:9 tiles linking to each one's `media.html`;
+  the group is absent when there are none. Nothing here is edited on this page.
 - **Artwork** tab: thumb (1:1) · background (16:9) · logo (transparent, on a checker or a dark plate as 232
   decides) — candidates from fanart.tv and Commons with the licence line for Commons files; *Currently in use*.
 - **Genres**, **NFO**, **History** as §B3.

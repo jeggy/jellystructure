@@ -510,6 +510,20 @@ TV (the owner scoped it to the phone; a TV music UI is a different design), the 
 casting music, offline/downloads, ListenBrainz scrobbling, playlist *editing* (phase 2), an audiobook mode
 (`books` library — different rules, out of scope), tag writing (§7).
 
+### 6.7 Music videos and concert films (owner-confirmed 2026-09-27)
+
+The `music_*` tables are a storage decision, not a decision about what the music player shows. **Audio**
+live recordings are albums (MusicBrainz's secondary type *Live* — the brief draws the badge) and belong in
+music mode. **Music videos and concert films are video files**: they already live in the household's
+music-video library as `MUSIC_VIDEO` items (22 today) and play in the video player; they **stay video-mode
+content** — a music player that suddenly needs a picture and R244's chrome is the wrong seam. The link
+between the two is the **artist**: 168 already parses `artist – title` from a music video's filename, and a
+`music_artist` row carries a name and a MusicBrainz id, so an artist page in music mode can carry a
+**Videos** row (16:9 tiles) that opens the *video* player and comes back — cheap precisely because music has
+its own tables: a `music_artist` may reference `media` rows of kind `MUSIC_VIDEO` without the two models
+merging. Phase 2, only shown when the artist has any; the same row on the admin's Artist page links to the
+music video's `media.html`.
+
 ---
 
 ## 7. Open questions for the owner (with leans)
