@@ -46,6 +46,9 @@ jobs:
       # test could see any of them. This is the thing that would have.
       - name: No hardcoded viewer-facing text in Ravilo
         run: ./scripts/check-ravilo-strings.sh
+      # R315 FR-R315-4 — the web app has no system fonts; a character no bundled font carries is a box.
+      - name: Every character Ravilo draws is in a bundled font
+        run: ./scripts/check-web-glyphs.sh
 
   # ── Backend unit tests (Kotlin/Native). 342 tests that CI had never run before 231. ──
   unit:

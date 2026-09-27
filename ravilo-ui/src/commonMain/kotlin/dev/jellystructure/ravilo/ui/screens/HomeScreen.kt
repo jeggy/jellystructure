@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.GridGlyph
 import dev.jellystructure.shared.tv.offersSeeAll
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -750,7 +751,7 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
         Box(
             modifier = Modifier.size(40.dp).background(colors.accentGradient, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center,
-        ) { Text("▦", color = Color.White, fontSize = 18.sp) }
+        ) { GridGlyph(Color.White, 20.dp) }   // R315 — drawn, not typed
         Spacer(Modifier.height(10.dp))
         Text(
             str("livetv.guide_kicker"), color = colors.textDim, fontSize = 11.sp,

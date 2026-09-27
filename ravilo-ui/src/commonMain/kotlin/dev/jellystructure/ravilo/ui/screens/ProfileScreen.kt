@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.CheckGlyph
+import dev.jellystructure.ravilo.ui.components.PencilGlyph
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,7 +132,7 @@ fun ProfileScreen(
                     Box(
                         Modifier.align(Alignment.BottomEnd).size(26.dp).background(colors.surface, CircleShape).border(2.dp, colors.background, CircleShape),
                         contentAlignment = Alignment.Center,
-                    ) { Text("✎", color = colors.text, fontSize = 13.sp) }
+                    ) { PencilGlyph(colors.text, 13.dp) }   // R315 — drawn, not typed
                 }
                 Spacer(Modifier.width(16.dp))
                 Column {
@@ -255,7 +257,7 @@ fun AppLanguageScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(lang.name, color = colors.text, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                        if (lang.code == current) Text("✓", color = colors.accentSecondary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        if (lang.code == current) CheckGlyph(colors.accentSecondary, 17.dp)
                     }
                 }
             }

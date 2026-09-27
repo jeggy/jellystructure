@@ -175,7 +175,7 @@ fun EpisodeCard(
                         .background(colors.badgeWatched, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    CheckGlyph(Color.White, 12.dp)   // R315
                 }
             }
 

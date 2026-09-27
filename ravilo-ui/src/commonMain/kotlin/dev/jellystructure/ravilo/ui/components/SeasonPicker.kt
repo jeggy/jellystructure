@@ -171,14 +171,7 @@ fun SeasonPicker(
                                     .background(colors.badgeWatched, RoundedCornerShape(50)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = "✓",
-                                    color = colors.background,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = sora,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
+                                CheckGlyph(colors.background, 12.dp, Modifier.padding(horizontal = 6.dp, vertical = 2.dp))   // R315
                             }
                         } else if (isPartial) {
                             Box(

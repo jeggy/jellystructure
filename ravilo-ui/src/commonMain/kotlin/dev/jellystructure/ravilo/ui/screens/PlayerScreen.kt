@@ -2676,7 +2676,7 @@ private fun EpisodeChip(colors: RaviloColors) {
             modifier = Modifier.size(24.dp).clip(CircleShape).background(colors.accentGradient),
             contentAlignment = Alignment.Center,
         ) {
-            Text("↓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            dev.jellystructure.ravilo.ui.components.ArrowGlyph(dev.jellystructure.ravilo.ui.components.GlyphDirection.DOWN, Color.White, 13.dp)   // R315
         }
         Text(str("detail.episodes"), color = Color.White.copy(0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -3173,7 +3173,7 @@ private fun PickerTick(selected: Boolean, colors: RaviloColors) {
             .border(2.dp, if (selected) colors.accent else Color.White.copy(0.35f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Text("✓", color = colors.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        if (selected) dev.jellystructure.ravilo.ui.components.CheckGlyph(colors.onAccent, 12.dp)   // R315
     }
 }
 

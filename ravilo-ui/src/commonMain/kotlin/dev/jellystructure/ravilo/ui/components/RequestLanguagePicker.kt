@@ -122,7 +122,7 @@ private fun RequestLanguageOptionRow(
             if (drawable != null) {
                 Image(painter = painterResource(drawable), contentDescription = null, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(3.dp)))
             } else {
-                Text("🌐", fontSize = 14.sp)
+                GlobeGlyph(colors.textSecondary, 16.dp)   // R315 — drawn, not an emoji
             }
         }
         Text(option.label, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.weight(1f))
@@ -134,7 +134,7 @@ private fun RequestLanguageOptionRow(
                 .border(2.dp, if (selected) colors.accent else Color.White.copy(0.35f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (selected) Text("✓", color = colors.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            if (selected) CheckGlyph(colors.onAccent, 12.dp)
         }
     }
 }

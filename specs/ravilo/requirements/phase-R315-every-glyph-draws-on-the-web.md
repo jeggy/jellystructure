@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Client (`ravilo-ui`, every platform for the drawn icons; the web for the fallback font)
 plus one check script. **Numbering:** verified against `STATUS.md` the same day — Ravilo taken through
 **R314**.
@@ -158,3 +158,40 @@ items.
 
 **Net effect.** One glyph file and about fifteen call-site swaps, one generated font plus its build script
 and licence, one preload in the web entry, one check script. No change on Android beyond the drawn icons.
+
+## Build notes (2026-09-27)
+
+1. **Drawn glyphs** (`components/Glyphs.kt`): `CheckGlyph`, `CloseGlyph`, `StarGlyph`, `ChevronGlyph`,
+   `TriangleGlyph` (▲ ▼ ◂ ▸), `PlayOutlineGlyph`, `RingGlyph`, `ArrowGlyph`, `GearGlyph`, `PencilGlyph`,
+   `EnvelopeGlyph`, `GlobeGlyph`, `ShareGlyph`, `GridGlyph`, all `(tint, glyphSize, modifier, description)`
+   on a `Canvas`. Every standalone icon character in `ravilo-ui/src/commonMain` was swapped: the ticks on
+   tiles, episode cards, the multi-episode card, the season picker, the language, sort and facet lists,
+   the request-language picker and the player's track picker; every ✕ (screens sheet, install card,
+   trailer overlay, browse reset); the IMDb star; the chevrons (Library type pill, screens sheet); the
+   sort triangles and the maturity stepper; ⚙ (profile picker; `ActionTile` now takes a glyph composable),
+   ✎, ✉, 🌐, ⇧ (install card), ▦ (Home), ↓ (player), and the AirPlay mark. Close buttons whose only
+   content is the glyph carry `action.close` as their description.
+2. **Kept as text, drawn from the fallback on the web:** the symbols inside translated strings, and seven
+   icon-plus-label strings built in Kotlin (*✓ Watched*, *▷ Trailer* twice, *✓ signed in*, *★ stinger*,
+   the request meta line's *★7.5*, and the install card's *→*). Android draws them from its system fonts
+   as before.
+3. **The fallback font**: `scripts/build-web-fallback-font.py` subsets 23 Noto sources (Noto Sans, Symbols
+   2, Math, one per script, Serif Tibetan, SC and KR instanced at weight 400) to the 169 characters the app
+   uses that Sora and Space Grotesk do not **both** have (Compose never falls back from one family to the
+   other), keeps every layout feature, drops the tables fontTools cannot merge (MATH, and BASE/STAT/meta/
+   JSTF), merges them as *Ravilo Web Fallback*, and writes
+   `ravilo-ui/src/wasmJsMain/composeResources/font/web_fallback.ttf`: **104 KB**. It is in the wasm source
+   set's resources, so the Android APK does not carry it. The OFL text, with the list of sources, ships
+   beside it (`composeResources/files/licenses/noto-OFL.txt`).
+4. **Shaping checked** by rendering all 37 native names with only this font loaded (inlined as a data URL,
+   since Chrome refuses a `file://` font from `about:blank`; the first attempt had silently shown the
+   host's system fonts): Arabic joins, the Devanagari conjunct in *हिन्दी* forms, Tibetan stacks, and
+   Telugu, Myanmar, Khmer and Korean (all boxes on this host without it) draw.
+5. **Registration**: `WithWebFallbackFont` (ravilo-ui wasmJs) calls `preloadFont(Res.font.web_fallback)`
+   and `LocalFontFamilyResolver.current.preload(FontFamily(font))`, then composes the app; ravilo-web's
+   `main()` wraps `RaviloRoot()` in it. It waits at most 3 s, so a failed font load never stops the app.
+6. **Guard**: `scripts/check-web-glyphs.sh` → `scripts/web_glyphs.py` (its own `cmap` reader for formats
+   4 and 12, checked equal to fontTools on both bundled fonts) scans Kotlin string literals (comments
+   skipped, `\u` escapes decoded, template expressions skipped) and `i18n/*.json`, and passes (211
+   characters). A `⚑` added to `en.json` fails it, naming the character and the key. It runs in CI beside
+   `check-ravilo-strings.sh`.

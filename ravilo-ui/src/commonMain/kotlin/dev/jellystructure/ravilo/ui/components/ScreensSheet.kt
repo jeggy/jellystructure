@@ -248,7 +248,7 @@ private fun SheetHeader(title: String, onClose: () -> Unit) {
         Box(
             Modifier.height(36.dp).width(36.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
             contentAlignment = Alignment.Center,
-        ) { Text("✕", color = colors.textSecondary, fontSize = 16.sp) }
+        ) { CloseGlyph(colors.textSecondary, 16.dp, description = str("action.close")) }
     }
 }
 
@@ -270,7 +270,7 @@ private fun CollapsibleRow(label: String, count: Int, expanded: Boolean, onToggl
         Spacer(Modifier.width(6.dp))
         Text("($count)", color = colors.textDim, fontSize = 14.sp, fontFamily = Sora)
         Spacer(Modifier.weight(1f))
-        Text(if (expanded) "︿" else "﹀", color = colors.textDim, fontSize = 14.sp)
+        ChevronGlyph(if (expanded) GlyphDirection.UP else GlyphDirection.DOWN, colors.textDim, 14.dp)
     }
 }
 
@@ -334,7 +334,7 @@ private fun SimpleRow(icon: @Composable () -> Unit, label: String, onClick: () -
 
 @Composable private fun TvGlyph(tint: Color) { ScreenCastGlyph(tint = tint, on = false, sizeDp = 20) }
 @Composable private fun PlusGlyph(tint: Color) { Text("+", color = tint, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-@Composable private fun AirplayGlyph(tint: Color) { Text("▲", color = tint, fontSize = 14.sp) }
+@Composable private fun AirplayGlyph(tint: Color) { TriangleGlyph(GlyphDirection.UP, tint, 16.dp) }   // R315
 
 /**
  * R270 (FR-R270-4) — *"Offline · last seen {when}"*: a **weekday** inside the last seven days, a

@@ -60,7 +60,7 @@ fun ImdbChip(rating: TvImdbRating?, modifier: Modifier = Modifier) {
                 .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("★", color = IMDB_INK, fontSize = 11.sp, fontFamily = sora)
+            StarGlyph(IMDB_INK, 11.dp)   // R315 — drawn, not typed
             Text(
                 " IMDb", color = IMDB_INK, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, fontFamily = sora,
             )

@@ -185,7 +185,7 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
                     .background(stripeBrush),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("✉", color = Color.White, fontSize = 21.sp)
+                EnvelopeGlyph(Color.White, 24.dp)   // R315 — drawn, not typed
             }
             Text(toast.text, color = colors.text, fontSize = 19.sp, lineHeight = 26.sp)
         }

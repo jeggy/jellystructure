@@ -77,7 +77,7 @@ private fun InstallCard(onDismiss: () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("⇧", color = colors.accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                ShareGlyph(colors.accent, 20.dp)   // R315 — drawn, not typed
                 Spacer(Modifier.width(10.dp))
                 Text(
                     str("install.title"), color = colors.text, fontSize = 16.sp,
@@ -88,7 +88,7 @@ private fun InstallCard(onDismiss: () -> Unit) {
                         .dpadFocusable(focusRequester = dismissFR, onSelect = onDismiss)
                         .padding(6.dp),
                 ) {
-                    Text("✕", color = colors.textSecondary, fontSize = 14.sp)
+                    CloseGlyph(colors.textSecondary, 14.dp, description = str("action.close"))
                 }
             }
             Spacer(Modifier.height(12.dp))

@@ -467,7 +467,7 @@ private fun CornerBadgeContent(
             modifier = modifier.size(24.dp).background(colors.badgeWatched, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Text("✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            CheckGlyph(Color.White, 14.dp)   // R315 — drawn, not typed
         }
         // "NEW" gradient badge.
         CornerBadge.NEW -> Box(

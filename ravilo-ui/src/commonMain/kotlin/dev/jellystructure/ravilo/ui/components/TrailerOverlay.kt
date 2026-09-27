@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -95,11 +96,16 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                     .background(colors.surfaceVariant, RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                Text(
-                    "✕ ${str("action.close")}",
-                    color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
-                    maxLines = 1, softWrap = false,
-                )
+                // R315 — the ✕ is drawn, not typed.
+                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                    CloseGlyph(colors.text, 12.dp)
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
+                    Text(
+                        str("action.close"),
+                        color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
+                        maxLines = 1, softWrap = false,
+                    )
+                }
             }
         }
     }

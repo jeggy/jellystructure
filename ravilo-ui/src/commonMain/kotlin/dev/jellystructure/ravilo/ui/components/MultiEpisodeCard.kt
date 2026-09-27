@@ -157,7 +157,7 @@ fun MultiEpisodeCard(
                         .background(colors.badgeWatched)
                         .padding(horizontal = 7.dp, vertical = 3.dp),
                 ) {
-                    Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    CheckGlyph(Color.White, 12.dp)   // R315
                 }
             } else if (groupPct > 0f) {
                 Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(colors.progressBg)) {

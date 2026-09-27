@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.GearGlyph
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -152,7 +153,7 @@ fun ProfilePickerScreen(
                         // "Settings" tile (only with an active session)
                         if (showSettings) {
                             ActionTile(
-                                glyph = "⚙",
+                                glyph = { tint -> GearGlyph(tint, 30.dp) },   // R315 — drawn, not typed
                                 label = str("nav.settings"),
                                 focusRequester = frs[settingsIdx],
                                 onLeft  = { frs[addIdx].requestFocus() },
@@ -256,7 +257,7 @@ private fun AddUserTile(
     onSelect: () -> Unit,
     onRight: () -> Unit = {},
 ) = ActionTile(
-    glyph = "+",
+    glyph = { tint -> Text("+", color = tint, fontSize = 36.sp, fontWeight = FontWeight.Thin) },
     label = str("profile.add_user"),
     focusRequester = focusRequester,
     onLeft = onLeft,
@@ -266,7 +267,7 @@ private fun AddUserTile(
 
 @Composable
 private fun ActionTile(
-    glyph: String,
+    glyph: @Composable (tint: androidx.compose.ui.graphics.Color) -> Unit,
     label: String,
     focusRequester: FocusRequester,
     onLeft: () -> Unit,
@@ -294,7 +295,7 @@ private fun ActionTile(
                 .then(if (focused) Modifier.border(3.dp, colors.focusRing, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            Text(glyph, color = if (focused) colors.text else colors.textSecondary, fontSize = 36.sp, fontWeight = FontWeight.Thin)
+            glyph(if (focused) colors.text else colors.textSecondary)
         }
         Spacer(Modifier.height(12.dp))
         Text(label, color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)

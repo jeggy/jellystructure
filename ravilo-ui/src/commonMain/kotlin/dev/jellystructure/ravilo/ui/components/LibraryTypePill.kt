@@ -90,7 +90,7 @@ fun LibraryTypePill(
                 maxLines = 1,
             )
             Spacer(Modifier.width(6.dp))
-            Text(if (open) "︿" else "﹀", color = colors.textDim, fontSize = 12.sp)
+            ChevronGlyph(if (open) GlyphDirection.UP else GlyphDirection.DOWN, colors.textDim, 12.dp)   // R315
         }
         if (open) {
             // A tap anywhere outside closes it.
@@ -122,12 +122,10 @@ fun LibraryTypePill(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(
-                                text = if (t == current) "✓" else " ",
-                                color = colors.text,
-                                fontSize = 13.sp,
-                                fontFamily = Sora,
-                            )
+                            // R315 — a fixed slot, so the labels line up whether or not the tick is there.
+                            androidx.compose.foundation.layout.Box(Modifier.width(13.dp)) {
+                                if (t == current) CheckGlyph(colors.text, 13.dp)
+                            }
                             Text(
                                 text = libraryTypeLabel(t),
                                 color = colors.text,

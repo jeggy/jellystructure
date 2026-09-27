@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.CheckGlyph
+import dev.jellystructure.ravilo.ui.components.RingGlyph
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -894,12 +896,8 @@ private fun EpisodeWatchToggle(watched: Boolean, onToggle: () -> Unit) {
             .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            if (watched) "✓" else "○",
-            color = if (watched) colors.badgeWatched else colors.textSecondary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        // R315 — drawn, not typed.
+        if (watched) CheckGlyph(colors.badgeWatched, 13.dp) else RingGlyph(colors.textSecondary, 13.dp)
         Spacer(Modifier.width(5.dp))
         Text(
             if (watched) str("action.watched") else str("action.mark_watched"),

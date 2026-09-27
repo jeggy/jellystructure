@@ -22,6 +22,7 @@ fun main() {
     dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs()
     dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay()
     CanvasBasedWindow(title = "Ravilo") {
-        RaviloRoot()
+        // R315 — the fallback font is registered before any text is laid out.
+        dev.jellystructure.ravilo.ui.WithWebFallbackFont { RaviloRoot() }
     }
 }

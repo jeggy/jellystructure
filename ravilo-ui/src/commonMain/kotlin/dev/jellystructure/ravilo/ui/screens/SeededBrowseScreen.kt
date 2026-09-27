@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.CheckGlyph
+import dev.jellystructure.ravilo.ui.components.CloseGlyph
+import dev.jellystructure.ravilo.ui.components.TriangleGlyph
+import dev.jellystructure.ravilo.ui.components.GlyphDirection
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -622,7 +626,14 @@ private fun FacetBar(
                         .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = { store.resetFilters() }, onUp = onBarUp)
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text("✕ " + str("browse.reset"), color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora) }
+                ) {
+                    // R315 — the ✕ is drawn, not typed.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CloseGlyph(colors.textSecondary, 13.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(str("browse.reset"), color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
+                    }
+                }
             }
         }
         item(key = "sort") {
@@ -643,11 +654,13 @@ private fun FacetBar(
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                val dirArrow = if (store.sortDir == SortDir.DESC) "▼" else "▲"
-                Text(
-                    str("browse.sort") + ": " + sortLabel(store.sortField, store.sourceLabel) + " " + dirArrow,
-                    color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp, fontFamily = Sora,
-                )
+                // R315 — the direction triangle is drawn, not typed.
+                val ink = if (focused) colors.text else colors.textSecondary
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(str("browse.sort") + ": " + sortLabel(store.sortField, store.sourceLabel), color = ink, fontSize = 14.sp, fontFamily = Sora)
+                    Spacer(Modifier.width(6.dp))
+                    TriangleGlyph(if (store.sortDir == SortDir.DESC) GlyphDirection.DOWN else GlyphDirection.UP, ink, 12.dp)
+                }
             }
         }
     }
@@ -762,7 +775,7 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                             // R187 fix — no unselected-row bullet; a fixed-width slot keeps the checkmark
                             // from shifting the label when a row becomes (un)selected.
                             Box(Modifier.width(18.dp)) {
-                                if (selected) Text("✓", color = colors.accent, fontSize = 14.sp)
+                                if (selected) CheckGlyph(colors.accent, 14.dp)
                             }
                             if (key == BrowseFacetKey.AUDIO) {
                                 val flag = LANG_CC[v.value.lowercase()]
@@ -845,9 +858,9 @@ private fun MaturityRangePicker(store: SeededBrowseStore, firstRowFR: FocusReque
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-            Text("◂", color = colors.textSecondary, fontSize = 14.sp)
+            TriangleGlyph(GlyphDirection.LEFT, colors.textSecondary, 12.dp)
             Text(value, color = colors.text, fontSize = 16.sp, fontFamily = Sora, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(48.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text("▸", color = colors.textSecondary, fontSize = 14.sp)
+            TriangleGlyph(GlyphDirection.RIGHT, colors.textSecondary, 12.dp)
         }
     }
     Text(str("browse.maturity.hint"), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora, modifier = Modifier.padding(top = 4.dp))
@@ -887,7 +900,7 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
                 ) {
                     // R187 fix — same no-dot-when-unselected treatment as FacetPopover's checklist.
                     Box(Modifier.width(18.dp)) {
-                        if (active) Text("✓", color = colors.accent, fontSize = 14.sp)
+                        if (active) CheckGlyph(colors.accent, 14.dp)
                     }
                     Column(Modifier.weight(1f)) {
                         Text(sortLabel(opt, store.sourceLabel), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
@@ -897,10 +910,7 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
                         )
                     }
                     if (active) {
-                        Text(
-                            if (store.sortDir == SortDir.DESC) "▼" else "▲",
-                            color = colors.accent, fontSize = 14.sp, fontFamily = Sora,
-                        )
+                        TriangleGlyph(if (store.sortDir == SortDir.DESC) GlyphDirection.DOWN else GlyphDirection.UP, colors.accent, 12.dp)
                     }
                 }
             }
