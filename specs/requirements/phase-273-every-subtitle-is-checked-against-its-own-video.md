@@ -11,8 +11,8 @@
 ## Status
 
 `Planned` — written 2026-09-27 from two research passes the same day (a single animated series, then every
-sidecar in the production library; the reports are private because they name library titles). Not
-dev-reviewed. Backend (a check, a hook, a Bazarr steering loop, an advisor) and admin (verdicts on the title
+sidecar in the production library; the reports are private because they name library titles). The owner
+answered the open questions the same day (see *Owner decisions*). Not dev-reviewed. Backend (a check, a hook, a Bazarr steering loop, an advisor) and admin (verdicts on the title
 page, a Dashboard card, a Bazarr advisor). **No Ravilo client change and no new wire value for Ravilo**: the
 server stops offering a subtitle it knows is wrong, and that is all a viewer sees. Numbering verified against
 `STATUS.md` the same day: admin taken through **272**.
@@ -33,15 +33,35 @@ judges whether they fit. Everything else stays with the tool that already does i
 | Finding and downloading subtitles, providers, language profiles, history | **Bazarr** | Tells Bazarr which subtitle is wrong (blacklist), which candidate to take (manual download), where a mislabelled file belongs (upload) |
 | Retiming a subtitle | **Bazarr** (ffsubsync) | Tells Bazarr which reference to sync against, how far to search and whether to fix the frame rate, then checks the result |
 | Extracting embedded subtitles | **Jellyfin** | Keeps the text `prewarm_subtitles` already asks Jellyfin for, instead of throwing it away |
-| Telling Jellyfin a subtitle changed | **Bazarr** (its Jellyfin integration) | Advises turning it on |
+| Telling Jellyfin a subtitle changed | **Bazarr** (its Jellyfin integration) | Advises turning it on, and sets it up when the admin presses *Apply* |
 | Deciding whether a subtitle fits its video | **jellystructure** | New in this phase |
-| Knowing which settings in Bazarr work against that | **jellystructure** (advisor) | New in this phase: says what to change, where, and why |
+| Knowing which settings in Bazarr work against that | **jellystructure** (advisor) | New in this phase: says what to change, where, and why, and applies it when the admin presses *Apply in Bazarr* |
 
 jellystructure never talks to a subtitle provider, never downloads a subtitle itself, never writes a subtitle
-file directly and never changes a Bazarr setting on its own. Every change to a subtitle on disk goes through a
+file directly, and changes a Bazarr setting only when the admin presses *Apply in Bazarr*. Every change to a subtitle on disk goes through a
 Bazarr API call, so Bazarr's history, naming and language bookkeeping stay true. This supersedes one sentence
 of phase 157 ("jellystructure stores nothing about subtitles"): it still stores nothing *Bazarr* owns, but a
 verdict about whether a file fits a video is jellystructure's own finding, like 255's track coverage.
+
+**Rather nothing than wrong** (owner, 2026-09-27: *"I do not want incorrect things. Rather have nothing than
+something which is just wrong."*). A subtitle that does not belong to its video, or that is too far off to
+read along with, is never kept as a fallback and never shown to a viewer, even when no right one can be found
+yet. An empty language is the correct state for a title nobody has a right subtitle for.
+
+## Owner decisions (2026-09-27)
+
+1. **An *Apply in Bazarr* button: yes.** Every advisor finding with a value to set gets one (FR-273-19).
+2. **A subtitle only the audio doubts** (explained to the owner in plain terms: files with no subtitle inside
+   them can only be compared with who is talking when, which is less certain and wrongly doubted 2 right
+   subtitles in the research). Resolved from decision 5: it is **hidden from viewers at once** and **thrown away
+   only after the admin says OK** (FR-273-16), because hiding can be undone and a Bazarr blacklist cannot.
+3. **Blacklisting: "the best way".** Bazarr's blacklist is used as designed (it deletes and searches again at
+   once), with no workaround. A neighbour's candidate that turns out not to fit is deleted without a blacklist,
+   because it may be right for its own episode (FR-273-13, FR-273-14).
+4. **The hook address: whatever makes the best sense.** The address Jellyfin already reaches jellystructure at
+   (165), editable, written into Bazarr by *Apply* (FR-273-9).
+5. **Croatian and Serbian stay, under the same rule as every language:** rather nothing than wrong (FR-273-17,
+   FR-273-23).
 
 ## Today
 
@@ -198,6 +218,11 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
     <address Bazarr reaches jellystructure at>/api/webhooks/bazarr?secret=<secret>
   ```
 
+  The address is the one Jellyfin already reaches jellystructure at (165's `jellyfin_reach_url`), since Bazarr
+  runs beside the backend too; the Bazarr card lets the admin change it. *Apply in Bazarr* (FR-273-19) writes the
+  command, so the admin never types it. Bazarr has no way to test a post-processing command, so the card says
+  *Waiting for Bazarr's first call* until one arrives and *Last called …* after.
+
   Bazarr runs the command inside its download worker and ignores the exit code, so the route **queues and
   answers at once** (202). Items are matched by Bazarr's ids through 157's id join, never by rewriting paths; the
   paths are kept only for Bazarr calls that need Bazarr's own path strings.
@@ -232,18 +257,22 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
   `other_episode` after FR-273-11, or an `off` that sync could not fix, jellystructure blacklists the subtitle's
   (provider, subtitle id) in Bazarr (`POST /api/episodes/blacklist` or the movie equivalent). Bazarr then deletes
   the file and searches again at once; the new pick arrives through the hook and is checked like any other. The
-  blacklist is global in Bazarr, which is right: a mislabelled upload is wrong wherever it is offered. **At most 3
-  blacklist rounds per (file, language)** in 24 hours; after that the file waits for FR-273-14's neighbour search
-  or for the admin.
+  language is empty for those minutes, which is what decision 5 asks for. The blacklist is global in Bazarr,
+  which is right here: a provider offers an upload under the label it carries, and that label is the wrong one.
+  **At most 3 blacklist rounds per (file, language)** in 24 hours; after that the file waits for FR-273-14's
+  neighbour search, and Bazarr's own wanted-search keeps trying on its schedule, each pick checked the same way.
+  Every wrong pick is blacklisted for good, so the candidates run out rather than repeat. No workaround for
+  "blacklist without deleting" is used.
 
 - **FR-273-14 — When the label is broken, look next door.** When a series has two or more `other_episode`
   verdicts with the same shift (for example, uploads labelled E05 hold E02's content), or a (file, language) has
   used its 3 rounds, jellystructure asks Bazarr for the candidates of the episodes the pattern points at
   (`GET /api/providers/episodes?episodeid=B`) and has Bazarr download the likeliest one **onto the file that needs
   it** (`POST /api/providers/episodes` with the target's ids and the candidate key from B's search; Bazarr does
-  not tie a key to the episode it was found for). The result is checked; a miss is deleted through Bazarr
-  (`DELETE /api/episodes/subtitles`) and blacklisted only for that target. Candidate keys expire after an hour in
-  Bazarr, so search and download happen together.
+  not tie a key to the episode it was found for). The result is checked. A miss is deleted through Bazarr
+  (`DELETE /api/episodes/subtitles`) **without** a blacklist, because it may well be right for the episode it
+  was found under; jellystructure remembers that it was tried for this target and does not try it again there.
+  Candidate keys expire after an hour in Bazarr, so search and download happen together.
 
 - **FR-273-15 — A settled subtitle is not lost to a blind upgrade.** jellystructure keeps a copy of every sidecar
   it has judged `in_sync` (a few KB each, in its own store). If Bazarr later replaces it (an upgrade, a new
@@ -253,18 +282,29 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
 - **FR-273-16 — A budget, and a say.** Every Bazarr action that costs a provider download (blacklist rounds,
   neighbour downloads) counts against a daily budget in Settings → Download tools → Bazarr (default 100 a day;
   OpenSubtitles VIP allows 1,000). One setting says what jellystructure does about a bad subtitle:
-  - **Fix it** (default): FR-273-11 to FR-273-15 run on their own for verdicts from a subtitle reference; a
-    verdict from speech alone waits in *Needs your OK*.
-  - **Ask me first**: every action waits in *Needs your OK* with what it would do.
-  - **Only report**: verdicts and advice, no action.
+  - **Fix it** (default): FR-273-11 to FR-273-15 run on their own for verdicts from a subtitle reference. A
+    subtitle that only the speech track doubts (`cant_tell · weak` against speech) is hidden from viewers at once
+    (FR-273-17) and waits in *Needs your OK* before Bazarr is asked to throw it away (owner decision 2).
+  - **Ask me first**: every action waits in *Needs your OK* with what it would do. Hiding from viewers still
+    happens at once.
+  - **Only report**: verdicts and advice, no action, nothing hidden. Meant for the first run on production.
 
 ### §D — What viewers see
 
-- **FR-273-17 — A known-wrong subtitle is not offered.** While a sidecar is `not_this_video`, `other_episode` or
-  `longer_video`, the server leaves it out of the subtitle list it builds for Ravilo and never chooses it as the
-  default or the remembered track (253, R235). An `off` subtitle stays offered while Bazarr fixes it. No client
-  change and no new wire value: the track simply is not in the list. This narrows R180's "nothing hidden"
-  invariant to tracks that belong to the video, and says so in R180's spec when this is built.
+- **FR-273-17 — A wrong subtitle is not offered.** The server leaves a sidecar out of the subtitle list it builds
+  for Ravilo, and never chooses it as the default or the remembered track (253, R235), while it is:
+  - `not_this_video`, `other_episode` or `longer_video`;
+  - `off` or `off_mid_file` by 2 s or more anywhere in the file (offset plus drift at the end), until Bazarr's sync
+    makes it `in_sync`. Smaller offsets stay offered while Bazarr syncs them;
+  - doubted by the speech track and waiting for the admin (FR-273-16).
+
+  No client change and no new wire value: the track simply is not in the list, and it comes back the moment it
+  checks `in_sync`. This narrows R180's "nothing hidden" invariant to tracks that belong to the video, and says
+  so in R180's spec when this is built.
+
+  `cant_tell` subtitles stay offered. Of the checked subtitles, 97% were the right content, so hiding every
+  subtitle that cannot be checked would take away far more right ones than wrong ones; the speech track
+  (FR-273-5) shrinks that group to files whose audio cannot be read.
 
 ### §E — Guide the admin to the settings that help
 
@@ -294,8 +334,23 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
   subtitle, and a larger maximum offset makes a rare spurious alignment more likely (jellystructure's check
   catches that).
 
-- **FR-273-19 — Suggest, don't change.** Following 212, the advisor never writes Bazarr's settings. Each finding
-  gives the value to set and, for the hook, the exact command with a Copy button.
+- **FR-273-19 — *Apply in Bazarr*.** Every finding with a value to set carries an *Apply in Bazarr* button (owner
+  decision 1). It changes exactly that finding's settings and nothing else:
+  - It posts only those fields to Bazarr's `POST /api/system/settings`, as the form fields Bazarr's own settings
+    page sends (`settings-<section>-<key>`); Bazarr updates only the keys it receives.
+  - It re-reads Bazarr's settings. The finding disappears only when Bazarr reports the new value; if it does not,
+    the finding stays and says what Bazarr answered.
+  - It writes a line to jellystructure's log: who pressed it, which setting, the value before and after.
+
+  | Finding | What *Apply* sets |
+  |---|---|
+  | The hook | `general.use_postprocessing` on, `general.postprocessing_cmd` = the generated command, both score thresholds for post-processing off |
+  | Sync | `subsync.use_subsync` on, `subsync.max_offset_seconds` 300, `subsync.no_fix_framerate` off |
+  | Minimum score | the value shown (only when it is above 92%) |
+  | Jellyfin is not told | a **dedicated Jellyfin API key named Bazarr**, created through Jellyfin's `POST /Auth/Keys` with jellystructure's admin token (jellystructure never hands out its own token), then Bazarr's Jellyfin URL and key, `general.use_jellyfin` on, and the series and movie refresh switches on |
+  | A show searched by title | no button: the fix is an IMDb id on the show's TheTVDB entry, which the finding links to |
+
+  The hook finding also keeps a Copy button for the command, for an admin who prefers to paste it.
 
 ### §F — The admin sees what happened
 
@@ -306,8 +361,18 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
 - **FR-273-21 — On the Dashboard.** A *Subtitles* card beside 157's summary: counts by verdict, what is waiting in
   *Needs your OK*, provider downloads used today against the budget, and when Bazarr last called.
 - **FR-273-22 — In History.** Every action jellystructure takes (sync requested, uploaded to another episode,
-  blacklisted, neighbour candidate tried, settled copy restored) is written to the title's History with the
-  verdict numbers that caused it, as 170 does for segments.
+  blacklisted, neighbour candidate tried, settled copy restored, a setting applied in Bazarr) is written to the
+  title's History, or for settings jellystructure's log, with the numbers that caused it, as 170 does for segments.
+
+### §G — Rather nothing than wrong
+
+- **FR-273-23 — A wrong subtitle is never kept as a fallback.** A subtitle that is `not_this_video`,
+  `longer_video`, `other_episode` (after FR-273-11 has moved it), or off in a way Bazarr's sync could not fix, is
+  removed through Bazarr (FR-273-13) even when no replacement exists. jellystructure never uploads, restores or
+  offers a subtitle it has judged wrong: FR-273-11 uploads only to the episode the file belongs to, and FR-273-15
+  restores only copies that checked `in_sync`. When the candidates run out, the language stays empty and the
+  title page says *No right subtitle found yet · 4 tried · Bazarr looks again in 6 h*. On *Only report* nothing is
+  removed and nothing hidden, so the first production run changes nothing.
 
 ## API (all admin, all additive)
 
@@ -318,6 +383,7 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
 | `GET /api/subtitles/summary` | Dashboard card counts, *Needs your OK*, budget |
 | `POST /api/subtitles/checks/{id}/approve` · `/dismiss` | act on a waiting proposal |
 | `GET /api/bazarr/advisor` | Bazarr findings (FR-273-18) |
+| `POST /api/bazarr/advisor/{finding}/apply` | *Apply in Bazarr* for one finding (FR-273-19) |
 
 The Ravilo DTOs do not change (FR-273-17 only removes a track from a list).
 
@@ -344,10 +410,16 @@ reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both 
 6. **A mislabelled subtitle moves.** A sidecar identified as its neighbour's is uploaded to the neighbour through
    Bazarr, the neighbour re-checks `in_sync`, and the source is blacklisted and re-searched.
 7. **The budget holds.** With a budget of 5, the sixth provider download of the day waits until tomorrow.
-8. **Viewers.** A `not_this_video` sidecar is absent from the Ravilo subtitle list and from default selection;
-   an `in_sync` sibling in the same language is offered.
+8. **Viewers.** A `not_this_video` sidecar, and one 50 s late, are absent from the Ravilo subtitle list and from
+   default selection; an `in_sync` sibling in the same language is offered; the late one is offered again once
+   Bazarr's sync makes it `in_sync`.
 9. **The advisor is silent where Bazarr is already right**, and on this server today shows the hook, sync, max
    offset, frame rate, Jellyfin integration and title-search findings.
+10. ***Apply* changes only what it names.** Bazarr's settings read before and after an *Apply* differ in exactly
+    the finding's keys; the finding then disappears; jellystructure's log has the before and after values. The Jellyfin
+    finding's *Apply* leaves a new API key named Bazarr in Jellyfin and jellystructure's own token unused by Bazarr.
+11. **Nothing rather than wrong.** An episode whose candidates are all wrong (the animated series has 13 today)
+    ends with no subtitle in that language, not a wrong one, and says so on its page.
 
 ## Non-goals
 
@@ -361,23 +433,19 @@ reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both 
 - **IMDb's episode numbering as a warning before any download.** IMDb's `title.episode` dataset would show which
   series Bazarr will mislabel by design; phase 158 fetches only ratings today. A follow-up.
 - **Checking embedded subtitles.** They are the reference.
-- **Changing Bazarr's settings for the admin.** Open question 1.
+- **Changing a Bazarr setting without the admin pressing *Apply*.**
 
-## Open questions
+## For dev review
 
-1. **An *Apply in Bazarr* button?** Bazarr's `POST /api/system/settings` could set a recommended value in one
-   click. 212 chose suggest-only for Jellyfin; the same is assumed here. Lean: suggest-only, but offer *Apply* for
-   the hook command alone, because it is jellystructure's own address and secret.
-2. **Speech-only verdicts on *Fix it*.** FR-273-16 makes them wait for approval. Once acceptance 3 has run on a
-   month of production data, should confident speech verdicts act on their own?
-3. **Blacklist deletes before the next pick is known.** For a few minutes the language is missing. Acceptable,
-   since the deleted file was wrong. A "blacklist without deleting" call does not exist in Bazarr; posting a
-   subtitle path that does not exist writes the blacklist row and stops before the search (observed by the
-   research session), but relying on that is a hack. Dev review to decide.
-4. **Where the Bazarr hook address comes from** when Bazarr runs on another host than Jellyfin. Default from
-   `jellyfin_reach_url`, editable on the Bazarr card.
-5. **Croatian and Serbian** are 59% of the checked sidecars and 23 of the 30 not for their video. Whether they are
-   still wanted is the household's call, not this phase's.
+The owner's decisions settled the design questions. These are facts to confirm in Bazarr before building:
+
+1. **What Bazarr's empty `series_library_ids` / `movie_library_ids` mean** for its Jellyfin refresh (every
+   library, or none). If none, *Apply* for the Jellyfin finding also fills them from Jellyfin's library list.
+2. **Side effects of `POST /api/system/settings`** for the keys this phase writes. Bazarr's `save_settings` sets
+   flags such as a scheduler update or a Sonarr/Radarr resync when some keys change; none of ours should start a
+   full resync, and a test against a Bazarr container should show it.
+3. **When speech-only verdicts may act without approval.** After acceptance 3 has run on a month of production
+   data, a follow-up can let confident ones act on *Fix it* like subtitle-reference verdicts.
 
 ## Verification plan
 
