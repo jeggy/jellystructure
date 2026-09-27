@@ -20,6 +20,15 @@ The *Directions* canvases (Casting, Mobile Player, Play on a TV, Bottom Nav, Foc
 
 **Legend.** **D>C**: in the design, not built. **C>D**: built, not in the design (the mockup is behind). **DIFF**: both exist and disagree. **Design defect**: the mockup is wrong whatever the code does.
 
+## Owner decisions (2026-09-27, after the first read)
+
+1. **Translations: the code is correct.** `i18n/*.json` is the truth. The design's string table may disagree, and that is accepted. §1.1 is information, not an action.
+2. **Always the system keyboard, never a custom one.** The mockups' on-screen keyboards go: TV search, TV sign-in, change password, and the receiver app's server setup. §4's first row is decided for the code.
+3. **The phone Library page as built is better than the mockup.** The design follows the code.
+4. **The phone Profile's *Settings* row is correct.** The design follows the code.
+5. **Episodes are written `S01E05`, always**: zero-padded, no colon, no spaces, everywhere in the app and the design. Today the code has five spellings (§4). For a multi-episode file, use the admin's Phase 149 form `S01E01–E03` unless decided otherwise.
+6. **The phone Profile footer names whatever server the app is configured for.** Checked: the app already does. `ProfileScreen` gets `serverHost` from `apiClient.baseUrl` (`RaviloApp.kt:1632`). Only the static mockup shows a fixed host, and that host appears in no live config or compose file, so it is a stand-in. §1.6 is closed.
+
 ## Summary
 
 The core matches well: the TV home, hero, rows, browse page, Discover (order, gating, 6-up walls), focus detail L/J, the TV player (R303 ident, −10/+30, 3.6 s auto-hide, skip intro, credits card, two-level picker), the phone bottom bar, the thumb-rail player, the *Play on a TV* sheet, and the Chromecast receiver. The three skins' colour tokens and tile radii match to the hex value.
@@ -37,6 +46,8 @@ The gaps fall into five groups:
 ## 1 · Design defects (fix in the design, not the app)
 
 ### 1.1 The design's English table renders Faroese, and its Faroese is out of date
+
+> **Accepted (owner decision 1):** the shipped `i18n/*.json` is correct, and a design mismatch is fine. Kept here as information, so a reviewer who sees Faroese in the English mockup knows why.
 
 `design/ravilo/ravilo-i18n.js`: 22 keys in `STR.en` hold Faroese values. Examples: `pm_settings: 'Stillingar'`, `pm_unpair: 'Loys hetta sjónvarpið'` (:230), `seg_coming: 'Komandi skjótt'`, `seg_request: 'Umbøn'`, `nav_upcoming`, `up_all: 'Alt'`, `up_series: 'Seriur'`, `up_airs_in/today/tomorrow` (:239), `up_episode: 'Partur'`, `up_new_episode`, `up_missing`, `up_missing_title` (:272), `up_aired_ago`, `up_released_ago`, `slow_tail_measured` (:175), `fd_nodesc` (:183), `seg_networks: 'Sjónvarpsrásir'`, `tx_sub_networks`, `tx_n_networks` (:401), `tx_empty`.
 
@@ -70,9 +81,9 @@ Owner rule (2026-09-25; also R234's rejected copy): Ravilo never names Jellyfin 
 
 `Ravilo Mobile.html`'s `SUBS` versions read *Full dialogue · sidecar* / *· embedded*, with badges *SDH* and *forced*. These are file provenance and jargon. The TV picker and the app use the plain-language lines (`player.variant_*`: *The full version of everything spoken.*) and badges *Signs only* / *Sound described*.
 
-### 1.6 Hygiene
+### 1.6 Hygiene: closed
 
-The phone Profile page footer hard-codes a server hostname in *Ravilo 1.38 · signed in to …*. The repo is public: confirm it is a stand-in and not a household domain. `scripts/check-deanonymization.sh` only knows the values it was given.
+The phone Profile mockup's footer shows a fixed host in *Ravilo 1.38 · signed in to …*. The app builds that line from the configured server (`apiClient.baseUrl`, `RaviloApp.kt:1632`). The mockup's host appears in no live config or compose file: it is a stand-in. No action (owner decision 6).
 
 ---
 
@@ -128,15 +139,15 @@ Most of this landed after the 2026-09-25 design sync.
 
 | Area | Design | App | Lean |
 |---|---|---|---|
-| **TV text entry** (search, sign-in, change password) | In-app on-screen keyboards: A–Z/0–9 for search, QWERTY with Shift/Space/Delete for sign-in and password (`ravilo-app.js` `renderSearch`, `renderSignin`) | The system IME on a native field. Deliberate: *"no reusable on-screen keyboard exists in this codebase"* (`AccountScreens.kt:61`); R277 raises the IME on TV entry | Redraw the mockup: the app's choice is recorded, the design's is not |
-| **Phone Library body** | Home-style rows filtered by type, meta *N titles · movies* | The R187 browse grid with facet bar, titled *Library* (as R267 FR-5b specifies) | The design should follow the spec |
+| **TV text entry** (search, sign-in, change password) | In-app on-screen keyboards: A–Z/0–9 for search, QWERTY with Shift/Space/Delete for sign-in and password (`ravilo-app.js` `renderSearch`, `renderSignin`) | The system IME on a native field (`AccountScreens.kt:61`); R277 raises the IME on TV entry | **Decided (2): system keyboard always.** The design removes its keyboards |
+| **Phone Library body** | Home-style rows filtered by type, meta *N titles · movies* | The R187 browse grid with facet bar, titled *Library* (as R267 FR-5b specifies) | **Decided (3): the app's grid.** The design follows |
 | **Phone Search** | Placeholder *Search Ravilo*; empty state *Titles and genres — everything this profile can watch*; matches titles **and genres** | Placeholder *Search by title...*; empty state shows *Suggestions* | Decide whether search should match genres |
-| **Phone Profile** | Two Account rows, with subs *{Language} · this phone only* and *Used when you sign in*; Settings removed | Three rows: *App language* (name only) · *Change password* · **Settings** (dev review item 2: phone Settings still holds skin, autoplay, tile shape) | The app applied R304 OQ1's lean (drop *this phone only*: `ui_language` is per viewer). The design should follow |
+| **Phone Profile** | Two Account rows, with subs *{Language} · this phone only* and *Used when you sign in*; Settings removed | Three rows: *App language* (name only) · *Change password* · **Settings** (dev review item 2: phone Settings still holds skin, autoplay, tile shape) | **Decided (4): the Settings row stays.** The design follows, including R304 OQ1's lean (drop *this phone only*: `ui_language` is per viewer) |
 | **Movie action row** | Play · Mark watched · Trailer · ＋My List | Play · Mark watched · ±My List · Trailer | Cosmetic; pick one |
 | **Series watched count** | Only in the Episodes heading (*N of M watched*), with a season progress bar | In the hero (all episodes) **and** the Episodes heading (*N / M watched*), no bar | — |
 | **Resume line** (series hero) | *Resume S1 · E3 "title" · N min left* / *Up next · S1 · E3 "title"* | `episodeCode · title` in accent, with no *Resume*/*Up next* word and no minutes | — |
 | **Next-airing line** | *Next episode · S2:E5 "title" · airs 12 Oct 2026* (localised) | *…S02E05… · airs 2026-10-12*: **the raw ISO date**. Episode cards format dates properly (`formatAirDate`) | Real app bug: the hero skips the formatter |
-| **Episode code spelling** | *S1:E3* on the TV, *S2 · E8* on the phone | Five spellings: *S1 · E3* (player kicker), *S1E3* (resume line), *S1:E3* (Continue tile badge), *S1·E3* (Coming Soon card), *S01E05* (next airing) | Pick one |
+| **Episode code spelling** | *S1:E3* on the TV, *S2 · E8* on the phone | Five spellings: *S1 · E3* (player kicker), *S1E3* (resume line), *S1:E3* (Continue tile badge), *S1·E3* (Coming Soon card), *S01E05* (next airing) | **Decided (5): `S01E05` everywhere**, app and design; ranges `S01E01–E03` |
 | **Episode card title** | *3. Title* | *E3 · Title* | Cosmetic |
 | **Channel rail heading** | *Channels & Collections* / *Configured in Jellystructure* | *Collections*, no sub (`section.channels_sub` ships, unused) | — |
 | **Phone player rail** | Four items: Subtitles · Episodes · Next · Lock (the markup), although the design's own decision says three | Subtitles · Next *or* Episodes · Lock (+ Guide for live) | The app matches the decision; fix the markup |
@@ -190,6 +201,8 @@ Checked and aligned:
 
 ## Suggested triage (not done)
 
-- **Design fixes, cheap and high value:** swap the 22 Faroese values out of `STR.en` and re-pull `fo`/`da` from `i18n/*.json` (§1.1); drop the *Jellyfin* wording (§1.2); make the seek wordless (§1.3); delete the chart-era and pairing remnants (§1.4); replace the phone picker's jargon (§1.5); redraw TV text entry, the phone Library and the phone Profile to match what shipped (§4); draw R308, R310, R317, R291, R191, the Settings Playback toggles and the web install surfaces (§3).
-- **App fixes, small:** format the hero's next-airing date (§4); wire the unreferenced strings for the connecting bar, the music empty state and the phone next-up, or delete them (§2.6, §2.10, §2.11, §5); honour or remove `show_collection` (§2.4); pick one episode-code spelling (§4).
-- **Needs an owner decision first:** the About section (§2.1: spec it or remove it), the tile quality badge (§2.2), the viewer *Cast or crew* facet (§2.5), and whether search should match genres (§4).
+Updated with the owner decisions above.
+
+- **Design follows the code:** drop every on-screen keyboard (decision 2); redraw the phone Library as the browse grid (decision 3) and the phone Profile with its *Settings* row (decision 4); write episodes as `S01E05` (decision 5); make the seek wordless (§1.3); drop the *Jellyfin* wording (§1.2); delete the chart-era, pairing and *Mark all* remnants (§1.4); replace the phone picker's jargon (§1.5); draw R308, R310, R317, R291, R191, the Settings Playback toggles and the web install surfaces (§3). The string table's mismatches are accepted (decision 1).
+- **App fixes, small:** one episode code, `S01E05`, at all five call sites (decision 5); format the hero's next-airing date (§4); wire the unreferenced strings for the connecting bar, the music empty state and the phone next-up, or delete them (§2.6, §2.10, §2.11, §5); honour or remove `show_collection` (§2.4).
+- **Still needs an owner decision:** the About section (§2.1: spec it or remove it), the tile quality badge (§2.2), the viewer *Cast or crew* facet (§2.5), and whether search should match genres (§4).
