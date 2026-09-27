@@ -7,8 +7,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Backend (the model, the scanner, a backfill, the sorts) and the admin frontend. The Ravilo
+`✓ Built` 2026-09-27, not deployed (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed
+2026-09-26** against `main` `0e5e434f` (see *Dev review*). Backend (the model, the scanner, a backfill, the sorts) and the admin frontend. The Ravilo
 half is **R317**, which reads what this phase stores. **Numbering:** verified against `STATUS.md` the
 same day — admin taken through **267**.
 
@@ -132,3 +132,42 @@ The design holds. One correction (item 3); the rest places the work.
 **Net effect.** Two model fields and one function, a stat at four scanner sites, one batched store
 method plus the boot pass, two sort sites, one `RowOrder` selector, one DTO field, the admin's size
 lines. No migration: the size rides the item's JSON.
+
+## Build notes (2026-09-27)
+
+1. **The model.** `Episode.fileSizeBytes` and `MediaItem.fileSizeBytes` (a film's or music video's own
+   file) hold the stored sizes. `MediaItem.sizeBytes()` and `seasonSizeBytes(season)` are the one rule, in
+   `commonMain` (`model/Media.kt`), called by the server, the admin and `RowOrder`'s callers. A series with
+   no episodes is unknown, like a missing file.
+2. **The scanner** stats every file it records: films and music videos in `scanMovie` / `scanMusicVideo`
+   / `syncMovie`, episodes in `scanSeries` / `syncSeriesEpisodes`, and `syncSeason` when it re-probes.
+   The helper is `fileSize()` (`SystemFileSystem.metadataOrNull`, which opens no descriptor).
+3. **Keeping sizes true** (FR-268-1/3), by one path. `MediaStore.refreshFileSizes(paths?)` stats files and
+   calls `setFileSizes`, which writes every changed title in **one transaction with one feed bump**. Each
+   item is re-read inside the transaction, so a scan's write in between is not undone.
+   - It runs at boot and then **hourly** in the background, which also catches a file changed outside a
+     scan.
+   - It runs right after a 254 *Replace from clean copy* or lossy repair job, for that job's files
+     (acceptance 4).
+
+   Because the hourly pass also covers any other rewrite, no other job needed its own hook.
+4. **The admin.**
+   - The page header carries a size pill beside the IMDb pill (a film's file; a series' whole series,
+     explained in its tooltip).
+   - Each season block on *Seasons & episodes* shows that season's size.
+   - The one formatter is `formatSize()` (`model/SizeFormat.kt`): decimal units, one decimal place under
+     100 (*23.4 GB*, *812 MB*), *—* when unknown.
+   - Library: *size, largest first* / *size, smallest first* (`sort=size` / `size_asc`), unknown last,
+     ties by title.
+   - The row editor's *Order* gains *Size* (*largest first* / *smallest first*). The preview uses the
+     same `RowOrder` with `size = { it.sizeBytes() }` as the server.
+5. **`BrowseCard.size_bytes`** (additive, absent when unknown; R319's compatibility check passes).
+6. **Tests** (`FileSizeTest`):
+   - the rule: a film; a 3-in-1 file once; a duplicate file counted; season sizes; one unknown file makes
+     the title unknown;
+   - the formatter;
+   - the Library sort both ways with unknown last;
+   - the batched write (one bump, and nothing written when nothing changed);
+   - a row ordered by size both ways, the validator accepting it, and its words.
+
+**Not done here:** acceptance 1–4 on production, which need a release and a restart.

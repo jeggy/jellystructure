@@ -5,8 +5,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Client (`ravilo-ui`: TV, phone, web) and strings. Needs **Phase 268** first: the size, the
+`✓ Built` 2026-09-27, not on a device (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed
+2026-09-26** against `main` `0e5e434f` (see *Dev review*). Client (`ravilo-ui`: TV, phone, web) and strings. Needs **Phase 268** first: the size, the
 one rule that computes it, and `BrowseCard.size_bytes`. **Numbering:** verified against `STATUS.md` the
 same day — Ravilo taken through **R316**.
 
@@ -80,3 +80,20 @@ any loaded card has a size.
    `størst` and `minst` enter the Faroese lexicon in the same commit.
 
 **Net effect.** One enum value, one sort branch, one mapping, three strings. Depends on 268 being live.
+
+## Build notes (2026-09-27)
+
+Built with Phase 268, the same day.
+
+1. **The sort itself** (`SeededBrowseScreen.kt`): `SortField.SIZE`, largest first by default. The branch
+   in `browseOrder()` puts unknown sizes last in **both** directions and breaks ties by the sort name in
+   either direction, so it is not the plain reverse the other fields use. `initialBrowseSort("size")`
+   opens a size-ordered row's *See all* by size, in the row's direction.
+2. **FR-R317-4:** the store's `hasSizes` is true once any loaded card carries `size_bytes`, and the Sort
+   popover offers *Size* only then. An older server sends none, so the option does not appear.
+3. **Strings:** `browse.sort.size` / `.largest` / `.smallest` in en/da/fo, as the spec's table has them.
+   The lexicon was regenerated (`check-i18n-spelling.sh --update-lexicon`), and both string checks pass.
+4. **Tests** (`BrowseSizeOrderTest`, 3): largest first and smallest first, both with the unknown last and
+   ties by title; a size-ordered row's initial sort.
+
+**Not done here:** acceptance on the TV, phone and web (needs 268 deployed and a build on a device).

@@ -368,6 +368,9 @@ data class BrowseCard(
     @SerialName("sort_name") val sortName: String? = null,
     /** Phase 271 (FR-271-5) — the TMDB id of each of [genres], aligned; null for a genre added by hand. */
     @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
+    /** Phase 268 (FR-268-7) — the title's size on disk in bytes (a series: the whole series), for R317's
+     *  *Size* sort. Browse-only, like [imdbRating]; absent when unknown. */
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the

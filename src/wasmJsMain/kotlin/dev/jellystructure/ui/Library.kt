@@ -215,6 +215,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <option value="">recently added ▾</option>
             <option value="title">title A–Z</option>
             <option value="year">year newest first</option>
+            <option value="size">size, largest first</option>
+            <option value="size_asc">size, smallest first</option>
           </select>
           <span class="muted tiny" id="lib-total"></span>
         </div>

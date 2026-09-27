@@ -873,6 +873,8 @@ class MediaJobQueue(
                 " — fixed=$fixed failed=${refusals.size} of ${paths.size}" + refusals.joinToString("") { " · $it" },
         )
         if (fixed > 0) store.resolve(row.media_id)?.let { runCatching { postWriteSync(it) } }
+        // Phase 268 (FR-268-1) — a replaced file's size is recorded now, not at the next pass.
+        if (fixed > 0) runCatching { store.refreshFileSizes(paths) }
         return if (refusals.isEmpty()) Success else Failure(refusals.joinToString(" · "))
     }
 

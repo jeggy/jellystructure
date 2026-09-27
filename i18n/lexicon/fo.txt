@@ -386,6 +386,7 @@ strika
 studio
 stór
 stødd
+størst
 sum
 sun
 sunnudag

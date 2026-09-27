@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.shared.tv.RowConfig
@@ -34,7 +35,7 @@ private var ordDragId: String? = null
 
 private fun idOf(m: MediaItem) = m.jellyfinId ?: m.id
 private fun words() = RowOrder.directionWords(ordBy, ordDesc)
-private fun keyLabel(by: String) = when (by) { "title" -> "Title"; "year" -> "Release year"; else -> "Date added" }
+private fun keyLabel(by: String) = when (by) { "title" -> "Title"; "year" -> "Release year"; "size" -> "Size"; else -> "Date added" }
 
 internal fun wbOrderOpen(row: RowConfig?, collectionName: String?) {
     ordActive = row != null
@@ -60,6 +61,7 @@ internal fun wbOrderSetMatches(items: List<MediaItem>) { ordMatches = items; wbO
 private fun ordered(): List<MediaItem> = RowOrder.resolveAll(
     ordMatches, RowSort(ordBy, ordDesc), if (ordHand) ordPins else emptyList(),
     id = ::idOf, added = { it.recencyKey() }, year = { it.year }, title = { it.title }, sortName = { it.sortName },
+    size = { it.sizeBytes() },   // Phase 268 — the same rule the server serves the row with
 )
 
 // A toast is usually raised right BEFORE a re-render (which replaces the toast element), so it is held

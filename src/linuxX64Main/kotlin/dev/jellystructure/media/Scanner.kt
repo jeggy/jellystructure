@@ -124,6 +124,11 @@ internal fun parseSeasonEpisodes(path: String): Pair<Int?, List<Int>> {
  * all. Never overrides a filename parse that found at least one episode — the filename is the
  * more specific signal when it succeeds.
  */
+/** Phase 268 (FR-268-1) — a file's size from `stat` alone (no descriptor is opened, so Phase 134's FD
+ *  hygiene does not apply). Null when the file cannot be stat'ed. */
+internal fun fileSize(path: String): Long? =
+    runCatching { SystemFileSystem.metadataOrNull(Path(path))?.size }.getOrNull()?.takeIf { it >= 0 }
+
 internal fun resolveSeasonEpisode(filenameParsed: Pair<Int?, List<Int>>, jfSeason: Int?, jfEpisode: Int?): Pair<Int?, List<Int>> =
     if (filenameParsed.second.isEmpty() && jfSeason != null && jfEpisode != null) {
         Pair(jfSeason, listOf(jfEpisode))
@@ -408,6 +413,7 @@ class Scanner(
             year = storedYear,
             kind = MediaKind.MOVIE,
             path = localPath,
+            fileSizeBytes = fileSize(localPath),   // Phase 268
             jellyfinId = jItem.id,
             tmdbId = tmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
@@ -504,6 +510,7 @@ class Scanner(
             year = storedYear,
             kind = MediaKind.MUSIC_VIDEO,
             path = localPath,
+            fileSizeBytes = fileSize(localPath),   // Phase 268
             jellyfinId = jItem.id,
             tmdbId = tmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
@@ -711,6 +718,7 @@ class Scanner(
                         Episode(
                             filename = file.substringAfterLast('/'),
                             path = file,
+                            fileSizeBytes = fileSize(file),   // Phase 268
                             seasonNumber = seasonNum,
                             episodeNumber = epNum,
                             tracks = tracks,
@@ -974,6 +982,7 @@ class Scanner(
             studioLogoPath = primaryCompany?.logoPath,
             secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
             tracks = tracks,
+            fileSizeBytes = fileSize(item.path) ?: item.fileSizeBytes,   // Phase 268
             issueCount = issueCount,
             tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
@@ -1089,6 +1098,7 @@ class Scanner(
                         Episode(
                             filename = file.substringAfterLast('/'),
                             path = file,
+                            fileSizeBytes = fileSize(file),   // Phase 268
                             seasonNumber = seasonNum,
                             episodeNumber = epNum,
                             tracks = tracks,
@@ -1218,6 +1228,7 @@ class Scanner(
             } else null
             updatedEpisodes[idx] = ep.copy(
                 tracks = tracks,
+                fileSizeBytes = if (probeFiles) fileSize(ep.path) ?: ep.fileSizeBytes else ep.fileSizeBytes,   // Phase 268
                 issueCount = epIssueCount,
                 // Phase 128: honest per-episode display language — see the scanMovie comment above.
                 resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },

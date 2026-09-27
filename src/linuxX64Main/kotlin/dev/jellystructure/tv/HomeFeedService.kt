@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
@@ -756,6 +757,7 @@ class HomeFeedService(
     private fun orderRow(items: List<MediaItem>, rowCfg: RowConfig?): List<MediaItem> = RowOrder.resolve(
         items, rowCfg?.sort, rowCfg?.pinned.orEmpty(), rowCfg?.limit,
         id = { it.jellyfinId ?: it.id }, added = { it.recencyKey() }, year = { it.year }, title = { it.title }, sortName = { it.sortName },
+        size = { it.sizeBytes() },   // Phase 268
     )
 
     /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).

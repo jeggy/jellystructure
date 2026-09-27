@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
@@ -126,6 +127,7 @@ class BrowseService(
                 card = item.toMediaCard(lang).withPlaystate(ps),
                 genres = GenreCatalog.displayNames(item, lang, withTitle = false),
                 genreIds = GenreCatalog.displayIds(item),
+                sizeBytes = item.sizeBytes(),   // Phase 268 (FR-268-7)
                 audioLanguages = item.audioLanguages(),
                 quality = item.qualityLabel(),
                 channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },

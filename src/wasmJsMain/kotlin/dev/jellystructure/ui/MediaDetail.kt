@@ -2,6 +2,9 @@
 
 package dev.jellystructure.ui
 
+import dev.jellystructure.model.seasonSizeBytes
+import dev.jellystructure.model.sizeBytes
+import dev.jellystructure.model.formatSize
 import dev.jellystructure.App
 import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkCandidate
@@ -795,6 +798,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <span class="audio-flags" id="subtitle-flags">${subtitleFlagsHtml(item.tracks)}</span>
           $ageRatingBadgeHtml
           ${buildImdbPillHtml(item)}
+          ${run {   // Phase 268 (FR-268-4) — a film's file, a series' whole series (distinct files)
+              val whole = if (item.kind == MediaKind.TV_SHOW) "the whole series, every episode file counted once" else "the file"
+              """<span class="chip" id="size-pill" style="font-size:.75rem;" title="Size on disk — $whole">${formatSize(item.sizeBytes())}</span>"""
+          }}
           <span id="seeding-pill" style="display:none;cursor:pointer;" title="Click to open Seeding tab"></span>
           <span class="spacer"></span>
           ${run {
@@ -1560,6 +1567,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
                  <div class="row center" style="margin-bottom:8px;">
                    <h4 style="margin:0;">${seasonLabel.esc()}</h4>
                    <span class="chip" style="margin-left:8px;font-size:.75rem;">${eps.size} ep</span>
+                   <span class="chip" style="margin-left:6px;font-size:.75rem;" title="This season's size on disk">${formatSize(item.seasonSizeBytes(season))}</span>
                    $issueSummary
                    <span class="spacer"></span>
                    ${if (season != null) """<button class="btn sm ghost season-sync-btn" $seasonAttr style="padding:3px 9px;font-size:.75rem;" title="Sync season $season">↻</button>""" else ""}

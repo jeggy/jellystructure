@@ -86,13 +86,13 @@ import org.jetbrains.compose.resources.painterResource
 enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL, QUALITY }
 /** R318 (FR-R318-2b) — [SOURCE] is the server's own order (the Recommended list's rank), offered only on
  *  a page whose store is source-ordered, and labelled with the page's own title (no new string). */
-enum class SortField { SOURCE, RECENT, TITLE, YEAR, MATURITY, IMDB }
+enum class SortField { SOURCE, RECENT, TITLE, YEAR, MATURITY, IMDB, SIZE }   // R317 — SIZE
 enum class SortDir { ASC, DESC }
 
 /** R253 (FR-R253-2) — 225's served `sort_by`/`sort_descending` onto the page's existing (field, direction)
  *  pair. Absent or unknown ⇒ R187's default (`RECENT · DESC`), never an empty chip. Zero new strings. */
 fun initialBrowseSort(sortBy: String?, descending: Boolean?): Pair<SortField, SortDir> {
-    val field = when (sortBy) { "title" -> SortField.TITLE; "year" -> SortField.YEAR; "added" -> SortField.RECENT; else -> return SortField.RECENT to SortDir.DESC }
+    val field = when (sortBy) { "title" -> SortField.TITLE; "year" -> SortField.YEAR; "added" -> SortField.RECENT; "size" -> SortField.SIZE; else -> return SortField.RECENT to SortDir.DESC }   // R317 (FR-R317-2)
     val dir = when (descending) { true -> SortDir.DESC; false -> SortDir.ASC; null -> if (field == SortField.TITLE) SortDir.ASC else SortDir.DESC }
     return field to dir
 }
@@ -107,6 +107,7 @@ private fun defaultDirFor(field: SortField): SortDir = when (field) {
     SortField.YEAR -> SortDir.DESC
     SortField.MATURITY -> SortDir.ASC
     SortField.IMDB -> SortDir.DESC
+    SortField.SIZE -> SortDir.DESC   // R317 — largest first
 }
 
 /** null bound = "Any" on that side (FR-RV-BROWSE1-6). Both null = filter off. */
@@ -153,6 +154,8 @@ class SeededBrowseStore(
     val recommendations: Boolean = false,
     val sourceLabel: String? = null,
 ) {
+    /** R317 (FR-R317-4) — whether any loaded card carries a size; the *Size* sort is offered only then. */
+    val hasSizes: Boolean get() = (state.value as? SeededBrowseState.Loaded)?.items?.any { it.sizeBytes != null } == true
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeededBrowseState>(SeededBrowseState.Loading)
     val state: StateFlow<SeededBrowseState> = _state.asStateFlow()
@@ -327,6 +330,17 @@ private fun sortedFiltered(store: SeededBrowseStore, all: List<BrowseCard>): Lis
 
 /** The page's ordering, pure (R318: testable without a store). */
 internal fun browseOrder(filtered: List<BrowseCard>, field: SortField, dir: SortDir): List<BrowseCard> {
+    // R317 (FR-R317-1) — by the size the server sent (268's one rule; the client never derives one).
+    // Unknown sizes go last in BOTH directions, and ties read by title either way, so this is not a
+    // plain reverse like the other fields.
+    if (field == SortField.SIZE) {
+        val (known, unknown) = filtered.partition { it.sizeBytes != null }
+        val byTitle = compareBy<BrowseCard> { (it.sortName?.takeIf { n -> n.isNotBlank() } ?: it.card.title).lowercase() }
+        val sized = known.sortedWith(
+            (if (dir == SortDir.DESC) compareByDescending<BrowseCard> { it.sizeBytes } else compareBy { it.sizeBytes }).then(byTitle),
+        )
+        return sized + unknown.sortedWith(byTitle)
+    }
     // ASC ordering per field; RECENT's "ascending" base is the server's own newest-first order, so
     // ASC there reads as oldest-first and DESC (the default) as newest-first — both real orders, not
     // one arbitrary order plus its reverse-for-the-sake-of-it.
@@ -340,6 +354,7 @@ internal fun browseOrder(filtered: List<BrowseCard>, field: SortField, dir: Sort
         SortField.YEAR -> filtered.sortedBy { it.card.year ?: 0 }
         SortField.MATURITY -> filtered.sortedBy { it.card.ageRating }
         SortField.IMDB -> filtered.sortedBy { it.imdbRating?.aggregateRating ?: -1.0 }
+        SortField.SIZE -> filtered   // handled above
     }
     return if (dir == SortDir.DESC) ascending.asReversed() else ascending
 }
@@ -663,6 +678,7 @@ private fun sortLabel(field: SortField, sourceLabel: String?): String = when (fi
     SortField.RECENT -> str("browse.sort.recent"); SortField.TITLE -> str("browse.sort.title")
     SortField.YEAR -> str("browse.sort.year")
     SortField.MATURITY -> str("browse.sort.maturity"); SortField.IMDB -> str("browse.sort.imdb")
+    SortField.SIZE -> str("browse.sort.size")   // R317
 }
 
 /** Bidirectional-sort fix — a short, direction-aware sub-label under the field name in the popover
@@ -675,6 +691,7 @@ private fun sortDirLabel(field: SortField, dir: SortDir): String = when (field) 
     SortField.YEAR -> if (dir == SortDir.DESC) str("browse.sort.newest") else str("browse.sort.oldest")
     SortField.MATURITY -> if (dir == SortDir.ASC) str("browse.sort.low_first") else str("browse.sort.high_first")
     SortField.IMDB -> if (dir == SortDir.DESC) str("browse.sort.high_first") else str("browse.sort.low_first")
+    SortField.SIZE -> if (dir == SortDir.DESC) str("browse.sort.largest") else str("browse.sort.smallest")   // R317
 }
 
 /**
@@ -844,7 +861,8 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
     Box(Modifier.padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
         Column(Modifier.width(260.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
             // R318 — the list's own order exists only on a source-ordered page.
-            SortField.entries.filter { it != SortField.SOURCE || store.recommendations }.forEachIndexed { i, opt ->
+            // R317 (FR-R317-4) — Size only once the server sends sizes (an older server sends none).
+            SortField.entries.filter { (it != SortField.SOURCE || store.recommendations) && (it != SortField.SIZE || store.hasSizes) }.forEachIndexed { i, opt ->
                 var focused by rememberFocusVisual()
                 val active = store.sortField == opt
                 Row(

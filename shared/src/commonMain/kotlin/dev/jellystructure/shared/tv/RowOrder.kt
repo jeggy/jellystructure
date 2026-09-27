@@ -14,7 +14,7 @@ package dev.jellystructure.shared.tv
 object RowOrder {
     const val DEFAULT_LIMIT = 30
     const val MIN_LIMIT = 3
-    val KEYS = listOf("added", "title", "year")
+    val KEYS = listOf("added", "title", "year", "size")   // Phase 268 (FR-268-6) — size
 
     fun effectiveLimit(limit: Int?): Int = limit?.takeIf { it in MIN_LIMIT..DEFAULT_LIMIT } ?: DEFAULT_LIMIT
 
@@ -28,7 +28,8 @@ object RowOrder {
         year: (T) -> Int?,
         title: (T) -> String,
         sortName: (T) -> String?,
-    ): List<T> = resolveAll(matches, sort, pinned, id, added, year, title, sortName).take(effectiveLimit(limit))
+        size: (T) -> Long? = { null },   // Phase 268 — the title's size on disk (its `sizeBytes()`)
+    ): List<T> = resolveAll(matches, sort, pinned, id, added, year, title, sortName, size).take(effectiveLimit(limit))
 
     /** The whole match set in the row's order, UNCAPPED — what the editor previews and picks from, and what
      *  [resolve] takes its first `limit` of. */
@@ -41,12 +42,17 @@ object RowOrder {
         year: (T) -> Int?,
         title: (T) -> String,
         sortName: (T) -> String?,
+        size: (T) -> Long? = { null },
     ): List<T> {
         val name: (T) -> String = { (sortName(it)?.takeIf { s -> s.isNotBlank() } ?: title(it)).lowercase() }
         val comparator: Comparator<T> = when {
             sort == null -> compareByDescending<T> { added(it) }.thenBy { title(it) }          // today, byte for byte
             sort.by == "title" -> if (sort.descending) compareByDescending<T> { name(it) } else compareBy<T> { name(it) }
             sort.by == "year" -> (if (sort.descending) compareByDescending<T> { year(it) ?: 0 } else compareBy<T> { year(it) ?: 0 }).thenBy { name(it) }
+            // Phase 268 (FR-268-6) — unknown sizes last in either direction, then by name.
+            sort.by == "size" -> compareBy<T> { size(it) == null }
+                .then(Comparator { a, b -> val x = size(a) ?: 0L; val y = size(b) ?: 0L; if (sort.descending) y.compareTo(x) else x.compareTo(y) })
+                .thenBy { name(it) }
             else -> (if (sort.descending) compareByDescending<T> { added(it) } else compareBy<T> { added(it) }).thenBy { name(it) }
         }
         if (pinned.isEmpty()) return matches.sortedWith(comparator)
@@ -63,7 +69,7 @@ object RowOrder {
         if (!touched) return null
         val label = row.title ?: row.id
         if (row.kind == RowKind.CONTINUE || row.kind == RowKind.NEWLY_ADDED) return "Row '$label' is a system row and cannot be given an order."   // FR-225-7
-        row.sort?.let { if (it.by !in KEYS) return "Row '$label': sort must be one of added, title, year." }
+        row.sort?.let { if (it.by !in KEYS) return "Row '$label': sort must be one of ${KEYS.joinToString(", ")}." }
         row.limit?.let { if (it !in MIN_LIMIT..DEFAULT_LIMIT) return "Row '$label': a row shows between $MIN_LIMIT and $DEFAULT_LIMIT titles." }
         if (row.pinned.distinct().size > effectiveLimit(row.limit)) return "Row '$label': more hand-picks than the row shows (${effectiveLimit(row.limit)})."
         return null
@@ -73,6 +79,7 @@ object RowOrder {
     fun directionWords(by: String, descending: Boolean): String = when (by) {
         "title" -> if (descending) "Z → A" else "A → Z"
         "year" -> if (descending) "newest release first" else "oldest release first"
+        "size" -> if (descending) "largest first" else "smallest first"
         else -> if (descending) "newest first" else "oldest first"
     }
 

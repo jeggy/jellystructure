@@ -327,6 +327,18 @@ fun main() = runBlocking {
         }
     }
 
+    // Phase 268 (FR-268-3) — every file's size from `stat` (about a second for the whole library): at boot,
+    // which fills titles the freshness cooldown would not re-scan for months, then hourly, which picks up a
+    // file changed outside a scan. One batched write when anything changed; nothing when nothing did.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            runCatching { mediaStore.refreshFileSizes() }
+                .onSuccess { n -> if (n > 0) Logger.info("File sizes: $n title(s) updated", "media") }
+                .onFailure { Logger.warn("File size refresh failed: ${it.message}", "media") }
+            kotlinx.coroutines.delay(3_600_000L)
+        }
+    }
+
     // Phase 243 (FR-243-2) — keep the connected Jellyfin's version fresh on its own.
     //
     // Found by deploying it: `testConnection` (the only thing that latches the version) is called

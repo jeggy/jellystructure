@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.model.sizeBytes
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
@@ -319,6 +320,56 @@ class MediaStore(
         return changed.size
     }
 
+    /**
+     * Phase 268 (FR-268-3) — `stat` [paths] (null = every file the library knows: each film's and music
+     * video's file, each episode's) and store the sizes that changed. Run at boot and hourly in the
+     * background, and after a 254/263 replace, so a size never describes a file that is no longer there.
+     * Returns how many titles changed.
+     */
+    suspend fun refreshFileSizes(paths: Collection<String>? = null): Int {
+        val wanted = paths?.toHashSet()
+        val sizes = HashMap<String, Long>()
+        for (item in allItems()) {
+            val files = if (item.kind == MediaKind.TV_SHOW) item.episodes.map { it.path } else listOf(item.path)
+            for (p in files) if ((wanted == null || p in wanted) && p !in sizes) fileSize(p)?.let { sizes[p] = it }
+        }
+        return setFileSizes(sizes)
+    }
+
+    /**
+     * Phase 268 (dev review item 3) — file sizes by path onto every item that holds them, in ONE
+     * transaction with at most ONE feed bump: a write per title would discard every viewer's Home feed each
+     * time (Phase 204). Each item is re-read inside the transaction, so a scan's write in between is not
+     * overwritten with a stale copy. Not `stampTimestamps`: a size is not an edit.
+     */
+    suspend fun setFileSizes(sizes: Map<String, Long>): Int {
+        fun MediaItem.withSizes(): MediaItem? {
+            var touched = false
+            val eps = if (kind == MediaKind.TV_SHOW) episodes.map { ep ->
+                val s = sizes[ep.path]
+                if (s != null && s != ep.fileSizeBytes) { touched = true; ep.copy(fileSizeBytes = s) } else ep
+            } else episodes
+            val own = if (kind != MediaKind.TV_SHOW) sizes[path]?.takeIf { it != fileSizeBytes } else null
+            if (own != null) touched = true
+            return if (touched) copy(episodes = eps, fileSizeBytes = own ?: fileSizeBytes) else null
+        }
+        val candidates = allItems().filter { it.withSizes() != null }.map { it.id }
+        if (candidates.isEmpty()) return 0
+        var changed = 0
+        db.transaction {
+            for (id in candidates) {
+                val fresh = get(id)?.withSizes() ?: continue
+                upsertItemDbOnly(fresh, examined = false)
+                changed++
+            }
+        }
+        allItemsMutex.withLock { allItemsCache = null }
+        jellyfinIdIndex.value = null
+        genreIndexCache.value = null
+        if (changed > 0) feedVersionAtomic.incrementAndGet()
+        return changed
+    }
+
     /** Phase 196 — epoch ms of the last completed examination of this item's files; see [lastExaminedMap]. */
     fun lastExaminedAt(id: String): Long? = lastExaminedLock.withLock { lastExaminedMap[id] }
 
@@ -554,6 +605,13 @@ class MediaStore(
         val sorted = when (sort) {
             "title" -> decoded.sortedBy { it.title.lowercase() }
             "year" -> decoded.sortedByDescending { it.year ?: 0 }
+            // Phase 268 (FR-268-5) — by the one size rule; unknown sizes last in either direction, ties by title.
+            "size", "size_asc" -> {
+                val desc = sort == "size"
+                decoded.sortedWith(compareBy<MediaItem> { it.sizeBytes() == null }
+                    .then(Comparator { a, b -> val x = a.sizeBytes() ?: 0L; val y = b.sizeBytes() ?: 0L; if (desc) y.compareTo(x) else x.compareTo(y) })
+                    .thenBy { it.title.lowercase() })
+            }
             // "recently added" (default): the real Jellyfin date-added, falling back to scan time for
             // items not yet re-scanned. scannedAt alone sorts by scan order, not add order.
             else -> decoded.sortedByDescending { it.recencyKey() }

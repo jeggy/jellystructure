@@ -210,6 +210,10 @@ data class Episode(
      *  true when jellystructure DID parse a real episode number from the filename — an episode we can't
      *  number either is not repairable and is never flagged. */
     val jellyfinIndexMissing: Boolean = false,
+    /** Phase 268 (FR-268-1) — this episode's file's size in bytes, from `stat` (never by reading it), taken
+     *  whenever the file is recorded. Episodes that share a file (Phase 149) carry the same value. Null
+     *  until the file is next recorded or the boot backfill reaches it. */
+    val fileSizeBytes: Long? = null,
 )
 
 @Serializable
@@ -346,6 +350,10 @@ data class MediaItem(
     /** Phase 269 — TMDB's own vote count and average, for the quality prior where IMDb has no rating. */
     val tmdbVoteCount: Int? = null,
     val tmdbVoteAverage: Double? = null,
+    /** Phase 268 (FR-268-1) — a film's or music video's file size in bytes; null for a series (its size is
+     *  its episodes', see [sizeBytes]) and until the file is recorded. Named apart from [sizeBytes], the
+     *  title's derived size, so the two cannot be confused. */
+    val fileSizeBytes: Long? = null,
 )
 
 /** Phase 269 (dev review item 3) — a matched film or series whose recommendation signals were never
@@ -356,6 +364,29 @@ fun MediaItem.needsRecommendationSignals(): Boolean =
 /** Phase 269 — one TMDB keyword. */
 @Serializable
 data class Keyword(val id: Int, val name: String)
+
+/**
+ * Phase 268 (FR-268-2) — a title's size on disk, the ONE rule every surface uses (the admin pages, the
+ * Library sort, a content row's order, Ravilo's browse sort):
+ * - a film or music video: its file;
+ * - a series: the sum over its episodes' DISTINCT file paths — a 3-in-1 file (Phase 149) once, a duplicate
+ *   copy of an episode in a second file counted (it takes up disk);
+ * - `null` while any of its files has no size yet, never a partial sum shown as the whole.
+ */
+fun MediaItem.sizeBytes(): Long? = when (kind) {
+    MediaKind.TV_SHOW -> episodes.sumOfDistinctFiles()
+    MediaKind.MOVIE, MediaKind.MUSIC_VIDEO -> fileSizeBytes
+}
+
+/** Phase 268 (FR-268-4) — one season's size, by the same distinct-file rule. */
+fun MediaItem.seasonSizeBytes(season: Int?): Long? = episodes.filter { it.seasonNumber == season }.sumOfDistinctFiles()
+
+private fun List<Episode>.sumOfDistinctFiles(): Long? {
+    if (isEmpty()) return null
+    var total = 0L
+    for ((_, eps) in groupBy { it.path }) total += eps.firstNotNullOfOrNull { it.fileSizeBytes } ?: return null
+    return total
+}
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
  *  the admin Library default sort, related-by-genre). Movies sort by their own createdAt; a series

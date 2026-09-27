@@ -253,6 +253,7 @@ menuer
 mere
 mindre
 mindst
+mindste
 mislykkedes
 mistede
 modtaget
@@ -375,6 +376,7 @@ studie
 studier
 stå
 størrelse
+største
 surround
 synstolkning
 så
