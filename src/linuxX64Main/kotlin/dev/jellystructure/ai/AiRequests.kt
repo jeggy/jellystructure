@@ -139,8 +139,10 @@ object AiRequests {
         return request(customId, model, effort, THEMES_MAX_TOKENS, THEMES_SYSTEM, user, THEMES_SCHEMA)
     }
 
-    /** A title the themes job may tag: no TMDB keywords, and a synopsis to read. */
-    fun wantsThemes(item: MediaItem): Boolean = item.keywords.isNullOrEmpty() && !item.overview.isNullOrBlank()
+    /** A title the themes job may tag: TMDB answered and has no keywords for it (`[]`), and there is a
+     *  synopsis to read. `null` keywords means "not fetched yet" (269's backfill), not "TMDB has none":
+     *  tagging those would pay for themes TMDB is about to supply. */
+    fun wantsThemes(item: MediaItem): Boolean = item.keywords?.isEmpty() == true && !item.overview.isNullOrBlank()
 
     /** The synopsis a stored answer was made from, so a changed synopsis is tagged again. */
     fun synopsisHash(item: MediaItem): String {

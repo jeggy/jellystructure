@@ -247,7 +247,10 @@ Built off by default; nothing has been sent to Anthropic from production (no key
     the server's `Json` leaves out a field equal to its default (v1.41's trap, here on an admin route), so
     the tab drew no model list and no prices date. The fields are now required, and a test encodes the
     status the way the server does.
-12. **Tests**: `AiJobsTest` (16): prices and multipliers, the limit check and a refused send, the five
+12. **Also found on production:** *untagged* counted titles whose keywords were never fetched (`null`, 549
+    of 551 that day: 269's backfill had not reached them) as titles TMDB has none for. The themes job now
+    takes only `keywords == []` (TMDB answered, none) with a synopsis.
+13. **Tests**: `AiJobsTest` (17): prices and multipliers, the limit check and a refused send, the five
     validation cases plus themes, the request shape for Haiku vs Opus, resume after a restart with the ledger
     total, the three key-test outcomes, *off sends nothing*, one themes batch per title set and one batch per
     job in flight, and the TOML round-trip. The full backend suite passes (686).

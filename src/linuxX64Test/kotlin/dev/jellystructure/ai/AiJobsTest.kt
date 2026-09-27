@@ -231,6 +231,13 @@ class AiJobsTest {
     }
 
     @Test
+    fun `a title whose keywords were never fetched is not a themes candidate`() {
+        assertFalse(AiRequests.wantsThemes(film(1).copy(keywords = null)))
+        assertTrue(AiRequests.wantsThemes(film(1, keywords = false)))
+        assertFalse(AiRequests.wantsThemes(film(1)))
+    }
+
+    @Test
     fun `themes are sent only for titles without keywords and each once per synopsis`() = runBlocking {
         enable(rerank = false, themes = true)
         val bodies = ArrayList<JsonObject>()
