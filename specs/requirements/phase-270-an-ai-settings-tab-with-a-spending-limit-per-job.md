@@ -254,3 +254,5 @@ Built off by default; nothing has been sent to Anthropic from production (no key
     validation cases plus themes, the request shape for Haiku vs Opus, resume after a restart with the ledger
     total, the three key-test outcomes, *off sends nothing*, one themes batch per title set and one batch per
     job in flight, and the TOML round-trip. The full backend suite passes (686).
+
+**Verified 2026-09-27:** production: Settings → AI renders with three models, the prices' date and estimates (re-rank ≈ $1.60 / $0.64 / $0.32 a month for 4 viewers; themes for the 1 title TMDB answered with no keywords); AI stays off.

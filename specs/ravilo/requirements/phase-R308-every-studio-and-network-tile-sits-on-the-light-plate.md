@@ -245,3 +245,5 @@ the tile's background, ink and tint. No migration.
 6. **Tests.** `LogoReinkTest` (11): the seven synthetic cases, the four re-inks and five misses rebuilt as
    generic 1,000-pixel rasters that measure the same (lost, opaque), and the thumbnail size. No
    production logo is in the repository.
+
+**Verified 2026-09-27:** production's boot pass judged 221 logos and wrote `1` for exactly the four predicted. The release app on the stue TV draws every Studios/Networks tile on the plate (seen against the old backend too); the new app on the soveværelse TV's debug package draws Channel 4 re-inked and Hulu/TV3 in their own colours; the Play app 1.36 on the same TV draws both walls exactly as before (acceptance 5).

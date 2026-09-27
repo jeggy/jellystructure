@@ -138,3 +138,5 @@ e2e block. No Kotlin, no route, no config.
    and the `Dockerfile`'s `COPY` names the icons. `GET /favicon.ico` there answers `200 image/x-icon`.
 5. **E2E:** the check is in `auth.spec.ts`, before any login. It is read-only, so it is also run against
    production after the deploy that carries this phase.
+
+**Verified 2026-09-27:** `GET /favicon.ico` 200 `image/x-icon`, `favicon.svg` 200, `apple-touch-icon.png` 200 on production (v1.42-14); the page declares both icons; e2e `auth.spec.ts` passes.

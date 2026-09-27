@@ -195,3 +195,5 @@ and licence, one preload in the web entry, one check script. No change on Androi
    skipped, `\u` escapes decoded, template expressions skipped) and `i18n/*.json`, and passes (211
    characters). A `⚑` added to `en.json` fails it, naming the character and the key. It runs in CI beside
    `check-ravilo-strings.sh`.
+
+**Verified 2026-09-27:** the web app loads `web_fallback.ttf` (107 KB, served 200 by production's `ravilo-web`) before its first screen and runs with no page errors; the sort chip's triangle and the popover's tick draw on the soveværelse TV (debug) and on the web. The release APK on the stue TV passed ART verification (no rejected classes; the player's widest method at 236 registers).

@@ -137,3 +137,5 @@ one in-memory set. No schema, no DTO change.
    inline link style as *Recently watched ▾* on the same card.
 3. **Not touched:** `design/app/ravilo-users.html` (the design side's mockup; the product copy follows the
    spec's words).
+
+**Verified 2026-09-27:** production admin: the owner's card is first, shows three devices and *+ 9 devices*, which opens to *Show less*.

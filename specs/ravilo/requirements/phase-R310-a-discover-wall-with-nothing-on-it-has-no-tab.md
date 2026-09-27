@@ -182,3 +182,5 @@ type, one re-selection effect. No new cache.
 6. **Tests.** `DiscoverSegmentOrderTest` (11, in `testDebugUnitTest`): no answer shows every wall; each wall
    off alone and in pairs keeps the order and lands on the first left; all three off lands on Coming
    Soon, Request or nothing; stepping never reaches a hidden wall. `FacetsSummaryTest` (2, `shared`).
+
+**Verified 2026-09-27:** the release app against the pre-R310 backend shows all five chips (acceptance 6); a scoped profile on the new backend shows its walls from the summary; the web app on the e2e stack (no networks, no studios, no Sonarr/Seerr) shows one chip, *Genres*, and lands on it.

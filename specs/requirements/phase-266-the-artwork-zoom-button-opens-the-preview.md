@@ -137,3 +137,5 @@ route, one e2e file. No backend change.
    a logo from it and tries to download it from the real image CDN. It clicks the zoom button's centre by
    coordinates on a Clearlogo card and on a Poster card, expects the lightbox each time, and expects no
    `/artwork/candidates/save` request.
+
+**Verified 2026-09-27:** production admin (writes blocked): on a Clearlogo card the element at the zoom button's centre is `BUTTON.art-zoom`, the click opens the lightbox, and no save request is made; the e2e case passes.

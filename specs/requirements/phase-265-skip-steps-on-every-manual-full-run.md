@@ -169,3 +169,5 @@ config change.
    the plan (discovery locked), unticks `verify_files` (the test config has no pipeline, so its plan is
    the built-in default, which has no `detect_segments`), and asserts the run's step plan leaves it out
    and its log line reads *· skipped: verify_files*.
+
+**Verified 2026-09-27:** production admin (writes blocked in the browser): Dashboard's and Library's *Scan library* open the dialog titled *Scan library* with 12 rows, the same 12 steps `GET /api/pipeline/plan` answers; both e2e cases pass.

@@ -98,3 +98,5 @@ is where the next stale translation hides.
 2. `nav.upcoming` is removed from `i18n/{en,da,fo}.json`; `check-i18n-spelling.sh --update-lexicon`
    dropped *kommende* from the Danish lexicon (the Faroese *Komandi* is still used elsewhere).
 3. Built on R310 (same file): its no-segment page already used `nav.discover`.
+
+**Verified 2026-09-27:** the stue TV (release) and the soveværelse TV (debug): the heading reads *Opdag* / *Discover* at one size on every tab.

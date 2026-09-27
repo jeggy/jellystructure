@@ -90,3 +90,5 @@ precaches the shell's icons (R263), the two new files join that list.
    from the dist, so it picks both up.
 4. **E2E**: `ravilo-web-headers.spec.ts` gains *the web app has a tab icon*, run against both serving
    paths (the `ravilo-web` container and the backend's `/tv/`).
+
+**Verified 2026-09-27:** production's `ravilo-web` answers `favicon.svg` and `favicon.ico` 200 and declares both icons; the e2e case passes on both serving paths.
