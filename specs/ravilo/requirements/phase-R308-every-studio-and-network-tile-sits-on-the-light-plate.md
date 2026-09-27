@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Client (`ravilo-ui`, every platform: TV, phone, web) plus one backend judgement that
 extends Phase 232. **Every open question decided the same day**: the owner handed the calls over (*"You
 just decide for me. We want all best solutions for everything"*). See *Decisions* at the end.
@@ -220,3 +220,28 @@ The rule is confirmed on the server's own tool. Five items.
 
 **Net effect.** One pure function, one extra ffmpeg run per logo (once), one sidecar, one DTO field, and
 the tile's background, ink and tint. No migration.
+
+## Build notes (2026-09-27)
+
+1. **The rule** is `logoReinkOf` / `logoReinkMeasure` in `commonMain/.../media/LogoInk.kt` beside
+   `logoInkOf`, with `logoReinkThumbSize` (128 px on the long side, aspect kept, never padded). WCAG
+   luminance with sRGB linearisation, HSV saturation, the two clauses as written.
+2. **Checked against production before building:** a Python port of the same rule over the 221 logos
+   in production's `artwork/{studios,networks}`, rendered with the dev review's filter chain at the
+   computed size, re-inks exactly four, at (lost, opaque) = (0.99, 0.30), (1.00, 0.48), (0.99, 0.13) and
+   (0.67, 0.20), and the nearest misses sit at 0.61–0.72 lost with 0.48–0.54 opaque, and at 0.56–0.82
+   lost with 0.76–1.00 opaque (solid boxes). The same numbers as the dev review.
+3. **Server.** `FfmpegRunner.probeImageSize` (ffprobe) and `rawRgbaThumbAlpha` (`format=rgba,
+   premultiply=inplace=1,scale=W:H:flags=area,unpremultiply=inplace=1`). `LogoDownloader.computeMissingInk`
+   judges every logo without a `<slug>.reink` sidecar (`1`/`0`; an unreadable logo is `0`, so it is not
+   retried), in the same background pass; a replaced logo drops `.reink` with `.ink`. `logoReink(kind,
+   name)` is a cached sidecar read, `true` or absent.
+4. **Wire.** `FacetItem.logoReink` (`logo_reink`), set only when true, through `FacetsAcc.toFacets`.
+   `logo_ink` is unchanged. R319's `WireCompatTest` passes.
+5. **Client.** `TaxonomyTile`: Studios and Networks always on `TAXO_LOGO_PLATE`; the no-logo name in
+   `TAXO_PLATE_INK` (`#1B1E2B`); a `logo_reink` logo drawn with `ColorFilter.tint(TAXO_PLATE_INK)` (SrcIn).
+   `RemoteImage` gained `colorFilter: ColorFilter? = null`, passed to `AsyncImage`; no other caller
+   changed. Genres keep `colors.surfaceVariant` and `colors.text`.
+6. **Tests.** `LogoReinkTest` (11): the seven synthetic cases, the four re-inks and five misses rebuilt as
+   generic 1,000-pixel rasters that measure the same (lost, opaque), and the thumbnail size. No
+   production logo is in the repository.

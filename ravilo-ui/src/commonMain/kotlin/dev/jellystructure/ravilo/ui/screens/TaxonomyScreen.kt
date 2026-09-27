@@ -217,6 +217,9 @@ internal fun titleCountLabel(n: Int): String =
  */
 private const val TAXO_TV_COLUMNS = 6
 private val TAXO_LOGO_PLATE = androidx.compose.ui.graphics.Color(0xFFE8EAF0)
+/** R308 (FR-R308-2/3) — the one dark ink on the plate: a no-logo tile's name, and a re-inked logo. Fixed,
+ *  not the skin's `colors.text` (light on every skin, so it would vanish on the plate). */
+private val TAXO_PLATE_INK = androidx.compose.ui.graphics.Color(0xFF1B1E2B)
 
 @Composable
 private fun TaxonomyTile(
@@ -255,11 +258,12 @@ private fun TaxonomyTile(
                 .height(cardHeight)
                 .graphicsLayer { val s = if (focused) 1.045f else 1f; scaleX = s; scaleY = s }
                 // R257 (FR-R257-3) — a captured logo is dark ink on transparency far more often than not (88
-                // of 135 in production; TMDB draws them for a light page), so a logo tile gets a light
-                // plate; a wordmark tile keeps the dark card and light ink.
-                // R259 (FR-R259-5) — …except a logo the server has judged LIGHT ink (232: Channel 4's white mark),
-                // which keeps the dark card it was drawn for. Unknown ink = the light plate.
-                .background(if (item.logoUrl != null && item.logoInk != "light") TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
+                // of 135 in production; TMDB draws them for a light page), so a logo gets a light plate.
+                // R308 (FR-R308-1) — every Studios and Networks tile now sits on it, logo or not, whatever its
+                // ink (supersedes R243/R257's dark wordmark card and R259's dark card for a light-ink logo):
+                // one ground per wall. The server says which logos only re-inking can show (FR-R308-3).
+                // Genres keep their dark cards (FR-R308-6).
+                .background(if (!genre) TAXO_LOGO_PLATE else colors.surfaceVariant, shape)
                 .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
                 .padding(horizontal = if (handset || item.logoUrl == null) 10.dp else 16.dp),
             contentAlignment = Alignment.Center,
@@ -271,11 +275,12 @@ private fun TaxonomyTile(
                     contentDescription = item.name,
                     modifier = Modifier.fillMaxWidth(0.74f).height(cardHeight * 0.56f),
                     contentScale = ContentScale.Fit,
+                    colorFilter = if (item.logoReink == true) androidx.compose.ui.graphics.ColorFilter.tint(TAXO_PLATE_INK) else null,
                 )
             } else {
                 Text(
                     item.name,
-                    color = colors.text,
+                    color = if (genre) colors.text else TAXO_PLATE_INK,
                     fontSize = wmSize,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SpaceGrotesk,

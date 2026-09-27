@@ -80,3 +80,63 @@ fun clearlogoInkOf(rgba: ByteArray, width: Int, height: Int): String? {
         else -> null
     }
 }
+
+/**
+ * R308 (FR-R308-4) — should a studio/network logo be RE-INKED (drawn in one dark ink) to show on
+ * Ravilo's light plate `#E8EAF0`? Narrower than [logoInkOf]'s `light`: many light logos are coloured
+ * and read on the plate by hue (a yellow 5, a lime wordmark), and tinting a logo with an opaque body
+ * turns it into a silhouette. So the rule is about legibility on this plate:
+ * - a visible pixel (alpha > 16) is *lost* when its WCAG contrast against the plate is below
+ *   [REINK_MIN_CONTRAST] AND its HSV saturation is below [REINK_MIN_SATURATION];
+ * - `lost` = the alpha-weighted share of lost pixels; `opaque` = the share of all pixels with alpha > 240;
+ * - re-ink when essentially everything is lost and the logo is not a solid block (`lost ≥ 0.95`,
+ *   `opaque ≤ 0.90`), or when most is lost and it is thin ink on transparency (`lost ≥ 0.60`,
+ *   `opaque ≤ 0.30`) — which leaves a white shape with its own outline or body alone.
+ * Measured on an aspect-keeping, alpha-correct 128 px thumbnail (FfmpegRunner.rawRgbaThumbAlpha): over
+ * the 221 production logos on 2026-09-26 it re-inks exactly four.
+ */
+private const val REINK_MIN_CONTRAST = 1.6
+private const val REINK_MIN_SATURATION = 0.5
+private val PLATE_LUMINANCE = wcagLuminance(0xE8, 0xEA, 0xF0)
+
+private fun srgbLinear(c: Int): Double {
+    val v = c / 255.0
+    return if (v <= 0.04045) v / 12.92 else kotlin.math.exp(2.4 * kotlin.math.ln((v + 0.055) / 1.055))
+}
+
+private fun wcagLuminance(r: Int, g: Int, b: Int): Double = 0.2126 * srgbLinear(r) + 0.7152 * srgbLinear(g) + 0.0722 * srgbLinear(b)
+
+/** The two measurements [logoReinkOf] decides on, exposed for its tests: (lost, opaque). */
+fun logoReinkMeasure(rgba: ByteArray, width: Int, height: Int): Pair<Double, Double>? {
+    val pixels = width * height
+    if (pixels <= 0 || rgba.size < pixels * 4) return null
+    var lostWeight = 0.0
+    var alphaSum = 0.0
+    var opaque = 0
+    for (i in 0 until pixels) {
+        val o = i * 4
+        val a = rgba[o + 3].toInt() and 0xFF
+        if (a > 240) opaque++
+        if (a <= 16) continue
+        val r = rgba[o].toInt() and 0xFF; val g = rgba[o + 1].toInt() and 0xFF; val b = rgba[o + 2].toInt() and 0xFF
+        val l = wcagLuminance(r, g, b)
+        val contrast = (maxOf(l, PLATE_LUMINANCE) + 0.05) / (minOf(l, PLATE_LUMINANCE) + 0.05)
+        val max = maxOf(r, g, b); val min = minOf(r, g, b)
+        val saturation = if (max == 0) 0.0 else (max - min).toDouble() / max
+        if (contrast < REINK_MIN_CONTRAST && saturation < REINK_MIN_SATURATION) lostWeight += a
+        alphaSum += a
+    }
+    if (alphaSum == 0.0) return null
+    return (lostWeight / alphaSum) to (opaque.toDouble() / pixels)
+}
+
+fun logoReinkOf(rgba: ByteArray, width: Int, height: Int): Boolean {
+    val (lost, opaque) = logoReinkMeasure(rgba, width, height) ?: return false
+    return (lost >= 0.95 && opaque <= 0.90) || (lost >= 0.60 && opaque <= 0.30)
+}
+
+/** R308 (dev review item 2) — the thumbnail [logoReinkOf] is measured on: 128 px on the long side,
+ *  aspect kept, never padded (padding would change the `opaque` share the thresholds were set on). */
+fun logoReinkThumbSize(width: Int, height: Int): Pair<Int, Int> =
+    if (width >= height) 128 to maxOf(1, kotlin.math.round(height * 128.0 / width).toInt())
+    else maxOf(1, kotlin.math.round(width * 128.0 / height).toInt()) to 128

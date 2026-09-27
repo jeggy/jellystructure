@@ -9,6 +9,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import coil3.PlatformContext
@@ -42,6 +43,9 @@ fun RemoteImage(
      * of decoding the full 1920px backdrop (~8.3 MB) into a 256dp slot.
      */
     requestedWidth: Int? = null,
+    /** R308 (FR-R308-3) — e.g. a source-in tint that re-inks a logo the server judged invisible on its
+     *  plate. Null = draw the image as it is (every caller before R308). */
+    colorFilter: ColorFilter? = null,
 ) {
     // R85: relative paths (e.g. /api/tv/image/{id}/poster) are resolved against the server base URL.
     // Absolute TMDB/Jellyfin URLs (https://…) pass through unchanged.
@@ -77,6 +81,7 @@ fun RemoteImage(
         placeholder = placeholder,
         error = placeholder,
         fallback = placeholder,
+        colorFilter = colorFilter,
     )
 }
 

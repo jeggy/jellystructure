@@ -54,8 +54,39 @@ class LogoDownloader(
         return ink
     }
 
+    // ── R308 — whether the client re-inks a logo to show on the light plate, a `<slug>.reink` sidecar ──
+    private val reinkCache = HashMap<String, Boolean>()
+
+    /** FR-R308-4/5 — read-only and cheap, like [logoInk]. `true` only when judged so; `null` = draw as is. */
+    fun logoReink(kind: String, name: String): Boolean? {
+        val logo = logoFile(kind, name)
+        reinkCache[logo]?.let { return it.takeIf { v -> v } }
+        val side = Path(logo.removeSuffix(".png") + ".reink")
+        if (!SystemFileSystem.exists(side)) return null
+        val reink = runCatching { FileIo.readBytes(side).decodeToString().trim() == "1" }.getOrDefault(false)
+        reinkCache[logo] = reink
+        return reink.takeIf { it }
+    }
+
+    /** R308 (FR-R308-4) — one more ffmpeg run per logo, ever: the re-ink verdict on an aspect-keeping,
+     *  alpha-correct 128 px thumbnail. An unreadable logo is written `0` (draw as is), so it is not retried. */
+    private suspend fun judgeReink(path: String) {
+        val side = path.removeSuffix(".png") + ".reink"
+        val raw = "$side.rgba"
+        val reink = runCatching {
+            val (w, h) = FfmpegRunner.probeImageSize(path) ?: return@runCatching false
+            val (tw, th) = logoReinkThumbSize(w, h)
+            if (!FfmpegRunner.rawRgbaThumbAlpha(path, raw, tw, th)) false
+            else logoReinkOf(FileIo.readBytes(Path(raw)), tw, th)
+        }.getOrDefault(false)
+        runCatching { SystemFileSystem.delete(Path(raw), mustExist = false) }
+        runCatching { FileIo.writeBytes(Path(side), (if (reink) "1" else "0").encodeToByteArray()) }
+        reinkCache.remove(path)
+    }
+
     /** FR-232-2 — one ffmpeg run per logo, EVER: fills in missing sidecars for every captured studio and
-     *  network logo. Called at boot and after a fetch batch, on the background gate class. */
+     *  network logo. Called at boot and after a fetch batch, on the background gate class. R308 adds the
+     *  re-ink verdict to the same pass, for a logo that has no `.reink` yet. */
     suspend fun computeMissingInk(): Int {
         var done = 0
         for (kind in listOf("studios", "networks")) {
@@ -64,6 +95,7 @@ class LogoDownloader(
             for (file in SystemFileSystem.list(dir)) {
                 val path = file.toString()
                 if (!path.endsWith(".png")) continue
+                if (!SystemFileSystem.exists(Path(path.removeSuffix(".png") + ".reink"))) { judgeReink(path); done++ }
                 val side = path.removeSuffix(".png") + ".ink"
                 if (SystemFileSystem.exists(Path(side))) continue
                 val raw = "$side.rgba"
@@ -151,7 +183,11 @@ class LogoDownloader(
             FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
             // Phase 232 (FR-232-4) — a replaced logo is re-judged: drop its ink sidecar + cache entry.
-            if (destPath.endsWith(".png")) { inkCache.remove(destPath); runCatching { SystemFileSystem.delete(Path(destPath.removeSuffix(".png") + ".ink"), mustExist = false) } }
+            if (destPath.endsWith(".png")) {
+                inkCache.remove(destPath); runCatching { SystemFileSystem.delete(Path(destPath.removeSuffix(".png") + ".ink"), mustExist = false) }
+                // R308 — the re-ink verdict is re-judged with it.
+                reinkCache.remove(destPath); runCatching { SystemFileSystem.delete(Path(destPath.removeSuffix(".png") + ".reink"), mustExist = false) }
+            }
             Logger.info("Downloaded logo: $destPath", "artwork")
             true
         }

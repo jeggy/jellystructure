@@ -1580,6 +1580,10 @@ data class FacetItem(
      *  in the viewer's app language. Absent for a genre added by hand and for every other facet. Additive:
      *  an installed app ignores it and keeps sending [name], which the server resolves in any language. */
     val id: Int? = null,
+    /** R308 (FR-R308-5) — `true` only on a studio/network logo the server judged invisible on the light
+     *  plate unless re-inked (the client then tints it in one dark ink); absent = draw it as it is. Additive:
+     *  an installed app ignores it and keeps reading [logoInk]. */
+    @kotlinx.serialization.SerialName("logo_reink") val logoReink: Boolean? = null,
 )
 
 /**

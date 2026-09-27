@@ -337,10 +337,15 @@ class BrowseService(
             item.tags.distinctBy { TaxonomyKey.key(it) }.forEach { tags.add(it) }
         }
 
-        fun toFacets(scoped: Boolean, logoUrl: (String, String) -> String?, logoInk: (String, String) -> String?): BrowseFacets = BrowseFacets(
+        fun toFacets(
+            scoped: Boolean,
+            logoUrl: (String, String) -> String?,
+            logoInk: (String, String) -> String?,
+            logoReink: (String, String) -> Boolean? = { _, _ -> null },
+        ): BrowseFacets = BrowseFacets(
             genres   = genres.items(),
-            studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name), logoInk("studios", it.name)) },
-            networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name), logoInk("networks", it.name)) },
+            studios  = studios.entries().map { FacetItem(it.name, it.count, logoUrl("studios", it.name), logoInk("studios", it.name), logoReink = logoReink("studios", it.name)) },
+            networks = networks.entries().map { FacetItem(it.name, it.count, logoUrl("networks", it.name), logoInk("networks", it.name), logoReink = logoReink("networks", it.name)) },
             tags     = tags.entries().map { FacetItem(it.name, it.count) },
             library  = library,
             titles   = mapOf("studios" to studioTitles, "networks" to networkTitles, "genres" to genreTitles, "tags" to tagTitles),
@@ -369,6 +374,8 @@ class BrowseService(
         }
         // Phase 232 (FR-232-3) — a sidecar READ only; judging happens in the background (LogoDownloader).
         val logoInk: (String, String) -> String? = { k, name -> if (logoDownloader?.hasLogo(k, name) == true) logoDownloader.logoInk(k, name) else null }
+        // R308 (FR-R308-5) — `true` only on a logo judged to re-ink; absent otherwise. `logo_ink` is untouched.
+        val logoReink: (String, String) -> Boolean? = { k, name -> if (logoDownloader?.hasLogo(k, name) == true) logoDownloader.logoReink(k, name) else null }
         // R267 (FR-R267-5c) — every kind's count, in ONE response. The phone's Library dropdown shows
         // four counts at once, and `facets(kind)` answers for one slice per call: four round trips
         // would be four chances to disagree, and the client may not sum them itself
@@ -379,7 +386,7 @@ class BrowseService(
             "series" to series.library,
             MUSIC_KIND to music.library,
         )
-        fun FacetsAcc.facets() = toFacets(scoped, logoUrl, logoInk).copy(kindCounts = counts)
+        fun FacetsAcc.facets() = toFacets(scoped, logoUrl, logoInk, logoReink).copy(kindCounts = counts)
         return FacetsEntry(all.facets(), movie.facets(), series.facets(), music.facets(), 0L, 0L, 0)
     }
 

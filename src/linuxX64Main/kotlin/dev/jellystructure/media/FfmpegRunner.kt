@@ -300,6 +300,28 @@ object FfmpegRunner {
         return runCommand("ffmpeg -y -v error -i '$inEsc' -vf scale=$size:$size:flags=area -frames:v 1 -pix_fmt rgba -f rawvideo '$outEsc' 2>&1")
     }
 
+    /** R308 (FR-R308-4) — an image's pixel size via ffprobe, or null. */
+    suspend fun probeImageSize(input: String): Pair<Int, Int>? {
+        val inEsc = input.replace("'", "'\\''")
+        val out = captureCommand("ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x '$inEsc' 2>/dev/null") ?: return null
+        val parts = out.trim().lineSequence().firstOrNull()?.split('x') ?: return null
+        val w = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: return null
+        val h = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: return null
+        return if (w > 0 && h > 0) w to h else null
+    }
+
+    /**
+     * R308 (FR-R308-4) — [input] as one [width]×[height] raw RGBA frame, resized with alpha taken into
+     * account: premultiplied before the area average and un-premultiplied after, so the colour of the
+     * transparent pixels does not bleed into thin strokes ([rawRgbaThumb]'s straight `flags=area` makes a
+     * white wordmark read 0.74 luminance at 32 px). The caller passes the aspect-keeping size.
+     */
+    suspend fun rawRgbaThumbAlpha(input: String, output: String, width: Int, height: Int): Boolean {
+        val inEsc = input.replace("'", "'\\''")
+        val outEsc = output.replace("'", "'\\''")
+        return runCommand("ffmpeg -y -v error -i '$inEsc' -vf format=rgba,premultiply=inplace=1,scale=$width:$height:flags=area,unpremultiply=inplace=1 -frames:v 1 -pix_fmt rgba -f rawvideo '$outEsc' 2>&1")
+    }
+
     /**
      * Phase 187 (FR-187-6) — server-side centre-crop-to-square + bound, for an uploaded account photo.
      * There is no crop UI (R234 FR-R234-9: the owner didn't ask for one, every surface renders a
