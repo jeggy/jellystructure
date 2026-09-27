@@ -206,6 +206,17 @@ class AiJobsTest {
         assertEquals(AnthropicClient.KeyCheck.UNREACHABLE, AnthropicClient(FakeTransport { _, _, _ -> error("no route to host") }).testKey("k"))
     }
 
+    // ─── The tab's status, encoded as the server encodes ──────────────────────
+
+    @Test
+    fun `the status carries the model list and the prices date on the wire`() = runBlocking {
+        val status = jobs(FakeTransport { _, _, _ -> error("no call") }).status(viewers = 4)
+        val wire = Json { ignoreUnknownKeys = true }.encodeToJsonElement(AiJobs.Status.serializer(), status).jsonObject
+        assertEquals(3, (wire["models"] as kotlinx.serialization.json.JsonArray).size)
+        assertEquals("\"${AiPricing.AS_OF}\"", wire["pricesAsOf"].toString())
+        assertEquals(3, wire["rerank"]!!.jsonObject["estimateMicroUsd"]!!.jsonObject.size)
+    }
+
     // ─── Off means off (dev review item 8) ────────────────────────────────────
 
     @Test

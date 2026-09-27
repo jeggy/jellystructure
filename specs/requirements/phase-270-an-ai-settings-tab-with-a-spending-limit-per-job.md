@@ -243,7 +243,11 @@ Built off by default; nothing has been sent to Anthropic from production (no key
 10. **Admin tab** (`ui/SettingsAi.kt`): *Use AI*, provider, key with *Test key* and the saved hint, one card
     per job (switch, model with prices, effort hidden for Haiku, monthly limit, spent, last run, estimate),
     what is sent (FR-270-8) and the prices' date. The TOML preview never echoes the key.
-11. **Tests**: `AiJobsTest` (15): prices and multipliers, the limit check and a refused send, the five
+11. **Found on production the same day:** the status DTO gave `models` and `pricesAsOf` default values, and
+    the server's `Json` leaves out a field equal to its default (v1.41's trap, here on an admin route), so
+    the tab drew no model list and no prices date. The fields are now required, and a test encodes the
+    status the way the server does.
+12. **Tests**: `AiJobsTest` (16): prices and multipliers, the limit check and a refused send, the five
     validation cases plus themes, the request shape for Haiku vs Opus, resume after a restart with the ledger
     total, the three key-test outcomes, *off sends nothing*, one themes batch per title set and one batch per
     job in flight, and the TOML round-trip. The full backend suite passes (686).

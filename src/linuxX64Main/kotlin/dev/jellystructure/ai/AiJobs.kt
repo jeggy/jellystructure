@@ -248,11 +248,13 @@ class AiJobs(
         val estimateBasis: String = "",
     )
 
+    /** No field here has a default: the server's `Json` leaves out a field equal to its default, and the tab
+     *  then drew no model list and no prices date (found on production the day it shipped). */
     @Serializable
     data class Status(
-        val keyHint: String? = null,
-        val pricesAsOf: String = AiPricing.AS_OF,
-        val models: List<ModelDto> = AiPricing.MODELS.map { ModelDto(it.id, it.label, it.inputPerMTok, it.outputPerMTok, it.effort) },
+        val keyHint: String?,
+        val pricesAsOf: String,
+        val models: List<ModelDto>,
         val rerank: JobStatus,
         val themes: JobStatus,
     )
@@ -276,6 +278,8 @@ class AiJobs(
         val (themesEst, themesBasis) = estimate(AiRequests.THEMES_JOB, THEMES_ASSUMED, untagged.toDouble())
         return Status(
             keyHint = key.takeIf { it.length >= 8 }?.let { "…" + it.takeLast(4) },
+            pricesAsOf = AiPricing.AS_OF,
+            models = AiPricing.MODELS.map { ModelDto(it.id, it.label, it.inputPerMTok, it.outputPerMTok, it.effort) },
             rerank = job(AiRequests.RERANK_JOB, rerankEst, "$viewers viewer${if (viewers == 1) "" else "s"} × about ${RUNS_PER_MONTH.toInt()} runs a month · $rerankBasis"),
             themes = job(AiRequests.THEMES_JOB, themesEst, "once, for $untagged untagged title${if (untagged == 1) "" else "s"} · $themesBasis"),
         )
