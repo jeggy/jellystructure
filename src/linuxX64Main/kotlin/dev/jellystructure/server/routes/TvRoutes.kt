@@ -9,6 +9,7 @@ import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.shared.tv.DiscoverResponse
+import dev.jellystructure.shared.tv.wallSummary
 import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.FavoriteRequest
@@ -640,6 +641,14 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val kind = call.request.queryParameters["kind"]
         call.respond(browseService.facets(device, kind))
+    }
+
+    // R310 (FR-R310-3) — which Discover walls hold anything for this viewer: three counts, read from the
+    // very per-viewer facets cache the walls are drawn from, so a chip and its wall cannot disagree. A
+    // separate path, not a query flag, so an older server answers 404 rather than the full facets.
+    get("/tv/facets/summary") {
+        val device = call.attributes[DeviceKey]
+        call.respond(browseService.facets(device, null).wallSummary())
     }
 
     // ── Phase 218 (FR-218-9): Chromecast hand-off ────────────────────────────

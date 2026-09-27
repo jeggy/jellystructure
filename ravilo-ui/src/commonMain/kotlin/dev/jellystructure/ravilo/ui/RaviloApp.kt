@@ -264,7 +264,9 @@ private sealed class Dest {
     // actually renders (see DiscoverSegment/defaultDiscoverSegment in NavItems.kt).
     // R243 — [focusSegment] is set by a segment-bar switch (replaceTop), so the next screen keeps
     // focus on the chip that was pressed rather than parking it on the AppBar (FR-R243-7).
-    data class Discover(val displayName: String, val segment: DiscoverSegment, val focusSegment: Boolean = false) : Dest()
+    // R310 (FR-R310-5) — `null` when no segment is available at all: Discover opens with no chips and
+    // FR-R243-8's one sentence.
+    data class Discover(val displayName: String, val segment: DiscoverSegment?, val focusSegment: Boolean = false) : Dest()
     // R171 — addressed by mediaType ("movie"|"tv") + tmdbId; Request rows have no rank concept.
     data class DiscoverItem(val mediaType: String, val tmdbId: Int, val displayName: String) : Dest()
     // R171 — the Request tab's Seerr-scoped search (FR-R171-3), a separate destination from the
@@ -550,6 +552,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         var discoverAvailable by remember { mutableStateOf(false) }
         // R160: same pattern for the Coming Soon segment (server-gated on [sonarr]/[radarr] presence).
         var upcomingAvailable by remember { mutableStateOf(false) }
+        // R310 (FR-R310-3) — which library walls hold anything for this viewer; null = no answer (show all).
+        var taxonomyWalls by remember { mutableStateOf<Set<DiscoverSegment>?>(null) }
         // R170 — the avatar opens this dropdown (My List/Settings/Switch profile/Unpair) instead of
         // pushing straight to the profile picker.
         var profileMenuOpen by remember { mutableStateOf(false) }
@@ -1038,6 +1042,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 SideEffect { discoverAvailable = da }
                 val ua by store.upcomingAvailable.collectAsState()
                 SideEffect { upcomingAvailable = ua }
+                val tw by store.taxonomyWalls.collectAsState()
+                SideEffect { taxonomyWalls = tw }
                 // R141: on every Home re-entry (including Back-returns) the store does a silent re-pull.
                 // HomeStore.refresh(silent=true) keeps the current content visible and swaps in the new
                 // feed when it arrives — no Loading flash.
@@ -1077,7 +1083,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> {} // already home
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onSearch = { push(Dest.Search(dest.displayName)) },
@@ -1123,7 +1129,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1171,7 +1177,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1265,7 +1271,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1284,7 +1290,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onItemSelect = { openDetail(it, dest.displayName) },
@@ -1313,8 +1319,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 // R243 (FR-R243-1) — the segment bar shows every available segment; a chip press swaps
                 // the segment in place (replaceTop, same Dest class ⇒ AnimatedContent's contentKey skips
                 // the slide transition) and keeps focus on that chip via focusSegment.
-                val segs = discoverSegments(upcomingAvailable, discoverAvailable)
+                val segs = discoverSegments(upcomingAvailable, discoverAvailable, taxonomyWalls)
                 val onSegment: (DiscoverSegment) -> Unit = { seg -> replaceTop(Dest.Discover(dest.displayName, seg, focusSegment = true)) }
+                // R310 (FR-R310-4) — the segment on screen lost its chip (a refresh said its wall is now empty,
+                // or the integration went away): move to the first chip left, in place, with focus on it. A
+                // wall that gains values just appears in its declared place.
+                val landing = if (dest.segment != null && dest.segment in segs) dest.segment else segs.firstOrNull()
+                if (landing != dest.segment) LaunchedEffect(segs, dest.segment) { replaceTop(Dest.Discover(dest.displayName, landing, focusSegment = landing != null)) }
                 // The Discover nav button while already on Discover: step to the next segment rather than
                 // no-op (the R170 fix, generalised — this screen's two-stage Back routinely parks focus on it).
                 val onNav: (Int) -> Unit = { idx ->
@@ -1322,7 +1333,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                         RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                         RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                        RaviloNavTarget.DISCOVER -> nextDiscoverSegment(segs, dest.segment)?.let { replaceTop(Dest.Discover(dest.displayName, it)) } ?: Unit
+                        RaviloNavTarget.DISCOVER -> dest.segment?.let { cur -> nextDiscoverSegment(segs, cur) }?.let { replaceTop(Dest.Discover(dest.displayName, it)) } ?: Unit
                     }
                 }
                 // R262 (FR-R262-7) — one frame, warmed on entry regardless of which segment shows first:
@@ -1424,7 +1435,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1473,7 +1484,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1596,7 +1607,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1751,7 +1762,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                                 if (alreadyHere) reselectTick++
                                 resetTo(Dest.Discover(
                                     destDisplayName(dest),
-                                    defaultDiscoverSegment(upcomingAvailable, discoverAvailable),
+                                    defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls),
                                 ))
                             }
                         }

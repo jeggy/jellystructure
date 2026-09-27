@@ -55,6 +55,10 @@ class HomeStore(
     // this and [discoverAvailable] into the single Discover tab — see raviloNavItems/DiscoverSegment.
     private val _upcomingAvailable = MutableStateFlow(false)
     val upcomingAvailable: StateFlow<Boolean> = _upcomingAvailable.asStateFlow()
+    // R310 (FR-R310-3) — which of the three library walls hold anything for this viewer. `null` = no answer
+    // (an older server's 404, or a failure): every wall is shown, as before this phase.
+    private val _taxonomyWalls = MutableStateFlow<Set<DiscoverSegment>?>(null)
+    val taxonomyWalls: StateFlow<Set<DiscoverSegment>?> = _taxonomyWalls.asStateFlow()
     // Phase R177 — the Home "On now" row; empty when Live TV is disabled/not placed on Home
     // (HomeFeed.liveTvHome null or showOnNowRow false).
     private val _liveTvChannels = MutableStateFlow<List<LiveTvChannel>>(emptyList())
@@ -140,6 +144,7 @@ class HomeStore(
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
+        refreshTaxonomyWalls()
     }
 
     /** R212 — same bounded backoff as [load], but never disturbs the seeded feed already on screen:
@@ -152,6 +157,7 @@ class HomeStore(
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
+        refreshTaxonomyWalls()
     }
 
     /** (Re)starts the "On now" poll loop iff [feed] places it on Home; a no-op restart when the
@@ -182,6 +188,18 @@ class HomeStore(
         scope.launch { _upcomingAvailable.value = runCatching { apiClient.getUpcoming().enabled }.getOrDefault(false) }
     }
 
+    private fun refreshTaxonomyWalls() {
+        scope.launch {
+            _taxonomyWalls.value = runCatching { apiClient.getFacetsSummary() }.getOrNull()?.let { s ->
+                buildSet {
+                    if (s.networks > 0) add(DiscoverSegment.NETWORKS)
+                    if (s.studios > 0) add(DiscoverSegment.STUDIOS)
+                    if (s.genres > 0) add(DiscoverSegment.GENRES)
+                }
+            }
+        }
+    }
+
     /**
      * [silent] = true keeps the current Loaded feed on screen and swaps in the new one when it
      * arrives (no Loading flash, scroll/focus preserved) — used for R33 live config push.
@@ -209,5 +227,6 @@ class HomeStore(
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
+        refreshTaxonomyWalls()
     }
 }

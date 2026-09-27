@@ -128,6 +128,14 @@ class TvApiClient(
         return json.decodeFromString<BrowseFacets>(r.bodyAsText())
     }
 
+    /** R310 (FR-R310-3) — which Discover walls hold anything for this viewer. `null` when the server has
+     *  no such route (an older backend answers 404) or the call fails: the caller then shows every wall. */
+    suspend fun getFacetsSummary(): FacetsSummary? {
+        val r = client.get("$baseUrl/api/tv/facets/summary") { auth() }
+        if (!r.status.isSuccess()) return null
+        return json.decodeFromString<FacetsSummary>(r.bodyAsText())
+    }
+
     /** R187 — resolves a "→ See all" seed ([Row.seedQuery]/[Row.seedMediaKind]) to the FULL matching
      *  set as [BrowseCard]s; the caller computes every facet's counts/filtering/sort reactively from
      *  this one response — see [SeededBrowseResponse]'s doc comment for why no further round trip. */

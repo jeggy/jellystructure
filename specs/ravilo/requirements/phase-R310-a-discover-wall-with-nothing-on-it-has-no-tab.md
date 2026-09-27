@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Client (`ravilo-ui`: TV, phone, web) plus one small additive backend answer. **Every choice
 decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
 solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the
@@ -160,3 +160,25 @@ Every seam named is where the spec says. Six items.
 
 **Net effect.** One small route, one fetch beside two existing ones, one filter parameter, one nullable
 type, one re-selection effect. No new cache.
+
+## Build notes (2026-09-27)
+
+1. **Server.** `GET /api/tv/facets/summary` beside `/api/tv/facets`, answering
+   `browseService.facets(device, null).wallSummary()`: `FacetsSummary(networks, studios, genres)`, the three
+   list sizes, from the same per-viewer cache. `FacetsSummary` and `wallSummary()` live in `shared`.
+2. **Client.** `TvApiClient.getFacetsSummary()` returns `null` on any non-success (an older server's
+   404). `HomeStore.refreshTaxonomyWalls()` runs beside the two existing gates on all three load/refresh
+   paths and exposes `taxonomyWalls: StateFlow<Set<DiscoverSegment>?>`; `RaviloApp` mirrors it like the
+   other two. `discoverSegments(…, walls)` shows a wall when `walls == null || seg in walls`;
+   `defaultDiscoverSegment` is `firstOrNull()`; all nine call sites pass the walls.
+3. **Nullable landing.** `Dest.Discover.segment: DiscoverSegment?`. `DiscoverScreen` shows the title
+   *Discover*, no chips and FR-R243-8's `tx.empty` sentence for `null`; the chip bar is not drawn with no
+   segments, and its focus effect spends the press token on `null`.
+4. **FR-R310-4** is one effect in the `Dest.Discover` branch: when the segment on screen is not in the
+   list (or is `null` and a segment has appeared), `replaceTop` to the first one left, with focus on its
+   chip.
+5. **Wire.** `FacetsSummary` joined R319's roots (`scripts/wire_roots.py`, `WireRoots.kt` regenerated);
+   no release in the baseline has it, so it is checked from the next baseline on.
+6. **Tests.** `DiscoverSegmentOrderTest` (11, in `testDebugUnitTest`): no answer shows every wall; each wall
+   off alone and in pairs keeps the order and lands on the first left; all three off lands on Coming
+   Soon, Request or nothing; stepping never reaches a hidden wall. `FacetsSummaryTest` (2, `shared`).

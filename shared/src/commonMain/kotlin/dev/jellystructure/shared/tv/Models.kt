@@ -1587,6 +1587,20 @@ data class FacetItem(
 )
 
 /**
+ * R310 (FR-R310-3) — `GET /api/tv/facets/summary`: how many values each Discover library wall holds for
+ * this viewer. The client shows a wall's chip when its count is above zero and does no other arithmetic.
+ */
+@Serializable
+data class FacetsSummary(
+    val networks: Int = 0,
+    val studios: Int = 0,
+    val genres: Int = 0,
+)
+
+/** R310 — the summary of these facets: the sizes of the three wall lists, nothing else. */
+fun BrowseFacets.wallSummary(): FacetsSummary = FacetsSummary(networks = networks.size, studios = studios.size, genres = genres.size)
+
+/**
  * Phase 216 (FR-216-1) — the browse facet bar's counts, now also the Discover wall's index (R243).
  * Every list is per-viewer (counted over what this device can see), count-descending with the
  * display name as tie-break, normalised so two spellings of one value cannot both appear.

@@ -82,10 +82,9 @@ class DiscoverSegmentOrderTest {
     }
 
     @Test
-    fun theFirstChipIsNetworksOnEveryHousehold() {
-        // FR-R268-2: the taxonomy segments cannot be gated off, so entry is the same everywhere.
-        // ⚠ A real behaviour change for the household with neither integration, which used to land on
-        // Studios — named here because it gets no other change from this phase.
+    fun theFirstChipIsNetworksOnEveryHouseholdThatHasNetworks() {
+        // FR-R268-2: with every wall holding something (or no answer from the server: R310), entry is the
+        // same everywhere. R310 gates the walls themselves; the tests below cover that.
         for (upcoming in listOf(false, true)) {
             for (discover in listOf(false, true)) {
                 assertEquals(DiscoverSegment.NETWORKS, defaultDiscoverSegment(upcoming, discover))
@@ -102,6 +101,55 @@ class DiscoverSegmentOrderTest {
         assertEquals(DiscoverSegment.NETWORKS, nextDiscoverSegment(neither, DiscoverSegment.GENRES))
         assertEquals(DiscoverSegment.REQUEST, nextDiscoverSegment(both, DiscoverSegment.COMING_SOON))
         assertEquals(DiscoverSegment.NETWORKS, nextDiscoverSegment(both, DiscoverSegment.REQUEST))
+    }
+
+    // ── R310 (FR-R310-7) — a wall with nothing on it has no chip ──
+
+    private val net = DiscoverSegment.NETWORKS
+    private val stu = DiscoverSegment.STUDIOS
+    private val gen = DiscoverSegment.GENRES
+
+    @Test
+    fun noAnswerFromTheServerShowsEveryWall() {
+        assertEquals(both, discoverSegments(upcomingAvailable = true, discoverAvailable = true, walls = null))
+    }
+
+    @Test
+    fun aWallGatedOffAloneOrInPairsKeepsTheOrderAndLandsOnTheFirstLeft() {
+        val cases = mapOf(
+            setOf(stu, gen) to listOf(stu, gen),
+            setOf(net, gen) to listOf(net, gen),
+            setOf(net, stu) to listOf(net, stu),
+            setOf(gen) to listOf(gen),
+            setOf(stu) to listOf(stu),
+            setOf(net) to listOf(net),
+        )
+        for ((walls, expected) in cases) {
+            val segs = discoverSegments(upcomingAvailable = true, discoverAvailable = true, walls = walls)
+            assertEquals(expected + listOf(DiscoverSegment.COMING_SOON, DiscoverSegment.REQUEST), segs, "walls $walls")
+            assertEquals(DISCOVER_SEGMENT_ORDER.filter { it in segs }, segs, "re-ordered for $walls")
+            assertEquals(expected.first(), defaultDiscoverSegment(true, true, walls))
+        }
+    }
+
+    @Test
+    fun allThreeOffLandsOnTheIntegrationsOrOnNothing() {
+        val none = emptySet<DiscoverSegment>()
+        assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(upcomingAvailable = true, discoverAvailable = true, walls = none))
+        assertEquals(DiscoverSegment.REQUEST, defaultDiscoverSegment(upcomingAvailable = false, discoverAvailable = true, walls = none))
+        assertEquals(emptyList(), discoverSegments(upcomingAvailable = false, discoverAvailable = false, walls = none))
+        assertEquals(null, defaultDiscoverSegment(upcomingAvailable = false, discoverAvailable = false, walls = none))
+    }
+
+    @Test
+    fun steppingNeverReachesAHiddenWall() {
+        val segs = discoverSegments(upcomingAvailable = false, discoverAvailable = true, walls = setOf(stu))
+        assertEquals(listOf(stu, DiscoverSegment.REQUEST), segs)
+        var cur: DiscoverSegment = stu
+        repeat(6) {
+            cur = nextDiscoverSegment(segs, cur)!!
+            assertTrue(cur in segs, "stepped onto $cur")
+        }
     }
 
     @Test

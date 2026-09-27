@@ -5,7 +5,7 @@ import glob, re, sys
 
 RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedEnvelope', 'AcquisitionRecord',
     'BrowseFacets', 'CardPlayState', 'CastHandoffResponse', 'Channel', 'DeviceStatusEnvelope', 'DiscoverDetail',
-    'DiscoverEntry', 'DiscoverResponse', 'HomeFeed', 'LiveTvChannel', 'LiveTvGuideProgram', 'LiveTvStreamTicket',
+    'DiscoverEntry', 'DiscoverResponse', 'FacetsSummary', 'HomeFeed', 'LiveTvChannel', 'LiveTvGuideProgram', 'LiveTvStreamTicket',
     'MediaCard', 'MovieDetail', 'NavigateEnvelope', 'PairResult', 'PlayItemEnvelope', 'PlayerCommandEnvelope',
     'PlaystateChangedEnvelope', 'PlaystateCommandEnvelope', 'RaviloConfig', 'RemoteDevice', 'RemotePairResponse',
     'ScreenCodeResponse', 'SearchResults', 'SeededBrowseResponse', 'SeerrSearchResults', 'SeriesDetail',

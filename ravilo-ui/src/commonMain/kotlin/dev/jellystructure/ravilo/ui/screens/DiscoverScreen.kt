@@ -58,7 +58,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun DiscoverScreen(
-    segment: DiscoverSegment,
+    /** R310 (FR-R310-5) — `null` when no segment is available: no chips, and FR-R243-8's sentence. */
+    segment: DiscoverSegment?,
     segments: List<DiscoverSegment>,
     onSegment: (DiscoverSegment) -> Unit,
     // R262 (dev review item 2) — lives on the destination (R243's focusSegment), so it survives a
@@ -139,16 +140,16 @@ fun DiscoverScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(
-                                discoverHeaderTitle(segment), color = colors.text,
+                                if (segment == null) str("nav.discover") else discoverHeaderTitle(segment), color = colors.text,
                                 fontSize = if (segment == DiscoverSegment.COMING_SOON) 26.sp else 22.sp,
                                 fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk,
                             )
-                            Text(discoverHeaderSubtitle(segment), color = colors.textSecondary, fontSize = 13.sp)
+                            if (segment != null) Text(discoverHeaderSubtitle(segment), color = colors.textSecondary, fontSize = 13.sp)
                         }
                         if (segment == DiscoverSegment.REQUEST) SeerrSearchPill(onSelect = onSearchSeerr)
                     }
                     Spacer(Modifier.height(12.dp))
-                    DiscoverSegmentBar(
+                    if (segments.isNotEmpty()) DiscoverSegmentBar(
                         segments = segments,
                         active = segment,
                         onSelect = onSegment,
@@ -159,6 +160,11 @@ fun DiscoverScreen(
                 // FR-R262-2 — loading/error are content-region states; the frame above never changes.
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     when (segment) {
+                        // R310 (FR-R310-5) — nothing to discover for this household: one sentence, no chips.
+                        null -> Text(
+                            str("tx.empty"), color = colors.textSecondary, fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = raviloHPad, vertical = 26.dp),
+                        )
                         DiscoverSegment.COMING_SOON -> {
                             val store = upcomingStore
                             if (store == null) DiscoverLoading() else {

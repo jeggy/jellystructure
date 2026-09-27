@@ -97,12 +97,18 @@ val TAXONOMY_SEGMENTS: Set<DiscoverSegment> =
  * with neither integration reached Discover and landed on a segment that was not rendered. With one
  * declared list and a filter, that entire class of bug is unrepresentable.
  */
-fun discoverSegments(upcomingAvailable: Boolean, discoverAvailable: Boolean): List<DiscoverSegment> =
+fun discoverSegments(
+    upcomingAvailable: Boolean,
+    discoverAvailable: Boolean,
+    /** R310 (FR-R310-1) — the library walls the server says hold anything for this viewer; `null` = no
+     *  answer (an older server), so every wall is shown as before. */
+    walls: Set<DiscoverSegment>? = null,
+): List<DiscoverSegment> =
     DISCOVER_SEGMENT_ORDER.filter { seg ->
         when (seg) {
             DiscoverSegment.COMING_SOON -> upcomingAvailable
             DiscoverSegment.REQUEST -> discoverAvailable
-            else -> seg in TAXONOMY_SEGMENTS
+            else -> seg in TAXONOMY_SEGMENTS && (walls == null || seg in walls)
         }
     }
 
@@ -117,8 +123,13 @@ fun discoverSegments(upcomingAvailable: Boolean, discoverAvailable: Boolean): Li
  * to land on **Studios** and now lands on **Networks**. Intended, and named here because that household
  * gets no other change from this phase and is the one most likely to notice.
  */
-fun defaultDiscoverSegment(upcomingAvailable: Boolean, discoverAvailable: Boolean): DiscoverSegment =
-    discoverSegments(upcomingAvailable, discoverAvailable).first()
+/*
+ * R310 (FR-R310-2/5) — the library walls can now be gated too (a wall with no values for this viewer has
+ * no chip), so this lands on the first chip that is left, and is `null` when nothing is: Discover then
+ * opens with no chips and one sentence.
+ */
+fun defaultDiscoverSegment(upcomingAvailable: Boolean, discoverAvailable: Boolean, walls: Set<DiscoverSegment>? = null): DiscoverSegment? =
+    discoverSegments(upcomingAvailable, discoverAvailable, walls).firstOrNull()
 
 /** The segment after [current] in [segments] (wrapping) — what the Discover nav button does while a
  *  Discover screen is already showing, so the button is never inert under focus. */
@@ -152,7 +163,7 @@ fun discoverSegmentLabel(seg: DiscoverSegment): String = when (seg) {
 @Composable
 fun DiscoverSegmentBar(
     segments: List<DiscoverSegment>,
-    active: DiscoverSegment,
+    active: DiscoverSegment?,
     onSelect: (DiscoverSegment) -> Unit,
     focusActiveOnEntry: Boolean = false,
     onFocusConsumed: () -> Unit = {},
@@ -183,8 +194,10 @@ fun DiscoverSegmentBar(
         if (animate) scrollState.animateScrollTo(target) else scrollState.scrollTo(target)
     }
 
-    LaunchedEffect(focusActiveOnEntry, active, chipBounds[active], viewportWidth) {
+    LaunchedEffect(focusActiveOnEntry, active, active?.let { chipBounds[it] }, viewportWidth) {
         if (!focusActiveOnEntry) return@LaunchedEffect
+        // R310 (FR-R310-5) — no segment at all: nothing to focus, and the press token is spent.
+        if (active == null) { onFocusConsumed(); return@LaunchedEffect }
         // FR-R268-7 + dev review item 5 — SEQUENCE the scroll and the focus request; never race them.
         // This codebase has been bitten by exactly that three times: R232 (the season row's scroll and
         // focus ran as concurrent coroutines, so the first Down only *looked* like it focused), R223

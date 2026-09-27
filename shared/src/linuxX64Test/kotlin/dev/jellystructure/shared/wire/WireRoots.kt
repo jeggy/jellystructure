@@ -16,6 +16,7 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("DiscoverDetail", WireDir.RESPONSE, DiscoverDetail.serializer()),
     WireRoot("DiscoverEntry", WireDir.RESPONSE, DiscoverEntry.serializer()),
     WireRoot("DiscoverResponse", WireDir.RESPONSE, DiscoverResponse.serializer()),
+    WireRoot("FacetsSummary", WireDir.RESPONSE, FacetsSummary.serializer()),
     WireRoot("HomeFeed", WireDir.RESPONSE, HomeFeed.serializer()),
     WireRoot("LiveTvChannel", WireDir.RESPONSE, LiveTvChannel.serializer()),
     WireRoot("LiveTvGuideProgram", WireDir.RESPONSE, LiveTvGuideProgram.serializer()),
