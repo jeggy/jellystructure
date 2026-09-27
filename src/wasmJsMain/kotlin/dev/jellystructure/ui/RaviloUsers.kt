@@ -237,6 +237,24 @@ private suspend fun loadRecommendations(scope: CoroutineScope, userId: String, r
     }
 }
 
+// Phase 267 (FR-267-2/3/4) — a user's devices and web sessions show three at a time; the rest are in the
+// page, only hidden, behind one line. Which lists are open is kept for the page's lifetime so *Refresh*
+// and the re-render after a *Revoke* never fold a list away under the pointer (Activity's
+// expandedJobGroups pattern). A new page load starts collapsed.
+private const val USERS_SHOWN = 3
+private val expandedDeviceUsers = mutableSetOf<String>()
+private val expandedSessionUsers = mutableSetOf<String>()
+
+/** The rows after the first [USERS_SHOWN], wrapped so one toggle can show them, plus that toggle. */
+private fun collapsible(kind: String, userId: String, rows: List<String>, noun: String, hiddenNote: String, open: Boolean): String {
+    if (rows.size <= USERS_SHOWN) return rows.joinToString("")
+    val hidden = rows.size - USERS_SHOWN
+    val closedLabel = "+ $hidden $noun${if (hidden != 1) "s" else ""}$hiddenNote"
+    return rows.take(USERS_SHOWN).joinToString("") +
+        """<div class="users-more-rows" data-kind="$kind" data-user="$userId" style="display:${if (open) "block" else "none"}">${rows.drop(USERS_SHOWN).joinToString("")}</div>""" +
+        """<button class="tiny users-more-toggle" data-kind="$kind" data-user="$userId" data-closed="${closedLabel.esc()}" style="background:none;border:none;color:var(--acc-ink);cursor:pointer;padding:6px 0 0">${if (open) "Show less" else closedLabel.esc()}</button>"""
+}
+
 private suspend fun refreshUsersList(scope: CoroutineScope) {
     val listEl = document.getElementById("users-list") as? HTMLElement ?: return
     val users = runCatching { dev.jellystructure.api.RaviloApi.getOverview() }.getOrNull()
@@ -276,7 +294,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
             else -> (listOf(access) + tagBits).joinToString(" · ")
         }
 
-        val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
+        val deviceRowList = u.devices.map { d ->
             val vhId = "vh-${u.userId.filter { it.isLetterOrDigit() }}-${d.deviceId.filter { it.isLetterOrDigit() }}"   // Phase 259
             val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""
             val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing ${it.esc()}</div>""" } ?: ""
@@ -303,10 +321,14 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                  <button class="btn sm ghost users-revoke-device" data-device="${d.deviceId}" data-user="${u.userId}">Revoke</button>
                </div>"""
         }
+        // FR-267-5 — a connected device can only be hidden when more than three are connected; say so.
+        val hiddenConnected = u.devices.drop(USERS_SHOWN).count { it.connected }
+        val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>"""
+            else collapsible("dev", u.userId, deviceRowList, "device", if (hiddenConnected > 0) " · $hiddenConnected connected" else "", u.userId in expandedDeviceUsers)
 
         val sessionRows = if (u.sessions.isEmpty()) "" else """
             <div class="tiny muted" style="margin-top:10px;margin-bottom:2px">Admin web sessions</div>
-        """ + u.sessions.joinToString("") { s ->
+        """ + collapsible("ses", u.userId, u.sessions.map { s ->
             val cur = if (s.isCurrent) """<span class="badge info" style="margin-left:6px">this session</span>""" else ""
             """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
                  <div style="flex:1;min-width:0">
@@ -315,7 +337,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                  </div>
                  <button class="btn sm ghost users-revoke-session" data-id="${s.id}" data-current="${s.isCurrent}">Revoke</button>
                </div>"""
-        }
+        }, "session", "", u.userId in expandedSessionUsers)
 
         """<div class="card" style="margin-bottom:12px;padding:14px 16px">
              <div class="row center" style="margin-bottom:4px">
@@ -340,6 +362,21 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
            </div>"""
     }
 
+    // Phase 267 (FR-267-2/3/4) — show the rest / show less, in place; the open set outlives re-renders.
+    listEl.querySelectorAll(".users-more-toggle").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val kind = btn.getAttribute("data-kind") ?: return@addEventListener
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                val set = if (kind == "dev") expandedDeviceUsers else expandedSessionUsers
+                val open = if (userId in set) { set.remove(userId); false } else { set.add(userId); true }
+                (listEl.querySelector(""".users-more-rows[data-kind="$kind"][data-user="$userId"]""") as? HTMLElement)
+                    ?.style?.display = if (open) "block" else "none"
+                btn.textContent = if (open) "Show less" else (btn.getAttribute("data-closed") ?: "")
+            }
+        }
+    }
     // Phase 259 (FR-259-7) — the history toggle; all rows start closed, nothing is remembered across loads.
     listEl.querySelectorAll(".usr-vh-btn").let { nodes ->
         for (i in 0 until nodes.length) {

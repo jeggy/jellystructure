@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). One route (`GET /api/tv/admin/overview`) and the admin page (`RaviloUsers.kt`, plus
 `design/app/ravilo-users.html` on the design side). **Numbering:** verified against `STATUS.md` the same
 day — admin taken through **266**.
@@ -122,3 +122,18 @@ The measurements hold. Five items.
 
 **Net effect.** One pure ordering function in the route, two hidden-row blocks and a toggle on the page,
 one in-memory set. No schema, no DTO change.
+
+## Build notes (2026-09-27)
+
+1. **Server.** `server/routes/OverviewOrder.kt` holds the three rules as pure functions (devices:
+   connected, then `last_seen`, then `created_at`, all newest first; sessions: `last_used_at`; users:
+   activity with *connected* = now, then name, case-insensitive). The route applies them after building
+   the overview; the SQL is unchanged. `OverviewOrderTest` (4) holds each rule, including the
+   connected-but-stale TV.
+2. **Page.** `collapsible()` in `RaviloUsers.kt` renders the first three rows, the rest inside a
+   `.users-more-rows` block (in the page, hidden) and one `+ N devices` / `+ N sessions` line, with
+   `· N connected` when a hidden device is connected (FR-267-5). The toggle flips the block in place;
+   `expandedDeviceUsers` / `expandedSessionUsers` are read by every re-render. The line uses the same
+   inline link style as *Recently watched ▾* on the same card.
+3. **Not touched:** `design/app/ravilo-users.html` (the design side's mockup; the product copy follows the
+   spec's words).

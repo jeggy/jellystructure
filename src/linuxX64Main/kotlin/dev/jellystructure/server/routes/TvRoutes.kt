@@ -1040,7 +1040,19 @@ fun Route.tvRoutes(
                 },
             )
         }
-        call.respond(users)
+        // Phase 267 (FR-267-1) — ordered here, by stated rules; the page renders what it gets.
+        val nowMs = dev.jellystructure.nowEpochSec() * 1000L
+        val ordered = OverviewOrder.users(
+            users.map { u ->
+                u.copy(
+                    devices = OverviewOrder.devices(u.devices, { it.connected }, { it.lastSeen }, { it.createdAt }),
+                    sessions = OverviewOrder.sessions(u.sessions) { it.lastUsedAt },
+                )
+            },
+            activity = { u -> OverviewOrder.activity(nowMs, u.devices.any { it.connected }, u.devices.map { it.lastSeen }, u.sessions.map { it.lastUsedAt }) },
+            name = { it.username },
+        )
+        call.respond(ordered)
     }
 
     // Phase 259 (FR-259-9) — the Users & devices page-bar chip. "Latest" is this backend's own version (the
