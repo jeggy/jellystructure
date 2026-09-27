@@ -12,7 +12,8 @@
 
 `Planned` — written 2026-09-27 from two research passes the same day (a single animated series, then every
 sidecar in the production library; the reports are private because they name library titles). The owner
-answered the open questions the same day (see *Owner decisions*). Not dev-reviewed. Backend (a check, a hook, a Bazarr steering loop, an advisor) and admin (verdicts on the title
+answered the open questions the same day (see *Owner decisions*). **Dev-reviewed 2026-09-27** against `main`
+`0766a76b`: buildable, three corrections folded into the text below (see *Dev review* at the end). Backend (a check, a hook, a Bazarr steering loop, an advisor) and admin (verdicts on the title
 page, a Dashboard card, a Bazarr advisor). **No Ravilo client change and no new wire value for Ravilo**: the
 server stops offering a subtitle it knows is wrong, and that is all a viewer sees. Numbering verified against
 `STATUS.md` the same day: admin taken through **272**.
@@ -33,7 +34,7 @@ judges whether they fit. Everything else stays with the tool that already does i
 | Finding and downloading subtitles, providers, language profiles, history | **Bazarr** | Tells Bazarr which subtitle is wrong (blacklist), which candidate to take (manual download), where a mislabelled file belongs (upload) |
 | Retiming a subtitle | **Bazarr** (ffsubsync) | Tells Bazarr which reference to sync against, how far to search and whether to fix the frame rate, then checks the result |
 | Extracting embedded subtitles | **Jellyfin** | Keeps the text `prewarm_subtitles` already asks Jellyfin for, instead of throwing it away |
-| Telling Jellyfin a subtitle changed | **Bazarr** (its Jellyfin integration) | Advises turning it on, and sets it up when the admin presses *Apply* |
+| Telling Jellyfin a subtitle changed | **jellystructure** (dev review item 1) | Tells Jellyfin about exactly the file that changed. Bazarr's own integration does nothing without library ids and otherwise falls back to rescanning whole libraries |
 | Deciding whether a subtitle fits its video | **jellystructure** | New in this phase |
 | Knowing which settings in Bazarr work against that | **jellystructure** (advisor) | New in this phase: says what to change, where, and why, and applies it when the admin presses *Apply in Bazarr* |
 
@@ -282,7 +283,8 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
 - **FR-273-16 — A budget, and a say.** Every Bazarr action that costs a provider download (blacklist rounds,
   neighbour downloads) counts against a daily budget in Settings → Download tools → Bazarr (default 100 a day;
   OpenSubtitles VIP allows 1,000). One setting says what jellystructure does about a bad subtitle:
-  - **Fix it** (default): FR-273-11 to FR-273-15 run on their own for verdicts from a subtitle reference. A
+  - **Fix it** (default on a new install; an existing install starts on *Only report* and the owner switches it
+    once, dev review item 8): FR-273-11 to FR-273-15 run on their own for verdicts from a subtitle reference. A
     subtitle that only the speech track doubts (`cant_tell · weak` against speech) is hidden from viewers at once
     (FR-273-17) and waits in *Needs your OK* before Bazarr is asked to throw it away (owner decision 2).
   - **Ask me first**: every action waits in *Needs your OK* with what it would do. Hiding from viewers still
@@ -299,7 +301,8 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
   - doubted by the speech track and waiting for the admin (FR-273-16).
 
   No client change and no new wire value: the track simply is not in the list, and it comes back the moment it
-  checks `in_sync`. This narrows R180's "nothing hidden" invariant to tracks that belong to the video, and says
+  checks `in_sync`. The same rule decides every place a subtitle language is named (dev review item 2): the
+  title's language flags in Ravilo and in the admin must never list a language the player will not offer. This narrows R180's "nothing hidden" invariant to tracks that belong to the video, and says
   so in R180's spec when this is built.
 
   `cant_tell` subtitles stay offered. Of the checked subtitles, 97% were the right content, so hiding every
@@ -327,7 +330,6 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
   | Sync leaves PAL subtitles slow | *Do Not Fix Framerate Mismatch* | off | 13 subtitles here are timed for 25 fps |
   | Upgrades without the hook | *Upgrade Previously Downloaded Subtitles* (Upgrading Subtitles) | shown only while the hook is not set | an upgrade uses the same score that cannot see the episode; with the hook, jellystructure re-checks and restores (FR-273-15) |
   | A minimum score that rejects everything | *Minimum Score For Episodes* / *For Movies* (Search Scores) | ≤ 92% (shown only above) | the score's floor for any labelled result is 91.7%; above it only hash and release-group matches survive, 3% of right subtitles |
-  | Jellyfin is not told | *Refresh series metadata after downloading subtitles* (Integrations → Jellyfin) | on | a replaced or removed subtitle stays listed in Jellyfin until its next scan |
   | A show searched by title | per show; fixed at the source of Sonarr's ids | an IMDb id on the show's TheTVDB entry | Bazarr has no IMDb id for 41 shows and searches them by title; one got another show's subtitle. The finding names the show and the IMDb id jellystructure knows from TMDB |
 
   Trade-offs are stated plainly: sync costs an audio decode per download where the file has no embedded
@@ -347,7 +349,6 @@ title; 2 of the 4 subtitles fetched that way are wrong, one of them from another
   | The hook | `general.use_postprocessing` on, `general.postprocessing_cmd` = the generated command, both score thresholds for post-processing off |
   | Sync | `subsync.use_subsync` on, `subsync.max_offset_seconds` 300, `subsync.no_fix_framerate` off |
   | Minimum score | the value shown (only when it is above 92%) |
-  | Jellyfin is not told | a **dedicated Jellyfin API key named Bazarr**, created through Jellyfin's `POST /Auth/Keys` with jellystructure's admin token (jellystructure never hands out its own token), then Bazarr's Jellyfin URL and key, `general.use_jellyfin` on, and the series and movie refresh switches on |
   | A show searched by title | no button: the fix is an IMDb id on the show's TheTVDB entry, which the finding links to |
 
   The hook finding also keeps a Copy button for the command, for an admin who prefers to paste it.
@@ -390,7 +391,8 @@ The Ravilo DTOs do not change (FR-273-17 only removes a track from a list).
 ## Storage
 
 `subtitle_check` and `subtitle_reference` (FR-273-7), a small `subtitle_settled` table for FR-273-15's copies
-(path, language, content, checked_at), the budget ledger, and the *Needs your OK* queue. One forward migration.
+(path, language, content, checked_at), the budget ledger, and the *Needs your OK* queue. One forward migration
+(58).
 Config: `bazarr.check_action` (`fix` · `ask` · `report`), `bazarr.daily_download_budget`, and the address Bazarr
 reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both run beside the backend).
 
@@ -400,10 +402,12 @@ reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both 
    counts of *Today* within a few per class for the 944 sidecars that had a reference, and flags the same 192 by
    duration.
 2. **The known cases.** A test pins the animated series' 34 old subtitles with a reference: 15 fit, 19 do not, the
-   10 identifiable ones point at the right episodes.
+   10 identifiable ones point at the right episodes. The fixture holds cue timings only, under opaque ids: no
+   subtitle text and no title enters the repo (dev review item 3).
 3. **Speech agrees before it is trusted.** On files with both an embedded reference and stereo audio, speech
    verdicts agree with subtitle verdicts on at least 95% of *fits*, and never call `not_this_video` (FR-273-4).
-4. **The hook.** A subtitle Bazarr downloads is checked within a minute of the download, and *Custom
+4. **The hook.** A subtitle Bazarr downloads for a file whose reference is already stored is checked within a
+   minute of the download, even while a TV plays (dev review item 5), and *Custom
    Post-Processing* with the generated command pasted in shows *Last called …* on the Bazarr card.
 5. **An offset is fixed by Bazarr.** A sidecar measured 50 s late is synced by Bazarr with `max_offset_seconds=120`
    and the embedded reference, re-checks `in_sync`, and History shows both steps.
@@ -412,12 +416,12 @@ reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both 
 7. **The budget holds.** With a budget of 5, the sixth provider download of the day waits until tomorrow.
 8. **Viewers.** A `not_this_video` sidecar, and one 50 s late, are absent from the Ravilo subtitle list and from
    default selection; an `in_sync` sibling in the same language is offered; the late one is offered again once
-   Bazarr's sync makes it `in_sync`.
+   Bazarr's sync makes it `in_sync`. The title's detail page, in Ravilo and in the admin, lists the same subtitle
+   languages the player offers (dev review item 2).
 9. **The advisor is silent where Bazarr is already right**, and on this server today shows the hook, sync, max
-   offset, frame rate, Jellyfin integration and title-search findings.
+   offset, frame rate and title-search findings, and not the minimum score (90% today).
 10. ***Apply* changes only what it names.** Bazarr's settings read before and after an *Apply* differ in exactly
-    the finding's keys; the finding then disappears; jellystructure's log has the before and after values. The Jellyfin
-    finding's *Apply* leaves a new API key named Bazarr in Jellyfin and jellystructure's own token unused by Bazarr.
+    the finding's keys; the finding then disappears; jellystructure's log has the before and after values.
 11. **Nothing rather than wrong.** An episode whose candidates are all wrong (the animated series has 13 today)
     ends with no subtitle in that language, not a wrong one, and says so on its page.
 
@@ -435,7 +439,7 @@ reaches jellystructure at (defaulting to 165's `jellyfin_reach_url`, since both 
 - **Checking embedded subtitles.** They are the reference.
 - **Changing a Bazarr setting without the admin pressing *Apply*.**
 
-## For dev review
+## For dev review (answered below, items 4 and 1)
 
 The owner's decisions settled the design questions. These are facts to confirm in Bazarr before building:
 
@@ -452,3 +456,126 @@ The owner's decisions settled the design questions. These are facts to confirm i
 Read-only first: run the check with *Only report* on a copy of production's database and the live Jellyfin cache,
 compare with the research data, then enable *Ask me first* for one series with a known shift and one with a known
 offset, then *Fix it*. Run `scripts/check-phases.sh` and, for the admin, `scripts/check-mobile-css.sh`.
+
+## Dev review (2026-09-27, against `main` `0766a76b`)
+
+Buildable, with three corrections (items 1–3, already folded into the text above) and the answers to *For dev
+review* (item 4). Bazarr facts below were read from the running v1.6.1's source (`/app/bazarr/bin/`) and, where
+marked, from read-only calls to the production Bazarr. Nothing was written to Bazarr or Jellyfin.
+
+1. **Correction: jellystructure tells Jellyfin, not Bazarr's Jellyfin integration.** Bazarr's
+   `jellyfin_refresh_item` returns without doing anything while `series_library_ids` / `movie_library_ids` are
+   empty (they are, and Bazarr has no Jellyfin URL or key yet). With them set, an item it cannot find by IMDb,
+   TMDB, TVDB id or title falls back to `POST /Library/Media/Updated` over every configured library path, a
+   directory rescan of whole libraries for one subtitle; 41 shows here have no IMDb id. jellystructure already has
+   the precise tools: `JellyfinClient.notifyLibraryMediaUpdated(path)` (phase 114, one path) and
+   `refreshItem(…, full = false)` (`ValidationOnly`). After every hook call and every change it causes, it sends
+   the sidecar's own path (`Created`, `Modified` or `Deleted`), and a `ValidationOnly` refresh of that one item if
+   the stream list has not changed a minute later. The advisor's Jellyfin finding and its *Apply* (a dedicated
+   Jellyfin API key) are removed. Build-time check on the demo Jellyfin, never production: which of the two calls
+   makes Jellyfin 12.1 list a new external subtitle and drop a deleted one.
+2. **Correction: every surface that names subtitle languages follows FR-273-17.** `DetailService` builds the
+   Ravilo detail flags from store tracks, sidecars included (`DetailService.kt:81`, `:200`), and the admin
+   pagebar's SUBTITLES strip does the same (200). Hiding a track only in `PlaybackService.buildSubtracks`
+   (`:863`) would bring back phase 200's contradiction (the detail says Danish, the player has none). One predicate,
+   `SubtitleVerdicts.offered(track)`, is used by `buildSubtracks`, `DetailService` and the admin strip.
+   - `buildSubtracks` reads Jellyfin's `MediaStreams`, and `JellyfinMediaStream` (`auth/Models.kt:245`) has no
+     `Path`. Add `@SerialName("Path")` and match an external stream to its sidecar by file name within the
+     item's folder, since Jellyfin, Bazarr and jellystructure each see the media under a different root.
+   - Default and remembered subtitle choice is client-side (R235's rule in `PlayerScreen.kt`, around `:4102`)
+     and picks only from the list the server sends, so leaving the track out is the whole change. The spec's
+     "(253, R235)" means exactly that; no server-side subtitle default exists to change.
+   - In HLS mode (R265) Jellyfin's manifest still carries the rendition, but the picker only offers what
+     `SubTrack` lists. Check on the Pixel 9 in HLS mode.
+3. **Correction: the test corpus stays out of the public repo.** Acceptance 2's fixture is cue timings only
+   (start and end in ms) under opaque ids, plus synthetic cases (shifted, 25 fps-scaled, spliced mid-file,
+   another episode). No subtitle text and no title is committed. Acceptance 1 runs against production data on
+   this machine, not in CI.
+4. **The three questions.**
+   1. *Empty Jellyfin library ids*: Bazarr does nothing (above). Moot after item 1.
+   2. *Side effects of `POST /api/system/settings`*: the endpoint writes only the `settings-<section>-<key>`
+      fields it receives. None of the keys this phase writes (`general.use_postprocessing`,
+      `general.postprocessing_cmd`, `general.use_postprocessing_threshold`, `…_movie`, `general.minimum_score`,
+      `…_movie`, `subsync.use_subsync`, `subsync.max_offset_seconds`, `subsync.no_fix_framerate`) is in any of
+      `save_settings`' trigger lists (scheduler update, Sonarr/Radarr SignalR restart, provider reset, path
+      maps, embedded-subtitle reindex; `app/config.py`). `general.upgrade_subs` would reschedule tasks; this
+      phase never writes it.
+   3. *Speech-only verdicts acting alone*: a follow-up, as written.
+5. **The check: code map.**
+   - **Parsing.** The backend has no subtitle parser; the only cue handling is in the wasm UI. New
+     `subtitles/CueTrack.kt` (commonMain): SRT, ASS/SSA and WebVTT (Jellyfin's extraction answers in WebVTT) to a
+     10 Hz bitset, with the forced-track rule (under 3 cues a minute). `.sub`/`.idx` sidecars
+     (`SidecarSubtitleScanner.kt:17`) are images and are skipped, not given a verdict.
+   - **Correlation.** No FFT exists (segment detection compares Chromaprint hashes). A small radix-2 real FFT in
+     commonMain, tested against a naive correlation. Own file first; neighbours only when the own file does not
+     fit (about 5% here), so a typical check is five 32k-point transforms. Buffers are reused per job: large
+     short-lived arrays are what phases 228/230 fought in Kotlin/Native's GC.
+   - **References.** `JellyfinClient.warmSubtitleExtraction` (`:1142`) calls `httpGet(url)` and drops the
+     body; it returns the text instead, and `PipelineStepOps.prewarmSubtitles` hands the first qualifying stream
+     per file to a `SubtitleReferenceStore`. Bazarr's `s:N` is the subtitle-relative index, so it comes from the
+     track's `specifier` (`0:s:N`), not `streamIndex`.
+   - **Speech track.** `FfmpegRunner.computeEnvelope` (`:251`, mono 8 kHz) gains a stereo 16 kHz variant that
+     yields the envelope from the mid channel plus the speech track in one stream (a `SpeechAccumulator` beside
+     `EnvelopeAccumulator`, `:530`). The mono path stays for files that need no speech track. When a file has
+     several audio streams, use the one in the title's original language, else `0:a:0`. Mono audio gives
+     `cant_tell · mono_audio`. Behind `SegmentProcessGate`, on the segments lane.
+   - **The step.** `FileCheckSteps.SUBTITLES = "check_subtitles"` beside `VERIFY` and `LENGTHS`
+     (`AppConfig.kt:125`), its own job type and dedupe key `subs:<video path>` in `FileCheckSchedule`, and the
+     261 due rule extended so a changed sidecar set (path, size, mtime) makes the file `NO_RESULT`. Lane
+     `subtitles`, after prewarm. A check whose references are already stored reads two small files and is exempt
+     from 262's deferral, so a hook result appears within a minute; fetching a missing reference, decoding
+     speech and asking Bazarr to sync (ffsubsync reads the whole video) all defer while a TV plays.
+   - **Storage.** Migration **58** (57 is 272's): `subtitle_check`, `subtitle_reference`, `subtitle_settled`, and
+     one `subtitle_action` table for *Needs your OK*, candidates already tried per target, and the budget
+     ledger. History through `MediaHistory.record` (`media/MediaHistory.kt:22`).
+   - **Initial run size.** 944 sidecars can be checked at once; 1,404 more after prewarm reaches their files;
+     about 1,650 files need a speech track, each a full read on the segments lane. The research decoded 164
+     episodes in under 6 minutes with 8 workers, so expect several deferred nights with one worker.
+6. **Bazarr: code map and facts.**
+   - **The hook** goes in `WebhookRoutes.kt` beside the Sonarr/Radarr/Jellyfin routes, with the same
+     `constantTimeEquals` secret check (`:349`) and `WebhookStatus.recordArrHit("bazarr")`. Bazarr sets
+     `{{series_id}}` to an empty string for a film, so an empty `series_id` means `episode_id` is a Radarr id.
+     An episode resolves through Bazarr's own record (`GET /api/episodes?episodeid[]=`), then its
+     `sonarrSeriesId` and the series' `tvdbId` to the store item (157's `resolveSeries`, reversed), then the
+     sidecar by file name. Paths are never rewritten.
+   - **`BazarrClient` additions**, all additive: blacklist (episode and movie), upload (multipart `file`),
+     `syncSubtitle` with `reference`, `maxOffsetSeconds`, `noFixFramerate` and `gss` (today it sends none,
+     `BazarrClient.kt:254`), `systemSettings()`, `applySettings(fields)`, `episodeById`. Models gain
+     `BazarrSeries.imdbId`, `BazarrHistoryEvent.subsId`, `subtitlesPath`, `sonarrEpisodeId`, `blacklisted`,
+     `upgradable` and `matches`, and `BazarrProviderResult.releaseInfo`, `uploader` and `origScore`; all are in
+     Bazarr's responses today.
+   - **Sync** writes `<name>.synced.srt`, renames it over the original and logs action 5. Its callback is chmod,
+     store refresh and Plex/Jellyfin refresh, not the custom command, so the hook does not fire and jellystructure
+     re-checks after the call returns. The reference must be exactly 3 characters (`s:0`–`s:9`); beyond that, an
+     `in_sync` sibling's path or `a:0`.
+   - **A manual-download key** lives 1 hour in Bazarr's in-memory cache and is saved against whichever episode
+     the POST names (`subtitles/manual.py`), which FR-273-14 relies on.
+   - **An upload** runs Bazarr's post-processing, so jellystructure's own uploads come back through the hook.
+     They are recognised by content hash (the settled copy, or the moved file) and verified, never acted on again.
+   - **The blacklist** logs, then deletes, and re-searches only when the delete succeeded. Used as designed.
+   - **The advisor.** `BazarrAdvisorService` in `advisor/`, returning `AdvisorFinding`. `GET /api/system/settings`
+     returns every secret Bazarr holds (checked, read-only), so the raw response never leaves the backend and
+     findings carry values only. `advisorFindingHtml` (`Settings.kt:1480`) binds a single action today (244's
+     `recheck_exposure`); it becomes an action-to-button map and gains `apply_bazarr`. Production today
+     (read-only): post-processing off with no command, thresholds off, minimum 90/70, upgrades on, sync off, max
+     offset 60, *Do Not Fix Framerate Mismatch* on, golden-section search on. So the advisor opens with the hook,
+     sync, max offset and frame rate, plus the title-search shows; the minimum-score finding stays silent.
+7. **Budget.** Bazarr made 4,859 downloads in its first 172 days here, about 28 a day, peaking at 717 on the
+   import day. A 100-a-day budget for jellystructure's own actions fits well under OpenSubtitles VIP's 1,000.
+   Clearing today's 30 wrong subtitles costs about that much; the 274 off ones cost nothing, because sync is
+   local.
+8. **First production run.** The migration seeds `bazarr.check_action = report` on an existing install and
+   `fix` on a new one. The Bazarr card shows what *Fix it* would do from the report run (*would sync 274, replace
+   30, hide 30*), and the owner switches it once. This keeps acceptance 1 a read-only run on production without
+   changing the default the owner chose.
+9. **Tests.** Cue parsers (SRT with BOM, ASS override tags, VTT cue settings); correlation against a naive
+   reference; the verdict thresholds on synthetic shifts, scales, splices and wrong episodes; the 261 due rule
+   with a changed sidecar; hook parsing for an episode and a film; the Bazarr steering loop against a mocked
+   Bazarr (sync then re-check, move then blacklist, three-round cap, neighbour miss deleted without a
+   blacklist, budget exhaustion, restore after a worse upgrade); `offered()` shared by `buildSubtracks` and
+   `DetailService`; the advisor's silence rule and *Apply* sending only its own keys.
+
+**Net effect.** A cue parser, an FFT, a speech track in the existing decode, one pipeline step, one hook, a
+steering loop over Bazarr's own API, one advisor, migration 58, and one shared rule for which subtitles a viewer
+sees. No Ravilo client change, and nothing written to Bazarr or Jellyfin except what the admin applies or a
+verdict requires.
