@@ -6,9 +6,9 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-26** and **device-checked on the Pixel 9's Library** (see *Device check*
-at the end). Not deployed. The gap is acceptance 1's Discover Studios and Request screens, acceptance 2
-(release build) and acceptance 3 (a TV). Written 2026-09-26, **dev-reviewed 2026-09-26** against
+`⚠ Partial` — **built 2026-09-26**, and **acceptance 1 passed on the Pixel 9** (debug build: Library,
+Discover's Networks and Studios walls, Request; see *Device check* at the end). Not deployed. The gap is
+acceptance 2 (a release build) and acceptance 3 (a TV). Written 2026-09-26, **dev-reviewed 2026-09-26** against
 `main` `0e5e434f` (see *Dev review*). **Reproduced on the Pixel 9 the same day** (debug build 1.39-19). Android client
 (`ravilo-ui` androidMain, both the phone and TV apps) plus one backend change. **Numbering:** verified
 against `STATUS.md` the same day — Ravilo taken through **R315**.
@@ -239,13 +239,18 @@ The server was production on v1.41, which still gzips images, so the harder path
      entry in `dumpsys dropbox data_app_crash`. The grid ended at the last title of the 550, the exact
      "fast to the bottom" of the report.
    - Afterwards the dropbox held no entry for `1.40-44`, and the process (pid 1749) was still alive.
-3. **Not run:**
-   - Discover's Studios wall and the Request tab. The owner took the phone back mid-test.
+3. **Discover, 23:02–23:04, same build, 5 rounds each, all OK.**
+   - *Stationer* (Networks, 66) and *Studier* (Studios). Both walls ended at their last tile.
+   - *Anmod* (Request). The page moved from *Discover (popular)* and *Trending* down to *Horror*.
+
+   No Ravilo `1.40-44` entry in the dropbox afterwards.
+4. **Not run:**
    - The release build (acceptance 2). The Pixel 9's Play app must not be overwritten, and a release
      APK carries that package.
    - A TV (acceptance 3).
 
-**Seen on the way, unconfirmed:** on the R316 build, screenshots of Library showed the Genre filter
-popover open right after the tab opened, and Back did not close it. A tap on the header then landed on
-a poster behind it, so the popover may not have been live at all. Neither the popover nor the tap
-behaviour is proven; worth a look on the next device pass. R316 changes no UI.
+**Seen on the way (not R316, which changes no UI):** Library's Genre filter popover was found open
+when the tab was opened, and it stayed open across tab switches. Back did not close it. It was live UI:
+its rows were in the accessibility tree, inside the app's own window. From a cold start, Library opens
+without it, so something in the test's taps opened it, most likely a tap that landed while the screen
+was still loading. Worth a look: a facet popover left open should close on Back and on leaving the tab.
