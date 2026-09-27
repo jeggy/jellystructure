@@ -37,6 +37,12 @@ private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
 private var activeRunFilter: String? = null   // 93g: scope the log to one scan/pipeline run
 private var jobsPollActive = false   // Phase 109: true while the "Jobs & workers" segment is showing
+/** Phase 272 — which render of the page a poll belongs to. The admin runs every page in one app-wide scope that
+ *  is never cancelled, so a poll must stop by itself once its render is gone (another page drew over it, or
+ *  Activity was drawn again): otherwise every visit leaves one more loop polling in the background. */
+private var activityGen = 0
+
+private fun activityShowing(container: Element, gen: Int): Boolean = gen == activityGen && container.querySelector("#view-jobs") != null
 private var healthPollActive = false // Phase 182/183: true while the Activity page is open at all — the
                                       // saturation banner is view-independent; the pacing card lives in
                                       // Jobs & workers but stays in the DOM (just display:none) when that
@@ -107,6 +113,8 @@ private data class RunSummaryDto(
 
 fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     activityScope = scope
+    activityGen++
+    aiJobsSig = ""; aiHistorySig = ""; aiOpenBatch = null
     activitySocket?.close()
     activitySocket = null
     jobItemCount = 0
@@ -308,12 +316,23 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         }
         (container.querySelector("#view-console") as? HTMLElement)?.style?.display = if (jobs) "none" else ""
         (container.querySelector("#view-jobs") as? HTMLElement)?.style?.display = if (jobs) "" else "none"
+        val wasPolling = jobsPollActive
         jobsPollActive = jobs
-        if (jobs) {
+        if (jobs && !wasPolling) {
             scope.launch { pollJobsPanel(container) }
             scope.launch { loadRecentPlaybackQuality(container) }
         }
     }
+    // Phase 272 (FR-272-11) — the tab badge (lanes + AI) is kept current from the Scan console too, slower.
+    val gen = activityGen
+    scope.launch {
+        while (activityShowing(container, gen)) {
+            if (!jobsPollActive) refreshJobsPanel(container)
+            delay(10_000)
+        }
+    }
+    // `#/activity?view=jobs` opens *Jobs & workers* (the AI card's links, and the design's own URL).
+    if (query["view"] == "jobs") (container.querySelector("#viewseg [data-view=jobs]") as? HTMLElement)?.click()
 
     container.querySelector("#clear-log-btn")?.addEventListener("click") {
         if (window.confirm("Clear the entire activity log?")) {
@@ -591,7 +610,8 @@ private suspend fun loadLogHistory(container: Element) {
 // Phase 109 — polls GET /api/jobs while the "Jobs & workers" segment is visible and re-renders the
 // worker line, running card, queue and recent lists. Mirrors design/app/activity.html #view-jobs.
 private suspend fun pollJobsPanel(container: Element) {
-    while (jobsPollActive) {
+    val gen = activityGen
+    while (jobsPollActive && activityShowing(container, gen)) {
         refreshJobsPanel(container)
         delay(2000)
     }
@@ -601,7 +621,8 @@ private suspend fun pollJobsPanel(container: Element) {
  *  endpoint) for the gate-saturation banner and the Outbound pacing card. 5s cadence: this is ambient
  *  health, not a running job's own progress, so it doesn't need pollJobsPanel's tighter 2s. */
 private suspend fun pollHealthCard(container: Element) {
-    while (healthPollActive) {
+    val gen = activityGen
+    while (healthPollActive && activityShowing(container, gen)) {
         refreshHealthCard(container)
         delay(5000)
     }
@@ -894,15 +915,20 @@ private fun aiJobHtml(j: dev.jellystructure.api.AiJobView): String = buildString
 
 private fun aiHistoryHtml(h: dev.jellystructure.api.AiHistory): String {
     val ok = h.outcome?.startsWith("ran") == true
-    val ic = if (ok) """<span class="jq-ic ok">✓</span>""" else """<span class="jq-ic bad">✗</span>"""
+    // A batch read before Phase 272 has no stored outcome: not a failure, just not recorded.
+    val ic = when {
+        h.outcome == null -> """<span class="jq-ic" style="color:var(--ink-soft);">·</span>"""
+        ok -> """<span class="jq-ic ok">✓</span>"""
+        else -> """<span class="jq-ic bad">✗</span>"""
+    }
     val took = h.endedAt?.let { e -> " · read ${clockOf(e)} · took ${formatRemaining((e - h.sentAt).coerceAtLeast(0) * 1000.0)}" } ?: ""
     val open = if (h.hasTranscripts) """<span class="btn sm ghost ai-open" data-batch="${h.id.esc()}">Conversations</span>"""
-        else """<span class="tiny muted">no conversation kept</span>"""
+        else """<span class="tiny muted">no conversation kept</span>"""   // read before Phase 272
     val jobName = if (h.job == "rerank") "Re-rank" else "Theme tags"
     return """<div class="jobrow">
         $ic
         <div class="jq-main"><div class="jq-title">$jobName · ${h.requests} ${jobNoun(h.job, h.requests)} · ${h.modelLabel.esc()}</div>
-          <div class="jq-sub">sent ${clockOf(h.sentAt)}$took · ${(h.outcome ?: "—").esc()}</div></div>
+          <div class="jq-sub">sent ${clockOf(h.sentAt)}$took · ${(h.outcome ?: "read before conversations were kept").esc()}</div></div>
         $open
       </div>"""
 }
