@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -82,6 +83,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -169,7 +171,11 @@ class SeededBrowseStore(
     private val _seerrOverflow = MutableStateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>>(emptyList())
     val seerrOverflow: StateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>> = _seerrOverflow.asStateFlow()
     val gridState = LazyGridState()
+    val facetBarState = LazyListState()
     var focusItemKey: String? = null
+    /** R187 (FR-RV-BROWSE1-10) — the sort the grid was last laid out in. The screen scrolls to the top
+     *  only when the viewer's choice differs from it, never merely because the page composed again. */
+    internal var laidOutSort: Pair<SortField, SortDir> = initialSort
     private var loadJob: Job? = null
     /** Channel id -> display name, for the Channel facet's labels — [BrowseCard] only carries ids.
      *  R187 fix: fetched by the store itself (cheap, config-only) in [load] instead of being threaded
@@ -210,7 +216,11 @@ class SeededBrowseStore(
 
     fun load() {
         loadJob?.cancel()
-        _state.value = SeededBrowseState.Loading
+        // R187 (FR-RV-BROWSE1-10) — a return re-fetches (the watched ✓ must be fresh) but keeps the list on
+        // screen until the new one lands, as R40 says a kept store does. Going through Loading took the grid
+        // out of composition and flashed "Loading…" on every Back.
+        val refreshing = _state.value is SeededBrowseState.Loaded
+        if (!refreshing) _state.value = SeededBrowseState.Loading
         // R187 fix — fetch the Channel facet's id->name map here (cheap, config-only) instead of
         // relying on a caller that may not have one loaded; best-effort, never blocks/fails the main
         // items load.
@@ -227,7 +237,7 @@ class SeededBrowseStore(
             }
         }
         loadJob = scope.launch {
-            _state.value = runCatching {
+            val next = runCatching {
                 if (recommendations) {
                     SeededBrowseState.Loaded(apiClient.recommendations(channelId).items)
                 } else if (continueWatching) {
@@ -238,6 +248,10 @@ class SeededBrowseStore(
                     SeededBrowseState.Loaded(resp.items)
                 }
             }.getOrElse { SeededBrowseState.Error(it.message ?: "", loadErrorKindOf(it)) }
+            // A superseded load (runCatching also catches its cancellation) and a failed refresh both leave
+            // the screen as it is: stale titles beat an error page over a list the viewer was reading.
+            if (!isActive || (refreshing && next is SeededBrowseState.Error)) return@launch
+            _state.value = next
         }
     }
 }
@@ -525,7 +539,13 @@ fun SeededBrowseScreen(
                     // old focused tile silently re-highlighted. A new sort is a new list: drop the stale
                     // focus target and jump back to the top so the first (now differently-ordered) items
                     // are what's actually on screen — focus itself stays on the sort chip (unchanged).
+                    // R187 (FR-RV-BROWSE1-10) — only on a real change. An effect also runs when it first
+                    // composes, and this page composes afresh on every Back, so this used to throw away
+                    // the kept scroll position (and R139's tile to refocus) on each return.
                     LaunchedEffect(store.sortField, store.sortDir) {
+                        val sort = store.sortField to store.sortDir
+                        if (sort == store.laidOutSort) return@LaunchedEffect
+                        store.laidOutSort = sort
                         store.focusItemKey = null
                         runCatching { gridState.scrollToItem(0) }
                     }
@@ -540,7 +560,10 @@ fun SeededBrowseScreen(
                         // cannot clear. Seen on the Pixel 9. Selection on a phone is carried by the
                         // bottom bar's pill, never by focus.
                         focusFirstOnLoad = freshEntry && !movedOffBar && !handsetLayout,
-                        restoreItemKey = store.focusItemKey,
+                        // R187 (FR-RV-BROWSE1-10) — a TV refocuses the opened tile (R139). A phone
+                        // focuses nothing: focus brings the tile fully into view, so a poster tapped
+                        // at the screen's edge would move the grid the viewer came back to.
+                        restoreItemKey = if (handsetLayout) null else store.focusItemKey,
                         onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
                         seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
@@ -589,6 +612,8 @@ private fun FacetBar(
     }
     val chipShape = remember { RoundedCornerShape(18.dp) }
     LazyRow(
+        // R187 (FR-RV-BROWSE1-10) — the strip comes back scrolled as it was left, like the grid.
+        state = store.facetBarState,
         modifier = Modifier.focusRestorer(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad),
         horizontalArrangement = Arrangement.spacedBy(10.dp),

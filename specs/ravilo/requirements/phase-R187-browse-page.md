@@ -444,3 +444,65 @@ unchanged: `PlatformBackHandler` is a no-op there, and browser Back stays browse
 - The `ravilo-ui` unit tests and the web compile pass.
 
 **Not verified:** a TV. The TV's path is unchanged by design.
+
+## Amendment (2026-09-27) — Back returns to the grid where you left it
+
+> Owner, 2026-09-27: *"When on the library page and opening some item and going back it just goes back to
+> the top of the page, i would like to go back and have it scrolled to the exact same point as before, so
+> it looks like a proper back."*
+
+**Bug confirmed on the Pixel 9** (debug `1.42-4`, before the fix). Library → scroll a few rows down → open
+a series → Back: the grid is at the top, on the first three titles. Filters and type are kept; only the
+position is lost. Same code on the TV, the web and every *See all* page, since all of them are this screen.
+
+**Why.** The position is not lost in storage: `SeededBrowseStore` is kept across navigation (R40) and holds
+the `LazyGridState`. Two things throw it away when the page comes back:
+- **The sort-reset effect fires on every entry, not only on a sort change.** 6f021b80 added
+  `LaunchedEffect(sortField, sortDir) { focusItemKey = null; scrollToItem(0) }` so that a new sort opens at
+  its top. A `LaunchedEffect` also runs the first time it composes, and the page composes afresh every time
+  it is returned to. So every Back scrolled to the top and dropped the tile to restore focus to (R137/R139's
+  TV restore was undone by the same line).
+- **The return reloads through `Loading`.** `LaunchedEffect(store) { store.load() }` re-fetches on every
+  entry (the watched ✓ must be fresh after watching), and `load()` sets `Loading` first. The grid leaves
+  composition, *Indlæser…* flashes, and the list comes back as a new layout. R40 already says a kept store
+  "refreshes silently on re-entry"; this one did not.
+
+**FR-RV-BROWSE1-10 — Back returns to the grid exactly where it was (every platform).** Coming back to a
+browse page (Back from a title, or back to the Library tab from another tab) shows the grid at the same
+scroll position, to the pixel, with the same filters, type and sort. The filter strip keeps its sideways
+scroll too (a viewer who swiped it to reach *Sort* finds it there); both states live on the kept store.
+Specifically:
+- **Only a real sort change scrolls to the top.** The store remembers the sort the grid was last laid out
+  in; the reset runs only when the viewer's choice differs from it.
+- **A return refreshes silently.** When the store already holds a list, `load()` keeps it on screen and
+  swaps in the new one when it lands; there is no `Loading` state and no flash. The grid keeps its place by
+  the first visible title's key, so a title added above does not shift what the viewer was looking at. A
+  failed refresh keeps the list that is on screen (stale beats an error page); a first load still shows
+  *Loading* and, on failure, the error state with Retry.
+- **On a TV, focus lands on the tile that was opened** (R139, restored). **On a phone nothing is focused**:
+  focusing the tile would bring it fully into view, and a tile tapped at the screen's edge would move.
+- **Re-tapping Library still scrolls to the top** (FR-R267-9), and **picking a type opens that type at its
+  top**, like a sort: it is a new list. Each type keeps its own store, so without this the pill would bring
+  back wherever that type was last left.
+
+**Not changed:** the facet selections and popovers (FR-RV-BROWSE1-8a closes popovers on leaving); what the
+refresh fetches; the order of the list.
+
+**Built 2026-09-27** (`SeededBrowseScreen.kt`, `RaviloApp.kt`).
+- `SeededBrowseStore.laidOutSort`: the sort effect returns early when the sort equals it.
+- `load()` keeps a `Loaded` list while refreshing; a superseded or failed refresh writes nothing.
+- `SeededBrowseStore.facetBarState`: the filter strip's `LazyListState`, kept with the grid's.
+- `restoreItemKey` is `null` on a handset.
+- The Library type pill calls `requestScrollToItem(0)` on the picked type's kept store, if it has one.
+
+**Verified on the Pixel 9** (debug `1.42-30`, before and after):
+- Before: Library scrolled down → a series opened → Back: the grid at the top.
+- After: Library scrolled to a mid-row offset, the filter strip swiped to *Sort*, a poster opened → Back: the
+  area below the app bar is pixel-identical to the frame before the tap (compared from screenshots). Same
+  for a poster half off the bottom edge, and under the *Title* sort.
+- A frame caught mid-transition after Back shows the grid already in place: no *Loading* frame.
+- Library → Home → Library: identical. Re-tapping Library: top. Alle scrolled → Serier: top; Serier
+  scrolled → Film → Serier: top. Sort changed to *Title*: top.
+- `ravilo-ui` unit tests (260) and the wasmJs compile pass.
+
+**Not verified:** a TV (focus lands on the opened tile again, R139) and the web.

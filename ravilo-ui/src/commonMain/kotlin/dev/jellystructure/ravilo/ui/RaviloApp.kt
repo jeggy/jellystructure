@@ -1242,7 +1242,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             closeTick = reselectTick,
                             // The choice is a browse control, not a setting: it rides the destination
                             // and does not persist across app restarts.
-                            onSelect = { replaceTop(Dest.Browse(it, dest.displayName)) },
+                            // R187 (FR-RV-BROWSE1-10) — a type picked is a new list, opened at its top.
+                            // Each type keeps its own store (and so its own scroll), which Back needs.
+                            onSelect = {
+                                (storeRegistry["library:${dest.displayName}:$it"] as? SeededBrowseStore)
+                                    ?.gridState?.requestScrollToItem(0)
+                                replaceTop(Dest.Browse(it, dest.displayName))
+                            },
                         )
                     },
                 )
