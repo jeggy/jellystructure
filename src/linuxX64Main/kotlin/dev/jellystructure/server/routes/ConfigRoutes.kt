@@ -223,6 +223,9 @@ fun Route.configureConfigRoutes(
         // config-file-only — the Settings form (readForm) sends neither, so without this a Settings save
         // would wipe the operator's tracker registry and reset the ingest webhook secret/realtime flag.
         config = config.copy(trackers = stored.trackers, ingest = stored.ingest)
+        // Phase 273 — the subtitle check's switch has its own route (PUT /api/subtitles/settings), so a Settings save
+        // from any page, including one loaded before the switch existed, never resets it.
+        config = config.copy(subtitleCheck = stored.subtitleCheck)
         // Bug fix (live report, 2026-09-04) — same class of bug: age_rating_map is managed on Metadata ▸
         // Age ratings via its own write-through POST /api/metadata/age-ratings, not on this form.
         // readForm() sends MetadataConfig(ageRatingCascade = ...) with ageRatingMap defaulting to empty,

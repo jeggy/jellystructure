@@ -42,6 +42,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         <div id="dash-findings" style="margin-bottom:14px"></div>
         <!-- Phase 257 — every Jellyfin settings advisor finding, most urgent first; empty = silent. -->
         <div id="dash-advisor" style="margin-bottom:14px"></div>
+        <!-- Phase 273 — Bazarr settings that work against subtitles fitting their video; empty = silent. -->
+        <div id="dash-bazarr-advisor" style="margin-bottom:14px"></div>
         <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
         <div class="statgrid">
@@ -172,7 +174,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         loadDashAdvisor(scope)
         loadAttentionBreakdown()
         loadRecentActivity()
-        loadDashSubtitlesCard()
+        loadDashSubtitlesCard(scope)
+        loadDashBazarrAdvisor(scope)
         val status = MediaApi.scanStatus()
         when (status?.status) {
             "RUNNING" -> {
@@ -537,16 +540,82 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
 // Phase 157 (FR-BZ1-3) — first external-service status card on the Dashboard (no prior Radarr/Sonarr/
 // Seerr card existed here, per the addendum). Hidden entirely when Bazarr is off, same as every other
 // subtitle surface.
-private suspend fun loadDashSubtitlesCard() {
+private suspend fun loadDashSubtitlesCard(scope: CoroutineScope) {
     val card = document.getElementById("dash-subtitles-card") as? HTMLElement ?: return
     val overview = dev.jellystructure.api.BazarrApi.overview()
     if (overview == null || !overview.connected) { card.style.display = "none"; return }
     card.style.display = "block"
     val latest = dev.jellystructure.api.BazarrApi.history(0, 1).firstOrNull()
     val latestLine = latest?.let { "Latest: ${(it.language ?: "").uppercase()} ${(it.provider ?: "")}" } ?: "No recent activity"
+    // Phase 273 (FR-273-21) — do the subtitles fit their video, what waits for the admin, what it cost today.
+    val sum = dev.jellystructure.api.SubtitleCheckApi.summary()
+    val checkHtml = if (sum == null) "" else {
+        val c = sum.counts
+        val fit = c["in_sync"] ?: 0
+        val off = (c["off"] ?: 0) + (c["off_mid_file"] ?: 0)
+        val wrong = (c["not_this_video"] ?: 0) + (c["other_episode"] ?: 0) + (c["longer_video"] ?: 0)
+        val unknown = c["cant_tell"] ?: 0
+        val mode = when (sum.mode) { "fix" -> "Fix it"; "ask" -> "Ask me first"; else -> "Only report" }
+        val hook = sum.hookLastCalledAt?.let { "Bazarr last called ${dev.jellystructure.formatStoredTs((it / 1000).toString())}" } ?: "Bazarr has not called yet"
+        """
+        <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+          <div><b>Fit their video:</b> $fit in sync · $off out of sync · $wrong not for their video · $unknown can't tell</div>
+          <div class="muted">${sum.notOffered} not offered to viewers · $mode · ${sum.downloadsToday}/${sum.dailyBudget} downloads today · $hook</div>
+          ${if (sum.waiting.isEmpty()) "" else """<div style="margin-top:8px;font-weight:600">Needs your OK (${sum.waiting.size})</div>""" +
+            sum.waiting.take(8).joinToString("") { w -> """
+            <div class="row center" style="gap:6px;margin-top:4px;flex-wrap:wrap">
+              <span style="flex:1;min-width:0;overflow-wrap:anywhere">${(w.sidecarName ?: "").esc()} — ${w.detail.esc()}</span>
+              <button class="btn sm" data-subok="${w.id}">Do it</button><button class="btn sm ghost" data-subno="${w.id}">Leave it</button>
+            </div>""" }}
+        </div>"""
+    }
     document.getElementById("dash-subtitles-body")?.innerHTML = """
         <div>Wanted: <b>${overview.wantedMovies + overview.wantedEpisodes}</b></div>
         <div>Providers: <b>${overview.providersHealthy}/${overview.providersTotal}</b> healthy</div>
         <div class="muted">${latestLine}</div>
+        $checkHtml
     """.trimIndent()
+    wireSubtitleDecisions(card, scope) { loadDashSubtitlesCard(scope) }
+}
+
+/** Phase 273 (FR-273-16/20) — *Do it* / *Leave it* on a waiting proposal; shared by the Dashboard and the title page. */
+internal fun wireSubtitleDecisions(root: HTMLElement, scope: CoroutineScope, reload: suspend () -> Unit) {
+    val oks = root.querySelectorAll("[data-subok]")
+    for (i in 0 until oks.length) {
+        val b = oks.item(i) as? HTMLElement ?: continue
+        b.addEventListener("click", {
+            val id = b.getAttribute("data-subok")?.toLongOrNull() ?: return@addEventListener
+            b.textContent = "Doing it\u2026"
+            scope.launch { dev.jellystructure.api.SubtitleCheckApi.approve(id); reload() }
+        })
+    }
+    val nos = root.querySelectorAll("[data-subno]")
+    for (i in 0 until nos.length) {
+        val b = nos.item(i) as? HTMLElement ?: continue
+        b.addEventListener("click", {
+            val id = b.getAttribute("data-subno")?.toLongOrNull() ?: return@addEventListener
+            scope.launch { dev.jellystructure.api.SubtitleCheckApi.dismiss(id); reload() }
+        })
+    }
+}
+
+/** Phase 273 (FR-273-18) — the Bazarr settings advisor on the Dashboard, beside the Jellyfin one; silent when Bazarr
+ *  is right, not connected or unreachable. */
+private suspend fun loadDashBazarrAdvisor(scope: CoroutineScope) {
+    val el = document.getElementById("dash-bazarr-advisor") as? HTMLElement ?: return
+    val advice = dev.jellystructure.api.SubtitleCheckApi.advice()
+    if (advice == null || !advice.reachable || advice.findings.isEmpty()) { el.innerHTML = ""; return }
+    val asks = advice.findings.count { it.severity != "info" }
+    el.innerHTML = """
+    <div class="card" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="font-size:1rem;margin:0">Bazarr settings advisor</h3>
+        ${if (asks > 0) """<span class="badge warn" style="font-size:.72rem">$asks to change</span>""" else ""}
+        <span class="spacer" style="flex:1"></span>
+        <a class="btn sm ghost" href="#/settings?tab=downloads">Open the Bazarr card →</a>
+      </div>
+      <p class="hint" style="margin:6px 0 0">Settings in Bazarr that work against subtitles fitting their video. <b>Apply in Bazarr</b> changes exactly the one setting named.</p>
+      ${advice.findings.joinToString("") { advisorFindingHtml(it) }}
+    </div>"""
+    wireAdvisorActions(advice.findings, scope) { loadDashBazarrAdvisor(scope) }
 }

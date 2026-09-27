@@ -41,6 +41,13 @@ object TrackCoverageMarks {
     }
 }
 
+/** Phase 273 (FR-273-20) — each sidecar's verdict chips by file name, set by the detail page once
+ *  `/subtitles/checks` answers, so a sidecar row rendered later still carries them. */
+object SidecarVerdictMarks {
+    var byName: Map<String, String> = emptyMap()
+    fun html(externalPath: String?): String = externalPath?.substringAfterLast('/')?.let { byName[it] } ?: ""
+}
+
 // Phase 127: shared by buildCommandText/renderPending/applyChanges for both audio and subtitle blocks —
 // factored out after the Phase 120 bug where this exact diff, duplicated per call site, was fixed
 // incorrectly in one place at a time. A per-track flag diff (not just comparing the first default)
@@ -355,7 +362,7 @@ fun wireUnifiedTrackEditor(
                 if (t.sdh) add("SDH")
                 if (t.forced) add("forced")
             }.joinToString(" · ")
-            """<div class="trk" style="opacity:.85;">
+            """<div class="trk" style="opacity:.85;" data-sidecar="${t.externalPath?.substringAfterLast('/')?.esc() ?: ""}">
               <div class="trk-main">
                 <span class="grip" style="visibility:hidden;">⠿</span>
                 <span class="pos" style="visibility:hidden;">·</span>
@@ -363,6 +370,7 @@ fun wireUnifiedTrackEditor(
                   <span class="badge" style="font-size:.68rem;" title="Sidecar file: ${t.externalPath?.esc() ?: ""}">sidecar</span>
                   $lang
                   <span class="muted tiny mono">${t.codec.esc()}${if (flags.isNotEmpty()) " · $flags" else ""}</span>
+                  <span class="subv">${SidecarVerdictMarks.html(t.externalPath)}</span>
                 </span>
               </div>
             </div>"""

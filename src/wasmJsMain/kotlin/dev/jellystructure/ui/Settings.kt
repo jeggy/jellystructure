@@ -580,6 +580,30 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 </div>
                 <div class="row center" style="margin-top:2px"><span class="tiny">Auto-search when new media is added</span><span class="spacer"></span><span id="bazarr-autosearch-toggle" class="toggle" style="cursor:pointer"></span></div>
                 <div class="row center" style="margin-top:8px"><span class="tiny">Show subtitle history on title pages</span><span class="spacer"></span><span id="bazarr-history-toggle" class="toggle" style="cursor:pointer"></span></div>
+                <!-- Phase 273 — does each subtitle fit its video, and what jellystructure asks Bazarr to do about it. -->
+                <div id="subcheck-block" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+                  <div class="row center"><b style="font-size:.92rem">Subtitles that fit their video</b><span class="spacer"></span><span id="subcheck-mode-badge"></span></div>
+                  <div class="tiny muted" style="margin:6px 0 10px;line-height:1.6">jellystructure checks every subtitle beside a video against the video itself, and steers Bazarr until it fits: it asks Bazarr to sync one that is out of time, gives one filed under the wrong episode to the right one, and has Bazarr replace one that belongs to another video. Rather nothing than wrong: a subtitle for another video is never offered to a viewer.</div>
+                  <div class="field"><label for="subcheck-action">When a subtitle does not fit</label>
+                    <select id="subcheck-action" class="input" style="max-width:320px">
+                      <option value="fix">Fix it</option>
+                      <option value="ask">Ask me first</option>
+                      <option value="report">Only report</option>
+                    </select>
+                    <span class="hint" id="subcheck-action-hint"></span>
+                  </div>
+                  <div class="field"><label for="subcheck-budget">Subtitle downloads jellystructure may cause a day</label>
+                    <input id="subcheck-budget" class="input" type="number" min="0" max="1000" style="width:120px">
+                    <span class="hint">Each replacement makes Bazarr download from its provider. OpenSubtitles VIP allows 1,000 a day.</span>
+                  </div>
+                  <div class="field"><label for="subcheck-reach">Address Bazarr reaches jellystructure at</label>
+                    <input id="subcheck-reach" class="input" type="url" placeholder="Blank = the address the Jellyfin webhook uses" style="width:100%">
+                    <span class="hint">Goes into the command Bazarr runs after each download.</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="subcheck-save" class="btn sm">Save</button><span id="subcheck-save-out" class="tiny muted"></span></div>
+                  <div id="subcheck-hook" class="tiny" style="margin-top:12px;line-height:1.6"></div>
+                  <div id="subcheck-advisor"></div>
+                </div>
               </div>
             </div>
 
@@ -1170,6 +1194,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireArr(scope, "sonarr")
     wireSeerr(scope)
     wireBazarr(scope)
+    wireSubtitleCheck(scope)   // Phase 273
     wireChromecast(scope)
     wireRequestLanguage(scope)
     wireAi(scope) { refreshTomlPreview(readForm()) }   // Phase 270
@@ -1451,6 +1476,21 @@ private suspend fun runMemoryBudgetCalculator() {
  */
 internal fun wireAdvisorActions(findings: List<dev.jellystructure.api.AdvisorFinding>, scope: CoroutineScope?, onClosed: suspend () -> Unit) {
     for (f in findings) {
+        // Phase 273 (FR-273-19) — *Apply in Bazarr*: exactly this finding's keys; the finding disappearing on the
+        // reload that follows is the confirmation.
+        if (f.action == "apply_bazarr") {
+            val btn = document.getElementById("advisor-action-${f.id}") as? HTMLElement ?: continue
+            val out = document.getElementById("advisor-action-out-${f.id}") as? HTMLElement
+            btn.addEventListener("click", {
+                out?.textContent = "Applying\u2026"
+                scope?.launch {
+                    val r = dev.jellystructure.api.SubtitleCheckApi.apply(f.id)
+                    out?.textContent = r?.message ?: "Couldn't reach the server."
+                    if (r?.applied == true) onClosed()
+                }
+            })
+            continue
+        }
         if (f.action != "recheck_exposure") continue
         val btn = document.getElementById("advisor-action-${f.id}") as? HTMLElement ?: continue
         val out = document.getElementById("advisor-action-out-${f.id}") as? HTMLElement
@@ -1492,8 +1532,13 @@ internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): Strin
         <b>You lose:</b> ${f.tradeoff.esc()}"""
     // Phase 244 FR-244-4 — a finding that carries an action gets a button that re-runs its own check,
     // so a fix is confirmed in place rather than taken on trust.
-    val actionButton = if (f.action == "recheck_exposure") """
-        <br><button class="btn" id="advisor-action-${f.id.esc()}" style="margin-top:6px;font-size:.78rem;padding:2px 10px">Re-check</button>
+    val actionLabel = when (f.action) {
+        "recheck_exposure" -> "Re-check"
+        "apply_bazarr" -> "Apply in Bazarr"   // Phase 273 (FR-273-19)
+        else -> null
+    }
+    val actionButton = if (actionLabel != null) """
+        <br><button class="btn" id="advisor-action-${f.id.esc()}" style="margin-top:6px;font-size:.78rem;padding:2px 10px">$actionLabel</button>
         <span id="advisor-action-out-${f.id.esc()}" class="tiny" style="margin-left:8px"></span>"""
     else ""
     return """
@@ -1984,6 +2029,71 @@ private fun wireBazarr(scope: CoroutineScope) {
         if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
         else { inp.type = "password"; btn?.textContent = "Show" }
     }
+}
+
+// ── Phase 273 — the subtitle check on the Bazarr card ─────────────────────────────────────────────
+
+private val SUBCHECK_HINTS = mapOf(
+    "fix" to "Bazarr is steered on its own. A subtitle that only the audio doubts is hidden and waits for your OK.",
+    "ask" to "Every action waits for your OK on the Dashboard. A subtitle that does not fit is still hidden from viewers.",
+    "report" to "Verdicts and advice only. Nothing is hidden and nothing is asked of Bazarr.",
+)
+
+private fun wireSubtitleCheck(scope: CoroutineScope) {
+    val sel = document.getElementById("subcheck-action") as? org.w3c.dom.HTMLSelectElement ?: return
+    sel.addEventListener("change", { (document.getElementById("subcheck-action-hint") as? HTMLElement)?.textContent = SUBCHECK_HINTS[sel.value] })
+    document.getElementById("subcheck-save")?.addEventListener("click", {
+        scope.launch {
+            val out = document.getElementById("subcheck-save-out") as? HTMLElement
+            out?.textContent = "Saving\u2026"
+            val saved = dev.jellystructure.api.SubtitleCheckApi.saveSettings(dev.jellystructure.api.SubtitleCheckSettings(
+                action = sel.value,
+                dailyDownloadBudget = getInputValue("subcheck-budget").toIntOrNull() ?: 100,
+                bazarrReachUrl = getInputValue("subcheck-reach"),
+            ))
+            out?.textContent = if (saved != null) "Saved" else "Couldn't save"
+            if (saved != null) loadSubtitleCheck(scope, fresh = true)
+        }
+    })
+    scope.launch { loadSubtitleCheck(scope) }
+}
+
+private suspend fun loadSubtitleCheck(scope: CoroutineScope, fresh: Boolean = false) {
+    val sel = document.getElementById("subcheck-action") as? org.w3c.dom.HTMLSelectElement ?: return
+    val settings = dev.jellystructure.api.SubtitleCheckApi.settings() ?: return
+    sel.value = settings.action
+    setInputValue("subcheck-budget", settings.dailyDownloadBudget.toString())
+    setInputValue("subcheck-reach", settings.bazarrReachUrl)
+    (document.getElementById("subcheck-action-hint") as? HTMLElement)?.textContent = SUBCHECK_HINTS[settings.action]
+    (document.getElementById("subcheck-mode-badge") as? HTMLElement)?.innerHTML = when (settings.action) {
+        "fix" -> """<span class="badge ok" style="font-size:.72rem">Fix it</span>"""
+        "ask" -> """<span class="badge warn" style="font-size:.72rem">Ask me first</span>"""
+        else -> """<span class="badge" style="font-size:.72rem">Only report</span>"""
+    }
+    val advice = dev.jellystructure.api.SubtitleCheckApi.advice(fresh)
+    val hookEl = document.getElementById("subcheck-hook") as? HTMLElement
+    val advEl = document.getElementById("subcheck-advisor") as? HTMLElement
+    if (advice == null || !advice.configured) { hookEl?.innerHTML = ""; advEl?.innerHTML = ""; return }
+    val last = advice.hookLastCalledAt
+    val cmd = advice.hookCommand
+    hookEl?.innerHTML = buildString {
+        append("<b>Bazarr's call after each download:</b> ")
+        append(if (last == null) "Waiting for Bazarr's first call." else "Last called ${dev.jellystructure.formatStoredTs((last / 1000).toString())}.")
+        if (cmd != null) append("""<div style="display:flex;gap:6px;align-items:flex-start;margin-top:6px"><code id="subcheck-cmd" style="flex:1;min-width:0;overflow-wrap:anywhere;font-size:.72rem">${cmd.esc()}</code><button id="subcheck-copy" class="btn sm ghost" style="flex:none">Copy</button></div>""")
+        else append("""<div class="muted" style="margin-top:4px">Set the address above (or the Jellyfin webhook's) to get the command.</div>""")
+    }
+    document.getElementById("subcheck-copy")?.addEventListener("click", {
+        val text = document.getElementById("subcheck-cmd")?.textContent ?: ""
+        runCatching { dev.jellystructure.copyToClipboard(text) }
+        (document.getElementById("subcheck-copy") as? HTMLElement)?.textContent = "Copied"
+    })
+    advEl?.innerHTML = when {
+        !advice.reachable -> """<div class="note warn" style="margin-top:10px"><span class="tiny">Couldn't reach Bazarr.</span></div>"""
+        advice.findings.isEmpty() -> ""
+        else -> """<div class="tiny muted" style="margin:14px 0 -2px;font-weight:600">Bazarr settings that work against this</div>""" +
+            advice.findings.joinToString("") { advisorFindingHtml(it) }
+    }
+    wireAdvisorActions(advice.findings, scope) { loadSubtitleCheck(scope, fresh = true) }
 }
 
 // Phase 139 — request-language intents (Original/Dansk-Nordic etc.). Plain list, no drag-reorder (order

@@ -578,7 +578,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() else ""
+    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() + subtitleCheckCardShellHtml() else ""
 
     val resolverTraceHtml = buildMetadataLanguageCard(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
@@ -1177,6 +1177,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
     scope.launch { loadChecksCard(item, scope) }   // Phase 261
+    scope.launch { loadSubtitleVerdicts(item, scope) }   // Phase 273
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -1600,6 +1601,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
             <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)" style="margin-left:8px;">Re-probe episode files ↻</button>
           </div>
           $seasonSummary
+          ${subtitleCheckCardShellHtml(bottom = true)}
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;gap:14px;">
               $votingCard
@@ -1893,6 +1895,110 @@ private suspend fun loadMovieSegmentsCard(mediaId: String) {
             append(if (data.checked) """<span class="tiny muted">checked</span>""" else """<span class="tiny muted">not checked yet</span>""")
         }
     }
+}
+
+// Phase 273 (FR-273-20) — does each sidecar fit its own video, in plain words, and what waits for the admin's OK.
+// One card on the movie's Tracks & subtitles tab and on the series' Seasons & episodes tab; hidden until a sidecar
+// has been checked, so a title without sidecars says nothing.
+private fun subtitleCheckCardShellHtml(bottom: Boolean = false): String = """
+    <div class="card" id="subcheck-card" style="display:none;${if (bottom) "margin-bottom:16px;" else "margin-top:16px;"}">
+      <div class="row center"><h3 style="font-size:1.02rem;margin:0;">Do the subtitles fit?</h3><span class="tiny muted" style="margin-left:8px;">each sidecar timed against its own video</span></div>
+      <div id="subcheck-body" style="margin-top:10px;"></div>
+    </div>"""
+
+private fun subVerdictClass(verdict: String): String = when (verdict) {
+    "in_sync" -> "ok"
+    "off", "off_mid_file" -> "warn"
+    "other_episode", "not_this_video", "longer_video" -> "bad"
+    else -> ""
+}
+
+private fun subVerdictChips(c: dev.jellystructure.api.SubtitleCheck): String {
+    val against = when (c.reference?.substringBefore(':')) {
+        "embedded" -> "Timed against the subtitle inside the file"
+        "sibling" -> "Timed against another subtitle beside it that fits"
+        "speech" -> "Timed against the speech in the audio"
+        else -> "Nothing to time it against"
+    }
+    val how = listOfNotNull(c.rho?.let { "match ${(it * 100).toInt()}%" }, c.z?.let { "z ${(it * 10).toInt() / 10.0}" }).joinToString(" · ")
+    val tip = if (how.isEmpty()) against else "$against · $how"
+    val words = c.words.replaceFirstChar { it.uppercase() }
+    val offered = if (c.offered) "" else """ <span class="badge" title="Ravilo leaves this file out of the subtitle list">not offered</span>"""
+    return """<span class="badge ${subVerdictClass(c.verdict)}" title="${tip.esc()}">${words.esc()}</span>$offered"""
+}
+
+private suspend fun loadSubtitleVerdicts(item: MediaItem, scope: CoroutineScope) {
+    val card = document.getElementById("subcheck-card") as? HTMLElement ?: return
+    val body = document.getElementById("subcheck-body") as? HTMLElement ?: return
+    val data = dev.jellystructure.api.SubtitleCheckApi.forTitle(item.id)
+    if (data == null || (data.checks.isEmpty() && data.waiting.isEmpty() && data.actions.isEmpty())) { card.style.display = "none"; return }
+    card.style.display = "block"
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+    val episodeOf = item.episodes.associateBy { it.path }
+    fun label(videoPath: String): String = episodeOf[videoPath]?.let { ep ->
+        if (ep.seasonNumber != null && ep.episodeNumber != null) "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+        else ep.filename.substringBeforeLast('.')
+    } ?: videoPath.substringAfterLast('/').substringBeforeLast('.')
+    fun row(c: dev.jellystructure.api.SubtitleCheck): String =
+        """<div class="row center tiny" style="gap:10px;padding:3px 0;flex-wrap:wrap;">
+             ${if (isTvShow) """<span class="mono" style="min-width:64px;">${label(c.videoPath).esc()}</span>""" else ""}
+             <span class="mono" style="min-width:36px;">${(c.language ?: "?").esc()}${if (c.hi) " SDH" else ""}</span>
+             ${subVerdictChips(c)}
+             <span class="muted" style="flex:1;min-width:0;overflow-wrap:anywhere;" title="${c.sidecarPath.esc()}">${c.name.esc()}</span>
+           </div>"""
+    val waiting = if (data.waiting.isEmpty()) "" else """<div style="font-weight:600;margin-bottom:4px;">Needs your OK (${data.waiting.size})</div>""" +
+        data.waiting.joinToString("") { w ->
+            """<div class="row center tiny" style="gap:6px;padding:3px 0;flex-wrap:wrap;">
+                 ${if (isTvShow) """<span class="mono" style="min-width:64px;">${label(w.videoPath).esc()}</span>""" else ""}
+                 <span style="flex:1;min-width:0;overflow-wrap:anywhere;">${(w.sidecarName ?: "").esc()} — ${w.detail.esc()}</span>
+                 <button class="btn sm" data-subok="${w.id}">Do it</button><button class="btn sm ghost" data-subno="${w.id}">Leave it</button>
+               </div>"""
+        } + """<hr class="dash" style="margin:8px 0;">"""
+    val problems = data.checks.filter { it.verdict != "in_sync" }
+    val list = if (!isTvShow) data.checks.sortedBy { it.name }.joinToString("") { row(it) }
+    else {
+        // A series lists what needs attention; the sidecars that fit are counted per season, not listed.
+        val bySeason = data.checks.groupBy { episodeOf[it.videoPath]?.seasonNumber }.entries.sortedBy { it.key ?: -1 }
+        bySeason.joinToString("") { (season, rows) ->
+            val bad = rows.filter { it.verdict != "in_sync" }.sortedBy { label(it.videoPath) }
+            val fit = rows.size - bad.size
+            """<details style="margin:2px 0 6px;"${if (bad.any { subVerdictClass(it.verdict) == "bad" || !it.offered }) " open" else ""}>
+                 <summary class="tiny" style="cursor:pointer;"><b>${season?.let { "S${it.toString().padStart(2, '0')}" } ?: "Specials"}</b>
+                   <span class="muted">· $fit of ${rows.size} in sync</span></summary>
+                 ${if (bad.isEmpty()) """<div class="tiny muted" style="padding:3px 0;">Every checked subtitle fits its episode.</div>""" else bad.joinToString("") { row(it) }}
+               </details>"""
+        }
+    }
+    val summary = if (data.checks.isEmpty()) "" else
+        """<div class="tiny muted" style="margin-bottom:6px;">${data.checks.size - problems.size} of ${data.checks.size} in sync${
+            data.checks.count { !it.offered }.takeIf { it > 0 }?.let { " · $it not offered to viewers" } ?: ""}</div>"""
+    val history = if (data.actions.isEmpty()) "" else
+        """<details style="margin-top:8px;"><summary class="tiny muted" style="cursor:pointer;">What jellystructure asked Bazarr to do (${data.actions.size})</summary>""" +
+            data.actions.joinToString("") { a ->
+                """<div class="tiny" style="padding:2px 0;"><span class="muted">${dev.jellystructure.formatStoredTs(a.createdAt.toString())}</span>
+                     ${if (isTvShow) """<span class="mono">${label(a.videoPath).esc()}</span>""" else ""} ${a.detail.esc()}
+                     <span class="badge" style="font-size:.66rem;">${a.state.esc()}</span></div>"""
+            } + "</details>"
+    body.innerHTML = waiting + summary + list + history
+    wireSubtitleDecisions(card, scope) { loadSubtitleVerdicts(item, scope) }
+    markHiddenSidecars(item, data.checks)
+}
+
+/** FR-273-17 on the admin's own strip and track list: a sidecar Ravilo does not offer is marked, and the pagebar's
+ *  SUBTITLES flags count only what a viewer can pick. */
+private fun markHiddenSidecars(item: MediaItem, checks: List<dev.jellystructure.api.SubtitleCheck>) {
+    val hidden = checks.filter { !it.offered }.map { it.name }.toSet()
+    SidecarVerdictMarks.byName = checks.associate { it.name to subVerdictChips(it) }
+    val rows = document.querySelectorAll("[data-sidecar]")
+    for (i in 0 until rows.length) {
+        val el = rows.item(i) as? HTMLElement ?: continue
+        val name = el.getAttribute("data-sidecar") ?: continue
+        val slot = el.querySelector(".subv") as? HTMLElement ?: continue
+        slot.innerHTML = SidecarVerdictMarks.byName[name] ?: ""
+    }
+    if (hidden.isEmpty()) return
+    val shown = item.tracks.filterNot { it.kind == TrackKind.SUBTITLE && it.external && it.externalPath?.substringAfterLast('/') in hidden }
+    document.getElementById("subtitle-flags")?.innerHTML = subtitleFlagsHtml(shown)
 }
 
 // Phase 157 — movie "Subtitles — Bazarr" card (FR-BZ1-4). Shell renders immediately; the card
@@ -3208,8 +3314,10 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
                     "sync_imdb" -> MediaApi.syncImdbRating(item.id)
                     "check_verify" -> MediaApi.checkFileIntegrity(item.id, check = "verify", force = true)
                     "check_lengths" -> MediaApi.checkFileIntegrity(item.id, check = "lengths", force = true)
+                    "check_subtitles" -> MediaApi.checkFileIntegrity(item.id, check = "subtitles", force = true)
                 }
                 loadChecksCard(item, scope)
+                if (action == "check_subtitles") loadSubtitleVerdicts(item, scope)
             }
         }
     }

@@ -14,11 +14,13 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.subtitles.SubtitleCheckService
 import dev.jellystructure.subtitles.SubtitleVerdicts
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.request.receive
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -157,6 +159,20 @@ fun Route.subtitleCheckRoutes(
         val id = call.parameters["id"]?.toLongOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
         val s = steering ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Bazarr is not connected"))
         call.respond(if (s.dismiss(id)) HttpStatusCode.OK else HttpStatusCode.Conflict, mapOf("ok" to true))
+    }
+
+    // FR-273-16 — the switch, the budget and where Bazarr reaches this server (the Bazarr card).
+    get("/subtitles/settings") { call.respond(configStore.current.subtitleCheck) }
+
+    put("/subtitles/settings") {
+        val req = runCatching { call.receive<dev.jellystructure.config.SubtitleCheckConfig>() }.getOrNull()
+            ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Body must be {action, daily_download_budget, bazarr_reach_url}"))
+        if (req.action !in setOf("fix", "ask", "report")) return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "action must be fix, ask or report"))
+        val clean = req.copy(dailyDownloadBudget = req.dailyDownloadBudget.coerceIn(0, 1_000), bazarrReachUrl = req.bazarrReachUrl.trim().trimEnd('/'))
+        configStore.update(configStore.current.copy(subtitleCheck = clean))
+        advisor?.invalidate()
+        Logger.info("Subtitle check: ${clean.action}, budget ${clean.dailyDownloadBudget} a day", "subtitles")
+        call.respond(clean)
     }
 
     get("/bazarr/advisor") {
