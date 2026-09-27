@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -56,6 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalGridColumns
+import dev.jellystructure.ravilo.ui.PlatformBackHandler
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -189,6 +192,12 @@ class SeededBrowseStore(
     var sortDir by mutableStateOf(initialSort.second)
     var openFacet by mutableStateOf<BrowseFacetKey?>(null)
     var sortOpen by mutableStateOf(false)
+
+    val popoverOpen: Boolean get() = openFacet != null || sortOpen
+
+    /** R187 (FR-RV-BROWSE1-8a) — an open popover belongs to one visit to the page, not to the store,
+     *  which outlives it (the bottom bar's pages keep their stores between visits). */
+    fun closePopovers() { openFacet = null; sortOpen = false }
 
     val hasActiveFilters: Boolean
         get() = genre.isNotEmpty() || type.isNotEmpty() || maturity.isActive || year.isNotEmpty() ||
@@ -405,6 +414,14 @@ fun SeededBrowseScreen(
     // was never loaded. The page sat on "Loading…" forever. Keying on the store is also just more
     // honest: the effect's job is "load THIS store".
     LaunchedEffect(store) { store.load() }
+    // R187 (FR-RV-BROWSE1-8a) — leaving the page closes its popovers. Found on the Pixel 9: the open flag
+    // lives on the store, so a Genre popover left open came back with the Library tab on every visit.
+    DisposableEffect(store) { onDispose { store.closePopovers() } }
+    // R187 (FR-RV-BROWSE1-8b) — a phone's Back gesture never reaches the popover rows' key-event onBack
+    // (the dispatcher takes it, and a touch-opened popover holds no focus), so it ran RaviloApp's ladder
+    // instead: back-to-top, then Home. Registered after RaviloApp's handler, so it wins while enabled
+    // (FR-R304-3's pattern). Off on the TV, whose Back is a key event the focused row already consumes.
+    PlatformBackHandler(enabled = !isTvPlatform && store.popoverOpen) { store.closePopovers() }
     val state by store.state.collectAsState()
     val scope = rememberCoroutineScope()
     val gridState = store.gridState
@@ -484,7 +501,7 @@ fun SeededBrowseScreen(
                         // R187 fix — small, restrained open/close motion (fade + vertical expand, ~150ms)
                         // instead of the popover just snapping in; matches AppBar's own tween(180) idiom.
                         AnimatedVisibility(
-                            visible = store.openFacet != null || store.sortOpen,
+                            visible = store.popoverOpen,
                             enter = fadeIn(tween(150)) + expandVertically(tween(150)),
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(120)),
                         ) {

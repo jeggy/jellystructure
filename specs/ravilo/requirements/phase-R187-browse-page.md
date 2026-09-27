@@ -388,3 +388,59 @@ Corrections folded into the body above; summary of what changed:
   `:ravilo-ui:compileKotlinWasmJs` all pass. **Not verified**: D-pad focus/key behavior on a real TV —
   Compose UI can't be screenshotted or exercised the way the admin wasmJs pages were earlier this session;
   this needs on-device testing (stuetv), which is the operator's own to run.
+
+## Phone amendment (2026-09-26) — a popover closes when you leave, and Back closes it first
+
+**Bug confirmed on the Pixel 9** (debug build 1.40-44, during R316's device check). Library's Genre
+popover was found open when the Library tab was opened. It stayed open across switches to Home and
+Discover and back, and system Back did not close it: Back scrolled the grid to the top instead. It was
+live UI, with its rows in the accessibility tree inside the app's own window. A cold start opens
+Library with it closed, so a stray tap during the test opened it. What is wrong is that nothing ever
+closed it again.
+
+**Why.** FR-RV-BROWSE1-8 already says *"navigating anywhere force-closes a stray popover"*, and that
+Back closes it. Both were built for the TV's D-pad:
+- **Back** is the `onBack` of the popover's own focused rows, a key event. On a phone, the Back gesture
+  never arrives as a key event: `OnBackPressedDispatcher` takes it first, and it runs `RaviloApp`'s Back
+  ladder (back-to-top, pop, Home, exit). A popover opened by touch does not hold focus anyway.
+- **The open flag** (`openFacet` / `sortOpen`) lives on `SeededBrowseStore`, which outlives the screen:
+  the bottom bar's pages keep their stores between visits. So leaving the page never cleared it, and the
+  popover came back with the page.
+
+The Library type pill (*Alle*) is unaffected. It is a platform `Popup` with `onDismissRequest`, so Back
+and an outside tap already close it.
+
+**FR-RV-BROWSE1-8a — Leaving the page closes its popovers (every platform).** When the browse page
+leaves composition, its store's facet and sort popovers are closed. That covers a bottom-bar tab switch,
+opening a title, Back, and a Library type switch, which swaps the store. Coming back shows the page with
+every popover closed and the filters as they were. The selections are the viewer's; an open popover is
+not.
+
+**FR-RV-BROWSE1-8b — On a phone, Back closes an open popover before anything else.** While a facet or
+sort popover is open, one Back closes it and does nothing more: no scroll to top, no leaving the page.
+The next Back runs the normal ladder. This is FR-R304-3's pattern: a `PlatformBackHandler` registered by
+the screen, enabled only while a popover is open, which wins over `RaviloApp`'s handler because it
+registers after it. It is off on the TV. The TV's Back is a key event, which the popover's focused row
+already consumes, and the dispatcher path stays switched off there, as for the player. The web is
+unchanged: `PlatformBackHandler` is a no-op there, and browser Back stays browser Back.
+
+**Not changed:**
+- Tapping outside the popover. A tap on a poster opens it, and that closes the popover by
+  FR-RV-BROWSE1-8a. The chip still toggles its popover.
+- The popover stays open while values are toggled (FR-RV-BROWSE1-5).
+
+**Built 2026-09-26** (`SeededBrowseScreen.kt`).
+- `SeededBrowseStore.closePopovers()` and `popoverOpen`.
+- `DisposableEffect(store) { onDispose { closePopovers() } }`, keyed on the store, so a Library type
+  switch closes the old store's popover too.
+- `PlatformBackHandler(enabled = !isTvPlatform && popoverOpen) { closePopovers() }`.
+
+**Verified on the Pixel 9** (debug `1.42-4`, gesture navigation), each step read from the UI tree:
+- A Genre popover open, then Hjem → Bibliotek: closed.
+- A popover open, then the Back gesture (an edge swipe, first confirmed to be a real Back by taking a
+  page with no popover to Home): the popover closed and the page stayed on Library. The next gesture went
+  Home.
+- The Back key did the same.
+- The `ravilo-ui` unit tests and the web compile pass.
+
+**Not verified:** a TV. The TV's path is unchanged by design.
