@@ -60,7 +60,8 @@ kotlin {
                 implementation(libs.ktor.client.websockets)
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.coil.compose)
-                implementation(libs.coil.network.ktor)
+                // R316 — no network fetcher in commonMain: each platform names its own (Android: OkHttp,
+                // web: Ktor), so none is ever picked up from the classpath.
             }
         }
         // R196 (FR-RV-TRK2-4) — this module's first tests. commonTest's kotlin("test") auto-wires to
@@ -76,7 +77,12 @@ kotlin {
             dependencies {
                 implementation(libs.coil.svg) // SVG channel logos
                 implementation(libs.ktor.client.cio) // WebSocket-only client now (R210) — CIO supports WS, the Android engine does not
-                implementation(libs.ktor.client.android) // R210 — REST-only client; routes around a CIO connect bug seen on Android
+                // R316 — REST and images over ONE OkHttpClient. R210's `ktor-client-android` (HttpURLConnection)
+                // drained a cancelled body on the cancelling thread and crashed a fast scroll with
+                // "Unbalanced enter/exit"; OkHttp cancels by closing the socket. R210 named it the fallback.
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.coil.network.okhttp)
+                implementation("com.squareup.okhttp3:okhttp") { version { strictly(libs.versions.okhttp.get()) } } // see libs.versions.toml
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.session) // R44: MediaSession for hardware transport keys
@@ -90,6 +96,7 @@ kotlin {
         val wasmJsMain by getting {
             dependencies {
                 implementation(libs.ktor.client.js)
+                implementation(libs.coil.network.ktor) // R316 — images through the browser's fetch; moved here from commonMain
                 implementation(libs.coil.svg) // SVG channel logos — was Android-only, browser never decoded them
             }
         }

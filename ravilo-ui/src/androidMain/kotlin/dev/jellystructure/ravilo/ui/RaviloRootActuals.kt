@@ -6,7 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
@@ -29,22 +29,25 @@ private val httpTimeoutConfig: HttpTimeoutConfig.() -> Unit = {
 }
 
 actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?): TvApiClient {
-    // R210 — REST calls (everything except the WebSocket) go through the Android engine
-    // (`HttpURLConnection`-based), not CIO: CIO's connect step was found to intermittently
-    // fail/hang on real Android devices even when the same network path is instantly reachable via
-    // a raw shell request from the same device at the same moment
+    // R210 — REST calls (everything except the WebSocket) do not go through CIO: CIO's connect step
+    // was found to intermittently fail/hang on real Android devices even when the same network path
+    // is instantly reachable via a raw shell request from the same device at the same moment
     // (see bug-ravilo-tv-cio-connect-timeout). Combined with HomeStore's 10-attempt exponential
     // backoff, that made a client-side connect bug look exactly like "the app just hangs on
-    // launch." The Android engine has no WebSocket support, which is fine here — it's never asked
-    // to open one.
-    val restClient = HttpClient(Android) {
+    // launch."
+    // R316 — and no longer through the Android engine (`HttpURLConnection`) R210 chose: its cancel
+    // drains the body on the cancelling thread and crashed the app with "Unbalanced enter/exit". OkHttp,
+    // R210's named fallback, on the same client as Coil's images (RaviloAppContext.okHttp). The
+    // HttpTimeout plugin still applies: Ktor derives a per-timeout client from this one, which keeps
+    // its connection pool.
+    val restClient = HttpClient(OkHttp) {
+        engine { preconfigured = RaviloAppContext.okHttp }
         install(ContentNegotiation) {
             json(dev.jellystructure.shared.tv.RaviloWireJson)   // R318
         }
         install(HttpTimeout, httpTimeoutConfig)
     }
-    // CIO engine: kept solely for the WebSocket client used for live config push (R33); the
-    // Android engine above has no WebSocket support at all.
+    // CIO engine: kept solely for the WebSocket client used for live config push (R33), as R210 set it.
     val wsClient = HttpClient(CIO) {
         install(WebSockets)
         install(HttpTimeout, httpTimeoutConfig)

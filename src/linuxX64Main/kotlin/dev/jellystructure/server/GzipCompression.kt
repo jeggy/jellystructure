@@ -1,5 +1,6 @@
 package dev.jellystructure.server
 
+import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.content.OutgoingContent
@@ -31,6 +32,23 @@ import platform.zlib.z_stream
 private const val GZIP_MIN_BYTES = 860
 
 /**
+ * R316 (FR-R316-4) — types whose bytes are already compressed, so gzip only costs a pass on the server
+ * and an inflate on the device: a production poster was 30,296 bytes plain and 30,251 gzipped (0.15 %).
+ * SVG is `image/svg+xml` but it is text and does compress, which is why this is a list and not the
+ * `image/` prefix. Every `video/` and `audio/` type is skipped as well.
+ */
+private val ALREADY_COMPRESSED = setOf(
+    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
+    "application/zip", "application/gzip",
+)
+
+internal fun isAlreadyCompressed(contentType: ContentType?): Boolean {
+    val type = contentType?.contentType?.lowercase() ?: return false
+    if (type == "video" || type == "audio") return true
+    return "$type/${contentType.contentSubtype.lowercase()}" in ALREADY_COMPRESSED
+}
+
+/**
  * Ktor's `Compression` plugin has no linuxX64 klib variant (confirmed against the 3.5.0 Gradle
  * module metadata — it publishes only jvmApiElements/jvmRuntimeElements), so every JSON/text
  * response — Library grid, Ravilo home/browse/detail with its per-episode data — went out
@@ -39,11 +57,13 @@ private const val GZIP_MIN_BYTES = 860
  * Ktor's own source (`BaseApplicationResponse.resetFrom` resets every per-call response pipeline
  * from this Application-level one, so registering the interceptor once here covers every route).
  * Skips anything that isn't a `ByteArrayContent` (i.e. streamed content — none of this codebase's
- * routes produce that today) and anything under [GZIP_MIN_BYTES].
+ * routes produce that today), anything under [GZIP_MIN_BYTES], and (R316) any type that is already
+ * compressed ([isAlreadyCompressed]).
  */
 fun Application.installGzipCompression() {
     sendPipeline.intercept(ApplicationSendPipeline.ContentEncoding) { message ->
         val original = message as? OutgoingContent.ByteArrayContent ?: return@intercept
+        if (isAlreadyCompressed(original.contentType)) return@intercept  // R316 (FR-R316-4)
         val acceptsGzip = call.request.headers[HttpHeaders.AcceptEncoding]
             ?.split(",")?.any { it.trim().startsWith("gzip") } == true
         if (!acceptsGzip) return@intercept

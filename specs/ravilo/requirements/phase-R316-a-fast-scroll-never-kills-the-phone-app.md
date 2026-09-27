@@ -6,8 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). **Reproduced on the Pixel 9 the same day** (debug build 1.39-19). Android client
+`⚠ Partial` — **built 2026-09-26**, not deployed and **not yet device-checked** (FR-R316-3 / acceptance
+1–3 are the gap; see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against
+`main` `0e5e434f` (see *Dev review*). **Reproduced on the Pixel 9 the same day** (debug build 1.39-19). Android client
 (`ravilo-ui` androidMain, both the phone and TV apps) plus one backend change. **Numbering:** verified
 against `STATUS.md` the same day — Ravilo taken through **R315**.
 
@@ -162,3 +163,61 @@ The reproduction and the stack pin the cause. Six items.
 
 **Net effect.** Two dependencies added and one moved, one shared client built in one place, one
 `ImageLoader` line, one content-type check on the server. No change to screens.
+
+## Build notes (2026-09-26)
+
+Built on `main` after R309 (`3e59b32c`).
+
+1. **One `OkHttpClient`** (`RaviloAppContext.okHttp`, lazy) backs both Coil and REST.
+   - Images: `OkHttpNetworkFetcherFactory(callFactory = { okHttp })` with `serviceLoaderEnabled(false)`,
+     so nothing is picked up from the classpath (FR-R316-2).
+   - REST: `HttpClient(OkHttp) { engine { preconfigured = RaviloAppContext.okHttp } }`, with the same
+     `HttpTimeout` settings. Ktor derives a per-timeout client from the preconfigured one with
+     `newBuilder()`, and that shares its connection pool.
+   - The events socket stays on CIO (R210).
+2. **Dependencies.**
+   - `ktor-client-android` is gone. `ktor-client-okhttp` and `coil-network-okhttp` are in `androidMain`.
+   - `coil-network-ktor3` moved from `commonMain` to `wasmJsMain`. The web loader is otherwise
+     unchanged: it keeps discovering the Ktor fetcher, which is the right one in a browser and was
+     never the crash.
+3. **OkHttp is pinned strictly to 5.4.0, not the 5.5.0 Ktor 3.6.0 asks for.** The first release build
+   failed `checkReleaseAarMetadata`: `okhttp-android` 5.5.0 declares `minCompileSdk=37`, while the
+   project builds against 36 on AGP 9.0.1, whose maximum is 36. Read from each AAR's metadata:
+   5.1.0–5.3.2 declare 1, 5.4.0 declares 36, and 5.5.0 declares 37. So 5.4.0 is the newest that builds.
+   - Before pinning it, every `okhttp3` class, method and field that `ktor-client-okhttp-jvm` 3.6.0
+     and `coil-network-okhttp-jvm` 3.2.0 reference (101, read with `javap -v`) was checked against
+     5.4.0's `classes.jar`. All resolve. The only one not found directly is `Protocol.ordinal()`,
+     which is inherited from `java.lang.Enum`.
+   - The pin is `strictly(libs.versions.okhttp)` in `ravilo-ui`'s `androidMain`, with the reason next
+     to the version in `libs.versions.toml`. Lift it when compileSdk moves to 37.
+4. **The server (FR-R316-4).** `isAlreadyCompressed(contentType)` in `GzipCompression.kt` runs before
+   the body is read. It skips the exact list in FR-R316-4 plus every `video/` and `audio/` type. SVG,
+   JSON and WASM are still compressed. The integration test covers JPEG and `video/mp4` (untouched, byte
+   for byte), JSON and SVG (gzipped), and the list itself (case-insensitive, `null`, not the `image/`
+   prefix).
+5. **The release guard (FR-R316-5).** CI's emulator is not signed in to a server, so it cannot fling a
+   Library, and no emulator reproduces the timing anyway. CI guards the cause instead:
+   - `scripts/check-android-http-engine.sh`, a new CI step after the player dex guard, reads the
+     release APK's `mapping.txt`. It fails if `io.ktor.client.engine.android` or `coil3.network.ktor3`
+     is in the APK, or if either OkHttp path is missing.
+   - Run against the release APK built before this phase, it fails on all four counts. Against this
+     build it passes.
+6. **The device check (FR-R316-3)** is now a script, `scripts/fling-check.sh`. Open the screen under
+   test on a signed-in device and run `ADB_SERIAL=… scripts/fling-check.sh [rounds]` (the default
+   package is the debug build). It does the reproduction's fast swipes (15 down and 10 up, 40 ms,
+   sized from `wm size`), checks the process survived each round, and compares the Ravilo entries in
+   `dumpsys dropbox data_app_crash` before and after.
+
+**Verified:**
+- Release and debug APKs build.
+- `check-android-http-engine.sh`, `check-player-dex.sh` (247 registers, limit 250) and `check-min-sdk.sh`
+  pass.
+- The `ravilo-ui` unit tests pass.
+- The server suite passes, including the new gzip tests.
+
+**Not verified:**
+- Acceptance 1–3, the fling on the Pixel 9 (debug and release) and on a TV. Until they run, this phase
+  stays `⚠ Partial`.
+- `verify-release-apk-on-art.sh` (ART verifying OkHttp 5.4.0's classes). It runs on the CI emulator at
+  the next push.
+- Acceptance 4 (`curl` on production) needs a deploy.

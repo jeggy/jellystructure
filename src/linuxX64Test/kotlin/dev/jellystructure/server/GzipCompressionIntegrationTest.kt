@@ -3,7 +3,9 @@ package dev.jellystructure.server
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsBytes
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
@@ -62,5 +64,42 @@ class GzipCompressionIntegrationTest {
         val response = client.get("/small") { header(HttpHeaders.AcceptEncoding, "gzip") }
         assertNull(response.headers[HttpHeaders.ContentEncoding])
         assertEquals("ok", response.bodyAsBytes().decodeToString())
+    }
+
+    /** R316 (FR-R316-4) — a poster is never gzipped; the JSON beside it still is, and so is SVG. */
+    @Test
+    fun leavesAlreadyCompressedTypesAloneButStillCompressesTextAndSvg() = testApplication {
+        val jpegLike = ByteArray(4_000) { (it % 7).toByte() }  // compressible bytes: only the type decides
+        val svg = "<svg xmlns='http://www.w3.org/2000/svg'>" + "<rect width='1' height='1'/>".repeat(100) + "</svg>"
+        application {
+            installGzipCompression()
+            routing {
+                get("/poster") { call.respondBytes(jpegLike, ContentType.Image.JPEG) }
+                get("/clip") { call.respondBytes(jpegLike, ContentType.parse("video/mp4")) }
+                get("/home") { call.respondText(longBody, ContentType.Application.Json) }
+                get("/logo") { call.respondText(svg, ContentType.Image.SVG) }
+            }
+        }
+        for (path in listOf("/poster", "/clip")) {
+            val r = client.get(path) { header(HttpHeaders.AcceptEncoding, "gzip") }
+            assertNull(r.headers[HttpHeaders.ContentEncoding], path)
+            assertEquals(jpegLike.toList(), r.bodyAsBytes().toList(), path)
+        }
+        for (path in listOf("/home", "/logo")) {
+            val r = client.get(path) { header(HttpHeaders.AcceptEncoding, "gzip") }
+            assertEquals("gzip", r.headers[HttpHeaders.ContentEncoding], path)
+        }
+    }
+
+    @Test
+    fun theSkipListIsExactTypesNotThePrefix() {
+        assertTrue(isAlreadyCompressed(ContentType.Image.PNG))
+        assertTrue(isAlreadyCompressed(ContentType.parse("IMAGE/WEBP")))
+        assertTrue(isAlreadyCompressed(ContentType.parse("audio/aac")))
+        assertTrue(isAlreadyCompressed(ContentType.parse("application/gzip")))
+        assertEquals(false, isAlreadyCompressed(ContentType.Image.SVG))
+        assertEquals(false, isAlreadyCompressed(ContentType.Application.Json))
+        assertEquals(false, isAlreadyCompressed(ContentType.parse("application/wasm")))
+        assertEquals(false, isAlreadyCompressed(null))
     }
 }

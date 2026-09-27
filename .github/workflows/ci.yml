@@ -139,6 +139,9 @@ jobs:
         run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-player:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
       - name: Player dex register guard (FR-231-2)
         run: ./scripts/check-player-dex.sh
+      # R316 (FR-R316-5) — Ktor's Android engine crashed a fast scroll; the release APK fetches over OkHttp only.
+      - name: Android fetches over OkHttp only (FR-R316-5)
+        run: ./scripts/check-android-http-engine.sh
       # R289 (FR-R289-4) — Play's automatic protection refuses any bundle below minSdk 24; a commit that
       # lowers the floor goes red here, on push, before a tag exists.
       - name: The bundle's floor is what Play requires (FR-R289-4)
