@@ -73,7 +73,7 @@ private fun aiJobCardHtml(j: AiJobUi): String = """
                 </div>
                 <p class="hint" style="margin:6px 0 10px">${j.what}</p>
                 <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
-                  <div class="field" style="margin:0"><label>Model</label><select id="ai-${j.key}-model" class="input" style="width:260px"></select></div>
+                  <div class="field" style="margin:0"><label>Model</label><select id="ai-${j.key}-model" class="input" style="width:340px;max-width:100%"></select></div>
                   <div class="field" style="margin:0" id="ai-${j.key}-effort-field"><label>Effort</label>
                     <select id="ai-${j.key}-effort" class="input" style="width:120px"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
                   <div class="field" style="margin:0"><label>Monthly limit (USD)</label><input id="ai-${j.key}-limit" class="input" type="number" min="0" step="0.5" style="width:110px"></div>
