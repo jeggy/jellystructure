@@ -6,8 +6,9 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-26**, not deployed and **not yet device-checked** (FR-R316-3 / acceptance
-1–3 are the gap; see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against
+`⚠ Partial` — **built 2026-09-26** and **device-checked on the Pixel 9's Library** (see *Device check*
+at the end). Not deployed. The gap is acceptance 1's Discover Studios and Request screens, acceptance 2
+(release build) and acceptance 3 (a TV). Written 2026-09-26, **dev-reviewed 2026-09-26** against
 `main` `0e5e434f` (see *Dev review*). **Reproduced on the Pixel 9 the same day** (debug build 1.39-19). Android client
 (`ravilo-ui` androidMain, both the phone and TV apps) plus one backend change. **Numbering:** verified
 against `STATUS.md` the same day — Ravilo taken through **R315**.
@@ -221,3 +222,30 @@ Built on `main` after R309 (`3e59b32c`).
 - `verify-release-apk-on-art.sh` (ART verifying OkHttp 5.4.0's classes). It runs on the CI emulator at
   the next push.
 - Acceptance 4 (`curl` on production) needs a deploy.
+
+## Device check (2026-09-26 22:58–23:01, Pixel 9 Pro, debug package)
+
+The server was production on v1.41, which still gzips images, so the harder path.
+
+1. **The control crashes.** Debug build `1.40-43-gfe0596cc` (before this phase, Ktor's Android engine).
+   Library, *Alle*, 550 titles, `scripts/fling-check.sh 3`. The app **died in round 1, 4.6 s in**:
+   `IllegalStateException: Unbalanced enter/exit` at `com.android.okhttp.okio.AsyncTimeout.enter` ←
+   `RawSourceChannel.closeSource`, the same trace as the report. So the script reproduces the crash
+   reliably.
+2. **This build does not.** Debug build `1.40-44-g3e59b32c` (this phase), same Library.
+   - First, 15 fast downward flings with screenshots before and after. The grid moved far down the
+     list, so the swipes reach the grid.
+   - Then `scripts/fling-check.sh 5`: **OK**. The process survived every round, and there was no new
+     entry in `dumpsys dropbox data_app_crash`. The grid ended at the last title of the 550, the exact
+     "fast to the bottom" of the report.
+   - Afterwards the dropbox held no entry for `1.40-44`, and the process (pid 1749) was still alive.
+3. **Not run:**
+   - Discover's Studios wall and the Request tab. The owner took the phone back mid-test.
+   - The release build (acceptance 2). The Pixel 9's Play app must not be overwritten, and a release
+     APK carries that package.
+   - A TV (acceptance 3).
+
+**Seen on the way, unconfirmed:** on the R316 build, screenshots of Library showed the Genre filter
+popover open right after the tab opened, and Back did not close it. A tap on the header then landed on
+a poster behind it, so the popover may not have been live at all. Neither the popover nor the tap
+behaviour is proven; worth a look on the next device pass. R316 changes no UI.
