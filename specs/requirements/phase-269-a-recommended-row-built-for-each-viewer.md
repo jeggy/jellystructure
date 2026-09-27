@@ -381,3 +381,20 @@ dev review above, the build is recorded here.
 
 **Not done here:** deploying, running the first build against production, and acceptance 1–6 on the TVs
 (a release, a restart and the owner's go-ahead). The client half (See all, tolerant enums) is R318.
+
+## Correction (2026-09-27): the signals backfill reaches every title within a day
+
+**Found in production the day after the first deploy:** 549 of 551 titles still had `keywords == null`, so
+the similarity ran without keywords, TMDB recommendation edges or collections for almost everything.
+Dev review item 3 made `pull_tmdb`'s *missing* scope include titles whose signals were never fetched, but
+`pull_tmdb` only walks the run's **working set**, and a whole-library run's working set is what the
+freshness filter lets through (Phase 175): a title is in it only when it is next due for a recheck, which
+for an older film is months away. The backfill therefore happened at the speed of the recheck tiers.
+
+**FR-269-3a — the backfill is its own small queue.** On a whole-library run (no single library, not a
+single-item ingest), `pull_tmdb` with scope *missing* also takes titles **outside** the working set that
+still need signals (`needsRecommendationSignals()`), at most **40 per run**, oldest scan first so every
+title gets its turn. With the hourly schedule that is the whole library within about a day, at a pace
+Phase 183's TMDB limiter absorbs (about 200 requests an hour). Only `pull_tmdb` sees these titles: the
+run's other steps keep the working set they had. The log line says how many were added and how many
+remain, as Phase 183's rule for capped passes requires.

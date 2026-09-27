@@ -343,8 +343,17 @@ suspend fun runPipeline(
             "pull_tmdb" -> {
                 // Phase 269 (dev review item 3) — "missing" also means "recommendation signals never
                 // fetched" (`keywords == null`; `[]` is TMDB having none), for one pass per title.
-                val toProcess = if (step.scope == "all") workingSet
+                var toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { it.tmdbId == null || it.needsRecommendationSignals() }
+                // Phase 269 (FR-269-3a) — plus a bounded batch of titles the freshness filter kept out that
+                // still lack signals, on a whole-library run, so the backfill is not months long.
+                if (step.scope != "all" && target is RunTarget.Library && target.libraryJellyfinId == null) {
+                    val extra = SignalsBackfill.pick(store.allItems(), workingSet)
+                    if (extra.items.isNotEmpty()) {
+                        Logger.info("pull_tmdb: +${extra.items.size} for recommendation signals (${extra.remaining} still to fetch)")
+                        toProcess = toProcess + extra.items
+                    }
+                }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
