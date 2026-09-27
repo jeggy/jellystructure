@@ -63,7 +63,12 @@ data class SubtitleSummary(
     @SerialName("hook_last_called_at") val hookLastCalledAt: Long? = null,
     @SerialName("bazarr_connected") val bazarrConnected: Boolean = false,
     val recent: List<SubtitleAction> = emptyList(),
+    @SerialName("fix_would") val fixWould: FixWould? = null,
 )
+
+/** What *Fix it* would do with today's verdicts, while the switch says *Only report*. */
+@Serializable
+data class FixWould(val sync: Int = 0, val replace: Int = 0, val move: Int = 0, val ask: Int = 0, val hide: Int = 0)
 
 @Serializable
 data class SubtitleCheckSettings(

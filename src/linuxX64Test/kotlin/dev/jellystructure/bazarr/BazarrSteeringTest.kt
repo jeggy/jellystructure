@@ -201,6 +201,8 @@ class BazarrSteeringTest {
         steering.act("film", filmVideo)
         assertEquals(emptyList(), fake.calls)
         assertTrue(SubtitleVerdicts.isOffered("Film.hr.srt"))
+        val would = BazarrSteering.preview(db.subtitleCheckQueries.allChecks().executeAsList())
+        assertEquals(BazarrSteering.FixPreview(sync = 1, replace = 1, move = 0, ask = 0, hide = 2), would, "the report run says what Fix it would do: the 50 s late one is hidden too until synced")
     }
 
     @Test

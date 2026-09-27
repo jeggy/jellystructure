@@ -672,8 +672,8 @@ class JellyfinClient {
 
     /** Phase 114 (FR A.2) — asks Jellyfin to examine one path right now, instead of waiting for its own
      *  library monitor (unreliable on network mounts — the usual reason ingest "takes forever"). */
-    suspend fun notifyLibraryMediaUpdated(baseUrl: String, token: String, path: String): Boolean = runCatching {
-        val body = """{"Updates":[{"Path":${path.jsonEscape()},"UpdateType":"Created"}]}"""
+    suspend fun notifyLibraryMediaUpdated(baseUrl: String, token: String, path: String, updateType: String = "Created"): Boolean = runCatching {
+        val body = """{"Updates":[{"Path":${path.jsonEscape()},"UpdateType":${updateType.jsonEscape()}}]}"""
         val r = httpPost(baseUrl.trimEnd('/') + "/Library/Media/Updated") {
             jellyfinAuth(token)
             contentType(ContentType.Application.Json)

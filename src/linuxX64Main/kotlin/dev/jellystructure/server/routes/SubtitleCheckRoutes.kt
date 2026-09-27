@@ -77,7 +77,12 @@ data class SubtitleSummaryDto(
     @SerialName("hook_last_called_at") val hookLastCalledAt: Long? = null,
     @SerialName("bazarr_connected") val bazarrConnected: Boolean,
     val recent: List<SubtitleActionDto>,
+    /** Dev review item 8 — what *Fix it* would do with today's verdicts; sent only while the switch says *Only report*. */
+    @SerialName("fix_would") val fixWould: FixWouldDto? = null,
 )
+
+@Serializable
+data class FixWouldDto(val sync: Int, val replace: Int, val move: Int, val ask: Int, val hide: Int)
 
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 private fun nowSeconds(): Long = platform.posix.time(null)
@@ -146,6 +151,8 @@ fun Route.subtitleCheckRoutes(
             hookLastCalledAt = hook?.lastCalledAtMs(),
             bazarrConnected = configStore.current.bazarr?.let { it.enabled && it.url.isNotBlank() } == true,
             recent = q.recentActions(20).executeAsList().map { it.dto() },
+            fixWould = if (!configStore.current.subtitleCheck.reportOnly) null
+                else BazarrSteering.preview(q.allChecks().executeAsList()).let { FixWouldDto(it.sync, it.replace, it.move, it.ask, it.hide) },
         ))
     }
 

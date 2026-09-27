@@ -18,6 +18,7 @@ import dev.jellystructure.subtitles.CantTell
 import dev.jellystructure.subtitles.RefKind
 import dev.jellystructure.subtitles.SubtitleCheckService
 import dev.jellystructure.subtitles.SubtitleSteering
+import dev.jellystructure.subtitles.SubtitleVerdicts
 import dev.jellystructure.subtitles.Verdict
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -71,7 +72,31 @@ class BazarrSteering(
         const val ROUNDS_PER_DAY = 3
         val MAX_OFFSETS = listOf(60, 120, 300, 600)
         var current: BazarrSteering? = null
+
+        internal fun needsAction(r: Subtitle_check): Boolean = when (r.verdict) {
+            Verdict.IN_SYNC.wire -> false
+            Verdict.CANT_TELL.wire -> r.reason == CantTell.WEAK && r.reference?.startsWith(RefKind.SPEECH.wire) == true
+            else -> true
+        }
+
+        /** Dev review item 8 — what *Fix it* would do with the verdicts as they stand, first action per sidecar, so
+         *  the admin can read the report run before switching. A verdict from the speech track only ever waits. */
+        fun preview(rows: List<Subtitle_check>): FixPreview {
+            var sync = 0; var replace = 0; var move = 0; var ask = 0
+            for (r in rows) {
+                if (!needsAction(r)) continue
+                if (r.reference?.startsWith(RefKind.SPEECH.wire) == true) { ask++; continue }
+                when (r.verdict) {
+                    Verdict.OFF.wire -> if (abs(r.shift_ms ?: 0) / 1000 < MAX_OFFSETS.last()) sync++ else replace++
+                    Verdict.OTHER_EPISODE.wire -> move++
+                    else -> replace++
+                }
+            }
+            return FixPreview(sync, replace, move, ask, rows.count { SubtitleVerdicts.isHidden(it) })
+        }
     }
+
+    data class FixPreview(val sync: Int, val replace: Int, val move: Int, val ask: Int, val hide: Int)
 
     fun start() {
         current = this
@@ -94,12 +119,6 @@ class BazarrSteering(
         settle(videoPath, rows)
         if (mode().reportOnly || service.config() == null) return
         if (rows.any { needsAction(it) } || q.settledForVideo(videoPath).executeAsList().isNotEmpty()) work.trySend(item.id to videoPath)
-    }
-
-    private fun needsAction(r: Subtitle_check): Boolean = when (r.verdict) {
-        Verdict.IN_SYNC.wire -> false
-        Verdict.CANT_TELL.wire -> r.reason == CantTell.WEAK && r.reference?.startsWith(RefKind.SPEECH.wire) == true
-        else -> true
     }
 
     /** FR-273-15 — keep a copy of every sidecar judged in sync, so a blind upgrade can be undone. */
@@ -369,11 +388,11 @@ class BazarrSteering(
         is Target.Film -> client.uploadMovieSubtitle(cfg.url, cfg.apiKey, t.movie.radarrId, language ?: "", forced, hi, name, content)
     }
 
-    /** After a change: tell Jellyfin about this one item (dev review item 1) and check the video again. */
+    /** After a change: tell Jellyfin about this one item (dev review item 1) and check the video again. The video's
+     *  own path goes as *Modified*: what changed beside it may be a file that no longer exists. */
     private suspend fun afterChange(item: MediaItem, videoPath: String, t: Target) {
         val jfId = when (t) { is Target.Ep -> t.unit.jellyfinId; is Target.Film -> item.jellyfinId }
-        val k = configStore.current.apiKeys
-        if (!jfId.isNullOrBlank() && k.jellyfinUrl.isNotBlank()) runCatching { jellyfinClient.refreshItem(k.jellyfinUrl, k.jellyfinToken, jfId, full = false) }
+        tellJellyfin(configStore, jellyfinClient, videoPath, "Modified", jfId)
         later(item.id, videoPath, delayMs = 3_000, recheck = true)
     }
 

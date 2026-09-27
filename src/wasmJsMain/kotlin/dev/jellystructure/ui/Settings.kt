@@ -601,6 +601,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                     <span class="hint">Goes into the command Bazarr runs after each download.</span>
                   </div>
                   <div style="display:flex;align-items:center;gap:8px"><button id="subcheck-save" class="btn sm">Save</button><span id="subcheck-save-out" class="tiny muted"></span></div>
+                  <div id="subcheck-would" class="tiny" style="margin-top:10px;line-height:1.6"></div>
                   <div id="subcheck-hook" class="tiny" style="margin-top:12px;line-height:1.6"></div>
                   <div id="subcheck-advisor"></div>
                 </div>
@@ -2069,6 +2070,19 @@ private suspend fun loadSubtitleCheck(scope: CoroutineScope, fresh: Boolean = fa
         "fix" -> """<span class="badge ok" style="font-size:.72rem">Fix it</span>"""
         "ask" -> """<span class="badge warn" style="font-size:.72rem">Ask me first</span>"""
         else -> """<span class="badge" style="font-size:.72rem">Only report</span>"""
+    }
+    // Dev review item 8 — while it only reports, say what *Fix it* would do with the verdicts so far.
+    val would = if (settings.action == "report") dev.jellystructure.api.SubtitleCheckApi.summary()?.fixWould else null
+    (document.getElementById("subcheck-would") as? HTMLElement)?.innerHTML = if (would == null) "" else {
+        val parts = listOfNotNull(
+            would.sync.takeIf { it > 0 }?.let { "sync $it" },
+            would.replace.takeIf { it > 0 }?.let { "replace $it" },
+            would.move.takeIf { it > 0 }?.let { "move $it to their own episode" },
+            would.ask.takeIf { it > 0 }?.let { "ask you about $it" },
+            would.hide.takeIf { it > 0 }?.let { "hide $it from viewers" },
+        )
+        if (parts.isEmpty()) """<span class="muted">So far every checked subtitle fits: <b>Fix it</b> would have nothing to do.</span>"""
+        else "With <b>Fix it</b>, the checks so far would: ${parts.joinToString(" · ")}."
     }
     val advice = dev.jellystructure.api.SubtitleCheckApi.advice(fresh)
     val hookEl = document.getElementById("subcheck-hook") as? HTMLElement

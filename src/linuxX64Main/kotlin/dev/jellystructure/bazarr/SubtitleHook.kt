@@ -14,6 +14,21 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
+ * Dev review item 1 — Jellyfin learns about one changed file, under the path Jellyfin itself sees (the library's
+ * `jellyfin_path` mapping, as the *arr webhook does), and validates its one item. Never Bazarr's own Jellyfin
+ * integration, which rescans whole libraries for an item it cannot find by id.
+ */
+internal suspend fun tellJellyfin(configStore: ConfigStore, jellyfinClient: JellyfinClient, localPath: String, updateType: String, jellyfinId: String?) {
+    val cfg = configStore.current
+    val k = cfg.apiKeys
+    if (k.jellyfinUrl.isBlank() || k.jellyfinToken.isBlank()) return
+    val lib = cfg.libraries.firstOrNull { !it.skip && it.localPath.isNotBlank() && localPath.startsWith(it.localPath) }
+    val seen = if (lib == null || lib.jellyfinPath.isBlank()) localPath else localPath.replaceFirst(lib.localPath, lib.jellyfinPath)
+    runCatching { jellyfinClient.notifyLibraryMediaUpdated(k.jellyfinUrl, k.jellyfinToken, seen, updateType) }
+    if (!jellyfinId.isNullOrBlank()) runCatching { jellyfinClient.refreshItem(k.jellyfinUrl, k.jellyfinToken, jellyfinId, full = false) }
+}
+
+/**
  * Phase 273 (§B) — hearing about a subtitle the minute Bazarr places it. Bazarr's *Custom Post-Processing* runs a
  * command after every download, upgrade, manual download and upload; the command jellystructure generates posts
  * the file's ids to `/api/webhooks/bazarr`, which queues the call here and answers at once (Bazarr runs the command
@@ -82,16 +97,10 @@ class SubtitleHook(
     }
 
     private suspend fun check(item: MediaItem, videoPath: String, sources: Map<String, SubtitleCheckService.Source>) {
-        tellJellyfin(item, videoPath)
+        val jfId = if (item.kind == MediaKind.TV_SHOW) item.episodes.firstOrNull { it.path == videoPath }?.jellyfinId else item.jellyfinId
+        for (sidecar in sources.keys) tellJellyfin(configStore, jellyfinClient, sidecar, "Created", jfId)
         val out = checks.checkVideo(item, videoPath, SubtitleCheckService.Mode.INLINE, sources)
         if (out.needsJob) steering.enqueueCheck(item, videoPath)
-    }
-
-    /** Dev review item 1 — Jellyfin learns about the one item whose subtitles changed. */
-    private suspend fun tellJellyfin(item: MediaItem, videoPath: String) {
-        val jfId = if (item.kind == MediaKind.TV_SHOW) item.episodes.firstOrNull { it.path == videoPath }?.jellyfinId else item.jellyfinId
-        val k = configStore.current.apiKeys
-        if (!jfId.isNullOrBlank() && k.jellyfinUrl.isNotBlank()) runCatching { jellyfinClient.refreshItem(k.jellyfinUrl, k.jellyfinToken, jfId, full = false) }
     }
 
     private suspend fun episodeFor(sonarrEpisodeId: Int): Pair<MediaItem, String>? {
