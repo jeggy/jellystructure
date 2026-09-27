@@ -1,0 +1,62 @@
+-- Phase 270 (FR-270-5, dev review item 4) — the AI jobs' batches, ledger and results. Must stay byte-for-byte in sync with Ai.sq.
+-- Phase 270 (FR-270-5) — a batch sent to the AI provider and not yet read back. `submitted` rows are
+-- polled again after a restart, so the results are never lost and never paid for twice.
+CREATE TABLE ai_batch (
+    id TEXT NOT NULL PRIMARY KEY,
+    job TEXT NOT NULL,
+    model TEXT NOT NULL,
+    submitted_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    request_count INTEGER NOT NULL
+);
+
+-- One request inside a batch: its opaque custom_id and what the result needs to be applied (for a
+-- re-rank: viewer, scope and the shortlist, as JSON; for themes: the item and its synopsis hash).
+CREATE TABLE ai_batch_item (
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    context TEXT NOT NULL,
+    PRIMARY KEY (batch_id, custom_id)
+);
+
+-- FR-270-5 — spend, from the API's own `usage`, per job, calendar month and model.
+CREATE TABLE ai_usage (
+    job TEXT NOT NULL,
+    month TEXT NOT NULL,
+    model TEXT NOT NULL,
+    requests INTEGER NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_write_tokens INTEGER NOT NULL,
+    cache_read_tokens INTEGER NOT NULL,
+    cost_micro_usd INTEGER NOT NULL,
+    PRIMARY KEY (job, month, model)
+);
+
+-- The last run's outcome, one line per job, as the AI tab shows it.
+CREATE TABLE ai_run (
+    job TEXT NOT NULL PRIMARY KEY,
+    at INTEGER NOT NULL,
+    line TEXT NOT NULL
+);
+
+-- The theme-tags job's answer per title, and the synopsis it was made from (FR-270 job 2: again only
+-- when the synopsis changes).
+CREATE TABLE ai_theme (
+    item_id TEXT NOT NULL PRIMARY KEY,
+    themes TEXT NOT NULL,
+    synopsis_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- The re-rank job's order per viewer and scope, with its reasons. 269's finish-triggered rebuilds keep
+-- it, filtered and topped up (FR-270-7); only the next AI run replaces it.
+CREATE TABLE ai_order (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ordered_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);

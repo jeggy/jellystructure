@@ -16,6 +16,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
+import dev.jellystructure.server.routes.aiRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.bazarrRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
@@ -587,6 +588,7 @@ fun startServer(
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService)
                 activityRoutes(activityLog)
+                aiRoutes(configStore)   // Phase 270
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)

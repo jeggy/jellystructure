@@ -1,0 +1,120 @@
+-- Phase 270 (FR-270-5) — a batch sent to the AI provider and not yet read back. `submitted` rows are
+-- polled again after a restart, so the results are never lost and never paid for twice.
+CREATE TABLE ai_batch (
+    id TEXT NOT NULL PRIMARY KEY,
+    job TEXT NOT NULL,
+    model TEXT NOT NULL,
+    submitted_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    request_count INTEGER NOT NULL
+);
+
+-- One request inside a batch: its opaque custom_id and what the result needs to be applied (for a
+-- re-rank: viewer, scope and the shortlist, as JSON; for themes: the item and its synopsis hash).
+CREATE TABLE ai_batch_item (
+    batch_id TEXT NOT NULL,
+    custom_id TEXT NOT NULL,
+    context TEXT NOT NULL,
+    PRIMARY KEY (batch_id, custom_id)
+);
+
+-- FR-270-5 — spend, from the API's own `usage`, per job, calendar month and model.
+CREATE TABLE ai_usage (
+    job TEXT NOT NULL,
+    month TEXT NOT NULL,
+    model TEXT NOT NULL,
+    requests INTEGER NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_write_tokens INTEGER NOT NULL,
+    cache_read_tokens INTEGER NOT NULL,
+    cost_micro_usd INTEGER NOT NULL,
+    PRIMARY KEY (job, month, model)
+);
+
+-- The last run's outcome, one line per job, as the AI tab shows it.
+CREATE TABLE ai_run (
+    job TEXT NOT NULL PRIMARY KEY,
+    at INTEGER NOT NULL,
+    line TEXT NOT NULL
+);
+
+-- The theme-tags job's answer per title, and the synopsis it was made from (FR-270 job 2: again only
+-- when the synopsis changes).
+CREATE TABLE ai_theme (
+    item_id TEXT NOT NULL PRIMARY KEY,
+    themes TEXT NOT NULL,
+    synopsis_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- The re-rank job's order per viewer and scope, with its reasons. 269's finish-triggered rebuilds keep
+-- it, filtered and topped up (FR-270-7); only the next AI run replaces it.
+CREATE TABLE ai_order (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ordered_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);
+
+insertBatch:
+INSERT INTO ai_batch(id, job, model, submitted_at, status, request_count) VALUES (:id, :job, :model, :submitted_at, :status, :request_count);
+
+setBatchStatus:
+UPDATE ai_batch SET status = :status WHERE id = :id;
+
+pendingBatches:
+SELECT * FROM ai_batch WHERE status = 'submitted' ORDER BY submitted_at;
+
+pendingBatchForJob:
+SELECT * FROM ai_batch WHERE job = :job AND status = 'submitted' ORDER BY submitted_at DESC LIMIT 1;
+
+countBatches:
+SELECT COUNT(*) FROM ai_batch;
+
+insertBatchItem:
+INSERT OR REPLACE INTO ai_batch_item(batch_id, custom_id, context) VALUES (:batch_id, :custom_id, :context);
+
+batchItems:
+SELECT * FROM ai_batch_item WHERE batch_id = :batch_id;
+
+deleteBatchItems:
+DELETE FROM ai_batch_item WHERE batch_id = :batch_id;
+
+-- No UPSERT in this dialect (sqlite_3_18): AiJobs reads the row, adds, and replaces, in one transaction.
+usageRow:
+SELECT * FROM ai_usage WHERE job = :job AND month = :month AND model = :model;
+
+putUsage:
+INSERT OR REPLACE INTO ai_usage(job, month, model, requests, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, cost_micro_usd)
+VALUES (:job, :month, :model, :requests, :input_tokens, :output_tokens, :cache_write_tokens, :cache_read_tokens, :cost_micro_usd);
+
+spentInMonth:
+SELECT COALESCE(SUM(cost_micro_usd), 0) AS spent FROM ai_usage WHERE job = :job AND month = :month;
+
+usageForJob:
+SELECT * FROM ai_usage WHERE job = :job ORDER BY month DESC;
+
+putRun:
+INSERT OR REPLACE INTO ai_run(job, at, line) VALUES (:job, :at, :line);
+
+runFor:
+SELECT * FROM ai_run WHERE job = :job;
+
+putTheme:
+INSERT OR REPLACE INTO ai_theme(item_id, themes, synopsis_hash, created_at) VALUES (:item_id, :themes, :synopsis_hash, :created_at);
+
+allThemes:
+SELECT * FROM ai_theme;
+
+deleteOrder:
+DELETE FROM ai_order WHERE user_id = :user_id AND scope_key = :scope_key;
+
+putOrder:
+INSERT OR REPLACE INTO ai_order(user_id, scope_key, rank, item_id, reason, ordered_at) VALUES (:user_id, :scope_key, :rank, :item_id, :reason, :ordered_at);
+
+orderFor:
+SELECT * FROM ai_order WHERE user_id = :user_id AND scope_key = :scope_key ORDER BY rank;

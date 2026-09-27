@@ -169,7 +169,71 @@ data class AppConfig(
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
+    // Phase 270 — the AI tab. The key arrives as the `##KEEP##` sentinel when one is saved (never the key).
+    val ai: AiConfig = AiConfig(),
 )
+
+/** Phase 270 — mirrors the backend's `AiConfig` (FR-270-1/2). */
+@Serializable
+data class AiConfig(
+    val enabled: Boolean = false,
+    val provider: String = "anthropic",
+    @SerialName("api_key") val apiKey: String = "",
+    val rerank: AiJobConfig = AiJobConfig(effort = "medium"),
+    val themes: AiJobConfig = AiJobConfig(effort = "low"),
+)
+
+@Serializable
+data class AiJobConfig(
+    val enabled: Boolean = false,
+    val model: String = "claude-opus-5",
+    val effort: String = "medium",
+    @SerialName("monthly_limit_usd") val monthlyLimitUsd: Double = 5.0,
+)
+
+/** Phase 270 (dev review item 1) — `GET /api/ai/status`: everything the tab shows that is not config. */
+@Serializable
+data class AiModel(val id: String, val label: String, val inputPerMTok: Double, val outputPerMTok: Double, val effort: Boolean)
+
+@Serializable
+data class AiJobStatus(
+    val spentThisMonthMicroUsd: Long = 0,
+    val lastRun: String? = null,
+    val lastRunAt: Long? = null,
+    val pending: Boolean = false,
+    val estimateMicroUsd: Map<String, Long> = emptyMap(),
+    val estimateBasis: String = "",
+)
+
+@Serializable
+data class AiStatus(
+    val keyHint: String? = null,
+    val pricesAsOf: String = "",
+    val models: List<AiModel> = emptyList(),
+    val rerank: AiJobStatus = AiJobStatus(),
+    val themes: AiJobStatus = AiJobStatus(),
+)
+
+@Serializable
+data class AiKeyTest(val result: String = "", val detail: String = "")
+
+@Serializable
+private data class AiKeyTestRequest(@SerialName("api_key") val apiKey: String)
+
+object AiApi {
+    suspend fun status(): AiStatus? = runCatching {
+        val r = httpClient.get("/api/ai/status")
+        if (r.status == HttpStatusCode.OK) r.body<AiStatus>() else null
+    }.getOrNull()
+
+    /** [typedKey] blank = test the saved key. */
+    suspend fun testKey(typedKey: String): AiKeyTest? = runCatching {
+        httpClient.post("/api/ai/test-key") {
+            contentType(ContentType.Application.Json)
+            setBody(AiKeyTestRequest(typedKey))
+        }.body<AiKeyTest>()
+    }.getOrNull()
+}
 
 @Serializable
 data class ApiKeys(

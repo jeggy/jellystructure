@@ -99,6 +99,7 @@ private fun maskSecrets(config: AppConfig): AppConfig {
         seerr = config.seerr?.copy(apiKey = mask(config.seerr.apiKey)),
         bazarr = config.bazarr?.copy(apiKey = mask(config.bazarr.apiKey)),
         ingest = config.ingest.copy(webhookSecret = mask(config.ingest.webhookSecret)),
+        ai = config.ai.copy(apiKey = mask(config.ai.apiKey)),   // Phase 270 (dev review item 1)
     )
 }
 
@@ -211,6 +212,9 @@ fun Route.configureConfigRoutes(
         }
         if (received.bazarr?.apiKey == "##KEEP##") {
             config = config.copy(bazarr = received.bazarr.copy(apiKey = stored.bazarr?.apiKey ?: ""))
+        }
+        if (received.ai.apiKey == "##KEEP##") {
+            config = config.copy(ai = config.ai.copy(apiKey = stored.ai.apiKey))
         }
         // The frontend AppConfig model omits acquisition (config-file-only, not exposed in the Settings
         // UI). Preserve the stored value so a Settings save never wipes it.

@@ -70,6 +70,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("metadata", "Metadata")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
+              ${settingsNavItemHtml("ai", "AI")}
               ${settingsNavItemHtml("advanced", "Advanced")}
             </div>
           </nav>
@@ -663,6 +664,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
+${aiSectionHtml()}
             <div class="card set-section" id="sect-advanced" data-tab="advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
               <div class="field">
@@ -777,7 +779,7 @@ private val SECTION_TAB = mapOf(
     "sect-advanced" to "advanced",
 )
 // Phase 217 — the phase-162 tab is gone; its old `?tab=` value is unknown and the Phase-55 contract sends it to the default.
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "ai", "advanced")   // Phase 270 — "ai"
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -874,6 +876,7 @@ private var rcDragFrom: String? = null
 private fun populateForm(response: ConfigResponse) {
     val config = response.config
     effectiveScanThreads = response.effectiveScanThreads
+    populateAi(config.ai)   // Phase 270
 
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
     // Security fix (2026-08-02 review, finding H3) — GET /config now masks secrets with a "##KEEP##"
@@ -1169,6 +1172,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireBazarr(scope)
     wireChromecast(scope)
     wireRequestLanguage(scope)
+    wireAi(scope) { refreshTomlPreview(readForm()) }   // Phase 270
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -1719,6 +1723,7 @@ private fun readForm(): AppConfig = AppConfig(
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList(), deferWhilePlaying = deferWhilePlaying),
     requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
+    ai = readAi(),   // Phase 270
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -1850,6 +1855,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""app_id = "${cc.appId}"""")
         appendLine("max_sessions = ${cc.maxSessions}")
     }
+    append(aiTomlPreview(c.ai))   // Phase 270 — the key is never echoed
 }
 
 // Phase 54 — wire one Radarr/Sonarr box (enable + rescan toggles, inputs, test, import root folders).

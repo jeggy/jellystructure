@@ -34,6 +34,30 @@ data class AppConfig(
     val ingest: IngestConfig = IngestConfig(),
     // Phase 139 — request-language steering (Original vs Nordic/Danish etc.)
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
+    // Phase 270 — the AI tab. Off by default; off means no request leaves the server.
+    val ai: AiConfig = AiConfig(),
+)
+
+/**
+ * Phase 270 (FR-270-1/2, dev review item 1) — one provider (Anthropic) for now, drawn as a choice; one
+ * block per job, each with its own model, effort and monthly limit in USD. [apiKey] is a secret: masked
+ * with the `##KEEP##` sentinel on read like every other key, never sent to a Ravilo client, never logged.
+ */
+@Serializable
+data class AiConfig(
+    val enabled: Boolean = false,
+    val provider: String = "anthropic",
+    @SerialName("api_key") val apiKey: String = "",
+    val rerank: AiJobConfig = AiJobConfig(effort = "medium"),
+    val themes: AiJobConfig = AiJobConfig(effort = "low"),
+)
+
+@Serializable
+data class AiJobConfig(
+    val enabled: Boolean = false,
+    val model: String = "claude-opus-5",
+    val effort: String = "medium",
+    @SerialName("monthly_limit_usd") val monthlyLimitUsd: Double = 5.0,
 )
 
 // Phase 114 — realtime ingest. `realtime` defaults on when a Jellyfin token is configured (checked at

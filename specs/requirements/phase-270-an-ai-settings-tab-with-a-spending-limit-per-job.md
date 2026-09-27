@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Backend (a provider client, a job runner, a usage ledger) and the admin (a new Settings
 tab). It sits **on top of Phase 269**: with AI off, or when a limit is reached, 269's standard list is
 what every viewer gets, unchanged. **Numbering:** verified against `STATUS.md` the same day — admin
@@ -197,3 +197,53 @@ Buildable as written, with two corrections (items 1 and 8). Nine items.
 **Net effect.** A small Anthropic client, a batch runner with resume, migration 56, a price table, two job
 definitions with pure validators, one status route, one Settings tab. Nothing changes for viewers while
 it is off.
+
+## Build notes (2026-09-27)
+
+Built off by default; nothing has been sent to Anthropic from production (no key is configured).
+
+1. **Config.** `AiConfig(enabled, provider, api_key, rerank, themes)` with one `AiJobConfig(enabled, model,
+   effort, monthly_limit_usd)` per job as `[ai]`, `[ai.rerank]`, `[ai.themes]` (two named blocks rather than
+   a map: simpler in TOML, and the tab has exactly these cards). The key is masked with `##KEEP##` on read
+   and restored on write, like every secret. Round-trip tested through `config.toml`.
+2. **Prices** (`ai/AiPricing.kt`): Opus 5 $5 / $25, Sonnet 5 $2 / $10, Haiku 4.5 $1 / $5 per MTok, re-checked
+   on 2026-09-27 against the model reference bundled with Claude Code (`AS_OF`, shown on the tab); batch ×0.5,
+   cache write ×1.25, cache read ×0.1. The worst case counts every input character as a third of a token
+   priced as a cache write, plus `max_tokens` × requests (re-rank 8,000, themes 600).
+3. **Client** (`ai/AnthropicClient.kt`): plain HTTPS through `OutboundHttp` (the backend is Kotlin/Native;
+   there is no SDK), `x-api-key` and `anthropic-version: 2023-06-01`; `GET /v1/models` for *Test key*;
+   `POST /v1/messages/batches`, `GET …/{id}`, and the results JSONL, read by `custom_id`. 429 and 5xx back off
+   with jitter, five tries. The HTTP sits behind a `Transport` interface so tests stand in for Anthropic.
+4. **Requests** (`ai/AiRequests.kt`, pure): the instructions as a system prompt with `cache_control`; the
+   answer constrained by `output_config.format` (JSON schema, `additionalProperties: false`); `effort` only
+   for Opus 5 and Sonnet 5. Candidates carry short ids `t1…t100`; `custom_id`s are FNV hashes. The request
+   never names the viewer.
+5. **Validation** as FR-270-4: `refusal`/`max_tokens`/`errored` → 269's list; a foreign id, a repeat or more
+   than 50 → discarded; fewer than 50 → topped up in 269's order. Themes lower-cased, trimmed,
+   de-duplicated, capped at 8. A title the model could not tag is stored with no themes and the synopsis
+   hash, so it is not paid for again until the synopsis changes.
+6. **Runner** (`ai/AiJobs.kt`): one batch per job in flight; the limit is checked before sending
+   (*skipped: limit reached …* on the card); polled every five minutes, and `submitted` rows are polled again
+   after a restart (tested with a second runner over the same database); results priced into `ai_usage`
+   from the API's own `usage`; the last run's line in `ai_run`. **Off means off:** with AI off or no key, no
+   request is made, polling included (tested against a transport that fails on any call).
+7. **Migration 56**: `ai_batch`, `ai_batch_item` (per-request context, so results apply after a restart),
+   `ai_usage` (read-add-replace in a transaction: the dialect has no UPSERT), `ai_run`, `ai_theme`,
+   `ai_order`.
+8. **The seam with 269** (dev review item 9): `RecommendationService` builds a 100-title shortlist beside the
+   list (the same scoring, `build(size = 100)`), hands `RerankInput`s to the AI after a full build and after a
+   viewer's first build (at most once a day for a viewer with no AI order, so a failed answer is not re-bought
+   on every finish), and applies an accepted order with `applyAiOrder`. Rebuilds between AI runs keep the AI's
+   order, filtered to the new shortlist and topped up from the standard list. Rows carry `source = "ai"`;
+   the admin view (*Users & devices*) shows the AI's reason for those titles and *re-ranked by AI* on the
+   list. Theme tags join the engine's features as `t:<theme>` at keyword weight.
+9. **Routes**: `GET /api/ai/status` (key hint, spend this month, last run, pending batch, a month's estimate
+   per model from the job's own ledger or the documented assumption, prices' date) and
+   `POST /api/ai/test-key` (a typed key, or the saved one).
+10. **Admin tab** (`ui/SettingsAi.kt`): *Use AI*, provider, key with *Test key* and the saved hint, one card
+    per job (switch, model with prices, effort hidden for Haiku, monthly limit, spent, last run, estimate),
+    what is sent (FR-270-8) and the prices' date. The TOML preview never echoes the key.
+11. **Tests**: `AiJobsTest` (15): prices and multipliers, the limit check and a refused send, the five
+    validation cases plus themes, the request shape for Haiku vs Opus, resume after a restart with the ledger
+    total, the three key-test outcomes, *off sends nothing*, one themes batch per title set and one batch per
+    job in flight, and the TOML round-trip. The full backend suite passes (686).

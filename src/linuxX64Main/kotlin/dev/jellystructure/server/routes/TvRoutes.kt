@@ -1137,13 +1137,16 @@ fun Route.tvRoutes(
         val newest = rows.firstOrNull() ?: return RecommendationsView(lastFullBuild = service.lastBuiltAt())
         val current = rows.filter { it.scope_key == newest.scope_key }.sortedBy { it.rank }
         suspend fun titleOf(jellyfinId: String?): String? = jellyfinId?.let { mediaStore?.resolveByJellyfinId(it)?.title }
+        // Phase 270 (FR-270-4) — an AI-ordered title shows the AI's own reason (the admin's eyes only).
+        val aiReasons = if (current.any { it.source == dev.jellystructure.tv.RecommendationService.SOURCE_AI }) service.aiReasonsFor(userId, newest.scope_key) else emptyMap()
         return RecommendationsView(
             builtAt = newest.built_at,
-            source = newest.source,
+            // Phase 270 — "ai" when the AI ordered this list (its first title), else "standard".
+            source = if (current.any { it.source == dev.jellystructure.tv.RecommendationService.SOURCE_AI }) dev.jellystructure.tv.RecommendationService.SOURCE_AI else newest.source,
             lastFullBuild = service.lastBuiltAt(),
             items = current.mapNotNull { r ->
                 val item = mediaStore?.resolveByJellyfinId(r.item_id) ?: return@mapNotNull null
-                val reason = when (r.reason_code) {
+                val reason = aiReasons[r.item_id]?.takeIf { r.source == dev.jellystructure.tv.RecommendationService.SOURCE_AI } ?: when (r.reason_code) {
                     dev.jellystructure.tv.RecommendationEngine.REASON_WATCHED -> titleOf(r.reason_item_id)?.let { "because you watched $it" } ?: "like what you watch"
                     dev.jellystructure.tv.RecommendationEngine.REASON_HOUSEHOLD -> "liked in your household"
                     dev.jellystructure.tv.RecommendationEngine.REASON_RATED -> "highly rated"

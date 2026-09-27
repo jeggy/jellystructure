@@ -143,12 +143,14 @@ object RecommendationEngine {
     // ─── Features ─────────────────────────────────────────────────────────────
 
     /** A title's features and their family weights, before IDF. */
-    fun rawFeatures(item: MediaItem): Map<String, Double> {
+    fun rawFeatures(item: MediaItem, themes: List<String> = emptyList()): Map<String, Double> {
         val f = HashMap<String, Double>()
         fun put(k: String, v: Double) { if (v > (f[k] ?: 0.0)) f[k] = v }
         val ids = GenreCatalog.ids(item)
         item.genres.forEachIndexed { i, name -> put("g:" + (ids.getOrNull(i)?.toString() ?: TaxonomyKey.key(name)), W_GENRE) }
         item.keywords.orEmpty().forEach { put("k:${it.id}", W_KEYWORD) }
+        // Phase 270 — the AI's theme tags, for titles TMDB has no keywords for: one more family, weighted as keywords.
+        themes.forEach { put("t:" + it, W_KEYWORD) }
         item.cast.sortedBy { it.order }.take(BILLING.size).forEachIndexed { i, p -> if (p.tmdbId != 0) put("c:${p.tmdbId}", W_CAST * BILLING[i]) }
         item.crew.filter { it.job in CREATOR_JOBS && it.tmdbId != 0 }.forEach { put("d:${it.tmdbId}", W_DIRECTOR) }
         if (item.kind != MediaKind.TV_SHOW) item.studio?.takeIf { it.isNotBlank() }?.let { put("s:" + TaxonomyKey.key(it), W_STUDIO) }
@@ -161,8 +163,8 @@ object RecommendationEngine {
 
     /** Every title's weighted feature vector: family weight × ln(N / titles carrying it). A feature every
      *  title has says nothing and drops out; one on six titles says a lot. */
-    class Vectors(library: List<MediaItem>) {
-        private val raw: Map<String, Map<String, Double>> = library.associate { (it.jellyfinId ?: it.id) to rawFeatures(it) }
+    class Vectors(library: List<MediaItem>, themes: Map<String, List<String>> = emptyMap()) {
+        private val raw: Map<String, Map<String, Double>> = library.associate { (it.jellyfinId ?: it.id).let { k -> k to rawFeatures(it, themes[k].orEmpty()) } }
         private val idf: Map<String, Double>
         init {
             val df = HashMap<String, Int>()
@@ -219,6 +221,8 @@ object RecommendationEngine {
         starter: List<Pick>,
         nowSec: Long,
         vectors: Vectors = Vectors(library),
+        /** Phase 270 — how many to keep: [LIST_SIZE] for the list, 100 for the AI re-rank's shortlist. */
+        size: Int = LIST_SIZE,
     ): List<Pick> {
         val byTmdb = HashMap<String, MediaItem>()
         for (it in library) it.tmdbId?.let { t -> byTmdb["${kindKey(it.kind)}:$t"] = it }
@@ -263,7 +267,7 @@ object RecommendationEngine {
         for (p in scored) chosen[p.jellyfinId] = p
         val eligibleIds = eligible.mapTo(HashSet()) { it.jellyfinId!! }
         for (s in starter) if (s.jellyfinId in eligibleIds && s.jellyfinId !in chosen) chosen[s.jellyfinId] = s.copy(score = 0.0)
-        return diversify(chosen.values.toList(), byJf, LIST_SIZE)
+        return diversify(chosen.values.toList(), byJf, size)
     }
 
     /** The history title a candidate is most like, for "because you watched …". */

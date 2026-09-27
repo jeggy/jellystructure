@@ -259,6 +259,14 @@ fun main() = runBlocking {
     homeFeedService.recommendations = recommendationService
     dev.jellystructure.tv.PlaystateCache.onNewlyPlayed = { device -> recommendationService.markStale(device) }
     dev.jellystructure.tv.RecommendationService.current = recommendationService
+    // Phase 270 — the AI jobs, on top of 269. Off by default; with AI off not one request leaves the server.
+    val aiJobs = dev.jellystructure.ai.AiJobs(db, configStore, library = { mediaStore.liveItems() })
+    aiJobs.rerankSink = dev.jellystructure.ai.AiJobs.RerankSink { u, s, picks -> recommendationService.applyAiOrder(u, s, picks) }
+    recommendationService.themes = { aiJobs.themes() }
+    recommendationService.afterBuild = { inputs -> aiJobs.afterBuild(inputs) }
+    dev.jellystructure.ai.AiJobs.current = aiJobs
+    dev.jellystructure.ai.AiJobs.viewerCount = { recommendationService.viewerCount() }
+    aiJobs.start(rootScope)
     recommendationService.start(rootScope)
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { clearlogoInk.warm(mediaStore.allItems()) } }
     val playbackQoeStore = dev.jellystructure.tv.PlaybackQoeStore(db)
