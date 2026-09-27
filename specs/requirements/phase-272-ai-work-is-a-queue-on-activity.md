@@ -2,10 +2,55 @@
 
 ## Status
 
-`Planned` — written 2026-09-27 from the owner's two asks the same afternoon, after the first real AI run on
-production. Builds on **270** (the AI tab, the batch runner, the per-job monthly limit), **269** (the
-Recommended lists the re-rank orders, *Rebuild now*) and **213/260/261** (Activity ▸ *Jobs & workers*).
-Not dev-reviewed.
+`✓ Built` 2026-09-27, the same afternoon it was written (commits `9b9298d9`, `3f337153`). `Planned` when written
+2026-09-27 from the owner's two asks after the first real AI run on production. Builds on **270** (the AI tab,
+the batch runner, the per-job monthly limit), **269** (the Recommended lists the re-rank orders, *Rebuild now*)
+and **213/260/261** (Activity ▸ *Jobs & workers*). Not dev-reviewed.
+
+### Build (2026-09-27)
+
+- **Migration 57**: `ai_queue` (unique on *(job, subject)*, `INSERT OR REPLACE` so newest wins and moves to the
+  back), `ai_transcript`, and `ai_batch` + `ended_at`/`outcome`/`cost_micro_usd`/`counts`/`cancelling`. Dry-run
+  against a copy of production's database: applies cleanly; the one batch read before this phase gets empty
+  columns and shows as *read before conversations were kept* with a neutral mark, not a failure.
+- **`AiJobs`**: `enqueueRerank`/`enqueueThemes` → `sendQueued` (one batch per job out, oldest first, the limit
+  taken as a prefix of per-request worst cases — FR-272-4's sentence kept in memory per job and shown by both
+  the card and the AI tab), `pollPending` stores Anthropic's `request_counts` and sends the job's queue right
+  after a read, a conflated `Channel` wakes the minute loop at once on a queue or a cancel, a failed send backs
+  off five minutes. The theme queue skips titles already waiting or in the batch out, so no title is paid for
+  twice. `afterBuild(inputs, reason, by)` queues then sends inline, as 270's did.
+- **Verdicts** (`AiRequests.judgeRerank`/`judgeThemes`) return the reason; `validateRerank`/`validateThemes` are
+  now `judge…().value`, so what is accepted is unchanged (270's validator tests pass untouched). An `errored`
+  result carries its API error type and message.
+- **Transcripts** are written at send (system prompt and user message pulled out of the exact request) and
+  filled at read (answer as returned, verdict, the readable picks with titles, tokens, cost); `pruneHistory`
+  keeps five ended batches with their items and transcripts.
+- **269**: `RerankInput.label` = the viewer's Jellyfin username (queue label only; a test asserts it is absent
+  from the request). `rebuildViewer(device, by)` always queues when `by` is set (the admin route passes the
+  session's username); `buildAll(reason)`; the pipeline's `runPipeline(byHand = triggerKind == "manual")` and
+  `RecommendationsStep.notDue(last, now, every, byHand)`. `GET /api/pipeline/plan` rows gained `rebuildEvery`.
+- **Routes**: `GET /api/ai/jobs`, `GET /api/ai/batches/{id}`, `DELETE /api/ai/queue/{id}`, `POST
+  /api/ai/batches/{id}/cancel` (a bodyless POST — the transport now omits the content type and body when empty);
+  the recommendations view gained `aiPending`. `JobView`/`HistoryDto` also carry the model's display name, so
+  the page never maps ids to names itself.
+- **Admin**: the *AI · sent to Anthropic* card; the conversations panel is filled only on a click and never
+  redrawn by the poll, so a request left open (native `<details>`) stays open; the two poll-drawn parts redraw
+  only when their data (or, for the job lines, the minute) changes. `formatClock`/`prettyJson` in `JsInterop`.
+- **Found on the way, fixed here:** `#/activity?view=jobs` never opened the tab — only the design mockup read it.
+  And the admin runs every page in one app-wide `MainScope` that is never cancelled, so Activity's pollers
+  stopped only on flags (the health poll's was never cleared): every visit left one more loop polling after you
+  left. Each poll now stops once its own render is gone (`activityGen` + the view still being in the DOM). The
+  tab badge is refreshed every 10 s from the Scan console too (FR-272-11 needs it; it was only ever updated while
+  *Jobs & workers* was open).
+- **Tests**: `AiJobsTest` 17 → 27 — a request made while a batch is out waits and goes in the same poll as the
+  read (acceptance 1), newest wins per subject, the limit's prefix and raising it (3), five batches kept (4), the
+  verdicts incl. an errored line (5), cancel with a partly cancelled batch (6), the request byte-identical to
+  270's and free of the label (8), off ⇒ nothing queued; plus the cadence rule (2). Full suite 654 + 63 shared.
+- **Verified in a browser** against the e2e stack's backend on this build with `/api/ai/*` answered in the page
+  (no Anthropic): card, badge (lanes + AI), *Remove*, *Cancel at Anthropic* → *cancelling…*, the history row, a
+  conversation that stays open across polls with the answer pretty-printed, a batch still out showing *waiting for
+  the answer*, `?view=jobs` by fresh load, hash change and link, and the AI tab showing **13:29** for a batch
+  sent at 11:29:56 UTC in a Copenhagen browser (acceptance 7).
 
 > *"The jellystructure looked like it got finished right away, if this is a long running process. Maybe we
 > should make it into a queue and have it in the activity jobs page?"*
