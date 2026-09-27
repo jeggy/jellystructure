@@ -392,7 +392,8 @@ freshness filter lets through (Phase 175): a title is in it only when it is next
 for an older film is months away. The backfill therefore happened at the speed of the recheck tiers.
 
 **FR-269-3a — the backfill is its own small queue.** On a whole-library run (no single library, not a
-single-item ingest), `pull_tmdb` with scope *missing* also takes titles **outside** the working set that
+single-item ingest), `pull_tmdb` (either scope: production runs it with *all*, which re-pulls the whole
+working set but is still only what the freshness filter let in) also takes titles **outside** the working set that
 still need signals (`needsRecommendationSignals()`), at most **40 per run**, oldest scan first so every
 title gets its turn. With the hourly schedule that is the whole library within about a day, at a pace
 Phase 183's TMDB limiter absorbs (about 200 requests an hour). Only `pull_tmdb` sees these titles: the

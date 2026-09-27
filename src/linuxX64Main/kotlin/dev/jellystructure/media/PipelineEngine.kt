@@ -346,8 +346,9 @@ suspend fun runPipeline(
                 var toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { it.tmdbId == null || it.needsRecommendationSignals() }
                 // Phase 269 (FR-269-3a) — plus a bounded batch of titles the freshness filter kept out that
-                // still lack signals, on a whole-library run, so the backfill is not months long.
-                if (step.scope != "all" && target is RunTarget.Library && target.libraryJellyfinId == null) {
+                // still lack signals, on a whole-library run, so the backfill is not months long. Either scope:
+                // `all` re-pulls the whole WORKING SET, which is still only what the freshness filter let in.
+                if (target is RunTarget.Library && target.libraryJellyfinId == null) {
                     val extra = SignalsBackfill.pick(store.allItems(), workingSet)
                     if (extra.items.isNotEmpty()) {
                         Logger.info("pull_tmdb: +${extra.items.size} for recommendation signals (${extra.remaining} still to fetch)")
