@@ -5,7 +5,7 @@
 `Planned` — written 2026-09-28 from the phone brief (§D–§G, §J4–§J6, §M5) and the research report (§5, §6.3,
 §6.4), with the mockup `design/ravilo/mobile/ravilo-music-player.js` (+ `ravilo-music.css`), including the
 owner's *"a full-screen of what's now playing there. If nothing is playing, then it should just be whatever was
-last played in pause mode."* **Not dev-reviewed.** Builds on **R321** and **279**, **R244** (the time bubble,
+last played in pause mode."* **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **R321** and **279**, **R244** (the time bubble,
 follow-the-sensor), **R218** (the buffering pulse), **R237** (failure copy), **R245/R267** (the cast mini bar's
 docking) and **R292** (the video engine's lifecycle).
 
@@ -161,3 +161,46 @@ stacked bars), and the J4/J5 alternatives. *Jump to* opens Now playing, Lyrics, 
    on those until H1's *Convert…* is run? Lean: yes, and say nothing.
 2. Resumption after reboot (`onPlaybackResumption`): restore the last queue paused, or only the last song?
    Lean: the queue.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Thirteen items; items 1, 3 and 11 change how it is built, none blocks.
+
+1. **Where the service lives.** `ravilo-ui` has **no** `AndroidManifest.xml` and `media3-session` is its
+   androidMain dependency (`ravilo-ui/build.gradle.kts:88`). The `Service` class may sit in `ravilo-ui/androidMain`,
+   but its `<service android:foregroundServiceType="mediaPlayback" android:exported="true">` with the
+   `androidx.media3.session.MediaSessionService` intent filter, and `FOREGROUND_SERVICE`,
+   `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `POST_NOTIFICATIONS`, `WAKE_LOCK`, go in
+   `ravilo-android/src/main/AndroidManifest.xml` by FQCN — none of them is there today; `targetSdk 36`
+   makes the FGS type mandatory.
+2. **`RaviloAppContext.init(context)`** stores `context.applicationContext` and builds the Coil loader
+   (`RaviloAppContext.kt:31-50`) — safe from `Service.onCreate()` ✓ (FR-R322-1's third bullet holds).
+3. **A second seam — and the web must still compile.** `RaviloPlayer` is an `expect class` with Android and
+   wasm actuals; the music engine is a new `expect class RaviloMusicPlayer` (a `MediaController` on Android).
+   Its **wasm actual must exist as a no-op** or `:ravilo-web` fails to build, even though the web player is a
+   later phase.
+4. **Renderers:** reuse `RaviloPlayerEngine.renderersFactoryProvider` (`phone/MainActivity.kt`) so FLAC, Opus
+   and ALAC decode through the same FFmpeg audio renderers; there is no ASF extractor, so WMA arrives as HLS ✓.
+5. **The dex fence.** `scripts/check-player-dex.sh` guards `PlayerScreen`'s register count (limit 250, cliff
+   256) — the music player is **new files** (`MusicPlayingScreen.kt`, `MusicMiniBar.kt`, …) and adds nothing
+   to `PlayerScreen`.
+6. **Lock-screen buttons:** Media3 1.8.0 has `MediaSession.setMediaButtonPreferences(List<CommandButton>)`
+   (verified in the AAR; `setCustomLayout` is the deprecated form). Music keeps the default previous/next;
+   R323's ±30 s use it.
+7. **Resumption needs a persisted queue.** `onPlaybackResumption` restores from a per-device
+   `MusicQueueStore` (expect/actual like `PlaybackPrefsStore`, `screens/PlaybackPrefsStore.kt:7`): track ids,
+   index, position. This is also where 279's *last position* lives (279's review, item 5). Open question 2:
+   the queue ✓.
+8. **Audio focus.** The music engine sets `setAudioAttributes(…, handleAudioFocus = true)` and
+   `setHandleAudioBecomingNoisy(true)`; the video engine already sets attributes
+   (`seams/RaviloPlayerAndroid.kt:97`), so starting a video pauses music by the platform's rule. FR-R322-12's
+   *stops* is then one explicit call (pause → clear queue) from the video start path.
+9. **R292's sentence** goes under `### The rule` in `phase-R292-…md` (`:194`) when this is built.
+10. **Mini bar stacking:** `miniBarOver(dest)` + `castMiniBarHeight` (`RaviloApp.kt:989-992`,
+    `theme/Dimens.kt:62`) → a `musicMiniBarHeight`, both summed when both show ✓.
+11. **Even out volume is a turn-down only.** `player.volume = 10^(gain/20)` clamped to ≤ 1: a track louder
+    than the target is turned down; a quieter one cannot be raised without a limiter. FR-R322-9 amended to say
+    so; the sentence in Settings stays true.
+12. **`POST_NOTIFICATIONS`** is a runtime prompt on Android 13+: ask on the **first play**, not at launch;
+    without it the service still runs, only the card is missing.
+13. **Wire:** none beyond 279.

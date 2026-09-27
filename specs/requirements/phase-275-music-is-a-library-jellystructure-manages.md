@@ -9,7 +9,7 @@
 `Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A, §E1, §E3, §F),
 `specs/research-reports/music-library-and-player-2026-09-27.md` (§1.2, §2.1, §4.1–§4.3) and the round-1 mockups
 (`design/app/music-data.js`, `library.html?kind=music`, `settings.html#mu-libcard`, `ravilo-users.html`).
-**Not dev-reviewed.** Numbering verified against `main` `f8bdaab4` on 2026-09-27: admin taken through **273**,
+**Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main` `f8bdaab4` on 2026-09-27: admin taken through **273**,
 and **274** is ours (pending export), so the research report's ladder (274–280 / R320–R324) moves up by one:
 this is its "274".
 
@@ -94,3 +94,43 @@ travels only on 279's new paths. `WireCompatTest` (R319) passes unchanged.
 1. Does music matching run in its own lane or ride the media lane? Both are drawn (Activity's fence, 278 FR-278-10).
 2. `music_track_artist` role set — is *main/feat* enough, or does Jellyfin's `ArtistItems` vs `AlbumArtists`
    split need a third (*album artist only*)?
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Ten items; no blocker. Two things the spec asks for already exist (1, 2).
+
+1. ***Refresh from Jellyfin* already adds the row.** `ui/Settings.kt:1356-1366` merges `/api/jellyfin/libraries`
+   into `libraryMappings`, new libraries with `skip = false` and `localPath = jellyfinPath`. FR-275-3 is
+   therefore a **card** change (no fallback language; the *not the Music videos library* line), not a new
+   mechanism. Consequence: a fresh `music` row is scanned by the film scanner at once — harmless
+   (`Audio` → `unsupported-type`, `media/Scanner.kt:1525`) — but `scan_music` must key on
+   `collection_type == "music"` explicitly, never on "not skipped".
+2. **The advisor finding exists.** `JellyfinAdvisorService.metadataOwnershipFindings(lib)`
+   (`advisor/JellyfinAdvisorService.kt:404-411`) flags `MetadataSavers` containing `Nfo` for every managed
+   library (`managedJellyfinIds`: `!skip && jellyfinId.isNotBlank()`, `:394`). Once the music row is mapped,
+   the `--bad` finding appears with no new code; FR-275-5's *You lose: nothing* is a per-collection wording
+   tweak. The three silent ✓ rows need nothing.
+3. **Tables:** migration **59** (`58.sqm` is 273's) creates `music_artist`, `music_album`, `music_track`,
+   `music_track_artist` + `.sq` files, the `media` shape (JSON blob + index columns, `library_id`). Add
+   `nfo_written_at` / `nfo_hash` to the album and artist index columns — 277's foreign-NFO and drift rules
+   need them (see 277's review, item 2).
+4. **Visibility is a `MediaItem` extension today.** `MediaItem.visibleTo(allowed)` / `visibleTo(device)`
+   (`media/MediaStore.kt:36-60`) — write the same two-line rule for the music rows (a shared
+   `libraryVisible(libraryId, device)` helper); `DeviceData.allowedLibraries` (`auth/Models.kt:36`, null =
+   unrestricted) is the input.
+5. **Health** is a hand-built JSON string (`server/Server.kt:443`) — the `music` block is additive. The webhook
+   counter stays film/series-only (168 FR-168-5) ✓.
+6. **New Jellyfin reads:** `getMusicArtists` (`/Artists`, `/Artists/AlbumArtists`), `getMusicAlbums`,
+   `getAudioTracks` (`/Items?IncludeItemTypes=MusicAlbum|Audio&Recursive=true&Fields=…`), on 12.1's header
+   auth. The existing `IncludeItemTypes=Movie,Series,MusicVideo` queries are untouched.
+7. **Lane (open question 1):** `MediaJobQueue.QUEUE_NAMES = listOf("media", "segments", "subtitles")`
+   (`media/MediaJobQueue.kt:1270`), `lane TEXT DEFAULT 'media'` (`db/MediaJob.sq:23`, no migration), the
+   scheduler iterates the list (`:470-485`), `emptyQueues` filters on it (`:498-499`). Adding `"music"` is a
+   code change plus Activity's lane card. Lean: **own lane** — MusicBrainz is 1 request/second and must never
+   hold a film's re-order (213's *slow by design*).
+8. **Search:** a `search_text` column per music table; `BrowseService.search` (`tv/BrowseService.kt:232`)
+   keeps its response shape — music groups travel only on 279's path.
+9. **Open question 2 (credit roles):** Jellyfin gives `ArtistItems` (per track) and `AlbumArtists` (per album)
+   separately (measured) → three roles: *album_artist*, *artist*, *feat* — *feat* only when MusicBrainz's
+   artist-credit join phrase says so, never from a title parse alone.
+10. **Wire:** nothing an installed app decodes changes (FR-275-9) ✓.

@@ -7,7 +7,7 @@
 
 `Planned` — written 2026-09-28 from `specs/research-reports/audiobooks-library-and-player-2026-09-27.md` (§0,
 §1, §3, §4), the admin brief §M1 and §M4–§M5, and the mockups (`design/app/audiobook-data.js`,
-`library.html?kind=books`, `settings.html#ab-libcard`). **Not dev-reviewed.** The research's "279". Builds on
+`library.html?kind=books`, `settings.html#ab-libcard`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). The research's "279". Builds on
 **275** (the library pattern), **152/160** (numbering fallbacks) and **149** (`FfprobeRunner -show_chapters`).
 
 ## Decisions (research §6 — leans; not yet answered)
@@ -102,3 +102,31 @@ States: **one book — the household's, drawn with one cell and no apology**; ma
 
 `design/app/audiobook-data.js`, `design/app/library.html?kind=books` (fence: one · many · empty), and the books
 parts of `design/app/settings.html#ab-libcard` and `index.html`.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Nine items; one correction (1) and one grouping detail (3).
+
+1. **Heartbeats must not ride `/tv/playback/progress`.** `reportProgress(device, jellyfinId, …)`
+   (`tv/PlaybackService.kt:607`) keys on the tracked session and relays to Jellyfin by item id — a `book_id`
+   is a stranger there. **Correction:** FR-280-4 uses 281's `PUT /music/book/{id}/progress {part,
+   position_ms}`; the server writes `audiobook_progress` and mirrors with `reportProgress` on the **part's**
+   Jellyfin id plus `setPlayed` (`:756`) on the earlier parts. Jellyfin applies its own 5-minute rule; we
+   never read it back ✓.
+2. **Chapters:** `FfprobeRunner.chapters(filePath): List<ChapterMarker>` (`media/FfprobeRunner.kt:9-11`,
+   `-show_chapters`) exists — call it only for single-file books, as written.
+3. **Group by Jellyfin's parent, not by path parsing.** Every `AudioBook` item carries `ParentId` = the folder
+   item (measured: a `Folder` with `ChildCount 14`) → group by `ParentId`; fall back to the path's parent only
+   when the parent is a `CollectionFolder` (a one-file book directly under the library root).
+4. **The missing part.** Measured `IndexNumber` 1–15 with 6 absent → FR-280-3's example is right. Since 152/160
+   parse the filename too, the flag should say *numbered wrong* only when the filename disagrees with
+   Jellyfin, and *not in the folder* when both agree there is a gap.
+5. **Tables:** migration **59** (with 275's) or **60**: `audiobook`, `audiobook_part`, `author`,
+   `audiobook_progress`, `audiobook_bookmark`.
+6. **Jellyfin's semantics, confirmed in source:** `MinAudiobookResume` / `MaxAudiobookResume` are **minutes**
+   (5 / 5 here), `AudioBook : Audio, IHasSeries` with `SupportsPositionTicksResume = true`; the resolver's
+   multi-part path is commented out and PR #17362 is open and held — the book is ours to build ✓.
+7. **Advisor:** `metadataOwnershipFindings` would flag `MetadataSavers` — the books library has `[]`
+   (measured) → silent; `SaveLocalMetadata: true` → the informational note as written. Nothing fires wrongly.
+8. **Health** additive ✓; `Book` items ignored ✓ (0 measured).
+9. **Wire:** none (new paths only).

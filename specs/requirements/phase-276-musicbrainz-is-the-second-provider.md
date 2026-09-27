@@ -4,7 +4,7 @@
 
 `Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§B1, §B2, §E2, §H2,
 §H5), the research report §3.1–§3.3 and §4.3, and the mockups `design/app/album.js` (the Find match… panel) and
-`design/app/settings.html#sect-musicprov`. **Not dev-reviewed.** Builds on **275**. Numbering: see 275.
+`design/app/settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**. Numbering: see 275.
 
 ## Decisions (round 1 — leans; not yet answered)
 
@@ -106,3 +106,33 @@ The card names its providers (the admin registers with them) — unlike anything
 1. The pick margin and the bar — numbers after the dry run (acceptance 1), not before.
 2. Does a pasted MusicBrainz *release* URL (not a release-group) resolve to its group and preselect that release?
    Lean: yes.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Nine items; no blocker. The dry run (acceptance 1) is the first build step.
+
+1. **Rate limiter:** `TmdbRateLimiter` is a `private class` inside `tmdb/TmdbClient.kt` (AIMD, `:47-110`).
+   MusicBrainz's ceiling is **fixed** at 1/s (research §3.2), so the music client needs a fixed-rate bucket
+   with the same 503 back-off — extract a small `RateLimiter(rate, burst)` both can use rather than a second
+   copy. The `User-Agent` is `jellystructure/{version} ( {[musicbrainz].contact} )`.
+2. **Pacing card:** the health JSON carries one `tmdb_pacing` object (`server/Server.kt:408-412`,
+   `TmdbPacingStats`) → add `musicbrainz_pacing` and `acoustid_pacing` (admin-only JSON, additive); Activity
+   renders the rows.
+3. **AcoustID's fingerprint is not the one we compute.** `FfmpegRunner.computeFingerprint` runs `fpcalc -raw
+   -length 120` and returns ints (`media/FfmpegRunner.kt:528-535`); AcoustID wants the **compressed** string
+   plus the duration → a second helper (`fpcalc -json <file>`, no `-raw`), same `nice`/`ionice` and
+   `ProcessGate` wrapping.
+4. **Lock and clear:** 174's `tmdbMatchLocked` + `TmdbMatchLock.kt` are per `MediaItem`; `match_locked` on
+   `music_album` (FR-275-1) carries the same meaning; *Re-pull disabled while locked* copies
+   `ui/MediaDetail.kt`'s idiom.
+5. **Config:** `ApiKeys` has three fields (`config/AppConfig.kt:343-347`) → add `acoustid_client_key`,
+   `fanart_tv_key`; a `MusicBrainzConfig(enabled, contact, ratePerSec)` on `AppConfig` as `[musicbrainz]`;
+   `ui/Settings.kt`'s `sect-apikeys` card (`:98`) gains the two keys; the providers card is a new
+   `data-tab="connections"` section after `sect-public` (`:171`) — H5's lean.
+6. **Genres:** a separate `music_genre(name, mbid)` list, never 271's `GenreCatalog` (TMDB ids); the admin
+   override survives runs as `genres_override` JSON on the album.
+7. **The dry run first** (acceptance 1): a one-off over production's 30 albums before any UI; its result sets
+   the bar and margin (open question 1).
+8. **A pasted release URL** resolves to its group with `/release/{mbid}?inc=release-groups` and preselects
+   that release (open question 2: yes).
+9. **Wire:** none.

@@ -4,7 +4,7 @@
 
 `Planned` — written 2026-09-28 from the audiobooks research (§2, §3.1, §4, §6), the admin brief §M2–§M4 and
 §M6, and the mockups `design/app/audiobook.html` (+ `audiobook.js`), `author.html` and
-`settings.html#sect-musicprov`. **Not dev-reviewed.** The research's "280". Builds on **280**, **276** (the
+`settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). The research's "280". Builds on **280**, **276** (the
 providers card, MusicBrainz's client) and **279** (the phone's paths).
 
 ## Decisions (§M6 — leans; not yet answered)
@@ -133,3 +133,31 @@ The §M6 questions are in the shared panel at the foot of each page.
    that acceptable, or does Audnexus only answer when the admin pastes an ASIN?
 2. The *Split into two books…* flow is drawn as one confirmation. Does it need a preview of which parts go where?
    Lean: yes — two columns, drag between them.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable, with one thing the image does not have (1). Nine items.
+
+1. **There is no tag writer in the runtime image.** The Dockerfile installs ffmpeg, mkvtoolnix, wget and fpcalc
+   — nothing that edits ID3/MP4 tags in place. FR-281-8's switch needs either **`ffmpeg -i in -c copy
+   -metadata …`** (a re-mux: new bytes, new mtime, atomic temp + rename, `SeedingGuard.check` per file as
+   written) or a dedicated tagger in the image (`mid3v2` from python3-mutagen, or `id3v2` + `AtomicParsley`).
+   Lean: **a tagger** — a remux of an M4B risks its chapter atoms — plus the Dockerfile change and
+   `scripts/check-docker-cache-ids.sh`. Owner decision M6·1 still gates whether the switch is drawn at all.
+2. **Provider clients** (iTunes · Google Books · Open Library · Audnexus · MusicBrainz) go through
+   `OutboundHttp` BACKGROUND with identifying User-Agents. Google Books **needs a key** (the keyless quota
+   was exhausted on the probe) → `[api_keys].google_books_key`; the store and region pickers need a home:
+   `[audiobooks] { itunes_store = "dk", audnexus_region = "uk" }`.
+3. **Audnexus needs an ASIN** (open question 1). Audible's catalogue search is undocumented and has no
+   Danish store. Lean: **only when the admin pastes an ASIN or MusicBrainz carries an Audible/ASIN URL
+   relationship** — no Audible scraping in v1.
+4. **One play shape with 279.** `POST /music/play {track_id?, book_id?, part?, capabilities}`; the part
+   list rides `GET /music/book/{id}` (FR-281-10 puts it on the play response — either works; pick one).
+5. **Progress** — see 280's review, item 1.
+6. **Routing and CSS:** `/audiobook/{id}`, `/author/{id}` in `Main.kt`'s `when` (`:84-102`); the design's
+   `music.css` carries the book pages too → one registration (278's review, item 1).
+7. **Listeners tab** joins `audiobook_progress` with the users the Users & devices tab already lists
+   (`server/routes/TvRoutes.kt` admin overview) — read-only ✓.
+8. **Series** only when any book has one ✓; Jellyfin's `AudioBook` is `IHasSeries`, so `SeriesName` may arrive
+   from tags (null on the household's book).
+9. **Wire:** none.

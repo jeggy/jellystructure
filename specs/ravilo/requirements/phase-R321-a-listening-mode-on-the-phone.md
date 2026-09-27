@@ -9,7 +9,7 @@
 
 `Planned` — written 2026-09-28 from `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md` (§A–§C,
 §E placement, §H, §I, §J) and the mockup `design/ravilo/Ravilo Mobile.html` (+ `mobile/ravilo-music.js`,
-`mobile/ravilo-music.css`), including the owner's three same-evening changes. **Not dev-reviewed.** Numbering
+`mobile/ravilo-music.css`), including the owner's three same-evening changes. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering
 verified against `main` `f8bdaab4`: Ravilo taken through **R319**, and **R320** is ours (pending export). The
 brief's *"R321's service"* is **R322** here. Builds on **R304** (Profile is a page), **R267/R274/R278** (the
 bottom bar), **R277** (the keyboard on Search), **R187** (the browse grid), **R256** (`isHandset`) and **R319**.
@@ -150,3 +150,38 @@ account without music · library size · playlists none/two · skins. Its *Jump 
 2. **Continue listening with no Audiobooks tab.** Under this bar a book in progress is two taps deep (Browse ▸
    Audiobooks), which the research warned against. Lean: Listen gains a *Continue listening* row above
    *Recently added* while a book is in progress (R323 FR-R323-2). Not drawn yet.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Ten items; item 3 would fail a CI fence if built as drawn.
+
+1. **The bar's items are a fixed enum.** `RaviloBottomNav(selected, onSelect, userInitials)` iterates
+   `BottomNavItem.entries` and derives the pill's position from the index (`components/RaviloBottomNav.kt:84-94`,
+   `enum class BottomNavItem { HOME, LIBRARY, SEARCH, DISCOVER, PROFILE }` at `:151`). Parameterise with an
+   `items: List<BottomNavSpec>` (glyph · label key · id), keep the enum for the video list; `bottomBarShows(d)`
+   and `bottomItemOf(d)` (`RaviloApp.kt:775-787`) learn the music destinations; `Dest` (`:219-326`) gains the
+   nine listed.
+2. **The mode store has a precedent.** `DeviceLanguageStore` (`screens/LastLanguageStore.kt:16-22`: an expect
+   object with `read()` / `write()`, installed per platform) — a per-device `ListeningModeStore` in the same
+   shape; **clear it in `signOutActiveSession`** (`screens/SettingsScreen.kt:126/156`) as FR-R321-1 says.
+3. **♪ beside the brand must be a drawn glyph.** R315 made every UI glyph a Canvas glyph because the web build
+   has no system fonts, and `scripts/check-web-glyphs.sh` fails a literal no bundled font can draw — a `♪`
+   character in a Kotlin literal or an i18n value fails CI. Draw a `NoteGlyph` in the `PlayPauseGlyph` idiom.
+4. **Browse = search** reuses `SearchScreen.kt`'s `reportTextFieldFocus()` seam
+   (`seams/TextFieldFocusBridge.kt:19`) and R277's re-tap rule (`OnReselect`, `RaviloBottomNav.kt:162`). The
+   field lives in the page head; the top row's page slot (`AppBar.handsetTopSlot`, `components/AppBar.kt:86-94`)
+   holds the sort pill, as FR-R321-6 says.
+5. **Detail pages and insets.** `bottomBarShows` already hides the bar on `MovieDetail`/`SeriesDetail`; add
+   `AlbumDetail`, `ArtistDetail`, `PlaylistDetail`, `BookDetail`, `AuthorDetail`. `navBarInset`
+   (`RaviloApp.kt:989-992`) sums the bar and `castMiniBarHeight` through `miniBarOver(dest)` — the music mini
+   bar's height joins that sum (R322).
+6. **Strings:** dotted keys in `i18n/{en,da,fo}.json` (R279); `scripts/check-ravilo-strings.sh` fails a
+   literal in a text position; regenerate the lexicon (`scripts/check-i18n-spelling.sh --update-lexicon`) and
+   commit it with the strings.
+7. **Playlists through Jellyfin** (`POST /Playlists`, `/Playlists/{id}/Items`, 12.1 OpenAPI) with the
+   viewer's token (`DeviceData.jellyfinUserToken`, `auth/Models.kt:17`) — feasible; phase 2 as written.
+8. **The Videos row** opens `Dest.Player` on the `MUSIC_VIDEO` media id — the existing player path;
+   `MediaKind.MUSIC_VIDEO` is already on the wire ✓.
+9. **Open questions:** 1 — drop the queue button on Now playing (the tab is one tap away) ✓; 2 — FR-R323-2's
+   *Continue listening* row on Listen ✓, it is the only one-tap place left for a book.
+10. **Wire:** `/tv/config` unchanged; the mode is client-only ✓.

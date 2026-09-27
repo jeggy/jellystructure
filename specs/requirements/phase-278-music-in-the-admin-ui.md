@@ -3,7 +3,7 @@
 ## Status
 
 `Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A–§G, the §H
-questions) and the round-1 mockups. **Not dev-reviewed.** Builds on **275–277**, the Library workbench's facet
+questions) and the round-1 mockups. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**, the Library workbench's facet
 idiom, `media.html`'s pagebar/tabs, and the triage dock. The seven §H questions are drawn as one live panel at the
 foot of every music page (`design/app/music-qs.js`, localStorage `js-music-q`). The leans below are the spec's
 defaults until the owner picks.
@@ -138,3 +138,34 @@ linking to the Music kind filtered by genre. There are no logos and no merging w
 `design/app/artist.html` (+ `artist.js`), `design/app/music.css`, `design/app/music-qs.js`, and the music parts
 of `settings.html`, `activity.html`, `index.html`, `metadata.html`, `ravilo-users.html`, `app-shell.js` (dock).
 Each detail page's fence links one item per state.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Nine items; item 1 is the one that ships a blank page if missed.
+
+1. **A new stylesheet must be registered in two places.** `design/app/music.css` reaches the served admin only
+   through `syncDesignAssets`' include lists (`build.gradle.kts:269` and `:302`) **and** the `<link>` set in
+   `src/wasmJsMain/resources/index.html` (`:10-16`) — the `segments.css` lesson. The `music-*.js` mockup
+   scripts are design-only; the admin is Kotlin DOM (`ui/Library.kt`, new `ui/Album.kt`, `ui/Artist.kt`).
+2. **Router and kind picker.** `Main.kt:84-102` is a `when` on the path prefix → add `/album/{id}`,
+   `/artist/{id}` (281 adds `/audiobook/`, `/author/`). `Library.kt` keeps `libKind: MediaKind?` (`:60`)
+   parsed with `MediaKind.valueOf` (`:126`) and three kind spans (`:197-199`) — Music is **not** a
+   `MediaKind`, so the picker needs a second selector (`libView = "music" | "books"`) beside `libKind`, and
+   `?kind=music` deep-links to it.
+3. **Triage:** `TriageDetection` is a set of `MediaItem` functions and `TriageRoutes` a fixed list of type
+   strings (`untagged`, `missing_artwork`, `cascade_mismatch`, `mkv_track_layout`, `file_damage`, …) → the
+   music types are new strings with a music detection source; the dock (`app-shell.js`) renders whatever
+   `/api/triage` returns.
+4. **Dashboard:** `/api/stats` → `StatsResponse` (`api/MediaApi.kt:521`) gains `music` fields; attention
+   entries ride the same route family.
+5. **Metadata tab:** `TAB_LABELS` (`ui/Metadata.kt:22`) gains `"music"` (H3's lean) — one list, one render
+   branch.
+6. **Convert… (FR-278-7):** a `media_job` with `MediaJobParams` extended in its nullable-per-field shape
+   (`jobs/MediaJobParams.kt:11`, e.g. `albumId`, `trackIds`); **`SeedingGuard.check(localFilePath, config)`**
+   (`torrent/SeedingGuard.kt:12-13`) is the Phase-26 guard to call per file; ffmpeg `-c:a aac -b:a 192k` (or
+   libopus) under `ProcessGate` BACKGROUND; originals to a holding folder (254's `.js-quarantine` precedent).
+   **Awaits H1.**
+7. **Lane (FR-278-10):** see 275's review, item 7 — lean own lane; both drawn ✓.
+8. **Settings card (FR-278-9):** `ui/Settings.kt:1560` (`typeLabel`) and `:2336-2337` (`isMovie`/`isTv`) drive
+   per-card behaviour → an `isMusic` branch for the no-fallback-language rule and the provider line.
+9. **Acceptance 5** ("every non-lean answer is drawn") is a design acceptance; keep it, label it so.

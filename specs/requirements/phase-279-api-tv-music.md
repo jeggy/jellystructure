@@ -3,7 +3,7 @@
 ## Status
 
 `Planned` — written 2026-09-28 from the research report §2.4, §4.1, §5.1–§5.3 and §6.5, and the phone mockup's
-data needs (`design/ravilo/mobile/ravilo-music.js`). **Not dev-reviewed.** Builds on **275–277**,
+data needs (`design/ravilo/mobile/ravilo-music.js`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**,
 `PlaybackService`/`StreamTicket` (180), **218** (the session ceiling) and **R319** (wire discipline). It serves
 **R321** and **R322**. **281** extends it for audiobooks.
 
@@ -80,3 +80,42 @@ or 204.
 1. The Mix threshold (FR-279-2). Lean ≥ 300 tracks, tuned on real libraries.
 2. Should `last-played` read Jellyfin's `LastPlayedDate` (cross-device) or the phone's own store (per device,
    like the mode)? Lean: Jellyfin — it is the viewer's.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Ten items; three corrections (2, 3, 5).
+
+1. **An audio device profile is new.** `deviceProfile(capabilities)` (`auth/JellyfinClient.kt:55-100`) emits
+   only `Type: "Video"` direct-play profiles and a video HLS transcoding profile → an
+   `audioDeviceProfile(capabilities)` sibling: `DirectPlayProfiles` of `Type: "Audio"` from the phone's
+   `containers` (`mp3, flac, ogg, oga, opus, m4a, mp4, wav, mka, webm`) with its `audioCodecs`, and one
+   `TranscodingProfile {Container ts, Type Audio, AudioCodec aac, Protocol hls, MaxAudioChannels 2}` — the
+   shape measured in the research (§2.4: MP3 direct, WMA → `/audio/{id}/master.m3u8`).
+   `startPlayback(device, jellyfinId, capabilities, …)` (`tv/PlaybackService.kt:461`) gets a sibling or a
+   `mediaType` parameter.
+2. **Visibility and favourites are `MediaStore`-bound.** `requireVisible` (`PlaybackService.kt:442-450`)
+   resolves the id through `mediaStore` (movies, then episodes) and throws for anything else — a track id
+   would be refused; `setFavorite` (`:820-827`) calls it first. **Correction:** the music start and favourite
+   paths use 275's `libraryVisible(libraryId, device)` on the `music_track` row (or a `/music/favorite`
+   route); Jellyfin's `markFavorite` itself accepts any item id ✓.
+3. **218's ceiling is cast-only by construction.** It filters on `DeviceData.kind == "cast"`
+   (`PlaybackService.kt:249, 314, 475`), so a phone's audio encode never counted. FR-279-6's last sentence
+   is true as written — drop the "lean", it is a fact.
+4. **Recently played needs a new query.** `getRecentlyPlayed` hardcodes `IncludeItemTypes=Movie,Episode`
+   (`JellyfinClient.kt:747`) → `getRecentlyPlayedAudio(userId)` with `IncludeItemTypes=Audio&SortBy=DatePlayed`,
+   the per-user token via `tvToken` as today.
+5. **`last-played` cannot return "the position left off" from Jellyfin.** Jellyfin keeps **no** position for
+   `Audio` (`PlaybackPositionTicks` is 0 on every track — research §1.1). **Correction:** the server answers
+   *which* track (from `LastPlayedDate`) and its album context; *where* lives on the phone with the queue
+   (R322's per-device queue store, which `onPlaybackResumption` needs anyway). Open question 2 is answered
+   by that split.
+6. **Lyrics:** `GET /Audio/{id}/Lyrics` → `LyricDto{Metadata, Lyrics[{Text, Start, Cues}]}` (12.1 OpenAPI);
+   `Start` is in ticks → `t_ms = Start / 10_000`. New `JellyfinClient.getLyrics`.
+7. **DTOs and R319.** The new DTOs are additive; add them to `WIRE_ROOTS`
+   (`shared/src/linuxX64Test/…/wire/WireRoots.kt:6`) so later changes are guarded, and re-record the baseline
+   at the next release (`scripts/record-wire-baseline.sh`).
+8. **`TvApiClient`** gains `getMusicHome`, `browseMusic`, `getMusicAlbum`, `getMusicArtist`, `searchMusic`,
+   `playMusic`, `getLyrics`, `lastPlayed`; the platform header is unchanged.
+9. **The Mix threshold:** InstantMix on the 60-track library returns the whole library (measured) — ≥ 300
+   tracks as the lean, tuned later; the server decides ✓.
+10. **Wire:** no existing DTO changes ✓.

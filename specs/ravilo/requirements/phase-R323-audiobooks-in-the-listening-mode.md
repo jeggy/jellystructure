@@ -6,7 +6,7 @@
 ## Status
 
 `Planned` — written 2026-09-28 from the phone brief §M1–§M7, the audiobooks research (§3.2, §4, §5, §6) and the
-mockup `design/ravilo/mobile/ravilo-books.js` (+ the `bk-*` rules in `ravilo-music.css`). **Not dev-reviewed.**
+mockup `design/ravilo/mobile/ravilo-books.js` (+ the `bk-*` rules in `ravilo-music.css`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below).
 Builds on **R321**, **R322**, **280** and **281** (FR-281-10's paths). The research's "R324".
 
 ## Decisions
@@ -134,3 +134,26 @@ Speed, Sleep, Chapters and Bookmark sheets. *Settings · Listening* is on the sa
    playing · Audiobooks* bar. Owner's call.
 2. **Chapter vs part** in the seek bar for a one-file M4B with 24 embedded chapters: chapter (drawn). Confirm that
    the book hairline alone is enough for a 12-hour file.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Nine items; item 3 is the one that decides whether a chapter boundary is seamless.
+
+1. **APIs:** `Player.setPlaybackSpeed(float)` and `ExoPlayer.setSkipSilenceEnabled(boolean)` exist in Media3
+   1.8; speed is stored per book per viewer through 281's `PUT /music/book/{id}/speed`. A heartbeat position
+   is media time whatever the speed, so *book time* is automatic ✓.
+2. **±30 s on the lock screen:** two `CommandButton`s bound to custom `SessionCommand`s via
+   `setMediaButtonPreferences` (R322's review, item 6), handled in `onCustomCommand`; Android 13+ shows a
+   limited number of slots — two is safe.
+3. **A seamless boundary needs the next ticket early.** Each part is a Jellyfin play session of its own
+   (279 FR-279-6: a queue advance is stop + start; 180's teardown per session), so the phone must fetch the
+   **next part's ticket while the current one plays** and hand Media3 the next `MediaItem` before the
+   boundary — otherwise the cut is a ~1 s gap plus a start. Say so in the build; FR-R323-6's *seamless*
+   depends on it.
+4. **Progress:** `PUT /music/book/{id}/progress` at the heartbeat cadence (280's review, item 1).
+5. **Finished** = the last part within its last 5 minutes — mirrors `MaxAudiobookResume` ✓.
+6. **Sleep timer and fade** are client-only ✓ (a volume ramp over the last 10 s).
+7. **Placement:** open question 1 stands with the owner; FR-R323-2's Listen row is the lean fix and costs
+   one row.
+8. **Strings:** as R321's review, item 6.
+9. **Wire:** none beyond 279/281.

@@ -11,7 +11,7 @@
 
 `Planned` — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
 round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
-the brief's seven questions the same day (§ *Decisions*). **Not dev-reviewed.** Numbering verified against `main`
+the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
 `e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
 
 Builds on **269** (the taste signals and the pipeline step pattern), **270/272** (the AI job, its limit and its
@@ -210,3 +210,59 @@ Admin copy is English (the admin page is not localised). The only viewer string 
 `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`); `?state=list|unreachable|first|
 nohistory|nothing` and the PREVIEW fence reach every state. The Dashboard card is in `design/app/index.html`;
 the feed card and catalogue entry in `design/app/ravilo-config.html` ▸ Request.
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Measured against the household's **Jellyseerr 3.4.1** (read-only) and the checkout. Twelve items,
+two corrections (1, 2), the rest confirmations and build anchors.
+
+1. **Seerr has no request note — FR-274-10's note cannot go to Seerr.** A request on 3.4.1 carries
+   `requestedBy`, `modifiedBy`, `status`, `is4k`, `profileId`, `rootFolder`, `tags`, `seasons`, `type`… and no
+   note or comment field; `SeerrClient.createRequest` (`seerr/SeerrClient.kt:277-300`) sends `mediaType`,
+   `mediaId`, `seasons` and the `X-API-User` header (156). **Correction:** *"Suggested for {viewer}"* is kept
+   **locally** on the suggestion row (`requested_for`) and shown on the tile and under *Dismissed / Requested*;
+   the Seerr request is the admin's plain request (Q1 stands).
+2. **The blacklist API exists and is empty today**, but Seerr's own UI calls it a *Blocklist*: `GET
+   /api/v1/blacklist?take=&skip=` → 200 `{pageInfo{pages, pageSize, results, page}, results[]}`; the settings
+   carry `hideBlocklisted: false` and `blocklistRegion`. **Correction to copy:** say *Seerr's blocklist* where
+   the admin reads it (they see that word in Seerr), keep `/blacklist` in code. `POST /api/v1/blacklist` takes
+   `{tmdbId, mediaType, title?, user?}` and `DELETE /api/v1/blacklist/{tmdbId}` removes one — from
+   Jellyseerr's source; **verify the POST body once against the running instance before building** (its
+   `/api-docs` serves HTML, and the published `overseerr-api.yml` has moved).
+3. **Recommendations and similar confirmed:** `GET /api/v1/movie/{id}/recommendations|similar?page=` → 20 per
+   page, `totalResults` (548 for a well-known film), items with `id, title, releaseDate, voteAverage,
+   voteCount, genreIds, popularity, posterPath, overview, originalLanguage` and `mediaInfo{status,
+   downloadStatus, jellyfinMediaId, …}` when Seerr knows the title. Movie detail has `collection`,
+   `keywords`, `runtime` and `releases.results[].release_dates[].certification` (DK *15* · GB *15* · US *R*
+   on the probe). FR-274-3.2/3.5, FR-274-4 and FR-274-9's fields all exist. New client methods:
+   `movieRecommendations`, `movieSimilar`, `blacklist(page)`, `addToBlacklist`, `removeFromBlacklist` — through
+   `OutboundHttp.withPermit` (BACKGROUND). One build is ~100–200 Seerr calls for 50 sources.
+4. **Sources reuse 269.** `RecommendationEngine.signals(played, resume, favorites, byJellyfinId, nowSec)`
+   (`tv/RecommendationEngine.kt:87`) already weights a viewer's Jellyfin history with recency; FR-274-2's
+   weights are a second table over the same inputs — a parameter, not a fork. Test accounts excluded as 269.
+5. **The step pattern exists.** `RecommendationsStep` (`config/AppConfig.kt:125-131`: `STEP`, `CADENCES`
+   daily/weekly, the due rule with an hour's slack) and `rebuild_every` (`:216`); `build_suggestions` gets a
+   sibling object, `effectivePipeline` (`media/PipelineEngine.kt:135-140`) appends it, the `when (step.step)`
+   registry (`:347-622`) gains a branch. *Rebuild now* queues it (272 FR-272-7's shape).
+6. **The AI job.** `AiConfig` has `rerank` and `themes` (`AppConfig.kt:71-72`) → `clusters: AiJobConfig(effort
+   = "low")`; the admin AI tab's job list is hardcoded (`ui/SettingsAi.kt:27-34`, `AI_JOBS` + `aiJobEnabled`)
+   → a third `AiJobUi`; `ai_queue.job` is TEXT (`db/Ai.sq:24`) so the queue needs no migration; the
+   validator is pure, as 270 FR-270-4.
+7. **Where it sits.** `ui/Shell.kt:96-97` — `NavLink("/library", …)`, `NavLink("/activity", …)` → insert
+   `NavLink("/suggestions", "Suggestions", …)` between them; the router is a `when` on the path prefix
+   (`Main.kt:84-102`) → `path.startsWith("/suggestions")`; the Dashboard card rides `/api/stats`
+   (`api/MediaApi.kt:521`, `StatsResponse` additive).
+8. **Storage:** migration **59** (the latest is `58.sqm`, phase 273) creates `suggestion`,
+   `suggestion_cluster`, `suggestion_dismissal`, `suggestion_viewer` + their `.sq` files.
+9. **The per-viewer scope hash** is the Home cache's `allowedHash` (`tv/HomeFeedService.kt:377-383`) — reuse
+   it as `scope_hash` rather than a second derivation.
+10. **FR-274-16 is the mechanism, not Seerr's setting.** `SeerrDiscoverService.getRequestFeeds` (`:80`)
+    builds rows from `SeerrClient.discover`; the blacklist filter goes there with a 10-minute cache. The
+    household's `hideBlocklisted` is off, so only this filter makes FR-274-11's sentence true.
+11. **Users:** Seerr has 7 users, all Jellyfin-linked; `resolveUserId(jellyfinUserId)` (`SeerrClient.kt:310`)
+    answers for the signed-in admin (Q1).
+12. **The feed catalogue entry (FR-274-15) must not add a wire enum value** — see R320's dev review, item 1:
+    the feed is stored and sent as an existing `endpoint` plus an additive `suggested` flag on `SeerrFeed`.
+
+**Net effect.** Five Seerr client methods, one step object + registry branch, one AI job, four tables (59),
+one route family, one sidebar link, one filter in the Request feeds. Nothing an installed app decodes changes.

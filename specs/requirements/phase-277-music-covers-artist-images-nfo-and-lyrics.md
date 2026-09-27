@@ -4,7 +4,7 @@
 
 `Planned` — written 2026-09-28 from the admin music brief (§B3 Artwork/Genres/NFO, §C2, §E2, §H6, §H7), the
 research report §2.3, §3.4, §3.5 and §4.2, and the mockups `design/app/album.js` and `artist.js`.
-**Not dev-reviewed.** Builds on **275**, **276**, **133/151** (per-asset locks), **175** (the foreign-NFO rule)
+**Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**, **276**, **133/151** (per-asset locks), **175** (the foreign-NFO rule)
 and the drift detector.
 
 ## Decisions (round 1 — leans; not yet answered)
@@ -97,3 +97,37 @@ The drawn alternative greys out MusicBrainz's other release-groups (*not in libr
 1. Does Jellyfin set anything on `Audio` items from `<track>` entries in `album.nfo` (research §9)? If not, the
    recording ids live in our table only, and the NFO keeps them for Kodi.
 2. `cover.jpg` vs `folder.jpg` — Jellyfin reads both; lean `cover.jpg` (first in its list).
+
+## Dev review (2026-09-28, against `main` `728f22ea`)
+
+Buildable. Nine items; two need code the spec assumed existed (1, 2) and one Jellyfin call needs a flag (4).
+
+1. **The artwork writer is `MediaItem`-typed.** `ArtworkDownloader.fetch(item)`, `check(item)` and `mediaDir()`
+   dispatch on `MediaKind` (`media/ArtworkDownloader.kt:115, 162, 308`); a `MusicArtworkWriter` for
+   `{album}/cover.jpg` and `{artist}/folder.jpg | backdrop.jpg | logo.png` is new code — but the per-asset
+   lock is **path-level** (`isManual(imagePath)` / `markManual(imagePath)`, `:143-147`), so 133/151's locks
+   work unchanged.
+2. **The NFO writer dispatches on `MediaKind`.** `NfoWriter.buildXml` (`nfo/NfoWriter.kt:17-20`) → a separate
+   `MusicNfoWriter` (album · artist), the same atomic `.tmp` + rename. 175's foreign rule is
+   `PipelineStepOps.writeNfo` comparing the on-disk hash with the row's `nfoHash` (`media/PipelineStepOps.kt:217-235`),
+   and `detectDrift` (`:471-479`) reads the same fields — hence 275's `nfo_written_at`/`nfo_hash` columns.
+3. **Jellyfin reads it — confirmed in its source.** `AlbumNfoProvider` → `{album}/album.nfo`,
+   `ArtistNfoProvider` → `{artist}/artist.nfo`; provider ids by element name (`musicbrainzalbumid`,
+   `musicbrainzreleasegroupid`, `musicbrainzartistid`, `musicbrainzalbumartistid`). Jellyfin's own saver writes
+   `<track><disc><position><title><duration>`, so `<track>` is in its vocabulary; whether its **parser** sets
+   anything on `Audio` items from it is unconfirmed — open question 1 stands, test on the demo Jellyfin.
+4. **The refresh call is deliberately non-recursive.** `refreshItem(base, token, id, full)` sends no
+   `Recursive` (`auth/JellyfinClient.kt:685-697`). An album refresh must re-read `album.nfo` **and** the
+   tracks' new `.lrc` sidecars → add `recursive: Boolean = false` (Jellyfin's `Recursive` query) and use it
+   for albums only.
+5. **Lyrics:** LRCLIB verified (research §3.5). The sidecar is `{track basename}.lrc`; the library's
+   `SaveLyricsWithMedia` is on and Jellyfin's resolver picks it up on the refresh in item 4.
+6. **The biography is a new outbound host.** Wikipedia's REST summary (`/api/rest_v1/page/summary/{title}`,
+   the viewer's language, else `en`) and Wikidata's description, found through the artist's MusicBrainz URL
+   relationships — `OutboundHttp` BACKGROUND, a descriptive User-Agent (Wikimedia asks for one), cached per
+   artist per run.
+7. **fanart.tv's response shape** (v3 `albums` as a map vs v3.2 as an array) — verify on the first call
+   (research §9) and pin the version in the URL.
+8. **Videos by artist (FR-277-9):** `MUSIC_VIDEO` rows carry the artist in `director` from 168's parse
+   (`media/Scanner.kt:145`, `parseMusicVideoArtistTitle`) → match by normalised name or MusicBrainz alias ✓.
+9. **Wire:** none.
