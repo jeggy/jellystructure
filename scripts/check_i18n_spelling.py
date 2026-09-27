@@ -33,6 +33,11 @@ DISCOURAGED = {
         # nothing could see it. Both masculine uses were removed by other edits; this keeps them out.
         "telefonurin": "`telefon` is feminine — telefonin / telefonina / telefonini",
         "telefonur": "`telefon` is feminine — telefonin / telefonina / telefonini",
+        # R312 — owner, 2026-09-26: genre is `sjangra` / `sjangrur`. The design mockup still has the old
+        # stem; this keeps a string copied from it out of the shipped table.
+        "sjanra": "genre is `sjangra` / `sjangrur` (owner, R312)",
+        "sjanru": "genre is `sjangra` / `sjangrur` (owner, R312)",
+        "sjanrur": "genre is `sjangra` / `sjangrur` (owner, R312)",
     },
 }
 DISCOURAGED_OK = set()  # "<lang>:<key>" pairs that have earned the abbreviation

@@ -149,6 +149,7 @@ heim
 heimaskerminum
 heintar
 heiti
+heitir
 heitið
 henda
 hendan
@@ -196,7 +197,6 @@ klárt
 knøttar
 knýta
 kom
-komandi
 komið
 kommentarur
 konta
@@ -336,9 +336,9 @@ seriuna
 seriur
 sesong
 sett
-sjanra
-sjanru
-sjanrur
+sjangra
+sjangru
+sjangrur
 sjálvgivið
 sjálvvirkandi
 sjónlýsing

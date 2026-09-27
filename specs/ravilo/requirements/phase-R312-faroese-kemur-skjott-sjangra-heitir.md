@@ -9,7 +9,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). **Strings only:** `i18n/fo.json`, one dead key removed from all three languages, the
 regenerated lexicons, and one entry in `scripts/check_i18n_spelling.py`. No key added or renamed, and no
 placeholder changed. **Open questions decided the same day**: the owner handed the calls over (*"You
@@ -145,3 +145,14 @@ the check instead of slipping back in.
    first.
 
 **Net effect.** Nine values, one key removed, three `DISCOURAGED` entries, the lexicons regenerated.
+
+## Build notes (2026-09-27)
+
+1. The nine Faroese values as tabled; `lib.count` deleted from all three files (no reader: grep over
+   every `.kt`, `.js`, `.ts`, `.py` and `.sh` outside `design/` and build output).
+2. `DISCOURAGED["fo"]` gained `sjanra`, `sjanru`, `sjanrur` with the owner's reason.
+3. `--update-lexicon`: `fo.txt` gained `heitir`, `sjangra`, `sjangru`, `sjangrur` and dropped `sjanra`,
+   `sjanru`, `sjanrur` and `komandi` (R311 removed `nav.upcoming`, and `seg.coming` no longer says it);
+   `da.txt` is unchanged (`titler` is used elsewhere).
+4. Checks: `check-i18n-spelling.sh`, `check-ravilo-strings.sh`, `generateRaviloStrings` and
+   `checkRaviloStrings` pass.
