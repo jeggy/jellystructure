@@ -59,11 +59,21 @@ data class SubtitleActionDto(
     @SerialName("created_at") val createdAt: Long,
 )
 
+/** FR-273-23 — a language jellystructure emptied and nothing right has arrived for since. */
+@Serializable
+data class EmptyLanguageDto(
+    @SerialName("video_path") val videoPath: String,
+    val language: String?,
+    val tried: Int,
+    val words: String,
+)
+
 @Serializable
 data class TitleSubtitleChecksDto(
     val checks: List<SubtitleCheckDto>,
     val waiting: List<SubtitleActionDto>,
     val actions: List<SubtitleActionDto>,
+    val empty: List<EmptyLanguageDto> = emptyList(),
 )
 
 @Serializable
@@ -131,10 +141,20 @@ fun Route.subtitleCheckRoutes(
         val item = mediaStore.resolve(itemId) ?: return@get call.respond(HttpStatusCode.NotFound)
         val q = db.subtitleCheckQueries
         val acts = q.actionsForItem(item.id).executeAsList()
+        val rows = checks.checksForItem(item.id)
+        // FR-273-23 — rather nothing than wrong: a language whose wrong subtitles were thrown away and that has no
+        // sidecar since says so, with how many were tried.
+        val present = rows.map { it.video_path to it.language }.toSet()
+        val thrownAway = setOf(BazarrSteering.BLACKLIST, BazarrSteering.REMOVE, BazarrSteering.NEIGHBOUR)
+        val empty = acts.filter { it.action in thrownAway && it.state == BazarrSteering.DONE }
+            .groupBy { it.video_path to it.language }
+            .filterKeys { it !in present }
+            .map { (k, tried) -> EmptyLanguageDto(k.first, k.second, tried.size, "No right subtitle found yet · ${tried.size} tried") }
         call.respond(TitleSubtitleChecksDto(
-            checks = checks.checksForItem(item.id).map { it.dto(checks) },
+            checks = rows.map { it.dto(checks) },
             waiting = acts.filter { it.state == BazarrSteering.WAITING }.map { it.dto() },
             actions = acts.filter { it.state != BazarrSteering.WAITING }.take(50).map { it.dto() },
+            empty = empty,
         ))
     }
 

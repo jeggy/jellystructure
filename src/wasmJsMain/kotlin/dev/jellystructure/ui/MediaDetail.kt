@@ -1931,7 +1931,7 @@ private suspend fun loadSubtitleVerdicts(item: MediaItem, scope: CoroutineScope)
     val card = document.getElementById("subcheck-card") as? HTMLElement ?: return
     val body = document.getElementById("subcheck-body") as? HTMLElement ?: return
     val data = dev.jellystructure.api.SubtitleCheckApi.forTitle(item.id)
-    if (data == null || (data.checks.isEmpty() && data.waiting.isEmpty() && data.actions.isEmpty())) { card.style.display = "none"; return }
+    if (data == null || (data.checks.isEmpty() && data.waiting.isEmpty() && data.actions.isEmpty() && data.empty.isEmpty())) { card.style.display = "none"; return }
     card.style.display = "block"
     val isTvShow = item.kind == MediaKind.TV_SHOW
     val episodeOf = item.episodes.associateBy { it.path }
@@ -1954,6 +1954,14 @@ private suspend fun loadSubtitleVerdicts(item: MediaItem, scope: CoroutineScope)
                  <button class="btn sm" data-subok="${w.id}">Do it</button><button class="btn sm ghost" data-subno="${w.id}">Leave it</button>
                </div>"""
         } + """<hr class="dash" style="margin:8px 0;">"""
+    // FR-273-23 — a language left empty on purpose says so, rather than simply vanishing from the list.
+    val empty = if (data.empty.isEmpty()) "" else data.empty.sortedBy { label(it.videoPath) }.joinToString("") { e ->
+        """<div class="row center tiny" style="gap:10px;padding:3px 0;flex-wrap:wrap;">
+             ${if (isTvShow) """<span class="mono" style="min-width:64px;">${label(e.videoPath).esc()}</span>""" else ""}
+             <span class="mono" style="min-width:36px;">${(e.language ?: "?").esc()}</span>
+             <span class="badge" title="Every subtitle found for this language was wrong for this video, so none is offered">${e.words.esc()}</span>
+           </div>"""
+    } + """<hr class="dash" style="margin:8px 0;">"""
     val problems = data.checks.filter { it.verdict != "in_sync" }
     val list = if (!isTvShow) data.checks.sortedBy { it.name }.joinToString("") { row(it) }
     else {
@@ -1979,7 +1987,7 @@ private suspend fun loadSubtitleVerdicts(item: MediaItem, scope: CoroutineScope)
                      ${if (isTvShow) """<span class="mono">${label(a.videoPath).esc()}</span>""" else ""} ${a.detail.esc()}
                      <span class="badge" style="font-size:.66rem;">${a.state.esc()}</span></div>"""
             } + "</details>"
-    body.innerHTML = waiting + summary + list + history
+    body.innerHTML = waiting + empty + summary + list + history
     wireSubtitleDecisions(card, scope) { loadSubtitleVerdicts(item, scope) }
     markHiddenSidecars(item, data.checks)
 }

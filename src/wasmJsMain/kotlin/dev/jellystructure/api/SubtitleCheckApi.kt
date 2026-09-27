@@ -45,11 +45,21 @@ data class SubtitleAction(
     @SerialName("created_at") val createdAt: Long = 0,
 )
 
+/** A language jellystructure emptied because every subtitle for it was wrong (rather nothing than wrong). */
+@Serializable
+data class EmptyLanguage(
+    @SerialName("video_path") val videoPath: String,
+    val language: String? = null,
+    val tried: Int = 0,
+    val words: String = "",
+)
+
 @Serializable
 data class TitleSubtitleChecks(
     val checks: List<SubtitleCheck> = emptyList(),
     val waiting: List<SubtitleAction> = emptyList(),
     val actions: List<SubtitleAction> = emptyList(),
+    val empty: List<EmptyLanguage> = emptyList(),
 )
 
 @Serializable
