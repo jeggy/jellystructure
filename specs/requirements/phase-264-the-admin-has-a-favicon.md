@@ -4,7 +4,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
+`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
 at the end). Frontend resources and build only; no route, no config, no backend logic. **Open questions
 decided the same day**: the owner handed the calls over (*"You just decide for me. We want all best
 solutions for everything"*). See *Decisions* at the end. **Numbering:** verified against `STATUS.md` the
@@ -120,3 +120,21 @@ is a deploy to ask for.
 
 **Net effect.** Three files in `src/wasmJsMain/resources/`, three `<link>` lines, one `include` list, one
 e2e block. No Kotlin, no route, no config.
+
+## Build notes (2026-09-27)
+
+1. **The drawing.** `favicon.svg` is the `brand-mark` of `Shell.kt` on the favicon artboard's tile: a
+   100-unit square, corner radius 22, the gradient `#b15cd0 → #7b6ef0 → #00a4dc`, and the white
+   quartet-and-play glyph at `translate(18 18) scale(.64)` (inset 18 %).
+2. **Rasters, rendered once and committed.** Rendered from that SVG in headless Chromium (Playwright,
+   already in `tests/`), since the host has no ImageMagick or `rsvg-convert`: `favicon.ico` holds 16, 32
+   and 48 px PNG frames; `apple-touch-icon.png` is 180 px on an opaque `#0b0d14` ground, the tile inset
+   so iOS's own rounding does not clip the gradient. The build rasterises nothing.
+3. **Bundles.** `processedResources/wasmJs/main` carries all three, so the production distribution (and
+   the Docker image's `COPY … productionExecutable/`) ships them unchanged; `syncDesignAssets` names them
+   for `runDev`.
+4. **The info site (FR-264-6)** was changed and rebuilt on 2026-09-27 with the owner's deploy
+   permission: the three pages link the three files (no inline data URI), the nav mark is Quartet Play,
+   and the `Dockerfile`'s `COPY` names the icons. `GET /favicon.ico` there answers `200 image/x-icon`.
+5. **E2E:** the check is in `auth.spec.ts`, before any login. It is read-only, so it is also run against
+   production after the deploy that carries this phase.

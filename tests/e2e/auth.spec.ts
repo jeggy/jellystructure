@@ -5,6 +5,21 @@ const JF_USER = process.env.JELLYFIN_USER ?? "admin";
 const JF_PASS = process.env.JELLYFIN_PASS ?? "password";
 
 test.describe("Authentication", () => {
+  // Phase 264 (FR-264-5) — before any login: the icons load without a session (dev review item 1).
+  test("the admin has a favicon, and /favicon.ico answers at the root", async ({ page, request }) => {
+    await page.goto("/login");
+    const href = await page.locator('link[rel="icon"][type="image/svg+xml"]').getAttribute("href");
+    expect(href).toBeTruthy();
+    const svg = await request.get(new URL(href!, page.url()).toString());
+    expect(svg.status()).toBe(200);
+    expect(svg.headers()["content-type"]).toContain("image/svg+xml");
+    const ico = await request.get("/favicon.ico");
+    expect(ico.status()).toBe(200);
+    expect(ico.headers()["content-type"]).toMatch(/image\/(x-icon|vnd\.microsoft\.icon)/);
+    const touch = await request.get("/apple-touch-icon.png");
+    expect(touch.status()).toBe(200);
+  });
+
   test("login page renders and accepts valid credentials", async ({ page }) => {
     await page.goto("/login");
     await expect(page.locator("h1, h2").first()).toBeVisible();

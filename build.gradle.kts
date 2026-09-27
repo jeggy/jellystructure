@@ -279,7 +279,8 @@ tasks.register<Copy>("syncDesignAssets") {
         include("jellystructure.js", "*.wasm")
     }
     from(layout.buildDirectory.dir("wasm/packages/jellystructure/kotlin")) {
-        include("index.html")
+        // Phase 264 (FR-264-3) — the icons beside index.html, or the dev server keeps answering 404 for them.
+        include("index.html", "favicon.svg", "favicon.ico", "apple-touch-icon.png")
     }
     into(layout.buildDirectory.dir("dist/wasmJs/developmentExecutable"))
     dependsOn("wasmJsBrowserDevelopmentWebpack")
