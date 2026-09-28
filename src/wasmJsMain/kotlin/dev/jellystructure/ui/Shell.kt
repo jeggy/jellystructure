@@ -44,6 +44,8 @@ private var triageDockHidden: Boolean = false
 private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
     // Phase 278 (FR-278-12) — a music entry says one thing.
     when (item.musicIssue) {
+        "shared_album" -> return "♪ album · several folders say they are this album"  // Phase 283
+        "folder_disagrees" -> return "♪ album · the folder and the songs disagree"
         "needs_you" -> return "♪ album · several MusicBrainz candidates — needs you"
         "no_match" -> return "♪ album · no MusicBrainz match yet"
         "no_cover" -> return "♪ album · no cover"

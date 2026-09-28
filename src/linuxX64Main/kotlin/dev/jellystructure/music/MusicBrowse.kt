@@ -34,7 +34,7 @@ object MusicBrowse {
     /** The Library's facet keys, in the bar's order. */
     val FACETS = listOf(
         "match" to "Match", "cover" to "Cover", "artimg" to "Artist image", "format" to "Format", "genre" to "Genre",
-        "decade" to "Decade", "type" to "Album type", "lyrics" to "Lyrics", "lib" to "Library",
+        "decade" to "Decade", "type" to "Album type", "lyrics" to "Lyrics", "check" to "Check", "lib" to "Library",
     )
     private val FIXED: Map<String, List<Pair<String, String>>> = mapOf(
         "match" to listOf("matched" to "matched", MusicMatch.NEEDS_YOU to "needs you", MusicMatch.UNMATCHED to "unmatched", "locked" to "locked"),
@@ -43,6 +43,8 @@ object MusicBrowse {
         "format" to listOf("MP3" to "MP3", "WMA" to "WMA", "FLAC" to "FLAC", "AAC" to "AAC", "other" to "other"),
         "type" to listOf("album" to "album", "single" to "single / EP", "compilation" to "compilation", "live" to "live", "soundtrack" to "soundtrack"),
         "lyrics" to listOf("has" to "has lyrics", "missing" to "missing"),
+        // Phase 283 (FR-283-3) — what the folder and the songs disagree on.
+        "check" to listOf(MusicFlags.SHARED to "one album in several folders", MusicFlags.FOLDER to "folder and songs disagree", "none" to "nothing to check"),
     )
     private const val WMA_NOTE = "plays on a phone only by re-encoding"
     /** Containers a desktop browser plays as they are — the Tracks tab's ▶ (direct play or nothing). */
@@ -88,8 +90,9 @@ object MusicBrowse {
         query: String?,
         libraryNames: Map<String, String>,
         sort: String? = null,
+        roots: Set<String> = emptySet(),
     ): Result {
-        val ctx = Ctx(snap)
+        val ctx = Ctx(snap, roots)
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         fun hit(vararg s: String?) = q == null || s.any { it != null && q in it.lowercase() }
         return when (view) {
@@ -142,8 +145,10 @@ object MusicBrowse {
 
     // ── internals ──
 
-    private class Ctx(val snap: MusicStore.Snapshot) {
+    private class Ctx(val snap: MusicStore.Snapshot, val roots: Set<String> = emptySet()) {
         val albums = snap.albums.values.filter { it.missingSince == null }
+        /** Phase 283 — every album's flags, once per request. */
+        val flags: Map<String, List<dev.jellystructure.model.MusicFlagDto>> by lazy { MusicFlags.of(albums, roots) }
         val tracks = snap.tracks.values.filter { it.missingSince == null }
         val artists = snap.artists.values.filter { it.missingSince == null }
         private val albumCache = HashMap<String, Map<String, Set<String>>>()
@@ -162,6 +167,7 @@ object MusicBrowse {
                 "decade" to setOfNotNull(decade(a.year)),
                 "type" to setOf(albumType(a)),
                 "lyrics" to ts.map { if (hasLyrics(it)) "has" else "missing" }.toSet(),
+                "check" to flags[a.id].orEmpty().map { it.kind }.toSet().ifEmpty { setOf("none") },
                 "lib" to setOfNotNull(a.libraryId),
             )
         }
@@ -185,6 +191,8 @@ object MusicBrowse {
             id = a.id, title = a.title, artist = a.albumArtists.joinToString(" & ") { it.name }, artistId = a.albumArtists.firstOrNull()?.artistId,
             year = a.year, songs = liveTracks(a).size, match = albumMatch(a), cover = a.coverState != MusicArt.NONE,
             v = a.updatedAt, type = albumType(a),
+            folder = MusicFlags.folders(a.path, roots)?.album, flags = flags[a.id].orEmpty().map { it.kind },
+            note = a.matchNote.takeIf { a.matchState != MusicMatch.MATCHED },
         )
 
         fun artistRow(r: MusicArtist): MusicArtistRow {

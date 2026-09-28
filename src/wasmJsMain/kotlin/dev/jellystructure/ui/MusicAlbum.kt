@@ -8,6 +8,7 @@ import dev.jellystructure.api.MusicApi
 import dev.jellystructure.model.MusicAlbumPageDto
 import dev.jellystructure.model.MusicCandidate
 import dev.jellystructure.model.MusicConvertRequest
+import dev.jellystructure.model.MusicFlagDto
 import dev.jellystructure.model.MusicReleaseOption
 import dev.jellystructure.model.MusicTrackRow
 import kotlinx.browser.document
@@ -192,6 +193,13 @@ private fun alHead(p: MusicAlbumPageDto): String {
 
 private fun alBanners(p: MusicAlbumPageDto): String = buildString {
     val a = p.album
+    // Phase 283 (FR-283-3/4) — what the folder and the songs disagree on, first: it says why the rest went as it did.
+    for (f in p.flags) append(alFlagCard(f))
+    if (p.dismissedFlags.isNotEmpty()) {
+        append("""<div class="tiny muted" style="margin:-4px 0 14px;">""")
+        append(p.dismissedFlags.joinToString(" · ") { k -> "You marked “${alFlagName(k)}” as right · <a href=\"#\" data-a=\"flagshow\" data-kind=\"${k.esc()}\">Show it again</a>" })
+        append("</div>")
+    }
     if (a.matchState == "unmatched" && !a.matchLocked)
         append("""<div class="mu-note w"><span class="badge warn">Unmatched</span><div class="t"><b>No MusicBrainz match yet.</b> ${(a.matchNote ?: "").esc()} Nothing below fills in until this is matched: the cover, genres, the release’s track count and every recording id.</div><span class="btn sm primary" data-a="find">Find match…</span></div>""")
     if (a.matchState == "needs_you")
@@ -201,6 +209,31 @@ private fun alBanners(p: MusicAlbumPageDto): String = buildString {
     }
     if (a.jellyfinLocked.isNotEmpty())
         append("""<div class="note red" style="margin-bottom:14px;display:flex;gap:13px;align-items:flex-start;"><span class="badge bad" style="flex:none;margin-top:1px;">⚠ Locked in Jellyfin</span><div style="flex:1;min-width:0;"><b>This album has locked metadata in Jellyfin, so what jellystructure writes may be ignored.</b><div class="tiny" style="margin-top:5px;line-height:1.6;">Locked: ${a.jellyfinLocked.joinToString(" ") { """<span class="chip" style="font-size:.66rem;">${if (it == "All") "everything" else it.esc()}</span>""" }}. To fix it: open the album in Jellyfin → <b>Edit metadata</b> → uncheck the locks → save.</div></div></div>""")
+}
+
+private fun alFlagName(kind: String) = if (kind == "shared_album") "Several folders" else "Folder and songs disagree"
+
+private fun alFlagCard(f: MusicFlagDto): String = buildString {
+    val mono = { s: String? -> s?.let { """<span class="mono">${it.esc()}</span>""" } ?: "" }
+    append("""<div class="mu-note w"><span class="badge warn" style="flex:none">${alFlagName(f.kind)}</span><div class="t">""")
+    if (f.kind == "shared_album") {
+        append("""<b>${f.sentence.esc()}: <i>${(f.filesTitle ?: "").esc()}</i>.</b> """)
+        append("""This folder (${mono(f.folder)}) and ${if (f.others.size == 1) "this one" else "these"} name the same album: """)
+        val shown = f.others.take(6)
+        append(shown.joinToString(", ") { o -> """<a href="#/album/${o.id.esc()}">${(o.folder ?: o.title).esc()}</a>""" })
+        if (f.others.size > shown.size) append(" and ${f.others.size - shown.size} more")
+        append(""". If they are one album, put the songs in one folder. If each folder is its own release — a single, an EP — give each its own match with Find match….""")
+    } else {
+        append("""<b>${f.sentence.esc()}.</b>""")
+        append("""<div style="margin-top:4px">Folder: ${mono(listOfNotNull(f.folderArtist, f.folder).joinToString("/"))}</div>""")
+        append("""<div>Songs: ${listOfNotNull(f.filesArtist?.esc(), f.filesTitle?.let { "<i>${it.esc()}</i>" }).joinToString(" — ")}</div>""")
+        append("""<div style="margin-top:4px">A search by the songs’ tags can find the wrong album, or none. Fix the tags or the folder, or search by the folder’s name.</div>""")
+    }
+    if (f.writtenFromMatch) append("""<div class="tiny" style="margin-top:6px">The cover and <span class="mono">album.nfo</span> in this folder came from the match this puts in doubt.</div>""")
+    append("""<div class="pill-row" style="margin-top:10px;">""")
+    f.search?.let { q -> append("""<span class="btn sm primary" data-a="flagfind" data-q="${q.esc()}">Find match… by the folder’s name</span>""") }
+    append("""<span class="btn sm ghost" data-a="flagok" data-kind="${f.kind.esc()}">This is right</span>""")
+    append("</div></div></div>")
 }
 
 private fun alPanel(scope: CoroutineScope) {
@@ -441,6 +474,13 @@ private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     ev.preventDefault()
     when (a.getAttribute("data-a")) {
         "find" -> fmOpen(scope)
+        "flagfind" -> { fmPrefill = a.getAttribute("data-q"); fmOpen(scope) }
+        "flagok", "flagshow" -> scope.launch {
+            val kind = a.getAttribute("data-kind") ?: return@launch
+            val ok = a.getAttribute("data-a") == "flagok"
+            if (MusicApi.setFlagDismissed(id, kind, ok)) { muToast(if (ok) "Won’t be flagged again unless the folder or the tags change" else "Flagged again"); alReload(scope) }
+            else muToast("That didn’t save")
+        }
         "lock" -> scope.launch { MusicApi.lock(id, !p.album.matchLocked)?.let { muToast(if (it.matchLocked) "Locked · runs leave this match alone" else "Unlocked · the next run may re-match it"); alReload(scope) } }
         "clear" -> scope.launch { MusicApi.clear(id)?.let { muToast("Match cleared and locked · the fields it filled stay"); alReload(scope) } }
         "convert" -> muOpenConvert(scope, MusicConvertRequest(albumId = id)) { alReload(scope) }
@@ -510,9 +550,12 @@ private fun alLightbox(p: MusicAlbumPageDto) {
 
 // ── Find match… (FR-276-4, drawn as a side panel) ──
 
+/** Phase 283 — Find match… opened from a flag searches for the folder's name instead of the tag's. */
+private var fmPrefill: String? = null
+
 private fun fmOpen(scope: CoroutineScope) {
     val p = alPage ?: return
-    fmCands = p.album.candidates.map { it to null }
+    fmCands = if (fmPrefill != null) emptyList() else p.album.candidates.map { it to null }
     fmChosen = null; fmReleases = null; fmRelease = 0; fmBusy = null; fmSound = null
     document.getElementById("fm-scrim")?.remove(); document.getElementById("fm-panel")?.remove()
     val scrim = document.createElement("div") as HTMLElement
@@ -527,6 +570,7 @@ private fun fmOpen(scope: CoroutineScope) {
 }
 
 private fun fmClose() {
+    fmPrefill = null
     document.getElementById("fm-scrim")?.remove(); document.getElementById("fm-panel")?.remove()
     if (Router.currentQuery()["find"] != null) Router.updateQuery(mapOf("find" to null))
 }
@@ -540,7 +584,7 @@ private fun fmPaint() {
     val prevAl = (document.getElementById("fm-al") as? HTMLInputElement)?.value
     panel.innerHTML = buildString {
         append("""<div class="mu-ph"><h3>${if (a.matchState == "needs_you") "Choose a match" else "Find a match"} · ${a.title.esc()}</h3><span class="spacer"></span><span class="btn sm ghost" data-f="close">✕</span></div><div class="mu-pbody">""")
-        append("""<div class="mu-q3" style="grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto"><div class="field"><label>Artist</label><input id="fm-ar" value="${(prevAr ?: artist.takeIf { !it.equals("Various Artists", true) } ?: "").esc()}"></div><div class="field"><label>Album — or a MusicBrainz URL</label><input id="fm-al" value="${(prevAl ?: a.title).esc()}"></div><span class="btn" data-f="search">Search</span></div>""")
+        append("""<div class="mu-q3" style="grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto"><div class="field"><label>Artist</label><input id="fm-ar" value="${(prevAr ?: artist.takeIf { !it.equals("Various Artists", true) } ?: "").esc()}"></div><div class="field"><label>Album — or a MusicBrainz URL</label><input id="fm-al" value="${(prevAl ?: fmPrefill ?: a.title).esc()}"></div><span class="btn" data-f="search">Search</span></div>""")
         append("""<div class="tiny muted" style="margin-top:6px;">Pre-filled from ${a.path?.let { "the folder <span class=\"mono\">${it.substringAfterLast('/').esc()}</span>" } ?: "the tags"}. Paste a <span class="mono">musicbrainz.org/release-group/…</span> or <span class="mono">/release/…</span> URL to take exactly that.</div>""")
         when {
             fmBusy != null -> append("""<div class="mu-busy"><span class="sp"></span>${fmBusy!!.esc()}</div>""")

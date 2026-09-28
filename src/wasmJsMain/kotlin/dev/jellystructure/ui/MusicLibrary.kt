@@ -211,11 +211,12 @@ private fun body(d: MusicBrowseDto): String {
         }
         else -> buildString {
             append("""<div class="mu-grid${if (muSelected.isNotEmpty()) " selecting" else ""}">""")
+            val repeated = muRepeatedTitles(d.albums)
             for (a in d.albums) {
                 val url = if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null
                 append("""<a class="mu-cell${if (a.id in muSelected) " on" else ""}" href="#/album/${a.id}" data-id="${a.id}"><span class="mu-sel" data-sel="${a.id}">✓</span>""")
-                append(muCoverHtml(a.title, url, chip = muMatchChip(a.match)))
-                append("""<div class="ttl">${a.title.esc()}</div><div class="sub">${a.artist.esc()}</div><div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>""")
+                append(muCoverHtml(a.title, url, chip = muAlbumChip(a)))
+                append("""<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div><div class="sub">${a.artist.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>""")
             }
             append("</div>")
         }

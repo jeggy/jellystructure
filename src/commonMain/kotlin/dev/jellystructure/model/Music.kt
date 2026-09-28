@@ -190,6 +190,9 @@ data class MusicAlbum(
     /** Phase 278 — Jellyfin's own locked fields on the album (`All` when the whole item is locked); a scan
      *  refreshes it. Our NFO edits to a locked field are ignored by Jellyfin, so the page says so (136). */
     val jellyfinLocked: List<String> = emptyList(),
+    /** Phase 283 (FR-283-4) — a flag the admin said *This is right* to, with what it was said for: when that changes
+     *  (a folder renamed, a tag rewritten, another folder added) the flag comes back. */
+    val flagsDismissed: Map<String, String> = emptyMap(),
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,

@@ -503,7 +503,17 @@ private fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, co
     val noCover = albums.count { it.matchState == dev.jellystructure.model.MusicMatch.MATCHED && it.coverState == dev.jellystructure.model.MusicArt.NONE }
     val noPicture = s.artists.values.count { it.missingSince == null && it.path != null && it.imageState == dev.jellystructure.model.MusicArt.NONE }
     val reencodes = s.tracks.values.count { it.missingSince == null && dev.jellystructure.model.MusicFormats.reencodesOnPhone(it.container, it.codec) }
+    // Phase 283 (FR-283-3) — what the folders and the songs disagree on.
+    val flags = dev.jellystructure.music.MusicFlags.of(albums, dev.jellystructure.music.MusicFlags.roots(configStore.current))
+    val shared = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.SHARED } }
+    val folder = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.FOLDER } }
     return listOf(
+        TriageTypeCount("music_shared_album", "Albums in several folders",
+            "Two or more folders say they are the same album — often a band's singles whose files all name one compilation. Open one: if they are one album, put the songs in one folder; if each folder is its own release, give it its own match with Find match….",
+            shared, shared),
+        TriageTypeCount("music_folder_disagrees", "Albums whose folder and songs disagree",
+            "The folder's name and the songs' Album or Album artist tags name different things, so a search by the tags can find the wrong album, or none. Open the album: Find match… can search by the folder's name.",
+            folder, folder),
         TriageTypeCount("music_needs_match", "Albums need a match",
             "MusicBrainz found several candidates and none clearly won, or found nothing. Open the album: Find match… searches, or identifies it by sound.",
             needs, needs),
@@ -523,8 +533,14 @@ private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, con
     if (music == null || dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty()) return emptyList()
     val s = music.store.snapshot()
     val out = mutableListOf<TriageItem>()
-    for (a in s.albums.values.filter { it.missingSince == null }.sortedBy { (it.sortName ?: it.title).lowercase() }) {
+    val live = s.albums.values.filter { it.missingSince == null }
+    val flags = dev.jellystructure.music.MusicFlags.of(live, dev.jellystructure.music.MusicFlags.roots(configStore.current))
+    for (a in live.sortedBy { (it.sortName ?: it.title).lowercase() }) {
+        val kinds = flags[a.id].orEmpty().map { it.kind }
         val issue = when {
+            // Phase 283 — a flag first: it says why the rest (a match, a cover) went the way it did.
+            dev.jellystructure.music.MusicFlags.SHARED in kinds -> dev.jellystructure.music.MusicFlags.SHARED
+            dev.jellystructure.music.MusicFlags.FOLDER in kinds -> dev.jellystructure.music.MusicFlags.FOLDER
             !a.matchLocked && a.matchState == dev.jellystructure.model.MusicMatch.NEEDS_YOU -> "needs_you"
             !a.matchLocked && a.matchState == dev.jellystructure.model.MusicMatch.UNMATCHED -> "no_match"
             a.matchState == dev.jellystructure.model.MusicMatch.MATCHED && a.coverState == dev.jellystructure.model.MusicArt.NONE -> "no_cover"

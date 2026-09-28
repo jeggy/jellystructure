@@ -32,6 +32,7 @@ import dev.jellystructure.model.MusicStatusDto
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.MusicUseRequest
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -153,6 +154,12 @@ object MusicApi {
     suspend fun saveArtist(artistId: String, sync: Boolean): String? = runCatching {
         httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/save${if (sync) "?sync=1" else ""}").body<OutcomeResult>().outcome
     }.getOrNull()
+
+    /** Phase 283 (FR-283-4) — *This is right* on one flag, and *Show it again*. */
+    suspend fun setFlagDismissed(albumId: String, kind: String, dismissed: Boolean): Boolean = runCatching {
+        val url = "/api/music/album/${albumId.encodeURLParameter()}/flags/${kind.encodeURLParameter()}/dismiss"
+        (if (dismissed) httpClient.post(url) else httpClient.delete(url)).status.isSuccess()
+    }.getOrDefault(false)
 
     suspend fun syncAlbum(albumId: String): Boolean = runCatching {
         httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/sync").status.isSuccess()

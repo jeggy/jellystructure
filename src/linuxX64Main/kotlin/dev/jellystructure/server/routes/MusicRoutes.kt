@@ -47,6 +47,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -282,7 +283,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val selected = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["f.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
             val libs = MusicScanner.musicLibraries(cfg)
             val snap = music.store.snapshot()
-            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"])
+            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg))
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
@@ -300,6 +301,10 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val a = snap.albums[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
             val tracks = snap.tracksByAlbum[a.id].orEmpty().filter { it.missingSince == null }
             val lib = cfg.libraries.firstOrNull { it.jellyfinId == a.libraryId }
+            // Phase 283 (FR-283-3) — the album's flags, and the kinds the admin said *This is right* to.
+            val roots = dev.jellystructure.music.MusicFlags.roots(cfg)
+            val all = dev.jellystructure.music.MusicFlags.raw(snap.albums.values, roots, withDismissed = true)[a.id].orEmpty()
+            val shown = dev.jellystructure.music.MusicFlags.of(snap.albums.values, roots)[a.id].orEmpty()
             call.respond(MusicAlbumPageDto(
                 album = a, tracks = MusicBrowse.trackRows(tracks) { media.lyricsStateOf(it) },
                 genres = a.effectiveGenres(),
@@ -307,14 +312,34 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 drift = media.albumDrift(a), lyricsEnabled = cfg.music.fetchLyrics, acoustId = matcher.acoustId.available,
                 jellyfinUrl = jellyfinWebUrl(cfg, a.id), library = lib?.name, jellyfinLocked = a.jellyfinLocked,
                 type = MusicBrowse.albumType(a),
+                flags = shown, dismissedFlags = all.map { it.kind }.filter { k -> shown.none { it.kind == k } },
             ))
+        }
+
+        /** Phase 283 (FR-283-4) — *This is right*: the flag goes until what it was said for changes. */
+        post("/album/{id}/flags/{kind}/dismiss") {
+            val kind = call.parameters["kind"]!!
+            val roots = dev.jellystructure.music.MusicFlags.roots(configStore.current)
+            val snap = music.store.snapshot()
+            val a = snap.albums[call.parameters["id"]!!] ?: return@post call.respond(HttpStatusCode.NotFound)
+            val flag = dev.jellystructure.music.MusicFlags.raw(snap.albums.values, roots, withDismissed = true)[a.id].orEmpty().firstOrNull { it.kind == kind }
+                ?: return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "This album has no such flag"))
+            val others = flag.others.mapNotNull { snap.albums[it.id] }
+            music.store.putAlbum(a.copy(flagsDismissed = a.flagsDismissed + (kind to dev.jellystructure.music.MusicFlags.fingerprint(kind, a, others, roots))))
+            call.respond(mapOf("status" to "ok"))
+        }
+        /** *Show it again*. */
+        delete("/album/{id}/flags/{kind}/dismiss") {
+            val a = music.store.snapshot().albums[call.parameters["id"]!!] ?: return@delete call.respond(HttpStatusCode.NotFound)
+            music.store.putAlbum(a.copy(flagsDismissed = a.flagsDismissed - call.parameters["kind"]!!))
+            call.respond(mapOf("status" to "ok"))
         }
 
         get("/artist/{id}/page") {
             val cfg = configStore.current
             val snap = music.store.snapshot()
             val r = snap.artists[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
-            val browse = MusicBrowse.browse(snap, MusicBrowse.ALBUMS, emptyMap(), null, emptyMap(), "year")
+            val browse = MusicBrowse.browse(snap, MusicBrowse.ALBUMS, emptyMap(), null, emptyMap(), "year", dev.jellystructure.music.MusicFlags.roots(cfg))
             val mine = snap.albumsByArtist[r.id].orEmpty().filter { it.missingSince == null }
             val own = mine.filter { a -> a.albumArtists.any { it.artistId == r.id } }.map { it.id }.toSet()
             val credited = mine.map { it.id }.toSet() - own

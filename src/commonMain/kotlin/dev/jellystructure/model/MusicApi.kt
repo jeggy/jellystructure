@@ -171,6 +171,11 @@ data class MusicAlbumRow(
     val v: Long = 0,
     /** `album` · `single` · `compilation` · `live` · `soundtrack` — the Artist page's groups. */
     val type: String = "album",
+    /** Phase 283 — the album folder's name (a repeated title is told apart by it), the flags it carries, and the
+     *  matcher's note (the chip's tooltip, FR-283-6). */
+    val folder: String? = null,
+    val flags: List<String> = emptyList(),
+    val note: String? = null,
 )
 
 @Serializable
@@ -269,7 +274,29 @@ data class MusicAlbumPageDto(
     /** Jellyfin's own locked fields on the album (136's banner). */
     @SerialName("jellyfin_locked") val jellyfinLocked: List<String> = emptyList(),
     val type: String = "album",
+    /** Phase 283 — what the folder and the songs disagree on; and the kinds the admin said *This is right* to. */
+    val flags: List<MusicFlagDto> = emptyList(),
+    @SerialName("dismissed_flags") val dismissedFlags: List<String> = emptyList(),
 )
+
+/** Phase 283 (FR-283-3) — one flag on an album: the two sides quoted, the other folders, and what Find match… can
+ *  search for instead ([search], the folder's cleaned name). */
+@Serializable
+data class MusicFlagDto(
+    val kind: String,
+    val sentence: String,
+    val folder: String? = null,
+    @SerialName("folder_artist") val folderArtist: String? = null,
+    @SerialName("files_title") val filesTitle: String? = null,
+    @SerialName("files_artist") val filesArtist: String? = null,
+    val search: String? = null,
+    val others: List<MusicFlagOther> = emptyList(),
+    /** The cover and `album.nfo` in the folder came from the match this flag puts in doubt. */
+    @SerialName("written_from_match") val writtenFromMatch: Boolean = false,
+)
+
+@Serializable
+data class MusicFlagOther(val id: String, val title: String, val folder: String? = null)
 
 @Serializable
 data class MusicVideoRow(

@@ -167,7 +167,21 @@ class MusicMatchService(
                 else runCatching { ladder(a, tracks, allowSound) }.getOrElse { e ->
                     Logger.warn("match_musicbrainz: ${a.id} failed: ${e.message}", "music"); Outcome.NoAnswer
                 }
-                when (outcome) {
+                // Phase 283 (FR-283-2) — a new pick by search or sound is not given to a second folder: another folder
+                // already holding that album (matched before, or earlier in this run) makes it *needs you*. Ids in the
+                // files are the files' own word and are taken; an album already matched is never un-matched here.
+                val holder = (outcome as? Outcome.Picked)?.takeIf { a.matchState != MusicMatch.MATCHED && it.source != "tags" }?.let { p ->
+                    store.snapshot().albums.values.firstOrNull { o -> o.id != a.id && o.missingSince == null && o.path != a.path && o.releaseGroupMbid == p.candidate.releaseGroupMbid }
+                }
+                when {
+                    holder != null && outcome is Outcome.Picked -> {
+                        needs++
+                        val folder = MusicFlags.folders(holder.path, emptySet())?.album ?: holder.title
+                        val why = "Another folder is already matched to this album: $folder"
+                        if (a.matchState != MusicMatch.NEEDS_YOU) note(a.id, "music_match", "match_musicbrainz · $why — needs you")
+                        store.putAlbum(a.copy(matchState = MusicMatch.NEEDS_YOU, candidates = listOf(outcome.candidate), matchNote = why, matchAttemptedAt = now))
+                    }
+                    else -> when (outcome) {
                     is Outcome.Picked -> {
                         val r = applyMatch(a.id, outcome.candidate.releaseGroupMbid, outcome.releaseMbid, outcome.source, lock = false)
                         if (r != null) { matched++; artists += r } else failed++
@@ -183,6 +197,7 @@ class MusicMatchService(
                         store.putAlbum(a.copy(matchState = MusicMatch.UNMATCHED, candidates = outcome.candidates, matchNote = outcome.note, matchAttemptedAt = now))
                     }
                     Outcome.NoAnswer -> failed++
+                    }
                 }
             }
         } finally {

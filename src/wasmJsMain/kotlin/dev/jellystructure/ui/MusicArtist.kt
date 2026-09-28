@@ -142,8 +142,8 @@ private fun arPanel(scope: CoroutineScope) {
     }
 }
 
-private fun albumCell(a: MusicAlbumRow): String =
-    """<a class="mu-cell" href="#/album/${a.id}">${muCoverHtml(a.title, if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null, chip = muMatchChip(a.match))}<div class="ttl">${a.title.esc()}</div><div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>"""
+private fun albumCell(a: MusicAlbumRow, repeated: Set<String> = emptySet()): String =
+    """<a class="mu-cell" href="#/album/${a.id}">${muCoverHtml(a.title, if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null, chip = muAlbumChip(a))}<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>"""
 
 private fun arOverview(p: MusicArtistPageDto): String {
     val r = p.artist
@@ -162,15 +162,27 @@ private fun arOverview(p: MusicArtistPageDto): String {
             }
             else -> append("""<div class="tiny muted">No biography found — MusicBrainz links this artist to no Wikipedia or Wikidata page${if (r.matchState != "matched") " (or the artist isn’t matched yet)" else ""}. ${if (r.path != null) """<a href="#" data-a="bioedit">Write one</a>; it is saved into <span class="mono">artist.nfo</span>.""" else ""}</div>""")
         }
+        // Phase 283 (FR-283-3) — the page says what its flagged tiles have in common before showing them.
+        val flagged = (p.albums + p.creditedOn).filter { it.flags.isNotEmpty() }
+        if (flagged.isNotEmpty()) {
+            val shared = flagged.count { "shared_album" in it.flags }
+            val folder = flagged.count { "folder_disagrees" in it.flags }
+            val parts = listOfNotNull(
+                shared.takeIf { it > 0 }?.let { "$it ${if (it == 1) "is one of several folders" else "are folders"} that say they are the same album" },
+                folder.takeIf { it > 0 }?.let { "$it ${if (it == 1) "has a folder" else "have folders"} whose name and songs disagree" },
+            )
+            append("""<div class="mu-note w" style="margin-top:14px"><span class="badge warn" style="flex:none">Check</span><div class="t"><b>${muPlural(flagged.size, "album")} here ${if (flagged.size == 1) "needs" else "need"} a look.</b> Of them, ${parts.joinToString("; ")}. Each album’s page says what it sees and what you can do; the tiles carry a <b>check</b> chip.</div></div>""")
+        }
+        val repeated = muRepeatedTitles(p.albums + p.creditedOn)
         var any = false
         for ((label, types) in groups) {
             val own = p.albums.filter { it.type in types }
             if (own.isEmpty()) continue
             any = true
-            append("""<div class="mu-sec">$label <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${own.size}</span></div><div class="mu-grid">${own.joinToString("") { albumCell(it) }}</div>""")
+            append("""<div class="mu-sec">$label <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${own.size}</span></div><div class="mu-grid">${own.joinToString("") { albumCell(it, repeated) }}</div>""")
         }
         if (p.creditedOn.isNotEmpty()) {
-            append("""<div class="mu-sec">Credited on <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${p.creditedOn.size}</span></div><div class="mu-grid">${p.creditedOn.joinToString("") { albumCell(it) }}</div>""")
+            append("""<div class="mu-sec">Credited on <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${p.creditedOn.size}</span></div><div class="mu-grid">${p.creditedOn.joinToString("") { albumCell(it, repeated) }}</div>""")
         } else if (!any) append("""<div class="mu-sec">Albums</div><div class="tiny muted">No albums in the library.</div>""")
         if (p.videos.isNotEmpty()) {
             append("""<div class="mu-sec">Videos <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">from the Music videos library · matched by the filename’s artist · edited on their own pages</span></div><div class="mu-vgrid">""")

@@ -60,6 +60,25 @@ internal fun muMatchChip(match: String): String = when (match) {
     else -> ""
 }
 
+/** Phase 283 (FR-283-3/6) — an album cell's chip: a flag first (it says why the rest went as it did), else the match
+ *  chip with the matcher's own note as its tooltip. */
+internal fun muAlbumChip(a: dev.jellystructure.model.MusicAlbumRow): String {
+    if (a.flags.isNotEmpty()) {
+        val why = a.flags.joinToString(" · ") { if (it == "shared_album") "Several folders say they are this album" else "The folder and the songs disagree" }
+        return """<span class="mu-mchip w" title="${why.esc()}">check</span>"""
+    }
+    val chip = muMatchChip(a.match)
+    val note = a.note ?: return chip
+    return chip.replaceFirst("<span class=\"mu-mchip", "<span title=\"${note.esc()}\" class=\"mu-mchip")
+}
+
+/** Phase 283 — the album folder's name under a title that repeats on the page, so ten tiles are ten things. */
+internal fun muRepeatedTitles(rows: List<dev.jellystructure.model.MusicAlbumRow>): Set<String> =
+    rows.groupBy { it.title.lowercase() }.filterValues { it.size > 1 }.keys
+
+internal fun muFolderLine(a: dev.jellystructure.model.MusicAlbumRow, repeated: Set<String>): String =
+    if (a.title.lowercase() in repeated && a.folder != null) """<div class="sub mono" style="font-size:.66rem" title="${a.folder.esc()}">${a.folder.esc()}</div>""" else ""
+
 /** An album cover or its wordmark (FR-277-3). [cls] is `mu-cov`; [extra] is appended to the style. */
 internal fun muCoverHtml(title: String, url: String?, extraClass: String = "", chip: String = "", extraStyle: String = ""): String =
     if (url != null) """<div class="mu-cov $extraClass" style="${muImageStyle(url)}$extraStyle">$chip</div>"""

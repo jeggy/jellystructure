@@ -353,6 +353,9 @@ private suspend fun loadAttentionBreakdown() {
                     "no_segments" -> App.navigate("/segments?filter=none")
                     // Phase 278 (FR-278-11) — music's entries open the Music kind, filtered.
                     "music_needs_match" -> App.navigate("/library?kind=music&f.match=needs_you,unmatched")
+                    // Phase 283 — the flags open the Music kind on the Check facet.
+                    "music_shared_album" -> App.navigate("/library?kind=music&f.check=shared_album")
+                    "music_folder_disagrees" -> App.navigate("/library?kind=music&f.check=folder_disagrees")
                     "music_no_cover" -> App.navigate("/library?kind=music&f.match=matched,locked&f.cover=missing")
                     "music_no_picture" -> App.navigate("/library?kind=music&mview=artists&f.artimg=missing")
                     "music_reencodes" -> App.navigate("/library?kind=music&mview=songs&f.format=WMA")
@@ -393,6 +396,8 @@ private val ATTENTION_ROW_ORDER = listOf(
     "track_ends_early" to "bad",  // Phase 255 — silence or black from that point on
     "duration_header_wrong" to "warn",  // Phase 255 — never marked watched, wrong length shown
     // Phase 278 — music, last: none of it stops a film from playing.
+    "music_shared_album" to "warn",  // Phase 283
+    "music_folder_disagrees" to "warn",
     "music_needs_match" to "warn",
     "music_no_cover" to "warn",
     "music_no_picture" to "warn",
