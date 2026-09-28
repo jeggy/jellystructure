@@ -9,7 +9,7 @@
 
 `Planned` — written 2026-09-28 from the owner's answers and the mockup `design/ravilo/Ravilo Mobile.html` →
 `mobile/ravilo-music.js`, `mobile/ravilo-music-player.js`, `mobile/ravilo-books.js`, `mobile/ravilo-music.css`.
-**Not dev-reviewed.** Number verified free on `main` 2026-09-28. **Amends the built R321, R322 and R323** — where
+**Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main` 2026-09-28. **Amends the built R321, R322 and R323** — where
 this phase and theirs differ, this phase wins. The admin side of the same answers is **287**.
 
 ## Decisions (owner, 2026-09-28)
@@ -89,3 +89,45 @@ Playlists (create · add · reorder), a Mix row, music in the web app — each a
 4. With a book in progress, Listen opens on Continue listening.
 5. The music player has no speed or sleep control; the book player has both.
 6. A restarted app shows the last queue, paused where it was left.
+
+## Dev review (2026-09-28, against `main` `32daeee2`)
+
+Most of this phase is already the built state; the review names what actually changes. Ten items.
+
+1. **Already as decided — nothing to build:** Continue listening on Listen (`MusicListenScreen.kt:62–77`, R323
+   FR-R323-2 as built); Now playing has no queue button (R322's open question 1 resolved as the Queue tab); no speed
+   or sleep timer in the music player (`MusicPlayerScreens` has neither); a finished book stops (R323 FR-R323-6); the
+   Videos row (R321 FR-R321-11); no gap notice exists (FR-R326-10); last played is Jellyfin's played list
+   (`MusicTvService.lastPlayed`, 279 FR-279-11 — FR-R326-12).
+2. **The biography (FR-R326-1):** `MusicDetailScreens.kt:174/202` — `bioOpen` exists and *More* sets it, but the text
+   keeps `maxLines = 2`. Make it `if (bioOpen) Int.MAX_VALUE else 3` inside `animateContentSize()` (~340 ms, the app's
+   easing), the label *More ⇄ Less* (`music.less`, new); the same on the audiobook page (`AudiobookScreens.kt:340`).
+   Three lines collapsed, as the mockup draws it, not two.
+3. **The bar on every music page (FR-R326-2):** `RaviloApp.kt:893` `barShows(d) = bottomBarShows(d) && !(MusicPlaying
+   && !portrait)`, and `bottomBarShows` excludes detail destinations (R278). In music mode `Dest.MusicAlbum`,
+   `MusicArtist`, `Book` and `MusicPlaying` show the bar; the pushed page's bottom inset already follows `barShows`
+   (`:1074`, `:2042`, `:2052`, `:2062`), so content stops at the bar and the mini bar sits above it. A tab tapped with a
+   detail open pops the music stack to that tab's root (no behaviour exists today because the bar was hidden there).
+   Opening Now playing from the mini bar already goes to the Playing tab (`Dest.MusicPlaying` is the tab).
+4. **The mode row (FR-R326-3) — keep the built card, apply the behaviour.** The shipped control is R321 FR-R321-3's
+   two-half card (`ListeningModeCard`: *Films & series* | *Music & audiobooks*, the current half lit); it never said
+   *Back* — the owner's words were about the mockup's row. The card shows both modes and marks the current one, which
+   is clearer than a single *Switch to…* line, and it is the dev-reviewed R321 shape, so it stays. What changes:
+   switching **stays on Profile** (today `onSwitch` lands on the new mode's first tab), the bar re-renders around the
+   Profile pill, and a toast names the mode (`mode.music_books` / `mode.video` reused). No `mode.switch_*` strings.
+   Design drift accepted, as for translations — if the owner wants the one-line row literally, it is a rendering
+   swap inside `ListeningModeCard`.
+5. **No Mix row (FR-R326-6):** the server builds it (`MusicTvService.kt:167`, `MusicRow("mix", …)`) and the phone
+   draws `MixCard` (`MusicListenScreen.kt:104–135`) — remove both (279 amended). Old phone, new server: no mix row
+   arrives; new phone, old server: `key == "mix"` is skipped — additive both ways.
+6. **Chapter strip and the whole-book scrubber (FR-R326-9):** `ChapterSeekBar` (`BookPlayerScreens.kt:138`) stays;
+   the hairline (`:139`, `:457`) becomes the small labelled scrubber (`ab.whole_book`) on `MusicEngine.seekBook` ✓;
+   the strip is the chapters as proportional segments (`BookMath.chapterAt` ✓) under the transport, tap → the
+   chapter's start.
+7. **Restore after restart (FR-R326-11):** `MusicEngine.loadPaused(tracks, index, positionMs, context)` exists (R322
+   FR-R322-3, one song). Persist the queue on every change in `MusicDeviceStore` (per-device prefs, exists) as JSON —
+   the `MusicTrackItem`s, index, position, context, repeat, shuffle (a 30-song queue ≈ 10 KB) — and restore in
+   `attach()`; fall back to `/tv/music/last-played`. A track that no longer exists drops silently.
+8. **Speed and the sleep timer** stay the book player's (`BookPlayback.kt`) ✓; `ab.speed_note` and friends untouched.
+9. **Strings:** `music.less` only. The design's `mode.switch_video` / `mode.switch_music` are not adopted (item 4).
+10. **Wire:** none new; the mix row's removal is a server-side omission (279 amended in place).

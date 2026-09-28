@@ -8,7 +8,7 @@
 
 `Planned` — written 2026-09-28 from `specs/design-brief-dashboard-one-overview-2026-09-28.md` (§A–§G) and the mockup
 `design/app/index.html` on `design/app/dashboard-data.js` · `dashboard.js` · `dashboard.css`, with the dock removed
-from `design/app/app-shell.js`. **Not dev-reviewed.** Number verified free on `main` 2026-09-28. A presentation
+from `design/app/app-shell.js`. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main` 2026-09-28. A presentation
 phase in the shape of 146/257, plus one count-endpoint change (FR-285-9).
 
 **Supersedes:** 146's fixed 28-row attention list and `ATTENTION_ROW_ORDER` · 257's advisor card placement · the
@@ -116,3 +116,42 @@ New checks; any change to what a row's target page does; the Activity page.
 ## Open questions (for the dev review)
 
 1. Whether `/api/stats.issues` is kept (as a row count) or retired with its last caller.
+
+## Dev review (2026-09-28, against `main` `32daeee2`)
+
+Buildable. The one structural change is that the page stops computing: severity, order, units and sentences come
+from one endpoint. Eleven items.
+
+1. **One endpoint, rendered.** Today `Dashboard.kt` orders and grades client-side (`ATTENTION_ROW_ORDER`, 28 keys →
+   `bad`/`warn`/`info`) from `/api/triage/count` (24 `TriageTypeCount` rows in `TriageRoutes.kt`) plus three advisor
+   fetches (Jellyfin · Bazarr · memory budget) and the cards. FR-285-3 moves all of it server-side: one
+   `GET /api/dashboard` → `{headline, domains[], rows[{key, domain, severity, label, sentence, count, unit, fix:
+   click|open|elsewhere|info, action?, href}], since_last_visit, scan}` built from the triage counts, the advisors
+   (`AdvisorFinding.severity` already speaks the three words), `WebhookStatus.findings`, 273's subtitle check and the
+   Services lines. The page renders it (render-never-compute). `/api/triage/count` stays for Library's chips.
+2. **Per-kind counts (FR-285-9):** `TriageTypeCount(key, label, description, count)` gains `movies`/`series` (additive)
+   by running `MediaStore`'s per-type filter per `MediaKind`; music and audiobook types already own their keys.
+3. **The unit.** Each type states what it counts: `untagged` counts tracks (today it counts items), `missing_still`
+   episodes, `duplicate_episode` files, `music_needs_match` albums… the server computes the item count (Library's
+   filter needs it) and the unit count (the row) and names up to three titles in the sentence.
+4. **Removed rows:** `no_segments` and the segment queue's *waiting* line leave `/api/dashboard`; `no_segments`
+   stays in `/api/triage/count` for Library's chip and the segment editor.
+5. **Since your last visit:** `media_history(ts, action, detail, media_id)` is queryable by `ts` → actions grouped into
+   domains since `dashboard_visit.opened_at`; a new table `dashboard_visit(jellyfin_user_id PRIMARY KEY, opened_at)` —
+   an admin session is a Jellyfin user (`session.jellyfin_user_id`), so "per admin" = per that id. Written by
+   `POST /api/dashboard/seen` on leaving the page, read by the GET.
+6. **The dock removal:** `Shell.kt` (`triageDockItems`, `triageDockIndex`, `navigateToTriageItem`, the n/p/o keys at
+   `:463–479`, the ⌘K entries, `triageSubline`) and `Dashboard.kt`'s *Show attention dock* (`#reopen-dock`) — deleted,
+   ~130 lines; `JsInterop.kt` and `BulkReorderWizard.kt` reference the dock (fix on build). The sidebar count keeps
+   reading a count, but the **dashboard's row count** (`Shell.kt:221` reads `/api/triage/count` today) so the badge,
+   the tile and the list agree (FR-285-6).
+7. **`/api/stats.issues`** = `store.totalIssueCount()` (`MediaRoutes.kt:2152`): kept, redefined as the dashboard's
+   row count (open question 1 → keep; the stat tile is its other caller).
+8. **Settings indicators (FR-285-12):** `advisorFindingHtml` at `Settings.kt:1412` (server-wide), `:1434` (per
+   library), `:1475` (Bazarr) and the memory-budget swap line → one `settingsIndicator(domain, n)` each, linking to
+   `#/?domain=…`. The advisor endpoints stay; the dashboard reads them server-side.
+9. **The scan banner (FR-285-11)** exists (`#dash-scan-banner`) — unchanged.
+10. **Design assets:** `dashboard.css` is a new file → both `syncDesignAssets` copy lists in `build.gradle.kts` and
+    `index.html`'s `<link>` set, and its fragile rules registered in `scripts/check-mobile-css.sh` (the 8th-incident
+    lesson: a new stylesheet not on those lists ships with no CSS).
+11. **Wire:** admin only; `RemoteDevice`/Ravilo untouched.

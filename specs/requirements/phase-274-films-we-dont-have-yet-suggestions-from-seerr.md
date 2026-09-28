@@ -10,7 +10,7 @@
 ## Status
 
 `✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — **plus FR-274-10a (*Download asks first*),
-`Planned`, written 2026-09-28, not dev-reviewed** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
+`Planned`, written 2026-09-28, dev-reviewed 2026-09-28 (§Dev review — FR-274-10a)** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
 round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
 the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
 `e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
@@ -127,7 +127,7 @@ steering — is Seerr's, unchanged. The tile shows the state that comes back and
 tile says so in one line and stays.
 
 **FR-274-10a — Download asks first** (amendment, `Planned` — written 2026-09-28 from the brief's §8 and the mockup
-`design/app/suggestions.js` / `suggestions.css`; not dev-reviewed). Owner, 2026-09-28: the built *Download* sends the
+`design/app/suggestions.js` / `suggestions.css`; dev-reviewed 2026-09-28, see §Dev review — FR-274-10a). Owner, 2026-09-28: the built *Download* sends the
 request too fast. It now opens a **confirm dialog** for that one film — **always a centred dialog, on every width**
 (owner, Q2) — and the request goes only from the dialog's own button. The tile's state chain after that is
 unchanged.
@@ -363,3 +363,30 @@ the household server with the dev compose (migration **61**; schema 62).
    half and its refusal are covered by the validator's tests; 3 by the engine's; 1 by the pipeline filter's test and
    the routes' 404s, not by switching the household's Seerr off; 4–7 wait for the owner's first real *Download* and
    *No thanks*.
+
+## Dev review — FR-274-10a (2026-09-28, against `main` `32daeee2`)
+
+Buildable on the built 274. Seven items.
+
+1. **Two Seerr calls are missing.** `SeerrClient` has no `/service/radarr`: add `radarrServers(url, key)` →
+   `[{id, name, is4k, isDefault, activeProfileId, activeDirectory}]` (`GET /service/radarr`) and `radarrServer(id)` →
+   `{profiles[{id, name}], rootFolders[{path}]}` (`GET /service/radarr/{id}`), both through `OutboundHttp` like the
+   rest; server-side cache 60 s so a re-opened dialog is free (the page's own cache stands).
+2. **`createRequest` gains `serverId`, `rootFolder`, `is4k`** beside the existing `profileId` / `tagIds` / `seerrUserId`
+   (`SeerrClient.kt:369`); `SeerrDiscoverService.request(...)` (`:265`) and `SuggestionService.download` (`:508`) pass
+   them through. **139's language steering also sets `profileId`** (a Nordic-scored profile for a Danish pick): the
+   dialog pre-selects 139's profile when 139 would have applied one — marked *your Danish rule* — else Seerr's active
+   profile marked *Seerr's default*; the admin's explicit choice always wins. So the dialog never silently drops a
+   steering rule and never silently keeps one.
+3. **`canChoose`.** The request goes as the admin's own Seerr user (Q1, `X-API-User`); Seerr honours
+   `profileId`/`serverId`/`rootFolder` only for a user holding `REQUEST_ADVANCED` (or admin). `ping` already fetches
+   `/auth/me` and discards the body — keep `permissions` and test the bit (**verify the constant against Seerr 3.4's
+   `server/lib/permissions.ts` before trusting a number**). Without it the dialog shows the default as a fact and the
+   request goes without the fields, as the FR says.
+4. **The note** already lives in `suggestion_request(requested_for, requested_by, …)` (dev review 1) ✓; add
+   `profile_name` and `server_name` so the tile's history can say *Requested in HD-1080p*.
+5. **Routes:** `GET /api/suggestions/request-options` (new) and an optional body on
+   `POST /api/suggestions/{tmdbId}/download` (`SuggestionsRoutes.kt:38`) — additive; the page's *Download*
+   (`Suggestions.kt:172`, handler `:295`) opens the dialog first and sends from it.
+6. **Seerr 3.5 (282):** nothing here changes; `hideRequested` does not touch `/service/radarr`.
+7. **Wire:** admin only; R320 unchanged.

@@ -8,7 +8,7 @@
 `Planned` — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§0–§9, road B) and the
 mockups `design/ravilo/Speakers - Directions.html` (§E, the display receiver), `design/app/settings.html` (the
 Chromecast card's step 5a and registered-state lines), `design/app/ravilo-users.html` (a speaker row) and
-`design/app/dashboard-data.js` (the Services line). **Not dev-reviewed.** Number verified free on `main`
+`design/app/dashboard-data.js` (the Services line). **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main`
 2026-09-28. The phone side is **R324**; both ship together.
 
 **Builds on** 218 / 226 / 235 (the receiver, its registration, the card) · 279 (`/api/tv/music/**`) · R245
@@ -87,3 +87,52 @@ any audio device · multi-room sync beyond Google's own groups.
 ## Open questions (for the dev review)
 
 1. Whether a Nest Wifi point accepts a queue LOAD of 30 items in one message, or the receiver must page it.
+
+## Dev review (2026-09-28, against `main` `32daeee2`)
+
+Buildable on the receiver as it stands; the receiver already runs its own item list for episodes, which is the
+shape the music queue reuses. Eleven items. The household has five Cast devices: two TVs, the Nest Hub, and two
+screenless speakers — today the phone's sheet sees only the three displays (the app is not registered for audio).
+
+1. **Registration and the card.** FR-286-1's step 5a is a change inside `Settings.kt`'s `#cc-steps` (step 5 today).
+   FR-286-2 needs the backend to know a speaker cast happened: the receiver passes `platform = "cast-audio"` on
+   redeem when `display_supported` is false (the `platform` column is free text — no schema change);
+   `ChromecastStatus` gains `speakers_confirmed_at` (additive) = the newest `last_seen` of a `cast-audio` device.
+2. **Headless (FR-286-3).** CAF's `context.getDeviceCapabilities().display_supported`; today `Receiver.kt` builds its
+   DOM unconditionally (`start()` · `idle()` · `show()`), so every `el()` path is gated on a `headless` flag. The
+   metadata block is `MusicTrackMediaMetadata` (title · artist · albumName · albumArtist · images) instead of the
+   `GenericMediaMetadata` at `:199`. `canDisplayType` means nothing on a speaker: capabilities are a fixed audio set
+   (MP3 · AAC · FLAC · Opus · Vorbis direct; WMA converted — 279's music negotiation already sets
+   `directPlay = !needsTranscode`, `PlaybackService.kt:641`).
+3. **The queue (FR-286-4) is the episode list, for songs.** The receiver already carries `CastLoadData.episodes` and
+   self-issues a LOAD per item (`nextEpisode()`/`loadNext()`, `Receiver.kt:339–380`). `CastLoadData` gains
+   `tracks: List<CastTrackItem>` (id · title · artist · album · cover URL · duration), `repeat`, `shuffle` — additive
+   (R319). Each song is negotiated through `POST /tv/music/play` with the receiver's own token (it is a `cast` device
+   carrying the phone user's token — `CastService.redeem`) and reported per song through the generic
+   `/tv/playback/progress` and `/tv/playback/stop` (279 routes music there). **Open question 1 is answered:** the LOAD
+   carries ids and titles, ~120 B a song — 30 songs ≈ 4 KB, far under the Cast message ceiling (64 KB). No paging.
+4. **Google's own next/previous** (the Home app, the Assistant, a display's remote) arrive as `QUEUE_UPDATE`
+   (jump ±1) / `QUEUE_NEXT` / `QUEUE_PREV` messages: the receiver intercepts them (`PlayerManager.setMessageInterceptor`)
+   onto its own list and advertises `supportedMediaCommands` with `QUEUE_NEXT | QUEUE_PREV`, or the Home app hides the
+   buttons. Verify on a speaker (acceptance 1).
+5. **The display's remote (FR-286-5).** Media keys (play/pause, next, previous, stop) reach a web receiver as media
+   commands — the same interceptor; the D-pad reaches the page as DOM `keydown` (ArrowLeft/Right/Down, Enter); a tap
+   on the hub is `click`. **Back on a Chromecast with Google TV is the platform's** — it may leave the app rather
+   than reach the page; verify on the stue TV, and if Back cannot be kept, the transport row auto-hides after 5 s
+   instead (the music never stops either way). Amends FR-R245-15 for music.
+6. **Lyrics on a display (FR-286-6).** The receiver fetches `GET /tv/music/track/{id}/lyrics` (279) itself, synced
+   only; the per-display switch lives in the receiver's `localStorage` (where `receiverId` already lives) and is set
+   by a `CastCommand(type = "lyrics", on)` from R324 or by ▼.
+7. **The ceiling (FR-286-8).** `CastService.checkCeiling` counts every playing `cast` device; the tracker's
+   `TrackedPlayback` needs `directPlay` (the ticket knows it) recorded at `/tv/playback/start`, and the count skips
+   `cast` devices whose session is direct — so a direct-played MP3 on a speaker costs nothing.
+8. **Users & devices (FR-286-7).** `RaviloUsers.kt:91` maps `"cast" → "Chromecast"`; the *audio only* badge and the
+   capability line key on `platform == "cast-audio"`. A group's name is the sender's `friendlyName` (the group),
+   already passed as `CastLoadData.deviceName` ✓.
+9. **Dashboard (FR-286-9)** rides 285's Services domain — 285 first, else the line lands in today's Services card.
+10. **Wire:** `CastLoadData.tracks/repeat/shuffle`, new `CastCommand` types, `CastReceiverMessage.queue` (the snapshot
+    R324 mirrors), `ChromecastStatus.speakers_confirmed_at` — all additive. The receiver is served by the backend
+    (218), so it moves with the release; the phone must not offer music casting against a server without it —
+    `RaviloConfig.cast.music = true` (additive, default false) gates R324's music-mode sheet.
+11. **Build order:** 279 (built) → this phase → R324; the two ship in one release because the receiver and the phone's
+    music sender share the shapes in item 10.

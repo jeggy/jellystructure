@@ -8,7 +8,7 @@
 
 `Planned` — written 2026-09-28 from `research-reports/ravilo-design-vs-implementation-audit-2026-09-27.md` §2.1, §2.2,
 §2.5 and the mockups `design/ravilo/ravilo-app.js` (TV detail, `tileQ()`), `design/ravilo/Ravilo Mobile.html`
-(`aboutHTML()`, `.pb`), `design/ravilo/Focus Detail - Directions.html` §F. **Not dev-reviewed.** Number verified free
+(`aboutHTML()`, `.pb`), `design/ravilo/Focus Detail - Directions.html` §F. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free
 on `main` 2026-09-28 (Ravilo tops at R323; R324 is the speakers phase).
 
 ## Decisions (owner, 2026-09-28)
@@ -66,3 +66,42 @@ Browse filtered to it.
 ## Open questions (for the dev review)
 
 1. Whether *In your library since* should be the first file's date or the title's (they differ for a series).
+
+## Dev review (2026-09-28, against `main` `32daeee2`)
+
+Buildable. Two of the eight facts are not held anywhere yet, and two of the four calls cannot be client-side. Nine
+items.
+
+1. **Six of the eight facts are held; two are not.** `MediaItem` has `runtime`, `year`, `director`, `studio`/`network`
+   (+ `secondaryStudios`), `originalLanguage`, `crew` (with a `Creator` job where TMDB gives one — `RecommendationEngine`
+   already keys on it) and `createdAt`. It has **no country** and **no full release / first-air date** (only `year`).
+   So FR-R325-2's `about` block needs two fields persisted by `pull_tmdb` (`release_date` / `first_air_date`, and
+   `production_countries[0]` / `origin_country[0]`), filled for existing titles by their next pull; until then the
+   row is absent and FR-R325-1 hides it without a gap ✓. Small admin-side work inside this phase (R270's precedent
+   for a Ravilo spec carrying its backend half); no new number.
+2. **Open question 1 → `createdAt`**, our first-insert stamp — never `addedAt` (Jellyfin's `DateCreated` is the file's
+   mtime; 181 found half of them junk). For a series: the series record's own `createdAt`, not `max(episode.createdAt)`
+   (that float is for *recently added*; the About line answers "since when have we had this show").
+3. **Seasons · episodes** are the item's own library counts ✓.
+4. **The tile badge (FR-R325-3) is additive, not a filter.** `MediaCard` carries no quality field (only
+   `BrowseCard.quality` and `FocusDetailFacts.quality`) and `Tile.kt` draws no badge today. Add
+   `MediaCard.quality_badge: String?` = `4K` · `HDR` · `4K HDR` · `Dolby Vision`, null otherwise, resolved server-side
+   from the file's video track (the resolver `BrowseCard.quality` uses); the tile draws it top-right; hero and detail
+   untouched; old apps ignore it.
+5. **Cast or crew (FR-R325-4) must be server-side.** The browse page filters **client-side over the loaded page**
+   (`SeededBrowseScreen.kt:534`) and counts facet values from the cards (`:307`) — a card carries no people. So:
+   `BrowseFacets` gains `people: List<FacetItem>` (top 40 by title count within the scope) and the browse query gains
+   `person=` (multi, OR) — R190's `personTmdbId` seed already filters server-side by one person, so the filter exists
+   and the facet is its multi-select form; *Search…* is `GET /api/tv/people?q=` over this profile's libraries. The
+   chip applies by re-query — a stated exception to the page's local-filter model, like the seed itself.
+6. **Genres in search (FR-R325-5).** `BrowseService.search` matches titles only (`:232`). Add `genres:
+   List<{id, label, count}>` to `SearchResults` (additive), matched server-side on the R271 labels (`GenreLabels`) when
+   the query equals or prefixes a genre's name in the viewer's language; the TV and phone Search screens render the
+   chip row above titles; a chip opens Browse seeded to the genre (R221's contract). Old clients ignore the field.
+7. **Where About renders:** `MovieDetailScreen` / `SeriesDetailScreen` (TV) and the phone detail; the mockup's
+   `aboutHTML()` is the model. No new screen; the section is absent when the block has no value at all.
+8. **Strings** × en/da/fo from the design (`about.title`, `about.runtime`, `about.released`, `about.first_aired`,
+   `about.director`, `about.creator`, `about.studio`, `about.network`, `about.country`, `about.original_language`,
+   `about.seasons`, `about.in_library_since`, `about.per_episode`); language names through the existing native-name
+   table (R180); country names through the platform's locale (`Locale` display names — no table of ours).
+9. **Wire:** all additive (`about`, `quality_badge`, `people`, `genres`, `person=`) — R319 passes.

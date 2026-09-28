@@ -7,7 +7,7 @@
 
 `Planned` — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§6.6–§6.11, §7, §8)
 and the mockups `design/ravilo/Speakers - Directions.html` (round 1) and the build in `design/ravilo/Ravilo
-Mobile.html` → `mobile/ravilo-speakers.js` (+ the `spk-*` rules in `mobile/ravilo-music.css`). **Not dev-reviewed.**
+Mobile.html` → `mobile/ravilo-speakers.js` (+ the `spk-*` rules in `mobile/ravilo-music.css`). **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review).
 Number verified free on `main` 2026-09-28. The receiver side is admin **286**; both ship together.
 
 **Builds on** R265 (the sheet) · R270 (a busy TV names its viewer) · R245 (hand-off, reconnect) · R321/R322 (the
@@ -91,3 +91,49 @@ The iPhone reaching a speaker (needs 286's road C) · AirPlay speakers · castin
 5. Swiping the bar down leaves Stue playing and shows the toast; *Stop* stops it.
 6. Locked for an hour and reopened: the bar shows the song Stue is playing now.
 7. iPhone: no speaker rows, one footnote.
+
+## Dev review (2026-09-28, against `main` `32daeee2`)
+
+Buildable. The sheet, the sender and the music engine all exist; what is missing is that a route knows what kind of
+device it is, and that the music engine can hand its queue to the sender. Twelve items.
+
+1. **A route carries no kind.** `CastRoute(id, name, selected, select)` (`CastSender.kt:89`); `CastRoutesAndroid.kt`
+   filters `MediaRouter.routes` by the app's category. Add `kind` (display · speaker · group) from
+   `CastDevice.getFromBundle(route.extras)` → `hasCapability(CastDevice.CAPABILITY_VIDEO_OUT)` (false ⇒ speaker) and
+   `route.deviceType == RouteInfo.DEVICE_TYPE_GROUP`; and `busyWith` from `route.description` (the Cast route provider
+   publishes the running receiver app's name there — **verify on the Pixel with Spotify on Gæsteværelse**; if it is
+   empty, the row reads *Busy* with no name, never a guess). Audio routes appear only once 286's box is ticked and
+   the speaker has restarted — nothing to do on the phone for discovery.
+2. **Video mode hides audio routes (FR-R324-1):** `ScreensSheetBody`'s `castRows` drop `speaker`/`group` when the sheet
+   is opened outside music mode; the hub (a display) stays in both. The sheet's title switches on the same flag.
+3. **Take-over.** Selecting a route where another app runs launches ours — that *is* the stop; the confirm sheet is
+   the only gate. A route already running Ravilo: the SDK joins the running session (R265's build notes confirm the
+   rejoin), `onSessionStarted` arrives with a media status, and Playing/Queue rebuild from `CastReceiverMessage.queue`
+   (286 item 3).
+4. **Hand-off (FR-R324-3).** `MusicEngine` (commonMain) is the phone's player. Casting = the engine stops locally and
+   `cast.sender.load(CastLoadData(tracks…, currentIndex, positionMs))`; while linked, a `MusicCastBridge` in
+   `ravilo-ui` mirrors the engine's observable state from the receiver's reports (position from the
+   `RemoteMediaClient.ProgressListener` already wired at `CastSenderAndroid.kt:122`, the queue from the receiver's
+   snapshot). *Play on this phone*: `loadPaused(tracks, index, position)` + `play()`, then `sender.stop()`.
+5. **Queue edits go to the receiver:** `CastCommand` gains `queue_move(from, to)`, `queue_remove(index)`,
+   `queue_add(track)`, `queue_play_next(track)`, `repeat`, `shuffle`, `lyrics(on)` — the existing
+   `command(type, index, size)` shape, extended (additive).
+6. **Volume (FR-R324-5/6).** The slider is `CastSession.setVolume(0.0–1.0)` in 0.05 steps. The phone's keys already
+   reach the selected route through `MediaRouter` while the app is in the foreground (API ≥ 16) — nothing to add;
+   Android's own panel names the route.
+7. **Lock screen (FR-R324-9).** `NotificationOptions` is app-wide (`CastSenderAndroid.kt:41–52`: toggle · rewind ·
+   forward · stop, 30 s steps). Music needs previous/next: a `NotificationActionsProvider` that returns the music set
+   when the loaded media's metadata type is `MEDIA_TYPE_MUSIC_TRACK`, else today's. R322's `RaviloMusicService`
+   media session releases while a cast runs (R192's rule for video), or two cards appear.
+8. **Mini bar, swipe, toast, stacking:** R322's composables; the `· Stue` suffix, the toast and *Stop* are the listed
+   strings; the stacked-under-a-film frame exists in R322.
+9. **Reconnect (FR-R324-8)** is FR-R245-5 as built for video — one foreground resume at start-up
+   (`setEnableReconnectionService(false)`); the queue rebuild needs `CastReceiverMessage.queue` on `onSessionResumed`
+   (286 item 3). A phone that was killed is R265's open item, unchanged here.
+10. **iPhone and web (FR-R324-10):** `rememberCastRoutes` is `expect`; the iOS and web actuals return no routes ✓;
+    the footnote is a string.
+11. **Strings:** the eleven keys → `i18n/en.json` (`cast.sheet_music` …); da/fo drafts from `ravilo-i18n.js`, the
+    shipped table wins (R279).
+12. **Wire:** shares 286's additive shapes; the music-mode sheet is offered only when `RaviloConfig.cast.music` is
+    true (286 item 10), so a new app against an older server keeps today's sheet. **Not the same bug as R327:** the
+    server's receiver *records* (`kind = cast`) never appear in this sheet — speakers are routes.
