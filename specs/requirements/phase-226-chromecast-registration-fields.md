@@ -8,7 +8,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 — the five steps, the two console fields with their exact labels and a Copy each, the corrected hint and link text, in `Settings.kt`; **Package Name** comes from one Gradle value (`gradle.properties` `ravilo.applicationId` → `:ravilo-android`'s `applicationId` and the root `BuildInfo.androidApplicationId`). **Seen in a browser 2026-09-17** (local v1.22): five steps, the console link, both fields with their values and Copy, the corrected hint. One leftover string fixed afterwards (the enabled blurb still said *Three one-time steps*). Live on production as v1.22. Google's live labels were not re-read on the day (dev review's caveat stands). Was `Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `8873cea7`** (see §Dev review at
+`✓ Built` 2026-09-17 — the five steps, the two console fields with their exact labels and a Copy each, the corrected hint and link text, in `Settings.kt`; **Package Name** comes from one Gradle value (`gradle.properties` `ravilo.applicationId` → `:ravilo-android`'s `applicationId` and the root `BuildInfo.androidApplicationId`). **Seen in a browser 2026-09-17** (local v1.22): five steps, the console link, both fields with their values and Copy, the corrected hint. One leftover string fixed afterwards (the enabled blurb still said *Three one-time steps*). Live on production as v1.22. Google's live labels were not re-read on the day (dev review's caveat stands). Was `Planned` — written 2026-09-17, **dev-reviewed 2026-09-17 against `main` `654869b9`** (see §Dev review at
 the bottom). Supersedes **FR-218-6** only; every other 218
 requirement stands unchanged.
 
@@ -124,7 +124,7 @@ says so. Google remains the only product named on this card and nowhere else (FR
 
 ## Dev review (2026-09-17)
 
-Reviewed against `main` at `8873cea7`, alongside **227**. The card as built by 218 is at
+Reviewed against `main` at `654869b9`, alongside **227**. The card as built by 218 is at
 `src/wasmJsMain/kotlin/dev/jellystructure/ui/Settings.kt:170-215` (`#cc-steps`, three steps,
 `#cc-steps-again` reading *Show the three steps again*, the Application ID hint) — every string this phase
 replaces exists there once, so the change is confined to that block plus one build-time constant.

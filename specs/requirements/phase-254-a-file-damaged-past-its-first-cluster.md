@@ -48,7 +48,7 @@ files of *Hoppe Hares Byggebande* (`/mnt/series/jellyfin/Hoppy Hare Builders`, 2
   finite size`, `Invalid length 0x61 > 0x8 for element with ID 0xE7`, `0x00 at pos 56420409 invalid as
   first byte of an EBML number`, `Truncating packet of size 1656599 to 4847`.
 - It is **data loss**: bytes inside clusters were overwritten by the 2026-09-13 concurrent-repair race
-  (phase 201's amendment, fixed by `c10716ef` and phase 234). A stream copy makes the container valid by
+  (phase 201's amendment, fixed by `6aa8b9c6` and phase 234). A stream copy makes the container valid by
   *discarding* what it cannot parse (measured on S01E05: −246 video packets, ≈10 s).
 - **Why jellystructure says nothing:** the only detector it has (`scanMkvLayout`, phase 201) stops at the
   end of the **first** `Cluster` — deliberately, so a library sweep costs ~400 KB a file. Damage at

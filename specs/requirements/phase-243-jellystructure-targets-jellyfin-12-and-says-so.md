@@ -5,7 +5,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c` (see
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6` (see
 §Dev review at the foot), built 2026-09-20 with every review item taken. The umbrella decision behind **238**,
 **239**, **240**, **241**, **242** and **R271**; those are the individual repairs, this is the policy
 that makes them legitimate and stops the next one being written as a compatibility shim.
@@ -156,7 +156,7 @@ new version string and the bridge state from FR-238-3. The 2026-09-18 audit is t
    mid-session is caught? Leaning no. The check is cheap and runs per request; a transient wrong
    answer during a restart would be worse than a late one.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 The policy is right and the gap is real: `JellyfinSystemInfoAuth` carries exactly one field
 (`Models.kt:386-388`), nothing reads a version anywhere, and neither `specs/constitution.md` nor

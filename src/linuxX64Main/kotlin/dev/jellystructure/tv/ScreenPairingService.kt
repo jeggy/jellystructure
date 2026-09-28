@@ -11,7 +11,7 @@ import dev.jellystructure.shared.tv.TvSession
  * Phase 236 (FR-236-2, dev review item 1) — the receiver-shows-a-code pairing flow. 218's hand-off code
  * runs phone → receiver (an authenticated phone mints, an unpaired receiver redeems); this is the
  * opposite direction, and is the flow the device-code pairing phase 141 retired
- * (`/api/tv/pair/{start,poll,approve}`, removed in `9c6325e3`) coming back for one device kind:
+ * (`/api/tv/pair/{start,poll,approve}`, removed in `010e7e7e`) coming back for one device kind:
  *
  *  1. `mintCode` — the unpaired receiver (no credential) shows a code and holds a secret.
  *  2. `claim` — a signed-in phone types the code in; its OWN session (Jellyfin token, ACL, tags, kids)

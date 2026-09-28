@@ -5,7 +5,7 @@
 **Build under test:** `dev.jellystructure.ravilo` release APK
 **Method:** `dumpsys gfxinfo` frame stats, driven by scripted `adb input` D-pad
 navigation, with **forced AOT compilation** (`cmd package compile -m speed -f`) and
-warm-up passes so JIT/cold-start state is not a confound. Baseline = commit `a27407b`
+warm-up passes so JIT/cold-start state is not a confound. Baseline = commit `1bd410e`
 (R94, pre-round); After = the R96–R102 round.
 
 > Caveat on inputs: `adb input keyevent` injection reports a large "High input latency"

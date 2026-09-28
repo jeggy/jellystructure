@@ -167,7 +167,7 @@ The reproduction and the stack pin the cause. Six items.
 
 ## Build notes (2026-09-26)
 
-Built on `main` after R309 (`3e59b32c`).
+Built on `main` after R309 (`ba9793af`).
 
 1. **One `OkHttpClient`** (`RaviloAppContext.okHttp`, lazy) backs both Coil and REST.
    - Images: `OkHttpNetworkFetcherFactory(callFactory = { okHttp })` with `serviceLoaderEnabled(false)`,
@@ -232,7 +232,7 @@ The server was production on v1.41, which still gzips images, so the harder path
    `IllegalStateException: Unbalanced enter/exit` at `com.android.okhttp.okio.AsyncTimeout.enter` ←
    `RawSourceChannel.closeSource`, the same trace as the report. So the script reproduces the crash
    reliably.
-2. **This build does not.** Debug build `1.40-44-g3e59b32c` (this phase), same Library.
+2. **This build does not.** Debug build `1.40-44-gba9793af` (this phase), same Library.
    - First, 15 fast downward flings with screenshots before and after. The grid moved far down the
      list, so the swipes reach the grid.
    - Then `scripts/fling-check.sh 5`: **OK**. The process survived every round, and there was no new

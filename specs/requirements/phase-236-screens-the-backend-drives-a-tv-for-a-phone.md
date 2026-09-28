@@ -13,7 +13,7 @@
 
 `✓ Built` 2026-09-18 — written from the research report `ravilo-web-pwa-player-cast-2026-09-18.md`
 (§5, §12) and a trace of `TvEventBus.kt`, `RemoteRoutes.kt`, `CastService.kt`, `PlaybackService.kt`
-and `RaviloDeviceService.kt`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at
+and `RaviloDeviceService.kt`. **Dev-reviewed 2026-09-18 against `main` `140f6aba`** (see §Dev review at
 the bottom: 218's code is minted by a signed-in phone, so a TV that *shows* a code needs a new pairing
 flow — FR-236-2 rewritten; a device token is per `(device, user)`, so the receiver picks its token from
 `session_user_id` and the event bus needs a device-level lookup — FR-236-4 rewritten, FR-236-4a added;
@@ -257,7 +257,7 @@ subtitle from `device_status`). Admin → Settings → Advanced's API-key card l
 - Keep `ScreenStatus` in `shared` so the receiver (Kotlin/JS), the phone (Compose) and the backend share
   one serializer — the R245 lesson where the receiver declared fields the backend never read.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 The *Current state* section was traced line by line (`RemoteRoutes.kt`, `TvEventBus.kt`, `CastService.kt`,
 `RaviloDeviceService.kt`, `AuthPlugin.kt`, `RaviloDevice.sq`, `CastHandoff.sq`). Push, reporting and the
@@ -271,7 +271,7 @@ the build** — they also reach R264, R265 and the design-authored R269.
    FR-R264-1/2, R265 FR-R265-5 and R269 FR-R269-4 all describe the opposite: **an unpaired TV, holding no
    credential, shows a code and a phone types it in.** `mint` cannot serve that — there is no phone to
    mint for — and `redeem` cannot either, because its caller is the side that *lacks* the user. This is
-   the device-code flow phase 141 retired (`/api/tv/pair/{start,poll,approve}`, removed in `9c6325e3`),
+   the device-code flow phase 141 retired (`/api/tv/pair/{start,poll,approve}`, removed in `010e7e7e`),
    coming back for one device kind. **FR-236-2 is rewritten:**
    - `POST /api/tv/screen/code` — **open path**, behind `LoginRateLimiter` (it is the second
      unauthenticated route that leads to a device token). Body `{device_id, device_name, platform}`; the

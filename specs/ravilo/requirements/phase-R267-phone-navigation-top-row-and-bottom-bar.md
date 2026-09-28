@@ -9,7 +9,7 @@
 
 ## Status
 
-`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **built
+`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, **built
 2026-09-20 and verified on a real Pixel 9** (debug build). **Finished 2026-09-25**: FR-R267-9's
 scroll-to-top and Search's top row built and verified on the Pixel 9; the other two owner items were
 closed by R304 and R274 (see *Finished (2026-09-25)* below).
@@ -376,7 +376,7 @@ handset; `onNavSelect` is what the bottom bar calls).
    three controls on a 393 dp screen it fits but is tight. If it does not in da/fo, shrink the
    wordmark, never the targets.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 The diagnosis of `AppBar`'s compact mode is exact, the seam is the right one, and the load-bearing
 structural claim holds. **But the Status section describes a smaller phase than the requirements do:**

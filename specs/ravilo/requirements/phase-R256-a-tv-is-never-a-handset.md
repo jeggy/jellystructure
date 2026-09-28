@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-17 (`9e060653`) — written the same day from a live reproduction, not dev-reviewed, **verified on the stue TV the same day** (release `1.19-13`/`-14` sideloaded): TV transport with a focus ring, Left/Right seek (0:44 → 1:15 → 1:05), 4-up walls. Live TV player and the Pixel 9 regression check still owed. `isHandset()` in `Platform.kt`, `IsHandsetTest` (7 cases); Android + Wasm compile clean. Client-only
+`✓ Built` 2026-09-17 (`6493c949`) — written the same day from a live reproduction, not dev-reviewed, **verified on the stue TV the same day** (release `1.19-13`/`-14` sideloaded): TV transport with a focus ring, Left/Right seek (0:44 → 1:15 → 1:05), 4-up walls. Live TV player and the Pixel 9 regression check still owed. `isHandset()` in `Platform.kt`, `IsHandsetTest` (7 cases); Android + Wasm compile clean. Client-only
 (`ravilo-ui`). Corrects the gate **R244** and **R243** were built on; neither spec changes.
 
 **Numbering:** verified against `STATUS.md` 2026-09-17 — Ravilo taken through **R255**. Backend
@@ -24,7 +24,7 @@ touch a TV never sends. R244 (the player), R243 (the walls) and the Live TV play
 layouts on it, and its dev review "confirmed the gate" on a phone, where it is right. `PlayerScreen`'s
 own comment (`:1428`) states the assumption that failed: *"a TV window is never handset-sized."*
 
-## Observed on the TV (build `1.18-3-g0a6b45ea`)
+## Observed on the TV (build `1.18-3-g4aafff77`)
 
 - **Player:** handset chrome instead of the TV transport. No visible focus; OK acts on an invisible
   focus target (paused once, opened the picker once); **Left/Right do not seek** (1:02 → 1:06 → 1:11

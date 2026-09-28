@@ -15,7 +15,7 @@
 ## Status
 
 `✓ Built` — written 2026-09-16 from the question plus a read of `Segments.kt` as built by phase 222
-(`main` `90dbc201`), `design/app/segments.css` and `segments.js`, `SegmentRoutes.kt`, and a read-only
+(`main` `30864868`), `design/app/segments.css` and `segments.js`, `SegmentRoutes.kt`, and a read-only
 copy of the production database; **implemented 2026-09-16** (see §8). Not dev-reviewed, not deployed,
 not watched in a browser. Admin frontend (`/segments`), the served `segments.css`, the mockup, and one
 shared rule the backend validates too. `compileKotlinLinuxX64` + `compileKotlinWasmJs` clean;
@@ -24,7 +24,7 @@ half — but Ravilo is the consumer whose behaviour justifies FR-223-6.
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 222.
 
-## 1. What dragging does today (traced against `main` `90dbc201`)
+## 1. What dragging does today (traced against `main` `30864868`)
 
 - **Edge handles exist, mouse-only.** `buildTrack` (`Segments.kt:285-301`) draws `<i class="h l"
   data-e="a">` and `<i class="h r" data-e="b">` on every unlocked bar; an open-ended credits marker gets

@@ -34,7 +34,7 @@ the genuinely wrong track.
 
 ## Root cause
 
-`PlayerScreen.kt:2503` (introduced by R195, `c640dec8`):
+`PlayerScreen.kt:2503` (introduced by R195, `15c3acbb`):
 
 ```kotlin
 val single = group.versions.size <= 1
@@ -113,7 +113,7 @@ No separate code path, and no reason to fix only the tab this was noticed on.
 - `…/PlayerScreen.kt:2487-2489` — R195 §A's doc comment, which is the specification this violates.
 - `specs/ravilo/requirements/phase-R235-never-auto-select-a-signs-only-subtitle.md` — the phase whose
   verification surfaced this, and whose reported symptom this row reproduces.
-- Introduced by `c640dec8` (R195, two-level picker).
+- Introduced by `15c3acbb` (R195, two-level picker).
 
 ## Open questions
 

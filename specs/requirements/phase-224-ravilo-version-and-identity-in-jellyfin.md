@@ -20,7 +20,7 @@ can appear; each half is safe to ship without the other (§4, FR-224-3 and R252 
 
 **Numbering:** verified against `STATUS.md` on 2026-09-16 — admin taken through 223, Ravilo through R251.
 
-## 1. What the code does today (traced against `main` `0ef6ff36`)
+## 1. What the code does today (traced against `main` `b4584f4e`)
 
 - **The version is a literal.** `JellyfinClient.kt:28` builds the server's own header with
   `Version="0.1.0"`; `:230` (`authenticateByName`) and `:1220` (`jellyfinAuth`) build the per-device
@@ -79,7 +79,7 @@ All eight live Ravilo sessions in `GET /Sessions` read `0.1.0`.
 - A build has one version string. It comes from one Gradle property, defaults to `git describe`, and is
   the same value the Android `versionName` already takes from the release tag — so the Play Store, the
   Docker images and a sideload all agree with themselves and differ from each other honestly
-  (`1.18` · `0ef6ff36` · `1.18-3-g6d4499e-dirty`).
+  (`1.18` · `b4584f4e` · `1.18-3-g6d4499e-dirty`).
 - The device states it on **every** request, as headers, not in a login body: a durable token outlives
   the build that minted it, so the only truthful moment is now. The backend stores it, writes it only
   when it changes, and forwards it in the Jellyfin header **together with the device's identity**, which
@@ -189,7 +189,7 @@ as `dev`.
 2. **The in-backend `/tv/**` serving of ravilo-web** (`RAVILO_WEB_DIR`) is used by no deployment; it
    keeps the compiled-in constant and does not inject. Say so if it ever becomes a deployment.
 3. **`git describe` in CI push builds.** The runner clones at depth 1, so a push build carries the short
-   sha rather than `1.18-1-g0ef6ff3`. A `fetch-depth: 0` (93 MB pack) would allow the richer string.
+   sha rather than `1.18-1-gb4584f4`. A `fetch-depth: 0` (93 MB pack) would allow the richer string.
 4. **Retention.** `app_version` is one value per row, no history. If "when did this TV update" ever
    matters, that is a new table, not a column.
 
@@ -226,7 +226,7 @@ that should appear as its own device in Jellyfin needs its own Jellyfin token, w
 
 **Verified:** `compileKotlinLinuxX64` clean; `linuxX64Test` **331/0** (new: `RaviloDeviceVersionTest` ×4,
 `JellyfinIdentityHeaderTest` ×3); admin `compileKotlinWasmJs` and `:web-static-server` clean. `BuildInfo`
-on this tree reads `1.18-1-g809fc650-dirty`, and `9.9` under `-Pravilo.versionName=9.9`. The static
+on this tree reads `1.18-1-g74bd8737-dirty`, and `9.9` under `-Pravilo.versionName=9.9`. The static
 server, run locally with `RAVILO_VERSION=9.9` and a default server, serves
 `<script>window.__RAVILO_DEFAULT_SERVER__="…";window.__RAVILO_VERSION__="9.9";</script>` on `/` and on a
 deep link, and a byte-identical `index.html` with neither set. **Not verified:** a Docker build with the

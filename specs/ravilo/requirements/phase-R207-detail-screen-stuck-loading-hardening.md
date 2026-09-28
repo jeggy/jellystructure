@@ -18,7 +18,7 @@
 ### What's already in place (ruled out)
 - Every REST call (Android) goes through an `HttpClient` with `install(HttpTimeout) { connectTimeoutMillis
   = 5_000L; requestTimeoutMillis = 10_000L; socketTimeoutMillis = 10_000L }`
-  (`RaviloRootActuals.kt`, added 2026-07-09, commit `056035eb`, for this exact class of symptom
+  (`RaviloRootActuals.kt`, added 2026-07-09, commit `9fb6068c`, for this exact class of symptom
   — its own comment: *"a genuinely unreachable/slow server... fell through to the OS's raw TCP
   connect timeout, often 60-120+s... this could compound into minutes of an apparently 'stuck
   forever' shimmer skeleton with no feedback"*). So an unbounded network hang should already surface

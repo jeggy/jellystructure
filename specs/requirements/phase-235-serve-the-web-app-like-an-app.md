@@ -12,7 +12,7 @@
 
 `✓ Built` — written 2026-09-18 from live measurements of `ravilo.example.net` and a read of
 `web-static-server/.../Main.kt` and `server/Server.kt`. **Dev-reviewed 2026-09-18 against `main`
-`05195d1f`** (see §Dev review at the bottom: only the `.wasm` files are hashed, so FR-235-1 narrows; the
+`140f6aba`** (see §Dev review at the bottom: only the `.wasm` files are hashed, so FR-235-1 narrows; the
 CSP would block the page's own inline runtime-config script, so FR-235-8 removes inline script; hls.js and
 JASSUB self-hosting moves here from R265 as FR-235-9 so production playback never breaks). **Built
 2026-09-18** in the dev review's own build order (FR-235-8/FR-235-9 first, then the headers).
@@ -125,7 +125,7 @@ stays byte-identical to the bundle's own.
 - The e2e image is `mcr.microsoft.com/playwright:v1.61.0-noble` locally (WebKit runs there; the host lacks
   `libgtk-4`, `libevent`, `libwoff2dec`) — the header spec needs only `request`, not a browser.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 Every row of the *Current state* table was re-checked against `web-static-server/…/Main.kt`, `Server.kt`
 and a real `wasmJsBrowserDistribution` output. The measurements stand. Three premises do not, and two of

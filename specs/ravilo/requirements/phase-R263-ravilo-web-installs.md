@@ -11,7 +11,7 @@
 ## Status
 
 `✓ Built` — written 2026-09-18 from the research report and a read of `ravilo-web/` and
-`ravilo-ui/src/wasmJsMain/`. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the
+`ravilo-ui/src/wasmJsMain/`. **Dev-reviewed 2026-09-18 against `main` `140f6aba`** (see §Dev review at the
 bottom: no inline script — the probe is `boot.js` and loads `ravilo.js` itself; the notice strings are
 owned by that file; the precache needs per-file revisions and never holds `runtime-config.js`; the inset
 seam is the app's own). **Built 2026-09-18.** Icons and the install card were built directly from the
@@ -166,7 +166,7 @@ The install card's state is per-device UI state, the same class as the remembere
 - `check-mobile-css.sh` fences served stylesheets; the install card's styles are Compose, not CSS, but
   the notice page's minimal CSS lives inline in `index.html` and is exempt.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 `index.html` is as described (viewport + theme colour present; no manifest, no Apple meta; the inline
 `#fs-btn` + gamepad block; a fixed `<script src="ravilo.js">`). Five corrections, three of them forced

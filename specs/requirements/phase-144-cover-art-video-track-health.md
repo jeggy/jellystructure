@@ -3,7 +3,7 @@
 > Some releases mux a `cover.png` as a **second, non-attached-picture video stream**. The file is
 > technically malformed and broke Ravilo playback until the client-side fix
 > ([research report](../research-reports/ravilo-cover-art-video-track-2026-07-08.md), Ravilo commit
-> `482a336`). This phase gives jellystructure **library-health management** for the pattern — detect it
+> `b2d672a`). This phase gives jellystructure **library-health management** for the pattern — detect it
 > at scan time, surface it in Triage like the other file-health issues, and offer a one-click **repair**
 > that drops the junk cover stream — so the whole library is clean for *any* client, not just Ravilo.
 > Follows the same model as Phase 128 (zero-audio diagnosis) and Phase 120 (multi-default-audio "keep
@@ -23,7 +23,7 @@
 The cover is **not** flagged as an attached picture, so it reads as a genuine, selectable video track.
 Jellyfin negotiates DirectPlay (it counts only the one real video stream), jellystructure hands the raw
 MKV to the player, and Media3 exposes the png as `video/x-unknown`. On Ravilo this left the player with
-no working video decoder until the client fix landed (`482a336`, hardware-only video renderer). But:
+no working video decoder until the client fix landed (`b2d672a`, hardware-only video renderer). But:
 
 - jellystructure has **no awareness** of the malformed track today. `MediaItem.tracks` already records
   the `png` VIDEO track (verified), but nothing flags it, and it does not appear in any Triage bucket.
@@ -71,7 +71,7 @@ This is the same class of "the scan sees a real file problem but doesn't surface
    out of the `cover_as_video` triage bucket automatically.
 
 ## Non-goals
-- **Any client change** — Ravilo already handles these files (`482a336`, hardware-only video). This
+- **Any client change** — Ravilo already handles these files (`b2d672a`, hardware-only video). This
   phase is library-health/management only.
 - **Forcing a Jellyfin transcode** at `PlaybackInfo` time (heavier, gives up direct-play) — rejected in
   the research report in favour of repairing the file once.

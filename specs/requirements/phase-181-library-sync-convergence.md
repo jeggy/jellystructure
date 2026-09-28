@@ -90,7 +90,7 @@ BEFORE 2026-08-14 | 18
 AFTER  2026-08-14 | 0
 ```
 
-2026-08-14 is when Phase 165 (`b77d0aad`, *"Jellyfin Webhook plugin drives realtime ingest, not
+2026-08-14 is when Phase 165 (`251e69e0`, *"Jellyfin Webhook plugin drives realtime ingest, not
 Radarr/Sonarr"*) landed. Those 18 ingests were **all** the *arr direct-ingest path that Phase 165
 deliberately removed. The Jellyfin-based path it was replaced with has delivered **nothing, ever**.
 

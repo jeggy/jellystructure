@@ -106,7 +106,7 @@ from `RaviloAppContext.isTelevision`, wasmJs `web`, Tizen `tizen`, Cast `cast`. 
 
 **Verified:** `:shared:compileKotlinWasmJs`, `:shared:compileKotlinJs`, `:ravilo-ui:compileKotlinWasmJs`,
 `:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-tizen:compileKotlinJs`, `:ravilo-cast:compileKotlinJs`
-clean. `BuildInfo.version` on this tree: `1.18-1-g809fc650-dirty`; with `-Pravilo.versionName=9.9` the
+clean. `BuildInfo.version` on this tree: `1.18-1-g74bd8737-dirty`; with `-Pravilo.versionName=9.9` the
 constant is `9.9` and the merged release manifest carries `android:versionName="9.9"` (the `-rel`
 suffix the verification text guessed applies at APK naming, not in the manifest). **Not done:** the
 Pixel 9 run against a 224 backend (§Verification 3) — no device this session.

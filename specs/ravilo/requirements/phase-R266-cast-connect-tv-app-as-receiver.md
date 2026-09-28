@@ -9,7 +9,7 @@
 
 ## Status
 
-`Planned` — design-authored 2026-09-18, **dev-reviewed 2026-09-19 against `main` `dcb97f2c`**, **not
+`Planned` — design-authored 2026-09-18, **dev-reviewed 2026-09-19 against `main` `b397f5e6`**, **not
 built, deliberately.** Two of its three open questions are closed below from the review's code
 citations; the build itself is the only remaining phase in this batch that was left alone, and the
 reason is worth stating rather than leaving as a gap.
@@ -161,7 +161,7 @@ are unchanged.
    ceiling (it is not a server transcode; the TV direct-plays)? Design leans **no** — the ceiling
    exists because each *web* cast is a transcode.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 **The conditional in this spec's own header has become unconditional.** 236 is `✓ Built` (2026-09-18) and
 R264/R265 landed 2026-09-19, so "if the team builds 236 first, this phase shrinks to the sender flag, the

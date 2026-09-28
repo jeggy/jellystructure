@@ -18,7 +18,7 @@ emulator or a TV, or the Samsung store submission) happens until the owner resum
 The status below is the state it was paused in.
 
 `✓ Built` — built 2026-09-19, **dev-reviewed twice 2026-09-19** (§Dev review at the foot, against
-`dcb97f2c`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
+`b397f5e6`; all 6 actionable findings applied same day — see below). `.github/workflows/deploy-tizen-tv.yml`
 wired into `publish.yml` as a new `tizen-tv` job (same `needs: [version, ci, publish]` /
 `if: github.event_name == 'release'` shape as the existing `play-store` job). The exact `tz` CLI +
 headless-signing recipe was verified end-to-end against a throwaway self-signed certificate in this
@@ -149,7 +149,7 @@ certificate remains unconfirmed).
   for reviewers) — human-only, §3.
 - Installing/testing on real or emulated Tizen hardware — R264's own remaining scope, untouched here.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced against `.github/workflows/deploy-tizen-tv.yml` (254 lines) and `publish.yml`. The research
 conclusion is sound, the scope decision is the right one, the wiring matches the `play-store` job's shape

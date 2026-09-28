@@ -11,7 +11,7 @@ detail page: at 1.3 s the start screen alone (pulse · `S1 · E1` · title · sw
 bar); at 2.5 s the film with the chrome at **0:49**, the resume point — never 0:00; Back out clean. The
 transcode-with-remembered-audio case (FR-R290-4's restream) was not reproduced in this capture and stays on the
 owner's device list. `Planned` when written 2026-09-24 from the soveværelse-TV sweep (Play Store v1.36 and a debug
-build of `1.37-6-g2c2aca48`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`.**
+build of `1.37-6-g1c5425b4`, both reproduced). **Dev-reviewed 2026-09-24 against `main` `9d2636bb`.**
 Pairs with **R291** (instant audio switching), which removes the most common cause of the third moment
 below.
 

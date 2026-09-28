@@ -174,6 +174,6 @@ Up/down is **essentially perfect** on both. Transitions are good on the fast pan
 
 ## 11. Commits
 
-- `R115` (`6fe93aa`) — skip competing detail-open scroll when already at top (kept; not the lever).
+- `R115` (`60775d8`) — skip competing detail-open scroll when already at top (kept; not the lever).
 - `R116` — reverted (hand-written Compose baseline rules don't survive R8).
 - No other code change; the headline fix is the `-m speed` deploy step.

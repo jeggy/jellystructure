@@ -14,7 +14,7 @@
 `✓ Built` — written 2026-09-18 from an owner report ("The top notification bar and bottom native
 android buttons are gone (just like when in full-screen mode). I only want this fullscreen when the
 app is actually playing some media") and a same-day trace + device measurement. **Dev-reviewed 2026-09-18 against `main`
-`05195d1f`** (see §Dev review at the bottom: `minSdk 21` — the window calls are inert only on Android
+`140f6aba`** (see §Dev review at the bottom: `minSdk 21` — the window calls are inert only on Android
 15+ and stay, plus a cutout mode below it; FR-R261-5 is met by visibility-independent insets, not by
 ordering; the padding moves inside `AnimatedContent`). **Built 2026-09-18** per the dev review's
 corrected FR-R261-1/3/5 (see §Dev review); compiles clean on commonMain/Android/wasmJs, including
@@ -183,7 +183,7 @@ Pixel 9 (Android 17, `targetSdk 36`, gesture navigation), Play build:
   empty result is "bars visible". The screenshot method used here (first non-page-colour column) is a
   fine acceptance probe for FR-R261-3.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 `PlayerImmersiveEffect.kt` is as quoted, `RaviloApp.kt:696` pads every destination with
 `WindowInsets.safeDrawing`, `FLAG_KEEP_SCREEN_ON` exists only at `android/MainActivity.kt:29`, and the

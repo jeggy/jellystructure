@@ -82,7 +82,7 @@ against every local mirror file (history was rewritten again, so compare is nois
 
 ## Previous sync (2026-09-24, 22:53 — pull: 21 admin + 32 Ravilo phases, a repo-side title sweep, and the mockups brought up to what shipped)
 date: 2026-09-24T22:53:22Z
-direction: pull (repo → this project). ⚠ **Upstream history was rewritten** since `ad3244eaf2af` (compare reports
+direction: pull (repo → this project). ⚠ **Upstream history was rewritten** since `8537bcedf250` (compare reports
 the base diverged by 1,361 commits), so the compare list was noise; drift was found by a filtered `specs/` tree scan
 plus a byte-size comparison of every mockup against `design/` on `main`.
 - **Pulled:** admin **238–258** (21 files), Ravilo **R271–R302** (32), our **237 / R263–R270** back dev-reviewed and
@@ -278,9 +278,9 @@ mockup fix in the real component instead of guessing at its copy.
 ## Previous sync (2026-09-18, 06:49 — full sync: our 225/226/227/R253 came back canonical + dev-reviewed; 12 new dev specs pulled; a double numbering collision resolved)
 date: 2026-09-18T06:49:00Z
 direction: pull (repo → this project), plus two local renumbers. `github_compare` against the last recorded
-tree hash `7f22d328d5cb` returned 170 changed files across 47 commits.
+tree hash `606084974932` returned 170 changed files across 47 commits.
 - **Our whole 2026-09-17 export landed and is canonical, dev-reviewed, `✓ Built`.** `phase-225`, `-226`, `-227`
-  and `phase-R253` all carry a 2026-09-17 dev-review addendum against `main` `8873cea7` and are `✓ Built` —
+  and `phase-R253` all carry a 2026-09-17 dev-review addendum against `main` `654869b9` and are `✓ Built` —
   pulled over our drafts. One real correction worth knowing: dev review found there is **no client-side trim
   to 10** (`StaticContentRow` draws every item it's sent), so a row's default `limit` is **30**, not the design's
   assumed 10 — FR-225-1b and R253 were corrected accordingly. The shipped row-order **editor is Kotlin**
@@ -350,13 +350,13 @@ local (our 225/226/227), `specs/ravilo/requirements` 92 vs **93** (our R253), re
   99 342 B), `app/ravilo-builders.css` (18 411 → 23 332), `app/ravilo-config.html` (75 201 → 76 662),
   `app/settings.html` (124 753 → 130 472). `CLAUDE.md` and `github.md` go to the repo root as always.
   **Leave alone on export:** the repo's `STATUS.md`, `specs/research-reports/` and `scripts/`.
-- The tree hash moved (`0a6b45ea77b4` → `7f22d328d5cb`) on work outside our mirror (`src/`, `ravilo-ui/`) plus the
+- The tree hash moved (`4aafff77055d` → `606084974932`) on work outside our mirror (`src/`, `ravilo-ui/`) plus the
   three design files above.
 
 ## Previous sync (2026-09-17, 06:04 — pull: everything from 2026-09-16 shipped, 13 new dev specs, repo edits to our mockups pulled back)
 date: 2026-09-17T06:04:26Z
 direction: pull (repo → this project). 26 spec/STATUS files mirrored + **10 design files pulled BACK over our own
-local copies**, nothing exported. Base commit unknown (the recorded `a5eeb8a82b50` is a tree hash), so this was a
+local copies**, nothing exported. Base commit unknown (the recorded `38beba446590` is a tree hash), so this was a
 tree + byte-size diff of every design file against `main`, as on 2026-09-15.
 - **The whole 2026-09-16 export landed and is `✓ Built`.** `phase-218`, `phase-R244`, `phase-R245` are canonical
   on `main` (24.5 / 22.4 / 25.6 KB — dev-review addenda on all three; pulled over our drafts), and `STATUS.md` has
@@ -481,7 +481,7 @@ to pick collision-free numbers for the Discover taxonomy pair.
 date: 2026-09-15T20:32:00Z
 direction: pull (repo → this project). 25 spec/STATUS files mirrored + **12 design files pulled BACK over
 our own local copies**, nothing exported. Repo wins on every disagreement, per CLAUDE.md.
-- **Base commit unknown — `github_compare` failed** (`42885163eeee` from the last sync is a tree hash,
+- **Base commit unknown — `github_compare` failed** (`fe4c4c7f254e` from the last sync is a tree hash,
   not a commit, and is unreachable). Fell back to tree + blob-size diffing against every local file.
 - **Everything we authored last session is now canonical on `main`.** 202 and R240 both have `STATUS.md`
   rows and shipped code; `design/app/media.html`, `series.html`, `activity.html`, `settings.html`,
@@ -565,7 +565,7 @@ R234 drafts were overwritten by the canonical, dev-reviewed, now-built versions.
   the 2026-09-04 repo-side STATUS gap for R227–R232/186 is **closed**); **179** documents under `specs/`
   (177 on `main` + our two unpushed drafts); highest **202 / R240**; next free **203 / R241**. Deck
   counters updated in `presentation/Jellystructure & Ravilo - Spec-Driven Development.html`.
-- `presentation/` is unchanged upstream (compare against `e8a11120` returns nothing) — the mirror is
+- `presentation/` is unchanged upstream (compare against `28cb1cd5` returns nothing) — the mirror is
   still current and ours to build on.
 
 ## Previous sync (2026-09-12 — read-only: numbering check before writing two specs)
@@ -624,7 +624,7 @@ drafts renumbered out of the way of numbers the dev team had already taken.
 date: 2026-09-03T21:04:12Z
 direction: no repo I/O — a dev-authored bug report (R231) was handed over in chat and built into the deck
 - **R231 — Continue Watching timeout cache poisoning** (`specs/ravilo/requirements/phase-R231-continue-watching-timeout-cache-poisoning.md`,
-  committed `e8a11120`). R219's spec said a failed Jellyfin build must serve the previous good cache value;
+  committed `28cb1cd5`). R219's spec said a failed Jellyfin build must serve the previous good cache value;
   the shipped `buildCanonicalContinueList` returned `emptyList()` on its 6 s timeout and wrote that empty
   list into the shared 5-minute SWR cache, blanking Continue Watching on Home, every channel row and
   See-all at once. Return type is now `List<ContinueEntry>?` — `null` = failed (never cached, falls back to
@@ -749,7 +749,7 @@ direction: pull (repo → this project) — one research report, then a design p
 ## Previous sync (2026-09-01)
 date: 2026-09-01T19:58:58Z
 direction: pull (repo → this project) — mirror refresh, no export
-- **Nothing new repo-side since the 2026-08-31 sync.** The full `specs/` diff against `4a2675f524cd`
+- **Nothing new repo-side since the 2026-08-31 sync.** The full `specs/` diff against `6b1602a58170`
   returns the same 17 files we already pulled (R215–R220, 177–183, amended 167, two research reports).
   Re-pulled **STATUS.md**, `specs/research-reports/README.md` and the amended `phase-167` to be certain
   our read-only mirrors match `main` — the repo wins on any disagreement, per CLAUDE.md.
@@ -966,7 +966,7 @@ direction: pull (repo → this project)
 ### Previous sync
 date: 2026-08-09T00:08:26Z
 direction: pull (repo → this project)
-- Compared `6145f6fc7854...main` (173 files, 56 commits). Most were our own `design/**` export
+- Compared `64f00d9e9f26...main` (173 files, 56 commits). Most were our own `design/**` export
   echoing back, or code (ravilo-tizen module, backend/UI wiring) not pulled here. **Pulled the real
   spec changes:**
 - **Phase 157 (Bazarr subtitles) — our design spec is now `Implemented`.** The dev team built it
@@ -995,7 +995,7 @@ direction: pull (repo → this project)
   renumbering needed this sync.
 
 ### Previous sync — 2026-08-07T11:26Z (pull)
-- Compared `6145f6fc7854...main`, 135 files/35 commits — mostly our own design echo. Confirmed R190
+- Compared `64f00d9e9f26...main`, 135 files/35 commits — mostly our own design echo. Confirmed R190
   flipped `Planned → Implemented` in the repo (dev team shipped our people-filter design end to end,
   incl. the ravilo-tizen module).
 
@@ -1123,7 +1123,7 @@ direction: pull (repo → this project)
 
 ## Sync history
 - 2026-09-18 (08:17): pulled **R260 · R261 · R262** (Discover as one frame); **our drafts renumbered again** — Cast Connect R254→R260→**R263**, the phone top bar R261→**R264**; wrote **R265** (Discover order Networks · Studios · Genres · Coming Soon · Request + a scrolling strip) and built it into both mockups; dropped the phone's clock. Next free **236 / R266**.
-- 2026-09-18 (06:49): `github_compare` against `7f22d328d5cb` → `main`, 170 files/47 commits; **225/226/227/R253 came back canonical + dev-reviewed** (the "no client-side trim to 10" correction, editor is Kotlin not JS); 12 new dev specs pulled (admin 229–234, Ravilo R254–R259, all `✓ Built`, none needing design work) + 2 research reports; **double numbering collision** — our unpushed 228/R254 renumbered to **235/R260** (repo had independently taken both numbers the same day for unrelated phases). Next free **236 / R261**.
+- 2026-09-18 (06:49): `github_compare` against `606084974932` → `main`, 170 files/47 commits; **225/226/227/R253 came back canonical + dev-reviewed** (the "no client-side trim to 10" correction, editor is Kotlin not JS); 12 new dev specs pulled (admin 229–234, Ravilo R254–R259, all `✓ Built`, none needing design work) + 2 research reports; **double numbering collision** — our unpushed 228/R254 renumbered to **235/R260** (repo had independently taken both numbers the same day for unrelated phases). Next free **236 / R261**.
 - 2026-09-17: base commit unreachable, byte-size diff of every design file; **the entire 2026-09-16 export is canonical and `✓ Built`** (216 · 217 · 218 · R243 · R244 · R245, `claude-console/` deleted upstream); 13 new dev specs pulled (admin 219–224, Ravilo R246–R252, all `✓ Built`) + the stue-TV test-sweep report; **10 design files pulled BACK** (segments.js/.css for 222/223, wf.css, app.css, new `app/fonts/`, library.html, ravilo-app.js, ravilo.css); no design backlog from the specs; drew the Row Sorting directions canvas, **built direction 2 into the row editor** and wrote **225 / R253** (both `Planned`); next free **226 / R254**.
 - 2026-09-16 (latest, same turn): no repo I/O — the picks were **built** into `Ravilo Mobile.html` (+ a new served `mobile/ravilo-mobile-player.css`), a new `Ravilo Receiver.html` was drawn, the Chromecast card was added to `app/settings.html`, the player + casting strings landed in `ravilo-i18n.js`, and **three specs were written: R244 · 218 · R245** (all `Planned`, none dev-reviewed). Next free **219 / R246**.
 - 2026-09-16 (latest, same turn): no repo I/O — the round-1 picks were applied to both canvases and both print copies, playback **Speed removed from the design entirely** (owner decision), and the casting remote gained a **Subtitles &amp; audio** frame.

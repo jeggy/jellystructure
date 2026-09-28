@@ -10,7 +10,7 @@
 ## Status
 
 `✓ Built` 2026-09-20 — written 2026-09-18 from the owner's direction, dev-reviewed 2026-09-19 against
-`main` `dcb97f2c`, built 2026-09-20 with every review item taken. Client-only (`ravilo-ui` commonMain),
+`main` `b397f5e6`, built 2026-09-20 with every review item taken. Client-only (`ravilo-ui` commonMain),
 **no new string in any language** (acceptance 7 verified: the i18n diff across this phase is empty), no
 backend, DTO or config change. Supersedes **R243 FR-R243-1**'s tab order only. Pairs with **R262**.
 
@@ -182,7 +182,7 @@ This phase moves chips and lets them scroll.
 3. **A remembered segment per household or per device?** FR-R268-7 assumes whatever R262 retains. Not
    this phase's call; flagged so the two do not disagree.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced against `screens/NavItems.kt` and `RaviloApp.kt`. **This is the cleanest spec of the 2026-09-18
 batch: its scope claims are accurate.** All five labels exist (`seg.coming`, `seg.request`,

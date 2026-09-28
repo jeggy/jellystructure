@@ -231,7 +231,7 @@ matches — that cost a mysteriously blank element on 2026-09-15, and the shippe
 
 ## Dev review (2026-09-16)
 
-Reviewed against `main` at `080364b4`. **The architecture holds and the §2 argument against Jellyfin's own
+Reviewed against `main` at `21f5b1a3`. **The architecture holds and the §2 argument against Jellyfin's own
 receiver survives scrutiny** — every invariant it names is real and really would be bypassed. Most
 integration points are cheaper than the spec assumes. One is considerably more expensive.
 

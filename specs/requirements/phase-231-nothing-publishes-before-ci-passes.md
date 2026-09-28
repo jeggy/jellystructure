@@ -32,7 +32,7 @@ product code. The first green run on GitHub is the acceptance and is still owed.
 - **FR-231-2 — the register guard.** `scripts/check-player-dex.sh` reads the release APK with
   `dexdump`, resolves `PlayerScreenKt`/`LiveTvPlayerScreenKt` through the APK's own `mapping.txt`
   and fails when the widest method uses more than **250** registers (cliff ≈ 256). Proven: 266 on the
-  crashing commit (`0f55569c`) → FAIL; 236 after the fix → OK.
+  crashing commit (`6b9ae2e6`) → FAIL; 236 after the fix → OK.
 - **FR-231-3 — ART verifies the real release APK.** `scripts/verify-release-apk-on-art.sh` installs
   the R8 release APK on an emulator, forces `cmd package compile -m verify -f`, and fails on any
   `dex2oat` *Verification error / failed to verify* line. Proven locally on an Android 16 emulator:

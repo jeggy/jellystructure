@@ -16,7 +16,7 @@
 Android/Chromecast half verified on the Pixel 9 + soveværelse TV, the iPhone/AirPlay half not (no
 iPhone), the screens half pending a TV that runs R264. Written 2026-09-18 from the owner's decisions and the research report
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§5, §12). **Dev-reviewed 2026-09-18 against `main`
-`05195d1f`** (see §Dev review at the bottom: pairing is 236's new `remote/pair`; self-hosting the player
+`140f6aba`** (see §Dev review at the bottom: pairing is 236's new `remote/pair`; self-hosting the player
 libraries moved to 235; the glyph's presence is server-pushed so a first TV can be added; two senders
 need a one-linked-at-a-time rule; R270 supersedes FR-R265-4's row).
 
@@ -317,7 +317,7 @@ with its notice; the connected glyph naming a Tizen TV. The remote and mini bar 
   before building) — the `SubtitleProfiles` in `deviceProfile()` gain `{"Format":"vtt","Method":"Hls"}`
   for `hls_only` clients only if the probe says the master playlist carries the rendition.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 The seam is as described: `seams/CastSender.kt` (commonMain) exposes `link`, `deviceName`,
 `status: StateFlow<CastRemoteStatus?>`, `setAppId`, `load(CastLoadData)` and the transport calls; the

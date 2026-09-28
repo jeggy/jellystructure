@@ -2,7 +2,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built
 2026-09-20. Client half of **239**. Policy: **243**.
 
 ### Build (2026-09-20) — it was the deletion, not the refactor
@@ -158,7 +158,7 @@ existing per-cause copy.
    HLS URL in practice, these two lines are dead code and the phase is a deletion rather than a
    refactor. Worth measuring before building, because the answer changes the work substantially.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 **Half this phase's subject no longer exists.** `ravilo-tizen` was deleted by **R264** (built
 2026-09-19, same commit that added `:ravilo-screen`): it has **zero tracked files**, only a stale

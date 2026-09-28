@@ -13,7 +13,7 @@
 
 `✓ Built` — written 2026-09-18 from an owner report ("using the native android back button it just
 closes the app, instead of actually going back"), traced against `main` and reproduced on the Pixel 9
-the same day. **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see §Dev review at the bottom: a
+the same day. **Dev-reviewed 2026-09-18 against `main` `140f6aba`** (see §Dev review at the bottom: a
 hardware Back can reach both entrances, so the platform entrance is off on TVs and de-duplicated per
 press elsewhere — FR-R260-1 amended; acceptance 6 moves to the bedroom TV). **Built 2026-09-18** per
 the amended FR-R260-1 (see §Dev review); compiles clean on commonMain/Android/wasmJs. **Device-tested on
@@ -141,7 +141,7 @@ Pixel 9, Play build, gesture navigation, an episode playing:
 - The comment on `rememberExitAction` about `moveTaskToBack` describes an older Android; worth a
   one-line correction while in the file (observed: finish, on API 36 with the OnBackInvoked path).
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 The three pieces in *Current state* are exactly as described: the decision tree at
 `PlayerScreen.kt:1421–1432` (picker → rail → next-up → scrub → chrome → leave) and

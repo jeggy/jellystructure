@@ -7,7 +7,7 @@
 ## Status
 
 `✓ Built` — written 2026-09-18 from the upgrade audit, **dev-reviewed 2026-09-19 against `main`
-`dcb97f2c`** (see §Dev review at the foot), **built 2026-09-19** on top of phase **246**, which landed
+`b397f5e6`** (see §Dev review at the foot), **built 2026-09-19** on top of phase **246**, which landed
 the shared `AdvisorFinding` severity/action extension the review asked for. Extends phase
 **212**'s advisor with a security section. Sibling of **242** (metadata ownership); the two share the
 advisor surface and nothing else. Evidence:
@@ -229,7 +229,7 @@ Same reasoning as 242's FR-242-6.
    Not built. The caveat to check first is a server with exactly one active session that genuinely
    originates on the Docker network, where the two would coincide for an innocent reason.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 The finding is real, the direction is right, and phase 212's advisor is the right home. Traced against
 `advisor/JellyfinAdvisorService.kt`, `config/AppConfig.kt`, `ui/Settings.kt` and the household's live

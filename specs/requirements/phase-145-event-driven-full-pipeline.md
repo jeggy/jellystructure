@@ -86,7 +86,7 @@ can ingest the wrong id (or nothing).
 - A Radarr/Sonarr import reliably ingests the **correct** item (no `getItemByPath` mis-resolution).
 - A multi-episode import triggers **one** pipeline run for the series, not one per episode.
 - A newly-added series is correct in Ravilo immediately (the closing `/Library/Refresh` recomputes its
-  child rollup — no transient false "watched" ✓; complements the `8a89507` guard).
+  child rollup — no transient false "watched" ✓; complements the `9433943` guard).
 - A targeted run and a scheduled scan can run concurrently without either tripping the other's "already
   running" guard.
 - Verified via `compileKotlinLinuxX64` (+ a live import test on the running backend).

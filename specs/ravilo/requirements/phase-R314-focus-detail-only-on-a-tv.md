@@ -136,7 +136,7 @@ facts field is already optional.
 
 ## Build notes (2026-09-26)
 
-Built on `main` after the R187 popover fix (`81bfbbc6`), as the dev review laid out.
+Built on `main` after the R187 popover fix (`45a461dc`), as the dev review laid out.
 
 1. **The app.** `effectiveFocusDetailMode(resolvedMode, reduceMotion, isTv)` is now `!isTv -> "none"`,
    then R240's reduced-motion downgrade of `rowOpen` to `line`. The `handset` parameter is gone, and both

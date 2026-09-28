@@ -22,7 +22,7 @@ re-arms once per episode via `rememberUpdatedState`-backed live groups, and ever
 calls `persistChoice()`. A dedicated test suite
 (`ravilo-ui/src/commonTest/.../PlayerScreenTrackResolutionTest.kt`) already guards the R196 shape. None
 of that explains a report on 2026-09-14, over a month after that fix shipped and was released
-(present in every tag from v1.9 onward, `41e7af14`..`v1.13`).
+(present in every tag from v1.9 onward, `a3a44c14`..`v1.13`).
 
 ### The real cause: language codes aren't canonicalized before being compared
 

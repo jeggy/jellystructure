@@ -83,7 +83,7 @@ PWA, with a proper media player, Chromecast support, and installable on iOS and 
   profile, so a browser is handed a raw MKV URL. Chrome plays MKV only with H.264/VP9 + AAC/Opus (HEVC
   needs a hardware decoder, AC-3/E-AC-3 are not decoded); **Safari plays no MKV at all**, and there is no
   DTS or TrueHD anywhere on the web. This is the exact bug fixed for the receiver on 2026-09-18
-  (`1aa2562f`: "a client that says `hls_only` gets no direct-play profile") — the browser needs the same
+  (`2b19966f`: "a client that says `hls_only` gets no direct-play profile") — the browser needs the same
   honesty, one level finer (§4.3).
 - Also true today and worth keeping: `wireMediaSession` already routes OS media keys; `::cue` styling
   matches the TV; VTT is fetched and stripped of ASS tags; `object-fit` is the fit/fill seam (R244).
@@ -591,4 +591,4 @@ small project has demonstrably passed.
   `CastSenderWasm.kt`, `RaviloRootActuals.kt`; `ravilo-web/src/wasmJsMain/resources/index.html`;
   `web-static-server/.../Main.kt`; `src/linuxX64Main/.../auth/JellyfinClient.kt` (`deviceProfile`),
   `server/Server.kt` (CSP), `server/routes/RemoteRoutes.kt` (phase 111); `PlayerStore.kt:172`;
-  commit `1aa2562f` (the receiver's `hls_only` fix).
+  commit `2b19966f` (the receiver's `hls_only` fix).

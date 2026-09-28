@@ -13,7 +13,7 @@
 ## Status
 
 `✓ Built` — written 2026-09-18 from the owner's direction, a trace of `main` and a same-day run on the
-Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). **Dev-reviewed 2026-09-18 against `main` `05195d1f`** (see
+Stue TV (release `1.23-dirty` sideload) and the Pixel 9 (Play 1.26). **Dev-reviewed 2026-09-18 against `main` `140f6aba`** (see
 §Dev review at the bottom: nine `backToTopOnBack` sites, the focus token must be consumed, and R267/R268
 touch the same page). **Built 2026-09-18** — compiles clean on `ravilo-ui` (commonMain/Android/wasmJs),
 `ravilo-android` and `ravilo-web`. FR-R262-3 implemented for the full nav-bar section group
@@ -212,7 +212,7 @@ Web (ravilo-web):
   whole of FR-R262-3.
 - FR-R262-7 is three `keptStore(...)` calls hoisted to the frame's entry rather than one per branch.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 The shape is as traced: `RaviloApp.kt:990–1060` renders three screens from one `Dest.Discover`, each
 with its own `AppBar`, header and `DiscoverSegmentBar`; all three render `Loading` as

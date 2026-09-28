@@ -224,7 +224,7 @@ three the app already loads. A Chromecast idles for hours; a 1st-gen stick has v
 
 ## Dev review (2026-09-16)
 
-Reviewed against `main` at `080364b4`, alongside its server half **218**. **Nothing the viewer sees
+Reviewed against `main` at `21f5b1a3`, alongside its server half **218**. **Nothing the viewer sees
 changed.** The sender flow, the mini bar, the remote's seven states, the shared picker component and the
 receiver's ten screens all survive unchanged. Three notes.
 
@@ -323,7 +323,7 @@ to press) — only *Auto* skips.
 
 ## Packaging fix (2026-09-16, later the same day)
 
-**Bug confirmed.** Every `publish.yml` and `ci.yml` run after this phase landed (`d9ed4c8c`) was red:
+**Bug confirmed.** Every `publish.yml` and `ci.yml` run after this phase landed (`3f17a627`) was red:
 `ravilo-web/Dockerfile` builds from the same Gradle graph as the main image, and `settings.gradle.kts`
 now includes `:ravilo-cast`, but only the main Dockerfile copied `ravilo-cast/` into its context. Gradle
 configures every included module before running any task, so the ravilo-web image failed in 3 s with

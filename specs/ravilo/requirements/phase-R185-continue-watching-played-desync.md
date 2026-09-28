@@ -56,7 +56,7 @@ each episode's own true stop point. Corruption clusters 2026-07-10 through 07-25
      staleness class R184 already documented) — whatever they hold at the moment that disposal races against
      the new episode's own `LaunchedEffect(itemId)` reset is what gets reported as the **old** episode's
      "final" position, and it isn't reliably that episode's own true near-100% value.
-- `PlaybackTracker`'s stop-grace window (b877813) does **not** cover this: it only suppresses a *late*
+- `PlaybackTracker`'s stop-grace window (dc572d6) does **not** cover this: it only suppresses a *late*
   heartbeat arriving *after* an explicit stop was already recorded for that `(device,item)` key. Since
   `advanceNext()` never calls `stopPlayback`/`.stopped()` for the outgoing item at all, that protection is
   never armed for the dominant binge-advance trigger.
@@ -108,5 +108,5 @@ load, no backfill required.
   the `DisposableEffect(store)` at line ~863) — not changed by this phase; FR-RV-CW1-1 closes the gap
   server-side regardless.
 - Related: **R184** (`phase-R184-autoplay-next-stale-position.md`, the leaked-outgoing-position bug this
-  phase's investigation was originally mistaken for), **b877813** (`PlaybackTracker` stop-grace window,
+  phase's investigation was originally mistaken for), **dc572d6** (`PlaybackTracker` stop-grace window,
   confirmed not to cover this case).

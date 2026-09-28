@@ -274,13 +274,13 @@ owner found the banner in the running admin the next day. What actually ships to
 | piece | where |
 |---|---|
 | detector, two defect kinds (`TRACKS_AFTER_CLUSTER`, `ELEMENT_SIZE_OVERFLOW`) | `media/MkvLayout.kt` |
-| **the sweep runs as part of scanning** | `7d140419` |
+| **the sweep runs as part of scanning** | `5bbfeb1b` |
 | per-item live header check | `GET /api/media/{id}/health/mkv-layout` |
 | Triage row *"Unplayable in Ravilo (MKV structure)"*, counted by instances and titles | `TriageRoutes.kt:201` |
 | Dashboard severity | `Dashboard.kt:281` |
 | Library filter label | `Library.kt:84` |
 | detail-page banner + **Fix now**, queued through the Phase 109 media job queue | `MediaDetail.kt:2927+` |
-| one `needsRepair` predicate shared by sweep, Fix now and the post-mkvpropedit gate; per-file lock | phase 234, `9b6215a6` |
+| one `needsRepair` predicate shared by sweep, Fix now and the post-mkvpropedit gate; per-file lock | phase 234, `022fcf03` |
 | cold-cache handling: a count is **omitted**, never reported as 0 | phase 203, `MkvHealthCache` |
 
 So Part 2 is largely **done**, and it worked: E19 is flagged in the admin today. Two real gaps remain.

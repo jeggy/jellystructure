@@ -212,7 +212,7 @@ Sweep the other screens for the same pattern while here: `ChannelScreen`, `Seede
   "never one-per-item across a lazy list" rule `:62-71`, key consumption `:116-125`.
 - Same failure shape, previously: `phase-R200-*`, `phase-R201-*`, `phase-R223-detail-focus-scroll-bugs.md`,
   `phase-R232-series-detail-nav-polish.md` (FR-R232-3), and the 2026-09-05 Settings focus-chain fix
-  (`df22966e`).
+  (`a56eb5b4`).
 
 ## Open questions
 

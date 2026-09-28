@@ -7,7 +7,7 @@
 ## Status
 
 `✓ Built` 2026-09-20 — written 2026-09-18 from a live audit of the upgraded household server (12.1.0),
-dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built 2026-09-20 with every review item taken.
+dev-reviewed 2026-09-19 against `main` `b397f5e6`, built 2026-09-20 with every review item taken.
 Pair: **239** (the remaining query-string tokens), **240** (the guard test that should have caught
 this), **241** (the mock that could not). Research report:
 `specs/research-reports/jellyfin-12-1-upgrade-audit-2026-09-18.md`.
@@ -207,7 +207,7 @@ path for a Jellyfin older than 12. A 403 is a real failure and is reported as on
    But an hours-long loop against a server that will never accept it is pure waste, and FR-238-3 now
    makes the decision observable either way.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced against `JellyfinSessionBridge.kt`, `JellyfinClient.kt`, `AuthPlugin.kt`, `Server.kt`, `Main.kt`,
 `Dockerfile` and the Ktor artefact on the build path. **The diagnosis is correct and FR-238-1 is safe to

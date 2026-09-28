@@ -3,11 +3,11 @@
 > A viewer reported that when Ravilo auto-plays the next episode, it sometimes opens several minutes
 > in instead of at 0:00. Root-caused by tracing every place playback start position is set; fix is
 > spec'd here before implementation, per this repo's "spec before fix" convention. Distinct from
-> **554c7b4** (duplicate-episode-file id collisions causing the auto-advance loop/no-op) — that fix
+> **d75c568** (duplicate-episode-file id collisions causing the auto-advance loop/no-op) — that fix
 > does not touch position state at all. Interacts with three other undocumented, already-shipped
-> changes to the same player-session lifecycle: **0fadfc0** ("end the playback session when the app
-> is backgrounded", which introduced the exploitable code path below), **b877813** (per-(device,item)
-> `PlaybackTracker` on the watchdog) and **590b9ff** (Continue Watching cache invalidation on stop) —
+> changes to the same player-session lifecycle: **0102efc** ("end the playback session when the app
+> is backgrounded", which introduced the exploitable code path below), **dc572d6** (per-(device,item)
+> `PlaybackTracker` on the watchdog) and **5536e70** (Continue Watching cache invalidation on stop) —
 > none of them own a spec either; this phase is the first to document this corner of the player.
 
 **Status:** Implemented, not yet on-device verified (see Dev-review addendum).
@@ -37,7 +37,7 @@ into the *new* episode's own Jellyfin resume field before it's ever read back:
   resets `nextUpDismissed`/`nextUpVisible`/`countdown` but **not** `positionMs`/`durationMs`. For the
   window between `itemId` flipping to the next episode and the new ticket's `player.load()` landing,
   these still hold the **outgoing** episode's near-the-end values.
-- `PlayerLifecycleEffect` (`PlayerScreen.kt:812-816`, wired up by 0fadfc0) calls
+- `PlayerLifecycleEffect` (`PlayerScreen.kt:812-816`, wired up by 0102efc) calls
   `store.stopSession(positionMs, durationMs)` on `Lifecycle.Event.ON_STOP`
   (`ravilo-ui/src/androidMain/.../PlayerLifecycleEffect.kt:11-58`). `store` is already the **new**
   episode's `PlayerStore` right after `advanceNext()`'s `replaceTop` swap, but `positionMs` can still
@@ -101,7 +101,7 @@ freshly-observed position), never the outgoing episode's.
   `SeriesDetailScreen.kt:174-177`'s `groupEntryPoint` can pick an unplayable synthetic id as "next
   episode." This produces a broken/404 stream, not a wrong start offset, so it doesn't match this bug
   report; it needs its own spec if/when it's reported.
-- Retroactively spec'ing 0fadfc0 / b877813 / 590b9ff in full — this phase only documents the slice of
+- Retroactively spec'ing 0102efc / dc572d6 / 5536e70 in full — this phase only documents the slice of
   their behavior that's load-bearing for this fix (the `onBackground`/`onForeground` contract). A
   follow-up phase could give the background/foreground session lifecycle its own proper spec.
 
@@ -141,7 +141,7 @@ very often. Re-investigated per this repo's "spec before fix" convention before 
 `positionKnownForItemId`) and the `LaunchedEffect(itemId)` reset are both intact and correctly close the
 window described above.
 
-**554c7b4's fix (duplicate-episode id collisions causing the advance loop) is also not the cause** — that
+**d75c568's fix (duplicate-episode id collisions causing the advance loop) is also not the cause** — that
 fix stops a *retry loop*, it doesn't touch resume-position state.
 
 **New root cause, upstream of both: `Scanner.kt`'s `(season, episode) → JellyfinEpisodeItem` lookup is
@@ -198,5 +198,5 @@ change).
 - Store: `ravilo-ui/src/commonMain/.../PlayerStore.kt` (`startSession`, `stopSession`).
 - Server: `src/linuxX64Main/kotlin/dev/jellystructure/tv/PlaybackService.kt` (`startPlayback`,
   `stopPlayback`), `auth/JellyfinClient.kt` (`getItemDetail`, `stopPlaybackSession`).
-- Related: **554c7b4** (duplicate-episode id collisions — different bug, same `advanceNext()` area),
-  **0fadfc0** / **b877813** / **590b9ff** (undocumented prior changes to this session lifecycle).
+- Related: **d75c568** (duplicate-episode id collisions — different bug, same `advanceNext()` area),
+  **0102efc** / **dc572d6** / **5536e70** (undocumented prior changes to this session lifecycle).

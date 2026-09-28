@@ -2,7 +2,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built
 2026-09-20 **after 238 including FR-238-3**, which is the build order the review established: a
 tightened mock plus a silent bridge is a broken bridge and a green suite, which is this phase's own
 failure mode one level up.
@@ -125,7 +125,7 @@ marker that says the mock has not.
    a fixture fix or a genuine product gap; they should be triaged rather than worked around by
    loosening FR-241-2.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Every claim checks out against `tests/mock-jellyfin/server.js` (148 lines): one real refusal on
 `AuthenticateByName` (`:74-95`), seven data routes with no credential check at all, an upgrade handler

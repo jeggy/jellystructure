@@ -264,7 +264,7 @@ Kotlin/Compose code** (`ravilo-ui/src/commonMain/.../PlayerScreen.kt`,
 calibrated against the phase-157 and R190 addenda.
 
 **❌ Correction — §5.1 overstates the SDH gap. Title-text SDH detection already ships**, since R180
-stage 3 (commit `1b72d17`, 2026-07-12), not "nothing sets it today" as §5.1/the research report's §5
+stage 3 (commit `ee562ff`, 2026-07-12), not "nothing sets it today" as §5.1/the research report's §5
 claim. `SDH_RE = Regex("""\bsdh\b|hard of hearing""", IGNORE_CASE)` (`PlayerScreen.kt:2517`) feeds
 `trackVariant()` (`:2548-2556`), which `subtitleBadges()` (`:2593-2601`) already maps
 `TrackVariant.SDH` → the **"Sound described"** badge — exactly the CLAUDE.md-documented mapping

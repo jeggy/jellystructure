@@ -39,7 +39,7 @@ A status pass asked whether phase 201's "164 files still unrepaired on productio
 - The viewer symptom differs from 201's: not "loads forever" at the start, but a stall, a skip or a
   macroblock smear part-way through — easy to mistake for the stue TV's Wi-Fi.
 - The shape (kids' series, the exact seasons the 2026-09-13 race ran over) says this is that race's
-  damage and **not an ongoing writer** — phase 201's temp-file fix shipped in `c10716ef`. That is an
+  damage and **not an ongoing writer** — phase 201's temp-file fix shipped in `6aa8b9c6`. That is an
   inference: nothing here proves no file has been damaged since.
 
 ## Options, with a lean

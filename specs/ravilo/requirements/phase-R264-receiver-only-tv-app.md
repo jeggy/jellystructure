@@ -19,7 +19,7 @@ The status below is the state it was paused in.
 `ravilo-web-pwa-player-cast-2026-09-18.md` (§12) and a read of `ravilo-cast/…/Receiver.kt` (419 lines,
 11 CAF touchpoints) and `ravilo-tizen/` (`config.xml` `required_version="2.4"`, AVPlay in
 `PlayerScreen.kt`/`TizenPlatform.kt`/`LiveTvPlayerScreen.kt`). **Dev-reviewed 2026-09-18 against `main`
-`05195d1f`** (see §Dev review at the bottom: 218's code is minted by a phone, so this app pairs through
+`140f6aba`** (see §Dev review at the bottom: 218's code is minted by a phone, so this app pairs through
 236's new `screen/code` + `screen/claim`; it stores one device token per paired user; the core
 extraction is its own no-behaviour-change commit; R269 amends FR-R264-2/6).
 
@@ -234,7 +234,7 @@ else reuses R245's `cast.*`/`srv.*` keys and the player's existing keys.
 - R252: send `platform=tizen-screen` and the app version so the Jellyfin dashboard names it *Ravilo on
   Samsung TV*.
 
-## Dev review (2026-09-18, against `main` `05195d1f`)
+## Dev review (2026-09-18, against `main` `140f6aba`)
 
 The inventory is right: `ravilo-cast/…/Receiver.kt` is 419 lines of Kotlin/JS (IR) with its CAF surface
 confined to a handful of calls; `ravilo-tizen` is 2 405 lines across 22 files with the AVPlay layer in

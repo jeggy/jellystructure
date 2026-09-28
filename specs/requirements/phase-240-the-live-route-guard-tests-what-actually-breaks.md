@@ -2,7 +2,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built
 2026-09-20 **after 238**, which acceptance 2 depends on. Every review item taken, including the one
 that changed the probe technique.
 
@@ -165,7 +165,7 @@ rediscovering that the same way.
 2. Should the model-field guard also flag fields the server sends that no model reads? That finds
    capability we are ignoring rather than breakage, which is a different and lower-priority signal.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 All three diagnoses check out: `JellyfinLiveRouteGuardTest.kt:50` does send `X-Emby-Token`, the guard
 only calls `get(...)` so it cannot reach `/socket`, and every route named in FR-240-3 exists in the

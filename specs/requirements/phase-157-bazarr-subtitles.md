@@ -140,7 +140,7 @@ Traced every backend-adjacent claim above against the actual Kotlin/Ktor backend
 and the actual admin frontend (`src/wasmJsMain` — **not** `design/app/*.html`, which is a static
 mockup, not shipped code), and against a live Bazarr instance running on this host (port 7007, real
 data: 161 series / hundreds of movies, 4,999 episodes + 35 movies currently wanted). Style/rigor
-calibrated against the R190 addendum (`c72cf500`).
+calibrated against the R190 addendum (`31c1adf2`).
 
 **✅ Confirmed — `[bazarr]` config shape is structurally trivial to add**, but one file-name nit.
 `AppConfig` (`config/AppConfig.kt:7-28`) declares `radarr`/`sonarr`/`seerr` as nullable top-level

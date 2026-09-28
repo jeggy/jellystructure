@@ -10,7 +10,7 @@
 
 ## Status
 
-`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, **the
+`✓ Built` — design-authored 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, **the
 admin-facing half built 2026-09-20.** Renumbered from design drafts 228 → 235 → 237.
 
 **Closed 2026-09-25 (owner decision):** the one line this phase could not pass, acceptance 6 (*the
@@ -215,7 +215,7 @@ that a TV opens Ravilo rather than the receiver.
    *no* — the whitelisted-installer check is independent of publish state. If dev finds otherwise, the
    FR-237-3 note softens; it does not disappear.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced line by line against the shipped card (`src/wasmJsMain/kotlin/dev/jellystructure/ui/Settings.kt`),
 the receiver route (`Server.kt`), `CastService.kt`, `Main.kt`, `Dockerfile`, `build.gradle.kts` and

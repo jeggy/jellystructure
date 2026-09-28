@@ -33,7 +33,7 @@ ever makes its input saner.
   to the production Jellyfin.
 - A read-only copy of the production database (`media_segment`, `media`), 2026-09-16 18:38.
 
-## 1. What the editor does today (traced against `main` `ad906857`)
+## 1. What the editor does today (traced against `main` `94f4f5cc`)
 
 **The stream.** `GET /api/segments/{itemId}/stream` (`SegmentRoutes.kt:356-390`) decides server-side
 between two shapes (phase 190 FR-190-2): **direct** — `/Videos/{id}/stream?Static=true…` for a file

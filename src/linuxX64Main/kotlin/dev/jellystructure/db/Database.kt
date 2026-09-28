@@ -108,7 +108,7 @@ fun createDatabase(dbFile: String): JellystructureDb {
 
 /**
  * Live bug found in production logs (2026-08-25) — this has been broken since it was introduced (Phase
- * 90, commit `42e01511`), unrelated to any recent change. `PRAGMA wal_checkpoint(TRUNCATE)` returns a
+ * 90, commit `5bdd4277`), unrelated to any recent change. `PRAGMA wal_checkpoint(TRUNCATE)` returns a
  * result row (busy/log/checkpointed), but the generated `MediaQueries.walCheckpoint()` (from a plain,
  * non-`SELECT` `.sq` statement) runs it through SQLDelight's non-query `execute()`/`executeUpdateDelete`
  * path — which touchlab-sqliter's native driver explicitly rejects for any statement that returns a

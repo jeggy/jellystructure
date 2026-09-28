@@ -12,7 +12,7 @@
 
 ## Status
 
-`✓ Built` — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built 2026-09-20
+`✓ Built` — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built 2026-09-20
 except FR-R270-2, **which was built 2026-09-25** with R265's AirPlay seam (see *FR-R270-2, built* below).
 Not verified on an iPhone (none available).
 
@@ -157,7 +157,7 @@ FR-R270-2's bar and the admin help text. `screens.busy` *Busy · {user} is watch
 - FR-R270-3's name comes from the same field 236's 409 uses; if that field is ever absent for privacy
   reasons, the row must fall back to *"In use"* rather than rendering an empty *"Busy · is watching"*.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced against `ScreensSheet.kt`, `RemoteRoutes.kt`, `shared/…/tv/Models.kt` and `i18n/Strings.kt`.
 **Two things have changed since this was written: FR-R270-1 is already built, and FR-R270-3 is built

@@ -46,7 +46,7 @@ jellystructure's `DeviceProfile` never declared any HDR/color constraint, so Jel
 decision — which is otherwise perfectly capable of tone-mapping — never had a reason to trigger. This is
 not a Ravilo decode bug; it's a missing capability declaration in the server-to-Jellyfin negotiation.
 
-## Fix (implemented, commit `3cb4966`)
+## Fix (implemented, commit `897946a`)
 - `ClientCapabilities` (`shared/src/commonMain/.../tv/Models.kt`) gains `supportsHdr10` / `supportsHlg`
   (default `false` — conservative: assume SDR-only unless the device proves otherwise, so an unknown or
   new client forces a safe tone-mapped transcode rather than risking a dark picture).

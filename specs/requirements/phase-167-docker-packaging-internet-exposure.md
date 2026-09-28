@@ -373,7 +373,7 @@ Confirmed the same crash in the production build (`:ravilo-web:wasmJsBrowserDist
 **Root cause, traced with file:line precision, not guessed:**
 
 1. `ravilo-web/webpack.config.d/skiko.js` (dated before the Compose Multiplatform 1.8.1→1.9.3 bump,
-   commit `fda96349`, 2026-06-30) force-redirected `skiko.mjs` imports to a separate npm package copy —
+   commit `6ace0e3c`, 2026-06-30) force-redirected `skiko.mjs` imports to a separate npm package copy —
    stale since CMP 1.7+, where skiko's web runtime ships bundled directly inside the compiled app JS, no
    redirect needed. Removed — legitimate cleanup, but (confirmed by testing) not sufficient alone; the
    redirect's own target didn't even resolve to an existing path, so it was already inert.

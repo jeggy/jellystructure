@@ -79,7 +79,7 @@ whose app build reaches for a flat wash. Both skins' `--bg` values are already i
 files: Aurora `#0A0C13`, Midnight `#04101A`, Noir `#080807` (`Colors.kt`, `ravilo.css` `:root` /
 `[data-skin]`).
 
-**What the owner has seen.** R250 is on the stue TV (build `1.18-3-g0a6b45ea`, sideloaded
+**What the owner has seen.** R250 is on the stue TV (build `1.18-3-g4aafff77`, sideloaded
 2026-09-17); this ask is the reading of that result at sofa distance: readable, not nice. The
 sweep's F5 (`stue-tv-test-sweep-2026-09-16.md`) is the underlying observation and still the only
 device evidence — R250's numbers were computed, never measured (FR-R250-7, not done).

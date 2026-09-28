@@ -2,7 +2,7 @@
 
 ## Status
 
-`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `dcb97f2c`, built
+`✓ Built` 2026-09-20 — written 2026-09-18, dev-reviewed 2026-09-19 against `main` `b397f5e6`, built
 2026-09-20. Client half: **R271**, built the same day. Policy: **243**.
 
 ### Build (2026-09-20)
@@ -138,7 +138,7 @@ undefined and we do not accommodate it.
 2. Is there a Jellyfin server setting that requires authentication on media routes? If one exists,
    turning it on is the real mitigation and would convert open question 1 into a test.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 The table is accurate: all eight sites exist at the cited lines, and `grep` finds no ninth Jellyfin one
 (`RemoteRoutes.kt:202` reads `api_key` as a query parameter, but that is *jellystructure's own* API key

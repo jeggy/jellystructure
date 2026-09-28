@@ -10,7 +10,7 @@
 
 ## Status
 
-`✓ Built` — investigated, spec'd and built 2026-09-17 (commit `8d648b7d`), not dev-reviewed; **released as v1.20 and deployed to production 2026-09-17 12:41Z** (compose on `:latest`, GC floor 512 MiB); first 30 min flat. The measurements below were taken on
+`✓ Built` — investigated, spec'd and built 2026-09-17 (commit `ec08a7e4`), not dev-reviewed; **released as v1.20 and deployed to production 2026-09-17 12:41Z** (compose on `:latest`, GC floor 512 MiB); first 30 min flat. The measurements below were taken on
 the production container (`v1.18`, up since 2026-09-17 07:06Z) and on three instrumented local instances
 run against copies of the production DB and config.
 

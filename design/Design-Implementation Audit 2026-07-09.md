@@ -1,7 +1,7 @@
 # Design ↔ Implementation Audit — 2026-07-09
 
 Full comparison of this project's mockups against `jeggy/jellystructure@main`
-(commit `626030b`): the repo's `design/**` mirror, the Kotlin/WASM admin frontend
+(commit `72e6c5f`): the repo's `design/**` mirror, the Kotlin/WASM admin frontend
 (`src/wasmJsMain`), and the Compose Ravilo app (`ravilo-ui/`).
 
 ## 1 · Mirror sync (repo `design/**` vs this project) — ✅ resolved
@@ -22,7 +22,7 @@ dev-side refactor, which we adopted:
 
 - **Phase 138 mobile CSS** — `.dash-sidecol { display: none; }` added to
   `app/app.css` (≤980px block) + class on `index.html`'s side column. This rule had
-  landed in the repo and **our export silently reverted it** (`885f0b3`); the dev
+  landed in the repo and **our export silently reverted it** (`e8ce0a2`); the dev
   team wrote `scripts/check-mobile-css.sh` as a fence. It's now sourced here, so the
   loop is closed.
 - **CLAUDE.md export rules** — `STATUS.md` is now documented as **code-owned /

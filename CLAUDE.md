@@ -272,7 +272,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-09-18 (sync) — our 225/226/227/R253 came back canonical + dev-reviewed; 12 new dev specs pulled
   (all `✓ Built`, none touching a design mockup); a double numbering collision resolved by renumbering our
   side.** `github_compare` against the last recorded tree found 170 files / 47 commits changed.
-  - **225/226/227/R253 are canonical, dev-reviewed against `main` `8873cea7`, `✓ Built`.** One real design
+  - **225/226/227/R253 are canonical, dev-reviewed against `main` `654869b9`, `✓ Built`.** One real design
     correction: there is **no client-side trim to 10** — a row's default `limit` is **30**, not the 10 the
     design assumed — and the shipped row-order **editor is Kotlin** (`Workbench.kt`), not
     `app/ravilo-builders.js`, which is not in the served bundle and stays our reference implementation.
@@ -1034,7 +1034,7 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **2026-09-03 (latest) — R231 (Continue Watching cache poisoning) fixed dev-side and folded into the
   presentation. Next unassigned numbers: 187 / R232.**
   - **R231 — `specs/ravilo/requirements/phase-R231-continue-watching-timeout-cache-poisoning.md`**, spec
-    written first per convention, committed `e8a11120`. DanskTV showed no Continue Watching row; config,
+    written first per convention, committed `28cb1cd5`. DanskTV showed no Continue Watching row; config,
     server response (15 items on re-check, every device) and `ChannelScreen.kt` rendering were all fine —
     which is what pointed at the cache. **R219's spec already stated the invariant** ("on a Jellyfin
     timeout the row is omitted entirely rather than shipped half-built, and the SWR cache serves the

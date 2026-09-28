@@ -7,7 +7,7 @@
 
 `✓ Built` — written 2026-09-18 after a live audit of the household server on **12.1.0** found one
 managed library with Jellyfin's NFO saver switched on and no surface reporting it, **dev-reviewed
-2026-09-19 against `main` `dcb97f2c`** (see §Dev review at the foot: the new model fields must be
+2026-09-19 against `main` `b397f5e6`** (see §Dev review at the foot: the new model fields must be
 nullable or FR-242-3's checks fail open, and FR-242-7's cited precedent was drawn but never built),
 **built 2026-09-19** on top of phase **246**, which landed the shared `AdvisorFinding` extension the
 dev review asked for. Extends phase **212**'s advisor. Backend + admin UI.
@@ -155,7 +155,7 @@ other half of this and catches it at build time.
    ordinary managed library and the NFO saver there is a genuine conflict, not a deliberate "Jellyfin
    owns music" setting.
 
-## Dev review (2026-09-19, against `main` `dcb97f2c`)
+## Dev review (2026-09-19, against `main` `b397f5e6`)
 
 Traced against `advisor/JellyfinAdvisorService.kt`, `auth/Models.kt`, `server/Server.kt` and the shipped
 renderer in `ui/Settings.kt`. The diagnosis is right in every particular, and the scoping FR-242-1 asks

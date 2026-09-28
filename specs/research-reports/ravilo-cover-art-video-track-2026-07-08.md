@@ -7,7 +7,7 @@ opened but the video never started. Why — and beyond the client fix, what "man
 jellystructure grow so it can *detect* and *repair* files like this (like it already does for
 untagged tracks, multi-default audio, and zero-audio files)?
 
-**Status: root-caused and the client fix shipped** (commit `482a336`, `ravilo-player`). This report is
+**Status: root-caused and the client fix shipped** (commit `b2d672a`, `ravilo-player`). This report is
 the record of the analysis and a scope note for **future server-side management** in jellystructure —
 that part is **not built**.
 

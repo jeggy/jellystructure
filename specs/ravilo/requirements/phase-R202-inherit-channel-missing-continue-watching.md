@@ -37,7 +37,7 @@ This is the ONLY code path an inherit-mode channel runs (the `channelRows?.mode 
 returns early and never reaches here) — so `channelFilter != null` is true for **every** inherit-mode
 channel, unconditionally skipping Continue Watching regardless of R59's own "Same as Home" framing.
 
-`git log -S"RowKind.CONTINUE"` traces this exact skip to **Phase R05** (`c6233e93`, 2026-06-19) — the very
+`git log -S"RowKind.CONTINUE"` traces this exact skip to **Phase R05** (`a2608804`, 2026-06-19) — the very
 first channel implementation, written before "inherit vs custom" existed as a concept at all:
 ```kotlin
 RowKind.CONTINUE -> {
@@ -45,7 +45,7 @@ RowKind.CONTINUE -> {
     ...
 ```
 Every channel view skipped Continue back then, full stop — there was no other mode to compare against.
-**Phase R143** (`a2de8eb8`, per its own commit message: *"Home + inherit-mode channels keep their existing
+**Phase R143** (`9d7b3ec3`, per its own commit message: *"Home + inherit-mode channels keep their existing
 behaviour"*) added the real custom-mode system-row config (`ChannelRowsConfig.system`, `show`/`scope`/
 `merge`) but explicitly left the inherit path's R05-era skip untouched — and its comment retroactively
 (and incorrectly) attributed that untouched skip to R59, when R59 itself (`STATUS.md`'s own R59 row:
@@ -80,8 +80,8 @@ approximation of it.
 ## Source references
 - Bug site: `src/linuxX64Main/kotlin/dev/jellystructure/tv/HomeFeedService.kt` (`buildRows`, inherit-mode
   branch, `RowKind.CONTINUE` case).
-- Original skip: commit `c6233e93` (Phase R05, 2026-06-19).
-- Preserved-not-fixed: commit `a2de8eb8` (Phase R143, 2026-06-29).
+- Original skip: commit `a2608804` (Phase R05, 2026-06-19).
+- Preserved-not-fixed: commit `9d7b3ec3` (Phase R143, 2026-06-29).
 - R59's actual scope: `STATUS.md`'s R59 row (no dated spec file exists for R59; described only there).
 
 ---

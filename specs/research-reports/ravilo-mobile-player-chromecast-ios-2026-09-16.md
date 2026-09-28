@@ -408,7 +408,7 @@ else blocks the design round.
 
 ## 8. Source references
 
-Code (this repo, `main` at `fbee64fe`):
+Code (this repo, `main` at `06672135`):
 - `ravilo-android/src/main/AndroidManifest.xml`, `…/phone/MainActivity.kt`, `…/android/MainActivity.kt`
 - `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/PlayerScreen.kt`
   (constants 120–150, `PlayerImmersiveEffect()` 1122, tap-to-toggle 1329, `PlayerChrome` 1697–1850,

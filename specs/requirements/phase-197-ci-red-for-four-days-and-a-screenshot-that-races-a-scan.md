@@ -5,8 +5,8 @@
 
 ## What happened
 
-Every CI run since **2026-09-02T07:08:33Z (`17b3fe7c "updated designs"`)** has failed. The last green
-run was `d8a6a6e3` on 2026-08-31. Between them, **18 commits** were merged and **two releases (v1.8,
+Every CI run since **2026-09-02T07:08:33Z (`bfa6df32 "updated designs"`)** has failed. The last green
+run was `b8dbd1ca` on 2026-08-31. Between them, **18 commits** were merged and **two releases (v1.8,
 v1.9) were cut and published** — including a prod deploy — on a permanently red pipeline.
 
 The failure is one Playwright test, `shell-layout.spec.ts:49` — *"sidebar nav + logo are visible in
@@ -146,15 +146,15 @@ worth an explicit answer either way, because right now the answer is "no gate, b
 
 - `tests/e2e/shell-layout.spec.ts:49-83` — the two theme tests and the `toHaveScreenshot` call.
 - `tests/e2e/shell-layout.spec.ts-snapshots/shell-{dark,light}-chromium-linux.png` — baselines, last
-  recorded `f8d154dd`, 2026-08-17.
+  recorded `db386338`, 2026-08-17.
 - `tests/playwright.config.ts:7-14` — `workers: 1` and the shared-state reasoning it records.
 - `tests/e2e/scan-fixture.spec.ts` — the spec that runs immediately before this one.
-- CI run `34020481434` (`173a0769`) — artifacts `shell-dark-{expected,actual,diff}.png`.
-- First red run: `17b3fe7c`, 2026-09-02T07:08:33Z. Last green: `d8a6a6e3`, 2026-08-31T16:15:15Z.
+- CI run `34020481434` (`bdb6f583`) — artifacts `shell-dark-{expected,actual,diff}.png`.
+- First red run: `bfa6df32`, 2026-09-02T07:08:33Z. Last green: `b8dbd1ca`, 2026-08-31T16:15:15Z.
 
 ## Open questions
 
-1. **Why did it start exactly at `17b3fe7c`?** That commit changed only `design/` files, and the
+1. **Why did it start exactly at `bfa6df32`?** That commit changed only `design/` files, and the
    frontend ships `design/app/wf.css` + `app.css` verbatim — but the shell pixels are identical in the
    artifacts, so a CSS change is not the trigger. The likelier story is that the scan's timing moved
    (Phases 182/183 landed on 08-31, changing scan concurrency and outbound pacing) and the race

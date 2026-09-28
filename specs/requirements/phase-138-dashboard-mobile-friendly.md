@@ -13,8 +13,8 @@ why it needs to be a tracked requirement with a regression fence, not just a one
 1. First landed: `Dashboard.kt` (the real wasmJs frontend) got a `dash-sidecol` class on the column
    `<div>` wrapping both cards; `design/app/app.css` got `.dash-sidecol { display: none; }` inside the
    existing `@media (max-width: 980px)` block; `design/app/index.html` (the mockup) got the same class
-   for parity. Committed as `4c63f14`.
-2. The **very next commit**, `885f0b3 "updated designs"`, is a wholesale export from the separate
+   for parity. Committed as `a97aff6`.
+2. The **very next commit**, `e8ce0a2 "updated designs"`, is a wholesale export from the separate
    design-mockup project (see root `CLAUDE.md` → "How this project syncs with the repo"). That project
    has no knowledge of `dash-sidecol` — it doesn't originate there — so its export overwrote
    `design/app/app.css` and `index.html` in full, silently dropping the rule. `Dashboard.kt` is **not**

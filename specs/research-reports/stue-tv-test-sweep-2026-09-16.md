@@ -16,7 +16,7 @@ This is the most important context for everything below, and it was not knowable
 | Component | What is running | Evidence |
 |---|---|---|
 | **Backend** (`jelly.example.net`) | `main` as of **2026-09-14 ~14:34**, i.e. **through phase 210** | `/app/jellystructure` binary mtime `2026-09-14 14:34`; image created `2026-09-14T14:41`. Phase 210 landed 11:29, phase 211 landed 16:22. |
-| **Ravilo TV app** | **v1.17** (`4e428862`), installed `2026-09-14 16:34` | `dumpsys package … lastUpdateTime`; R242's backdrop renders on-device, and R242 (`5b38ca98`, v1.16) is a descendant of R241 (`baa57f84`, v1.15). |
+| **Ravilo TV app** | **v1.17** (`d7e93c2a`), installed `2026-09-14 16:34` | `dumpsys package … lastUpdateTime`; R242's backdrop renders on-device, and R242 (`08fb9796`, v1.16) is a descendant of R241 (`c22712e4`, v1.15). |
 
 Independent confirmation that the backend predates 213: `GET /api/health` returns no `job_queues`
 block, which `Server.kt:397` emits unconditionally once 213 is in.
@@ -123,7 +123,7 @@ restart) correctly showed **S17:E8** as the most recent. Two surfaces in the sam
 about where the viewer is in the same series.
 
 This is precisely phase **211**'s described defect ("`PlaystateCache` never fetched an episode id, so
-every series lost its own progress and next-up"). 211 is `✓ Built` and committed (`4e428862`) but is
+every series lost its own progress and next-up"). 211 is `✓ Built` and committed (`d7e93c2a`) but is
 **not on the running backend**. No new work needed — **this closes on deploy**, and is the single
 strongest argument for deploying `main`.
 

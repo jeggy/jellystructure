@@ -211,7 +211,7 @@ the Danish and Faroese above are drafts and must be reviewed before release.
 
 ## Dev review (2026-09-16)
 
-Reviewed against `main` at `080364b4`. **This spec's factual claims about the code are accurate** — every
+Reviewed against `main` at `21f5b1a3`. **This spec's factual claims about the code are accurate** — every
 one checked out, which is not the norm for a design-authored spec this size. Two additions, no
 corrections.
 

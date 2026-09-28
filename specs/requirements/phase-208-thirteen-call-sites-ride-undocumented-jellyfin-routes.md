@@ -17,7 +17,7 @@ migrated has a documented equivalent with the same semantics, verified live wher
 
 **Correction found while building this phase: the count is twelve, not thirteen, and FR-208-4 describes
 a bug that no longer exists.** `openLiveStream` was already fixed to call the documented
-`/LiveStreams/Open` — not `/LiveTv/LiveStreams/Open` — in commit `dcc2de32`
+`/LiveStreams/Open` — not `/LiveTv/LiveStreams/Open` — in commit `9ee5e911`
 (`fix(livetv): correct LiveStreams Open/Close URL path (was 404ing)`), **2026-07-10, more than two
 months before this phase's audit.** The audit that produced this spec misread the code (or was
 comparing against a since-fixed memory of it) and reported a live bug that had been dead for ten weeks.
@@ -93,7 +93,7 @@ Every HTTP-calling method in `JellyfinClient.kt` (55 of them) was enumerated, th
 ### The twelve
 
 **Corrected during the build pass** (see Status): the seventh row below (`openLiveStream`) does not
-exist — the code already calls the documented `/LiveStreams/Open`, fixed in commit `dcc2de32` on
+exist — the code already calls the documented `/LiveStreams/Open`, fixed in commit `9ee5e911` on
 2026-07-10. Struck through rather than deleted, so this table still shows what the original audit
 claimed and where it was wrong.
 
@@ -188,7 +188,7 @@ would show up as Continue Watching resurrecting finished titles — the exact bu
 **FR-208-4 — fix the `openLiveStream`/`closeLiveStream` inconsistency.** ~~Close already uses the
 documented form; Open should match it. Smallest item here and the only one that is unambiguously just
 tidying.~~ **Withdrawn — the inconsistency does not exist.** `openLiveStream` already calls the
-documented `/LiveStreams/Open`, fixed in commit `dcc2de32` on 2026-07-10, ten weeks before this phase's
+documented `/LiveStreams/Open`, fixed in commit `9ee5e911` on 2026-07-10, ten weeks before this phase's
 audit claimed otherwise. Verified directly against the current source during this build. Nothing to fix.
 
 **FR-208-5 — a guard so the next one of these is found by CI, not by an outage.** A single test or
