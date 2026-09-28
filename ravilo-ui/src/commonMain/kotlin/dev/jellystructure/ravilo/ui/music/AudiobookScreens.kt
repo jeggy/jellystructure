@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -336,8 +338,8 @@ fun AudiobookDetailScreen(
                     }
                     d.description?.takeIf { it.isNotBlank() }?.let { text ->
                         Spacer(Modifier.height(16.dp))
-                        Text(text, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        Text(str("music.more"), color = colors.accentSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { desc = true }.padding(vertical = 6.dp))
+                        Text(text, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora, maxLines = if (desc) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.animateContentSize(tween(340)))   // R326 (FR-R326-1)
+                        Text(str(if (desc) "music.less" else "music.more"), color = colors.accentSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { desc = !desc }.padding(vertical = 6.dp))
                     }
                     MusicSectionHeader(str("ab.chapters"), count = d.chapters.size.toString())
                 }
@@ -364,13 +366,6 @@ fun AudiobookDetailScreen(
         }
         DetailBack(onBack)
         BookMenuSheet(menu, d, api, store, onDismiss = { menu = false }, onOpenAuthor = onOpenAuthor)
-        HandsetSheet(visible = desc, onDismiss = { desc = false }) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-                Text(d.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                Spacer(Modifier.height(8.dp))
-                Text(d.description.orEmpty(), color = Color.White.copy(0.8f), fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora)
-            }
-        }
     }
 }
 

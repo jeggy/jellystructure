@@ -136,14 +136,13 @@ fun BookPlayingScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 ChapterSeekBar(d, ci, bookPos)
-                // The book hairline and *… left*.
+                // R326 (FR-R326-9) — a small scrubber for the whole book (the hairline it replaces), then *… left*.
                 val length = BookMath.length(d).coerceAtLeast(1L)
-                Box(Modifier.fillMaxWidth().height(2.dp).background(colors.textDim.copy(0.25f))) {
-                    Box(Modifier.fillMaxWidth((bookPos.toFloat() / length).coerceIn(0f, 1f)).fillMaxHeight().background(colors.accentGradient))
-                }
-                Spacer(Modifier.height(4.dp))
+                WholeBookBar(d, bookPos)
                 Text(str("ab.left", mapOf("t" to fmtTotal((length - bookPos).coerceAtLeast(0L)))), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
                 if (b.finished) FinishedRow(api, store, d) else BookTransport(st, b, onSpeed = { sheet = "speed" }, onSleep = { sheet = "sleep" })
+                Spacer(Modifier.height(6.dp))
+                ChapterStrip(d, ci)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(46.dp).tap { sheet = "chapters" }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.CHAPTERS, colors.textSecondary, 22.dp, description = str("ab.chapters")) }
                     Box(Modifier.size(46.dp).tap { sheet = "add" }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.BOOKMARK, colors.textSecondary, 21.dp, description = str("ab.bookmark_add")) }
@@ -180,6 +179,62 @@ fun BookPlayingScreen(
         ChaptersSheet(sheet == "chapters" || sheet == "bookmarks", api, d, bookPos, startOnBookmarks = sheet == "bookmarks") { sheet = null }
         AddBookmarkSheet(sheet == "add", api, d, bookPos) { sheet = null }
         if (store != null) BookMenuSheet(sheet == "menu", d, api, store, onDismiss = { sheet = null }, onOpenAuthor = onOpenAuthor)
+    }
+}
+
+/** R326 (FR-R326-9) — the whole book as a small labelled scrubber: *Book* · a thin bar with a knob · elapsed / total.
+ *  Tapped or dragged, it seeks in book time (`MusicEngine.seekBook`). */
+@Composable
+private fun WholeBookBar(d: AudiobookDetail, bookPos: Long) {
+    val colors = RaviloTheme.colors
+    val length = BookMath.length(d).coerceAtLeast(1L)
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    val frac = dragFrac ?: (bookPos.toFloat() / length).coerceIn(0f, 1f)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(str("ab.whole_book").uppercase(), color = colors.textDim, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp)
+        Spacer(Modifier.width(10.dp))
+        BoxWithConstraints(Modifier.weight(1f).height(24.dp)) {
+            val wPx = with(LocalDensity.current) { maxWidth.toPx() }
+            val knobX = maxWidth * frac
+            Box(
+                Modifier.fillMaxSize()
+                    .pointerInput(length) { detectTapGestures { o -> MusicEngine.seekBook(((o.x / wPx).coerceIn(0f, 1f) * length).toLong()) } }
+                    .pointerInput(length) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
+                            onDragEnd = { dragFrac?.let { f -> MusicEngine.seekBook((f * length).toLong()) }; dragFrac = null },
+                            onDragCancel = { dragFrac = null },
+                        ) { change, _ -> dragFrac = (change.position.x / wPx).coerceIn(0f, 1f) }
+                    },
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(Modifier.fillMaxWidth().height(2.dp).background(colors.textDim.copy(0.25f))) {
+                    Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(colors.accentGradient))
+                }
+                Box(Modifier.offset(x = (knobX - 5.dp).coerceAtLeast(0.dp)).size(10.dp).clip(CircleShape).background(colors.text))
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text("${fmtTotal((frac * length).toLong())} / ${fmtTotal(length)}", color = colors.textDim, fontSize = 11.sp, fontFamily = Sora)
+    }
+}
+
+/** R326 (FR-R326-9) — the chapters as proportional segments under the transport: the current one lit, the finished
+ *  ones quieter; a tap jumps to that chapter's start. Absent on a one-chapter book. */
+@Composable
+private fun ChapterStrip(d: AudiobookDetail, ci: Int) {
+    if (d.chapters.size < 2) return
+    val colors = RaviloTheme.colors
+    val length = BookMath.length(d).coerceAtLeast(1L)
+    Row(Modifier.fillMaxWidth().height(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        d.chapters.forEachIndexed { i, c ->
+            val w = ((BookMath.chapterEnd(d, i) - c.startMs).coerceAtLeast(1L).toFloat() / length).coerceAtLeast(0.012f)
+            Box(
+                Modifier.weight(w).fillMaxHeight().clip(RoundedCornerShape(3.dp))
+                    .background(when { i == ci -> colors.accentSecondary; i < ci -> colors.textDim.copy(0.5f); else -> colors.textDim.copy(0.22f) })
+                    .tap { MusicEngine.seekBook(c.startMs) },
+            )
+        }
     }
 }
 

@@ -890,7 +890,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         fun musicMiniOver(d: Dest) = handset && musicState.active && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
             d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
         // FR-R322-6 — landscape Playing is full-screen, not a tab.
-        fun barShows(d: Dest) = bottomBarShows(d) && !(d is Dest.MusicPlaying && !portrait)
+        // R326 (FR-R326-2) — in music mode the bar stays on an album, an artist, a playlist, a book and its author
+        // (R321/R322's "one title's detail hides the bar" holds for video mode only — R278 stands there).
+        fun musicDetail(d: Dest) = d is Dest.AlbumDetail || d is Dest.ArtistDetail || d is Dest.PlaylistDetail || d is Dest.AudiobookDetail || d is Dest.AudiobookAuthor
+        fun barShows(d: Dest) = (bottomBarShows(d) || (inMusic && musicDetail(d))) && !(d is Dest.MusicPlaying && !portrait)
         var trackSheet by remember { mutableStateOf<dev.jellystructure.ravilo.ui.music.TrackSheetRequest?>(null) }
         val musicFavoriteAdded = str("music.my_list_added")
         val musicFavoriteRemoved = str("music.my_list_removed")
@@ -1727,12 +1730,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     // the picker, none goes to Login.
                     onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
                     scrollToTopTick = reselectTick,
-                    // R321 (FR-R321-3) — the mode card; a tap switches and lands on that mode's first tab.
+                    // R321 (FR-R321-3) — the mode card; R326 (FR-R326-3): a tap switches the mode and stays on Profile.
                     modeCard = if (handset && musicAvailable == true && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) ({
                         dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode, withBooks = booksAvailable) { on ->
                             musicMode = on
                             dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (on) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
-                            resetTo(if (on) Dest.MusicListen(dest.displayName) else Dest.Home(dest.displayName))
+                            // R326 (FR-R326-3) — switching stays on Profile: only the bar changes (the card toasts the mode).
                         }
                     }) else null,
                 )

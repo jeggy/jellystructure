@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -198,8 +200,9 @@ fun MusicArtistScreen(
                     Column(Modifier.padding(horizontal = raviloHPad).padding(top = 12.dp)) {
                         // FR-R321-8 — two lines and *More*; the source is never named.
                         d.biography?.takeIf { it.isNotBlank() }?.let { bio ->
-                            Text(bio, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(str("music.more"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { bioOpen = true }.padding(vertical = 6.dp))
+                            // R326 (FR-R326-1) — three lines and *More*; tapped, the block grows in place (~340 ms) and reads *Less*. No sheet.
+                            Text(bio, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora, maxLines = if (bioOpen) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.animateContentSize(tween(340)))
+                            Text(str(if (bioOpen) "music.less" else "music.more"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { bioOpen = !bioOpen }.padding(vertical = 6.dp))
                         }
                         Spacer(Modifier.height(8.dp))
                         if (d.topTracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -239,13 +242,6 @@ fun MusicArtistScreen(
                             items(d.videos, key = { it.id }) { v -> VideoTile(v) { onPlayVideo(v) } }
                         }
                     }
-                }
-            }
-            HandsetSheet(visible = bioOpen, onDismiss = { bioOpen = false }) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-                    Text(r.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                    Spacer(Modifier.height(8.dp))
-                    Text(d.biography.orEmpty(), color = Color.White.copy(0.8f), fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora)
                 }
             }
         } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))

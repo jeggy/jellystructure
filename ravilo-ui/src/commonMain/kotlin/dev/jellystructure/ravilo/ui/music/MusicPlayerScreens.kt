@@ -181,7 +181,7 @@ internal fun playingGround(): Brush {
 
 @Composable
 private fun contextLabel(c: MusicContext): String = when (c.kind) {
-    "played" -> str("mhome.recent_played"); "mix" -> str("mhome.mix"); else -> c.label
+    "played" -> str("mhome.recent_played"); else -> c.label   // R326 (FR-R326-6) — a stale "mix" context keeps its own label
 }
 
 @Composable

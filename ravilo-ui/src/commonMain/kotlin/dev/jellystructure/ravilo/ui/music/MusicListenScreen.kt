@@ -101,14 +101,13 @@ private fun ListenRow(
 ) {
     val title = when (row.key) {
         "recent" -> str("mhome.recent_albums"); "played" -> str("mhome.recent_played"); "artists" -> str("mhome.artists")
-        "mix" -> str("mhome.mix"); else -> row.title
+        else -> row.title   // R326 (FR-R326-6) — no Mix row
     }
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.padding(horizontal = raviloHPad)) {
             MusicSectionHeader(title, onSeeAll = if (row.key == "played") onSeeAllPlayed else null)
         }
         when {
-            row.key == "mix" -> MixCard(row, title)
             row.tracks.isNotEmpty() -> Column(Modifier.padding(horizontal = raviloHPad)) {
                 row.tracks.forEachIndexed { i, t ->
                     TrackRow(t, showCover = true, onPlay = { MusicEngine.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
@@ -125,27 +124,3 @@ private fun ListenRow(
     }
 }
 
-/** FR-R321-5 — *A mix from your library*: a four-cover collage that plays shuffled. */
-@Composable
-private fun MixCard(row: MusicRow, title: String) {
-    val colors = RaviloTheme.colors
-    val covers = row.tracks.mapNotNull { it.imageUrl }.distinct().take(4)
-    Row(
-        Modifier.padding(horizontal = raviloHPad).fillMaxWidth().background(colors.surface, colors.tileRadius.let { androidx.compose.foundation.shape.RoundedCornerShape(it) })
-            .tap { MusicEngine.playQueue(row.tracks, 0, MusicContext("mix", title), shuffle = true) }.padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.size(88.dp)) {
-            for (r in 0..1) Row(Modifier.weight(1f)) {
-                for (c in 0..1) MusicCover(covers.getOrNull(r * 2 + c), row.tracks.getOrNull(r * 2 + c)?.album ?: title, Modifier.weight(1f).fillMaxSize(), corner = 2.dp, requestedWidth = 120, wordmarkSize = 7)
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
-            Text(songsCount(row.tracks.size), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
-        }
-        MusicGlyph(MusicIcon.SHUFFLE, colors.accentSecondary, 22.dp, description = str("music.shuffle"))
-    }
-    Spacer(Modifier.height(4.dp))
-}

@@ -333,13 +333,16 @@ fun MusicToastHost(bottomInset: Dp) {
 @Composable
 fun ListeningModeCard(musicMode: Boolean, withBooks: Boolean = false, onSwitch: (Boolean) -> Unit) {
     val colors = RaviloTheme.colors
+    // R326 (FR-R326-3) — a switch stays on Profile; a short toast names the mode the bar now shows.
+    val videoName = str("mode.video"); val musicName = if (withBooks) str("mode.music_books") else str("mode.music")
+    fun switch(on: Boolean) { onSwitch(on); MusicToasts.show(if (on) musicName else videoName) }
     Column {
         Text(str("mode.label").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(16.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            ModeHalf(str("mode.video"), str("mode.video_sub"), MusicIcon.FILM, selected = !musicMode, Modifier.weight(1f)) { if (musicMode) onSwitch(false) }
+            ModeHalf(str("mode.video"), str("mode.video_sub"), MusicIcon.FILM, selected = !musicMode, Modifier.weight(1f)) { if (musicMode) switch(false) }
             // R323 (R321 FR-R321-3) — *Music & audiobooks* when the viewer has books.
-            ModeHalf(if (withBooks) str("mode.music_books") else str("mode.music"), str("mode.music_sub"), MusicIcon.NOTE, selected = musicMode, Modifier.weight(1f)) { if (!musicMode) onSwitch(true) }
+            ModeHalf(if (withBooks) str("mode.music_books") else str("mode.music"), str("mode.music_sub"), MusicIcon.NOTE, selected = musicMode, Modifier.weight(1f)) { if (!musicMode) switch(true) }
         }
     }
 }
