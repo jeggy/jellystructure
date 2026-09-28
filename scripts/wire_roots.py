@@ -9,12 +9,15 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     'MediaCard', 'MovieDetail', 'NavigateEnvelope', 'PairResult', 'PlayItemEnvelope', 'PlayerCommandEnvelope',
     'PlaystateChangedEnvelope', 'PlaystateCommandEnvelope', 'RaviloConfig', 'RemoteDevice', 'RemotePairResponse',
     'ScreenCodeResponse', 'SearchResults', 'SeededBrowseResponse', 'SeerrSearchResults', 'SeriesDetail',
-    'ServerMessageEnvelope', 'StreamTicket', 'TvEvent', 'UpcomingDetail', 'UpcomingFeed']
+    'ServerMessageEnvelope', 'StreamTicket', 'TvEvent', 'UpcomingDetail', 'UpcomingFeed',
+    # Phase 279 — the phone's music
+    'MusicAlbumDetail', 'MusicArtistDetail', 'MusicGenreCount', 'MusicHome', 'MusicLastPlayed', 'MusicList',
+    'MusicPlaylist', 'MusicSearch', 'TrackLyrics']
 REQUESTS = ['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',
     'PlaybackProgressRequest', 'PlaybackQoeReport', 'PlaybackRestreamRequest', 'PlaybackStartRequest',
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',
-    'ViewerSettingsRequest']
+    'ViewerSettingsRequest', 'MusicPlayRequest', 'MusicFavoriteRequest']
 
 src = ''.join(open(f).read() for f in glob.glob(sys.argv[1] + '/shared/src/commonMain/kotlin/**/*.kt', recursive=True))
 def has(n):   # a @Serializable class in package dev.jellystructure.shared.tv

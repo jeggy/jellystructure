@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the research report §2.4, §4.1, §5.1–§5.3 and §6.5, and the phone mockup's
+`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from the research report §2.4, §4.1, §5.1–§5.3 and §6.5, and the phone mockup's
 data needs (`design/ravilo/mobile/ravilo-music.js`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**,
 `PlaybackService`/`StreamTicket` (180), **218** (the session ceiling) and **R319** (wire discipline). It serves
 **R321** and **R322**. **281** extends it for audiobooks.
@@ -119,3 +119,53 @@ Buildable. Ten items; three corrections (2, 3, 5).
 9. **The Mix threshold:** InstantMix on the 60-track library returns the whole library (measured) — ≥ 300
    tracks as the lean, tuned later; the server decides ✓.
 10. **Wire:** no existing DTO changes ✓.
+
+## Build notes (2026-09-28)
+
+Built on `main` after 278. Backend, `:shared` (linuxX64/wasm/js) and the admin compile; the music tests (a new
+`MusicTvServiceTest`) and `:shared`'s `WireCompatTest` pass. **Not deployed; not called from a phone yet** (R321/R322
+are the client).
+
+1. **New paths, new DTOs** (`shared/…/tv/Music.kt`): `MusicHome`/`MusicRow`, `MusicList` (one page of albums,
+   artists or tracks), `MusicAlbumCard`, `MusicArtistCard`, **`MusicTrackItem`** (the spec's `MusicTrack`, renamed —
+   the backend already has a library row by that name), `MusicAlbumDetail`, `MusicArtistDetail`/`MusicAlbumGroup`/
+   `MusicVideoCard`, `MusicSearch`, `MusicGenreCount`, `MusicPlaylist`, `TrackLyrics`/`LyricLine`,
+   `MusicLastPlayed`, and the two requests. Kinds are strings, never enums. **Added to `WIRE_ROOTS`** (through
+   `scripts/wire_roots.py`'s lists); the baseline is re-recorded at the next release (dev review 7). No existing DTO
+   changed. `TvApiClient` gained `getMusicHome`, `browseMusic`, `getMusicGenres`, `getMusicPlaylists`,
+   `getMusicAlbum`, `getMusicArtist(lang)`, `searchMusic`, `playMusic`, `getLyrics`, `lastPlayedMusic`,
+   `setMusicFavorite`.
+2. **Scope (FR-279-1, acceptance 3):** every answer is built from the viewer's view of 275's rows — a song, album or
+   artist whose library the viewer may not open is not there (275's `musicVisible`); play and favourite refuse it
+   (dev review 2 — the films' `requireVisible` only knows films).
+3. **Home (FR-279-2):** *Recently added* (12), *Recently played* (5, from the viewer's own `IsPlayed` items in
+   Jellyfin, newest first), *Artists* (album artists, pictures first), *A mix from your library* only at ≥ **300**
+   songs (open question 1 → the lean; Jellyfin's InstantMix around the last song played, shown only when at least
+   five of its songs are visible), then one row per genre with ≥ 3 albums (six at most). Rows carry a `key`; the phone
+   titles the fixed ones in its language, a genre row by its name. An empty library answers no rows.
+4. **Browse (FR-279-3):** 60 a page; `added` · `title` · `year` · `played` (the viewer's `PlayCount`s); `?genre=`
+   filters albums by the genres an album shows (276's pick); playlists are the viewer's own from Jellyfin with up to
+   four album covers.
+5. **Detail (FR-279-4):** an album with its songs (disc, position, credits, length, `has_lyrics`, gains, favourite)
+   and *more from this artist*; an artist with the picture, background, type, span, the biography in `?lang=` else
+   English (source never named), albums grouped `album · single · compilation · live · soundtrack` **plus
+   `appears_on`** for someone else's album they are credited on, the ten most played songs, and `videos[]` from 277's
+   linker — ids the video player opens (`jellyfinId`, as a film card's).
+6. **Play (FR-279-6):** `POST /tv/music/play` → `PlaybackService.startMusicPlayback` with the new
+   `audioDeviceProfile` (direct play for what the phone declares — MP3/FLAC/Ogg/Opus/AAC/ALAC/WAV by default — else
+   one HLS/AAC stereo transcode at 256 kbps). Direct play is Jellyfin's `/Audio/{id}/stream?Static=true`; a transcode
+   is Jellyfin's own `TranscodingUrl`. Progress and stop are the films' endpoints with the song's id, so Jellyfin's
+   `PlayCount`/`LastPlayedDate` move; a song's stop **does not rebuild the film Home feed**. Not under 218's ceiling
+   (cast-only by construction, dev review 3). A song starts at 0 unless the phone passes its own position.
+7. **Lyrics (FR-279-8):** Jellyfin's `GET /Audio/{id}/Lyrics` (`Start` ticks → `t_ms`); when Jellyfin has none yet
+   our own `.lrc`/`.txt` sidecar is read (the album refresh that makes Jellyfin see it may not have run). 404 when
+   neither exists.
+8. **Favourites (FR-279-9):** `POST /tv/music/favorite` (songs and albums, Jellyfin's `IsFavorite`); My List on the
+   phone is R321's.
+9. **Last played (FR-279-11, dev review 5):** which song and its album; *where in it* stays on the phone. 204 when
+   none.
+10. **Images:** `/api/tv/image/music/{album|artist|background}/{id}?w=` — under the open `/api/tv/image/` prefix,
+    resized and cached by the same service as posters; art only inside the files is Jellyfin's own image.
+11. **FR-279-10:** no string these endpoints return names a provider, a codec or a delivery. The viewer's own numbers
+    (play counts, favourites) are cached 30 s per viewer and dropped on a play or a favourite change.
+

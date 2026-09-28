@@ -1,0 +1,178 @@
+package dev.jellystructure.shared.tv
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/*
+ * Phase 279 — what the phone's music player reads from `/api/tv/music/…`. New paths and new types only: no
+ * existing DTO gains a field (R319), and an app without music never asks for any of these. Kinds are plain
+ * strings, never enums, so a later value never breaks an installed app. Nothing here names a provider, a codec
+ * or a delivery (FR-279-10): a viewer never learns that a song is re-encoded.
+ *
+ * `MusicTrackItem` is the spec's `MusicTrack` — renamed so it cannot be confused with the admin's library row of
+ * the same name in the backend.
+ */
+
+@Serializable
+data class MusicArtistRef(val id: String, val name: String)
+
+@Serializable
+data class MusicAlbumCard(
+    val id: String,
+    val title: String,
+    val artists: List<MusicArtistRef> = emptyList(),
+    val year: Int? = null,
+    /** Null: set the title as a wordmark (277 FR-277-3) — there is no "no cover" state on the viewer's side. */
+    @SerialName("image_url") val imageUrl: String? = null,
+    /** `album` · `single` · `compilation` · `live` · `soundtrack`. */
+    val type: String = "album",
+    @SerialName("track_count") val trackCount: Int = 0,
+)
+
+@Serializable
+data class MusicArtistCard(
+    val id: String,
+    val name: String,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("album_count") val albumCount: Int = 0,
+    @SerialName("track_count") val trackCount: Int = 0,
+)
+
+@Serializable
+data class MusicTrackItem(
+    val id: String,
+    val title: String,
+    @SerialName("album_id") val albumId: String? = null,
+    val album: String? = null,
+    /** Everyone credited, in order; the first is the performer, the rest read as *feat.* when they differ from the album's. */
+    val artists: List<MusicArtistRef> = emptyList(),
+    val disc: Int? = null,
+    val position: Int? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("has_lyrics") val hasLyrics: Boolean = false,
+    /** The album's cover (the same URL the album card carries). */
+    @SerialName("image_url") val imageUrl: String? = null,
+    /** FR-279-7 — the phone chooses: album gain on an album, track gain on a mix (R322 FR-R322-9). */
+    @SerialName("track_gain_db") val trackGainDb: Double? = null,
+    @SerialName("album_gain_db") val albumGainDb: Double? = null,
+    val favorite: Boolean = false,
+)
+
+/** One row of the Listen tab (FR-279-2). [key] is `recent` · `played` · `artists` · `mix` · `genre`; the phone
+ *  titles the fixed rows in its own language, and a genre row by [title] (the genre's name). */
+@Serializable
+data class MusicRow(
+    val key: String,
+    val title: String = "",
+    val albums: List<MusicAlbumCard> = emptyList(),
+    val tracks: List<MusicTrackItem> = emptyList(),
+    val artists: List<MusicArtistCard> = emptyList(),
+)
+
+@Serializable
+data class MusicHome(val rows: List<MusicRow> = emptyList())
+
+/** A page of one browse list (FR-279-3); only the list asked for is filled. */
+@Serializable
+data class MusicList(
+    val albums: List<MusicAlbumCard> = emptyList(),
+    val artists: List<MusicArtistCard> = emptyList(),
+    val tracks: List<MusicTrackItem> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 0,
+    @SerialName("page_size") val pageSize: Int = 0,
+)
+
+@Serializable
+data class MusicGenreCount(val name: String, @SerialName("album_count") val albumCount: Int)
+
+@Serializable
+data class MusicPlaylist(
+    val id: String,
+    val name: String,
+    @SerialName("track_count") val trackCount: Int = 0,
+    /** Up to four album covers from the start of the playlist. */
+    val covers: List<String> = emptyList(),
+)
+
+@Serializable
+data class MusicAlbumDetail(
+    val album: MusicAlbumCard,
+    val tracks: List<MusicTrackItem> = emptyList(),
+    @SerialName("more_from_artist") val moreFromArtist: List<MusicAlbumCard> = emptyList(),
+    val favorite: Boolean = false,
+)
+
+@Serializable
+data class MusicAlbumGroup(
+    /** `album` · `single` · `compilation` · `live` · `soundtrack` — the phone titles it. */
+    val type: String,
+    val albums: List<MusicAlbumCard> = emptyList(),
+)
+
+/** An artist's music video or concert film — a video, so it opens the video player with [id] (a `media` id). */
+@Serializable
+data class MusicVideoCard(
+    val id: String,
+    val title: String,
+    val year: Int? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+)
+
+@Serializable
+data class MusicArtistDetail(
+    val artist: MusicArtistCard,
+    @SerialName("background_url") val backgroundUrl: String? = null,
+    /** MusicBrainz's `Person` / `Group`… as a plain word; the phone may leave it out. */
+    val type: String? = null,
+    /** `1999–` — only what is known. */
+    val span: String? = null,
+    /** Plain text in the viewer's language when there is one, else English. The source is never named. */
+    val biography: String? = null,
+    val groups: List<MusicAlbumGroup> = emptyList(),
+    /** Songs by this viewer's play count, most played first. */
+    @SerialName("top_tracks") val topTracks: List<MusicTrackItem> = emptyList(),
+    val videos: List<MusicVideoCard> = emptyList(),
+)
+
+/** FR-279-5 — three groups, each with its own total; an empty query answers recently played songs and artists. */
+@Serializable
+data class MusicSearch(
+    val songs: List<MusicTrackItem> = emptyList(),
+    val albums: List<MusicAlbumCard> = emptyList(),
+    val artists: List<MusicArtistCard> = emptyList(),
+    @SerialName("songs_total") val songsTotal: Int = 0,
+    @SerialName("albums_total") val albumsTotal: Int = 0,
+    @SerialName("artists_total") val artistsTotal: Int = 0,
+)
+
+/** FR-279-6 — start one song. [startPositionMs] is the phone's own (a queue resumed after the app came back);
+ *  the server keeps no position for music. */
+@Serializable
+data class MusicPlayRequest(
+    @SerialName("track_id") val trackId: String,
+    val capabilities: ClientCapabilities = ClientCapabilities(),
+    @SerialName("start_position_ms") val startPositionMs: Long? = null,
+)
+
+@Serializable
+data class LyricLine(@SerialName("t_ms") val tMs: Long, val line: String)
+
+/** FR-279-8 — timed lines, or plain text; a song without lyrics is a 404, never an empty object. */
+@Serializable
+data class TrackLyrics(
+    val synced: List<LyricLine>? = null,
+    val plain: String? = null,
+)
+
+/** FR-279-11 — the song this viewer played last and where it sits. *Where in it* lives on the phone (Jellyfin keeps
+ *  no position for music). */
+@Serializable
+data class MusicLastPlayed(
+    val track: MusicTrackItem,
+    val album: MusicAlbumCard? = null,
+)
+
+@Serializable
+data class MusicFavoriteRequest(@SerialName("item_id") val itemId: String, val favorite: Boolean)

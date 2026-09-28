@@ -273,7 +273,11 @@ fun main() = runBlocking {
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope)
     // R248 (FR-R248-2) — once a queued stop has landed in Jellyfin, fold it into the Home feed and tell
     // the user's devices (`home_changed`); the stop route itself no longer invalidates (see TvRoutes).
-    playbackService.onStopLanded = { device, stoppedId -> homeFeedService.invalidatePlaystate(device, stoppedId) }
+    // Phase 275 — the music library: its own tables, never a MediaKind.
+    val musicStore = dev.jellystructure.music.MusicStore(db)
+    // Phase 279 — a song's stop is not a film's: it never touches Continue Watching, so it rebuilds no Home feed
+    // (every song in a queue is one session, and one stop).
+    playbackService.onStopLanded = { device, stoppedId -> if (musicStore.track(stoppedId) == null) homeFeedService.invalidatePlaystate(device, stoppedId) }
     // Phase 236 (FR-236-8) — a reaped device's status is cleared and the "gone" snapshot fanned out to
     // whoever is watching it (a phone's remote, an API subscriber).
     playbackService.onDeviceReaped = { deviceId ->
@@ -282,8 +286,6 @@ fun main() = runBlocking {
         }
     }
     val mediaHistory = MediaHistory(db)
-    // Phase 275 — the music library: its own tables, never a MediaKind.
-    val musicStore = dev.jellystructure.music.MusicStore(db)
     val musicPipeline = dev.jellystructure.media.MusicPipeline(
         scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
         store = musicStore,

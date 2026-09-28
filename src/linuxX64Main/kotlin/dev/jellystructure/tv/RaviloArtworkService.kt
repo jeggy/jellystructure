@@ -271,6 +271,11 @@ class RaviloArtworkService(
         }
     }
 
+    /** Phase 279 — a music cover (square, like a poster), artist picture or background from the music folders,
+     *  resized and cached like every other Ravilo image. [cacheKey] names the entry; the source's size keys freshness. */
+    suspend fun serveMusicFile(path: String, cacheKey: String, type: String, width: Int?): Pair<ByteArray, String>? =
+        resizeServe(cacheKey, path, type, width)
+
     /** The resize itself; shared by the request path and [presize]. Null when ffmpeg produced nothing. */
     private suspend fun resizeInto(cacheKey: String, sourcePath: String, type: String, width: Int?, srcSize: Long): Pair<ByteArray, String>? {
         val cachePath = "$cacheDir/$cacheKey"

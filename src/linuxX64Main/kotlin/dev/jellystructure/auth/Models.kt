@@ -539,6 +539,38 @@ data class JellyfinMusicItemsResponse(
     @SerialName("TotalRecordCount") val totalRecordCount: Int = 0,
 )
 
+// ─── Phase 279 — what a viewer's own music looks like in Jellyfin ─────────────────────────────────────────
+
+/** A track or album with this viewer's user data (play count, last played, favourite). */
+@Serializable
+data class JellyfinAudioUserItem(
+    @SerialName("Id") val id: String,
+    @SerialName("Type") val type: String = "",
+    @SerialName("AlbumId") val albumId: String? = null,
+    @SerialName("UserData") val userData: JellyfinUserData? = null,
+)
+
+@Serializable
+data class JellyfinAudioUserItems(@SerialName("Items") val items: List<JellyfinAudioUserItem> = emptyList())
+
+/** `GET /Audio/{id}/Lyrics` (12.1): `Start` is in ticks and absent on a plain (untimed) line. */
+@Serializable
+data class JellyfinLyricLine(@SerialName("Text") val text: String = "", @SerialName("Start") val start: Long? = null)
+
+@Serializable
+data class JellyfinLyricDto(@SerialName("Lyrics") val lyrics: List<JellyfinLyricLine> = emptyList())
+
+@Serializable
+data class JellyfinPlaylistItem(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String = "",
+    @SerialName("ChildCount") val childCount: Int? = null,
+    @SerialName("MediaType") val mediaType: String? = null,
+)
+
+@Serializable
+data class JellyfinPlaylistItems(@SerialName("Items") val items: List<JellyfinPlaylistItem> = emptyList())
+
 /** One music library as Jellyfin reports it — every page fetched, or nothing (see [JellyfinClient.getMusicLibrary]). */
 data class JellyfinMusicLibrary(
     val artists: List<JellyfinMusicItem>,

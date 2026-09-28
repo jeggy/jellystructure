@@ -17,6 +17,8 @@ import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.musicRoutes
+import dev.jellystructure.server.routes.musicTvRoutes
+import dev.jellystructure.media.visibleTo
 import dev.jellystructure.server.routes.aiRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.bazarrRoutes
@@ -628,6 +630,15 @@ fun startServer(
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
+                // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
+                musicPipeline?.let { mp ->
+                    musicTvRoutes(
+                        dev.jellystructure.music.MusicTvService(mp.store, { mp.media.lyricsFile(it) }, jellyfinClient, configStore) { device ->
+                            mediaStore.allItems().filter { it.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO && it.visibleTo(device) }
+                        },
+                        playbackService, jellyfinClient, configStore, mp.store, mp.media, imageProxyService,
+                    )
+                }
                 liveTvRoutes(liveTvService)
             }
 

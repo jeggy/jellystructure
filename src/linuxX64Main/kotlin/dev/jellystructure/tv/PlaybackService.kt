@@ -604,6 +604,47 @@ class PlaybackService(
         ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived)
     }
 
+    /**
+     * Phase 279 (FR-279-6) — one song. The same session machinery as a film (Jellyfin's Now Playing, progress, stop,
+     * `PlayCount` / `LastPlayedDate`, phase 180's teardown), negotiated with [audioDeviceProfile]: direct play for what
+     * the phone declared, else an HLS/AAC stream (WMA). The caller has already checked the viewer may see the song
+     * (275's library rule — [requireVisible] only knows films). Not gated by 218's ceiling: that is cast-only by
+     * construction (dev review 3). A song always starts at 0 unless the phone says where (Jellyfin keeps no music
+     * position; a resumed queue carries its own).
+     */
+    suspend fun startMusicPlayback(device: DeviceData, trackId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null): StreamTicket {
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — sign in again to continue listening.")
+        val identity = JellyfinDeviceIdentity.forDevice(device)
+        val playSessionId = playSessionIdFor(device, trackId)
+        val startMs = (startPositionMs ?: 0L).coerceAtLeast(0L)
+        jellyfinClient.startPlaybackSession(jellyfinBase, token, trackId, startMs * TICKS_PER_MS, trackId, identity, playSessionId)
+        val info = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, trackId, capabilities = capabilities, identity = identity, audio = true)
+        val source = info?.mediaSources?.firstOrNull()
+        val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
+        val jellyfinPlaySessionId = info?.playSessionId
+        Logger.info("PlaybackInfo (music): item=$trackId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
+        val url = if (needsTranscode) source?.transcodingUrl!!.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
+            else withJellyfinToken("$jellyfinBase/Audio/$trackId/stream?Static=true&MediaSourceId=$trackId&DeviceId=${identity.deviceId}", token)
+        val startResult = playbackTracker.started(device, trackId, startMs, jellyfinPlaySessionId)
+        startResult.superseded?.let { old -> withContext(NonCancellable) { releaseSession(device, trackId, old.positionMs, old.jellyfinPlaySessionId) } }
+        if (startResult.stopAlreadyArrived) withContext(NonCancellable) {
+            playbackTracker.stopped(device, trackId)
+            releaseSession(device, trackId, startMs, jellyfinPlaySessionId)
+        }
+        return StreamTicket(
+            jellyfinBaseUrl = jellyfinBase,
+            accessToken = "",   // R271 — present and empty, never the token
+            itemId = trackId,
+            container = source?.container ?: "audio",
+            directPlay = !needsTranscode,
+            hlsUrl = url,
+            startPositionMs = startMs,
+            expiresAt = nowMs() + TICKET_TTL_MS,
+        )
+    }
+
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
         // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
         // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would

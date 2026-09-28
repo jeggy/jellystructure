@@ -52,6 +52,20 @@ private val AUTH_HEADER: String by lazy {
 // version of this was previously rejected), folds [capabilities.audioCodecs]/[maxAudioChannels] into
 // AudioCodec/a new audio CodecProfile (previously always discarded), and replaces the fixed
 // MaxStreamingBitrate with [maxStreamingBitrate] (device decode ceiling + link-derived cap).
+/**
+ * Phase 279 (dev review 1) — the phone's **audio** profile: direct play for what it declares it can demux, else one
+ * HLS/AAC stereo transcode (the shape measured in the research: MP3 direct, WMA → `/audio/{id}/master.m3u8`).
+ * A client that declares nothing gets the list a phone's Media3 plays.
+ */
+internal fun audioDeviceProfile(capabilities: ClientCapabilities): String {
+    val containers = capabilities.containers.ifEmpty { listOf("mp3", "flac", "ogg", "oga", "opus", "m4a", "mp4", "aac", "wav", "mka", "webm") }
+    val codecs = capabilities.audioCodecs.ifEmpty { listOf("mp3", "flac", "vorbis", "opus", "aac", "alac", "pcm_s16le", "pcm_s24le") }
+    return """{"MaxStreamingBitrate":140000000,"MusicStreamingTranscodingBitrate":256000,""" +
+        """"DirectPlayProfiles":[{"Container":"${containers.joinToString(",")}","Type":"Audio","AudioCodec":"${codecs.joinToString(",")}"}],""" +
+        """"TranscodingProfiles":[{"Container":"ts","Type":"Audio","AudioCodec":"aac","Protocol":"hls","Context":"Streaming","MaxAudioChannels":"2","BreakOnNonKeyFrames":true}],""" +
+        """"CodecProfiles":[],"SubtitleProfiles":[]}"""
+}
+
 internal fun deviceProfile(capabilities: ClientCapabilities): String {
     val audioCodecs = capabilities.audioCodecs.takeIf { it.isNotEmpty() }
         ?.joinToString(",") ?: "aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"
@@ -922,6 +936,8 @@ class JellyfinClient {
         mediaSourceId: String? = itemId,
         /** Phase 253 (FR-253-1) — the audio track a transcode must carry; null = Jellyfin's default. */
         audioStreamIndex: Int? = null,
+        /** Phase 279 — a song: [audioDeviceProfile] instead of the video one. */
+        audio: Boolean = false,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
@@ -929,7 +945,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"DeviceProfile":${deviceProfile(capabilities)}$mediaSourceBody$subBody}""")
+            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities)}$mediaSourceBody$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 
@@ -1081,6 +1097,40 @@ class JellyfinClient {
     // Phase 208 (FR-208-3) — migrated off /Users/{userId}/FavoriteItems/{itemId}; same reasoning and same
     // same-handler proof as markPlayed/markUnplayed above (UserLibraryController.cs's
     // `MarkFavoriteItemLegacy`/`UnmarkFavoriteItemLegacy` call the modern handlers directly).
+    // ── Phase 279: a viewer's own music ──
+
+    /** Every song (or album) this viewer has played, or marked a favourite ([filter] `IsPlayed` / `IsFavorite`),
+     *  newest play first. Null when Jellyfin did not answer. */
+    suspend fun getAudioUserItems(baseUrl: String, userToken: String, userId: String, filter: String, types: String = "Audio", limit: Int = 2000): List<JellyfinAudioUserItem>? = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Items?userId=$userId&Filters=$filter&Recursive=true&IncludeItemTypes=$types" +
+            "&SortBy=DatePlayed&SortOrder=Descending&Limit=$limit&EnableImages=false&Fields=UserData"
+        httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinAudioUserItems>("getAudioUserItems")?.items
+    }.getOrNull()
+
+    /** FR-279-8 (dev review 6) — a song's lyrics as Jellyfin serves them (an embedded tag or a sidecar it read). */
+    suspend fun getLyrics(baseUrl: String, userToken: String, itemId: String): JellyfinLyricDto? = runCatching {
+        val resp = httpGet(baseUrl.trimEnd('/') + "/Audio/${itemId.encodeURLParameter()}/Lyrics") { jellyfinAuth(userToken) }
+        if (!resp.status.isSuccess()) null else resp.bodyOrNull<JellyfinLyricDto>("getLyrics")
+    }.getOrNull()
+
+    /** FR-279-2 — Jellyfin's InstantMix around one song; the ids only, in Jellyfin's order. */
+    suspend fun getInstantMix(baseUrl: String, userToken: String, userId: String, itemId: String, limit: Int = 25): List<String>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Items/${itemId.encodeURLParameter()}/InstantMix?userId=$userId&Limit=$limit&EnableImages=false") { jellyfinAuth(userToken) }
+            .bodyOrNull<JellyfinAudioUserItems>("getInstantMix")?.items?.map { it.id }
+    }.getOrNull()
+
+    /** FR-279-3 — this viewer's playlists that hold music. */
+    suspend fun getMusicPlaylists(baseUrl: String, userToken: String, userId: String): List<JellyfinPlaylistItem>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Items?userId=$userId&IncludeItemTypes=Playlist&Recursive=true&Fields=ChildCount&EnableImages=false&SortBy=SortName") { jellyfinAuth(userToken) }
+            .bodyOrNull<JellyfinPlaylistItems>("getMusicPlaylists")?.items?.filter { it.mediaType == null || it.mediaType.equals("Audio", true) }
+    }.getOrNull()
+
+    /** The first [limit] entries of a playlist (their album ids make its cover mosaic). */
+    suspend fun getPlaylistEntries(baseUrl: String, userToken: String, userId: String, playlistId: String, limit: Int = 12): List<JellyfinAudioUserItem>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Playlists/${playlistId.encodeURLParameter()}/Items?userId=$userId&Limit=$limit&EnableImages=false") { jellyfinAuth(userToken) }
+            .bodyOrNull<JellyfinAudioUserItems>("getPlaylistEntries")?.items
+    }.getOrNull()
+
     suspend fun markFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/UserFavoriteItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)

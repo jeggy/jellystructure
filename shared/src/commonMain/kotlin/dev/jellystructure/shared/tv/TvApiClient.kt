@@ -295,6 +295,90 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // ─── Phase 279 — music (the phone's music mode) ──────────────────────────
+
+    suspend fun getMusicHome(): MusicHome {
+        val r = client.get("$baseUrl/api/tv/music/home") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** [what] is `albums` · `artists` · `tracks`; [sort] `added` · `title` · `year` · `played`. */
+    suspend fun browseMusic(what: String, sort: String? = null, page: Int = 0, genre: String? = null): MusicList {
+        val r = client.get("$baseUrl/api/tv/music/$what") {
+            auth()
+            sort?.let { parameter("sort", it) }
+            if (page > 0) parameter("page", page)
+            genre?.let { parameter("genre", it) }
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getMusicGenres(): List<MusicGenreCount> {
+        val r = client.get("$baseUrl/api/tv/music/genres") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getMusicPlaylists(): List<MusicPlaylist> {
+        val r = client.get("$baseUrl/api/tv/music/playlists") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getMusicAlbum(id: String): MusicAlbumDetail {
+        val r = client.get("$baseUrl/api/tv/music/album/$id") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** [lang] — the viewer's app language, for the biography. */
+    suspend fun getMusicArtist(id: String, lang: String? = null): MusicArtistDetail {
+        val r = client.get("$baseUrl/api/tv/music/artist/$id") { auth(); lang?.let { parameter("lang", it) } }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun searchMusic(query: String): MusicSearch {
+        val r = client.get("$baseUrl/api/tv/music/search") { auth(); parameter("q", query) }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** One song; progress and stop are [reportProgress] / [stopPlayback] with the song's id. */
+    suspend fun playMusic(trackId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null): StreamTicket {
+        val r = client.post("$baseUrl/api/tv/music/play") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlayRequest(trackId, capabilities, startPositionMs)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Null when the song has no lyrics (the lyrics glyph is then absent, never greyed). */
+    suspend fun getLyrics(trackId: String): TrackLyrics? {
+        val r = client.get("$baseUrl/api/tv/music/track/$trackId/lyrics") { auth() }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Null when this viewer has played no music. */
+    suspend fun lastPlayedMusic(): MusicLastPlayed? {
+        val r = client.get("$baseUrl/api/tv/music/last-played") { auth() }
+        if (r.status.value == 204) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun setMusicFavorite(itemId: String, favorite: Boolean) {
+        client.post("$baseUrl/api/tv/music/favorite") {
+            auth()
+            jsonBody(json.encodeToString(MusicFavoriteRequest(itemId, favorite)))
+        }.assertSuccess()
+    }
+
     // ─── Config ──────────────────────────────────────────────────────────────
 
     // ─── Phase 218 / R245 — Chromecast hand-off ─────────────────────────────
