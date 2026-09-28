@@ -158,7 +158,12 @@ object MusicSteps {
     const val SCAN = "scan_music"
     /** Phase 276 — the MusicBrainz ladder. */
     const val MATCH = "match_musicbrainz"
-    val ALL: List<String> = listOf(SCAN, MATCH)
+    /** Phase 277 — covers, artist pictures and biographies; lyrics (only while *Fetch lyrics* is on); the NFOs last,
+     *  so Jellyfin's one refresh per album picks up all three. */
+    const val ARTWORK = "fetch_music_artwork"
+    const val LYRICS = "fetch_lyrics"
+    const val NFO = "write_music_nfo"
+    val ALL: List<String> = listOf(SCAN, MATCH, ARTWORK, LYRICS, NFO)
 
     fun isMusic(step: String): Boolean = step in ALL
 

@@ -88,6 +88,48 @@ data class MusicProvidersDto(
     @SerialName("lyrics_enabled") val lyricsEnabled: Boolean = true,
 )
 
+/** Phase 277 — one picture a provider offers (FR-277-2). */
+@Serializable
+data class MusicArtCandidate(
+    /** `front` / `back` / `booklet` / `albumcover` / `cdart` / `thumb` / `background` / `logo`. */
+    val kind: String,
+    val url: String,
+    val thumb: String = url,
+    /** `Cover Art Archive` / `fanart.tv` / `Wikimedia Commons`. */
+    val source: String,
+    val approved: Boolean = true,
+    val credit: String? = null,
+)
+
+/** FR-277-2 — an album's Artwork tab: what is in use, and what the providers offer. */
+@Serializable
+data class MusicArtworkDto(
+    @SerialName("in_use") val inUse: String? = null,
+    @SerialName("in_use_bytes") val inUseBytes: Long? = null,
+    val locked: Boolean = false,
+    val source: String? = null,
+    val candidates: List<MusicArtCandidate> = emptyList(),
+)
+
+/** FR-277-2 — an artist's Artwork tab: thumb (1:1), background (16:9), logo (transparent). */
+@Serializable
+data class MusicArtistArtworkDto(
+    val thumb: String? = null,
+    val background: String? = null,
+    val logo: String? = null,
+    val locked: List<String> = emptyList(),
+    val credit: String? = null,
+    val candidates: List<MusicArtCandidate> = emptyList(),
+    @SerialName("fanart_key") val fanartKey: Boolean = false,
+)
+
+@Serializable data class MusicArtUseRequest(val url: String, val kind: String = "front", val source: String = "manual", val credit: String? = null)
+@Serializable data class MusicBiographyRequest(val text: String? = null)
+
+/** FR-277-4/7 — the NFO tab: the path, the file as written, and how many fields differ if someone rewrote it. */
+@Serializable
+data class MusicNfoDto(val path: String? = null, val text: String? = null, val drift: Int? = null)
+
 @Serializable
 data class MusicProvidersUpdate(
     @SerialName("musicbrainz_enabled") val musicbrainzEnabled: Boolean? = null,

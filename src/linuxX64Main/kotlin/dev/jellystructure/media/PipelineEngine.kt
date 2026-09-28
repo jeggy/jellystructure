@@ -75,6 +75,8 @@ class MusicPipeline(
     val store: dev.jellystructure.music.MusicStore,
     // Phase 276 — the MusicBrainz ladder and every admin action on a match.
     val matcher: dev.jellystructure.music.MusicMatchService,
+    // Phase 277 — the files: covers, pictures, biographies, lyrics, NFOs.
+    val media: dev.jellystructure.music.MusicMediaService,
 )
 
 /**
@@ -139,6 +141,9 @@ private suspend fun awaitPlaybackClear(stillDefers: () -> Boolean, jobId: String
 }
 
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
+    rawPipeline(cfg).filter { !(it.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfg.music.fetchLyrics) }  // Phase 277 (FR-277-8)
+
+private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
     cfg.scan.pipeline.filter { it.enabled }.ifEmpty {
         buildList {
             add(PipelineStep(step = "scan_files"))
@@ -150,6 +155,9 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
             add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.ARTWORK))  // Phase 277
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.LYRICS))
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.NFO))
         }
     }
 
@@ -391,6 +399,27 @@ suspend fun runPipeline(
                             .getOrDefault("failed — see the log")
                     }
                 Logger.info("match_musicbrainz: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.MusicSteps.ARTWORK, dev.jellystructure.config.MusicSteps.LYRICS, dev.jellystructure.config.MusicSteps.NFO -> {
+                // Phase 277 — covers/pictures/biographies, lyrics sidecars, then the NFOs; each tells Jellyfin
+                // about the albums and artists it changed.
+                val music = deps.music ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val cfgNow = configStore.current
+                val summary = when {
+                    dev.jellystructure.music.MusicScanner.musicLibraries(cfgNow).isEmpty() -> "no music library mapped"
+                    step.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfgNow.music.fetchLyrics -> "lyrics are off in Settings"
+                    else -> runCatching {
+                        when (step.step) {
+                            dev.jellystructure.config.MusicSteps.ARTWORK -> music.media.fetchArtwork(scopeAll = step.scope == "all")
+                            dev.jellystructure.config.MusicSteps.LYRICS -> music.media.fetchLyrics(scopeAll = step.scope == "all")
+                            else -> music.media.writeNfos()
+                        }.sentence()
+                    }.onFailure { Logger.warn("${step.step} failed: ${it.message}", "music") }.getOrDefault("failed — see the log")
+                }
+                Logger.info("${step.step}: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "pull_tmdb" -> {

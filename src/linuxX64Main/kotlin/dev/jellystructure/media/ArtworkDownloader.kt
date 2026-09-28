@@ -300,6 +300,22 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         else Logger.warn("Could not remove misplaced artwork $path: ${result.exceptionOrNull()?.message}")
     }
 
+    /** Phase 277 — the same validated download (URL safety, image status/type, magic bytes, atomic rename) for the
+     *  music library's own files (`cover.jpg`, an artist's `folder.jpg` / `backdrop.jpg` / `logo.png`). */
+    suspend fun downloadTo(url: String, destPath: String): Boolean = download(url, destPath)
+
+    /** Phase 277 — remove one music image with its `.manual` lock and `.src` sidecar. True when an image was there. */
+    suspend fun removeImage(path: String): Boolean {
+        val existed = SystemFileSystem.exists(Path(path))
+        deleteIfExists(path); deleteIfExists(manualMarkerPath(path)); deleteIfExists("$path.src")
+        return existed
+    }
+
+    /** Phase 277 — unlock a music image without removing it. */
+    fun unmarkManual(imagePath: String) {
+        runCatching { SystemFileSystem.delete(Path(manualMarkerPath(imagePath))) }
+    }
+
     private suspend fun download(url: String, destPath: String): Boolean {
         // Security fix (2026-08-02 review, finding M5) — see UrlSafety's doc comment. `source` here can
         // be an admin-pasted URL (the Artwork manager's "pick from URL" flow); without this check the

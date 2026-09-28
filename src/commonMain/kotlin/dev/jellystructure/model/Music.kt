@@ -108,6 +108,24 @@ data class MusicArtist(
     val mbGenres: List<MusicGenreVote> = emptyList(),
     /** MusicBrainz URL relationships by type (`wikidata`, `image`, `official homepage`, `discogs`, `wikipedia`…). */
     val urls: Map<String, String> = emptyMap(),
+    // ── Phase 277: pictures, biography, NFO ──
+    /** A backdrop (`backdrop.jpg`) and a logo (`logo.png`) in the artist folder — [imageState] is the picture. */
+    val backdropState: String = MusicArt.NONE,
+    val logoState: String = MusicArt.NONE,
+    /** `fanart.tv` / `commons` / `upload` — where the picture on disk came from. */
+    val imageSource: String? = null,
+    /** A Commons picture's credit line (author · licence), written into `artist.nfo`. */
+    val imageCredit: String? = null,
+    /** FR-277-6 — the lead of the artist's Wikipedia article per language (`en`, `da`, `fo`), from MusicBrainz's URL
+     *  relationships. The phone picks the viewer's language, else English. */
+    val biographies: Map<String, String> = emptyMap(),
+    /** `Wikipedia (da)` / `Wikidata` — named on the admin page only. */
+    val biographySource: String? = null,
+    /** The admin's own text; when set it wins everywhere and no run overwrites it. */
+    val biographyEdited: String? = null,
+    val bioFetchedAt: Long? = null,
+    val nfoWrittenAt: Long? = null,
+    val nfoHash: String? = null,
     val addedAt: Long? = null,
     /** Set when a scan no longer finds the artist in Jellyfin; the row is kept (the films' rule). */
     val missingSince: Long? = null,
@@ -159,6 +177,16 @@ data class MusicAlbum(
     /** FR-276-7 — the admin's own tick/untick; survives every run. Null = take MusicBrainz's votes. */
     val genresOverride: List<String>? = null,
     val urls: Map<String, String> = emptyMap(),
+    // ── Phase 277: cover, NFO, drift ──
+    /** `caa` / `fanart.tv` / `upload` / `jellyfin` — where the cover on disk came from. */
+    val coverSource: String? = null,
+    /** FR-277-1 — matched, and the Cover Art Archive has no front for it: a triage item, not an error. */
+    val coverMissingOnCaa: Boolean = false,
+    val nfoWrittenAt: Long? = null,
+    val nfoHash: String? = null,
+    /** FR-277-7 — when `album.nfo` on disk was found rewritten by someone else, and how many fields differed. */
+    val nfoDriftAt: Long? = null,
+    val nfoDriftFields: Int = 0,
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
@@ -223,11 +251,26 @@ data class MusicTrack(
     val mbTitle: String? = null,
     val mbLengthMs: Long? = null,
     val mbArtists: List<MusicMbCredit> = emptyList(),
+    // ── Phase 277: lyrics ──
+    /** [MusicLyrics] — what the last lyrics lookup found (or a sidecar already there). Null = never looked. */
+    val lyricsState: String? = null,
+    val lyricsCheckedAt: Long? = null,
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )
+
+/** Phase 277 (FR-277-8) — the lyrics a track has beside it. */
+object MusicLyrics {
+    /** A `.lrc` with timestamps — the phone lights the current line. */
+    const val SYNCED = "synced"
+    /** A `.txt` — words, no timing. */
+    const val PLAIN = "plain"
+    /** LRCLIB says the track has no words. */
+    const val INSTRUMENTAL = "instrumental"
+    const val NONE = "none"
+}
 
 /**
  * Phase 275 (FR-275-6) — which files a phone cannot play as they are. Media3 has no ASF extractor, so a WMA file

@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the admin music brief (§B3 Artwork/Genres/NFO, §C2, §E2, §H6, §H7), the
+`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from the admin music brief (§B3 Artwork/Genres/NFO, §C2, §E2, §H6, §H7), the
 research report §2.3, §3.4, §3.5 and §4.2, and the mockups `design/app/album.js` and `artist.js`.
 **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**, **276**, **133/151** (per-asset locks), **175** (the foreign-NFO rule)
 and the drift detector.
@@ -131,3 +131,52 @@ Buildable. Nine items; two need code the spec assumed existed (1, 2) and one Jel
 8. **Videos by artist (FR-277-9):** `MUSIC_VIDEO` rows carry the artist in `director` from 168's parse
    (`media/Scanner.kt:145`, `parseMusicVideoArtistTitle`) → match by normalised name or MusicBrainz alias ✓.
 9. **Wire:** none.
+
+## Build notes (2026-09-28)
+
+Built on `main` after 276. Compiles (backend + admin); the music/config tests pass. **Not deployed**, so nothing has
+been fetched or written against the household library yet, and open questions 1–2 stay open until the demo Jellyfin
+run. The admin pages that show all of this are 278.
+
+1. **Three run steps, seeded like 275's** (`MusicSteps.ARTWORK` `fetch_music_artwork`, `LYRICS` `fetch_lyrics`,
+   `NFO` `write_music_nfo`), after `match_musicbrainz` and before the trailing wait/notify; all three run even when
+   no film changed and never in a single-item run. `fetch_lyrics` is **filtered out of `effectivePipeline` while
+   *Fetch lyrics* is off** (acceptance 4), so the pre-run dialog doesn't list it; a hand-started run with it off
+   says *lyrics are off in Settings*.
+2. **Covers (FR-277-1).** Matched albums only: the CAA's approved front at 1200 px by release-group
+   (`/release-group/{mbid}/front-1200`; the 307 redirect is followed) → `{album}/cover.jpg` (open question 2 went
+   with the lean). A locked path is never touched — the lock is 133/151's path-level one, so it works unchanged. A
+   release-group with no front is flagged `coverMissingOnCaa` for triage, not an error. `missing` scope (the
+   default) skips albums that already have a cover file; `all` re-fetches unlocked ones.
+3. **Artist pictures.** With a fanart.tv key: `artistthumb` → `folder.jpg`, `artistbackground` → `backdrop.jpg`,
+   `hdmusiclogo` → `logo.png` (v3 URL pinned; `albums` read as either shape, dev review 7). Without one:
+   the Wikimedia Commons file from the artist's MusicBrainz `image` relationship, with its author · licence as
+   `imageCredit`, which `artist.nfo` carries as a comment.
+4. **Biographies (FR-277-6).** Wikidata sitelinks from the artist's MusicBrainz URL relationships → Wikipedia's REST
+   summary lead in **en, da and fo** (all three stored; the page picks the viewer's language, else English), else
+   Wikidata's description. Fetched once per artist (`all` refreshes), a descriptive User-Agent on every Wikimedia
+   call. An admin-typed biography (`biographyEdited`) always wins and is never overwritten.
+5. **NFOs (FR-277-4).** `album.nfo` for matched albums only: title, artists, year, type (`compilation` from the
+   secondary types), the release-group and release ids, album-artist ids, label, the effective genres, one `<track>`
+   per song **on disk** (a partial album lists what it holds). `artist.nfo`: name, sort name, id, type,
+   `formed`/`disbanded` for a group and `born`/`died` for a person, disambiguation, biography, albums. Lowercase
+   provider-id elements for Jellyfin plus Kodi's camel-case ones. Atomic `.tmp` + rename.
+6. **175's foreign-NFO rule, and drift (FR-277-7).** A file whose hash is not the one written here is left alone
+   unless `behavior.overwrite_nfo`, and the fields that differ are counted onto the album (`nfoDriftAt`,
+   `nfoDriftFields`); *Save → NFO* / *Re-assert* always overwrites, because the admin asked. The page also asks on
+   read (`albumDrift`), so Jellyfin's own saver rewriting a file between runs shows up without a run.
+7. **Jellyfin refresh (FR-277-5, dev review 4).** `refreshItem` gained `recursive` (default false, so nothing else
+   changes); each written or re-covered album is refreshed **recursively** so the tracks' `.lrc` sidecars are read,
+   each changed artist non-recursively.
+8. **Lyrics (FR-277-8, H6 → on).** LRCLIB `get` by artist · title · album · duration → `{track}.lrc` when synced,
+   `{track}.txt` when only plain text exists, nothing when not found or instrumental. A song without lyrics is
+   asked again after **30 days**, not every run. An existing sidecar is never overwritten; *Fetch missing lyrics*
+   on an album (`POST /api/music/album/{id}/lyrics`) retries that album's songs now.
+9. **H7 → no tag writing.** Nothing in this phase opens an audio file for writing.
+10. **FR-277-9, the videos link:** `MusicVideoLinks.forArtist` matches `MUSIC_VIDEO` rows by 168's filename artist
+    against the artist's name, sort names and aliases (letters and digits only); tested. The route that serves it
+    is 278's artist page. **FR-277-10 → not shown** (the lean).
+11. **Routes** (all under the admin session): album/artist artwork candidates · use · upload · clear · lock, the
+    image files themselves (`/api/music/image/…`, private, short cache), the two NFO views with drift, album/artist
+    save (with or without sync), album sync, and the biography editor.
+

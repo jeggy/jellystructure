@@ -38,6 +38,11 @@ data class MusicLibraryRows(
 object MusicIngest {
     private val COVER_FILES = listOf("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png", "front.jpg", "front.png")
     private val ARTIST_FILES = listOf("folder.jpg", "folder.jpeg", "folder.png", "artist.jpg", "artist.png", "thumb.jpg", "poster.jpg")
+    private val BACKDROP_FILES = listOf("backdrop.jpg", "fanart.jpg", "background.jpg")
+    private val LOGO_FILES = listOf("logo.png", "clearlogo.png")
+
+    private fun fileState(folder: String?, names: List<String>, exists: (String) -> Boolean): String =
+        if (folder != null && names.any { exists("${folder.trimEnd('/')}/$it") }) MusicArt.FILE else MusicArt.NONE
 
     /** Jellyfin's path → jellystructure's (the same prefix swap the film scanner does). */
     fun localPath(lib: LibraryMapping, jellyfinPath: String?): String? {
@@ -133,6 +138,8 @@ object MusicIngest {
                 path = path,
                 jellyfinProviderIds = a?.providerIds?.ids() ?: emptyMap(),
                 imageState = if (a == null) MusicArt.NONE else artState(path, ARTIST_FILES, a, exists),
+                backdropState = fileState(path, BACKDROP_FILES, exists),
+                logoState = fileState(path, LOGO_FILES, exists),
                 addedAt = a?.dateCreated?.let { isoToEpochSeconds(it) },
             )
             carry(fresh, prev, now)
@@ -180,6 +187,8 @@ object MusicIngest {
             libraryId = fresh.libraryId, title = fresh.title, sortName = fresh.sortName, year = fresh.year,
             path = fresh.path, albumArtists = fresh.albumArtists, genres = fresh.genres, trackCount = fresh.trackCount,
             durationMs = fresh.durationMs, albumGainDb = fresh.albumGainDb, coverState = fresh.coverState,
+            // A cover that disappeared from the folder no longer has the source it had.
+            coverSource = if (fresh.coverState == MusicArt.NONE) null else prev.coverSource,
             jellyfinProviderIds = fresh.jellyfinProviderIds, addedAt = fresh.addedAt, missingSince = null,
         )
         return if (merged == prev) prev else merged.copy(updatedAt = now)
@@ -192,7 +201,11 @@ object MusicIngest {
             // A credit-only sighting never erases a folder an earlier scan saw.
             path = fresh.path ?: prev.path,
             jellyfinProviderIds = fresh.jellyfinProviderIds.ifEmpty { prev.jellyfinProviderIds },
-            imageState = fresh.imageState, addedAt = fresh.addedAt ?: prev.addedAt, missingSince = null,
+            imageState = if (fresh.path == null && prev.path != null) prev.imageState else fresh.imageState,
+            addedAt = fresh.addedAt ?: prev.addedAt, missingSince = null,
+            // A credit-only sighting has no folder to look in: keep what the folder showed.
+            backdropState = if (fresh.path == null) prev.backdropState else fresh.backdropState,
+            logoState = if (fresh.path == null) prev.logoState else fresh.logoState,
         )
         return if (merged == prev) prev else merged.copy(updatedAt = now)
     }

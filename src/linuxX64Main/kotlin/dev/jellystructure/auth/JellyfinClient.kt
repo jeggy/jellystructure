@@ -722,7 +722,7 @@ class JellyfinClient {
         r.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin notifyLibraryMediaUpdated failed: ${it.message}"); false }
 
-    suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
+    suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false, recursive: Boolean = false): Boolean = runCatching {
         // FullRefresh forces Jellyfin to actually re-read all providers (including our NFO) regardless
         // of DateLastRefreshed. Default mode skips the re-read if the item was recently refreshed.
         // ReplaceAllMetadata=true replaces all Jellyfin-cached fields with what providers return so our
@@ -732,7 +732,9 @@ class JellyfinClient {
         // writes its own NFO back after reading ours (overwriting our metadata). The /health/full
         // endpoint checks and warns about this.
         val mode = if (full) "FullRefresh" else "ValidationOnly"
-        val extra = if (full) "&ReplaceAllMetadata=true" else ""
+        // Phase 277 (dev review item 4) — an album refresh must re-read its tracks too (a new `.lrc` sidecar
+        // beside a track only reaches Jellyfin when the track itself is refreshed). Films never pass it.
+        val extra = (if (full) "&ReplaceAllMetadata=true" else "") + (if (recursive) "&Recursive=true" else "")
         val url = baseUrl.trimEnd('/') +
             "/Items/$jellyfinId/Refresh?MetadataRefreshMode=$mode&ImageRefreshMode=$mode$extra"
         val response = httpPost(url) { jellyfinAuth(token) }

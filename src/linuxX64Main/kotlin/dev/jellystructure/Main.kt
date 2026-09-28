@@ -120,20 +120,6 @@ fun main() = runBlocking {
     dev.jellystructure.media.GenreCatalog.attach(db)
     val mediaStore = MediaStore(db, jsTagStore, configStore)
     mediaStore.load()
-    // Phase 275 — the music library: its own tables, never a MediaKind.
-    val musicStore = dev.jellystructure.music.MusicStore(db)
-    val musicPipeline = dev.jellystructure.media.MusicPipeline(
-        scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
-        store = musicStore,
-        // Phase 276 — MusicBrainz at one request a second, AcoustID only with a key.
-        matcher = dev.jellystructure.music.MusicMatchService(
-            musicStore,
-            dev.jellystructure.music.MusicBrainzClient(configStore),
-            dev.jellystructure.music.AcoustIdClient({ configStore.current.apiKeys.acoustidClientKey }),
-            configStore,
-            fingerprint = { path -> dev.jellystructure.media.FfmpegRunner.acoustIdFingerprint(path) },
-        ),
-    )
     // Phase 163 (Intro & credits editor) — one row per (item, episode, kind), replacing the old flat
     // SegmentMarkers blob field. Backfilled from mediaStore's already-loaded items just below.
     val mediaSegmentStore = dev.jellystructure.media.MediaSegmentStore(db)
@@ -296,6 +282,26 @@ fun main() = runBlocking {
         }
     }
     val mediaHistory = MediaHistory(db)
+    // Phase 275 — the music library: its own tables, never a MediaKind.
+    val musicStore = dev.jellystructure.music.MusicStore(db)
+    val musicPipeline = dev.jellystructure.media.MusicPipeline(
+        scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
+        store = musicStore,
+        // Phase 276 — MusicBrainz at one request a second, AcoustID only with a key.
+        matcher = dev.jellystructure.music.MusicMatchService(
+            musicStore,
+            dev.jellystructure.music.MusicBrainzClient(configStore),
+            dev.jellystructure.music.AcoustIdClient({ configStore.current.apiKeys.acoustidClientKey }),
+            configStore,
+            fingerprint = { path -> dev.jellystructure.media.FfmpegRunner.acoustIdFingerprint(path) },
+        ),
+        // Phase 277 — covers, artist pictures, biographies, lyrics, album.nfo / artist.nfo.
+        media = dev.jellystructure.music.MusicMediaService(
+            musicStore, artworkDownloader, configStore, jellyfinClient,
+            dev.jellystructure.music.FanartTvClient { configStore.current.apiKeys.fanartTvKey },
+            mediaHistory,
+        ),
+    )
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()
