@@ -9,7 +9,10 @@ read-only, with the tagger that phase 281 already put in the runtime image.
 > Owner, 2026-09-28: *"All this tags management is something we should add into jellystructure."* And the rule
 > that decides the shape of it: *"We want jellystructure to hold as little metadata on its own, but rather use
 > all standard things, so any tool (like Jellyfin or any other) will benefit from jellystructure without the need
-> of knowing of its existence."*
+> of knowing of its existence."* And, later the same day, the boundary: *"We are fine with having some on-top
+> metadata in our database tables. But we always prefer everything to use standards, so other tools can fully
+> benefit from us. But if something has no standard and we want it, so we can provide the very best experience
+> to our Ravilo users, then that's fine."*
 
 ## 0. The principle, and what it changes
 
@@ -20,9 +23,9 @@ read. The owner's rule turns that around. **For music the file is the record.** 
 |---|---|---|---|
 | 1 | **The audio file's own tags** (ID3 in MP3, Vorbis comments in FLAC/Ogg/Opus, iTunes atoms in M4A, ASF attributes in WMA) | every player, tagger, scanner and server on earth: Jellyfin, Kodi, Navidrome, Plex, Picard, beets, Lidarr, a car stereo, a phone's file browser | the song's identity: title · artists · album · album artist · track and disc numbers · year · genre · the MusicBrainz ids · loudness gain |
 | 2 | **Sidecars beside the file**, in Kodi's and Jellyfin's conventions: `album.nfo`, `artist.nfo`, `cover.jpg`, `folder.jpg`, `backdrop.jpg`, `.lrc` lyrics | Jellyfin, Kodi, Emby, Audiobookshelf-style readers | what a *file* cannot carry: an album's release type and MusicBrainz ids as a unit, an artist's biography, formed/disbanded, the pictures, synced lyrics |
-| 3 | **jellystructure's tables** (`music_*`) | jellystructure and Ravilo only | what is *about the work of managing*, never the facts themselves: match state, which release was chosen and why, locks, the cover's and NFO's hashes for drift, history, listeners' positions (audiobooks), what the last lookup found |
+| 3 | **jellystructure's tables** (`music_*`) | jellystructure and Ravilo only | two kinds of thing: what is *about the work of managing* (match state, which release was chosen and why, locks, the cover's and NFO's hashes for drift, history, what the last lookup found), and **what has no standard home but makes Ravilo better** (a book's position and chapters across parts, a household's listening state, per-device playback notes). The test for a new column is *"is there a standard place for this?"* — if yes, it goes there and the table only caches it; if no, the table is the right place |
 
-The consequence for the design: **a fact typed or matched in the admin is not "saved" until it is in the file.**
+The consequence for the design: **a fact that has a standard home is not "saved" until it is there** — in the file's tags, or in the sidecar the file's readers look for.
 The tables cache what the files say so the pages are fast and Ravilo can be served; they are rebuilt from the
 files by a scan, and a scan that finds a file changed by another tool (Picard on a laptop, Lidarr on import)
 takes the file's word. That is the opposite of 277's *"nothing in this phase opens an audio file for writing"*,
