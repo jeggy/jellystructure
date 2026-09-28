@@ -59,6 +59,9 @@ fun MusicListenScreen(
     onSeeAllPlayed: () -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
     scrollToTopTick: Int,
+    /** R323 (FR-R323-2) — *Continue listening* above the rows while a book is in progress. */
+    books: AudiobookStore? = null,
+    onResumeBook: (String) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by loader.state.collectAsState()
@@ -67,10 +70,11 @@ fun MusicListenScreen(
     OnReselect(scrollToTopTick) { runCatching { list.animateScrollToItem(0) } }
     Box(Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
-            is Load.Ready -> if (s.value.rows.isEmpty()) EmptyLine(str("mhome.empty")) else LazyColumn(
+            is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
                 state = list,
                 contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
             ) {
+                if (books != null) continueListeningRow(books, onResumeBook)
                 items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
             }
             Load.Failed -> EmptyLine(str("mhome.empty"))

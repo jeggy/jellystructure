@@ -331,14 +331,15 @@ fun MusicToastHost(bottomInset: Dp) {
  * accent, flat); a tap switches, lands on that mode's first tab, and asks nothing.
  */
 @Composable
-fun ListeningModeCard(musicMode: Boolean, onSwitch: (Boolean) -> Unit) {
+fun ListeningModeCard(musicMode: Boolean, withBooks: Boolean = false, onSwitch: (Boolean) -> Unit) {
     val colors = RaviloTheme.colors
     Column {
         Text(str("mode.label").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(16.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             ModeHalf(str("mode.video"), str("mode.video_sub"), MusicIcon.FILM, selected = !musicMode, Modifier.weight(1f)) { if (musicMode) onSwitch(false) }
-            ModeHalf(str("mode.music"), str("mode.music_sub"), MusicIcon.NOTE, selected = musicMode, Modifier.weight(1f)) { if (!musicMode) onSwitch(true) }
+            // R323 (R321 FR-R321-3) — *Music & audiobooks* when the viewer has books.
+            ModeHalf(if (withBooks) str("mode.music_books") else str("mode.music"), str("mode.music_sub"), MusicIcon.NOTE, selected = musicMode, Modifier.weight(1f)) { if (!musicMode) onSwitch(true) }
         }
     }
 }

@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.Dp
 enum class MusicIcon {
     LISTEN, BROWSE, PLAYING, QUEUE, NOTE, SHUFFLE, REPEAT, PREVIOUS, NEXT, PLAY, PAUSE,
     HEART, HEART_FILLED, MORE, LYRICS, DRAG, CHEVRON_DOWN, FILM, SEARCH,
+    // R323 — the book player.
+    BACK30, FWD30, SLEEP, BOOKMARK, CHAPTERS, CHECK,
 }
 
 @Composable
@@ -126,6 +128,25 @@ private fun DrawScope.drawMusicIcon(icon: MusicIcon, tint: Color) {
             path(fill = true) { m(it(10f, 9.5f)); l(it(15f, 12f)); l(it(10f, 14.5f)); close() }
         }
         MusicIcon.SEARCH -> { circle(11f, 11f, 7f); line(16.3f, 16.3f, 20.5f, 20.5f) }
+        // A circular arrow round a small "30" drawn in strokes (no text in a glyph).
+        MusicIcon.BACK30, MusicIcon.FWD30 -> {
+            val fwd = icon == MusicIcon.FWD30
+            val left = at(3f, 3f); val sz = Size(18f * u, 18f * u)
+            drawArc(tint, if (fwd) -60f else -120f, if (fwd) 300f else -300f, false, left, sz, style = stroke)
+            if (fwd) path { m(it(15.5f, 1.8f)); l(it(18.2f, 4.4f)); l(it(14.8f, 5.6f)) }
+            else path { m(it(8.5f, 1.8f)); l(it(5.8f, 4.4f)); l(it(9.2f, 5.6f)) }
+            val thin = 1.5f * u
+            fun t(x1: Float, y1: Float, x2: Float, y2: Float) = drawLine(tint, at(x1, y1), at(x2, y2), thin, StrokeCap.Round)
+            t(8.4f, 9.2f, 10.8f, 9.2f); t(10.8f, 9.2f, 10.8f, 14.8f); t(8.8f, 12f, 10.8f, 12f); t(8.4f, 14.8f, 10.8f, 14.8f)
+            drawRoundRect(tint, at(12.6f, 9.2f), Size(2.8f * u, 5.6f * u), CornerRadius(1.3f * u, 1.3f * u), style = Stroke(width = thin))
+        }
+        MusicIcon.SLEEP -> path { m(it(19.5f, 14.5f)); c(it(15f, 16.5f), it(8.5f, 13f), it(9f, 7f)); c(it(9.2f, 5.6f), it(9.7f, 4.5f), it(10.4f, 3.5f)); c(it(5.8f, 4.8f), it(3f, 8.8f), it(3.5f, 13.3f)); c(it(4.2f, 19.3f), it(10.3f, 22.5f), it(15.6f, 20f)); c(it(17.3f, 19.2f), it(18.6f, 17f), it(19.5f, 14.5f)); close() }
+        MusicIcon.BOOKMARK -> path { m(it(6.5f, 3.5f)); l(it(17.5f, 3.5f)); l(it(17.5f, 20.5f)); l(it(12f, 16.5f)); l(it(6.5f, 20.5f)); close() }
+        MusicIcon.CHECK -> path { m(it(5f, 12.5f)); l(it(10f, 17.5f)); l(it(19f, 7f)) }
+        MusicIcon.CHAPTERS -> {
+            circle(5f, 6f, 1.3f, fill = true); circle(5f, 12f, 1.3f, fill = true); circle(5f, 18f, 1.3f, fill = true)
+            line(9f, 6f, 20f, 6f); line(9f, 12f, 20f, 12f); line(9f, 18f, 16f, 18f)
+        }
     }
 }
 

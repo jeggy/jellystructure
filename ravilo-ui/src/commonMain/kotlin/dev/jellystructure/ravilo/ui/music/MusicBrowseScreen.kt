@@ -155,9 +155,16 @@ fun MusicBrowseScreen(
     onOpenPlaylist: (MusicPlaylist) -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
     scrollToTopTick: Int,
+    /** R323 (FR-R323-1) — the Audiobooks chip, absent without the audiobook library. */
+    books: AudiobookStore? = null,
+    onResumeBook: (String) -> Unit = {},
+    onOpenBook: (String) -> Unit = {},
+    onOpenBookAuthor: (String) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val query by store.query.collectAsState()
+    val bookSort by remember(books) { books?.sort ?: kotlinx.coroutines.flow.MutableStateFlow("added") }.collectAsState()
+    val bookView by remember(books) { books?.view ?: kotlinx.coroutines.flow.MutableStateFlow("books") }.collectAsState()
     val results by store.results.collectAsState()
     val sorts by store.sorts.collectAsState()
     val genre by store.genre.collectAsState()
@@ -178,6 +185,7 @@ fun MusicBrowseScreen(
     }
     OnReselect(scrollToTopTick) { runCatching { list.animateScrollToItem(0) } }
     val sortable = query.isBlank() && chip in sorts.keys && !(chip == "albums" && genre != null)
+    val bookSortable = query.isBlank() && chip == "audiobooks" && books != null && bookView == "books"
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         LazyColumn(state = list, contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
@@ -189,10 +197,11 @@ fun MusicBrowseScreen(
             } else {
                 item(key = "chips") {
                     LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
-                        items(MUSIC_CHIPS, key = { it }) { c -> Chip(chipLabel(c), c == chip) { expanded = null; onChip(c) } }
+                        items(MUSIC_CHIPS + listOfNotNull(if (books != null) "audiobooks" else null), key = { it }) { c -> Chip(chipLabel(c), c == chip) { expanded = null; onChip(c) } }
                     }
                 }
                 when (chip) {
+                    "audiobooks" -> if (books != null) audiobookShelf(books, bookSort, bookView, onResumeBook, onOpenBook, onOpenBookAuthor) else Unit
                     "genres" -> if (genre == null) genresChip(store) { store.genre.value = it; onChip("albums") } else Unit
                     "playlists" -> playlistsChip(store, onOpenPlaylist)
                     else -> {
@@ -208,11 +217,20 @@ fun MusicBrowseScreen(
             scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0,
             brandBadge = { MusicModeBadge() },
             // FR-R321-6 — the sort pill sits in the top row's page slot.
-            handsetTopSlot = if (sortable) ({ SortPill(str(SORTS.first { it.first == (sorts[chip] ?: "added") }.second)) { sortOpen = true } }) else null,
+            handsetTopSlot = when {
+                sortable -> ({ SortPill(str(SORTS.first { it.first == (sorts[chip] ?: "added") }.second)) { sortOpen = true } })
+                bookSortable -> ({ SortPill(str(AUDIOBOOK_SORTS.first { it.first == bookSort }.second)) { sortOpen = true } })
+                else -> null
+            },
         )
         HandsetSheet(visible = sortOpen, onDismiss = { sortOpen = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 14.dp)) {
-                SORTS.forEach { (key, label) ->
+                if (chip == "audiobooks" && books != null) AUDIOBOOK_SORTS.forEach { (key, label) ->
+                    val on = bookSort == key
+                    Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { books.sort.value = key; sortOpen = false }, verticalAlignment = Alignment.CenterVertically) {
+                        Text(str(label), color = if (on) colors.accentSecondary else Color.White, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
+                    }
+                } else SORTS.forEach { (key, label) ->
                     val on = (sorts[chip] ?: "added") == key
                     Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { store.setSort(chip, key); sortOpen = false }, verticalAlignment = Alignment.CenterVertically) {
                         Text(str(label), color = if (on) colors.accentSecondary else Color.White, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
@@ -225,11 +243,12 @@ fun MusicBrowseScreen(
 
 @Composable
 private fun chipLabel(c: String): String = when (c) {
-    "albums" -> str("mlib.albums"); "artists" -> str("mlib.artists"); "songs" -> str("mlib.songs"); "genres" -> str("mlib.genres"); else -> str("mlib.playlists")
+    "albums" -> str("mlib.albums"); "artists" -> str("mlib.artists"); "songs" -> str("mlib.songs"); "genres" -> str("mlib.genres")
+    "audiobooks" -> str("mnav.audiobooks"); else -> str("mlib.playlists")
 }
 
 @Composable
-private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
+internal fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     val m = if (on) Modifier.background(colors.accentGradient, RoundedCornerShape(18.dp)) else Modifier.background(colors.surfaceVariant, RoundedCornerShape(18.dp))
     Text(label, color = if (on) colors.onAccent else colors.textSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
@@ -237,7 +256,7 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SortPill(label: String, onClick: () -> Unit) {
+internal fun SortPill(label: String, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     Row(Modifier.border(1.dp, colors.textDim.copy(0.4f), RoundedCornerShape(16.dp)).tap(onClick).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = colors.text, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
@@ -382,7 +401,7 @@ private fun LazyListScope.listChip(
 
 /** A grid inside the page's one scrolling column (the chip strip and the field scroll away with it). */
 @Composable
-private fun <T> Grid(items: List<T>, columns: Int, gap: Dp, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit) {
+internal fun <T> Grid(items: List<T>, columns: Int, gap: Dp, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(horizontal = raviloHPad).fillMaxWidth()) {
         val w = (maxWidth - gap * (columns - 1)) / columns
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

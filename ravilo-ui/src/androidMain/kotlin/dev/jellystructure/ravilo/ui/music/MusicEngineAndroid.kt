@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -15,7 +16,11 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import dev.jellystructure.ravilo.ui.RaviloAppContext
@@ -24,6 +29,7 @@ import dev.jellystructure.ravilo.ui.createTvApiClient
 import dev.jellystructure.ravilo.ui.raviloBaseUrl
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayerEngine
+import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.StreamTicket
@@ -71,6 +77,21 @@ actual object MusicEngine {
     private var ended = false
     private var loadJob: Job? = null
     private var tickJob: Job? = null
+
+    // ── R323: a book in place of songs ──
+    private var book: BookPlayback? = null
+    /** The part playing came as a direct stream, so the next one may be fetched early (dev review 3): an early
+     *  ticket supersedes this part's Jellyfin session, which only a direct stream survives. */
+    private var partDirect = false
+    /** The next part, already handed to ExoPlayer for a seamless boundary. */
+    private var queuedPart: Int? = null
+    private var prefetching = false
+    private var watchJob: Job? = null
+    private var lastChapter = -1
+    private const val BACK30 = "ravilo.book.back30"
+    private const val FWD30 = "ravilo.book.fwd30"
+    private val back30 = SessionCommand(BACK30, Bundle.EMPTY)
+    private val fwd30 = SessionCommand(FWD30, Bundle.EMPTY)
 
     actual fun attach(api: TvApiClient) { this.api = api }
 
@@ -138,10 +159,41 @@ actual object MusicEngine {
         override fun pause() = MusicEngine.pause()
     }
 
-    /** Dev review 7 / open question 2 → the queue: after a reboot the system's *play* resumes the saved queue. */
+    /** Dev review 7 / open question 2 → the queue: after a reboot the system's *play* resumes the saved queue.
+     *  R323 (dev review 2) — a book's −30 s / +30 s are two custom commands on the card. */
     private object SessionCallback : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+            MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(back30).add(fwd30).build())
+                .build()
+
+        override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                BACK30 -> skipBy(-30_000L)
+                FWD30 -> skipBy(30_000L)
+                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            // R323 — the last thing listened to was a book: resume it where the server says this viewer is.
+            val last = BookLastStore.load()?.takeIf { it.first == MultiTokenStore.getActive()?.userId && MusicQueueStore.load() == null }
+            if (last != null) {
+                scope.launch {
+                    val c = client()
+                    val d = runCatching { c?.getAudiobook(last.second) }.getOrNull()
+                    val part = d?.position?.part ?: 0
+                    val pos = d?.position?.positionMs ?: 0L
+                    val ticket = d?.let { runCatching { c?.playAudiobook(it.id, part, ClientCapabilities(), pos.takeIf { p -> p > 0 }) }.getOrNull() }
+                    if (d == null || ticket == null) { future.setException(IllegalStateException("could not resume")); return@launch }
+                    book = BookPlayback(d, part, d.speed); openTrackId = d.parts.getOrNull(part)?.id; partDirect = ticket.directPlay
+                    future.set(MediaSession.MediaItemsWithStartPosition(listOf(bookItem(d, part, ticket)), 0, pos))
+                    applyBookPlayer(); publish(); startTicks(); startWatch()
+                }
+                return future
+            }
             val snap = MusicQueueStore.load()?.takeIf { it.userId == MultiTokenStore.getActive()?.userId && it.tracks.isNotEmpty() }
             if (snap == null) { future.setException(IllegalStateException("nothing to resume")); return future }
             scope.launch {
@@ -160,6 +212,10 @@ actual object MusicEngine {
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) onSongEnded() else publish()
+        }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // R323 — the part queued early took over, without a gap: it is now the one playing.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) onPartTransition()
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             publish()
@@ -195,6 +251,26 @@ actual object MusicEngine {
             .build()
     }
 
+    /** R323 (FR-R323-8) — the card: title = the chapter, artist = the author, album = the book, the cover. */
+    private fun bookMeta(d: AudiobookDetail, part: Int, positionMs: Long): MediaMetadata {
+        val ch = BookMath.chapter(d, BookMath.bookPosition(d, part, positionMs))
+        return MediaMetadata.Builder()
+            .setTitle(ch?.title?.takeIf { it.isNotBlank() } ?: d.title)
+            .setArtist(d.authors.joinToString(", ") { it.name })
+            .setAlbumTitle(d.title)
+            .apply { d.coverUrl?.let { setArtworkUri(Uri.parse(absolute(it) + (if ('?' in it) "&" else "?") + "w=720")) } }
+            .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER)
+            .build()
+    }
+
+    private fun bookItem(d: AudiobookDetail, part: Int, ticket: StreamTicket, positionMs: Long = 0L): MediaItem =
+        MediaItem.Builder()
+            .setUri(absolute(ticket.hlsUrl.orEmpty()))
+            .setMediaId(d.parts.getOrNull(part)?.id ?: "${d.id}#$part")
+            .apply { if (!ticket.directPlay) setMimeType(MimeTypes.APPLICATION_M3U8) }
+            .setMediaMetadata(bookMeta(d, part, positionMs))
+            .build()
+
     /** Leave the song that is open (a skip, the end, a stop): the server hears where it stopped. */
     private fun closeSong(atMs: Long? = null) {
         val id = openTrackId ?: return
@@ -202,12 +278,18 @@ actual object MusicEngine {
         openTrackId = null
         tickJob?.cancel()
         val c = client()
-        scope.launch { runCatching { c?.stopPlayback(id, pos) } }
+        val b = book
+        scope.launch {
+            // R323 — the book's own place first (ours), then the part's Jellyfin session ends.
+            if (b != null) runCatching { c?.audiobookProgress(b.id, b.part, pos, true) }
+            runCatching { c?.stopPlayback(id, pos) }
+        }
     }
 
     private fun startSong(i: Int, startMs: Long = 0L, play: Boolean = true) {
         val track = q.tracks.getOrNull(i) ?: return
         closeSong()
+        dropBook()
         q.index = i
         failed = false; ended = false
         parkedPositionMs = startMs
@@ -234,6 +316,7 @@ actual object MusicEngine {
     private fun onSongEnded() {
         // An emptied player also reports "ended"; only a song that was open can end.
         if (openTrackId == null) { publish(); return }
+        book?.let { b -> onPartEnded(b); return }
         val next = q.nextIndex(repeat)
         if (next != null) { startSong(next, 0L, true); return }
         // FR-R322-5 — queue end: stay on the last song, paused at 0:00. Nothing restarts on its own.
@@ -261,12 +344,26 @@ actual object MusicEngine {
         val pos = p.currentPosition
         val paused = !p.playWhenReady
         val c = client()
+        // R323 (280's dev review 1) — a book's heartbeat is the book's; the server mirrors it to the part's session.
+        val b = book
+        if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused) } }; return }
         scope.launch { runCatching { c?.reportProgress(id, pos, paused) } }
     }
 
     private fun publish() {
         val p = exo?.takeIf { openTrackId != null }
         val track = q.current
+        val b = book
+        if (b != null) {
+            _state.value = MusicPlayerState(
+                playing = p != null && p.playWhenReady && !failed && !b.finished,
+                buffering = p != null && p.playbackState == Player.STATE_BUFFERING,
+                positionMs = p?.currentPosition ?: parkedPositionMs,
+                durationMs = b.detail.parts.getOrNull(b.part)?.durationMs?.takeIf { it > 0 } ?: p?.duration?.takeIf { it > 0 } ?: 0L,
+                failed = failed, book = b,
+            )
+            return
+        }
         _state.value = MusicPlayerState(
             queue = q.tracks, index = q.index, context = context,
             playing = p != null && p.playWhenReady && !failed && !ended,
@@ -279,6 +376,7 @@ actual object MusicEngine {
 
     private fun save() {
         val uid = MultiTokenStore.getActive()?.userId ?: return
+        book?.let { BookLastStore.save(uid, it.id); MusicQueueStore.clear(); return }
         if (q.tracks.isEmpty()) { MusicQueueStore.clear(); return }
         MusicQueueStore.save(MusicQueueSnapshot(uid, q.tracks, q.index, currentPositionMs(), context))
     }
@@ -287,6 +385,7 @@ actual object MusicEngine {
 
     actual fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) {
         if (tracks.isEmpty()) return
+        endBook()
         this.context = context
         q.set(tracks, startIndex, shuffle)
         startSong(q.index)
@@ -295,6 +394,7 @@ actual object MusicEngine {
     actual fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) {
         if (tracks.isEmpty()) return
         closeSong()
+        dropBook()
         exo?.stop()
         this.context = context
         q.restore(tracks, index)
@@ -306,6 +406,11 @@ actual object MusicEngine {
     actual fun togglePlay() { if (_state.value.playing) pause() else play() }
 
     actual fun play() {
+        book?.let { b ->
+            if (b.finished) return
+            if (openTrackId == null || failed) startPart(b.part, currentPositionMs(), true) else { ensureService(); exo?.play() }
+            return
+        }
         if (q.current == null) return
         if (openTrackId == null || failed) startSong(q.index, if (ended) 0L else currentPositionMs(), true)
         else { ensureService(); exo?.play() }
@@ -314,11 +419,13 @@ actual object MusicEngine {
     actual fun pause() { exo?.pause(); publish(); save() }
 
     actual fun next() {
+        if (book != null) { skipBy(30_000L); return }   // a headset's *next* on a book
         val n = q.skipIndex(repeat) ?: return
         startSong(n, 0L, true)
     }
 
     actual fun previous() {
+        if (book != null) { skipBy(-30_000L); return }
         if (currentPositionMs() > 3_000L) { seekTo(0L); return }
         val p = q.previousIndex()
         if (p == null) seekTo(0L) else startSong(p, 0L, true)
@@ -342,12 +449,14 @@ actual object MusicEngine {
     actual fun remove(index: Int) { q.remove(index); publish(); save() }
 
     actual fun playNext(track: MusicTrackItem) {
+        endBook()
         val wasEmpty = q.current == null
         q.insertNext(track)
         if (wasEmpty) { context = MusicContext("queue", track.title); startSong(0) } else { publish(); save() }
     }
 
     actual fun addToQueue(track: MusicTrackItem) {
+        endBook()
         val wasEmpty = q.current == null
         q.append(track)
         if (wasEmpty) { context = MusicContext("queue", track.title); startSong(0) } else { publish(); save() }
@@ -356,6 +465,8 @@ actual object MusicEngine {
     actual fun clear() {
         loadJob?.cancel()
         closeSong()
+        dropBook()
+        BookLastStore.clear()
         exo?.stop(); exo?.clearMediaItems()
         q.clear(); context = null; failed = false; ended = false; parkedPositionMs = 0L
         MusicQueueStore.clear()
@@ -367,14 +478,19 @@ actual object MusicEngine {
         val pos = currentPositionMs()
         loadJob?.cancel()
         closeSong(pos)
+        watchJob?.cancel(); queuedPart = null
         exo?.stop()
         parkedPositionMs = pos
         publish(); save()
     }
 
-    actual fun retry() { if (q.current != null) startSong(q.index, currentPositionMs(), true) }
+    actual fun retry() {
+        book?.let { startPart(it.part, currentPositionMs(), true); return }
+        if (q.current != null) startSong(q.index, currentPositionMs(), true)
+    }
 
     actual fun skip() {
+        if (book != null) { retry(); return }
         val n = q.skipIndex(repeat)
         if (n != null) startSong(n, 0L, true) else { failed = false; publish() }
     }
@@ -385,6 +501,203 @@ actual object MusicEngine {
         MusicPrefs.evenVolume = on
         val t = q.current ?: return
         exo?.volume = musicVolumeScale(t, context, q.shuffled, on)
+    }
+
+    // ── R323: the book ──
+
+    /** A song is starting: the book goes (its place was already sent by [closeSong]). */
+    private fun dropBook() {
+        if (book == null) return
+        book = null; queuedPart = null; prefetching = false; lastChapter = -1
+        watchJob?.cancel()
+        exo?.let { it.setPlaybackSpeed(1f); it.skipSilenceEnabled = false; it.volume = 1f }
+        runCatching { session?.setMediaButtonPreferences(emptyList()) }
+    }
+
+    /** The music queue is starting while a book is loaded: close the part and drop the book. */
+    private fun endBook() {
+        if (book == null) return
+        loadJob?.cancel()
+        closeSong()
+        exo?.stop(); exo?.clearMediaItems()
+        dropBook()
+    }
+
+    /** The player's settings for a book: its speed, skip silence, full volume, and ±30 s on the card. */
+    private fun applyBookPlayer() {
+        val b = book ?: return
+        val p = exo ?: return
+        p.setPlaybackSpeed(b.speed.toFloat())
+        p.skipSilenceEnabled = BookPrefs.skipSilence
+        p.volume = 1f
+        runCatching {
+            session?.setMediaButtonPreferences(listOf(
+                CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30).setSessionCommand(back30).setDisplayName("-30").setSlots(CommandButton.SLOT_BACK).build(),
+                CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30).setSessionCommand(fwd30).setDisplayName("+30").setSlots(CommandButton.SLOT_FORWARD).build(),
+            ))
+        }
+    }
+
+    private fun startPart(part: Int, startMs: Long, play: Boolean) {
+        val b = book ?: return
+        val d = b.detail
+        if (part !in d.parts.indices) return
+        closeSong()
+        watchJob?.cancel(); queuedPart = null; prefetching = false
+        book = b.copy(part = part, finished = false)
+        failed = false; ended = false
+        parkedPositionMs = startMs
+        publish()
+        if (play) ensureService()
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            val c = client()
+            val ticket = runCatching { c?.playAudiobook(d.id, part, ClientCapabilities(), startMs.takeIf { it > 0 }) }.getOrNull()
+            if (ticket == null) { failed = true; publish(); return@launch }
+            openTrackId = d.parts[part].id
+            partDirect = ticket.directPlay
+            val p = player()
+            p.setMediaItem(bookItem(d, part, ticket, startMs), startMs)
+            p.prepare()
+            applyBookPlayer()
+            p.playWhenReady = play
+            publish(); save(); startTicks(); startWatch()
+        }
+    }
+
+    /** ExoPlayer moved on to the part queued early. That part's session is open (its ticket started it). */
+    private fun onPartTransition() {
+        val b = book ?: return
+        val next = queuedPart ?: return
+        queuedPart = null
+        openTrackId = b.detail.parts.getOrNull(next)?.id
+        book = b.copy(part = next)
+        exo?.let { if (it.mediaItemCount > 1 && it.currentMediaItemIndex > 0) it.removeMediaItems(0, it.currentMediaItemIndex) }
+        lastChapter = -1
+        val c = client()
+        scope.launch { runCatching { c?.audiobookProgress(b.id, next, 0L, false) } }   // ours moves on; earlier parts marked played
+        publish(); save(); startTicks()
+    }
+
+    /** A part played to its end with nothing queued: the next part (a short gap), or the book is finished. */
+    private fun onPartEnded(b: BookPlayback) {
+        val next = b.part + 1
+        if (next in b.detail.parts.indices) { startPart(next, 0L, true); return }
+        val end = b.detail.parts.getOrNull(b.part)?.durationMs ?: exo?.duration ?: 0L
+        closeSong(atMs = end)   // the last part within its last five minutes: the server marks it finished
+        exo?.pause()
+        watchJob?.cancel()
+        book = b.copy(finished = true, sleep = null)
+        parkedPositionMs = end
+        publish()
+    }
+
+    /** Twice a second while a book is loaded: fetch the next part early, keep the card's chapter right, and run
+     *  the sleep timer (with its fade). */
+    private fun startWatch() {
+        watchJob?.cancel()
+        watchJob = scope.launch {
+            while (true) {
+                delay(500)
+                val b = book ?: return@launch
+                val p = exo ?: continue
+                if (openTrackId == null) continue
+                val pos = p.currentPosition
+                val d = b.detail
+                val partLen = d.parts.getOrNull(b.part)?.durationMs ?: p.duration
+                val speed = b.speed.coerceAtLeast(0.1)
+                // Dev review 3 — the next part's ticket before the boundary, so Media3 crosses it without a gap.
+                val next = b.part + 1
+                if (partDirect && queuedPart == null && !prefetching && next in d.parts.indices && partLen > 0 && (partLen - pos) / speed < 20_000) {
+                    prefetching = true
+                    val c = client()
+                    scope.launch {
+                        val t = runCatching { c?.playAudiobook(d.id, next, ClientCapabilities(), null) }.getOrNull()
+                        prefetching = false
+                        if (t != null && book?.id == d.id && book?.part == next - 1) { exo?.addMediaItem(bookItem(d, next, t)); queuedPart = next }
+                    }
+                }
+                // FR-R323-8 — the card's title follows the chapter.
+                val bookPos = BookMath.bookPosition(d, b.part, pos)
+                val ch = BookMath.chapterAt(d, bookPos)
+                if (ch != lastChapter) {
+                    lastChapter = ch
+                    val i = p.currentMediaItemIndex
+                    p.currentMediaItem?.let { item -> runCatching { p.replaceMediaItem(i, item.buildUpon().setMediaMetadata(bookMeta(d, b.part, pos)).build()) } }
+                }
+                // FR-R323-5 — the sleep timer, fading its last 10 s when the fade is on.
+                val s = b.sleep ?: continue
+                val leftMs = when {
+                    s.endsAtMs != null -> s.endsAtMs - System.currentTimeMillis()
+                    s.endOfChapter -> ((BookMath.chapterEnd(d, s.chapter) - bookPos) / speed).toLong()
+                    else -> Long.MAX_VALUE
+                }
+                if (leftMs <= 0) {
+                    p.pause(); p.volume = 1f
+                    book = book?.copy(sleep = null)
+                    publish(); reportProgress()
+                } else if (BookPrefs.sleepFade && leftMs < 10_000) p.volume = (leftMs / 10_000f).coerceIn(0f, 1f)
+                else if (p.volume < 1f) p.volume = 1f
+            }
+        }
+    }
+
+    actual fun playBook(detail: AudiobookDetail, part: Int, positionMs: Long, play: Boolean) {
+        if (detail.parts.isEmpty()) return
+        // One listening queue at a time (FR-R323-7): the songs go.
+        if (q.current != null || book?.id != detail.id) {
+            loadJob?.cancel()
+            closeSong()
+            exo?.stop(); exo?.clearMediaItems()
+            q.clear(); context = null
+            MusicQueueStore.clear()
+        }
+        val speed = book?.takeIf { it.id == detail.id }?.speed ?: detail.speed
+        book = BookPlayback(detail, part.coerceIn(0, detail.parts.lastIndex), speed)
+        startPart(part.coerceIn(0, detail.parts.lastIndex), positionMs.coerceAtLeast(0L), play)
+    }
+
+    actual fun skipBy(deltaMs: Long) {
+        if (book == null) return
+        seekBook(bookPositionMs() + deltaMs)
+    }
+
+    actual fun seekBook(bookMs: Long) {
+        val b = book ?: return
+        val (part, off) = BookMath.locate(b.detail, bookMs)
+        if (b.finished) { book = b.copy(finished = false) }
+        if (part == b.part && openTrackId != null) {
+            if (queuedPart != null) { exo?.let { if (it.mediaItemCount > 1) it.removeMediaItems(1, it.mediaItemCount) }; queuedPart = null }
+            exo?.seekTo(off); publish(); reportProgress()
+        } else startPart(part, off, _state.value.playing || openTrackId == null && !b.finished)
+    }
+
+    actual fun setSpeed(speed: Double) {
+        val b = book ?: return
+        val s = speed.coerceIn(0.5, 3.0)
+        book = b.copy(speed = s)
+        exo?.setPlaybackSpeed(s.toFloat())
+        publish()
+        val c = client()
+        scope.launch { runCatching { c?.setAudiobookSpeed(b.id, s) } }
+    }
+
+    actual fun setSleep(timer: SleepTimer?) {
+        val b = book ?: return
+        val t = timer?.let { if (it.endOfChapter) it.copy(chapter = BookMath.chapterAt(b.detail, bookPositionMs())) else it }
+        book = b.copy(sleep = t)
+        if (t == null) exo?.volume = 1f
+        publish()
+    }
+
+    actual fun setSkipSilence(on: Boolean) {
+        BookPrefs.skipSilence = on
+        if (book != null) exo?.skipSilenceEnabled = on
+    }
+
+    actual fun bookPositionMs(): Long {
+        val b = book ?: return 0L
+        return BookMath.bookPosition(b.detail, b.part, currentPositionMs())
     }
 
     /** The service went away (the app was removed from recents, or the system stopped it). */

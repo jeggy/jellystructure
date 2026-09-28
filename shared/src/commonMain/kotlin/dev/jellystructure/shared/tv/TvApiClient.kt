@@ -386,6 +386,85 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    // ─── Phase 281 (FR-281-10) / R323 — audiobooks ───────────────────────────
+
+    /** The viewer's shelf; null when the server has no audiobooks for them (or predates them: a 404). */
+    suspend fun getAudiobooks(sort: String? = null, author: String? = null, series: String? = null): AudiobookShelf? {
+        val r = client.get("$baseUrl/api/tv/music/audiobooks") {
+            auth()
+            sort?.let { parameter("sort", it) }
+            author?.let { parameter("author", it) }
+            series?.let { parameter("series", it) }
+        }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getAudiobook(id: String): AudiobookDetail {
+        val r = client.get("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getAudiobookAuthor(id: String): AudiobookAuthorDetail {
+        val r = client.get("$baseUrl/api/tv/music/audiobook-author/${id.encodeURLPathPart()}") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** One part of a book ([part] 0-based, our order), from [startPositionMs] inside it. Its stop is [stopPlayback]
+     *  with the part's id; its heartbeat is [audiobookProgress], never [reportProgress]. */
+    suspend fun playAudiobook(id: String, part: Int, capabilities: ClientCapabilities, startPositionMs: Long? = null): StreamTicket {
+        val r = client.post("$baseUrl/api/tv/music/play") {
+            auth()
+            jsonBody(json.encodeToString(MusicPlayRequest(capabilities = capabilities, startPositionMs = startPositionMs, audiobookId = id, part = part)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun audiobookProgress(id: String, part: Int, positionMs: Long, paused: Boolean): AudiobookPosition? {
+        val r = client.put("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/progress") {
+            auth()
+            jsonBody(json.encodeToString(AudiobookProgressRequest(part, positionMs, paused)))
+        }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun setAudiobookSpeed(id: String, speed: Double) {
+        client.put("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/speed") {
+            auth()
+            jsonBody(json.encodeToString(AudiobookSpeedRequest(speed)))
+        }.assertSuccess()
+    }
+
+    /** *Mark as finished* (true) / *Start over* (false). */
+    suspend fun setAudiobookFinished(id: String, finished: Boolean): AudiobookPosition? {
+        val r = client.put("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/finished") {
+            auth()
+            jsonBody(json.encodeToString(AudiobookFinishedRequest(finished)))
+        }
+        r.assertSuccess()
+        val body = r.bodyAsText()
+        return if (body.isBlank()) null else json.decodeFromString(body)
+    }
+
+    suspend fun addAudiobookBookmark(id: String, positionMs: Long, note: String?): AudiobookBookmarkItem {
+        val r = client.post("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/bookmarks") {
+            auth()
+            jsonBody(json.encodeToString(AudiobookBookmarkRequest(positionMs, note)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun deleteAudiobookBookmark(id: String, bookmarkId: Long) {
+        client.delete("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/bookmarks/$bookmarkId") { auth() }.assertSuccess()
+    }
+
     // ─── Config ──────────────────────────────────────────────────────────────
 
     // ─── Phase 218 / R245 — Chromecast hand-off ─────────────────────────────

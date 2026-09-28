@@ -107,9 +107,14 @@ fun MusicPlayingScreen(
     onOpenArtist: (String) -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
     onFavorite: (MusicTrackItem, Boolean) -> Unit,
+    /** R323 — a book in the engine gets the book variant of this screen. */
+    books: AudiobookStore? = null,
+    onOpenBook: (String) -> Unit = {},
+    onOpenBookAuthor: (String) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val st by MusicEngine.state.collectAsState()
+    if (st.book != null) { BookPlayingScreen(api, books, onClose, onOpenBook, onOpenBookAuthor); return }
     val portrait = LocalPortrait.current
     var showLyrics by remember { mutableStateOf(false) }
     val t = st.current
@@ -168,7 +173,7 @@ fun MusicPlayingScreen(
 }
 
 @Composable
-private fun playingGround(): Brush {
+internal fun playingGround(): Brush {
     val colors = RaviloTheme.colors
     return if (LocalRaviloSkin.current == Skin.NOIR) Brush.verticalGradient(listOf(colors.background, colors.background))
     else Brush.verticalGradient(listOf(colors.accentDim.copy(alpha = 0.6f), colors.background, colors.background))
@@ -295,7 +300,7 @@ private fun Transport(st: MusicPlayerState) {
 }
 
 @Composable
-private fun Pulse(tint: Color) {
+internal fun Pulse(tint: Color) {
     val t = rememberInfiniteTransition(label = "pulse")
     val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), AnimRepeat.Restart), label = "p")
     Canvas(Modifier.size(34.dp, 12.dp)) {
@@ -455,6 +460,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
 fun MusicMiniBar(onOpen: () -> Unit) {
     val colors = RaviloTheme.colors
     val st by MusicEngine.state.collectAsState()
+    if (st.book != null) { BookMiniBar(onOpen); return }   // R323 (FR-R323-7)
     val t = st.current ?: return
     val live = rememberLivePosition()
     val scope = rememberCoroutineScope()

@@ -333,6 +333,9 @@ private sealed class Dest {
     data class AlbumDetail(val id: String, val displayName: String) : Dest()
     data class ArtistDetail(val id: String, val displayName: String) : Dest()
     data class PlaylistDetail(val id: String, val name: String, val displayName: String) : Dest()
+    // R323 — a book and its author (the phone only; the bar hides, the mini bar stays).
+    data class AudiobookDetail(val id: String, val displayName: String) : Dest()
+    data class AudiobookAuthor(val id: String, val displayName: String) : Dest()
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
@@ -365,6 +368,8 @@ private sealed class Dest {
         is AlbumDetail    -> "/music/album/$id"
         is ArtistDetail   -> "/music/artist/$id"
         is PlaylistDetail -> "/music/playlist/$id"
+        is AudiobookDetail -> "/music/audiobook/$id"
+        is AudiobookAuthor -> "/music/audiobook-author/$id"
     }
 }
 
@@ -728,6 +733,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.MusicListen -> d.displayName; is Dest.MusicBrowse -> d.displayName; is Dest.MusicPlaying -> d.displayName   // R321
             is Dest.MusicQueue -> d.displayName; is Dest.AlbumDetail -> d.displayName; is Dest.ArtistDetail -> d.displayName
             is Dest.PlaylistDetail -> d.displayName
+            is Dest.AudiobookDetail -> d.displayName; is Dest.AudiobookAuthor -> d.displayName   // R323
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -800,6 +806,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.Login, is Dest.ProfilePicker -> false
             // R321 (FR-R321-4) — one title's detail hides the bar; the mini bar stays.
             is Dest.AlbumDetail, is Dest.ArtistDetail, is Dest.PlaylistDetail -> false
+            is Dest.AudiobookDetail, is Dest.AudiobookAuthor -> false   // R323 (FR-R323-3)
             else -> true
         }
 
@@ -849,21 +856,28 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         var musicMode by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC) }
         // FR-R321-2 — absent, never greyed: only for a viewer with the music library, and only where it can play.
         var musicAvailable by remember { mutableStateOf<Boolean?>(null) }
+        var booksAvailable by remember { mutableStateOf(false) }
         LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.music.MusicEngine.attach(apiClient) }
         LaunchedEffect(activeUserId, handset) {
             musicMode = dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC
+            // R323 — the listening mode is there for music or for audiobooks (either is enough).
+            booksAvailable = if (activeUserId == null || !handset || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
+                else runCatching { apiClient.getAudiobooks()?.books?.isNotEmpty() == true }.getOrDefault(false)
             musicAvailable = if (activeUserId == null || !handset || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
-                else runCatching { apiClient.getMusicHome().rows.isNotEmpty() }.getOrDefault(false)
+                else booksAvailable || runCatching { apiClient.getMusicHome().rows.isNotEmpty() }.getOrDefault(false)
         }
         val inMusic = handset && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
         // FR-R321-2 — a mode stored for a viewer who lost the grant falls back to video, silently.
         LaunchedEffect(musicAvailable) {
-            if (musicAvailable == false && stack.any { it is Dest.MusicListen || it is Dest.MusicBrowse || it is Dest.MusicPlaying || it is Dest.MusicQueue }) {
+            if (musicAvailable == false && stack.any { it is Dest.MusicListen || it is Dest.MusicBrowse || it is Dest.MusicPlaying || it is Dest.MusicQueue || it is Dest.AudiobookDetail || it is Dest.AudiobookAuthor }) {
                 resetTo(Dest.Home(destDisplayName(stack.lastOrNull())))
             }
         }
         val musicState by dev.jellystructure.ravilo.ui.music.MusicEngine.state.collectAsState()
+        // R323 — the viewer's shelf and book pages, kept across navigation; commands to the engine run on the main thread.
+        val bookStore = remember(activeUserId) { dev.jellystructure.ravilo.ui.music.AudiobookStore(apiClient) }
+        val uiScope = androidx.compose.runtime.rememberCoroutineScope()
         // FR-R322-12 — a video taking the screen stops the song (the queue stays, paused where it was).
         LaunchedEffect(stack.lastOrNull()) {
             val top = stack.lastOrNull()
@@ -1715,7 +1729,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     scrollToTopTick = reselectTick,
                     // R321 (FR-R321-3) — the mode card; a tap switches and lands on that mode's first tab.
                     modeCard = if (handset && musicAvailable == true && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) ({
-                        dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode) { on ->
+                        dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode, withBooks = booksAvailable) { on ->
                             musicMode = on
                             dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (on) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
                             resetTo(if (on) Dest.MusicListen(dest.displayName) else Dest.Home(dest.displayName))
@@ -1738,6 +1752,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     },
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
                     scrollToTopTick = reselectTick,
+                    books = if (booksAvailable) bookStore else null,
+                    onResumeBook = { id -> uiScope.launch { dev.jellystructure.ravilo.ui.music.resumeBook(apiClient, id); bookStore.refresh(id) } },
                 )
             }
             is Dest.MusicBrowse -> {
@@ -1754,6 +1770,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onOpenPlaylist = { p -> push(Dest.PlaylistDetail(p.id, p.name, dest.displayName)) },
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
                     scrollToTopTick = reselectTick,
+                    books = if (booksAvailable) bookStore else null,
+                    onResumeBook = { id -> uiScope.launch { dev.jellystructure.ravilo.ui.music.resumeBook(apiClient, id); bookStore.refresh(id) } },
+                    onOpenBook = { id -> push(Dest.AudiobookDetail(id, dest.displayName)) },
+                    onOpenBookAuthor = { id -> push(Dest.AudiobookAuthor(id, dest.displayName)) },
                 )
             }
             is Dest.MusicPlaying -> {
@@ -1762,6 +1782,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 LaunchedEffect(Unit) {
                     if (!musicState.active) {
                         val uid = MultiTokenStore.getActive()?.userId
+                        // R323 — the last thing listened to was a book: load it paused where this viewer is.
+                        val lastBook = dev.jellystructure.ravilo.ui.music.BookLastStore.load()?.takeIf { it.first == uid && dev.jellystructure.ravilo.ui.music.MusicQueueStore.load() == null }
+                        val book = lastBook?.let { runCatching { apiClient.getAudiobook(it.second) }.getOrNull() }
+                        if (book != null) { dev.jellystructure.ravilo.ui.music.MusicEngine.playBook(book, book.position?.part ?: 0, book.position?.positionMs ?: 0L, play = false); return@LaunchedEffect }
                         val snap = dev.jellystructure.ravilo.ui.music.MusicQueueStore.load()?.takeIf { it.userId == uid && it.tracks.isNotEmpty() }
                         if (snap != null) dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(snap.tracks, snap.index, snap.positionMs, snap.context)
                         else runCatching { apiClient.lastPlayedMusic() }.getOrNull()?.let { lp ->
@@ -1777,6 +1801,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
                     onFavorite = { t, fav -> setMusicFavorite(t, fav) },
+                    books = bookStore,
+                    onOpenBook = { id -> push(Dest.AudiobookDetail(id, dest.displayName)) },
+                    onOpenBookAuthor = { id -> push(Dest.AudiobookAuthor(id, dest.displayName)) },
                 )
             }
             is Dest.MusicQueue -> dev.jellystructure.ravilo.ui.music.MusicQueueScreen(
@@ -1804,6 +1831,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
                 )
             }
+            is Dest.AudiobookDetail -> dev.jellystructure.ravilo.ui.music.AudiobookDetailScreen(
+                store = bookStore, api = apiClient, id = dest.id,
+                onBack = { pop() },
+                onOpenAuthor = { id -> push(Dest.AudiobookAuthor(id, dest.displayName)) },
+                onOpenPlaying = { resetTo(Dest.MusicPlaying(dest.displayName)) },
+            )
+            is Dest.AudiobookAuthor -> dev.jellystructure.ravilo.ui.music.AudiobookAuthorScreen(
+                store = bookStore, id = dest.id,
+                onBack = { pop() },
+                onOpenBook = { id -> push(Dest.AudiobookDetail(id, dest.displayName)) },
+            )
             is Dest.PlaylistDetail -> {
                 val loader = keptStore("mplaylist:${dest.id}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicPlaylist(dest.id) } }
                 dev.jellystructure.ravilo.ui.music.MusicPlaylistScreen(

@@ -34,4 +34,11 @@ actual object MusicEngine {
     actual fun skip() = Unit
     actual fun currentPositionMs(): Long = 0L
     actual fun setEvenVolume(on: Boolean) = Unit
+    actual fun playBook(detail: dev.jellystructure.shared.tv.AudiobookDetail, part: Int, positionMs: Long, play: Boolean) = Unit
+    actual fun skipBy(deltaMs: Long) = Unit
+    actual fun seekBook(bookMs: Long) = Unit
+    actual fun setSpeed(speed: Double) = Unit
+    actual fun setSleep(timer: SleepTimer?) = Unit
+    actual fun setSkipSilence(on: Boolean) = Unit
+    actual fun bookPositionMs(): Long = 0L
 }

@@ -42,5 +42,6 @@ object MusicQueueStore {
 fun forgetListening() {
     ListeningMode.write(ListeningMode.VIDEO)
     MusicQueueStore.clear()
+    BookLastStore.clear()
     runCatching { MusicEngine.clear() }
 }

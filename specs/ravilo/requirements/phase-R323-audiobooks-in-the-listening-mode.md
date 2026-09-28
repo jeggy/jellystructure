@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the phone brief §M1–§M7, the audiobooks research (§3.2, §4, §5, §6) and the
+`✓ Built` 2026-09-28 (build notes at the end) — written 2026-09-28 from the phone brief §M1–§M7, the audiobooks research (§3.2, §4, §5, §6) and the
 mockup `design/ravilo/mobile/ravilo-books.js` (+ the `bk-*` rules in `ravilo-music.css`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below).
 Builds on **R321**, **R322**, **280** and **281** (FR-281-10's paths). The research's "R324".
 
@@ -157,3 +157,47 @@ Buildable. Nine items; item 3 is the one that decides whether a chapter boundary
    one row.
 8. **Strings:** as R321's review, item 6.
 9. **Wire:** none beyond 279/281.
+
+## Build notes (2026-09-28)
+
+Built on `main` after 280/281. The phone app compiles (Android + web); `BookMathTest` and `MusicQueueTest` pass.
+Named *audiobooks* throughout (280's build notes): the phone's paths are `/tv/music/audiobooks`,
+`/tv/music/audiobook/{id}` (+ `/progress`, `/speed`, `/finished`, `/bookmarks`) and `/tv/music/audiobook-author/{id}`.
+
+1. **One engine, one listening queue at a time (FR-R323-7).** The book player is a *book mode* of R322's
+   `MusicEngine`: the same ExoPlayer, MediaSession and foreground service. Starting a song drops the book and
+   starting a book drops the songs. `BookMath` (common, tested) is the only place book time, parts and chapters
+   are worked out; every screen reads it.
+2. **Parts and the boundary (dev review 3).** Each part is its own Jellyfin session (281's play shape). While a
+   directly played part has under 20 s left (at the current speed), the next part's ticket is fetched and handed
+   to ExoPlayer as a second item, so Media3 crosses the boundary without a gap; the transition moves our position
+   on (which marks the earlier parts played in Jellyfin). **Only for direct play** — fetching early supersedes the
+   playing part's session, which an HLS stream would not survive; a re-encoded part is started at its end instead
+   (a short gap). Heartbeats every 10 s and on pause go to `PUT …/progress`, never to the films' progress route.
+3. **The shelf (FR-R323-1)** is Browse's *Audiobooks* chip, present only when the viewer has a book: *Continue
+   listening* cards (a tap resumes, no detour), *All books* 2-up with a ring or ✓, the *All books · Authors ·
+   Series* chips when the server lists more than one author or any series, and a sort pill (Recently added ·
+   Title · Author · Series). **Listen** shows *Continue listening* above its rows (FR-R323-2, the lean). The
+   listening mode now exists for a viewer with books and no music, and the mode card says *Music & audiobooks*
+   when books are there.
+4. **The book page and the author page (FR-R323-3)** as drawn, with **Continue · {where}** (the place in the book),
+   *Start* or *Start over*, ⋯ (Start over · Mark as finished · Go to author), the description with *More*, and the
+   chapter list (heard dimmed, the current one with bars, a tap plays from there). **Deviation:** no ♡ My List on
+   a book (Jellyfin favourites are per part here, not per book) and the author page has no picture (281).
+5. **The book player (FR-R323-4/6):** the chapter as the title, *book · author* as links, the chapter's seek bar
+   over a 2 dp book hairline and *… left*, −30 s / play / +30 s with long-press repeat (~0.4 s), the speed chip and
+   the sleep glyph (lit, with minutes left), chapters · bookmark · ⋯, *Finished · Start over*, and the failure sheet
+   (*Try again* / *Close*). Speed is set on the player and stored per book; nowhere else in Ravilo has one.
+6. **Sheets (FR-R323-5):** speed (eight steps), sleep (15/30/45/60 min, end of chapter, off; the last 10 s fade
+   when *Sleep timer fade* is on), Chapters / Bookmarks, and *Add bookmark* with a one-line note on the system
+   keyboard.
+7. **The card (FR-R323-8):** title = the chapter (the book's title when the chapter has none), artist = author,
+   album = book, the cover, and −30 s / +30 s as two custom session commands in the back and forward slots
+   (`setMediaButtonPreferences`); a headset's next/previous on a book skips 30 s.
+8. **Settings ▸ Listening (FR-R323-9):** *Skip silences in audiobooks* (off) and *Sleep timer fade* (on), under
+   *Even out volume*.
+9. **Words (FR-R323-10):** 48 keys × en/da/fo from the mockup's drafts (two Danish words changed for the spelling
+   fence: *Marker*, and *inden* for *før*). Speeds render as digits with `×`.
+10. **Resuming:** after a restart the Playing tab loads the last book paused where the server says this viewer is,
+    and the system's *play* after a reboot resumes it.
+

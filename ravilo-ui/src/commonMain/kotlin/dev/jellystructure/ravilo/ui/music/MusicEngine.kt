@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.StateFlow
@@ -39,9 +40,11 @@ data class MusicPlayerState(
     val failed: Boolean = false,
     /** FR-R322-5 — the queue's last song finished: paused at 0:00, and *next* is absent. */
     val ended: Boolean = false,
+    /** R323 — a book instead of songs (one listening queue at a time). [positionMs]/[durationMs] are then the part's. */
+    val book: BookPlayback? = null,
 ) {
     val current: MusicTrackItem? get() = queue.getOrNull(index)
-    val active: Boolean get() = current != null
+    val active: Boolean get() = current != null || book != null
     val hasNext: Boolean get() = index in queue.indices && (index < queue.lastIndex || repeat == RepeatMode.ALL)
     val upNext: List<MusicTrackItem> get() = if (index in queue.indices) queue.drop(index + 1) else emptyList()
 }
@@ -88,6 +91,23 @@ expect object MusicEngine {
     fun currentPositionMs(): Long
     /** FR-R322-9 — *Even out volume*. */
     fun setEvenVolume(on: Boolean)
+
+    // ── R323 — a book ──
+
+    /** Load [detail] and play (or park) [part] at [positionMs] inside it. The songs' queue is dropped. */
+    fun playBook(detail: AudiobookDetail, part: Int, positionMs: Long, play: Boolean = true)
+    /** FR-R323-4 — −30 s / +30 s, across part boundaries. */
+    fun skipBy(deltaMs: Long)
+    /** A place in the book (a chapter, a bookmark, the chapter seek bar). */
+    fun seekBook(bookMs: Long)
+    /** FR-R323-5 — this book's speed (remembered per book on the server). */
+    fun setSpeed(speed: Double)
+    /** FR-R323-5 — the sleep timer; null turns it off. */
+    fun setSleep(timer: SleepTimer?)
+    /** FR-R323-9 — *Skip silences in audiobooks*. */
+    fun setSkipSilence(on: Boolean)
+    /** Book time now (the parts before, plus the place in this one); 0 with no book. */
+    fun bookPositionMs(): Long
 }
 
 /** A queue as a device remembers it (dev review 7): the songs, which one, where in it, and for whom. */
