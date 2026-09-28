@@ -6,6 +6,9 @@ import dev.jellystructure.model.AudiobookProvidersDto
 import dev.jellystructure.model.AudiobookProvidersUpdate
 import dev.jellystructure.model.MusicProvidersDto
 import dev.jellystructure.model.MusicProvidersUpdate
+import dev.jellystructure.model.ProviderKeyCheck
+import dev.jellystructure.model.ProviderTestResult
+import dev.jellystructure.formatClock
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -38,6 +41,52 @@ private fun row(name: String, id: String, body: String, test: Boolean = true) = 
       ${if (test) """<button type="button" class="btn sm ghost jmp-test" data-p="$id" style="flex:none">Test</button>""" else ""}
     </div>"""
 
+/** Where a keyed provider says what it answered when its key was last used. */
+private fun checkLine(id: String) = """<div class="tiny" id="jmp-check-$id" style="margin-top:6px;line-height:1.5"></div>"""
+
+private const val DOT_OFF = "var(--line-2,rgba(255,255,255,.22))"
+
+/** 2026-09-28 amendment — a keyed provider's dot and line say what the provider **answered** with the saved key:
+ *  green = accepted, red = refused, amber = no answer (untested), grey = no key or not checked yet. A saved key on its
+ *  own is never green. */
+private fun showCheck(id: String, keySet: Boolean, check: ProviderKeyCheck?, checking: Boolean = false) {
+    val (color, text) = when {
+        !keySet -> DOT_OFF to ""
+        checking -> DOT_OFF to "Trying the key…"
+        check == null -> DOT_OFF to "Not tried yet — press Test."
+        check.ok -> "var(--ok)" to "✓ ${check.message} · ${formatClock(check.checkedAt.toString())}"
+        else -> (if (check.answered) "var(--bad)" else "var(--warn)") to "${check.message} · ${formatClock(check.checkedAt.toString())}"
+    }
+    (document.getElementById("jmp-dot-$id") as? HTMLElement)?.style?.background = color
+    (document.getElementById("jmp-check-$id") as? HTMLElement)?.let {
+        it.textContent = text
+        it.style.color = if (!checking && check != null && !check.ok) (if (check.answered) "var(--bad)" else "var(--warn)") else "var(--ink-soft)"
+    }
+}
+
+/** Wires the *Test* buttons inside [container]. A keyed provider ([keyed] → key saved?) shows its answer on its own
+ *  row and is tried at once when its saved key has not been tried yet (a new key, or after a restart). */
+private fun wireTests(container: HTMLElement, scope: CoroutineScope, keyed: Map<String, Pair<Boolean, ProviderKeyCheck?>>, test: suspend (String) -> ProviderTestResult) {
+    val buttons = container.querySelectorAll(".jmp-test")
+    for (i in 0 until buttons.length) {
+        val b = buttons.item(i) as? HTMLElement ?: continue
+        val name = b.getAttribute("data-p") ?: continue
+        val run = {
+            b.textContent = "Testing…"
+            keyed[name]?.let { (keySet, _) -> showCheck(name, keySet, null, checking = true) }
+            scope.launch {
+                val r = test(name)
+                b.textContent = "Test"
+                val k = keyed[name]
+                if (k != null && r.check != null) showCheck(name, k.first, r.check)
+                else { if (k != null) showCheck(name, k.first, null); note(r.result) }
+            }
+        }
+        b.addEventListener("click") { run() }
+        keyed[name]?.let { (keySet, check) -> showCheck(name, keySet, check); if (keySet && check == null) run() }
+    }
+}
+
 private fun render(p: MusicProvidersDto): String = buildString {
     append(row("MusicBrainz", "musicbrainz", """
         <div class="tiny muted" style="margin:3px 0 6px">No key. One request a second — MusicBrainz's rule.
@@ -59,7 +108,7 @@ private fun render(p: MusicProvidersDto): String = buildString {
           <span class="tiny muted" style="width:70px">Client key</span>
           <input id="jmp-acoustid" class="input mono" type="password" style="flex:1;min-width:200px" placeholder="${if (p.acoustIdKeySet) "saved — type to replace" else "not set"}">
           ${if (p.acoustIdKeySet) """<button type="button" class="btn sm ghost" id="jmp-acoustid-clear">Remove</button>""" else ""}
-        </div>"""))
+        </div>${checkLine("acoustid")}"""))
     append(row("fanart.tv", "fanart", """
         <div class="tiny muted" style="margin:3px 0 6px">Artist pictures, backgrounds and logos.
           ${if (p.fanartKeySet) "A key is saved." else "Without a key, artist pictures come from Wikimedia Commons only."}
@@ -68,8 +117,8 @@ private fun render(p: MusicProvidersDto): String = buildString {
           <span class="tiny muted" style="width:70px">Project key</span>
           <input id="jmp-fanart" class="input mono" type="password" style="flex:1;min-width:200px" placeholder="${if (p.fanartKeySet) "saved — type to replace" else "not set"}">
           ${if (p.fanartKeySet) """<button type="button" class="btn sm ghost" id="jmp-fanart-clear">Remove</button>""" else ""}
-        </div>
-        <div class="hint">Free. Sign in to fanart.tv (or create an account), open <b>Get an API key</b>, and request a key under <b>Project API Keys</b>. Paste that one here — a <i>personal</i> key is a different kind and does not work on its own.</div>""", test = false))
+        </div>${checkLine("fanart")}
+        <div class="hint">Free. Sign in to fanart.tv (or create an account), open <b>Get an API key</b>, and request a key under <b>Project API Keys</b>. Paste it here and press <b>Save</b>: the key is then tried against fanart.tv, and the dot turns green only when fanart.tv accepts it.</div>"""))
     append(row("Lyrics · LRCLIB", "lrclib", """
         <div class="tiny muted" style="margin:3px 0 6px">No key. Synced lyrics as a <span class="mono">.lrc</span> file beside each song, which Jellyfin reads too.</div>
         <label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-lyrics" ${if (p.lyricsEnabled) "checked" else ""}> Fetch lyrics</label>""", test = false))
@@ -90,7 +139,7 @@ private fun renderAudiobooks(p: AudiobookProvidersDto): String = buildString {
           <span class="tiny muted" style="width:70px">API key</span>
           <input id="jmp-gbooks" class="input mono" type="password" style="flex:1;min-width:200px" placeholder="${if (p.googleBooksKeySet) "saved — type to replace" else "not set"}">
           ${if (p.googleBooksKeySet) """<button type="button" class="btn sm ghost" id="jmp-gbooks-clear">Remove</button>""" else ""}
-        </div>""", test = false))
+        </div>${checkLine("googlebooks")}"""))
     append(row("Open Library", "openlibrary", """<div class="tiny muted" style="margin-top:3px">Nothing to configure. Bibliographic only — one request a second.</div>""", test = false))
     val regions = listOf("au", "ca", "de", "es", "fr", "in", "it", "jp", "us", "uk")
     append(row("Audnexus", "audnexus", """
@@ -123,7 +172,7 @@ private fun wireAudiobookProviders(scope: CoroutineScope) {
         body.innerHTML = renderAudiobooks(p)
         audiobooksLoaded = p
         listOf("itunes", "openlibrary").forEach { (document.getElementById("jmp-dot-$it") as? HTMLElement)?.style?.background = "var(--ok)" }
-        if (p.googleBooksKeySet) (document.getElementById("jmp-dot-googlebooks") as? HTMLElement)?.style?.background = "var(--ok)"
+        wireTests(body, scope, mapOf("googlebooks" to (p.googleBooksKeySet to p.googleBooksCheck))) { AudiobooksApi.testProvider(it) }
         if (p.writeTags && p.taggerAvailable) (document.getElementById("jmp-dot-abtags") as? HTMLElement)?.style?.background = "var(--ok)"
         document.getElementById("jmp-gbooks-clear")?.addEventListener("click") { clearGoogleBooks = true; note("The Google Books key goes when you press Save.") }
     }
@@ -144,26 +193,12 @@ internal fun wireMusicProvidersCard(scope: CoroutineScope) {
         (document.getElementById("jmp-dot-musicbrainz") as? HTMLElement)?.style?.background =
             if (p.musicbrainzEnabled) "var(--ok)" else "var(--line-2,rgba(255,255,255,.22))"
         (document.getElementById("jmp-dot-caa") as? HTMLElement)?.style?.background = "var(--ok)"
-        if (p.acoustIdKeySet) (document.getElementById("jmp-dot-acoustid") as? HTMLElement)?.style?.background = "var(--ok)"
-        if (p.fanartKeySet) (document.getElementById("jmp-dot-fanart") as? HTMLElement)?.style?.background = "var(--ok)"
         if (p.lyricsEnabled) (document.getElementById("jmp-dot-lrclib") as? HTMLElement)?.style?.background = "var(--ok)"
 
         document.getElementById("jmp-acoustid-clear")?.addEventListener("click") { clearAcoustId = true; note("The AcoustID key goes when you press Save.") }
         document.getElementById("jmp-fanart-clear")?.addEventListener("click") { clearFanart = true; note("The fanart.tv key goes when you press Save.") }
 
-        val tests = document.querySelectorAll(".jmp-test")
-        for (i in 0 until tests.length) {
-            val b = tests.item(i) as? HTMLElement ?: continue
-            b.addEventListener("click") {
-                val name = b.getAttribute("data-p") ?: return@addEventListener
-                b.textContent = "Testing…"
-                scope.launch {
-                    val result = MusicApi.testProvider(name)
-                    b.textContent = "Test"
-                    note(result)
-                }
-            }
-        }
+        wireTests(body, scope, mapOf("acoustid" to (p.acoustIdKeySet to p.acoustIdCheck), "fanart" to (p.fanartKeySet to p.fanartCheck))) { MusicApi.testProvider(it) }
     }
 }
 

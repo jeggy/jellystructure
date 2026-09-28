@@ -276,7 +276,16 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
                 itunesStore = cfg.audiobooks.itunesStore, audnexusRegion = cfg.audiobooks.audnexusRegion,
                 googleBooksKeySet = cfg.apiKeys.googleBooksKey.isNotBlank(), writeTags = cfg.audiobooks.writeTags,
                 taggerAvailable = music.audiobooksMedia?.taggerAvailable() == true,
+                googleBooksCheck = dev.jellystructure.music.ProviderKeyChecks.googleBooks.last(cfg.apiKeys.googleBooksKey),
             ))
+        }
+        // 2026-09-28 amendment — *Test* on a keyed row: one real request with the saved key.
+        post("/providers/test/{name}") {
+            val key = configStore.current.apiKeys.googleBooksKey
+            if (call.parameters["name"] != "googlebooks") return@post call.respond(dev.jellystructure.model.ProviderTestResult("Nothing to test"))
+            if (key.isBlank()) return@post call.respond(dev.jellystructure.model.ProviderTestResult("No API key yet"))
+            val check = dev.jellystructure.music.ProviderKeyChecks.checkGoogleBooks(key)
+            call.respond(dev.jellystructure.model.ProviderTestResult(check.message, check))
         }
         put("/providers") {
             val req = call.receive<AudiobookProvidersUpdate>()

@@ -214,4 +214,6 @@ the R319 wire tests pass with the new shapes in `WIRE_ROOTS`. Named *audiobooks*
 
 Build note 3's *saved on its own* is withdrawn: the *Audiobooks · suggestions only* rows have no Save button, and the
 page's one Save sends them through `PUT /api/audiobooks/providers` when they changed. The rule and its order are 276's
-amendment of the same date (FR-276-8).
+amendment of the same date (FR-276-8). Build note 3's other deviation is withdrawn too: the **Google Books** row has
+*Test* (one real volume search with the saved key), and its dot is green only when Google accepted the key — the same
+honest-dot rule as 276's keyed rows.

@@ -25,6 +25,7 @@ import dev.jellystructure.model.MusicLockRequest
 import dev.jellystructure.model.MusicMatchRequest
 import dev.jellystructure.model.MusicProvidersDto
 import dev.jellystructure.model.MusicProvidersUpdate
+import dev.jellystructure.model.ProviderTestResult
 import dev.jellystructure.model.MusicRecordingRequest
 import dev.jellystructure.model.MusicSearchRequest
 import dev.jellystructure.model.MusicStatusDto
@@ -429,6 +430,8 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 musicbrainzLast = matcher.mb.lastOutcome,
                 acoustIdKeySet = cfg.apiKeys.acoustidClientKey.isNotBlank(), fanartKeySet = cfg.apiKeys.fanartTvKey.isNotBlank(),
                 lyricsEnabled = cfg.music.fetchLyrics,
+                acoustIdCheck = dev.jellystructure.music.ProviderKeyChecks.acoustId.last(cfg.apiKeys.acoustidClientKey),
+                fanartCheck = dev.jellystructure.music.ProviderKeyChecks.fanart.last(cfg.apiKeys.fanartTvKey),
             ))
         }
         put("/providers") {
@@ -448,7 +451,15 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             call.respond(mapOf("saved" to true))
         }
         post("/providers/test/{name}") {
-            call.respond(mapOf("result" to matcher.test(call.parameters["name"]!!)))
+            // 2026-09-28 amendment — a keyed provider's Test is one real request with the saved key.
+            val keys = configStore.current.apiKeys
+            val checks = dev.jellystructure.music.ProviderKeyChecks
+            val check = when (call.parameters["name"]) {
+                "fanart" -> keys.fanartTvKey.takeIf { it.isNotBlank() }?.let { checks.checkFanart(it) } ?: return@post call.respond(ProviderTestResult("No project key yet"))
+                "acoustid" -> keys.acoustidClientKey.takeIf { it.isNotBlank() }?.let { checks.checkAcoustId(it) } ?: return@post call.respond(ProviderTestResult("No client key yet"))
+                else -> return@post call.respond(ProviderTestResult(matcher.test(call.parameters["name"]!!)))
+            }
+            call.respond(ProviderTestResult(check.message, check))
         }
     }
 }

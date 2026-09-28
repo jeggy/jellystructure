@@ -48,8 +48,11 @@ class AcoustIdClient(
                     },
                 ) { header(HttpHeaders.UserAgent, "jellystructure/${ServerVersion.current.ifBlank { "dev" }}") }
                 if (resp.status == HttpStatusCode.ServiceUnavailable || resp.status == HttpStatusCode.TooManyRequests) limiter.onRefused()
+                val text = resp.bodyAsText()
+                // The answer also tells the providers card whether the key works (code 4 turns its dot red).
+                ProviderKeyChecks.acoustId.record(key, ProviderKeyChecks.acoustIdVerdict(resp.status.value, text))
                 if (resp.status != HttpStatusCode.OK) null
-                else json.decodeFromString(AcoustIdResponse.serializer(), resp.bodyAsText())
+                else json.decodeFromString(AcoustIdResponse.serializer(), text)
             }
         }.getOrElse { e ->
             if (e is CancellationException) throw e

@@ -203,9 +203,34 @@ re-reads, so *A key is saved.* and the status dots are the server's.
 
 **The fanart.tv row says where the key comes from** (same day, owner). Like AcoustID's *Get a client key*, it links
 *Get a project key* → `https://fanart.tv/get-an-api-key/#project` and says how: *Free. Sign in to fanart.tv (or create an
-account), open Get an API key, and request a key under Project API Keys. Paste that one here — a personal key is a
-different kind and does not work on its own.* (fanart.tv issues both kinds on that page; ours is sent as `api_key`,
-which takes the project key — a personal key is a `client_key` sent alongside one.)
+account), open Get an API key, and request a key under Project API Keys. Paste it here and press Save: the key is then
+tried against fanart.tv, and the dot turns green only when fanart.tv accepts it.* (fanart.tv issues project and personal
+keys on that page. The household's saved key was answered 200 both as `api_key` and as `client_key`, so the card makes
+no claim about which kind works — it tries the key and says what fanart.tv answered.)
+
+**A green dot means the provider accepted the key** (same day, owner: *both a personal and a project key just showed a
+green icon when added — I want to be fully sure it works*). Until now the three keyed rows — AcoustID, fanart.tv,
+Google Books — turned green the moment a key was saved, and AcoustID's *Test* answered *Key saved — it is checked on
+the first fingerprint* without calling anything. Now:
+
+- **Each keyed row has *Test*, and it is one real request with the saved key** — fanart.tv: the v3 music endpoint for a
+  widely-covered artist (fanart.tv checks the key before the artist: a bad key is `401 {"error":"invalid API key"}`, an
+  unknown artist `200 {}`); AcoustID: a lookup by AcoustID's documented example track id (a bad key is `400` error
+  code 4); Google Books: one volume search (a bad key is `400 API_KEY_INVALID`, a key barred from the Books API `403`).
+  Routes: `POST /api/music/providers/test/{fanart|acoustid}`, `POST /api/audiobooks/providers/test/googlebooks`, both
+  answering `{result, check}`.
+- **The dot is the answer:** green = accepted · red = refused (with the provider's own reason) · amber = no answer
+  (a 5xx, a 429, no connection — *so the key is untested*) · grey = no key, or not tried yet. A saved key alone is
+  never green. The row's line says the same sentence and the time it was tried.
+- **The answer belongs to the key it was made with**, remembered by the server in memory. A new, replaced or
+  hand-edited key therefore reads as *not tried yet*, and the card **tries it at once on its own** — so pressing Save
+  with a new key shows accepted or refused within a second, and after a restart the card tries again when opened.
+- **Real calls count too:** a fanart.tv artist lookup, an AcoustID fingerprint lookup and a Google Books suggestion
+  record their answer the same way, so a key revoked later turns its dot red without anyone pressing *Test*. A book's
+  Google Books card says *Google Books refused the API key — check it in Settings → Connections.* instead of *didn't
+  answer*. An answer that is not about the key (a 404, a quota) never changes the dot.
+- **Wire:** `MusicProvidersDto` gains `acoustid_check` / `fanart_check`, `AudiobookProvidersDto` `google_books_check`
+  (`{ok, answered, message, checked_at}`, null = no key or not tried) — additive, admin-only.
 
 Unchanged: the two routes, and `PUT /api/config` still keeping the stored `[musicbrainz]`, `[music]`,
-`[audiobooks]` and the three keys — a page loaded before the card existed must still not reset them. **Wire:** none.
+`[audiobooks]` and the three keys — a page loaded before the card existed must still not reset them.

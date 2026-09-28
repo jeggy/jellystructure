@@ -81,7 +81,11 @@ class FanartTvClient(private val key: () -> String) {
      *  array); both are read. */
     suspend fun artist(artistMbid: String): Artist? {
         val k = key().ifBlank { return null }
-        val body = fetchText("https://webservice.fanart.tv/v3/music/$artistMbid?api_key=${k.encodeURLParameter()}", "fanart.tv", limiter) ?: return null
+        limiter.acquire()
+        // The answer also tells the providers card whether the key works (a 401 turns its dot red).
+        val (status, text) = ProviderKeyChecks.probe("https://webservice.fanart.tv/v3/music/$artistMbid?api_key=${k.encodeURLParameter()}", "fanart.tv")
+        ProviderKeyChecks.fanart.record(k, ProviderKeyChecks.fanartVerdict(status, text))
+        val body = text?.takeIf { status == 200 } ?: return null
         val o = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
         fun list(el: JsonElement?, kind: String) = (el as? JsonArray)?.mapNotNull { e ->
             val u = (e as? JsonObject)?.get("url").str() ?: return@mapNotNull null

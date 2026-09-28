@@ -86,7 +86,24 @@ data class MusicProvidersDto(
     @SerialName("fanart_key_set") val fanartKeySet: Boolean,
     /** Phase 277 (FR-277-8) — the *Fetch lyrics* switch. */
     @SerialName("lyrics_enabled") val lyricsEnabled: Boolean = true,
+    /** 2026-09-28 amendment — the saved key's last real check; null = no key, or this key not checked yet. */
+    @SerialName("acoustid_check") val acoustIdCheck: ProviderKeyCheck? = null,
+    @SerialName("fanart_check") val fanartCheck: ProviderKeyCheck? = null,
 )
+
+/** Phase 276/281 (2026-09-28 amendment) — what a provider answered when a key was really used: [ok] it accepted the
+ *  key; [answered] false = it did not answer, so the key is untested. Never inferred from a key being saved. */
+@Serializable
+data class ProviderKeyCheck(
+    val ok: Boolean,
+    val answered: Boolean = true,
+    val message: String,
+    @SerialName("checked_at") val checkedAt: Long,
+)
+
+/** *Test* on a provider row: one sentence, plus the key's check for a keyed provider. */
+@Serializable
+data class ProviderTestResult(val result: String = "", val check: ProviderKeyCheck? = null)
 
 /** Phase 277 — one picture a provider offers (FR-277-2). */
 @Serializable

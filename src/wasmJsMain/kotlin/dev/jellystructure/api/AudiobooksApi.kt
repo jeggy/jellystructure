@@ -20,6 +20,7 @@ import dev.jellystructure.model.MusicArtworkDto
 import dev.jellystructure.model.MusicBulkResult
 import dev.jellystructure.model.MusicLockRequest
 import dev.jellystructure.model.MusicStreamDto
+import dev.jellystructure.model.ProviderTestResult
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -145,4 +146,8 @@ object AudiobooksApi {
     suspend fun saveProviders(update: AudiobookProvidersUpdate): Boolean = runCatching {
         httpClient.put("/api/audiobooks/providers") { contentType(ContentType.Application.Json); setBody(update) }.status.isSuccess()
     }.getOrDefault(false)
+
+    suspend fun testProvider(name: String): ProviderTestResult = runCatching {
+        httpClient.post("/api/audiobooks/providers/test/${name.encodeURLParameter()}").body<ProviderTestResult>()
+    }.getOrDefault(ProviderTestResult("The test could not be run"))
 }

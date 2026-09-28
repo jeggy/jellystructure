@@ -6,6 +6,7 @@ import dev.jellystructure.model.AudiobookSuggestion
 import dev.jellystructure.model.MusicArtCandidate
 import dev.jellystructure.music.FixedRateLimiter
 import dev.jellystructure.music.MusicBrainzClient
+import dev.jellystructure.music.ProviderKeyChecks
 import dev.jellystructure.music.fetchText
 import io.ktor.http.encodeURLParameter
 import kotlinx.serialization.json.Json
@@ -67,8 +68,11 @@ class AudiobookProviders(private val configStore: ConfigStore, private val mb: M
         val key = configStore.current.apiKeys.googleBooksKey.trim()
         if (key.isEmpty()) return AudiobookSuggestion("Google Books", note = "No API key — without one its shared quota is always used up, so it is skipped.")
         val q = "intitle:" + book.title + (book.authors.firstOrNull()?.let { " inauthor:$it" } ?: "")
-        val body = fetchText("https://www.googleapis.com/books/v1/volumes?q=${q.encodeURLParameter()}&maxResults=5&key=${key.encodeURLParameter()}", "Google Books")
-            ?: return AudiobookSuggestion("Google Books", note = "Google Books didn't answer — ask again in a moment.")
+        val (status, text) = ProviderKeyChecks.probe("https://www.googleapis.com/books/v1/volumes?q=${q.encodeURLParameter()}&maxResults=5&key=${key.encodeURLParameter()}", "Google Books")
+        // The answer also tells the providers card whether the key works (a refused key turns its dot red).
+        val verdict = ProviderKeyChecks.googleBooksVerdict(status, text).also { ProviderKeyChecks.googleBooks.record(key, it) }
+        if (verdict.answered && !verdict.ok) return AudiobookSuggestion("Google Books", note = "Google Books refused the API key — check it in Settings → Connections.")
+        val body = text?.takeIf { status == 200 } ?: return AudiobookSuggestion("Google Books", note = "Google Books didn't answer — ask again in a moment.")
         val items = runCatching { json.parseToJsonElement(body).obj()?.get("items").arr() }.getOrNull().orEmpty().mapNotNull { it.obj()?.get("volumeInfo").obj() }
         val v = items.firstOrNull { sameTitle(it["title"].s(), book.title) }
             ?: return AudiobookSuggestion("Google Books", note = if (items.isEmpty()) "It has no book by that title." else "It has ${items.size} other books for that search, none of them this one.")

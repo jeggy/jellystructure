@@ -382,7 +382,6 @@ class MusicMatchService(
     suspend fun test(provider: String): String = when (provider) {
         // MusicBrainz's own special "Various Artists" entity — a fixed id, no search, one request.
         "musicbrainz" -> if (mb.artist("89ad4ac3-39f7-470e-963a-56509c546377") != null) "MusicBrainz answered" else "MusicBrainz didn't answer — ${mb.lastOutcome ?: "no reply"}"
-        "acoustid" -> if (!acoustId.available) "No client key yet" else "Key saved — it is checked on the first fingerprint"
         else -> "Nothing to test"
     }
 }

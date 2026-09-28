@@ -148,6 +148,8 @@ data class AudiobookProvidersDto(
     @SerialName("write_tags") val writeTags: Boolean = false,
     /** Whether this server can write tags at all (a tagger in the image). */
     @SerialName("tagger_available") val taggerAvailable: Boolean = false,
+    /** 2026-09-28 amendment — the saved key's last real check; null = no key, or this key not checked yet. */
+    @SerialName("google_books_check") val googleBooksCheck: ProviderKeyCheck? = null,
 )
 
 @Serializable

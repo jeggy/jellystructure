@@ -23,6 +23,7 @@ import dev.jellystructure.model.MusicLockRequest
 import dev.jellystructure.model.MusicMatchRequest
 import dev.jellystructure.model.MusicProvidersDto
 import dev.jellystructure.model.MusicProvidersUpdate
+import dev.jellystructure.model.ProviderTestResult
 import dev.jellystructure.model.MusicRecordingOption
 import dev.jellystructure.model.MusicRecordingRequest
 import dev.jellystructure.model.MusicReleaseOption
@@ -42,8 +43,6 @@ import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
-
-@Serializable private data class ProviderTestResult(val result: String = "")
 
 /** Phases 275/276 — the admin's music calls (`/api/music/…`). Null / false = the call failed (the page says so). */
 object MusicApi {
@@ -99,9 +98,9 @@ object MusicApi {
         httpClient.put("/api/music/providers") { contentType(ContentType.Application.Json); setBody(update) }.status.isSuccess()
     }.getOrDefault(false)
 
-    suspend fun testProvider(name: String): String = runCatching {
-        httpClient.post("/api/music/providers/test/${name.encodeURLParameter()}").body<ProviderTestResult>().result
-    }.getOrDefault("The test could not be run")
+    suspend fun testProvider(name: String): ProviderTestResult = runCatching {
+        httpClient.post("/api/music/providers/test/${name.encodeURLParameter()}").body<ProviderTestResult>()
+    }.getOrDefault(ProviderTestResult("The test could not be run"))
 
     // ── Phase 277: artwork, NFO, biography, lyrics ──
 
