@@ -171,7 +171,10 @@ class MusicMatchService(
                 // already holding that album (matched before, or earlier in this run) makes it *needs you*. Ids in the
                 // files are the files' own word and are taken; an album already matched is never un-matched here.
                 val holder = (outcome as? Outcome.Picked)?.takeIf { a.matchState != MusicMatch.MATCHED && it.source != "tags" }?.let { p ->
-                    store.snapshot().albums.values.firstOrNull { o -> o.id != a.id && o.missingSince == null && o.path != a.path && o.releaseGroupMbid == p.candidate.releaseGroupMbid }
+                    store.snapshot().albums.values.firstOrNull { o ->
+                        o.id != a.id && o.missingSince == null && o.releaseGroupMbid == p.candidate.releaseGroupMbid &&
+                            (o.path == null || a.path == null || MusicFlags.albumDir(o.path) != MusicFlags.albumDir(a.path))
+                    }
                 }
                 when {
                     holder != null && outcome is Outcome.Picked -> {

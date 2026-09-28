@@ -191,6 +191,22 @@ class MusicMatchTest {
     }
 
     @Test
+    fun a_second_folder_is_not_given_an_album_another_folder_has() = runBlocking {
+        // Phase 283 (FR-283-2) — two folders whose tags name the same album: the first takes it, the second waits.
+        store.putAlbum(store.album("alb")!!.copy(path = "/music/HL/Salt"))
+        store.putAlbum(MusicAlbum(id = "alb2", libraryId = "lib", title = "Salt", path = "/music/HL/Salt (Single)", albumArtists = listOf(MusicCredit("ja1", "Harbour Lights")), trackCount = 2))
+        store.putTracks(listOf(track("t3", 1, 200).copy(albumId = "alb2"), track("t4", 2, 210).copy(albumId = "alb2")))
+        val mb = FakeMb(listOf(MbReleaseGroup("rg1", "Salt", 100)), mapOf("rg1" to listOf(release("r1", 200, 210))))
+        val s = service(mb).matchAlbums(null, scopeAll = false)
+        assertEquals(1, s.matched); assertEquals(1, s.needsYou)
+        val states = listOf(store.album("alb")!!, store.album("alb2")!!)
+        val waiting = states.single { it.matchState == MusicMatch.NEEDS_YOU }
+        assertEquals(MusicMatch.MATCHED, states.single { it.id != waiting.id }.matchState)
+        assertTrue(waiting.matchNote!!.startsWith("Another folder is already matched to this album: Salt"), waiting.matchNote)
+        assertEquals(listOf("rg1"), waiting.candidates.map { it.releaseGroupMbid })
+    }
+
+    @Test
     fun an_unmatched_album_is_retried_once_a_day() = runBlocking {
         store.putAlbum(store.album("alb")!!.copy(matchAttemptedAt = nowEpochSec() - 60))
         val mb = FakeMb(listOf(MbReleaseGroup("rg1", "Salt", 100)), mapOf("rg1" to listOf(release("r1", 200, 210))))

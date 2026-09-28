@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28. Builds on **275** (the music library), **276** (the match ladder), **277** (covers
+`✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — written 2026-09-28. Builds on **275** (the music library), **276** (the match ladder), **277** (covers
 and `album.nfo`) and **278** (the admin's Album and Artist pages, the Library's Music kind, the attention list).
 
 ## What the household's library showed (2026-09-28)
@@ -106,3 +106,35 @@ tooltip, the one the Album page already shows.
 - Moving, merging or renaming folders, and writing tags from these cards.
 - Undoing covers or `album.nfo` files already written.
 - The phone: a viewer never sees a flag.
+
+## Build notes (2026-09-28)
+
+Built the same day and deployed to the household server with the dev compose.
+
+1. **The rules** are `MusicFlags` (pure, computed on read, no table and no migration): `shared_album` groups live
+   albums by album artist + title (case-, punctuation- and space-blind) and by release group, and ignores two albums in
+   the same album folder (a disc folder is its parent's); `folder_disagrees` compares the cleaned folder name with the
+   *Album* tag and the artist folder with the *Album artist* tag, skipping the artist when the album sits directly in
+   the library folder. *This is right* stores a fingerprint per kind on the album (`flagsDismissed`, in the album's
+   JSON): the other folders' ids, or the folder names and the two tags. 6 tests.
+2. **The matcher (FR-283-2)** checks a new search or sound pick against the albums already matched — including
+   earlier in the same run, since each pick is written as it is made — and leaves the second folder *needs you* with
+   the other folder's name. Ids in the files are still taken. A test drives two folders through one run.
+3. **Where they show:** the two attention entries (the Dashboard sends them to the Library's *Check* facet), the dock
+   (a flag is the album's first issue, since it explains the rest), the Album page's cards (both sides quoted, up to
+   six other folders as links, *Find match… by the folder's name*, *This is right* / *Show it again*; with both flags
+   the *came from the match* line and the search button appear once), a *check* chip on Library and Artist tiles, the
+   folder's name under any title that repeats on the page, and one *Check* sentence above an artist's albums.
+4. **FR-283-6:** an *unmatched* or *needs you* chip carries the matcher's note as its tooltip, and the banners end
+   the note with a full stop — the note used to run straight into the banner's next sentence.
+5. **Found while trying it on the household's library:** Find match searches an album name as a phrase, and
+   MusicBrainz punctuates some names differently from the folder (`<A> - <B>` on disk, `<A> / <B>` on MusicBrainz), so
+   the folder-name search found nothing. When a phrase search comes back empty, Find match now retries with the same
+   words unquoted; for the single folder of shape 2 that returns the single, *4 of 4 tracks agree*.
+
+**On the household's library (acceptance):** 12 albums flagged — the ten folders of shape 1 with both flags, shapes
+2 and 3 with the second — and the other 18 clean (1). The band's Artist page shows the *Check* sentence, a *check* chip
+on every flagged tile and each folder's name under the repeated titles (2). The folder-name search for shape 2 finds
+the single (3, through the search route; the page's button was checked with writes blocked). **Not tried on the live
+data:** *This is right* (4) — it changes the owner's albums, so it is theirs to press — and a live run of FR-283-2 (5),
+covered by the test instead: no unmatched album in the library currently searches its way onto a held album.

@@ -194,16 +194,19 @@ private fun alHead(p: MusicAlbumPageDto): String {
 private fun alBanners(p: MusicAlbumPageDto): String = buildString {
     val a = p.album
     // Phase 283 (FR-283-3/4) — what the folder and the songs disagree on, first: it says why the rest went as it did.
-    for (f in p.flags) append(alFlagCard(f))
+    // An album with both flags says *came from the match* and offers the folder-name search once, on the first card.
+    val searchOn = p.flags.firstOrNull { it.search != null }?.kind
+    val writtenOn = p.flags.firstOrNull { it.writtenFromMatch }?.kind
+    for (f in p.flags) append(alFlagCard(f, showSearch = f.kind == searchOn, showWritten = f.kind == writtenOn))
     if (p.dismissedFlags.isNotEmpty()) {
         append("""<div class="tiny muted" style="margin:-4px 0 14px;">""")
         append(p.dismissedFlags.joinToString(" · ") { k -> "You marked “${alFlagName(k)}” as right · <a href=\"#\" data-a=\"flagshow\" data-kind=\"${k.esc()}\">Show it again</a>" })
         append("</div>")
     }
     if (a.matchState == "unmatched" && !a.matchLocked)
-        append("""<div class="mu-note w"><span class="badge warn">Unmatched</span><div class="t"><b>No MusicBrainz match yet.</b> ${(a.matchNote ?: "").esc()} Nothing below fills in until this is matched: the cover, genres, the release’s track count and every recording id.</div><span class="btn sm primary" data-a="find">Find match…</span></div>""")
+        append("""<div class="mu-note w"><span class="badge warn">Unmatched</span><div class="t"><b>No MusicBrainz match yet.</b> ${alSentence(a.matchNote).esc()} Nothing below fills in until this is matched: the cover, genres, the release’s track count and every recording id.</div><span class="btn sm primary" data-a="find">Find match…</span></div>""")
     if (a.matchState == "needs_you")
-        append("""<div class="mu-note w"><span class="badge warn">Needs you</span><div class="t"><b>${muPlural(a.candidates.size, "candidate")}, no clear winner.</b> ${(a.matchNote ?: "").esc()}</div><span class="btn sm primary" data-a="find">Choose…</span></div>""")
+        append("""<div class="mu-note w"><span class="badge warn">Needs you</span><div class="t"><b>${muPlural(a.candidates.size, "candidate")}, no clear winner.</b> ${alSentence(a.matchNote).esc()}</div><span class="btn sm primary" data-a="find">Choose…</span></div>""")
     p.drift?.let { n ->
         append("""<div class="note" style="margin-bottom:14px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;"><span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span><div style="flex:1;min-width:0;"><b>album.nfo was rewritten since we wrote it${a.nfoDriftAt?.let { " — found " + dev.jellystructure.formatStoredTs(it.toString()) } ?: ""}.</b><div class="tiny" style="margin-top:5px;line-height:1.6;"><b>${muPlural(n, "field")}</b> differ from our last write. When Jellyfin’s own NFO saver is on for this library it will keep happening — see <a href="#/settings?tab=libraries">the advisor finding on the library card</a>.</div><div class="pill-row" style="margin-top:10px;"><span class="btn sm" data-a="reassert">Re-assert NFO → Jellyfin</span></div></div></div>""")
     }
@@ -211,9 +214,12 @@ private fun alBanners(p: MusicAlbumPageDto): String = buildString {
         append("""<div class="note red" style="margin-bottom:14px;display:flex;gap:13px;align-items:flex-start;"><span class="badge bad" style="flex:none;margin-top:1px;">⚠ Locked in Jellyfin</span><div style="flex:1;min-width:0;"><b>This album has locked metadata in Jellyfin, so what jellystructure writes may be ignored.</b><div class="tiny" style="margin-top:5px;line-height:1.6;">Locked: ${a.jellyfinLocked.joinToString(" ") { """<span class="chip" style="font-size:.66rem;">${if (it == "All") "everything" else it.esc()}</span>""" }}. To fix it: open the album in Jellyfin → <b>Edit metadata</b> → uncheck the locks → save.</div></div></div>""")
 }
 
+/** The matcher's note as a sentence of its own, so the banner's next sentence doesn't run into it. */
+private fun alSentence(note: String?): String = note?.trim()?.takeIf { it.isNotEmpty() }?.let { if (it.last() in ".!?…") it else "$it." }.orEmpty()
+
 private fun alFlagName(kind: String) = if (kind == "shared_album") "Several folders" else "Folder and songs disagree"
 
-private fun alFlagCard(f: MusicFlagDto): String = buildString {
+private fun alFlagCard(f: MusicFlagDto, showSearch: Boolean, showWritten: Boolean): String = buildString {
     val mono = { s: String? -> s?.let { """<span class="mono">${it.esc()}</span>""" } ?: "" }
     append("""<div class="mu-note w"><span class="badge warn" style="flex:none">${alFlagName(f.kind)}</span><div class="t">""")
     if (f.kind == "shared_album") {
@@ -222,16 +228,16 @@ private fun alFlagCard(f: MusicFlagDto): String = buildString {
         val shown = f.others.take(6)
         append(shown.joinToString(", ") { o -> """<a href="#/album/${o.id.esc()}">${(o.folder ?: o.title).esc()}</a>""" })
         if (f.others.size > shown.size) append(" and ${f.others.size - shown.size} more")
-        append(""". If they are one album, put the songs in one folder. If each folder is its own release — a single, an EP — give each its own match with Find match….""")
+        append(""". If they are one album, put the songs in one folder. If each folder is its own release — a single, an EP — give each its own match with Find match… on its page.""")
     } else {
         append("""<b>${f.sentence.esc()}.</b>""")
         append("""<div style="margin-top:4px">Folder: ${mono(listOfNotNull(f.folderArtist, f.folder).joinToString("/"))}</div>""")
         append("""<div>Songs: ${listOfNotNull(f.filesArtist?.esc(), f.filesTitle?.let { "<i>${it.esc()}</i>" }).joinToString(" — ")}</div>""")
         append("""<div style="margin-top:4px">A search by the songs’ tags can find the wrong album, or none. Fix the tags or the folder, or search by the folder’s name.</div>""")
     }
-    if (f.writtenFromMatch) append("""<div class="tiny" style="margin-top:6px">The cover and <span class="mono">album.nfo</span> in this folder came from the match this puts in doubt.</div>""")
+    if (showWritten) append("""<div class="tiny" style="margin-top:6px">The cover and <span class="mono">album.nfo</span> in this folder came from the match this puts in doubt.</div>""")
     append("""<div class="pill-row" style="margin-top:10px;">""")
-    f.search?.let { q -> append("""<span class="btn sm primary" data-a="flagfind" data-q="${q.esc()}">Find match… by the folder’s name</span>""") }
+    f.search?.takeIf { showSearch }?.let { q -> append("""<span class="btn sm primary" data-a="flagfind" data-q="${q.esc()}">Find match… by the folder’s name</span>""") }
     append("""<span class="btn sm ghost" data-a="flagok" data-kind="${f.kind.esc()}">This is right</span>""")
     append("</div></div></div>")
 }
@@ -623,7 +629,14 @@ private fun fmSearch(scope: CoroutineScope) {
     fmBusy = "Searching MusicBrainz… it answers one request a second, so a search plus each candidate’s releases takes a few seconds."
     fmChosen = null; fmReleases = null; fmPaint()
     scope.launch {
-        val r = MusicApi.search(p.album.id, query, url)
+        var r = MusicApi.search(p.album.id, query, url)
+        // Phase 283 — a phrase finds nothing when MusicBrainz punctuates the name differently from the folder
+        // (`A - B` on disk, `A / B` on MusicBrainz): the same words, unquoted, do.
+        val words = al.split(' ').map { w -> w.filter { it.isLetterOrDigit() || it == '\'' } }.filter { it.isNotEmpty() }
+        if (r != null && r.isEmpty() && url == null && words.size > 1) {
+            val loose = "releasegroup:(" + words.joinToString(" ") { luceneEsc(it) } + ")" + if (ar.isNotEmpty()) " AND artist:\"${luceneEsc(ar)}\"" else ""
+            r = MusicApi.search(p.album.id, loose, null)
+        }
         fmBusy = null
         if (r == null) { fmCands = emptyList(); fmPaint(); muToast("MusicBrainz didn’t answer — try again in a moment"); return@launch }
         fmCands = r.map { it.candidate to it.fit }
