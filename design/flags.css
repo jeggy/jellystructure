@@ -1,6 +1,7 @@
 /* ============================================================
    flags.css — local country-flag assets (ISO 3166-1-alpha-2)
-   99 flags in flags/4x3/<code>.svg (4:3 SVG, from lipis/flag-icons, MIT).
+   100 flags in flags/4x3/<code>.svg (4:3 SVG, from lipis/flag-icons, MIT, plus a hand-authored `ct.svg`
+   for Catalan — see R239's flag-strip fix for why a non-ISO code is here).
    Usage: <span class="fi fi-dk"></span>  (add .fis nowhere — these are 4:3 only)
    Self-hosted; no CDN. Paths are relative to THIS file's location.
    ============================================================ */
@@ -35,6 +36,7 @@
 .fi-cn { background-image: url("flags/4x3/cn.svg"); }
 .fi-co { background-image: url("flags/4x3/co.svg"); }
 .fi-cr { background-image: url("flags/4x3/cr.svg"); }
+.fi-ct { background-image: url("flags/4x3/ct.svg"); }  /* Catalonia (Senyera) — not ISO-3166, added for Catalan language flag (R239 amendment) */
 .fi-cu { background-image: url("flags/4x3/cu.svg"); }
 .fi-cy { background-image: url("flags/4x3/cy.svg"); }
 .fi-cz { background-image: url("flags/4x3/cz.svg"); }
