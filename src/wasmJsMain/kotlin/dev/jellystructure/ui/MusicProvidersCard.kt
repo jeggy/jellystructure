@@ -63,7 +63,7 @@ private fun render(p: MusicProvidersDto): String = buildString {
     append(row("fanart.tv", "fanart", """
         <div class="tiny muted" style="margin:3px 0 6px">Artist pictures, backgrounds and logos.
           ${if (p.fanartKeySet) "A key is saved." else "Without a key, artist pictures come from Wikimedia Commons only."}
-          <a href="https://fanart.tv/get-an-api-key/" target="_blank" rel="noopener">Get a project key</a></div>
+          <a href="https://fanart.tv/get-an-api-key/#project" target="_blank" rel="noopener">Get a project key</a></div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span class="tiny muted" style="width:70px">Project key</span>
           <input id="jmp-fanart" class="input mono" type="password" style="flex:1;min-width:200px" placeholder="${if (p.fanartKeySet) "saved — type to replace" else "not set"}">

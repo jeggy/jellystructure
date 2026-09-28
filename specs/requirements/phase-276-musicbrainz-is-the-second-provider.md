@@ -202,7 +202,7 @@ for removal; the key goes when Save is pressed (*The AcoustID key goes when you 
 re-reads, so *A key is saved.* and the status dots are the server's.
 
 **The fanart.tv row says where the key comes from** (same day, owner). Like AcoustID's *Get a client key*, it links
-*Get a project key* → `https://fanart.tv/get-an-api-key/` and says how: *Free. Sign in to fanart.tv (or create an
+*Get a project key* → `https://fanart.tv/get-an-api-key/#project` and says how: *Free. Sign in to fanart.tv (or create an
 account), open Get an API key, and request a key under Project API Keys. Paste that one here — a personal key is a
 different kind and does not work on its own.* (fanart.tv issues both kinds on that page; ours is sent as `api_key`,
 which takes the project key — a personal key is a `client_key` sent alongside one.)
