@@ -109,7 +109,7 @@ fun Route.remoteRoutes(
         get("/devices") {
             val caller = call.attributes[RemoteCallerAttr]
             val callerAddress = callerAddressOf(call.request.headers, call.request.local.remoteHost)
-            val devices = deviceService.listByUser(caller.jellyfinUserId)
+            val devices = deviceService.listByUser(caller.jellyfinUserId).filter { it.listedToRemote() }
                 .map { remoteDeviceOf(it, callerAddress) }
             call.respond(devices)
         }
@@ -118,7 +118,7 @@ fun Route.remoteRoutes(
             val caller = call.attributes[RemoteCallerAttr]
             val deviceId = call.parameters["device_id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val callerAddress = callerAddressOf(call.request.headers, call.request.local.remoteHost)
-            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.deviceId == deviceId }
+            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.listedToRemote() && it.deviceId == deviceId }
                 ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "device not found for this caller"))
             call.respond(remoteDeviceOf(device, callerAddress))
         }
@@ -126,7 +126,7 @@ fun Route.remoteRoutes(
         post("/play") {
             val caller = call.attributes[RemoteCallerAttr]
             val req = call.receive<RemotePlayRequest>()
-            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.deviceId == req.deviceId }
+            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.listedToRemote() && it.deviceId == req.deviceId }
             if (device == null) {
                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "device not found for this caller"))
                 return@post
@@ -162,7 +162,7 @@ fun Route.remoteRoutes(
         post("/command") {
             val caller = call.attributes[RemoteCallerAttr]
             val req = call.receive<RemoteCommandRequest>()
-            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.deviceId == req.deviceId }
+            val device = deviceService.listByUser(caller.jellyfinUserId).firstOrNull { it.listedToRemote() && it.deviceId == req.deviceId }
             if (device == null) {
                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "device not found for this caller"))
                 return@post
@@ -281,7 +281,7 @@ suspend fun handleSubscribeMessage(
     val deviceId = (obj["device_id"] as? JsonPrimitive)?.content ?: return
     when (type) {
         "subscribe_device" -> {
-            if (deviceService.listByUser(caller.jellyfinUserId).any { it.deviceId == deviceId }) {
+            if (deviceService.listByUser(caller.jellyfinUserId).any { it.listedToRemote() && it.deviceId == deviceId }) {
                 tvEventBus.subscribeDeviceStatus(deviceId, session)
             }
         }
@@ -335,3 +335,12 @@ fun Route.apiKeyManagementRoutes(apiKeyStore: ApiKeyStore) {
         }
     }
 }
+/**
+ * R327 (FR-R327-2) — which of a viewer's devices the remote API lists and drives. A Chromecast receiver's row
+ * (`kind = cast`, 218) is a record for the session ceiling and the Jellyfin dashboard name: the receiver never
+ * opens the events socket, so it can never be online, nearby or driven here — the phone reaches a Chromecast
+ * through the Cast SDK's route. Listing the record beside the route showed every Chromecast twice, once as
+ * *Offline · last seen…* (never tappable) and once as *Ready* (the owner's 2026-09-28 screenshot).
+ */
+internal fun dev.jellystructure.auth.DeviceData.listedToRemote(): Boolean = kind != "cast"
+

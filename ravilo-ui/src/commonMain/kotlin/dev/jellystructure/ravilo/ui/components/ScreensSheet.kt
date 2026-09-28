@@ -139,7 +139,10 @@ private fun ScreensSheetBody(
 ) {
     val colors = RaviloTheme.colors
     // Open question 3 — the TV used last leads its own tier; the server's order holds for the rest.
-    val screens = devices.filter { it.kind == DeviceKind.SCREEN || it.kind == DeviceKind.CAST }
+    // R327 (FR-R327-1) — screens only. A Chromecast's receiver record (`kind = cast`) is never online or
+    // nearby (the receiver has no events socket) and cannot be driven through /api/remote; the Cast SDK's
+    // route below is the one row a Chromecast gets. Listing both showed every Chromecast twice.
+    val screens = devices.filter { it.kind == DeviceKind.SCREEN }
         .sortedByDescending { it.deviceId == lastDevice }
     val near = screens.filter { it.nearby }
     val rest = screens.filter { !it.nearby }
