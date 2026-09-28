@@ -187,6 +187,9 @@ data class MusicAlbum(
     /** FR-277-7 — when `album.nfo` on disk was found rewritten by someone else, and how many fields differed. */
     val nfoDriftAt: Long? = null,
     val nfoDriftFields: Int = 0,
+    /** Phase 278 — Jellyfin's own locked fields on the album (`All` when the whole item is locked); a scan
+     *  refreshes it. Our NFO edits to a locked field are ignored by Jellyfin, so the page says so (136). */
+    val jellyfinLocked: List<String> = emptyList(),
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,

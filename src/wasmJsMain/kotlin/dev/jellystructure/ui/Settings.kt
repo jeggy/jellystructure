@@ -1585,7 +1585,7 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
       ${if (lib.collectionType.equals("music", ignoreCase = true)) """
       <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
-        <span style="font-size:.78rem">MusicBrainz · Covers: Cover Art Archive · Artist images: fanart.tv · Lyrics: LRCLIB
+        <span style="font-size:.78rem"><a href="#/settings?tab=connections" title="The Metadata providers card (Music)">MusicBrainz · Covers: Cover Art Archive · Artist images: fanart.tv · Lyrics: LRCLIB</a>
           <span style="color:var(--ink-soft)">— music has no language cascade. Not the Music videos library.</span></span>
       </div>""" else """
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
@@ -1602,7 +1602,8 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
       ${if (!skipped) """
       <div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
         <button class="btn sm ghost lib-scan-btn" data-lib-id="${lib.jellyfinId}" data-lib-idx="$i">Scan</button>
-        <button class="btn sm ghost lib-push-btn" data-lib-idx="$i">Push all to Jellyfin</button>
+        ${if (lib.collectionType.equals("music", ignoreCase = true)) """<a class="btn sm ghost" href="#/library?kind=music">Open in Library</a>"""   // Phase 278 (FR-278-9)
+          else """<button class="btn sm ghost lib-push-btn" data-lib-idx="$i">Push all to Jellyfin</button>"""}
         <span id="lib-action-result-$i" class="tiny muted"></span>
       </div>""" else ""}
       <div id="lib-advisor-$i"></div>

@@ -90,11 +90,15 @@ class MusicMediaService(
 
     // ── fetch_music_artwork (FR-277-1, FR-277-6) ──
 
-    suspend fun fetchArtwork(scopeAll: Boolean): MusicStepSummary {
+    /** Phase 278 — the Library's *Fetch covers* on a selection: those albums and their album artists, re-fetched. */
+    suspend fun fetchArtworkFor(albumIds: Set<String>): MusicStepSummary = fetchArtwork(scopeAll = true, albumIds = albumIds)
+
+    suspend fun fetchArtwork(scopeAll: Boolean, albumIds: Set<String>? = null): MusicStepSummary {
         val snap = store.snapshot()
+        val artistIds = albumIds?.let { ids -> ids.mapNotNull { snap.albums[it] }.flatMap { a -> a.albumArtists.map { it.artistId } }.toSet() }
         var covers = 0; var noCover = 0; var pictures = 0; var bios = 0
         val changedAlbums = mutableListOf<MusicAlbum>()
-        for (a in snap.albums.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.releaseGroupMbid != null }) {
+        for (a in snap.albums.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.releaseGroupMbid != null && (albumIds == null || it.id in albumIds) }) {
             val dest = coverPath(a) ?: continue
             if (isLocked(dest)) continue
             if (!scopeAll && a.coverState == MusicArt.FILE) continue
@@ -110,7 +114,7 @@ class MusicMediaService(
             }
         }
         val changedArtists = mutableListOf<MusicArtist>()
-        for (ar in snap.artists.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.mbid != null }) {
+        for (ar in snap.artists.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.mbid != null && (artistIds == null || it.id in artistIds) }) {
             var updated = ar
             if (ar.path != null) {
                 val fa = if (fanart.available) fanart.artist(ar.mbid!!) else null

@@ -38,7 +38,13 @@ class MusicMatchService(
     val acoustId: AcoustIdClient,
     private val configStore: ConfigStore,
     private val fingerprint: suspend (String) -> Pair<String, Int>?,
+    /** Phase 278 — the album page's History tab (the films' table, keyed by the album's id). */
+    private val history: dev.jellystructure.media.MediaHistory? = null,
 ) {
+    private fun note(id: String, action: String, detail: String) {
+        runCatching { history?.record(id, action, detail) }
+    }
+
     private val passLock = Mutex()
     private val statusRef = AtomicReference(MusicMatchStatus())
     val status: MusicMatchStatus get() = statusRef.value
@@ -168,10 +174,12 @@ class MusicMatchService(
                     }
                     is Outcome.NeedsYou -> {
                         needs++
+                        if (a.matchState != MusicMatch.NEEDS_YOU) note(a.id, "music_match", "match_musicbrainz · ${outcome.candidates.size} candidates, no clear winner — needs you")
                         store.putAlbum(a.copy(matchState = MusicMatch.NEEDS_YOU, candidates = outcome.candidates, matchNote = outcome.note, matchAttemptedAt = now))
                     }
                     is Outcome.Unmatched -> {
                         unmatched++
+                        if (a.matchAttemptedAt == null || a.matchState != MusicMatch.UNMATCHED) note(a.id, "music_match", "match_musicbrainz · ${outcome.note}")
                         store.putAlbum(a.copy(matchState = MusicMatch.UNMATCHED, candidates = outcome.candidates, matchNote = outcome.note, matchAttemptedAt = now))
                     }
                     Outcome.NoAnswer -> failed++
@@ -208,6 +216,13 @@ class MusicMatchService(
             primaryType = rg.primaryType, secondaryTypes = rg.secondaryTypes, firstReleaseDate = rg.firstReleaseDate,
             mbArtists = mbArtists, mbGenres = MusicScoring.votes(rg.genres), urls = MusicScoring.urls(rg.relations),
         ))
+        if (album.matchState != MusicMatch.MATCHED || album.releaseGroupMbid != rg.id) {
+            val how = when (source) {
+                "tags" -> "from the ids already in the files"; "acoustid" -> "by sound (AcoustID)"
+                "manual" -> "chosen by hand"; else -> "by text search"
+            }
+            note(albumId, "music_match", "Matched to “${rg.title}” $how · ${agreement.hits.size} of ${tracks.size} tracks agree" + if (lock) " · locked" else "")
+        }
         val byTrack = agreement.hits.associateBy { it.track.id }
         store.putTracks(tracks.map { t ->
             val hit = byTrack[t.id]
@@ -286,7 +301,23 @@ class MusicMatchService(
 
     suspend fun setLocked(albumId: String, locked: Boolean): MusicAlbum? {
         val a = store.album(albumId) ?: return null
+        if (a.matchLocked != locked) note(albumId, "music_lock", if (locked) "Match locked — runs leave it alone" else "Match unlocked — the next run may re-match it")
         return a.copy(matchLocked = locked).also { store.putAlbum(it) }
+    }
+
+    /** Phase 278 — an artist's lock: a run never re-reads a locked artist from an album's credits. */
+    suspend fun setArtistLocked(artistId: String, locked: Boolean): MusicArtist? {
+        val r = store.artist(artistId) ?: return null
+        if (r.matchLocked != locked) note(artistId, "music_lock", if (locked) "Match locked" else "Match unlocked")
+        return r.copy(matchLocked = locked).also { store.putArtist(it) }
+    }
+
+    /** Phase 278 — forget an artist's MusicBrainz id (and lock it, 174's rule); the fields it filled stay. */
+    suspend fun clearArtist(artistId: String): MusicArtist? {
+        val r = store.artist(artistId) ?: return null
+        val cleared = r.copy(mbid = null, matchState = MusicMatch.UNMATCHED, matchLocked = true)
+        note(artistId, "music_match", "Match cleared by hand — locked so no run re-matches it")
+        return cleared.also { store.putArtist(it) }
     }
 
     /** FR-276-6 — forget the ids and the tracks' recordings; the fields the match filled stay. The album is **locked**
@@ -299,13 +330,16 @@ class MusicMatchService(
             matchNote = "Cleared by hand — won't be matched again until you unlock it or choose a match",
         )
         store.putAlbum(cleared)
+        note(albumId, "music_match", "Match cleared by hand — locked so no run re-matches it")
         store.putTracks(tracksOf(albumId).map { it.copy(recordingMbid = null, releaseTrackMbid = null, recordingState = null) })
         return cleared
     }
 
     suspend fun setGenres(albumId: String, genres: List<String>?): MusicAlbum? {
         val a = store.album(albumId) ?: return null
-        return a.copy(genresOverride = genres?.map { it.trim() }?.filter { it.isNotBlank() }?.distinct()).also { store.putAlbum(it) }
+        val picked = genres?.map { it.trim() }?.filter { it.isNotBlank() }?.distinct()
+        note(albumId, "music_genres", if (picked == null) "Genres back to MusicBrainz's votes" else "Genres set by hand: ${picked.joinToString(", ").ifEmpty { "none" }}")
+        return a.copy(genresOverride = picked).also { store.putAlbum(it) }
     }
 
     /** FR-276-5 — the artist's recordings of this title, closest length first. */
@@ -322,6 +356,7 @@ class MusicMatchService(
 
     suspend fun useRecording(trackId: String, recordingMbid: String): MusicTrack? {
         val t = store.track(trackId) ?: return null
+        t.albumId?.let { note(it, "music_recording", "Recording chosen by hand for “${t.title}”") }
         return t.copy(recordingMbid = recordingMbid, recordingState = MusicRecording.MANUAL).also { store.putTracks(listOf(it)) }
     }
 

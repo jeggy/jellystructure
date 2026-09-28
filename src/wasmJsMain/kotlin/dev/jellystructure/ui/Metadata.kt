@@ -19,7 +19,8 @@ import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLTextAreaElement
 
 // Phase 155 — "ages" slots in after "tags" per the spec (FR-AGE1-3).
-private val TAB_LABELS = listOf("studios", "networks", "genres", "tags", "ages", "trackers")
+// Phase 278 (FR-278-13, H3's lean) — "musicgenres", its own tab beside Genres: MusicBrainz's genres never merge with TMDB's.
+private val TAB_LABELS = listOf("studios", "networks", "genres", "musicgenres", "tags", "ages", "trackers")
 
 fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String = "studios") {
     val activeTab = if (initialTab in TAB_LABELS) initialTab else "studios"
@@ -30,7 +31,7 @@ fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String
 
 private fun buildMetadataShell(activeTab: String): String {
     val tabs = TAB_LABELS.joinToString("") { tab ->
-        val label = if (tab == "ages") "Age ratings" else tab.replaceFirstChar { it.uppercase() }
+        val label = when (tab) { "ages" -> "Age ratings"; "musicgenres" -> "Music genres"; else -> tab.replaceFirstChar { it.uppercase() } }
         val active = if (tab == activeTab) " on" else ""
         """<span class="$active" data-tab="$tab">$label</span>"""
     }
@@ -112,6 +113,21 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
             "genres" -> {
                 val entries = MetadataApi.getGenres(sort)
                 content.innerHTML = if (entries == null) errorHtml() else renderGenreChips(entries)
+            }
+            "musicgenres" -> {
+                val rows = dev.jellystructure.api.MusicApi.genres()
+                content.innerHTML = when {
+                    rows == null -> errorHtml()
+                    rows.isEmpty() -> """<div class="tiny muted">No music genres yet — they come from the files’ tags, then from MusicBrainz’s votes once an album is matched.</div>"""
+                    else -> {
+                        val sorted = if (sort == "name") rows.sortedBy { it.name.lowercase() } else rows
+                        """<div class="row center" style="margin-bottom:14px;gap:8px;flex-wrap:wrap"><span class="muted tiny">${rows.size} music genres · from MusicBrainz’s votes (and the files’ own tags until an album is matched) · no logos — MusicBrainz genres have none</span></div>""" +
+                            """<div class="pill-row">""" + sorted.joinToString("") { g ->
+                                """<a class="chip genre-chip" data-filter-name="${g.name.lowercase().esc()}" href="#/library?kind=music&f.genre=${dev.jellystructure.encodeURIComponent(g.name)}">${g.name.esc()} <span class="badge info" style="margin-left:4px;">${g.albums} album${if (g.albums == 1) "" else "s"} · ${g.songs} song${if (g.songs == 1) "" else "s"}</span></a>"""
+                            } + "</div>" +
+                            """<div class="tiny muted" style="margin-top:14px;line-height:1.6;max-width:720px">A film’s <i>Comedy</i> and an album’s <i>comedy rock</i> are different ids from different providers, so these never merge into the Genres tab. Names are MusicBrainz’s English ones.</div>"""
+                    }
+                }
             }
             "tags" -> {
                 val tags = MetadataApi.getTags(sort)

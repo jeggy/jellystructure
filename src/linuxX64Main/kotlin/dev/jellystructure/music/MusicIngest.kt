@@ -114,6 +114,7 @@ object MusicIngest {
                 albumGainDb = a.normalizationGain ?: own.firstNotNullOfOrNull { it.albumGainDb },
                 coverState = artState(path, COVER_FILES, a, exists),
                 jellyfinProviderIds = a.providerIds.ids(),
+                jellyfinLocked = (if (a.lockData == true) listOf("All") else emptyList()) + a.lockedFields.orEmpty(),
                 addedAt = a.dateCreated?.let { isoToEpochSeconds(it) },
             )
             carry(fresh, prev, now)
@@ -189,7 +190,8 @@ object MusicIngest {
             durationMs = fresh.durationMs, albumGainDb = fresh.albumGainDb, coverState = fresh.coverState,
             // A cover that disappeared from the folder no longer has the source it had.
             coverSource = if (fresh.coverState == MusicArt.NONE) null else prev.coverSource,
-            jellyfinProviderIds = fresh.jellyfinProviderIds, addedAt = fresh.addedAt, missingSince = null,
+            jellyfinProviderIds = fresh.jellyfinProviderIds, jellyfinLocked = fresh.jellyfinLocked,
+            addedAt = fresh.addedAt, missingSince = null,
         )
         return if (merged == prev) prev else merged.copy(updatedAt = now)
     }

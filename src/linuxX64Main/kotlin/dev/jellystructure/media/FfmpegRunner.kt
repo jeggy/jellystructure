@@ -225,6 +225,16 @@ object FfmpegRunner {
         }
     }
 
+    /**
+     * Phase 278 (FR-278-7) — Convert…: one audio file to AAC 192 kbps in an `.m4a`, tags carried over, any
+     * embedded picture dropped (the album's `cover.jpg` is the picture). [output] is written whole or not at all:
+     * the caller writes to a temporary name and renames. Background priority, through the shared ProcessGate.
+     */
+    suspend fun convertAudioToAac(input: String, output: String): Boolean {
+        val i = input.replace("'", "'\\''"); val o = output.replace("'", "'\\''")
+        return runCommand("nice -n 19 ffmpeg -nostdin -y -v error -i '$i' -map 0:a:0 -map_metadata 0 -vn -c:a aac -b:a 192k -movflags +faststart -f mp4 '$o' 2>&1")
+    }
+
     /** R131: extract a single JPEG frame at [atSeconds] into [output] (overwrites) — the screen-grabber's
      *  core. `-ss` before `-i` is a fast input seek; `-q:v 3` ≈ JPEG quality 90. */
     suspend fun extractFrame(input: String, output: String, atSeconds: Int): Boolean {

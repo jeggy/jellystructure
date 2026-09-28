@@ -82,6 +82,9 @@ data class TriageItem(
     val coverAsVideo: String? = null,       // Phase 144: movie — specifier of a cover-image track muxed as video, or null
     val segmentsLowConfidence: Boolean = false,  // Phase 150: movie — its own heuristic guess is below the trust threshold
     val noSegments: Boolean = false,             // Phase 150: title-level — no marker anywhere yet (movie, or whole series)
+    /** Phase 278 (FR-278-12) — a music entry: `needs_you` · `no_match` · `no_cover` (albums, [kind] `album`) or
+     *  `no_picture` (artists, [kind] `artist`). The dock opens the album or artist page, not `/media/`. */
+    val musicIssue: String? = null,
 )
 
 // Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
@@ -111,11 +114,11 @@ private data class AssignLanguageResponse(val ok: Boolean, val language: String)
 
 private var triageCountCache: Pair<String, TriageCount>? = null
 
-fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, segmentStore: MediaSegmentStore) {
+fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, segmentStore: MediaSegmentStore, music: dev.jellystructure.media.MusicPipeline? = null) {
     route("/triage") {
         get("/count") {
             // Phase 254 — a deep check's finding changes the count without touching the library version.
-            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}"   // Phase 255 — a coverage finding changes the count too
+            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}"   // Phase 255 — a coverage finding changes the count too
             triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
 
@@ -229,7 +232,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                     )
                 },
             )
-            val result = TriageCount(types = types, total = types.sumOf { it.instances })
+            val result = TriageCount(types = types + musicTriageCounts(music, configStore), total = (types + musicTriageCounts(music, configStore)).sumOf { it.instances })
             triageCountCache = Pair(ver, result)
             call.respond(result)
         }
@@ -240,7 +243,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
             val items = store.allItems()
                 .mapNotNull { it.toTriageItem(segmentsEnabled, segmentStore) }
-            call.respond(items)
+            call.respond(items + musicTriageItems(music, configStore))
         }
 
         get("/{mediaId}/suggest") {
@@ -487,3 +490,47 @@ private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
         actualDefaultLang = currentDefault?.language,
     )
 }
+
+/** Phase 278 (FR-278-11/12) — the music library's attention entries; absent entirely when no music library is mapped. */
+private fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
+    if (music == null || dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty()) return emptyList()
+    val s = music.store.snapshot()
+    val albums = s.albums.values.filter { it.missingSince == null }
+    val needs = albums.count { !it.matchLocked && it.matchState != dev.jellystructure.model.MusicMatch.MATCHED }
+    val noCover = albums.count { it.matchState == dev.jellystructure.model.MusicMatch.MATCHED && it.coverState == dev.jellystructure.model.MusicArt.NONE }
+    val noPicture = s.artists.values.count { it.missingSince == null && it.path != null && it.imageState == dev.jellystructure.model.MusicArt.NONE }
+    val reencodes = s.tracks.values.count { it.missingSince == null && dev.jellystructure.model.MusicFormats.reencodesOnPhone(it.container, it.codec) }
+    return listOf(
+        TriageTypeCount("music_needs_match", "Albums need a match",
+            "MusicBrainz found several candidates and none clearly won, or found nothing. Open the album: Find match… searches, or identifies it by sound.",
+            needs, needs),
+        TriageTypeCount("music_no_cover", "Albums without a cover",
+            "Matched, but no cover on disk — nobody has uploaded one to the Cover Art Archive yet. Upload one on the album's Artwork tab.",
+            noCover, noCover),
+        TriageTypeCount("music_no_picture", "Artists without a picture",
+            "Neither fanart.tv nor Wikimedia Commons had one. Choose or upload one on the artist's Artwork tab.",
+            noPicture, noPicture),
+        TriageTypeCount("music_reencodes", "Songs a phone plays only by re-encoding",
+            "WMA files: Jellyfin re-encodes them on every play on a phone, never gapless. Convert… makes AAC copies and keeps the originals.",
+            reencodes, reencodes),
+    )
+}
+
+private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageItem> {
+    if (music == null || dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty()) return emptyList()
+    val s = music.store.snapshot()
+    val out = mutableListOf<TriageItem>()
+    for (a in s.albums.values.filter { it.missingSince == null }.sortedBy { (it.sortName ?: it.title).lowercase() }) {
+        val issue = when {
+            !a.matchLocked && a.matchState == dev.jellystructure.model.MusicMatch.NEEDS_YOU -> "needs_you"
+            !a.matchLocked && a.matchState == dev.jellystructure.model.MusicMatch.UNMATCHED -> "no_match"
+            a.matchState == dev.jellystructure.model.MusicMatch.MATCHED && a.coverState == dev.jellystructure.model.MusicArt.NONE -> "no_cover"
+            else -> null
+        } ?: continue
+        out += TriageItem(mediaId = a.id, title = a.title, year = a.year, path = a.path.orEmpty(), kind = "album", untaggedTracks = emptyList(), musicIssue = issue)
+    }
+    for (r in s.artists.values.filter { it.missingSince == null && it.path != null && it.imageState == dev.jellystructure.model.MusicArt.NONE }.sortedBy { it.name.lowercase() })
+        out += TriageItem(mediaId = r.id, title = r.name, year = null, path = r.path.orEmpty(), kind = "artist", untaggedTracks = emptyList(), musicIssue = "no_picture")
+    return out
+}
+

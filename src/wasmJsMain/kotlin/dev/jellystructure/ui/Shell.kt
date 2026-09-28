@@ -42,6 +42,13 @@ private var triageDockHidden: Boolean = false
 
 /** One-line "what's wrong" summary for the current triage item, mirroring the design dock sub-line. */
 private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
+    // Phase 278 (FR-278-12) — a music entry says one thing.
+    when (item.musicIssue) {
+        "needs_you" -> return "♪ album · several MusicBrainz candidates — needs you"
+        "no_match" -> return "♪ album · no MusicBrainz match yet"
+        "no_cover" -> return "♪ album · no cover"
+        "no_picture" -> return "♪ artist · no picture"
+    }
     val parts = mutableListOf<String>()
     val untagged = item.untaggedTracks.size
     if (untagged > 0) parts += "$untagged untagged audio track${if (untagged != 1) "s" else ""}"
@@ -460,6 +467,12 @@ private fun wireGlobalKeyBindings() {
 }
 
 private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
+    // Phase 278 (FR-278-12) — music opens its own pages: Find match… open, or the Artwork tab.
+    when (item.musicIssue) {
+        "needs_you", "no_match" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("find" to "1"))
+        "no_cover" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("tab" to "artwork"))
+        "no_picture" -> return dev.jellystructure.Router.navigate("/artist/${item.mediaId}", mapOf("tab" to "artwork"))
+    }
     val tab = if (item.kind == "tv") "episodes" else "overview"
     dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))
 }

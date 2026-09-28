@@ -609,7 +609,7 @@ fun startServer(
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
-                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)
+                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
@@ -618,7 +618,7 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
-                musicPipeline?.let { musicRoutes(configStore, it, appScope) }   // Phase 276
+                musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient) { mediaStore.allItems() } }   // Phases 276–278
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)

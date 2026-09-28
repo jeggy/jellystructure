@@ -112,6 +112,10 @@ class MediaJobQueue(
     val stepRuns: StepRunStore? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Phase 278 (FR-278-7) — the music library's *Convert…* job body, set once music is wired (Main.kt). Takes the
+     *  job's owner id, the files, a per-file progress callback and the cancel flag; returns null or why it failed. */
+    var audioConverter: (suspend (String, List<String>, suspend (Int) -> Unit, () -> Boolean) -> String?)? = null
     private val queries get() = db.mediaJobQueries
 
     // Phase 213 — the shared worker pool. Replaces the old per-lane pair (media's fixed FIFO-1
@@ -616,6 +620,7 @@ class MediaJobQueue(
             "mkv_layout_repair" -> runMkvLayoutRepair(row, params)
             "file_replace_from_source", "file_lossy_repair" -> runFileDamageRepair(row, params)
             "presize_artwork" -> runPresizeArtwork(row)
+            "convert_audio" -> runConvertAudio(row, params)
             else -> Failure("Unknown job type '${row.type}'")
         }
     }
@@ -932,6 +937,18 @@ class MediaJobQueue(
      * skips entries that are already fresh, reported on Activity like any other job. Enqueued by
      * [enqueuePresizeBackfill] at boot until its marker exists.
      */
+    /** Phase 278 (FR-278-7) — music's *Convert…*, one file at a time on the media lane. */
+    private suspend fun runConvertAudio(row: Media_job, params: MediaJobParams): Outcome {
+        val convert = audioConverter ?: return Failure("Music is not set up on this server")
+        val paths = params.repairPaths.orEmpty().ifEmpty { return Failure("Nothing to convert") }
+        val reason = convert(row.media_id, paths, { done ->
+            queries.updateProgress(done.toDouble() / paths.size * 100.0, null, done.toLong(), null, row.id)
+            broadcastSnapshot(row.id)
+        }, { cancelRunning })
+        if (cancelRunning) return Cancelled()
+        return if (reason == null) Success else Failure(reason)
+    }
+
     private suspend fun runPresizeArtwork(row: Media_job): Outcome {
         val svc = artworkService ?: return Failure("Image cache not available")
         val items = store.allItems()

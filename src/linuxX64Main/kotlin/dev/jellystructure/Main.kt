@@ -294,6 +294,7 @@ fun main() = runBlocking {
             dev.jellystructure.music.AcoustIdClient({ configStore.current.apiKeys.acoustidClientKey }),
             configStore,
             fingerprint = { path -> dev.jellystructure.media.FfmpegRunner.acoustIdFingerprint(path) },
+            history = mediaHistory,
         ),
         // Phase 277 — covers, artist pictures, biographies, lyrics, album.nfo / artist.nfo.
         media = dev.jellystructure.music.MusicMediaService(
@@ -335,6 +336,10 @@ fun main() = runBlocking {
     dev.jellystructure.subtitles.SubtitleVerdicts.reportOnly = { configStore.current.subtitleCheck.reportOnly }
     subtitleChecks.init()
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks)
+    // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
+    musicPipeline.convert = dev.jellystructure.music.MusicConvert(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory).also { c ->
+        mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
+    }
     mediaJobQueue.start()
     // Phase 273 (§B/§C/§E) — the Bazarr side: steering, the post-processing hook and its history poll, the advisor.
     val bazarrSteering = dev.jellystructure.bazarr.BazarrSteering(db, mediaStore, configStore, bazarrClient,

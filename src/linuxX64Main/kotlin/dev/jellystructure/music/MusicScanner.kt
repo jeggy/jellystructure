@@ -38,6 +38,10 @@ class MusicScanner(
     private val store: MusicStore,
     private val exists: (String) -> Boolean = { SystemFileSystem.exists(Path(it)) },
 ) {
+    /** Phase 278 — when a scan last read a library (the Library's *mapped, not yet scanned* state). Since boot. */
+    var lastScanAt: Long? = null
+        private set
+
     /** [onlyLibraryId] — a run scoped to one library scans music only when that library is a music one. */
     suspend fun scan(onlyLibraryId: String? = null): MusicScanSummary {
         val cfg = configStore.current
@@ -55,6 +59,7 @@ class MusicScanner(
             val prev = store.snapshot()
             val rows = MusicIngest.build(lib, jf, prev.artists, prev.albums, prev.tracks, nowEpochSec(), exists)
             store.replaceLibrary(rows)
+            lastScanAt = nowEpochSec()
             Logger.info("scan_music: ${lib.name} — ${jf.albums.size} albums, ${jf.tracks.size} tracks, ${rows.artists.size} artists", "music")
         }
         val h = store.health()

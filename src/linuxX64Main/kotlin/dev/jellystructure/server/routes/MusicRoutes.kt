@@ -29,6 +29,18 @@ import dev.jellystructure.model.MusicRecordingRequest
 import dev.jellystructure.model.MusicSearchRequest
 import dev.jellystructure.model.MusicStatusDto
 import dev.jellystructure.model.MusicUseRequest
+import dev.jellystructure.model.MusicAlbumPageDto
+import dev.jellystructure.model.MusicArtistPageDto
+import dev.jellystructure.model.MusicBrowseDto
+import dev.jellystructure.model.MusicBulkRequest
+import dev.jellystructure.model.MusicBulkResult
+import dev.jellystructure.model.MusicConvertPlan
+import dev.jellystructure.model.MusicConvertRequest
+import dev.jellystructure.model.MusicLibraryInfo
+import dev.jellystructure.model.MusicStreamDto
+import dev.jellystructure.model.MusicVideoRow
+import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.music.MusicBrowse
 import dev.jellystructure.music.MusicScanner
 import dev.jellystructure.music.MusicScoring
 import io.ktor.http.HttpStatusCode
@@ -72,7 +84,7 @@ private suspend fun serveFile(call: ApplicationCall, path: String?) {
  * Phase 276 — the admin's MusicBrainz surface: *Match now*, Find match… (search, releases, identify by sound, use),
  * lock / clear, genre ticks, *Match this track…*, and the providers card's own save (FR-276-8/9).
  */
-fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope) {
+fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }) {
     val matcher = music.matcher
     val noAnswer = mapOf("error" to "MusicBrainz didn't answer — try again in a moment")
 
@@ -208,11 +220,29 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         // The image files themselves (the admin's grids and pages; 279 serves the phone its own way).
         get("/image/album/{id}") {
             val a = music.store.album(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound)
-            serveFile(call, media.existingCover(a))
+            val file = media.existingCover(a)
+            // Phase 278 — no cover file, but Jellyfin has art (embedded in a track): show Jellyfin's.
+            if (file == null && a.coverState == dev.jellystructure.model.MusicArt.JELLYFIN && jellyfinClient != null) {
+                val cfg = configStore.current
+                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id)
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                call.response.headers.append("Cache-Control", "private, max-age=60")
+                return@get call.respondBytes(img.first, ContentType.parse(img.second))
+            }
+            serveFile(call, file)
         }
         get("/image/artist/{id}/{kind}") {
             val a = music.store.artist(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound)
-            serveFile(call, media.existingArtistImage(a, call.parameters["kind"]!!))
+            val kind = call.parameters["kind"]!!
+            val file = media.existingArtistImage(a, kind)
+            if (file == null && kind == "thumb" && a.imageState == dev.jellystructure.model.MusicArt.JELLYFIN && jellyfinClient != null) {
+                val cfg = configStore.current
+                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id)
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                call.response.headers.append("Cache-Control", "private, max-age=60")
+                return@get call.respondBytes(img.first, ContentType.parse(img.second))
+            }
+            serveFile(call, file)
         }
 
         get("/album/{id}/nfo") {
@@ -240,6 +270,130 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         post("/album/{id}/lyrics") {
             val id = call.parameters["id"]!!
             call.respond(mapOf("result" to media.fetchLyrics(scopeAll = false, albumIds = setOf(id), force = true).sentence()))
+        }
+
+        // ── Phase 278: the admin's music pages ──
+
+        /** The Music kind (FR-278-1..4). Facets ride `f.<key>=a,b`; everything is counted here. */
+        get("/browse") {
+            val cfg = configStore.current
+            val qp = call.request.queryParameters
+            val view = qp["view"]?.takeIf { it in MusicBrowse.VIEWS } ?: MusicBrowse.ALBUMS
+            val selected = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["f.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
+            val libs = MusicScanner.musicLibraries(cfg)
+            val snap = music.store.snapshot()
+            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"])
+            call.respond(MusicBrowseDto(
+                mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
+                health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
+                libraries = libs.map { MusicLibraryInfo(it.jellyfinId, it.name, it.jellyfinPath, it.localPath) },
+                view = view, total = r.rowsTotal, facets = r.facets, albums = r.albums, artists = r.artists, songs = r.songs,
+                musicbrainzEnabled = cfg.musicbrainz.enabled,
+            ))
+        }
+
+        get("/genres") { call.respond(MusicBrowse.genres(music.store.snapshot())) }
+
+        get("/album/{id}/page") {
+            val cfg = configStore.current
+            val snap = music.store.snapshot()
+            val a = snap.albums[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val tracks = snap.tracksByAlbum[a.id].orEmpty().filter { it.missingSince == null }
+            val lib = cfg.libraries.firstOrNull { it.jellyfinId == a.libraryId }
+            call.respond(MusicAlbumPageDto(
+                album = a, tracks = MusicBrowse.trackRows(tracks) { media.lyricsStateOf(it) },
+                genres = a.effectiveGenres(),
+                coverUrl = if (a.coverState != dev.jellystructure.model.MusicArt.NONE) "/api/music/image/album/${a.id}?v=${a.updatedAt}" else null,
+                drift = media.albumDrift(a), lyricsEnabled = cfg.music.fetchLyrics, acoustId = matcher.acoustId.available,
+                jellyfinUrl = jellyfinWebUrl(cfg, a.id), library = lib?.name, jellyfinLocked = a.jellyfinLocked,
+                type = MusicBrowse.albumType(a),
+            ))
+        }
+
+        get("/artist/{id}/page") {
+            val cfg = configStore.current
+            val snap = music.store.snapshot()
+            val r = snap.artists[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val browse = MusicBrowse.browse(snap, MusicBrowse.ALBUMS, emptyMap(), null, emptyMap(), "year")
+            val mine = snap.albumsByArtist[r.id].orEmpty().filter { it.missingSince == null }
+            val own = mine.filter { a -> a.albumArtists.any { it.artistId == r.id } }.map { it.id }.toSet()
+            val credited = mine.map { it.id }.toSet() - own
+            val rows = browse.albums
+            val genres = r.mbGenres.ifEmpty {
+                mine.filter { it.id in own }.flatMap { it.mbGenres }.groupBy { it.name }
+                    .map { (n, v) -> dev.jellystructure.model.MusicGenreVote(n, v.sumOf { it.count }) }.sortedByDescending { it.count }
+            }
+            val videos = dev.jellystructure.music.MusicVideoLinks.forArtist(r, videos())
+            call.respond(MusicArtistPageDto(
+                artist = r, albums = rows.filter { it.id in own }.sortedBy { it.year ?: 0 },
+                creditedOn = rows.filter { it.id in credited }, songs = MusicBrowse.browse(snap, MusicBrowse.ARTISTS, emptyMap(), null, emptyMap())
+                    .artists.firstOrNull { it.id == r.id }?.songs ?: 0,
+                pictureUrl = if (r.imageState != dev.jellystructure.model.MusicArt.NONE) "/api/music/image/artist/${r.id}/thumb?v=${r.updatedAt}" else null,
+                videos = videos.map { MusicVideoRow(it.id, it.title, it.year, it.runtime?.let { m -> m * 60 }) },
+                genres = genres, jellyfinUrl = jellyfinWebUrl(cfg, r.id),
+                biography = r.biographyEdited ?: r.biographies["en"] ?: r.biographies.values.firstOrNull(),
+            ))
+        }
+
+        post("/artist/{id}/lock") {
+            val req = call.receive<MusicLockRequest>()
+            call.respond(matcher.setArtistLocked(call.parameters["id"]!!, req.locked) ?: return@post call.respond(HttpStatusCode.NotFound))
+        }
+        post("/artist/{id}/clear") {
+            call.respond(matcher.clearArtist(call.parameters["id"]!!) ?: return@post call.respond(HttpStatusCode.NotFound))
+        }
+
+        /** The selection bar (FR-278-3). Match now runs in the background (progress on /music/status); the rest
+         *  answer when done — a household selection is a handful of albums. */
+        post("/bulk") {
+            val req = call.receive<MusicBulkRequest>()
+            val ids = req.albumIds.distinct()
+            val n = ids.size
+            fun albums(k: Int) = "$k album${if (k == 1) "" else "s"}"
+            val sentence = when (req.action) {
+                "match" -> {
+                    if (matcher.status.running) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "A matching pass is already running"))
+                    appScope.launch { runCatching { matcher.matchAlbums(ids, scopeAll = true) }.onFailure { Logger.warn("Music bulk match failed: ${it.message}", "music") } }
+                    "Matching ${albums(n)} against MusicBrainz — one request a second"
+                }
+                "covers" -> media.fetchArtworkFor(ids.toSet()).sentence()
+                "nfo" -> {
+                    val done = ids.count { media.saveAlbum(it, sync = true) == dev.jellystructure.music.MusicNfo.Outcome.WRITTEN }
+                    "album.nfo written for ${albums(done)}" + if (done < n) " · ${n - done} not matched yet, so not written" else ""
+                }
+                "lock" -> { ids.forEach { matcher.setLocked(it, true) }; "${albums(n)} locked — runs leave them alone" }
+                "unlock" -> { ids.forEach { matcher.setLocked(it, false) }; "${albums(n)} unlocked" }
+                "clear" -> { ids.forEach { matcher.clear(it) }; "Match cleared on ${albums(n)} — locked so no run re-matches them" }
+                else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown action"))
+            }
+            call.respond(MusicBulkResult(sentence))
+        }
+
+        /** FR-278-7 — what Convert… would do, then the job itself. */
+        post("/convert/plan") {
+            val conv = music.convert ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            call.respond(conv.plan(runCatching { call.receive<MusicConvertRequest>() }.getOrDefault(MusicConvertRequest())))
+        }
+        post("/convert") {
+            val conv = music.convert ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            val q = jobs ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            val req = runCatching { call.receive<MusicConvertRequest>() }.getOrDefault(MusicConvertRequest())
+            val targets = conv.targets(req)
+            if (targets.isEmpty()) return@post call.respond(MusicConvertPlan(0))
+            val owner = req.albumId ?: targets.first().albumId ?: "music"
+            val label = "Convert for phones: ${targets.size} song${if (targets.size == 1) "" else "s"}" +
+                (req.albumId?.let { id -> music.store.album(id)?.title?.let { " · $it" } } ?: "")
+            val snap = q.enqueue("convert_audio", owner, label, dev.jellystructure.jobs.MediaJobParams(repairPaths = targets.mapNotNull { it.path }), fileCount = targets.size)
+            call.respond(MusicConvertPlan(songs = targets.size, job = snap.id))
+        }
+
+        /** The Tracks tab's ▶ — your own Jellyfin session, direct play or nothing (the segment editor's rule). */
+        get("/track/{id}/stream") {
+            val session = runCatching { call.attributes[dev.jellystructure.auth.SessionKey] }.getOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            val t = music.store.track(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound)
+            if (!MusicBrowse.browserPlays(t)) return@get call.respond(HttpStatusCode.Conflict, mapOf("error" to "A browser can't direct-play this format"))
+            val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+            call.respond(MusicStreamDto(dev.jellystructure.auth.withJellyfinToken("$base/Audio/${t.id}/stream?Static=true&DeviceId=jellystructure-admin-music", session.jellyfinUserToken)))
         }
 
         get("/providers") {
@@ -273,3 +427,8 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         }
     }
 }
+
+/** Where the album or artist opens in Jellyfin's own web UI (the External links menu). */
+private fun jellyfinWebUrl(cfg: dev.jellystructure.config.AppConfig, id: String): String? =
+    cfg.apiKeys.jellyfinUrl.trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/web/#/details?id=$id" }
+

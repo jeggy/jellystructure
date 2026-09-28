@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A–§G, the §H
+`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A–§G, the §H
 questions) and the round-1 mockups. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**, the Library workbench's facet
 idiom, `media.html`'s pagebar/tabs, and the triage dock. The seven §H questions are drawn as one live panel at the
 foot of every music page (`design/app/music-qs.js`, localStorage `js-music-q`). The leans below are the spec's
@@ -169,3 +169,60 @@ Buildable. Nine items; item 1 is the one that ships a blank page if missed.
 8. **Settings card (FR-278-9):** `ui/Settings.kt:1560` (`typeLabel`) and `:2336-2337` (`isMovie`/`isTv`) drive
    per-card behaviour → an `isMusic` branch for the no-fallback-language rule and the provider line.
 9. **Acceptance 5** ("every non-lean answer is drawn") is a design acceptance; keep it, label it so.
+
+## Build notes (2026-09-28)
+
+Built on `main` after 277. Compiles (backend + admin); the music/config tests pass, including a new
+`MusicBrowseTest` for the facet arithmetic. **Not deployed and not tried in a browser** — the pages are written against
+the mockups' markup and `design/app/music.css`, so the first real look is on the next deploy.
+
+1. **Every row and every count comes from the server** (the constitution's rule, and why this is not the mockup's
+   client-side filtering): `GET /api/music/browse?view=&q=&sort=&f.<key>=a,b` returns the view's rows and each facet's
+   values, each counted against every *other* active facet (the workbench's rule — ticking WMA never zeroes MP3).
+   A song takes its album's facet values but keeps its own format and lyrics; an artist takes the union of its
+   albums' (a credit-only artist is found through the album it is credited on). `music/MusicBrowse.kt` is pure and
+   tested. Deep links work: `?kind=music&mview=songs&f.format=WMA`.
+2. **The Music kind is its own view, not a fifth `MediaKind` value** (dev review 2): `renderLibrary` hands
+   `?kind=music` to `renderMusicLibrary`; the film Library's picker gained *Music*. States: not mapped, mapped but not
+   scanned (the paths + *Scan now*, which opens the normal pre-run dialog), mapped and empty, and the live view.
+   *Match now* shows *Matching… n of N* from `/music/status` and reloads when the pass ends.
+3. **Album page** (`#/album/{id}`, `ui/MusicAlbum.kt`) and **Artist page** (`#/artist/{id}`, `ui/MusicArtist.kt`)
+   as FR-278-5/6/8, reading one page DTO each (`/album/{id}/page`, `/artist/{id}/page`). *Find match…* is the side
+   panel: stored candidates first, else a search from the folder's artist and title (a pasted MusicBrainz URL takes
+   exactly that), a candidate's pressings loaded on selection with the best-agreeing first, *Use* / *Use and lock*,
+   and *Identify by sound* when an AcoustID key is set. The Tracks tab draws gap rows from the chosen release's track
+   count (single-disc albums; multi-disc albums list per disc), *Match this track…*, lyrics with *Fetch*, gain, and
+   ▶ for browser-playable files only (Jellyfin's `Audio/{id}/stream?Static=true` in the admin's own session — direct
+   play or nothing). **Deviations:** no *Jellystructure tags* section on an album (albums carry no JS tags yet); an
+   artist has no *Find match…* (artists are matched through their albums' credits, 276) — its ⋯ says so; the artist's
+   Genres tab is read-only.
+4. **History is recorded now:** matches (how, and how many tracks agree), *needs you*, lock/unlock, clear, a genre
+   override and a hand-picked recording land in the album's History (the films' table, keyed by the album id), so
+   the Dashboard's recent-activity feed shows them too.
+5. **136's banner:** the scan now asks Jellyfin for an album's `LockData`/`LockedFields` (`MusicAlbum.jellyfinLocked`).
+   **An album without a cover file but with art in Jellyfin** (embedded) shows Jellyfin's image through the same
+   `/api/music/image/album/{id}` route.
+6. **Convert… (FR-278-7, H1 → the lean):** `convert_audio` jobs on the **media lane** (no music lane — FR-278-10's
+   drawn alternative), one file at a time: phase 26's seeding guard per file (seeding → skipped; qBittorrent
+   unreachable → skipped, to be safe), ffmpeg to AAC 192 kbps `.m4a` with the tags carried and the embedded picture
+   dropped, the original **moved** to 254's `.js-quarantine` beside the library (put back if the new file cannot be
+   placed), then a recursive Jellyfin refresh of each album. Offered on the album head, the Library status line
+   (*Convert… (n)*, library-wide) and — through the Dashboard's *Songs a phone plays only by re-encoding* entry — the
+   Songs view filtered to WMA. The confirmation asks the server first and says the numbers. A converted song is a new
+   Jellyfin item: its recording ids return on the next match refresh; its `.lrc` keeps working (same base name).
+7. **Settings (FR-278-9):** the music library card's provider line links to the providers card, and *Open in
+   Library* replaces *Push all to Jellyfin* there. **Activity (FR-278-10):** ♪ step labels for all five steps, the
+   MusicBrainz and AcoustID rows in *Outbound pacing* (fixed rate, *slow by design*), and the convert job's label;
+   the per-step *done* lines are the run summary. **Dashboard (FR-278-11):** a *♪ Music* tile (from `/music/status`,
+   not `/api/stats` — deviation from dev review 4, same data, no new field on a film DTO) and four attention rows
+   linking to the Music kind filtered.
+8. **Triage (FR-278-12):** four count types (`music_needs_match`, `music_no_cover`, `music_no_picture`,
+   `music_reencodes`) only while a music library is mapped; dock entries for albums (needs you / no match → the album
+   with *Find match…* open; no cover → Artwork) and artists (no picture → Artwork) via a new `TriageItem.musicIssue`.
+   The count cache is keyed on the music store's version too.
+9. **Metadata (FR-278-13, H3 → its own tab):** *Music genres*, each with albums · songs, linking to the Music kind
+   filtered by that genre. **`music.css` is registered** in both `syncDesignAssets` include lists and `index.html`
+   (dev review 1).
+10. **Acceptance 5** (every non-lean answer drawn) is a design acceptance and was met by the mockups; the build ships
+    the leans only.
+

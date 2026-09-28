@@ -51,6 +51,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <div class="stat"><div class="k">TV episodes</div><div class="v" id="stat-tv">—</div></div>
           <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Items needing attention</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—%</div></div>
+          <div class="stat" id="stat-music-cell" style="cursor:pointer;display:none" title="Open the Music kind"><div class="k">♪ Music</div><div class="v" id="stat-music">—</div><div class="tiny muted" id="stat-music-sub"></div></div>
         </div>
 
         <div class="row" style="margin-top:18px;align-items:stretch;gap:18px;flex-wrap:wrap">
@@ -269,7 +270,21 @@ private suspend fun loadDashAdvisor(scope: CoroutineScope, keepOpen: Boolean = f
     }
 }
 
+/** Phase 278 (FR-278-11) — the Music tile, only when a music library is mapped. */
+private suspend fun loadMusicTile() {
+    val st = dev.jellystructure.api.MusicApi.status() ?: return
+    val h = st.health ?: return
+    if (!st.mapped) return
+    val cell = document.getElementById("stat-music-cell") as? HTMLElement ?: return
+    cell.style.display = ""
+    (document.getElementById("stat-music") as? HTMLElement)?.textContent = "${h.albums} albums"
+    (document.getElementById("stat-music-sub") as? HTMLElement)?.textContent =
+        "${h.matched} matched · ${h.albums - h.coversMissing} covers" + if (h.needsYou > 0) " · ${h.needsYou} need you" else ""
+    cell.onclick = { App.navigate("/library?kind=music") }
+}
+
 private suspend fun loadDashboardStats() {
+    loadMusicTile()
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
     (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
@@ -323,6 +338,11 @@ private suspend fun loadAttentionBreakdown() {
                 when (key) {
                     "segments_lowconf" -> App.navigate("/segments?filter=lowconf")
                     "no_segments" -> App.navigate("/segments?filter=none")
+                    // Phase 278 (FR-278-11) — music's entries open the Music kind, filtered.
+                    "music_needs_match" -> App.navigate("/library?kind=music&f.match=needs_you,unmatched")
+                    "music_no_cover" -> App.navigate("/library?kind=music&f.match=matched,locked&f.cover=missing")
+                    "music_no_picture" -> App.navigate("/library?kind=music&mview=artists&f.artimg=missing")
+                    "music_reencodes" -> App.navigate("/library?kind=music&mview=songs&f.format=WMA")
                     else -> App.navigate("/library?filter=$key")
                 }
             }
@@ -354,6 +374,11 @@ private val ATTENTION_ROW_ORDER = listOf(
     "file_damage" to "bad",  // Phase 254 — damaged past the first Cluster
     "track_ends_early" to "bad",  // Phase 255 — silence or black from that point on
     "duration_header_wrong" to "warn",  // Phase 255 — never marked watched, wrong length shown
+    // Phase 278 — music, last: none of it stops a film from playing.
+    "music_needs_match" to "warn",
+    "music_no_cover" to "warn",
+    "music_no_picture" to "warn",
+    "music_reencodes" to "warn",
 )
 
 private suspend fun loadRecentActivity() {

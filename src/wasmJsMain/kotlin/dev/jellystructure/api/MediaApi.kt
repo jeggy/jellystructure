@@ -215,6 +215,7 @@ data class TriageItem(
     val coverAsVideo: String? = null,          // Phase 144: movie — specifier of a cover-image track muxed as video
     val segmentsLowConfidence: Boolean = false,  // Phase 150: movie — its own heuristic guess is below the trust threshold
     val noSegments: Boolean = false,             // Phase 150: title-level — no marker anywhere yet
+    val musicIssue: String? = null,              // Phase 278: needs_you · no_match · no_cover (album) · no_picture (artist)
 )
 
 @Serializable

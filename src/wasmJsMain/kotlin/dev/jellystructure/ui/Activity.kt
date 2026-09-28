@@ -102,6 +102,9 @@ private data class HealthProbeDto(
     @SerialName("outbound_http_gate") val outboundHttpGate: GateStatsDto = GateStatsDto(),
     @SerialName("process_gate") val processGate: GateStatsDto = GateStatsDto(),
     @SerialName("tmdb_pacing") val tmdbPacing: TmdbPacingDto = TmdbPacingDto(),
+    // Phase 276 (FR-276-2) / 278 (FR-278-10) — the two fixed-rate music hosts; null when music is not wired.
+    @SerialName("musicbrainz_pacing") val musicbrainzPacing: dev.jellystructure.model.PacingStats? = null,
+    @SerialName("acoustid_pacing") val acoustidPacing: dev.jellystructure.model.PacingStats? = null,
 )
 
 @Serializable
@@ -638,8 +641,10 @@ private suspend fun refreshHealthCard(container: Element) {
     (container.querySelector("#gate-saturation-banner") as? HTMLElement)?.style?.display = if (queuing) "flex" else "none"
 
     val pacing = health.tmdbPacing
+    val music = listOfNotNull(health.musicbrainzPacing?.let { "MusicBrainz" to it }, health.acoustidPacing?.let { "AcoustID" to it })
     val pacingHtml = buildString {
         append("""<div class="row center" style="gap:14px;flex-wrap:wrap;">""")
+        if (music.isNotEmpty()) append("""<span class="tiny" style="min-width:92px;font-weight:600;">TMDB</span>""")
         append("""<span class="tiny"><b>${pacing.ratePerSec.formatRate()}</b>/s now</span>""")
         append("""<span class="tiny muted">ceiling ${pacing.ceilingPerSec.formatRate()}/s · floor ${pacing.floorPerSec.formatRate()}/s</span>""")
         if (pacing.rateLimitedLastMinute > 0) {
@@ -648,6 +653,15 @@ private suspend fun refreshHealthCard(container: Element) {
             append("""<span class="tiny muted">no rate limiting in the last minute</span>""")
         }
         append("</div>")
+        // Phase 278 — fixed rate by design (MusicBrainz asks for one request a second): a ceiling, no floor.
+        for ((name, p) in music) {
+            append("""<div class="row center" style="gap:14px;flex-wrap:wrap;margin-top:6px;">""")
+            append("""<span class="tiny" style="min-width:92px;font-weight:600;">♪ $name</span>""")
+            append("""<span class="tiny"><b>${p.ratePerSec.formatRate()}</b>/s now</span>""")
+            append("""<span class="tiny muted">fixed at ${p.ceilingPerSec.formatRate()}/s — slow by design</span>""")
+            if (p.refusedLastMinute > 0) append("""<span class="badge warn" style="font-size:.7rem;">${p.refusedLastMinute} refused in the last minute</span>""")
+            append("</div>")
+        }
     }
     (container.querySelector("#pacing-card-body") as? HTMLElement)?.innerHTML = pacingHtml
 }
@@ -688,6 +702,7 @@ private fun jobTypeLabel(type: String): String = when (type) {
     "file_damage_repair" -> "replace damaged file from clean copy"
     "file_lossy_repair" -> "lossy remux of damaged file"
     "presize_artwork" -> "pre-size TV artwork"
+    "convert_audio" -> "♪ convert for phones (WMA → AAC)"   // Phase 278
     "queue_emptied" -> "queue emptied"
     else -> type
 }

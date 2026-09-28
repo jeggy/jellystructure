@@ -171,6 +171,8 @@ private fun updateLibraryUrl() {
 fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     libScanSocket?.close()
     libScanSocket = null
+    // Phase 278 (FR-278-1) — Music is not a MediaKind: its own view, its own rows and facets.
+    if (query["kind"].equals("music", ignoreCase = true)) { renderMusicLibrary(container, scope, query); return }
     libScannedCount = 0
     libPendingScanCount = 0
     parseLibraryUrl()
@@ -197,6 +199,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <span id="k-movie">Movies</span>
             <span id="k-tv">TV</span>
             <span id="k-mv">Music videos</span>
+            <span id="k-music" title="Jellyfin's music library — albums, artists and songs">Music</span>
           </span>
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
@@ -361,6 +364,8 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
             reload()
         }
     }
+
+    document.getElementById("k-music")?.addEventListener("click") { App.navigate("/library?kind=music") }
 
     // R101: Clear filters — reset all state vars and reload a clean grid.
     document.getElementById("lib-clear")?.addEventListener("click") {

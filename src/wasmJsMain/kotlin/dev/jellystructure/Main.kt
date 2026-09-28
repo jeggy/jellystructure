@@ -8,6 +8,8 @@ import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
+import dev.jellystructure.ui.renderMusicAlbum
+import dev.jellystructure.ui.renderMusicArtist
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSegments
 import dev.jellystructure.ui.renderSetup
@@ -80,7 +82,8 @@ object App {
             shellMounted = true
         }
         val container = document.getElementById("page-content") ?: return
-        updateActiveNav(Router.current())
+        // Phase 278 — an album or artist page belongs to the Library in the sidebar.
+        updateActiveNav(if (path.startsWith("/album/") || path.startsWith("/artist/")) "/library" else Router.current())
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
             path.startsWith("/library") -> renderLibrary(container, scope, query)
@@ -94,6 +97,9 @@ object App {
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id, query["tab"])
                 else renderLibrary(container, scope, query)
             }
+            // Phase 278 — music's own pages (not MediaKinds, so not /media/).
+            path.startsWith("/album/") -> renderMusicAlbum(container, scope, path.removePrefix("/album/").substringBefore('/'), query)
+            path.startsWith("/artist/") -> renderMusicArtist(container, scope, path.removePrefix("/artist/").substringBefore('/'), query)
             path == "/activity" -> renderActivity(container, scope, query)
             path == "/subtitles" -> renderSubtitles(container, scope)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)

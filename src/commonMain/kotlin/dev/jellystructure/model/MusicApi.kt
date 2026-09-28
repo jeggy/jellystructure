@@ -139,3 +139,189 @@ data class MusicProvidersUpdate(
     @SerialName("fanart_key") val fanartKey: String? = null,
     @SerialName("lyrics_enabled") val lyricsEnabled: Boolean? = null,
 )
+
+// ── Phase 278 — the admin's music pages ──────────────────────────────────────────────────────────────────
+
+/** One value of a Library facet, counted server-side against every other active facet (FR-278-3). */
+@Serializable
+data class MusicFacetValue(
+    val value: String,
+    val label: String,
+    val count: Int,
+    val on: Boolean = false,
+    /** A warning line under the value (WMA: *plays on a phone only by re-encoding*). */
+    val note: String? = null,
+)
+
+@Serializable
+data class MusicFacet(val key: String, val label: String, val values: List<MusicFacetValue>)
+
+/** An album cell (FR-278-2). [match] is `matched` · `needs_you` · `unmatched` · `locked` (a locked match). */
+@Serializable
+data class MusicAlbumRow(
+    val id: String,
+    val title: String,
+    val artist: String = "",
+    @SerialName("artist_id") val artistId: String? = null,
+    val year: Int? = null,
+    val songs: Int = 0,
+    val match: String,
+    val cover: Boolean = false,
+    /** Changes whenever the row does — appended to the image URL so a replaced cover shows. */
+    val v: Long = 0,
+    /** `album` · `single` · `compilation` · `live` · `soundtrack` — the Artist page's groups. */
+    val type: String = "album",
+)
+
+@Serializable
+data class MusicArtistRow(
+    val id: String,
+    val name: String,
+    val albums: Int = 0,
+    val songs: Int = 0,
+    val match: String,
+    val picture: Boolean = false,
+    /** Has a folder of its own; a credit-only artist has nowhere to put a picture. */
+    val folder: Boolean = false,
+    val v: Long = 0,
+)
+
+@Serializable
+data class MusicSongRow(
+    val id: String,
+    @SerialName("album_id") val albumId: String? = null,
+    val album: String? = null,
+    val disc: Int? = null,
+    val position: Int? = null,
+    val title: String,
+    val artists: List<MusicCredit> = emptyList(),
+    @SerialName("length_ms") val lengthMs: Long? = null,
+    /** `WMA · 128`, `MP3 · 320`, `FLAC`. */
+    val format: String,
+    val reencodes: Boolean = false,
+    /** [MusicLyrics] or null. */
+    val lyrics: String? = null,
+    /** [MusicRecording] or null (album not matched). */
+    val recording: String? = null,
+    @SerialName("album_matched") val albumMatched: Boolean = false,
+)
+
+@Serializable
+data class MusicLibraryInfo(
+    val id: String,
+    val name: String,
+    @SerialName("jellyfin_path") val jellyfinPath: String = "",
+    @SerialName("local_path") val localPath: String = "",
+)
+
+/** `GET /api/music/browse` — one view of the Music kind, its facets counted on the server (FR-278-1..4). */
+@Serializable
+data class MusicBrowseDto(
+    val mapped: Boolean,
+    /** A scan has read the library at least once since the server started, or rows exist. */
+    val scanned: Boolean,
+    val health: MusicHealth? = null,
+    val match: MusicMatchStatus = MusicMatchStatus(),
+    val libraries: List<MusicLibraryInfo> = emptyList(),
+    val view: String,
+    val total: Int = 0,
+    val facets: List<MusicFacet> = emptyList(),
+    val albums: List<MusicAlbumRow> = emptyList(),
+    val artists: List<MusicArtistRow> = emptyList(),
+    val songs: List<MusicSongRow> = emptyList(),
+    @SerialName("musicbrainz_enabled") val musicbrainzEnabled: Boolean = true,
+)
+
+/** One row of the Album page's Tracks tab (FR-278-6). */
+@Serializable
+data class MusicTrackRow(
+    val id: String,
+    val disc: Int? = null,
+    val position: Int? = null,
+    val title: String,
+    val artists: List<MusicCredit> = emptyList(),
+    @SerialName("length_ms") val lengthMs: Long? = null,
+    val format: String,
+    @SerialName("sample_rate") val sampleRate: Int? = null,
+    val reencodes: Boolean = false,
+    /** A browser can direct-play the file (the ▶ is offered). */
+    val browser: Boolean = false,
+    val recording: String? = null,
+    @SerialName("mb_title") val mbTitle: String? = null,
+    @SerialName("mb_length_ms") val mbLengthMs: Long? = null,
+    val lyrics: String? = null,
+    @SerialName("gain_db") val gainDb: Double? = null,
+)
+
+@Serializable
+data class MusicAlbumPageDto(
+    val album: MusicAlbum,
+    val tracks: List<MusicTrackRow>,
+    /** What the album shows and writes: the admin's pick, else MusicBrainz's top votes, else the tags. */
+    val genres: List<String> = emptyList(),
+    @SerialName("cover_url") val coverUrl: String? = null,
+    /** Fields that differ from our last `album.nfo` write, when someone else rewrote it (FR-277-7). */
+    val drift: Int? = null,
+    @SerialName("lyrics_enabled") val lyricsEnabled: Boolean = true,
+    @SerialName("acoustid") val acoustId: Boolean = false,
+    @SerialName("jellyfin_url") val jellyfinUrl: String? = null,
+    val library: String? = null,
+    /** Jellyfin's own locked fields on the album (136's banner). */
+    @SerialName("jellyfin_locked") val jellyfinLocked: List<String> = emptyList(),
+    val type: String = "album",
+)
+
+@Serializable
+data class MusicVideoRow(
+    val id: String,
+    val title: String,
+    val year: Int? = null,
+    @SerialName("duration_sec") val durationSec: Int? = null,
+)
+
+@Serializable
+data class MusicArtistPageDto(
+    val artist: MusicArtist,
+    val albums: List<MusicAlbumRow> = emptyList(),
+    @SerialName("credited_on") val creditedOn: List<MusicAlbumRow> = emptyList(),
+    val songs: Int = 0,
+    @SerialName("picture_url") val pictureUrl: String? = null,
+    val videos: List<MusicVideoRow> = emptyList(),
+    /** MusicBrainz's votes on the artist, summed over its matched albums when the artist has none of its own. */
+    val genres: List<MusicGenreVote> = emptyList(),
+    @SerialName("jellyfin_url") val jellyfinUrl: String? = null,
+    /** The biography this page shows: the admin's own, else English, else the first language there is. */
+    val biography: String? = null,
+)
+
+/** Metadata → Music genres (FR-278-13). */
+@Serializable
+data class MusicGenreRow(val name: String, val albums: Int, val songs: Int)
+
+/** The Library's selection bar (FR-278-3): `match` · `covers` · `nfo` · `lock` · `unlock` · `clear`. */
+@Serializable
+data class MusicBulkRequest(val action: String, @SerialName("album_ids") val albumIds: List<String>)
+
+@Serializable
+data class MusicBulkResult(val sentence: String)
+
+/** FR-278-7 — Convert…: an album, some songs, or (both null) every song a phone re-encodes. */
+@Serializable
+data class MusicConvertRequest(
+    @SerialName("album_id") val albumId: String? = null,
+    @SerialName("track_ids") val trackIds: List<String>? = null,
+)
+
+/** What Convert… would do, asked before the confirmation says a number. */
+@Serializable
+data class MusicConvertPlan(
+    val songs: Int,
+    /** Seeding in qBittorrent — skipped. */
+    val seeding: Int = 0,
+    /** The formats involved, as the admin reads them (`WMA · 128`). */
+    val formats: List<String> = emptyList(),
+    val job: String? = null,
+)
+
+@Serializable
+data class MusicStreamDto(val url: String)

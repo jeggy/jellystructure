@@ -12,6 +12,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -457,7 +458,7 @@ class JellyfinClient {
         val id = libraryId.encodeURLParameter()
         val artists = paged("/Artists?ParentId=$id&Fields=ProviderIds,SortName,Genres,Path,DateCreated", "music artists") ?: return null
         val albums = paged(
-            "/Items?ParentId=$id&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId",
+            "/Items?ParentId=$id&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId,LockData,LockedFields",
             "music albums",
         ) ?: return null
         val tracks = paged(
@@ -721,6 +722,15 @@ class JellyfinClient {
         }
         r.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin notifyLibraryMediaUpdated failed: ${it.message}"); false }
+
+    /** Phase 278 — an item's primary image as Jellyfin serves it (an album's embedded art, when no cover file
+     *  exists). Null on anything but an image. The admin's music pages only; the credential is a header. */
+    suspend fun getItemPrimaryImage(baseUrl: String, token: String, itemId: String, maxWidth: Int = 600): Pair<ByteArray, String>? = runCatching {
+        val resp = httpGet(baseUrl.trimEnd('/') + "/Items/${itemId.encodeURLParameter()}/Images/Primary?maxWidth=$maxWidth&quality=90") { jellyfinAuth(token) }
+        val ct = resp.contentType()?.toString() ?: ""
+        if (!resp.status.isSuccess() || !ct.startsWith("image/")) return@runCatching null
+        resp.readRawBytes().takeIf { it.isNotEmpty() }?.let { it to ct }
+    }.getOrNull()
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false, recursive: Boolean = false): Boolean = runCatching {
         // FullRefresh forces Jellyfin to actually re-read all providers (including our NFO) regardless

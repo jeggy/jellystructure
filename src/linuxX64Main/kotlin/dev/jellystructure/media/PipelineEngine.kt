@@ -77,7 +77,10 @@ class MusicPipeline(
     val matcher: dev.jellystructure.music.MusicMatchService,
     // Phase 277 — the files: covers, pictures, biographies, lyrics, NFOs.
     val media: dev.jellystructure.music.MusicMediaService,
-)
+) {
+    /** Phase 278 — *Convert…* (set in Main.kt once the seeding guard exists). */
+    var convert: dev.jellystructure.music.MusicConvert? = null
+}
 
 /**
  * The one place every trigger resolves "what steps actually run" when Settings has no pipeline

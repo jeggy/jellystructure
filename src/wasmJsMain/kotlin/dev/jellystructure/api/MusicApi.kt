@@ -1,6 +1,22 @@
 package dev.jellystructure.api
 
 import dev.jellystructure.model.MusicAlbum
+import dev.jellystructure.model.MusicAlbumPageDto
+import dev.jellystructure.model.MusicArtCandidate
+import dev.jellystructure.model.MusicArtUseRequest
+import dev.jellystructure.model.MusicArtist
+import dev.jellystructure.model.MusicArtistArtworkDto
+import dev.jellystructure.model.MusicArtistPageDto
+import dev.jellystructure.model.MusicArtworkDto
+import dev.jellystructure.model.MusicBiographyRequest
+import dev.jellystructure.model.MusicBrowseDto
+import dev.jellystructure.model.MusicBulkRequest
+import dev.jellystructure.model.MusicBulkResult
+import dev.jellystructure.model.MusicConvertPlan
+import dev.jellystructure.model.MusicConvertRequest
+import dev.jellystructure.model.MusicGenreRow
+import dev.jellystructure.model.MusicNfoDto
+import dev.jellystructure.model.MusicStreamDto
 import dev.jellystructure.model.MusicCandidateDto
 import dev.jellystructure.model.MusicGenresRequest
 import dev.jellystructure.model.MusicLockRequest
@@ -85,4 +101,121 @@ object MusicApi {
     suspend fun testProvider(name: String): String = runCatching {
         httpClient.post("/api/music/providers/test/${name.encodeURLParameter()}").body<ProviderTestResult>().result
     }.getOrDefault("The test could not be run")
+
+    // ── Phase 277: artwork, NFO, biography, lyrics ──
+
+    suspend fun albumArtwork(albumId: String): MusicArtworkDto? = runCatching {
+        val r = httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/artwork")
+        if (r.status.isSuccess()) r.body<MusicArtworkDto>() else null
+    }.getOrNull()
+
+    suspend fun artistArtwork(artistId: String): MusicArtistArtworkDto? = runCatching {
+        httpClient.get("/api/music/artist/${artistId.encodeURLParameter()}/artwork").body<MusicArtistArtworkDto>()
+    }.getOrNull()
+
+    suspend fun useAlbumCover(albumId: String, c: MusicArtCandidate): Boolean = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/artwork/use") { contentType(ContentType.Application.Json); setBody(MusicArtUseRequest(c.url, c.kind, c.source, c.credit)) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun useArtistImage(artistId: String, c: MusicArtCandidate): Boolean = runCatching {
+        val kind = when (c.kind) { "background" -> "background"; "logo" -> "logo"; else -> "thumb" }
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/artwork/use") { contentType(ContentType.Application.Json); setBody(MusicArtUseRequest(c.url, kind, c.source, c.credit)) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun clearAlbumCover(albumId: String): Boolean = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/artwork/clear").status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun lockAlbumCover(albumId: String, locked: Boolean): Boolean = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/artwork/lock") { contentType(ContentType.Application.Json); setBody(MusicLockRequest(locked)) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun clearArtistImage(artistId: String, kind: String): Boolean = runCatching {
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/artwork/clear?kind=$kind").status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun lockArtistImage(artistId: String, kind: String, locked: Boolean): Boolean = runCatching {
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/artwork/lock?kind=$kind") { contentType(ContentType.Application.Json); setBody(MusicLockRequest(locked)) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun setBiography(artistId: String, text: String?): MusicArtist? = runCatching {
+        httpClient.put("/api/music/artist/${artistId.encodeURLParameter()}/biography") { contentType(ContentType.Application.Json); setBody(MusicBiographyRequest(text)) }.body<MusicArtist>()
+    }.getOrNull()
+
+    suspend fun albumNfo(albumId: String): MusicNfoDto? = runCatching { httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/nfo").body<MusicNfoDto>() }.getOrNull()
+    suspend fun artistNfo(artistId: String): MusicNfoDto? = runCatching { httpClient.get("/api/music/artist/${artistId.encodeURLParameter()}/nfo").body<MusicNfoDto>() }.getOrNull()
+
+    /** Save → NFO (and Sync when [sync]); the answer is `written` · `unchanged` · `no_folder` · `failed`. */
+    suspend fun saveAlbum(albumId: String, sync: Boolean): String? = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/save${if (sync) "?sync=1" else ""}").body<OutcomeResult>().outcome
+    }.getOrNull()
+
+    suspend fun saveArtist(artistId: String, sync: Boolean): String? = runCatching {
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/save${if (sync) "?sync=1" else ""}").body<OutcomeResult>().outcome
+    }.getOrNull()
+
+    suspend fun syncAlbum(albumId: String): Boolean = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/sync").status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun fetchLyrics(albumId: String): String? = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/lyrics").body<LyricsResult>().result
+    }.getOrNull()
+
+    // ── Phase 278: the pages ──
+
+    /** [facets] maps a facet key to the values ticked. */
+    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null): MusicBrowseDto? = runCatching {
+        val qs = buildList {
+            add("view=$view")
+            query?.takeIf { it.isNotBlank() }?.let { add("q=${it.encodeURLParameter()}") }
+            sort?.let { add("sort=$it") }
+            facets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }
+        }.joinToString("&")
+        httpClient.get("/api/music/browse?$qs").body<MusicBrowseDto>()
+    }.getOrNull()
+
+    suspend fun albumPage(albumId: String): MusicAlbumPageDto? = runCatching {
+        val r = httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/page")
+        if (r.status.isSuccess()) r.body<MusicAlbumPageDto>() else null
+    }.getOrNull()
+
+    suspend fun artistPage(artistId: String): MusicArtistPageDto? = runCatching {
+        val r = httpClient.get("/api/music/artist/${artistId.encodeURLParameter()}/page")
+        if (r.status.isSuccess()) r.body<MusicArtistPageDto>() else null
+    }.getOrNull()
+
+    suspend fun genres(): List<MusicGenreRow>? = runCatching { httpClient.get("/api/music/genres").body<List<MusicGenreRow>>() }.getOrNull()
+
+    suspend fun bulk(action: String, albumIds: List<String>): String? = runCatching {
+        val r = httpClient.post("/api/music/bulk") { contentType(ContentType.Application.Json); setBody(MusicBulkRequest(action, albumIds)) }
+        if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
+    }.getOrNull()
+
+    suspend fun lockArtist(artistId: String, locked: Boolean): MusicArtist? = runCatching {
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/lock") { contentType(ContentType.Application.Json); setBody(MusicLockRequest(locked)) }.body<MusicArtist>()
+    }.getOrNull()
+
+    suspend fun clearArtist(artistId: String): MusicArtist? = runCatching {
+        httpClient.post("/api/music/artist/${artistId.encodeURLParameter()}/clear").body<MusicArtist>()
+    }.getOrNull()
+
+    suspend fun convertPlan(req: MusicConvertRequest): MusicConvertPlan? = runCatching {
+        val r = httpClient.post("/api/music/convert/plan") { contentType(ContentType.Application.Json); setBody(req) }
+        if (r.status.isSuccess()) r.body<MusicConvertPlan>() else null
+    }.getOrNull()
+
+    suspend fun convert(req: MusicConvertRequest): MusicConvertPlan? = runCatching {
+        val r = httpClient.post("/api/music/convert") { contentType(ContentType.Application.Json); setBody(req) }
+        if (r.status.isSuccess()) r.body<MusicConvertPlan>() else null
+    }.getOrNull()
+
+    suspend fun streamUrl(trackId: String): String? = runCatching {
+        val r = httpClient.get("/api/music/track/${trackId.encodeURLParameter()}/stream")
+        if (r.status.isSuccess()) r.body<MusicStreamDto>().url else null
+    }.getOrNull()
 }
+
+@Serializable private data class OutcomeResult(val outcome: String = "")
+@Serializable private data class LyricsResult(val result: String = "")
+

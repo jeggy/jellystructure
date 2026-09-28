@@ -528,6 +528,9 @@ data class JellyfinMusicItem(
     @SerialName("ArtistItems") val artistItems: List<JellyfinNameId> = emptyList(),
     @SerialName("AlbumArtists") val albumArtists: List<JellyfinNameId> = emptyList(),
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinAudioStream> = emptyList(),
+    /** Phase 278 — an album's locked metadata in Jellyfin (136's *Locked in Jellyfin* banner). */
+    @SerialName("LockData") val lockData: Boolean? = null,
+    @SerialName("LockedFields") val lockedFields: List<String>? = null,
 )
 
 @Serializable
