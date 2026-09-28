@@ -65,6 +65,14 @@ class PipelineDeps(
     // Phase 220 (FR-220-1) — after fetch_artwork writes an item's originals, produce the served
     // variants the TV will ask for (RaviloArtworkService.presize), so the request path is a file read.
     val artworkPresize: (suspend (MediaItem) -> Unit)? = null,
+    // Phase 275 — the music library's steps; null where a site builds none (a single-item run never runs them).
+    val music: MusicPipeline? = null,
+)
+
+/** Phase 275 — what the music steps need. Later music phases add their collaborators here. */
+class MusicPipeline(
+    val scanner: dev.jellystructure.music.MusicScanner,
+    val store: dev.jellystructure.music.MusicStore,
 )
 
 /**
@@ -132,6 +140,7 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
     cfg.scan.pipeline.filter { it.enabled }.ifEmpty {
         buildList {
             add(PipelineStep(step = "scan_files"))
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.SCAN))  // Phase 275
             add(PipelineStep(step = "pull_tmdb", scope = "all"))
             if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
             // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
@@ -302,11 +311,15 @@ suspend fun runPipeline(
         is RunTarget.SingleItem -> listOf(target.item)
     }
 
-    if (workingSet.isEmpty()) {
+    // Phase 275 — the music steps are whole-library: nothing changing among films is no reason to skip them.
+    val musicSteps = if (target is RunTarget.Library && deps.music != null) pipeline.filter { dev.jellystructure.config.MusicSteps.isMusic(it.step) } else emptyList()
+    if (workingSet.isEmpty() && musicSteps.isEmpty()) {
         Logger.info("Pipeline scan_files: no items in working set, skipping action steps")
         signalPipelineComplete(workingSet)
         return workingSet
     }
+    // Only the music steps run when no film/series item is in the working set.
+    val stepsToRun = if (workingSet.isEmpty()) musicSteps else pipeline
 
     Logger.info("Pipeline scan_files complete: ${workingSet.size} items in working set")
 
@@ -328,8 +341,10 @@ suspend fun runPipeline(
     fun ran(item: MediaItem, step: String, outcome: String = StepRunStore.OK, detail: String? = null) { stepRuns?.record(item.id, step, outcome, detail) }
     fun failedRun(step: String): (MediaItem, Throwable) -> Unit = { item, e -> stepRuns?.record(item.id, step, StepRunStore.FAILED, e.message ?: "failed") }
     try {
-    for (step in pipeline) {
+    for (step in stepsToRun) {
         if (step.step == "scan_files") continue
+        // Phase 275 — a single item's run (a webhook for one film) never touches the music library.
+        if (dev.jellystructure.config.MusicSteps.isMusic(step.step) && step !in musicSteps) continue
         // A realtime single-item run already matched TMDB via scanItem() — running pull_tmdb again
         // would be a wasted second fetch for the same item in the same run.
         if (target is RunTarget.SingleItem && step.step == "pull_tmdb") continue
@@ -344,6 +359,18 @@ suspend fun runPipeline(
         withContext(RunContext(jobId, step.step)) {
         Logger.info("Pipeline step: ${step.step}")
         when (step.step) {
+            dev.jellystructure.config.MusicSteps.SCAN -> {
+                // Phase 275 (FR-275-2) — three paged Jellyfin reads per music library, no file probing.
+                val music = deps.music ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val libraryFilter = (target as? RunTarget.Library)?.libraryJellyfinId
+                val summary = runCatching { music.scanner.scan(libraryFilter) }
+                    .onFailure { Logger.warn("scan_music failed: ${it.message}", "music") }
+                    .getOrNull()?.sentence() ?: "failed — see the log"
+                Logger.info("scan_music: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
             "pull_tmdb" -> {
                 // Phase 269 (dev review item 3) — "missing" also means "recommendation signals never
                 // fetched" (`keywords == null`; `[]` is TMDB having none), for one pass per title.

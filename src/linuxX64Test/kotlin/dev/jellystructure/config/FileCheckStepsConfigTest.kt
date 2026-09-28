@@ -36,8 +36,9 @@ class FileCheckStepsConfigTest {
         val path = pathFor("off")
         runBlocking { FileIo.writeText(Path(path), "[behavior]\nverify_files = false\n\n$pipeline") }
         val cfg = load(path).current
-        // Phase 269 seeds build_recommendations the same way, and Phase 273 check_subtitles, both ahead of the trailing notify.
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "check_track_lengths", "build_recommendations", "check_subtitles", "notify"), cfg.scan.pipeline.map { it.step })
+        // Phase 269 seeds build_recommendations the same way, and Phase 273 check_subtitles, both ahead of the trailing notify;
+        // Phase 275's scan_music goes right after scan_files.
+        assertEquals(listOf("scan_files", "scan_music", "pull_tmdb", "verify_files", "check_track_lengths", "build_recommendations", "check_subtitles", "notify"), cfg.scan.pipeline.map { it.step })
         assertEquals("report", cfg.subtitleCheck.action, "an existing install's subtitle check starts on Only report")
         assertEquals(listOf(false, false), cfg.scan.pipeline.filter { it.step in FileCheckSteps.ALL }.map { it.enabled })
         assertTrue(cfg.scan.fileCheckStepsSeeded)
@@ -63,7 +64,7 @@ class FileCheckStepsConfigTest {
         runBlocking { FileIo.writeText(Path(path), pipeline) }
         val store = load(path)
         runBlocking { store.update(store.current.copy(scan = store.current.scan.copy(pipeline = store.current.scan.pipeline.filter { it.step != FileCheckSteps.LENGTHS }))) }
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "build_recommendations", "check_subtitles", "notify"), load(path).current.scan.pipeline.map { it.step })
+        assertEquals(listOf("scan_files", "scan_music", "pull_tmdb", "verify_files", "build_recommendations", "check_subtitles", "notify"), load(path).current.scan.pipeline.map { it.step })
         platform.posix.remove(path)
     }
 
@@ -73,7 +74,7 @@ class FileCheckStepsConfigTest {
         runBlocking { FileIo.writeText(Path(path), "[behavior]\nverify_files = true\n") }
         val cfg = load(path).current
         assertEquals(emptyList(), cfg.scan.pipeline)
-        assertEquals(listOf("scan_files", "pull_tmdb", "fetch_artwork", "verify_files", "check_track_lengths", "check_subtitles", "build_recommendations"),
+        assertEquals(listOf("scan_files", "scan_music", "pull_tmdb", "fetch_artwork", "verify_files", "check_track_lengths", "check_subtitles", "build_recommendations"),
             dev.jellystructure.media.effectivePipeline(cfg).map { it.step })
         platform.posix.remove(path)
     }

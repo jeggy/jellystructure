@@ -481,3 +481,64 @@ data class JellyfinTaskResult(
     @SerialName("EndTimeUtc") val endTimeUtc: String? = null,
     @SerialName("Status") val status: String? = null,
 )
+
+// ─── Phase 275 — the music library ───────────────────────────────────────────────────────────────────────
+// Read with `Fields=` that Jellyfin 12.1.0 answered in full (measured 2026-09-27/28, the household's music
+// library): artists from `/Artists?ParentId=`, albums (`MusicAlbum`) and tracks (`Audio`) from `/Items`.
+// Separate from [JellyfinItem] on purpose: the film/series scan reads that shape and must not start seeing
+// music fields (or music items).
+
+@Serializable
+data class JellyfinNameId(
+    @SerialName("Name") val name: String = "",
+    @SerialName("Id") val id: String = "",
+)
+
+@Serializable
+data class JellyfinAudioStream(
+    @SerialName("Type") val type: String? = null,
+    @SerialName("Codec") val codec: String? = null,
+    @SerialName("BitRate") val bitRate: Int? = null,
+    @SerialName("SampleRate") val sampleRate: Int? = null,
+    @SerialName("Channels") val channels: Int? = null,
+)
+
+@Serializable
+data class JellyfinMusicItem(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String = "",
+    @SerialName("Type") val type: String = "",
+    @SerialName("SortName") val sortName: String? = null,
+    @SerialName("Path") val path: String? = null,
+    /** An album's parent is its artist folder; a track's is its album. */
+    @SerialName("ParentId") val parentId: String? = null,
+    @SerialName("AlbumId") val albumId: String? = null,
+    @SerialName("ProductionYear") val year: Int? = null,
+    @SerialName("IndexNumber") val indexNumber: Int? = null,
+    @SerialName("ParentIndexNumber") val parentIndexNumber: Int? = null,
+    @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
+    @SerialName("Container") val container: String? = null,
+    @SerialName("DateCreated") val dateCreated: String? = null,
+    @SerialName("HasLyrics") val hasLyrics: Boolean? = null,
+    @SerialName("NormalizationGain") val normalizationGain: Double? = null,
+    @SerialName("AlbumNormalizationGain") val albumNormalizationGain: Double? = null,
+    @SerialName("Genres") val genres: List<String> = emptyList(),
+    @SerialName("ProviderIds") val providerIds: Map<String, String?> = emptyMap(),
+    @SerialName("ImageTags") val imageTags: Map<String, String?> = emptyMap(),
+    @SerialName("ArtistItems") val artistItems: List<JellyfinNameId> = emptyList(),
+    @SerialName("AlbumArtists") val albumArtists: List<JellyfinNameId> = emptyList(),
+    @SerialName("MediaStreams") val mediaStreams: List<JellyfinAudioStream> = emptyList(),
+)
+
+@Serializable
+data class JellyfinMusicItemsResponse(
+    @SerialName("Items") val items: List<JellyfinMusicItem> = emptyList(),
+    @SerialName("TotalRecordCount") val totalRecordCount: Int = 0,
+)
+
+/** One music library as Jellyfin reports it — every page fetched, or nothing (see [JellyfinClient.getMusicLibrary]). */
+data class JellyfinMusicLibrary(
+    val artists: List<JellyfinMusicItem>,
+    val albums: List<JellyfinMusicItem>,
+    val tracks: List<JellyfinMusicItem>,
+)

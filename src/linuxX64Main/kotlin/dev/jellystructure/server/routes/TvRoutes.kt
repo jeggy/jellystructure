@@ -143,6 +143,8 @@ private data class OverviewPolicy(
     /** Phase 258 (FR-258-6) — true when any of this user's device rows still carries a policy that differs
      *  from Jellyfin's live one (a reconcile has not run yet, or has been failing). */
     @SerialName("stale") val stale: Boolean = false,
+    /** Phase 275 (FR-275-7) — `yes` / `no_access` for the mapped music library; null when none is mapped. */
+    @SerialName("music") val music: String? = null,
 )
 
 /** Phase 177 §FR-177-5 — one row for the Activity page's "Playback quality" card; device/title are
@@ -987,6 +989,7 @@ fun Route.tvRoutes(
         // shape as the client-facing routes above; one call, reused, not a per-row round trip.
         val jfAvatarTags = jfUsers.associate { it.id to it.primaryImageTag }
         val totalLibraries = config.libraries.size
+        val musicLibraryIds = dev.jellystructure.music.MusicScanner.musicLibraries(config).map { it.jellyfinId }
 
         val userIds = (allDevices.map { it.jellyfinUserId } + allSessions.map { it.jellyfinUserId }).distinct()
         val users = userIds.map { uid ->
@@ -1011,6 +1014,11 @@ fun Route.tvRoutes(
                     // FR-258-6 — the live policy is what this line shows; name it when a device's own copy
                     // (the one that decides what plays) is behind it. Same comparison the reconciler makes.
                     stale = policy?.let { live -> val p = dev.jellystructure.tv.DevicePolicy.of(live); userDevices.any { dev.jellystructure.tv.policyChanges(it, p).isNotEmpty() } } ?: false,
+                    // FR-275-7 — why a phone shows no music switch: the same grant rule the music routes apply.
+                    music = musicLibraryIds.takeIf { it.isNotEmpty() && policy != null }?.let { ids ->
+                        val allowed = if (policy!!.enableAllFolders) null else policy.enabledFolders.map { dev.jellystructure.tv.normalizeGuid(it) }.toSet()
+                        if (ids.any { dev.jellystructure.music.musicVisible(it, allowed) }) "yes" else "no_access"
+                    },
                 ),
                 avatarUrl = RaviloImageUrl.avatar(uid, jfAvatarTags[uid]),
                 devices = userDevices.map { d ->

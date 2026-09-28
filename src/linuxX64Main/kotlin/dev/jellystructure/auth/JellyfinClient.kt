@@ -428,6 +428,46 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * Phase 275 (FR-275-2) — one music library, every page of artists, albums and tracks. **All or nothing**: any
+     * failed page returns null, because the caller marks what is absent as missing, and a half-fetched library
+     * would mark the other half missing. Artists are the library's folder-backed ones (`/Artists?ParentId=`);
+     * an artist Jellyfin knows only as a track credit arrives on the tracks' `ArtistItems` instead.
+     */
+    suspend fun getMusicLibrary(baseUrl: String, token: String, libraryId: String): JellyfinMusicLibrary? {
+        val base = baseUrl.trimEnd('/')
+        suspend fun paged(query: String, context: String): List<JellyfinMusicItem>? {
+            val acc = mutableListOf<JellyfinMusicItem>()
+            var start = 0
+            while (true) {
+                val page = runCatching {
+                    httpGet("$base$query&EnableUserData=false&Limit=$JF_PAGE_SIZE&StartIndex=$start") { jellyfinAuth(token) }
+                        .bodyOrNull<JellyfinMusicItemsResponse>(context)
+                }.getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    Logger.warn("Jellyfin $context failed: ${e.message}")
+                    null
+                } ?: return null
+                acc += page.items
+                start += page.items.size
+                if (page.items.isEmpty() || start >= page.totalRecordCount) break
+            }
+            return acc
+        }
+        val id = libraryId.encodeURLParameter()
+        val artists = paged("/Artists?ParentId=$id&Fields=ProviderIds,SortName,Genres,Path,DateCreated", "music artists") ?: return null
+        val albums = paged(
+            "/Items?ParentId=$id&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId",
+            "music albums",
+        ) ?: return null
+        val tracks = paged(
+            "/Items?ParentId=$id&IncludeItemTypes=Audio&Recursive=true" +
+                "&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId,MediaStreams",
+            "music tracks",
+        ) ?: return null
+        return JellyfinMusicLibrary(artists, albums, tracks)
+    }
+
     suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName"

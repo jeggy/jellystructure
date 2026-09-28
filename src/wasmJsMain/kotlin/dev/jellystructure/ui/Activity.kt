@@ -1454,6 +1454,7 @@ private fun stepLabel(step: String): String = when (step) {
     "fetch_artwork" -> "Artwork"
     "sync_imdb_ratings" -> "IMDb"
     "build_recommendations" -> "Recommendations"  // Phase 269
+    "scan_music" -> "♪ Music"                      // Phase 275
     "rescan_arr" -> "*arr"
     "write_nfo" -> "NFO"
     "sync_jellyfin" -> "Jellyfin"

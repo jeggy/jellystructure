@@ -54,11 +54,13 @@ internal val PIPE_BLOCKS = mapOf(
     "check_track_lengths" to PipeBlockDef("Check track lengths", "Find audio/video tracks that stop before the file does (phase 255).",           "#8fa8e8", PIPE_LENGTHS_IC),
     // Phase 269 (FR-269-8) — a whole-library step: every viewer's Recommended list, on its own cadence.
     "build_recommendations" to PipeBlockDef("Build recommendations", "Each viewer's Recommended list, from what they watch in Jellyfin (phase 269).", "#e86f9a", PIPE_REC_IC),
+    // Phase 275 — the music library: whole-library, runs even when no film changed.
+    "scan_music"    to PipeBlockDef("♪ Scan music",              "Artists · albums · songs from Jellyfin's music library. No file probing.", "#9b7bf5", PIPE_SCAN_IC),
     "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
 internal val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
-internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","notify" to "Notify","wait" to "Wait")
+internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","scan_music" to "♪ Music","notify" to "Notify","wait" to "Wait")
 
 /**
  * Phase 154 (FR-PIPE1-1..5) — pre-run dialog. Lists the steps that will actually run and lets the operator

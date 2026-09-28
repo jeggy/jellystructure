@@ -144,6 +144,8 @@ data class OverviewPolicy(
     @SerialName("known") val known: Boolean = true,
     /** Phase 258 (FR-258-6) — a device row still carries an older policy than Jellyfin's live one. */
     @SerialName("stale") val stale: Boolean = false,
+    /** Phase 275 (FR-275-7) — `yes` / `no_access`; null when no music library is mapped. */
+    @SerialName("music") val music: String? = null,
 )
 
 @Serializable

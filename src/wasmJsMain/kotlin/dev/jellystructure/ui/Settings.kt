@@ -1579,13 +1579,19 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
         <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
           value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
       </div>
+      ${if (lib.collectionType.equals("music", ignoreCase = true)) """
+      <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
+        <span style="font-size:.78rem">MusicBrainz · Covers: Cover Art Archive · Artist images: fanart.tv · Lyrics: LRCLIB
+          <span style="color:var(--ink-soft)">— music has no language cascade. Not the Music videos library.</span></span>
+      </div>""" else """
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
         <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
           value="${lib.fallbackLanguage ?: ""}" maxlength="10"
           style="width:110px;${if (skipped) "pointer-events:none" else ""}">
         <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
-      </div>
+      </div>"""}
       <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Match prefix</span>
         <code id="match-prefix-$i" style="font-size:.72rem;color:var(--ink-soft)">${lib.jellyfinPath.ifBlank { lib.localPath }}</code>

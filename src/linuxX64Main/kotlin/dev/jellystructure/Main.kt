@@ -120,6 +120,12 @@ fun main() = runBlocking {
     dev.jellystructure.media.GenreCatalog.attach(db)
     val mediaStore = MediaStore(db, jsTagStore, configStore)
     mediaStore.load()
+    // Phase 275 — the music library: its own tables, never a MediaKind.
+    val musicStore = dev.jellystructure.music.MusicStore(db)
+    val musicPipeline = dev.jellystructure.media.MusicPipeline(
+        scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
+        store = musicStore,
+    )
     // Phase 163 (Intro & credits editor) — one row per (item, episode, kind), replacing the old flat
     // SegmentMarkers blob field. Backfilled from mediaStore's already-loaded items just below.
     val mediaSegmentStore = dev.jellystructure.media.MediaSegmentStore(db)
@@ -460,6 +466,7 @@ fun main() = runBlocking {
         devicePolicyReconciler = devicePolicyReconciler,
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
+        musicPipeline = musicPipeline,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
@@ -475,6 +482,7 @@ fun main() = runBlocking {
         mediaSegmentStore = mediaSegmentStore, mediaJobQueue = mediaJobQueue,
         realtimeIngest = realtimeIngest, mediaHistory = mediaHistory, dirtyItemStore = dirtyItemStore,
         artworkPresize = { imageProxyService.presize(it) },   // Phase 220 (FR-220-1)
+        music = musicPipeline,                                // Phase 275
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set

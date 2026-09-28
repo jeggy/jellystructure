@@ -119,7 +119,43 @@ data class ScanConfig(
     // Phase 273 (dev review item 8) — `check_subtitles` joins an existing pipeline ONCE, and an existing install's
     // subtitle check starts on `report`. Server-owned like the two flags above.
     @SerialName("subtitle_check_seeded") val subtitleCheckSeeded: Boolean = false,
+    // Phase 275 — WHICH music steps have been added to an existing pipeline (not a boolean: 276/277 add steps
+    // of their own later, and each must be seeded exactly once). Server-owned like the flags above.
+    @SerialName("music_steps_seeded") val musicStepsSeeded: List<String> = emptyList(),
 )
+
+/**
+ * Phase 275 — the music library's pipeline steps. They are **whole-library** steps: a Library run executes them
+ * even when no film or series changed (the film working set can be empty), and a single-item run (a webhook for
+ * one film) never does. `scan_music` runs right after `scan_files` (FR-275-2); later phases add their steps to
+ * [ALL] and [seed] adds each once.
+ */
+object MusicSteps {
+    const val SCAN = "scan_music"
+    val ALL: List<String> = listOf(SCAN)
+
+    fun isMusic(step: String): Boolean = step in ALL
+
+    /** [SCAN] directly after `scan_files`; any other music step ahead of the trailing wait/notify steps. Only steps
+     *  not in [alreadySeeded] are considered, so a step the operator removed stays removed. An empty pipeline
+     *  means the built-in default, which carries them itself. */
+    fun seed(pipeline: List<PipelineStep>, alreadySeeded: List<String>): List<PipelineStep> {
+        if (pipeline.isEmpty()) return pipeline
+        var out = pipeline
+        for (step in ALL) {
+            if (step in alreadySeeded || out.any { it.step == step }) continue
+            val at = if (step == SCAN) {
+                out.indexOfFirst { it.step == "scan_files" }.let { if (it >= 0) it + 1 else 0 }
+            } else {
+                var i = out.size
+                while (i > 1 && out[i - 1].step in setOf("wait", "notify")) i--
+                i
+            }
+            out = out.subList(0, at) + PipelineStep(step = step) + out.subList(at, out.size)
+        }
+        return out
+    }
+}
 
 /** Phase 269 (FR-269-8) — the whole-library step that rebuilds every viewer's Recommended list. */
 object RecommendationsStep {

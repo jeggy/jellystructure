@@ -180,6 +180,8 @@ fun startServer(
     screenPairingService: dev.jellystructure.tv.ScreenPairingService? = null,
     // Phase 273 — the subtitle check, its Bazarr side and their routes; null in contexts that build none.
     subtitleCheckWiring: SubtitleCheckWiring? = null,
+    // Phase 275 — the music library (its store, its scan) and the routes that read it.
+    musicPipeline: dev.jellystructure.media.MusicPipeline? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -444,6 +446,8 @@ fun startServer(
                             """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
                             """"session_bridges":{"connected":$bridgesConnected,"failing":$bridgesFailing},""" +
                             """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
+                            // Phase 275 (FR-275-6) — null when no music library is mapped. Counts only.
+                            """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.music.MusicHealth.serializer(), it) } ?: "null"},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
@@ -598,7 +602,7 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, tvEventBus = tvEventBus, realtimeIngest = realtimeIngest)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore)

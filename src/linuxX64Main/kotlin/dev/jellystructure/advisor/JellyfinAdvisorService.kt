@@ -418,7 +418,10 @@ object JellyfinAdvisorService {
                 navigationPath = path,
                 fieldLabel = "\"Metadata savers\" → uncheck \"Nfo\"",
                 recommendation = "Uncheck Nfo. Then check whether the NFO files jellystructure wrote for this library still say what it wrote — a saver that has been on for a while has already overwritten them.",
-                tradeoff = "Jellyfin stops maintaining its own copy of the metadata on disk. That is the intended arrangement here: jellystructure writes the NFOs.",
+                tradeoff = if (lib.collectionType.equals("music", ignoreCase = true))
+                    // Phase 275 (FR-275-5) — Jellyfin keeps READING album.nfo / artist.nfo with its saver off.
+                    "You lose: nothing — Jellyfin keeps reading the album.nfo and artist.nfo files; it only stops rewriting them."
+                else "Jellyfin stops maintaining its own copy of the metadata on disk. That is the intended arrangement here: jellystructure writes the NFOs.",
             )
         }
 

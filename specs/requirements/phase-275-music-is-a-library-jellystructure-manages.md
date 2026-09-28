@@ -6,7 +6,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A, §E1, §E3, §F),
+`✓ Built` 2026-09-28 (build notes at the end; not deployed — the backend was not restarted). `Planned` when
+written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A, §E1, §E3, §F),
 `specs/research-reports/music-library-and-player-2026-09-27.md` (§1.2, §2.1, §4.1–§4.3) and the round-1 mockups
 (`design/app/music-data.js`, `library.html?kind=music`, `settings.html#mu-libcard`, `ravilo-users.html`).
 **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main` `f8bdaab4` on 2026-09-27: admin taken through **273**,
@@ -134,3 +135,46 @@ Buildable. Ten items; no blocker. Two things the spec asks for already exist (1,
    separately (measured) → three roles: *album_artist*, *artist*, *feat* — *feat* only when MusicBrainz's
    artist-credit join phrase says so, never from a title parse alone.
 10. **Wire:** nothing an installed app decodes changes (FR-275-9) ✓.
+
+## Build notes (2026-09-28)
+
+Built on `main` after the dev review. Compiles (`compileKotlinLinuxX64`, `compileKotlinWasmJs`), the migration
+verifies, and the music, config, plan and advisor tests pass. **Not deployed; acceptance 1–4 are checked on the
+server once it runs this build.**
+
+1. **Tables (FR-275-1).** `Music.sq` + migration **59**: `music_artist`, `music_album`, `music_track`,
+   `music_credit` (roles `album_artist` · `artist`, `feat` reserved for 276), the `media` shape — a JSON blob plus
+   the columns a query filters on (`library_id`, names, MusicBrainz ids, `match_state`, `match_locked`,
+   `cover_state`, `search_text`, `missing_since`). The models are in `commonMain` (`model/Music.kt`), so the admin
+   decodes the same classes. `MediaKind` and `MediaItem` are untouched.
+2. **`scan_music` is a real pipeline step (FR-275-2), not a sub-step.** It runs in the same run, directly after
+   `scan_files`, so it shows in the pre-run dialog and Activity's strip and can be skipped for a run. It is seeded
+   once into an existing pipeline (`scan.music_steps_seeded` records *which* music steps were added, so 276/277's
+   steps each join once and an operator's removal sticks) and is in the built-in default. Two engine rules are new:
+   **the music steps run even when no film or series changed** (the empty-working-set early return now keeps them),
+   and **a single-item run never runs them** (a webhook for one film does not rescan music).
+3. **One read per kind, all or nothing.** `JellyfinClient.getMusicLibrary` pages `/Artists?ParentId=`, `MusicAlbum`
+   and `Audio` items; any failed page returns null and nothing is marked missing. No ffprobe per track.
+4. **Artists are the union of folders and credits.** `/Artists?ParentId=` lists folder-backed artists only; an artist
+   Jellyfin knows only from a track's `ArtistItems` is kept too, with no folder (and not counted as a missing
+   picture). **On the household library the scan stores 20 artists (19 + 1 credit-only), 30 albums, 60 songs, 38 of
+   them `reencodes`** (checked read-only against Jellyfin on 2026-09-28). Acceptance 1's "23 artists" counted every
+   `MusicArtist` across Jellyfin's libraries, including the music-video library's.
+5. **What a rescan may change.** The scan overwrites only Jellyfin's fields on top of the previous row (names,
+   paths, formats, gains, credits, tag genres, the cover state); match state, MusicBrainz ids, locks and anything a
+   later phase adds are carried untouched. A row Jellyfin no longer reports keeps its data and gets `missing_since`;
+   reappearing clears it. Another library's rows are never touched.
+6. **Covers and pictures.** `cover_state`: a file in the album folder (`cover`/`folder`/`front` · jpg/png) →
+   `file`; else Jellyfin's `Primary` image tag → `jellyfin`; else `none`. Artists the same with `folder`/`artist`/
+   `thumb`/`poster`.
+7. **FR-275-4:** `musicVisible(libraryId, allowed)` — the films' grant rule, fail-closed. Its readers are 279's routes.
+8. **FR-275-5:** the existing NFO-saver finding fires for the music library as soon as it is mapped; for a
+   `music` library its trade-off reads *You lose: nothing — Jellyfin keeps reading the album.nfo and artist.nfo
+   files*. **FR-275-6:** `/api/health` carries `music {artists, albums, tracks, matched, needs_you, unmatched,
+   covers_missing, artist_images_missing, reencodes}`, null when no music library is mapped. `music_unmatched` in
+   the webhook waits for 276 (nothing is matched before it). **FR-275-7:** Users & devices' access line adds
+   *Music: yes* / *Music: no library access*.
+9. **FR-275-3:** a `music` library's card shows the provider line instead of *Fallback lang*.
+10. **Lane (open question 1):** no job-queue lane here — the scan is three reads inline in the run. 276 decides
+    matching's.
+11. **FR-275-8:** `search_text` is written on every row; its readers are 278 (admin) and 279 (phone).

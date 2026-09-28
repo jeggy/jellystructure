@@ -1,0 +1,105 @@
+-- Phase 275 — the music library: artists, albums, tracks and who is credited on what. Must stay in sync with 59.sqm.
+-- The `media` table's shape (FR-275-1): the whole row as a JSON blob plus the columns a query filters on. Ids are
+-- Jellyfin item ids. Music is NOT a MediaKind — nothing here is read by a film or series path.
+
+CREATE TABLE music_artist (
+    id TEXT NOT NULL PRIMARY KEY,
+    library_id TEXT,
+    json TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_name TEXT,
+    mbid TEXT,
+    match_state TEXT NOT NULL DEFAULT 'unmatched',
+    match_locked INTEGER NOT NULL DEFAULT 0,
+    search_text TEXT NOT NULL DEFAULT '',
+    missing_since INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE music_album (
+    id TEXT NOT NULL PRIMARY KEY,
+    library_id TEXT,
+    json TEXT NOT NULL,
+    title TEXT NOT NULL,
+    sort_name TEXT,
+    year INTEGER,
+    release_group_mbid TEXT,
+    release_mbid TEXT,
+    match_state TEXT NOT NULL DEFAULT 'unmatched',
+    match_locked INTEGER NOT NULL DEFAULT 0,
+    cover_state TEXT NOT NULL DEFAULT 'none',
+    search_text TEXT NOT NULL DEFAULT '',
+    missing_since INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE music_track (
+    id TEXT NOT NULL PRIMARY KEY,
+    album_id TEXT,
+    library_id TEXT,
+    json TEXT NOT NULL,
+    title TEXT NOT NULL,
+    disc INTEGER,
+    position INTEGER,
+    duration_ms INTEGER,
+    codec TEXT,
+    container TEXT,
+    recording_mbid TEXT,
+    search_text TEXT NOT NULL DEFAULT '',
+    missing_since INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+-- role: album_artist (an album's credit), artist (a track's credit), feat (a featured artist, only when
+-- MusicBrainz's artist credit says so — never from a title parse). `subject_id` is a track or album id.
+CREATE TABLE music_credit (
+    subject_id TEXT NOT NULL,
+    artist_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (subject_id, artist_id, role)
+);
+
+CREATE INDEX music_album_library ON music_album(library_id);
+CREATE INDEX music_track_album ON music_track(album_id);
+CREATE INDEX music_credit_artist ON music_credit(artist_id);
+
+allArtists:
+SELECT json FROM music_artist;
+
+allAlbums:
+SELECT json FROM music_album;
+
+allTracks:
+SELECT json FROM music_track;
+
+putArtist:
+INSERT OR REPLACE INTO music_artist(id, library_id, json, name, sort_name, mbid, match_state, match_locked, search_text, missing_since, updated_at)
+VALUES (:id, :library_id, :json, :name, :sort_name, :mbid, :match_state, :match_locked, :search_text, :missing_since, :updated_at);
+
+putAlbum:
+INSERT OR REPLACE INTO music_album(id, library_id, json, title, sort_name, year, release_group_mbid, release_mbid, match_state, match_locked, cover_state, search_text, missing_since, updated_at)
+VALUES (:id, :library_id, :json, :title, :sort_name, :year, :release_group_mbid, :release_mbid, :match_state, :match_locked, :cover_state, :search_text, :missing_since, :updated_at);
+
+putTrack:
+INSERT OR REPLACE INTO music_track(id, album_id, library_id, json, title, disc, position, duration_ms, codec, container, recording_mbid, search_text, missing_since, updated_at)
+VALUES (:id, :album_id, :library_id, :json, :title, :disc, :position, :duration_ms, :codec, :container, :recording_mbid, :search_text, :missing_since, :updated_at);
+
+deleteCreditsFor:
+DELETE FROM music_credit WHERE subject_id = :subject_id;
+
+putCredit:
+INSERT OR REPLACE INTO music_credit(subject_id, artist_id, role, position)
+VALUES (:subject_id, :artist_id, :role, :position);
+
+allCredits:
+SELECT * FROM music_credit;
+
+countArtists:
+SELECT COUNT(*) FROM music_artist WHERE missing_since IS NULL;
+
+countAlbums:
+SELECT COUNT(*) FROM music_album WHERE missing_since IS NULL;
+
+countTracks:
+SELECT COUNT(*) FROM music_track WHERE missing_since IS NULL;

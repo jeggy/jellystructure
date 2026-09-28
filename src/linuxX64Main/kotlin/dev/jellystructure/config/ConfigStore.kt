@@ -34,7 +34,22 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps() }
+    }
+
+    /** Phase 275 — each music step joins the operator's pipeline once (see [MusicSteps.seed]). */
+    private suspend fun seedMusicSteps() {
+        val scan = _config.scan
+        val todo = MusicSteps.ALL - scan.musicStepsSeeded.toSet()
+        if (todo.isEmpty()) return
+        val seeded = MusicSteps.seed(scan.pipeline, scan.musicStepsSeeded)
+        _config = _config.copy(scan = scan.copy(pipeline = seeded, musicStepsSeeded = MusicSteps.ALL))
+        persist()
+        Logger.info(
+            "Config: music steps ${todo.joinToString()} " +
+                if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added",
+            "config",
+        )
     }
 
     /** Phase 261 (FR-261-4, dev review item 8) — once: add `verify_files` / `check_track_lengths` to the
