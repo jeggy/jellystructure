@@ -26,6 +26,10 @@
          device filter excludes every TV from this one listing on that basis alone. Explicit override
          wins over the implied one. -->
     <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+    <!-- ACCESS_WIFI_STATE (R216, above) implies android.hardware.wifi as REQUIRED, which would filter an
+         Ethernet-only TV box off the listing; the link-speed read is best-effort, so Wi-Fi is optional.
+         scripts/check-play-device-filter.sh fails CI on any required feature that reappears. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <application
         android:icon="@mipmap/ic_launcher"
