@@ -1855,7 +1855,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         if (step.step == "write_nfo") appendLine("overwrite = ${step.overwrite}")
         if (step.step == "notify") appendLine("on = \"${step.on}\"")
         if (step.step == "wait") appendLine("minutes = ${step.minutes}")
-        if (step.step == "build_recommendations") appendLine("rebuild_every = \"${step.rebuildEvery}\"")  // Phase 269
+        if (step.step == "build_recommendations" || step.step == "build_suggestions") appendLine("rebuild_every = \"${step.rebuildEvery}\"")  // Phases 269, 274
     }
     if (c.behavior.notificationsWebhook.isNotBlank()) {
         appendLine()
@@ -2762,7 +2762,7 @@ private fun renderPathCheckInline(diags: List<LibraryPathDiag>?) {
 // Phase 265 — PipeBlockDef, PIPE_BLOCKS, FILE_CHECK_STEPS, PIPE_SHORT and the pre-run dialog live in
 // PipelineRunDialog.kt, shared with Library, Dashboard and the command palette.
 private data class PipeCadRow(val key: String, val nm: String, val yr: String, val cadValue: String)
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","build_recommendations","wait","notify")
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","prewarm_subtitles","verify_files","check_track_lengths","build_recommendations","build_suggestions","wait","notify")
 // Phase 261 (FR-261-5) — 2years/5years exist for every step; the file checks default to them.
 private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","2years","5years","never")
 private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","every 2 years","every 5 years","never")
@@ -3003,7 +3003,7 @@ private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
         "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
         "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
         "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
-        "build_recommendations"           -> opts.appendChild(pipeRebuildEveryEl(step, idx))
+        "build_recommendations", "build_suggestions" -> opts.appendChild(pipeRebuildEveryEl(step, idx))
     }
     body.appendChild(row1); body.appendChild(sub)
     if (opts.childNodes.length > 0) body.appendChild(opts)

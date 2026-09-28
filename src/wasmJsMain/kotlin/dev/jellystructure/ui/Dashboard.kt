@@ -79,6 +79,11 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
               <div id="dash-subtitles-body" class="tiny" style="line-height:1.8;margin-top:6px"><span class="muted">Loading…</span></div>
               <a href="#/subtitles" class="tiny" style="display:inline-block;margin-top:6px;">Open Subtitles →</a>
             </div>
+            <div class="card" id="dash-suggestions-card" style="display:none">
+              <div class="row center"><h3 style="margin:0;font-size:1.05rem">Suggestions</h3><span class="badge info" style="margin-left:8px;font-size:.66rem;">Seerr</span></div>
+              <div id="dash-suggestions-body" class="tiny" style="line-height:1.8;margin-top:6px"></div>
+              <a href="#/suggestions" class="tiny" style="display:inline-block;margin-top:6px;">Open Suggestions →</a>
+            </div>
             <div class="card">
               <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
               <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -177,6 +182,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         loadAttentionBreakdown()
         loadRecentActivity()
         loadDashSubtitlesCard(scope)
+        loadDashSuggestionsCard()
         loadDashBazarrAdvisor(scope)
         val status = MediaApi.scanStatus()
         when (status?.status) {
@@ -588,6 +594,17 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
     document.getElementById("new-scan-btn")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
+}
+
+/** Phase 274 (FR-274-14) — *{n} films waiting · {n} new since {weekday}* and the two groups with the most room;
+ *  absent without Seerr, and until a first build. */
+private suspend fun loadDashSuggestionsCard() {
+    val card = document.getElementById("dash-suggestions-card") as? HTMLElement ?: return
+    val s = dev.jellystructure.api.SuggestionsApi.summary() ?: run { card.style.display = "none"; return }
+    card.style.display = "block"
+    val since = s.since?.let { " · ${s.newCount} new since ${dev.jellystructure.formatWeekdayClock(it.toString()).substringBefore(' ')}" } ?: ""
+    val groups = s.topClusters.takeIf { it.isNotEmpty() }?.let { "<div class=\"muted\">Most room: ${it.joinToString(" and ") { g -> g.esc() }}</div>" } ?: ""
+    document.getElementById("dash-suggestions-body")?.innerHTML = "<div><b>${s.waiting}</b> film${if (s.waiting == 1) "" else "s"} waiting$since</div>$groups"
 }
 
 // Phase 157 (FR-BZ1-3) — first external-service status card on the Dashboard (no prior Radarr/Sonarr/

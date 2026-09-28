@@ -96,6 +96,8 @@ private val SEERR_ENDPOINTS = listOf(
     SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_UPCOMING, SeerrFeedKind.TV, "TV", "Upcoming"),
     SeerrEndpointMeta(SeerrDiscoverEndpoint.TRENDING, SeerrFeedKind.MIXED, "Mixed", "Trending"),
 )
+/** Phase 274 — the catalogue's *Suggested for you*: not an endpoint (see the change handler). */
+private const val SUGGESTED_FEED = "SUGGESTED"
 private fun seerrEndpointMeta(endpoint: SeerrDiscoverEndpoint): SeerrEndpointMeta =
     SEERR_ENDPOINTS.first { it.endpoint == endpoint }
 private fun seerrKindBadge(kind: SeerrFeedKind): String = when (kind) {
@@ -2063,7 +2065,10 @@ private fun renderDiscover(container: Element) {
 
     val rows = d.feeds.mapIndexed { i, feed ->
         val meta = seerrEndpointMeta(feed.endpoint)
-        val sub = buildString {
+        // Phase 274 (FR-274-15) — the viewer's own suggestions: no parameter to pick, and a row that differs per viewer.
+        val sub = if (feed.suggested) "From this viewer's watching · no genre or studio to pick — their own history is the parameter. " +
+            "The preview is schematic; a viewer with no history gets no row, and a kids profile only rated films its age allows."
+        else buildString {
             append(meta.group).append(" · ").append(meta.label)
             if (!feed.param.isNullOrBlank()) append(" · ").append(feed.param)
         }
@@ -2083,7 +2088,8 @@ private fun renderDiscover(container: Element) {
         """.trimIndent()
     }.joinToString("")
 
-    val groupedOptions = SEERR_ENDPOINTS.groupBy { it.group }.entries.joinToString("") { (group, metas) ->
+    val groupedOptions = """<optgroup label="From this viewer's watching"><option value="$SUGGESTED_FEED">Suggested for you</option></optgroup>""" +
+        SEERR_ENDPOINTS.groupBy { it.group }.entries.joinToString("") { (group, metas) ->
         """<optgroup label="${group.htmlEsc()}">${metas.joinToString("") { m ->
             """<option value="${m.endpoint.name}">${m.label.htmlEsc()}</option>"""
         }}</optgroup>"""
@@ -2231,6 +2237,18 @@ private fun renderDiscover(container: Element) {
     var pickerSearchJob: Job? = null
 
     endpointSel?.addEventListener("change") { _ ->
+        // Phase 274 / R320 — stored as an existing endpoint plus `suggested`, so no installed app meets a new enum value.
+        if (endpointSel.value == SUGGESTED_FEED) {
+            structural(container, {
+                val fs = currentConfig.discover.feeds + SeerrFeed(
+                    id = genId("feed"), kind = SeerrFeedKind.MOVIE, endpoint = SeerrDiscoverEndpoint.TRENDING, param = null,
+                    name = "Suggested for you", suggested = true,
+                )
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
+            }, ::renderDiscover)
+            closeAddMenu()
+            return@addEventListener
+        }
         val chosen = runCatching { SeerrDiscoverEndpoint.valueOf(endpointSel.value) }.getOrNull()
         if (chosen == null) { fieldsEl?.style?.display = "none"; return@addEventListener }
         val meta = seerrEndpointMeta(chosen)

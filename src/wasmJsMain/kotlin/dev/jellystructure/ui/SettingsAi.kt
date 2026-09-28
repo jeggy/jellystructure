@@ -28,10 +28,13 @@ private val AI_JOBS = listOf(
         "After the weekly recommendations build, the model reads each viewer's top 100 and keeps the 50 it would pick, in order, with a reason you can see on Users &amp; devices. It never adds a title of its own. If anything goes wrong, the viewer keeps the standard list."),
     AiJobUi("themes", "Theme tags",
         "Once per title, for titles TMDB has no keywords for (often local and regional television): the model reads the synopsis and writes five to eight themes, used by the recommendations like keywords. Again only when the synopsis changes."),
+    // Phase 274 (FR-274-5, Q7)
+    AiJobUi("clusters", "Suggestion clusters",
+        "Once per suggestions build (weekly, with Seerr connected): the model groups the films the household doesn't have into three to eight kinds it actually watches, named for this house. It sees genre and keyword ids only — no viewer, no title, no synopsis — and each group's share of the 20 shown is counted by the server, never by the model. If anything goes wrong, the list keeps the six genre groups and the page says so."),
 )
 
 private var aiEnabled = false
-private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false)
+private val aiJobEnabled = mutableMapOf("rerank" to false, "themes" to false, "clusters" to false)
 private var aiLoaded: AiConfig = AiConfig()
 private var aiStatus: AiStatus? = null
 
@@ -105,7 +108,7 @@ internal fun populateAi(c: AiConfig) {
     toggle("ai-enabled-toggle", aiEnabled)
     select("ai-provider")?.value = c.provider
     input("ai-key")?.value = ""
-    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes)) {
+    for ((key, job) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters)) {
         aiJobEnabled[key] = job.enabled
         toggle("ai-$key-toggle", job.enabled)
         select("ai-$key-effort")?.value = job.effort
@@ -130,6 +133,7 @@ internal fun readAi(): AiConfig {
         apiKey = typed.ifBlank { if (aiLoaded.apiKey.isBlank()) "" else "##KEEP##" },
         rerank = job("rerank", aiLoaded.rerank),
         themes = job("themes", aiLoaded.themes),
+        clusters = job("clusters", aiLoaded.clusters),
     )
 }
 
@@ -137,7 +141,7 @@ internal fun wireAi(scope: CoroutineScope, onChange: () -> Unit) {
     document.getElementById("ai-enabled-toggle")?.addEventListener("click") {
         aiEnabled = !aiEnabled; toggle("ai-enabled-toggle", aiEnabled); onChange()
     }
-    for (key in listOf("rerank", "themes")) {
+    for (key in listOf("rerank", "themes", "clusters")) {
         document.getElementById("ai-$key-toggle")?.addEventListener("click") {
             aiJobEnabled[key] = !(aiJobEnabled[key] ?: false); toggle("ai-$key-toggle", aiJobEnabled[key] ?: false); onChange()
         }
@@ -162,7 +166,7 @@ private fun renderAiStatus() {
     (document.getElementById("ai-key-hint") as? HTMLElement)?.textContent = s?.keyHint?.let { "saved: $it" } ?: ""
     (document.getElementById("ai-prices") as? HTMLElement)?.textContent =
         if (s == null) "" else "Prices as of ${s.pricesAsOf}, at batch rates (half the standard price): every job runs in the background through the Message Batches API."
-    for (key in listOf("rerank", "themes")) {
+    for (key in listOf("rerank", "themes", "clusters")) {
         val sel = select("ai-$key-model") ?: continue
         if (s != null && sel.options.length == 0) {
             val want = sel.getAttribute("data-want") ?: s.models.firstOrNull()?.id
@@ -176,7 +180,7 @@ private fun renderAiStatus() {
 
 private fun renderAiJob(key: String) {
     val s = aiStatus ?: return
-    val job: AiJobStatus = if (key == "rerank") s.rerank else s.themes
+    val job: AiJobStatus = when (key) { "rerank" -> s.rerank; "clusters" -> s.clusters; else -> s.themes }
     val modelId = select("ai-$key-model")?.value ?: return
     val model: AiModel? = s.models.firstOrNull { it.id == modelId }
     // FR-270-3 — effort only for a model that takes it (Haiku 4.5 rejects the parameter).
@@ -202,7 +206,7 @@ internal fun aiTomlPreview(c: AiConfig): String = buildString {
     appendLine("enabled = ${c.enabled}")
     appendLine("provider = \"${c.provider}\"")
     appendLine("api_key = \"${if (c.apiKey.isBlank()) "" else "••••"}\"")
-    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes)) {
+    for ((name, j) in listOf("rerank" to c.rerank, "themes" to c.themes, "clusters" to c.clusters)) {
         appendLine()
         appendLine("[ai.$name]")
         appendLine("enabled = ${j.enabled}")

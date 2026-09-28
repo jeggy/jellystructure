@@ -21,6 +21,7 @@ import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.renderSubtitles
+import dev.jellystructure.ui.renderSuggestions
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -106,6 +107,7 @@ object App {
             path.startsWith("/audiobook/") -> renderAudiobookPage(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook/").substringBefore('/')), query)
             path.startsWith("/audiobook-author/") -> renderAudiobookAuthor(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook-author/").substringBefore('/')), query)
             path == "/activity" -> renderActivity(container, scope, query)
+            path.startsWith("/suggestions") -> renderSuggestions(container, scope, query)  // Phase 274
             path == "/subtitles" -> renderSubtitles(container, scope)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)

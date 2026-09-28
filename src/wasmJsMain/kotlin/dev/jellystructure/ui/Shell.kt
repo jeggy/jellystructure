@@ -26,6 +26,8 @@ private data class NavLink(
     val label: String,
     val icon: String,
     val count: Int? = null,
+    /** Phase 274 — drawn hidden, and shown once the server says it exists (Suggestions needs Seerr, FR-274-1). */
+    val hidden: Boolean = false,
 ) : NavEntry()
 private data class NavGroup(val label: String) : NavEntry()
 
@@ -93,6 +95,7 @@ private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
     "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
     "triage"    to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>""",
+    "suggestions" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>""",
     "activity"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>""",
     "language"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>""",
     "metadata"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>""",
@@ -109,6 +112,7 @@ private val ICONS = mapOf(
 private val BASE_NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "dashboard"),
     NavLink("/library", "Library", "library"),
+    NavLink("/suggestions", "Suggestions", "suggestions", hidden = true),  // Phase 274 (FR-274-8a)
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
     NavLink("/metadata", "Metadata", "metadata"),
@@ -207,6 +211,11 @@ fun renderShell(user: UserProfile) {
     wireGlobalKeyBindings()
 
     document.getElementById("cmd-search-pill")?.addEventListener("click") { showPalette() }
+
+    // Phase 274 (FR-274-1) — Suggestions is in the sidebar only while Seerr is connected.
+    MainScope().launch {
+        if (dev.jellystructure.api.SuggestionsApi.available()) (document.getElementById("nav-suggestions") as? HTMLElement)?.style?.display = ""
+    }
 
     MainScope().launch {
         // Triage count → sidebar status dots + the floating Triage dock (Phase 27; there is no
@@ -756,7 +765,8 @@ private fun navLinkHtml(entry: NavLink): String {
         entry.count != null -> """<span class="count">${entry.count}</span>"""
         else -> ""
     }
-    return """<a class="nav" href="#${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
+    val hide = if (entry.hidden) """ id="nav-${entry.icon}" style="display:none"""" else ""
+    return """<a class="nav" href="#${entry.href}"$hide><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
 }
 
 /** Renders [NAV], wrapping each [NavGroup]'s following links in a collapsible `.nav-group` (Phase 148). */

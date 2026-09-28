@@ -100,3 +100,17 @@ internal fun seedingRenderMovie(el: JsAny, reportJson: String, trackersJson: Str
 
 internal fun seedingRenderSeries(el: JsAny, reportJson: String, trackersJson: String): Unit =
     js("(function(){ if(!window.Seeding) return; if(window.Seeding.setTrackers) window.Seeding.setTrackers(JSON.parse(trackersJson)); window.Seeding.renderSeries(el, JSON.parse(reportJson)); })()")
+
+// Phase 274: "today 06:30" · "yesterday 06:30" · "Tuesday 06:30" within a week · "Sep 21, 06:30" further back —
+// the Suggestions page's *Built …* and *next build …*, in the browser's own zone (272's rule).
+internal fun formatWeekdayClock(epochSecStr: String): String = js("""(function(){
+    var d=new Date(parseFloat(epochSecStr)*1000), n=new Date();
+    var t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
+    var day=function(x){return new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();};
+    var diff=Math.round((day(d)-day(n))/86400000);
+    if(diff===0) return 'today '+t;
+    if(diff===-1) return 'yesterday '+t;
+    if(diff===1) return 'tomorrow '+t;
+    if(Math.abs(diff)<7) return d.toLocaleDateString([],{weekday:'long'})+' '+t;
+    return d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+})()""")

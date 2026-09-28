@@ -54,6 +54,8 @@ internal val PIPE_BLOCKS = mapOf(
     "check_track_lengths" to PipeBlockDef("Check track lengths", "Find audio/video tracks that stop before the file does (phase 255).",           "#8fa8e8", PIPE_LENGTHS_IC),
     // Phase 269 (FR-269-8) — a whole-library step: every viewer's Recommended list, on its own cadence.
     "build_recommendations" to PipeBlockDef("Build recommendations", "Each viewer's Recommended list, from what they watch in Jellyfin (phase 269).", "#e86f9a", PIPE_REC_IC),
+    // Phase 274 (FR-274-7) — films the household doesn't have, from Seerr; present only while Seerr is connected.
+    "build_suggestions" to PipeBlockDef("Build suggestions", "Films Seerr can get that the library doesn't have, from what the household finished (phase 274).", "#e8a86f", PIPE_REC_IC),
     // Phase 275 — the music library: whole-library, runs even when no film changed.
     "scan_music"    to PipeBlockDef("♪ Scan music",              "Artists · albums · songs from Jellyfin's music library. No file probing.", "#9b7bf5", PIPE_SCAN_IC),
     // Phase 280 — the audiobook libraries: the folder is the book; a gap or two books in one folder is flagged.
@@ -68,7 +70,7 @@ internal val PIPE_BLOCKS = mapOf(
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
 internal val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
-internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
+internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","build_suggestions" to "Suggestions","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
 
 /**
  * Phase 154 (FR-PIPE1-1..5) — pre-run dialog. Lists the steps that will actually run and lets the operator
@@ -104,6 +106,7 @@ private fun showPipelineRunDialog(title: String, full: Boolean, plan: List<Pipel
             step.step in FILE_CHECK_STEPS -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Only queues the files that are due; the reading happens on the segments queue. Unticked, nothing is queued this run.</div>"""
             // Phase 272 (FR-272-7) — a run started here builds whatever the schedule says.
             step.step == "build_recommendations" -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Rebuilds now — the scheduled run rebuilds ${(step.rebuildEvery ?: "weekly").esc()}. With AI re-ranking on, every viewer is then queued for it (Activity ▸ Jobs &amp; workers).</div>"""
+            step.step == "build_suggestions" -> """<div class="muted" style="font-size:.76rem;margin-top:3px;">Builds now — the scheduled run builds ${(step.rebuildEvery ?: "weekly").esc()}. With AI suggestion clusters on, the groups are then asked for (Activity ▸ Jobs &amp; workers).</div>"""
             else -> ""
         }
         """

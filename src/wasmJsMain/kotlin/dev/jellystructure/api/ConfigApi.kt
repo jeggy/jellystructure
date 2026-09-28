@@ -182,6 +182,8 @@ data class AiConfig(
     @SerialName("api_key") val apiKey: String = "",
     val rerank: AiJobConfig = AiJobConfig(effort = "medium"),
     val themes: AiJobConfig = AiJobConfig(effort = "low"),
+    /** Phase 274 — carried on every save, so Settings never resets it. */
+    val clusters: AiJobConfig = AiJobConfig(effort = "low"),
 )
 
 @Serializable
@@ -215,6 +217,7 @@ data class AiStatus(
     val models: List<AiModel> = emptyList(),
     val rerank: AiJobStatus = AiJobStatus(),
     val themes: AiJobStatus = AiJobStatus(),
+    val clusters: AiJobStatus = AiJobStatus(),  // Phase 274
 )
 
 @Serializable
