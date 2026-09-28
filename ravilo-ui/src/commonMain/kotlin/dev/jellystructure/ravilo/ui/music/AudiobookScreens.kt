@@ -61,6 +61,8 @@ import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.AudiobookShelf
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 /*
  * R323 — audiobooks in the listening mode: the shelf (Browse ▸ Audiobooks), *Continue listening* (also on Listen),
@@ -363,7 +365,7 @@ fun AudiobookDetailScreen(
         DetailBack(onBack)
         BookMenuSheet(menu, d, api, store, onDismiss = { menu = false }, onOpenAuthor = onOpenAuthor)
         HandsetSheet(visible = desc, onDismiss = { desc = false }) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
                 Text(d.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                 Spacer(Modifier.height(8.dp))
                 Text(d.description.orEmpty(), color = Color.White.copy(0.8f), fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora)

@@ -78,6 +78,25 @@ import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 // ─── R244 — the player on a phone ────────────────────────────────────────────
 //
@@ -694,14 +713,123 @@ internal fun HandsetGestureLayer(
 
 // ─── Bottom sheet (FR-R244-10/11/12) ──────────────────────────────────────────
 
+/**
+ * FR-R244-10a (amendment 2026-09-28) — the drag rules of [HandsetSheet], pure so they are tested as written:
+ * down follows the finger, up gives a rubber band, and a release leaves past a third of the height or on a
+ * downward fling. A sheet that must be answered ([dismissible] false) rubber-bands both ways.
+ */
+internal object SheetDrag {
+    const val LEAVE_FRACTION = 0.3f
+    const val FLING_DP_PER_SEC = 1_000f
+    const val MAX_OVER_DP = 24f
+    /** How much of a finger's movement past a bound the sheet shows. */
+    const val RESISTANCE = 0.35f
+
+    /** Where the sheet shows for a finger [finger] px from the resting place: one to one down (when it may leave),
+     *  and a [RESISTANCE] share of the way past a bound, at most [maxOverPx]. */
+    fun shown(finger: Float, maxOverPx: Float, dismissible: Boolean): Float = when {
+        finger < 0f -> maxOf(-maxOverPx, finger * RESISTANCE)
+        !dismissible && finger > 0f -> minOf(maxOverPx, finger * RESISTANCE)
+        else -> finger
+    }
+
+    /** Where the sheet sits after the finger moves [delta] px from where it shows now ([current]); coming back
+     *  toward the resting place retraces the same curve. */
+    fun next(current: Float, delta: Float, maxOverPx: Float, dismissible: Boolean): Float {
+        val finger = if (current < 0f || (!dismissible && current > 0f)) current / RESISTANCE else current
+        return shown(finger + delta, maxOverPx, dismissible)
+    }
+
+    /** Whether a release at [offset] px down, moving at [velocity] px/s (down is positive), takes the sheet away. */
+    fun leaves(offset: Float, height: Float, velocity: Float, flingPx: Float, dismissible: Boolean): Boolean = when {
+        !dismissible || offset <= 0f -> false
+        velocity <= -flingPx -> false
+        velocity >= flingPx -> true
+        else -> height > 0f && offset >= height * LEAVE_FRACTION
+    }
+}
+
 /** The handset's one sheet container: scrim (tap-away dismisses), rounded top, inset from the home
- *  indicator, at most ~72 % of the screen. Content decides the rest. */
+ *  indicator, at most ~72 % of the screen. Content decides the rest.
+ *
+ *  FR-R244-10a — it also follows the thumb: dragged down from anywhere that is not itself scrolling (a list inside
+ *  scrolls first, and at its top the same drag moves the sheet), it leaves past a third or on a flick and springs
+ *  back otherwise; up gives a little. The scrim fades with it. A leave is the same [onDismiss] a tap beside the
+ *  sheet makes; when that keeps the sheet up (a picker going back a level) it springs back. [dismissible] false is
+ *  a sheet that must be answered: tap-away and drag both leave it where it is. */
 @Composable
-internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: Boolean = true, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val flingPx = with(density) { SheetDrag.FLING_DP_PER_SEC.dp.toPx() }
+    val overPx = with(density) { SheetDrag.MAX_OVER_DP.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val dragY = remember { mutableFloatStateOf(0f) }
+    val sheetH = remember { mutableIntStateOf(0) }
+    val settleJob = remember { mutableStateOf<Job?>(null) }
+    val stillVisible = rememberUpdatedState(visible)
+    val dismiss = rememberUpdatedState(onDismiss)
+    val canLeave = rememberUpdatedState(dismissible)
+    // A sheet shown again starts where it rests, whatever the last one was dragged to.
+    LaunchedEffect(visible) { if (visible) { settleJob.value?.cancel(); dragY.floatValue = 0f } }
+
+    fun dragBy(delta: Float) {
+        settleJob.value?.cancel()
+        dragY.floatValue = SheetDrag.next(dragY.floatValue, delta, overPx, canLeave.value)
+    }
+    fun settle(velocity: Float) {
+        val from = dragY.floatValue
+        val height = sheetH.intValue.toFloat()
+        val leave = SheetDrag.leaves(from, height, velocity, flingPx, canLeave.value)
+        settleJob.value?.cancel()
+        settleJob.value = scope.launch {
+            if (leave) {
+                // The rest of the way at the finger's speed (never slower than a flick), then the tap-away's dismissal.
+                val speed = maxOf(velocity, 2f * flingPx)
+                val ms = ((height - from) / speed * 1000f).toInt().coerceIn(80, 220)
+                animate(from, height, animationSpec = tween(ms, easing = LinearEasing)) { v, _ -> dragY.floatValue = v }
+                dismiss.value()
+                // A dismissal that keeps the sheet (a picker back to its first level) brings it back up.
+                withFrameNanos { }; withFrameNanos { }
+                if (!stillVisible.value) return@launch
+                animate(dragY.floatValue, 0f, animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)) { v, _ -> dragY.floatValue = v }
+            } else {
+                animate(from, 0f, initialVelocity = velocity, animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium)) { v, _ -> dragY.floatValue = v }
+            }
+        }
+    }
+    // A list inside the sheet scrolls first; at its top, the rest of a downward drag moves the sheet, and a sheet
+    // that has been pulled down comes back up before the list scrolls again.
+    val nested = remember(overPx, flingPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y >= 0f || dragY.floatValue <= 0f) return Offset.Zero
+                val take = maxOf(available.y, -dragY.floatValue)
+                dragBy(take)
+                return Offset(0f, take)
+            }
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                dragBy(available.y)
+                return Offset(0f, available.y)
+            }
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (dragY.floatValue == 0f) return Velocity.Zero
+                settle(available.y)
+                return available
+            }
+        }
+    }
+    val dragState = rememberDraggableState { delta -> dragBy(delta) }
+
     AnimatedVisibility(visible = visible, enter = fadeIn(tween(160)), exit = fadeOut(tween(160))) {
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    val h = sheetH.intValue
+                    alpha = if (h > 0) 1f - (dragY.floatValue / h).coerceIn(0f, 1f) else 1f
+                }
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { if (dismissible) onDismiss() }),
         )
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -716,6 +844,14 @@ internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, content: @Com
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = maxH)
+                    .onSizeChanged { sheetH.intValue = it.height }
+                    .nestedScroll(nested)
+                    // Measured outside the moving sheet: inside it, each step would be read against a sheet that had
+                    // already moved, and the sheet would travel half as far as the thumb.
+                    .draggable(dragState, Orientation.Vertical, onDragStopped = { v -> settle(v) })
+                    // Moved by placement, not by a draw-time translation: a list inside the sheet reads the finger
+                    // against where the sheet is placed, and a translated layer would hand it zero after two steps.
+                    .offset { IntOffset(0, dragY.floatValue.roundToInt()) }
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
                     .background(CARD.copy(alpha = 0.97f))
                     // a sheet takes its own taps so they never reach the scrim or the video

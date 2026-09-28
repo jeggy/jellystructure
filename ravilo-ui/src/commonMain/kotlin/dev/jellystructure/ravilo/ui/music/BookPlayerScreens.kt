@@ -280,7 +280,7 @@ private fun FinishedRow(api: TvApiClient, store: AudiobookStore?, d: AudiobookDe
 @Composable
 private fun BookFailureSheet(failed: Boolean) {
     // A tap beside the sheet keeps the book (paused where it is); only *Close* clears the player.
-    HandsetSheet(visible = failed, onDismiss = {}) {
+    HandsetSheet(visible = failed, onDismiss = {}, dismissible = false) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
             Text(str("music.fail_t"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))

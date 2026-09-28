@@ -309,3 +309,53 @@ than a branch inside the existing one.
 - **FR-R244-16** — 15 keys (`pl.*`) × en/da/fo from the design table; no speed string anywhere.
 - **Not done / open:** device acceptance 1–7 (Pixel 9); haptic strength (OQ2); the Live TV edge swipe
   vs a thumb (OQ4 — volume is deliberately not offered on that screen); foldables (OQ5).
+
+## Amendment (2026-09-28) — a sheet follows the thumb
+
+**Owner, 2026-09-28:** *"This drawer that we have in the app for settings and other stuff. Like in the music player
+the three dots on the bottom right, it nicely animates up. But we would like to have this nice drag feeling, where I
+can when it's up drag it up or down with my thumb. So to remove it again it feels very nice, just like how most other
+apps are handling these types of bottom up drawers."*
+
+**What is there today.** `HandsetSheet` (`PlayerHandsetChrome.kt`, FR-R244-10) is the one sheet container on a
+phone — every sheet since R244 uses it (the player's picker and season sheet, the cast remote's picker, R265's
+screens sheet, the profile's language sheet, the music and audiobook sheets of R321–R323). It slides up, draws its
+drag handle, and dismisses on a tap beside it — but the handle is only a picture: a finger on the sheet moves
+nothing, so the only way out is a tap on the scrim, which on a tall sheet is a reach to the top of the screen.
+
+**FR-R244-10a · The sheet follows the thumb.** Amends FR-R244-10's *tap-away dismisses*: tap-away stays, and a drag
+is added, for every sheet the container draws.
+
+1. **Down follows the finger one to one**, from anywhere on the sheet that is not itself scrolling — the handle, a
+   heading, a row (a tap on a row still selects; a drag only starts past the touch slop). The scrim fades with it.
+2. **Let go and it decides:** past **30 %** of the sheet's height, or a downward fling (~1 000 dp/s), and it leaves
+   — the rest of the way at the finger's speed, then the same dismissal a tap beside it makes. Otherwise it springs
+   back. An upward fling always keeps it.
+3. **Up resists:** a sheet is as tall as its content, so there is nowhere to go — it gives a little (a rubber band,
+   at most ~24 dp) and springs back on release.
+4. **A list inside a sheet scrolls first.** Dragging down on a list that is scrolled into its content scrolls the
+   list; at its top, the same drag moves the sheet (the nested-scroll rule every platform sheet follows). Dragging
+   up on a sheet that has been pulled down brings the sheet back before the list scrolls.
+5. **A sheet that must be answered stays.** A sheet whose tap-away does nothing (the audiobook failure sheet,
+   R323 — only *Close* clears the player) is not dragged away either: it rubber-bands in both directions and
+   springs back.
+6. **A sheet of reading scrolls.** Found while testing this: the artist biography (R321) and the book description
+   (R323) sheets did not scroll, so text longer than the sheet's 72 % was cut off with no way to read the rest. Both
+   scroll now, and follow rule 4.
+7. **Nothing else changes:** no new string, the TV (which never draws this container, R256) is untouched, and the
+   opening animation is as it was.
+
+**Acceptance (Pixel 9):** the music player's ⋯ sheet drags down and leaves past a third, springs back short of it,
+and leaves on a quick flick; dragging up springs back; the audiobook chapters sheet scrolls its list, and at the top
+of the list the same drag takes the sheet down; the audiobook failure sheet does not leave on a drag.
+
+**Built 2026-09-28** (`HandsetSheet`, with the drag rules as a pure `SheetDrag` object and `SheetDragTest`). Two
+things only a finger showed, both about where the drag is measured: (1) with the drag handler inside the moving
+sheet, each step was read against a sheet that had already moved, so it travelled half as far as the thumb — the
+handler now sits outside it; (2) the sheet moves by **placement** (`offset {}`), not a draw-time translation, or a
+scroll inside it read the finger as standing still after two steps. **Seen on the Pixel 9:** one to one (282 px for a
+300 px pull, the rest touch slop), springs back from a quarter, leaves past a third and on a 170 px flick, up gives
+24 dp and springs back, and a drag on the biography's scrolling text moves the sheet (rule 4). A drag that *starts*
+in the bottom ~10 % of the screen belongs to Android's home gesture, which takes it over — for every app, not this
+sheet. **Not tried on a device:** the two-level pickers (the player's and the cast remote's) coming back up at their
+first level, and a long list (the chapters sheet) scrolled into its content.

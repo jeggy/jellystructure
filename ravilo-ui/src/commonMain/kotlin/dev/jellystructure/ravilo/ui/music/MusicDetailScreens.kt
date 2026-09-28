@@ -55,6 +55,8 @@ import dev.jellystructure.shared.tv.MusicArtistDetail
 import dev.jellystructure.shared.tv.MusicList
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.MusicVideoCard
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 /** The floating Back on a detail page (the bar is hidden there, R278's rule). */
 @Composable
@@ -240,7 +242,7 @@ fun MusicArtistScreen(
                 }
             }
             HandsetSheet(visible = bioOpen, onDismiss = { bioOpen = false }) {
-                Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
                     Text(r.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Spacer(Modifier.height(8.dp))
                     Text(d.biography.orEmpty(), color = Color.White.copy(0.8f), fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora)
