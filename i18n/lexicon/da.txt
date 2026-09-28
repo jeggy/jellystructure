@@ -25,8 +25,12 @@ afparret
 afsnit
 afspil
 afspille
+afspiller
+afspilles
+afspillet
 afspilning
 airplay
+album
 aldersgrænse
 aldrig
 alle
@@ -57,6 +61,7 @@ biblioteket
 billede
 billedet
 biografen
+bland
 blevet
 blive
 brug
@@ -75,6 +80,7 @@ del
 dem
 den
 denne
+dens
 der
 det
 dette
@@ -94,12 +100,14 @@ enhed
 enheder
 enheds
 ens
+ep
 episode
 episoden
 episoder
 er
 et
 ets
+feat
 feb
 feeds
 fil
@@ -119,6 +127,7 @@ forbinder
 forbliv
 forbliver
 forkert
+forskellige
 forslag
 fortsæt
 fortsætte
@@ -136,6 +145,7 @@ få
 får
 føj
 føjes
+føjet
 følger
 først
 galt
@@ -168,6 +178,7 @@ hvad
 hvem
 hvor
 højeste
+højt
 i
 igen
 ikke
@@ -211,8 +222,11 @@ konverterer
 konverteret
 kun
 kunne
+kunstner
+kunstnere
 kvalitet
 kø
+køen
 lad
 langsom
 laveste
@@ -229,6 +243,9 @@ lukker
 lyd
 lydbeskrevet
 lydeffektnoter
+lydstyrken
+lyt
+lytning
 lås
 låse
 låst
@@ -245,11 +262,15 @@ marker
 matcher
 med
 medvirkende
+medvirker
 mellem
 men
 mens
+menu
 menuer
 mere
+mest
+miks
 mindre
 mindst
 mindste
@@ -286,6 +307,8 @@ onsdag
 op
 opdag
 opdateret
+opsamling
+opsamlinger
 opsætning
 optaget
 originalen
@@ -293,6 +316,8 @@ over
 par
 pauset
 planlagt
+playliste
+playlister
 premiere
 profil
 profiler
@@ -313,6 +338,10 @@ ryd
 samling
 samlinger
 samme
+sang
+sange
+sangen
+sangtekst
 scene
 scenen
 se
@@ -323,6 +352,7 @@ sender
 sendes
 sendetidspunkt
 sendt
+senere
 senest
 sep
 ser
@@ -337,6 +367,8 @@ set
 siden
 sidst
 sidste
+single
+singler
 skal
 sker
 skift
@@ -355,6 +387,8 @@ snart
 som
 sonarr
 sortér
+soundtrack
+soundtracks
 spil
 spille
 spiller
@@ -384,6 +418,7 @@ søg
 søge
 søn
 søndag
+t
 tag
 talernavne
 talte
@@ -427,6 +462,7 @@ udgivelsestype
 udgivelsesår
 udgives
 udgivet
+udjævn
 udløbet
 udseende
 unavngivet
@@ -440,6 +476,7 @@ venter
 version
 versionen
 versioner
+videoer
 videre
 virkede
 vis
@@ -449,6 +486,7 @@ vælg
 være
 åben
 åbn
+år
 årti
 ældste
 øjeblik

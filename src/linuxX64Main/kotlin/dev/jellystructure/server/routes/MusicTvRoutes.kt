@@ -45,6 +45,9 @@ fun Route.musicTvRoutes(
     get("/tv/music/genres") { call.respond(svc.genres(call.attributes[DeviceKey])) }
     get("/tv/music/playlists") { call.respond(svc.playlists(call.attributes[DeviceKey])) }
 
+    get("/tv/music/playlist/{id}") {
+        call.respond(svc.playlist(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+    }
     get("/tv/music/album/{id}") {
         call.respond(svc.album(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
     }

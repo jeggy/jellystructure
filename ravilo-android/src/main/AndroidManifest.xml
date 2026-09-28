@@ -7,6 +7,13 @@
          prompt (see HdrCapabilities.kt's detectLinkState() doc). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- R322 (dev review 1/12) — music keeps playing with the screen off: a mediaPlayback foreground service, a
+         wake lock for the network while it streams, and the notification (asked for on the first play, never at
+         launch; without it the service still runs and only the card is missing). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- R224 — universal app: neither feature is required, so Play distributes this one listing to
          both Android TV (leanback launcher, below) and phones/tablets (standard launcher, below).
@@ -37,6 +44,16 @@
         <receiver
             android:name="androidx.mediarouter.media.MediaTransferReceiver"
             android:exported="true" />
+
+        <!-- R322 (FR-R322-1) — the music engine's session host (ravilo-ui androidMain). -->
+        <service
+            android:name="dev.jellystructure.ravilo.ui.music.RaviloMusicService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <!-- TV entry point — leanback/D-pad UI, full-screen immersive. Only the TV launcher sees this
              (LEANBACK_LAUNCHER); the phone launcher uses the separate activity below instead. -->

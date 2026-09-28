@@ -87,9 +87,10 @@ fun RaviloBottomNav(
     onSelect: (BottomNavItem) -> Unit,
     userInitials: String,
     modifier: Modifier = Modifier,
+    /** R321 (FR-R321-4, dev review 1) — the bar's declared item list: [VIDEO_BAR], or [MUSIC_BAR] in music mode. */
+    items: List<BottomNavItem> = VIDEO_BAR,
 ) {
     val colors = RaviloTheme.colors
-    val items = BottomNavItem.entries
     // The pill's horizontal position is derived from the selected item's index, so one animated value
     // moves one element rather than five states cross-fading (FR-R267-6).
     //
@@ -97,7 +98,7 @@ fun RaviloBottomNav(
     // none of the four, and the bar is drawn on them. The pill is then not drawn at all rather than
     // defaulting to index 0, which would light Home on a page that is not Home. Its last position is
     // parked so that coming back to a page slides it from where it was, not in from the left.
-    val selectedIndex = selected?.let { items.indexOf(it) }
+    val selectedIndex = selected?.let { items.indexOf(it) }?.takeIf { it >= 0 }
     var parkedIndex by remember { mutableIntStateOf(selectedIndex ?: 0) }
     LaunchedEffect(selectedIndex) { if (selectedIndex != null) parkedIndex = selectedIndex }
 
@@ -117,13 +118,13 @@ fun RaviloBottomNav(
         // content offset by, which is how the bar ended up one dp shorter than the cell inside it.
         Box(Modifier.fillMaxWidth().height(RaviloDimens.bottomNavHeight - HAIRLINE)) {
             // The sliding pill, drawn under the items so an item's own icon and label sit on top of it.
-            BoxWithItemWidth { itemWidth ->
+            BoxWithItemWidth(items.size) { itemWidth ->
                 val pillX by animateDpAsState(
                     targetValue = itemWidth * parkedIndex + (itemWidth - PILL_WIDTH) / 2,
                     animationSpec = tween(PILL_SLIDE_MS),
                     label = "bottomNavPill",
                 )
-                if (selected != null) {
+                if (selectedIndex != null) {
                     Box(
                         Modifier
                             .offset(x = pillX, y = PILL_TOP)
@@ -147,8 +148,17 @@ fun RaviloBottomNav(
     }
 }
 
-/** The five items, in the order they are drawn. Search is deliberately the middle one. */
-enum class BottomNavItem { HOME, LIBRARY, SEARCH, DISCOVER, PROFILE }
+/** Every item either bar can draw. The video bar's five are drawn in [VIDEO_BAR]'s order — Search deliberately the
+ *  middle one; R321's music bar is [MUSIC_BAR], with Playing in the middle (owner, 2026-09-27). */
+enum class BottomNavItem { HOME, LIBRARY, SEARCH, DISCOVER, PROFILE, LISTEN, BROWSE, PLAYING, QUEUE }
+
+val VIDEO_BAR = listOf(BottomNavItem.HOME, BottomNavItem.LIBRARY, BottomNavItem.SEARCH, BottomNavItem.DISCOVER, BottomNavItem.PROFILE)
+val MUSIC_BAR = listOf(BottomNavItem.LISTEN, BottomNavItem.BROWSE, BottomNavItem.PLAYING, BottomNavItem.QUEUE, BottomNavItem.PROFILE)
+
+private val MUSIC_GLYPHS = mapOf(
+    BottomNavItem.LISTEN to MusicIcon.LISTEN, BottomNavItem.BROWSE to MusicIcon.BROWSE,
+    BottomNavItem.PLAYING to MusicIcon.PLAYING, BottomNavItem.QUEUE to MusicIcon.QUEUE,
+)
 
 /**
  * R267 (FR-R267-9) — runs [onReselect] each time the bar's item for the page on screen is tapped
@@ -195,7 +205,11 @@ private fun BottomNavCell(
                 // FR-R267-5d — the profile item's icon is the viewer's own avatar: the photo when
                 // there is one, initials when there is not.
                 BottomNavItem.PROFILE -> ProfileDot(userInitials, isSelected)
-                else -> BottomNavGlyph(item, if (isSelected) colors.onAccent else colors.textSecondary)
+                else -> {
+                    val tint = if (isSelected) colors.onAccent else colors.textSecondary
+                    // R321 — music mode's four marks, drawn on the same 24-unit grid.
+                    MUSIC_GLYPHS[item]?.let { MusicGlyph(it, tint, GLYPH_BOX) } ?: BottomNavGlyph(item, tint)
+                }
             }
         }
         Spacer(Modifier.height(3.dp))
@@ -278,7 +292,7 @@ private fun BottomNavGlyph(item: BottomNavItem, tint: Color) {
             BottomNavItem.LIBRARY -> Triple(11f, 12f, 16f)     // x 3..19, y 4..20
             BottomNavItem.SEARCH -> Triple(12.25f, 12.25f, 16.5f)
             BottomNavItem.DISCOVER -> Triple(12f, 12f, 18f)    // the r9 circle is the tallest
-            BottomNavItem.PROFILE -> Triple(12f, 12f, 16f)     // unreachable; see below
+            else -> Triple(12f, 12f, 16f)     // the profile and music marks are drawn elsewhere; unreachable
         }
         val g = GEOM_UNITS / span
         fun at(x: Float, y: Float) =
@@ -316,8 +330,8 @@ private fun BottomNavGlyph(item: BottomNavItem, tint: Color) {
                     tint, style = stroke,
                 )
             }
-            // The profile item draws the viewer's own avatar instead (FR-R267-5d); this is unreachable.
-            BottomNavItem.PROFILE -> Unit
+            // The profile item draws the viewer's own avatar instead (FR-R267-5d); music marks are MusicGlyphs.
+            else -> Unit
         }
     }
 }
@@ -329,13 +343,17 @@ private fun bottomNavLabel(item: BottomNavItem): String = when (item) {
     BottomNavItem.SEARCH -> str("nav.search")
     BottomNavItem.DISCOVER -> str("nav.discover")
     BottomNavItem.PROFILE -> str("nav.profile")
+    BottomNavItem.LISTEN -> str("mnav.listen")
+    BottomNavItem.BROWSE -> str("mnav.browse")
+    BottomNavItem.PLAYING -> str("mnav.now_short")
+    BottomNavItem.QUEUE -> str("mnav.queue")
 }
 
-/** Gives its content the width of one of five equal cells, so the pill can be positioned in dp. */
+/** Gives its content the width of one of [count] equal cells, so the pill can be positioned in dp. */
 @Composable
-private fun BoxWithItemWidth(content: @Composable (Dp) -> Unit) {
+private fun BoxWithItemWidth(count: Int, content: @Composable (Dp) -> Unit) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-        content(maxWidth / BottomNavItem.entries.size)
+        content(maxWidth / count)
     }
 }
 

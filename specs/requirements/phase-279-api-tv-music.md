@@ -168,4 +168,7 @@ are the client).
     resized and cached by the same service as posters; art only inside the files is Jellyfin's own image.
 11. **FR-279-10:** no string these endpoints return names a provider, a codec or a delivery. The viewer's own numbers
     (play counts, favourites) are cached 30 s per viewer and dropped on a play or a favourite change.
+12. **Added with R321 (2026-09-28):** `GET /tv/music/playlist/{id}` (a playlist's songs, for R321's playlist page) and
+    `TvApiClient.getMusicPlaylist`; an artist's `top_tracks` now carries every song of theirs (≤ 200, most played
+    first), because *Play all* plays them.
 

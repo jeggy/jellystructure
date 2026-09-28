@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md` (§A–§C,
+`✓ Built` 2026-09-28, **not deployed, not tried on a phone** (build notes at the end). Written 2026-09-28 from `specs/ravilo/design-brief-music-player-on-the-phone-2026-09-27.md` (§A–§C,
 §E placement, §H, §I, §J) and the mockup `design/ravilo/Ravilo Mobile.html` (+ `mobile/ravilo-music.js`,
 `mobile/ravilo-music.css`), including the owner's three same-evening changes. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering
 verified against `main` `f8bdaab4`: Ravilo taken through **R319**, and **R320** is ours (pending export). The
@@ -185,3 +185,44 @@ Buildable. Ten items; item 3 would fail a CI fence if built as drawn.
 9. **Open questions:** 1 — drop the queue button on Now playing (the tab is one tap away) ✓; 2 — FR-R323-2's
    *Continue listening* row on Listen ✓, it is the only one-tap place left for a book.
 10. **Wire:** `/tv/config` unchanged; the mode is client-only ✓.
+
+## Build notes (2026-09-28)
+
+Built with R322 on `main` after 279. `:ravilo-ui` compiles for Android and the web, `:ravilo-android` assembles,
+`:ravilo-web` compiles; the fences (`check-ravilo-strings`, `check-web-glyphs`, `check-i18n-spelling`,
+`check-player-dex`) pass. **Not installed on any device.**
+
+1. **The mode (FR-R321-1):** `ListeningMode` in its own per-device store (`MusicDeviceStore`: SharedPreferences
+   `ravilo_music`, localStorage `ravilo.music.*`), remembered across launches — a cold start in music mode opens on
+   Listen — and **cleared by `signOutActiveSession`** with the device's saved queue (`forgetListening()`).
+2. **Absent, never greyed (FR-R321-2):** music mode needs the phone (`isHandset`), a build that can play
+   (`MusicEngine.supported` — false on the web until its player exists, dev review 3), and the viewer's
+   `/tv/music/home` answering rows. Asked per viewer; a mode stored for a viewer without it falls back to video.
+3. **The switch (J1 → the lean):** `ListeningModeCard` under the photo and name on Profile, the same place in both
+   modes; the chosen half on the brand gradient. A tap writes the mode and lands on that mode's first tab.
+4. **The bar (FR-R321-4, dev review 1):** `BottomNavItem` gained LISTEN · BROWSE · PLAYING · QUEUE and the bar takes
+   an item list (`VIDEO_BAR` / `MUSIC_BAR`) — the enum stays, extended, rather than a separate spec type. The four
+   marks are drawn on the design's grid (`MusicGlyphs.kt`); ♪ beside the brand is a drawn `NOTE` glyph in the AppBar's
+   new `brandBadge` slot (dev review 3). Re-tap: Listen scrolls to top, Browse raises the keyboard (R277's rule, never
+   on arrival), Playing/Queue do nothing. Back follows R275's ladder with **Listen as music mode's Home**. Album,
+   artist and playlist pages hide the bar and keep the mini bar.
+5. **Listen (FR-R321-5):** the server's rows; no Now-playing card; *See all* on Recently played opens Browse ▸ Songs
+   sorted by *Most played*; the mix is a four-cover collage that plays shuffled. Empty ⇒ *Nothing filed as music yet*.
+6. **Browse (FR-R321-6):** the search field at the top; a query replaces the chips with Songs · Albums · Artists
+   (three each, *See all* expands), a song plays in its group; the chips Albums (2-up) · Artists (3-up) · Songs ·
+   Genres (→ that genre's albums with a way back) · Playlists; the sort pill in the top row's page slot. Lists load 60
+   at a time as the viewer scrolls.
+7. **Album / artist (FR-R321-7/8/11):** as drawn. **Deviation:** the ground under an album's cover is tinted from the
+   skin's own accent, not from the cover's colours (no palette extraction yet); Noir stays flat. *Play all* on an
+   artist plays every song of theirs, most played first — 279's artist detail now carries them all (≤ 200), the page
+   shows five with *See all*. Groups include *Appears on* (someone else's album they are credited on). A music video
+   opens the film player (and so stops the song, R322 FR-R322-12).
+8. **My List (FR-R321-9):** ♡ in ⋯ and on Now playing marks the song in Jellyfin (`/tv/music/favorite`), and answers at
+   once everywhere it is drawn. **Deviation:** Profile's My List row still lists films only.
+9. **Playlists (FR-R321-10, J7 → two states):** empty or a list with the four-cover collage → a playlist page (279 gained
+   `GET /tv/music/playlist/{id}`). *New playlist* and *Add to playlist…* are shown as *Coming later* (phase 2); no
+   create sheet is drawn.
+10. **Words (FR-R321-13):** 90 keys × en · da · fo in `i18n/*.json` from the design's drafts, plus the lexicon
+    regenerated. Danish *repeat one* is *Gentag sangen* (the spelling fence rejects *én* beside *en*); `music.sort_az`
+    joins `browse.sort.az` in the fence's exclusions. Open questions 1 and 2 → the leans (no queue button on Now
+    playing; *Continue listening* is R323's).

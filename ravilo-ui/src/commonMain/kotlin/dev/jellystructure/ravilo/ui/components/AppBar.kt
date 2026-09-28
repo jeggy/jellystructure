@@ -92,6 +92,9 @@ fun AppBar(
      * Ignored when [LocalHandset] is false — the TV and the web app keep the single row.
      */
     handsetTopSlot: (@Composable () -> Unit)? = null,
+    /** R321 (FR-R321-4, J3) — a mark beside the brand on a handset: music mode's note, the one always-visible sign of
+     *  which mode the phone is in. Null everywhere else. */
+    brandBadge: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -174,6 +177,7 @@ fun AppBar(
                         fontFamily = spaceGrotesk,
                         letterSpacing = (-1).sp,
                     )
+                    brandBadge?.invoke()
                 }
                 Box(modifier = Modifier.weight(1f))
                 handsetTopSlot?.invoke()

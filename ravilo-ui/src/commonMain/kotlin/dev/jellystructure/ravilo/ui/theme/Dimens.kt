@@ -60,6 +60,9 @@ object RaviloDimens {
     val castMiniBarRowHeight = 60.dp
     val castMiniBarMargin = 8.dp
     val castMiniBarHeight = castMiniBarRowHeight + castMiniBarMargin * 2 + 2.dp
+    /** R322 (FR-R322-10, dev review 10) — the music mini bar: 64 dp, opaque, with its 2 dp progress hairline on the
+     *  top edge. It docks where the cast mini bar docks, under it when both show, and content pads by the sum. */
+    val musicMiniBarHeight = 66.dp
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
     val itemSpacing   = 16.dp   // gap between tiles / channel cards / cast circles

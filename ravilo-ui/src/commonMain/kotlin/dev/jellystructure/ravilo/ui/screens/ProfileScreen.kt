@@ -88,6 +88,9 @@ fun ProfileScreen(
     onSignedOut: () -> Unit,
     /** FR-R304-1 — tap-on-active scrolls to top: the caller bumps this on a re-tap of the bar's item. */
     scrollToTopTick: Int = 0,
+    /** R321 (FR-R321-3) — the listening mode card under the photo and name; null (absent, never greyed) for a viewer
+     *  without the music library, on a TV, or where this build has no music player (FR-R321-2). */
+    modeCard: (@Composable () -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
@@ -139,6 +142,12 @@ fun ProfileScreen(
                     Text(displayName, color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (isAdmin) Text(str("profile.admin"), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                 }
+            }
+
+            // ── R321: the mode card, in the same place in both modes (it is the way back) ──
+            if (modeCard != null) {
+                Spacer(Modifier.height(22.dp))
+                modeCard()
             }
 
             // ── My List ──

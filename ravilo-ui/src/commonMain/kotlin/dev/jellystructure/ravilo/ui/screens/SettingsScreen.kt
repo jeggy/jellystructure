@@ -159,6 +159,7 @@ suspend fun signOutActiveSession(apiClient: TvApiClient): Boolean {
     MultiTokenStore.remove(active.userId)
     PlaybackPrefsStore.clearProfile(active.userId)   // R181 — local playback memory doesn't outlive the profile
     HomeSnapshotCache.clear(active.userId)           // R212 — cached Home snapshot doesn't outlive the profile either
+    dev.jellystructure.ravilo.ui.music.forgetListening()   // R321 (FR-R321-1) — the next viewer starts in video mode
     return MultiTokenStore.getAll().isNotEmpty()
 }
 
@@ -522,6 +523,21 @@ private fun SettingsContent(
         onUp = { progressFR.requestFocus() },
         onDown = { changePwFR.requestFocus() },
     )
+    // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. The phone only.
+    if (dev.jellystructure.ravilo.ui.theme.LocalHandset.current && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) {
+        Spacer(Modifier.height(32.dp))
+        SectionHeader(str("music.listening"))
+        Spacer(Modifier.height(12.dp))
+        var even by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.MusicPrefs.evenVolume) }
+        ToggleRow(
+            label = str("music.even_volume"),
+            checked = even,
+            focusRequester = remember { FocusRequester() },
+            onToggle = { even = !even; dev.jellystructure.ravilo.ui.music.MusicEngine.setEvenVolume(even) },
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(str("music.even_volume_sub"), color = colors.textSecondary, fontSize = 13.sp)
+    }
     // Land focus on a stable control on entry; up/down reach skin and sign-out.
     LaunchedEffect(Unit) { runCatching { progressFR.requestFocus() } }
 

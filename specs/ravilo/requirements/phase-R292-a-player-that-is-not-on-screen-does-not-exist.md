@@ -193,6 +193,10 @@ in `onStop`, create it in `onStart`.
 
 ### The rule
 
+*(R322, 2026-09-28: this rule is the **film** player's. Music has its own engine in `RaviloMusicService`, which
+exists precisely to survive `ON_STOP` — R322 FR-R322-1. The two are not in conflict: a video taking the screen stops
+the music, R322 FR-R322-12.)*
+
 - **FR-R292-1 — The engine does not survive `ON_STOP`.** When the activity stops (HOME, another app,
   standby, a TV input switch), the player's `ExoPlayer` is **released**: its decoders, `AudioTrack`,
   buffers, network source and (TV) `MediaSession`. `ON_PAUSE` still only pauses (an overlay such as the

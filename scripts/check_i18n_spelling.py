@@ -8,7 +8,7 @@ import json, os, re, sys, unicodedata, collections
 #   {placeholder}   `Partar {a}–{b}` — `a` is a placeholder name, not a word.
 #   after a `/`    `Innloggin/ur` — `ur` is a grammatical ending, not the word `úr`. Only the part
 #                  AFTER the slash is exempt; the stem before it is an ordinary word.
-EXCLUDED_KEYS = {"browse.sort.az", "browse.sort.za"}
+EXCLUDED_KEYS = {"browse.sort.az", "browse.sort.za", "music.sort_az"}   # R321 — music's A–Z sort label, the same alphabet ends as browse.sort.az
 
 # R288 — unit abbreviations are not words in any language, so they are exempt from folding against
 # words that happen to look like them. `min` is minutes in all three files; Faroese `mín` is "my".

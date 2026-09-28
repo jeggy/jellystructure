@@ -324,6 +324,15 @@ private sealed class Dest {
     // R245 (FR-R245-7) — the full-screen remote for a running cast. Reached from the mini bar, from a
     // detail screen's "Play on {device}", or by the hand-off from inside the local player.
     data class CastRemote(val displayName: String) : Dest()
+    // R321 — music mode's pages (the phone only). The four tabs sit on the bar; the three details hide it (R278's rule).
+    data class MusicListen(val displayName: String) : Dest()
+    /** [focusInput] — a re-tap of Browse raises the keyboard (R277's rule), consumed like [Search.focusInput]. */
+    data class MusicBrowse(val displayName: String, val chip: String = "albums", val focusInput: Boolean = false) : Dest()
+    data class MusicPlaying(val displayName: String) : Dest()
+    data class MusicQueue(val displayName: String) : Dest()
+    data class AlbumDetail(val id: String, val displayName: String) : Dest()
+    data class ArtistDetail(val id: String, val displayName: String) : Dest()
+    data class PlaylistDetail(val id: String, val name: String, val displayName: String) : Dest()
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
@@ -349,6 +358,13 @@ private sealed class Dest {
         is LiveTv         -> "/livetv/$channelId"
         is LiveTvGuide    -> "/livetv-guide"
         is CastRemote     -> "/cast"
+        is MusicListen    -> "/music"
+        is MusicBrowse    -> "/music/browse"
+        is MusicPlaying   -> "/music/playing"
+        is MusicQueue     -> "/music/queue"
+        is AlbumDetail    -> "/music/album/$id"
+        is ArtistDetail   -> "/music/artist/$id"
+        is PlaylistDetail -> "/music/playlist/$id"
     }
 }
 
@@ -523,7 +539,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 sessions.isEmpty() -> Dest.Login
                 sessions.size == 1 -> {
                     MultiTokenStore.setActive(sessions.first().userId)
-                    Dest.Home(sessions.first().displayName)
+                    // R321 (FR-R321-1) — the mode is remembered across launches; a lost grant falls back below.
+                    if (!isTvPlatform && dev.jellystructure.ravilo.ui.music.MusicEngine.supported && dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC)
+                        Dest.MusicListen(sessions.first().displayName)
+                    else Dest.Home(sessions.first().displayName)
                 }
                 else -> Dest.ProfilePicker
             }
@@ -706,6 +725,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
             is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
+            is Dest.MusicListen -> d.displayName; is Dest.MusicBrowse -> d.displayName; is Dest.MusicPlaying -> d.displayName   // R321
+            is Dest.MusicQueue -> d.displayName; is Dest.AlbumDetail -> d.displayName; is Dest.ArtistDetail -> d.displayName
+            is Dest.PlaylistDetail -> d.displayName
             else -> null
         } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
 
@@ -776,6 +798,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.Player, is Dest.LiveTv, is Dest.CastRemote -> false
             is Dest.MovieDetail, is Dest.SeriesDetail, is Dest.DiscoverItem, is Dest.UpcomingDetail -> false
             is Dest.Login, is Dest.ProfilePicker -> false
+            // R321 (FR-R321-4) — one title's detail hides the bar; the mini bar stays.
+            is Dest.AlbumDetail, is Dest.ArtistDetail, is Dest.PlaylistDetail -> false
             else -> true
         }
 
@@ -785,6 +809,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             d is Dest.Search -> BottomNavItem.SEARCH
             d is Dest.Discover -> BottomNavItem.DISCOVER
             d is Dest.Profile -> BottomNavItem.PROFILE   // R304 (FR-R304-1) — a page, so it takes the pill
+            d is Dest.MusicListen -> BottomNavItem.LISTEN   // R321 (FR-R321-4)
+            d is Dest.MusicBrowse -> BottomNavItem.BROWSE
+            d is Dest.MusicPlaying -> BottomNavItem.PLAYING
+            d is Dest.MusicQueue -> BottomNavItem.QUEUE
             else -> null
         }
 
@@ -814,6 +842,48 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // both, but they're independent signals (e.g. a narrow-but-landscape split-screen window).
         val portrait = remember(windowInfo.containerSize.width, windowInfo.containerSize.height) {
             windowInfo.containerSize.height > windowInfo.containerSize.width
+        }
+
+        // ─── R321/R322 — music mode ───────────────────────────────────────────────
+        // FR-R321-1 — a per-device flag, read again whenever the viewer changes (a sign-out clears it).
+        var musicMode by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC) }
+        // FR-R321-2 — absent, never greyed: only for a viewer with the music library, and only where it can play.
+        var musicAvailable by remember { mutableStateOf<Boolean?>(null) }
+        LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.music.MusicEngine.attach(apiClient) }
+        LaunchedEffect(activeUserId, handset) {
+            musicMode = dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC
+            musicAvailable = if (activeUserId == null || !handset || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
+                else runCatching { apiClient.getMusicHome().rows.isNotEmpty() }.getOrDefault(false)
+        }
+        val inMusic = handset && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
+        fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
+        // FR-R321-2 — a mode stored for a viewer who lost the grant falls back to video, silently.
+        LaunchedEffect(musicAvailable) {
+            if (musicAvailable == false && stack.any { it is Dest.MusicListen || it is Dest.MusicBrowse || it is Dest.MusicPlaying || it is Dest.MusicQueue }) {
+                resetTo(Dest.Home(destDisplayName(stack.lastOrNull())))
+            }
+        }
+        val musicState by dev.jellystructure.ravilo.ui.music.MusicEngine.state.collectAsState()
+        // FR-R322-12 — a video taking the screen stops the song (the queue stays, paused where it was).
+        LaunchedEffect(stack.lastOrNull()) {
+            val top = stack.lastOrNull()
+            if (top is Dest.Player || top is Dest.LiveTv || top is Dest.CastRemote) dev.jellystructure.ravilo.ui.music.MusicEngine.stopForVideo()
+        }
+        // Dev review 12 — the notification permission is asked on the first play, never at launch.
+        val askNotifications = dev.jellystructure.ravilo.ui.music.rememberNotificationAsk()
+        LaunchedEffect(musicState.playing) { if (musicState.playing) askNotifications() }
+        // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
+        fun musicMiniOver(d: Dest) = handset && musicState.active && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
+            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
+        // FR-R322-6 — landscape Playing is full-screen, not a tab.
+        fun barShows(d: Dest) = bottomBarShows(d) && !(d is Dest.MusicPlaying && !portrait)
+        var trackSheet by remember { mutableStateOf<dev.jellystructure.ravilo.ui.music.TrackSheetRequest?>(null) }
+        val musicFavoriteAdded = str("music.my_list_added")
+        val musicFavoriteRemoved = str("music.my_list_removed")
+        fun setMusicFavorite(t: dev.jellystructure.shared.tv.MusicTrackItem, fav: Boolean) {
+            dev.jellystructure.ravilo.ui.music.MusicFavorites.set(t.id, fav)
+            dev.jellystructure.ravilo.ui.music.MusicToasts.show(if (fav) musicFavoriteAdded else musicFavoriteRemoved)
+            configScope.launch { runCatching { apiClient.setMusicFavorite(t.id, fav) } }
         }
 
         // R245/R265 — one sender per app (composed: the platform Chromecast SDK where one exists, plus
@@ -881,7 +951,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // Home gets this treatment (not e.g. Login/ProfilePicker, which stay on the platform default) —
         // see rememberExitAction's doc comment.
         val exitApp = rememberExitAction()
-        val atHomeRoot = stack.size == 1 && stack.last() is Dest.Home
+        val atHomeRoot = stack.size == 1 && (stack.last() is Dest.Home || stack.last() is Dest.MusicListen)
         // Bug fix (live-tested on soveværelse TV): the Player/LiveTv screens own a deliberate two-step
         // Back (chrome visible -> hide it; chrome already hidden -> exit, PlayerScreen.kt's onBack doc
         // comment at R112). Both PlatformBackHandler here AND this root onKeyEvent block used to run
@@ -907,15 +977,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // finish). FR-R275-2 gives them Home instead, scoped by the same bottomItemOf() the bar is drawn
         // from so the two cannot drift — and NOT extended to Login/ProfilePicker, which have no Home to
         // go to and keep the platform default per rememberExitAction's doc comment.
-        val backGoesHome = handset && bottomItemOf(dest) != null && dest !is Dest.Home
-        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || stack.size > 1 || backGoesHome || atHomeRoot)) {
+        val backGoesHome = handset && bottomItemOf(dest) != null && dest !is Dest.Home && dest !is Dest.MusicListen
+        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || trackSheet != null || stack.size > 1 || backGoesHome || atHomeRoot)) {
             // FR-R275-4 — one order, stated once, first match wins. backToTop sits above the stack: a
             // scrolled pushed screen goes to its top before it pops, exactly as it does on the TV.
             when {
                 profileMenuOpen -> profileMenuOpen = false
+                trackSheet != null -> trackSheet = null   // R322 — Back with the ⋯ sheet up closes the sheet
                 backToTop.consumeBack() -> Unit
                 stack.size > 1 -> pop()
-                backGoesHome -> resetTo(Dest.Home(destDisplayName(dest)))
+                backGoesHome -> resetTo(homeDest(destDisplayName(dest)))   // R321 — Listen is music mode's Home
                 atHomeRoot -> exitApp()
             }
         }
@@ -986,10 +1057,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             // by one bar is exactly how a heading ends up underneath one, twice already (R257
             // FR-R257-5, R259 FR-R259-2). Applied here, where the per-destination insets already are,
             // so the four pages do not each have to remember it.
-            val navBarInset = (if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
+            val navBarInset = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                 // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
                 // bar floats over this page, the page pads by it as well, or its last row sits under it.
-                (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp)
+                (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp) +
+                // R322 (dev review 10) — and by the music mini bar too, when it shows.
+                (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)
             Box(
                 modifier = if (playingFullscreen) Modifier.fillMaxSize()
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
@@ -1640,6 +1713,104 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     // the picker, none goes to Login.
                     onSignedOut = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
                     scrollToTopTick = reselectTick,
+                    // R321 (FR-R321-3) — the mode card; a tap switches and lands on that mode's first tab.
+                    modeCard = if (handset && musicAvailable == true && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) ({
+                        dev.jellystructure.ravilo.ui.music.ListeningModeCard(musicMode) { on ->
+                            musicMode = on
+                            dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (on) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
+                            resetTo(if (on) Dest.MusicListen(dest.displayName) else Dest.Home(dest.displayName))
+                        }
+                    }) else null,
+                )
+            }
+
+            // ─── R321/R322 — music mode ───
+            is Dest.MusicListen -> {
+                val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome() } }
+                dev.jellystructure.ravilo.ui.music.MusicListenScreen(
+                    loader = loader,
+                    onProfile = { openProfile() },
+                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
+                    onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
+                    onSeeAllPlayed = {
+                        keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient) }.setSort("songs", "played")
+                        resetTo(Dest.MusicBrowse(dest.displayName, chip = "songs"))
+                    },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                    scrollToTopTick = reselectTick,
+                )
+            }
+            is Dest.MusicBrowse -> {
+                val store = keptStore("mbrowse:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicBrowseStore(apiClient) }
+                dev.jellystructure.ravilo.ui.music.MusicBrowseScreen(
+                    store = store,
+                    chip = dest.chip,
+                    onChip = { c -> replaceTop(dest.copy(chip = c, focusInput = false)) },
+                    focusInput = dest.focusInput,
+                    onFocusInputConsumed = { replaceTop(dest.copy(focusInput = false)) },
+                    onProfile = { openProfile() },
+                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
+                    onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
+                    onOpenPlaylist = { p -> push(Dest.PlaylistDetail(p.id, p.name, dest.displayName)) },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                    scrollToTopTick = reselectTick,
+                )
+            }
+            is Dest.MusicPlaying -> {
+                // FR-R322-3 — nothing playing: the last queue this phone kept (where it was), else the viewer's last-played
+                // song, loaded paused and not started.
+                LaunchedEffect(Unit) {
+                    if (!musicState.active) {
+                        val uid = MultiTokenStore.getActive()?.userId
+                        val snap = dev.jellystructure.ravilo.ui.music.MusicQueueStore.load()?.takeIf { it.userId == uid && it.tracks.isNotEmpty() }
+                        if (snap != null) dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(snap.tracks, snap.index, snap.positionMs, snap.context)
+                        else runCatching { apiClient.lastPlayedMusic() }.getOrNull()?.let { lp ->
+                            dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(listOf(lp.track), 0, 0L,
+                                dev.jellystructure.ravilo.ui.music.MusicContext("album", lp.album?.title ?: lp.track.album.orEmpty(), lp.album?.id))
+                        }
+                    }
+                }
+                dev.jellystructure.ravilo.ui.music.MusicPlayingScreen(
+                    api = apiClient,
+                    onClose = { if (stack.size > 1) pop() else resetTo(homeDest(dest.displayName)) },
+                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
+                    onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                    onFavorite = { t, fav -> setMusicFavorite(t, fav) },
+                )
+            }
+            is Dest.MusicQueue -> dev.jellystructure.ravilo.ui.music.MusicQueueScreen(
+                onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                onProfile = { openProfile() },
+            )
+            is Dest.AlbumDetail -> {
+                val loader = keptStore("malbum:${dest.id}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicAlbum(dest.id) } }
+                dev.jellystructure.ravilo.ui.music.MusicAlbumScreen(
+                    loader = loader,
+                    onBack = { pop() },
+                    onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
+                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                )
+            }
+            is Dest.ArtistDetail -> {
+                val loader = keptStore("martist:${dest.id}:$lang") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicArtist(dest.id, lang) } }
+                dev.jellystructure.ravilo.ui.music.MusicArtistScreen(
+                    loader = loader,
+                    onBack = { pop() },
+                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
+                    // FR-R321-11 — a music video is a video: the film player (which stops the music, FR-R322-12).
+                    onPlayVideo = { v -> push(Dest.Player(itemId = v.id, title = v.title, displayName = dest.displayName, seriesId = v.id, posterUrl = v.imageUrl)) },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                )
+            }
+            is Dest.PlaylistDetail -> {
+                val loader = keptStore("mplaylist:${dest.id}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicPlaylist(dest.id) } }
+                dev.jellystructure.ravilo.ui.music.MusicPlaylistScreen(
+                    name = dest.name,
+                    loader = loader,
+                    onBack = { pop() },
+                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
                 )
             }
 
@@ -1704,13 +1875,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // it is none of the four.
         val pageItem = bottomItemOf(dest)
         val litItem = pageItem ?: stack.lastOrNull { bottomItemOf(it) != null }?.let { bottomItemOf(it) }
-        if (handset && bottomBarShows(dest)) {
+        if (handset && barShows(dest)) {
             // R274 (FR-R274-2) — includeIme = false: the bar is window furniture, so the keyboard is
             // drawn OVER it. Unioning the IME here is what made it climb onto the keyboard's top edge,
             // and (since union takes the larger side) swallowed its own navigation-bar inset on the way,
             // leaving the labels flush against the keys.
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
                 RaviloBottomNav(
+                    // R321 (FR-R321-4) — music mode's bar: Listen · Browse · Playing · Queue · Profile.
+                    items = if (inMusic) dev.jellystructure.ravilo.ui.components.MUSIC_BAR else dev.jellystructure.ravilo.ui.components.VIDEO_BAR,
                     selected = litItem,
                     // Same derivation every other AppBar call site uses (ChannelScreen, HomeScreen, …).
                     userInitials = destDisplayName(dest).take(2).uppercase(),
@@ -1733,6 +1906,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             BottomNavItem.HOME ->
                                 if (alreadyHere) reselectTick++
                                 else resetTo(Dest.Home(destDisplayName(dest)))
+                            // R321 (FR-R321-4) — music mode's four. Listen scrolls to top on a re-tap; Browse raises
+                            // the keyboard on a re-tap (never on arrival); Playing and Queue do nothing.
+                            BottomNavItem.LISTEN ->
+                                if (alreadyHere) reselectTick++
+                                else resetTo(Dest.MusicListen(destDisplayName(dest)))
+                            BottomNavItem.BROWSE ->
+                                if (alreadyHere && dest is Dest.MusicBrowse) replaceTop(dest.copy(focusInput = true))
+                                else resetTo(Dest.MusicBrowse(destDisplayName(dest)))
+                            BottomNavItem.PLAYING -> if (!alreadyHere) resetTo(Dest.MusicPlaying(destDisplayName(dest)))
+                            BottomNavItem.QUEUE -> if (!alreadyHere) resetTo(Dest.MusicQueue(destDisplayName(dest)))
                             // FR-R267-5b — Movies and Series are one page on a phone. This is a
                             // presentation change, not a new screen: Dest.Browse is already one screen
                             // with a type parameter, so Library is that screen with its parameter
@@ -1818,9 +2001,37 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     Modifier
                         .align(Alignment.BottomCenter)
                         // R278 (FR-R278-4) — the same "is there a bar" answer the content pads by.
-                        .padding(bottom = if (handset && bottomBarShows(dest)) RaviloDimens.bottomNavHeight else 0.dp),
+                        .padding(bottom = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
+                            // R322 (FR-R322-10) — with a film casting too the bars stack: the cast bar on top, music under it.
+                            (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)),
                 ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
+        }
+        // R322 (FR-R322-10) — the music mini bar docks on top of the bottom bar, where the cast mini bar docks; on a
+        // detail page (no bar) it sits at the bottom inset. Tap → the Playing tab.
+        if (musicMiniOver(dest)) {
+            Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
+                Box(Modifier.padding(bottom = if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp)) {
+                    dev.jellystructure.ravilo.ui.music.MusicMiniBar(onOpen = {
+                        if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest)))
+                    })
+                }
+            }
+        }
+        if (handset) {
+            Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false)) {
+                dev.jellystructure.ravilo.ui.music.MusicToastHost(
+                    (if (barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) + (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp),
+                )
+            }
+            // FR-R322-11 — ⋯ on a song, over every music page.
+            dev.jellystructure.ravilo.ui.music.TrackActionsSheet(
+                request = trackSheet,
+                onDismiss = { trackSheet = null },
+                onGoAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(dest))) },
+                onGoArtist = { id -> push(Dest.ArtistDetail(id, destDisplayName(dest))) },
+                onFavorite = { t, fav -> setMusicFavorite(t, fav) },
+            )
         }
         // R265 — the "Play on a TV" sheet, drawn once over every screen (incl. the player), above the bottom
         // bar AND the cast mini bar (drawn before it here, the mini bar sat on top of the open sheet — seen

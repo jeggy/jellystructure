@@ -226,6 +226,18 @@ class MusicTvService(
         }
     }
 
+    /** R321 (FR-R321-10) — one of the viewer's playlists, in its own order; songs the viewer may not see are left out. */
+    suspend fun playlist(device: DeviceData, id: String): MusicList? {
+        val v = View(device)
+        val cfg = configStore.current
+        val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+        if (base.isBlank()) return null
+        val entries = jellyfin.getPlaylistEntries(base, jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken), device.jellyfinUserId, id, limit = 1000) ?: return null
+        val u = userMusic(device)
+        val tracks = entries.mapNotNull { v.tracks[it.id] }
+        return MusicList(tracks = tracks.map { trackItem(v, it, u) }, total = tracks.size, pageSize = tracks.size)
+    }
+
     // ── FR-279-4 ──
 
     suspend fun album(device: DeviceData, id: String): MusicAlbumDetail? {
@@ -254,7 +266,8 @@ class MusicTvService(
                 .filter { a -> a.albumArtists.none { it.artistId == r.id } }.distinctBy { it.id }
                 .takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup("appears_on", it.map { a -> albumCard(v, a) }) },
         )
-        val top = v.songsBy(r.id).sortedWith(compareByDescending<MusicTrack> { u.playCount[it.id] ?: 0 }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(10)
+        // Every song of theirs, most played first: the phone shows five and plays them all (R321 FR-R321-8).
+        val top = v.songsBy(r.id).sortedWith(compareByDescending<MusicTrack> { u.playCount[it.id] ?: 0 }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
         val vids = MusicVideoLinks.forArtist(r, videos(device)).map { m ->
             val vid = m.jellyfinId ?: m.id
             MusicVideoCard(vid, m.title, m.year, m.runtime?.let { it * 60_000L }, dev.jellystructure.tv.RaviloImageUrl.poster(vid))

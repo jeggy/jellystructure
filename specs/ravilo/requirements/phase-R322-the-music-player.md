@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the phone brief (§D–§G, §J4–§J6, §M5) and the research report (§5, §6.3,
+`✓ Built` 2026-09-28, **not deployed, not tried on a phone** (build notes at the end). Written 2026-09-28 from the phone brief (§D–§G, §J4–§J6, §M5) and the research report (§5, §6.3,
 §6.4), with the mockup `design/ravilo/mobile/ravilo-music-player.js` (+ `ravilo-music.css`), including the
 owner's *"a full-screen of what's now playing there. If nothing is playing, then it should just be whatever was
 last played in pause mode."* **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **R321** and **279**, **R244** (the time bubble,
@@ -204,3 +204,46 @@ Buildable. Thirteen items; items 1, 3 and 11 change how it is built, none blocks
 12. **`POST_NOTIFICATIONS`** is a runtime prompt on Android 13+: ask on the **first play**, not at launch;
     without it the service still runs, only the card is missing.
 13. **Wire:** none beyond 279.
+
+## Build notes (2026-09-28)
+
+Built with R321 (see its notes for the build and fence results). **Not installed on any device**, so acceptance 1–7
+are unverified.
+
+1. **One engine (FR-R322-1).** `MusicEngine` (androidMain) owns an `ExoPlayer` — music attributes with focus
+   handling, becoming-noisy, a network wake lock, and the app's FFmpeg renderers when set (dev review 4) — and a
+   `MediaSession` over a `ForwardingPlayer` whose *next/previous* come from the queue. `RaviloMusicService`
+   (`MediaSessionService`, declared in `:ravilo-android`'s manifest with `mediaPlayback`, dev review 1) hosts that
+   session and is started with the first song; removing the app from recents stops it. **Deviation:** Compose calls
+   the engine directly (same process) instead of through a `MediaController`. The web actual is a no-op with
+   `supported = false` (dev review 3), so music mode never appears there.
+2. **One song, one session (279 FR-279-6).** A song's stream is asked for when it starts (which opens its Jellyfin
+   session), progress is reported every 10 s and on play/pause, and a skip, the end or a stop reports the stop. ExoPlayer
+   holds only the playing song, so **there is a short gap between songs** — open question 1 answered more broadly than
+   asked: no gapless in v1.
+3. **The Playing tab (FR-R322-2..6, J4 → cover-first):** *Playing from*, the cover (a swipe is next/previous, sliding
+   off), the title in a marquee, artist and album as links, ♡, the seek bar with the time bubble, shuffle · previous ·
+   play/pause (the buffering pulse in its place) · next (absent at the queue's end) · repeat (off → all → one; one is a
+   drawn dot badge, the toast names the state), lyrics (absent without) · ⋯. No queue button (R321 open question 1)
+   and **no cast glyph** (nothing on the server casts music yet). Landscape is full-screen with a close chevron.
+4. **Nothing playing (FR-R322-3, dev review 7):** the queue this phone saved for this viewer, paused where it was;
+   else 279's last-played song at 0:00; else *Nothing played yet*.
+5. **States (FR-R322-5):** failure is a sheet with Try again / Skip, no cause named; queue end stays on the last song
+   paused at 0:00.
+6. **Lyrics (FR-R322-7):** synced lines in Space Grotesk 24 sp, the current one lit (Noir: ink), past ones dimmed,
+   followed at ~40 %; a tap seeks; a hand scroll stops the follow until the next song. Plain lyrics are body text.
+7. **The queue (FR-R322-8):** the Queue tab — now playing, up next with a drag handle and swipe-left to remove, *Clear
+   queue*, *N songs · T left*. Playing a context replaces the queue; *Play next* / *Add to queue* insert and toast. The
+   rules live in `MusicQueue` (common, tested).
+8. **Even out volume (FR-R322-9, J6 → on):** Settings ▸ Listening; album gain for an album in order, track gain
+   otherwise, as a volume scale ≤ 1 (dev review 11).
+9. **The mini bar (FR-R322-10, J5 → swipe down stops):** docks on the bottom bar where the cast mini bar docks (under
+   it when both show — content pads by the sum, dev review 10), hidden on the Playing tab and wherever a picture plays,
+   shown in video mode too. Tap → Playing.
+10. **Music and video (FR-R322-12):** a film, Live TV or the cast remote taking the screen stops the song. **Deviation
+    from dev review 8:** the queue is kept, paused where it was, rather than cleared. Switching mode does not stop it.
+11. **The platform's card (FR-R322-13):** Media3's notification from the item's metadata — title, artists joined ", ",
+    album, the cover at 720 px. **Deviation:** no wordmark is rendered for a song without a cover. The notification
+    permission is asked on the first play, once per device (dev review 12).
+12. **Resumption (open question 2 → the queue):** `onPlaybackResumption` restores this viewer's saved queue and opens
+    its song. R292's spec carries the one sentence (dev review 9).

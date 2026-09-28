@@ -327,6 +327,13 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    /** A playlist's songs, in its own order (R321 FR-R321-10). */
+    suspend fun getMusicPlaylist(id: String): MusicList {
+        val r = client.get("$baseUrl/api/tv/music/playlist/$id") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     suspend fun getMusicAlbum(id: String): MusicAlbumDetail {
         val r = client.get("$baseUrl/api/tv/music/album/$id") { auth() }
         r.assertSuccess()
