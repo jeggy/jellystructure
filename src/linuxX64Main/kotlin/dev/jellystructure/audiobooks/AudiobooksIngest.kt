@@ -50,12 +50,19 @@ object AudiobooksIngest {
     ): AudiobooksRows {
         val libId = lib.jellyfinId
         // FR-280-3 — a folder the admin split: each `Album` tag but the one the folder keeps becomes its own book.
-        val split = previousBooks.values.filter { it.splitByAlbum }.associate { it.id to it.splitPrimary }
+        val split = previousBooks.values.filter { it.splitByAlbum }.associateBy { it.id }
         val groups = jf.parts.groupBy { item ->
             val parent = item.parentId
             val key = if (parent.isNullOrBlank() || parent.equals(libId, ignoreCase = true)) "f:" + item.id else parent
             val album = item.album?.trim()?.takeIf { it.isNotEmpty() }
-            if (key in split && album != null && album != split[key]) splitId(key, album) else key
+            val book = split[key]
+            when {
+                book == null -> key
+                // Phase 287 (FR-287-4) — the admin's own arrangement wins over the tags; a part it does not name stays.
+                book.splitGroups.isNotEmpty() -> (book.splitGroups[item.id] ?: 0).let { g -> if (g == 0) key else splitId(key, book.splitTitles.getOrNull(g) ?: "book $g") }
+                album != null && album != book.splitPrimary -> splitId(key, album)
+                else -> key
+            }
         }
         val books = mutableListOf<Audiobook>()
         val parts = mutableListOf<AudiobookPart>()
@@ -90,7 +97,11 @@ object AudiobooksIngest {
             }
             val albumTags = ordered.mapNotNull { it.album?.trim()?.takeIf { a -> a.isNotEmpty() } }.distinct()
             val folderName = folder?.substringAfterLast('/') ?: items.first().name
-            val title = albumTags.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: folderName
+            val tagTitle = albumTags.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: folderName
+            // Phase 287 (FR-287-4) — a book the admin arranged carries the title typed in the preview.
+            val arranged = (split[bookId] ?: splitFrom?.let { split[it] })?.takeIf { it.splitGroups.isNotEmpty() }
+            val arrangedTitle = arranged?.let { fb -> if (splitFrom == null) fb.splitTitles.firstOrNull() else fb.splitTitles.drop(1).firstOrNull { t -> splitId(splitFrom, t) == bookId } }
+            val title = arrangedTitle ?: tagTitle
             val authors = (ordered.flatMap { it.albumArtists } + ordered.flatMap { it.artistItems }).map { it.name.trim() }.filter { it.isNotEmpty() }.distinct()
             val narrators = ordered.flatMap { it.people }.filter { it.type.equals("Composer", true) }.map { it.name.trim() }.filter { it.isNotEmpty() }.distinct()
             val duration = bookParts.sumOf { it.durationMs ?: 0L }
@@ -116,6 +127,7 @@ object AudiobooksIngest {
                 chapterSource = if (prev == null && chapters.isNotEmpty()) "embedded" else prev?.chapterSource ?: "files",
                 addedAt = ordered.mapNotNull { it.dateCreated?.let { d -> isoToEpochSeconds(d) } }.minOrNull(),
                 splitFrom = splitFrom,
+                origins = if (arrangedTitle != null) mapOf("title" to AudiobookOrigin.TYPED) else emptyMap(),
             )
             books += carry(fromFiles, prev, now)
         }
@@ -148,7 +160,7 @@ object AudiobooksIngest {
     }
 
     private fun carry(fresh: Audiobook, prev: Audiobook?, now: Long): Audiobook {
-        if (prev == null) return fresh.copy(createdAt = now, updatedAt = now, origins = FILE_FIELDS.associateWith { AudiobookOrigin.FILES })
+        if (prev == null) return fresh.copy(createdAt = now, updatedAt = now, origins = FILE_FIELDS.associateWith { AudiobookOrigin.FILES } + fresh.origins)
         fun owned(field: String) = !prev.locked && (prev.origins[field] ?: AudiobookOrigin.FILES) == AudiobookOrigin.FILES
         val merged = prev.copy(
             libraryId = fresh.libraryId, folderPath = fresh.folderPath, coverState = fresh.coverState,

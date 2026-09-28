@@ -94,6 +94,10 @@ data class Audiobook(
      *  tagged [splitPrimary]; each other tag becomes a book of its own (`<folder id>~<tag>`). The files are not moved. */
     val splitByAlbum: Boolean = false,
     val splitPrimary: String? = null,
+    /** Phase 287 (FR-287-4) — the admin's own split, from the two-column preview: part id → book index (0 keeps this
+     *  page) and one title per book. Present ⇒ it replaces the album-tag grouping as the source of truth. */
+    val splitGroups: Map<String, Int> = emptyMap(),
+    val splitTitles: List<String> = emptyList(),
     /** On a book split off a folder: that folder's book id (*Join back into one book* lives there). */
     val splitFrom: String? = null,
     /** FR-281-6 — the chapters a single file carries; empty for a multi-part book (then each part is one). */

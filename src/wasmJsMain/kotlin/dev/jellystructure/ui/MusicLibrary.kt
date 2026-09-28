@@ -21,7 +21,7 @@ import org.w3c.dom.HTMLSelectElement
  * search with no results). Every row and every count comes from `GET /api/music/browse`; this page only renders.
  */
 
-private var muView = "albums"
+private var muView = "artists"   // Phase 287 (FR-287-1) — Artists first
 private var muQuery = ""
 private var muSort: String? = null
 private val muFacets = LinkedHashMap<String, MutableSet<String>>()
@@ -35,14 +35,14 @@ private var muScope: CoroutineScope? = null
 
 private fun muUrl(): String = buildList {
     add("kind=music")
-    if (muView != "albums") add("mview=$muView")
+    if (muView != "artists") add("mview=$muView")
     if (muQuery.isNotBlank()) add("q=${dev.jellystructure.encodeURIComponent(muQuery)}")
     muSort?.let { add("sort=$it") }
     muFacets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}") }
 }.joinToString("&").let { "#/library?$it" }
 
 fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<String, String>) {
-    muView = query["mview"]?.takeIf { it in setOf("albums", "artists", "songs") } ?: "albums"
+    muView = query["mview"]?.takeIf { it in setOf("albums", "artists", "songs") } ?: "artists"
     muQuery = query["q"].orEmpty()
     muSort = query["sort"]
     muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null
@@ -104,7 +104,7 @@ private fun muRender(scope: CoroutineScope) {
     val live = d.mapped && h != null && (h.albums > 0 || h.tracks > 0)
     root.innerHTML = buildString {
         append("""<div class="mu-top"><span class="seg" id="mu-view">""")
-        for ((k, l) in listOf("albums" to "Albums", "artists" to "Artists", "songs" to "Songs"))
+        for ((k, l) in listOf("artists" to "Artists", "albums" to "Albums", "songs" to "Songs"))   // Phase 287 (FR-287-1)
             append("""<span data-mview="$k" class="${if (muView == k) "on" else ""}">$l</span>""")
         append("</span>")
         if (live) append(statusLine(d))
@@ -251,7 +251,7 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         muRender(scope); return
     }
     t.closest("[data-mview]")?.let { v ->
-        muView = v.getAttribute("data-mview") ?: "albums"; muSelected.clear(); muOpenFacet = null
+        muView = v.getAttribute("data-mview") ?: "artists"; muSelected.clear(); muOpenFacet = null
         muLoad(scope); return
     }
     t.closest("[data-fopen]")?.let { f ->

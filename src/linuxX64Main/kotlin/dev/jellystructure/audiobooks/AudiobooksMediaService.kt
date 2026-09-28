@@ -203,16 +203,36 @@ else:
         val parts = store.parts(b.id).filter { it.missingSince == null }.sortedBy { it.position }
         val tags = parts.mapNotNull { it.albumTag?.trim()?.takeIf { t -> t.isNotEmpty() } }.distinct()
         return tags.mapIndexed { i, t ->
-            dev.jellystructure.model.AudiobookSplitGroup(t, parts.filter { it.albumTag?.trim() == t || (i == 0 && it.albumTag.isNullOrBlank()) }.map { p -> p.number?.let { "$it · ${p.title}" } ?: p.title }, i == 0)
+            val mine = parts.filter { it.albumTag?.trim() == t || (i == 0 && it.albumTag.isNullOrBlank()) }
+            dev.jellystructure.model.AudiobookSplitGroup(t, partIds = mine.map { it.id }, parts = mine.map { p -> p.number?.let { "$it · ${p.title}" } ?: p.title }, keepsPage = i == 0)
         }
     }
 
-    suspend fun split(bookId: String): Audiobook? {
+    /** Phase 287 (FR-287-4) — the preview's groups, cleaned: known parts only, no empty book, no blank title. */
+    fun cleanSplit(bookId: String, groups: List<dev.jellystructure.model.AudiobookSplitGroupRequest>): List<dev.jellystructure.model.AudiobookSplitGroupRequest>? {
+        val ids = store.parts(bookId).filter { it.missingSince == null }.map { it.id }.toSet()
+        val seen = HashSet<String>()
+        val clean = groups.map { g -> g.copy(title = g.title.trim(), partIds = g.partIds.filter { it in ids && seen.add(it) }) }.filter { it.partIds.isNotEmpty() }
+        return clean.takeIf { it.size >= 2 && it.none { g -> g.title.isBlank() } }
+    }
+
+    /** With [groups] (Phase 287): the admin's arrangement, the first book keeping this page; without: 280's split by
+     *  the files' album tags. Either way the files stay where they are. */
+    suspend fun split(bookId: String, groups: List<dev.jellystructure.model.AudiobookSplitGroupRequest>? = null): Audiobook? {
         val b = store.book(bookId) ?: return null
-        val first = splitPreview(b).firstOrNull()?.title ?: return b
-        val next = b.copy(splitByAlbum = true, splitPrimary = first, updatedAt = nowEpochSec())
+        val now = nowEpochSec()
+        val next = if (groups != null) {
+            val clean = cleanSplit(bookId, groups) ?: return b
+            val map = clean.flatMapIndexed { i, g -> g.partIds.map { it to i } }.toMap()
+            b.copy(splitByAlbum = true, splitPrimary = null, splitGroups = map, splitTitles = clean.map { it.title }, title = clean.first().title,
+                origins = b.origins + ("title" to AudiobookOrigin.TYPED), twoInOneDismissed = false, updatedAt = now)
+        } else {
+            val first = splitPreview(b).firstOrNull()?.title ?: return b
+            b.copy(splitByAlbum = true, splitPrimary = first, splitGroups = emptyMap(), splitTitles = emptyList(), updatedAt = now)
+        }
         store.putBook(next)
-        note(bookId, "audiobook_split", "Split into ${b.albumTags.size} books by the files' album tags · the files are not moved")
+        note(bookId, "audiobook_split", if (groups != null) "Split into ${next.splitTitles.size} books as arranged in the preview · the files are not moved"
+            else "Split into ${b.albumTags.size} books by the files' album tags · the files are not moved")
         rescan(b.libraryId)
         return store.book(bookId)
     }
@@ -221,7 +241,7 @@ else:
     suspend fun join(bookId: String): Audiobook? {
         val b = store.book(bookId) ?: return null
         val folder = store.book(b.splitFrom ?: b.id) ?: return null
-        store.putBook(folder.copy(splitByAlbum = false, splitPrimary = null, twoInOneDismissed = true, updatedAt = nowEpochSec()))
+        store.putBook(folder.copy(splitByAlbum = false, splitPrimary = null, splitGroups = emptyMap(), splitTitles = emptyList(), twoInOneDismissed = true, updatedAt = nowEpochSec()))
         note(folder.id, "audiobook_split", "Joined back into one book")
         rescan(folder.libraryId)
         return store.book(folder.id)

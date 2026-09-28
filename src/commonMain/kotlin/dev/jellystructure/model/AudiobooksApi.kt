@@ -109,7 +109,16 @@ data class AudiobookPageDto(
 )
 
 @Serializable
-data class AudiobookSplitGroup(val title: String, val parts: List<String> = emptyList(), @SerialName("keeps_page") val keepsPage: Boolean = false)
+data class AudiobookSplitGroup(val title: String, val parts: List<String> = emptyList(), @SerialName("keeps_page") val keepsPage: Boolean = false,
+    /** Phase 287 (FR-287-4) — the parts' ids, so the two-column preview can be pre-filled and sent back. */
+    @SerialName("part_ids") val partIds: List<String> = emptyList())
+
+/** Phase 287 (FR-287-4) — the admin's split as arranged in the preview: the first group keeps the folder's page. */
+@Serializable
+data class AudiobookSplitRequest(val groups: List<AudiobookSplitGroupRequest>)
+
+@Serializable
+data class AudiobookSplitGroupRequest(val title: String, @SerialName("part_ids") val partIds: List<String>)
 
 /** FR-281-2 — one field typed on the Details tab; `value` is the text as shown (lists joined with `; `). */
 @Serializable

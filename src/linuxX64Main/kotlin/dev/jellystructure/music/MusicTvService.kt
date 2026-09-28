@@ -49,7 +49,6 @@ class MusicTvService(
     companion object {
         const val PAGE_SIZE = 60
         /** FR-279-2 / open question 1 — below this a mix is the whole library over again (measured: 60 tracks). */
-        const val MIX_MIN_TRACKS = 300
         private const val USER_TTL_MS = 30_000L
         private val GROUP_ORDER = listOf("album", "single", "compilation", "live", "soundtrack")
 
@@ -149,22 +148,12 @@ class MusicTvService(
         v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() }
             .sortedWith(compareBy<MusicArtist> { if (it.imageState != MusicArt.NONE) 0 else 1 }.thenBy { (it.sortName ?: it.name).lowercase() })
             .take(12).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("artists", "Artists", artists = it.map { r -> artistCard(v, r) }) }
-        if (v.tracks.size >= MIX_MIN_TRACKS) mix(device, v, u)?.let { rows += it }
+        // R326 (FR-R326-6) — no *Mix* row in round 1 (the owner, 2026-09-28); 279 amended in place.
         val byGenre = HashMap<String, MutableList<MusicAlbum>>()
         for (a in v.albums.values) for (g in a.effectiveGenres()) byGenre.getOrPut(g) { mutableListOf() } += a
         byGenre.filterValues { it.size >= 3 }.entries.sortedWith(compareByDescending<Map.Entry<String, MutableList<MusicAlbum>>> { it.value.size }.thenBy { it.key })
             .take(6).forEach { (g, list) -> rows += MusicRow("genre", g, albums = list.sortedByDescending { it.addedAt ?: it.createdAt }.take(12).map { albumCard(v, it) }) }
         return MusicHome(rows)
-    }
-
-    /** A mix around the last song played (else the newest album's first song), from Jellyfin's InstantMix. */
-    private suspend fun mix(device: DeviceData, v: View, u: UserMusic): MusicRow? {
-        val seed = u.played.firstOrNull { it.id in v.tracks }?.id ?: recentAlbums(v).firstOrNull()?.let { v.tracksByAlbum[it.id]?.firstOrNull()?.id } ?: return null
-        val cfg = configStore.current
-        val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
-        val ids = jellyfin.getInstantMix(base, jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken), device.jellyfinUserId, seed) ?: return null
-        val tracks = ids.mapNotNull { v.tracks[it] }.take(20)
-        return if (tracks.size < 5) null else MusicRow("mix", "A mix from your library", tracks = tracks.map { trackItem(v, it, u) })
     }
 
     // ── FR-279-3 ──

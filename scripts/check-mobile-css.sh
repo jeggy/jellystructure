@@ -192,6 +192,16 @@ check "$SEGCSS" "drawer thumbnail stays in its 250px column" \
 check "$SEGCSS" "season sheet State column wide enough for one line" \
   "grid-template-columns:26px 62px 186px 1fr 196px 128px"
 
+# Phase 287 (FR-287-4) — the split preview's rules live inline in the design's audiobook.html; the served page loads
+# only the synced stylesheets, so music.css carries a copy the next export will not have.
+MUSICCSS="design/app/music.css"
+check "$MUSICCSS" "audiobook split preview columns (.ab-scols)" \
+  ".ab-scols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}"
+check "$MUSICCSS" "audiobook split preview part row (.ab-spart)" \
+  ".ab-spart{display:grid;grid-template-columns:18px 26px minmax(0,1fr) auto;"
+check "$MUSICCSS" "audiobook split preview empty column (.ab-sempty)" \
+  ".ab-sempty{padding:26px 8px;text-align:center;"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

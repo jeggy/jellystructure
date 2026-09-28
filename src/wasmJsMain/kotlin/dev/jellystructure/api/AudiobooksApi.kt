@@ -82,8 +82,11 @@ object AudiobooksApi {
         httpClient.post("/api/audiobooks/${id(bookId)}/dismiss") { contentType(ContentType.Application.Json); setBody(AudiobookDismissRequest(what)) }.body<Audiobook>()
     }.getOrNull()
 
-    suspend fun split(bookId: String): Audiobook? = runCatching {
-        val r = httpClient.post("/api/audiobooks/${id(bookId)}/split")
+    /** Phase 287 (FR-287-4) — with [groups], the arrangement from the two-column preview; without, 280's split by tag. */
+    suspend fun split(bookId: String, groups: List<dev.jellystructure.model.AudiobookSplitGroupRequest>? = null): Audiobook? = runCatching {
+        val r = httpClient.post("/api/audiobooks/${id(bookId)}/split") {
+            if (groups != null) { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.AudiobookSplitRequest(groups)) }
+        }
         if (r.status.isSuccess()) r.body<Audiobook>() else null
     }.getOrNull()
 

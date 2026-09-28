@@ -30,6 +30,7 @@ import dev.jellystructure.model.MusicStreamDto
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
@@ -185,7 +186,16 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
         }
         post("/{id}/split") {
             val media = music.audiobooksMedia ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
-            call.respond(media.split(call.parameters["id"]!!) ?: return@post call.respond(HttpStatusCode.NotFound))
+            val id = call.parameters["id"]!!
+            // Phase 287 (FR-287-4) — an arranged split arrives as a body; 280's tag split has none.
+            val body = call.receiveText()
+            val groups = if (body.isBlank()) null else {
+                val req = runCatching { kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString(dev.jellystructure.model.AudiobookSplitRequest.serializer(), body) }.getOrNull()
+                val clean = req?.let { media.cleanSplit(id, it.groups) }
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "each book needs a title and at least one part"))
+                clean
+            }
+            call.respond(media.split(id, groups) ?: return@post call.respond(HttpStatusCode.NotFound))
         }
         post("/{id}/join") {
             val media = music.audiobooksMedia ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)

@@ -390,6 +390,62 @@ private fun bkChange(t: Element, scope: CoroutineScope) {
     (t as? HTMLSelectElement)?.let { s -> s.getAttribute("data-f")?.let { bkEdit(scope, it, s.value.ifEmpty { null }) } }
 }
 
+/**
+ * Phase 287 (FR-287-4) — *Split into two books…* opens a preview first: two columns, a title field each, the parts
+ * dragged (or nudged with ‹ ›) between them; *Split* stays disabled while a column is empty. The tags pre-fill the
+ * columns (280's grouping); nothing moves on disk — the split is virtual, as 280 built it.
+ */
+private fun bkSplitPreview(p: AudiobookPageDto, scope: CoroutineScope) {
+    val parts = p.parts.sortedBy { it.position }
+    val pre = p.splitPreview.filter { it.partIds.isNotEmpty() }
+    val cols = arrayOf(
+        (pre.getOrNull(0)?.partIds ?: parts.map { it.id }).toMutableList(),
+        pre.drop(1).flatMap { it.partIds }.toMutableList(),
+    )
+    val titles = arrayOf(pre.getOrNull(0)?.title ?: p.book.title, pre.getOrNull(1)?.title ?: "")
+    fun row(id: String, col: Int): String {
+        val r = parts.firstOrNull { it.id == id } ?: return ""
+        val len = r.lengthMs?.let { " · " + muTotal(it) } ?: ""
+        return """<div class="ab-spart" draggable="true" data-pid="${r.id.esc()}"><span class="ab-grab">⋮⋮</span><span class="mono tiny">${r.number ?: ""}</span><span class="t">${r.title.esc()}<span class="tiny muted">$len</span></span><span class="ab-mv" data-mv="${if (col == 0) 1 else 0}" title="${if (col == 0) "Move to book 2" else "Move to book 1"}">${if (col == 0) "›" else "‹"}</span></div>"""
+    }
+    fun partsHtml(i: Int) = cols[i].joinToString("") { row(it, i) }.ifEmpty { """<div class="ab-sempty">Drag parts here</div>""" }
+    fun colHtml(i: Int) = """<div class="ab-scol" data-g="$i"><div class="ab-sh"><input data-gt="$i" value="${titles[i].esc()}" placeholder="Book ${i + 1}’s title"><span class="tiny muted">${if (i == 0) "keeps this page" else "gets a page of its own"} · <span data-gc="$i">${cols[i].size}</span> parts</span></div>
+        <div class="ab-parts" data-g="$i">${partsHtml(i)}</div></div>"""
+    muModal("""<h3>Split this folder into two books</h3>
+        <p>Drag the parts between the columns and name each book. <b>The files are not moved</b> — Jellyfin keeps showing one folder; Ravilo shows two books.</p>
+        <div class="ab-scols">${colHtml(0)}${colHtml(1)}</div>
+        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;"><span class="btn ghost" data-m="no">Cancel</span><span class="btn primary" id="ab-split-go">Split</span></div>""") {}
+    val m = document.getElementById("mu-modal") as? HTMLElement ?: return
+    (m.querySelector(".card") as? HTMLElement)?.style?.maxWidth = "820px"
+    fun refresh() {
+        for (i in 0..1) {
+            (m.querySelector(".ab-parts[data-g='$i']") as? HTMLElement)?.innerHTML = partsHtml(i)
+            (m.querySelector("[data-gc='$i']") as? HTMLElement)?.textContent = cols[i].size.toString()
+        }
+        val ok = cols[0].isNotEmpty() && cols[1].isNotEmpty()
+        (m.querySelector("#ab-split-go") as? HTMLElement)?.classList?.toggle("is-off", !ok)
+    }
+    fun move(id: String, to: Int) { cols[0].remove(id); cols[1].remove(id); cols[to].add(id); refresh() }
+    var dragging: String? = null
+    m.addEventListener("dragstart") { ev -> dragging = (ev.target as? Element)?.closest(".ab-spart")?.getAttribute("data-pid") }
+    m.addEventListener("dragover") { ev -> if ((ev.target as? Element)?.closest(".ab-scol") != null) ev.preventDefault() }
+    m.addEventListener("drop") { ev ->
+        val col = (ev.target as? Element)?.closest(".ab-scol")?.getAttribute("data-g")?.toIntOrNull() ?: return@addEventListener
+        ev.preventDefault(); dragging?.let { move(it, col) }; dragging = null
+    }
+    m.addEventListener("click") { ev ->
+        val t = ev.target as? Element ?: return@addEventListener
+        t.closest("[data-mv]")?.let { b -> val id = b.closest(".ab-spart")?.getAttribute("data-pid") ?: return@let; move(id, b.getAttribute("data-mv")!!.toInt()); return@addEventListener }
+        if (t.closest("#ab-split-go") != null) {
+            if (cols[0].isEmpty() || cols[1].isEmpty()) return@addEventListener
+            val groups = (0..1).map { i -> dev.jellystructure.model.AudiobookSplitGroupRequest(((m.querySelector("[data-gt='$i']") as? HTMLInputElement)?.value ?: "").trim().ifBlank { "Book ${i + 1}" }, cols[i].toList()) }
+            m.remove()
+            scope.launch { if (AudiobooksApi.split(bkId, groups) != null) { muToast("Split · each book has its own page now"); bkReload(scope) } else muToast("That didn't work") }
+        }
+    }
+    refresh()
+}
+
 private fun bkClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope) {
     val p = bkPage ?: return
     val b = p.book
@@ -448,15 +504,7 @@ private fun bkClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         "reread" -> scope.launch { muToast("Re-reading ${muPlural(b.partCount, "file")} from Jellyfin"); if (bkPost("reread")) bkReload(scope) }
         "save", "savesync" -> scope.launch { muToast(AudiobooksApi.save(bkId, a == "savesync") ?: "That wasn't saved"); bkReload(scope) }
         "sync" -> scope.launch { muToast(if (bkPost("sync")) "Sync requested ↻" else "Jellyfin didn't answer") }
-        "split" -> {
-            val groups = p.splitPreview
-            muModal("""<h3>Split this folder into ${groups.size} books?</h3>
-                <p>The parts are grouped by the book title their tags carry. The first keeps this page; the others get pages of their own. <b>The files are not moved</b> — Jellyfin keeps showing one folder.</p>
-                ${groups.joinToString("") { g -> """<div class="mu-sec" style="margin-top:10px">${g.title.esc()}${if (g.keepsPage) """ <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">keeps this page</span>""" else ""}</div><div class="tiny" style="line-height:1.6">${g.parts.joinToString("<br>") { it.esc() }}</div>""" }}
-                <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;"><span class="btn ghost" data-m="no">Cancel</span><span class="btn primary" data-m="go">Split into ${groups.size} books</span></div>""") {
-                scope.launch { if (AudiobooksApi.split(bkId) != null) { muToast("Split · each book has its own page now"); bkReload(scope) } else muToast("That didn't work") }
-            }
-        }
+        "split" -> bkSplitPreview(p, scope)
         "join" -> scope.launch {
             val nb = AudiobooksApi.join(bkId) ?: return@launch muToast("That didn't work")
             muToast("Joined back into one book")
