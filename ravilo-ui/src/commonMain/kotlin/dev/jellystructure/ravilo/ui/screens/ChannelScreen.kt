@@ -271,6 +271,7 @@ fun ChannelScreen(
                                         progressPct = card.progressPct ?: 0f,
                                         watched = card.watched,
                                         upcomingLabel = card.upcomingEpisode,
+                                        qualityBadge = card.qualityBadge,   // R325
                                         focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
                                         onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                                     )

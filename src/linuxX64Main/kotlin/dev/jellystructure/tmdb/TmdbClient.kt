@@ -172,7 +172,16 @@ data class TmdbMovieDetails(
     val runtime: Int? = null,
     val genres: List<TmdbGenre> = emptyList(),
     @SerialName("production_companies") val productionCompanies: List<TmdbCompany> = emptyList(),
+    @SerialName("production_countries") val productionCountries: List<TmdbCountry> = emptyList(),   // R325
 )
+
+/** R325 — `production_countries[]` on a film's details. */
+@Serializable
+data class TmdbCountry(@SerialName("iso_3166_1") val iso: String = "", val name: String = "")
+
+/** R325 — `created_by[]` on a series' details. */
+@Serializable
+data class TmdbCreator(val id: Int = 0, val name: String = "")
 
 @Serializable
 data class TmdbGenre(val id: Int, val name: String)
@@ -222,6 +231,8 @@ data class TmdbTvDetails(
     @SerialName("episode_run_time") val episodeRunTime: List<Int> = emptyList(),
     val genres: List<TmdbGenre> = emptyList(),
     val networks: List<TmdbNetwork> = emptyList(),
+    @SerialName("origin_country") val originCountry: List<String> = emptyList(),   // R325
+    @SerialName("created_by") val createdBy: List<TmdbCreator> = emptyList(),       // R325
 )
 
 @Serializable

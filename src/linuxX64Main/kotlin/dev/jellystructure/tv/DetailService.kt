@@ -114,6 +114,7 @@ class DetailService(
             genres             = GenreCatalog.displayNames(item, lang, withTitle = true),
             genreIds           = GenreCatalog.displayIds(item),
             playbackNote       = playbackNote,  // R222 (Phase 185)
+            about              = aboutOf(item),  // R325
         )
     }
 
@@ -228,6 +229,7 @@ class DetailService(
             originalLanguage  = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
             genres            = GenreCatalog.displayNames(item, lang, withTitle = true),  // R221 / Phase 271
             genreIds          = GenreCatalog.displayIds(item),
+            about             = aboutOf(item),  // R325
         )
     }
 
@@ -266,6 +268,31 @@ class DetailService(
         return cards.map { it.withPlaystate(ps) }
     }
 
+    /**
+     * R325 (FR-R325-1/2) — the About section's facts from what the item already holds. A film's company is its
+     * studio, a series' its network; a series with no director names its creator (TMDB's `created_by`, else the
+     * crew's *Creator* job). [MediaItem.createdAt] is our own first-sighting stamp — never `addedAt`, which is the
+     * file's mtime (181 found half of them junk). Null where the server has no value: the client draws no row.
+     */
+    private fun aboutOf(item: MediaItem): dev.jellystructure.shared.tv.AboutFacts {
+        val series = item.kind == MediaKind.TV_SHOW
+        val director = item.director?.takeIf { it.isNotBlank() } ?: item.crew.firstOrNull { it.job.equals("Director", true) }?.name
+        val creator = item.creator?.takeIf { it.isNotBlank() } ?: item.crew.firstOrNull { it.job.equals("Creator", true) }?.name
+        val runtime = if (series) item.episodes.mapNotNull { it.runtime }.filter { it > 0 }.sorted().let { if (it.isEmpty()) null else it[it.size / 2] } else item.runtime
+        return dev.jellystructure.shared.tv.AboutFacts(
+            runtimeMin = runtime?.takeIf { it > 0 },
+            released = item.releaseDate,
+            director = director,
+            creator = if (series) creator else null,
+            studioOrNetwork = (if (series) item.network else item.studio)?.takeIf { it.isNotBlank() },
+            country = item.country,
+            originalLanguage = item.originalLanguage?.takeIf { it.isNotBlank() },
+            added = item.createdAt,
+            seasons = if (series) item.episodes.mapNotNull { it.seasonNumber }.filter { it > 0 }.distinct().size.takeIf { it > 0 } else null,
+            episodes = if (series) item.episodes.size.takeIf { it > 0 } else null,
+        )
+    }
+
     private fun MediaItem.toMediaCard(lang: String?, withTitle: Boolean = false): MediaCard {
         val jId = jellyfinId
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
@@ -283,6 +310,7 @@ class DetailService(
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),  // Phase 155
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
             backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
+            qualityBadge = qualityBadge(),   // R325 (FR-R325-3)
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
                 sonarrStatus != "ended" && sonarrNextAiringDate != null &&
                 sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)

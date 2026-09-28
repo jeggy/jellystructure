@@ -6,6 +6,10 @@ import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -150,6 +154,8 @@ fun SearchScreen(
     // keyboard once and then be indistinguishable from false for the rest of the page's life.
     focusInputOnEntry: Boolean = false,
     onFocusInputConsumed: () -> Unit = {},
+    /** R325 (FR-R325-5) — a genre chip opens Browse seeded to it; null hides the group (no navigation available). */
+    onOpenGenre: ((dev.jellystructure.shared.tv.SearchGenreHit) -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -330,6 +336,19 @@ fun SearchScreen(
         }
         Spacer(Modifier.height(24.dp))
 
+        // R325 (FR-R325-5) — the viewer's genres the query names, as their own group above the titles.
+        val genreHits = (state as? SearchState.Loaded)?.results?.genres.orEmpty()
+        if (genreHits.isNotEmpty() && onOpenGenre != null && query.isNotEmpty()) {
+            Text(str("search.genres"), color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora, modifier = Modifier.padding(horizontal = raviloHPad))
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = raviloHPad),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                genreHits.forEach { g -> SearchGenreChip(g.label, g.count) { onOpenGenre(g) } }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
         val label = when {
             query.isEmpty()                              -> str("search.suggestions_label")
             items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
@@ -381,6 +400,7 @@ fun SearchScreen(
                         progressPct = card.progressPct ?: 0f,
                         watched = card.watched,
                         upcomingLabel = card.upcomingEpisode,
+                        qualityBadge = card.qualityBadge,   // R325
                         focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },
                         onSelect = { store.returnTarget.remember(visit, card.id); onItemSelect(card) },
@@ -392,5 +412,24 @@ fun SearchScreen(
     // R267 (FR-R267-2) — the handset's top row: brand · cast, as on every other page. The TV keeps no
     // bar here (unchanged), and the phone's search and profile live in the bottom bar.
     if (handset) AppBar()
+    }
+}
+
+
+/** R325 (FR-R325-5) — one genre chip in the search results: the label and how many titles carry it. Focusable for
+ *  the D-pad (the grid below stays reachable with Down) and tappable on a phone. */
+@Composable
+private fun SearchGenreChip(label: String, count: Int, onSelect: () -> Unit) {
+    val colors = RaviloTheme.colors
+    var focused by rememberFocusVisual()
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier.background(if (focused) colors.accent else colors.surfaceVariant, shape)
+            .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(label, color = if (focused) colors.onAccent else colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+        Text(count.toString(), color = if (focused) colors.onAccent.copy(0.8f) else colors.textDim, fontSize = 14.sp, fontFamily = Sora)
     }
 }

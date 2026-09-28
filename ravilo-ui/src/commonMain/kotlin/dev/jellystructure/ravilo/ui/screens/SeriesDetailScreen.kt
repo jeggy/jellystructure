@@ -809,6 +809,10 @@ private fun SeriesDetailLoaded(
             }
 
             // Cast row — own lazy item.
+            // R325 (FR-R325-1) — the About section: after the synopsis and the episodes, before the cast.
+            detail.about?.let { about ->
+                item(key = "about") { dev.jellystructure.ravilo.ui.components.AboutSection(about, series = true, twoColumns = !LocalCompact.current) }
+            }
             if (detail.cast.isNotEmpty()) item(key = "cast") {
                 Column {
                     Spacer(Modifier.height(RaviloDimens.rowGap))
@@ -849,6 +853,7 @@ private fun SeriesDetailLoaded(
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
                                 upcomingLabel = card.upcomingEpisode,
+                                qualityBadge = card.qualityBadge,   // R325
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

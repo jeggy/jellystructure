@@ -1115,6 +1115,7 @@ class HomeFeedService(
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
             backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
+            qualityBadge = qualityBadge(),   // R325 (FR-R325-3)
             progressPct = progressPct,
             nextUpLabel = nextUpLabel,
             seasonNumber = seasonNumber,

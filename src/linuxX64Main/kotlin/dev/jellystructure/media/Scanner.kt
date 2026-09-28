@@ -431,6 +431,8 @@ class Scanner(
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
             secondaryStudios = details?.productionCompanies?.drop(1)?.map { it.name }?.filter { it.isNotBlank() }?.distinct() ?: emptyList(),
+            releaseDate = details?.releaseDate?.takeIf { it.isNotBlank() },   // R325
+            country = details?.productionCountries?.firstOrNull()?.iso?.takeIf { it.isNotBlank() },
             tracks = tracks,
             issueCount = issueCount,
             languageMix = false,
@@ -525,6 +527,8 @@ class Scanner(
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
             secondaryStudios = details?.productionCompanies?.drop(1)?.map { it.name }?.filter { it.isNotBlank() }?.distinct() ?: emptyList(),
+            releaseDate = details?.releaseDate?.takeIf { it.isNotBlank() },   // R325
+            country = details?.productionCountries?.firstOrNull()?.iso?.takeIf { it.isNotBlank() },
             director = artist,
             tracks = tracks,
             issueCount = issueCount,
@@ -896,6 +900,9 @@ class Scanner(
             network = details?.networks?.firstOrNull()?.name,
             networkTmdbId = details?.networks?.firstOrNull()?.id,
             networkLogoPath = details?.networks?.firstOrNull()?.logoPath,
+            releaseDate = details?.firstAirDate?.takeIf { it.isNotBlank() },   // R325
+            country = details?.originCountry?.firstOrNull()?.takeIf { it.isNotBlank() },
+            creator = details?.createdBy?.firstOrNull()?.name?.takeIf { it.isNotBlank() },
             tracks = firstTracks,
             episodes = sortedEpisodes,
             issueCount = totalIssueCount,
@@ -981,6 +988,8 @@ class Scanner(
             studioTmdbId = primaryCompany?.id,
             studioLogoPath = primaryCompany?.logoPath,
             secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
+            releaseDate = details.releaseDate.takeIf { it.isNotBlank() },   // R325
+            country = details.productionCountries.firstOrNull()?.iso?.takeIf { it.isNotBlank() },
             tracks = tracks,
             fileSizeBytes = fileSize(item.path) ?: item.fileSizeBytes,   // Phase 268
             issueCount = issueCount,
@@ -1172,6 +1181,9 @@ class Scanner(
             originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
             tmdbId = syncSeriesFinalId,
             year = updatedDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: item.year,
+            releaseDate = updatedDetails?.firstAirDate?.takeIf { it.isNotBlank() } ?: item.releaseDate,   // R325
+            country = updatedDetails?.originCountry?.firstOrNull()?.takeIf { it.isNotBlank() } ?: item.country,
+            creator = updatedDetails?.createdBy?.firstOrNull()?.name?.takeIf { it.isNotBlank() } ?: item.creator,
             originalLanguage = updatedDetails?.originalLanguage?.takeIf { it.isNotBlank() } ?: item.originalLanguage,
             // Phase 128: honest display language — see the scanMovie comment above. Covers both the
             // majority-vote branch (already naturally null with zero audio anywhere) and the single-
@@ -1331,6 +1343,8 @@ class Scanner(
                     studioTmdbId = rescanCompany?.id,
                     studioLogoPath = rescanCompany?.logoPath,
                     secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
+            releaseDate = details.releaseDate.takeIf { it.isNotBlank() },   // R325
+            country = details.productionCountries.firstOrNull()?.iso?.takeIf { it.isNotBlank() },
                     tags = mergeRepullTags(rescanTmdbTags, item),
                     imdbId = fetch.imdbId ?: item.imdbId,
                     cast = fetch.cast,
@@ -1391,6 +1405,9 @@ class Scanner(
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
                     tmdbId = details.id,
                     year = details.firstAirDate.take(4).toIntOrNull() ?: item.year,
+                    releaseDate = details.firstAirDate.takeIf { it.isNotBlank() } ?: item.releaseDate,   // R325
+                    country = details.originCountry.firstOrNull()?.takeIf { it.isNotBlank() } ?: item.country,
+                    creator = details.createdBy.firstOrNull()?.name?.takeIf { it.isNotBlank() } ?: item.creator,
                     originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
                     // Phase 128: honest display language — see the scanMovie comment above, off the
                     // item-level sourceTracks/audioLangs computed earlier in this function.
@@ -1447,6 +1464,8 @@ class Scanner(
                         studioTmdbId = rescanCompany?.id,
                         studioLogoPath = rescanCompany?.logoPath,
                         secondaryStudios = details.productionCompanies.drop(1).map { it.name }.filter { it.isNotBlank() }.distinct(),
+            releaseDate = details.releaseDate.takeIf { it.isNotBlank() },   // R325
+            country = details.productionCountries.firstOrNull()?.iso?.takeIf { it.isNotBlank() },
                         imdbId = fetch.imdbId ?: item.imdbId,
                         cast = fetch.cast,
                         crew = fetch.crew,

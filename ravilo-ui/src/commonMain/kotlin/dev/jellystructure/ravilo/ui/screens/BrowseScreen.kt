@@ -445,6 +445,7 @@ private fun BrowseGrid(
                 progressPct = card.progressPct ?: 0f,
                 watched = card.watched,
                 upcomingLabel = card.upcomingEpisode,
+                qualityBadge = card.qualityBadge,   // R325
                 // R139 restore target takes precedence; R55: first cell is the back-to-top landing target.
                 focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },

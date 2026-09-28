@@ -256,6 +256,12 @@ data class MediaItem(
     val network: String? = null,
     val networkTmdbId: Int? = null,
     val networkLogoPath: String? = null,
+    // R325 (FR-R325-1/2) — the About section's two facts nothing held before: TMDB's release date (a film) or
+    // first air date (a series) as `YYYY-MM-DD`, and the first production / origin country as ISO 3166-1
+    // alpha-2. `creator` is a series' first `created_by` name. All three are TMDB-owned (cleared with the match).
+    val releaseDate: String? = null,
+    val country: String? = null,
+    val creator: String? = null,
     val tracks: List<Track>,
     val episodes: List<Episode> = emptyList(),
     val issueCount: Int,

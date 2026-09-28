@@ -92,7 +92,7 @@ import org.jetbrains.compose.resources.painterResource
 
 // ─── R187 (FR-RV-BROWSE1) — the generic browse page ────────────────────────────
 
-enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL, QUALITY }
+enum class BrowseFacetKey { GENRE, TYPE, MATURITY, YEAR, WATCHED, AUDIO, CHANNEL, QUALITY, PEOPLE }   // R325 — PEOPLE is *Cast or crew*
 /** R318 (FR-R318-2b) — [SOURCE] is the server's own order (the Recommended list's rank), offered only on
  *  a page whose store is source-ordered, and labelled with the page's own title (no new string). */
 enum class SortField { SOURCE, RECENT, TITLE, YEAR, MATURITY, IMDB, SIZE }   // R317 — SIZE
@@ -194,6 +194,10 @@ class SeededBrowseStore(
     var audio by mutableStateOf(setOf<String>())
     var channel by mutableStateOf(setOf<String>())
     var quality by mutableStateOf(setOf<String>())
+    /** R325 (FR-R325-4) — selected people, as TMDB ids in string form (the facet's value type); names in [peopleNames]. */
+    var people by mutableStateOf(setOf<String>())
+    var peopleNames by mutableStateOf(emptyMap<String, String>())
+        private set
     var sortField by mutableStateOf(initialSort.first)
     var sortDir by mutableStateOf(initialSort.second)
     var openFacet by mutableStateOf<BrowseFacetKey?>(null)
@@ -207,11 +211,11 @@ class SeededBrowseStore(
 
     val hasActiveFilters: Boolean
         get() = genre.isNotEmpty() || type.isNotEmpty() || maturity.isActive || year.isNotEmpty() ||
-            watched.isNotEmpty() || audio.isNotEmpty() || channel.isNotEmpty() || quality.isNotEmpty()
+            watched.isNotEmpty() || audio.isNotEmpty() || channel.isNotEmpty() || quality.isNotEmpty() || people.isNotEmpty()
 
     fun resetFilters() {
         genre = emptySet(); type = emptySet(); maturity = MaturityRange(); year = emptySet()
-        watched = emptySet(); audio = emptySet(); channel = emptySet(); quality = emptySet()
+        watched = emptySet(); audio = emptySet(); channel = emptySet(); quality = emptySet(); people = emptySet()
     }
 
     fun load() {
@@ -245,6 +249,7 @@ class SeededBrowseStore(
                     SeededBrowseState.Loaded(items.map { BrowseCard(card = it) })
                 } else {
                     val resp = apiClient.browseSeeded(seedQuery, seedMediaKind)
+                    peopleNames = resp.people.mapNotNull { p -> p.id?.let { it.toString() to p.name } }.toMap()   // R325
                     SeededBrowseState.Loaded(resp.items)
                 }
             }.getOrElse { SeededBrowseState.Error(it.message ?: "", loadErrorKindOf(it)) }
@@ -283,6 +288,7 @@ private fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKe
     if (excluding != BrowseFacetKey.AUDIO && audio.isNotEmpty() && card.audioLanguages.none { it in audio }) return false
     if (excluding != BrowseFacetKey.CHANNEL && channel.isNotEmpty() && card.channels.none { it in channel }) return false
     if (excluding != BrowseFacetKey.QUALITY && quality.isNotEmpty() && card.quality !in quality) return false
+    if (excluding != BrowseFacetKey.PEOPLE && people.isNotEmpty() && card.people.none { it.toString() in people }) return false   // R325
     return true
 }
 
@@ -305,6 +311,7 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
             BrowseFacetKey.AUDIO -> card.audioLanguages.forEach { bump(it) }
             BrowseFacetKey.CHANNEL -> card.channels.forEach { bump(it) }
             BrowseFacetKey.QUALITY -> card.quality?.let { bump(it) }
+            BrowseFacetKey.PEOPLE -> card.people.forEach { bump(it.toString()) }   // R325 — ids; names at render time
             BrowseFacetKey.MATURITY -> {} // range picker, not a checklist
         }
     }
@@ -318,7 +325,7 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
  *  codes, quality tiers) is already display-ready. [channelNames] resolves a channel id to its
  *  configured name (threaded in from the already-loaded Home/channel data by the caller). */
 @Composable
-private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>): String = when (key) {
+private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>, peopleNames: Map<String, String> = emptyMap()): String = when (key) {
     BrowseFacetKey.TYPE -> when (value) {
         "MOVIE" -> str("browse.type.movie")
         "MUSIC_VIDEO" -> str("browse.type.musicvideo")
@@ -331,6 +338,7 @@ private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Ma
     }
     BrowseFacetKey.CHANNEL -> channelNames[value] ?: value
     BrowseFacetKey.AUDIO -> languageName(value) ?: value
+    BrowseFacetKey.PEOPLE -> peopleNames[value] ?: value   // R325
     else -> value
 }
 
@@ -338,6 +346,7 @@ private fun SeededBrowseStore.selectionFor(key: BrowseFacetKey): Set<String> = w
     BrowseFacetKey.GENRE -> genre; BrowseFacetKey.TYPE -> type; BrowseFacetKey.YEAR -> year
     BrowseFacetKey.WATCHED -> watched; BrowseFacetKey.AUDIO -> audio
     BrowseFacetKey.CHANNEL -> channel; BrowseFacetKey.QUALITY -> quality
+    BrowseFacetKey.PEOPLE -> people
     BrowseFacetKey.MATURITY -> emptySet()
 }
 
@@ -348,7 +357,7 @@ private fun SeededBrowseStore.toggle(key: BrowseFacetKey, value: String) {
         BrowseFacetKey.GENRE -> genre = next; BrowseFacetKey.TYPE -> type = next
         BrowseFacetKey.YEAR -> year = next; BrowseFacetKey.WATCHED -> watched = next
         BrowseFacetKey.AUDIO -> audio = next; BrowseFacetKey.CHANNEL -> channel = next
-        BrowseFacetKey.QUALITY -> quality = next; BrowseFacetKey.MATURITY -> {}
+        BrowseFacetKey.QUALITY -> quality = next; BrowseFacetKey.PEOPLE -> people = next; BrowseFacetKey.MATURITY -> {}
     }
 }
 
@@ -531,7 +540,7 @@ fun SeededBrowseScreen(
                         }
                         Spacer(Modifier.height(14.dp))
                     }
-                    val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.sortField, store.sortDir) {
+                    val filtered = remember(s.items, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.people, store.sortField, store.sortDir) {
                         sortedFiltered(store, s.items)
                     }
                     // Bug fix — a sort change kept whatever grid position/focus the viewer had before,
@@ -609,6 +618,7 @@ private fun FacetBar(
         add(BrowseFacetKey.AUDIO)
         if (all.any { it.channels.isNotEmpty() }) add(BrowseFacetKey.CHANNEL)
         if (all.any { it.quality != null }) add(BrowseFacetKey.QUALITY)
+        if (all.any { it.people.isNotEmpty() }) add(BrowseFacetKey.PEOPLE)   // R325 (FR-R325-4)
     }
     val chipShape = remember { RoundedCornerShape(18.dp) }
     LazyRow(
@@ -715,7 +725,7 @@ private fun facetChipSummary(store: SeededBrowseStore, key: BrowseFacetKey): Str
     if (key == BrowseFacetKey.MATURITY) return store.maturity.label().takeIf { it.isNotBlank() }
     val sel = store.selectionFor(key)
     if (sel.isEmpty()) return null
-    val names = sel.map { facetValueLabel(key, it, store.channelNames) }
+    val names = sel.map { facetValueLabel(key, it, store.channelNames, store.peopleNames) }
     return if (names.size <= 2) names.joinToString(", ") else names.take(2).joinToString(", ") + " +${names.size - 2}"
 }
 
@@ -725,6 +735,7 @@ private fun facetLabel(key: BrowseFacetKey): String = when (key) {
     BrowseFacetKey.MATURITY -> str("browse.facet.maturity"); BrowseFacetKey.YEAR -> str("browse.facet.year")
     BrowseFacetKey.WATCHED -> str("browse.facet.watched"); BrowseFacetKey.AUDIO -> str("browse.facet.audio")
     BrowseFacetKey.CHANNEL -> str("browse.facet.channel"); BrowseFacetKey.QUALITY -> str("browse.facet.quality")
+    BrowseFacetKey.PEOPLE -> str("browse.facet.people")   // R325
 }
 
 @Composable
@@ -762,11 +773,12 @@ private fun sortDirLabel(field: SortField, dir: SortDir): String = when (field) 
  *  comment) longest value, clamped to a sane range. Audio gets extra room for its flag glyph. */
 @Composable
 private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>, key: BrowseFacetKey): androidx.compose.ui.unit.Dp {
-    val maxLen = remember(values, store.channelNames) {
+    val maxLen = remember(values, store.channelNames, store.peopleNames) {
         values.maxOfOrNull { v ->
             when (key) {
                 BrowseFacetKey.CHANNEL -> store.channelNames[v.value]?.length ?: v.value.length
                 BrowseFacetKey.AUDIO -> (languageName(v.value) ?: v.value).length
+                BrowseFacetKey.PEOPLE -> store.peopleNames[v.value]?.length ?: v.value.length
                 else -> v.value.length
             }
         } ?: 8
@@ -791,7 +803,7 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                 MaturityRangePicker(store, firstRowFR, onClose)
             }
         } else {
-            val values = remember(all, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality) {
+            val values = remember(all, store.genre, store.type, store.maturity, store.year, store.watched, store.audio, store.channel, store.quality, store.people) {
                 store.valuesFor(all, key)
             }
             Column(
@@ -829,7 +841,7 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                                     Spacer(Modifier.width(8.dp))
                                 }
                             }
-                            Text(facetValueLabel(key, v.value, store.channelNames), color = colors.text, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                            Text(facetValueLabel(key, v.value, store.channelNames, store.peopleNames), color = colors.text, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                             Text(v.count.toString(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                         }
                     }
@@ -1023,6 +1035,7 @@ private fun BrowseCardGrid(
                 progressPct = card.progressPct ?: 0f,
                 watched = card.watched,
                 upcomingLabel = card.upcomingEpisode,
+                qualityBadge = card.qualityBadge,   // R325
                 focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },
             )

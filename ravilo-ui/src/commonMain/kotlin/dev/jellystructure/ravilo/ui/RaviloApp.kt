@@ -1397,6 +1397,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
             is Dest.Search -> {
                 val store = keptStore("search:${dest.displayName}") { SearchStore(apiClient) }
+                val searchTitle = str("nav.search")
                 SearchScreen(
                     store = store,
                     visit = dest.visit,
@@ -1404,6 +1405,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onItemSelect = { openDetail(it, dest.displayName) },
                     focusInputOnEntry = dest.focusInput,
                     onFocusInputConsumed = { replaceTop(dest.copy(focusInput = false)) },
+                    // R325 (FR-R325-5) — a genre chip opens Browse seeded to it, R221's contract.
+                    onOpenGenre = { hit -> openGenreBrowse(listOf(hit.label), searchTitle, dest.displayName) },
                 )
             }
 

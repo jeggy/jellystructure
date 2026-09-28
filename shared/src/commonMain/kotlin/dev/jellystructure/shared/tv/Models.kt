@@ -315,6 +315,9 @@ data class MediaCard(
      *  channel rail, browse, search, related) — the same additive-field discipline [BrowseCard.genres]/
      *  R164's IMDb-rating precedent already set for this card. */
     @SerialName("focus_detail") val focusDetail: FocusDetailFacts? = null,
+    /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, else null: the only badge a tile carries for picture quality
+     *  (a 1080p or SD title has none). Resolved server-side from the file's video track; older apps ignore it. */
+    @SerialName("quality_badge") val qualityBadge: String? = null,
 )
 
 /**
@@ -375,6 +378,9 @@ data class BrowseCard(
     /** Phase 268 (FR-268-7) — the title's size on disk in bytes (a series: the whole series), for R317's
      *  *Size* sort. Browse-only, like [imdbRating]; absent when unknown. */
     @SerialName("size_bytes") val sizeBytes: Long? = null,
+    /** R325 (FR-R325-4) — the TMDB ids of this title's cast and crew (capped), for the *Cast or crew* facet; the
+     *  names ride [SeededBrowseResponse.people]. Browse-only, like [imdbRating]. */
+    val people: List<Int> = emptyList(),
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
@@ -390,6 +396,9 @@ data class SeededBrowseRequest(
 data class SeededBrowseResponse(
     val items: List<BrowseCard>,
     val total: Int,
+    /** R325 (FR-R325-4) — every person credited on [items], by title count: [FacetItem.id] is the TMDB person
+     *  id the cards' [BrowseCard.people] carry, [FacetItem.name] the name. Additive; empty on an older server. */
+    val people: List<FacetItem> = emptyList(),
 )
 
 @Serializable
@@ -671,6 +680,29 @@ data class MovieDetail(
      *  series carries it per-episode instead of here (FR-R222-5: a ceiling is per device, a bitrate is
      *  per file, and a series hero has no single file to speak for). */
     @SerialName("playback_note") val playbackNote: PlaybackNote? = null,
+    /** R325 (FR-R325-1/2) — the About section's facts; absent on an older server. */
+    val about: AboutFacts? = null,
+)
+
+/**
+ * R325 (FR-R325-2) — what a title's About section states, from the facts the server already holds. Every
+ * field is optional and the client draws only the rows it has: nothing is invented and nothing says *Unknown*.
+ * Dates are `YYYY-MM-DD`, the country is ISO 3166-1 alpha-2 and the language ISO 639-1 — the client names both
+ * in the viewer's language. [added] is jellystructure's own first-sighting stamp (epoch seconds), never the
+ * file's mtime.
+ */
+@Serializable
+data class AboutFacts(
+    @SerialName("runtime_min") val runtimeMin: Int? = null,
+    val released: String? = null,
+    val director: String? = null,
+    val creator: String? = null,
+    @SerialName("studio_or_network") val studioOrNetwork: String? = null,
+    val country: String? = null,
+    @SerialName("original_language") val originalLanguage: String? = null,
+    val added: Long? = null,
+    val seasons: Int? = null,
+    val episodes: Int? = null,
 )
 
 @Serializable
@@ -704,6 +736,8 @@ data class SeriesDetail(
     val genres: List<String> = emptyList(),
     /** Phase 271 (FR-271-5) — see [MovieDetail.genreIds]. */
     @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
+    /** R325 (FR-R325-1/2) — the About section's facts; absent on an older server. */
+    val about: AboutFacts? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
@@ -717,7 +751,14 @@ data class SearchResults(
     // not just the current page's size. Defaults to items.size for every existing non-paginated caller
     // (search()'s suggestions/results, which already return the full matching set in one response).
     val total: Int = items.size,
+    /** R325 (FR-R325-5) — the viewer's genres the query names, as their own result group above the titles. */
+    val genres: List<SearchGenreHit> = emptyList(),
 )
+
+/** R325 (FR-R325-5) — one genre a search matched: its TMDB id (null for a hand-added genre), the label in the
+ *  viewer's language and how many of this viewer's titles carry it. A chip opens Browse seeded to it (R221). */
+@Serializable
+data class SearchGenreHit(val id: Int? = null, val label: String, val count: Int = 0)
 
 // ─── Live events (R33) ──────────────────────────────────────────────────────────
 

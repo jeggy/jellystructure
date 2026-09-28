@@ -396,6 +396,10 @@ private fun MovieDetailLoaded(
             } // item: hero
 
             // Cast row — its own lazy item, so it composes only when scrolled into view (R109).
+            // R325 (FR-R325-1) — the About section: after the synopsis, before the cast.
+            detail.about?.let { about ->
+                item(key = "about") { dev.jellystructure.ravilo.ui.components.AboutSection(about, series = false, twoColumns = !LocalCompact.current) }
+            }
             if (detail.cast.isNotEmpty()) item(key = "cast") {
                 Column {
                     Spacer(Modifier.height(RaviloDimens.rowGap))
@@ -436,6 +440,7 @@ private fun MovieDetailLoaded(
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
                                 upcomingLabel = card.upcomingEpisode,
+                                qualityBadge = card.qualityBadge,   // R325
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

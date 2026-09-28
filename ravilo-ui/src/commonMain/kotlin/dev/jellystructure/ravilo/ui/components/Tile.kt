@@ -112,6 +112,8 @@ fun Tile(
     episodeBadgeColor: Color = Color.Black.copy(alpha = 0.6f),
     /** R149: "Soon • SxxExx" badge for continuing series with a scheduled episode. Null = no badge. */
     upcomingLabel: String? = null,
+    /** R325 (FR-R325-3) — `4K` · `HDR` · `4K HDR`, bottom-start; null (a 1080p or SD title) draws nothing. */
+    qualityBadge: String? = null,
     /** Phase R240 (FR-R240-3/7) — true for the one tile J has opened. Grows the tile's actual layout
      *  width (not a draw-only scale — the row band's reflow IS the point here, unlike the focus-scale
      *  effect below) by [dev.jellystructure.ravilo.ui.theme.RaviloMotion.ROW_OPEN_WIDTH_SCALE], and
@@ -284,6 +286,14 @@ fun Tile(
                     CornerBadgeContent(corners.topStart, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
                 }
                 CornerBadgeContent(corners.topEnd, Modifier, episodeBadge, episodeBadgeColor, upcomingLabel, colors, sora)
+            }
+            // R325 (FR-R325-3) — the picture badge, bottom-start, clear of the two top corners and above the progress bar.
+            qualityBadge?.let { q ->
+                Text(
+                    q, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = sora, letterSpacing = 0.5.sp,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 10.dp)
+                        .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                )
             }
             }
         }

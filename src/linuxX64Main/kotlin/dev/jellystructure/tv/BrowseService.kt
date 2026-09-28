@@ -9,6 +9,7 @@ import dev.jellystructure.media.GenreCatalog
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.shared.tv.SearchGenreHit
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.recencyKey
@@ -105,13 +106,28 @@ class BrowseService(
             else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) })
             .sortedByDescending { it.recencyKey() }
 
-        SeededBrowseResponse(items = browseCards(device, matched, cfg), total = matched.size)
+        SeededBrowseResponse(items = browseCards(device, matched, cfg), total = matched.size, people = peopleFacet(matched))
     }
 
     /** Phase 269 (FR-269-2/7) — the Recommended row's *See all*: [items] (already the viewer's
      *  still-eligible list, in its order) as browse cards, never re-sorted. */
     fun recommendationCards(device: DeviceData, items: List<MediaItem>): SeededBrowseResponse =
-        SeededBrowseResponse(items = browseCards(device, items, raviloConfigService.getConfig(device.jellyfinUserId)), total = items.size)
+        SeededBrowseResponse(items = browseCards(device, items, raviloConfigService.getConfig(device.jellyfinUserId)), total = items.size, people = peopleFacet(items))
+
+    /** R325 (FR-R325-4) — everyone credited on [items], by how many of them, the model R190 §D's admin facet uses.
+     *  Names are the credit's own; a person counts once per title however many roles they hold. */
+    private fun peopleFacet(items: List<MediaItem>): List<FacetItem> {
+        val counts = HashMap<Int, Pair<String, Int>>()
+        for (item in items) {
+            for (p in (item.cast + item.crew).distinctBy { it.tmdbId }) {
+                if (p.name.isBlank()) continue
+                val prev = counts[p.tmdbId]
+                counts[p.tmdbId] = (prev?.first ?: p.name) to ((prev?.second ?: 0) + 1)
+            }
+        }
+        return counts.entries.map { (id, v) -> FacetItem(name = v.first, count = v.second, id = id) }
+            .sortedWith(compareByDescending<FacetItem> { it.count }.thenBy { it.name.lowercase() }).take(300)
+    }
 
     private fun browseCards(device: DeviceData, matched: List<MediaItem>, cfg: dev.jellystructure.shared.tv.RaviloConfig): List<BrowseCard> {
         val heroIds = cfg.heroes.map { it.itemId }.toSet()
@@ -130,26 +146,12 @@ class BrowseService(
                 sizeBytes = item.sizeBytes(),   // Phase 268 (FR-268-7)
                 audioLanguages = item.audioLanguages(),
                 quality = item.qualityLabel(),
+                people = (item.cast + item.crew).map { it.tmdbId }.distinct().take(60),   // R325 (FR-R325-4)
                 channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
                 imdbRating = item.imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
                 sortName = item.sortName,   // R253 (FR-R253-3)
             )
         }
-    }
-
-    /** R187 (Quality facet) — the best (largest, since a scan only probes one file per episode/movie
-     *  today) video track's resolution+HDR flag as one label. Null when no video track was probed yet. */
-    private fun MediaItem.qualityLabel(): String? {
-        val tracks = if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks
-        val video = tracks.filter { it.kind == TrackKind.VIDEO }.maxByOrNull { (it.width ?: 0) * (it.height ?: 0) } ?: return null
-        val tier = when {
-            (video.width ?: 0) >= 3840 || (video.height ?: 0) >= 2160 -> "4K"
-            (video.width ?: 0) >= 1920 || (video.height ?: 0) >= 1080 -> "1080p"
-            (video.width ?: 0) >= 1280 || (video.height ?: 0) >= 720  -> "720p"
-            video.width != null || video.height != null -> "SD"
-            else -> return null
-        }
-        return if (video.videoRange == "HDR") "$tier HDR" else tier
     }
 
     /** R187 (Audio facet) — distinct, tagged audio languages across every track (episodes flattened for
@@ -253,9 +255,16 @@ class BrowseService(
                 .toList()
         }
 
+        // R325 (FR-R325-5) — the viewer's genres the query names, in their language: their own result group.
+        val genreHits = if (query.isBlank() || query.length < MIN_SEARCH_LEN) emptyList() else {
+            val q = query.trim().lowercase()
+            runCatching { facets(device, null).genres }.getOrDefault(emptyList())
+                .filter { g -> g.name.lowercase().let { n -> n == q || n.startsWith(q) || n.split(' ').any { w -> w.startsWith(q) && q.length >= 3 } } }
+                .map { SearchGenreHit(id = it.id, label = it.name, count = it.count) }
+        }
         // Phase 205 (FR-205-1) — PlaystateCache read, no Jellyfin call (see browseByQuery's doc above).
         val ps = PlaystateCache.get(device.jellyfinUserId)
-        return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) })
+        return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) }, genres = genreHits)
     }
 
     /**
@@ -411,6 +420,7 @@ class BrowseService(
             ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
             posterUrl = RaviloImageUrl.poster(id, artwork.assetVersion(this, "poster")),     // R133/R214
             backdropUrl = RaviloImageUrl.backdrop(id, artwork.assetVersion(this, "backdrop")),
+            qualityBadge = qualityBadge(),   // R325 (FR-R325-3)
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
                 sonarrStatus != "ended" && sonarrNextAiringDate != null &&
                 sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)

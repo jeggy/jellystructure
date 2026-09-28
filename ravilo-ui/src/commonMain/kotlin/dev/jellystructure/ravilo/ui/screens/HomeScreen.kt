@@ -612,6 +612,7 @@ private fun ContentRowItem(
             progressPct = card.progressPct ?: 0f,
             watched = card.watched,
             upcomingLabel = card.upcomingEpisode,
+            qualityBadge = card.qualityBadge,   // R325
             focusRequester = fr,  // R139 restore target only — the hero-down bridge is row-level now (R236)
             // Phase R240 — the tile that's actually open right now grows in place (FR-R240-7); every
             // other tile in every other row is untouched.
