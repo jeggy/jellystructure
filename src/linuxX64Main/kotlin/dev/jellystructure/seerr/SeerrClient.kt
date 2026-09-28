@@ -42,6 +42,9 @@ data class SeerrCatalogResult(
     val voteAverage: Double? = null,
     val genreIds: List<Int> = emptyList(),
     val mediaInfo: SeerrMediaInfo? = null,
+    /** Phase 274 — the vote floor (FR-274-3.5) needs the count, not only the average. */
+    val voteCount: Int? = null,
+    val originalLanguage: String? = null,
 )
 
 /**
@@ -164,7 +167,53 @@ data class SeerrMovieDetails(
     val genres: List<SeerrGenre> = emptyList(),
     val credits: SeerrCredits = SeerrCredits(),
     val mediaInfo: SeerrMediaInfo? = null,
+    // Phase 274 (dev review 3) — the franchise, the keywords the clusters read, the certifications R320 gates on.
+    val voteCount: Int? = null,
+    val keywords: List<SeerrKeyword> = emptyList(),
+    val collection: SeerrCollectionRef? = null,
+    val releases: SeerrReleases = SeerrReleases(),
 )
+
+@Serializable
+data class SeerrKeyword(val id: Int = 0, val name: String = "")
+
+@Serializable
+data class SeerrCollectionRef(val id: Int = 0, val name: String = "")
+
+@Serializable
+data class SeerrReleases(val results: List<SeerrReleaseCountry> = emptyList())
+
+@Serializable
+data class SeerrReleaseCountry(
+    @kotlinx.serialization.SerialName("iso_3166_1") val country: String = "",
+    @kotlinx.serialization.SerialName("release_dates") val releaseDates: List<SeerrReleaseDate> = emptyList(),
+)
+
+@Serializable
+data class SeerrReleaseDate(val certification: String? = null)
+
+/** `GET /collection/{id}` — a franchise's films, for *the first film you don't have* (FR-274-4). */
+@Serializable
+data class SeerrCollection(val id: Int = 0, val name: String = "", val parts: List<SeerrCatalogResult> = emptyList())
+
+/** `GET /blacklist` (Seerr's UI calls it the blocklist) — one entry. Only the fields 274 reads. */
+@Serializable
+data class SeerrBlacklistEntry(
+    val tmdbId: Int = 0,
+    val mediaType: String = "",
+    val title: String? = null,
+    val createdAt: String? = null,
+    val user: SeerrBlacklistUser? = null,
+)
+
+@Serializable
+data class SeerrBlacklistUser(val displayName: String? = null)
+
+@Serializable
+data class SeerrBlacklistPageInfo(val pages: Int = 0, val pageSize: Int = 0, val results: Int = 0, val page: Int = 1)
+
+@Serializable
+data class SeerrBlacklistPage(val pageInfo: SeerrBlacklistPageInfo = SeerrBlacklistPageInfo(), val results: List<SeerrBlacklistEntry> = emptyList())
 
 /** `GET /tv/{id}` — TV's equivalent of [SeerrMovieDetails] (name/firstAirDate/episodeRunTime instead
  *  of title/releaseDate/runtime). */
@@ -243,6 +292,49 @@ class SeerrClient {
     suspend fun movieDetails(url: String, apiKey: String, tmdbId: Int): SeerrMovieDetails? = runCatching {
         httpGet(base(url) + "/movie/$tmdbId", apiKey).body<SeerrMovieDetails>()
     }.getOrNull()
+
+    // ── Phase 274: what the household hasn't got yet ──
+
+    /** `GET /movie/{id}/recommendations` and `/similar` — 20 a page, the edges of the suggestion graph (FR-274-3).
+     *  Null when Seerr did not answer, so a build can tell *no edges* from *couldn't ask*. */
+    suspend fun movieRecommendations(url: String, apiKey: String, tmdbId: Int, page: Int = 1): SeerrCatalogPage? = runCatching {
+        httpGet(base(url) + "/movie/$tmdbId/recommendations", apiKey) { parameter("page", page) }.takeIf { it.status == HttpStatusCode.OK }?.body<SeerrCatalogPage>()
+    }.getOrNull()
+
+    suspend fun movieSimilar(url: String, apiKey: String, tmdbId: Int, page: Int = 1): SeerrCatalogPage? = runCatching {
+        httpGet(base(url) + "/movie/$tmdbId/similar", apiKey) { parameter("page", page) }.takeIf { it.status == HttpStatusCode.OK }?.body<SeerrCatalogPage>()
+    }.getOrNull()
+
+    suspend fun collection(url: String, apiKey: String, collectionId: Int): SeerrCollection? = runCatching {
+        httpGet(base(url) + "/collection/$collectionId", apiKey).takeIf { it.status == HttpStatusCode.OK }?.body<SeerrCollection>()
+    }.getOrNull()
+
+    /** Every blocklisted title, paged to the end (FR-274-3.3). Null when Seerr did not answer. */
+    suspend fun blacklist(url: String, apiKey: String): List<SeerrBlacklistEntry>? = runCatching {
+        val out = mutableListOf<SeerrBlacklistEntry>()
+        var skip = 0
+        while (true) {
+            val page = httpGet(base(url) + "/blacklist", apiKey) { parameter("take", 50); parameter("skip", skip) }
+                .takeIf { it.status == HttpStatusCode.OK }?.body<SeerrBlacklistPage>() ?: return@runCatching null
+            out += page.results
+            skip += page.results.size
+            if (page.results.isEmpty() || skip >= page.pageInfo.results || page.pageInfo.page >= page.pageInfo.pages) break
+        }
+        out
+    }.getOrNull()
+
+    /** `POST /blacklist {tmdbId, mediaType, title}` as the key's user (the admin, Q1). True when Seerr has it
+     *  afterwards — including when it already had it. Body verified against 3.4.1's validator (2026-09-28). */
+    suspend fun addToBlacklist(url: String, apiKey: String, tmdbId: Int, mediaType: String, title: String): Boolean = runCatching {
+        val payload = buildJsonObject { put("tmdbId", tmdbId); put("mediaType", mediaType); put("title", title) }
+        val resp = httpPost(base(url) + "/blacklist", apiKey) { contentType(ContentType.Application.Json); setBody(payload.toString()) }
+        resp.status.value in 200..299 || resp.status == HttpStatusCode.Conflict || resp.status == HttpStatusCode.PreconditionFailed
+    }.getOrElse { false }
+
+    suspend fun removeFromBlacklist(url: String, apiKey: String, tmdbId: Int): Boolean = runCatching {
+        val resp = OutboundHttp.withPermit { http.delete(base(url) + "/blacklist/$tmdbId") { header("X-Api-Key", apiKey) } }
+        resp.status.value in 200..299 || resp.status == HttpStatusCode.NotFound
+    }.getOrElse { false }
 
     suspend fun tvDetails(url: String, apiKey: String, tmdbId: Int): SeerrTvDetails? = runCatching {
         httpGet(base(url) + "/tv/$tmdbId", apiKey).body<SeerrTvDetails>()
