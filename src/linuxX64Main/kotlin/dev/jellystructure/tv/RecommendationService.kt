@@ -232,7 +232,8 @@ class RecommendationService(
     /** Phase 270 — how many viewers a full build covers (the AI tab's estimate). */
     fun viewerCount(): Int = viewers().size
 
-    private fun viewers(): List<DeviceData> {
+    /** Phase 274 reuses the same viewers (dev review 4). */
+    internal fun viewers(): List<DeviceData> {
         val now = nowSec() * 1000L
         return deviceService.allDevices()
             .filter { now - it.lastSeen < RECENTLY_SEEN_MS }
@@ -241,7 +242,7 @@ class RecommendationService(
             .sortedBy { it.jellyfinUserId }
     }
 
-    private suspend fun historyOf(device: DeviceData): History? {
+    internal suspend fun historyOf(device: DeviceData): History? {
         historySource?.let { return it(device) }
         val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank()) return null

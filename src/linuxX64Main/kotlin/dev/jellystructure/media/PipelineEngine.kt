@@ -149,6 +149,8 @@ private suspend fun awaitPlaybackClear(stillDefers: () -> Boolean, jobId: String
 
 fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
     rawPipeline(cfg).filter { !(it.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfg.music.fetchLyrics) }  // Phase 277 (FR-277-8)
+        // Phase 274 (FR-274-1) — no Seerr, no step: absent from runs and from the pre-run dialog, never greyed.
+        .filter { it.step != dev.jellystructure.config.SuggestionsStep.STEP || cfg.seerr?.let { s -> s.enabled && s.url.isNotBlank() } == true }
 
 private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
     cfg.scan.pipeline.filter { it.enabled }.ifEmpty {
@@ -162,6 +164,7 @@ private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
             FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
             add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
+            add(PipelineStep(step = dev.jellystructure.config.SuggestionsStep.STEP))  // Phase 274
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.ARTWORK))  // Phase 277
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.LYRICS))
@@ -374,6 +377,7 @@ suspend fun runPipeline(
         if (target is RunTarget.SingleItem && (step.step == "wait" || step.step == "notify")) continue
         // Phase 269 — a whole-library step; one new download is no reason to rebuild every viewer.
         if (target is RunTarget.SingleItem && step.step == dev.jellystructure.config.RecommendationsStep.STEP) continue
+        if (target is RunTarget.SingleItem && step.step == dev.jellystructure.config.SuggestionsStep.STEP) continue  // Phase 274
         // Phase 214 (FR-214-2) — a per-step stop requested for a PREVIOUS step must never leak into this
         // one: reset right before each step starts, not once at the run's own start.
         scanTracker.resetStepStop()
@@ -708,6 +712,24 @@ suspend fun runPipeline(
                         .getOrElse { Logger.warn("build_recommendations failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
                 }
                 Logger.info("build_recommendations: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.SuggestionsStep.STEP -> {
+                // Phase 274 (FR-274-7) — once per run, at most once per cadence; a run started by hand builds.
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val service = dev.jellystructure.suggestions.SuggestionService.current
+                val every = dev.jellystructure.config.SuggestionsStep.CADENCES[step.rebuildEvery]
+                    ?: dev.jellystructure.config.SuggestionsStep.CADENCES.getValue(dev.jellystructure.config.SuggestionsStep.DEFAULT_CADENCE)
+                val last = service?.lastBuiltAt()
+                val now = dev.jellystructure.suggestions.SuggestionService.nowSec()
+                val summary = when {
+                    service == null -> "not available"
+                    dev.jellystructure.config.SuggestionsStep.notDue(last, now, every, byHand) -> "not due — built ${(now - (last ?: now)) / 3600} h ago, rebuilt ${step.rebuildEvery}"
+                    else -> runCatching { "built: " + service.build(if (byHand) dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND else dev.jellystructure.suggestions.SuggestionService.REASON_WEEKLY) }
+                        .getOrElse { Logger.warn("build_suggestions failed: ${it.message}", "pipeline"); "failed: ${it.message}" }
+                }
+                Logger.info("build_suggestions: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "wait" -> {

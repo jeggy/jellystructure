@@ -104,6 +104,8 @@ data class AiConfig(
     @SerialName("api_key") val apiKey: String = "",
     val rerank: AiJobConfig = AiJobConfig(effort = "medium"),
     val themes: AiJobConfig = AiJobConfig(effort = "low"),
+    /** Phase 274 (FR-274-5, Q7) — names the groups of the household's suggestions on every build. */
+    val clusters: AiJobConfig = AiJobConfig(effort = "low"),
 )
 
 @Serializable
@@ -150,6 +152,8 @@ data class ScanConfig(
     // Phase 269 (FR-269-8) — `build_recommendations` is added to an existing pipeline ONCE, the same way
     // and for the same reason as the file checks above. Server-owned; a Settings save keeps the stored value.
     @SerialName("recommendations_step_seeded") val recommendationsStepSeeded: Boolean = false,
+    /** Phase 274 — `build_suggestions` was added to this install's pipeline once; a step the operator removes stays removed. */
+    @SerialName("suggestions_step_seeded") val suggestionsStepSeeded: Boolean = false,
     // Phase 273 (dev review item 8) — `check_subtitles` joins an existing pipeline ONCE, and an existing install's
     // subtitle check starts on `report`. Server-owned like the two flags above.
     @SerialName("subtitle_check_seeded") val subtitleCheckSeeded: Boolean = false,
@@ -219,6 +223,25 @@ object RecommendationsStep {
         if (pipeline.isEmpty() || pipeline.any { it.step == STEP }) return pipeline
         var at = pipeline.size
         while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
+        return pipeline.subList(0, at) + PipelineStep(step = STEP) + pipeline.subList(at, pipeline.size)
+    }
+}
+
+/** Phase 274 (FR-274-7) — the household's suggestions from Seerr, rebuilt beside 269's recommendations: weekly by
+ *  default (`rebuild_every`), and present in a pipeline only while Seerr is connected (FR-274-1). */
+object SuggestionsStep {
+    const val STEP = "build_suggestions"
+    val CADENCES = RecommendationsStep.CADENCES
+    const val DEFAULT_CADENCE = "weekly"
+
+    fun notDue(last: Long?, now: Long, every: Long, byHand: Boolean): Boolean = RecommendationsStep.notDue(last, now, every, byHand)
+
+    /** The one-time seed: right after `build_recommendations`, or where that one would go. */
+    fun seed(pipeline: List<PipelineStep>): List<PipelineStep> {
+        if (pipeline.isEmpty() || pipeline.any { it.step == STEP }) return pipeline
+        val after = pipeline.indexOfFirst { it.step == RecommendationsStep.STEP }
+        var at = if (after >= 0) after + 1 else pipeline.size
+        if (after < 0) while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
         return pipeline.subList(0, at) + PipelineStep(step = STEP) + pipeline.subList(at, pipeline.size)
     }
 }
@@ -293,7 +316,7 @@ data class PipelineStep(
     @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
     @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
     @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
-    // Phase 269 — build_recommendations: how often a run really rebuilds (`daily` | `weekly`).
+    // Phase 269 — build_recommendations (and 274's build_suggestions): how often a run really rebuilds (`daily` | `weekly`).
     @SerialName("rebuild_every") val rebuildEvery: String = RecommendationsStep.DEFAULT_CADENCE,
 )
 

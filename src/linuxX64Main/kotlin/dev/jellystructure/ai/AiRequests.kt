@@ -270,6 +270,121 @@ object AiRequests {
         return Judged(themes, "used · ${themes.size} theme${if (themes.size == 1) "" else "s"}")
     }
 
+    // ─── Suggestion clusters (Phase 274, FR-274-5) ─────────────────────────────
+
+    const val CLUSTERS_JOB = "clusters"
+    const val CLUSTERS_MAX_TOKENS = 6_000
+    const val CLUSTERS_MIN = 3
+    const val CLUSTERS_MAX = 8
+
+    /** What a build sends: the household's finished titles and the candidates as genre and keyword ids only — no
+     *  viewer, no title, no synopsis (FR-274-5) — and the names of those ids. [builtAt] ties the answer to its build. */
+    @kotlinx.serialization.Serializable
+    data class ClustersInput(
+        val builtAt: Long,
+        val genres: Map<Int, String>,
+        val keywords: Map<Int, String>,
+        val taste: List<TasteLine>,
+        val candidates: List<CandLine>,
+    )
+
+    @kotlinx.serialization.Serializable
+    data class TasteLine(val kind: String, val weight: Double, val genres: List<Int>, val keywords: List<Int>)
+
+    @kotlinx.serialization.Serializable
+    data class CandLine(val tmdbId: Int, val genres: List<Int>, val keywords: List<Int>)
+
+    /** One accepted group: its name, its candidates by index into [ClustersInput.candidates], and the genre (`g…`) and
+     *  keyword (`k…`) ids it stands for. */
+    data class Cluster(val name: String, val candidates: List<Int>, val sources: List<String>)
+
+    private val CLUSTERS_SYSTEM = """
+        You group films a household does not have yet into the kinds of film the household watches. You receive what
+        the household finished — each line a film or series as its genre ids (g…) and keyword ids (k…) with a weight
+        for how much it was watched — the names of those ids, and the candidate films (c…) the same way.
+
+        Make between $CLUSTERS_MIN and $CLUSTERS_MAX groups that describe what this household actually watches, specific
+        enough to mean something (for example "Folk and coastal horror" or "Heist thrillers"), never a person's name.
+        Put every candidate in exactly one group. For each group, list the genre and keyword ids from the household's
+        watching that the group stands for: the server counts each group's share of the household's watching from
+        those ids, so choose them to match the group. Names are English, 3 to 32 characters, and all different.
+    """.trimIndent()
+
+    private val CLUSTERS_SCHEMA = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("clusters") {
+                put("type", "array")
+                putJsonObject("items") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("name") { put("type", "string") }
+                        putJsonObject("candidates") { put("type", "array"); putJsonObject("items") { put("type", "string") } }
+                        putJsonObject("sources") { put("type", "array"); putJsonObject("items") { put("type", "string") } }
+                    }
+                    putJsonArray("required") { add(JsonPrimitive("name")); add(JsonPrimitive("candidates")); add(JsonPrimitive("sources")) }
+                    put("additionalProperties", false)
+                }
+            }
+        }
+        putJsonArray("required") { add(JsonPrimitive("clusters")) }
+        put("additionalProperties", false)
+    }
+
+    /** The ids a clusters answer may name as sources: every genre and keyword the household's watching carries. */
+    fun clusterSourceIds(input: ClustersInput): Set<String> =
+        (input.taste.flatMap { t -> t.genres.map { "g$it" } + t.keywords.map { "k$it" } }).toSet()
+
+    fun clustersRequest(customId: String, model: String, effort: String, input: ClustersInput): JsonObject {
+        val used = clusterSourceIds(input) + input.candidates.flatMap { c -> c.genres.map { "g$it" } + c.keywords.map { "k$it" } }
+        val user = buildString {
+            append("Genres:\n")
+            append(input.genres.entries.sortedBy { it.key }.filter { "g${it.key}" in used }.joinToString("\n") { "g${it.key} ${it.value}" })
+            append("\n\nKeywords:\n")
+            append(input.keywords.entries.sortedBy { it.key }.filter { "k${it.key}" in used }.joinToString("\n") { "k${it.key} ${it.value}" })
+            append("\n\nWhat the household finished (weight · kind · ids):\n")
+            append(input.taste.sortedByDescending { it.weight }.joinToString("\n") { t ->
+                "${(kotlin.math.round(t.weight * 100) / 100.0)} · ${t.kind} · " + (t.genres.map { "g$it" } + t.keywords.map { "k$it" }).joinToString(" ")
+            })
+            append("\n\nCandidates (id · ids):\n")
+            append(input.candidates.mapIndexed { i, c -> "c${i + 1} · " + (c.genres.map { "g$it" } + c.keywords.map { "k$it" }).joinToString(" ") }.joinToString("\n"))
+        }
+        return request(customId, model, effort, CLUSTERS_MAX_TOKENS, CLUSTERS_SYSTEM, user, CLUSTERS_SCHEMA)
+    }
+
+    /**
+     * FR-274-5 — nothing trusted blindly: 3–8 groups, a name 3–32 characters, no two names equal ignoring case,
+     * every candidate in exactly one group, no id it was not given. Anything else is `null` with the reason, and the
+     * build keeps its genre groups.
+     */
+    fun judgeClusters(r: Result, candidateCount: Int, sourceIds: Set<String>): Judged<List<Cluster>> {
+        unreadable(r)?.let { return Judged(null, it) }
+        val root = runCatching { json.parseToJsonElement(r.text!!) }.getOrNull() ?: return Judged(null, "not valid JSON")
+        val arr = ((root as? JsonObject)?.get("clusters") as? JsonArray) ?: return Judged(null, "not in the expected form")
+        if (arr.size !in CLUSTERS_MIN..CLUSTERS_MAX) return Judged(null, "${arr.size} groups ($CLUSTERS_MIN–$CLUSTERS_MAX allowed)")
+        val names = HashSet<String>()
+        val placed = HashSet<Int>()
+        val out = ArrayList<Cluster>()
+        for (el in arr) {
+            val o = el as? JsonObject ?: return Judged(null, "not in the expected form")
+            val name = (o["name"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+            if (name.length !in 3..32) return Judged(null, "a group name of ${name.length} characters (\"${name.take(40)}\")")
+            if (!names.add(name.lowercase())) return Judged(null, "two groups named \"$name\"")
+            val cands = ((o["candidates"] as? JsonArray) ?: return Judged(null, "not in the expected form")).map { (it as? JsonPrimitive)?.contentOrNull.orEmpty() }
+            val idx = ArrayList<Int>()
+            for (c in cands) {
+                val n = c.removePrefix("c").toIntOrNull()?.takeIf { it in 1..candidateCount } ?: return Judged(null, "an id it wasn't given ($c)")
+                if (!placed.add(n - 1)) return Judged(null, "a candidate in two groups ($c)")
+                idx += n - 1
+            }
+            val srcs = ((o["sources"] as? JsonArray) ?: return Judged(null, "not in the expected form")).map { (it as? JsonPrimitive)?.contentOrNull.orEmpty() }
+            srcs.firstOrNull { it !in sourceIds }?.let { return Judged(null, "an id it wasn't given ($it)") }
+            out += Cluster(name, idx, srcs.distinct())
+        }
+        (0 until candidateCount).firstOrNull { it !in placed }?.let { return Judged(null, "a candidate left out (c${it + 1})") }
+        return Judged(out, "used · ${out.size} groups")
+    }
+
     /** Phase 272 (FR-272-13) — the system prompt and the user message a request carries, as sent. */
     fun systemOf(request: JsonObject): String =
         ((request["params"] as? JsonObject)?.get("system") as? JsonArray)?.firstOrNull()?.let { (it as? JsonObject)?.get("text") as? JsonPrimitive }?.contentOrNull.orEmpty()

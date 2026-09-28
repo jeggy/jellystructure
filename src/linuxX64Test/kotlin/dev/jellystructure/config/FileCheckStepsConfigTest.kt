@@ -38,7 +38,7 @@ class FileCheckStepsConfigTest {
         val cfg = load(path).current
         // Phase 269 seeds build_recommendations the same way, and Phase 273 check_subtitles, both ahead of the trailing notify;
         // The music steps (275–277) are seeded too; their own order is tested in MusicIngestTest/MusicMatchTest.
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "check_track_lengths", "build_recommendations", "check_subtitles", "notify"), cfg.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
+        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "check_track_lengths", "build_recommendations", "build_suggestions", "check_subtitles", "notify"), cfg.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
         assertEquals("report", cfg.subtitleCheck.action, "an existing install's subtitle check starts on Only report")
         assertEquals(listOf(false, false), cfg.scan.pipeline.filter { it.step in FileCheckSteps.ALL }.map { it.enabled })
         assertTrue(cfg.scan.fileCheckStepsSeeded)
@@ -64,7 +64,7 @@ class FileCheckStepsConfigTest {
         runBlocking { FileIo.writeText(Path(path), pipeline) }
         val store = load(path)
         runBlocking { store.update(store.current.copy(scan = store.current.scan.copy(pipeline = store.current.scan.pipeline.filter { it.step != FileCheckSteps.LENGTHS }))) }
-        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "build_recommendations", "check_subtitles", "notify"), load(path).current.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
+        assertEquals(listOf("scan_files", "pull_tmdb", "verify_files", "build_recommendations", "build_suggestions", "check_subtitles", "notify"), load(path).current.scan.pipeline.map { it.step }.filterNot { MusicSteps.isMusic(it) })
         platform.posix.remove(path)
     }
 

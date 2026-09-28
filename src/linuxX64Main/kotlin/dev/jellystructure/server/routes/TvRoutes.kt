@@ -848,7 +848,7 @@ fun Route.tvRoutes(
     // (shouldn't happen outside tests) — falls back to unavailable rather than 500ing.
     get("/tv/discover") {
         val device = call.attributes[DeviceKey]
-        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin, device.isKids)
+        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin, device.isKids, dev.jellystructure.tv.RecommendationEngine.scopeKey(device))
             ?: DiscoverResponse(available = false, canRequest = false)
         call.respond(resp)
     }

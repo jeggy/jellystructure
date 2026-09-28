@@ -47,6 +47,7 @@ import dev.jellystructure.server.routes.remoteRoutes
 import dev.jellystructure.server.routes.apiKeyManagementRoutes
 import dev.jellystructure.server.routes.webhookRoutes
 import dev.jellystructure.server.routes.subtitleCheckRoutes
+import dev.jellystructure.server.routes.suggestionsRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -157,6 +158,7 @@ fun startServer(
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     acquisitionService: AcquisitionService? = null,
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
+    suggestionService: dev.jellystructure.suggestions.SuggestionService? = null,
     bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
     tvEventBus: TvEventBus,
     imageProxyService: RaviloArtworkService? = null,
@@ -638,6 +640,12 @@ fun startServer(
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
+                // Phase 274 — the household's suggestions reuse this service's request(), and its feeds read theirs.
+                suggestionService?.let { s ->
+                    s.discover = seerrDiscoverService
+                    seerrDiscoverService?.suggestions = s
+                    suggestionsRoutes(s)
+                }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->

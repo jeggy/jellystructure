@@ -1192,6 +1192,10 @@ data class SeerrFeed(
     val param: String? = null,   // genre id / studio id / network id / ISO-639-1 language code
     val name: String,
     val visible: Boolean = true,
+    /** R320 (dev review 1) — *Suggested for you*: the viewer's own suggestions (274), served from the last build instead
+     *  of calling Seerr. Additive with a default, so no installed app meets a new enum value: the feed travels as an
+     *  existing [endpoint] and this flag, and resolves to an ordinary Request row. */
+    val suggested: Boolean = false,
 )
 
 enum class SeerrFeedKind { MOVIE, TV, MIXED }

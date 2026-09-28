@@ -34,7 +34,7 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps(); seedSuggestionsStep() }
     }
 
     /** Phase 275 — each music step joins the operator's pipeline once (see [MusicSteps.seed]). */
@@ -87,6 +87,18 @@ class ConfigStore(private val filePath: String) {
                 if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added",
             "config",
         )
+    }
+
+    /** Phase 274 — once: add `build_suggestions` beside `build_recommendations`. It runs only while Seerr is connected
+     *  (FR-274-1 leaves it out of the effective pipeline otherwise), so seeding it on an install without Seerr is quiet. */
+    private suspend fun seedSuggestionsStep() {
+        val scan = _config.scan
+        if (scan.suggestionsStepSeeded) return
+        val seeded = SuggestionsStep.seed(scan.pipeline)
+        _config = _config.copy(scan = scan.copy(pipeline = seeded, suggestionsStepSeeded = true))
+        persist()
+        Logger.info("Config: suggestions from Seerr are built by a pipeline step now — ${SuggestionsStep.STEP} " +
+            if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added", "config")
     }
 
     /** Phase 273 (dev review item 8) — once: add `check_subtitles` to the operator's pipeline and start this

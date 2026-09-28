@@ -23,7 +23,7 @@ fun pipelinePlan(cfg: AppConfig): List<PipelineStep> = planOrder(effectivePipeli
 data class PipelinePlanStep(val step: String, val scope: String, val rebuildEvery: String? = null)
 
 fun pipelinePlanRows(cfg: AppConfig): List<PipelinePlanStep> = pipelinePlan(cfg).map {
-    PipelinePlanStep(it.step, it.scope, if (it.step == dev.jellystructure.config.RecommendationsStep.STEP) it.rebuildEvery else null)
+    PipelinePlanStep(it.step, it.scope, if (it.step == dev.jellystructure.config.RecommendationsStep.STEP || it.step == dev.jellystructure.config.SuggestionsStep.STEP) it.rebuildEvery else null)
 }
 
 /** Phase 154 — the pre-run dialog's one-run skip. Defaulted so a bodyless call behaves as it always did. */

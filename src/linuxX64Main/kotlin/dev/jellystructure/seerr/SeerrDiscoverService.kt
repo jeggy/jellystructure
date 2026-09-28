@@ -77,16 +77,30 @@ class SeerrDiscoverService(
 ) {
     private fun seerr() = configStore.current.seerr?.takeIf { it.enabled && it.url.isNotBlank() }
 
-    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean, isKids: Boolean = false): DiscoverResponse {
+    /** Phase 274 — the household's suggestions: the blocklist filter (FR-274-16) and R320's row. Set by Main. */
+    var suggestions: dev.jellystructure.suggestions.SuggestionService? = null
+
+    /**
+     * [scopeKey] is the device's visibility scope (269's key), for R320's per-viewer row; null takes the viewer's list
+     * in whatever scope it was built.
+     */
+    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean, isKids: Boolean = false, scopeKey: String? = null): DiscoverResponse {
         val d = raviloConfigService.getConfig(userId).discover
         val seerr = seerr()
         if (!d.enabled || seerr == null) return DiscoverResponse(available = false, canRequest = false)
 
         val libByTmdb = libraryByTmdbId()
-        val rows = d.feeds.filter { it.visible }.map { feed ->
-            val page = seerrClient.discover(seerr.url, seerr.apiKey, feed.endpoint, feed.param)
-            val entries = page.results
+        // Phase 274 (FR-274-16) — Seerr's blocklist and our own dismissals leave every Request row, whatever Seerr's own
+        // *hide blocklisted* setting says: that is what makes *No thanks*'s sentence true.
+        val hidden = runCatching { suggestions?.hiddenTmdbIds() }.getOrNull().orEmpty()
+        val rows = d.feeds.filter { it.visible }.mapNotNull { feed ->
+            val results = if (feed.suggested) {
+                // R320 — this viewer's own list from the last build; no history ⇒ no row (FR-R320-3).
+                suggestions?.viewerRow(userId, scopeKey).orEmpty().filter { it.id !in libByTmdb }.ifEmpty { return@mapNotNull null }
+            } else seerrClient.discover(seerr.url, seerr.apiKey, feed.endpoint, feed.param).results
+            val entries = results
                 .filter { it.mediaType == "movie" || it.mediaType == "tv" }
+                .filter { !(it.mediaType == "movie" && it.id in hidden) }
                 .map { toDiscoverEntry(it, libByTmdb) }
             DiscoverRow(feedId = feed.id, feedName = feed.name, entries = entries)
         }

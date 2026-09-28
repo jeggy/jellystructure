@@ -68,7 +68,7 @@ class TitleChecks(
         // OQ2 — the card lists what is done TO this title; `wait`, `notify` and the whole-library
         // `build_recommendations` (Phase 269) are not.
         val steps = (listOf(configured.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")) +
-            configured.filter { it.step != "scan_files" && it.step !in setOf("wait", "notify", dev.jellystructure.config.RecommendationsStep.STEP) })
+            configured.filter { it.step != "scan_files" && it.step !in setOf("wait", "notify", dev.jellystructure.config.RecommendationsStep.STEP, dev.jellystructure.config.SuggestionsStep.STEP) })
             .distinctBy { it.step }
         val scanStep = steps.first()
         val runs = stepRuns?.forItem(item.id) ?: emptyMap()

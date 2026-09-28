@@ -1,0 +1,55 @@
+-- Phase 274 — suggestions from Seerr. Must stay in sync with Suggestions.sq.
+
+CREATE TABLE suggestion (
+    rank INTEGER NOT NULL PRIMARY KEY,
+    tmdb_id INTEGER NOT NULL,
+    cluster TEXT NOT NULL,
+    score REAL NOT NULL,
+    json TEXT NOT NULL,
+    built_at INTEGER NOT NULL
+);
+
+CREATE TABLE suggestion_cluster (
+    position INTEGER NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    share_weight REAL NOT NULL,
+    finished_count INTEGER NOT NULL,
+    slots INTEGER NOT NULL
+);
+
+CREATE TABLE suggestion_build (
+    id INTEGER NOT NULL PRIMARY KEY,
+    built_at INTEGER NOT NULL,
+    cluster_source TEXT NOT NULL,
+    cluster_note TEXT NOT NULL,
+    json TEXT NOT NULL
+);
+
+CREATE TABLE suggestion_viewer (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    tmdb_id INTEGER NOT NULL,
+    json TEXT NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);
+
+CREATE TABLE suggestion_dismissal (
+    tmdb_id INTEGER NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    year INTEGER,
+    reason TEXT NOT NULL,
+    note TEXT,
+    who TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    in_seerr INTEGER NOT NULL,
+    sources TEXT NOT NULL,
+    for_user TEXT
+);
+
+CREATE TABLE suggestion_request (
+    tmdb_id INTEGER NOT NULL PRIMARY KEY,
+    requested_for TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    at INTEGER NOT NULL
+);

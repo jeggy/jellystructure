@@ -65,6 +65,14 @@ class AiJobs(
     fun interface RerankSink { fun apply(userId: String, scope: String, picks: List<AiRequests.Pick>) }
     var rerankSink: RerankSink? = null
 
+    /** Phase 274 — where the suggestion groups go: accepted, or the reason the build keeps its genre groups. The build
+     *  they belong to is [builtAt]; an answer for an older build is dropped by the sink. */
+    interface ClustersSink {
+        suspend fun apply(builtAt: Long, clusters: List<AiRequests.Cluster>, candidates: List<Int>)
+        suspend fun failed(builtAt: Long, why: String)
+    }
+    var clustersSink: ClustersSink? = null
+
     private val lock = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
     private val kick = Channel<Unit>(Channel.CONFLATED)
@@ -75,6 +83,7 @@ class AiJobs(
 
     @Serializable private data class RerankCtx(val u: String, val s: String, val ids: List<String>)
     @Serializable private data class ThemeCtx(val item: String, val hash: String)
+    @Serializable private data class ClustersCtx(val builtAt: Long, val ids: List<Int>, val sources: List<String>)
 
     fun start(scope: CoroutineScope) {
         scope.launch(GateClass.BACKGROUND) {
@@ -94,7 +103,29 @@ class AiJobs(
         return ai.enabled && ai.apiKey.isNotBlank() && job.enabled
     }
 
-    private fun cfgFor(job: String): AiJobConfig = configStore.current.ai.let { if (job == AiRequests.RERANK_JOB) it.rerank else it.themes }
+    private fun cfgFor(job: String): AiJobConfig = configStore.current.ai.let {
+        when (job) { AiRequests.RERANK_JOB -> it.rerank; AiRequests.CLUSTERS_JOB -> it.clusters; else -> it.themes }
+    }
+
+    /** Phase 274 — whether a build may ask for groups at all (AI on, a key, the job on). */
+    fun clustersOn(): Boolean = on(configStore.current.ai.clusters)
+
+    /**
+     * Phase 274 (FR-274-5) — one request per build, the household's: a newer build replaces one still waiting. Sends
+     * at once when it can, and answers what became of it: `waiting` (sent or queued) or `limit` (this month's limit
+     * holds it back); `off` when the job cannot run.
+     */
+    suspend fun enqueueClusters(input: AiRequests.ClustersInput, reason: String, by: String): String {
+        val queued = lock.withLock {
+            if (!on(configStore.current.ai.clusters) || input.candidates.isEmpty()) return@withLock false
+            db.aiQueries.enqueue(AiRequests.CLUSTERS_JOB, "household", "Household suggestions", reason, by,
+                json.encodeToString(AiRequests.ClustersInput.serializer(), input), clock())
+            true
+        }
+        if (!queued) return "off"
+        runCatching { sendJob(AiRequests.CLUSTERS_JOB) }.onFailure { Logger.warn("AI: sending failed: ${it.message}", "ai") }
+        return lock.withLock { if (heldBack[AiRequests.CLUSTERS_JOB] != null) "limit" else "waiting" }
+    }
 
     /** After 269's build (and a viewer's first build or the admin's *Rebuild now*): queue what needs tagging and
      *  the re-ranks, then send what can go now. [reason] and [by] are what the Activity card says. */
@@ -166,6 +197,7 @@ class AiJobs(
     suspend fun sendQueued() {
         sendJob(AiRequests.THEMES_JOB)
         sendJob(AiRequests.RERANK_JOB)
+        sendJob(AiRequests.CLUSTERS_JOB)
     }
 
     private suspend fun sendJob(job: String): Boolean = lock.withLock {
@@ -182,7 +214,7 @@ class AiJobs(
         val byKey = items.associateBy { it.jellyfinId ?: it.id }
         val themes = themes()
         val done = if (job == AiRequests.THEMES_JOB) db.aiQueries.allThemes().executeAsList().associate { it.item_id to it.synopsis_hash } else emptyMap()
-        val maxTokens = if (job == AiRequests.RERANK_JOB) AiRequests.RERANK_MAX_TOKENS else AiRequests.THEMES_MAX_TOKENS
+        val maxTokens = when (job) { AiRequests.RERANK_JOB -> AiRequests.RERANK_MAX_TOKENS; AiRequests.CLUSTERS_JOB -> AiRequests.CLUSTERS_MAX_TOKENS; else -> AiRequests.THEMES_MAX_TOKENS }
         val built = ArrayList<Built>()
         val gone = ArrayList<Long>()
         for (row in waiting) {
@@ -194,6 +226,10 @@ class AiJobs(
                         AiRequests.rerankRequest(customId, cfg.model, cfg.effort, shortlist, input.watched.mapNotNull { byJf[it] }, themes) to
                             json.encodeToString(RerankCtx.serializer(), RerankCtx(input.userId, input.scope, shortlist.mapNotNull { it.jellyfinId }))
                     }
+                }
+                AiRequests.CLUSTERS_JOB -> runCatching { json.decodeFromString(AiRequests.ClustersInput.serializer(), row.payload) }.getOrNull()?.let { input ->
+                    AiRequests.clustersRequest(opaqueId("c", "household|" + input.builtAt), cfg.model, cfg.effort, input) to
+                        json.encodeToString(ClustersCtx.serializer(), ClustersCtx(input.builtAt, input.candidates.map { it.tmdbId }, AiRequests.clusterSourceIds(input).sorted()))
                 }
                 else -> byKey[row.subject]?.takeIf { AiRequests.wantsThemes(it) && done[row.subject] != AiRequests.synopsisHash(it) }?.let { item ->
                     AiRequests.themesRequest(opaqueId("t", row.subject), cfg.model, cfg.effort, item) to
@@ -244,7 +280,7 @@ class AiJobs(
                 db.aiQueries.deleteQueued(b.queueId)
             }
         }
-        val noun = if (job == AiRequests.RERANK_JOB) "viewer" else "title"
+        val noun = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; else -> "title" }
         run(job, "sent · ${take.size} $noun${if (take.size == 1) "" else "s"} · waiting for Anthropic")
         Logger.info("AI: $job batch ${batch.id} sent (${take.size} requests, worst case ${AiPricing.usd(sum)})", "ai")
         true
@@ -303,6 +339,21 @@ class AiJobs(
                         readable = picks.mapIndexed { i, p -> "${i + 1}. ${titles[p.jellyfinId] ?: p.jellyfinId} — ${p.reason.ifEmpty { "(topped up from the standard list)" }}" }.joinToString("\n")
                     }
                 }
+                AiRequests.CLUSTERS_JOB -> {
+                    val c = runCatching { json.decodeFromString(ClustersCtx.serializer(), ctx) }.getOrNull() ?: continue
+                    val judged = AiRequests.judgeClusters(r, c.ids.size, c.sources.toSet())
+                    val groups = judged.value
+                    if (groups == null) {
+                        if (r.type == "succeeded") rejected++
+                        clustersSink?.failed(c.builtAt, judged.why)
+                        verdict = "kept the genre groups — ${judged.why}"
+                    } else {
+                        clustersSink?.apply(c.builtAt, groups, c.ids)
+                        accepted++
+                        verdict = judged.why
+                        readable = groups.joinToString("\n") { g -> "${g.name} · ${g.candidates.size} film${if (g.candidates.size == 1) "" else "s"} · ${g.sources.joinToString(" ")}" }
+                    }
+                }
                 else -> {
                     val c = runCatching { json.decodeFromString(ThemeCtx.serializer(), ctx) }.getOrNull() ?: continue
                     val judged = AiRequests.judgeThemes(r)
@@ -330,7 +381,7 @@ class AiJobs(
         }
         val cost = AiPricing.costMicroUsd(model, AiPricing.Usage(input, output, cacheWrite, cacheRead))
         val now = clock()
-        val noun = if (job == AiRequests.RERANK_JOB) "viewer" else "title"
+        val noun = when (job) { AiRequests.RERANK_JOB -> "viewer"; AiRequests.CLUSTERS_JOB -> "build"; else -> "title" }
         val line = when {
             accepted == 0 && cancelled -> "cancelled — standard list kept"
             accepted == 0 && expired > 0 -> "batch expired — standard list kept"
@@ -447,7 +498,7 @@ class AiJobs(
 
     suspend fun jobsView(): JobsView = lock.withLock {
         val ai = configStore.current.ai
-        val jobs = listOf(AiRequests.RERANK_JOB to "Re-rank Recommended", AiRequests.THEMES_JOB to "Theme tags").map { (job, label) ->
+        val jobs = listOf(AiRequests.RERANK_JOB to "Re-rank Recommended", AiRequests.THEMES_JOB to "Theme tags", AiRequests.CLUSTERS_JOB to "Suggestion clusters").map { (job, label) ->
             val cfg = cfgFor(job)
             val out = db.aiQueries.pendingBatchForJob(job).executeAsOneOrNull()
             JobView(
@@ -489,6 +540,10 @@ class AiJobs(
         return db.aiQueries.queuedForSubjectPrefix(AiRequests.RERANK_JOB, "$userId|%").executeAsOneOrNull()?.let { ViewerPending("waiting", it.queued_at) }
     }
 
+    /** Phase 274 — a clusters request still queued or out: a build waiting on it keeps saying *waiting*. */
+    fun clustersInFlight(): Boolean =
+        db.aiQueries.waitingFor(AiRequests.CLUSTERS_JOB).executeAsList().isNotEmpty() || db.aiQueries.pendingBatchForJob(AiRequests.CLUSTERS_JOB).executeAsOneOrNull() != null
+
     /** Waiting requests and batches out, for Activity's tab badge (FR-272-11). */
     fun inFlight(): Long = db.aiQueries.countQueued().executeAsOne() + db.aiQueries.pendingBatches().executeAsList().size
 
@@ -520,6 +575,8 @@ class AiJobs(
         val models: List<ModelDto>,
         val rerank: JobStatus,
         val themes: JobStatus,
+        /** Phase 274. */
+        val clusters: JobStatus,
     )
 
     suspend fun status(viewers: Int): Status {
@@ -541,12 +598,14 @@ class AiJobs(
         }
         val (rerankEst, rerankBasis) = estimate(AiRequests.RERANK_JOB, RERANK_ASSUMED, viewers * RUNS_PER_MONTH)
         val (themesEst, themesBasis) = estimate(AiRequests.THEMES_JOB, THEMES_ASSUMED, untagged.toDouble())
+        val (clustersEst, clustersBasis) = estimate(AiRequests.CLUSTERS_JOB, CLUSTERS_ASSUMED, RUNS_PER_MONTH)
         return Status(
             keyHint = key.takeIf { it.length >= 8 }?.let { "…" + it.takeLast(4) },
             pricesAsOf = AiPricing.AS_OF,
             models = AiPricing.MODELS.map { ModelDto(it.id, it.label, it.inputPerMTok, it.outputPerMTok, it.effort) },
             rerank = job(AiRequests.RERANK_JOB, rerankEst, "$viewers viewer${if (viewers == 1) "" else "s"} × about ${RUNS_PER_MONTH.toInt()} runs a month · $rerankBasis"),
             themes = job(AiRequests.THEMES_JOB, themesEst, "once, for $untagged untagged title${if (untagged == 1) "" else "s"} · $themesBasis"),
+            clusters = job(AiRequests.CLUSTERS_JOB, clustersEst, "one request per suggestions build, about ${RUNS_PER_MONTH.toInt()} a month · $clustersBasis"),
         )
     }
 
@@ -587,6 +646,8 @@ class AiJobs(
         /** FR-270-7's starting assumptions: a re-rank ~12k in / ~5k out; a title's themes ~0.5k in / ~0.15k out. */
         private val RERANK_ASSUMED = AiPricing.Usage(input = 12_000, output = 5_000)
         private val THEMES_ASSUMED = AiPricing.Usage(input = 500, output = 150)
+        /** Phase 274 — a household's watching and 50 candidates as ids: ~9k in, ~2k out. */
+        private val CLUSTERS_ASSUMED = AiPricing.Usage(input = 9_000, output = 2_000)
 
         @OptIn(ExperimentalForeignApi::class)
         fun nowSec(): Long = time(null)

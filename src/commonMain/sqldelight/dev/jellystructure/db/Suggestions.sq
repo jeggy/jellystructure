@@ -1,0 +1,131 @@
+-- Phase 274 (FR-274-6) — the household's suggestions from Seerr: films the library does not have, built in the
+-- background by `build_suggestions` and never scored on a request. `json` carries the tile (title, year, rating,
+-- runtime, certification, synopsis, poster, the *because* line, the franchise note); `cluster` is the group's
+-- name ('' until grouped). 50 are kept; the page shows 20.
+CREATE TABLE suggestion (
+    rank INTEGER NOT NULL PRIMARY KEY,
+    tmdb_id INTEGER NOT NULL,
+    cluster TEXT NOT NULL,
+    score REAL NOT NULL,
+    json TEXT NOT NULL,
+    built_at INTEGER NOT NULL
+);
+
+-- The groups, in share order: `share_weight` is counted by the server from the household's finished titles,
+-- never by the model; `slots` is its part of the 20 shown.
+CREATE TABLE suggestion_cluster (
+    position INTEGER NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    share_weight REAL NOT NULL,
+    finished_count INTEGER NOT NULL,
+    slots INTEGER NOT NULL
+);
+
+-- One row (id 1): when the list was built, where its groups came from (`ai` | `fallback`) and why the
+-- fallback (`off` | `limit` | `bad` | `waiting`), and the build's inputs the page and the AI regroup read (JSON).
+CREATE TABLE suggestion_build (
+    id INTEGER NOT NULL PRIMARY KEY,
+    built_at INTEGER NOT NULL,
+    cluster_source TEXT NOT NULL,
+    cluster_note TEXT NOT NULL,
+    json TEXT NOT NULL
+);
+
+-- R320 — each viewer's own list, from their sources only; `scope_key` is 269's `RecommendationEngine.scopeKey`.
+-- `json` is the Request tile (title, year, genre, rating, poster, backdrop, overview).
+CREATE TABLE suggestion_viewer (
+    user_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    tmdb_id INTEGER NOT NULL,
+    json TEXT NOT NULL,
+    PRIMARY KEY (user_id, scope_key, rank)
+);
+
+-- FR-274-11/12 — what was said no to, and why. `in_seerr` = the blocklist write has landed (a dismissal counts
+-- here at once either way). `sources`: the TMDB ids that led to it ('|'-joined) — *Not interested* weighs them
+-- down; `for_user`: whose watching it counts as (*Already seen it*).
+CREATE TABLE suggestion_dismissal (
+    tmdb_id INTEGER NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    year INTEGER,
+    reason TEXT NOT NULL,
+    note TEXT,
+    who TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    in_seerr INTEGER NOT NULL,
+    sources TEXT NOT NULL,
+    for_user TEXT
+);
+
+-- FR-274-10 (dev review 1) — Seerr keeps no note on a request, so *Suggested for {viewer}* is kept here.
+CREATE TABLE suggestion_request (
+    tmdb_id INTEGER NOT NULL PRIMARY KEY,
+    requested_for TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
+
+all:
+SELECT * FROM suggestion ORDER BY rank;
+
+deleteAll:
+DELETE FROM suggestion;
+
+put:
+INSERT OR REPLACE INTO suggestion(rank, tmdb_id, cluster, score, json, built_at) VALUES (:rank, :tmdb_id, :cluster, :score, :json, :built_at);
+
+setCluster:
+UPDATE suggestion SET cluster = :cluster WHERE tmdb_id = :tmdb_id;
+
+clusters:
+SELECT * FROM suggestion_cluster ORDER BY position;
+
+deleteClusters:
+DELETE FROM suggestion_cluster;
+
+putCluster:
+INSERT OR REPLACE INTO suggestion_cluster(position, name, share_weight, finished_count, slots) VALUES (:position, :name, :share_weight, :finished_count, :slots);
+
+build:
+SELECT * FROM suggestion_build WHERE id = 1;
+
+putBuild:
+INSERT OR REPLACE INTO suggestion_build(id, built_at, cluster_source, cluster_note, json) VALUES (1, :built_at, :cluster_source, :cluster_note, :json);
+
+setClusterSource:
+UPDATE suggestion_build SET cluster_source = :cluster_source, cluster_note = :cluster_note WHERE id = 1 AND built_at = :built_at;
+
+forViewer:
+SELECT * FROM suggestion_viewer WHERE user_id = :user_id AND scope_key = :scope_key ORDER BY rank;
+
+forViewerAnyScope:
+SELECT * FROM suggestion_viewer WHERE user_id = :user_id ORDER BY scope_key, rank;
+
+deleteViewers:
+DELETE FROM suggestion_viewer;
+
+putViewer:
+INSERT OR REPLACE INTO suggestion_viewer(user_id, scope_key, rank, tmdb_id, json) VALUES (:user_id, :scope_key, :rank, :tmdb_id, :json);
+
+dismissals:
+SELECT * FROM suggestion_dismissal ORDER BY at DESC, tmdb_id;
+
+dismissal:
+SELECT * FROM suggestion_dismissal WHERE tmdb_id = :tmdb_id;
+
+putDismissal:
+INSERT OR REPLACE INTO suggestion_dismissal(tmdb_id, title, year, reason, note, who, at, in_seerr, sources, for_user)
+VALUES (:tmdb_id, :title, :year, :reason, :note, :who, :at, :in_seerr, :sources, :for_user);
+
+setInSeerr:
+UPDATE suggestion_dismissal SET in_seerr = :in_seerr WHERE tmdb_id = :tmdb_id;
+
+deleteDismissal:
+DELETE FROM suggestion_dismissal WHERE tmdb_id = :tmdb_id;
+
+requests:
+SELECT * FROM suggestion_request ORDER BY at DESC;
+
+putRequest:
+INSERT OR REPLACE INTO suggestion_request(tmdb_id, requested_for, requested_by, at) VALUES (:tmdb_id, :requested_for, :requested_by, :at);

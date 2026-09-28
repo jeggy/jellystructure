@@ -277,6 +277,11 @@ fun Route.configureConfigRoutes(
         // Phase 218 (FR-218-3) — a changed chromecast block changes every client's resolved `cast`
         // capability, so push the same global-config event a layout save does; clients re-fetch /tv/config.
         if (ok && (config.chromecast != stored.chromecast || config.publicUrl != stored.publicUrl)) tvEventBus?.notifyGlobalConfigChanged()
+        // Phase 274 (FR-274-7) — the first save that connects Seerr builds the suggestions once, in the background.
+        val seerrOn = { c: dev.jellystructure.config.SeerrConfig? -> c != null && c.enabled && c.url.isNotBlank() && c.apiKey.isNotBlank() }
+        if (ok && seerrOn(config.seerr) && !seerrOn(stored.seerr) && dev.jellystructure.suggestions.SuggestionService.current?.lastBuiltAt() == null) {
+            dev.jellystructure.suggestions.SuggestionService.current?.queueBuild(dev.jellystructure.suggestions.SuggestionService.REASON_FIRST, dev.jellystructure.ai.AiJobs.BY_SYSTEM)
+        }
         if (ok) call.respond(HttpStatusCode.NoContent)
         else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))
     }
