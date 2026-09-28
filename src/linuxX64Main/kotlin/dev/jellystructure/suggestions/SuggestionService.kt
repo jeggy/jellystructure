@@ -12,6 +12,10 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.SuggestionActionResult
+import dev.jellystructure.model.SuggestionDownloadRequest
+import dev.jellystructure.model.SuggestionProfile
+import dev.jellystructure.model.SuggestionRadarrServer
+import dev.jellystructure.model.SuggestionRequestOptions
 import dev.jellystructure.model.SuggestionBecause
 import dev.jellystructure.model.SuggestionClusterDto
 import dev.jellystructure.model.SuggestionDismissedDto
@@ -454,7 +458,8 @@ class SuggestionService(
             val req = requests[it.tmdbId]
             if (req != null) {
                 val state = if (ok && s != null) stateOf(it.tmdbId) else null
-                dto = dto.copy(state = state?.first ?: "requested", progress = state?.second, requestedFor = req.requested_for)
+                dto = dto.copy(state = state?.first ?: "requested", progress = state?.second, requestedFor = req.requested_for,
+                    requestedIn = req.profile_name?.let { n -> if (req.server_name?.contains("4K", true) == true) "$n · 4K" else n })
             }
             dto
         }
@@ -505,17 +510,56 @@ class SuggestionService(
 
     /** *Download* — a request as the signed-in admin's own Seerr user (Q1); *Suggested for {viewer}* is kept here
      *  because Seerr keeps no note on a request (dev review 1). */
-    suspend fun download(tmdbId: Int, adminUserId: String, adminName: String): SuggestionActionResult {
+    /** FR-274-10a — what the confirm dialog offers, cached a minute so a re-opened dialog costs nothing. */
+    /** Seerr's permission bits (`server/lib/permissions.ts`): ADMIN and REQUEST_ADVANCED. */
+    private val SEERR_PERMISSION_ADMIN = 2
+    private val SEERR_PERMISSION_REQUEST_ADVANCED = 8192
+    private var optionsCache: Pair<Long, SuggestionRequestOptions>? = null
+    private var optionsFor: String? = null
+
+    suspend fun requestOptions(adminUserId: String): SuggestionRequestOptions {
+        optionsCache?.takeIf { optionsFor == adminUserId && nowSec() - it.first < 60 }?.let { return it.second }
+        if (!seerrOk()) return SuggestionRequestOptions(seerrOk = false)
+        val s = seerr() ?: return SuggestionRequestOptions(seerrOk = false)
+        val servers = seerrClient.radarrServers(s.url, s.apiKey) ?: return SuggestionRequestOptions(seerrOk = false)
+        val detailed = servers.map { srv ->
+            val d = seerrClient.radarrServer(s.url, s.apiKey, srv.id)
+            SuggestionRadarrServer(
+                id = srv.id, name = srv.name.ifBlank { "Radarr" }, is4k = srv.is4k, isDefault = srv.isDefault, activeProfileId = srv.activeProfileId,
+                profiles = d?.profiles.orEmpty().map { SuggestionProfile(it.id, it.name) },
+                folders = d?.rootFolders.orEmpty().map { it.path }.filter { it.isNotBlank() },
+                activeFolder = srv.activeDirectory?.takeIf { it.isNotBlank() },
+            )
+        }
+        // Seerr honours the request's profile/server/folder only for a user with *Advanced requests* (or an admin):
+        // the admin's own Seerr user (Q1), read from Seerr itself. Unknown ⇒ offered — the fields are harmless.
+        val seerrUserId = seerrClient.resolveUserId(s.url, s.apiKey, adminUserId)
+        val perms = seerrUserId?.let { seerrClient.userPermissions(s.url, s.apiKey, it) }
+        val canChoose = perms == null || (perms and SEERR_PERMISSION_ADMIN) != 0 || (perms and SEERR_PERMISSION_REQUEST_ADVANCED) != 0
+        val steered = discover?.steeredProfile(adminUserId)
+        val opts = SuggestionRequestOptions(seerrOk = true, servers = detailed, canChoose = canChoose, steeredProfileId = steered?.first, steeredLabel = steered?.second)
+        optionsCache = nowSec() to opts; optionsFor = adminUserId
+        return opts
+    }
+
+    /** *Download* — a request as the signed-in admin's own Seerr user (Q1); *Suggested for {viewer}* is kept here
+     *  because Seerr keeps no note on a request (dev review 1). FR-274-10a: [choice] is the confirm dialog's pick. */
+    suspend fun download(tmdbId: Int, adminUserId: String, adminName: String, choice: SuggestionDownloadRequest? = null): SuggestionActionResult {
         if (!seerrOk()) return SuggestionActionResult(false, "Seerr can't be reached right now — this waits until it's back")
         val (item, cluster) = storedItem(tmdbId) ?: return SuggestionActionResult(false, "That film isn't in the list any more")
         val disc = discover ?: return SuggestionActionResult(false, "Seerr isn't connected")
-        val rec = disc.request(adminUserId, isAdmin = true, mediaType = "movie", tmdbId = tmdbId, title = item.title)
+        val opts = if (choice != null) requestOptions(adminUserId) else null
+        val server = opts?.servers?.firstOrNull { it.id == choice?.serverId }
+        val profileName = server?.profiles?.firstOrNull { it.id == choice?.profileId }?.name
+        val requestChoice = choice?.let { SeerrDiscoverService.RequestChoice(serverId = server?.id, profileId = it.profileId, rootFolder = it.rootFolder, is4k = server?.is4k == true) }
+        val rec = disc.request(adminUserId, isAdmin = true, mediaType = "movie", tmdbId = tmdbId, title = item.title, choice = requestChoice)
         if (rec.status == AcquisitionStatus.FAILED) return SuggestionActionResult(false, "Seerr didn't take it: ${rec.reason ?: "no reason given"}", itemDto(item, cluster).copy(state = "refused", note = rec.reason))
         val forWhom = item.because.firstOrNull()?.viewer ?: "the household"
-        db.suggestionsQueries.putRequest(tmdbId.toLong(), forWhom, adminName, nowSec())
+        val requestedIn = profileName?.let { if (server?.is4k == true) "$it · 4K" else it }
+        db.suggestionsQueries.putRequest(tmdbId.toLong(), forWhom, adminName, nowSec(), profileName, server?.name)
         val state = stateOf(tmdbId)
-        return SuggestionActionResult(true, "Requested in Seerr · suggested for $forWhom",
-            itemDto(item, cluster).copy(state = state?.first ?: "requested", progress = state?.second, requestedFor = forWhom))
+        return SuggestionActionResult(true, if (requestedIn != null) "Requested in $requestedIn · suggested for $forWhom" else "Requested in Seerr · suggested for $forWhom",
+            itemDto(item, cluster).copy(state = state?.first ?: "requested", progress = state?.second, requestedFor = forWhom, requestedIn = requestedIn))
     }
 
     /** *No thanks* — out here at once, and onto Seerr's blocklist (Q4); retried with the next Seerr call if it's down. */

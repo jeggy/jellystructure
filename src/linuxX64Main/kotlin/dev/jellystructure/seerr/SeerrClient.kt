@@ -13,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -118,7 +119,24 @@ data class SeerrRequestResult(
 
 /** Phase 156 — just enough of Seerr's `User` to resolve a Jellyfin user's Seerr account id. */
 @Serializable
-data class SeerrUser(val id: Int = 0)
+data class SeerrUser(val id: Int = 0, val permissions: Int = 0)
+
+/** FR-274-10a — `GET /service/radarr`: one row per Radarr Seerr knows, with the profile and folder it uses by default. */
+@Serializable
+data class SeerrRadarrServer(
+    val id: Int = 0, val name: String = "", @SerialName("is4k") val is4k: Boolean = false, @SerialName("isDefault") val isDefault: Boolean = false,
+    @SerialName("activeProfileId") val activeProfileId: Int? = null, @SerialName("activeDirectory") val activeDirectory: String? = null,
+)
+
+/** FR-274-10a — `GET /service/radarr/{id}`: that server's quality profiles and root folders, as Radarr names them. */
+@Serializable
+data class SeerrRadarrServerDetail(val server: SeerrRadarrServer = SeerrRadarrServer(), val profiles: List<SeerrProfile> = emptyList(), @SerialName("rootFolders") val rootFolders: List<SeerrRootFolder> = emptyList())
+
+@Serializable
+data class SeerrProfile(val id: Int = 0, val name: String = "")
+
+@Serializable
+data class SeerrRootFolder(val id: Int = 0, val path: String = "", @SerialName("freeSpace") val freeSpace: Long? = null)
 
 @Serializable
 data class SeerrGenre(val name: String = "", val id: Int? = null)  // Phase 271 — TMDB's genre id
@@ -374,6 +392,10 @@ class SeerrClient {
         profileId: Int? = null,
         tagIds: List<Int> = emptyList(),
         seerrUserId: Int? = null,
+        // FR-274-10a — the confirm dialog's server, folder and 4K flag; Seerr's own documented `POST /request` fields.
+        serverId: Int? = null,
+        rootFolder: String? = null,
+        is4k: Boolean = false,
     ): SeerrRequestResult? =
         runCatching {
             val payload = buildJsonObject {
@@ -381,6 +403,9 @@ class SeerrClient {
                 put("mediaId", tmdbId)
                 if (mediaType == "tv") put("seasons", "all")
                 profileId?.let { put("profileId", it) }
+                serverId?.let { put("serverId", it) }
+                rootFolder?.takeIf { it.isNotBlank() }?.let { put("rootFolder", it) }
+                if (is4k) put("is4k", true)
                 if (tagIds.isNotEmpty()) put("tags", buildJsonArray { tagIds.forEach { add(it) } })
             }
             val resp = httpPost(base(url) + "/request", apiKey) {
@@ -399,6 +424,23 @@ class SeerrClient {
      * [createRequest] to accept a `userId` on someone else's behalf). Returns null on any failure —
      * callers fall back to an unattributed request rather than blocking on this.
      */
+    /** FR-274-10a — Seerr's Radarr servers, then one server's profiles and folders. Null when Seerr does not answer. */
+    suspend fun radarrServers(url: String, apiKey: String): List<SeerrRadarrServer>? = runCatching {
+        val r = httpGet(base(url) + "/service/radarr", apiKey)
+        if (r.status == HttpStatusCode.OK) r.body<List<SeerrRadarrServer>>() else null
+    }.getOrNull()
+
+    suspend fun radarrServer(url: String, apiKey: String, id: Int): SeerrRadarrServerDetail? = runCatching {
+        val r = httpGet(base(url) + "/service/radarr/$id", apiKey)
+        if (r.status == HttpStatusCode.OK) r.body<SeerrRadarrServerDetail>() else null
+    }.getOrNull()
+
+    /** FR-274-10a — a Seerr user's permission bits (`GET /user/{id}`); null when Seerr does not answer. */
+    suspend fun userPermissions(url: String, apiKey: String, seerrUserId: Int): Int? = runCatching {
+        val r = httpGet(base(url) + "/user/$seerrUserId", apiKey)
+        if (r.status == HttpStatusCode.OK) r.body<SeerrUser>().permissions else null
+    }.getOrNull()
+
     suspend fun resolveUserId(url: String, apiKey: String, jellyfinUserId: String): Int? = runCatching {
         val existing = httpGet(base(url) + "/user/jellyfin/$jellyfinUserId", apiKey)
         if (existing.status == HttpStatusCode.OK) return@runCatching existing.body<SeerrUser>().id

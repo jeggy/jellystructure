@@ -4,6 +4,7 @@ import dev.jellystructure.model.SuggestionDismissRequest
 import dev.jellystructure.suggestions.SuggestionService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
@@ -35,11 +36,20 @@ fun Route.suggestionsRoutes(service: SuggestionService) {
             val who = runCatching { call.attributes[dev.jellystructure.auth.SessionKey].jellyfinUsername }.getOrNull() ?: "admin"
             call.respond(mapOf("queued" to service.queueBuild(SuggestionService.REASON_BY_HAND, who).toString()))
         }
+        /** FR-274-10a — what the confirm dialog offers (Seerr's Radarr servers, profiles, folders; whether the admin may choose). */
+        get("/request-options") {
+            if (!service.available()) return@get call.respond(HttpStatusCode.NotFound)
+            val session = runCatching { call.attributes[dev.jellystructure.auth.SessionKey] }.getOrNull() ?: return@get call.respond(HttpStatusCode.Unauthorized)
+            call.respond(service.requestOptions(session.jellyfinUserId))
+        }
         post("/{tmdbId}/download") {
             if (!service.available()) return@post call.respond(HttpStatusCode.NotFound)
             val id = call.parameters["tmdbId"]?.toIntOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
             val session = runCatching { call.attributes[dev.jellystructure.auth.SessionKey] }.getOrNull() ?: return@post call.respond(HttpStatusCode.Unauthorized)
-            call.respond(service.download(id, session.jellyfinUserId, session.jellyfinUsername))
+            // FR-274-10a — the dialog's choice rides as an optional body; no body keeps the plain request.
+            val body = call.receiveText()
+            val choice = body.takeIf { it.isNotBlank() }?.let { runCatching { kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString(dev.jellystructure.model.SuggestionDownloadRequest.serializer(), it) }.getOrNull() }
+            call.respond(service.download(id, session.jellyfinUserId, session.jellyfinUsername, choice))
         }
         post("/{tmdbId}/dismiss") {
             if (!service.available()) return@post call.respond(HttpStatusCode.NotFound)

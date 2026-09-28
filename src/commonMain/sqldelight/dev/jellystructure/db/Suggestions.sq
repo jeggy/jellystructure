@@ -63,7 +63,10 @@ CREATE TABLE suggestion_request (
     tmdb_id INTEGER NOT NULL PRIMARY KEY,
     requested_for TEXT NOT NULL,
     requested_by TEXT NOT NULL,
-    at INTEGER NOT NULL
+    at INTEGER NOT NULL,
+    -- FR-274-10a — the quality profile and server the dialog chose (Radarr's names), for the tile's history.
+    profile_name TEXT,
+    server_name TEXT
 );
 
 all:
@@ -128,4 +131,4 @@ requests:
 SELECT * FROM suggestion_request ORDER BY at DESC;
 
 putRequest:
-INSERT OR REPLACE INTO suggestion_request(tmdb_id, requested_for, requested_by, at) VALUES (:tmdb_id, :requested_for, :requested_by, :at);
+INSERT OR REPLACE INTO suggestion_request(tmdb_id, requested_for, requested_by, at, profile_name, server_name) VALUES (:tmdb_id, :requested_for, :requested_by, :at, :profile_name, :server_name);

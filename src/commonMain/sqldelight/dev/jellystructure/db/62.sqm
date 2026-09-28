@@ -1,0 +1,5 @@
+-- Phase 274 FR-274-10a — Download asks first: the request row remembers the quality profile and the server it went to.
+-- Must stay in sync with Suggestions.sq.
+
+ALTER TABLE suggestion_request ADD COLUMN profile_name TEXT;
+ALTER TABLE suggestion_request ADD COLUMN server_name TEXT;

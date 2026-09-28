@@ -34,8 +34,15 @@ object SuggestionsApi {
 
     suspend fun rebuild(): Boolean = runCatching { httpClient.post("/api/suggestions/rebuild").status == HttpStatusCode.OK }.getOrDefault(false)
 
-    suspend fun download(tmdbId: Int): SuggestionActionResult? = runCatching {
-        httpClient.post("/api/suggestions/$tmdbId/download").body<SuggestionActionResult>()
+    /** FR-274-10a — the confirm dialog's options; null when the server did not answer. */
+    suspend fun requestOptions(): dev.jellystructure.model.SuggestionRequestOptions? = runCatching {
+        httpClient.get("/api/suggestions/request-options").body<dev.jellystructure.model.SuggestionRequestOptions>()
+    }.getOrNull()
+
+    suspend fun download(tmdbId: Int, choice: dev.jellystructure.model.SuggestionDownloadRequest? = null): SuggestionActionResult? = runCatching {
+        httpClient.post("/api/suggestions/$tmdbId/download") {
+            if (choice != null) { contentType(ContentType.Application.Json); setBody(choice) }
+        }.body<SuggestionActionResult>()
     }.getOrNull()
 
     suspend fun dismiss(tmdbId: Int, reason: String, note: String?): SuggestionActionResult? = runCatching {

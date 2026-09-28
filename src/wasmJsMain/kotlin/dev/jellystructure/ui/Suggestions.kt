@@ -2,7 +2,9 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.api.SuggestionsApi
 import dev.jellystructure.model.SuggestionDismissedDto
+import dev.jellystructure.model.SuggestionDownloadRequest
 import dev.jellystructure.model.SuggestionItemDto
+import dev.jellystructure.model.SuggestionRequestOptions
 import dev.jellystructure.model.SuggestionsPageDto
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -26,6 +28,17 @@ private var sgView = "list"
 private var sgDismissed: List<SuggestionDismissedDto>? = null
 private var sgUndoTimer = 0
 private var sgPolling = false
+/** FR-274-10a — the open confirm dialog, if any: which film, Seerr's options, the picks so far. */
+private var sgDl: SgDl? = null
+private class SgDl(val id: Int) {
+    var opts: SuggestionRequestOptions? = null
+    var loading = true
+    var srv = 0
+    var profileId: Int? = null
+    var folder: String? = null
+    var more = false
+    var sending = false
+}
 
 private val REASONS = listOf(
     Triple("not_interested", "Not interested", "Out for good. What led here counts for a little less next time."),
@@ -150,7 +163,7 @@ private fun sgBecause(it: SuggestionItemDto): String =
 private fun sgMins(m: Int) = if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min"
 
 private fun sgState(it: SuggestionItemDto): String? {
-    val forWhom = it.requestedFor?.let { f -> " · suggested for ${f.esc()}" } ?: ""
+    val forWhom = (it.requestedIn?.let { q -> " · in ${q.esc()}" } ?: "") + (it.requestedFor?.let { f -> " · suggested for ${f.esc()}" } ?: "")
     return when (it.state) {
         "requested" -> """<div class="sg-state"><span class="badge warn">Requested</span><span class="tiny muted">waiting for approval in Seerr$forWhom</span></div>"""
         "approved" -> """<div class="sg-state"><span class="badge info">Approved</span><span class="tiny muted">Radarr is looking for it$forWhom</span></div>"""
@@ -287,16 +300,12 @@ private fun sgClick(t: Element, scope: CoroutineScope) {
         }
         return
     }
+    // FR-274-10a — Download asks first: the dialog, then the request from its own button.
+    if (t.closest("#sg-dlroot") != null) { sgDlClick(t, scope); return }
     t.closest("[data-dl]")?.let { b ->
         if (b.classList.contains("is-off")) return
         val id = b.getAttribute("data-dl")?.toIntOrNull() ?: return
-        b.classList.add("is-off")
-        scope.launch {
-            val r = SuggestionsApi.download(id)
-            sgToast(r?.sentence ?: "The server didn’t answer")
-            r?.item?.let { upd -> sgPage = sgPage?.let { pg -> pg.copy(items = pg.items.map { if (it.tmdbId == id) upd else it }) } }
-            sgRender()
-        }
+        sgDlOpen(scope, id)
         return
     }
     t.closest("[data-no]")?.let { b -> sgPick = b.getAttribute("data-no")?.toIntOrNull(); sgOther = null; sgRender(); return }
@@ -326,5 +335,125 @@ private fun sgDismiss(scope: CoroutineScope, id: Int, reason: String, note: Stri
         sgRender()
         sgUndo(scope, item)
         if (r.sentence.contains("not in Seerr")) sgToast("Not in Seerr’s blocklist yet — it is written when Seerr answers")
+    }
+}
+
+
+// ── FR-274-10a — Download asks first ─────────────────────────────────────────────────────────────────────────
+
+/** Opens the confirm dialog for [id] and asks Seerr for its options (cached server-side for a minute). */
+private fun sgDlOpen(scope: CoroutineScope, id: Int) {
+    val d = SgDl(id); sgDl = d; sgDlRender()
+    scope.launch {
+        val o = SuggestionsApi.requestOptions()
+        if (sgDl !== d) return@launch
+        d.opts = o; d.loading = false
+        o?.servers?.let { servers ->
+            d.srv = servers.indexOfFirst { it.isDefault }.coerceAtLeast(0)
+            sgDlPickDefaults(d)
+        }
+        sgDlRender()
+    }
+}
+
+/** Pre-selects 139's steered profile when the server has it, else the server's active one, else its first; the active folder. */
+private fun sgDlPickDefaults(d: SgDl) {
+    val o = d.opts ?: return
+    val srv = o.servers.getOrNull(d.srv) ?: return
+    d.profileId = o.steeredProfileId?.takeIf { s -> srv.profiles.any { it.id == s } } ?: srv.activeProfileId?.takeIf { a -> srv.profiles.any { it.id == a } } ?: srv.profiles.firstOrNull()?.id
+    d.folder = srv.activeFolder ?: srv.folders.firstOrNull()
+    d.more = false
+}
+
+private fun sgDlClose() { sgDl = null; document.getElementById("sg-dlroot")?.remove() }
+
+private fun sgDlRender() {
+    val d = sgDl ?: run { document.getElementById("sg-dlroot")?.remove(); return }
+    val root = document.getElementById("sg-dlroot") as? HTMLElement ?: (document.createElement("div") as HTMLElement).also { it.id = "sg-dlroot"; document.body?.appendChild(it) }
+    val it = (sgPage?.items.orEmpty()).firstOrNull { x -> x.tmdbId == d.id } ?: run { sgDlClose(); return }
+    val o = d.opts
+    val down = !d.loading && (o == null || !o.seerrOk)
+    val servers = o?.servers.orEmpty()
+    val srv = servers.getOrNull(d.srv)
+    val prof = srv?.profiles?.firstOrNull { p -> p.id == d.profileId } ?: srv?.profiles?.firstOrNull()
+    val fixed = o?.canChoose == false
+    val body = buildString {
+        when {
+            d.loading -> append("""<div class="sg-dls"><div class="lb">Quality</div><div class="sg-skel"><i></i><i></i><i></i></div><div class="tiny muted">Asking Seerr which qualities Radarr has…</div></div>""")
+            down -> append("""<div class="sg-dldown"><span class="dot warn"></span><span>Seerr can’t be reached right now — this waits until it’s back.</span><span class="btn sm ghost" data-dlretry="1">Try again</span></div>""")
+            srv == null -> append("""<div class="sg-dls"><div class="tiny muted">Seerr has no Radarr server set up, so it would use nothing — check Seerr’s settings.</div></div>""")
+            else -> {
+                if (servers.size > 1) {
+                    append("""<div class="sg-dls"><div class="lb">Server <span>Seerr has ${servers.size} Radarr servers</span></div><div class="sg-srvs">""")
+                    servers.forEachIndexed { i, s ->
+                        append("""<button class="sg-srv${if (i == d.srv) " on" else ""}" data-dlsrv="$i"><b>${s.name.esc()}</b>${if (s.is4k) """<span class="sg-4k">4K</span>""" else ""}<span class="tiny muted">${s.profiles.size} qualit${if (s.profiles.size == 1) "y" else "ies"}${if (s.isDefault) " · Seerr’s default" else ""}</span></button>""")
+                    }
+                    append("</div></div>")
+                }
+                append("""<div class="sg-dls"><div class="lb">Quality <span>as Radarr names them${if (servers.size > 1) "" else " · to <b>${srv.name.esc()}</b>"}</span></div>""")
+                fun tag(p: dev.jellystructure.model.SuggestionProfile) = when {
+                    o?.steeredProfileId == p.id -> """<span class="sg-def">your ${o.steeredLabel?.esc() ?: "language"} rule</span>"""
+                    srv.activeProfileId == p.id -> """<span class="sg-def">Seerr’s default</span>"""
+                    else -> ""
+                }
+                if (fixed || srv.profiles.size <= 1) {
+                    append("""<div class="sg-fact"><b>${prof?.name?.esc() ?: "Seerr’s default"}</b>${prof?.let { tag(it) } ?: ""}</div>""")
+                    append("""<div class="tiny muted" style="margin-top:6px;line-height:1.45">${if (fixed) "Your Seerr user may not choose a quality, so Seerr uses its default. Seerr’s <i>Advanced requests</i> permission lets it choose." else "This is the only quality Radarr has on ${srv.name.esc()}."}</div>""")
+                } else {
+                    append("""<div class="sg-opts" role="radiogroup">""")
+                    srv.profiles.forEach { p -> append("""<button class="sg-opt${if (p.id == prof?.id) " on" else ""}" role="radio" aria-checked="${p.id == prof?.id}" data-dlprof="${p.id}"><i></i><b>${p.name.esc()}</b>${tag(p)}</button>""") }
+                    append("</div>")
+                }
+                append("</div>")
+                if (srv.folders.size > 1 && !fixed) {
+                    val f = d.folder ?: srv.folders.first()
+                    append("""<div class="sg-dls"><button class="sg-morebtn" data-dlmore="1">${if (d.more) "▾" else "▸"} More <span class="tiny muted">folder · ${f.esc()}</span></button>""")
+                    if (d.more) {
+                        append("""<div class="sg-opts" style="margin-top:8px">""")
+                        srv.folders.forEach { x -> append("""<button class="sg-opt${if (x == f) " on" else ""}" data-dlfold="${x.esc()}"><i></i><b class="mono">${x.esc()}</b>${if (x == srv.activeFolder) """<span class="sg-def">Seerr’s default</span>""" else ""}</button>""") }
+                        append("</div>")
+                    }
+                    append("</div>")
+                }
+            }
+        }
+        val who = it.because.firstOrNull()?.viewer ?: "the household"
+        append("""<div class="sg-dlnote"><span class="lb">Kept with the request</span><span>Suggested for ${who.esc()}</span><span class="tiny muted">Seerr has no note field, so this stays on this page (under the tile and in Dismissed / Requested).</span></div>""")
+    }
+    val primary = when { d.sending -> "Sending…"; d.loading -> "Asking Seerr…"; down || srv == null -> "Download"; else -> "Download in ${prof?.name?.esc() ?: "Seerr’s default"}${if (srv.is4k) " · 4K" else ""}" }
+    val disabled = d.loading || down || srv == null || d.sending
+    val poster = it.poster?.let { p -> "background:url('https://image.tmdb.org/t/p/w185$p') center/cover" } ?: "background:linear-gradient(160deg, hsl(${(it.tmdbId * 37) % 360} 40% 30%), hsl(${(it.tmdbId * 37 + 30) % 360} 50% 14%))"
+    root.innerHTML = """<div class="sg-dlb as-dialog" data-dlback="1"><div class="sg-dl" role="dialog" aria-modal="true" aria-label="Download ${it.title.esc()}">
+        <div class="sg-grab"></div>
+        <div class="sg-dlh"><div class="sg-post" style="width:64px;$poster"><span>${it.title.esc()}</span></div>
+        <div style="min-width:0"><div class="sg-t">${it.title.esc()}<span class="y">${it.year ?: ""}</span>${it.cert?.let { c -> """<span class="sg-cert" style="margin-left:8px">${c.esc()}</span>""" } ?: ""}</div><div class="sg-why" style="margin-top:5px">${sgBecause(it)}</div></div></div>
+        $body
+        <div class="sg-dlf">${if (down) """<span class="tiny muted" style="flex:1">Nothing is sent while Seerr is away.</span>""" else """<span style="flex:1"></span>"""}<span class="btn ghost" data-dlcancel="1">Cancel</span><span class="btn primary" data-dlgo="1"${if (disabled) """ aria-disabled="true" style="opacity:.55"""" else ""}>$primary</span></div>
+        </div></div>"""
+    if (!disabled) (root.querySelector("[data-dlgo]") as? HTMLElement)?.focus()
+}
+
+private fun sgDlClick(t: Element, scope: CoroutineScope) {
+    val d = sgDl ?: return
+    if (t.closest("[data-dlcancel]") != null || (t.closest("[data-dlback]") != null && t.closest(".sg-dl") == null)) { sgDlClose(); return }
+    t.closest("[data-dlsrv]")?.let { b -> d.srv = b.getAttribute("data-dlsrv")?.toIntOrNull() ?: 0; sgDlPickDefaults(d); sgDlRender(); return }
+    t.closest("[data-dlprof]")?.let { b -> d.profileId = b.getAttribute("data-dlprof")?.toIntOrNull(); sgDlRender(); return }
+    t.closest("[data-dlfold]")?.let { b -> d.folder = b.getAttribute("data-dlfold"); d.more = false; sgDlRender(); return }
+    if (t.closest("[data-dlmore]") != null) { d.more = !d.more; sgDlRender(); return }
+    if (t.closest("[data-dlretry]") != null) { sgDlOpen(scope, d.id); return }
+    if (t.closest("[data-dlgo]") != null) {
+        val o = d.opts ?: return
+        val srv = o.servers.getOrNull(d.srv) ?: return
+        if (d.loading || d.sending || !o.seerrOk) return
+        d.sending = true; sgDlRender()
+        val id = d.id
+        val choice = SuggestionDownloadRequest(serverId = srv.id, profileId = if (o.canChoose) d.profileId else null, rootFolder = if (o.canChoose && srv.folders.size > 1) d.folder else null)
+        scope.launch {
+            val r = SuggestionsApi.download(id, choice)
+            if (sgDl === d) sgDlClose()
+            sgToast(r?.sentence ?: "The server didn’t answer")
+            r?.item?.let { upd -> sgPage = sgPage?.let { pg -> pg.copy(items = pg.items.map { if (it.tmdbId == id) upd else it }) } }
+            sgRender()
+        }
     }
 }

@@ -262,7 +262,20 @@ class SeerrDiscoverService(
      * [requestLanguageService] wired, or an empty catalog) resolves to `null` and reproduces exactly
      * today's plain request.
      */
-    suspend fun request(userId: String, isAdmin: Boolean, mediaType: String, tmdbId: Int, title: String, language: String? = null, isKids: Boolean = false): AcquisitionRecord {
+    /** FR-274-10a — the admin's explicit choice from the confirm dialog: an explicit [profileId] wins over 139's steering. */
+    data class RequestChoice(val serverId: Int? = null, val profileId: Int? = null, val rootFolder: String? = null, val is4k: Boolean = false)
+
+    /** FR-274-10a — the profile 139's language steering would apply for [userId] on a film, with the rule's label, or null. */
+    suspend fun steeredProfile(userId: String): Pair<Int, String>? {
+        val langSvc = requestLanguageService ?: return null
+        val viewerDefault = raviloConfigService.getBehaviourOverlay(userId).requestLanguage
+        val id = langSvc.resolveIntentId(null, viewerDefault, false) ?: return null
+        val intent = langSvc.intent(id) ?: return null
+        val (profileId, _) = langSvc.profileFor(id, MediaKind.MOVIE)
+        return profileId?.let { it to intent.label }
+    }
+
+    suspend fun request(userId: String, isAdmin: Boolean, mediaType: String, tmdbId: Int, title: String, language: String? = null, isKids: Boolean = false, choice: RequestChoice? = null): AcquisitionRecord {
         val mediaKind = if (mediaType == "tv") MediaKind.SERIES else MediaKind.MOVIE
         val itemKey = "tmdb:$tmdbId"
         val d = raviloConfigService.getConfig(userId).discover
@@ -276,13 +289,15 @@ class SeerrDiscoverService(
         val viewerDefault = raviloConfigService.getBehaviourOverlay(userId).requestLanguage
         val resolvedLanguage = langSvc?.resolveIntentId(language, viewerDefault, isKids)
         val resolvedIntent = resolvedLanguage?.let { langSvc?.intent(it) }
-        val (profileId, tagIds) = if (langSvc != null && resolvedLanguage != null) langSvc.profileFor(resolvedLanguage, mediaKind) else (null to emptyList())
+        val (steeredProfileId, tagIds) = if (langSvc != null && resolvedLanguage != null) langSvc.profileFor(resolvedLanguage, mediaKind) else (null to emptyList())
+        // FR-274-10a — the dialog's explicit profile wins; without one, 139's steering stands as before.
+        val profileId = choice?.profileId ?: steeredProfileId
         // Bug fix: a steering intent (non-blank `match`, e.g. "Dansk") that couldn't be resolved to a
         // real scored *arr profile must reject the request outright — proceeding with profileId=null
         // would let Seerr fall back to its own default profile, silently enforcing no language
         // preference at all (see RequestLanguageService.profileFor's doc for the incident this fixes:
         // "Mood Swing 2" requested as Dansk grabbed a plain English release with no error anywhere).
-        if (resolvedIntent != null && resolvedIntent.match.isNotBlank() && profileId == null) {
+        if (choice?.profileId == null && resolvedIntent != null && resolvedIntent.match.isNotBlank() && profileId == null) {
             return AcquisitionRecord(
                 itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title,
                 reason = "\"${resolvedIntent.label}\" isn't set up in Radarr/Sonarr yet — ask the admin to check Settings ▸ Download tools ▸ Request languages",
@@ -296,7 +311,8 @@ class SeerrDiscoverService(
         // rather than blocking the viewer.
         val seerrUserId = seerrClient.resolveUserId(seerr.url, seerr.apiKey, userId)
         if (seerrUserId == null) Logger.warn("Seerr: couldn't resolve/provision a Seerr account for Jellyfin user $userId — request will be unattributed", "seerr")
-        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds, seerrUserId)
+        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds, seerrUserId,
+            serverId = choice?.serverId, rootFolder = choice?.rootFolder, is4k = choice?.is4k == true)
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
         // Bug fix: this used to save unconditionally *before* createRequest, so a failed Seerr call
         // (network hiccup, Seerr-side rejection, etc.) still left a local "you requested this" row —
