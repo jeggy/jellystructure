@@ -1,7 +1,6 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
-import dev.jellystructure.callOpenAttentionDock
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
@@ -38,67 +37,20 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         </div>
         <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper. <span id="dash-next-run" class="badge" style="margin-left:6px"></span></p>
 
-        <!-- Phase 221 (FR-221-3/4) — operator findings (webhook failing, deprecated *arr route); empty = silent. -->
-        <div id="dash-findings" style="margin-bottom:14px"></div>
-        <!-- Phase 257 — every Jellyfin settings advisor finding, most urgent first; empty = silent. -->
-        <div id="dash-advisor" style="margin-bottom:14px"></div>
-        <!-- Phase 273 — Bazarr settings that work against subtitles fitting their video; empty = silent. -->
-        <div id="dash-bazarr-advisor" style="margin-bottom:14px"></div>
         <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
           <div class="stat"><div class="k">TV episodes</div><div class="v" id="stat-tv">—</div></div>
-          <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Items needing attention</div><div class="v" id="stat-issues">—</div></div>
+          <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Rows needing you</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—%</div></div>
           <div class="stat" id="stat-music-cell" style="cursor:pointer;display:none" title="Open the Music kind"><div class="k">♪ Music</div><div class="v" id="stat-music">—</div><div class="tiny muted" id="stat-music-sub"></div></div>
           <div class="stat" id="stat-audiobooks-cell" style="cursor:pointer;display:none" title="Open the Audiobooks kind"><div class="k">Audiobooks</div><div class="v" id="stat-audiobooks">—</div><div class="tiny muted" id="stat-audiobooks-sub"></div></div>
         </div>
-
-        <div class="row" style="margin-top:18px;align-items:stretch;gap:18px;flex-wrap:wrap">
-          <div class="card fill" id="attention-queue" style="min-width:0">
-            <div class="row center" style="gap:8px">
-              <h3 style="margin:0;font-size:1.1rem">Needs your attention</h3>
-              <span class="spacer"></span>
-              <span class="badge bad" id="attention-count" style="display:none"></span>
-              <button id="reopen-dock" class="btn sm">Show attention dock</button>
-              <button id="dash-triage" class="btn sm">Browse all →</button>
-            </div>
-            <div class="tiny muted" style="margin:6px 0 0">Every flagged item, grouped by issue type. Click a type to open Library filtered to just those; or step through them one by one from the floating dock, bottom-right. Closed the dock? <b>Show attention dock</b> brings it back.</div>
-            <hr class="dash" style="margin:11px 0">
-            <div id="attention-breakdown"><span class="muted tiny">Loading…</span></div>
-            <div class="tiny muted" style="margin-top:10px"><a id="dash-browse-all-footer" style="cursor:pointer;text-decoration:underline">Browse all flagged items in Library →</a></div>
-          </div>
-          <div class="col dash-sidecol" style="width:320px;flex:none;gap:14px">
-            <div class="card">
-              <h3 style="margin:0 0 8px;font-size:1.05rem">Recently processed</h3>
-              <div id="recent-list" class="tiny" style="line-height:2"><span class="muted">Loading…</span></div>
-            </div>
-            <div class="card" id="dash-subtitles-card" style="display:none">
-              <div class="row center"><h3 style="margin:0;font-size:1.05rem">Subtitles</h3><span class="badge info" style="margin-left:8px;font-size:.66rem;">Bazarr</span></div>
-              <div id="dash-subtitles-body" class="tiny" style="line-height:1.8;margin-top:6px"><span class="muted">Loading…</span></div>
-              <a href="#/subtitles" class="tiny" style="display:inline-block;margin-top:6px;">Open Subtitles →</a>
-            </div>
-            <div class="card" id="dash-suggestions-card" style="display:none">
-              <div class="row center"><h3 style="margin:0;font-size:1.05rem">Suggestions</h3><span class="badge info" style="margin-left:8px;font-size:.66rem;">Seerr</span></div>
-              <div id="dash-suggestions-body" class="tiny" style="line-height:1.8;margin-top:6px"></div>
-              <a href="#/suggestions" class="tiny" style="display:inline-block;margin-top:6px;">Open Suggestions →</a>
-            </div>
-            <div class="card">
-              <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
-              <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap">
-                <button id="qa-triage" class="chip">View items needing attention</button>
-                <button id="qa-track-order" class="chip">Manage tracks</button>
-                <button id="qa-artwork" class="chip">Re-pull artwork</button>
-                <button id="qa-artwork-repair" class="chip" title="One-time sweep: removes any on-disk artwork file that isn't actually a valid image (e.g. a CDN error page saved before download validation existed), so the next artwork fetch can replace it">Repair corrupt artwork</button>
-                <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
-                <button id="qa-jf-refresh" class="chip" title="Tell Jellyfin to rescan its own library (does not change Jellystructure data)">Jellyfin: rescan its library</button>
-                <button id="qa-activity" class="chip">View activity</button>
-              </div>
-              <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
-            </div>
-          </div>
-        </div>
+        <!-- Phase 285 — one overview of what could be fixed: the headline, the domain chips, since your last visit, the list. -->
+        <div class="ov-top" id="ov-head"></div>
+        <div id="ov-since"></div>
+        <div id="ov-body"><div class="muted tiny" style="margin-top:14px">Loading…</div></div>
     """.trimIndent()
 
     document.getElementById("dash-browse")?.addEventListener("click") {
@@ -122,68 +74,11 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         }
     }
     document.addEventListener("click") { (document.getElementById("dash-scan-split") as? HTMLElement)?.classList?.remove("open") }
-    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library?filter=attention") }
-    document.getElementById("dash-browse-all-footer")?.addEventListener("click") { App.navigate("/library?filter=attention") }
-    document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/library") }
-    document.getElementById("reopen-dock")?.addEventListener("click") { callOpenAttentionDock() }
-    document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/library") }
-    document.getElementById("qa-track-order")?.addEventListener("click") { App.navigate("/library") }
-    document.getElementById("qa-activity")?.addEventListener("click") { App.navigate("/activity") }
-
-    document.getElementById("qa-artwork")?.addEventListener("click") {
-        scope.launch {
-            setQaFeedback("Fetching artwork for all items…", "badge")
-            val ok = MediaApi.batchFetchArtwork()
-            setQaFeedback(
-                if (ok) "Artwork fetch started in background ✓" else "Failed to start artwork fetch",
-                if (ok) "badge ok" else "badge bad"
-            )
-        }
-    }
-
-    document.getElementById("qa-artwork-repair")?.addEventListener("click") {
-        scope.launch {
-            setQaFeedback("Checking on-disk artwork for corrupt files…", "badge")
-            val ok = MediaApi.batchArtworkRepair()
-            setQaFeedback(
-                if (ok) "Artwork repair sweep started — check Activity for a per-item History entry on anything removed ✓" else "Failed to start the artwork repair sweep",
-                if (ok) "badge ok" else "badge bad"
-            )
-        }
-    }
-
-    document.getElementById("qa-jf-push")?.addEventListener("click") {
-        scope.launch {
-            setQaFeedback("Writing NFOs and pushing metadata to Jellyfin…", "badge")
-            val ok = MediaApi.batchJellyfinPush()
-            setQaFeedback(
-                if (ok) "NFO push started — Jellyfin will refresh all items ✓" else "Failed — check Jellyfin connection in Settings",
-                if (ok) "badge ok" else "badge bad"
-            )
-        }
-    }
-
-    document.getElementById("qa-jf-refresh")?.addEventListener("click") {
-        scope.launch {
-            setQaFeedback("Sending library scan signal to Jellyfin…", "badge")
-            val ok = MediaApi.jellyfinRefreshAll()
-            setQaFeedback(
-                if (ok) "Jellyfin rescan triggered ✓" else "Failed — check Jellyfin connection in Settings",
-                if (ok) "badge ok" else "badge bad"
-            )
-        }
-    }
+    document.getElementById("stat-issues-cell")?.addEventListener("click") { (document.getElementById("ov-body") as? HTMLElement)?.scrollIntoView() }
 
     scope.launch {
         loadDashboardStats()
-
-        loadDashFindings()
-        loadDashAdvisor(scope)
-        loadAttentionBreakdown()
-        loadRecentActivity()
-        loadDashSubtitlesCard(scope)
-        loadDashSuggestionsCard()
-        loadDashBazarrAdvisor(scope)
+        loadOverview(scope)
         val status = MediaApi.scanStatus()
         when (status?.status) {
             "RUNNING" -> {
@@ -206,14 +101,6 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         }
     }
 }
-
-/** Phase 221 — the same findings Settings → Notifications shows, on the Dashboard. */
-private suspend fun loadDashFindings() {
-    val el = document.getElementById("dash-findings") as? HTMLElement ?: return
-    val st = dev.jellystructure.api.ConfigApi.webhookStatus() ?: return
-    el.innerHTML = st.findings.joinToString("") { advisorFindingHtml(it) }
-}
-
 /**
  * Phase 257 — the Jellyfin settings advisor on the page an admin actually lands on. Every finding the
  * Settings advisor shows (FR-257-1), through the same [advisorFindingHtml]; nothing at all when there is
@@ -222,61 +109,6 @@ private suspend fun loadDashFindings() {
  * each library's rows together — then folded to the first finding, the rest behind one *+N more*.
  * [keepOpen] is only ever true for a Re-check reload, so the list does not close under the admin.
  */
-private suspend fun loadDashAdvisor(scope: CoroutineScope, keepOpen: Boolean = false) {
-    val el = document.getElementById("dash-advisor") as? HTMLElement ?: return
-    val result = dev.jellystructure.api.ConfigApi.getJellyfinAdvisor()
-    if (result == null || !result.reachable) { el.innerHTML = ""; return }
-    val rank = mapOf("critical" to 0, "warning" to 1, "info" to 2)
-    // Index order is server-wide (already severity-sorted by the backend) then each library in
-    // Jellyfin's order, so a stable sort on severity alone yields the whole of FR-257-2's order.
-    val all = result.serverWide.map { null as String? to it } +
-        result.perLibrary.flatMap { sec -> sec.findings.map { sec.libraryName to it } }
-    if (all.isEmpty()) { el.innerHTML = ""; return }
-    val ordered = all.withIndex().sortedWith(compareBy({ rank[it.value.second.severity] ?: 1 }, { it.index })).map { it.value }
-    fun row(lib: String?, f: dev.jellystructure.api.AdvisorFinding): String =
-        (if (lib != null) """<div class="tiny muted" style="margin:10px 0 -4px">Library · ${lib.esc()}</div>""" else "") + advisorFindingHtml(f)
-    val asks = ordered.filter { it.second.severity != "info" }
-    val critical = asks.count { it.second.severity == "critical" }
-    val first = ordered.first()
-    val (restNotes, restAsks) = ordered.drop(1).partition { it.second.severity == "info" }
-    val moreLabel = when {
-        restAsks.isEmpty() -> "+${restNotes.size} more for information"
-        restNotes.isEmpty() -> "+${restAsks.size} more"
-        else -> "+${restAsks.size} more · ${restNotes.size} for information"
-    }
-    val lessLabel = "− Show fewer"
-    el.innerHTML = """
-    <div class="card" style="padding:14px 16px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <h3 style="font-size:1rem;margin:0">Jellyfin settings advisor</h3>
-        ${if (asks.isNotEmpty()) """<span class="badge ${if (critical > 0) "bad" else "warn"}" style="font-size:.72rem">${asks.size} to change${if (critical > 0) " · $critical critical" else ""}</span>""" else ""}
-        <span class="spacer" style="flex:1"></span>
-        <a class="btn sm ghost" href="#/settings?tab=libraries">Open the advisor in Settings →</a>
-      </div>
-      <p class="hint" style="margin:6px 0 0">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
-      ${row(first.first, first.second)}
-      ${if (restAsks.isEmpty() && restNotes.isEmpty()) "" else """
-      <div id="dash-advisor-rest" style="display:${if (keepOpen) "block" else "none"}">
-        ${restAsks.joinToString("") { row(it.first, it.second) }}
-        ${if (restNotes.isNotEmpty()) """<div class="tiny muted" style="margin:16px 0 -2px;font-weight:600">For information</div>""" + restNotes.joinToString("") { row(it.first, it.second) } else ""}
-      </div>
-      <button class="btn sm ghost" id="dash-advisor-more" aria-controls="dash-advisor-rest" aria-expanded="$keepOpen" style="margin-top:10px">${if (keepOpen) lessLabel else moreLabel}</button>"""}
-    </div>"""
-    val rest = document.getElementById("dash-advisor-rest") as? HTMLElement
-    val more = document.getElementById("dash-advisor-more") as? HTMLElement
-    if (rest != null && more != null) {
-        more.addEventListener("click", {
-            val open = rest.style.display == "none"
-            rest.style.display = if (open) "block" else "none"
-            more.textContent = if (open) lessLabel else moreLabel
-            more.setAttribute("aria-expanded", open.toString())
-        })
-    }
-    wireAdvisorActions(ordered.map { it.second }, scope) {
-        loadDashAdvisor(scope, keepOpen = (document.getElementById("dash-advisor-rest") as? HTMLElement)?.style?.display == "block")
-    }
-}
-
 /** Phase 278 (FR-278-11) — the Music tile, only when a music library is mapped. */
 private suspend fun loadMusicTile() {
     val st = dev.jellystructure.api.MusicApi.status() ?: return
@@ -311,126 +143,10 @@ private suspend fun loadDashboardStats() {
     // Phase 117: "Items needing attention" now reads the same triage total the breakdown below sums —
     // it used to be store.totalIssueCount() (an untagged-only SQL sum), a different, smaller number.
 }
-
-/** Phase 117, redesigned Phase 146: a two-column grid, one cell per triage issue type — every type,
- *  always, including zeros — each cell fully clickable through to the Library pre-filtered to that
- *  issue. Zero-count cells are dimmed but stay clickable (an empty filtered Library is still a valid,
- *  honest result). Mirrors the Triage dock's phrasing (Shell.kt triageSubline). */
-private suspend fun loadAttentionBreakdown() {
-    val count = MediaApi.getTriageCount()
-    val el = document.getElementById("attention-breakdown") as? HTMLElement ?: return
-    if (count == null || count.types.isEmpty()) {
-        el.innerHTML = """<span class="muted tiny">Couldn't load the issue breakdown.</span>"""
-        return
-    }
-    (document.getElementById("stat-issues") as? HTMLElement)?.textContent = count.total.toString()
-    (document.getElementById("attention-count") as? HTMLElement)?.let {
-        it.textContent = "${count.total} items"
-        it.style.display = ""
-    }
-    val byKey = count.types.associateBy { it.key }
-    // Phase 146: fixed, severity-grouped order + a bad/warn severity per type — neither exists on
-    // TriageTypeCount, so both are authored here. Any type not in this list (forward-compat with a
-    // future triage type) renders after these, defaulting to "bad".
-    val ordered = ATTENTION_ROW_ORDER.mapNotNull { (key, sev) -> byKey[key]?.let { it to sev } } +
-        count.types.filter { it.key !in ATTENTION_ROW_ORDER.map { o -> o.first } }.map { it to "bad" }
-    el.innerHTML = buildString {
-        append("""<div class="attn-breakdown">""")
-        for ((t, severity) in ordered) {
-            val zero = t.instances == 0
-            val countLabel = if (t.instances != t.titles) "${t.instances} (${t.titles} title${if (t.titles != 1) "s" else ""})" else "${t.instances}"
-            val badgeCls = if (zero || severity == "info") "badge" else "badge $severity"
-            append("""<div class="abk${if (zero) " zero" else ""}"${if (severity == "info" && !zero) """ style="opacity:.65"""" else ""} data-issue-filter="${t.key}">""")
-            append("""<span class="abk-l"><b>${t.label.esc()}</b><span class="d">${t.description.esc()}</span></span>""")
-            append("""<span class="$badgeCls">${if (zero) "✓ 0" else countLabel}</span>""")
-            append("</div>")
-        }
-        append("</div>")
-    }
-    el.querySelectorAll("[data-issue-filter]").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val row = nodes.item(i) as? HTMLElement ?: continue
-            row.addEventListener("click") {
-                val key = row.getAttribute("data-issue-filter") ?: return@addEventListener
-                // Phase 163: these two now open the segment editor's cross-library sheet, not Library —
-                // Library has nothing to show for them (no per-episode row, no bulk action).
-                when (key) {
-                    "segments_lowconf" -> App.navigate("/segments?filter=lowconf")
-                    "no_segments" -> App.navigate("/segments?filter=none")
-                    // Phase 278 (FR-278-11) — music's entries open the Music kind, filtered.
-                    "music_needs_match" -> App.navigate("/library?kind=music&f.match=needs_you,unmatched")
-                    // Phase 283 — the flags open the Music kind on the Check facet.
-                    "music_shared_album" -> App.navigate("/library?kind=music&f.check=shared_album")
-                    "music_folder_disagrees" -> App.navigate("/library?kind=music&f.check=folder_disagrees")
-                    "music_no_cover" -> App.navigate("/library?kind=music&f.match=matched,locked&f.cover=missing")
-                    "music_no_picture" -> App.navigate("/library?kind=music&mview=artists&f.artimg=missing")
-                    "music_reencodes" -> App.navigate("/library?kind=music&mview=songs&f.format=WMA")
-                    // Phase 280 (FR-280-7) — audiobooks' entries open the Audiobooks kind, filtered.
-                    "audiobooks_missing_part" -> App.navigate("/library?kind=audiobooks&f.needs=missing_part")
-                    "audiobooks_two_in_one" -> App.navigate("/library?kind=audiobooks&f.needs=two_books")
-                    "audiobooks_no_cover" -> App.navigate("/library?kind=audiobooks&f.cover=missing")
-                    "audiobooks_no_narrator" -> App.navigate("/library?kind=audiobooks&f.narrator=missing")
-                    else -> App.navigate("/library?filter=$key")
-                }
-            }
-        }
-    }
-}
-
 // Phase 146 §A4: fixed, severity-grouped row order for the attention breakdown (not alphabetical, not
 // count-sorted — a stable position lets an operator build muscle memory). `missing_artwork` is the 10th
 // triage type the design mockup omitted; kept as a bad-severity cell next to `missing_still` (same class
 // of "missing visual asset" issue) per the dev-review addendum's recommendation.
-private val ATTENTION_ROW_ORDER = listOf(
-    "untagged" to "bad",
-    "missing_still" to "bad",
-    "missing_artwork" to "bad",
-    "cascade_mismatch" to "warn",
-    "language_mix" to "warn",
-    "multi_default" to "warn",
-    "cover_as_video" to "bad",
-    "segments_lowconf" to "warn",
-    "no_segments" to "warn",
-    "zero_audio" to "bad",
-    "duplicate" to "bad",
-    // Bug fix (Ravilo auto-play-next loop): duplicate episode FILES — same severity class as a duplicate
-    // library entry, and kept next to it: both are "one thing exists twice" problems.
-    "duplicate_episode" to "bad",
-    "missing_from_source" to "bad",
-    "mkv_track_layout" to "bad",  // Phase 201 amendment (2026-09-13) — unplayable in Ravilo
-    "file_damage" to "bad",  // Phase 254 — damaged past the first Cluster
-    "track_ends_early" to "bad",  // Phase 255 — silence or black from that point on
-    "duration_header_wrong" to "warn",  // Phase 255 — never marked watched, wrong length shown
-    // Phase 278 — music, last: none of it stops a film from playing.
-    "music_shared_album" to "warn",  // Phase 283
-    "music_folder_disagrees" to "warn",
-    "music_needs_match" to "warn",
-    "music_no_cover" to "warn",
-    "music_no_picture" to "warn",
-    "music_reencodes" to "warn",
-    // Phase 280 — audiobooks, after music; *no narrator* is information only (dimmed, never a count to clear).
-    "audiobooks_missing_part" to "warn",
-    "audiobooks_two_in_one" to "warn",
-    "audiobooks_no_cover" to "warn",
-    "audiobooks_no_narrator" to "info",
-)
-
-private suspend fun loadRecentActivity() {
-    val entries = MediaApi.getRecentActivity()
-    val el = document.getElementById("recent-list") as? HTMLElement ?: return
-    if (entries.isEmpty()) {
-        el.innerHTML = """<span class="muted">No activity yet — run a scan to get started.</span>"""
-        return
-    }
-    el.innerHTML = entries.take(6).joinToString("") { entry ->
-        val bad = entry.action.contains("fail", ignoreCase = true) ||
-                  entry.action.contains("error", ignoreCase = true) ||
-                  entry.action.contains("no_match", ignoreCase = true)
-        val dot = if (bad) "bad" else "ok"
-        """<div class="row center" style="gap:6px"><span class="dot $dot"></span> ${entry.detail.take(52).esc()}</div>"""
-    }
-}
-
 private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean, full: Boolean = false, skipSteps: List<String> = emptyList()) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
@@ -524,12 +240,6 @@ private fun wireCancelBtn(scope: CoroutineScope) {
         }
     }
 }
-
-private fun setQaFeedback(msg: String, cls: String = "badge") {
-    (document.getElementById("qa-feedback") as? HTMLElement)?.innerHTML =
-        """<span class="$cls" style="font-size:.75rem">$msg</span>"""
-}
-
 /** The split button's caret + "full rescan" menu item aren't `<button>`s, so [HTMLButtonElement.disabled]
  *  doesn't reach them — set/clear the `disabled` attribute by hand so the click handlers' own
  *  `hasAttribute("disabled")` guard (matching the pipe-run split button's pattern) actually blocks them
@@ -595,59 +305,9 @@ private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
 }
-
-/** Phase 274 (FR-274-14) — *{n} films waiting · {n} new since {weekday}* and the two groups with the most room;
- *  absent without Seerr, and until a first build. */
-private suspend fun loadDashSuggestionsCard() {
-    val card = document.getElementById("dash-suggestions-card") as? HTMLElement ?: return
-    val s = dev.jellystructure.api.SuggestionsApi.summary() ?: run { card.style.display = "none"; return }
-    card.style.display = "block"
-    val since = s.since?.let { " · ${s.newCount} new since ${dev.jellystructure.formatWeekdayClock(it.toString()).substringBefore(' ')}" } ?: ""
-    val groups = s.topClusters.takeIf { it.isNotEmpty() }?.let { "<div class=\"muted\">Most room: ${it.joinToString(" and ") { g -> g.esc() }}</div>" } ?: ""
-    document.getElementById("dash-suggestions-body")?.innerHTML = "<div><b>${s.waiting}</b> film${if (s.waiting == 1) "" else "s"} waiting$since</div>$groups"
-}
-
 // Phase 157 (FR-BZ1-3) — first external-service status card on the Dashboard (no prior Radarr/Sonarr/
 // Seerr card existed here, per the addendum). Hidden entirely when Bazarr is off, same as every other
 // subtitle surface.
-private suspend fun loadDashSubtitlesCard(scope: CoroutineScope) {
-    val card = document.getElementById("dash-subtitles-card") as? HTMLElement ?: return
-    val overview = dev.jellystructure.api.BazarrApi.overview()
-    if (overview == null || !overview.connected) { card.style.display = "none"; return }
-    card.style.display = "block"
-    val latest = dev.jellystructure.api.BazarrApi.history(0, 1).firstOrNull()
-    val latestLine = latest?.let { "Latest: ${(it.language ?: "").uppercase()} ${(it.provider ?: "")}" } ?: "No recent activity"
-    // Phase 273 (FR-273-21) — do the subtitles fit their video, what waits for the admin, what it cost today.
-    val sum = dev.jellystructure.api.SubtitleCheckApi.summary()
-    val checkHtml = if (sum == null) "" else {
-        val c = sum.counts
-        val fit = c["in_sync"] ?: 0
-        val off = (c["off"] ?: 0) + (c["off_mid_file"] ?: 0)
-        val wrong = (c["not_this_video"] ?: 0) + (c["other_episode"] ?: 0) + (c["longer_video"] ?: 0)
-        val unknown = c["cant_tell"] ?: 0
-        val mode = when (sum.mode) { "fix" -> "Fix it"; "ask" -> "Ask me first"; else -> "Only report" }
-        val hook = sum.hookLastCalledAt?.let { "Bazarr last called ${dev.jellystructure.formatStoredTs((it / 1000).toString())}" } ?: "Bazarr has not called yet"
-        """
-        <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
-          <div><b>Fit their video:</b> $fit in sync · $off out of sync · $wrong not for their video · $unknown can't tell</div>
-          <div class="muted">${sum.notOffered} not offered to viewers · $mode · ${sum.downloadsToday}/${sum.dailyBudget} downloads today · $hook</div>
-          ${if (sum.waiting.isEmpty()) "" else """<div style="margin-top:8px;font-weight:600">Needs your OK (${sum.waiting.size})</div>""" +
-            sum.waiting.take(8).joinToString("") { w -> """
-            <div class="row center" style="gap:6px;margin-top:4px;flex-wrap:wrap">
-              <span style="flex:1;min-width:0;overflow-wrap:anywhere">${(w.sidecarName ?: "").esc()} — ${w.detail.esc()}</span>
-              <button class="btn sm" data-subok="${w.id}">Do it</button><button class="btn sm ghost" data-subno="${w.id}">Leave it</button>
-            </div>""" }}
-        </div>"""
-    }
-    document.getElementById("dash-subtitles-body")?.innerHTML = """
-        <div>Wanted: <b>${overview.wantedMovies + overview.wantedEpisodes}</b></div>
-        <div>Providers: <b>${overview.providersHealthy}/${overview.providersTotal}</b> healthy</div>
-        <div class="muted">${latestLine}</div>
-        $checkHtml
-    """.trimIndent()
-    wireSubtitleDecisions(card, scope) { loadDashSubtitlesCard(scope) }
-}
-
 /** Phase 273 (FR-273-16/20) — *Do it* / *Leave it* on a waiting proposal; shared by the Dashboard and the title page. */
 internal fun wireSubtitleDecisions(root: HTMLElement, scope: CoroutineScope, reload: suspend () -> Unit) {
     val oks = root.querySelectorAll("[data-subok]")
@@ -669,23 +329,152 @@ internal fun wireSubtitleDecisions(root: HTMLElement, scope: CoroutineScope, rel
     }
 }
 
-/** Phase 273 (FR-273-18) — the Bazarr settings advisor on the Dashboard, beside the Jellyfin one; silent when Bazarr
- *  is right, not connected or unreachable. */
-private suspend fun loadDashBazarrAdvisor(scope: CoroutineScope) {
-    val el = document.getElementById("dash-bazarr-advisor") as? HTMLElement ?: return
-    val advice = dev.jellystructure.api.SubtitleCheckApi.advice()
-    if (advice == null || !advice.reachable || advice.findings.isEmpty()) { el.innerHTML = ""; return }
-    val asks = advice.findings.count { it.severity != "info" }
-    el.innerHTML = """
-    <div class="card" style="padding:14px 16px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <h3 style="font-size:1rem;margin:0">Bazarr settings advisor</h3>
-        ${if (asks > 0) """<span class="badge warn" style="font-size:.72rem">$asks to change</span>""" else ""}
-        <span class="spacer" style="flex:1"></span>
-        <a class="btn sm ghost" href="#/settings?tab=downloads">Open the Bazarr card →</a>
-      </div>
-      <p class="hint" style="margin:6px 0 0">Settings in Bazarr that work against subtitles fitting their video. <b>Apply in Bazarr</b> changes exactly the one setting named.</p>
-      ${advice.findings.joinToString("") { advisorFindingHtml(it) }}
-    </div>"""
-    wireAdvisorActions(advice.findings, scope) { loadDashBazarrAdvisor(scope) }
+
+// ── Phase 285 — the overview ─────────────────────────────────────────────────────────────────────────────────
+
+private const val DASH_SHOWALL_KEY = "js-dash-showall"
+private const val DASH_CHIP_KEY = "js-dash-chip"
+private var ovDto: dev.jellystructure.model.DashboardDto? = null
+private var ovChip: String = "all"
+private var ovShowAll = false
+private val ovOpen = HashSet<String>()
+
+/** Reads the one endpoint, renders it, and marks this visit so the next open measures *Since your last visit* from now. */
+private suspend fun loadOverview(scope: CoroutineScope) {
+    ovChip = runCatching { window.localStorage.getItem(DASH_CHIP_KEY) }.getOrNull() ?: "all"
+    ovShowAll = runCatching { window.localStorage.getItem(DASH_SHOWALL_KEY) }.getOrNull() == "1"
+    val d = dev.jellystructure.api.DashboardApi.get()
+    ovDto = d
+    if (d == null) {
+        (document.getElementById("ov-body") as? HTMLElement)?.innerHTML = """<div class="note warn" style="margin-top:14px"><span class="tiny">Couldn’t load the overview.</span></div>"""
+        return
+    }
+    renderOverview(scope)
+    dev.jellystructure.api.DashboardApi.seen()
+}
+
+private fun ovFmt(n: Int): String = if (n >= 1000) n.toString().reversed().chunked(3).joinToString(" ").reversed() else n.toString()
+private fun ovPlural(unit: String, n: Int) = when { n == 1 -> unit; unit == "series" -> "series"; unit == "library" -> "libraries"; else -> unit + "s" }
+
+private fun renderOverview(scope: CoroutineScope) {
+    val d = ovDto ?: return
+    val domains = d.domains
+    if (ovChip != "all" && domains.none { it.id == ovChip }) ovChip = "all"
+    (document.getElementById("stat-issues") as? HTMLElement)?.textContent = d.headline.rows.toString()
+    // FR-285-6 — the headline: the critical and warning counts in words.
+    val head = document.getElementById("ov-head") as? HTMLElement
+    head?.innerHTML = when {
+        d.firstRun -> """<span class="ov-big">Nothing scanned yet</span>"""
+        d.rows.isEmpty() -> """<span class="ov-big">Nothing needs you</span>"""
+        else -> buildString {
+            val parts = listOfNotNull(
+                d.headline.critical.takeIf { it > 0 }?.let { "$it critical" },
+                d.headline.warnings.takeIf { it > 0 }?.let { "$it ${if (it == 1) "warning" else "warnings"}" },
+                d.headline.info.takeIf { it > 0 }?.let { "$it for information" },
+            )
+            append("""<span class="ov-big">${parts.joinToString(" · ").ifBlank { "Nothing needs you" }}</span>""")
+            if (d.headline.things > 0) append("""<span class="tiny muted">${ovFmt(d.headline.things)} things could be fixed</span>""")
+            append("""<span class="spacer" style="flex:1"></span><button class="btn sm ghost" id="ov-all">${if (ovShowAll) "Fold every group" else "Show all"}</button>""")
+        }
+    }
+    // FR-285-8 — since your last visit
+    val since = document.getElementById("ov-since") as? HTMLElement
+    since?.innerHTML = d.since?.let { s ->
+        val when_ = s.since?.let { dev.jellystructure.formatWeekdayClock(it.toString()) } ?: "first visit"
+        val items = s.items.joinToString("") { it -> """<span class="chip"><b>${(domains.firstOrNull { g -> g.id == it.domain }?.label ?: dev.jellystructure.model.DashboardDto::class.simpleName.orEmpty()).esc()}</b> ${it.text.esc()}</span>""" }
+        """<div class="ov-since"><span class="lb">Since your last visit</span><span class="tiny muted">${when_.esc()}</span>${items.ifEmpty { """<span class="tiny">Nothing new since then.</span>""" }}<a class="tiny" href="#/activity" style="margin-left:auto">the full log is on Activity →</a></div>"""
+    } ?: ""
+    val body = document.getElementById("ov-body") as? HTMLElement ?: return
+    if (d.firstRun) {
+        body.innerHTML = """<div class="card ov-empty"><h3>Nothing scanned yet</h3><p>The first scan reads every library, then this page fills in, group by group. It takes a while on a large library; you can leave this page.</p></div>"""
+        return
+    }
+    if (d.rows.isEmpty()) {
+        body.innerHTML = """<div class="card ov-empty"><h3>Nothing needs you.</h3><p>Every library, every setting jellystructure checks, is as it should be.</p></div>"""
+        return
+    }
+    val rows = if (ovChip == "all") d.rows else d.rows.filter { it.domain == ovChip }
+    val chips = buildString {
+        append("""<div class="ov-chips"><button class="chip${if (ovChip == "all") " on" else ""}" data-chip="all">All · ${d.rows.size}</button>""")
+        for (g in domains) append("""<button class="chip${if (ovChip == g.id) " on" else ""}" data-chip="${g.id}">${g.label.esc()} · ${g.rows}</button>""")
+        append("</div>")
+    }
+    val bands = listOf("critical" to "Critical", "warning" to "To fix", "info" to "For information")
+    val list = buildString {
+        append("""<div class="ov-list">""")
+        for ((sev, title) in bands) {
+            val rs = rows.filter { it.severity == sev }
+            if (rs.isEmpty()) continue
+            val key = "b-$sev"
+            val open = ovShowAll || key in ovOpen
+            val shown = if (open) rs else rs.take(3)   // FR-285-4 — three per band, then +N more
+            append("""<section class="ov-band w-$sev"><div class="ov-sh"><h3>$title</h3><span class="ov-size">${rs.size} ${if (rs.size == 1) "row" else "rows"}</span></div>""")
+            shown.forEach { append(ovRowHtml(it, domains)) }
+            val more = rs.size - shown.size
+            if (more > 0) append("""<button class="ov-more" data-more="$key">+$more more</button>""")
+            else if (key in ovOpen && !ovShowAll) append("""<button class="ov-more" data-less="$key">Show fewer</button>""")
+            append("</section>")
+        }
+        append("</div>")
+    }
+    val down = if (!d.jellyfinReachable) """<div class="ov-down"><span class="dot bad"></span><b>Jellyfin can’t be reached</b><span class="tiny muted">— its settings and this server’s can’t be checked until it answers.</span></div>""" else ""
+    body.innerHTML = chips + down + list
+    body.onclick = { ev -> ovClick(ev.target as? Element, scope) }
+    (document.getElementById("ov-all") as? HTMLElement)?.onclick = {
+        ovShowAll = !ovShowAll; ovOpen.clear()
+        runCatching { window.localStorage.setItem(DASH_SHOWALL_KEY, if (ovShowAll) "1" else "0") }
+        renderOverview(scope)
+    }
+    // Advisor rows keep their own Re-check / Apply in Bazarr, wired exactly as Settings wires them.
+    val findings = rows.filter { it.findingId != null && it.actionKind != null }.map { r ->
+        dev.jellystructure.api.AdvisorFinding(id = r.findingId!!, summary = r.label, currentValue = r.now.orEmpty(), costHere = "", navigationPath = r.path.orEmpty(),
+            fieldLabel = "", recommendation = r.recommendation.orEmpty(), tradeoff = r.tradeoff.orEmpty(), severity = r.severity, action = r.actionKind)
+    }
+    wireAdvisorActions(findings, scope) { loadOverview(scope) }
+}
+
+/** FR-285-2 — one row grammar: severity · label + sentence · count · domain chip · what fixing means. */
+private fun ovRowHtml(r: dev.jellystructure.model.DashboardRow, domains: List<dev.jellystructure.model.DashboardDomain>): String {
+    val dom = domains.firstOrNull { it.id == r.domain }?.label ?: r.domain
+    val href = r.href?.let { "#$it" }
+    val label = if (href != null) """<a href="$href">${r.label.esc()}</a>""" else """<a>${r.label.esc()}</a>"""
+    val count = when {
+        r.count != null && r.unit != null -> """<span class="ov-n"><b>${ovFmt(r.count)}</b> ${ovPlural(r.unit, r.count).esc()}</span>"""
+        r.now != null -> """<span class="ov-now" title="the value now">${r.now.esc()}</span>"""
+        else -> ""
+    }
+    val fix = when (r.fix) {
+        "here" -> """<span class="ov-fix k-here">One click here</span>""" + (r.actionId?.let { """<span class="btn sm" data-act="$it" data-row="${r.id.esc()}">${(r.action ?: "Fix").esc()}</span>""" }
+            ?: r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm" id="advisor-action-${it.esc()}">${(r.action ?: "Apply").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "")
+        "open" -> """<span class="ov-fix k-open">Open the item</span>""" + (href?.let { """<a class="btn sm ghost" href="$it">${(r.action ?: "Open").esc()} →</a>""" } ?: "")
+        "elsewhere" -> """<span class="ov-fix k-else">Change ${if (r.where == "the host") "on the host" else "in " + (r.where ?: "").esc()}</span>""" +
+            (r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm ghost" id="advisor-action-${it.esc()}">${(r.action ?: "Re-check").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "")
+        else -> """<span class="ov-fix k-info">For information</span>""" + (href?.takeIf { r.action != null }?.let { """<a class="btn sm ghost" href="$it">${r.action!!.esc()} →</a>""" } ?: "")
+    }
+    val detail = buildString {
+        if (r.sentence.isNotBlank()) append("""<div class="ov-s">${r.sentence.esc()}</div>""")
+        if (!r.path.isNullOrBlank()) append("""<div class="ov-path">${(r.where ?: "").esc()} › ${r.path.esc()}</div>""")
+        if (!r.recommendation.isNullOrBlank()) append("""<div class="ov-s"><b>Set to:</b> ${r.recommendation.esc()}${if (!r.tradeoff.isNullOrBlank() && r.tradeoff != "n/a") " · <b>You lose:</b> " + r.tradeoff.esc() else ""}</div>""")
+    }
+    return """<div class="ov-row sev-${r.severity}"><span class="ov-sev" title="${r.severity}"></span><div class="ov-main"><div class="ov-l"><span class="ov-dom">${dom.esc()}</span>$label</div>$detail</div>$count<div class="ov-act">$fix</div></div>"""
+}
+
+private fun ovClick(t: Element?, scope: CoroutineScope) {
+    t ?: return
+    t.closest("[data-more]")?.let { ovOpen += it.getAttribute("data-more")!!; renderOverview(scope); return }
+    t.closest("[data-less]")?.let { ovOpen -= it.getAttribute("data-less")!!; renderOverview(scope); return }
+    t.closest("[data-chip]")?.let { ovChip = it.getAttribute("data-chip")!!; runCatching { window.localStorage.setItem(DASH_CHIP_KEY, ovChip) }; renderOverview(scope); return }
+    t.closest("[data-act]")?.let { b ->
+        val act = b.getAttribute("data-act") ?: return
+        val out = { msg: String -> (b as? HTMLElement)?.textContent = msg }
+        // FR-285-10 — the quick actions live on the rows they serve.
+        scope.launch {
+            when (act) {
+                "fetch_artwork" -> { out("Fetching…"); out(if (MediaApi.batchFetchArtwork()) "Started ✓" else "Failed") }
+                "artwork_repair" -> { out("Checking…"); out(if (MediaApi.batchArtworkRepair()) "Started ✓" else "Failed") }
+                "jf_push" -> { out("Writing…"); out(if (MediaApi.batchJellyfinPush()) "Started ✓" else "Failed") }
+                "jf_refresh" -> { out("Sending…"); out(if (MediaApi.jellyfinRefreshAll()) "Triggered ✓" else "Failed") }
+            }
+        }
+    }
 }

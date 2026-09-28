@@ -63,6 +63,17 @@ class MediaHistory(private val db: JellystructureDb) {
             )
         }
 
+    /** Phase 285 (FR-285-8) — every entry after [sinceTs] (epoch seconds, exclusive), newest first, capped. */
+    fun since(sinceTs: Long, limit: Int = 400): List<HistoryEntry> =
+        db.mediaHistoryQueries.since(sinceTs, limit.toLong()).executeAsList().map { row ->
+            HistoryEntry(id = row.id.toString(), mediaId = row.media_id, timestamp = row.ts, action = row.action, detail = row.detail,
+                revertable = row.revertable != 0L, beforeSnapshot = row.before_snapshot)
+        }
+
+    /** Phase 285 (FR-285-8) — when [jellyfinUserId] last opened the Dashboard (epoch seconds), null on a first visit. */
+    fun lastDashboardVisit(jellyfinUserId: String): Long? = db.dashboardQueries.visit(jellyfinUserId).executeAsOneOrNull()
+    fun markDashboardVisit(jellyfinUserId: String, at: Long) { db.dashboardQueries.mark(jellyfinUserId, at) }
+
     fun recent(limit: Int = 8): List<HistoryEntry> =
         db.mediaHistoryQueries.recent(limit.toLong()).executeAsList().map { row ->
             HistoryEntry(

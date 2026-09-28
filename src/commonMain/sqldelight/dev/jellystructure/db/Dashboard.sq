@@ -1,0 +1,13 @@
+-- Phase 285 (FR-285-8) — when each admin last opened the Dashboard, so *Since your last visit* is per admin.
+-- Must stay in sync with 63.sqm.
+
+CREATE TABLE dashboard_visit (
+    jellyfin_user_id TEXT NOT NULL PRIMARY KEY,
+    opened_at INTEGER NOT NULL
+);
+
+visit:
+SELECT opened_at FROM dashboard_visit WHERE jellyfin_user_id = :jellyfin_user_id;
+
+mark:
+INSERT OR REPLACE INTO dashboard_visit(jellyfin_user_id, opened_at) VALUES (:jellyfin_user_id, :opened_at);

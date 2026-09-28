@@ -37,6 +37,8 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.segmentRoutes
 import dev.jellystructure.server.routes.triageRoutes
+import dev.jellystructure.server.routes.dashboardRoutes
+import dev.jellystructure.server.routes.DashboardService
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
@@ -619,6 +621,9 @@ fun startServer(
                 activityRoutes(activityLog)
                 aiRoutes(configStore)   // Phase 270
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
+                // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
+                dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
+                    suggestionService, subtitleCheckWiring) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)

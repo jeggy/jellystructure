@@ -35,62 +35,6 @@ private val dockJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = t
 private var dockSocket: WebSocket? = null
 private var dockScanned = 0
 private var dockTotal = 0
-
-// Triage dock state
-private var triageDockItems: List<dev.jellystructure.api.TriageItem> = emptyList()
-private var triageDockIndex: Int = 0
-private const val TRIAGE_DOCK_CLOSED_KEY = "js-attn-dock-closed"
-private var triageDockHidden: Boolean = false
-
-/** One-line "what's wrong" summary for the current triage item, mirroring the design dock sub-line. */
-private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
-    // Phase 278 (FR-278-12) — a music entry says one thing.
-    when (item.musicIssue) {
-        "shared_album" -> return "♪ album · several folders say they are this album"  // Phase 283
-        "folder_disagrees" -> return "♪ album · the folder and the songs disagree"
-        "needs_you" -> return "♪ album · several MusicBrainz candidates — needs you"
-        "no_match" -> return "♪ album · no MusicBrainz match yet"
-        "no_cover" -> return "♪ album · no cover"
-        "no_picture" -> return "♪ artist · no picture"
-    }
-    // Phase 280 (FR-280-7) — an audiobook entry says one thing too.
-    when (item.audiobookIssue) {
-        "missing_part" -> return "audiobook · a part is missing"
-        "two_in_one" -> return "audiobook · the folder holds two books"
-        "no_cover" -> return "audiobook · no cover"
-    }
-    val parts = mutableListOf<String>()
-    val untagged = item.untaggedTracks.size
-    if (untagged > 0) parts += "$untagged untagged audio track${if (untagged != 1) "s" else ""}"
-    item.cascadeMismatch?.let {
-        val actual = it.actualDefaultLang ?: "?"
-        parts += "wrong default audio ($actual → ${it.resolvedLanguage})"
-    }
-    if (item.multiDefault != null) parts += "multiple default audio"
-    if (item.languageMix) parts += "mixed-language series"
-    if (item.missingArtwork) parts += "missing poster artwork"
-    if (item.missingFromSource) parts += "no longer in Jellyfin — kept, review & remove if intended"  // Phase 95
-    if (item.coverAsVideo != null) parts += "cover art muxed as video — playback-hostile, repairable"  // Phase 144
-    if (item.segmentsLowConfidence) parts += "low-confidence intro/credits — worth an eyeball"  // Phase 150
-    if (item.noSegments) parts += "no intro/credits detected"  // Phase 150
-    val epIssues = item.episodeIssues
-    if (epIssues.isNotEmpty()) {
-        val first = epIssues.first()
-        val epParts = mutableListOf<String>()
-        if (first.untaggedTracks.isNotEmpty()) epParts += "untagged tracks"
-        if (first.multiDefault != null) epParts += "multiple default audio"
-        if (first.missingStill) epParts += "missing episode image"
-        if (first.coverAsVideo != null) epParts += "cover art muxed as video"  // Phase 144
-        if (first.segmentsLowConfidence) epParts += "low-confidence segments"  // Phase 150
-        // Bug fix (Ravilo auto-play-next loop): a second file claiming this episode number — Ravilo can
-        // only ever play one of them, so the copy has to be removed/renumbered on disk.
-        if (first.duplicateEpisode) epParts += "duplicate episode file — another file claims this number"
-        val more = if (epIssues.size > 1) " (+${epIssues.size - 1} more)" else ""
-        parts += "${first.episodeCode} · ${epParts.joinToString(", ").ifEmpty { "needs attention" }}$more"
-    }
-    return parts.joinToString(" · ").ifEmpty { "needs attention" }
-}
-
 private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
     "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
@@ -203,10 +147,8 @@ fun renderShell(user: UserProfile) {
         }
     }
 
-    // Inject ambient dock and triage dock into body
-    triageDockHidden = window.localStorage.getItem(TRIAGE_DOCK_CLOSED_KEY) == "1"
+    // Inject the ambient scan dock into body (Phase 285 FR-285-13: the attention dock is gone — the Dashboard is the surface).
     injectDock(body as HTMLElement)
-    injectTriageDock(body)
     injectCommandPalette(body)
     wireGlobalKeyBindings()
 
@@ -218,17 +160,8 @@ fun renderShell(user: UserProfile) {
     }
 
     MainScope().launch {
-        // Triage count → sidebar status dots + the floating Triage dock (Phase 27; there is no
-        // Triage page or nav badge any more — the dock is the surface).
-        val count = MediaApi.getTriageCount()
-        // Sidebar status dots
-        updateSidebarStatus(count?.total ?: 0)
-        // Load triage dock items
-        if ((count?.total ?: 0) > 0) {
-            triageDockItems = MediaApi.getTriageItems()
-            triageDockIndex = 0
-            updateTriageDock()
-        }
+        // Phase 285 (FR-285-6) — the sidebar count is the Dashboard's row count, the same number its tile shows.
+        updateSidebarStatus(dev.jellystructure.api.DashboardApi.get()?.headline?.rows ?: 0)
         // Connection status — retry up to 3 times (5 s apart) to survive a brief cold-start delay
         launch {
             val delayMs = 5_000L
@@ -271,13 +204,6 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
     PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
     PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
     PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
-    PaletteCmd("Triage: first item", "Items needing attention") {
-        if (triageDockItems.isNotEmpty()) {
-            triageDockIndex = 0
-            updateTriageDock()
-            navigateToTriageItem(triageDockItems[0])
-        }
-    },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
     PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
         // Phase 175: startScan() now honors the freshness/cooldown filter by default — this command's
@@ -289,20 +215,6 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
                 if (MediaApi.startScan(full = true, skipSteps = skip)) "Full scan started" + skippedSuffix(skip)
                 else "Scan is already running or failed to start"
             )
-        }
-    },
-    PaletteCmd("Triage: next item", "n key") {
-        if (triageDockItems.isNotEmpty()) {
-            triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
-            updateTriageDock()
-            navigateToTriageItem(triageDockItems[triageDockIndex])
-        }
-    },
-    PaletteCmd("Triage: previous item", "p key") {
-        if (triageDockItems.isNotEmpty()) {
-            triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
-            updateTriageDock()
-            navigateToTriageItem(triageDockItems[triageDockIndex])
         }
     },
 )
@@ -458,48 +370,8 @@ private fun wireGlobalKeyBindings() {
             return@addEventListener
         }
         if (inInput) return@addEventListener
-        // Triage dock keyboard shortcuts
-        when (kev.key) {
-            "n" -> {
-                if (triageDockItems.isNotEmpty()) {
-                    triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
-                    updateTriageDock()
-                    navigateToTriageItem(triageDockItems[triageDockIndex])
-                }
-            }
-            "p" -> {
-                if (triageDockItems.isNotEmpty()) {
-                    triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
-                    updateTriageDock()
-                    navigateToTriageItem(triageDockItems[triageDockIndex])
-                }
-            }
-            "o" -> {
-                if (triageDockItems.isNotEmpty()) {
-                    navigateToTriageItem(triageDockItems[triageDockIndex])
-                }
-            }
-        }
     }
 }
-
-private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
-    // Phase 278 (FR-278-12) — music opens its own pages: Find match… open, or the Artwork tab.
-    when (item.musicIssue) {
-        "needs_you", "no_match" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("find" to "1"))
-        "no_cover" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("tab" to "artwork"))
-        "no_picture" -> return dev.jellystructure.Router.navigate("/artist/${item.mediaId}", mapOf("tab" to "artwork"))
-    }
-    // Phase 280 — an audiobook opens its own page: Parts for a gap, Artwork for a cover.
-    when (item.audiobookIssue) {
-        "missing_part" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", mapOf("tab" to "parts"))
-        "two_in_one" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", emptyMap())
-        "no_cover" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", mapOf("tab" to "artwork"))
-    }
-    val tab = if (item.kind == "tv") "episodes" else "overview"
-    dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))
-}
-
 private fun injectDock(body: HTMLElement) {
     val el = document.createElement("div") as HTMLElement
     el.id = "ambient-dock"
@@ -538,92 +410,6 @@ private fun injectDock(body: HTMLElement) {
         App.navigate("/activity")
     }
 }
-
-private fun injectTriageDock(body: HTMLElement) {
-    val el = document.createElement("div") as HTMLElement
-    el.id = "triage-dock"
-    el.className = "dock"
-    el.style.display = "none"
-    el.style.bottom = "72px"
-    el.innerHTML = """
-        <div class="dock-head" id="triage-dock-head">
-          <span class="dot warn" style="background:var(--warn,#f59e0b);"></span>
-          <b>Needs attention</b>
-          <span class="spacer"></span>
-          <span class="tiny mono" id="triage-dock-pos"></span>
-          <span class="kbd toggle-dock" id="triage-dock-toggle" style="cursor:pointer;padding:0 4px" title="Collapse">⌄</span>
-          <span class="kbd" id="triage-dock-close" style="cursor:pointer;padding:0 4px" title="Hide">✕</span>
-        </div>
-        <div class="dock-body">
-          <div style="margin-top:2px;">
-            <div id="triage-dock-title" style="font-size:.86rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
-            <div id="triage-dock-sub" class="tiny muted" style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
-          </div>
-          <div class="row center" style="gap:6px;margin-top:10px;">
-            <button class="btn sm ghost" id="triage-dock-prev" style="font-size:.75rem;padding:2px 8px;">‹ Prev</button>
-            <button class="btn sm primary" id="triage-dock-open" style="font-size:.75rem;padding:2px 8px;flex:1;justify-content:center;">Open &amp; fix →</button>
-            <button class="btn sm ghost" id="triage-dock-next" style="font-size:.75rem;padding:2px 8px;">Next ›</button>
-          </div>
-        </div>
-    """.trimIndent()
-    body.appendChild(el)
-
-    el.querySelector("#triage-dock-close")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        triageDockHidden = true
-        window.localStorage.setItem(TRIAGE_DOCK_CLOSED_KEY, "1")
-        el.style.display = "none"
-    }
-
-    el.querySelector("#triage-dock-open")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        if (triageDockItems.isEmpty()) return@addEventListener
-        navigateToTriageItem(triageDockItems[triageDockIndex])
-    }
-
-    el.querySelector("#triage-dock-toggle")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        val dock = document.getElementById("triage-dock") as? HTMLElement ?: return@addEventListener
-        val collapsed = dock.className.contains("collapsed")
-        dock.className = if (collapsed) "dock" else "dock collapsed"
-        dock.style.bottom = if (collapsed) "72px" else "72px"
-        (el.querySelector("#triage-dock-toggle") as? HTMLElement)?.textContent = if (collapsed) "⌄" else "⌃"
-    }
-
-    el.querySelector("#triage-dock-prev")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        if (triageDockItems.isEmpty()) return@addEventListener
-        triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
-        updateTriageDock()
-        navigateToTriageItem(triageDockItems[triageDockIndex])
-    }
-
-    el.querySelector("#triage-dock-next")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        if (triageDockItems.isEmpty()) return@addEventListener
-        triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
-        updateTriageDock()
-        navigateToTriageItem(triageDockItems[triageDockIndex])
-    }
-}
-
-internal fun updateTriageDock() {
-    val el = document.getElementById("triage-dock") as? HTMLElement ?: return
-    if (triageDockItems.isEmpty()) {
-        el.style.display = "none"
-        return
-    }
-    if (triageDockHidden) { el.style.display = "none"; return }
-    el.style.display = ""
-    val total = triageDockItems.size
-    val pos = triageDockIndex + 1
-    val item = triageDockItems.getOrNull(triageDockIndex)
-    (document.getElementById("triage-dock-title") as? HTMLElement)?.textContent = item?.title ?: "—"
-    (document.getElementById("triage-dock-sub") as? HTMLElement)?.textContent =
-        item?.let { triageSubline(it) } ?: ""
-    (document.getElementById("triage-dock-pos") as? HTMLElement)?.textContent = "$pos / $total"
-}
-
 private fun connectDockSocket() {
     val proto = if (window.location.protocol == "https:") "wss" else "ws"
     val ws = WebSocket("$proto://${window.location.host}/ws")
@@ -707,7 +493,7 @@ private fun updateDockCount() {
 
 private fun updateSidebarStatus(triageCount: Int) {
     (document.getElementById("status-triage") as? HTMLElement)?.apply {
-        innerHTML = """<span class="dot ${if (triageCount > 0) "warn" else "ok"}"></span> $triageCount to triage"""
+        innerHTML = """<span class="dot ${if (triageCount > 0) "warn" else "ok"}"></span> ${if (triageCount > 0) "$triageCount could be fixed" else "nothing to fix"}"""
     }
 }
 
@@ -739,13 +525,6 @@ fun updateActiveNav(currentRoute: String) {
         dock.style.display = "none"
     } else if (dock.style.display == "none" && dockScanned > 0) {
         dock.style.display = ""
-    }
-    // Sync triage dock index when navigating to a media item
-    if (currentRoute.startsWith("/media/")) {
-        val mediaId = currentRoute.removePrefix("/media/").substringBefore('?')
-        val idx = triageDockItems.indexOfFirst { it.mediaId == mediaId }
-        if (idx >= 0) triageDockIndex = idx
-        updateTriageDock()
     }
 }
 

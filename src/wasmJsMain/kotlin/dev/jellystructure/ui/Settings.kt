@@ -1402,16 +1402,8 @@ private suspend fun renderJellyfinAdvisor() {
         serverWideEl.style.display = "none"
     } else {
         serverWideEl.style.display = "block"
-        serverWideEl.innerHTML = """
-        <div class="card set-section" style="margin-bottom:14px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <h3 style="font-size:1rem;margin:0">Jellyfin settings advisor — server-wide</h3>
-            <span class="badge warn" style="font-size:.72rem">$actionable finding${if (actionable == 1) "" else "s"}${if (informational > 0) " + $informational for information" else ""}</span>
-          </div>
-          <p class="hint" style="margin:0 0 8px">Read-only. jellystructure never writes to Jellyfin — every row below is something to change yourself, with exact steps.</p>
-          ${result.serverWide.joinToString("") { advisorFindingHtml(it) }}
-        </div>"""
-        wireAdvisorActions(result.serverWide, settingsScope) { renderJellyfinAdvisor() }
+        // Phase 285 (FR-285-12) — Settings holds settings only: the findings live on the Dashboard, one indicator here.
+        serverWideEl.innerHTML = settingsIndicator("jf", actionable + informational, "Jellyfin settings advisor")
     }
 
     for (section in result.perLibrary) {
@@ -1431,9 +1423,8 @@ private suspend fun renderJellyfinAdvisor() {
                 renamed or stopped returning the field this reads.
               </div>
             </div>"""
-        else section.findings.joinToString("") { advisorFindingHtml(it) }
-        el.innerHTML = """<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">""" +
-            body + "</div>"
+        else settingsIndicator("jf", section.findings.size, null)   // Phase 285 (FR-285-12)
+        el.innerHTML = if (body.isBlank()) "" else """<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">""" + body + "</div>"
     }
 }
 
@@ -2139,10 +2130,8 @@ private suspend fun loadSubtitleCheck(scope: CoroutineScope, fresh: Boolean = fa
     advEl?.innerHTML = when {
         !advice.reachable -> """<div class="note warn" style="margin-top:10px"><span class="tiny">Couldn't reach Bazarr.</span></div>"""
         advice.findings.isEmpty() -> ""
-        else -> """<div class="tiny muted" style="margin:14px 0 -2px;font-weight:600">Bazarr settings that work against this</div>""" +
-            advice.findings.joinToString("") { advisorFindingHtml(it) }
+        else -> settingsIndicator("subs", advice.findings.size, null)   // Phase 285 (FR-285-12) — the findings live on the Dashboard
     }
-    wireAdvisorActions(advice.findings, scope) { loadSubtitleCheck(scope, fresh = true) }
 }
 
 // Phase 139 — request-language intents (Original/Dansk-Nordic etc.). Plain list, no drag-reorder (order
@@ -3593,3 +3582,12 @@ internal suspend fun renderWebhookStatus() {
 
 private fun clockOf(epochMs: Long): String = hhmmOf(epochMs.toDouble())
 private fun hhmmOf(epochMs: Double): String = js("new Date(epochMs).toTimeString().slice(0, 5)")
+
+
+/** Phase 285 (FR-285-12) — Settings holds settings only: where an advisor card stood, one line pointing at the Dashboard
+ *  filtered to that domain; nothing at all at zero. */
+internal fun settingsIndicator(domain: String, n: Int, title: String?): String {
+    if (n <= 0) return ""
+    val head = title?.let { """<b>${it.esc()}</b> · """ } ?: ""
+    return """<div class="set-find note blue" style="margin-top:8px;display:flex;gap:8px;align-items:center"><span>ℹ</span><span class="tiny">$head$n ${if (n == 1) "finding" else "findings"} · <a href="#/?domain=${domain.esc()}">see the Dashboard →</a></span></div>"""
+}

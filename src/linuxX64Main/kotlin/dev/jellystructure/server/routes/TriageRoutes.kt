@@ -26,6 +26,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -101,6 +102,11 @@ data class TriageTypeCount(
     val description: String,
     val instances: Int,
     val titles: Int,
+    // Phase 285 (FR-285-9) — the same counts among films / series only; 0 for a type that is not per file.
+    val movies: Int = 0,
+    val series: Int = 0,
+    @SerialName("movie_titles") val movieTitles: Int = 0,
+    @SerialName("series_titles") val seriesTitles: Int = 0,
 )
 
 @Serializable
@@ -119,126 +125,8 @@ private var triageCountCache: Pair<String, TriageCount>? = null
 
 fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, segmentStore: MediaSegmentStore, music: dev.jellystructure.media.MusicPipeline? = null) {
     route("/triage") {
-        get("/count") {
-            // Phase 254 — a deep check's finding changes the count without touching the library version.
-            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
-            triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
-            val all = store.allItems()
-
-            val untaggedInstances = all.sumOf { TriageDetection.untaggedCount(it) }
-            val untaggedTitles = all.count { TriageDetection.untaggedCount(it) > 0 }
-            val mismatchTitles = all.count { TriageDetection.hasCascadeMismatch(it) }
-            val multiDefaultTitles = all.count { TriageDetection.hasMultiDefault(it) }
-            val languageMixTitles = all.count { it.languageMix }
-            val missingArtworkTitles = all.count { !posterArtworkExists(it) }
-            val missingFromSourceTitles = all.count { it.missingFromSource }   // Phase 95
-            val missingStillInstances = all.sumOf { TriageDetection.missingStillCount(it) }
-            val missingStillTitles = all.count { TriageDetection.missingStillCount(it) > 0 }
-            val dupGroups = all.filter { !it.jellyfinId.isNullOrBlank() }.groupBy { it.jellyfinId }.filterValues { it.size > 1 }
-            val zeroAudioInstances = all.sumOf { TriageDetection.zeroAudioCount(it) }
-            val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
-            val coverAsVideoInstances = all.sumOf { TriageDetection.coverAsVideoCount(it) }  // Phase 144
-            val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
-            val dupEpisodeInstances = all.sumOf { TriageDetection.duplicateEpisodeCount(it) }
-            val dupEpisodeTitles = all.count { TriageDetection.duplicateEpisodeCount(it) > 0 }
-            val unresolvedIdInstances = all.sumOf { TriageDetection.unresolvedJellyfinIdCount(it) }
-            val unresolvedIdTitles = all.count { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }
-            // Phase 150: only meaningful once detect_segments is actually enabled — otherwise EVERY title
-            // has "no segments" (the feature has simply never run) and the row would flood with a
-            // misleading "everything is broken" count for an admin who hasn't opted in at all.
-            val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
-            val segmentsLowConfInstances = if (segmentsEnabled) all.sumOf { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) } else 0
-            val segmentsLowConfTitles = if (segmentsEnabled) all.count { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 } else 0
-            val noSegmentsTitles = if (segmentsEnabled) all.count { TriageDetection.hasNoSegments(it, segmentStore) } else 0
-            // Phase 201 amendment (2026-09-13): Tracks-after-Cluster — unplayable in Ravilo, fine in Jellyfin.
-            // Phase 203 — brokenPathsOrNull() never triggers a sweep and never blocks; `null` (cold
-            // cache) means the count below is omitted from `types` entirely rather than reported as 0
-            // (FR-203-1/FR-203-2). See MkvHealthCache's own doc for why this used to hold up the whole
-            // response.
-            val mkvBroken = MkvHealthCache.brokenPathsOrNull()?.keys
-            val mkvLayoutInstances = mkvBroken?.let { b -> all.sumOf { TriageDetection.mkvLayoutBrokenCount(it, b) } }
-            val mkvLayoutTitles = mkvBroken?.let { b -> all.count { TriageDetection.mkvLayoutBrokenCount(it, b) > 0 } }
-
-            val types = listOfNotNull(
-                TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
-                    "Tracks with no language tag — Ravilo and the workbench can't filter by language until these are assigned.",
-                    untaggedInstances, untaggedTitles),
-                TriageTypeCount("cascade_mismatch", "Wrong default audio track",
-                    "The default audio track doesn't match the title's resolved metadata language.",
-                    mismatchTitles, mismatchTitles),
-                TriageTypeCount("multi_default", "Multiple default audio tracks",
-                    "More than one audio track is flagged default — a file should have exactly one.",
-                    multiDefaultTitles, multiDefaultTitles),
-                TriageTypeCount("language_mix", "Mixed-language series",
-                    "Episodes disagree on audio language — the majority language is used for metadata.",
-                    languageMixTitles, languageMixTitles),
-                TriageTypeCount("missing_artwork", "Missing poster artwork",
-                    "No poster.jpg on disk for this title.",
-                    missingArtworkTitles, missingArtworkTitles),
-                TriageTypeCount("missing_from_source", "No longer in Jellyfin",
-                    "The scanner no longer finds this title in Jellyfin — kept for review, never auto-deleted.",
-                    missingFromSourceTitles, missingFromSourceTitles),
-                TriageTypeCount("missing_still", "Missing episode image",
-                    "Episode has no still image — no TMDB still and no screen-grab — so Ravilo shows a blank episode card.",
-                    missingStillInstances, missingStillTitles),
-                TriageTypeCount("duplicate", "Duplicate library entries",
-                    "The same Jellyfin item appears more than once — both open the same detail page; re-scan or remove the extra entry.",
-                    dupGroups.values.sumOf { it.size }, dupGroups.size),
-                TriageTypeCount("duplicate_episode", "Duplicate episode files",
-                    "Two files claim the same episode number — Ravilo can only play one of them, and auto-play-next stalls on the copy. Delete the extra file, or fix its episode number, then re-scan.",
-                    dupEpisodeInstances, dupEpisodeTitles),
-                TriageTypeCount("unresolved_jellyfin_id", "Episode never matched in Jellyfin",
-                    "jellystructure could read a season/episode from the filename, but Jellyfin never numbered this file (no IndexNumber) — it silently drops out of playstate, next-episode targeting, and Jellyfin's own Continue Watching/Next Up. Fix the episode's identification in Jellyfin (rename to match its naming rules, or manually identify it), then re-scan.",
-                    unresolvedIdInstances, unresolvedIdTitles),
-                TriageTypeCount("zero_audio", "No audio tracks",
-                    "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
-                    zeroAudioInstances, zeroAudioTitles),
-                TriageTypeCount("cover_as_video", "Cover art muxed as a video track",
-                    "A still image (cover.png etc.) is muxed as a second video stream — players may open the file but never start the video. Repairable: drop the cover stream.",
-                    coverAsVideoInstances, coverAsVideoTitles),
-                TriageTypeCount("segments_lowconf", "Low-confidence segments",
-                    "Intro/credits found by heuristic below 0.60 — worth an eyeball.",
-                    segmentsLowConfInstances, segmentsLowConfTitles),
-                TriageTypeCount("no_segments", "No intro/credits detected",
-                    "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
-                    noSegmentsTitles, noSegmentsTitles),
-                // Phase 203 — omitted entirely (not sent as a 0) while mkvLayoutInstances/Titles are
-                // null, i.e. no sweep has completed yet for this process.
-                if (mkvLayoutInstances != null && mkvLayoutTitles != null) TriageTypeCount(
-                    "mkv_track_layout", "Unplayable in Ravilo (MKV structure)",
-                    "Either a flag edit moved the file's Tracks element after its first Cluster, or a prior repair left an element with a corrupted declared size. Jellyfin seeks/resyncs past both and plays the file fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
-                    mkvLayoutInstances, mkvLayoutTitles,
-                ) else null,
-                // Phase 254 (FR-254-7) — omitted while unknown, like the type above.
-                dev.jellystructure.media.FileDamage.damagedPathsOrNull()?.let { damaged ->
-                    TriageTypeCount(
-                        "file_damage", "Damaged video files",
-                        "A deep check (reading the whole file) found parts of these files that cannot be read — data was overwritten mid-file. Jellyfin resyncs past it; a viewer sees a stall, a skip or a smear part-way through. Open the title: jellystructure can replace the file from the clean copy qBittorrent is still seeding.",
-                        all.sumOf { TriageDetection.fileDamageCount(it, damaged) }, all.count { TriageDetection.fileDamageCount(it, damaged) > 0 },
-                    )
-                },
-                // Phase 255 (FR-255-7) — two types, because they mean different things; omitted while unknown.
-                dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
-                    val early = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.endsEarly(it) }.keys
-                    TriageTypeCount(
-                        dev.jellystructure.media.TrackCoverageFlags.TYPE_TRACK_ENDS_EARLY, "Audio or video stops before the file ends",
-                        "A track in these files ends early. Viewers who get that track hear silence (or see black) from that point on, and which track they get depends on the player. Open the title for the exact time and the suggested fix.",
-                        all.sumOf { TriageDetection.trackCoverageCount(it, early) }, all.count { TriageDetection.trackCoverageCount(it, early) > 0 },
-                    )
-                },
-                dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
-                    val wrong = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.headerWrong(it) }.keys
-                    TriageTypeCount(
-                        dev.jellystructure.media.TrackCoverageFlags.TYPE_DURATION_HEADER_WRONG, "File claims to be longer than it is",
-                        "Everything in these files ends before the length the file reports. Players show the wrong length, and a player that marks watched at 90 % never gets there, so the episode never leaves Continue Watching.",
-                        all.sumOf { TriageDetection.trackCoverageCount(it, wrong) }, all.count { TriageDetection.trackCoverageCount(it, wrong) > 0 },
-                    )
-                },
-            )
-            val result = (types + musicTriageCounts(music, configStore) + audiobookTriageCounts(music, configStore)).let { all3 -> TriageCount(types = all3, total = all3.sumOf { it.instances }) }
-            triageCountCache = Pair(ver, result)
-            call.respond(result)
-        }
+        // Phase 285 — the same computation the Dashboard reads (kind-split, cached on the library version).
+        get("/count") { call.respond(triageCountFor(store, configStore, segmentStore, music)) }
 
         get {
             // Phase 150: same segmentsEnabled gate as /triage/count — kept in lockstep so the dock never
@@ -495,7 +383,142 @@ private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
 }
 
 /** Phase 278 (FR-278-11/12) — the music library's attention entries; absent entirely when no music library is mapped. */
-private fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
+/**
+ * Phase 117/146/285 — the per-type counts, computed once per library version and shared by `/triage/count` and the
+ * Dashboard (FR-285-1). FR-285-9: every file-level type is also counted per kind, so the Films and Series chips count
+ * honestly — `movies`/`series` are that type's instances among films / series, `movieTitles`/`seriesTitles` the titles.
+ */
+internal suspend fun triageCountFor(store: MediaStore, configStore: ConfigStore, segmentStore: MediaSegmentStore, music: dev.jellystructure.media.MusicPipeline?): TriageCount {
+    // Phase 254 — a deep check's finding changes the count without touching the library version.
+    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
+    triageCountCache?.let { (v, c) -> if (v == ver) return c }
+    val all = store.allItems()
+    val types = mediaTriageTypes(all, configStore, segmentStore)
+    val movies = mediaTriageTypes(all.filter { it.kind == MediaKind.MOVIE }, configStore, segmentStore).associateBy { it.key }
+    val series = mediaTriageTypes(all.filter { it.kind == MediaKind.TV_SHOW }, configStore, segmentStore).associateBy { it.key }
+    val split = types.map { t -> t.copy(movies = movies[t.key]?.instances ?: 0, series = series[t.key]?.instances ?: 0, movieTitles = movies[t.key]?.titles ?: 0, seriesTitles = series[t.key]?.titles ?: 0) }
+    val result = (split + musicTriageCounts(music, configStore) + audiobookTriageCounts(music, configStore)).let { all3 -> TriageCount(types = all3, total = all3.sumOf { it.instances }) }
+    triageCountCache = Pair(ver, result)
+    return result
+}
+
+/** The media (film/series) types over [all] — called three times per computation: everything, films only, series only. */
+private fun mediaTriageTypes(all: List<MediaItem>, configStore: ConfigStore, segmentStore: MediaSegmentStore): List<TriageTypeCount> {
+
+    val untaggedInstances = all.sumOf { TriageDetection.untaggedCount(it) }
+    val untaggedTitles = all.count { TriageDetection.untaggedCount(it) > 0 }
+    val mismatchTitles = all.count { TriageDetection.hasCascadeMismatch(it) }
+    val multiDefaultTitles = all.count { TriageDetection.hasMultiDefault(it) }
+    val languageMixTitles = all.count { it.languageMix }
+    val missingArtworkTitles = all.count { !posterArtworkExists(it) }
+    val missingFromSourceTitles = all.count { it.missingFromSource }   // Phase 95
+    val missingStillInstances = all.sumOf { TriageDetection.missingStillCount(it) }
+    val missingStillTitles = all.count { TriageDetection.missingStillCount(it) > 0 }
+    val dupGroups = all.filter { !it.jellyfinId.isNullOrBlank() }.groupBy { it.jellyfinId }.filterValues { it.size > 1 }
+    val zeroAudioInstances = all.sumOf { TriageDetection.zeroAudioCount(it) }
+    val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
+    val coverAsVideoInstances = all.sumOf { TriageDetection.coverAsVideoCount(it) }  // Phase 144
+    val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
+    val dupEpisodeInstances = all.sumOf { TriageDetection.duplicateEpisodeCount(it) }
+    val dupEpisodeTitles = all.count { TriageDetection.duplicateEpisodeCount(it) > 0 }
+    val unresolvedIdInstances = all.sumOf { TriageDetection.unresolvedJellyfinIdCount(it) }
+    val unresolvedIdTitles = all.count { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }
+    // Phase 150: only meaningful once detect_segments is actually enabled — otherwise EVERY title
+    // has "no segments" (the feature has simply never run) and the row would flood with a
+    // misleading "everything is broken" count for an admin who hasn't opted in at all.
+    val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
+    val segmentsLowConfInstances = if (segmentsEnabled) all.sumOf { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) } else 0
+    val segmentsLowConfTitles = if (segmentsEnabled) all.count { TriageDetection.lowConfidenceSegmentsCount(it, segmentStore) > 0 } else 0
+    val noSegmentsTitles = if (segmentsEnabled) all.count { TriageDetection.hasNoSegments(it, segmentStore) } else 0
+    // Phase 201 amendment (2026-09-13): Tracks-after-Cluster — unplayable in Ravilo, fine in Jellyfin.
+    // Phase 203 — brokenPathsOrNull() never triggers a sweep and never blocks; `null` (cold
+    // cache) means the count below is omitted from `types` entirely rather than reported as 0
+    // (FR-203-1/FR-203-2). See MkvHealthCache's own doc for why this used to hold up the whole
+    // response.
+    val mkvBroken = MkvHealthCache.brokenPathsOrNull()?.keys
+    val mkvLayoutInstances = mkvBroken?.let { b -> all.sumOf { TriageDetection.mkvLayoutBrokenCount(it, b) } }
+    val mkvLayoutTitles = mkvBroken?.let { b -> all.count { TriageDetection.mkvLayoutBrokenCount(it, b) > 0 } }
+
+    val types = listOfNotNull(
+        TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
+            "Tracks with no language tag — Ravilo and the workbench can't filter by language until these are assigned.",
+            untaggedInstances, untaggedTitles),
+        TriageTypeCount("cascade_mismatch", "Wrong default audio track",
+            "The default audio track doesn't match the title's resolved metadata language.",
+            mismatchTitles, mismatchTitles),
+        TriageTypeCount("multi_default", "Multiple default audio tracks",
+            "More than one audio track is flagged default — a file should have exactly one.",
+            multiDefaultTitles, multiDefaultTitles),
+        TriageTypeCount("language_mix", "Mixed-language series",
+            "Episodes disagree on audio language — the majority language is used for metadata.",
+            languageMixTitles, languageMixTitles),
+        TriageTypeCount("missing_artwork", "Missing poster artwork",
+            "No poster.jpg on disk for this title.",
+            missingArtworkTitles, missingArtworkTitles),
+        TriageTypeCount("missing_from_source", "No longer in Jellyfin",
+            "The scanner no longer finds this title in Jellyfin — kept for review, never auto-deleted.",
+            missingFromSourceTitles, missingFromSourceTitles),
+        TriageTypeCount("missing_still", "Missing episode image",
+            "Episode has no still image — no TMDB still and no screen-grab — so Ravilo shows a blank episode card.",
+            missingStillInstances, missingStillTitles),
+        TriageTypeCount("duplicate", "Duplicate library entries",
+            "The same Jellyfin item appears more than once — both open the same detail page; re-scan or remove the extra entry.",
+            dupGroups.values.sumOf { it.size }, dupGroups.size),
+        TriageTypeCount("duplicate_episode", "Duplicate episode files",
+            "Two files claim the same episode number — Ravilo can only play one of them, and auto-play-next stalls on the copy. Delete the extra file, or fix its episode number, then re-scan.",
+            dupEpisodeInstances, dupEpisodeTitles),
+        TriageTypeCount("unresolved_jellyfin_id", "Episode never matched in Jellyfin",
+            "jellystructure could read a season/episode from the filename, but Jellyfin never numbered this file (no IndexNumber) — it silently drops out of playstate, next-episode targeting, and Jellyfin's own Continue Watching/Next Up. Fix the episode's identification in Jellyfin (rename to match its naming rules, or manually identify it), then re-scan.",
+            unresolvedIdInstances, unresolvedIdTitles),
+        TriageTypeCount("zero_audio", "No audio tracks",
+            "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
+            zeroAudioInstances, zeroAudioTitles),
+        TriageTypeCount("cover_as_video", "Cover art muxed as a video track",
+            "A still image (cover.png etc.) is muxed as a second video stream — players may open the file but never start the video. Repairable: drop the cover stream.",
+            coverAsVideoInstances, coverAsVideoTitles),
+        TriageTypeCount("segments_lowconf", "Low-confidence segments",
+            "Intro/credits found by heuristic below 0.60 — worth an eyeball.",
+            segmentsLowConfInstances, segmentsLowConfTitles),
+        TriageTypeCount("no_segments", "No intro/credits detected",
+            "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
+            noSegmentsTitles, noSegmentsTitles),
+        // Phase 203 — omitted entirely (not sent as a 0) while mkvLayoutInstances/Titles are
+        // null, i.e. no sweep has completed yet for this process.
+        if (mkvLayoutInstances != null && mkvLayoutTitles != null) TriageTypeCount(
+            "mkv_track_layout", "Unplayable in Ravilo (MKV structure)",
+            "Either a flag edit moved the file's Tracks element after its first Cluster, or a prior repair left an element with a corrupted declared size. Jellyfin seeks/resyncs past both and plays the file fine, which is why nothing else here looks wrong — Ravilo reads linearly and buffers forever. Repair rewrites the header in place, no re-encode.",
+            mkvLayoutInstances, mkvLayoutTitles,
+        ) else null,
+        // Phase 254 (FR-254-7) — omitted while unknown, like the type above.
+        dev.jellystructure.media.FileDamage.damagedPathsOrNull()?.let { damaged ->
+            TriageTypeCount(
+                "file_damage", "Damaged video files",
+                "A deep check (reading the whole file) found parts of these files that cannot be read — data was overwritten mid-file. Jellyfin resyncs past it; a viewer sees a stall, a skip or a smear part-way through. Open the title: jellystructure can replace the file from the clean copy qBittorrent is still seeding.",
+                all.sumOf { TriageDetection.fileDamageCount(it, damaged) }, all.count { TriageDetection.fileDamageCount(it, damaged) > 0 },
+            )
+        },
+        // Phase 255 (FR-255-7) — two types, because they mean different things; omitted while unknown.
+        dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
+            val early = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.endsEarly(it) }.keys
+            TriageTypeCount(
+                dev.jellystructure.media.TrackCoverageFlags.TYPE_TRACK_ENDS_EARLY, "Audio or video stops before the file ends",
+                "A track in these files ends early. Viewers who get that track hear silence (or see black) from that point on, and which track they get depends on the player. Open the title for the exact time and the suggested fix.",
+                all.sumOf { TriageDetection.trackCoverageCount(it, early) }, all.count { TriageDetection.trackCoverageCount(it, early) > 0 },
+            )
+        },
+        dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull()?.let { flagged ->
+            val wrong = flagged.filterValues { dev.jellystructure.media.TrackCoverageFlags.headerWrong(it) }.keys
+            TriageTypeCount(
+                dev.jellystructure.media.TrackCoverageFlags.TYPE_DURATION_HEADER_WRONG, "File claims to be longer than it is",
+                "Everything in these files ends before the length the file reports. Players show the wrong length, and a player that marks watched at 90 % never gets there, so the episode never leaves Continue Watching.",
+                all.sumOf { TriageDetection.trackCoverageCount(it, wrong) }, all.count { TriageDetection.trackCoverageCount(it, wrong) > 0 },
+            )
+        },
+    )
+    return types
+}
+
+internal fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
     if (music == null || dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty()) return emptyList()
     val s = music.store.snapshot()
     val albums = s.albums.values.filter { it.missingSince == null }
@@ -555,7 +578,7 @@ private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, con
 
 
 /** Phase 280 (FR-280-7) — the audiobook libraries' attention entries; absent entirely when none is mapped. */
-private fun audiobookTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
+internal fun audiobookTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
     val scanner = music?.audiobooks ?: return emptyList()
     if (dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isEmpty()) return emptyList()
     val h = scanner.store.health()

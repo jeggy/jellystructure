@@ -178,7 +178,8 @@ data class EmptyQueuesResponse(
 )
 
 @Serializable
-data class TriageTypeCount(val key: String, val label: String, val description: String, val instances: Int, val titles: Int)
+data class TriageTypeCount(val key: String, val label: String, val description: String, val instances: Int, val titles: Int,
+    val movies: Int = 0, val series: Int = 0)   // Phase 285 (FR-285-9) — kind-split instances
 
 @Serializable
 data class TriageCount(val types: List<TriageTypeCount> = emptyList(), val total: Int = 0)

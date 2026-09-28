@@ -1,0 +1,6 @@
+-- Phase 285 (FR-285-8) — when each admin last opened the Dashboard. Must stay in sync with Dashboard.sq.
+
+CREATE TABLE dashboard_visit (
+    jellyfin_user_id TEXT NOT NULL PRIMARY KEY,
+    opened_at INTEGER NOT NULL
+);

@@ -266,7 +266,7 @@ tasks.register<Copy>("syncDesignAssets") {
     description = "Assemble the complete frontend dist (CSS + JS bundle + index.html) after webpack"
     group = "application"
     from(rootProject.layout.projectDirectory.dir("design/app")) {
-        include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "segments.css", "music.css", "suggestions.css")
+        include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "segments.css", "music.css", "suggestions.css", "dashboard.css")
         // FR-167-3 — self-hosted Space Grotesk/Sora/JetBrains Mono woff2 files wf.css now references
         // via relative @font-face url()s, replacing the old Google Fonts @import.
         include("fonts/**")
@@ -299,7 +299,7 @@ tasks.named("wasmJsBrowserDistribution") {
     doLast {
         copy {
             from(rootProject.layout.projectDirectory.dir("design/app")) {
-                include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "segments.css", "music.css", "suggestions.css")
+                include("wf.css", "app.css", "detail.css", "metadata.css", "seeding.css", "seeding.js", "segments.css", "music.css", "suggestions.css", "dashboard.css")
                 // FR-167-3 — see syncDesignAssets above.
                 include("fonts/**")
             }

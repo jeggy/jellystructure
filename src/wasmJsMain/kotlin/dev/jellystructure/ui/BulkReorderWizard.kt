@@ -31,7 +31,6 @@ fun renderBulkReorderWizard(container: Element, scope: CoroutineScope, mediaId: 
             return@launch
         }
         // Suppress triage dock while wizard is active
-        (document.getElementById("triage-dock") as? HTMLElement)?.style?.display = "none"
         val state = WizardState(item = item)
         state.targetOrder.addAll(detectInitialLanguages(item, "audio", "series"))
         renderStep1(container, scope, state)
@@ -96,7 +95,6 @@ private fun wizardHeader(item: MediaItem, step: Int): String {
 private fun wireBackButton(container: Element, scope: CoroutineScope, state: WizardState) {
     (document.getElementById("wiz-back") as? HTMLElement)?.addEventListener("click") {
         // Restore triage dock
-        (document.getElementById("triage-dock") as? HTMLElement)?.style?.removeProperty("display")
         App.navigate("/media/${state.item.id}")
     }
 }
@@ -703,7 +701,6 @@ private fun showDone(container: Element, scope: CoroutineScope, state: WizardSta
     }
 
     (document.getElementById("wiz-done-back") as? HTMLElement)?.addEventListener("click") {
-        (document.getElementById("triage-dock") as? HTMLElement)?.style?.removeProperty("display")
         App.navigate("/media/${state.item.id}")
     }
 

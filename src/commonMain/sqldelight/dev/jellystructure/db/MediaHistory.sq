@@ -27,6 +27,10 @@ SELECT * FROM media_history ORDER BY ts DESC LIMIT :limit;
 count:
 SELECT COUNT(*) FROM media_history;
 
+-- Phase 285 (FR-285-8) — what changed since an admin last opened the Dashboard.
+since:
+SELECT * FROM media_history WHERE ts > :since ORDER BY ts DESC LIMIT :limit;
+
 trimToMax:
 DELETE FROM media_history WHERE id NOT IN (
     SELECT id FROM media_history ORDER BY ts DESC LIMIT :max_rows
