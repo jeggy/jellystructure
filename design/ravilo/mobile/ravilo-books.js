@@ -64,14 +64,16 @@
     const top = '<div class="mu-ntop"><button class="mu-ib" data-np="close" aria-label="Close">' + IC.down + '</button><div class="ctx">' + (q.j3 === 'draw' ? '♪ ' : '') + t('mnav.audiobooks') + '<b>' + esc(b.title) + '</b></div><button class="mu-ib" data-nb="menu" aria-label="More">' + IC.more + '</button></div>';
     const cov = '<div class="mu-ncov" id="muBCov">' + cover(b) + '</div>';
     const meta = '<div class="mu-nmeta"><div class="b"><div class="mu-mq"><span id="bkChap">' + esc(c.title) + '</span></div><div class="mu-nsub"><a data-nb="book">' + esc(b.title) + '</a> · <a data-nb="author">' + esc(au) + '</a></div></div></div>';
-    const seek = '<div class="mu-seek bk-seek" id="bkSeek"><div class="tr"><span class="dn" id="bkDn"></span><span class="kb" id="bkKb"></span></div><div class="bk-book"><i id="bkBook"></i></div><div class="bub" id="bkBub">0:00</div><div class="tm"><span id="bkPos">0:00</span><span id="bkLeft"></span></div></div>';
+    const seek = '<div class="mu-seek bk-seek" id="bkSeek"><div class="tr"><span class="dn" id="bkDn"></span><span class="kb" id="bkKb"></span></div><div class="bub" id="bkBub">0:00</div><div class="tm"><span id="bkPos">0:00</span><span id="bkLeft"></span></div></div><div class="bk-bookscrub" id="bkBookScrub" data-nb="bookseek"><span class="l">' + t('ab.whole_book') + '</span><span class="trk"><i id="bkBook"></i><u id="bkBookKb"></u></span><span class="v" id="bkBookV"></span></div>';
     const speed = q.s1 !== 'no' ? '<button class="bk-chip" data-nb="speed" aria-label="' + t('ab.speed') + '">' + fmtSpeed(s.speed) + '</button>' : '<span class="bk-chip ghost"></span>';
     const sleep = '<button class="mu-ib sm' + (K.sleep ? ' on' : '') + '" data-nb="sleep" aria-label="' + t('ab.sleep') + '">' + IC.moon + (K.sleep ? '<span class="bk-sl" id="bkSl">' + sleepLabel() + '</span>' : '') + '</button>';
     const tp = s.finished ? '<div class="bk-fin"><b>' + t('ab.finished') + '</b><button class="mu-dacts-btn" data-nb="startover">' + t('ab.start_over') + '</button></div>'
       : '<div class="mu-tp">' + speed + '<button class="mu-ib" data-nb="b30" aria-label="' + t('ab.skip_back') + '">' + IC.b30 + '</button><button class="mu-pp" data-nb="pp" id="bkPP">' + pp() + '</button><button class="mu-ib" data-nb="f30" aria-label="' + t('ab.skip_fwd') + '">' + IC.f30 + '</button>' + sleep + '</div>';
+    // owner 2026-09-28 (R323 open question 2): a chapter list on the page itself — tap to jump; the strip follows the playing chapter
+    const chs = b.chapters.length > 1 ? '<div class="bk-chstrip" id="bkChs">' + b.chapters.map((x, i) => '<button class="bk-chc' + (i === ci ? ' on' : i < ci ? ' done' : '') + '" data-nb="chapjump" data-i="' + i + '"><b>' + (i + 1) + '</b><span>' + esc(x.title) + '</span><em>' + fmt(x.len) + '</em></button>').join('') + '</div>' : '';
     const bot = '<div class="mu-nbot"><button class="mu-ib" data-nb="chapters" aria-label="' + t('ab.chapters') + '">' + IC.list + '</button>' + (q.s3 !== 'later' ? '<button class="mu-ib" data-nb="mark" aria-label="' + t('ab.bookmark_add') + '">' + IC.mark + '</button>' : '<span class="mu-ib ghost"></span>') + '<button class="mu-ib" data-np="cast" aria-label="Cast">' + IC.cast + '</button><button class="mu-ib" data-nb="menu" aria-label="More">' + IC.more + '</button></div>';
-    if (land) return '<div class="bgt" style="' + tint + '"></div><button class="mu-ib mu-lclose" data-np="close">' + IC.down + '</button><div class="mu-nland">' + cov + '<div class="right">' + meta + seek + tp + bot + '</div></div>';
-    return '<div class="bgt" style="' + tint + '"></div>' + top + '<div class="mu-nmain"><div class="mu-nspacer"></div>' + cov + meta + seek + tp + '<div class="mu-nspacer"></div></div>' + bot;
+    if (land) return '<div class="bgt" style="' + tint + '"></div><button class="mu-ib mu-lclose" data-np="close">' + IC.down + '</button><div class="mu-nland">' + cov + '<div class="right">' + meta + seek + tp + chs + bot + '</div></div>';
+    return '<div class="bgt" style="' + tint + '"></div>' + top + '<div class="mu-nmain"><div class="mu-nspacer"></div>' + cov + meta + seek + tp + chs + '<div class="mu-nspacer"></div></div>' + bot;
   }
   const fmtSpeed = v => (Math.round(v * 100) / 100).toString().replace(/^(\d)$/, '$1.0') + '×';
   const pp = () => K.buffering ? '<span class="mp-pulse"><i></i><i></i><i></i></span>' : (K.playing ? IC.pause : IC.play);
@@ -80,7 +82,8 @@
     const b = cb(); if (!b) return;
     const s = BS[b.id], ci = B.chapterAt(b, s.pos), c = b.chapters[ci], inC = s.pos - c.start;
     const cp = Math.min(100, inC / c.len * 100), bp = Math.min(100, s.pos / b.len * 100);
-    if ($('bkDn')) { $('bkDn').style.width = cp + '%'; $('bkKb').style.left = cp + '%'; $('bkBook').style.width = bp + '%'; $('bkPos').textContent = fmt(inC) + ' / ' + fmt(c.len); $('bkLeft').textContent = t('ab.left', { t: B.fmtH(left(b)) }); }
+    if ($('bkDn')) { $('bkDn').style.width = cp + '%'; $('bkKb').style.left = cp + '%'; $('bkBook').style.width = bp + '%'; if ($('bkBookKb')) $('bkBookKb').style.left = bp + '%'; if ($('bkBookV')) $('bkBookV').textContent = B.fmtH(s.pos) + ' / ' + B.fmtH(b.len);
+      const strip = $('bkChs'); if (strip && strip.dataset.ci !== String(ci)) { strip.dataset.ci = ci; strip.querySelectorAll('.bk-chc').forEach((el, i) => { el.classList.toggle('on', i === ci); el.classList.toggle('done', i < ci); }); const on = strip.children[ci]; if (on) strip.scrollTo({ left: on.offsetLeft - 16, behavior: 'smooth' }); } $('bkPos').textContent = fmt(inC) + ' / ' + fmt(c.len); $('bkLeft').textContent = t('ab.left', { t: B.fmtH(left(b)) }); }
     if ($('bkPP')) $('bkPP').innerHTML = pp();
     if ($('bkSl')) $('bkSl').textContent = sleepLabel();
     if ($('bkChap') && $('bkChap').textContent !== c.title) $('bkChap').textContent = c.title;
@@ -148,6 +151,8 @@
     const x = e.target.closest('[data-nb]'); if (!x) return; e.stopPropagation();
     const k = x.dataset.nb, b = cb();
     if (k === 'pp') toggle(); else if (k === 'b30') skip(-30); else if (k === 'f30') skip(30);
+    else if (k === 'chapjump') { BS[b.id].pos = b.chapters[+x.dataset.i].start; BS[b.id].finished = false; live(); }
+    else if (k === 'bookseek') { const tr = x.querySelector('.trk').getBoundingClientRect(); const f = Math.max(0, Math.min(1, (e.clientX - tr.left) / tr.width)); BS[b.id].pos = Math.round(f * b.len); live(); }
     else if (k === 'speed') speedSheet(); else if (k === 'sleep') sleepSheet(); else if (k === 'chapters') chaptersSheet('chapters'); else if (k === 'mark') markSheet();
     else if (k === 'menu') bookMenu(b.id); else if (k === 'startover') { BS[b.id].finished = false; BS[b.id].pos = 0; K.playing = true; P.paintNow(); }
     else if (k === 'book') { P.closeNow(); RM.openDet('book', b.id); } else if (k === 'author') { P.closeNow(); RM.openDet('bauthor', b.authors[0]); }
@@ -201,6 +206,7 @@
     h += '<div class="row"><h3>' + t('ab.all_books') + '<span class="more" style="cursor:default">' + (l.length === 1 ? t('ab.books_one') : t('ab.books_n', { n: l.length })) + '</span></h3>' + chips + body + '</div>';
     return h + '<div style="height:24px"></div>';
   }
+  function contRow() { const ip = inProgress(); return ip.length ? '<div class="row"><h3>' + t('ab.continue') + '</h3>' + ip.map(contCard).join('') + '</div>' : ''; }
   function homeRow() { const l = books(); if (!l.length) return ''; return '<div class="row"><h3>' + t('mnav.audiobooks') + '</h3>' + (inProgress().length ? inProgress().map(contCard).join('') : '<div class="mu-track">' + l.map(b => bookCell(b).replace('mu-acard"', 'mu-acard" style="width:142px"')).join('') + '</div>') + '</div>'; }
   function paintSort(slot) { if (!books().length || K.chip) return; slot.innerHTML = '<button class="mu-sortpill" data-mu="bksort">' + t(SORTS[K.sort]) + '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>'; }
   function bookHTML(b) {
@@ -285,7 +291,7 @@
   }
   function active() { return !!K.cur; }
 
-  window.RaviloBooks = { active, nowHTML, miniHTML, live, stop, skip, toggle, shelf, homeRow, paintSort, detHTML, onClick, panelQs, panelPv, panelJumps, applyPv, jump, K, BS };
+  window.RaviloBooks = { active, nowHTML, miniHTML, live, stop, skip, toggle, shelf, homeRow, contRow, paintSort, detHTML, onClick, panelQs, panelPv, panelJumps, applyPv, jump, K, BS };
   P.paintPanel();
-  if (H.tab === 'm-books') H.render();
+  if (H.tab === 'm-books' || H.tab === 'm-listen') H.render();
 })();

@@ -178,13 +178,14 @@
     <hr class="dash" style="margin:10px 0;">
     <div class="steps">
       <span class="stepchip done"><span class="si">✓</span>scan_files</span>
-      <span class="stepchip done mu" title="Music brief §F — its own lane inside scan_files' run"><span class="si">✓</span>scan_music</span>
+      <span class="stepchip done mu" title="Music — runs in the media lane with films and series (owner 2026-09-28)"><span class="si">✓</span>scan_music</span>
       <span class="stepchip run"><span class="si">▸</span>pull_tmdb</span>
       <span class="stepchip mu">match_musicbrainz</span>
       <span class="stepchip">fetch_artwork</span>
       <span class="stepchip mu">fetch_music_artwork</span>
       <span class="stepchip">write_nfo</span>
       <span class="stepchip mu">write_music_nfo</span>
+      <span class="stepchip mu" title="Prospective 284 — only when Write tags into music files is on; a scan alone never writes">write_tags</span>
       <span class="stepchip mu" id="st-lyrics">fetch_lyrics</span>
       <span class="stepchip">sync_jellyfin</span>
       <span class="stepchip">detect_segments<span class="enq">enqueues</span></span>
@@ -192,6 +193,8 @@
       <span class="stepchip">detect_drift</span>
       <span class="stepchip">notify</span>
     </div>
+    <div class="tiny" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span class="mu-type">music</span><span class="mono">write_tags</span><span class="muted">last run</span> tags written into 20 files · 2 seeding · 38 WMA (ids not readable by Jellyfin)</div>
+    <div class="tiny" style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span class="mu-type">music</span><span class="mono">scan_music</span><span class="muted">last run</span> removed 104 macOS leftover files (<span class="mono">._*</span>, <span class="mono">.DS_Store</span>) — every scan does this; nothing reads them</div>
     <div class="tiny muted" style="margin-top:10px;line-height:1.6;">Stopping <b class="mono">pull_tmdb</b> ends that step only — the run moves on to <b class="mono">match_musicbrainz</b>. Whole-run <b>Stop scan</b> is in the pagebar. The two <span class="mono">enqueues</span> steps hand their work to a queue and return, so they finish instantly and are stopped from <b>Jobs &amp; workers</b> instead.</div>
     <!-- FR-214-3 — a stop that touches work already delegated to Jellyfin must say so, at the moment it
          is pressed, in the confirmation itself. The count is the in-flight subtitle extractions at that
@@ -460,17 +463,7 @@
         </div>
         <span class="lane-end"><span class="chip"><b class="lane-n">41</b> queued</span><span class="btn sm ghost lane-empty">Empty</span></span>
       </div>
-      <!-- music brief §F: only if 213's lane list gains a music lane (a dev decision) — drawn both ways -->
-      <div class="lane" data-lane="music" id="mu-lane" hidden>
-        <span class="lane-name"><span class="occ on"></span>music</span>
-        <div class="lane-body">
-          <b class="tiny">Matching · Low Tide Radio — Harbour Lights</b>
-          <div class="lane-kinds">match_album · fetch_cover · fingerprint · convert_audio</div>
-          <div class="lane-note">Paced by MusicBrainz's one request a second, so this lane is slow by design — on its own it never holds up a film's re-order.</div>
-        </div>
-        <span class="lane-end"><span class="chip"><b>2</b> queued</span></span>
-      </div>
-      <div class="mu-fence" style="margin:10px 0 0;"><span class="fl">Preview · mockup only</span><span class="seg" id="mu-lanes"><span class="on" data-ml="0">Music runs in the existing lanes</span><span data-ml="1">A music lane of its own</span></span><span class="tiny muted">a dev decision (213); with no lane of its own, music matching rides the <b>media</b> lane.</span></div>
+      <!-- owner 2026-09-28: music shares the films &amp; series lane (media) — no music lane -->
       <hr class="dash" style="margin:2px 0 10px;">
       <div class="tiny" style="line-height:1.6;color:var(--ink-soft);">A subtitle pre-warm asks <b>Jellyfin</b> to extract a track, and that ffmpeg reads the whole file — inside Jellyfin's own container, where none of the gates on the <b>Capacity</b> card can see it. That is why this queue exists and why it runs one at a time: the count of outstanding requests is the only number jellystructure can honestly report about it.</div>
     </div>
@@ -514,8 +507,6 @@
 <script>
 (function () {
   const main = document.querySelector('main'), qs = document.createElement('div'); main.appendChild(qs);
-  document.getElementById('mu-lanes').addEventListener('click', e => { const b = e.target.closest('[data-ml]'); if (!b) return;
-    [...b.parentNode.children].forEach(x => x.classList.toggle('on', x === b)); document.getElementById('mu-lane').hidden = b.dataset.ml !== '1'; });
   function paint() { const on = MusicQ.get('lyrics') === 'on';
     document.getElementById('st-lyrics').style.display = on ? '' : 'none';
     document.getElementById('st-count').textContent = 'run #2847 · step 3 of ' + (on ? 14 : 13);

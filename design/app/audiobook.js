@@ -8,7 +8,10 @@
   const P = new URLSearchParams(location.search);
   const b = B.book(P.get('b')) || B.household;
   const Q = k => (window.MusicQ ? MusicQ.get(k) : null);
-  const tagWrite = () => Q('abtags') === 'draw' && localStorage.getItem('js-ab-tagwrite') === '1';
+  const tagWrite = () => Q('abtags') === 'draw' && FilesTab.writeOn('book');
+  // prospective 284 §7.8 — the same Files tab, with 281's field set; it replaces 281's switch-only design
+  const bookSpec = () => ({ kind: 'book', title: f.title, author: f.authors.join(' & '), narrator: f.narrators.join(', '), desc: f.desc ? f.desc.slice(0, 38) + '…' : '', publisher: f.publisher || '', genre: f.genres[0] || 'Audiobook', total: b.parts.length, cover: hasCover,
+    tracks: order.map(p => ({ id: 'p' + p.n, n: p.n, title: p.title })) });
   let tab = P.get('tab') || 'details', locked = false, source = b.source, hasCover = b.cover, order = b.parts.slice();
   const f = { title: b.title, subtitle: b.subtitle, authors: b.authors.map(a => B.author(a).name), narrators: b.narrators.slice(), series: b.series ? b.series.name : '', seriesN: b.series ? b.series.n : '', year: b.year, publisher: b.publisher, language: b.language, genres: b.genres.slice(), desc: b.desc };
   const fromFiles = { title: 1, authors: 1, year: 1, genres: 1 };
@@ -29,10 +32,7 @@
     $('ab-bar').innerHTML = '<h1>' + esc(f.title) + ' <span class="muted">(' + esc(String(f.year)) + ')</span></h1><span class="spacer"></span>'
       + '<span class="menu-wrap"><span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span><div class="menu"><a class="menu-item" href="#"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">The book’s folder — Jellyfin lists ' + b.parts.length + ' separate item' + (b.parts.length > 1 ? 's' : '') + '</span></span></a>' + (source === 'itunes' ? '<a class="menu-item" href="#"><span class="mi-ic">↗</span><span>iTunes<span class="mi-sub">the accepted suggestion</span></span></a>' : '') + '</div></span>'
       + '<span class="menu-wrap"><span class="btn sm ghost menu-btn">⋯</span><div class="menu"><div class="menu-item" data-a="repull"><span class="mi-ic">⟲</span><span>Re-read the files<span class="mi-sub">Tags, part order and lengths from Jellyfin</span></span></div><div class="menu-item" data-a="ask"><span class="mi-ic">⌕</span><span>Ask the providers again<span class="mi-sub">iTunes · Google Books · Open Library · Audnexus</span></span></div></div></span>'
-      + '<span class="split"><span class="btn primary" data-a="savesync">Save &amp; Sync ↻</span><span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span><div class="menu">'
-        + '<div class="menu-item" data-a="savesync"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">' + (tw ? 'cover.jpg + tags in ' + b.parts.length + ' files' : 'cover.jpg') + ', then ask Jellyfin to re-read</span></span></div>'
-        + '<div class="menu-item" data-a="save"><span class="mi-ic">↓</span><span>' + (tw ? 'Save → cover + tags' : 'Save → cover.jpg') + '<span class="mi-sub">' + (tw ? 'Writes title, author, narrator, description into every part' : 'Tag writing is off in Settings — everything else stays here') + '</span></span></div>'
-        + '<div class="menu-item" data-a="sync"><span class="mi-ic">↻</span><span>Sync Jellyfin<span class="mi-sub">Ask Jellyfin to re-read (no rewrite)</span></span></div></div></span>';
+      + FilesTab.saveMenu({ kind: 'book', nfo: 'cover.jpg', where: 'book', n: b.parts.length, differ: FilesTab.summary(bookSpec()).differ });
   }
   function head() {
     const ser = f.series ? '<span class="chip" style="font-size:.74rem">' + esc(f.series) + ' · Book ' + esc(String(f.seriesN)) + (b.series ? ' of ' + b.series.of : '') + '</span>' : '';
@@ -54,7 +54,7 @@
     $('ab-banners').innerHTML = h;
   }
   function tabs() {
-    const T = [['details', 'Details'], ['parts', 'Parts'], ['chapters', 'Chapters'], ['artwork', 'Artwork']].concat(Q('ablisten') === 'show' ? [['listeners', 'Listeners']] : []).concat([['history', 'History']]);
+    const T = [['details', 'Details'], ['parts', 'Parts'], ['chapters', 'Chapters'], ['files', 'Files'], ['artwork', 'Artwork']].concat(Q('ablisten') === 'show' ? [['listeners', 'Listeners']] : []).concat([['history', 'History']]);
     if (!T.some(t => t[0] === tab)) tab = 'details';
     $('tabbar').innerHTML = T.map(t => '<span data-tab="' + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</span>').join('');
   }
@@ -66,7 +66,7 @@
   function suggestions() {
     if (b.id === 'the-salt-road') return [
       { p: 'itunes', name: 'iTunes', where: 'DK store', hit: { title: 'The Salt Road', by: 'Anna Berg', year: 2019 }, fill: { desc: b.desc, cover: '600 px', year: '2019' } },
-      { p: 'audnexus', name: 'Audnexus', where: 'uk', hit: { title: 'The Salt Road: Northern Roads, Book 2', by: 'Anna Berg', year: 2019 }, fill: { narrators: 'Tom Hale', series: 'Northern Roads · Book 2', publisher: 'Northlight Audio' } },
+      { p: 'audnexus', name: 'Audnexus', where: 'from the ASIN you pasted · B07K9Q2R4T', hit: { title: 'The Salt Road: Northern Roads, Book 2', by: 'Anna Berg', year: 2019 }, fill: { narrators: 'Tom Hale', series: 'Northern Roads · Book 2', publisher: 'Northlight Audio' } },
       { p: 'google', name: 'Google Books', where: 'da', none: 'Found the print edition only — nothing an audiobook needs.' },
       { p: 'openlibrary', name: 'Open Library', none: 'Nothing found for this title on Open Library.' }];
     const au = B.authorNames(b.authors);
@@ -74,12 +74,14 @@
       { p: 'itunes', name: 'iTunes', where: 'DK store', none: 'Nothing found for this title on iTunes. It knows ' + au + ' — 5 other audiobooks, none of them this one.' },
       { p: 'google', name: 'Google Books', where: 'da', none: 'Nothing found for this title on Google Books.' },
       { p: 'openlibrary', name: 'Open Library', none: 'Nothing found for this title on Open Library. It knows the author (17 works), not this book.' },
-      { p: 'audnexus', name: 'Audnexus', where: 'uk · de', none: 'Nothing found for this title on Audnexus — it covers what Audible sells, and Audible has no Danish store.' }];
+      { p: 'audnexus', name: 'Audnexus', where: 'needs an ASIN', asin: true }];
   }
   const FL = { desc: 'Description', cover: 'Cover', year: 'Year', narrators: 'Narrator', series: 'Series', publisher: 'Publisher' };
   function sugCard(s) {
     const head = '<div class="h">' + s.name + (s.where ? '<span class="p">' + s.where + '</span>' : '') + '</div>';
     if (s.none) return '<div class="ab-sug none">' + head + '<div class="nt">' + esc(s.none) + '</div></div>';
+    if (s.asin) return '<div class="ab-sug none">' + head + '<div class="nt">Audnexus answers only for an Audible id. If this book is on Audible, paste the ASIN from its page (10 characters, starts with B0).</div>'
+      + '<div class="ab-asin"><input placeholder="B0…" maxlength="10" data-asin><span class="btn sm" data-a="asin">Look up</span></div></div>';
     const perField = Q('abapply') === 'field';
     return '<div class="ab-sug">' + head + '<div class="hit"><div class="th" style="' + B.coverStyle({ id: b.id + s.p, hue: (b.hue + 30) % 360 }) + '"></div><div><b style="font-size:.84rem">' + esc(s.hit.title) + '</b><div class="tiny muted">' + esc(s.hit.by) + ' · ' + s.hit.year + '</div></div></div>'
       + '<div class="tiny muted" style="margin:8px 0 2px">What it would fill</div>'
@@ -138,8 +140,31 @@
     if (edited.size) H.push(['2026-09-26 20:12', 'Edited here · ' + [...edited].map(k => FL[k] || k).join(', ')]);
     return '<div class="mu-hist">' + H.reverse().map(h => '<div class="mu-hi"><span class="ts">' + h[0] + '</span><span>' + esc(h[1]) + '</span></div>').join('') + '</div>';
   }
-  function panel() { tabs(); $('ab-panel').innerHTML = tab === 'parts' ? parts() : tab === 'chapters' ? chaptersTab() : tab === 'artwork' ? artwork() : tab === 'listeners' ? listeners() : tab === 'history' ? history() : details(); }
+  function panel() { tabs(); if (tab === 'files') { FilesTab.mount($('ab-panel'), bookSpec(), bar); return; } $('ab-panel').innerHTML = tab === 'parts' ? parts() : tab === 'chapters' ? chaptersTab() : tab === 'artwork' ? artwork() : tab === 'listeners' ? listeners() : tab === 'history' ? history() : details(); }
   function repaint() { bar(); head(); banners(); panel(); }
+
+  /* ---- Split into two books… — a preview first (owner 2026-09-28, 281 open question 2): two columns, drag a part across ---- */
+  let splitCols = null;
+  function splitOpen() {
+    const T = b.twoBooks || [b.title + ' · 1', b.title + ' · 2'], half = Math.ceil(b.parts.length / 2);
+    splitCols = [b.parts.slice(0, half).map(p => p.n), b.parts.slice(half).map(p => p.n)];
+    let m = document.getElementById('ab-split'); if (!m) { m = document.createElement('div'); m.id = 'ab-split'; m.className = 'mu-modal'; document.body.appendChild(m); }
+    const paint = () => {
+      const col = (i) => '<div class="ab-scol" data-scol="' + i + '"><div class="ab-sh"><input value="' + esc(T[i]) + '"><span class="tiny muted">' + splitCols[i].length + ' part' + (splitCols[i].length === 1 ? '' : 's') + ' · ' + B.fmtH(splitCols[i].reduce((s, n) => s + b.parts.find(p => p.n === n).len, 0)) + '</span></div>'
+        + splitCols[i].map(n => { const p = b.parts.find(x => x.n === n); return '<div class="ab-spart" draggable="true" data-sp="' + n + '"><span class="ab-grab">⋮⋮</span><span class="mono tiny">' + String(n).padStart(2, '0') + '</span><span>' + esc(p.title) + '</span><span class="tiny muted">' + M.fmtLen(p.len) + '</span></div>'; }).join('')
+        + (splitCols[i].length ? '' : '<div class="ab-sempty">Drag parts here</div>') + '</div>';
+      m.innerHTML = '<div class="card" style="max-width:820px;width:100%"><h3 style="margin:0 0 4px">Split into two books</h3><p class="tiny muted" style="margin:0 0 14px;line-height:1.55">Grouped by the title in each part’s tags. Drag a part to the other side if it belongs there. Nothing moves on disk until you split — then each book gets its own page, and the folder is left as it is.</p>'
+        + '<div class="ab-scols">' + col(0) + col(1) + '</div>'
+        + '<div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><span class="btn ghost" data-ms="no">Cancel</span><span class="btn primary" data-ms="go"' + (splitCols[0].length && splitCols[1].length ? '' : ' aria-disabled="true" style="opacity:.45"') + '>Split into two books</span></div></div>';
+    };
+    paint(); m.classList.add('on');
+    m.onclick = e => { if (e.target === m || e.target.closest('[data-ms="no"]')) m.classList.remove('on'); const g = e.target.closest('[data-ms="go"]'); if (g && !g.getAttribute('aria-disabled')) { m.classList.remove('on'); toast('Split · two books, ' + splitCols[0].length + ' and ' + splitCols[1].length + ' parts — each has its own page'); } };
+    let drag = null;
+    m.ondragstart = e => { const p = e.target.closest('[data-sp]'); if (p) { drag = +p.dataset.sp; p.classList.add('drag'); } };
+    m.ondragover = e => { const c = e.target.closest('[data-scol]'); if (c && drag != null) { e.preventDefault(); m.querySelectorAll('.ab-scol.over').forEach(x => x.classList.remove('over')); c.classList.add('over'); } };
+    m.ondrop = e => { const c = e.target.closest('[data-scol]'); if (!c || drag == null) return; e.preventDefault(); const to = +c.dataset.scol; splitCols = splitCols.map(l => l.filter(n => n !== drag)); splitCols[to].push(drag); splitCols[to].sort((x, y) => x - y); drag = null; paint(); };
+    m.ondragend = () => { drag = null; m.querySelectorAll('.drag,.over').forEach(x => x.classList.remove('drag', 'over')); };
+  }
 
   /* ---- events ---- */
   document.addEventListener('click', e => {
@@ -164,7 +189,9 @@
     else if (k === 'usecover') { hasCover = true; repaint(); toast('cover.jpg written'); }
     else if (k === 'savesync' || k === 'save') toast(tagWrite() ? 'cover.jpg + tags written into ' + b.parts.length + ' files · Jellyfin re-reading' : 'cover.jpg written · Jellyfin re-reading ↻');
     else if (k === 'sync') toast('Sync requested ↻');
-    else if (k === 'split') toast('Split into two books · parts 1–3 and 4–6 — each gets its own page');
+    else if (k === 'savefiles') { if (a.dataset.off) toast('Turn on Write tags into audiobook files in Settings → Music providers'); else { tab = 'files'; panel(); } }
+    else if (k === 'split') splitOpen();
+    else if (k === 'asin') { const v = (document.querySelector('[data-asin]') || {}).value || ''; toast(/^B0[A-Z0-9]{8}$/i.test(v.trim()) ? 'Asking Audnexus for ' + v.trim().toUpperCase() + '…' : 'An ASIN is 10 characters and starts with B0'); }
     else if (k === 'keep1' || k === 'gapok') { a.closest('.mu-note').remove(); toast('Noted · this flag won’t come back for this folder'); }
   });
   document.addEventListener('change', e => {
@@ -179,6 +206,7 @@
   document.addEventListener('dragover', e => { const r = e.target.closest('.ab-tr'); if (r && dragI != null) { e.preventDefault(); document.querySelectorAll('.ab-tr.over').forEach(x => x.classList.remove('over')); r.classList.add('over'); } });
   document.addEventListener('drop', e => { const r = e.target.closest('.ab-tr'); if (!r || dragI == null) return; e.preventDefault(); const to = +r.dataset.i; const [m] = order.splice(dragI, 1); order.splice(to, 0, m); dragI = null; panel(); toast('Order kept here · the files are not renamed'); });
   document.addEventListener('dragend', () => { dragI = null; document.querySelectorAll('.ab-tr.drag,.ab-tr.over').forEach(x => x.classList.remove('drag', 'over')); });
+  TagsQ.mount($('ab-tq')); TagsQ.on(bar);
   if (window.MusicQ) { MusicQ.mount($('ab-qs'), 'audiobook'); MusicQ.on(repaint); }
   window.addEventListener('storage', repaint);
   fence(); repaint();

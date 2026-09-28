@@ -7,7 +7,7 @@
   const esc = s => (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const LOCK = '<svg viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.2" rx="1.6" fill="currentColor"/><path d="M3.1 5V3.5a2.4 2.4 0 0 1 4.8 0V5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
   const LYR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M4 11h9M4 16h6"/><circle cx="17.5" cy="16.5" r="2.5"/><path d="M20 16.5V8l-2 1"/></svg>';
-  let view = 'albums', state = 'partly', q = '', sel = new Set(), facets = {}, openF = null;
+  let view = 'artists', state = 'partly', q = '', sel = new Set(), facets = {}, openF = null;
   try { const u = new URLSearchParams(location.search); if (u.get('mview')) view = u.get('mview'); if (u.get('mstate')) state = u.get('mstate'); } catch (e) {}
 
   // the page's truth depends on the preview state: "everything unmatched" is the first real state of this household's library
@@ -153,14 +153,24 @@
   }
   function selBar() {
     return '<div class="mu-selbar' + (sel.size && view === 'albums' ? ' on' : '') + '"><b>' + sel.size + '</b> selected'
-      + ['match:Match now', 'covers:Fetch covers', 'nfo:Write NFOs', 'lock:Lock match', 'clear:Clear match'].map(x => { const [k, l] = x.split(':'); return '<span class="btn sm' + (k === 'match' ? ' primary' : k === 'clear' ? ' ghost' : '') + '" data-bulk="' + k + '">' + l + '</span>'; }).join('')
-      + '<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span></div>';
+      + ['match:Match now', 'covers:Fetch covers', 'nfo:Write NFOs', 'tags:Write tags…', 'lock:Lock match', 'clear:Clear match'].map(x => { const [k, l] = x.split(':'); return '<span class="btn sm' + (k === 'match' ? ' primary' : k === 'clear' ? ' ghost' : '') + '" data-bulk="' + k + '">' + l + '</span>'; }).join('')
+      + '<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span></div>'
+      + (tagAsk && sel.size && view === 'albums' ? tagConfirm() : '');
+  }
+  // prospective 284 §7.4 — the skip reasons as counts before confirming. Seeding is 0 today (§1: no music is in qBittorrent).
+  let tagAsk = false;
+  function tagConfirm() {
+    const T = [...sel].flatMap(id => M.tracksOf(id)), un = T.filter(t => { const a = M.album(t.albumId); return a.match !== 'matched' && a.match !== 'locked'; }).length;
+    const w = T.filter(t => M.reencodes(t)).length, write = T.length - un, seed = 0;
+    const off = localStorage.getItem('js-mu-tagwrite') === '0';
+    return '<div class="mu-bulkc"><b>Write tags to ' + write + ' song' + (write === 1 ? '' : 's') + '?</b><span class="muted">' + T.length + ' selected · ' + un + ' unmatched (skipped — nothing to write yet) · ' + seed + ' seeding · ' + w + ' WMA (tagged; Jellyfin won’t read their ids)</span><span class="spacer" style="flex:1"></span>'
+      + (off ? '<span class="tiny" style="color:var(--warn)">Tag writing is off in Settings → Music providers</span>' : '') + '<span class="btn sm ghost" data-bulk="tagno">Cancel</span><span class="btn sm primary" data-bulk="taggo"' + (off || !write ? ' aria-disabled="true" style="opacity:.45"' : '') + '>Write ' + write + '</span></div>';
   }
   function render() {
     const n = view === 'artists' ? artistsShown().length : view === 'songs' ? songsShown().length : albumsShown().length;
     const live = state !== 'empty' && state !== 'unscanned';
-    root.innerHTML = '<div class="mu-top"><span class="seg" id="mu-view">' + ['albums:Albums', 'artists:Artists', 'songs:Songs'].map(x => { const [k, l] = x.split(':'); return '<span data-mview="' + k + '" class="' + (view === k ? 'on' : '') + '">' + l + '</span>'; }).join('') + '</span>' + statusLine() + '</div>'
-      + '<p class="page-sub" style="margin-top:0">Albums, artists and songs from Jellyfin’s <b>Musik</b> library, matched against <b>MusicBrainz</b> — the metadata this page maintains is written to <span class="mono">album.nfo</span> / <span class="mono">artist.nfo</span>, never into the files. Not the <b>Music videos</b> library: those are films and stay under their own kind.</p>'
+    root.innerHTML = '<div class="mu-top"><span class="seg" id="mu-view">' + ['artists:Artists', 'albums:Albums', 'songs:Songs'].map(x => { const [k, l] = x.split(':'); return '<span data-mview="' + k + '" class="' + (view === k ? 'on' : '') + '">' + l + '</span>'; }).join('') + '</span>' + statusLine() + '</div>'
+      + '<p class="page-sub" style="margin-top:0">Albums, artists and songs from Jellyfin’s <b>Musik</b> library, matched against <b>MusicBrainz</b> — what this page maintains is written into the files’ own tags first (Picard’s vocabulary) and <span class="mono">album.nfo</span> / <span class="mono">artist.nfo</span> second — the file is the record. Not the <b>Music videos</b> library: those are films and stay under their own kind.</p>'
       + fence() + (live ? facetBar() + '<div class="mu-active">' + activeBar(n) + '</div>' + selBar() : '') + body();
     if (window.MusicQ && !document.getElementById('mu-qs-lib')) { const d = document.createElement('div'); d.id = 'mu-qs-lib'; root.after(d); MusicQ.mount(d, 'library'); }
     const qp = document.getElementById('mu-qs-lib'); if (qp) qp.hidden = root.hidden;
@@ -182,7 +192,10 @@
     if (b) {
       const k = b.dataset.bulk, n = sel.size;
       if (k === 'all') { albumsShown().forEach(a => sel.add(a.id)); render(); return; }
-      if (k === 'none') { sel.clear(); render(); return; }
+      if (k === 'none') { sel.clear(); tagAsk = false; render(); return; }
+      if (k === 'tags') { tagAsk = true; render(); return; }
+      if (k === 'tagno') { tagAsk = false; render(); return; }
+      if (k === 'taggo') { if (b.getAttribute('aria-disabled')) return; tagAsk = false; toast('write_tags queued · ' + n + ' album' + (n > 1 ? 's' : '') + ' · Jobs & workers'); sel.clear(); render(); return; }
       const msg = { match: 'Matching ' + n + ' album' + (n > 1 ? 's' : '') + ' against MusicBrainz · one request a second — about ' + Math.max(2, n * 4) + ' s', covers: 'Fetching covers for ' + n + ' from the Cover Art Archive', nfo: 'Writing album.nfo for ' + n + ' · then Jellyfin re-reads them', lock: n + ' match' + (n > 1 ? 'es' : '') + ' locked · won’t be re-matched', clear: n + ' match' + (n > 1 ? 'es' : '') + ' cleared · the fields it filled stay until the next run' }[k];
       toast(msg); sel.clear(); render(); return;
     }

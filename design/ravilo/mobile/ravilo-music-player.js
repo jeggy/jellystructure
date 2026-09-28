@@ -80,10 +80,11 @@
       + (P.cast ? '<div class="mu-ndev"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span>' + esc(t('music.playing_on', { d: P.cast })) + '</div>' : '') + '</div>'
       + '<button class="mu-ib" data-np="fav" style="color:' + (MS.favs.has(x.id) ? 'var(--accent)' : 'var(--ink-soft)') + '" aria-label="My List">' + (MS.favs.has(x.id) ? IC.heart.replace('fill="none"', 'fill="currentColor"') : IC.heart) + '</button></div>';
   }
-  function smallHead(x, a) { return '<div class="mu-lhead">' + U.cover(a, 'sm') + '<div class="b"><div class="t">' + esc(x.title) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + '</div></div></div>'; }
+  function smallHead(x, a) { return '<div class="mu-lhead">' + U.cover(a, 'sm') + '<div class="b"><div class="t">' + esc(x.title) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + '</div>' + (P.cast ? '<div class="mu-ndev"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span>' + esc(t('music.playing_on', { d: P.cast })) + '</div>' : '') + '</div></div>'; }
   function bottomHTML(x) {
     return '<div class="mu-nbot">' + (hasLyrics(x) ? '<button class="mu-ib' + (P.lyrics ? ' on' : '') + '" data-np="lyrics" aria-label="' + t('music.lyrics') + '">' + IC.lyr + '</button>' : '<span class="mu-ib ghost"></span>')
-      + '<button class="mu-ib' + (q.j4 === 'queue' && !P.lyrics ? ' on' : '') + '" data-np="queue" aria-label="' + t('music.queue') + '">' + IC.queue + '</button>'
+      // owner 2026-09-28: with a Queue tab in the bar the button is dropped (it opened the same list); bars without one keep it
+      + (RM.bar().some(x => x[0] === 'm-queue') ? '' : '<button class="mu-ib' + (q.j4 === 'queue' && !P.lyrics ? ' on' : '') + '" data-np="queue" aria-label="' + t('music.queue') + '">' + IC.queue + '</button>')
       + '<button class="mu-ib' + (P.cast ? ' on' : '') + '" data-np="cast" aria-label="Cast">' + IC.cast + '</button>'
       + '<button class="mu-ib" data-np="menu" aria-label="More">' + IC.more + '</button></div>';
   }
@@ -104,7 +105,7 @@
     else body = '<div class="mu-nspacer"></div>' + cov + metaHTML(x, a) + seekHTML(x) + transportHTML() + '<div class="mu-nspacer"></div>';
     return '<div class="bgt" style="' + tint + '"></div>' + top + '<div class="mu-nmain">' + body + '</div>' + bottomHTML(x);
   }
-  function openNow() { if (!cur() && !BK()) return; P.open = true; now.classList.add('on'); paintNow(); paintMini(); }
+  function openNow() { if (!cur() && !BK()) return; if (MS.mode === 'music' && RM.bar().some(b => b[0] === 'm-now')) { H.setTab('m-now'); H.render(); return; } P.open = true; now.classList.add('on'); paintNow(); paintMini(); }
   function closeNow() { P.open = false; P.tabbed = false; now.classList.remove('on', 'tabbed'); now.style.transform = ''; now.style.bottom = ''; paintMini(); }
   /* the Now playing TAB (owner, 2026-09-27): the same screen as a page, the bar stays under it. Nothing
      playing ⇒ whatever was played last, loaded and paused where it was left. */
@@ -144,6 +145,7 @@
   const mini = document.createElement('div'); mini.className = 'mu-mini'; mini.id = 'muMini'; screen.appendChild(mini);
   function navShown() {
     const d = $('detail'), mp = $('mp'), rr = $('rcRem');
+    if (MS.mode === 'music' && !(mp && mp.classList.contains('on')) && !(rr && rr.classList.contains('on'))) return true; // the bar is always there in music mode
     return !(MS.det || (d && d.classList.contains('on')) || (mp && mp.classList.contains('on')) || (rr && rr.classList.contains('on')));
   }
   function paintMini() {
@@ -157,10 +159,11 @@
     if (!show) return;
     const a = M.album(x.albumId);
     mini.innerHTML = '<div class="pg"><i id="muMiniBar"></i></div>' + (q.j5 === 'swipe' ? '<span class="gr"></span>' : '') + U.cover(a, 'sm')
-      + '<div class="tx"><div class="n">' + esc(x.title) + '</div><div class="d">' + esc(M.artistNames(x.artistIds)) + (P.cast ? ' · ' + esc(P.cast) : '') + '</div></div>'
+      + '<div class="tx"><div class="n">' + esc(x.title) + '</div><div class="d">' + esc(M.artistNames(x.artistIds)) + '' + '</div></div>'
       + '<button id="muMiniPP" data-mini="pp" aria-label="Play or pause"></button>'
       + (P.qi < P.queue.length - 1 || P.repeat === 'all' ? '<button data-mini="next" aria-label="Next">' + IC.next.replace(/ fill="currentColor" stroke="none"/g, '') + '</button>' : '')
       + (q.j5 === 'x' ? '<button class="x" data-mini="stop" aria-label="' + t('music.stop') + '">' + IC.x + '</button>' : '');
+    if (window.RaviloSpeakers) RaviloSpeakers.afterMini(mini);
     paintLive();
   }
   new MutationObserver(() => paintMini()).observe($('detail'), { attributes: true, attributeFilter: ['class'] });
@@ -197,6 +200,7 @@
       + (q.j7 === 'flow' ? rowB('addpl', S.pl, t('music.add_playlist')) : '<div class="mu-row-ph">' + rowB('addpl', S.pl, t('music.add_playlist'), 'phase 2') + '</div>')
       + rowB('goal', S.al, t('music.go_album')) + (a.artistId !== 'various' || x.artistIds.length ? rowB('goar', S.ar, t('music.go_artist')) : '')
       + rowB('fav', fav ? S.heart.replace('fill="none"', 'fill="currentColor"') : S.heart, (fav ? '✓ ' : '♡ ') + (window.t ? (t('pm.my_list') !== 'pm.my_list' ? t('pm.my_list') : 'My List') : 'My List')));
+    if (window.RaviloSpeakers) RaviloSpeakers.afterMenu(id);
   }
   function queueRow(id, i, isNow) {
     const x = M.track(id), a = M.album(x.albumId);
@@ -356,6 +360,7 @@
   if (window.innerWidth > 1000) document.body.classList.add('muq-open');
   const btn = (grp, v, l, lean, on) => '<button data-g="' + grp + '" data-v="' + v + '" class="' + (on ? 'on' : '') + '">' + l + (lean ? '<span class="ln">lean</span>' : '') + '</button>';
   function paintPanel() {
+    panel.innerHTML = ''; panel.hidden = true; panel.style.display = 'none'; return; // owner 2026-09-28: every §J / §M7 question decided — the review panel is gone
     panel.innerHTML = '<div class="mq-h" data-toggle="1"><b>♪ Music & audiobooks · round 1</b><span>brief 2026-09-27 §J + §M7 · mockup only</span><span style="margin-left:auto">' + (document.body.classList.contains('muq-open') ? '›' : '‹') + '</span></div><div class="mq-body">'
       + '<div class="mq-sec">Round-1 questions · lean marked</div>' + J.map(j => '<div class="mq-q"><div class="t">' + j[1] + '</div><div class="d">' + j[2] + '</div><div class="mq-opts">' + j[3].map(o => btn(j[0], o[0], o[1], o[2], q[j[0]] === o[0])).join('') + '</div></div>').join('')
       + (window.RaviloBooks ? RaviloBooks.panelQs(btn) : '')
@@ -378,7 +383,7 @@
     else if (k === 'pls') { MS.playlists = v === '2' ? [{ id: 'sun', name: 'Sunday morning', ids: ['glass-birds-1', 'salt-on-the-window-2', 'brim-3', 'slow-green-4', 'kaffe-og-cigaretter-1', 'undertow-3', 'morning-fields-2'] }, { id: 'kit', name: 'Kitchen radio', ids: ['paper-planes-1', 'kite-weather-1', 'stormur-1', 'signal-lost-1', 'copperline-2'] }] : []; RM.rerender(); if (MS.det && MS.det.kind === 'playlist') RM.closeAllDet(); }
     else if (k === 'pst') {
       if (MS.mode !== 'music') RM.setMode('music');
-      ensurePlaying(); MS.nocoverAll = v === 'nocov'; P.cast = v === 'cast' ? 'Stue TV' : null; P.stickyBuf = v === 'buf'; P.fail = false; closeSheet();
+      ensurePlaying(); MS.nocoverAll = v === 'nocov'; P.cast = v === 'cast' ? 'Stue' : null; P.castHidden = false; P.stickyBuf = v === 'buf'; P.fail = false; closeSheet();
       if (v === 'buf') { P.buffering = true; P.playing = true; }
       else { P.buffering = false; P.playing = v !== 'pause' && v !== 'end'; }
       if (v === 'end') { P.qi = P.queue.length - 1; P.repeat = 'off'; P.pos = 0; }

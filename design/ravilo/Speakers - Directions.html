@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Music on the household's speakers: directions (prospective 286 · R324)</title>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+/* Page-local (sp-*). Frames, sheet, cast glyph, captions and skins come from mobile-directions.css. */
+a{color:#9d93ff}a:hover{color:#c7c0ff}
+.scn{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+.sp-sbar{display:flex;justify-content:space-between;padding:14px 22px 4px;font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums;flex:none}
+.ios .sp-sbar{padding-top:18px;padding-left:34px;padding-right:30px}
+.sp-top{display:flex;align-items:center;gap:10px;padding:8px 18px 6px;flex:none}
+.sp-top h1{margin:0;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.sp-top .sp{flex:1}
+.sp-ib{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);background:rgba(255,255,255,.06);flex:none}
+.sp-ib.lit{color:var(--accent-2);background:var(--chip)}
+.noir .sp-ib.lit{color:var(--ink)}
+.sp-ib svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-ib .castic{width:20px;height:18px}
+.sp-body{flex:1;overflow:hidden;padding:0 18px}
+.sp-chips{display:flex;gap:8px;margin:8px 0 14px}
+.sp-chips b{height:36px;padding:0 14px;border-radius:18px;display:flex;align-items:center;font-size:13px;font-weight:600;background:rgba(255,255,255,.07);color:var(--ink-soft)}
+.sp-chips b.on{background:var(--ink);color:var(--bg)}
+.sp-field{height:46px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;padding:0 14px;gap:10px;color:var(--ink-dim);font-size:14px}
+.sp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.sp-alb .c{aspect-ratio:1;border-radius:12px;position:relative;overflow:hidden}
+.sp-alb .t{font-size:13.5px;font-weight:600;margin-top:7px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-alb .a{font-size:13px;color:var(--ink-dim);margin-top:2px}
+.sp-h3{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;margin:16px 0 10px;color:var(--ink)}
+/* bottom bar — the owner's music bar: Listen · Browse · Playing · Queue · Profile (J2 cnp) */
+.sp-bn{flex:none;background:var(--bg-2);border-top:1px solid var(--line);padding:8px 0 22px;display:flex;position:relative;z-index:30}
+.ios .sp-bn{padding-bottom:30px}
+.sp-bn .it{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink-dim);min-height:56px}
+.sp-bn .p{width:58px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center}
+.sp-bn svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-bn b{font-size:11.5px;font-weight:600}
+.sp-bn .on{color:var(--ink)}
+.sp-bn .on .p{background:var(--grad)}.sp-bn .on .p svg{stroke:#fff}
+.noir .sp-bn .on .p{background:var(--ink)}.noir .sp-bn .on .p svg{stroke:var(--bg)}
+/* Now playing as the remote */
+.sp-np{flex:1;display:flex;flex-direction:column;padding:6px 24px 0;position:relative;min-height:0}
+.sp-np .bgt{position:absolute;inset:0;opacity:.34;filter:blur(40px);pointer-events:none}
+.sp-np>*{position:relative}
+.sp-kick{text-align:center;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin:4px 0 16px}
+.sp-kick b{display:block;font-family:'Sora',sans-serif;letter-spacing:0;text-transform:none;font-size:13.5px;color:var(--ink);margin-top:3px;font-weight:600}
+.sp-cov{width:100%;aspect-ratio:1;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.45);position:relative;overflow:hidden}
+.sp-meta{display:flex;align-items:flex-start;gap:10px;margin-top:22px}
+.sp-meta .b{flex:1;min-width:0}
+.sp-meta h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-meta .ar{font-size:15px;color:var(--ink-soft);margin-top:4px}
+.sp-dev{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 13px 0 11px;border-radius:17px;margin-top:12px;background:var(--chip);border:1px solid var(--line-2);font-size:13.5px;font-weight:600;color:var(--accent-2)}
+.noir .sp-dev{color:var(--ink)}
+.sp-dev svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-dev .cv{width:13px;height:13px;stroke:var(--ink-dim)}
+.sp-seek{margin-top:20px}
+.sp-seek .tr{height:4px;border-radius:3px;background:rgba(255,255,255,.18);position:relative}
+.sp-seek .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--ink)}
+.sp-seek .tr u{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--ink)}
+.sp-seek .tm{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--ink-dim);margin-top:8px}
+.sp-tp{display:flex;align-items:center;justify-content:space-between;margin:14px 0 0}
+.sp-tp .b{width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.sp-tp .b svg{width:26px;height:26px;fill:currentColor}
+.sp-tp .b.sm svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-tp .b.sm{color:var(--ink-soft)}.sp-tp .b.sm.on{color:var(--accent-2)}
+.sp-tp .pp{width:70px;height:70px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center}
+.sp-tp .pp svg{width:30px;height:30px;fill:currentColor}
+.sp-nbot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding:10px 0 12px}
+.sp-nbot .b{width:46px;height:46px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+.sp-nbot .b svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-nbot .b.on{color:var(--accent-2)}.noir .sp-nbot .b.on{color:var(--ink)}
+.sp-nbot .b .castic{width:21px;height:19px}
+/* lyrics */
+.sp-lhead{display:flex;gap:12px;align-items:center}
+.sp-lhead .c{width:52px;height:52px;border-radius:9px;flex:none}
+.sp-lhead .t{font-weight:700;font-size:15px;color:var(--ink)}.sp-lhead .s{font-size:13px;color:var(--ink-soft);margin-top:2px}
+.sp-lyr{flex:1;overflow:hidden;margin:18px 0 0;display:flex;flex-direction:column;gap:14px;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.01em;line-height:1.2;color:var(--ink-dim);mask-image:linear-gradient(180deg,transparent,#000 12%,#000 80%,transparent)}
+.sp-lyr p{margin:0}.sp-lyr p.now{color:var(--ink)}
+/* rows in the sheet */
+.sp-sec{padding:14px 20px 6px;font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim)}
+.sp-row{display:flex;align-items:center;gap:13px;min-height:62px;padding:8px 20px;border-top:1px solid var(--line)}
+.sp-row .ic{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+.sp-row .ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.sp-row .tx{flex:1;min-width:0;display:flex;flex-direction:column}
+.sp-row .nm{font-size:15.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-row .st{font-size:13px;color:var(--ink-soft);margin-top:3px}
+.sp-row .st.play{color:var(--accent-2)}.noir .sp-row .st.play{color:var(--ink-soft)}
+.sp-row .go svg{width:18px;height:18px;fill:none;stroke:var(--ink-dim);stroke-width:2.2;stroke-linecap:round}
+.sp-row.off{opacity:.46}
+.sp-row.here{box-shadow:inset 3px 0 0 var(--accent-2)}.sp-row.here .ic{color:var(--accent-2)}
+.sp-col{display:flex;align-items:center;gap:6px;padding:14px 20px;border-top:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink-soft)}
+.sp-col .ct{margin-left:auto}.sp-col svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.sp-add{display:flex;align-items:center;gap:12px;padding:14px 20px;border-top:1px solid var(--line);font-size:15px;font-weight:600;color:var(--ink)}
+.sp-add svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.sp-foot{padding:12px 20px 0;font-size:13px;color:var(--ink-dim);line-height:1.5;display:flex;gap:9px;align-items:flex-start}
+.sp-foot svg{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;margin-top:1px}
+/* the ⋯ menu's volume slider (Q3) */
+.sp-vol{display:flex;align-items:center;gap:12px;padding:12px 20px 16px}
+.sp-vol svg{width:21px;height:21px;fill:none;stroke:var(--ink-soft);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sp-vol .tr{flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.14);position:relative}
+.sp-vol .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--ink)}
+.sp-vol .tr u{position:absolute;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:var(--ink);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.sp-vol .v{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-soft);width:38px;text-align:right}
+.sp-mrow{display:flex;align-items:center;gap:14px;min-height:54px;padding:0 20px;border-top:1px solid var(--line);font-size:15px;color:var(--ink)}
+.sp-mrow svg{width:21px;height:21px;fill:none;stroke:var(--ink-soft);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sp-mrow.stop{color:#ff9b8a}.sp-mrow.stop svg{stroke:#ff9b8a}
+.sp-mrow.mute{color:var(--ink-dim)}
+/* Android's own volume panel over the app (the keys drive the speaker) */
+.sp-vhud{position:absolute;right:12px;top:210px;width:64px;border-radius:32px;background:rgba(30,32,40,.96);padding:14px 0 12px;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.sp-vhud .tr{width:40px;height:190px;border-radius:20px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
+.sp-vhud .tr i{position:absolute;left:0;right:0;bottom:0;background:#d9dcff}
+.sp-vhud svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sp-vhud small{font-size:11px;color:#dfe2f0;font-weight:600;text-align:center;line-height:1.2}
+/* mini bars */
+.sp-mini{margin:0 10px 8px;height:64px;border-radius:15px;display:flex;align-items:center;gap:12px;padding:0 10px 0 8px;background:var(--card-2);border:1px solid var(--line-2);flex:none;position:relative;z-index:31}
+.sp-mini .c{width:48px;height:48px;border-radius:9px;flex:none;position:relative;overflow:hidden}
+.sp-mini .tx{flex:1;min-width:0}
+.sp-mini .n{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-mini .d{font-size:13px;color:var(--ink-soft);margin-top:2px;display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden}
+.sp-mini .d .on{color:var(--accent-2);display:inline-flex;align-items:center;gap:5px}.noir .sp-mini .d .on{color:var(--ink)}
+.sp-mini .d svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sp-mini .d .castic{width:14px;height:12px}
+.sp-mini .b{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.sp-mini .b svg{width:24px;height:24px;fill:currentColor}
+.sp-mini .pg{position:absolute;left:14px;right:14px;bottom:0;height:2px;border-radius:2px;background:rgba(255,255,255,.1)}
+.sp-mini .pg i{position:absolute;left:0;top:0;bottom:0;background:var(--ink-soft);border-radius:2px}
+.sp-mini.vid .c{background:linear-gradient(140deg,#2b3350,#161b2c)}
+.sp-mini.gone{transform:translateY(46px);opacity:.35}
+.sp-toast{position:absolute;left:18px;right:18px;bottom:108px;z-index:50;background:var(--ink);color:var(--bg);border-radius:12px;padding:13px 16px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px}
+.sp-toast .u{margin-left:auto;font-weight:700;color:var(--accent)}
+.sp-cbar{margin:0 10px 8px;height:48px;border-radius:13px;background:var(--card);border:1px solid var(--line-2);display:flex;align-items:center;gap:10px;padding:0 14px;font-size:13.5px;font-weight:600;color:var(--ink);flex:none}
+.sp-cbar .sp2{width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:var(--accent-2);animation:spn .9s linear infinite;flex:none}
+@keyframes spn{to{transform:rotate(360deg)}}
+.sp-gest{position:absolute;left:50%;width:2px;height:70px;margin-left:-1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.6));z-index:60}
+.sp-gest::after{content:'';position:absolute;left:-7px;bottom:-8px;width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.75)}
+/* the queue page */
+.sp-qrow{display:flex;align-items:center;gap:12px;min-height:60px;border-top:1px solid var(--line)}
+.sp-qrow .c{width:44px;height:44px;border-radius:8px;flex:none}
+.sp-qrow .b{flex:1;min-width:0}.sp-qrow .t{font-size:14.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sp-qrow .s{font-size:13px;color:var(--ink-dim);margin-top:2px}
+.sp-qrow.now .t{color:var(--accent-2)}.noir .sp-qrow.now .t{color:var(--ink)}
+.sp-qrow .h{width:24px;color:var(--ink-dim);font-size:16px;text-align:center}
+.sp-qlab{font-size:12px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim);margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+.sp-qlab .on{display:inline-flex;align-items:center;gap:6px;color:var(--accent-2);letter-spacing:0;text-transform:none;font-size:13px}
+.sp-qlab svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* receivers on a display */
+.sp-rx{position:absolute;overflow:hidden;border-radius:10px;box-shadow:0 0 0 8px #111317,0 0 0 9px #2a2d36,0 26px 60px rgba(0,0,0,.6)}
+.sp-rx .in{position:absolute;left:0;top:0;transform-origin:0 0;background:var(--bg);color:var(--ink);font-family:'Sora',sans-serif;overflow:hidden}
+.sp-rx .bgt{position:absolute;inset:-10%;filter:blur(90px);opacity:.42}
+.sp-rx .mk{position:absolute;display:flex;align-items:center;gap:14px;font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--ink-soft)}
+.sp-rx .mk i{display:block;border-radius:30%;background:var(--grad)}
+.noir.sp-rx .mk i,.noir .mk i{background:var(--ink)}
+.sp-rx .np{position:absolute;display:flex;align-items:center}
+.sp-rx .np .c{flex:none;border-radius:3%;box-shadow:0 30px 80px rgba(0,0,0,.5);position:relative;overflow:hidden}
+.sp-rx .np .k{font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim)}
+.sp-rx .np h3{margin:0;font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.02em;line-height:1.05}
+.sp-rx .np .ar{color:var(--ink-soft)}
+.sp-rx .np .al{color:var(--ink-dim)}
+.sp-rx .np .bar{border-radius:4px;background:rgba(255,255,255,.18);position:relative}
+.sp-rx .np .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--ink-soft)}
+.sp-rx .np .tm{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;color:var(--ink-dim)}
+.sp-rx .np .nx{color:var(--ink-dim)}
+.sp-rx .idle{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.sp-rx .idle i{display:block;border-radius:30%;background:var(--grad)}
+.sp-rx .idle b{font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--ink)}
+.sp-rx .idle span{color:var(--ink-soft)}
+/* canvas panels */
+.sp-panel{position:absolute;background:#12141c;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:22px 24px;color:#e8eaf2;font-family:'Sora',sans-serif}
+.sp-panel h2{margin:0 0 4px;font-family:'Space Grotesk',sans-serif;font-size:1.3rem}
+.sp-panel .lead{margin:4px 0 14px;font-size:.8rem;color:#a9afc4;line-height:1.6}
+.sp-tbl{width:100%;border-collapse:collapse;font-size:.78rem;line-height:1.55}
+.sp-tbl th{text-align:left;font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:#8f95aa;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sp-tbl td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:top;color:#c9cddb}
+.sp-tbl td b{color:#eef0f7}
+.sp-tbl .mono{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:#b9bfd3}
+.sp-opt{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.14);font-size:.72rem;margin:2px 4px 2px 0;color:#c9cddb}
+.sp-opt.lean{border-color:#2dd49a;color:#bff5dd}
+.sp-opt.lean::after{content:'';font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#2dd49a}
+.sp-warn{margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(245,181,66,.08);border:1px solid rgba(245,181,66,.3);font-size:.78rem;line-height:1.6;color:#d8cfb8}
+.sp-warn b{color:#f6e5bd}
+.sp-note{position:absolute;width:412px;box-sizing:border-box;padding:11px 14px;border-radius:12px;background:#12141c;border:1px solid rgba(255,255,255,.08);font-size:.76rem;line-height:1.6;color:#b3b9cc}
+.sp-note b{color:#e3e6f0}
+</style>
+</head>
+<body style="width:3700px;height:10100px;position:relative">
+<div id="sp-root"></div>
+<script src="../app/music-data.js"></script>
+<script src="speakers-directions.js"></script>
+</body>
+</html>

@@ -45,6 +45,17 @@ a{color:var(--hi)}a:hover{color:var(--acc-ink)}
 .ab-ch input:hover{border-color:var(--line-2)}.ab-ch input:focus{outline:none;border-color:var(--hi);background:var(--fill-2)}
 .ab-ring{--p:0;width:34px;height:34px;border-radius:50%;background:conic-gradient(var(--hi) calc(var(--p)*1%),var(--fill-3) 0);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .ab-ring::after{content:'';width:24px;height:24px;border-radius:50%;background:var(--fill)}
+.ab-asin{display:flex;gap:8px;margin-top:8px}.ab-asin input{flex:1;min-width:0;font:inherit;font-family:'JetBrains Mono',monospace;font-size:.8rem;padding:6px 9px;border-radius:8px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink);text-transform:uppercase}
+.ab-scols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:640px){.ab-scols{grid-template-columns:minmax(0,1fr)}}
+.ab-scol{border:1px solid var(--line-2);border-radius:12px;padding:10px;min-height:180px;background:var(--fill-2)}
+.ab-scol.over{border-color:var(--hi);background:var(--hi-soft)}
+.ab-sh{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.ab-sh input{font:inherit;font-weight:700;font-size:.9rem;padding:5px 8px;border-radius:7px;border:1px solid transparent;background:none;color:var(--ink)}
+.ab-sh input:hover,.ab-sh input:focus{border-color:var(--line-2);outline:none}
+.ab-spart{display:grid;grid-template-columns:18px 26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-radius:8px;background:var(--fill);border:1px solid var(--line);margin-top:6px;font-size:.84rem;cursor:grab}
+.ab-spart.drag{opacity:.4}
+.ab-sempty{padding:26px 8px;text-align:center;color:var(--ink-dim);font-size:.8rem;border:1px dashed var(--line-2);border-radius:8px}
 .ab-srcchip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);font-size:.76rem;font-weight:600}
 </style>
 </head>
@@ -58,12 +69,14 @@ a{color:var(--hi)}a:hover{color:var(--acc-ink)}
 <div class="tabs2" id="tabbar"></div>
 <div id="ab-panel"></div>
 <div id="ab-qs"></div>
+<div id="ab-tq"></div>
 </main>
 <div class="mu-lb" id="ab-lb"><div class="im" id="ab-lb-im"></div><div class="cap" id="ab-lb-cap"></div></div>
 <script src="app-shell.js"></script>
 <script src="music-data.js"></script>
 <script src="audiobook-data.js"></script>
 <script src="music-qs.js"></script>
+<script src="files-tab.js"></script>
 <script src="audiobook.js"></script>
 </body>
 </html>

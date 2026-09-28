@@ -158,9 +158,9 @@ stacked bars), and the J4/J5 alternatives. *Jump to* opens Now playing, Lyrics, 
 ## Open questions
 
 1. Gapless: Media3 does it on direct-play items and not on HLS re-encodes (38 of the household's 60). Accept a gap
-   on those until H1's *Convert…* is run? Lean: yes, and say nothing.
+   on those until H1's *Convert…* is run? Lean: yes, and say nothing. **Answered by the owner 2026-09-28:** the lean — accept the gap, say nothing; *Convert…* removes it.
 2. Resumption after reboot (`onPlaybackResumption`): restore the last queue paused, or only the last song?
-   Lean: the queue.
+   Lean: the queue. **Answered by the owner 2026-09-28:** the whole last queue, paused.
 
 ## Dev review (2026-09-28, against `main` `728f22ea`)
 

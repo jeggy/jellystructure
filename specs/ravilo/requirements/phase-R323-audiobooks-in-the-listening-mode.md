@@ -132,8 +132,10 @@ Speed, Sleep, Chapters and Bookmark sheets. *Settings · Listening* is on the sa
 1. **Audiobooks as a Browse chip** buries *Continue listening* two taps deep, the research's reason for a bar
    item (§5 c). FR-R323-2 (a Listen row) is the lean fix. The alternative is the drawn *Home · Library · Now
    playing · Audiobooks* bar. Owner's call.
+   **Answered by the owner 2026-09-28:** the lean — the Listen row (FR-R323-2), now drawn.
 2. **Chapter vs part** in the seek bar for a one-file M4B with 24 embedded chapters: chapter (drawn). Confirm that
    the book hairline alone is enough for a 12-hour file.
+   **Answered by the owner 2026-09-28:** not enough. The hairline becomes a **small scrubber for the whole book** (label *Book*, knob, *elapsed / total*, tap to seek), and the page gains a **chapter strip** under the transport — every chapter as a card (number · title · length), the playing one outlined, finished ones quieter, tap to jump; it follows the playing chapter. The chapters sheet stays for bookmarks. New string `ab.whole_book` × en/da/fo.
 
 ## Dev review (2026-09-28, against `main` `728f22ea`)
 

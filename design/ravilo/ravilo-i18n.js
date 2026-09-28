@@ -18,7 +18,7 @@
       cast_stop: 'Stop casting', cast_applies_on: 'Applies on {device}',
       cast_lost: 'Lost contact with {device}', cast_lost_sub: 'It may still be playing. Ravilo cannot reach it to check.',
       /* R299 · R270 as built — verbatim from the shipped i18n/en.json */
-      cast_failed: '{device} couldn’t play this', cast_failed_sub: 'Try another title, or play it on this phone.', cast_play_here: 'Play on this phone', screens_in_use: 'In use',
+      cast_failed: '{device} couldn’t play this', cast_failed_sub: 'Try another title, or play it on this phone.', cast_play_here: 'Play on this phone', /* prospective R324 (speakers, research 2026-09-28 §7) — cast.play_on_phone reuses R299’s cast_play_here */ cast_speaker: 'Speaker', cast_take_over: 'Stop {app} and play here?', cast_take_over_sub: '{device} is playing {app}. Playing here stops it for whoever started it.', cast_play_on: 'Play on {device}', cast_still_playing: 'Still playing on {device}', cast_stop_room: 'Stop', cast_lyrics_on: 'Lyrics on {device}', cast_sheet_music: 'Play on…', cast_group: 'Speaker group', cast_busy_with: 'Busy · {app}', cast_speakers_ios: 'Speakers need the Android app for now',  screens_in_use: 'In use',
       cast_no_server: 'Can\u2019t reach your Ravilo server', cast_no_server_sub: 'Check that the server is on and try again from your phone.',
       srv_busy: 'The server is busy right now', srv_busy_sub: 'It will start as soon as it can.', cast_waiting: 'waiting {n} s',
       nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
@@ -70,7 +70,7 @@
       cast_stop: 'Stop casting', cast_applies_on: 'Gælder på {device}',
       cast_lost: 'Mistede forbindelsen til {device}', cast_lost_sub: 'Den spiller måske stadig. Ravilo kan ikke nå den.',
       /* R299 · R270 as built — verbatim from the shipped i18n/da.json */
-      cast_failed: '{device} kunne ikke afspille dette', cast_failed_sub: 'Prøv en anden titel, eller afspil den på denne telefon.', cast_play_here: 'Afspil på denne telefon', screens_in_use: 'Optaget',
+      cast_failed: '{device} kunne ikke afspille dette', cast_failed_sub: 'Prøv en anden titel, eller afspil den på denne telefon.', cast_play_here: 'Afspil på denne telefon', /* prospective R324 (speakers, research 2026-09-28 §7) — draft */ cast_speaker: 'Højttaler', cast_take_over: 'Stop {app} og afspil her?', cast_take_over_sub: '{device} afspiller {app}. Afspiller du her, stopper det for den, der startede det.', cast_play_on: 'Afspil på {device}', cast_still_playing: 'Spiller stadig på {device}', cast_stop_room: 'Stop', cast_lyrics_on: 'Sangtekst på {device}', cast_sheet_music: 'Afspil på…', cast_group: 'Højttalergruppe', cast_busy_with: 'Optaget · {app}', cast_speakers_ios: 'Højttalere kræver Android-appen indtil videre',  screens_in_use: 'Optaget',
       cast_no_server: 'Kan ikke nå din Ravilo-server', cast_no_server_sub: 'Tjek at serveren er tændt, og prøv igen fra din telefon.',
       srv_busy: 'Serveren er travl lige nu', srv_busy_sub: 'Den starter, så snart den kan.', cast_waiting: 'venter {n} s',
       br_genre: 'Genre', br_type: 'Type', br_maturity: 'Aldersgrænse', br_year: 'Årti', br_watched: 'Set',
@@ -121,7 +121,7 @@
       cast_stop: 'Steðga casting', cast_applies_on: 'Virkar á {device}',
       cast_lost: 'Missti sambandið við {device}', cast_lost_sub: 'Sjónvarpið spælir kanska enn. Ravilo kann ikki ná tí.',
       /* R299 · R270 as built — verbatim from the shipped i18n/fo.json */
-      cast_failed: '{device} kundi ikki spæla hetta', cast_failed_sub: 'Royn ein annan heiti, ella spæl tað á hesi telefonini.', cast_play_here: 'Spæl á hesi telefonini', screens_in_use: 'Upptikið',
+      cast_failed: '{device} kundi ikki spæla hetta', cast_failed_sub: 'Royn ein annan heiti, ella spæl tað á hesi telefonini.', cast_play_here: 'Spæl á hesi telefonini', /* prospective R324 (speakers, research 2026-09-28 §7) — draft */ cast_speaker: 'Hátalari', cast_take_over: 'Steðga {app} og spæl her?', cast_take_over_sub: '{device} spælir {app}. Spælir tú her, steðgar tað fyri tann, ið byrjaði tað.', cast_play_on: 'Spæl á {device}', cast_still_playing: 'Spælir enn á {device}', cast_stop_room: 'Steðga', cast_lyrics_on: 'Sangtekstur á {device}', cast_sheet_music: 'Spæl á…', cast_group: 'Hátalarabólkur', cast_busy_with: 'Upptikið · {app}', cast_speakers_ios: 'Hátalarar krevja Android-appina fyri tað mundi',  screens_in_use: 'Upptikið',
       cast_no_server: 'Kann ikki ná Ravilo-ambætaranum', cast_no_server_sub: 'Kanna um ambætarin er á, og royn aftur frá telefonini.',
       srv_busy: 'Ambætarin hevur mikið at gera nú', srv_busy_sub: 'Byrjar, so skjótt sum gjørligt.', cast_waiting: 'bíðar {n} s',
       br_genre: 'Sjanra', br_type: 'Slag', br_maturity: 'Aldursmark', br_year: 'Áratíggju', br_watched: 'Sætt',
@@ -426,6 +426,11 @@
   Object.assign(STR.en, { pm_sign_out: 'Sign out', so_confirm: 'Sign out of {name}?', so_desc: 'You\u2019ll need your username and password to sign back in as {name} on this TV. Other signed-in profiles on this TV aren\u2019t affected.', so_yes: 'Yes, sign out',
     set_playback: 'Playback', set_show_progress: 'Show progress on Continue Watching', set_autoplay_next: 'Autoplay next episode',
     pl_now_showing: 'Now showing', pl_last_used: 'Last used', pl_switch_hint: 'Select one to switch instantly',
+    sort_recommended: 'Recommended', sort_rec_sub: 'The order the server suggests',
+    stale_line: 'Showing saved content — trying to reconnect',
+    err_reauth_t: 'Sign in again', err_reauth_p: 'This device’s session has ended. Sign in again to carry on.', err_sign_in: 'Sign in',
+    err_forbidden_t: 'Not available on this profile', err_forbidden_p: 'This profile can’t see this.',
+    err_gone_t: 'This isn’t here any more', err_unreach_t: 'Couldn’t reach the server', err_unreach_p: 'Check the connection and try again.', err_retry: 'Retry',
     sort_title: 'Title', sort_size: 'Size', sort_largest: 'Largest first', sort_smallest: 'Smallest first', sort_newest: 'Newest first', sort_oldest: 'Oldest first', sort_az: 'A\u2013Z', sort_za: 'Z\u2013A', sort_high: 'Highest first', sort_low: 'Lowest first', sort_recommended: 'Recommended' });
   Object.assign(STR.da, { pm_sign_out: 'Log ud', so_confirm: 'Log {name} ud?', so_desc: 'Du skal bruge dit brugernavn og kodeord for at logge ind igen som {name} p\u00e5 dette TV. Andre tilmeldte profiler p\u00e5 dette TV p\u00e5virkes ikke.', so_yes: 'Ja, log ud',
     set_playback: 'Afspilning', set_show_progress: 'Vis fremgang p\u00e5 Forts\u00e6t med at se', set_autoplay_next: 'Afspil n\u00e6ste episode automatisk',
@@ -444,7 +449,7 @@
   // design brief 2026-09-27 (phone music mode) §I — drafts; the shipped table wins where a key exists.
   // Keys beyond §I (sub-captions, the (b)/(c) bar labels, a few page words) are marked in the brief's own shape.
   Object.assign(STR.en, {
-    'mode.music': 'Music', 'mode.video': 'Films & series', 'mode.switch_music': 'Switch to music', 'mode.switch_video': 'Back to films & series',
+    'mode.music': 'Music', 'mode.video': 'Films & series', 'mode.switch_music': 'Switch to music', 'mode.switch_video': 'Switch to films & series', 'mode.now_music': 'Music & audiobooks', 'mode.now_video': 'Films & series', 'music.less': 'Less',
     'mode.video_sub': 'Home · Library · Search · Discover', 'mode.music_sub': 'Home · Library · Search · Playlists', 'mode.label': 'This phone',
     'mnav.home': 'Home', 'mnav.library': 'Library', 'mnav.search': 'Search', 'mnav.playlists': 'Playlists',
     'mnav.albums': 'Albums', 'mnav.artists': 'Artists', 'mnav.listen': 'Listen', 'mnav.browse': 'Browse', 'mnav.queue': 'Queue',
@@ -463,7 +468,7 @@
     'music.sort': 'Sort', 'music.sort_added': 'Recently added', 'music.sort_az': 'A–Z', 'music.sort_year': 'Year', 'music.sort_played': 'Most played', 'music.name': 'Name', 'music.create': 'Create',
   });
   Object.assign(STR.da, {
-    'mode.music': 'Musik', 'mode.video': 'Film og serier', 'mode.switch_music': 'Skift til musik', 'mode.switch_video': 'Tilbage til film og serier',
+    'mode.music': 'Musik', 'mode.video': 'Film og serier', 'mode.switch_music': 'Skift til musik', 'mode.switch_video': 'Skift til film og serier', 'mode.now_music': 'Musik og lydbøger', 'mode.now_video': 'Film og serier', 'music.less': 'Mindre',
     'mode.video_sub': 'Hjem · Bibliotek · Søg · Opdag', 'mode.music_sub': 'Hjem · Bibliotek · Søg · Playlister', 'mode.label': 'Denne telefon',
     'mnav.home': 'Hjem', 'mnav.library': 'Bibliotek', 'mnav.search': 'Søg', 'mnav.playlists': 'Playlister',
     'mnav.albums': 'Album', 'mnav.artists': 'Kunstnere', 'mnav.listen': 'Lyt', 'mnav.browse': 'Gennemse', 'mnav.queue': 'Kø',
@@ -482,7 +487,7 @@
     'music.sort': 'Sortér', 'music.sort_added': 'Senest tilføjet', 'music.sort_az': 'A–Å', 'music.sort_year': 'År', 'music.sort_played': 'Mest afspillet', 'music.name': 'Navn', 'music.create': 'Opret',
   });
   Object.assign(STR.fo, {
-    'mode.music': 'Tónleikur', 'mode.video': 'Filmar og seriur', 'mode.switch_music': 'Skift til tónleik', 'mode.switch_video': 'Aftur til filmar og seriur',
+    'mode.music': 'Tónleikur', 'mode.video': 'Filmar og seriur', 'mode.switch_music': 'Skift til tónleik', 'mode.switch_video': 'Skift til filmar og seriur', 'mode.now_music': 'Tónleikur og ljóðbøkur', 'mode.now_video': 'Filmar og seriur', 'music.less': 'Minni',
     'mode.video_sub': 'Heim · Savn · Leita · Uppdaga', 'mode.music_sub': 'Heim · Savn · Leita · Spælilistar', 'mode.label': 'Hendan telefonin',
     'mnav.home': 'Heim', 'mnav.library': 'Savn', 'mnav.search': 'Leita', 'mnav.playlists': 'Spælilistar',
     'mnav.albums': 'Fløgur', 'mnav.artists': 'Tónleikarar', 'mnav.listen': 'Lurta', 'mnav.browse': 'Kaga', 'mnav.queue': 'Bíðirøð',
@@ -503,7 +508,7 @@
 
   // part 2 — audiobooks (§M6 drafts; a few page words beyond §M6 are added in the same shape)
   Object.assign(STR.en, { 'mnav.audiobooks': 'Audiobooks', 'mode.music_books': 'Music & audiobooks', 'mlib.playlists': 'Playlists',
-    'ab.continue': 'Continue listening', 'ab.continue_from': 'Continue · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start over', 'ab.left': '{t} left', 'ab.read_by': 'Read by {narrator}',
+    'ab.continue': 'Continue listening', 'ab.continue_from': 'Continue · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start over', 'ab.left': '{t} left', 'ab.whole_book': 'Book', 'ab.read_by': 'Read by {narrator}',
     'ab.chapters_n': '{n} chapters', 'ab.chapter_n': 'Chapter {n}', 'ab.part_of': 'Part {n} of {m}', 'ab.book_of': 'Book {n} of {m}', 'ab.authors': 'Authors', 'ab.series': 'Series',
     'ab.finished': 'Finished', 'ab.mark_finished': 'Mark as finished', 'ab.speed': 'Speed', 'ab.sleep': 'Sleep timer', 'ab.sleep_end_chapter': 'End of chapter', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Add bookmark', 'ab.bookmarks': 'Bookmarks', 'ab.skip_back': '30 s back', 'ab.skip_fwd': '30 s forward', 'ab.skip_silence': 'Skip silences in audiobooks', 'ab.empty': 'Nothing filed as audiobooks yet',
@@ -512,7 +517,7 @@
     'ab.listening': 'Listening', 'ab.skip_silence_sub': 'Long pauses in a recording are shortened', 'ab.sleep_fade': 'Sleep timer fade', 'ab.sleep_fade_sub': 'The last 10 seconds get quieter before it stops',
     'ab.speed_note': 'Remembered for this book only.', 'ab.sleep_fade_note': 'The last 10 seconds fade out.', 'ab.fail_p': 'Try again. Your place in the book is kept.', 'ab.close': 'Close' });
   Object.assign(STR.da, { 'mnav.audiobooks': 'Lydbøger', 'mode.music_books': 'Musik og lydbøger', 'mlib.playlists': 'Playlister',
-    'ab.continue': 'Fortsæt med at lytte', 'ab.continue_from': 'Fortsæt · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start forfra', 'ab.left': '{t} tilbage', 'ab.read_by': 'Indlæst af {narrator}',
+    'ab.continue': 'Fortsæt med at lytte', 'ab.continue_from': 'Fortsæt · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start forfra', 'ab.left': '{t} tilbage', 'ab.whole_book': 'Bog', 'ab.read_by': 'Indlæst af {narrator}',
     'ab.chapters_n': '{n} kapitler', 'ab.chapter_n': 'Kapitel {n}', 'ab.part_of': 'Del {n} af {m}', 'ab.book_of': 'Bog {n} af {m}', 'ab.authors': 'Forfattere', 'ab.series': 'Serier',
     'ab.finished': 'Færdig', 'ab.mark_finished': 'Markér som færdig', 'ab.speed': 'Hastighed', 'ab.sleep': 'Sleep-timer', 'ab.sleep_end_chapter': 'Kapitlets slutning', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Tilføj bogmærke', 'ab.bookmarks': 'Bogmærker', 'ab.skip_back': '30 sek. tilbage', 'ab.skip_fwd': '30 sek. frem', 'ab.skip_silence': 'Spring over pauser i lydbøger', 'ab.empty': 'Ingen lydbøger endnu',
@@ -521,7 +526,7 @@
     'ab.listening': 'Lytning', 'ab.skip_silence_sub': 'Lange pauser i en indspilning forkortes', 'ab.sleep_fade': 'Sleep-timer toner ud', 'ab.sleep_fade_sub': 'De sidste 10 sekunder bliver stille før stop',
     'ab.speed_note': 'Huskes kun for denne bog.', 'ab.sleep_fade_note': 'De sidste 10 sekunder toner ud.', 'ab.fail_p': 'Prøv igen. Dit sted i bogen gemmes.', 'ab.close': 'Luk' });
   Object.assign(STR.fo, { 'mnav.audiobooks': 'Ljóðbøkur', 'mode.music_books': 'Tónleikur og ljóðbøkur', 'mlib.playlists': 'Spælilistar',
-    'ab.continue': 'Hald fram at lurta', 'ab.continue_from': 'Hald fram · {t}', 'ab.start': 'Byrja', 'ab.start_over': 'Byrja av nýggjum', 'ab.left': '{t} eftir', 'ab.read_by': 'Lisin av {narrator}',
+    'ab.continue': 'Hald fram at lurta', 'ab.continue_from': 'Hald fram · {t}', 'ab.start': 'Byrja', 'ab.start_over': 'Byrja av nýggjum', 'ab.left': '{t} eftir', 'ab.whole_book': 'Bók', 'ab.read_by': 'Lisin av {narrator}',
     'ab.chapters_n': '{n} kapitlar', 'ab.chapter_n': 'Kapittul {n}', 'ab.part_of': 'Partur {n} av {m}', 'ab.book_of': 'Bók {n} av {m}', 'ab.authors': 'Høvundar', 'ab.series': 'Røðir',
     'ab.finished': 'Liðugt', 'ab.mark_finished': 'Merk sum liðugt', 'ab.speed': 'Ferð', 'ab.sleep': 'Svøvnur', 'ab.sleep_end_chapter': 'Enda á kapitli', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Legg bókamerki afturat', 'ab.bookmarks': 'Bókamerki', 'ab.skip_back': '30 sek. aftur', 'ab.skip_fwd': '30 sek. fram', 'ab.skip_silence': 'Leyp um tøgn í ljóðbókum', 'ab.empty': 'Ongar ljóðbøkur enn',

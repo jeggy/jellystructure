@@ -127,7 +127,8 @@ html[data-skin="noir"]{--bg:#080807;--bg-2:#0d0c0a;--ink:#f7f3ea;--ink-soft:#c7b
 .mu-ahead .img{position:relative;width:150px;height:150px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#fff;box-shadow:0 18px 40px rgba(0,0,0,.45)}
 .mu-ahead .mu-dt{position:relative;margin-top:16px}
 .mu-ahead .mu-dm{position:relative;justify-content:center}
-.mu-bio{margin-top:14px;font-size:14px;line-height:1.55;color:var(--ink-soft);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left}
+.mu-bio{margin-top:14px;font-size:14px;line-height:1.55;color:var(--ink-soft);overflow:hidden;text-align:left;max-height:4.65em;transition:max-height .34s var(--ease);-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}
+.mu-bio.open{-webkit-mask-image:none;mask-image:none}
 .mu-biomore{display:block;text-align:left;font-size:13px;font-weight:600;color:var(--ink);margin-top:4px;cursor:pointer}
 .mu-vt{flex:none;width:220px;cursor:pointer}
 .mu-vt .im{aspect-ratio:16/9;border-radius:12px;position:relative;display:flex;align-items:flex-end;padding:10px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:#fff}
@@ -217,8 +218,10 @@ html[data-skin="noir"]{--bg:#080807;--bg-2:#0d0c0a;--ink:#f7f3ea;--ink-soft:#c7b
 .mu-nbot .mu-ib svg{width:22px;height:22px}
 .mu-nspacer{flex:1;min-height:6px}
 /* lyrics */
-.mu-lyr{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding:30vh 0 40vh;mask-image:linear-gradient(180deg,transparent,#000 18%,#000 78%,transparent);-webkit-mask-image:linear-gradient(180deg,transparent,#000 18%,#000 78%,transparent)}
+.mu-lyr{flex:1 1 0;min-height:0;overflow-y:auto;scrollbar-width:none;padding:0;margin-bottom:8px;mask-image:linear-gradient(180deg,transparent,#000 18%,#000 78%,transparent);-webkit-mask-image:linear-gradient(180deg,transparent,#000 18%,#000 78%,transparent)}
 .mu-lyr::-webkit-scrollbar{display:none}
+.mu-lyr:not(.plain)::before{content:'';display:block;height:110px}
+.mu-lyr:not(.plain)::after{content:'';display:block;height:160px}
 .mu-lyr p{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;line-height:1.3;margin:0 0 14px;color:var(--ink-dim);opacity:.55;cursor:pointer;transition:color .25s,opacity .25s}
 .mu-lyr p.on{opacity:1;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 [data-skin="noir"] .mu-lyr p.on{background:none;color:var(--ink)}
@@ -330,3 +333,54 @@ body:not(.muq-open) .muq .mq-body{display:none}
 .muq button .ln{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#2dd49a;margin-left:5px;font-weight:700}
 .muq button.on .ln{color:#138a60}
 .muq .mq-jump{display:flex;flex-wrap:wrap;gap:5px}
+
+/* R323 (owner 2026-09-28) — a small scrubber for the whole book under the chapter's seek, and the chapter strip */
+.bk-bookscrub{display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer;min-height:28px}
+.bk-bookscrub .l{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);flex:none}
+.bk-bookscrub .trk{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.14);position:relative}
+.bk-bookscrub .trk i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ink-soft)}
+.bk-bookscrub .trk u{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--ink-soft)}
+.bk-bookscrub .v{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-dim);flex:none}
+.bk-chstrip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:14px -22px 0;padding:0 22px}
+.bk-chstrip::-webkit-scrollbar{display:none}
+.bk-chc{flex:none;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;min-width:132px;max-width:180px;min-height:46px;padding:7px 12px;border-radius:12px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);color:var(--ink-soft);font:inherit;text-align:left;cursor:pointer}
+.bk-chc b{grid-row:1/3;font-family:'Space Grotesk',sans-serif;font-size:15px;color:var(--ink-dim)}
+.bk-chc span{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-chc em{font-style:normal;font-size:11.5px;color:var(--ink-dim)}
+.bk-chc.on{border-color:var(--accent-2);background:var(--chip)}.bk-chc.on b{color:var(--accent-2)}
+.bk-chc.done span{color:var(--ink-soft)}
+
+/* Speakers (prospective 286 / R324, owner picks 2026-09-28) — spk-* */
+.spk-ic svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.sc-row.on .spk-ic{color:var(--accent-2)}
+.spk-foot{display:flex;gap:9px;align-items:flex-start;padding:12px 20px 4px;font-size:13px;line-height:1.5;color:var(--ink-dim)}
+.spk-foot svg{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;margin-top:1px}
+.spk-mblk{border-bottom:1px solid var(--line);margin-bottom:4px;padding-bottom:4px}
+.spk-mh{display:flex;align-items:center;gap:9px;padding:4px 20px 0;font-size:13px;color:var(--ink-soft)}
+.spk-mh svg{width:17px;height:17px;fill:none;stroke:var(--accent-2);stroke-width:2;stroke-linecap:round}
+.spk-mh b{color:var(--ink);font-weight:600}
+.spk-vol{display:flex;align-items:center;gap:12px;padding:10px 20px 12px}
+.spk-vol svg{width:21px;height:21px;flex:none;fill:none;stroke:var(--ink-soft);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.spk-vol input{flex:1;accent-color:var(--ink);height:28px}
+.spk-vol span{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ink-soft);width:44px;text-align:right}
+.mu-mini .d:has(.spk-on){display:flex;gap:5px;min-width:0}
+.mu-mini .d .spk-ar{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mu-mini .d .spk-on{display:inline-flex;align-items:center;gap:4px;color:var(--accent-2);flex:none;white-space:nowrap}
+.mu-mini .d .spk-on svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.mu-ndev{cursor:pointer}
+.spk-toast{display:flex;align-items:center;gap:14px}
+.spk-toast button{background:none;border:0;font:inherit;font-weight:700;color:var(--accent);cursor:pointer;padding:6px 2px;min-height:36px}
+.spk-hud{position:absolute;right:12px;top:200px;width:60px;border-radius:30px;background:rgba(30,32,40,.96);padding:12px 0 10px;display:flex;flex-direction:column;align-items:center;gap:9px;z-index:90;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transform:translateX(10px);transition:opacity .15s,transform .15s;pointer-events:none}
+.spk-hud.on{opacity:1;transform:none}
+.spk-hud .tr{width:36px;height:170px;border-radius:18px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
+.spk-hud .tr i{position:absolute;left:0;right:0;bottom:0;background:#d9dcff}
+.spk-hud svg{width:19px;height:19px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.spk-hud small{font-size:10.5px;color:#dfe2f0;font-weight:600;text-align:center;line-height:1.2;padding:0 4px}
+
+/* owner 2026-09-28 — music mode keeps the bottom bar on every page: details and Now playing stop at it */
+.phone.mu-on .bnav{z-index:88}
+.phone.mu-on .mu-det{bottom:var(--bnh,74px)}
+.phone.mu-on .mu-now:not(.tabbed){bottom:var(--bnh,74px)}
+.phone.mu-on .mu-mini{z-index:87}
+.phone.mu-on .screen.mu-mini-on .mu-dsc{padding-bottom:84px}
+.phone.mu-on .mu-mini.abovenav{bottom:calc(var(--bnh,74px) + 8px)}

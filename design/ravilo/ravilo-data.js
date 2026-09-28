@@ -21,7 +21,7 @@
       hero: [
         { ...T('Iron Veil', 2021, 'Action · Sci-Fi', '16', 'film'), tagline: 'HBO Feature', badge: '4K',
           syn: 'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.' },
-        { ...T('Midnight Sun Patrol', 2022, 'Action · Crime', '16', 'series'), tagline: 'HBO Original', badge: 'New Season',
+        { ...T('Midnight Sun Patrol', 2022, 'Action · Crime', '16', 'series'), tagline: 'HBO Original', badge: 'HDR',
           syn: 'Above the Arctic Circle, a small-town patrol works cases the daylight never lets them forget.' },
         { ...T('Phantom Circuit', 2023, 'Thriller · Mystery', '16', 'film'), tagline: 'Featured', badge: '4K',
           syn: 'A hardware hacker traces a ghost signal through the city grid and finds someone is tracing her back.' },

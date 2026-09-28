@@ -1,0 +1,89 @@
+# Phase 286 — Music plays on the household's speakers: the receiver on an audio-only device
+
+> Owner, 2026-09-28: Ravilo music should play on the two Cast speakers (**Stue**, **Gæsteværelse** — Nest Wifi
+> points), keep playing when the phone is closed, and be picked up again when it is reopened.
+
+## Status
+
+`Planned` — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§0–§9, road B) and the
+mockups `design/ravilo/Speakers - Directions.html` (§E, the display receiver), `design/app/settings.html` (the
+Chromecast card's step 5a and registered-state lines), `design/app/ravilo-users.html` (a speaker row) and
+`design/app/dashboard-data.js` (the Services line). **Not dev-reviewed.** Number verified free on `main`
+2026-09-28. The phone side is **R324**; both ship together.
+
+**Builds on** 218 / 226 / 235 (the receiver, its registration, the card) · 279 (`/api/tv/music/**`) · R245
+(enrolment, reconnect, FR-R245-15's no-controls rule). **Amends** FR-R245-15 for music on a display (FR-286-5).
+
+## Decisions (owner, 2026-09-28)
+
+| # | Question | Answer |
+|---|---|---|
+| Road | Default receiver · our receiver registered for audio · backend as sender | **B — our receiver, registered for audio-only devices.** C is a later phase of its own |
+| Q4 | A speaker against the session ceiling | **Only while it transcodes** (WMA); a direct-played MP3 is a file download |
+| Q5 | Speaker groups | **Round 1** |
+| Q6 | Backend verifies the audio registration itself | **No** ("best experience"): the first real cast to a speaker confirms it and flips the card |
+| Q8 | Music on a TV or the hub | **The TV's own remote works** (FR-286-5), and the hub is tap |
+| Q9 | Lyrics on a display receiver | **Yes, round 1** — synced lyrics only, per display, off at first (FR-286-6) |
+
+## Requirements
+
+**FR-286-1 — One more box on the existing application.** No new Cast app, no new receiver URL, the same
+application id. The Chromecast card's *Register the receiver* group gains step **5a**: *For the household's
+speakers: on the console's Applications page, open Ravilo → Edit and tick **Supports casting to audio-only
+devices** — this is what lets Ravilo see the speakers. Same application ID, no second fee. It can take up to 15
+minutes to reach the devices, and a speaker may need a restart before it asks again.* Marked *Optional · music
+only — a speaker never gets video.*
+
+**FR-286-2 — The registered state says it honestly** (218 FR-218-7's rule): *Speakers **reachable** · Stue played
+music yesterday 18:02 — only a real cast confirms it; jellystructure can't ask Google*, or *Speakers **not
+confirmed** — tick step 5a, then cast a song to one once.* The first successful cast to an audio-only device flips
+it. No backend probe (Q6).
+
+**FR-286-3 — Headless on a speaker.** On `display_supported: false` the receiver builds **no screens at all** (no
+idle mark, no gradients — the DOM stays empty), uses §2's audio device profile, caps the media-source buffer, and
+sends a metadata block (title · artist · album · album artist · cover URL) so the Home app and the Assistant show
+what is playing.
+
+**FR-286-4 — The receiver owns the queue.** A LOAD carries a queue of track items; the receiver resolves each
+item's ticket as it comes up (per-item playback-info handler), reports the queue back, advances, honours repeat
+and shuffle, and reports progress and stop **per song** through 279's `progress` / `stop`, so *Recently played* and
+play counts are right. Nothing changes in 279's DTOs.
+
+**FR-286-5 — Now playing on a display** (hub 1024×600, TV 1920×1080; Aurora · Midnight · Noir): the receiver's
+eleventh screen — cover, *Now playing*, title, artist, album · year, a hairline progress with times, and *Next ·
+{song}* in one quiet line. No on-screen controls. **The display's own remote works** (Q8; amends FR-R245-15 for
+music): **OK / Enter** and the remote's **Play/Pause** key toggle; a **Stop** key, where the remote has one, stops
+the music; **◀ ▶** previous / next; **hold ◀ ▶** seeks 10 s; **▼** turns lyrics on or off; **Back** only hides the
+transport row — it never stops. On the hub, a tap does the same. When the queue ends, the screen **is** the idle
+view — no *finished* card.
+
+**FR-286-6 — Lyrics on a display** (Q9): only a song with **synced** (timed) lyrics; the receiver shows the current
+line and two either side under the cover row, following its own position. A per-display switch, **off at first**,
+set from the phone's ⋯ menu (R324 FR-R324-5) or with ▼ on the remote, and remembered per display.
+
+**FR-286-7 — Users & devices.** A speaker enrols as `kind = cast` with an **audio only** badge; the capability line
+reads *audio only · MP3 · AAC · FLAC · Opus direct; WMA converted on the server*; the receiver line adds *counts as
+a session only while converting* (Q4). A group enrols as its leader.
+
+**FR-286-8 — The session ceiling** (218 FR-218-8) counts a speaker only while it transcodes.
+
+**FR-286-9 — Dashboard** (285's Services domain): *Chromecast · speakers not confirmed — step 5a* (information)
+until the first speaker cast; nothing once they are.
+
+## Out of scope
+
+Road C (the backend as a Cast sender — the only way an iPhone reaches the speakers) · AirPlay speakers · video to
+any audio device · multi-room sync beyond Google's own groups.
+
+## Acceptance
+
+1. With the box ticked and Stue restarted, the phone lists Stue; an MP3 album plays on it; the receiver's DOM is
+   empty.
+2. The phone is locked for an hour; Stue plays through the queue; *Recently played* has every song.
+3. The card flips from *not confirmed* to *reachable · Stue played music …* after that first cast.
+4. On the hub, Now playing shows the song and the next; OK pauses; Back hides the row and the music plays on.
+5. A WMA song on Stue counts one session while it converts; an MP3 counts none.
+
+## Open questions (for the dev review)
+
+1. Whether a Nest Wifi point accepts a queue LOAD of 30 items in one message, or the receiver must page it.

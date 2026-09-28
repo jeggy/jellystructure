@@ -10,7 +10,7 @@
     { k: 'disco', n: 'H4', t: 'Artist page — albums the library lacks', d: 'Only what is on disk, or also MusicBrainz’s discography greyed out (a shopping list, like Discover’s Request — a second feature).', o: [['disk', 'On disk only', 1], ['greyed', 'Show the rest greyed']], pages: ['artist'] },
     { k: 'prov', n: 'H5', t: 'Where the Music providers card lives', d: 'Settings → Connections beside Jellyfin/TMDB (they are metadata sources), or Download tools beside Bazarr.', o: [['connections', 'Connections', 1], ['downloads', 'Download tools']], pages: ['settings'] },
     { k: 'lyrics', n: 'H6', t: 'Fetch lyrics by default?', d: 'LRCLIB needs no key. On by default means the run gains <span class="mu-mono">fetch_lyrics</span> and the Tracks tab fills in; off means the switch is there and nothing is fetched until it is turned on.', o: [['on', 'On by default', 1], ['off', 'Off by default']], pages: ['settings', 'activity', 'album'] },
-    { k: 'tags', n: 'H7', t: 'Write MusicBrainz ids into the files', d: 'A per-album action behind a confirmation, or not drawn at all — nothing touches a media file without being asked, and NFO + sidecars are enough for Jellyfin and Kodi.', o: [['none', 'Not drawn', 1], ['action', 'Per-album action']], pages: ['album'] },
+    // H7 (write ids into the files) removed 2026-09-28 — the owner's rule "the file is the record" answers it; see files-tab.js / TagsQ
     // part 2 — audiobooks (§M6)
     { k: 'abtags', n: 'M6·1', t: 'Audiobooks — write tags into the files', d: 'Jellyfin has no metadata file for audiobooks, so embedded tags are the only way its own apps show a narrator or a description. A switch in Settings (off by default), or leave the files alone for good.', o: [['draw', 'Draw the switch, off', 1], ['never', 'Leave the files alone']], pages: ['settings', 'audiobook'] },
     { k: 'abapply', n: 'M6·2', t: 'Suggestions rail — how a suggestion is taken', d: 'Apply one field at a time (a description from one provider, a cover from another), or only a whole card at once.', o: [['field', 'Per field', 1], ['card', 'Whole card only']], pages: ['audiobook'] },
@@ -26,6 +26,7 @@
     if (!el) return;
     const paint = () => {
       const here = Q.filter(q => q.pages.indexOf(page) >= 0).length;
+      el.innerHTML = ''; el.className = ''; el.hidden = true; return; // owner 2026-09-28: all decided on the leans — the panel is gone, the values stay
       el.className = 'mu-qs';
       el.innerHTML = '<div class="row center" style="gap:8px;flex-wrap:wrap;margin-bottom:6px;"><h3>Music &amp; audiobooks · round-1 questions</h3><span class="tiny muted">design brief 2026-09-27 §H + §M6 · lean marked · mockup only</span><span class="spacer"></span>'
         + (here ? '<span class="tiny muted">' + here + ' of ' + Q.length + ' change this page</span>' : '') + '<span class="btn sm ghost" data-muq-reset>Reset to leans</span></div>'

@@ -1,0 +1,85 @@
+/* Dashboard as one overview (ov-*) — brief 2026-09-28, prospective 285. One row grammar for every finding. */
+.ov-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 0}
+.ov-big{font-family:'Space Grotesk',sans-serif;font-size:1.35rem;font-weight:700;letter-spacing:-.01em}
+.ov-fence{border:1px dashed var(--line-2);border-radius:12px;padding:10px 14px;margin:14px 0 0;display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
+.ov-fence .fl{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);font-weight:700}
+.ov-fence .seg{flex-wrap:wrap}
+.ov-scan{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:10px 14px;border-radius:12px;border:1px solid var(--line-2);background:var(--fill-2);font-size:.9rem}
+.ov-scan.warn{border-color:color-mix(in oklch,var(--warn) 45%,var(--line-2))}
+.ov-bar{flex-basis:100%;height:4px;border-radius:3px;background:var(--fill-3);overflow:hidden}
+.ov-bar i{display:block;height:100%;background:var(--grad)}
+.ov-since{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;font-size:.82rem}
+.ov-since .lb,.ov-quick .lb{font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--ink-soft)}
+.ov-since .chip b{margin-right:4px}
+.ov-recent{margin-top:10px;padding:12px 14px}
+.ov-recent h4{margin:0 0 6px;font-size:.92rem}
+.ov-recent .tiny{line-height:1.9}
+.ov-quick{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:12px}
+.ov-down{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;padding:11px 14px;border-radius:12px;border:1px solid color-mix(in oklch,var(--bad) 45%,var(--line-2));font-size:.88rem}
+.ov-foot{margin-top:12px}
+.ov-empty{padding:44px 20px;text-align:center;margin-top:16px}
+.ov-empty h3{margin:0 0 6px;font-size:1.15rem}
+.ov-empty p{margin:0 auto 14px;max-width:460px;color:var(--ink-soft);font-size:.9rem;text-wrap:pretty}
+/* direction 1 — sections */
+.ov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,520px),1fr));gap:14px;margin-top:16px;align-items:start}
+.ov-sec,.ov-band,.ov-col{container-type:inline-size;border:1px solid var(--line);border-radius:14px;background:var(--fill);padding:4px 14px 8px;position:relative;overflow:hidden}
+.ov-sec::before,.ov-band::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:transparent}
+.ov-sec.w-critical::before,.ov-band.w-critical::before{background:var(--bad)}
+.ov-sec.w-warning::before,.ov-band.w-warning::before{background:var(--warn)}
+.ov-sh{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;padding:12px 0 8px;border-bottom:1px solid var(--line)}
+.ov-sh h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.08rem}
+.ov-sh h3 a{color:var(--ink);text-decoration:none}
+.ov-sh h3 a:hover{color:var(--acc-ink)}
+.ov-size{font-size:.76rem;color:var(--ink-soft)}
+.ov-sh .spacer{flex:1}
+.ov-sh .badge{align-self:center}
+/* the one row grammar: severity · label + sentence · count · what fixing means */
+.ov-row{display:grid;min-height:0;grid-template-columns:10px minmax(0,1fr) auto;grid-template-areas:"sev main n" "sev main act";gap:4px 14px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
+.ov-row:last-of-type{border-bottom:0}
+.ov-row.zero{opacity:.45}
+.ov-sev{grid-area:sev;width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--ink-dim)}
+.sev-critical .ov-sev{background:var(--bad);box-shadow:0 0 0 3px color-mix(in oklch,var(--bad) 22%,transparent)}
+.sev-warning .ov-sev{background:var(--warn)}
+.sev-info .ov-sev{background:transparent;border:1.5px solid var(--ink-dim);width:7px;height:7px}
+.ov-main{grid-area:main;min-width:0}
+.ov-l{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.ov-l a{font-weight:600;font-size:.9rem;color:var(--ink);text-decoration:none}
+.ov-l a:hover{color:var(--acc-ink);text-decoration:underline}
+.ov-s{font-size:.76rem;color:var(--ink-soft);line-height:1.42;margin-top:2px;text-wrap:pretty}
+.ov-path{font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--ink-soft);margin-top:3px}
+.ov-n{grid-area:n;font-size:.78rem;color:var(--ink-soft);white-space:nowrap;text-align:right}
+.ov-n b{font-family:'Space Grotesk',sans-serif;font-size:1.02rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.ov-n.z{color:var(--ok)}
+.ov-now{grid-area:n;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--ink-soft);padding:2px 6px;border-radius:5px;border:1px solid var(--line-2);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.ov-act{grid-area:act;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.ov-fix{font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--ink-soft)}
+.ov-fix.k-here{color:var(--ok)}
+.ov-fix.k-else{color:var(--acc-ink)}
+.ov-fix.k-info{color:var(--ink-dim)}
+.ov-act .btn.sm{padding:4px 10px;font-size:.76rem}
+.ov-dom{font-size:.64rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-soft)}
+.ov-new{font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--ink-dim);border:1px dashed var(--line-2);border-radius:4px;padding:0 4px}
+.ov-more{margin:8px 0 4px;background:none;border:0;padding:0;font:inherit;font-size:.8rem;font-weight:600;color:var(--acc-ink);cursor:pointer}
+/* direction 2 — one list by severity, domain as chips */
+.ov-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.ov-chips .chip{cursor:pointer;font:inherit;font-size:.78rem}
+.ov-chips .chip.on{border-color:var(--hi);background:var(--hi-soft);color:var(--acc-ink)}
+.ov-list{display:flex;flex-direction:column;gap:14px;margin-top:12px;max-width:980px}
+/* direction 3 — two queues */
+.ov-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:14px;margin-top:16px;align-items:start}
+.ov-colh{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;padding:12px 0 6px}
+.ov-colh h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.12rem}
+.ov-sub{border-top:1px solid var(--line);padding-top:6px}
+.ov-subh{display:flex;gap:8px;align-items:baseline;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);padding:6px 0 0}
+/* round-1 questions */
+.ov-qs{margin-top:30px;border:1px dashed var(--line-2);border-radius:14px;padding:16px 18px}
+.ov-q{display:grid;grid-template-columns:34px minmax(0,1fr);gap:4px 10px;padding:12px 0;border-top:1px solid var(--line)}
+.ov-q:first-of-type{border-top:0}
+.ov-q .qn{font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--ink-soft)}
+.ov-q .qt{font-weight:600;font-size:.9rem}
+.ov-q .seg,.ov-q .qd{grid-column:2}
+.ov-q .seg{justify-self:start;flex-wrap:wrap}
+.ov-q .qd{font-size:.76rem;color:var(--ink-soft);line-height:1.45;text-wrap:pretty}
+.lean{font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-left:6px;color:var(--ok)}
+@media (max-width:560px){.ov-row{grid-template-areas:"sev main" "sev n" "sev act";grid-template-columns:10px minmax(0,1fr)}.ov-n,.ov-now{text-align:left;justify-self:start}.ov-act{justify-content:flex-start}}
+@container (max-width:640px){.ov-row{grid-template-areas:"sev main n" "sev act act"}.ov-act{justify-content:flex-start}}

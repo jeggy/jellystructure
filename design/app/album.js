@@ -16,6 +16,10 @@
   const genresOn = new Set(A.genres.filter((g, i) => g.votes >= 3 && g.votes >= A.genres[0].votes * 0.1 && i < 4).map(g => g.name));
   const isMatched = () => match === 'matched' || match === 'locked';
   const wma = ts.filter(M.reencodes);
+  // prospective 284 — the Files tab's view of this album (stand-in values; ids shortened for the grid)
+  const tagSpec = () => ({ kind: 'album', title: A.title, artist: artist.name, total: A.total || ts.length, rel: isMatched() ? A.relMbid.slice(0, 8) + '…' : '', cover: hasCover,
+    tracks: ts.map(t => ({ id: t.id, n: t.n, title: t.title, artist: M.artistNames(t.artistIds), codec: t.codec, rec: isMatched() ? M.mbid('rec' + t.id).slice(0, 8) + '…' : '', gain: t.gain.toFixed(2) + ' dB', lyrics: lyr[t.id] })) });
+  const TQ = () => !!window.FilesTab;
   document.title = 'Jellystructure — ' + A.title;
 
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
@@ -42,9 +46,8 @@
       + '<span class="menu-wrap"><span class="btn sm ghost menu-btn">⋯</span><div class="menu">'
         + (isMatched() ? '<div class="menu-item" data-a="lock"><span class="mi-ic">' + (locked ? '🔓' : '🔒') + '</span><span>' + (locked ? 'Unlock match' : 'Lock match') + '<span class="mi-sub">' + (locked ? 'Let the next run re-match it' : 'The next run leaves this match alone') + '</span></span></div><div class="menu-item" data-a="clear"><span class="mi-ic">✕</span><span>Clear match<span class="mi-sub">Forget the MusicBrainz ids; fields stay until the next run</span></span></div>' : '')
         + '<div class="menu-item" data-a="find"><span class="mi-ic">⌕</span><span>' + (isMatched() ? 'Change match…' : 'Find match…') + '<span class="mi-sub">Search MusicBrainz for this album</span></span></div>'
-        + (Q('tags') === 'action' && isMatched() ? '<div class="menu-item" data-a="tags"><span class="mi-ic">✎</span><span>Write MusicBrainz ids into the files…<span class="mi-sub">Rewrites ' + ts.length + ' file' + (ts.length > 1 ? 's' : '') + '’ tags · asks first</span></span></div>' : '')
       + '</div></span>'
-      + '<span class="split"><span class="btn primary" data-a="savesync">Save &amp; Sync ↻</span><span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span><div class="menu"><div class="menu-item" data-a="savesync"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">Write album.nfo, then ask Jellyfin to re-read it</span></span></div><div class="menu-item" data-a="save"><span class="mi-ic">↓</span><span>Save → NFO<span class="mi-sub">Write album.nfo in the album folder</span></span></div><div class="menu-item" data-a="sync"><span class="mi-ic">↻</span><span>Sync Jellyfin<span class="mi-sub">Ask Jellyfin to re-read (no rewrite)</span></span></div></div></span>';
+      + FilesTab.saveMenu({ kind: 'music', nfo: 'album.nfo', where: 'album', n: ts.length, differ: FilesTab.summary(tagSpec()).differ });
   }
   function matchChip() {
     if (match === 'unmatched') return '<span class="mu-match w"><span class="l1"><span class="dot"></span>No MusicBrainz match</span><span class="l2">The ladder ran on ' + A.year + '-era tags and found nothing above the bar</span></span>';
@@ -71,7 +74,7 @@
     let h = '';
     if (match === 'unmatched') h += '<div class="mu-note w"><span class="badge warn">Unmatched</span><div class="t"><b>No MusicBrainz match after the ladder ran.</b> Folder <span class="mono">' + esc(artist.name) + '/' + esc(A.title) + '</span>, one track, tags from 2004. Nothing below fills in until this is matched: the cover, genres, the release’s track count and every recording id.</div><span class="btn sm primary" data-a="find">Find match…</span></div>';
     if (match === 'needs') h += '<div class="mu-note w"><span class="badge warn">Needs you</span><div class="t"><b>' + (M.CANDS[A.id] || []).length + ' candidates, no clear winner.</b> ' + (A.id === 'summer-hits-2004' ? 'Three compilations share this name, the year and the label type — only the track list tells them apart.' : 'The album and its deluxe edition both hold these two tracks at these positions.') + '</div><span class="btn sm primary" data-a="find">Choose…</span></div>';
-    if (driftOn) h += '<div class="note" style="margin-bottom:14px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;"><span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span><div style="flex:1;min-width:0;"><b>Jellyfin rewrote album.nfo at 03:12 — its own NFO saver is on for the Musik library.</b><div class="tiny" style="margin-top:5px;line-height:1.6;"><b>2 fields</b> differ from our last write (genres, the release id). This will keep happening until <a href="settings.html?tab=libraries#mu-libcard">the advisor finding on the Musik card</a> is fixed.</div><div class="pill-row" style="margin-top:10px;"><span class="btn sm" data-a="reassert">Re-assert NFO → Jellyfin</span></div></div><span class="x" data-a="nodrift" style="cursor:pointer;color:var(--ink-soft);">✕</span></div>';
+    if (driftOn) h += '<div class="note" style="margin-bottom:14px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;"><span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span><div style="flex:1;min-width:0;"><b>Jellyfin rewrote album.nfo at 03:12 — its own NFO saver is on for the Musik library.</b><div class="tiny" style="margin-top:5px;line-height:1.6;"><b>2 fields</b> differ from our last write (genres, the release id). This will keep happening until <a href="index.html">the Dashboard’s Jellyfin finding</a> (the NFO saver on Musik) is fixed.</div><div class="pill-row" style="margin-top:10px;"><span class="btn sm" data-a="reassert">Re-assert NFO → Jellyfin</span></div></div><span class="x" data-a="nodrift" style="cursor:pointer;color:var(--ink-soft);">✕</span></div>';
     if (A.id === 'early-recordings') h += '<div class="note red" style="margin-bottom:14px;display:flex;gap:13px;align-items:flex-start;"><span class="badge bad" style="flex:none;margin-top:1px;">⚠ Locked in Jellyfin</span><div style="flex:1;min-width:0;"><b>This album has locked metadata fields in Jellyfin, so your changes here may be ignored.</b><div class="tiny" style="margin-top:5px;line-height:1.6;">Locked fields: <span class="chip" style="font-size:.66rem;">Genres</span>. To fix it: open the album in Jellyfin → <b>Edit metadata</b> → uncheck all locks → save.</div></div></div>';
     $('al-banners').innerHTML = h;
   }
@@ -92,8 +95,8 @@
     const canPlay = !M.reencodes(t);
     return '<tr class="' + (t.rec === 'other' && isMatched() ? 'off' : '') + '"><td class="n">' + t.n + '</td><td>' + esc(t.title) + (t.feat.length ? ' <span class="dim tiny">feat. ' + artistLinks(t.feat) + '</span>' : '') + (t.artistIds[0] !== A.artistId ? '<div class="tiny dim">' + artistLinks(t.artistIds) + '</div>' : '') + '</td>'
       + '<td class="num">' + M.fmtLen(t.len) + '</td><td><span class="mu-fmt' + (canPlay ? '' : ' w') + '">' + t.codec + ' · ' + t.kbps + ' · ' + t.khz + ' kHz</span></td><td>' + recCell(t) + '</td><td>' + lyrCell(t) + '</td><td class="num mu-mono" style="font-size:.74rem">' + t.gain.toFixed(1) + ' dB</td>'
-      + '<td>' + (canPlay ? '<span class="mu-play' + (playing === t.id ? ' on' : '') + '" data-play="' + t.id + '" title="Play in this browser — your own Jellyfin session, direct play">' + (playing === t.id ? '❚❚' : '▶') + '</span>' : '<span class="tiny muted mu-tip" style="cursor:help">no direct play<span class="tp">A browser can’t direct-play WMA, and this page never asks Jellyfin to convert — direct play or nothing, the segment editor’s rule.</span></span>') + '</td></tr>'
-      + (recOpen === t.id ? '<tr><td></td><td colspan="7"><div class="mu-cand on" style="cursor:default;margin:2px 0 6px;"><b class="tiny">Recordings of “' + esc(t.title) + '” by ' + esc(artist.name) + '</b>'
+      + '<td>' + FilesTab.glyph(tagSpec(), t, ts.indexOf(t)) + '</td><td>' + (canPlay ? '<span class="mu-play' + (playing === t.id ? ' on' : '') + '" data-play="' + t.id + '" title="Play in this browser — your own Jellyfin session, direct play">' + (playing === t.id ? '❚❚' : '▶') + '</span>' : '<span class="tiny muted mu-tip" style="cursor:help">no direct play<span class="tp">A browser can’t direct-play WMA, and this page never asks Jellyfin to convert — direct play or nothing, the segment editor’s rule.</span></span>') + '</td></tr>'
+      + (recOpen === t.id ? '<tr><td></td><td colspan="8"><div class="mu-cand on" style="cursor:default;margin:2px 0 6px;"><b class="tiny">Recordings of “' + esc(t.title) + '” by ' + esc(artist.name) + '</b>'
         + '<table class="mu-mini"><tr><td>Small Hours</td><td class="mono">3:59</td><td>on <i>Glass Birds</i> (2004) · position 7</td><td class="ok">length agrees</td><td><span class="btn sm primary" data-recuse="' + t.id + '">Use</span></td></tr><tr><td>Small Hours (single version)</td><td class="mono">3:47</td><td>on <i>Small Hours</i> (single, 2004)</td><td class="w">12 s shorter</td><td><span class="btn sm ghost" data-recuse="' + t.id + '">Use</span></td></tr></table>'
         + '<div class="tiny muted" style="margin-top:6px;">Today the file is matched to the single’s recording, which is why the row is marked. The album recording agrees on position and length.</div></div></td></tr>' : '');
   }
@@ -101,14 +104,14 @@
     const byN = {}; ts.forEach(t => byN[t.n] = t);
     const max = A.total || Math.max(...ts.map(t => t.n));
     const rows = []; let gapFrom = null;
-    const flush = to => { if (gapFrom == null) return; rows.push('<tr class="gap"><td class="n">' + (gapFrom === to ? gapFrom : gapFrom + '–' + to) + '</td><td colspan="7">not in library' + (to > gapFrom ? ' · ' + (to - gapFrom + 1) + ' tracks' : '') + '</td></tr>'); gapFrom = null; };
+    const flush = to => { if (gapFrom == null) return; rows.push('<tr class="gap"><td class="n">' + (gapFrom === to ? gapFrom : gapFrom + '–' + to) + '</td><td colspan="8">not in library' + (to > gapFrom ? ' · ' + (to - gapFrom + 1) + ' tracks' : '') + '</td></tr>'); gapFrom = null; };
     if (A.total) { for (let n = 1; n <= max; n++) { if (byN[n]) { flush(n - 1); rows.push(trackRow(byN[n])); } else if (gapFrom == null) gapFrom = n; } flush(max); }
     else ts.forEach(t => rows.push(trackRow(t)));
     const missingLy = ts.filter(t => !lyr[t.id]).length;
     return '<div class="row center" style="gap:10px;flex-wrap:wrap;margin-bottom:10px;"><span class="tiny muted">Album gain <b class="mono" style="color:var(--ink)">' + A.gain.toFixed(1) + ' dB</b> · from Jellyfin’s loudness scan · the phone applies album gain on an album, track gain on a mix</span><span class="spacer"></span>'
       + (isMatched() && missingLy && Q('lyrics') === 'on' ? '<span class="btn sm ghost" data-a="lyrics">Fetch missing lyrics (' + missingLy + ')</span>' : '') + '</div>'
       + (!A.total ? '<div class="note blue" style="margin-bottom:12px;">Positions come from the files’ tags. A match tells us how many tracks the release has — then the gaps show here.</div>' : '')
-      + '<div class="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th></th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+      + '<div class="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th title="What the file says, against this page — opens the Files tab">File</th><th></th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
       + '<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>';
   }
   function artworkTab() {
@@ -151,6 +154,7 @@
   }
   function panel() {
     document.querySelectorAll('#tabbar [data-tab]').forEach(t => t.classList.toggle('on', t.dataset.tab === tab));
+    if (tab === 'files') { FilesTab.mount($('al-panel'), tagSpec(), bar); return; }
     $('al-panel').innerHTML = tab === 'artwork' ? artworkTab() : tab === 'genres' ? genresTab() : tab === 'nfo' ? nfoTab() : tab === 'history' ? historyTab() : tracksTab();
   }
 
@@ -216,9 +220,6 @@
   function convertModal() {
     modal('<h3>Convert ' + wma.length + ' song' + (wma.length > 1 ? 's' : '') + ' so a phone can play them directly?</h3><p>These are <b>WMA 128 kbps</b> — a phone can only play them by asking Jellyfin to re-encode on every play, which is never gapless. A one-time repair job converts them to <b>AAC 192 kbps</b>.</p><p><b>They are already lossy, so a little more is lost.</b> You are unlikely to hear it, and it cannot be undone from the new files. The WMA originals are moved to a holding folder, not deleted, until you empty it.</p><p class="tiny">Files seeding in qBittorrent are skipped (cross-seed safety).</p><div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;"><span class="btn ghost" data-m="no">Keep as they are</span><span class="btn primary" data-m="go" data-msg="Convert job queued · ' + wma.length + ' files · Jobs &amp; workers">Convert ' + wma.length + '</span></div>');
   }
-  function tagsModal() {
-    modal('<h3>Write MusicBrainz ids into ' + ts.length + ' file' + (ts.length > 1 ? 's' : '') + '?</h3><p>This rewrites the tags <b>inside each audio file</b> — the recording, release and artist ids — so any player finds this match without our NFO. Nothing else in the files changes.</p><p>Jellyfin and Kodi already read the ids from <span class="mono">album.nfo</span>; this is for other players. Files seeding in qBittorrent are skipped.</p><div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;"><span class="btn ghost" data-m="no">Cancel</span><span class="btn primary" data-m="go" data-msg="Tags written into ' + ts.length + ' files">Write the tags</span></div>');
-  }
 
   /* ---- events ---- */
   document.addEventListener('click', e => {
@@ -231,6 +232,8 @@
     const ak = e.target.closest('[data-ak]'); if (ak) { acoust = ak.dataset.ak === '1'; fence(); return; }
     const cov = e.target.closest('.mu-pb .mu-cov'); if (cov) { $('al-lb-im').setAttribute('style', hasCover ? M.coverStyle(A) : M.wordmarkStyle(A.title)); $('al-lb-cap').textContent = hasCover ? 'cover.jpg · 1000 × 1000' : 'no cover.jpg on disk'; $('al-lb').classList.add('on'); return; }
     if (e.target.closest('#al-lb')) { $('al-lb').classList.remove('on'); return; }
+    const fr = e.target.closest('[data-ftrow]'); if (fr) { e.preventDefault(); tab = 'files'; panel(); FilesTab.highlight(fr.dataset.ftrow); return; }
+    if (e.target.closest('[data-off]')) { toast('Turn on Write tags into music files in Settings → Music providers'); return; }
     const pl = e.target.closest('[data-play]'); if (pl) { playing = playing === pl.dataset.play ? null : pl.dataset.play; panel(); return; }
     const fe = e.target.closest('[data-fetch]'); if (fe) { e.preventDefault(); lyr[fe.dataset.fetch] = 'synced'; panel(); toast('LRCLIB · synced lyrics found'); return; }
     const rc = e.target.closest('[data-rec]'); if (rc) { recOpen = recOpen === rc.dataset.rec ? null : rc.dataset.rec; panel(); return; }
@@ -242,14 +245,14 @@
     else if (k === 'lock') { locked = !locked; match = locked ? 'locked' : 'matched'; repaint(); toast(locked ? 'Locked · the next run leaves this match alone' : 'Unlocked · the next run may re-match it'); }
     else if (k === 'clear') { match = 'unmatched'; locked = false; repaint(); toast('Match cleared · the fields it filled stay until the next run'); }
     else if (k === 'convert') convertModal();
-    else if (k === 'tags') tagsModal();
     else if (k === 'nodrift' || k === 'reassert') { driftOn = false; banners(); if (k === 'reassert') toast('Re-asserted · album.nfo rewritten, Jellyfin re-reading'); }
     else if (k === 'lyrics') { ts.forEach(t => { if (!lyr[t.id]) lyr[t.id] = t.len % 3 ? 'synced' : null; }); panel(); toast('LRCLIB · lyrics found for some; the rest stay empty'); }
     else if (k === 'upload') toast('Pick an image — it is written as cover.jpg');
     else if (k === 'usecover') { hasCover = true; repaint(); toast('cover.jpg written · Jellyfin re-reads on the next sync'); }
     else if (k === 'coverclear') { hasCover = false; repaint(); toast('cover.jpg removed'); }
     else if (k === 'coverlock') toast('Cover locked · a re-pull won’t replace it');
-    else if (k === 'savesync') toast('album.nfo written · Jellyfin re-reading ↻');
+    else if (k === 'savesync') toast(FilesTab.writeOn('music') ? 'album.nfo + tags in ' + ts.length + ' files written · Jellyfin re-reading ↻' : 'album.nfo written · Jellyfin re-reading ↻');
+    else if (k === 'savefiles') { tab = 'files'; panel(); }
     else if (k === 'save') toast('album.nfo written');
     else if (k === 'sync') toast('Sync requested ↻');
     else if (k === 'repull-mb') toast('Re-pulling from MusicBrainz · one request a second');
@@ -257,6 +260,7 @@
     else if (k === 'usecd') toast('cdart.png written');
   });
   function repaint() { bar(); head(); banners(); panel(); }
+  TagsQ.mount($('al-tq')); TagsQ.on(() => { bar(); if (tab === 'tracks') panel(); });
   if (window.MusicQ) { MusicQ.mount($('al-qs'), 'album'); MusicQ.on(() => { repaint(); if ($('fm-panel').classList.contains('on')) paintFM(); }); }
   fence(); repaint();
   if (P.get('find') === '1') openFM();

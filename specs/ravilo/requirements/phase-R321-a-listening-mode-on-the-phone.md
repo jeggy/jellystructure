@@ -146,10 +146,10 @@ account without music · library size · playlists none/two · skins. Its *Jump 
 
 1. **The Queue tab and the queue button on Now playing** open the same list, one as a page and one as a sheet.
    Keep both, or drop the button on Now playing when Queue is a tab? Lean: drop the button — the tab is one tap
-   away.
+   away. **Answered by the owner 2026-09-28:** the lean — dropped when the bar has a Queue tab.
 2. **Continue listening with no Audiobooks tab.** Under this bar a book in progress is two taps deep (Browse ▸
    Audiobooks), which the research warned against. Lean: Listen gains a *Continue listening* row above
-   *Recently added* while a book is in progress (R323 FR-R323-2). Not drawn yet.
+   *Recently added* while a book is in progress (R323 FR-R323-2). **Answered by the owner 2026-09-28:** the lean; drawn.
 
 ## Dev review (2026-09-28, against `main` `728f22ea`)
 

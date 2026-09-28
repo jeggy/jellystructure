@@ -22,7 +22,7 @@
     $('ar-bar').innerHTML = '<h1>' + esc(R.name) + '</h1><span class="spacer"></span>'
       + '<span class="menu-wrap"><span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span><div class="menu"><a class="menu-item" href="#"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Artist in the Jellyfin web UI</span></span></a>' + links.map(l => '<a class="menu-item" href="#"><span class="mi-ic">↗</span><span>' + l[0] + '<span class="mi-sub">' + l[1] + '</span></span></a>').join('') + '</div></span>'
       + '<span class="menu-wrap"><span class="btn sm ghost menu-btn">⋯</span><div class="menu">' + (isM() ? '<div class="menu-item" data-a="lock"><span class="mi-ic">🔒</span><span>' + (locked ? 'Unlock match' : 'Lock match') + '</span></div><div class="menu-item" data-a="clear"><span class="mi-ic">✕</span><span>Clear match</span></div>' : '') + '<div class="menu-item" data-a="find"><span class="mi-ic">⌕</span><span>' + (isM() ? 'Change match…' : 'Find match…') + '<span class="mi-sub">Search MusicBrainz artists</span></span></div></div></span>'
-      + '<span class="split"><span class="btn primary" data-a="save">Save &amp; Sync ↻</span><span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span><div class="menu"><div class="menu-item" data-a="save"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">Write artist.nfo, then ask Jellyfin to re-read it</span></span></div><div class="menu-item" data-a="save"><span class="mi-ic">↓</span><span>Save → NFO<span class="mi-sub">Write artist.nfo in the artist folder</span></span></div></div></span>';
+      + (window.FilesTab ? FilesTab.saveMenu({ kind: 'music', nfo: 'artist.nfo', where: 'artist', n: M.tracksBy(R.id).length, differ: M.tracksBy(R.id).length }) : '');
   }
   function head() {
     const facts = [R.type, R.country, R.span].filter(Boolean).join(' · ');
@@ -103,7 +103,10 @@
     else if (k === 'lock') { locked = !locked; repaint(); }
     else if (k === 'clear') { match = 'unmatched'; repaint(); toast('Match cleared'); }
     else if (k === 'find') toast('Artist search opens the same Find match… panel as an album, over MusicBrainz artists');
-    else if (k === 'save') toast('artist.nfo written · Jellyfin re-reading ↻');
+    else if (k === 'save') toast('artist.nfo written');
+    else if (k === 'savesync') toast(FilesTab.writeOn('music') ? 'artist.nfo + tags in ' + M.tracksBy(R.id).length + ' files written · Jellyfin re-reading ↻' : 'artist.nfo written · Jellyfin re-reading ↻');
+    else if (k === 'savefiles') toast(e.target.closest('[data-off]') ? 'Tag writing is off in Settings → Music providers' : 'Artist name, sort name and MusicBrainz artist id written into ' + M.tracksBy(R.id).length + ' files');
+    else if (k === 'sync') toast('Sync requested ↻');
   });
   if (window.MusicQ) { MusicQ.mount($('ar-qs'), 'artist'); MusicQ.on(repaint); }
   fence(); repaint();

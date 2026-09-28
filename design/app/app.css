@@ -122,9 +122,7 @@
 .backrow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 
 /* ---------- floating dock stack (bottom-right) ---------- */
-/* Both the scan dock and the needs-attention dock live in this flex column so
-   they always stack with a consistent gap, regardless of collapsed/expanded
-   or hidden state (no hardcoded offsets to drift). */
+/* The scan dock lives in this flex column (the attention dock was removed 2026-09-28). */
 #dock-stack {
   position: fixed; right: 24px; bottom: 24px; z-index: 80;
   display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 14px;
@@ -156,14 +154,6 @@
 
 .dock-log { position: fixed; right: 24px; bottom: 160px; width: 360px; z-index: 79; display: none; }
 .dock-log.open { display: block; }
-
-/* ---------- floating triage (needs-attention) dock ---------- */
-.triage-dock::before { background: var(--bad); opacity: 1; }
-.triage-dock .ico-attn { width: 20px; height: 20px; flex: none; display: inline-flex; color: var(--bad); }
-.triage-dock .ico-attn svg { width: 100%; height: 100%; }
-.triage-dock .td-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.02rem; }
-.triage-dock .td-item { padding: 2px 0 0; }
-.triage-dock .btn.sm { padding: 6px 10px; }
 
 /* ---------- dashboard stats ---------- */
 .statgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }

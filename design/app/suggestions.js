@@ -59,7 +59,8 @@
       : '<div class="sg-acts">' + (n > 1 ? '<span class="chip sg-multi">' + n + ' viewers</span>' : '') + '<span class="spacer"></span>'
         + '<span class="btn sm ghost" data-no="' + it.id + '">No thanks</span>'
         + '<span class="btn sm primary" data-dl="' + it.id + '"' + (off ? ' aria-disabled="true"' : '') + '>' + Q.q2 + '</span>'
-        + (off ? '<span class="sg-dis">Seerr can’t be reached right now — this waits until it’s back.</span>' : '') + '</div>';
+        + (off ? '<span class="sg-dis">Seerr can’t be reached right now — this waits until it’s back.</span>' : '')
+        + (it.refused ? '<span class="sg-ref">' + esc(it.refused) + '</span>' : '') + '</div>';
     return '<div class="sg-tile' + (openPick === it.id && !st ? ' picking' : '') + '" data-tile="' + it.id + '">'
       + '<div class="sg-post" style="background:' + grad(b.hue + (it.year % 7) * 6) + '"><span>' + esc(it.title) + '</span></div>'
       + '<div class="sg-body">'
@@ -135,7 +136,21 @@
     ];
     $('sg-qs').innerHTML = '<div class="row center"><h3 style="margin:0;font-size:1rem;">Decided · owner, 2026-09-27</h3><span class="badge ok" style="margin-left:8px;">Phase 274 · R320</span><span class="spacer"></span>'
       + '<span class="tiny muted">clusters preview:</span><span class="seg" id="sg-cl">' + [['ai', 'AI'], ['off', 'AI off'], ['limit', 'Limit reached'], ['bad', 'Bad answer']].map(x => '<span data-c="' + x[0] + '"' + (clusters === x[0] ? ' class="on"' : '') + '>' + x[1] + '</span>').join('') + '</span></div>'
-      + QS.map(q => '<div class="sg-q"><span class="qn">' + q[0] + '</span><span class="qt">' + q[1] + '</span><span class="qd">' + q[2] + '</span></div>').join('');
+      + QS.map(q => '<div class="sg-q"><span class="qn">' + q[0] + '</span><span class="qt">' + q[1] + '</span><span class="qd">' + q[2] + '</span></div>').join('')
+      + dlQsHTML();
+  }
+  function dlQsHTML() {
+    const L = '<span class="lean">lean</span>';
+    const QD = [
+      ['q1', 'Q1', 'Remember the last chosen quality for the next sheet', [['no', 'No — Seerr’s default every time'], ['yes', 'Yes — open on the last pick']], 'The default is Seerr’s own decision; the admin should see it each time.'],
+      ['q2', 'Q2', 'Sheet or dialog', [['both', 'Sheet on narrow, dialog on wide'], ['dialog', 'Always a dialog'], ['sheet', 'Always a sheet']], 'The confirmation idiom of 260’s Empty queues panel.'],
+      ['q3', 'Q3', 'Show the folder chooser', [['two', 'Only with two or more folders'], ['always', 'Always, under More'], ['never', 'Never']], 'The household has one folder per server today, so round 1 draws nothing unless Seerr reports two.'],
+      ['q4', 'Q4', 'Free space beside a folder', [['yes', 'Yes, as Seerr reports it'], ['no', 'No']], 'The one fact that changes the choice.'],
+      ['q5', 'Q5', 'Should No thanks get a confirm too', [['no', 'No — it has Undo and Bring back'], ['yes', 'Yes']], 'A confirm on both would make the page slow to use. Recorded; not drawn.'],
+    ];
+    return ''; // owner 2026-09-28: decided — panel removed
+    return '<div class="row center" style="margin-top:22px;padding-top:14px;border-top:1px solid var(--line)"><h3 style="margin:0;font-size:1rem;">Download asks first · decided</h3><span class="badge ok" style="margin-left:8px;">owner 2026-09-28 · amends FR-274-10</span><span class="spacer"></span><span class="tiny muted">picks switch the sheet live</span></div>'
+      + QD.map(q => '<div class="sg-q"><span class="qn">' + q[1] + '</span><span class="qt">' + q[2] + '</span><span class="seg" data-dq="' + q[0] + '">' + q[3].map((o, i) => '<span data-v="' + o[0] + '"' + (DQ[q[0]] === o[0] ? ' class="on"' : '') + '>' + o[1] + (o[0] === DQPICK[q[0]] ? '<span class="lean">decided</span>' : '') + '</span>').join('') + '</span><span class="qd">' + q[4] + '</span></div>').join('');
   }
 
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }
@@ -157,18 +172,101 @@
     const go = () => { pool.splice(idx, 1); it._idx = idx; render(); if (pool === list) undoToast(it, entry); };
     if (el) { el.classList.add('leaving'); setTimeout(go, 220); } else go();
   }
-  function download(id) {
+  /* §8 (2026-09-28) — Download asks first. The sheet's options are Seerr's own (GET /service/radarr and
+     /service/radarr/{id}), fetched when the sheet opens and cached for the page's life; never a setting here. */
+  const SRV_HD = { id: 0, name: 'Radarr', is4k: false, isDefault: true, active: 4, profiles: [[1, 'Any'], [4, 'HD-1080p'], [6, 'HD - 720p/1080p']], folders: [['/data/films', '2.1 TB'], ['/data/films-family', '740 GB']], activeFolder: 0 };
+  const SRV = {
+    one: [Object.assign({}, SRV_HD, { folders: [['/data/films', '2.1 TB']] })],
+    two: [SRV_HD, { id: 1, name: 'Radarr 4K', is4k: true, isDefault: false, active: 5, profiles: [[5, 'Ultra-HD'], [1, 'Any']], folders: [['/data/films-4k', '3.4 TB']], activeFolder: 0 }],
+    single: [Object.assign({}, SRV_HD, { profiles: [[4, 'HD-1080p']], folders: [['/data/films', '2.1 TB']] })],
+  };
+  // owner 2026-09-28: Q2 always a dialog, Q4 no free space; Q1/Q3/Q5 the leans
+  const DQ = { q1: 'no', q2: 'dialog', q3: 'two', q4: 'no', q5: 'no' };
+  const DQPICK = { q1: 'no', q2: 'dialog', q3: 'two', q4: 'no', q5: 'no' };
+  let dlPrev = 'live', dl = null, cached = false, lastPick = null;
+  const servers = () => SRV[dlPrev === 'two' ? 'two' : dlPrev === 'single' ? 'single' : 'one'];
+  function openDl(id) {
+    const srv = servers()[0];
+    let prof = srv.active;
+    if (DQ.q1 === 'yes' && lastPick && srv.profiles.some(p => p[0] === lastPick)) prof = lastPick;
+    dl = { id, srv: 0, prof, folder: srv.activeFolder, more: false, phase: (dlPrev === 'loading' || (!cached && dlPrev === 'live')) ? 'loading' : 'ready' };
+    renderDl();
+    if (dl.phase === 'loading' && dlPrev !== 'loading') setTimeout(() => { if (dl && dl.id === id) { cached = true; dl.phase = 'ready'; renderDl(); } }, 900);
+  }
+  function closeDl() { dl = null; const r = $('sg-dlroot'); if (r) r.remove(); }
+  function renderDl() {
+    let root = $('sg-dlroot');
+    if (!dl) { if (root) root.remove(); return; }
+    if (!root) { root = document.createElement('div'); root.id = 'sg-dlroot'; document.body.appendChild(root); }
+    const it = list.concat(more).find(x => x.id === dl.id), b = bucket(it.b), S = servers(), srv = S[dl.srv];
+    const prof = srv.profiles.find(p => p[0] === dl.prof) || srv.profiles[0];
+    const loading = dl.phase === 'loading', down = dlPrev === 'unreachable', fixed = dlPrev === 'nochoose';
+    const def = p => p[0] === srv.active;
+    let body = '';
+    if (loading) body = '<div class="sg-dls"><div class="lb">Quality</div><div class="sg-skel"><i></i><i></i><i></i></div><div class="tiny muted">Asking Seerr which qualities Radarr has…</div></div>';
+    else if (down) body = '<div class="sg-dldown"><span class="dot warn"></span><span>Seerr can’t be reached right now — this waits until it’s back.</span><span class="btn sm ghost" data-dlretry="1">Try again</span></div>';
+    else {
+      if (S.length > 1) body += '<div class="sg-dls"><div class="lb">Server <span>Seerr has ' + S.length + ' Radarr servers</span></div><div class="sg-srvs">'
+        + S.map((s, i) => '<button class="sg-srv' + (i === dl.srv ? ' on' : '') + '" data-dlsrv="' + i + '"><b>' + esc(s.name) + '</b>' + (s.is4k ? '<span class="sg-4k">4K</span>' : '') + '<span class="tiny muted">' + s.profiles.length + ' qualit' + (s.profiles.length === 1 ? 'y' : 'ies') + (s.isDefault ? ' · Seerr’s default server' : '') + '</span></button>').join('') + '</div></div>';
+      const oneProf = srv.profiles.length === 1;
+      body += '<div class="sg-dls"><div class="lb">Quality <span>as Radarr names them' + (S.length > 1 ? '' : ' · to <b>' + esc(srv.name) + '</b>') + '</span></div>';
+      if (fixed || oneProf) body += '<div class="sg-fact"><b>' + esc(prof[1]) + '</b><span class="sg-def">Seerr’s default</span></div>'
+        + '<div class="tiny muted" style="margin-top:6px;line-height:1.45">' + (fixed ? 'The admin’s Seerr user may not choose a quality, so Seerr uses its default. Seerr’s <i>Advanced requests</i> permission lets it choose.' : 'This is the only quality Radarr has on ' + esc(srv.name) + '.') + '</div>';
+      else body += '<div class="sg-opts" role="radiogroup">' + srv.profiles.map(p => '<button class="sg-opt' + (p[0] === prof[0] ? ' on' : '') + '" role="radio" aria-checked="' + (p[0] === prof[0]) + '" data-dlprof="' + p[0] + '"><i></i><b>' + esc(p[1]) + '</b>' + (def(p) ? '<span class="sg-def">Seerr’s default</span>' : '') + (DQ.q1 === 'yes' && lastPick === p[0] && !def(p) ? '<span class="sg-def last">your last choice</span>' : '') + '</button>').join('') + '</div>';
+      body += '</div>';
+      const showFolder = DQ.q3 === 'always' || (DQ.q3 === 'two' && srv.folders.length > 1);
+      if (showFolder) {
+        const f = srv.folders[dl.folder] || srv.folders[0];
+        body += '<div class="sg-dls"><button class="sg-morebtn" data-dlmore="1">' + (dl.more ? '▾' : '▸') + ' More <span class="tiny muted">folder · ' + esc(f[0]) + (DQ.q4 === 'yes' ? ' · ' + f[1] + ' free' : '') + '</span></button>'
+          + (dl.more ? '<div class="sg-opts" style="margin-top:8px">' + srv.folders.map((x, i) => '<button class="sg-opt' + (i === dl.folder ? ' on' : '') + '" data-dlfold="' + i + '"><i></i><b class="mono">' + esc(x[0]) + '</b>' + (DQ.q4 === 'yes' ? '<span class="tiny muted">' + x[1] + ' free</span>' : '') + (i === srv.activeFolder ? '<span class="sg-def">Seerr’s default</span>' : '') + '</button>').join('') + '</div>' : '') + '</div>';
+      }
+    }
+    const who = vname(it.because[0][0]);
+    body += '<div class="sg-dlnote"><span class="lb">Kept with the request</span><span>Suggested for ' + esc(Q.q5 === 'names' ? who : 'the household') + '</span><span class="tiny muted">Seerr has no note field, so this stays on this page (under the tile and in Dismissed / Requested).</span></div>';
+    const primary = loading ? 'Asking Seerr…' : down ? 'Download' : 'Download in ' + prof[1] + (srv.is4k ? ' · 4K' : '');
+    const mode = DQ.q2 === 'dialog' ? ' as-dialog' : DQ.q2 === 'sheet' ? ' as-sheet' : '';
+    root.innerHTML = '<div class="sg-dlb' + mode + '" data-dlback="1"><div class="sg-dl" role="dialog" aria-modal="true" aria-label="Download ' + esc(it.title) + '">'
+      + '<div class="sg-grab"></div>'
+      + '<div class="sg-dlh"><div class="sg-post" style="width:64px;background:' + grad(b.hue + (it.year % 7) * 6) + '"><span>' + esc(it.title) + '</span></div>'
+      + '<div style="min-width:0"><div class="sg-t">' + esc(it.title) + '<span class="y">' + it.year + '</span>' + (it.cert ? '<span class="sg-cert" style="margin-left:8px">' + esc(it.cert) + '</span>' : '') + '</div><div class="sg-why" style="margin-top:5px">' + because(it) + '</div></div></div>'
+      + body
+      + '<div class="sg-dlf">' + (down ? '<span class="tiny muted" style="flex:1">Nothing is sent while Seerr is away.</span>' : '<span style="flex:1"></span>') + '<span class="btn ghost" data-dlcancel="1">Cancel</span><span class="btn primary" data-dlgo="1"' + (loading || down ? ' aria-disabled="true"' : '') + '>' + esc(primary) + '</span></div>'
+      + '</div></div>';
+    const go = root.querySelector('[data-dlgo]'); if (go && !loading && !down) go.focus();
+  }
+  function confirmDl() {
+    const S = servers(), srv = S[dl.srv], id = dl.id;
+    lastPick = dl.prof;
+    const it = list.concat(more).find(x => x.id === id);
+    closeDl();
+    if (dlPrev === 'refused') { it.refused = 'Seerr refused it — someone requested this film since the list was built.'; render(); return; }
+    it.refused = null;
+    download(id, srv.profiles.find(p => p[0] === lastPick)[1] + (srv.is4k ? ' · 4K' : ''));
+  }
+  function download(id, prof) {
     const it = list.concat(more).find(x => x.id === id);
     it.state = 'requested'; render();
+    if (prof) toast('Requested in ' + prof + ' · ' + it.title);
     // mock: Seerr's auto-approve answers, then Radarr starts — the chip follows what comes back
     setTimeout(() => { it.state = 'approved'; render(); }, 1600);
     setTimeout(() => { it.state = 'downloading'; it.pct = 3; render(); }, 3600);
   }
 
   document.addEventListener('click', e => {
+    const d = e.target.closest('[data-dlgo],[data-dlcancel],[data-dlsrv],[data-dlprof],[data-dlfold],[data-dlmore],[data-dlretry],[data-dlback]');
+    if (d && dl) {
+      if (d.dataset.dlback && e.target !== d) return;
+      if (d.dataset.dlgo) return d.getAttribute('aria-disabled') ? null : confirmDl();
+      if (d.dataset.dlcancel || d.dataset.dlback) return closeDl();
+      if (d.dataset.dlsrv != null) { dl.srv = +d.dataset.dlsrv; const s = servers()[dl.srv]; dl.prof = s.active; dl.folder = s.activeFolder; return renderDl(); }
+      if (d.dataset.dlprof) { dl.prof = +d.dataset.dlprof; return renderDl(); }
+      if (d.dataset.dlfold != null) { dl.folder = +d.dataset.dlfold; return renderDl(); }
+      if (d.dataset.dlmore) { dl.more = !dl.more; return renderDl(); }
+      if (d.dataset.dlretry) { toast('Still no answer from Seerr'); return; }
+    }
     const t = e.target.closest('[data-dl],[data-no],[data-cancel],[data-reason],[data-other],[data-back],[data-build],#sg-showmore,#sg-rebuild,#sg-retry,.seg > span');
     if (!t) return;
-    if (t.dataset.dl) return download(t.dataset.dl);
+    if (t.dataset.dl) return t.getAttribute('aria-disabled') ? null : openDl(t.dataset.dl);
     if (t.dataset.no) { openPick = t.dataset.no; otherOn = null; return render(); }
     if (t.dataset.cancel) { openPick = null; otherOn = null; return render(); }
     if (t.dataset.reason) { if (t.dataset.reason === 'Other') { otherOn = t.dataset.id; render(); const n = $('sg-note'); if (n) n.focus(); return; } return dismiss(t.dataset.id, t.dataset.reason); }
@@ -180,8 +278,18 @@
     const sg = t.closest('.seg');
     if (sg && sg.id === 'sg-state') { state = t.dataset.s; syncSeg(); return render(); }
     if (sg && sg.id === 'sg-cl') { clusters = t.dataset.c; return render(); }
+    if (sg && sg.id === 'sg-dlprev') {
+      dlPrev = t.dataset.p; syncSeg();
+      if (state === 'unreachable') { state = 'list'; syncSeg(); render(); }
+      const first = list.find(x => !x.state); if (first) openDl(first.id); return;
+    }
+    if (sg && sg.dataset.dq) { DQ[sg.dataset.dq] = t.dataset.v; renderQs(); if (dl) renderDl(); return; }
   });
-  function syncSeg() { document.querySelectorAll('#sg-state span').forEach(s => s.classList.toggle('on', s.dataset.s === state)); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && dl) closeDl(); });
+  function syncSeg() {
+    document.querySelectorAll('#sg-state span').forEach(s => s.classList.toggle('on', s.dataset.s === state));
+    document.querySelectorAll('#sg-dlprev span').forEach(s => s.classList.toggle('on', s.dataset.p === dlPrev));
+  }
   window.addEventListener('hashchange', renderRest);
   syncSeg(); render();
 })();

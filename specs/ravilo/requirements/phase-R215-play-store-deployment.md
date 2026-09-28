@@ -130,25 +130,6 @@ New workflow, triggered on `release: published` (same tag-format validation as `
 to the Play `internal` track via the Play Publishing API. Fails closed (non-`vMAJOR.MINOR` tag → error,
 not a silent no-op), matching `publish.yml`'s existing validation behavior.
 
-### FR-R215-3 — CI proves the universal listing still reaches a TV (added 2026-09-28)
-
-The 2026-09-03 addendum's trap had no test: a merged manifest that requires a feature a TV lacks passes
-every compile, unit test and emulator run, and only Play's device filter notices — by silently dropping
-every TV from the listing. `scripts/check-play-device-filter.sh` runs in `ci.yml`'s `android-release` job
-on the built release APK (the merged manifest is what Play reads, so the source manifest is not enough)
-and fails when: there is no `LEANBACK_LAUNCHER` activity or no `<application android:banner>`; there is
-no `LAUNCHER` activity; `android.software.leanback`, `android.hardware.touchscreen` or
-`android.hardware.screen.portrait` is not explicitly `required="false"`; or **any** feature is required,
-explicitly or implied by a permission (`aapt2 dump badging`'s `uses-implied-feature` line names the
-permission in the failure). `ALLOWED_REQUIRED_FEATURES` lists exceptions; the default is none, and the
-manifest now declares `android.hardware.wifi` optional too (it was implied required by R216's
-`ACCESS_WIFI_STATE`, which would filter an Ethernet-only TV box).
-
-Written after a 2026-09-28 report that the household's TVs had disappeared from the Play listing's device
-list on the phone. `aapt2 dump badging` on every released APK from v1.35 to v1.44 declared the identical
-feature set and every Play upload succeeded, so that case was not a build regression — Play Console
-(track, form-factor review, device catalog) is where it lives; this guard is for the next time it is one.
-
 ## 6. Non-goals
 
 - `ravilo-phone` deployment (no Play listing exists yet).

@@ -88,10 +88,12 @@
     let h = '';
     // no Now-playing card at the top of Listen: the mini bar above the bottom bar already shows it (owner, 2026-09-27)
     void listen;
+    // R323 FR-R323-2 (owner 2026-09-28: the lean) — a book in progress is one tap from Listen, not two
+    if (listen && window.RaviloBooks && RaviloBooks.contRow) h += RaviloBooks.contRow();
     h += row(t('mhome.recent_albums'), '<div class="mu-track">' + recentAlbums().map(acard).join('') + '</div>');
     h += row(t('mhome.recent_played'), '<div class="mu-list">' + rp.map((x, i) => songRow(x, 'recent', i)).join('') + '</div>', 'seeall-recent');
     h += row(t('mhome.artists'), '<div class="mu-track">' + albumArtists().slice(0, 10).map(r => arc(r)).join('') + '</div>');
-    if (MS.size === 'large') {
+    if (false) { // owner 2026-09-28: no Mix row in round 1
       const mix = ['salt-on-the-window', 'signal-lost', 'brim', 'glass-birds'].map(M.album);
       CTX.mix = M.tracks.filter((x, i) => i % 3 === 0).map(x => x.id);
       h += '<div class="row"><h3>' + t('mhome.mix') + '</h3><div class="mu-mix" data-mu="mix"><div class="col">' + mix.map(a => '<i style="' + M.coverStyle(a) + '"></i>').join('') + '</div><div><b>' + t('mhome.mix') + '</b><span>Harbour Lights, Velvet Static, Aldan and more</span></div></div></div>';
@@ -255,7 +257,16 @@
   }
   /* ---- chrome: ♪ beside the brand (J3), the top-row segment (J1 direction 3) ---- */
   const brand = document.querySelector('.appbar .brand'), appbar = document.querySelector('.appbar');
+  // owner 2026-09-28: in music mode the bottom bar is on every page — an album, an artist, a book, Now playing
+  function paintBarAlways() {
+    const ph = document.querySelector('.phone'), bn = document.getElementById('bnav');
+    ph.classList.toggle('mu-on', MS.mode === 'music'); // not 'mu-mode' — that is the Profile mode card's class
+    if (bn) ph.style.setProperty('--bnh', bn.offsetHeight + 'px');
+  }
+  // a tab pressed while an album/artist/book is open goes to that tab (the detail stack closes)
+  document.getElementById('bnav').addEventListener('click', e => { if (MS.mode === 'music' && e.target.closest('[data-tab]') && MS.det) { MS.detStack = []; MS.det = null; det.classList.remove('on'); } }, true);
   function paintChrome() {
+    paintBarAlways();
     let n = $('muBrandNote'); if (!n) { n = document.createElement('span'); n.id = 'muBrandNote'; n.className = 'mu-brandnote'; n.textContent = '♪'; brand.appendChild(n); }
     n.style.display = MS.mode === 'music' && MS.granted && q.j3 === 'draw' ? '' : 'none';
     let s = $('muTseg');
@@ -270,7 +281,13 @@
     if (!MS.granted) m = 'video';
     MS.mode = m; try { localStorage.setItem(MKEY, m); } catch (e) {}
     closeAllDet(); paintBar(); paintChrome();
-    if (!silent) { H.closeAcct(); H.setTab(m === 'music' ? firstTab() : 'home'); H.render(); }
+    // owner 2026-09-28: switching from Profile stays on Profile — only the bottom bar changes, so the viewer can
+    // switch straight back or pick a tab themselves. (The top-bar switch, elsewhere, still lands on the mode's first tab.)
+    if (!silent) {
+      H.closeAcct();
+      if (H.tab === 'profile') { H.render(); if (window.RaviloHost.phToast) H.phToast(t(m === 'music' ? 'mode.now_music' : 'mode.now_video')); }
+      else { H.setTab(m === 'music' ? firstTab() : 'home'); H.render(); }
+    }
     if (MS.P) MS.P.paintMini();
   }
 
@@ -325,7 +342,13 @@
     else if (k.indexOf('srch-all-') === 0) { MS.srchAll = k.slice(9); fillSearch(); }
     else if (k === 'newpl') MS.P.newPlaylist();
     else if (k === 'open-now') MS.P.openNow();
-    else if (k === 'bio') MS.P.bioSheet(id);
+    else if (k === 'bio') { // owner 2026-09-28: expand in place, no sheet
+      const bio = el.previousElementSibling; if (!bio) return;
+      const open = !bio.classList.contains('open');
+      bio.style.maxHeight = bio.scrollHeight + 'px';
+      if (open) { bio.classList.add('open'); } else { bio.style.maxHeight = bio.scrollHeight + 'px'; requestAnimationFrame(() => { bio.classList.remove('open'); bio.style.maxHeight = ''; }); }
+      el.textContent = open ? (t('music.less') !== 'music.less' ? t('music.less') : 'Less') : t('music.more');
+    }
     else if (k === 'ar-all') { MS.arAll = id; paintDet(); }
     else if (k === 'video') H.openPlayer(id);
     else if (window.RaviloBooks && RaviloBooks.onClick(k, el, e)) {}

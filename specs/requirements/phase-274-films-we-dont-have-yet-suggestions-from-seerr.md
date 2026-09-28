@@ -9,7 +9,8 @@
 
 ## Status
 
-`✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
+`✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — **plus FR-274-10a (*Download asks first*),
+`Planned`, written 2026-09-28, not dev-reviewed** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
 round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
 the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
 `e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
@@ -124,6 +125,45 @@ steering — is Seerr's, unchanged. The tile shows the state that comes back and
 **Requested** (*waiting for approval in Seerr*) → **Approved** → **Downloading · {n}%** → **✓ In the library**
 (*leaves this list on the next build*). If Seerr refuses (requested by someone since the build, not found), the
 tile says so in one line and stays.
+
+**FR-274-10a — Download asks first** (amendment, `Planned` — written 2026-09-28 from the brief's §8 and the mockup
+`design/app/suggestions.js` / `suggestions.css`; not dev-reviewed). Owner, 2026-09-28: the built *Download* sends the
+request too fast. It now opens a **confirm dialog** for that one film — **always a centred dialog, on every width**
+(owner, Q2) — and the request goes only from the dialog's own button. The tile's state chain after that is
+unchanged.
+
+1. **Top:** poster · title · year · the *because* line · the age rating.
+2. **Quality:** the Radarr **quality profiles exactly as Seerr reports them** for the server the request would go
+   to — `GET /service/radarr` (servers: name, `is4k`, `isDefault`, `activeProfileId`) and `GET /service/radarr/{id}`
+   (`profiles[] {id, name}`, `rootFolders[] {path}`), fetched when the dialog opens and cached for the page's life.
+   Pre-selected: the server's active profile, marked ***Seerr's default***. Radarr's names, never invented or
+   translated. One profile ⇒ the choice reads as a fact.
+3. **Server:** only when Seerr has **more than one Radarr** (that is where 4K lives); choosing one re-lists the
+   profiles. One server ⇒ no control; the dialog says *to {server}* as a fact.
+4. **Folder:** folded under *More*, **only when the chosen server has two or more folders** (Q3); pre-selected to
+   its active folder; **no free space shown** (owner, Q4).
+5. **The note**, read-only: *Suggested for {viewer}* — **kept by jellystructure** with the request (dev review 1:
+   Seerr 3.4.1 has no note field), shown on the tile's history.
+6. **Cancel** · **Download in {profile}** (primary). While options load the primary reads *Asking Seerr…*,
+   disabled; Seerr unreachable ⇒ one line and the primary disabled with the banner's reason. The choice is sent as
+   `profileId` (+ `serverId`, `is4k` for the 4K server, `rootFolder` when chosen) on `POST /request`.
+
+**Rules.** The list is Seerr's, never a jellystructure setting. If the admin's Seerr user may not choose (no
+advanced-request permission), the dialog shows the default as a fact and says so; the request still goes. **No
+remembered choice** across films (Q1). Escape / Cancel / outside sends nothing. There is no quicker path anywhere
+274 draws *Download*. *No thanks* gets **no** confirm (Q5 — it has Undo and Bring back). Nothing reaches Ravilo
+(R320 keeps Seerr's defaults).
+
+**States:** loading · one server, three profiles · two servers with the list swapping · Seerr unreachable · admin
+may not choose · refused after confirm (the tile's one-line refusal) · a single profile.
+
+**Wire:** `GET /api/suggestions/request-options` → `{servers:[{id, name, is4k, isDefault, activeProfileId,
+profiles:[{id,name}], folders:[path], activeFolder}], canChoose}`; `POST /api/suggestions/{tmdbId}/download` gains
+optional `{serverId, profileId, rootFolder}`.
+
+**Acceptance (10a):** *Download* opens the dialog with *HD-1080p · Seerr's default* selected; *Cancel* sends nothing;
+*Download in Ultra-HD* on the 4K server creates a Seerr request with that profile and `is4k`; with Seerr stopped the
+primary is disabled with the banner's reason.
 
 **FR-274-11 — No thanks (Q4).** Opens a reason picker **on the tile** (not a modal); the tile widens to the row.
 Four reasons, each stating what it does:

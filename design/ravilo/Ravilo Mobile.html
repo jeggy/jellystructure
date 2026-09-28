@@ -23,7 +23,7 @@
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%; background:#05060a; font-family:'Sora',sans-serif; overflow:hidden;}
-  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding-bottom:152px;}
+  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding-bottom:210px;}
 
   /* Pixel 9 — 412×915 portrait */
   .phone{ width:412px; height:915px; border-radius:46px; background:#05060a;
@@ -49,13 +49,14 @@
   .devpick{ position:absolute; bottom:-72px; left:0; right:0; display:flex; justify-content:center; gap:6px; }
   .devpick b{ align-self:center; font-size:10px; letter-spacing:1.4px; color:#54596b; font-family:'Space Grotesk',sans-serif; margin-right:4px; }
   .devpick button{ border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#8b91a8;
-    font-family:'Sora',sans-serif; font-size:12px; font-weight:600; padding:6px 14px; border-radius:9px; cursor:pointer; }
+    font-family:'Sora',sans-serif; font-size:12px; font-weight:600; padding:6px 14px; border-radius:9px; cursor:pointer; white-space:nowrap; }
   .devpick button.on{ background:#f3f4fb; color:#0a0c13; border-color:transparent; }
   /* mockup-only, clearly fenced: the product has no such control. It exists so two
      states that are otherwise unreachable in a mockup — R237's failed start, and the
      rotate button that only appears when the SYSTEM has portrait locked — stay
      visible in the design. Same class of thing as app/activity.html's stop-note toggle. */
-  .devpick.prev{ bottom:-112px; }
+  .devpick.prev{ top:calc(100% + 76px); bottom:auto; left:-10px; right:-10px; flex-wrap:wrap; row-gap:6px; }
+  .devpick.prev button{ white-space:nowrap; padding:5px 11px; font-size:11.5px; }
   .devpick.prev b{ color:#4a4f60; }
 
   /* The status bar is positioned and opaque, and paints a 1px outset below itself: at the
@@ -670,6 +671,11 @@
       <button data-pv="fail">Failed start · R237</button>
       <button data-pv="portraitlock">System portrait lock</button>
       <button data-pv="castfail">Cast couldn’t play · R299</button>
+      <button data-pv="webtab" title="A browser tab on a phone: the install card on Home">Browser tab · R263</button>
+      <button data-pv="update">Update ready · R263</button>
+      <button data-pv="oldios">iOS below 18.2 · R263</button>
+      <button data-pv="stale">Saved content · R212</button>
+      <button data-pv="err" title="Cycles REAUTH · FORBIDDEN · GONE · UNREACHABLE">Load error · R280</button>
     </div>
   </div>
 </div>
@@ -745,7 +751,7 @@
 
   /* ---- tiles & rows ---- */
   function tile(it){
-    const badge = it.badge ? '<span class="pb">'+esc(it.badge)+'</span>' : '';
+    const badge = /^(4K|HDR|4K HDR|Dolby Vision)$/i.test(String(it.badge||'').trim()) ? '<span class="pb">'+esc(it.badge)+'</span>' : ''; // owner 2026-09-28: tiles show picture quality only
     return '<div class="tile" data-title="'+esc(it.title)+'">'
       + '<div class="poster" style="background:'+it.grad+';">'+badge+'<span class="ini">'+esc(it.initials)+'</span></div>'
       + '<div class="tlabel">'+esc(it.title)+'</div><div class="tsub">'+esc(String(it.year))+' · '+esc(R.normGenre ? R.normGenre(it.genre.split(' · ')[0]) : it.genre.split(' · ')[0])+'</div></div>';
@@ -784,7 +790,7 @@
 
   function renderHome(){
     const heroItems = tab==='movies' ? R.hero.filter(h=>h.kind==='film') : tab==='series' ? R.hero.filter(h=>h.kind==='series') : R.hero;
-    let html = heroHTML(heroItems);
+    let html = (window.RaviloWeb ? RaviloWeb.homeTop() : '') + heroHTML(heroItems);
     if(tab==='home'){
       html += '<div class="row"><h3>Channels</h3><div class="studios">'
         + R.studios.map(s=>'<div class="studio" style="background:'+s.bg+';">'+s.wm.replace(/<small>/g,'<small>').replace(/<\/small>/g,'</small>')+'</div>').join('')
@@ -832,27 +838,31 @@
   }
   /* Owner decision 3 (2026-09-27 audit): the phone Library as BUILT — R187's browse grid with its facet bar,
      titled Library (R267 FR-5b), not Home-style rows. The type pill above still picks the kind. */
-  const LIB_SORTS = [['Recently added','Newest first'],['Recently added','Oldest first'],['Title','A–Z'],['Title','Z–A'],['Size','Largest first'],['Release year','Newest first']];
-  let libSort = 0;
+  /* As built (R317 + 269/R318): one entry per FIELD with its direction in words; choosing the field in use flips it.
+     Recommended is first and the default when the server sends a recommended order (it has no direction). */
+  const LIB_SORTS = [['Recommended',null,'The order the server suggests'],['Date added',['Newest first','Oldest first']],['Release year',['Newest first','Oldest first']],['Title',['A to Z','Z to A']],['Size',['Largest first','Smallest first']]];
+  let libSort = 0, libRev = false;
+  const libWay = () => { const d = LIB_SORTS[libSort][1]; return d ? d[libRev?1:0] : LIB_SORTS[libSort][2]; };
   function libItems(){
     const k = (LIB_KINDS.find(x=>x.id===libKind)||{}).kind;
     let items = (R.libraryFor ? R.libraryFor(me) : []).filter(i => !k || i.kind===k);
-    const [f, way] = LIB_SORTS[libSort];
+    const f = LIB_SORTS[libSort][0];
     const sz = it => { let h = 0; for (const c of it.title) h = (h*31 + c.charCodeAt(0)) >>> 0; return (it.kind==='series'?40:4) + h % 60; };
     if(f==='Title') items = items.slice().sort((a,b)=>a.title.localeCompare(b.title));
     else if(f==='Size') items = items.slice().sort((a,b)=>sz(b)-sz(a));
     else if(f==='Release year') items = items.slice().sort((a,b)=>(b.year||0)-(a.year||0));
-    if(way==='Z–A' || way==='Oldest first') items = items.slice().reverse();
+    else if(f==='Recommended') items = items.slice().sort((a,b)=>(sz(a)*7%13)-(sz(b)*7%13));
+    if(libRev) items = items.slice().reverse();
     return items;
   }
   function renderLibrary(){
     const cur = LIB_KINDS.find(x=>x.id===libKind) || LIB_KINDS[0];
     const items = libItems();
-    const [f, way] = LIB_SORTS[libSort];
+    const f = LIB_SORTS[libSort][0], way = LIB_SORTS[libSort][1] ? libWay() : '';
     app.innerHTML = '<div class="row" style="margin-top:4px;"><h3>Library<span class="more" style="cursor:default">'+countLabel(items.length)+'</span></h3></div>'
       + '<div class="lbfbar">'
       +   ['Genre','Year','Watched','Audio','Maturity'].map(x=>'<button class="lbf">'+x+' <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>').join('')
-      +   '<button class="lbf sort" data-libsort="1"><span class="lb">Sort</span>'+esc(f)+' · '+esc(way)+'</button>'
+      +   '<button class="lbf sort" data-libsort="1"><span class="lb">Sort</span>'+esc(f)+(way?' · '+esc(way):'')+'</button>'
       + '</div>'
       + (items.length ? '<div class="txgrid">'+items.map(tile).join('')+'</div>'
           : '<div class="txmeta" style="padding-top:18px;">'+(cur.id==='music' ? 'No music videos yet' : 'Nothing here for this profile yet')+'</div>')
@@ -1004,6 +1014,8 @@
   if(window.ResizeObserver) new ResizeObserver(() => paintNav()).observe(document.getElementById('bnav'));
 
   function render(){
+    // R280 (mockup PREVIEW): a page that failed to load shows its one LoadErrorState instead of the page
+    if(window.RaviloWeb && RaviloWeb.error(tab)){ paintNav(); paintLibSlot(); scroll.scrollTop = 0; app.innerHTML = RaviloWeb.error(tab); return; }
     if(window.RaviloMusic && RaviloMusic.handles(tab)){ paintNav(); paintLibSlot(); scroll.scrollTop = 0; RaviloMusic.render(tab); return; }
     paintNav();
     paintLibSlot();
@@ -1187,7 +1199,7 @@
       + genresHTML(it)
       + flagsHTML(it)
       + slowHTML(it)
-      + '<div class="dbtns"><button class="btn play" data-mplay="'+esc(it.title)+'">'+(CAST ? '<span class="rc-ic" style="width:18px;height:15px"><span class="bx"></span><span class="fl"></span></span> Play on '+esc(CAST.device) : '▶ Play')+'</button><button class="btn ghost">＋ My List</button></div>'
+      + '<div class="dbtns"><button class="btn play" data-mplay="'+esc(it.title)+'">'+(CAST ? '<span class="rc-ic" style="width:18px;height:15px"><span class="bx"></span><span class="fl"></span></span> Play on '+esc(CAST.device) : '▶ '+esc(window.RaviloWeb ? RaviloWeb.playLabel(it) : 'Play'))+'</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
       + aboutHTML(it)
@@ -1247,7 +1259,7 @@
       else if(a==='mylist') openAcct(myListHTML());
       else if(a==='signout') openSheet(true);
       return; }
-    if(e.target.closest('[data-libsort]')){ libSort = (libSort + 1) % LIB_SORTS.length; renderLibrary(); return; }
+    if(e.target.closest('[data-libsort]')){ window.RaviloWeb && RaviloWeb.sortSheet(LIB_SORTS, libSort, libRev, i => { if(i===libSort){ if(LIB_SORTS[i][1]) libRev = !libRev; } else { libSort = i; libRev = false; } renderLibrary(); }); return; }
     const ds = e.target.closest('[data-discseg]'); if(ds){ discSeg=ds.dataset.discseg; txsel=null; render(); return; }
     const tb = e.target.closest('[data-txback]'); if(tb){ txsel=null; render(); return; }
     const tx = e.target.closest('[data-tx]'); if(tx){ txsel=tx.dataset.tx; render(); return; }
@@ -1799,13 +1811,14 @@
       + '<span class="sub' + ((live || (s.state === 'playing' && s.mine)) ? ' sc-play' : '') + '">' + screenState(s) + '</span></span>'
       + (tappable ? '<span class="rt"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>' : '') + '</button>';
   }
-  function screensSheetHTML(){
-    const list = SCREENS.filter(s => !(s.androidOnly && isIOS()));
+  function screensSheetHTML(extra){
+    extra = extra || {};
+    const list = SCREENS.filter(s => !(s.androidOnly && isIOS())).filter(s => !(extra.skip && extra.skip.indexOf(s.name) >= 0));
     const near = list.filter(s => s.nearby), rest = list.filter(s => !s.nearby);
     let h = '<div class="mp-grab"></div>'
-      + '<div class="mp-sh"><h4>Play on a TV</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
+      + '<div class="mp-sh"><h4>' + (extra.title || 'Play on a TV') + '</h4><span class="sp"></span><button class="mp-b flat" data-mp="closesheet" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
     // tier 1 — the server's judgement, and absent rather than empty
-    if(near.length) h += '<div class="sc-sec">On this network</div>' + near.map(screenRow).join('');
+    if(near.length || extra.rows) h += '<div class="sc-sec">On this network</div>' + (extra.rows || '') + near.map(screenRow).join('');
     // tier 2 — collapsed by default, remembers
     if(rest.length){
       h += '<button class="mp-row sc-col" data-mp="tier2"><span class="nm">All your TVs</span>'
@@ -1817,12 +1830,14 @@
     // form, not a full row — one quiet line under the collapsible, with the caveat inside the
     // label itself so the row cannot be read as the recommended route. (The full-row
     // alternative, with the notice as a second line, is drawn in the directions canvas.)
+    if(extra.foot) h += extra.foot;
     if(isIOS()){
       h += '<button class="sc-air" data-mp="airplay">'
         + '<span class="sc-ic"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M5 17a9 9 0 0 1 14 0"/><path d="M8.5 20.5 12 16l3.5 4.5z"/></svg></span>'
         + '<span class="nm">AirPlay (phone must stay on)</span></button>';
     }
     h += '<button class="mp-row sc-add" data-mp="addtv"><span class="sc-ic"><svg viewBox="0 0 24 24" style="width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M12 5v14M5 12h14"/></svg></span><span class="nm">Add a TV</span></button>';
+    if(extra.after) h += extra.after;
     if(CAST) h += '<button class="mp-row" data-mp="stopcast"><span class="nm" style="color:#ff9b8a">Stop casting</span></button>';
     return h;
   }
@@ -1836,7 +1851,7 @@
       + (err ? '<div class="sc-err">That code didn\'t work</div>'
              : '<div class="sc-hint">The code is on the TV\'s screen.</div>') + '</div>';
   }
-  function openScreensSheet(){ csSheetOpen(screensSheetHTML()); }
+  function openScreensSheet(extra){ csSheetOpen(screensSheetHTML(extra)); }
   function openCodeSheet(err){
     csSheetOpen(codeSheetHTML(err));
     const i = $('scCode'); if(i){ i.focus();
@@ -2043,8 +2058,8 @@
 
   /* the music mode's hooks (ravilo-music*.js) — the host owns tab, render and the page chrome */
   window.RaviloHost = {
-    get tab(){ return tab; }, setTab(tb){ tab = tb; }, render, paintNav, app, scroll, esc, phToast, closeAcct,
-    openPlayer: tl => { closeDetail(); openPlayer(tl); },
+    get tab(){ return tab; }, setTab(tb){ tab = tb; }, render, paintNav, app, scroll, esc, phToast, closeAcct, openScreensSheet: x => openScreensSheet(x), closeScreensSheet: () => csSheetClose(),
+    openPlayer: tl => { closeDetail(); openPlayer(tl); }, openSignOut: () => openSheet(true),
   };
 
   render();
@@ -2055,5 +2070,7 @@
 <script src="mobile/ravilo-music-player.js"></script>
 <script src="../app/audiobook-data.js"></script>
 <script src="mobile/ravilo-books.js"></script>
+<script src="mobile/ravilo-speakers.js"></script>
+<script src="mobile/ravilo-web-states.js"></script>
 </body>
 </html>

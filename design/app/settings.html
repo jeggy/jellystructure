@@ -287,6 +287,7 @@
   .mb-row.tot .mb-k { color: var(--ink); font-weight: 600; }
   .mb-file { font-family: 'JetBrains Mono', monospace; font-size: .7rem; color: var(--ink-dim); margin-top: 10px; }
 </style>
+<style>.set-find{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8rem;color:var(--ink-soft);margin-top:10px}.set-find b{color:var(--ink)}.set-find a{margin-left:auto;font-weight:600}</style>
 </head>
 <body class="wf-body app-body">
 
@@ -345,13 +346,17 @@
           <div class="field" style="margin:8px 0 0;max-width:420px;"><label>API key (project key)</label><div class="input mono muted">not set</div><span class="hint">Free — <a href="https://fanart.tv/get-an-api-key/#project" target="_blank" rel="noopener">fanart.tv/get-an-api-key</a>: sign in (or create an account) and request a key under <b>Project API Keys</b>. Saving the key tries it against fanart.tv; the dot is green only when fanart.tv accepts it. Without a key, artist pictures come from <b>Wikimedia Commons</b> only — which is why 2 artists have no picture.</span></div></div>
         <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Lyrics · LRCLIB</b><span class="tiny muted">synced and plain lyrics · no key</span><span class="spacer"></span><span class="muted tiny">Fetch lyrics</span><span class="toggle on" id="mp-lyrics"></span></div>
           <div class="tiny muted" style="margin-top:6px;" id="mp-lyrics-hint">Adds a <span class="mono">fetch_lyrics</span> step to each run and saves a <span class="mono">.lrc</span> beside the track — Jellyfin already saves lyrics with media for this library.</div></div>
+        <!-- prospective 284 (research 2026-09-28 §7.3) — the file is the record: the music tag-writing switch -->
+        <div class="mp-row" id="mu-tagrow"><div class="mp-h"><b>Write tags into music files</b><span class="tiny muted">Picard’s vocabulary · python3-mutagen</span><span class="spacer"></span><span class="muted tiny" id="mu-tag-st">on</span><span class="toggle on" id="mu-tagw"></span></div>
+          <div class="tiny muted" style="margin-top:6px;line-height:1.6">What this page matches and types reaches every player that reads the files, not only Ravilo. <b>Save</b> on an album writes the tags; a scan never does. Files seeding in qBittorrent are left alone. WMA files get every tag, but Jellyfin can’t read MusicBrainz ids from WMA.</div>
+          <div class="row" style="gap:8px 18px;flex-wrap:wrap;margin-top:9px;font-size:.8rem" id="mu-tagsub"><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-tqs="id3" checked> Keep the files’ ID3 version <span class="tiny muted">(all 22 MP3s are v2.3)</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-tqs="junk" checked> Leave frames we do not manage</label></div></div>
         <!-- part 2 (admin brief §M4) — audiobook suggestion providers + the tag-writing switch -->
         <div class="mp-grp">Audiobooks · suggestions only</div>
         <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>iTunes</b><span class="tiny muted">no key · no narrators</span><span class="spacer"></span><span class="tiny muted">Store</span><span class="select" style="width:auto;min-width:70px"><span>DK</span></span><span class="btn sm ghost" data-mptest="iTunes">Test</span></div><div class="tiny muted" style="margin-top:6px">DK · NO · SE · GB · US. Covers at 600 px. There is no Faroese store.</div></div>
         <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Google Books</b><span class="tiny muted">book data, not audiobook data</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="Google Books">Test</span></div>
           <div class="field" style="margin:8px 0 0;max-width:420px;"><label>API key</label><div class="input mono">••••••••Xw4c</div><span class="hint">Required in practice — without a key the shared quota is always used up, so the provider is skipped and this row says so.</span></div></div>
         <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Open Library</b><span class="tiny muted">nothing to configure · bibliographic only</span><span class="spacer"></span><span class="btn sm ghost" data-mptest="Open Library">Test</span></div></div>
-        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Audnexus</b><span class="tiny muted">narrators · series · no key</span><span class="spacer"></span><span class="tiny muted">Region</span><span class="select" style="width:auto;min-width:70px"><span>uk</span></span><span class="btn sm ghost" data-mptest="Audnexus">Test</span></div><div class="tiny muted" style="margin-top:6px">Covers the titles Audible sells — English and the big European languages. au · ca · de · es · fr · in · it · jp · us · uk; no Danish store.</div></div>
+        <div class="mp-row"><div class="mp-h"><span class="dot ok"></span><b>Audnexus</b><span class="tiny muted">narrators · series · no key</span><span class="spacer"></span><span class="tiny muted">Region</span><span class="select" style="width:auto;min-width:70px"><span>uk</span></span><span class="btn sm ghost" data-mptest="Audnexus">Test</span></div><div class="tiny muted" style="margin-top:6px">Answers only for an Audible id (ASIN) the admin pastes on a book’s Details — Audible’s own lookup is undocumented, so it is never called. au · ca · de · es · fr · in · it · jp · us · uk; no Danish store.</div></div>
         <div class="mp-row" id="ab-tagrow"><div class="mp-h"><b>Write tags into audiobook files</b><span class="spacer"></span><span class="muted tiny" id="ab-tag-st">off</span><span class="toggle" id="ab-tagw"></span></div><div class="tiny muted" style="margin-top:6px;line-height:1.6">The only way Jellyfin’s own apps show a narrator or a description — Jellyfin reads no metadata file for audiobooks. When on, <b>Save</b> on a book writes title, author, narrator and description into every part. Ravilo doesn’t need it. Files seeding in qBittorrent are skipped.</div></div>
       </div>
 
@@ -380,6 +385,8 @@
               </div></div>
             <div class="cc-step"><span class="step-n">4</span><p><b>Save.</b> The console shows an <b>Application ID</b> — 8 characters like <span class="mono">A1B2C3D4</span>. Paste it into the field below.</p></div>
             <div class="cc-step"><span class="step-n">5</span><p><b>Add your devices as test devices.</b> A Chromecast's serial is in the Google Home app. A TV with Chromecast built in has two — use the <b>software serial</b> under <b>Settings › Device Preferences › Google Cast</b>, not the printed one; it changes after a factory reset. <b>This is enough for a household</b> — nothing below is required.</p></div>
+            <!-- prospective 286 (research 2026-09-28 §6.1) — the same application, one more box. The id does not change. -->
+            <div class="cc-step"><span class="step-n">5a</span><p><b>For the household’s speakers:</b> on the console’s <b>Applications</b> page, open Ravilo → <b>Edit</b> and tick <b>Supports casting to audio-only devices</b> — this is what lets Ravilo see the speakers. Same application ID, no second fee. It can take up to 15 minutes to reach the devices, and a speaker may need a restart before it asks again. <span class="tiny muted">Optional · music only — a speaker never gets video.</span></p></div>
 
             <div class="cc-grp">A TV that runs Ravilo opens Ravilo itself <em>· Google calls this Cast Connect</em></div>
             <div class="cc-step"><span class="step-n">6</span><p><b>Add the Android TV package name</b> to the same application. A TV with Ravilo installed then opens <b>Ravilo itself</b> when cast to; a TV without it opens the receiver from step 3. The phone does nothing differently.</p>
@@ -560,74 +567,15 @@
         </div>
       </div>
 
-      <!-- JELLYFIN SETTINGS ADVISOR (Phase 212) — pinned above the library list. Server-wide findings
+      <!-- Owner 2026-09-28 (dashboard brief Q5): Settings holds settings only. The advisor's findings — server-wide and
+           per library — are listed on the Dashboard (Jellyfin · This server); here each is one small indicator.
+           JELLYFIN SETTINGS ADVISOR (Phase 212) — pinned above the library list. Server-wide findings
            live here; per-library findings live inside each library's own mapping card below, because
            the cost of each one is a property of that library's own storage. Read-only: jellystructure
            never writes to Jellyfin (FR-212-2 / §2), so there is no Apply anywhere on this surface. -->
       <div class="card set-section" id="sect-advisor" data-tab="libraries">
-        <div class="row center" style="flex-wrap:wrap;gap:8px;">
-          <h3 style="font-size:1.05rem;margin:0;">Jellyfin settings advisor</h3>
-          <span class="badge info">suggest-only</span>
-          <span class="badge warn" id="jfa-count">6 server-wide</span>
-          <span class="spacer"></span>
-          <span class="muted tiny">read 14:06 · cached 5 min</span>
-        </div>
-        <div class="tiny muted" style="margin:8px 0 0;line-height:1.6;">What Jellyfin is set to today, where that costs this hardware something, and exactly where to change it. <b>A setting that already matches the recommendation shows nothing at all</b> — no row, no green tick. On this server the transcode path is already a RAM disk and <span class="mono">/config</span>+<span class="mono">/cache</span> are already on NVMe, so neither is mentioned below. Nothing here is a defect; every one is a trade-off, and each row says what turning it off costs you.</div>
-
-        <!-- FR-212-1: a Jellyfin that cannot answer must never render as an empty finding list —
-             that reads as "everything is fine". Phase 207's lesson, one layer out. -->
-        <div class="note bad" id="jfa-down" style="display:none;margin-top:12px;">
-          <b>Couldn't reach Jellyfin.</b> None of these settings could be read, so nothing is being claimed about them — this is not "no findings".
-        </div>
-
-        <div id="jfa-list">
-          <hr class="dash" style="margin:12px 0 0;">
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Throttle Transcodes</span><span class="jfa-now">off</span></div>
-            <div class="jfa-body">A client that pauses or seeks leaves its <span class="mono">ffmpeg</span> writing segments at full speed instead of easing off — reads this disk can't spare during playback. <b>Time to throttle after</b> is already set to 180 s and has never once applied: it is inert until throttling itself is on, which is exactly what makes this hard to notice.</div>
-            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Throttle Transcodes</b> <b>on</b></div>
-            <div class="jfa-lose"><b>Trade-off:</b> a throttled transcode has less buffer built up, so a big seek can take a moment longer to recover.</div>
-          </div>
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Delete segments</span><span class="jfa-now">off · keep 720s</span></div>
-            <div class="jfa-body">Finished segments are never removed during a session, so a long film accumulates the whole way through. This one only matters <i>because</i> the transcode path is already a RAM disk — segments pile up in memory rather than on a disk with room to spare. <span class="muted">jellystructure can't see Jellyfin's own mounts from inside its container, so the RAM part is inference; the setting itself is read straight from Jellyfin.</span></div>
-            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Delete segments</b> <b>on</b>, keep <b>Time to keep segments</b> at 720 s</div>
-            <div class="jfa-lose"><b>Trade-off:</b> a viewer who rewinds past the keep window makes Jellyfin transcode that stretch again.</div>
-          </div>
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Allow encoding in HEVC format</span><span class="jfa-now">off</span></div>
-            <div class="jfa-body">Hardware encoding is on, but HEVC output is disallowed, so every transcode lands as H.264 — more bitrate for the same picture, over the same link. <b>BRAVIA 4K GB ATV3</b> and 2 other devices have a recorded HEVC decode ceiling, which is how we know they'd take it.</div>
-            <div class="jfa-do"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → consider turning <b>Allow encoding in HEVC format</b> <b>on</b></div>
-            <div class="jfa-lose"><b>Trade-off:</b> an older client that asks for a transcode may not decode HEVC at all. Worth testing per device rather than assuming.</div>
-          </div>
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">On-demand metadata-based keyframe extraction</span><span class="jfa-now">mkv, mp4</span></div>
-            <div class="jfa-body">A seek in a file without a usable index can make Jellyfin scan the whole file for keyframes — a full linear read of a remux, on a rotational library, triggered by someone dragging a scrub bar. <b>There is no switch for this in Jellyfin's UI</b>: it lives only in <span class="mono">encoding.xml</span>, as <span class="mono">AllowOnDemandMetadataBasedKeyframeExtractionForExtensions</span>.</div>
-            <div class="jfa-do">Edit <span class="mono">encoding.xml</span> and empty that list. No admin-panel equivalent exists — we're not sending you to hunt for a toggle that isn't there.</div>
-            <div class="jfa-lose"><b>Trade-off:</b> seeking in files with no index gets less accurate.</div>
-          </div>
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">vm.swappiness</span><span class="jfa-now">60</span></div>
-            <div class="jfa-body"><b>12 GB is currently swapped out</b> on a machine holding 102 GB of page cache. At 60 the kernel will page out a process to keep cache it doesn't need.</div>
-            <div class="jfa-do">Lower to <b>10</b>:</div>
-            <div class="jfa-cmd">sysctl -w vm.swappiness=10</div>
-            <div class="jfa-lose"><b>This does not survive a reboot.</b> To keep it, add <span class="mono">vm.swappiness=10</span> to <span class="mono">/etc/sysctl.d/</span>.</div>
-          </div>
-          <div class="jfa">
-            <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Jellyfin reports a pending restart</span></div>
-            <div class="jfa-body">One plugin is waiting on it: <b>File Transformation</b>.</div>
-            <div class="jfa-lose">Stated, not recommended — and there is deliberately no button here. Restarting the household's media server isn't an admin-panel side effect, and Ravilo sessions are live against it.</div>
-          </div>
-          <hr class="dash" style="margin:0 0 10px;">
-          <div class="tiny muted" style="line-height:1.6;">Field names above are Jellyfin's own on-screen labels, not API property names — pulled from this server's string table so you can search for them. <b>They need a screenshot check before anyone relies on them:</b> this server's web client was replaced by a Moonfin build and the admin strings couldn't be re-verified in the new bundle.</div>
-        </div>
-        <hr class="dash" style="margin:12px 0 10px;">
-        <!-- mockup-only, clearly fenced: the product has no such control. -->
-        <div class="row center" style="gap:9px;flex-wrap:wrap;">
-          <span class="muted tiny">Preview · Jellyfin reachable:</span>
-          <span class="seg" id="jfa-reach"><span class="on" data-r="1">yes</span><span data-r="0">no</span></span>
-          <span class="tiny muted">the unreachable state replaces the whole list, never empties it</span>
-        </div>
+        <div class="set-find" style="margin:0"><span class="dot warn"></span><span><b>Jellyfin settings advisor</b> · 6 server-wide findings</span><a href="index.html">see the Dashboard →</a></div>
+        <span id="jfa-count" hidden></span><div id="jfa-down" hidden></div><div id="jfa-list" hidden></div><span id="jfa-reach" hidden></span>
       </div>
       <script>
       /* Chromecast card (phase 218) — the preview control is mockup-only. */
@@ -639,7 +587,7 @@
               hint = document.getElementById('cc-appid-hint'), stat = document.getElementById('cc-stat');
         const OFF_BLURB = blurb.innerHTML;
         const ON_BLURB = 'Ravilo shows a cast button on every screen. A Chromecast appears in <b>Users &amp; devices</b> as its own device, and the Jellyfin dashboard can pause and seek it like any other client.';
-        const STEP_BLURB = 'Eight one-time steps in three groups. Five register the receiver — enough for your own devices; one lets a TV that already runs Ravilo open Ravilo itself; two publish it so any Chromecast can use it. Nothing recurring, and nothing leaves this page except what you paste at Google.';
+        const STEP_BLURB = 'Eight one-time steps in three groups (plus 5a for speakers). Five register the receiver — enough for your own devices; one lets a TV that already runs Ravilo open Ravilo itself; two publish it so any Chromecast can use it. Nothing recurring, and nothing leaves this page except what you paste at Google.';
         function set(state) {
           const isOff = state === 'off', okd = state === 'ok';
           on.style.display = isOff ? 'none' : '';
@@ -660,11 +608,13 @@
             ? '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>'
               + '<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>'
               + '<div><span class="cc-dot"></span> Living room TV <b>opens Ravilo itself</b> when cast to · other devices get the receiver</div>'
+              + '<div><span class="cc-dot"></span> Speakers <b>reachable</b> · Stue played music yesterday 18:02 <span class="muted">— only a real cast confirms it; jellystructure can’t ask Google</span></div>'
               + '<div><span class="cc-dot"></span> Last cast <b>yesterday 21:14</b> · Living room TV · 38 min</div>'
               + '<div><span class="cc-dot"></span> <b>2 devices</b> have cast · <a href="ravilo-users.html">Users &amp; devices</a></div>'
               + '<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · Living room</b></div>'
             : '<div><span class="cc-dot"></span> Receiver <b>reachable</b> at your public address + <span class="mono">/cast/</span></div>'
               + '<div><span class="cc-dot wait"></span> Application ID <b>not set yet</b></div>'
+              + '<div><span class="cc-dot off"></span> Speakers <b>not confirmed</b> — tick step 5a, then cast a song to one once</div>'
               + '<div><span class="cc-dot off"></span> <b>Cast from your phone once to confirm it works.</b> Jellystructure can\'t check an application ID with Google — only a real cast can.</div>';
           seg.querySelectorAll('[data-cc]').forEach(s => s.classList.toggle('on', s.dataset.cc === state));
         }
@@ -747,43 +697,7 @@
             <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/movies → /mnt/media/movies · 1,842 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
             <!-- Phase 212 FR-212-4/6 — this library's own findings. Storage-conditional ones fire
                  because /mnt/media/movies resolves to sdc, which is rotational. -->
-            <div class="jfa-lib">
-              <hr class="dash" style="margin:12px 0 2px;">
-              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge warn">5 findings</span><span class="spacer"></span><span class="tiny muted mono">sdc · rotational · 12.7 TB</span></div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">I/O scheduler on sdc</span><span class="jfa-now">mq-deadline</span></div>
-                <div class="jfa-body">Background <span class="mono">ffmpeg</span> here already runs under <span class="mono">nice -n 19 ionice -c3</span> — jellystructure has done that since Phase 109, to protect playback. <b>mq-deadline ignores ionice completely</b>, so that protection has never taken effect once. Switching to BFQ makes an already-written mitigation start working, and gives the film being watched latency priority over batch readers — exactly the contention that stalled <i>The Godfather</i>.</div>
-                <div class="jfa-do">Switch to <b>BFQ</b> (the module is present on this kernel):</div>
-                <div class="jfa-cmd">echo bfq &gt; /sys/block/sdc/queue/scheduler</div>
-                <div class="jfa-lose"><b>Trade-off:</b> BFQ costs a little more CPU per request and can shave peak sequential throughput. This box sat at 0.15 % CPU pressure while the disk was saturated, so it's the right trade here — but it is a trade. <b>Does not survive a reboot</b> — needs a udev rule to persist.</div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Read-ahead on sdc</span><span class="jfa-now">128 KB</span></div>
-                <div class="jfa-body">Every read of a 4K remux is broken into small requests, each paying a seek. Raising it means fewer, larger sequential reads. <span class="muted">A minor lever, listed second on purpose: a 24.7 GB film was 0.7 % resident in a 102 GB page cache, so the big win on this host isn't read-ahead at all.</span></div>
-                <div class="jfa-do">Raise to <b>8–16 MB</b>:</div>
-                <div class="jfa-cmd">echo 16384 &gt; /sys/block/sdc/queue/read_ahead_kb</div>
-                <div class="jfa-lose"><b>Trade-off:</b> more memory held per reader, and wasted reads if access turns out random. <b>Does not survive a reboot.</b></div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Max request size on sdc</span><span class="jfa-now">1280 KB of 32767 KB</span></div>
-                <div class="jfa-body">The hardware will take requests 25× larger than the queue currently allows, so a 16 MB read-ahead gets split into ~13 requests anyway — the row above is partly wasted without this one.</div>
-                <div class="jfa-do">Raise toward the hardware ceiling:</div>
-                <div class="jfa-cmd">echo 32767 &gt; /sys/block/sdc/queue/max_sectors_kb</div>
-                <div class="jfa-lose"><b>Trade-off:</b> a single huge request can hold the queue longer, which matters more without BFQ than with it. <b>Does not survive a reboot.</b></div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable chapter image extraction</span><span class="jfa-now">on</span></div>
-                <div class="jfa-body">Generates a still per chapter for every title in this library — each one a full linear read of a remux off a rotational disk. <b>Extract chapter images during the library scan</b> is on too, which moves that work into every scan instead of leaving it to the nightly task. Jellyfin's own help text makes the argument: <i>“The process can be slow, resource intensive, and may require several gigabytes of space… It is not recommended to run this task during peak usage hours.”</i></div>
-                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Movies → Manage library</span> → turn <b>Extract chapter images during the library scan</b> <b>off</b>; turn <b>Enable chapter image extraction</b> off too, or keep it knowing the cost</div>
-                <div class="jfa-lose"><b>You lose:</b> the chapter-image menu when picking a scene. Chapter <i>markers</i> stay.</div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Extract trickplay images during the library scan</span><span class="jfa-now">on, but inert</span></div>
-                <div class="jfa-body">A contradictory pair: <b>Enable trickplay image extraction</b> is <b>off</b> for this library, so the during-scan flag does nothing at all. Nothing is being wasted — but one of the two doesn't mean what it says, and that's a mistake at any disk speed.</div>
-                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Movies → Manage library</span> → pick one: turn the during-scan flag <b>off</b>, or turn the feature <b>on</b> if scrub previews were the intent</div>
-                <div class="jfa-lose">This one is a consistency finding, so it fires regardless of storage — nothing is lost by resolving it either way.</div>
-              </div>
-            </div>
+            <div class="jfa-lib"><hr class="dash" style="margin:12px 0 2px;"><div class="set-find"><span class="dot warn"></span><span>5 findings for this library</span><a href="index.html">see the Dashboard →</a></div></div>
           </div>
           <div class="box flat" style="padding:13px 15px;">
             <div class="row center" style="gap:9px;"><b>TV Shows</b><span class="badge info">tvshows</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
@@ -793,35 +707,7 @@
               <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span><span class="lang">da</span> Danish</span></span></div>
             </div>
             <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/tv → /mnt/media/tv · 312 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
-            <div class="jfa-lib">
-              <hr class="dash" style="margin:12px 0 2px;">
-              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge warn">4 findings</span><span class="spacer"></span><span class="tiny muted mono">sda · rotational · 9.1 TB</span></div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">I/O scheduler on sda</span><span class="jfa-now">mq-deadline</span></div>
-                <div class="jfa-body">Same as the Movies library, on the other spindle: the <span class="mono">ionice -c3</span> that background work already runs under is silently ignored by this scheduler.</div>
-                <div class="jfa-do">Switch to <b>BFQ</b>:</div>
-                <div class="jfa-cmd">echo bfq &gt; /sys/block/sda/queue/scheduler</div>
-                <div class="jfa-lose"><b>Trade-off:</b> slightly more CPU per request, marginally lower peak throughput. <b>Does not survive a reboot.</b></div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">Read-ahead + max request size on sda</span><span class="jfa-now">128 KB · 1280 KB of 32767 KB</span></div>
-                <div class="jfa-do">Raise both, in that order — the first is throttled by the second:</div>
-                <div class="jfa-cmd">echo 16384 &gt; /sys/block/sda/queue/read_ahead_kb ; echo 32767 &gt; /sys/block/sda/queue/max_sectors_kb</div>
-                <div class="jfa-lose"><b>Trade-off:</b> more memory per reader; wasted reads if access is random. <b>Does not survive a reboot.</b></div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable trickplay image extraction</span><span class="jfa-now">on</span></div>
-                <div class="jfa-body">Builds a filmstrip for the scrub bar by reading each episode end to end. 312 series' worth of episodes, on a rotational disk, as background work.</div>
-                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → TV Shows → Manage library</span> → consider turning <b>Enable trickplay image extraction</b> <b>off</b></div>
-                <div class="jfa-lose"><b>You lose:</b> thumbnail previews while dragging the scrub bar. Seeking itself is unaffected.</div>
-              </div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Enable LUFS scan</span><span class="jfa-now">on</span></div>
-                <div class="jfa-body">Measures loudness by decoding each episode's audio in full — another complete pass over every file in this library.</div>
-                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → TV Shows → Manage library</span> → consider turning <b>Enable LUFS scan</b> <b>off</b></div>
-                <div class="jfa-lose"><b>You lose:</b> loudness normalisation, so volume can jump between episodes from different sources.</div>
-              </div>
-            </div>
+            <div class="jfa-lib"><hr class="dash" style="margin:12px 0 2px;"><div class="set-find"><span class="dot warn"></span><span>4 findings for this library</span><a href="index.html">see the Dashboard →</a></div></div>
           </div>
           <!-- music brief §E1: the music library's card. No language cascade for music, so no fallback field. -->
           <div class="box flat" style="padding:13px 15px;" id="mu-libcard">
@@ -833,16 +719,7 @@
             <div class="tiny" style="margin-top:9px;color:var(--ink-soft);">Metadata: <b>MusicBrainz</b> · Covers: <b>Cover Art Archive</b> · Artist images: <b>fanart.tv</b> · Lyrics: <b>LRCLIB</b> — <a href="settings.html?tab=connections#sect-musicprov" id="mu-provlink">Music providers</a></div>
             <div class="row center" style="margin-top:9px;gap:7px;flex-wrap:wrap;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/music → /mnt/media/jellyfin/music · 60 tracks · 30 albums · 23 artists</span><span class="spacer"></span><a class="btn sm ghost" href="library.html?kind=music">Open in Library</a><span class="btn sm ghost lib-scan">Scan</span></div>
             <div class="tiny muted" style="margin-top:6px;">Not the <b>Musik Videoer</b> library — music videos are films and keep their own card.</div>
-            <div class="jfa-lib">
-              <hr class="dash" style="margin:12px 0 2px;">
-              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge bad">1 finding</span><span class="spacer"></span><span class="tiny muted">online fetchers off · NFO reader on · LUFS scan on — all as they should be</span></div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label" style="color:var(--bad)">Jellyfin writes its own NFO files for this library</span><span class="jfa-now" style="background:var(--bad-soft);border-color:rgba(214,69,65,.4)">MetadataSavers: Nfo</span></div>
-                <div class="jfa-body">Jellyfin will <b>overwrite the album.nfo and artist.nfo Jellystructure writes</b> — every match, genre and cover choice made here would be replaced by Jellyfin's own copy on its next save. It already happened once: <a href="album.html?a=salt-on-the-window">Salt on the Window</a> drifted at 03:12.</div>
-                <div class="jfa-do"><span class="jfa-path">Dashboard → Libraries → Musik → Manage library → Metadata savers</span> → untick <b>Nfo</b></div>
-                <div class="jfa-lose"><b>You lose:</b> nothing — Jellyfin keeps <i>reading</i> the NFO files (its NFO reader stays on); only its own writing stops.</div>
-              </div>
-            </div>
+            <div class="jfa-lib"><hr class="dash" style="margin:12px 0 2px;"><div class="set-find"><span class="dot bad"></span><span>1 finding for this library</span><a href="index.html">see the Dashboard →</a></div></div>
           </div>
           <!-- admin brief §M4: the books library. No NFO, no language cascade; the files, then you. -->
           <div class="box flat" style="padding:13px 15px;" id="ab-libcard">
@@ -854,14 +731,7 @@
             <div class="tiny" style="margin-top:9px;color:var(--ink-soft);">Metadata: <b>the files, then you</b> · Suggestions: <b>iTunes · Open Library · Audnexus · Google Books</b> — <a href="settings.html?tab=connections#sect-musicprov">Metadata providers</a></div>
             <div class="row center" style="margin-top:9px;gap:7px;flex-wrap:wrap;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/books → /mnt/media/jellyfin/books · 14 audiobook files → 1 book · 0 ebooks</span><span class="spacer"></span><a class="btn sm ghost" href="library.html?kind=books">Open in Library</a><span class="btn sm ghost lib-scan">Scan</span></div>
             <div class="tiny muted" style="margin-top:6px;">Jellyfin makes one item per file; the folder is grouped into a book here. Ebooks in this library are ignored — Ravilo has no reader.</div>
-            <div class="jfa-lib">
-              <hr class="dash" style="margin:12px 0 2px;">
-              <div class="row center" style="gap:8px;flex-wrap:wrap;"><b class="tiny">Advisor</b><span class="badge info">1 note</span><span class="spacer"></span><span class="tiny muted">online fetchers off — as they should be</span></div>
-              <div class="jfa">
-                <div class="jfa-h"><span class="jfa-kind jf">Jellyfin</span><span class="jfa-label">Save artwork into media folders</span><span class="jfa-now" style="background:var(--fill-3);border-color:var(--line-2)">SaveLocalMetadata: on</span></div>
-                <div class="jfa-body">Harmless for audio — Jellyfin has no metadata file for audiobooks to write, so nothing of ours is overwritten. Listed so it isn’t a surprise if a <span class="mono">folder.jpg</span> appears.</div>
-              </div>
-            </div>
+            <div class="jfa-lib"><hr class="dash" style="margin:12px 0 2px;"><div class="set-find"><span class="dot warn"></span><span>1 finding for this library</span><a href="index.html">see the Dashboard →</a></div></div>
           </div>
           <div class="box flat" style="padding:13px 15px;opacity:.6;">
             <div class="row center" style="gap:9px;"><b>4K Movies</b><span class="badge info">movies</span><span class="chip" style="font-size:.64rem;">skipped</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle on"></span></div>
@@ -1017,12 +887,7 @@
               <div class="jfa-do" style="margin-top:8px;"><span class="jfa-path">Dashboard → Playback → Transcoding</span> → turn <b>Delete segments</b> <b>on</b>, leave <b>Time to keep segments</b> at 720 s. <span class="muted">Jellyfin currently reports it off, so a long 4K transcode accumulates segments in RAM for the whole session.</span></div>
               <div class="jfa-lose"><b>Also worth capping:</b> <span class="mono">/tmp</span> is a second 63 GB RAM disk already holding 6.2 GB. Not ours, same hazard — a budget that caps one and ignores the other has bounded half the problem.</div>
             </div>
-            <div class="jfa" id="mb-swap">
-              <div class="jfa-h"><span class="jfa-kind host">Host</span><span class="jfa-label">vm.swappiness</span><span class="jfa-now">60</span></div>
-              <div class="jfa-body">The kernel is paging out live processes to grow a cache it doesn't need — 12 GB swapped out against 102 GB cached. Wrong trade when one of those processes is serving video.</div>
-              <div class="jfa-cmd">sysctl -w vm.swappiness=10   #  persist: echo 'vm.swappiness=10' &gt; /etc/sysctl.d/99-swappiness.conf</div>
-              <div class="jfa-lose">This is the one line here that disappears on its own once it's right — swappiness is host-wide and genuinely readable, unlike Jellyfin's compose file or the host's tmpfs size, which this container simply cannot see.</div>
-            </div>
+            <div class="set-find" id="mb-swap"><span class="dot warn"></span><span>The host swaps heavily</span><a href="index.html">see the Dashboard →</a></div>
             <hr class="dash" style="margin:13px 0;">
             <div class="tiny muted" style="line-height:1.65;">
               <b>If another service later takes 60 GB:</b> page cache is reclaimable, so anything cache-shaped just gets evicted and playback falls back to disk — it degrades on its own, correctly. tmpfs can't be dropped at all, which is why the cap above matters more than any other line. Today's real usage is small — Jellyfin 3.5 GB, jellystructure 3.0 GB, nothing else above 1.3 GB — so a 60 GB neighbour would fit right now without touching a thing. The risk isn't the neighbour; it's the neighbour arriving while an uncapped transcode is filling RAM.
@@ -1158,6 +1023,7 @@
 
 <script src="app-shell.js"></script>
 <script src="music-qs.js"></script>
+<script src="files-tab.js"></script>
 <style>
 .mp-row{padding:12px 2px;border-top:1px dashed var(--line)}
 .mp-row:first-of-type{border-top:none}
@@ -1170,6 +1036,12 @@
   function toast(m){ const t=document.createElement('div'); t.className='toast'; t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),1900); }
   document.querySelectorAll('[data-mptest]').forEach(b => b.addEventListener('click', () => toast(b.dataset.mptest + ' · reachable')));
   document.getElementById('ab-tagw').addEventListener('click', () => setTimeout(() => { const on = document.getElementById('ab-tagw').classList.contains('on'); localStorage.setItem('js-ab-tagwrite', on ? '1' : '0'); document.getElementById('ab-tag-st').textContent = on ? 'on' : 'off'; toast(on ? 'Tag writing on — Save on a book now writes into its files' : 'Tag writing off — the files are left alone'); }, 0));
+  const muT = document.getElementById('mu-tagw');
+  function paintMuT() { if (!window.FilesTab) return; const on = FilesTab.writeOn('music'); muT.classList.toggle('on', on); document.getElementById('mu-tag-st').textContent = on ? 'on' : 'off'; document.getElementById('mu-tagsub').style.opacity = on ? '' : '.45';
+    document.querySelector('[data-tqs="id3"]').checked = TagsQ.get('id3') === 'keep'; document.querySelector('[data-tqs="junk"]').checked = TagsQ.get('junk') === 'keep'; }
+  muT.addEventListener('click', () => setTimeout(() => { const on = muT.classList.contains('on'); localStorage.setItem('js-mu-tagwrite', on ? '1' : '0'); paintMuT(); toast(on ? 'Tag writing on — Save on an album now writes into its files' : 'Tag writing off — the files are left alone'); }, 0));
+  document.querySelectorAll('[data-tqs]').forEach(c => c.addEventListener('change', () => { const k = c.dataset.tqs; TagsQ.set(k, c.checked ? 'keep' : (k === 'id3' ? 'v24' : 'scrub')); }));
+  if (window.TagsQ) { TagsQ.on(paintMuT); setTimeout(paintMuT, 0); }
   document.getElementById('mp-testall').addEventListener('click', () => toast('MusicBrainz 200 · Cover Art Archive 307 · AcoustID ok · fanart.tv no key · LRCLIB 200'));
   const card = document.getElementById('sect-musicprov'), conn = document.getElementById('sect-connections'), baz = document.getElementById('sect-bazarr');
   function place() {

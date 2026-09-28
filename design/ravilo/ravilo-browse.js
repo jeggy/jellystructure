@@ -71,6 +71,8 @@
     // As built (R317 / 268 + the direction flip): one entry per FIELD, each with a direction. Choosing the
     // field already in use flips it; the sub-label says which way in words (never asc/desc).
     const SORTS = () => [
+      // 269 / R318 as built: Recommended first and the default when the server sends a recommended order; it has no direction
+      ['recommended', t('sort_recommended'), ['sort_rec_sub', 'sort_rec_sub']],
       ['added', t('br_s_added'), ['sort_newest', 'sort_oldest']],
       ['title', t('sort_title'), ['sort_az', 'sort_za']],
       ['year', t('br_s_year'), ['sort_newest', 'sort_oldest']],
@@ -144,6 +146,7 @@
       else if (v.sort === 'maturity') r = r.slice().sort((a, b) => normAge(a) - normAge(b) || a.title.localeCompare(b.title));
       else if (v.sort === 'imdb') r = r.slice().sort((a, b) => im(b) - im(a));
       else if (v.sort === 'size') r = r.slice().sort((a, b) => sizeOf(b) - sizeOf(a));
+      else if (v.sort === 'recommended') r = r.slice().sort((a, b) => (sizeOf(a) * 7 % 13) - (sizeOf(b) * 7 % 13));
       return v.sortRev ? r.slice().reverse() : r;   // 'added' = seed order (library feed arrives newest-first)
     }
     // popover values for one facet: count against seed with all OTHER facets applied;
@@ -162,7 +165,7 @@
 
     /* ---- render ---- */
     function render(view) {
-      v = view; v.filters = v.filters || {}; v.sort = v.sort || 'added';
+      v = view; v.filters = v.filters || {}; v.sort = v.sort || 'recommended';
       if (v.sort === 'az' || v.sort === 'za') { v.sortRev = v.sort === 'za'; v.sort = 'title'; }
       stopHero(); closePop(); scroll.innerHTML = '';
       const title = v.person ? v.person.n
@@ -342,7 +345,7 @@
       if (pop.range) { closePopAndBar(); return; }   // OK confirms the range
       if (pop.kind === 'sort') {
         const id = pop.opts[pop.idx].id;
-        if (id === v.sort) v.sortRev = !v.sortRev; else { v.sort = id; v.sortRev = false; }
+        if (id === v.sort) { if (id !== 'recommended') v.sortRev = !v.sortRev; } else { v.sort = id; v.sortRev = false; }
         closePopAndBar(); refreshGrid();
         return;
       }

@@ -27,6 +27,15 @@
     <button data-fd="row">Row &middot; J</button>
     <label class="msfield" title="Jellystructure &rarr; Focus detail &rarr; Wait before it appears"><input id="fddelay" type="number" min="0" step="10">ms</label>
   </div>
+  <div class="skinpick" id="statepick" title="Built, never drawn (audit 2026-09-27): R212 · R280">
+    <b>STATE</b>
+    <button data-st="" class="on">Normal</button>
+    <button data-st="stale">Saved content</button>
+    <button data-st="REAUTH">Sign in again</button>
+    <button data-st="FORBIDDEN">Not on profile</button>
+    <button data-st="GONE">Gone</button>
+    <button data-st="UNREACHABLE">Unreachable</button>
+  </div>
   <div class="skinpick" id="skinpick">
     <b>SKIN</b>
     <button data-skin="aurora" class="on">Aurora</button>
@@ -43,6 +52,7 @@
 <script src="ravilo-browse.js"></script>
 <script src="ravilo-focus.js"></script>
 <script src="ravilo-app.js"></script>
+<script src="ravilo-states.js"></script>
 <script>
   const params = new URLSearchParams(location.search);
   const skin = params.get('skin') || 'aurora';

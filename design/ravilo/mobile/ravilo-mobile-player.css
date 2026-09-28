@@ -166,7 +166,9 @@
 /* subtitle rendering behind the sheet, so a size change is visible */
 .mp-sub{position:absolute;left:16px;right:16px;text-align:center;font-weight:500;color:#fff;z-index:3;
   text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 0 12px rgba(0,0,0,.8)}
-.mp-sub.s{font-size:15px}.mp-sub.m{font-size:19px}.mp-sub.l{font-size:24px}
+/* R300 as built: portrait captions are a fraction of the PICTURE's height (232 px box here), not the window's —
+   S/M/L multiply that base. The old 15/19/24 px were 1/20 of the window and ran four lines over the rail. */
+.mp-sub.s{font-size:10.5px}.mp-sub.m{font-size:13px}.mp-sub.l{font-size:16px}
 
 /* ============================================================
    CASTING — cast glyph, connecting bar, mini bar, remote
@@ -324,3 +326,41 @@
 .sc-apchip{display:flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:17px;
   background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.22);font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap}
 .mp.mp-ap .rc-mini{display:none}
+
+/* ============================================================
+   Built, never drawn (audit 2026-09-27) — drawn in place 2026-09-28 · ws-*
+   R263 install card / update toast / old-iOS notice · R212 stale line · R280 LoadErrorState · R317/R318 sort sheet
+   ============================================================ */
+.ws-card{margin:10px 16px 6px;border-radius:16px;border:1px solid var(--line-2);background:var(--card,rgba(255,255,255,.04));padding:15px 16px 13px}
+.ws-card h4{margin:0;font-size:15.5px;display:flex;align-items:center;gap:10px}
+.ws-card svg{width:21px;height:21px;fill:none;stroke:var(--accent-2);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ws-card ol{margin:11px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+.ws-card li{display:flex;gap:10px;align-items:center;font-size:14px}
+.ws-card li b{width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.ws-card li svg{width:16px;height:16px;stroke:currentColor}
+.ws-card .ln{font-size:13px;color:var(--ink-soft);margin-top:9px;line-height:1.5}
+.ws-card .ac{display:flex;justify-content:flex-end;gap:8px;margin-top:11px}
+.ws-btn{box-sizing:border-box;min-height:44px;padding:0 18px;border-radius:22px;display:inline-flex;align-items:center;justify-content:center;font:600 14px 'Sora',sans-serif;background:rgba(255,255,255,.08);color:var(--ink);border:0;cursor:pointer}
+.ws-btn.pr{background:var(--ink);color:var(--bg)}
+.ws-stale{margin:6px 16px 8px;min-height:36px;border-radius:10px;background:rgba(255,255,255,.06);display:flex;align-items:center;gap:9px;padding:0 12px;font-size:13px;color:var(--ink-soft)}
+.ws-stale i{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:var(--ink-soft);animation:wsspin 1s linear infinite;flex:none}
+@keyframes wsspin{to{transform:rotate(360deg)}}
+.ws-err{min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 34px}
+.ws-err h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:22px}
+.ws-err p{margin:10px 0 0;font-size:14.5px;color:var(--ink-soft);line-height:1.55}
+.ws-err .ac{display:flex;gap:10px;margin-top:22px}
+.ws-toast{position:absolute;left:14px;right:14px;bottom:calc(var(--bnh,74px) + 14px);z-index:95;border-radius:14px;background:var(--ink);color:var(--bg);display:flex;align-items:center;gap:12px;padding:0 6px 0 16px;min-height:54px;font-size:14px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.ws-toast button{margin-left:auto;min-height:44px;padding:0 14px;border-radius:10px;border:0;background:none;font:700 14px 'Sora',sans-serif;color:var(--accent);cursor:pointer}
+.ws-old{position:absolute;inset:0;z-index:120;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 34px}
+.ws-old .mk{width:64px;height:64px;border-radius:30%;background:var(--grad);margin-bottom:22px}
+.ws-old h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:22px}
+.ws-old p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-soft)}
+.ws-scrim{position:absolute;inset:0;z-index:96;background:rgba(0,0,0,.5)}
+.ws-sheet{position:absolute;left:0;right:0;bottom:0;z-index:97;background:var(--bg-2);border-radius:22px 22px 0 0;padding:8px 0 26px;border-top:1px solid var(--line-2)}
+.ws-sheet .gr{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:4px auto 10px}
+.ws-sheet h4{margin:0 20px 8px;font-size:17px}
+.ws-sr{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:0 20px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.ws-sr .tx{flex:1}.ws-sr .n{font-size:15px}.ws-sr .s{font-size:12.5px;color:var(--ink-dim);margin-top:2px}
+.ws-sr .ck{width:22px;height:22px;border-radius:50%;border:2px solid var(--line-2);flex:none}
+.ws-sr.on .ck{border-color:var(--accent-2);box-shadow:inset 0 0 0 4px var(--bg-2);background:var(--accent-2)}
+.ws-sr.on .s{color:var(--accent-2)}

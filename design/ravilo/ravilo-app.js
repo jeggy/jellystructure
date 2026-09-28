@@ -385,6 +385,9 @@
     }) : null;
 
     function upcomingLabel() { return t('upcoming'); }
+    // owner 2026-09-28 (audit §2.2): a poster tile carries a badge only for picture quality — 4K and HDR. New Season,
+    // Premiere, Top 10 and HD never sit on a tile (the hero and the detail meta line are unchanged).
+    function tileQ(b) { return b && /^(4K|HDR|4K HDR|Dolby Vision)$/i.test(String(b).trim()) ? b : ''; }
     function airBadge(iso) {
       const d = new Date(iso + 'T00:00:00Z');
       return isNaN(d) ? iso : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -417,7 +420,7 @@
         if (ws.watched) t.classList.add('watched');
         const air = item.kind === 'series' ? R.nextAiringFor(item) : null;
         const wmark = ws.watched ? `<div class="tile-check">✓</div>` : (ws.pct > 0 ? `<div class="tile-prog"><i style="width:${ws.pct}%"></i></div>` : '');
-        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}${air ? `<div class="tile-air"><span class="tile-air-dot"></span>${upcomingLabel()}</div>` : ''}${wmark}</div>
+        t.innerHTML = `<div class="art">${artFill(item)}${tileQ(item.badge) ? `<div class="badge">${tileQ(item.badge)}</div>` : ''}${air ? `<div class="tile-air"><span class="tile-air-dot"></span>${upcomingLabel()}</div>` : ''}${wmark}</div>
           <div class="label">${item.title}</div><div class="sub">${[item.year, genresOf(item)[0]].filter(Boolean).join(' · ')}</div>`;
       }
       return t;
@@ -754,10 +757,12 @@
       const d = el('div', 'detail');
 
       let playLabel, upNote = '';
+      // R309 as built: a file of several episodes is named as the whole file — S01E01–E03 — on play and resume
+      const fEnd = e => { if (!e || !e.file) return null; const g = eps.filter(x => x.file === e.file); return g[g.length - 1].n; };
       if (isSeries) {
-        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · ' + epCode(season + 1, 1);
-        else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · ${epCode(season + 1, rEp.n)}`; upNote = `Resume ${epCode(season + 1, rEp.n)} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
-        else { playLabel = t('play') + ` · ${epCode(season + 1, rEp.n)}`; upNote = `Up next · ${epCode(season + 1, rEp.n)} “${rEp.title}”`; }
+        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · ' + epCode(season + 1, 1, fEnd(eps[0]));
+        else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · ${epCode(season + 1, rEp.n, fEnd(rEp))}`; upNote = `Resume ${epCode(season + 1, rEp.n, fEnd(rEp))} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
+        else { playLabel = t('play') + ` · ${epCode(season + 1, rEp.n, fEnd(rEp))}`; upNote = `Up next · ${epCode(season + 1, rEp.n, fEnd(rEp))} “${rEp.title}”`; }
       } else {
         const mp = wItem.pct || item.pct || 0;
         const mLeft = Math.max(1, Math.round(durFor(item) * (1 - mp / 100) / 60));

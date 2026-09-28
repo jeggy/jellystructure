@@ -80,6 +80,7 @@ or 204.
 1. The Mix threshold (FR-279-2). Lean ≥ 300 tracks, tuned on real libraries.
 2. Should `last-played` read Jellyfin's `LastPlayedDate` (cross-device) or the phone's own store (per device,
    like the mode)? Lean: Jellyfin — it is the viewer's.
+   **Answered by the owner 2026-09-28:** Jellyfin — the same on every device the viewer uses.
 
 ## Dev review (2026-09-28, against `main` `728f22ea`)
 

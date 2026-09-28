@@ -1,8 +1,10 @@
-/* Injects the persistent left sidebar, mobile drawer, ambient scan dock, and the
-   floating Triage navigation dock into every app page.
+/* Injects the persistent left sidebar, mobile drawer and the ambient scan dock into every app page.
+   The floating attention (Triage) dock was REMOVED on 2026-09-28 (owner; dashboard brief §D rule 9): not hidden,
+   gone — with its item queue, openAttentionDock and its ⌘K entries. The per-type path is the Dashboard, the
+   per-item path is the Library filtered to a type and the title's own page.
    Each page provides <main class="app-main2" data-page="..."> as its only body content.
    Opt-outs / opt-ins via attributes on <main>:
-     data-no-dock   — suppress BOTH docks (full-screen editing surfaces)
+     data-no-dock   — suppress the scan dock (full-screen editing surfaces)
      data-scan      — also show the ambient scan dock (demo of an active scan)
    Theme: three-way Light / Dark / System picker, persisted in localStorage 'js-theme'. */
 (function () {
@@ -76,26 +78,8 @@
   const main = document.querySelector('.app-main2');
   const current = main ? main.getAttribute('data-page') : '';
 
-  /* ---- attention queue (drives the Triage dock + sidebar count) ---- */
-  const ATTN = [
-    { title: 'Big Buck Bunny', sub: '2 untagged audio tracks', href: 'media.html' },
-    { title: 'Sintel',         sub: 'wrong default audio (fra → eng)', href: 'media.html' },
-    { title: 'Nordvest',       sub: 'S01E02 · missing still + overview', href: 'series.html' },
-    { title: 'Babel Fish',     sub: 'S02E05 · multiple default audio', href: 'series.html' },
-    { title: 'Caminandes 2',   sub: 'missing poster artwork', href: 'media.html' },
-    { title: 'Server Farm', sub: 'S01 · cover art muxed as video — playback-hostile, repairable', href: 'series.html' },
-    { title: 'The Daily Show', sub: 'no longer in Jellyfin — kept, flagged for triage', href: 'series.html' },
-    // music brief §G — the music triage types
-    { title: 'Low Tide Radio', sub: 'album · 3 candidates, no clear winner — Choose…', href: 'album.html?a=low-tide-radio&find=1' },
-    { title: 'Summer Hits 2004', sub: 'album · 3 compilations share this name — Choose…', href: 'album.html?a=summer-hits-2004&find=1' },
-    { title: 'Kvøld', sub: 'album · no MusicBrainz match — Find match…', href: 'album.html?a=kvold&find=1' },
-    { title: 'Foghorn Lullabies', sub: 'album · no cover on the Cover Art Archive — Upload', href: 'album.html?a=foghorn-lullabies&tab=artwork' },
-    { title: 'Skerry', sub: 'artist · no picture — Choose… / Upload', href: 'artist.html?ar=skerry&tab=artwork' },
-    // admin brief §M5 — audiobook triage (the household's one book)
-    { title: 'Vinterfærgen', sub: 'audiobook · part 6 is not in the folder', href: 'audiobook.html?b=vinterfaergen&tab=parts' },
-    { title: 'Vinterfærgen', sub: 'audiobook · no cover — Upload', href: 'audiobook.html?b=vinterfaergen&tab=artwork' },
-  ];
-  const ATTN_TOTAL = 214;
+  // The sidebar's count: titles, the same number the Dashboard's header states (brief §D rule 3). A plain link.
+  const ATTN_TOTAL = 411;
 
   /* ---- build shell ---- */
   const shell = document.createElement('div');
@@ -125,7 +109,7 @@
     '<div class="status">' +
       '<div class="row"><span class="dot ok"></span> Jellyfin online</div>' +
       '<div class="row"><span class="dot ok"></span> TMDB key OK</div>' +
-      '<div class="row"><span class="dot warn"></span> ' + ATTN_TOTAL + ' need attention</div>' +
+      '<a class="row" href="index.html" style="color:inherit;text-decoration:none"><span class="dot warn"></span> ' + ATTN_TOTAL + ' could be fixed</a>' +
     '</div>' +
     '<a class="nav" href="login.html" style="margin-top:8px"><span class="l"><span class="ico">' + I.signout + '</span>Sign out</span></a>' +
     '<div class="theme-seg" id="themeseg" role="group" aria-label="Appearance">' +
@@ -199,8 +183,7 @@
   /* ---- docks ---- */
   const noDock = main && main.hasAttribute('data-no-dock');
 
-  // Both docks live in one bottom-right flex stack so they reflow cleanly when
-  // either is collapsed or hidden (no hardcoded offsets).
+  // The scan dock lives in a bottom-right flex stack (no hardcoded offsets).
   function dockStack() {
     let s = document.getElementById('dock-stack');
     if (!s) { s = document.createElement('div'); s.id = 'dock-stack'; document.body.appendChild(s); }
@@ -236,67 +219,7 @@
     });
   }
 
-  // Floating Triage dock — navigation only. Persists across pages; steps through
-  // the attention queue, opening each item's media detail page where fixing happens.
-  if (!noDock && current !== 'activity' && ATTN.length) {
-    let idx = 0;
-    const scanShown = main && main.hasAttribute('data-scan');
-    const dock = document.createElement('div');
-    dock.className = 'dock triage-dock';
-    dock.innerHTML =
-      '<div class="dock-head">' +
-        '<span class="ico-attn">' + I.attn + '</span><b>Needs attention</b>' +
-        '<span class="spacer"></span>' +
-        '<span class="tiny mono" id="td-pos"></span>' +
-        '<span class="kbd toggle-dock" title="Collapse">⌄</span>' +
-        '<span class="kbd dock-close" title="Close" aria-label="Close">✕</span>' +
-      '</div>' +
-      '<div class="dock-body">' +
-        '<div class="td-item"><div class="td-title" id="td-title"></div><div class="tiny muted" id="td-sub"></div></div>' +
-        '<div class="row center" style="gap:8px;margin-top:12px">' +
-          '<button class="btn sm ghost" id="td-prev">‹ Prev</button>' +
-          '<a class="btn sm primary" id="td-open" style="flex:1;justify-content:center">Open &amp; fix →</a>' +
-          '<button class="btn sm ghost" id="td-next">Next ›</button>' +
-        '</div>' +
-      '</div>';
-    dockStack().appendChild(dock);
-    const $ = id => dock.querySelector(id);
-    function paint() {
-      const it = ATTN[idx];
-      $('#td-pos').textContent = (idx + 1) + ' / ' + ATTN_TOTAL;
-      $('#td-title').textContent = it.title;
-      $('#td-sub').textContent = it.sub;
-      $('#td-open').setAttribute('href', it.href);
-    }
-    $('#td-prev').addEventListener('click', () => { idx = (idx - 1 + ATTN.length) % ATTN.length; paint(); });
-    $('#td-next').addEventListener('click', () => { idx = (idx + 1) % ATTN.length; paint(); });
-    dock.querySelector('.toggle-dock').addEventListener('click', (e) => {
-      e.stopPropagation();
-      dock.classList.toggle('collapsed');
-      e.target.textContent = dock.classList.contains('collapsed') ? '⌃' : '⌄';
-    });
-
-    // Close (hide) the dock + remember it across pages; reopenable from the Dashboard.
-    const CLOSED_KEY = 'js-attn-dock-closed';
-    function setClosed(closed) {
-      dock.classList.toggle('dock-hidden', closed);
-      try { localStorage.setItem(CLOSED_KEY, closed ? '1' : '0'); } catch (e) {}
-    }
-    dock.querySelector('.dock-close').addEventListener('click', (e) => {
-      e.stopPropagation();
-      setClosed(true);
-    });
-    // honor a previously-closed state
-    let startClosed = false;
-    try { startClosed = localStorage.getItem(CLOSED_KEY) === '1'; } catch (e) {}
-    if (startClosed) dock.classList.add('dock-hidden');
-    // expose a reopener for the Dashboard (and anywhere else)
-    window.openAttentionDock = function () { setClosed(false); dock.classList.remove('collapsed'); dock.querySelector('.toggle-dock').textContent = '⌄'; };
-
-    paint();
-  }
-
-  /* ---- command palette (⌘K) + attention-queue keyboard nav (Phase 38) ---- */
+  /* ---- command palette (⌘K) ---- */
   const palette = document.createElement('div');
   palette.id = 'cmd-palette';
   palette.innerHTML =
@@ -310,7 +233,6 @@
     ...NAV.filter(n => !n.group).map(n => ({ label: n.label, kind: 'Page', href: n.href, icon: I[n.icon] })),
     { label: 'Start library scan', kind: 'Action', href: 'activity.html', icon: I.activity },
     { label: 'Re-pull artwork (all)', kind: 'Action', href: 'index.html', icon: I.dashboard },
-    ...ATTN.map(a => ({ label: a.title, kind: 'Needs attention', sub: a.sub, href: a.href, icon: I.attn })),
   ];
   const cmdInput = palette.querySelector('#cmdp-input');
   const cmdList = palette.querySelector('#cmdp-list');
@@ -353,9 +275,5 @@
   }
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
-    if (palette.classList.contains('open') || typingInField()) return;
-    if (e.key === 'n') document.getElementById('td-next') && document.getElementById('td-next').click();
-    else if (e.key === 'p') document.getElementById('td-prev') && document.getElementById('td-prev').click();
-    else if (e.key === 'o') document.getElementById('td-open') && document.getElementById('td-open').click();
   });
 })();

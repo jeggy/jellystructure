@@ -131,8 +131,9 @@ The §M6 questions are in the shared panel at the foot of each page.
 
 1. Audnexus needs an ASIN, and the ASIN lookup is Audible's undocumented per-store endpoint (research §2.1). Is
    that acceptable, or does Audnexus only answer when the admin pastes an ASIN?
+   **Answered by the owner 2026-09-28:** **only a pasted ASIN.** The undocumented lookup is never called; the Audnexus card on a book's Details carries an ASIN field and *Look up*, and Settings' Audnexus row says so.
 2. The *Split into two books…* flow is drawn as one confirmation. Does it need a preview of which parts go where?
-   Lean: yes — two columns, drag between them.
+   Lean: yes — two columns, drag between them. **Answered by the owner 2026-09-28:** the lean — a preview with two columns (titles editable, part count and length per side), drag a part across; *Split* is disabled while a side is empty; nothing moves on disk.
 
 ## Dev review (2026-09-28, against `main` `728f22ea`)
 
