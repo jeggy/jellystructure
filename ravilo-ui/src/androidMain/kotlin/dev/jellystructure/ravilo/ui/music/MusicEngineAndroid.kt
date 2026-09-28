@@ -41,6 +41,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -86,6 +87,8 @@ actual object MusicEngine {
     /** The next part, already handed to ExoPlayer for a seamless boundary. */
     private var queuedPart: Int? = null
     private var prefetching = false
+    /** *Play* pressed while a part is still loading: the load plays it, rather than a second load starting. */
+    private var pendingPlay = false
     private var watchJob: Job? = null
     private var lastChapter = -1
     private const val BACK30 = "ravilo.book.back30"
@@ -300,6 +303,9 @@ actual object MusicEngine {
         loadJob = scope.launch {
             val c = client()
             val ticket = runCatching { c?.playMusic(track.id, ClientCapabilities(), startMs.takeIf { it > 0 }) }.getOrNull()
+            // A load replaced by a newer one (a quick skip) was cancelled, not failed: runCatching caught the
+            // cancellation, and flagging it would raise the failure sheet over the song that is now playing.
+            if (!isActive) return@launch
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = track.id
             val p = player()
@@ -408,6 +414,7 @@ actual object MusicEngine {
     actual fun play() {
         book?.let { b ->
             if (b.finished) return
+            if (openTrackId == null && !failed && loadJob?.isActive == true) { pendingPlay = true; ensureService(); return }
             if (openTrackId == null || failed) startPart(b.part, currentPositionMs(), true) else { ensureService(); exo?.play() }
             return
         }
@@ -553,6 +560,7 @@ actual object MusicEngine {
         loadJob = scope.launch {
             val c = client()
             val ticket = runCatching { c?.playAudiobook(d.id, part, ClientCapabilities(), startMs.takeIf { it > 0 }) }.getOrNull()
+            if (!isActive) return@launch   // replaced by a newer start — cancelled, not failed
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = d.parts[part].id
             partDirect = ticket.directPlay
@@ -560,7 +568,8 @@ actual object MusicEngine {
             p.setMediaItem(bookItem(d, part, ticket, startMs), startMs)
             p.prepare()
             applyBookPlayer()
-            p.playWhenReady = play
+            p.playWhenReady = play || pendingPlay
+            pendingPlay = false
             publish(); save(); startTicks(); startWatch()
         }
     }

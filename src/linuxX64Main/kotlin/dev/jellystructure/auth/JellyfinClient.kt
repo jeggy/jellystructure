@@ -461,7 +461,7 @@ class JellyfinClient {
         while (true) {
             val page = runCatching {
                 httpGet("$base/Items?ParentId=$id&IncludeItemTypes=AudioBook&Recursive=true" +
-                    "&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId,MediaStreams,Overview,People" +
+                    "&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId,MediaStreams,MediaSources,Overview,People" +
                     "&EnableUserData=false&Limit=$JF_PAGE_SIZE&StartIndex=$start") { jellyfinAuth(token) }
                     .bodyOrNull<JellyfinMusicItemsResponse>("books")
             }.getOrElse { e -> if (e is CancellationException) throw e; Logger.warn("Jellyfin books failed: ${e.message}"); null } ?: return null

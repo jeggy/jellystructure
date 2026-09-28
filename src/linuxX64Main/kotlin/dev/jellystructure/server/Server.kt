@@ -458,7 +458,7 @@ fun startServer(
                             // Phase 275 (FR-275-6) — null when no music library is mapped. Counts only.
                             """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.model.MusicHealth.serializer(), it) } ?: "null"},""" +
                             // Phase 280 (FR-280-7) — null when no books library is mapped. Counts only.
-                            """"audiobooks":${musicPipeline?.audiobooks?.takeIf { dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isNotEmpty() }?.let { b -> Json.encodeToString(dev.jellystructure.model.AudiobooksHealthDto.serializer(), dev.jellystructure.server.routes.audiobooksHealth(b.store, b)) } ?: "null"},""" +
+                            """"audiobooks":${musicPipeline?.audiobooks?.takeIf { dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isNotEmpty() }?.let { b -> HEALTH_JSON.encodeToString(dev.jellystructure.model.AudiobooksHealthDto.serializer(), dev.jellystructure.server.routes.audiobooksHealth(b.store, b)) } ?: "null"},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
@@ -884,6 +884,9 @@ private suspend fun runShell(command: String): String? = dev.jellystructure.ops.
 // stable names and must revalidate). Shared by the admin frontend, /cast/** and /tv/** — whichever of
 // them turns out to hash a filename gets the same treatment; none of them are worse off if none do.
 private val HASHED_FRONTEND_ASSET_NAME = Regex("[0-9a-f]{16,}")
+
+/** Phase 280 — the health block's audiobook counts are all defaults when nothing is wrong; they are still said (a 0 is an answer). */
+private val HEALTH_JSON = Json { encodeDefaults = true }
 
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(
     dir: String,

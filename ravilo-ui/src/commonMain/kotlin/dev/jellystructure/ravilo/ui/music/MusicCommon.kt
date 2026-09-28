@@ -352,7 +352,7 @@ private fun ModeHalf(title: String, sub: String, icon: MusicIcon, selected: Bool
         Row(verticalAlignment = Alignment.CenterVertically) {
             MusicGlyph(icon, if (selected) colors.onAccent else colors.text, 18.dp)
             Spacer(Modifier.width(8.dp))
-            Text(title, color = if (selected) colors.onAccent else colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, color = if (selected) colors.onAccent else colors.text, fontSize = 14.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(4.dp))
         Text(sub, color = if (selected) colors.onAccent.copy(0.85f) else colors.textSecondary, fontSize = 11.5.sp, lineHeight = 15.sp, fontFamily = Sora, maxLines = 2)

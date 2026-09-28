@@ -175,3 +175,13 @@ collection type stays `books` — it is Jellyfin's name.
    empty states. The kind picker is now one shared control across films, Music and Audiobooks. Styles are
    `music.css`'s `mu-*`; the book page's `ab-*` rules moved there from the mockup's inline `<style>`.
 
+8. **On the household server (2026-09-28, deployed with the dev compose, DB backed up first).** `scan_audiobooks`
+   made the books library **one book of 14 parts, 5 h 27 min** (the acceptance says 5 h 24 — the sum of Jellyfin's
+   own part lengths), with *part 6 not in the folder* and *no cover* (acceptance 1). The Library kind, the book page,
+   the Parts tab's gap row and the Dashboard tile rendered against it. **One fix from that run:** Jellyfin 12.1 gives
+   an `AudioBook` item no top-level `Container` (an `Audio` item has one), so every part's format was blank; the
+   query now asks for `MediaSources` and a part falls back to its first source's container and bitrate. The health
+   block now says its counts even when they are all zero (`encodeDefaults`).
+   **Finding, not built:** the house's MP3 parts carry an embedded picture that Jellyfin does not surface as the
+   book's image, so the book reads *no cover* while its files have one. Offering the embedded picture as a cover
+   candidate on the Artwork tab is a follow-up.

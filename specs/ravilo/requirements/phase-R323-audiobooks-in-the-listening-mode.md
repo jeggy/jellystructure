@@ -201,3 +201,17 @@ Named *audiobooks* throughout (280's build notes): the phone's paths are `/tv/mu
 10. **Resuming:** after a restart the Playing tab loads the last book paused where the server says this viewer is,
     and the system's *play* after a reboot resumes it.
 
+11. **On the Pixel 9 against the household server (2026-09-28, debug build).** Seen working: acceptance 1 (the
+    Continue card resumes at the book position with no detour), 2 (1.5× on this book, a relaunch keeps it), 4 (the
+    part boundary on direct-play MP3 has no audible gap, and the chapter line moves on), 5 (the notification shows the
+    chapter, author and book with −30 s / +30 s) and 6 (*Finished · Start over*, and the server's `finished_at` is
+    set). The admin's Listeners tab showed the phone's place, and the part's Jellyfin position followed it.
+    **Not tried:** 3 (the sleep timer's end-of-chapter stop and fade).
+    **Fixed from that run:** (a) a part load replaced by a newer one (tapping a chapter while the book was still
+    opening) was *cancelled*, but `runCatching` caught the cancellation and flagged it as a failure, raising the
+    failure sheet over the part that was now playing; a cancelled load now returns quietly. (b) *Play* pressed while
+    a part was still loading started a second load; it now marks the running load to play. (c) A tap beside the
+    failure sheet cleared the player (the book was gone from the Playing tab); only *Close* does that now. (d) The
+    mode card's *Music & audiobooks* title was cut off at phone width; it may take two lines.
+    **Open, cosmetic:** with the system keyboard up, the *Add bookmark* sheet's Save button sits under the keyboard
+    until it is closed.

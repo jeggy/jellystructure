@@ -537,6 +537,15 @@ data class JellyfinMusicItem(
     /** Phase 278 — an album's locked metadata in Jellyfin (136's *Locked in Jellyfin* banner). */
     @SerialName("LockData") val lockData: Boolean? = null,
     @SerialName("LockedFields") val lockedFields: List<String>? = null,
+    /** Phase 280 — an `AudioBook` item carries no top-level `Container` (an `Audio` item does); its source does.
+     *  Measured on Jellyfin 12.1: `Container` absent, `MediaSources[0].Container = "mp3"`. */
+    @SerialName("MediaSources") val mediaSources: List<JellyfinSourceLite> = emptyList(),
+)
+
+@Serializable
+data class JellyfinSourceLite(
+    @SerialName("Container") val container: String? = null,
+    @SerialName("Bitrate") val bitrate: Int? = null,
 )
 
 @Serializable

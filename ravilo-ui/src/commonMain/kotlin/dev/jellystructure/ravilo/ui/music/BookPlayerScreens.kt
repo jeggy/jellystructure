@@ -279,7 +279,8 @@ private fun FinishedRow(api: TvApiClient, store: AudiobookStore?, d: AudiobookDe
 /** FR-R323-6 — *Couldn't play this · Try again. Your place in the book is kept.* with Try again and Close. */
 @Composable
 private fun BookFailureSheet(failed: Boolean) {
-    HandsetSheet(visible = failed, onDismiss = { MusicEngine.clear() }) {
+    // A tap beside the sheet keeps the book (paused where it is); only *Close* clears the player.
+    HandsetSheet(visible = failed, onDismiss = {}) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
             Text(str("music.fail_t"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))

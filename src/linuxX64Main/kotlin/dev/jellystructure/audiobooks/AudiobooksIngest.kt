@@ -75,7 +75,8 @@ object AudiobooksIngest {
                     // A part that moved book (a split or a join) starts after this book's own parts.
                     position = p?.takeIf { old -> old.bookId == bookId }?.position ?: nextPos++, path = MusicIngest.localPath(lib, it.path),
                     durationMs = it.runTimeTicks?.let { t -> t / TICKS_PER_MS }, title = it.name,
-                    albumTag = it.album?.takeIf { a -> a.isNotBlank() }, codec = stream?.codec, container = it.container, bitrate = stream?.bitRate,
+                    albumTag = it.album?.takeIf { a -> a.isNotBlank() }, codec = stream?.codec,
+                    container = it.container ?: it.mediaSources.firstOrNull()?.container, bitrate = stream?.bitRate ?: it.mediaSources.firstOrNull()?.bitrate,
                     missingSince = null, updatedAt = now,
                 )
             }
