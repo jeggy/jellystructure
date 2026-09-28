@@ -167,7 +167,7 @@ which of these it summarises, links to, or leaves alone:
 | Settings → Download tools | Bazarr card + its advisor; every *Test connection* result | *Connected · v3.5.0 · Seerr hides requested titles…* (282) |
 | **Library** | *Needs attention* chip, *Missing artwork* chip, the per-kind facets (Match · Cover · Check · Format · Needs) | the same 28 types, as filters |
 | **A title's page** | eight banners: *Cover art muxed as video* · *No longer in Jellyfin* · *Unplayable in Ravilo (MKV)* · integrity (254/255) · *coverage* (subtitles) · *NFO drift* · *Jellyfin field lock detected* · *NFO not writable*; plus the metadata-language mismatch card (191) and *Fix now* | — |
-| **The floating Triage dock** (app-shell) | steps through flagged items one by one; sidebar shows the count | *2 483 need attention* |
+| **The floating Triage dock** (app-shell; `Shell.kt` in the shipped app) | steps through flagged items one by one on every page; sidebar shows the count. **To be removed — §D rule 9** | *2 483 need attention* |
 | **`/api/health`** | `job_queues`, both gates, pacing, memory, `mkv_health_swept_at`, music/audiobook health | — |
 
 ## B. What is wrong, in the owner's words and in the numbers
@@ -248,6 +248,12 @@ The mockup should carry all three as marked options with the lean marked, as the
    the section order (Films · Series · Music · Audiobooks · Subtitles · Jellyfin · This server · Services), which is
    stable and learnable.
 8. **The scan banner stays at the top** in every direction; it is the one thing that changes under the admin.
+9. **The floating attention dock is removed from the application** (owner, 2026-09-28: *"We want to just fully
+   remove this dock from our application"*). Not hidden, not folded: gone from every page. That takes with it the
+   *Show attention dock* button, the *Closed the dock?* sentence, the dock's own copy of the item queue, the
+   `openAttentionDock` hook and its ⌘K entries. The per-item path is the Library filtered to a type (the row's
+   link) and the title's own page; the per-type path is this page. The sidebar's count survives as a number that
+   opens the Dashboard, nothing more.
 
 ## E. States to draw
 
@@ -270,16 +276,18 @@ the 1 277-in-one-type case (the fold must hold) · music library only (Films/Ser
 | Q7 | *Since your last visit* replaces *Recently processed*, or sits beside it | **Replaces**; the log is on Activity |
 | Q8 | Quick actions: keep the seven chips, or fold each into the group it serves (*Repair corrupt artwork* under Films/Series, *Sync NFOs* under Jellyfin) | **Fold into groups**; keep *Scan* and *Activity* in the pagebar |
 | Q9 | Per-kind split of the film/series issue types needs new counts from the backend (`/api/triage/count` does not split by kind) | **Yes** — presentation phase like 146/257, plus one count endpoint change |
-| Q10 | Should the floating triage dock survive, now that each group opens a filtered Library | **Keep**, unchanged; it is the per-item path and the page is the per-type path (146's split) |
+| ~~Q10~~ | ~~Should the floating triage dock survive~~ — **decided by the owner, 2026-09-28: the dock goes.** See §D rule 9 | — |
 
 ## G. Deliverables and numbering
 
 - `design/app/index.html` redrawn on the winning direction, with the eight groups seeded from §A's real counts
-  (fictional titles only), the states of §E, and the questions panel; `app-shell.js`'s attention queue re-seeded
-  so the dock, the sidebar badge and the page agree.
+  (fictional titles only), the states of §E, and the questions panel; **`app-shell.js` loses the floating dock,
+  `openAttentionDock` and the dock's ⌘K entries on every mockup page** (rule 9), and its sidebar count is
+  re-seeded to agree with the page.
 - One admin phase, prospective **285** (284 is the tags work in
   `research-reports/music-tags-in-the-files-2026-09-28.md`; verify both on `main` before writing): presentation
   first (like 146 and 257), plus per-kind and per-group counts on `/api/triage/count`, server-side severity per
-  type, `/api/stats.issues` reconciled, and a *since your last visit* endpoint. Nothing changes in what is
-  detected.
+  type, `/api/stats.issues` reconciled, a *since your last visit* endpoint, and **the removal of the triage dock
+  from `Shell.kt`** (its item-queue fetch, `callOpenAttentionDock`, the palette entries) — deleted, not gated.
+  Nothing changes in what is detected.
 - Out of scope: new detections, the Library page, the title pages' banners (they stay where the fix happens).
