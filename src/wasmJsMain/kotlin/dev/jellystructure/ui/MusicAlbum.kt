@@ -42,7 +42,9 @@ private var fmRelease: Int = 0
 private var fmBusy: String? = null
 private var fmSound: String? = null
 
-private val TABS = listOf("tracks" to "Tracks", "artwork" to "Artwork", "genres" to "Genres &amp; tags", "nfo" to "NFO (raw)", "history" to "History")
+private val TABS = listOf("tracks" to "Tracks", "files" to "Files", "artwork" to "Artwork", "genres" to "Genres &amp; tags", "nfo" to "NFO (raw)", "history" to "History")   // Phase 284 — Files
+private var alFiles: dev.jellystructure.model.MusicFilesDto? = null
+private val alFilesState = MusicFilesState()
 
 fun renderMusicAlbum(container: Element, scope: CoroutineScope, id: String, query: Map<String, String>) {
     alAudio?.pause(); alAudio = null
@@ -135,9 +137,14 @@ private fun alBar(p: MusicAlbumPageDto): String {
         if (matched) append("""<div class="menu-item" data-a="clear"><span class="mi-ic">✕</span><span>Clear match<span class="mi-sub">Forget the MusicBrainz ids and lock it; the fields it filled stay</span></span></div>""")
         append("""<div class="menu-item" data-a="find"><span class="mi-ic">⌕</span><span>${if (matched) "Change match…" else "Find match…"}<span class="mi-sub">Search MusicBrainz for this album</span></span></div>""")
         append("</div></span>")
-        append("""<span class="split"><span class="btn primary" data-a="savesync">Save &amp; Sync ↻</span><span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span><div class="menu">""")
-        append("""<div class="menu-item" data-a="savesync"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">Write album.nfo, then ask Jellyfin to re-read it</span></span></div>""")
+        // Phase 284 (FR-284-7) — with tag writing on, the first entry is *Save everything* and *Save → files* joins the menu.
+        val tagsOn = p.writeTags
+        val prim = if (tagsOn) "Save everything" else "Save &amp; Sync"
+        val n = p.tracks.size
+        append("""<span class="split"><span class="btn primary" data-a="savesync">$prim ↻</span><span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span><div class="menu">""")
+        append("""<div class="menu-item" data-a="savesync"><span class="mi-ic">↻</span><span>$prim<span class="mi-sub">Write album.nfo${if (tagsOn) " + tags in $n file${if (n == 1) "" else "s"}" else ""}, then ask Jellyfin to re-read</span></span></div>""")
         append("""<div class="menu-item" data-a="save"><span class="mi-ic">↓</span><span>Save → NFO<span class="mi-sub">Write album.nfo in the album folder</span></span></div>""")
+        append("""<div class="menu-item" data-a="savefiles"${if (!tagsOn) """ style="opacity:.45" title="Tag writing is off in Settings → Music providers"""" else ""}><span class="mi-ic">✎</span><span>Save → files<span class="mi-sub">${if (tagsOn) "Tags in $n file${if (n == 1) "" else "s"} · seeding files skipped" else "Tag writing is off in Settings → Music providers"}</span></span></div>""")
         append("""<div class="menu-item" data-a="sync"><span class="mi-ic">↻</span><span>Sync Jellyfin<span class="mi-sub">Ask Jellyfin to re-read (no rewrite)</span></span></div>""")
         append("</div></span>")
     }
@@ -242,6 +249,47 @@ private fun alFlagCard(f: MusicFlagDto, showSearch: Boolean, showWritten: Boolea
     append("</div></div></div>")
 }
 
+/** Phase 284 — paints the Files tab from [alFiles] and wires its actions. */
+private fun alPaintFiles(scope: CoroutineScope) {
+    val el = document.getElementById("al-panel") as? HTMLElement ?: return
+    val p = alPage ?: return
+    val d = alFiles ?: run { el.innerHTML = """<span class="muted tiny">Couldn’t read the files.</span>"""; return }
+    if (alFilesState.after == null) alFilesState.embed = d.embedCover
+    el.innerHTML = muFilesHtml(d, alFilesState.embed, alFilesState.removeJunk, alFilesState.after)
+    muFilesWire(el, scope, alFilesState, { alPaintFiles(scope) }, { embed, junk, take ->
+        val err = MusicApi.writeTags(p.album.id, dev.jellystructure.model.MusicWriteTagsRequest(embedCover = embed, removeJunk = junk, take = take))
+        if (err != null) { muToast(err); null } else {
+            muToast("Writing tags · watch it on Activity"); muPollWriteTags(scope, p.album.id)
+            "Tags queued on the media lane — the grid settles when the job finishes."
+        }
+    }, onConvert = { muOpenConvert(scope, MusicConvertRequest(albumId = p.album.id)) { alReload(scope) } })
+}
+
+/** After a write: re-read the files a few times until the job has landed, then repaint. */
+private fun muPollWriteTags(scope: CoroutineScope, albumId: String) {
+    scope.launch {
+        repeat(20) {
+            kotlinx.coroutines.delay(3000)
+            val d = MusicApi.files(albumId) ?: return@launch
+            if (d.writtenAt != (alFiles?.writtenAt) || d.differCount == 0) {
+                alFiles = d; alFilesState.after = "Tags written · Jellyfin re-read the album"
+                if (alTab == "files") alPaintFiles(scope) else alFillGlyphs()
+                return@launch
+            }
+        }
+    }
+}
+
+/** FR-284-9 — the Tracks tab's glyph column, filled from the last read. */
+private fun alFillGlyphs() {
+    val d = alFiles ?: return
+    val cells = document.querySelectorAll("[data-ftg]")
+    for (i in 0 until cells.length) {
+        val c = cells.item(i) as? HTMLElement ?: continue
+        c.innerHTML = muFileGlyph(d, c.getAttribute("data-ftg") ?: continue)
+    }
+}
+
 private fun alPanel(scope: CoroutineScope) {
     val tabs = document.querySelectorAll("#al-tabs [data-tab]")
     for (i in 0 until tabs.length) (tabs.item(i) as? HTMLElement)?.let { it.className = if (it.getAttribute("data-tab") == alTab) "on" else "" }
@@ -252,7 +300,13 @@ private fun alPanel(scope: CoroutineScope) {
         "genres" -> el.innerHTML = alGenres(p)
         "nfo" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { el.innerHTML = alNfo(p) } }
         "history" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { el.innerHTML = muHistory(p.album.id) } }
-        else -> el.innerHTML = alTracks(p)
+        // Phase 284 (FR-284-5) — the Files tab: read on open, never stored.
+        "files" -> { el.innerHTML = """<span class="muted tiny">Reading the files…</span>"""; scope.launch { alFiles = MusicApi.files(p.album.id); alPaintFiles(scope) } }
+        else -> {
+            el.innerHTML = alTracks(p)
+            // FR-284-9 — the glyphs land once the files have been read (once per page).
+            scope.launch { if (alFiles == null) alFiles = MusicApi.files(p.album.id); alFillGlyphs() }
+        }
     }
 }
 
@@ -288,13 +342,15 @@ private fun alTrackRow(p: MusicAlbumPageDto, t: MusicTrackRow, cols: Int): Strin
     append("<td>")
     if (t.browser) append("""<span class="mu-play${if (alPlaying == t.id) " on" else ""}" data-play="${t.id}" title="Play in this browser — your own Jellyfin session, direct play">${if (alPlaying == t.id) "❚❚" else "▶"}</span>""")
     else append("""<span class="tiny muted mu-tip" style="cursor:help">no direct play<span class="tp">A browser can’t direct-play this format, and this page never asks Jellyfin to convert — direct play or nothing, the segment editor’s rule.</span></span>""")
-    append("</td></tr>")
+    append("</td>")
+    append("""<td class="ft-gc" data-ftg="${t.id}"></td>""")   // Phase 284 (FR-284-9)
+    append("</tr>")
     if (alRecOpen == t.id) append("""<tr><td></td><td colspan="${cols - 1}"><div class="mu-cand on" style="cursor:default;margin:2px 0 6px;" id="al-rec"><span class="mu-busy" style="padding:0"><span class="sp"></span>Searching MusicBrainz for recordings of “${t.title.esc()}”…</span></div></td></tr>""")
 }
 
 private fun alTracks(p: MusicAlbumPageDto): String {
     val a = p.album
-    val cols = 8
+    val cols = 9   // Phase 284 — the Files glyph column
     val oneDisc = p.tracks.all { (it.disc ?: 1) == 1 }
     val total = a.release?.trackCount ?: 0
     val rows = StringBuilder()
@@ -427,6 +483,13 @@ internal suspend fun muHistory(id: String): String {
 // ── actions ──
 
 private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope) {
+    t.closest("[data-ftrow]")?.let { g ->
+        ev.preventDefault()
+        val row = g.getAttribute("data-ftrow") ?: return
+        alTab = "files"; alPanel(scope)
+        scope.launch { kotlinx.coroutines.delay(400); muFilesHighlight(row) }
+        return
+    }
     val p = alPage ?: return
     val id = p.album.id
     t.closest("#al-tabs [data-tab]")?.let { tab ->
@@ -491,7 +554,12 @@ private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         "clear" -> scope.launch { MusicApi.clear(id)?.let { muToast("Match cleared and locked · the fields it filled stay"); alReload(scope) } }
         "convert" -> muOpenConvert(scope, MusicConvertRequest(albumId = id)) { alReload(scope) }
         "reassert" -> scope.launch { alSaved(MusicApi.saveAlbum(id, sync = true), sync = true); alReload(scope) }
-        "savesync" -> scope.launch { alSaved(MusicApi.saveAlbum(id, sync = true), sync = true); alReload(scope) }
+        "savesync" -> scope.launch { alSaved(MusicApi.saveAlbum(id, sync = true, files = p.writeTags), sync = true); alReload(scope) }
+        "savefiles" -> scope.launch {
+            if (!p.writeTags) { muToast("Tag writing is off in Settings → Music providers"); return@launch }
+            val err = MusicApi.writeTags(id, dev.jellystructure.model.MusicWriteTagsRequest())
+            muToast(err ?: "Writing tags into the files · watch it on Activity"); if (err == null) muPollWriteTags(scope, id)
+        }
         "save" -> scope.launch { alSaved(MusicApi.saveAlbum(id, sync = false), sync = false); alReload(scope) }
         "sync" -> scope.launch { muToast(if (MusicApi.syncAlbum(id)) "Sync requested ↻ Jellyfin is re-reading" else "Jellyfin didn’t answer") }
         "repull-jf" -> scope.launch { muToast(if (MusicApi.syncAlbum(id)) "Jellyfin is re-reading the album · the next scan brings what changed" else "Jellyfin didn’t answer") }

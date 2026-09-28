@@ -41,6 +41,7 @@ class DashboardService(
     private val playbackService: dev.jellystructure.tv.PlaybackService,
     private val suggestions: dev.jellystructure.suggestions.SuggestionService?,
     private val subtitles: dev.jellystructure.server.SubtitleCheckWiring?,
+    private val lidarr: dev.jellystructure.arr.LidarrClient? = null,
     private val webhookSince: () -> Long?,
 ) {
     /** FR-285-2 — how one triage type reads as a row. `domain == null` ⇒ a film row and a series row from the kind split. */
@@ -73,6 +74,7 @@ class DashboardService(
         "music_no_cover" to Spec("music", WARNING, "open", "Albums without a cover", "Matched, but no cover on disk."),
         "music_no_picture" to Spec("music", WARNING, "open", "Artists without a picture", "Neither fanart.tv nor Wikimedia Commons had one."),
         "music_reencodes" to Spec("music", WARNING, "open", "Songs a phone plays only by re-encoding", "WMA. Convert… makes AAC copies and keeps the originals.", action = "Convert…"),
+        "music_files_no_ids" to Spec("music", WARNING, "open", "Songs whose files don’t say what they are", "Matched, but none of it is in the files — no MusicBrainz ids. Write tags puts them there."),
         "audiobooks_missing_part" to Spec("books", WARNING, "open", "A part is missing", "The folder’s files skip a number — the book will jump."),
         "audiobooks_two_in_one" to Spec("books", WARNING, "open", "Folder holds two books", "The parts carry two different book titles."),
         "audiobooks_no_cover" to Spec("books", WARNING, "open", "No cover", "No cover.jpg, no embedded art, no provider had one."),
@@ -162,6 +164,17 @@ class DashboardService(
                 if (sum.newCount > 0) "${sum.newCount} new since the last build" + (sum.topClusters.takeIf { it.isNotEmpty() }?.let { " — most room in " + it.joinToString(" and ") } ?: "") else "Nothing new since the last build.",
                 sum.waiting, "film", "info", action = "Suggestions", href = "/suggestions")
         }
+        // Phase 284 (dev review 4) — Lidarr as a second writer: only when its settings make it one.
+        cfg.lidarr?.takeIf { it.enabled && it.url.isNotBlank() }?.let { l ->
+            val tagging = lidarrCached("tagging") { lidarr?.tagging(l.url, l.apiKey)?.let { t -> "${t.writeAudioTags}|${t.scrubAudioTags}" } }
+            val parts = tagging?.split('|')
+            if (parts != null && parts[0] !in setOf("no", "newFiles")) rows += DashboardRow("lidarr_rewrites", "svc", WARNING, "Lidarr rewrites the tags jellystructure writes",
+                "Its *Tag Audio Files with Metadata* is set to ${if (parts[0] == "sync") "Sync" else "All files"}: every rescan rewrites what jellystructure wrote" + (if (parts.getOrNull(1) == "true") ", and *Scrub Existing Tags* drops the rest" else "") + ". Set it to *New files* (or *No*) so the two never fight.",
+                fix = "elsewhere", where = "Lidarr", path = "Settings › Metadata › Tag Audio Files with Metadata", now = parts[0], href = "/settings?tab=downloads")
+            val consumers = lidarrCached("consumers") { lidarr?.enabledConsumers(l.url, l.apiKey)?.joinToString("|") }
+            if (consumers?.split('|')?.any { it.contains("Kodi", true) || it.contains("Emby", true) } == true) rows += DashboardRow("lidarr_nfo", "svc", WARNING, "Lidarr writes album.nfo and artist.nfo too",
+                "Its Kodi / Emby metadata consumer is on: two writers on one file, the finding 277 made for Jellyfin’s NFO saver.", fix = "elsewhere", where = "Lidarr", path = "Settings › Metadata › Kodi (XBMC) / Emby", now = "On", href = "/settings?tab=downloads")
+        }
         runCatching { castService?.status(dev.jellystructure.tv.activePlaybackDevices()) }.getOrNull()?.let { cs ->
             if (cs.enabled && cs.appIdSet && !cs.verified) rows += DashboardRow("svc_cast", "svc", WARNING, "Chromecast isn’t confirmed by a real cast",
                 "The receiver is registered, but only a cast from a phone proves it reaches a TV.", fix = "info", href = "/settings?tab=connections")
@@ -177,10 +190,19 @@ class DashboardService(
         return DashboardDto(headline, domains, ordered, since = since(jellyfinUserId, all), jellyfinReachable = jellyfinReachable, firstRun = all.isEmpty())
     }
 
+    private val lidarrCache = HashMap<String, Pair<Long, String?>>()
+    private suspend fun lidarrCached(key: String, fetch: suspend () -> String?): String? {
+        val now = nowEpochSec()
+        lidarrCache[key]?.takeIf { now - it.first < 300 }?.let { return it.second }
+        val v = runCatching { fetch() }.getOrNull()
+        lidarrCache[key] = now to v
+        return v
+    }
+
     private fun domainOfKey(key: String) = when { key.startsWith("music_") -> "music"; key.startsWith("audiobooks_") -> "books"; else -> "films" }
 
     private fun unitForMusic(key: String) = when (key) {
-        "music_no_picture" -> "artist"; "music_reencodes" -> "song"
+        "music_no_picture" -> "artist"; "music_reencodes", "music_files_no_ids" -> "song"
         "audiobooks_missing_part", "audiobooks_two_in_one", "audiobooks_no_cover", "audiobooks_no_narrator" -> "book"
         else -> "album"
     }

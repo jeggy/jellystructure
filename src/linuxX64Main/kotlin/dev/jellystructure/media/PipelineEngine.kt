@@ -84,6 +84,8 @@ class MusicPipeline(
     var convert: dev.jellystructure.music.MusicConvert? = null
     /** Phase 281 — the book editor, suggestions, cover and Save (set in Main.kt once the seeding guard exists). */
     var audiobooksMedia: dev.jellystructure.audiobooks.AudiobooksMediaService? = null
+    /** Phase 284 — the one tag writer (set in Main.kt once the seeding guard exists). */
+    var tags: dev.jellystructure.music.MusicTagWriter? = null
 }
 
 /**
@@ -390,9 +392,12 @@ suspend fun runPipeline(
                 scanTracker.setActiveStep(step.step)
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 val libraryFilter = (target as? RunTarget.Library)?.libraryJellyfinId
-                val summary = runCatching { music.scanner.scan(libraryFilter) }
+                val scanned = runCatching { music.scanner.scan(libraryFilter) }
                     .onFailure { Logger.warn("scan_music failed: ${it.message}", "music") }
                     .getOrNull()?.sentence() ?: "failed — see the log"
+                // Phase 284 (FR-284-13) — macOS leftovers are removed by every scan.
+                val swept = runCatching { dev.jellystructure.music.MacLeftovers.sweep(dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).map { it.localPath }) }.getOrDefault(0)
+                val summary = if (swept > 0) "$scanned · removed $swept macOS leftover file${if (swept == 1) "" else "s"}" else scanned
                 Logger.info("scan_music: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
@@ -402,9 +407,12 @@ suspend fun runPipeline(
                 scanTracker.setActiveStep(step.step)
                 broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 val libraryFilter = (target as? RunTarget.Library)?.libraryJellyfinId
-                val summary = runCatching { books.scan(libraryFilter) }
+                val scanned = runCatching { books.scan(libraryFilter) }
                     .onFailure { Logger.warn("scan_audiobooks failed: ${it.message}", "audiobooks") }
                     .getOrNull()?.sentence() ?: "failed — see the log"
+                // Phase 284 (FR-284-13) — the audiobook folders too.
+                val swept = runCatching { dev.jellystructure.music.MacLeftovers.sweep(dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).map { it.localPath }) }.getOrDefault(0)
+                val summary = if (swept > 0) "$scanned · removed $swept macOS leftover file${if (swept == 1) "" else "s"}" else scanned
                 Logger.info("scan_audiobooks: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
@@ -423,6 +431,28 @@ suspend fun runPipeline(
                             .getOrDefault("failed — see the log")
                     }
                 Logger.info("match_musicbrainz: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.MusicSteps.TAGS -> {
+                // Phase 284 (FR-284-2 moment A, FR-284-11) — only while the switch is on, only albums matched since
+                // their files were last written; a scan never rewrites what it already wrote.
+                val music = deps.music ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val cfgNow = configStore.current
+                val writer = music.tags
+                val summary = when {
+                    dev.jellystructure.music.MusicScanner.musicLibraries(cfgNow).isEmpty() -> "no music library mapped"
+                    !cfgNow.music.writeTags -> "tag writing is off in Settings"
+                    writer == null || !writer.available() -> "this server has no tagger"
+                    else -> runCatching {
+                        val due = music.store.snapshot().albums.values.filter { it.missingSince == null && it.matchState == dev.jellystructure.model.MusicMatch.MATCHED && (it.matchedAt ?: 0) > (it.tagsWrittenAt ?: 0) }
+                        var written = 0; var seeding = 0; var wma = 0; var failed = 0
+                        for (a in due) { writer.writeAlbum(a.id)?.let { o -> written += o.written; seeding += o.seeding; wma += o.wma; failed += o.failed.size } }
+                        if (due.isEmpty()) "nothing new to write" else dev.jellystructure.music.MusicTagWriter.Outcome(written, seeding, List(failed) { "" }, wma).sentence()
+                    }.onFailure { Logger.warn("write_tags failed: ${it.message}", "music") }.getOrDefault("failed — see the log")
+                }
+                Logger.info("write_tags: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             dev.jellystructure.config.MusicSteps.ARTWORK, dev.jellystructure.config.MusicSteps.LYRICS, dev.jellystructure.config.MusicSteps.NFO -> {

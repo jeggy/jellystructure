@@ -621,6 +621,7 @@ class MediaJobQueue(
             "file_replace_from_source", "file_lossy_repair" -> runFileDamageRepair(row, params)
             "presize_artwork" -> runPresizeArtwork(row)
             "convert_audio" -> runConvertAudio(row, params)
+            "write_tags" -> runWriteTags(row)   // Phase 284
             else -> Failure("Unknown job type '${row.type}'")
         }
     }
@@ -938,6 +939,16 @@ class MediaJobQueue(
      * [enqueuePresizeBackfill] at boot until its marker exists.
      */
     /** Phase 278 (FR-278-7) — music's *Convert…*, one file at a time on the media lane. */
+    /** Phase 284 — one album's files through the tag writer (moments B and D); the album id is the job's owner. */
+    var tagWriter: (suspend (String, suspend (Int) -> Unit, () -> Boolean) -> String?)? = null
+
+    private suspend fun runWriteTags(row: Media_job): Outcome {
+        val write = tagWriter ?: return Failure("Music is not set up on this server")
+        val reason = write(row.media_id, { done -> queries.updateProgress(0.0, null, done.toLong(), null, row.id); broadcastSnapshot(row.id) }, { cancelRunning })
+        if (cancelRunning) return Cancelled()
+        return if (reason == null) Success else Failure(reason)
+    }
+
     private suspend fun runConvertAudio(row: Media_job, params: MediaJobParams): Outcome {
         val convert = audioConverter ?: return Failure("Music is not set up on this server")
         val paths = params.repairPaths.orEmpty().ifEmpty { return Failure("Nothing to convert") }

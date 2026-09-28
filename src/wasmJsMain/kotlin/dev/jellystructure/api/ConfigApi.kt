@@ -160,6 +160,7 @@ data class AppConfig(
     val qbittorrent: QBittorrentConfig? = null,
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
+    val lidarr: ArrConfig? = null,   // Phase 284 (dev review 4) — read-only, like the other two
     val seerr: SeerrConfig? = null,
     val bazarr: BazarrConfig? = null,
     // Phase 218 (FR-218-2) — Chromecast; null = off, and off means the phone shows no cast button at all.
@@ -510,6 +511,7 @@ object ConfigApi {
 
     suspend fun testRadarr(url: String, apiKey: String): ArrTestResult? = testArr("radarr", url, apiKey)
     suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
+    suspend fun testLidarr(url: String, apiKey: String): ArrTestResult? = testArr("lidarr", url, apiKey)   // Phase 284
     suspend fun testSeerr(url: String, apiKey: String): ArrTestResult? = testArr("seerr", url, apiKey)
     suspend fun testBazarr(url: String, apiKey: String): ArrTestResult? = testArr("bazarr", url, apiKey)
 

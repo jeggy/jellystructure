@@ -122,6 +122,15 @@ object AudiobooksApi {
     }.getOrDefault(false)
 
     /** Save — one sentence back (what was written, what was skipped). */
+    // Phase 284 (FR-284-6) — the Book page's Files tab and *Write tags to N parts*.
+    suspend fun files(bookId: String): dev.jellystructure.model.MusicFilesDto? = runCatching {
+        httpClient.get("/api/audiobooks/${id(bookId)}/files").body<dev.jellystructure.model.MusicFilesDto>()
+    }.getOrNull()
+
+    suspend fun writeTags(bookId: String): String? = runCatching {
+        httpClient.post("/api/audiobooks/${id(bookId)}/write-tags").body<Map<String, String>>()["sentence"]
+    }.getOrNull()
+
     suspend fun save(bookId: String, sync: Boolean): String? = runCatching {
         httpClient.post("/api/audiobooks/${id(bookId)}/save?sync=$sync").body<MusicBulkResult>().sentence
     }.getOrNull()

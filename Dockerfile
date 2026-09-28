@@ -108,6 +108,8 @@ COPY --from=builder --chown=jellystructure /app/ravilo-web/build/dist/wasmJs/pro
 # :ravilo-cast:syncCastReceiver above writes), so a CI checkout's context holds only index.html and the
 # published image would serve a receiver page with no bundle behind it.
 COPY --from=builder --chown=jellystructure /app/cast-receiver/ /app/cast/
+# Phase 284 (FR-284-3) — the one tag reader/writer (python3 + mutagen, installed above): copy → save → verify → rename.
+COPY --chown=jellystructure scripts/tagwrite.py /app/scripts/tagwrite.py
 
 USER jellystructure
 EXPOSE 9505

@@ -58,6 +58,9 @@ class MusicConvert(
      * The job's body: convert [paths] one at a time. Returns null when every file was converted or skipped for a
      * reason the admin can act on, else one sentence naming what failed.
      */
+    /** Phase 284 (moment C) — the full tag set goes into every file this makes. */
+    var tagWriter: MusicTagWriter? = null
+
     suspend fun run(ownerId: String, paths: List<String>, onFile: suspend (Int) -> Unit, cancelled: () -> Boolean): String? {
         val cfg = configStore.current
         var converted = 0; var seeding = 0
@@ -66,7 +69,10 @@ class MusicConvert(
         for ((i, path) in paths.withIndex()) {
             if (cancelled()) break
             when (val r = convertOne(path, cfg)) {
-                null -> { converted++; store.snapshot().tracks.values.firstOrNull { it.path == path }?.albumId?.let { albums += it } }
+                null -> {
+                    converted++; store.snapshot().tracks.values.firstOrNull { it.path == path }?.albumId?.let { albums += it }
+                    runCatching { tagWriter?.writeConverted(path.substringBeforeLast('.') + ".m4a", path) }
+                }
                 SEEDING -> seeding++
                 else -> failed += "${path.substringAfterLast('/')}: $r"
             }

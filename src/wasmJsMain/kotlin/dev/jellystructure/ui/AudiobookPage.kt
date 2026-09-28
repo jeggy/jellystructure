@@ -35,7 +35,9 @@ private var bkArt: MusicArtworkDto? = null
 private var bkDragFrom: Int? = null
 private var bkSaveSays: String? = null
 
-private val BK_TABS = listOf("details" to "Details", "parts" to "Parts", "chapters" to "Chapters", "artwork" to "Artwork", "listeners" to "Listeners", "history" to "History")
+private val BK_TABS = listOf("details" to "Details", "parts" to "Parts", "files" to "Files", "chapters" to "Chapters", "artwork" to "Artwork", "listeners" to "Listeners", "history" to "History")   // Phase 284 (FR-284-6) — Files
+private var bkFiles: dev.jellystructure.model.MusicFilesDto? = null
+private val bkFilesState = MusicFilesState()
 
 /** The Details fields, in the editor's order: key, label, placeholder, kind (`text` · `chips` · `lang` · `area`), wide. */
 private data class BkField(val key: String, val label: String, val ph: String, val kind: String = "text", val wide: Boolean = false)
@@ -201,6 +203,8 @@ private fun bkPanel(scope: CoroutineScope) {
     when (bkTab) {
         "parts" -> el.innerHTML = bkParts(p)
         "chapters" -> el.innerHTML = bkChapters(p)
+        // Phase 284 (FR-284-6) — the same component as an album's Files tab, with 281's field set.
+        "files" -> { el.innerHTML = """<span class="muted tiny">Reading the files…</span>"""; scope.launch { bkFiles = AudiobooksApi.files(bkId); bkPaintFiles(scope) } }
         "artwork" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { bkArt = AudiobooksApi.artwork(bkId); el.innerHTML = bkArtwork(p) } }
         "listeners" -> el.innerHTML = bkListeners(p)
         "history" -> { el.innerHTML = """<span class="muted tiny">Loading…</span>"""; scope.launch { el.innerHTML = muHistory(bkId) } }
@@ -444,6 +448,18 @@ private fun bkSplitPreview(p: AudiobookPageDto, scope: CoroutineScope) {
         }
     }
     refresh()
+}
+
+/** Phase 284 (FR-284-6) — paints the Files tab from [bkFiles]; *Write tags* is 281's Save with the switch on. */
+private fun bkPaintFiles(scope: CoroutineScope) {
+    val el = document.getElementById("bk-panel") as? HTMLElement ?: return
+    val d = bkFiles ?: run { el.innerHTML = """<span class="muted tiny">Couldn’t read the files.</span>"""; return }
+    el.innerHTML = muFilesHtml(d, false, bkFilesState.removeJunk, bkFilesState.after)
+    muFilesWire(el, scope, bkFilesState, { bkPaintFiles(scope) }, { _, _, _ ->
+        val sentence = AudiobooksApi.writeTags(bkId)
+        bkFiles = AudiobooksApi.files(bkId)
+        sentence ?: "That wasn't written"
+    })
 }
 
 private fun bkClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope) {

@@ -348,13 +348,26 @@ fun main() = runBlocking {
     subtitleChecks.init()
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks)
     // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
+    // Phase 284 — the one tag writer: albums, converted songs and books all go through it (and Lidarr, read-only, beside it).
+    val lidarrClient = dev.jellystructure.arr.LidarrClient()
+    val tagWriter = dev.jellystructure.music.MusicTagWriter(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory, lidarrClient)
+    musicPipeline.tags = tagWriter
+    mediaJobQueue.tagWriter = { albumId, onFile, cancelled ->
+        val o = tagWriter.writeAlbum(albumId, onFile = onFile, cancelled = cancelled)
+        when {
+            o == null -> "That album isn't in the library any more"
+            o.failed.isNotEmpty() && o.written == 0 -> o.failed.joinToString(" · ")
+            else -> null
+        }
+    }
     musicPipeline.convert = dev.jellystructure.music.MusicConvert(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory).also { c ->
+        c.tagWriter = tagWriter
         mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
     }
     // Phase 281 — the book editor: suggestions from four providers, the cover, Save (tags only with the switch on).
     musicPipeline.audiobooksMedia = musicPipeline.audiobooks?.let { b ->
         dev.jellystructure.audiobooks.AudiobooksMediaService(b.store, dev.jellystructure.audiobooks.AudiobookProviders(configStore, musicPipeline.matcher.mb),
-            artworkDownloader, configStore, jellyfinClient, seedingGuard, mediaHistory) { lib -> b.scan(lib) }
+            artworkDownloader, configStore, jellyfinClient, seedingGuard, mediaHistory) { lib -> b.scan(lib) }.also { it.tags = tagWriter }
     }
     mediaJobQueue.start()
     // Phase 273 (§B/§C/§E) — the Bazarr side: steering, the post-processing hook and its history poll, the advisor.
@@ -497,6 +510,7 @@ fun main() = runBlocking {
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, suggestionService = suggestionService, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         playbackQoeStore = playbackQoeStore,
         castService = castService, castDir = castDir,
+        lidarrClient = lidarrClient,
         screenPairingService = screenPairingService,
         devicePolicyReconciler = devicePolicyReconciler,
         playPushResolver = playPushResolver,

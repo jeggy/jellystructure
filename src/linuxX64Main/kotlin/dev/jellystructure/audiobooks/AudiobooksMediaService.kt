@@ -7,6 +7,7 @@ import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.model.Audiobook
 import dev.jellystructure.model.AudiobookOrigin
+import dev.jellystructure.model.AudiobookPart
 import dev.jellystructure.model.AudiobookSuggestion
 import dev.jellystructure.model.MusicArt
 import dev.jellystructure.model.MusicArtCandidate
@@ -112,11 +113,13 @@ else:
         private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
     }
 
+    /** Phase 284 (FR-284-6) — the shared writer; when set, [save] writes through it (copy → verify → swap), never in place. */
+    var tags: dev.jellystructure.music.MusicTagWriter? = null
     private var taggerChecked: Boolean? = null
 
     /** Whether this server can write tags at all (python3 with mutagen in the image). */
     @OptIn(ExperimentalForeignApi::class)
-    fun taggerAvailable(): Boolean = taggerChecked ?: (platform.posix.system("python3 -c 'import mutagen' >/dev/null 2>&1") == 0).also { taggerChecked = it }
+    fun taggerAvailable(): Boolean = tags?.available() ?: (taggerChecked ?: (platform.posix.system("python3 -c 'import mutagen' >/dev/null 2>&1") == 0).also { taggerChecked = it })
 
     private fun note(id: String, action: String, detail: String) { runCatching { history?.record(id, action, detail) } }
 
@@ -247,6 +250,66 @@ else:
         return store.book(folder.id)
     }
 
+    /** Phase 284 (FR-284-6) — 281's field set for one part: the narrator in the composer field, the description as the comment. */
+    fun bookTags(b: Audiobook, p: AudiobookPart, index: Int): Map<String, String?> = mapOf(
+        "title" to p.title.ifBlank { b.title }, "album" to b.title, "artist" to b.authors.joinToString("; "), "albumartist" to b.authors.joinToString("; "),
+        "composer" to b.narrators.joinToString("; ").ifBlank { null }, "comment" to b.description?.takeIf { it.isNotBlank() }, "publisher" to b.publisher?.takeIf { it.isNotBlank() },
+        "genre" to b.genres.firstOrNull(), "tracknumber" to (index + 1).toString(),
+    )
+
+    /** Phase 284 (FR-284-5/6) — the Book page's Files tab: what the parts say against what this page states. */
+    suspend fun files(bookId: String): dev.jellystructure.model.MusicFilesDto? {
+        val b = store.book(bookId) ?: return null
+        val parts = store.parts(bookId).filter { it.missingSince == null && it.path != null }.sortedBy { it.position }
+        val shared = tags
+        val cfg = configStore.current
+        val read = shared?.read(parts.map { it.path!! }).orEmpty()
+        val rows = ArrayList<dev.jellystructure.model.MusicFileRow>()
+        var differ = 0; var seedingN = 0
+        val junkAll = LinkedHashMap<String, Int>()
+        for ((i, p) in parts.withIndex()) {
+            val path = p.path!!
+            val f = read[path]
+            val guard = seeding?.check(path, cfg)
+            val seed = guard is dev.jellystructure.torrent.SeedingCheckResult.Blocked || guard is dev.jellystructure.torrent.SeedingCheckResult.Unreachable
+            val want = bookTags(b, p, i)
+            val ft = f?.tags.orEmpty()
+            val cells = LinkedHashMap<String, dev.jellystructure.model.MusicFileCell>()
+            var rowDiffers = false
+            fun cell(key: String, fv0: String?, pv0: String?) {
+                val fv = fv0?.takeIf { it.isNotBlank() }; val pv = pv0?.takeIf { it.isNotBlank() }
+                cells[key] = when {
+                    fv == null && pv == null -> dev.jellystructure.model.MusicFileCell(null, null, "empty")
+                    pv == null -> dev.jellystructure.model.MusicFileCell(fv, null, "fileonly")
+                    fv == pv -> dev.jellystructure.model.MusicFileCell(fv, null, "same")
+                    seed -> dev.jellystructure.model.MusicFileCell(fv, pv, "seed")
+                    else -> dev.jellystructure.model.MusicFileCell(fv, pv, "write").also { rowDiffers = true }
+                }
+            }
+            cell("title", ft["title"], want["title"]); cell("album", ft["album"], want["album"]); cell("artist", ft["artist"], want["artist"])
+            cell("composer", ft["composer"], want["composer"]); cell("track", ft["tracknumber"], want["tracknumber"])
+            cell("comment", ft["comment"], want["comment"]); cell("publisher", ft["publisher"], want["publisher"]); cell("genre", ft["genre"], want["genre"])
+            cells["cover"] = when { f?.cover == true -> dev.jellystructure.model.MusicFileCell("embedded", null, "side"); b.coverState == dev.jellystructure.model.MusicArt.FILE -> dev.jellystructure.model.MusicFileCell("cover.jpg beside", null, "side"); else -> dev.jellystructure.model.MusicFileCell(null, null, "empty") }
+            val junk = f?.junk.orEmpty()
+            junk.forEach { j -> val k = j.substringBefore(" ×"); val n = j.substringAfter(" ×", "1").toIntOrNull() ?: 1; junkAll[k] = (junkAll[k] ?: 0) + n }
+            cells["junk"] = if (junk.isEmpty()) dev.jellystructure.model.MusicFileCell(null, null, "empty") else dev.jellystructure.model.MusicFileCell(junk.joinToString(" · "), null, "junk")
+            if (seed) seedingN++; if (rowDiffers) differ++
+            val fmt = when (f?.format) { null -> "?"; "id3" -> "MP3 · ID3v" + (f.id3Version ?: "2"); "mp4" -> "M4B"; else -> f.format.uppercase() }
+            rows += dev.jellystructure.model.MusicFileRow(id = p.id, file = path.substringAfterLast('/'), format = fmt, seeding = seed, differs = rowDiffers, cells = cells, error = f?.error)
+        }
+        val tagger = taggerAvailable()
+        val reason = when {
+            !cfg.audiobooks.writeTags -> "Tag writing is off in Settings → Metadata providers"
+            !tagger -> "This server has no tagger — the image is missing python3-mutagen"
+            rows.isNotEmpty() && seedingN == rows.size -> "Every file is seeding"
+            differ == 0 -> "Nothing differs"
+            else -> null
+        }
+        return dev.jellystructure.model.MusicFilesDto(kind = "book", rows = rows, columns = dev.jellystructure.music.MusicTagWriter.BOOK_COLUMNS, writtenAt = b.tagsWrittenAt,
+            differCount = differ, seedingCount = seedingN, taggerAvailable = tagger, writeEnabled = cfg.audiobooks.writeTags, hasCover = b.coverState == dev.jellystructure.model.MusicArt.FILE,
+            junk = junkAll.entries.map { (k, n) -> if (n > 1) "$k ×$n" else k }, reason = reason)
+    }
+
     /** ⋯ → *Re-read the files*: tags, part order and lengths from Jellyfin (the book's library only). */
     suspend fun reread(bookId: String): Audiobook? {
         val b = store.book(bookId) ?: return null
@@ -341,7 +404,13 @@ else:
         // Our order, so each part's track number is the one the phone plays it at.
         val parts = store.parts(bookId).filter { it.missingSince == null }.sortedBy { it.position }
         var written = 0; var seeded = 0; var failed = 0
-        if (cfg.audiobooks.writeTags && taggerAvailable()) {
+        val shared = tags
+        if (cfg.audiobooks.writeTags && shared != null && shared.available()) {
+            // Phase 284 (FR-284-6) — the same writer as an album's songs: copy → save → verify → rename, seeding files skipped.
+            val files = parts.mapIndexedNotNull { i, p -> p.path?.let { it to bookTags(b, p, i) } }
+            val o = shared.writeFiles(files)
+            written = o.written; seeded = o.seeding; failed = o.failed.size
+        } else if (cfg.audiobooks.writeTags && taggerAvailable()) {
             for ((i, p) in parts.withIndex()) {
                 val path = p.path ?: continue
                 val guard = seeding?.check(path, cfg)

@@ -162,6 +162,7 @@ fun startServer(
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
     suggestionService: dev.jellystructure.suggestions.SuggestionService? = null,
     bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
+    lidarrClient: dev.jellystructure.arr.LidarrClient? = null,   // Phase 284
     tvEventBus: TvEventBus,
     imageProxyService: RaviloArtworkService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
@@ -614,7 +615,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, tvEventBus = tvEventBus, realtimeIngest = realtimeIngest)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, lidarrClient = lidarrClient, tvEventBus = tvEventBus, realtimeIngest = realtimeIngest)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
@@ -623,7 +624,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
-                    suggestionService, subtitleCheckWiring) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                    suggestionService, subtitleCheckWiring, lidarrClient) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)

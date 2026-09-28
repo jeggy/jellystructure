@@ -157,6 +157,9 @@ data class MusicAlbum(
     val releaseMbid: String? = null,
     val matchState: String = MusicMatch.UNMATCHED,
     val matchLocked: Boolean = false,
+    /** Phase 284 — when jellystructure last wrote tags into this album's files (epoch seconds), and Q3's per-album *Also embed the cover*. */
+    val tagsWrittenAt: Long? = null,
+    val embedCover: Boolean = false,
     /** `tags` (ids already in the files) · `search` · `acoustid` · `manual` (chosen in Find match…). */
     val matchSource: String? = null,
     val matchedAt: Long? = null,

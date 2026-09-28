@@ -38,6 +38,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.http.isSuccess
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
@@ -146,8 +147,22 @@ object MusicApi {
     suspend fun artistNfo(artistId: String): MusicNfoDto? = runCatching { httpClient.get("/api/music/artist/${artistId.encodeURLParameter()}/nfo").body<MusicNfoDto>() }.getOrNull()
 
     /** Save → NFO (and Sync when [sync]); the answer is `written` · `unchanged` · `no_folder` · `failed`. */
-    suspend fun saveAlbum(albumId: String, sync: Boolean): String? = runCatching {
-        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/save${if (sync) "?sync=1" else ""}").body<OutcomeResult>().outcome
+    suspend fun saveAlbum(albumId: String, sync: Boolean, files: Boolean = false): String? = runCatching {
+        httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/save?sync=${if (sync) 1 else 0}${if (files) "&files=1" else ""}").body<OutcomeResult>().outcome
+    }.getOrNull()
+
+    // Phase 284 — the Files tab, *Write tags*, and the bulk confirm line's counts.
+    suspend fun files(albumId: String): dev.jellystructure.model.MusicFilesDto? = runCatching {
+        httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/files").body<dev.jellystructure.model.MusicFilesDto>()
+    }.getOrNull()
+
+    suspend fun writeTags(albumId: String, req: dev.jellystructure.model.MusicWriteTagsRequest): String? = runCatching {
+        val r = httpClient.post("/api/music/album/${albumId.encodeURLParameter()}/write-tags") { contentType(ContentType.Application.Json); setBody(req) }
+        if (r.status.isSuccess()) null else runCatching { r.body<Map<String, String>>()["error"] }.getOrNull() ?: "The server said no"
+    }.getOrElse { "The server didn’t answer" }
+
+    suspend fun tagsPreview(albumIds: List<String>): dev.jellystructure.model.MusicTagsPreview? = runCatching {
+        httpClient.post("/api/music/bulk/tags-preview") { contentType(ContentType.Application.Json); setBody(MusicBulkRequest("tags", albumIds)) }.body<dev.jellystructure.model.MusicTagsPreview>()
     }.getOrNull()
 
     suspend fun saveArtist(artistId: String, sync: Boolean): String? = runCatching {

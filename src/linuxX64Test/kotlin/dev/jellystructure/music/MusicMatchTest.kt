@@ -105,11 +105,11 @@ class MusicMatchTest {
     @Test
     fun the_match_step_joins_before_the_trailing_notify() {
         val p = listOf(PipelineStep("scan_files"), PipelineStep("pull_tmdb"), PipelineStep("notify"))
-        assertEquals(listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "notify"),
+        assertEquals(listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
             MusicSteps.seed(p, emptyList()).map { it.step })
         // 275 already seeded scan_music (and the operator later removed it): only the new steps join, in order —
         // 280's scan_audiobooks after scan_files, since there is no music scan left to follow.
-        assertEquals(listOf("scan_files", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "notify"),
+        assertEquals(listOf("scan_files", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
             MusicSteps.seed(p, listOf(MusicSteps.SCAN)).map { it.step })
     }
 

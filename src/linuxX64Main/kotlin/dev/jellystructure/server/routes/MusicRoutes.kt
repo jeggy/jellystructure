@@ -34,6 +34,8 @@ import dev.jellystructure.model.MusicAlbumPageDto
 import dev.jellystructure.model.MusicArtistPageDto
 import dev.jellystructure.model.MusicBrowseDto
 import dev.jellystructure.model.MusicBulkRequest
+import dev.jellystructure.model.MusicTagsPreview
+import dev.jellystructure.model.MusicWriteTagsRequest
 import dev.jellystructure.model.MusicBulkResult
 import dev.jellystructure.model.MusicConvertPlan
 import dev.jellystructure.model.MusicConvertRequest
@@ -127,6 +129,8 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 val id = call.parameters["id"]!!
                 val req = call.receive<MusicUseRequest>()
                 matcher.applyMatch(id, req.releaseGroup, req.release, req.source, req.lock)
+                // Phase 284 (FR-284-2 moment A) — a pick in *Find match…* writes identity + ids at once, on the media lane.
+                if (configStore.current.music.writeTags && music.tags?.available() == true) jobs?.enqueue("write_tags", id, "Tags into the files · ${music.store.album(id)?.title ?: id}", dev.jellystructure.jobs.MediaJobParams(), fileCount = music.store.snapshot().tracksByAlbum[id]?.size ?: 1)
                     ?: return@post call.respond(HttpStatusCode.BadGateway, noAnswer)
                 call.respond(music.store.album(id) ?: return@post call.respond(HttpStatusCode.NotFound))
             }
@@ -260,8 +264,46 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         // The split button: Save → NFO · Sync Jellyfin · Save & Sync. Save overwrites — the admin asked.
         post("/album/{id}/save") {
             val sync = call.request.queryParameters["sync"] == "1"
-            val outcome = media.saveAlbum(call.parameters["id"]!!, sync) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val id = call.parameters["id"]!!
+            val outcome = media.saveAlbum(id, sync) ?: return@post call.respond(HttpStatusCode.NotFound)
+            // Phase 284 (FR-284-7) — *Save everything* (`files=1`): the NFO, then the tags, on the media lane.
+            if (call.request.queryParameters["files"] == "1" && configStore.current.music.writeTags) {
+                jobs?.enqueue("write_tags", id, "Tags into the files · ${music.store.album(id)?.title ?: id}", dev.jellystructure.jobs.MediaJobParams(), fileCount = music.store.snapshot().tracksByAlbum[id]?.size ?: 1)
+            }
             call.respond(mapOf("outcome" to outcome.name.lowercase()))
+        }
+        // Phase 284 (FR-284-5) — the Files tab: what the files say against what this page states.
+        get("/album/{id}/files") {
+            val w = music.tags ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+            call.respond(w.filesFor(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+        }
+        // FR-284-2 moment B — *Write tags to N files*: one job on the media lane; the choices ride the body.
+        post("/album/{id}/write-tags") {
+            val w = music.tags ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            val q = jobs ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            val id = call.parameters["id"]!!
+            val a = music.store.album(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (!configStore.current.music.writeTags) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "Tag writing is off in Settings → Music providers"))
+            if (!w.available()) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "This server has no tagger"))
+            val req = runCatching { call.receive<MusicWriteTagsRequest>() }.getOrDefault(MusicWriteTagsRequest())
+            if (req.embedCover != null && req.embedCover != a.embedCover) music.store.putAlbum(a.copy(embedCover = req.embedCover))
+            if (req.take == "file" && a.matchLocked) w.writeAlbum(id, take = "file")   // takes the files' facts first; the job then writes what is now ours
+            val snap = q.enqueue("write_tags", id, "Tags into the files · ${a.title}" + (if (req.removeJunk) " · junk frames removed" else ""), dev.jellystructure.jobs.MediaJobParams(), fileCount = music.store.snapshot().tracksByAlbum[id]?.size ?: 1)
+            call.respond(mapOf("job" to snap.id))
+        }
+        // FR-284-10 — the bulk confirm line's counts before anything runs.
+        post("/bulk/tags-preview") {
+            val req = call.receive<MusicBulkRequest>()
+            val w = music.tags
+            val snap = music.store.snapshot()
+            val cfg = configStore.current
+            var songs = 0; var unmatched = 0; var wma = 0
+            for (id in req.albumIds.distinct()) {
+                val a = snap.albums[id] ?: continue
+                if (a.matchState != dev.jellystructure.model.MusicMatch.MATCHED) { unmatched++; continue }
+                for (t in snap.tracksByAlbum[id].orEmpty().filter { it.missingSince == null && it.path != null }) { songs++; if (t.path!!.endsWith(".wma", true)) wma++ }
+            }
+            call.respond(MusicTagsPreview(selected = req.albumIds.distinct().size, songs = songs, unmatched = unmatched, seeding = 0, wma = wma, taggerAvailable = w?.available() == true, writeEnabled = cfg.music.writeTags))
         }
         post("/album/{id}/sync") { media.syncAlbum(call.parameters["id"]!!); call.respond(mapOf("ok" to true)) }
         post("/artist/{id}/save") {
@@ -314,6 +356,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 jellyfinUrl = jellyfinWebUrl(cfg, a.id), library = lib?.name, jellyfinLocked = a.jellyfinLocked,
                 type = MusicBrowse.albumType(a),
                 flags = shown, dismissedFlags = all.map { it.kind }.filter { k -> shown.none { it.kind == k } },
+                writeTags = cfg.music.writeTags && music.tags?.available() == true,   // Phase 284 (FR-284-7)
             ))
         }
 
@@ -387,6 +430,19 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                     val done = ids.count { media.saveAlbum(it, sync = true) == dev.jellystructure.music.MusicNfo.Outcome.WRITTEN }
                     "album.nfo written for ${albums(done)}" + if (done < n) " · ${n - done} not matched yet, so not written" else ""
                 }
+                // Phase 284 (FR-284-2 moment D) — one job per matched album on the media lane; the skips are said up front.
+                "tags" -> {
+                    val q = jobs ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+                    if (!configStore.current.music.writeTags) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "Tag writing is off in Settings → Music providers"))
+                    val snap = music.store.snapshot()
+                    var queued = 0; var skipped = 0
+                    for (id in ids) {
+                        val a = snap.albums[id] ?: continue
+                        if (a.matchState != dev.jellystructure.model.MusicMatch.MATCHED) { skipped++; continue }
+                        q.enqueue("write_tags", id, "Tags into the files · ${a.title}", dev.jellystructure.jobs.MediaJobParams(), fileCount = snap.tracksByAlbum[id]?.size ?: 1); queued++
+                    }
+                    "Writing tags for ${albums(queued)}" + if (skipped > 0) " · $skipped unmatched, skipped" else ""
+                }
                 "lock" -> { ids.forEach { matcher.setLocked(it, true) }; "${albums(n)} locked — runs leave them alone" }
                 "unlock" -> { ids.forEach { matcher.setLocked(it, false) }; "${albums(n)} unlocked" }
                 "clear" -> { ids.forEach { matcher.clear(it) }; "Match cleared on ${albums(n)} — locked so no run re-matches them" }
@@ -430,6 +486,8 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 musicbrainzLast = matcher.mb.lastOutcome,
                 acoustIdKeySet = cfg.apiKeys.acoustidClientKey.isNotBlank(), fanartKeySet = cfg.apiKeys.fanartTvKey.isNotBlank(),
                 lyricsEnabled = cfg.music.fetchLyrics,
+                writeTags = cfg.music.writeTags, keepId3Version = cfg.music.keepId3Version,   // Phase 284 (FR-284-8)
+                keepUnmanagedFrames = cfg.music.keepUnmanagedFrames, taggerAvailable = music.tags?.available() == true,
                 acoustIdCheck = dev.jellystructure.music.ProviderKeyChecks.acoustId.last(cfg.apiKeys.acoustidClientKey),
                 fanartCheck = dev.jellystructure.music.ProviderKeyChecks.fanart.last(cfg.apiKeys.fanartTvKey),
             ))
@@ -446,7 +504,8 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                     acoustidClientKey = req.acoustIdKey?.trim() ?: cur.apiKeys.acoustidClientKey,
                     fanartTvKey = req.fanartKey?.trim() ?: cur.apiKeys.fanartTvKey,
                 ),
-                music = cur.music.copy(fetchLyrics = req.lyricsEnabled ?: cur.music.fetchLyrics),
+                music = cur.music.copy(fetchLyrics = req.lyricsEnabled ?: cur.music.fetchLyrics, writeTags = req.writeTags ?: cur.music.writeTags,
+                    keepId3Version = req.keepId3Version ?: cur.music.keepId3Version, keepUnmanagedFrames = req.keepUnmanagedFrames ?: cur.music.keepUnmanagedFrames),
             ))
             call.respond(mapOf("saved" to true))
         }

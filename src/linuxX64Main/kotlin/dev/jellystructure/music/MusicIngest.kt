@@ -184,9 +184,12 @@ object MusicIngest {
 
     private fun carry(fresh: MusicAlbum, prev: MusicAlbum?, now: Long): MusicAlbum {
         if (prev == null) return fresh.copy(createdAt = now, updatedAt = now)
+        // Phase 284 (FR-284-4) — a foreign edit found by a scan is new information: the file wins — unless the album is
+        // locked, the one thing that holds our version (the Files tab then says the file disagrees).
+        val held = prev.matchLocked
         val merged = prev.copy(
-            libraryId = fresh.libraryId, title = fresh.title, sortName = fresh.sortName, year = fresh.year,
-            path = fresh.path, albumArtists = fresh.albumArtists, genres = fresh.genres, trackCount = fresh.trackCount,
+            libraryId = fresh.libraryId, title = if (held) prev.title else fresh.title, sortName = if (held) prev.sortName else fresh.sortName, year = if (held) prev.year else fresh.year,
+            path = fresh.path, albumArtists = if (held) prev.albumArtists else fresh.albumArtists, genres = if (held) prev.genres else fresh.genres, trackCount = fresh.trackCount,
             durationMs = fresh.durationMs, albumGainDb = fresh.albumGainDb, coverState = fresh.coverState,
             // A cover that disappeared from the folder no longer has the source it had.
             coverSource = if (fresh.coverState == MusicArt.NONE) null else prev.coverSource,

@@ -86,6 +86,11 @@ data class MusicProvidersDto(
     @SerialName("fanart_key_set") val fanartKeySet: Boolean,
     /** Phase 277 (FR-277-8) — the *Fetch lyrics* switch. */
     @SerialName("lyrics_enabled") val lyricsEnabled: Boolean = true,
+    // Phase 284 (FR-284-8)
+    @SerialName("write_tags") val writeTags: Boolean = true,
+    @SerialName("keep_id3_version") val keepId3Version: Boolean = true,
+    @SerialName("keep_unmanaged_frames") val keepUnmanagedFrames: Boolean = true,
+    @SerialName("tagger_available") val taggerAvailable: Boolean = true,
     /** 2026-09-28 amendment — the saved key's last real check; null = no key, or this key not checked yet. */
     @SerialName("acoustid_check") val acoustIdCheck: ProviderKeyCheck? = null,
     @SerialName("fanart_check") val fanartCheck: ProviderKeyCheck? = null,
@@ -155,6 +160,10 @@ data class MusicProvidersUpdate(
     @SerialName("acoustid_key") val acoustIdKey: String? = null,
     @SerialName("fanart_key") val fanartKey: String? = null,
     @SerialName("lyrics_enabled") val lyricsEnabled: Boolean? = null,
+    // Phase 284 (FR-284-8) — the switch and its two sub-choices.
+    @SerialName("write_tags") val writeTags: Boolean? = null,
+    @SerialName("keep_id3_version") val keepId3Version: Boolean? = null,
+    @SerialName("keep_unmanaged_frames") val keepUnmanagedFrames: Boolean? = null,
 )
 
 // ── Phase 278 — the admin's music pages ──────────────────────────────────────────────────────────────────
@@ -294,6 +303,8 @@ data class MusicAlbumPageDto(
     /** Phase 283 — what the folder and the songs disagree on; and the kinds the admin said *This is right* to. */
     val flags: List<MusicFlagDto> = emptyList(),
     @SerialName("dismissed_flags") val dismissedFlags: List<String> = emptyList(),
+    /** Phase 284 (FR-284-7) — whether *Write tags into music files* is on (the split Save reads it). */
+    @SerialName("write_tags") val writeTags: Boolean = false,
 )
 
 /** Phase 283 (FR-283-3) — one flag on an album: the two sides quoted, the other folders, and what Find match… can
@@ -345,6 +356,61 @@ data class MusicGenreRow(val name: String, val albums: Int, val songs: Int)
 /** The Library's selection bar (FR-278-3): `match` · `covers` · `nfo` · `lock` · `unlock` · `clear`. */
 @Serializable
 data class MusicBulkRequest(val action: String, @SerialName("album_ids") val albumIds: List<String>)
+
+// ── Phase 284 — the Files tab: what the files say, and what this page would write ──
+
+/** One cell: [file] is what the file says, [page] what this page states when it differs, [mark] what will happen —
+ *  `same` · `write` · `fileonly` (kept) · `empty` · `noreach` (written, Jellyfin won't read it from WMA) · `seed` (left as
+ *  it is) · `hold` (locked; ours differs) · `junk` (kept) · `side` (a sidecar). */
+@Serializable
+data class MusicFileCell(val file: String? = null, val page: String? = null, val mark: String = "same")
+
+@Serializable
+data class MusicFileRow(
+    val id: String, val file: String, val format: String, val seeding: Boolean = false, val wma: Boolean = false, val differs: Boolean = false,
+    val cells: Map<String, MusicFileCell> = emptyMap(), val error: String? = null,
+)
+
+@Serializable
+data class MusicFileColumn(val key: String, val label: String)
+
+@Serializable
+data class MusicFileColumnGroup(val label: String, val columns: List<MusicFileColumn>)
+
+@Serializable
+data class MusicFilesDto(
+    /** `album` · `book` — one component, two field sets (FR-284-6). */
+    val kind: String = "album",
+    val rows: List<MusicFileRow> = emptyList(),
+    val columns: List<MusicFileColumnGroup> = emptyList(),
+    @SerialName("written_at") val writtenAt: Long? = null,
+    @SerialName("differ_count") val differCount: Int = 0,
+    @SerialName("seeding_count") val seedingCount: Int = 0,
+    @SerialName("wma_count") val wmaCount: Int = 0,
+    @SerialName("tagger_available") val taggerAvailable: Boolean = true,
+    @SerialName("write_enabled") val writeEnabled: Boolean = true,
+    val locked: Boolean = false,
+    @SerialName("has_cover") val hasCover: Boolean = false,
+    @SerialName("embed_cover") val embedCover: Boolean = false,
+    /** Frames nothing manages, summed over the files (*PRIV ×11 · WCOM ×3*). */
+    val junk: List<String> = emptyList(),
+    /** Why *Write tags* is disabled, or null. */
+    val reason: String? = null,
+    /** Dev review 4 — *Lidarr manages this album · it matched …*, when Lidarr is connected and knows it. */
+    val lidarr: String? = null,
+)
+
+@Serializable
+data class MusicWriteTagsRequest(
+    @SerialName("embed_cover") val embedCover: Boolean? = null,
+    @SerialName("remove_junk") val removeJunk: Boolean = false,
+    /** A locked album whose files disagree: `file` takes the files' facts first, `ours` writes ours. */
+    val take: String? = null,
+)
+
+/** FR-284-10 — the bulk confirm line's counts before anything runs. */
+@Serializable
+data class MusicTagsPreview(val selected: Int = 0, val songs: Int = 0, val unmatched: Int = 0, val seeding: Int = 0, val wma: Int = 0, @SerialName("tagger_available") val taggerAvailable: Boolean = true, @SerialName("write_enabled") val writeEnabled: Boolean = true)
 
 @Serializable
 data class MusicBulkResult(val sentence: String)

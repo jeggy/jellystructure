@@ -530,7 +530,14 @@ internal fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, c
     val flags = dev.jellystructure.music.MusicFlags.of(albums, dev.jellystructure.music.MusicFlags.roots(configStore.current))
     val shared = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.SHARED } }
     val folder = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.FOLDER } }
+    // Phase 284 (FR-284-12) — matched songs whose files carry no MusicBrainz ids (Jellyfin reads them from the tags).
+    val matchedIds = albums.filter { it.matchState == dev.jellystructure.model.MusicMatch.MATCHED }.map { it.id }.toSet()
+    val noIdTracks = s.tracks.values.filter { it.missingSince == null && it.albumId in matchedIds && it.jellyfinProviderIds.keys.none { k -> k.startsWith("MusicBrainz") } }
+    val noIdAlbums = noIdTracks.mapNotNull { it.albumId }.distinct().size
     return listOf(
+        TriageTypeCount("music_files_no_ids", "Songs whose files don’t say what they are",
+            "Matched, but the files carry no MusicBrainz ids — every other player still sees the folder’s guess. *Write tags* on the album (or Library → Music → Write tags…) puts the match into the files.",
+            noIdTracks.size, noIdAlbums),
         TriageTypeCount("music_shared_album", "Albums in several folders",
             "Two or more folders say they are the same album — often a band's singles whose files all name one compilation. Open one: if they are one album, put the songs in one folder; if each folder is its own release, give it its own match with Find match….",
             shared, shared),

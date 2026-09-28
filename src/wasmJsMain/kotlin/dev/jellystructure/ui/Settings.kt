@@ -542,6 +542,8 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               <p class="hint" style="margin:0 0 14px">Connect Radarr/Sonarr so Jellystructure can import their root folders as library mappings and nudge a rescan after editing a title. <strong>Read + rescan only</strong> — it never adds, grabs, or deletes.</p>
               ${arrBoxHtml("radarr", "Radarr", "movies", "http://radarr:7878")}
               ${arrBoxHtml("sonarr", "Sonarr", "tvshows", "http://sonarr:8989")}
+              <!-- Phase 284 (dev review 4) — Lidarr, read-only: what it writes, which release it chose, a rescan after ours. -->
+              ${arrBoxHtml("lidarr", "Lidarr", "music", "http://lidarr:8686")}
               <div class="hint" style="margin-top:2px">Root-folder paths reconcile with <strong>Library mapping</strong> by longest prefix.</div>
             </div>
 
@@ -873,6 +875,8 @@ private var radarrEnabled = false
 private var radarrRescan = true
 private var sonarrEnabled = false
 private var sonarrRescan = true
+private var lidarrEnabled = false   // Phase 284
+private var lidarrRescan = true
 private var seerrEnabled = false
 // Phase 218 — Chromecast card state (mirrors the bazarr pattern above).
 private var ccEnabled = false
@@ -1018,6 +1022,14 @@ private fun populateForm(response: ConfigResponse) {
     val sonarr = config.sonarr
     sonarrEnabled = sonarr?.enabled ?: false
     sonarrRescan = sonarr?.rescanAfterWrite ?: true
+    val lidarr = config.lidarr   // Phase 284
+    lidarrEnabled = lidarr?.enabled ?: false
+    lidarrRescan = lidarr?.rescanAfterWrite ?: true
+    updateToggle("lidarr-enabled-toggle", lidarrEnabled)
+    updateToggle("lidarr-rescan-toggle", lidarrRescan)
+    if (lidarr != null) { setInputValue("lidarr-url", lidarr.url) }
+    setArrKeyBadge("lidarr", (lidarr?.apiKey ?: "").isNotBlank())
+    (document.getElementById("lidarr-on") as? HTMLElement)?.style?.display = if (lidarrEnabled) "block" else "none"
     updateToggle("sonarr-enabled-toggle", sonarrEnabled)
     updateToggle("sonarr-rescan-toggle", sonarrRescan)
     // Security fix (H3): apiKey is now the "##KEEP##" mask sentinel — do not push it into the input.
@@ -1196,6 +1208,7 @@ private fun attachListeners(scope: CoroutineScope) {
 
     wireArr(scope, "radarr")
     wireArr(scope, "sonarr")
+    wireArr(scope, "lidarr")   // Phase 284
     wireSeerr(scope)
     wireBazarr(scope)
     wireSubtitleCheck(scope)   // Phase 273
@@ -1772,6 +1785,12 @@ private fun readForm(): AppConfig = AppConfig(
         apiKey = getInputValue("sonarr-key").ifBlank { "##KEEP##" },
         rescanAfterWrite = sonarrRescan,
     ) else null,
+    lidarr = if (lidarrEnabled) ArrConfig(   // Phase 284
+        enabled = true,
+        url = getInputValue("lidarr-url"),
+        apiKey = getInputValue("lidarr-key").ifBlank { "##KEEP##" },
+        rescanAfterWrite = lidarrRescan,
+    ) else null,
     seerr = if (seerrEnabled) SeerrConfig(
         enabled = true,
         url = getInputValue("seerr-url"),
@@ -1904,6 +1923,14 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""api_key = "***"""")
         appendLine("rescan_after_write = ${s.rescanAfterWrite}")
     }
+    c.lidarr?.let { l ->   // Phase 284
+        appendLine()
+        appendLine("[lidarr]")
+        appendLine("enabled = ${l.enabled}")
+        appendLine("""url = "${l.url}"""")
+        appendLine("""api_key = "***"""")
+        appendLine("rescan_after_write = ${l.rescanAfterWrite}")
+    }
     c.seerr?.let { sr ->
         appendLine()
         appendLine("[seerr]")
@@ -1933,15 +1960,15 @@ private fun buildToml(c: AppConfig): String = buildString {
 // Phase 54 — wire one Radarr/Sonarr box (enable + rescan toggles, inputs, test, import root folders).
 private fun wireArr(scope: CoroutineScope, kind: String) {
     document.getElementById("$kind-enabled-toggle")?.addEventListener("click") {
-        val newVal = !(if (kind == "radarr") radarrEnabled else sonarrEnabled)
-        if (kind == "radarr") radarrEnabled = newVal else sonarrEnabled = newVal
+        val newVal = !(when (kind) { "radarr" -> radarrEnabled; "lidarr" -> lidarrEnabled; else -> sonarrEnabled })
+        when (kind) { "radarr" -> radarrEnabled = newVal; "lidarr" -> lidarrEnabled = newVal; else -> sonarrEnabled = newVal }
         updateToggle("$kind-enabled-toggle", newVal)
         (document.getElementById("$kind-on") as? HTMLElement)?.style?.display = if (newVal) "block" else "none"
         refreshTomlPreview(readForm())
     }
     document.getElementById("$kind-rescan-toggle")?.addEventListener("click") {
-        val newVal = !(if (kind == "radarr") radarrRescan else sonarrRescan)
-        if (kind == "radarr") radarrRescan = newVal else sonarrRescan = newVal
+        val newVal = !(when (kind) { "radarr" -> radarrRescan; "lidarr" -> lidarrRescan; else -> sonarrRescan })
+        when (kind) { "radarr" -> radarrRescan = newVal; "lidarr" -> lidarrRescan = newVal; else -> sonarrRescan = newVal }
         updateToggle("$kind-rescan-toggle", newVal)
         refreshTomlPreview(readForm())
     }
@@ -1956,8 +1983,11 @@ private fun wireArr(scope: CoroutineScope, kind: String) {
                 return@launch
             }
             el.textContent = "Testing…"
-            val r = if (kind == "radarr") ConfigApi.testRadarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
-                    else ConfigApi.testSonarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
+            val r = when (kind) {
+                "radarr" -> ConfigApi.testRadarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
+                "lidarr" -> ConfigApi.testLidarr(getInputValue("$kind-url"), getInputValue("$kind-key"))   // Phase 284
+                else -> ConfigApi.testSonarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
+            }
             when {
                 r == null -> el.innerHTML = """<span class="badge bad">Request failed</span>"""
                 r.ok -> { el.innerHTML = """<span class="badge ok">${r.detail.esc()}</span>"""; renderArrRoots(kind, r.rootFolders ?: emptyList()) }

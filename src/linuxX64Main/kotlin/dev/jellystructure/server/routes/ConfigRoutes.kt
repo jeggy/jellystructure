@@ -99,6 +99,7 @@ private fun maskSecrets(config: AppConfig): AppConfig {
         qbittorrent = config.qbittorrent?.copy(password = mask(config.qbittorrent.password)),
         radarr = config.radarr?.copy(apiKey = mask(config.radarr.apiKey)),
         sonarr = config.sonarr?.copy(apiKey = mask(config.sonarr.apiKey)),
+        lidarr = config.lidarr?.copy(apiKey = mask(config.lidarr.apiKey)),   // Phase 284
         seerr = config.seerr?.copy(apiKey = mask(config.seerr.apiKey)),
         bazarr = config.bazarr?.copy(apiKey = mask(config.bazarr.apiKey)),
         ingest = config.ingest.copy(webhookSecret = mask(config.ingest.webhookSecret)),
@@ -118,6 +119,7 @@ fun Route.configureConfigRoutes(
     // Phase 218 — the Chromecast card's reachability check (FR-218-5) and honest status (FR-218-7);
     // tvEventBus so a change to the chromecast block reaches every client's config snapshot (FR-218-3).
     castService: dev.jellystructure.tv.CastService? = null,
+    lidarrClient: dev.jellystructure.arr.LidarrClient? = null,   // Phase 284
     tvEventBus: dev.jellystructure.tv.TvEventBus? = null,
     // Phase 221 — the Jellyfin webhook's own last delivery, for the deprecated-*arr finding's wording.
     realtimeIngest: dev.jellystructure.media.RealtimeIngestService? = null,
@@ -209,6 +211,9 @@ fun Route.configureConfigRoutes(
         }
         if (received.sonarr?.apiKey == "##KEEP##") {
             config = config.copy(sonarr = received.sonarr.copy(apiKey = stored.sonarr?.apiKey ?: ""))
+        }
+        if (received.lidarr?.apiKey == "##KEEP##") {   // Phase 284
+            config = config.copy(lidarr = received.lidarr.copy(apiKey = stored.lidarr?.apiKey ?: ""))
         }
         if (received.seerr?.apiKey == "##KEEP##") {
             config = config.copy(seerr = received.seerr.copy(apiKey = stored.seerr?.apiKey ?: ""))
@@ -332,6 +337,22 @@ fun Route.configureConfigRoutes(
     }
     post("/config/test-radarr") { call.respond(testArr(call.receive())) }
     post("/config/test-sonarr") { call.respond(testArr(call.receive())) }
+    // Phase 284 (dev review 4) — Lidarr speaks /api/v1; the test is its own, the result shape the same.
+    post("/config/test-lidarr") {
+        val req = call.receive<TestArrRequest>()
+        val c = lidarrClient ?: return@post call.respond(ArrTestResult(false, "Lidarr client not available"))
+        if (req.url.isBlank()) return@post call.respond(ArrTestResult(false, "URL not configured"))
+        val ping = c.ping(req.url, req.apiKey)
+        if (!ping.ok) return@post call.respond(ArrTestResult(false, ping.detail))
+        val roots = c.rootFolders(req.url, req.apiKey)
+        call.respond(ArrTestResult(true, "Connected" + (ping.version?.let { " · v$it" } ?: ""), ping.version, roots))
+    }
+    get("/config/lidarr/root-folders") {
+        val l = configStore.current.lidarr
+        val c = lidarrClient
+        if (l == null || !l.enabled || l.url.isBlank() || c == null) return@get call.respond(emptyList<String>())
+        call.respond(c.rootFolders(l.url, l.apiKey))
+    }
     // Phase 136 — Jellyseerr/Overseerr connection test (temporary creds, never persisted). Reuses
     // TestArrRequest/ArrTestResult (identical url+apiKey shape) rather than a redundant pair of DTOs.
     post("/config/test-seerr") {

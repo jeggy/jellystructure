@@ -13,6 +13,8 @@ data class AppConfig(
     val qbittorrent: QBittorrentConfig? = null,
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
+    /** Phase 284 (dev review 4) — Lidarr, read-only: what it writes, which release it chose, a rescan after ours. */
+    val lidarr: ArrConfig? = null,
     val acquisition: AcquisitionConfig? = null,
     // Phase 136 — Jellyseerr/Overseerr connection (replaces the retired chart/Discover-charts subsystem)
     val seerr: SeerrConfig? = null,
@@ -58,6 +60,11 @@ data class AudiobooksConfig(
 @Serializable
 data class MusicConfig(
     @SerialName("fetch_lyrics") val fetchLyrics: Boolean = true,
+    // Phase 284 (FR-284-8, Q1/Q2/Q4) — *Write tags into music files*, on by default; keep the files' ID3 version; leave
+    // frames we do not manage.
+    @SerialName("write_tags") val writeTags: Boolean = true,
+    @SerialName("keep_id3_version") val keepId3Version: Boolean = true,
+    @SerialName("keep_unmanaged_frames") val keepUnmanagedFrames: Boolean = true,
 )
 
 /**
@@ -179,7 +186,9 @@ object MusicSteps {
     const val ARTWORK = "fetch_music_artwork"
     const val LYRICS = "fetch_lyrics"
     const val NFO = "write_music_nfo"
-    val ALL: List<String> = listOf(SCAN, AUDIOBOOKS, MATCH, ARTWORK, LYRICS, NFO)
+    /** Phase 284 (FR-284-11) — moment A's automatic half: tags into the files of albums matched since their last write. */
+    const val TAGS = "write_tags"
+    val ALL: List<String> = listOf(SCAN, AUDIOBOOKS, MATCH, ARTWORK, LYRICS, NFO, TAGS)
 
     fun isMusic(step: String): Boolean = step in ALL
 

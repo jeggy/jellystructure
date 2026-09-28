@@ -122,6 +122,15 @@ private fun render(p: MusicProvidersDto): String = buildString {
     append(row("Lyrics · LRCLIB", "lrclib", """
         <div class="tiny muted" style="margin:3px 0 6px">No key. Synced lyrics as a <span class="mono">.lrc</span> file beside each song, which Jellyfin reads too.</div>
         <label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-lyrics" ${if (p.lyricsEnabled) "checked" else ""}> Fetch lyrics</label>""", test = false))
+    // Phase 284 (FR-284-8) — *Write tags into music files*, on by default, with Q2/Q4's two sub-choices.
+    append(row("Write tags into music files", "mutags", """
+        <div class="tiny muted" style="margin:3px 0 6px;line-height:1.6">What this page matches and types reaches every player that reads the files, not only Ravilo. Save on an album writes the tags; a scan writes only on a new match. Files seeding in qBittorrent are left alone. WMA files get every tag, but Jellyfin can’t read MusicBrainz ids from WMA.</div>
+        ${if (p.taggerAvailable) """<label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-mutags" ${if (p.writeTags) "checked" else ""}> Write tags into music files</label>
+        <div id="jmp-mutags-sub" style="margin:6px 0 0 22px;display:flex;flex-direction:column;gap:4px;${if (!p.writeTags) "opacity:.5" else ""}">
+          <label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-mutags-id3" ${if (p.keepId3Version) "checked" else ""}> Keep the files’ ID3 version (v2.4 only where none)</label>
+          <label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-mutags-frames" ${if (p.keepUnmanagedFrames) "checked" else ""}> Leave frames we do not manage</label>
+        </div>"""
+          else """<div class="tiny" style="color:var(--warn)">This server has no tag writer installed (python3 with mutagen), so the switch has nothing to drive.</div>"""}""", test = false))
 }
 
 /** Phase 281 (FR-281-4/8) — the audiobook rows: suggestion providers and the tag-writing switch. The page's Save sends
@@ -194,6 +203,8 @@ internal fun wireMusicProvidersCard(scope: CoroutineScope) {
             if (p.musicbrainzEnabled) "var(--ok)" else "var(--line-2,rgba(255,255,255,.22))"
         (document.getElementById("jmp-dot-caa") as? HTMLElement)?.style?.background = "var(--ok)"
         if (p.lyricsEnabled) (document.getElementById("jmp-dot-lrclib") as? HTMLElement)?.style?.background = "var(--ok)"
+        if (p.writeTags && p.taggerAvailable) (document.getElementById("jmp-dot-mutags") as? HTMLElement)?.style?.background = "var(--ok)"
+        (document.getElementById("jmp-mutags") as? HTMLInputElement)?.addEventListener("change", { (document.getElementById("jmp-mutags-sub") as? HTMLElement)?.style?.opacity = if ((document.getElementById("jmp-mutags") as? HTMLInputElement)?.checked == true) "" else ".5" })
 
         document.getElementById("jmp-acoustid-clear")?.addEventListener("click") { clearAcoustId = true; note("The AcoustID key goes when you press Save.") }
         document.getElementById("jmp-fanart-clear")?.addEventListener("click") { clearFanart = true; note("The fanart.tv key goes when you press Save.") }
@@ -218,8 +229,10 @@ internal suspend fun saveMetadataProviders(): Boolean {
             acoustIdKey = if (clearAcoustId) "" else acoustid.ifBlank { null },
             fanartKey = if (clearFanart) "" else fanart.ifBlank { null },
             lyricsEnabled = input("jmp-lyrics")?.checked,
+            writeTags = input("jmp-mutags")?.checked, keepId3Version = input("jmp-mutags-id3")?.checked, keepUnmanagedFrames = input("jmp-mutags-frames")?.checked,
         )
-        val unchanged = MusicProvidersUpdate(musicbrainzEnabled = p.musicbrainzEnabled, musicbrainzContact = p.musicbrainzContact.trim(), lyricsEnabled = p.lyricsEnabled)
+        val unchanged = MusicProvidersUpdate(musicbrainzEnabled = p.musicbrainzEnabled, musicbrainzContact = p.musicbrainzContact.trim(), lyricsEnabled = p.lyricsEnabled,
+            writeTags = if (input("jmp-mutags") != null) p.writeTags else null, keepId3Version = if (input("jmp-mutags-id3") != null) p.keepId3Version else null, keepUnmanagedFrames = if (input("jmp-mutags-frames") != null) p.keepUnmanagedFrames else null)
         if (update != unchanged) { wrote = true; ok = MusicApi.saveProviders(update) && ok }
     }
     audiobooksLoaded?.let { p ->

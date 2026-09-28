@@ -197,6 +197,15 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
             }
             call.respond(media.split(id, groups) ?: return@post call.respond(HttpStatusCode.NotFound))
         }
+        // Phase 284 (FR-284-6) — the Book page's Files tab, and *Write tags to N parts* through the shared writer.
+        get("/{id}/files") {
+            val media = music.audiobooksMedia ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+            call.respond(media.files(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+        }
+        post("/{id}/write-tags") {
+            val media = music.audiobooksMedia ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+            call.respond(mapOf("sentence" to media.save(call.parameters["id"]!!, sync = true)))
+        }
         post("/{id}/join") {
             val media = music.audiobooksMedia ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
             call.respond(media.join(call.parameters["id"]!!) ?: return@post call.respond(HttpStatusCode.NotFound))

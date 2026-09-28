@@ -176,7 +176,7 @@ private fun selBar(): String {
     if (muView != "albums" || muSelected.isEmpty()) return """<div class="mu-selbar"></div>"""
     return buildString {
         append("""<div class="mu-selbar on"><b>${muSelected.size}</b> selected""")
-        for ((k, l) in listOf("match" to "Match now", "covers" to "Fetch covers", "nfo" to "Write NFOs", "lock" to "Lock match", "clear" to "Clear match"))
+        for ((k, l) in listOf("match" to "Match now", "covers" to "Fetch covers", "nfo" to "Write NFOs", "tags" to "Write tags…", "lock" to "Lock match", "clear" to "Clear match"))   // Phase 284 — Write tags…
             append("""<span class="btn sm${if (k == "match") " primary" else if (k == "clear") " ghost" else ""}" data-bulk="$k">$l</span>""")
         append("""<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span></div>""")
     }
@@ -276,6 +276,20 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
             "all" -> { muDto?.albums?.forEach { muSelected += it.id }; muRender(scope) }
             "none" -> { muSelected.clear(); muRender(scope) }
             null -> Unit
+            // Phase 284 (FR-284-10) — the confirm line says the skips as counts before anything runs.
+            "tags" -> {
+                val ids = muSelected.toList()
+                scope.launch {
+                    val pv = MusicApi.tagsPreview(ids) ?: return@launch muToast("The server didn’t answer")
+                    val off = when { !pv.writeEnabled -> "Tag writing is off in Settings → Music providers"; !pv.taggerAvailable -> "This server has no tagger"; pv.songs == 0 -> "Nothing to write — none of these albums is matched yet"; else -> null }
+                    muModal("""<h3>Write tags to ${pv.songs} song${if (pv.songs == 1) "" else "s"}?</h3>
+                        <p class="tiny muted" style="line-height:1.6">${pv.selected} selected · ${pv.unmatched} unmatched (skipped — nothing to write yet) · ${pv.seeding} seeding · ${pv.wma} WMA (tagged; Jellyfin won’t read their ids)</p>
+                        ${off?.let { """<div class="note warn"><span class="tiny">${it.esc()}</span></div>""" } ?: ""}
+                        <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px;"><span class="btn ghost" data-m="no">Cancel</span>${if (off == null) """<span class="btn primary" data-m="go">Write ${pv.songs}</span>""" else ""}</div>""") {
+                        scope.launch { muToast(MusicApi.bulk("tags", ids) ?: "That didn't work — the server said no"); muSelected.clear(); muLoad(scope) }
+                    }
+                }
+            }
             else -> {
                 val ids = muSelected.toList()
                 scope.launch {
