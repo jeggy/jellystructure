@@ -185,3 +185,27 @@ end to end against a fake MusicBrainz). **Not deployed.**
 11. **Routes** (`/api/music/…`): `status`, `match`, `album/{id}/search | releases | identify | use | lock | clear |
     genres`, `track/{id}/recordings | recording`, `providers`, `providers/test/{name}`. Their shapes live in
     `commonMain` (`model/MusicApi.kt`) so the admin decodes the same classes. The Find match… panel itself is 278's.
+
+## Amendment (2026-09-28) — the providers card has no Save of its own
+
+**What was wrong.** Build note 10 gave the **Metadata providers** card its own *Save providers* button (and 281 added
+a second, *Save audiobook providers*). Every other setting on the page is saved by the one **Save** at the top of
+Settings; two card-local buttons meant a change typed into the card and followed by the top Save was silently not
+saved. Owner decision: configuration is only ever saved through the top Save.
+
+**FR-276-8, amended.** The card has **no Save button**. The page's Save sends, in order: `PUT /api/config`, then —
+only if that succeeded — `PUT /api/music/providers` and `PUT /api/audiobooks/providers` (one after the other, since
+each rewrites `config.toml`), each **only when something in its half of the card changed** against what the card was
+rendered from, so an untouched card never overwrites a value saved elsewhere. A failed provider write reads *Saved,
+except the Metadata providers — couldn't save those.* in the page's message line. *Remove* on a key still marks it
+for removal; the key goes when Save is pressed (*The AcoustID key goes when you press Save.*). After a save the card
+re-reads, so *A key is saved.* and the status dots are the server's.
+
+**The fanart.tv row says where the key comes from** (same day, owner). Like AcoustID's *Get a client key*, it links
+*Get a project key* → `https://fanart.tv/get-an-api-key/` and says how: *Free. Sign in to fanart.tv (or create an
+account), open Get an API key, and request a key under Project API Keys. Paste that one here — a personal key is a
+different kind and does not work on its own.* (fanart.tv issues both kinds on that page; ours is sent as `api_key`,
+which takes the project key — a personal key is a `client_key` sent alongside one.)
+
+Unchanged: the two routes, and `PUT /api/config` still keeping the stored `[musicbrainz]`, `[music]`,
+`[audiobooks]` and the three keys — a page loaded before the card existed must still not reset them. **Wire:** none.

@@ -1256,11 +1256,18 @@ private fun attachListeners(scope: CoroutineScope) {
             val config = readForm()
             val result = ConfigApi.save(config)
             val ok = result.ok
+            // Phase 276/281 (2026-09-28 amendment) — the Metadata providers card has no Save of its own; this one
+            // sends it too, after the config, since both writes rewrite config.toml.
+            val providersOk = !ok || saveMetadataProviders()
             // Phase 166 (FR-166-4) — the save-path backstop: surface the backend's own rejection reason
             // rather than a bare "Save failed" if an invalid schedule somehow reached PUT /api/config
             // (the live check above should already have caught it and disabled this button, but a stale
             // client-side check must never leave the admin without an explanation).
-            showSettingsMsg(if (ok) "Saved." else (result.error ?: "Save failed."), ok)
+            showSettingsMsg(when {
+                !ok -> result.error ?: "Save failed."
+                !providersOk -> "Saved, except the Metadata providers — couldn't save those."
+                else -> "Saved."
+            }, ok && providersOk)
             if (result.field == "scan_schedule") {
                 pipeCronValid = false
                 (document.getElementById("pipe-cron-check") as? HTMLElement)?.innerHTML =

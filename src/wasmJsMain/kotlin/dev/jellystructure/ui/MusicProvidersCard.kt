@@ -15,8 +15,10 @@ import org.w3c.dom.HTMLInputElement
 /**
  * Phase 276 (FR-276-8) — Settings → Connections → **Metadata providers**: one row per provider the music library uses,
  * each with a status line and *Test*. The card names its providers (the admin registers with them) — nothing a viewer
- * reads ever does. It saves through `PUT /api/music/providers`, never the general Settings save, so a save from
- * another tab cannot reset it. Page-local classes are `jmp-` (not `adv-*`, which ad blockers hide).
+ * reads ever does. It has **no Save of its own** (2026-09-28 amendment): the page's one Save sends it, after
+ * `PUT /api/config`, through `PUT /api/music/providers` and `PUT /api/audiobooks/providers` — and only what changed,
+ * so an untouched card never overwrites a newer value. `PUT /api/config` still keeps the stored values, so a page
+ * loaded before this card existed cannot reset them. Page-local classes are `jmp-` (not `adv-*`, which ad blockers hide).
  */
 internal fun musicProvidersCardHtml(): String = """
     <div class="card set-section" id="sect-musicprov" data-tab="connections">
@@ -60,21 +62,21 @@ private fun render(p: MusicProvidersDto): String = buildString {
         </div>"""))
     append(row("fanart.tv", "fanart", """
         <div class="tiny muted" style="margin:3px 0 6px">Artist pictures, backgrounds and logos.
-          ${if (p.fanartKeySet) "A key is saved." else "Without a key, artist pictures come from Wikimedia Commons only."}</div>
+          ${if (p.fanartKeySet) "A key is saved." else "Without a key, artist pictures come from Wikimedia Commons only."}
+          <a href="https://fanart.tv/get-an-api-key/" target="_blank" rel="noopener">Get a project key</a></div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span class="tiny muted" style="width:70px">Project key</span>
           <input id="jmp-fanart" class="input mono" type="password" style="flex:1;min-width:200px" placeholder="${if (p.fanartKeySet) "saved — type to replace" else "not set"}">
           ${if (p.fanartKeySet) """<button type="button" class="btn sm ghost" id="jmp-fanart-clear">Remove</button>""" else ""}
-        </div>""", test = false))
+        </div>
+        <div class="hint">Free. Sign in to fanart.tv (or create an account), open <b>Get an API key</b>, and request a key under <b>Project API Keys</b>. Paste that one here — a <i>personal</i> key is a different kind and does not work on its own.</div>""", test = false))
     append(row("Lyrics · LRCLIB", "lrclib", """
         <div class="tiny muted" style="margin:3px 0 6px">No key. Synced lyrics as a <span class="mono">.lrc</span> file beside each song, which Jellyfin reads too.</div>
         <label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-lyrics" ${if (p.lyricsEnabled) "checked" else ""}> Fetch lyrics</label>""", test = false))
-    append("""<div style="display:flex;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-        <button type="button" class="btn sm" id="jmp-save">Save providers</button><span id="jmp-saved" class="tiny muted"></span></div>""")
 }
 
-/** Phase 281 (FR-281-4/8) — the audiobook rows: suggestion providers and the tag-writing switch. Saved through
- *  `PUT /api/audiobooks/providers`, on their own. */
+/** Phase 281 (FR-281-4/8) — the audiobook rows: suggestion providers and the tag-writing switch. The page's Save sends
+ *  them through `PUT /api/audiobooks/providers`. */
 private fun renderAudiobooks(p: AudiobookProvidersDto): String = buildString {
     append("""<div class="mu-sec" style="margin-top:0">Audiobooks · suggestions only</div>""")
     val stores = listOf("dk", "no", "se", "gb", "us")
@@ -99,44 +101,46 @@ private fun renderAudiobooks(p: AudiobookProvidersDto): String = buildString {
         <div class="tiny muted" style="margin:3px 0 6px;line-height:1.6">The only way Jellyfin’s own apps show a narrator or a description — Jellyfin reads no metadata file for audiobooks. When on, <b>Save</b> on a book writes title, author, narrator and description into every part. Ravilo doesn’t need it. Files seeding in qBittorrent are skipped.</div>
         ${if (p.taggerAvailable) """<label class="tiny" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="jmp-abtags" ${if (p.writeTags) "checked" else ""}> Write tags when a book is saved</label>"""
           else """<div class="tiny" style="color:var(--warn)">This server has no tag writer installed (python3 with mutagen), so the switch has nothing to drive.</div>"""}""", test = false))
-    append("""<div style="display:flex;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-        <button type="button" class="btn sm" id="jmp-ab-save">Save audiobook providers</button><span id="jmp-ab-saved" class="tiny muted"></span></div>""")
 }
 
+// What the page's Save reads: the values each half was rendered from (null until it loaded, so a card that never
+// loaded is never saved) and the keys marked for removal.
+private var musicLoaded: MusicProvidersDto? = null
+private var audiobooksLoaded: AudiobookProvidersDto? = null
+private var clearAcoustId = false
+private var clearFanart = false
+private var clearGoogleBooks = false
+private var providersScope: CoroutineScope? = null
+
+private fun note(text: String) { (document.getElementById("jmp-status") as? HTMLElement)?.textContent = text }
+
 private fun wireAudiobookProviders(scope: CoroutineScope) {
+    audiobooksLoaded = null
+    clearGoogleBooks = false
     val body = document.getElementById("jmp-ab-body") as? HTMLElement ?: return
     scope.launch {
         val p = AudiobooksApi.providers() ?: return@launch
         body.innerHTML = renderAudiobooks(p)
+        audiobooksLoaded = p
         listOf("itunes", "openlibrary").forEach { (document.getElementById("jmp-dot-$it") as? HTMLElement)?.style?.background = "var(--ok)" }
         if (p.googleBooksKeySet) (document.getElementById("jmp-dot-googlebooks") as? HTMLElement)?.style?.background = "var(--ok)"
         if (p.writeTags && p.taggerAvailable) (document.getElementById("jmp-dot-abtags") as? HTMLElement)?.style?.background = "var(--ok)"
-        var clearKey = false
-        document.getElementById("jmp-gbooks-clear")?.addEventListener("click") { clearKey = true; (document.getElementById("jmp-ab-saved") as? HTMLElement)?.textContent = "The Google Books key goes when you save." }
-        document.getElementById("jmp-ab-save")?.addEventListener("click") {
-            fun sel(id: String) = (document.getElementById(id) as? org.w3c.dom.HTMLSelectElement)?.value
-            val key = (document.getElementById("jmp-gbooks") as? HTMLInputElement)?.value?.trim().orEmpty()
-            val update = AudiobookProvidersUpdate(
-                itunesStore = sel("jmp-itunes"), audnexusRegion = sel("jmp-audnexus"),
-                googleBooksKey = if (clearKey) "" else key.ifBlank { null },
-                writeTags = (document.getElementById("jmp-abtags") as? HTMLInputElement)?.checked,
-            )
-            scope.launch {
-                val ok = AudiobooksApi.saveProviders(update)
-                (document.getElementById("jmp-ab-saved") as? HTMLElement)?.textContent = if (ok) "Saved ✓" else "Couldn't save"
-                if (ok) wireAudiobookProviders(scope)
-            }
-        }
+        document.getElementById("jmp-gbooks-clear")?.addEventListener("click") { clearGoogleBooks = true; note("The Google Books key goes when you press Save.") }
     }
 }
 
 internal fun wireMusicProvidersCard(scope: CoroutineScope) {
+    providersScope = scope
     wireAudiobookProviders(scope)
+    musicLoaded = null
+    clearAcoustId = false
+    clearFanart = false
     val body = document.getElementById("jmp-body") as? HTMLElement ?: return
     scope.launch {
         val p = MusicApi.providers()
         if (p == null) { body.innerHTML = """<div class="tiny muted">Couldn't load the providers.</div>"""; return@launch }
         body.innerHTML = render(p)
+        musicLoaded = p
         (document.getElementById("jmp-dot-musicbrainz") as? HTMLElement)?.style?.background =
             if (p.musicbrainzEnabled) "var(--ok)" else "var(--line-2,rgba(255,255,255,.22))"
         (document.getElementById("jmp-dot-caa") as? HTMLElement)?.style?.background = "var(--ok)"
@@ -144,10 +148,8 @@ internal fun wireMusicProvidersCard(scope: CoroutineScope) {
         if (p.fanartKeySet) (document.getElementById("jmp-dot-fanart") as? HTMLElement)?.style?.background = "var(--ok)"
         if (p.lyricsEnabled) (document.getElementById("jmp-dot-lrclib") as? HTMLElement)?.style?.background = "var(--ok)"
 
-        var clearAcoustId = false
-        var clearFanart = false
-        document.getElementById("jmp-acoustid-clear")?.addEventListener("click") { clearAcoustId = true; (document.getElementById("jmp-saved") as? HTMLElement)?.textContent = "The AcoustID key goes when you save." }
-        document.getElementById("jmp-fanart-clear")?.addEventListener("click") { clearFanart = true; (document.getElementById("jmp-saved") as? HTMLElement)?.textContent = "The fanart.tv key goes when you save." }
+        document.getElementById("jmp-acoustid-clear")?.addEventListener("click") { clearAcoustId = true; note("The AcoustID key goes when you press Save.") }
+        document.getElementById("jmp-fanart-clear")?.addEventListener("click") { clearFanart = true; note("The fanart.tv key goes when you press Save.") }
 
         val tests = document.querySelectorAll(".jmp-test")
         for (i in 0 until tests.length) {
@@ -158,27 +160,45 @@ internal fun wireMusicProvidersCard(scope: CoroutineScope) {
                 scope.launch {
                     val result = MusicApi.testProvider(name)
                     b.textContent = "Test"
-                    (document.getElementById("jmp-status") as? HTMLElement)?.textContent = result
+                    note(result)
                 }
             }
         }
-
-        document.getElementById("jmp-save")?.addEventListener("click") {
-            fun v(id: String) = (document.getElementById(id) as? HTMLInputElement)
-            val acoustid = v("jmp-acoustid")?.value?.trim().orEmpty()
-            val fanart = v("jmp-fanart")?.value?.trim().orEmpty()
-            val update = MusicProvidersUpdate(
-                musicbrainzEnabled = v("jmp-mb-on")?.checked,
-                musicbrainzContact = v("jmp-mb-contact")?.value?.trim(),
-                acoustIdKey = if (clearAcoustId) "" else acoustid.ifBlank { null },
-                fanartKey = if (clearFanart) "" else fanart.ifBlank { null },
-                lyricsEnabled = v("jmp-lyrics")?.checked,
-            )
-            scope.launch {
-                val ok = MusicApi.saveProviders(update)
-                (document.getElementById("jmp-saved") as? HTMLElement)?.textContent = if (ok) "Saved ✓" else "Couldn't save"
-                if (ok) wireMusicProvidersCard(scope)
-            }
-        }
     }
+}
+
+/** The card's part of the page's one Save, called after `PUT /api/config` succeeded. Sends each half only when
+ *  something in it changed, one after the other (both write `config.toml`). False when a write failed. */
+internal suspend fun saveMetadataProviders(): Boolean {
+    fun input(id: String) = document.getElementById(id) as? HTMLInputElement
+    fun select(id: String) = (document.getElementById(id) as? org.w3c.dom.HTMLSelectElement)?.value
+    var wrote = false
+    var ok = true
+    musicLoaded?.let { p ->
+        val acoustid = input("jmp-acoustid")?.value?.trim().orEmpty()
+        val fanart = input("jmp-fanart")?.value?.trim().orEmpty()
+        val update = MusicProvidersUpdate(
+            musicbrainzEnabled = input("jmp-mb-on")?.checked,
+            musicbrainzContact = input("jmp-mb-contact")?.value?.trim(),
+            acoustIdKey = if (clearAcoustId) "" else acoustid.ifBlank { null },
+            fanartKey = if (clearFanart) "" else fanart.ifBlank { null },
+            lyricsEnabled = input("jmp-lyrics")?.checked,
+        )
+        val unchanged = MusicProvidersUpdate(musicbrainzEnabled = p.musicbrainzEnabled, musicbrainzContact = p.musicbrainzContact.trim(), lyricsEnabled = p.lyricsEnabled)
+        if (update != unchanged) { wrote = true; ok = MusicApi.saveProviders(update) && ok }
+    }
+    audiobooksLoaded?.let { p ->
+        val key = input("jmp-gbooks")?.value?.trim().orEmpty()
+        val tags = input("jmp-abtags")
+        val update = AudiobookProvidersUpdate(
+            itunesStore = select("jmp-itunes"), audnexusRegion = select("jmp-audnexus"),
+            googleBooksKey = if (clearGoogleBooks) "" else key.ifBlank { null },
+            writeTags = tags?.checked,
+        )
+        val unchanged = AudiobookProvidersUpdate(itunesStore = p.itunesStore, audnexusRegion = p.audnexusRegion, writeTags = if (tags != null) p.writeTags else null)
+        if (update != unchanged) { wrote = true; ok = AudiobooksApi.saveProviders(update) && ok }
+    }
+    // Re-read so the rows say what is saved now ("A key is saved.", the dots) and the key fields empty again.
+    if (wrote && ok) providersScope?.let { wireMusicProvidersCard(it) }
+    return ok
 }

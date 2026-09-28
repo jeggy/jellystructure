@@ -209,3 +209,9 @@ the R319 wire tests pass with the new shapes in `WIRE_ROOTS`. Named *audiobooks*
    then mirrors the position to Jellyfin on the part's own session (`reportProgress`) and marks the parts left
    behind played; Jellyfin is never read back. Facts, not sentences: the phone words the times itself.
 
+
+## Amendment (2026-09-28) — no *Save audiobook providers*
+
+Build note 3's *saved on its own* is withdrawn: the *Audiobooks · suggestions only* rows have no Save button, and the
+page's one Save sends them through `PUT /api/audiobooks/providers` when they changed. The rule and its order are 276's
+amendment of the same date (FR-276-8).
