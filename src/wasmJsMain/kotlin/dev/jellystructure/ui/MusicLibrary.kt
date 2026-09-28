@@ -53,9 +53,7 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
           <h1>Library</h1>
           <span class="spacer"></span>
           <span class="searchwrap"><input id="mu-search" class="input" type="search" placeholder="⌕ search albums, artists, songs…" style="width:240px;flex-shrink:0;"></span>
-          <span class="seg" id="kindseg">
-            <span data-kind="">All</span><span data-kind="MOVIE">Movies</span><span data-kind="TV_SHOW">TV</span><span data-kind="MUSIC_VIDEO">Music videos</span><span class="on">Music</span>
-          </span>
+          ${libraryKindSeg("music")}
         </div>
         <div id="mu-lib"><span class="muted tiny">Loading…</span></div>
     """.trimIndent()
@@ -67,10 +65,7 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
             debounce = scope.launch { delay(250); muQuery = inp.value; muSelected.clear(); muLoad(scope) }
         }
     }
-    val kinds = container.querySelectorAll("#kindseg [data-kind]")
-    for (i in 0 until kinds.length) (kinds.item(i) as? HTMLElement)?.let { k ->
-        k.addEventListener("click") { val v = k.getAttribute("data-kind").orEmpty(); App.navigate(if (v.isEmpty()) "/library" else "/library?kind=$v") }
-    }
+    wireLibraryKindSeg(container)
     val root = document.getElementById("mu-lib") as? HTMLElement ?: return
     root.addEventListener("click") { ev -> muClick(ev.target as? Element ?: return@addEventListener, ev, scope) }
     root.addEventListener("change") { ev ->

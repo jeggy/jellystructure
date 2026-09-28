@@ -148,12 +148,18 @@ data class MusicSearch(
 )
 
 /** FR-279-6 — start one song. [startPositionMs] is the phone's own (a queue resumed after the app came back);
- *  the server keeps no position for music. */
+ *  the server keeps no position for music.
+ *
+ *  281 FR-281-10 (dev review 4: one play shape) — or one part of an audiobook: [audiobookId] + [part] (0-based, our
+ *  order) and [startPositionMs] inside that part. Exactly one of [trackId] / [audiobookId]. The answer is the part's
+ *  own ticket; the part list rides `GET /music/audiobook/{id}`. (Never released with a required `track_id`.) */
 @Serializable
 data class MusicPlayRequest(
-    @SerialName("track_id") val trackId: String,
+    @SerialName("track_id") val trackId: String? = null,
     val capabilities: ClientCapabilities = ClientCapabilities(),
     @SerialName("start_position_ms") val startPositionMs: Long? = null,
+    @SerialName("audiobook_id") val audiobookId: String? = null,
+    val part: Int? = null,
 )
 
 @Serializable

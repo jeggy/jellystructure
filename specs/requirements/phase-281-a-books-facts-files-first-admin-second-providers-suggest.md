@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the audiobooks research (§2, §3.1, §4, §6), the admin brief §M2–§M4 and
+`✓ Built` 2026-09-28, **not deployed** (build notes at the end) — written 2026-09-28 from the audiobooks research (§2, §3.1, §4, §6), the admin brief §M2–§M4 and
 §M6, and the mockups `design/app/audiobook.html` (+ `audiobook.js`), `author.html` and
 `settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). The research's "280". Builds on **280**, **276** (the
 providers card, MusicBrainz's client) and **279** (the phone's paths).
@@ -161,3 +161,51 @@ Buildable, with one thing the image does not have (1). Nine items.
 8. **Series** only when any book has one ✓; Jellyfin's `AudioBook` is `IHasSeries`, so `SeriesName` may arrive
    from tags (null on the household's book).
 9. **Wire:** none.
+
+## Build notes (2026-09-28)
+
+Built with 280 (same commit). Compiles (backend + admin + the phone app); the full backend suite passes, including
+`AudiobooksTvServiceTest` (the viewer's shelf, book time, the mirror, *finished*, speed and bookmarks per book), and
+the R319 wire tests pass with the new shapes in `WIRE_ROOTS`. Named *audiobooks* throughout (280's build notes).
+
+1. **The ladder (FR-281-1/2):** every field carries its origin — `files`, `typed`, or the provider's name — and the
+   head's source chip is computed server-side from them. The Details tab saves on change (write-through). The lock
+   freezes a re-read.
+2. **Suggestions (FR-281-3, M6·2 → per field):** iTunes (store from the card), Google Books (only with a key — without
+   one the card says so), Open Library, Audnexus **only for a pasted ASIN** (dev review 3; no Audible scraping), and
+   MusicBrainz only when it hits. One card per provider with its one-sentence reason when it has nothing. *Apply* per
+   line and *Apply all*; an applied line turns ✓ and stays marked across *Ask again* while the value is unchanged.
+   Providers are paced (Open Library 1/s, iTunes 1/s burst 3).
+3. **Providers card (FR-281-4):** the same card, now *Music · Audiobooks*, with an *Audiobooks · suggestions only*
+   group saved on its own through `PUT /api/audiobooks/providers` (`[audiobooks] itunes_store / audnexus_region /
+   write_tags`, `[api_keys] google_books_key`, masked and preserved by the general Settings save). **Deviation:** no
+   *Test* buttons on the audiobook rows.
+4. **Parts (FR-281-5):** drag reorders our `position` (never a rename; the phone plays that order); the gap row; the
+   5-minute info line; the Jellyfin position column is **the signed-in admin's own** Jellyfin position; ▶ plays a
+   browser-playable part through Jellyfin directly.
+5. **Chapters (FR-281-6):** embedded or file boundaries, stated; the toggle only for a one-file book with embedded
+   chapters; titles rename inline (`chapter_titles`, by index).
+6. **Artwork, Listeners, History (FR-281-7):** cover candidates are the suggestion cards' covers; *Use*, upload (both
+   written as `cover.jpg` and locked), clear, lock; embedded art shows through Jellyfin's image. Listeners is
+   read-only, one row per viewer with a position, names from the Users & devices list. History records edits,
+   asks, applies, locks, orders, flags, covers, splits and saves. No NFO tab.
+7. **Tag writing (FR-281-8, dev review 1 → a tagger):** `python3-mutagen` is added to the runtime image (Dockerfile,
+   `check-docker-cache-ids.sh` green). With the switch on, Save writes title · album · artist/album artist = author ·
+   composer = narrator · comment = description · publisher · genre · track number (our order) into every part,
+   **in place** (an M4B's chapter atoms survive), through the shared ProcessGate, skipping files seeding in
+   qBittorrent (or when qBittorrent cannot be asked). Verified against a synthetic MP3 and M4B with ffprobe. Without
+   a tagger in the image, the card says the switch has nothing to drive. Save's menu says what it will write.
+8. **The Author page (FR-281-9)** at `#/audiobook-author/{id}`: sort name, *N books*, the biography (typed here),
+   books grouped by series, History, and an on-demand Open Library sentence. **Deviation:** no author pictures and
+   no Artwork tab — there is no folder Jellyfin reads an author image from, and the phone does not show one.
+9. **Phone paths (FR-281-10, named *audiobooks*):** `GET /tv/music/audiobooks?sort=added|title|author|series`
+   (Continue listening, then all; authors only when more than one, series when any), `GET /tv/music/audiobook/{id}`
+   (the head, chapters, **the part list** — dev review 4's pick —, position, speed, bookmarks),
+   `GET /tv/music/audiobook-author/{id}`, `PUT …/audiobook/{id}/progress|speed|finished`,
+   `POST …/audiobook/{id}/bookmarks`, `DELETE …/bookmarks/{bookmark}`, and the cover at the open
+   `/tv/image/audiobook/{id}`. **One play shape** (dev review 4): `POST /tv/music/play {audiobook_id, part,
+   start_position_ms}` — `MusicPlayRequest.track_id` became optional (never released as required) — and the answer is
+   the part's own `StreamTicket`; the part's stop is the films' stop, as a song's is. A heartbeat saves ours first,
+   then mirrors the position to Jellyfin on the part's own session (`reportProgress`) and marks the parts left
+   behind played; Jellyfin is never read back. Facts, not sentences: the phone words the times itself.
+

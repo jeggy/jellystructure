@@ -94,6 +94,8 @@ data class JellyfinLibraryOptions(
     @SerialName("MetadataSavers") val metadataSavers: List<String>? = null,
     @SerialName("EnableInternetProviders") val enableInternetProviders: Boolean? = null,
     @SerialName("TypeOptions") val typeOptions: List<JellyfinTypeOptions>? = null,
+    // Phase 280 (FR-280-6) — *Save artwork into media folders*; nullable for the same reason as above.
+    @SerialName("SaveLocalMetadata") val saveLocalMetadata: Boolean? = null,
     // Phase 212 — the flags FR-212-4's findings read. Confirmed live against 10.11.11
     // (GET /Library/VirtualFolders, 2026-09-15) and re-confirmed unchanged on 12.1.0 by the
     // 2026-09-18 upgrade audit — every key here is the real JSON field name.
@@ -528,6 +530,10 @@ data class JellyfinMusicItem(
     @SerialName("ArtistItems") val artistItems: List<JellyfinNameId> = emptyList(),
     @SerialName("AlbumArtists") val albumArtists: List<JellyfinNameId> = emptyList(),
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinAudioStream> = emptyList(),
+    /** Phase 280 — an audiobook part's `Album` tag (the book's title, usually) and description. */
+    @SerialName("Album") val album: String? = null,
+    @SerialName("Overview") val overview: String? = null,
+    @SerialName("People") val people: List<JellyfinPersonLite> = emptyList(),
     /** Phase 278 — an album's locked metadata in Jellyfin (136's *Locked in Jellyfin* banner). */
     @SerialName("LockData") val lockData: Boolean? = null,
     @SerialName("LockedFields") val lockedFields: List<String>? = null,
@@ -570,6 +576,13 @@ data class JellyfinPlaylistItem(
 
 @Serializable
 data class JellyfinPlaylistItems(@SerialName("Items") val items: List<JellyfinPlaylistItem> = emptyList())
+
+/** Phase 280 — a person on an item (Jellyfin maps a file's composer tag to `Composer`; a narrator is one). */
+@Serializable
+data class JellyfinPersonLite(@SerialName("Name") val name: String = "", @SerialName("Type") val type: String? = null)
+
+/** Phase 280 — a books library: every audiobook **file**, and how many ebooks it holds (which are ignored). */
+data class JellyfinAudiobooksLibrary(val parts: List<JellyfinMusicItem>, val ebookCount: Int)
 
 /** One music library as Jellyfin reports it — every page fetched, or nothing (see [JellyfinClient.getMusicLibrary]). */
 data class JellyfinMusicLibrary(

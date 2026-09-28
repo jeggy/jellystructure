@@ -16,6 +16,8 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
+import dev.jellystructure.server.routes.audiobooksRoutes
+import dev.jellystructure.server.routes.audiobooksTvRoutes
 import dev.jellystructure.server.routes.musicRoutes
 import dev.jellystructure.server.routes.musicTvRoutes
 import dev.jellystructure.media.visibleTo
@@ -57,6 +59,7 @@ import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
+import dev.jellystructure.tv.tvTokenForClient
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
@@ -454,6 +457,8 @@ fun startServer(
                             """"acoustid_pacing":${musicPipeline?.matcher?.acoustId?.limiter?.stats()?.let { Json.encodeToString(dev.jellystructure.model.PacingStats.serializer(), it) } ?: "null"},""" +
                             // Phase 275 (FR-275-6) — null when no music library is mapped. Counts only.
                             """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.model.MusicHealth.serializer(), it) } ?: "null"},""" +
+                            // Phase 280 (FR-280-7) — null when no books library is mapped. Counts only.
+                            """"audiobooks":${musicPipeline?.audiobooks?.takeIf { dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isNotEmpty() }?.let { b -> Json.encodeToString(dev.jellystructure.model.AudiobooksHealthDto.serializer(), dev.jellystructure.server.routes.audiobooksHealth(b.store, b)) } ?: "null"},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
@@ -621,6 +626,10 @@ fun startServer(
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
                 musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient) { mediaStore.allItems() } }   // Phases 276–278
+                // Phases 280/281 — audiobooks: the Audiobooks kind, the Audiobook and Author pages.
+                musicPipeline?.let { mp ->
+                    audiobooksRoutes(configStore, mp, jellyfinClient) { uid -> deviceService.allDevices().firstOrNull { it.jellyfinUserId == uid }?.jellyfinUsername }
+                }
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)
@@ -632,12 +641,28 @@ fun startServer(
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
+                    // Phase 281 (FR-281-10) — the phone's audiobooks: our position first, then a mirror to Jellyfin
+                    // on the part being played (its own session) and the parts left behind marked played.
+                    val audiobooksTv = mp.audiobooks?.let { ab ->
+                        dev.jellystructure.audiobooks.AudiobooksTvService(ab.store,
+                            mirror = { device, partId, positionMs, paused -> playbackService.reportProgress(device, partId, positionMs, paused) },
+                            markPlayed = { device, partIds ->
+                                val cfg = configStore.current
+                                val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+                                val token = jellyfinClient.tvTokenForClient(base, device)
+                                if (token != null) partIds.forEach { jellyfinClient.markPlayed(base, token, device.jellyfinUserId, it) }
+                            },
+                        )
+                    }
                     musicTvRoutes(
                         dev.jellystructure.music.MusicTvService(mp.store, { mp.media.lyricsFile(it) }, jellyfinClient, configStore) { device ->
                             mediaStore.allItems().filter { it.kind == dev.jellystructure.model.MediaKind.MUSIC_VIDEO && it.visibleTo(device) }
                         },
-                        playbackService, jellyfinClient, configStore, mp.store, mp.media, imageProxyService,
+                        playbackService, jellyfinClient, configStore, mp.store, mp.media, imageProxyService, audiobooksTv,
                     )
+                    audiobooksTv?.let { svc ->
+                        audiobooksTvRoutes(svc, jellyfinClient, configStore, mp.audiobooks.store, mp.audiobooksMedia, imageProxyService)
+                    }
                 }
                 liveTvRoutes(liveTvService)
             }

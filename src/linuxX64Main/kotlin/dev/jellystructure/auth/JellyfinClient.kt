@@ -449,6 +449,33 @@ class JellyfinClient {
      * would mark the other half missing. Artists are the library's folder-backed ones (`/Artists?ParentId=`);
      * an artist Jellyfin knows only as a track credit arrives on the tracks' `ArtistItems` instead.
      */
+    /**
+     * Phase 280 (FR-280-2) — a books library: every `AudioBook` file (grouped into books by our scan, by `ParentId`),
+     * and the count of `Book` items (ebooks), which are ignored. All pages or nothing, like [getMusicLibrary].
+     */
+    suspend fun getAudiobooksLibrary(baseUrl: String, token: String, libraryId: String): JellyfinAudiobooksLibrary? {
+        val base = baseUrl.trimEnd('/')
+        val id = libraryId.encodeURLParameter()
+        val acc = mutableListOf<JellyfinMusicItem>()
+        var start = 0
+        while (true) {
+            val page = runCatching {
+                httpGet("$base/Items?ParentId=$id&IncludeItemTypes=AudioBook&Recursive=true" +
+                    "&Fields=ProviderIds,SortName,Genres,Path,DateCreated,ParentId,MediaStreams,Overview,People" +
+                    "&EnableUserData=false&Limit=$JF_PAGE_SIZE&StartIndex=$start") { jellyfinAuth(token) }
+                    .bodyOrNull<JellyfinMusicItemsResponse>("books")
+            }.getOrElse { e -> if (e is CancellationException) throw e; Logger.warn("Jellyfin books failed: ${e.message}"); null } ?: return null
+            acc += page.items
+            start += page.items.size
+            if (page.items.isEmpty() || start >= page.totalRecordCount) break
+        }
+        val ebooks = runCatching {
+            httpGet("$base/Items?ParentId=$id&IncludeItemTypes=Book&Recursive=true&Limit=0") { jellyfinAuth(token) }
+                .bodyOrNull<JellyfinMusicItemsResponse>("ebooks")?.totalRecordCount
+        }.getOrNull() ?: 0
+        return JellyfinAudiobooksLibrary(acc, ebooks)
+    }
+
     suspend fun getMusicLibrary(baseUrl: String, token: String, libraryId: String): JellyfinMusicLibrary? {
         val base = baseUrl.trimEnd('/')
         suspend fun paged(query: String, context: String): List<JellyfinMusicItem>? {

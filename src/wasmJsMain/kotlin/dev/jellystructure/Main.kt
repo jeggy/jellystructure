@@ -10,6 +10,8 @@ import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMusicAlbum
 import dev.jellystructure.ui.renderMusicArtist
+import dev.jellystructure.ui.renderAudiobookAuthor
+import dev.jellystructure.ui.renderAudiobookPage
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSegments
 import dev.jellystructure.ui.renderSetup
@@ -83,7 +85,7 @@ object App {
         }
         val container = document.getElementById("page-content") ?: return
         // Phase 278 — an album or artist page belongs to the Library in the sidebar.
-        updateActiveNav(if (path.startsWith("/album/") || path.startsWith("/artist/")) "/library" else Router.current())
+        updateActiveNav(if (path.startsWith("/album/") || path.startsWith("/artist/") || path.startsWith("/audiobook/") || path.startsWith("/audiobook-author/")) "/library" else Router.current())
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
             path.startsWith("/library") -> renderLibrary(container, scope, query)
@@ -100,6 +102,9 @@ object App {
             // Phase 278 — music's own pages (not MediaKinds, so not /media/).
             path.startsWith("/album/") -> renderMusicAlbum(container, scope, path.removePrefix("/album/").substringBefore('/'), query)
             path.startsWith("/artist/") -> renderMusicArtist(container, scope, path.removePrefix("/artist/").substringBefore('/'), query)
+            // Phase 281 — an audiobook and its author (the folder is the book; ids may carry `:` and `~`).
+            path.startsWith("/audiobook/") -> renderAudiobookPage(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook/").substringBefore('/')), query)
+            path.startsWith("/audiobook-author/") -> renderAudiobookAuthor(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook-author/").substringBefore('/')), query)
             path == "/activity" -> renderActivity(container, scope, query)
             path == "/subtitles" -> renderSubtitles(container, scope)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)

@@ -473,6 +473,23 @@ object JellyfinAdvisorService {
                 )
             }
         }
+
+        // Phase 280 (FR-280-6) — for an audiobook library the local-save switch is harmless: Jellyfin has no metadata
+        // file for audiobooks, so nothing of ours can be overwritten. Said once, as information, so a folder.jpg
+        // appearing beside a book is not a surprise.
+        if (lib.collectionType.equals("books", ignoreCase = true) && opts.saveLocalMetadata == true) {
+            out += AdvisorFinding(
+                id = "books_save_local_${lib.id}",
+                severity = INFO,
+                summary = "Jellyfin saves artwork into the audiobook folders",
+                currentValue = "Save artwork into media folders: On",
+                costHere = "Harmless for audio — Jellyfin has no metadata file for audiobooks to write, so nothing of ours is overwritten. Listed so it isn't a surprise if a folder.jpg appears beside a book.",
+                navigationPath = path,
+                fieldLabel = "\"Save artwork into media folders\"",
+                recommendation = "Nothing to do. Leave it as it is, or turn it off if you would rather Jellyfin wrote nothing into the audiobook folders.",
+                tradeoff = "None either way for jellystructure: a book's cover is cover.jpg, which jellystructure writes only when you ask it to.",
+            )
+        }
         return out
     }
 

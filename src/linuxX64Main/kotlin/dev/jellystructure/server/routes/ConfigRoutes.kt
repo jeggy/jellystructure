@@ -94,6 +94,7 @@ private fun maskSecrets(config: AppConfig): AppConfig {
             tmdbV3Key = mask(config.apiKeys.tmdbV3Key),
             acoustidClientKey = mask(config.apiKeys.acoustidClientKey),   // Phase 276
             fanartTvKey = mask(config.apiKeys.fanartTvKey),               // Phase 277
+            googleBooksKey = mask(config.apiKeys.googleBooksKey),         // Phase 281
         ),
         qbittorrent = config.qbittorrent?.copy(password = mask(config.qbittorrent.password)),
         radarr = config.radarr?.copy(apiKey = mask(config.radarr.apiKey)),
@@ -233,7 +234,8 @@ fun Route.configureConfigRoutes(
         config = config.copy(
             musicbrainz = stored.musicbrainz,
             music = stored.music,
-            apiKeys = config.apiKeys.copy(acoustidClientKey = stored.apiKeys.acoustidClientKey, fanartTvKey = stored.apiKeys.fanartTvKey),
+            audiobooks = stored.audiobooks,   // Phase 281 — saved through PUT /api/audiobooks/providers
+            apiKeys = config.apiKeys.copy(acoustidClientKey = stored.apiKeys.acoustidClientKey, fanartTvKey = stored.apiKeys.fanartTvKey, googleBooksKey = stored.apiKeys.googleBooksKey),
         )
         // Bug fix (live report, 2026-09-04) — same class of bug: age_rating_map is managed on Metadata ▸
         // Age ratings via its own write-through POST /api/metadata/age-ratings, not on this form.

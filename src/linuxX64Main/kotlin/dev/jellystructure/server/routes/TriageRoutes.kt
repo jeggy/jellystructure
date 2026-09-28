@@ -85,6 +85,9 @@ data class TriageItem(
     /** Phase 278 (FR-278-12) — a music entry: `needs_you` · `no_match` · `no_cover` (albums, [kind] `album`) or
      *  `no_picture` (artists, [kind] `artist`). The dock opens the album or artist page, not `/media/`. */
     val musicIssue: String? = null,
+    /** Phase 280 (FR-280-7) — an audiobook entry ([kind] `audiobook`): `missing_part` · `two_in_one` · `no_cover`.
+     *  The dock opens the Audiobook page. */
+    val audiobookIssue: String? = null,
 )
 
 // Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
@@ -118,7 +121,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
     route("/triage") {
         get("/count") {
             // Phase 254 — a deep check's finding changes the count without touching the library version.
-            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}"   // Phase 255 — a coverage finding changes the count too
+            val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
             triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
 
@@ -232,7 +235,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                     )
                 },
             )
-            val result = TriageCount(types = types + musicTriageCounts(music, configStore), total = (types + musicTriageCounts(music, configStore)).sumOf { it.instances })
+            val result = (types + musicTriageCounts(music, configStore) + audiobookTriageCounts(music, configStore)).let { all3 -> TriageCount(types = all3, total = all3.sumOf { it.instances }) }
             triageCountCache = Pair(ver, result)
             call.respond(result)
         }
@@ -243,7 +246,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
             val items = store.allItems()
                 .mapNotNull { it.toTriageItem(segmentsEnabled, segmentStore) }
-            call.respond(items + musicTriageItems(music, configStore))
+            call.respond(items + musicTriageItems(music, configStore) + audiobookTriageItems(music, configStore))
         }
 
         get("/{mediaId}/suggest") {
@@ -534,3 +537,38 @@ private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, con
     return out
 }
 
+
+/** Phase 280 (FR-280-7) — the audiobook libraries' attention entries; absent entirely when none is mapped. */
+private fun audiobookTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
+    val scanner = music?.audiobooks ?: return emptyList()
+    if (dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isEmpty()) return emptyList()
+    val h = scanner.store.health()
+    return listOf(
+        TriageTypeCount("audiobooks_missing_part", "Audiobooks with a missing part",
+            "The folder's files skip a number. Open the book: if the part really is missing, get it; if it is just numbered wrong, say so and the flag goes.",
+            h.missingParts, h.missingParts),
+        TriageTypeCount("audiobooks_two_in_one", "Folder holds two books",
+            "The files in one folder name two different books. Split them into two folders, or say it is one book.",
+            h.twoInOne, h.twoInOne),
+        TriageTypeCount("audiobooks_no_cover", "Audiobooks without a cover",
+            "No cover.jpg in the folder and no picture inside the files. Choose or upload one on the book's Artwork tab.",
+            h.coversMissing, h.coversMissing),
+        TriageTypeCount("audiobooks_no_narrator", "Audiobooks with no narrator",
+            "Nothing names who reads it. For information — a book plays the same without one.",
+            h.noNarrator, h.noNarrator),
+    )
+}
+
+private fun audiobookTriageItems(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageItem> {
+    val scanner = music?.audiobooks ?: return emptyList()
+    if (dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isEmpty()) return emptyList()
+    return scanner.store.snapshot().books.values.filter { it.missingSince == null }.sortedBy { it.title.lowercase() }.mapNotNull { b ->
+        val issue = when {
+            b.gap.isNotEmpty() && !b.gapDismissed -> "missing_part"
+            b.albumTags.size > 1 && !b.twoInOneDismissed -> "two_in_one"
+            b.coverState == dev.jellystructure.model.MusicArt.NONE -> "no_cover"
+            else -> null
+        } ?: return@mapNotNull null
+        TriageItem(mediaId = b.id, title = b.title, year = b.year, path = b.folderPath.orEmpty(), kind = "audiobook", untaggedTracks = emptyList(), audiobookIssue = issue)
+    }
+}

@@ -49,6 +49,12 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
         "no_cover" -> return "♪ album · no cover"
         "no_picture" -> return "♪ artist · no picture"
     }
+    // Phase 280 (FR-280-7) — an audiobook entry says one thing too.
+    when (item.audiobookIssue) {
+        "missing_part" -> return "audiobook · a part is missing"
+        "two_in_one" -> return "audiobook · the folder holds two books"
+        "no_cover" -> return "audiobook · no cover"
+    }
     val parts = mutableListOf<String>()
     val untagged = item.untaggedTracks.size
     if (untagged > 0) parts += "$untagged untagged audio track${if (untagged != 1) "s" else ""}"
@@ -472,6 +478,12 @@ private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
         "needs_you", "no_match" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("find" to "1"))
         "no_cover" -> return dev.jellystructure.Router.navigate("/album/${item.mediaId}", mapOf("tab" to "artwork"))
         "no_picture" -> return dev.jellystructure.Router.navigate("/artist/${item.mediaId}", mapOf("tab" to "artwork"))
+    }
+    // Phase 280 — an audiobook opens its own page: Parts for a gap, Artwork for a cover.
+    when (item.audiobookIssue) {
+        "missing_part" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", mapOf("tab" to "parts"))
+        "two_in_one" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", emptyMap())
+        "no_cover" -> return dev.jellystructure.Router.navigate("/audiobook/${item.mediaId}", mapOf("tab" to "artwork"))
     }
     val tab = if (item.kind == "tv") "episodes" else "overview"
     dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))

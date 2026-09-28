@@ -85,8 +85,11 @@ WORKDIR /app
 # cross-episode intro/credits fingerprinting (Phase 150/159) and documents it as "must be present on
 # PATH", but it was missing here. It fails closed (returns null, never throws), so without this the
 # feature doesn't error -- it just silently stops detecting anything, with zero symptoms.
+# python3-mutagen -- Phase 281 (FR-281-8): writes tags into audiobook parts in place when the admin turns tag
+# writing on (off by default). A tagger, not an ffmpeg remux, so an M4B's chapter atoms survive. Without it the
+# providers card says the switch has nothing to drive; nothing else depends on it.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen && \
     rm -rf /var/lib/apt/lists/*
 
 RUN adduser --system --uid 1000 jellystructure

@@ -52,6 +52,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Items needing attention</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—%</div></div>
           <div class="stat" id="stat-music-cell" style="cursor:pointer;display:none" title="Open the Music kind"><div class="k">♪ Music</div><div class="v" id="stat-music">—</div><div class="tiny muted" id="stat-music-sub"></div></div>
+          <div class="stat" id="stat-audiobooks-cell" style="cursor:pointer;display:none" title="Open the Audiobooks kind"><div class="k">Audiobooks</div><div class="v" id="stat-audiobooks">—</div><div class="tiny muted" id="stat-audiobooks-sub"></div></div>
         </div>
 
         <div class="row" style="margin-top:18px;align-items:stretch;gap:18px;flex-wrap:wrap">
@@ -283,8 +284,20 @@ private suspend fun loadMusicTile() {
     cell.onclick = { App.navigate("/library?kind=music") }
 }
 
+/** Phase 280 (FR-280-7) — the Audiobooks tile, only when an audiobook library is mapped and holds a book. */
+private suspend fun loadAudiobooksTile() {
+    val h = dev.jellystructure.api.AudiobooksApi.status() ?: return
+    if (h.books == 0) return
+    val cell = document.getElementById("stat-audiobooks-cell") as? HTMLElement ?: return
+    cell.style.display = ""
+    (document.getElementById("stat-audiobooks") as? HTMLElement)?.textContent = "${h.books} ${if (h.books == 1) "book" else "books"}"
+    (document.getElementById("stat-audiobooks-sub") as? HTMLElement)?.textContent = "${h.parts} parts · ${muTotal(h.durationMs)}"
+    cell.onclick = { App.navigate("/library?kind=audiobooks") }
+}
+
 private suspend fun loadDashboardStats() {
     loadMusicTile()
+    loadAudiobooksTile()
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
     (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
@@ -320,8 +333,8 @@ private suspend fun loadAttentionBreakdown() {
         for ((t, severity) in ordered) {
             val zero = t.instances == 0
             val countLabel = if (t.instances != t.titles) "${t.instances} (${t.titles} title${if (t.titles != 1) "s" else ""})" else "${t.instances}"
-            val badgeCls = if (zero) "badge" else "badge $severity"
-            append("""<div class="abk${if (zero) " zero" else ""}" data-issue-filter="${t.key}">""")
+            val badgeCls = if (zero || severity == "info") "badge" else "badge $severity"
+            append("""<div class="abk${if (zero) " zero" else ""}"${if (severity == "info" && !zero) """ style="opacity:.65"""" else ""} data-issue-filter="${t.key}">""")
             append("""<span class="abk-l"><b>${t.label.esc()}</b><span class="d">${t.description.esc()}</span></span>""")
             append("""<span class="$badgeCls">${if (zero) "✓ 0" else countLabel}</span>""")
             append("</div>")
@@ -343,6 +356,11 @@ private suspend fun loadAttentionBreakdown() {
                     "music_no_cover" -> App.navigate("/library?kind=music&f.match=matched,locked&f.cover=missing")
                     "music_no_picture" -> App.navigate("/library?kind=music&mview=artists&f.artimg=missing")
                     "music_reencodes" -> App.navigate("/library?kind=music&mview=songs&f.format=WMA")
+                    // Phase 280 (FR-280-7) — audiobooks' entries open the Audiobooks kind, filtered.
+                    "audiobooks_missing_part" -> App.navigate("/library?kind=audiobooks&f.needs=missing_part")
+                    "audiobooks_two_in_one" -> App.navigate("/library?kind=audiobooks&f.needs=two_books")
+                    "audiobooks_no_cover" -> App.navigate("/library?kind=audiobooks&f.cover=missing")
+                    "audiobooks_no_narrator" -> App.navigate("/library?kind=audiobooks&f.narrator=missing")
                     else -> App.navigate("/library?filter=$key")
                 }
             }
@@ -379,6 +397,11 @@ private val ATTENTION_ROW_ORDER = listOf(
     "music_no_cover" to "warn",
     "music_no_picture" to "warn",
     "music_reencodes" to "warn",
+    // Phase 280 — audiobooks, after music; *no narrator* is information only (dimmed, never a count to clear).
+    "audiobooks_missing_part" to "warn",
+    "audiobooks_two_in_one" to "warn",
+    "audiobooks_no_cover" to "warn",
+    "audiobooks_no_narrator" to "info",
 )
 
 private suspend fun loadRecentActivity() {

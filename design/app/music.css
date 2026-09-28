@@ -215,3 +215,41 @@
 .mu-modal h3{margin:0 0 8px;font-size:1.08rem}
 .mu-modal p{font-size:.86rem;line-height:1.6;color:var(--ink-soft);margin:0 0 10px}
 @media (max-width:720px){.mu-pb{grid-template-columns:minmax(0,1fr)}.mu-q3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.mu-rel{grid-template-columns:18px 42px minmax(0,1fr) 60px}.mu-rel .lb,.mu-rel .fm{display:none}.mu-hi{grid-template-columns:minmax(0,1fr)}}
+
+/* Phase 281 — the Audiobook page (was inline in audiobook.html; moved here so the admin build serves it). */
+.ab-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
+@media (max-width:1000px){.ab-grid{grid-template-columns:minmax(0,1fr)}}
+.ab-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.ab-fields .wide{grid-column:1/-1}
+.ab-f label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin-bottom:5px;font-weight:600}
+.ab-f label .src{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-dim);margin-left:6px}
+.ab-f input,.ab-f textarea,.ab-f select{width:100%;font:inherit;font-size:.88rem;padding:8px 10px;border-radius:8px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink)}
+.ab-f textarea{min-height:110px;resize:vertical;line-height:1.5}
+.ab-f input:focus,.ab-f textarea:focus{outline:none;border-color:var(--hi)}
+.ab-f .empty{border-style:dashed}
+.ab-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:38px;padding:4px 6px;border-radius:8px;border:1px solid var(--line-2);background:var(--fill-2)}
+.ab-chips.empty{border-style:dashed}
+.ab-chips .chip{font-size:.78rem}
+.ab-chips input{flex:1;min-width:110px;border:0;background:none;padding:4px;font:inherit;font-size:.84rem;color:var(--ink)}
+.ab-chips input:focus{outline:none}
+.ab-rail{display:flex;flex-direction:column;gap:10px}
+.ab-sug{border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--fill-2)}
+.ab-sug.none{border-style:dashed;background:none}
+.ab-sug .h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.84rem}
+.ab-sug .h .p{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim)}
+.ab-sug .nt{font-size:.76rem;color:var(--ink-soft);margin-top:4px;line-height:1.45}
+.ab-sug .hit{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;margin-top:8px}
+.ab-sug .hit .th{width:52px;aspect-ratio:1;border-radius:6px}
+.ab-sug .fl{display:flex;align-items:center;gap:8px;font-size:.76rem;padding:5px 0;border-top:1px dashed var(--line)}
+.ab-sug .fl .k{color:var(--ink-soft);width:78px;flex:none}
+.ab-sug .fl .v{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ab-sug .fl.done .v{color:var(--ok)}
+.ab-tr[draggable="true"]{cursor:grab}
+.ab-tr.drag td{opacity:.4}
+.ab-tr.over td{box-shadow:inset 0 2px 0 var(--hi)}
+.ab-grab{color:var(--ink-dim);cursor:grab;font-size:.9rem;user-select:none}
+.ab-ch input{font:inherit;font-size:.86rem;padding:5px 8px;border-radius:7px;border:1px solid transparent;background:none;color:var(--ink);width:100%}
+.ab-ch input:hover{border-color:var(--line-2)}.ab-ch input:focus{outline:none;border-color:var(--hi);background:var(--fill-2)}
+.ab-ring{--p:0;width:34px;height:34px;border-radius:50%;background:conic-gradient(var(--hi) calc(var(--p)*1%),var(--fill-3) 0);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.ab-ring::after{content:'';width:24px;height:24px;border-radius:50%;background:var(--fill)}
+.ab-srcchip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line-2);font-size:.76rem;font-weight:600}

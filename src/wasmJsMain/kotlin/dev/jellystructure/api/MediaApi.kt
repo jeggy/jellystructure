@@ -216,6 +216,7 @@ data class TriageItem(
     val segmentsLowConfidence: Boolean = false,  // Phase 150: movie — its own heuristic guess is below the trust threshold
     val noSegments: Boolean = false,             // Phase 150: title-level — no marker anywhere yet
     val musicIssue: String? = null,              // Phase 278: needs_you · no_match · no_cover (album) · no_picture (artist)
+    val audiobookIssue: String? = null,          // Phase 280: missing_part · two_in_one · no_cover (kind `audiobook`)
 )
 
 @Serializable

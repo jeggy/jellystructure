@@ -26,7 +26,7 @@ private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 private fun ua() = "jellystructure/${ServerVersion.current.ifBlank { "dev" }} ( https://github.com/jeggy/jellystructure )"
 
 /** GET as text through the shared outbound gate; null on any failure or non-200 (logged once, never thrown). */
-private suspend fun fetchText(url: String, context: String, limiter: FixedRateLimiter? = null): String? {
+internal suspend fun fetchText(url: String, context: String, limiter: FixedRateLimiter? = null): String? {
     limiter?.acquire()
     return runCatching {
         OutboundHttp.withPermit {

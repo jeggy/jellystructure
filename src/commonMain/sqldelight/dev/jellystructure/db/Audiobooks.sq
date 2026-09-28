@@ -1,0 +1,92 @@
+-- Phase 280 — audiobooks: the book (a folder), its parts, authors, and where each listener is. Must stay in sync with 60.sqm.
+-- The position and bookmarks are OURS (FR-280-4): Jellyfin keeps none in a part under 5 minutes, so it is never read back.
+
+CREATE TABLE audiobook (
+    id TEXT NOT NULL PRIMARY KEY,
+    library_id TEXT,
+    json TEXT NOT NULL,
+    title TEXT NOT NULL,
+    missing_since INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE audiobook_part (
+    id TEXT NOT NULL PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    json TEXT NOT NULL,
+    missing_since INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE audiobook_author (
+    id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    name TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE audiobook_progress (
+    user_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    part_index INTEGER NOT NULL DEFAULT 0,
+    position_ms INTEGER NOT NULL DEFAULT 0,
+    speed REAL NOT NULL DEFAULT 1.0,
+    updated_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    PRIMARY KEY (user_id, book_id)
+);
+
+CREATE TABLE audiobook_bookmark (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    position_ms INTEGER NOT NULL,
+    note TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX audiobook_part_book ON audiobook_part(book_id);
+CREATE INDEX audiobook_progress_book ON audiobook_progress(book_id);
+CREATE INDEX audiobook_bookmark_user_book ON audiobook_bookmark(user_id, book_id);
+
+allBooks:
+SELECT json FROM audiobook;
+
+allParts:
+SELECT json FROM audiobook_part;
+
+allAuthors:
+SELECT json FROM audiobook_author;
+
+putBook:
+INSERT OR REPLACE INTO audiobook(id, library_id, json, title, missing_since, updated_at) VALUES (?, ?, ?, ?, ?, ?);
+
+putPart:
+INSERT OR REPLACE INTO audiobook_part(id, book_id, json, missing_since, updated_at) VALUES (?, ?, ?, ?, ?);
+
+putAuthor:
+INSERT OR REPLACE INTO audiobook_author(id, json, name, updated_at) VALUES (?, ?, ?, ?);
+
+progressFor:
+SELECT * FROM audiobook_progress WHERE user_id = ? AND book_id = ?;
+
+progressOfUser:
+SELECT * FROM audiobook_progress WHERE user_id = ?;
+
+progressOfBook:
+SELECT * FROM audiobook_progress WHERE book_id = ?;
+
+putProgress:
+INSERT OR REPLACE INTO audiobook_progress(user_id, book_id, part_index, position_ms, speed, updated_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+bookmarksFor:
+SELECT * FROM audiobook_bookmark WHERE user_id = ? AND book_id = ? ORDER BY position_ms;
+
+addBookmark:
+INSERT INTO audiobook_bookmark(user_id, book_id, position_ms, note, created_at) VALUES (?, ?, ?, ?, ?);
+
+deleteBookmark:
+DELETE FROM audiobook_bookmark WHERE id = ? AND user_id = ?;
+
+lastInsertedBookmark:
+SELECT last_insert_rowid();

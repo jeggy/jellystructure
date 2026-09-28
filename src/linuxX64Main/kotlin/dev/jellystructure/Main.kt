@@ -304,6 +304,8 @@ fun main() = runBlocking {
             dev.jellystructure.music.FanartTvClient { configStore.current.apiKeys.fanartTvKey },
             mediaHistory,
         ),
+        // Phase 280 — audiobooks: the folder is the book.
+        audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db)),
     )
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
@@ -341,6 +343,11 @@ fun main() = runBlocking {
     // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
     musicPipeline.convert = dev.jellystructure.music.MusicConvert(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory).also { c ->
         mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
+    }
+    // Phase 281 — the book editor: suggestions from four providers, the cover, Save (tags only with the switch on).
+    musicPipeline.audiobooksMedia = musicPipeline.audiobooks?.let { b ->
+        dev.jellystructure.audiobooks.AudiobooksMediaService(b.store, dev.jellystructure.audiobooks.AudiobookProviders(configStore, musicPipeline.matcher.mb),
+            artworkDownloader, configStore, jellyfinClient, seedingGuard, mediaHistory) { lib -> b.scan(lib) }
     }
     mediaJobQueue.start()
     // Phase 273 (§B/§C/§E) — the Bazarr side: steering, the post-processing hook and its history poll, the advisor.

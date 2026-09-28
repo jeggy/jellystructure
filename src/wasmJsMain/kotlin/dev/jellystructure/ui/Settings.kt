@@ -1582,7 +1582,16 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
         <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
           value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
       </div>
-      ${if (lib.collectionType.equals("music", ignoreCase = true)) """
+      ${if (lib.collectionType.equals("books", ignoreCase = true)) """
+      <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
+        <span style="font-size:.78rem">The files, then you · Suggestions: <a href="#/settings?tab=connections" title="The Metadata providers card (Audiobooks)">iTunes · Open Library · Audnexus · Google Books</a>
+          <span style="color:var(--ink-soft)">— Jellyfin makes one item per file; here the folder is the book.</span></span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Audiobooks</span>
+        <span class="tiny muted mono lib-ab-count" data-lib-id="${lib.jellyfinId}">…</span>
+      </div>""" else if (lib.collectionType.equals("music", ignoreCase = true)) """
       <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
         <span style="font-size:.78rem"><a href="#/settings?tab=connections" title="The Metadata providers card (Music)">MusicBrainz · Covers: Cover Art Archive · Artist images: fanart.tv · Lyrics: LRCLIB</a>
@@ -1603,6 +1612,7 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
       <div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
         <button class="btn sm ghost lib-scan-btn" data-lib-id="${lib.jellyfinId}" data-lib-idx="$i">Scan</button>
         ${if (lib.collectionType.equals("music", ignoreCase = true)) """<a class="btn sm ghost" href="#/library?kind=music">Open in Library</a>"""   // Phase 278 (FR-278-9)
+          else if (lib.collectionType.equals("books", ignoreCase = true)) """<a class="btn sm ghost" href="#/library?kind=audiobooks">Open in Library</a>"""   // Phase 280 (FR-280-6)
           else """<button class="btn sm ghost lib-push-btn" data-lib-idx="$i">Push all to Jellyfin</button>"""}
         <span id="lib-action-result-$i" class="tiny muted"></span>
       </div>""" else ""}
@@ -1626,6 +1636,14 @@ private fun renderLibraryList() {
         append("</div></details>")
     }
     listEl.innerHTML = activeCards + skippedCards
+    // Phase 280 (FR-280-6) — an audiobook library card says what the files became: *14 audiobook files → 1 book · 0 ebooks*.
+    if (listEl.querySelector(".lib-ab-count") != null) settingsScope?.launch {
+        val h = dev.jellystructure.api.AudiobooksApi.status()
+        val nodes = listEl.querySelectorAll(".lib-ab-count")
+        for (k in 0 until nodes.length) (nodes.item(k) as? HTMLElement)?.textContent =
+            if (h == null || (h.books == 0 && h.parts == 0)) "not scanned yet — the next scan groups the files into books"
+            else "${h.parts} audiobook file${if (h.parts == 1) "" else "s"} → ${h.books} book${if (h.books == 1) "" else "s"} · ${h.ebooks} ebook${if (h.ebooks == 1) "" else "s"} (left alone)"
+    }
 
     // Attach change listeners after DOM is built
     libraryMappings.forEachIndexed { i, _ ->

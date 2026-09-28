@@ -42,6 +42,16 @@ data class AppConfig(
     val musicbrainz: MusicBrainzConfig = MusicBrainzConfig(),
     // Phase 277 — music behaviour that is not MusicBrainz's.
     val music: MusicConfig = MusicConfig(),
+    // Phase 281 (dev review 2) — the audiobook suggestion providers' pickers and the tag-writing switch.
+    val audiobooks: AudiobooksConfig = AudiobooksConfig(),
+)
+
+/** Phase 281 (FR-281-4/8) — iTunes' store, Audnexus' region, and *Write tags into audiobook files* (M6·1: off). */
+@Serializable
+data class AudiobooksConfig(
+    @SerialName("itunes_store") val itunesStore: String = "dk",
+    @SerialName("audnexus_region") val audnexusRegion: String = "uk",
+    @SerialName("write_tags") val writeTags: Boolean = false,
 )
 
 /** Phase 277 (FR-277-8, H6's lean) — `fetch_lyrics`: LRCLIB lyrics as `.lrc` sidecars, on by default. */
@@ -156,6 +166,8 @@ data class ScanConfig(
  */
 object MusicSteps {
     const val SCAN = "scan_music"
+    /** Phase 280 (FR-280-2) — the audiobook libraries: files grouped into books, flagged, never guessed. */
+    const val AUDIOBOOKS = "scan_audiobooks"
     /** Phase 276 — the MusicBrainz ladder. */
     const val MATCH = "match_musicbrainz"
     /** Phase 277 — covers, artist pictures and biographies; lyrics (only while *Fetch lyrics* is on); the NFOs last,
@@ -163,7 +175,7 @@ object MusicSteps {
     const val ARTWORK = "fetch_music_artwork"
     const val LYRICS = "fetch_lyrics"
     const val NFO = "write_music_nfo"
-    val ALL: List<String> = listOf(SCAN, MATCH, ARTWORK, LYRICS, NFO)
+    val ALL: List<String> = listOf(SCAN, AUDIOBOOKS, MATCH, ARTWORK, LYRICS, NFO)
 
     fun isMusic(step: String): Boolean = step in ALL
 
@@ -175,8 +187,10 @@ object MusicSteps {
         var out = pipeline
         for (step in ALL) {
             if (step in alreadySeeded || out.any { it.step == step }) continue
-            val at = if (step == SCAN) {
-                out.indexOfFirst { it.step == "scan_files" }.let { if (it >= 0) it + 1 else 0 }
+            val at = if (step == SCAN || step == AUDIOBOOKS) {
+                // The audiobooks scan sits straight after the music scan when there is one, else after scan_files.
+                val after = if (step == AUDIOBOOKS) out.indexOfFirst { it.step == SCAN }.takeIf { it >= 0 } else null
+                (after ?: out.indexOfFirst { it.step == "scan_files" }).let { if (it >= 0) it + 1 else 0 }
             } else {
                 var i = out.size
                 while (i > 1 && out[i - 1].step in setOf("wait", "notify")) i--
@@ -415,6 +429,9 @@ data class ApiKeys(
     @SerialName("acoustid_client_key") val acoustidClientKey: String = "",
     // Phase 277 — optional; absent ⇒ artist pictures come from Wikimedia Commons only.
     @SerialName("fanart_tv_key") val fanartTvKey: String = "",
+    // Phase 281 (FR-281-4, dev review 2) — optional; without a key Google Books' shared quota is always spent, so the
+    // provider is skipped and the card says so.
+    @SerialName("google_books_key") val googleBooksKey: String = "",
 )
 
 @Serializable

@@ -54,10 +54,10 @@ import io.ktor.server.routing.route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-private fun fileSize(path: String): Long? = runCatching { SystemFileSystem.metadataOrNull(Path(path))?.size }.getOrNull()
+internal fun fileSize(path: String): Long? = runCatching { SystemFileSystem.metadataOrNull(Path(path))?.size }.getOrNull()
 
 /** The `file` part of a multipart upload (the films' upload shape). */
-private suspend fun receiveImage(call: ApplicationCall): ByteArray? {
+internal suspend fun receiveImage(call: ApplicationCall): ByteArray? {
     var bytes: ByteArray? = null
     call.receiveMultipart().forEachPart { part ->
         if (part is PartData.FileItem && part.name == "file") bytes = part.provider().readRemaining().readByteArray()
@@ -67,7 +67,7 @@ private suspend fun receiveImage(call: ApplicationCall): ByteArray? {
 }
 
 /** A music image file, typed by its own bytes; 404 when there is none. Cached briefly — a replaced cover shows after a reload. */
-private suspend fun serveFile(call: ApplicationCall, path: String?) {
+internal suspend fun serveFile(call: ApplicationCall, path: String?) {
     val bytes = path?.let { runCatching { FileIo.readBytes(Path(it)) }.getOrNull() } ?: return call.respond(HttpStatusCode.NotFound)
     val type = when (dev.jellystructure.media.sniffImageSignature(bytes)) {
         dev.jellystructure.media.SniffedImage.PNG -> ContentType.Image.PNG
@@ -429,6 +429,6 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
 }
 
 /** Where the album or artist opens in Jellyfin's own web UI (the External links menu). */
-private fun jellyfinWebUrl(cfg: dev.jellystructure.config.AppConfig, id: String): String? =
+internal fun jellyfinWebUrl(cfg: dev.jellystructure.config.AppConfig, id: String): String? =
     cfg.apiKeys.jellyfinUrl.trimEnd('/').takeIf { it.isNotBlank() }?.let { "$it/web/#/details?id=$id" }
 

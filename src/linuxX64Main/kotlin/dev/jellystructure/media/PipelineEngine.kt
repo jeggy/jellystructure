@@ -77,9 +77,13 @@ class MusicPipeline(
     val matcher: dev.jellystructure.music.MusicMatchService,
     // Phase 277 — the files: covers, pictures, biographies, lyrics, NFOs.
     val media: dev.jellystructure.music.MusicMediaService,
+    // Phase 280 — the audiobook libraries ride the music steps' run (never a single-item run, run with no film changed).
+    val audiobooks: dev.jellystructure.audiobooks.AudiobooksScanner? = null,
 ) {
     /** Phase 278 — *Convert…* (set in Main.kt once the seeding guard exists). */
     var convert: dev.jellystructure.music.MusicConvert? = null
+    /** Phase 281 — the book editor, suggestions, cover and Save (set in Main.kt once the seeding guard exists). */
+    var audiobooksMedia: dev.jellystructure.audiobooks.AudiobooksMediaService? = null
 }
 
 /**
@@ -151,6 +155,7 @@ private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
         buildList {
             add(PipelineStep(step = "scan_files"))
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.SCAN))  // Phase 275
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.AUDIOBOOKS))  // Phase 280
             add(PipelineStep(step = "pull_tmdb", scope = "all"))
             if (cfg.behavior.fetchImages) add(PipelineStep(step = "fetch_artwork"))
             // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
@@ -385,6 +390,18 @@ suspend fun runPipeline(
                     .onFailure { Logger.warn("scan_music failed: ${it.message}", "music") }
                     .getOrNull()?.sentence() ?: "failed — see the log"
                 Logger.info("scan_music: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.MusicSteps.AUDIOBOOKS -> {
+                // Phase 280 (FR-280-2) — one paged Jellyfin read per audiobook library, grouped into books by folder.
+                val books = deps.music?.audiobooks ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val libraryFilter = (target as? RunTarget.Library)?.libraryJellyfinId
+                val summary = runCatching { books.scan(libraryFilter) }
+                    .onFailure { Logger.warn("scan_audiobooks failed: ${it.message}", "audiobooks") }
+                    .getOrNull()?.sentence() ?: "failed — see the log"
+                Logger.info("scan_audiobooks: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             dev.jellystructure.config.MusicSteps.MATCH -> {

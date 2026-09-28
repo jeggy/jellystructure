@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/research-reports/audiobooks-library-and-player-2026-09-27.md` (§0,
+`✓ Built` 2026-09-28, **not deployed** (build notes at the end) — written 2026-09-28 from `specs/research-reports/audiobooks-library-and-player-2026-09-27.md` (§0,
 §1, §3, §4), the admin brief §M1 and §M4–§M5, and the mockups (`design/app/audiobook-data.js`,
 `library.html?kind=books`, `settings.html#ab-libcard`). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). The research's "279". Builds on
 **275** (the library pattern), **152/160** (numbering fallbacks) and **149** (`FfprobeRunner -show_chapters`).
@@ -130,3 +130,48 @@ Buildable. Nine items; one correction (1) and one grouping detail (3).
    (measured) → silent; `SaveLocalMetadata: true` → the informational note as written. Nothing fires wrongly.
 8. **Health** additive ✓; `Book` items ignored ✓ (0 measured).
 9. **Wire:** none (new paths only).
+
+## Build notes (2026-09-28)
+
+Built on `main` after R321/R322. Compiles (backend + admin); the full backend suite passes (723), including the new
+`AudiobooksIngestTest` (grouping, the gap's two kinds, a re-read keeping what was typed and dragged, split and join,
+*finished*). **Not deployed and not tried in a browser when written.**
+
+**Owner, mid-build — "call it audiobooks":** *"We might [do] books at some later point, so would make sense to call it
+audiobooks."* Everything this phase names is therefore *audiobooks*, not *books*: the package
+`dev.jellystructure.audiobooks`, `Audiobook*` types, the step **`scan_audiobooks`** (FR-280-2's `scan_books`), the
+health key **`audiobooks`** (FR-280-7's `books { … }`; the fields inside are as written), the triage ids
+`audiobooks_*`, the tables `audiobook`, `audiobook_part`, **`audiobook_author`** (dev review 5's `author`),
+`audiobook_progress`, `audiobook_bookmark` (migration **60**), the admin routes `/api/audiobooks/…`, the Library kind
+`?kind=audiobooks` (the mockup's `?kind=books`) and the phone's paths (281's build notes). Only Jellyfin's own
+collection type stays `books` — it is Jellyfin's name.
+
+1. **Grouping (FR-280-1, dev review 3):** by Jellyfin's `ParentId`; a file straight under the library root is its own
+   book (`f:<item id>`). Our `position` starts as `IndexNumber`, else the filename's number, then the path; a part
+   already known keeps the position the admin dragged it to, and a new one goes after. A re-read replaces only a
+   field the files still own (281's origins; the lock freezes everything). Rows Jellyfin no longer lists are kept and
+   marked missing, the films' rule. `ffprobe -show_chapters` runs only for a one-file book, and only again when its
+   length changed.
+2. **The flags (FR-280-3, dev review 4):** a gap is *not in the folder* when the filename numbers agree with
+   Jellyfin's, *numbered wrong* when they disagree; both dismiss per folder. **Split into two books…** is built: the
+   folder's book keeps the parts tagged with its first `Album`, and each other tag becomes a book of its own
+   (`<folder id>~<tag>`) — **the files are not moved**, so Jellyfin still shows one folder. The confirmation lists
+   which parts go where (open question 2's preview, as a list, **without** dragging between columns). *Join back into
+   one book* undoes it (and dismisses the flag). A split-off book's cover is `cover-<tag>.jpg` beside the folder's
+   `cover.jpg`, which Jellyfin does not read.
+3. **Position (FR-280-4, dev review 1):** ours, in `audiobook_progress`; finished when the last part is within its last
+   five minutes, or marked; a heartbeat from an earlier part takes *finished* away. The Jellyfin mirror is 281's.
+4. **Visibility (FR-280-5):** the viewer's library grant, as music (`musicVisible`). **Deviation:** the phone's search
+   does not look in audiobooks this round.
+5. **Library card (FR-280-6):** the metadata line linking to the providers card, *N audiobook files → M books · E
+   ebooks (left alone)* from `/api/audiobooks/status`, *Open in Library*; the advisor gained the informational
+   *Save artwork into media folders* note for an audiobook library (`SaveLocalMetadata` read, nullable).
+6. **Health and triage (FR-280-7):** the `audiobooks` block (null without a mapped library; `ebooks` counted by the
+   last scan); a Dashboard *Audiobooks* tile; four attention rows (*no narrator* dimmed, information); dock entries
+   for a missing part (→ Parts), two books (→ the book) and no cover (→ Artwork). The triage cache keys on the
+   audiobook store's version.
+7. **The Audiobooks kind (FR-280-8):** Audiobooks · Authors · Series (Series only when any book has one), the eight
+   facets counted server-side against every other facet, the status line, sort, and the not-mapped / not-scanned /
+   empty states. The kind picker is now one shared control across films, Music and Audiobooks. Styles are
+   `music.css`'s `mu-*`; the book page's `ab-*` rules moved there from the mockup's inline `<style>`.
+

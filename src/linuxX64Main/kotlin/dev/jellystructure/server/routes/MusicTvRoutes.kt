@@ -35,6 +35,8 @@ fun Route.musicTvRoutes(
     store: MusicStore,
     media: MusicMediaService,
     images: RaviloArtworkService?,
+    /** 281 — audiobook parts play through the same `/tv/music/play`. */
+    audiobooks: dev.jellystructure.audiobooks.AudiobooksTvService? = null,
 ) {
     get("/tv/music/home") { call.respond(svc.home(call.attributes[DeviceKey])) }
 
@@ -61,8 +63,16 @@ fun Route.musicTvRoutes(
     post("/tv/music/play") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<MusicPlayRequest>()
-        if (!svc.visible(device, req.trackId) || store.track(req.trackId) == null) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
-        call.respond(playback.startMusicPlayback(device, req.trackId, req.capabilities, req.startPositionMs))
+        // 281 FR-281-10 — one part of an audiobook: the part's own session, exactly as a song's.
+        val audiobookId = req.audiobookId
+        if (audiobookId != null) {
+            val partId = audiobooks?.partId(device, audiobookId, req.part ?: 0)
+                ?: return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
+            return@post call.respond(playback.startMusicPlayback(device, partId, req.capabilities, req.startPositionMs))
+        }
+        val trackId = req.trackId ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "track_id or audiobook_id"))
+        if (!svc.visible(device, trackId) || store.track(trackId) == null) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
+        call.respond(playback.startMusicPlayback(device, trackId, req.capabilities, req.startPositionMs))
         svc.forget(device)   // Recently played moved.
     }
 

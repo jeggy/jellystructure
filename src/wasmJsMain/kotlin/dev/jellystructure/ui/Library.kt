@@ -173,6 +173,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     libScanSocket = null
     // Phase 278 (FR-278-1) — Music is not a MediaKind: its own view, its own rows and facets.
     if (query["kind"].equals("music", ignoreCase = true)) { renderMusicLibrary(container, scope, query); return }
+    // Phase 280 (FR-280-8) — Audiobooks, likewise: the folder is the book, its own rows and facets.
+    if (query["kind"].equals("audiobooks", ignoreCase = true)) { renderAudiobookLibrary(container, scope, query); return }
     libScannedCount = 0
     libPendingScanCount = 0
     parseLibraryUrl()
@@ -200,6 +202,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <span id="k-tv">TV</span>
             <span id="k-mv">Music videos</span>
             <span id="k-music" title="Jellyfin's music library — albums, artists and songs">Music</span>
+            <span id="k-audiobooks" title="Jellyfin's books library — the audiobooks in it, one folder per book">Audiobooks</span>
           </span>
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
@@ -366,6 +369,7 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
     }
 
     document.getElementById("k-music")?.addEventListener("click") { App.navigate("/library?kind=music") }
+    document.getElementById("k-audiobooks")?.addEventListener("click") { App.navigate("/library?kind=audiobooks") }
 
     // R101: Clear filters — reset all state vars and reload a clean grid.
     document.getElementById("lib-clear")?.addEventListener("click") {
