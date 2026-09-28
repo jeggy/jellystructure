@@ -73,6 +73,8 @@ class PipelineDeps(
 class MusicPipeline(
     val scanner: dev.jellystructure.music.MusicScanner,
     val store: dev.jellystructure.music.MusicStore,
+    // Phase 276 — the MusicBrainz ladder and every admin action on a match.
+    val matcher: dev.jellystructure.music.MusicMatchService,
 )
 
 /**
@@ -147,6 +149,7 @@ fun effectivePipeline(cfg: AppConfig): List<PipelineStep> =
             FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
             add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
         }
     }
 
@@ -227,8 +230,10 @@ suspend fun runPipeline(
             fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${items.size}}""")
         if (cfg.behavior.notifyOnNoMatch) {
             val unmatched = items.count { it.tmdbId == null && it.kind != dev.jellystructure.model.MediaKind.MUSIC_VIDEO }
+            // FR-275-6 — `unmatched` and the reason to fire stay film/series-only; music rides along as its own count.
+            val musicUnmatched = deps.music?.store?.health()?.unmatched ?: 0
             if (unmatched > 0)
-                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
+                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched,"music_unmatched":$musicUnmatched}""")
         }
     }
 
@@ -369,6 +374,23 @@ suspend fun runPipeline(
                     .onFailure { Logger.warn("scan_music failed: ${it.message}", "music") }
                     .getOrNull()?.sentence() ?: "failed — see the log"
                 Logger.info("scan_music: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.MusicSteps.MATCH -> {
+                // Phase 276 (FR-276-3) — one album at a time at MusicBrainz's one request a second; `missing`
+                // (the default) retries unmatched albums once a day, `all` refreshes matched ones from their ids.
+                val music = deps.music ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                val cfgNow = configStore.current
+                val summary = if (!cfgNow.musicbrainz.enabled) "MusicBrainz is off in Settings"
+                    else if (dev.jellystructure.music.MusicScanner.musicLibraries(cfgNow).isEmpty()) "no music library mapped"
+                    else {
+                        broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, music.store.health().albums))
+                        runCatching { music.matcher.matchAlbums(null, scopeAll = step.scope == "all").sentence() }
+                            .onFailure { Logger.warn("match_musicbrainz failed: ${it.message}", "music") }
+                            .getOrDefault("failed — see the log")
+                    }
+                Logger.info("match_musicbrainz: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "pull_tmdb" -> {

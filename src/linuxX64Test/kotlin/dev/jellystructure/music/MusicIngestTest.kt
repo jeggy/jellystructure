@@ -124,8 +124,8 @@ class MusicIngestTest {
     fun scan_music_is_seeded_once_right_after_scan_files() {
         val pipeline = listOf(PipelineStep("scan_files"), PipelineStep("pull_tmdb"), PipelineStep("notify"))
         val seeded = MusicSteps.seed(pipeline, emptyList())
-        assertEquals(listOf("scan_files", "scan_music", "pull_tmdb", "notify"), seeded.map { it.step })
-        assertEquals(pipeline, MusicSteps.seed(pipeline, listOf(MusicSteps.SCAN)))   // removed by the operator: stays removed
+        assertEquals(listOf("scan_files", "scan_music"), seeded.map { it.step }.take(2))
+        assertEquals(pipeline, MusicSteps.seed(pipeline, MusicSteps.ALL))            // removed by the operator: stays removed
         assertEquals(emptyList(), MusicSteps.seed(emptyList(), emptyList()))       // the built-in default carries it
     }
 

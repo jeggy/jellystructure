@@ -92,6 +92,8 @@ private fun maskSecrets(config: AppConfig): AppConfig {
         apiKeys = config.apiKeys.copy(
             jellyfinToken = mask(config.apiKeys.jellyfinToken),
             tmdbV3Key = mask(config.apiKeys.tmdbV3Key),
+            acoustidClientKey = mask(config.apiKeys.acoustidClientKey),   // Phase 276
+            fanartTvKey = mask(config.apiKeys.fanartTvKey),               // Phase 277
         ),
         qbittorrent = config.qbittorrent?.copy(password = mask(config.qbittorrent.password)),
         radarr = config.radarr?.copy(apiKey = mask(config.radarr.apiKey)),
@@ -226,6 +228,13 @@ fun Route.configureConfigRoutes(
         // Phase 273 — the subtitle check's switch has its own route (PUT /api/subtitles/settings), so a Settings save
         // from any page, including one loaded before the switch existed, never resets it.
         config = config.copy(subtitleCheck = stored.subtitleCheck)
+        // Phase 276 — the Metadata providers card saves through PUT /api/music/providers, so a Settings save (whose
+        // form model has no such fields) never resets the MusicBrainz contact or wipes the AcoustID/fanart.tv keys.
+        config = config.copy(
+            musicbrainz = stored.musicbrainz,
+            music = stored.music,
+            apiKeys = config.apiKeys.copy(acoustidClientKey = stored.apiKeys.acoustidClientKey, fanartTvKey = stored.apiKeys.fanartTvKey),
+        )
         // Bug fix (live report, 2026-09-04) — same class of bug: age_rating_map is managed on Metadata ▸
         // Age ratings via its own write-through POST /api/metadata/age-ratings, not on this form.
         // readForm() sends MetadataConfig(ageRatingCascade = ...) with ageRatingMap defaulting to empty,

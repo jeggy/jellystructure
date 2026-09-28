@@ -2,7 +2,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§B1, §B2, §E2, §H2,
+`✓ Built` 2026-09-28 (build notes at the end; not deployed). `Planned` when written 2026-09-28 from
+`specs/design-brief-music-in-the-admin-2026-09-27.md` (§B1, §B2, §E2, §H2,
 §H5), the research report §3.1–§3.3 and §4.3, and the mockups `design/app/album.js` (the Find match… panel) and
 `design/app/settings.html#sect-musicprov`. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275**. Numbering: see 275.
 
@@ -136,3 +137,51 @@ Buildable. Nine items; no blocker. The dry run (acceptance 1) is the first build
 8. **A pasted release URL** resolves to its group with `/release/{mbid}?inc=release-groups` and preselects
    that release (open question 2: yes).
 9. **Wire:** none.
+
+## Build notes (2026-09-28)
+
+Built on `main` after 275. Compiles (backend + admin), and the music/config/plan tests pass (the ladder is tested
+end to end against a fake MusicBrainz). **Not deployed.**
+
+1. **Acceptance 1 — the dry run, done first** (read-only, 1 request/second, a script mirroring rungs 1–3 over the
+   household's 30 albums, numbers only): **rung 1 decides 0** (no MusicBrainz ids in any file), **rung 2 decides
+   24 of 30** — every one with its best candidate strictly ahead of the second on agreeing tracks and a search score
+   of 100 — **0 need you**, **6 unmatched** (3 with no candidate at all, 3 whose candidates agree on no track): the six
+   only AcoustID can place. Most albums on disk hold one or two tracks.
+2. **The pick rule (open question 1, from that run):** the best candidate agrees on ≥ 1 track *and* ≥ half the
+   tracks on disk, has a search score ≥ 80, and agrees on more tracks than the second. A tie → *needs you*; a
+   candidate agreeing on nothing is never used. Agreement = same disc (none = disc 1) and position, length within
+   ±3 s, or the same title when a length is missing. The best pressing of a release-group is the one agreeing on most
+   tracks, then an official one, then the track count closest to the folder's highest position.
+3. **Rungs as built.** 1: Jellyfin's `MusicBrainzReleaseGroup` / `MusicBrainzAlbum` ids. 2: `releasegroup:"…" AND
+   artist:"…"` (title-only if the artist finds nothing), the top three candidates each browsed once for up to 25
+   pressings with track lists. 4 (with a key only): up to four tracks fingerprinted (`fpcalc` without `-raw` — the
+   compressed form; a new `FfmpegRunner.acoustIdFingerprint`), AcoustID by POST at ≤ 3/s, votes on release-groups;
+   the sound's own pick wins when one release-group holds at least half the fingerprinted tracks, even if lengths
+   differ (another cut of the same recordings).
+4. **No answer is not "nothing".** The client's list calls return null when MusicBrainz did not answer and empty when
+   it found nothing; only the latter unmatches. A run leaves an album it could not reach exactly as it was (tested).
+5. **Scopes.** `missing` (default): unmatched, unlocked albums **not tried in the last day** — prod runs the pipeline
+   hourly and an unmatched album costs ~4 requests a try — *needs you* waits for the admin. `all`: every unlocked
+   album; a matched one is **refreshed from its own ids**, never searched again. *Match now* on a selection ignores
+   the day.
+6. **Applying a match** writes the album (release-group, chosen release as country · date · label · format · track
+   count · CAA front flag, types, genre votes, URL relationships, MusicBrainz credits), each track's recording and
+   release-track id with `agrees` / `disagrees` against the release (FR-276-5; a hand-picked recording is kept), and
+   every album and track artist whose name pairs with a MusicBrainz credit (type, country, life span, disambiguation,
+   aliases, genre votes, URL relationships). A locked or already-matched artist is left alone.
+7. **Clear match locks** (deviation, 174's rule): it forgets the ids and the tracks' recordings, keeps the fields the
+   match filled, and sets the lock — otherwise the next run would find the same wrong album again. The note says so.
+8. **No job-queue lane.** Matching runs inline in the step, or in one background pass from *Match now*, one pass at a
+   time; the rate limit makes a parallel lane pointless. `/api/music/status` carries the pass's progress.
+9. **Pacing:** a fixed-rate limiter per host (MusicBrainz 1/s, AcoustID 3/s); 183's AIMD limiter is untouched.
+   `/api/health` gains `musicbrainz_pacing` and `acoustid_pacing`; the `no_tmdb_match` webhook gains
+   `music_unmatched` (its firing rule stays film/series-only, FR-275-6).
+10. **Config and the card (FR-276-8/9):** `[musicbrainz] {enabled, contact, rate_per_sec}` (blank contact sends the
+    project's page — MusicBrainz accepts an application URL), `[api_keys] acoustid_client_key / fanart_tv_key` (masked
+    on read), `[music] fetch_lyrics` (277). The **Metadata providers** card in Settings → Connections saves through
+    `PUT /api/music/providers`; the general Settings save keeps the stored values, since its form model has no such
+    fields (273's pattern). *Test* for MusicBrainz is one lookup of its own fixed *Various Artists* entity.
+11. **Routes** (`/api/music/…`): `status`, `match`, `album/{id}/search | releases | identify | use | lock | clear |
+    genres`, `track/{id}/recordings | recording`, `providers`, `providers/test/{name}`. Their shapes live in
+    `commonMain` (`model/MusicApi.kt`) so the admin decodes the same classes. The Find match… panel itself is 278's.

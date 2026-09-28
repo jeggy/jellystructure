@@ -125,6 +125,14 @@ fun main() = runBlocking {
     val musicPipeline = dev.jellystructure.media.MusicPipeline(
         scanner = dev.jellystructure.music.MusicScanner(configStore, jellyfinClient, musicStore),
         store = musicStore,
+        // Phase 276 — MusicBrainz at one request a second, AcoustID only with a key.
+        matcher = dev.jellystructure.music.MusicMatchService(
+            musicStore,
+            dev.jellystructure.music.MusicBrainzClient(configStore),
+            dev.jellystructure.music.AcoustIdClient({ configStore.current.apiKeys.acoustidClientKey }),
+            configStore,
+            fingerprint = { path -> dev.jellystructure.media.FfmpegRunner.acoustIdFingerprint(path) },
+        ),
     )
     // Phase 163 (Intro & credits editor) — one row per (item, episode, kind), replacing the old flat
     // SegmentMarkers blob field. Backfilled from mediaStore's already-loaded items just below.

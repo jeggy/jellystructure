@@ -18,6 +18,54 @@ data class MusicCredit(
     val name: String,
 )
 
+/** Phase 276 — a MusicBrainz artist credit as a release names it (the id is an MBID, not a Jellyfin id). */
+@Serializable
+data class MusicMbCredit(
+    val mbid: String,
+    val name: String,
+    val joinPhrase: String = "",
+)
+
+/** Phase 276 (FR-276-7) — one community genre vote count from MusicBrainz. */
+@Serializable
+data class MusicGenreVote(val name: String, val count: Int)
+
+/** Phase 276 — one pressing of a release-group, and how many of the tracks on disk agree with it. */
+@Serializable
+data class MusicReleaseOption(
+    val mbid: String,
+    val title: String = "",
+    val country: String? = null,
+    val date: String? = null,
+    val label: String? = null,
+    val format: String? = null,
+    val trackCount: Int = 0,
+    val agreeing: Int = 0,
+    /** The Cover Art Archive has a front for this release. */
+    val hasFront: Boolean = false,
+)
+
+/** Phase 276 (FR-276-4) — one candidate album (a release-group) for Find match… and for *needs you*. */
+@Serializable
+data class MusicCandidate(
+    val releaseGroupMbid: String,
+    val title: String,
+    val artist: String = "",
+    val primaryType: String? = null,
+    val secondaryTypes: List<String> = emptyList(),
+    val firstReleaseDate: String? = null,
+    /** MusicBrainz's own search score (0–100). */
+    val score: Int = 0,
+    /** Tracks on disk that agree on position and length (±3 s) with this candidate's best release. */
+    val agreeing: Int = 0,
+    val total: Int = 0,
+    /** The largest length difference among the tracks that did not agree, in whole seconds. */
+    val lengthOffMaxSec: Int? = null,
+    val bestRelease: MusicReleaseOption? = null,
+    /** `search` or `acoustid` (identified by sound). */
+    val source: String = "search",
+)
+
 /** Match states shared by albums, artists and (per track) recordings. */
 object MusicMatch {
     const val MATCHED = "matched"
@@ -49,6 +97,17 @@ data class MusicArtist(
     val mbid: String? = null,
     val matchState: String = MusicMatch.UNMATCHED,
     val matchLocked: Boolean = false,
+    /** `Person`, `Group`, `Orchestra`… */
+    val type: String? = null,
+    val country: String? = null,
+    /** `1987–1994`, `1999–` — only what MusicBrainz knows. */
+    val lifeSpan: String? = null,
+    val disambiguation: String? = null,
+    val mbSortName: String? = null,
+    val aliases: List<String> = emptyList(),
+    val mbGenres: List<MusicGenreVote> = emptyList(),
+    /** MusicBrainz URL relationships by type (`wikidata`, `image`, `official homepage`, `discogs`, `wikipedia`…). */
+    val urls: Map<String, String> = emptyMap(),
     val addedAt: Long? = null,
     /** Set when a scan no longer finds the artist in Jellyfin; the row is kept (the films' rule). */
     val missingSince: Long? = null,
@@ -80,11 +139,52 @@ data class MusicAlbum(
     val releaseMbid: String? = null,
     val matchState: String = MusicMatch.UNMATCHED,
     val matchLocked: Boolean = false,
+    /** `tags` (ids already in the files) · `search` · `acoustid` · `manual` (chosen in Find match…). */
+    val matchSource: String? = null,
+    val matchedAt: Long? = null,
+    /** When a run last tried to match this album. A `missing`-scope run retries an unmatched album once a day, not
+     *  on every hourly run (the answer rarely changes, and each try costs MusicBrainz several requests). */
+    val matchAttemptedAt: Long? = null,
+    /** Why the album needs you, or why nothing matched — one sentence the admin reads. */
+    val matchNote: String? = null,
+    /** Stored while the album *needs you* (or had candidates that did not agree), so Find match… opens on them. */
+    val candidates: List<MusicCandidate> = emptyList(),
+    /** The chosen pressing: country · date · label · format · track count. */
+    val release: MusicReleaseOption? = null,
+    val primaryType: String? = null,
+    val secondaryTypes: List<String> = emptyList(),
+    val firstReleaseDate: String? = null,
+    val mbArtists: List<MusicMbCredit> = emptyList(),
+    val mbGenres: List<MusicGenreVote> = emptyList(),
+    /** FR-276-7 — the admin's own tick/untick; survives every run. Null = take MusicBrainz's votes. */
+    val genresOverride: List<String>? = null,
+    val urls: Map<String, String> = emptyMap(),
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
 )
+
+/** Where a track stands against its album's chosen release (FR-276-5). */
+object MusicRecording {
+    /** The track sits where the release says, with the length it says (±3 s). */
+    const val AGREES = "agrees"
+    /** The release has a track at that position, but its length is off — often another version (a single's, a live cut). */
+    const val DISAGREES = "disagrees"
+    /** The admin picked this recording by hand in *Match this track…*. */
+    const val MANUAL = "manual"
+}
+
+/** FR-276-7 — the genres an album shows: the admin's own choice, else MusicBrainz's top votes, else the files' tags. */
+fun MusicAlbum.effectiveGenres(): List<String> = genresOverride ?: MusicGenrePick.pick(mbGenres).ifEmpty { genres }
+
+object MusicGenrePick {
+    /** The top four with at least 3 votes and at least a tenth of the top genre's votes. */
+    fun pick(votes: List<MusicGenreVote>): List<String> {
+        val top = votes.maxOfOrNull { it.count } ?: return emptyList()
+        return votes.filter { it.count >= 3 && it.count * 10 >= top }.sortedByDescending { it.count }.take(4).map { it.name }
+    }
+}
 
 @Serializable
 data class MusicTrack(
@@ -115,6 +215,14 @@ data class MusicTrack(
     val jellyfinProviderIds: Map<String, String> = emptyMap(),
     // ── Phase 276: MusicBrainz ──
     val recordingMbid: String? = null,
+    /** The track on the chosen release (Jellyfin's `MusicBrainzTrack`, Kodi's `musicBrainzTrackID`). */
+    val releaseTrackMbid: String? = null,
+    /** [MusicRecording] — null until the album is matched. */
+    val recordingState: String? = null,
+    /** What the release calls this track and how long it says it is. */
+    val mbTitle: String? = null,
+    val mbLengthMs: Long? = null,
+    val mbArtists: List<MusicMbCredit> = emptyList(),
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,

@@ -38,7 +38,31 @@ data class AppConfig(
     val ai: AiConfig = AiConfig(),
     // Phase 273 — what jellystructure does about a subtitle that does not fit its video (Bazarr card).
     @SerialName("subtitle_check") val subtitleCheck: SubtitleCheckConfig = SubtitleCheckConfig(),
+    // Phase 276 (FR-276-9) — the music library's provider. Keys for AcoustID/fanart.tv live in [apiKeys].
+    val musicbrainz: MusicBrainzConfig = MusicBrainzConfig(),
+    // Phase 277 — music behaviour that is not MusicBrainz's.
+    val music: MusicConfig = MusicConfig(),
 )
+
+/** Phase 277 (FR-277-8, H6's lean) — `fetch_lyrics`: LRCLIB lyrics as `.lrc` sidecars, on by default. */
+@Serializable
+data class MusicConfig(
+    @SerialName("fetch_lyrics") val fetchLyrics: Boolean = true,
+)
+
+/**
+ * Phase 276 (FR-276-9) — MusicBrainz asks every client for a `User-Agent` naming the application, its version and a
+ * contact (an e-mail or a URL). [contact] is that contact; blank uses the project's own page, which MusicBrainz
+ * accepts as an application URL. [ratePerSec] is shown, never raised: MusicBrainz answers 503 above one a second.
+ */
+@Serializable
+data class MusicBrainzConfig(
+    val enabled: Boolean = true,
+    val contact: String = "",
+    @SerialName("rate_per_sec") val ratePerSec: Double = 1.0,
+) {
+    val effectiveContact: String get() = contact.trim().ifBlank { "https://github.com/jeggy/jellystructure" }
+}
 
 /**
  * Phase 273 (FR-273-16) — one switch for what happens to a bad subtitle: `fix` (Bazarr is steered on its own for
@@ -132,7 +156,9 @@ data class ScanConfig(
  */
 object MusicSteps {
     const val SCAN = "scan_music"
-    val ALL: List<String> = listOf(SCAN)
+    /** Phase 276 — the MusicBrainz ladder. */
+    const val MATCH = "match_musicbrainz"
+    val ALL: List<String> = listOf(SCAN, MATCH)
 
     fun isMusic(step: String): Boolean = step in ALL
 
@@ -380,6 +406,10 @@ data class ApiKeys(
     @SerialName("tmdb_v3_key") val tmdbV3Key: String = "",
     @SerialName("jellyfin_token") val jellyfinToken: String = "",
     @SerialName("jellyfin_url") val jellyfinUrl: String = "",
+    // Phase 276 (FR-276-9) — optional; absent ⇒ identify-by-sound is not offered (never a disabled button).
+    @SerialName("acoustid_client_key") val acoustidClientKey: String = "",
+    // Phase 277 — optional; absent ⇒ artist pictures come from Wikimedia Commons only.
+    @SerialName("fanart_tv_key") val fanartTvKey: String = "",
 )
 
 @Serializable

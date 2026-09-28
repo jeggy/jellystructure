@@ -178,6 +178,8 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <span class="hint" id="pub-hint"></span></div>
             </div>
 
+            ${musicProvidersCardHtml()}
+
             <!-- Phase 218 (FR-218-4/6/13) — Settings → Connections → Chromecast, three states: off (switch +
                  one paragraph), on-but-unregistered (address, the three steps, empty ID, ceiling, status),
                  registered-and-verified (steps collapsed, ID with its use, status incl. the last cast).
@@ -731,6 +733,7 @@ ${aiSectionHtml()}
         attachListeners(scope)
     }
     scope.launch { loadApiKeysCard(scope) }
+    wireMusicProvidersCard(scope)   // Phase 276 (FR-276-8)
     scope.launch { loadIngestCard() }
 
     wireSettingsTabs(container)

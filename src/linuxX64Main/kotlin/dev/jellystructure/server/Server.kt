@@ -16,6 +16,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
+import dev.jellystructure.server.routes.musicRoutes
 import dev.jellystructure.server.routes.aiRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.bazarrRoutes
@@ -446,8 +447,11 @@ fun startServer(
                             """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
                             """"session_bridges":{"connected":$bridgesConnected,"failing":$bridgesFailing},""" +
                             """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
+                            // Phase 276 (FR-276-2) — the two fixed-rate hosts, beside TMDB's learned one.
+                            """"musicbrainz_pacing":${musicPipeline?.matcher?.mb?.limiter?.stats()?.let { Json.encodeToString(dev.jellystructure.model.PacingStats.serializer(), it) } ?: "null"},""" +
+                            """"acoustid_pacing":${musicPipeline?.matcher?.acoustId?.limiter?.stats()?.let { Json.encodeToString(dev.jellystructure.model.PacingStats.serializer(), it) } ?: "null"},""" +
                             // Phase 275 (FR-275-6) — null when no music library is mapped. Counts only.
-                            """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.music.MusicHealth.serializer(), it) } ?: "null"},""" +
+                            """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.model.MusicHealth.serializer(), it) } ?: "null"},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
@@ -614,6 +618,7 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
+                musicPipeline?.let { musicRoutes(configStore, it, appScope) }   // Phase 276
                 acquisitionService?.let { acquisitionRoutes(it, requestLifecycleService) }
                 bazarrClient?.let { bc ->
                     val bazarrService = dev.jellystructure.bazarr.BazarrService(configStore, bc)

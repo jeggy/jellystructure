@@ -4,14 +4,13 @@ import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.model.MusicAlbum
 import dev.jellystructure.model.MusicArt
 import dev.jellystructure.model.MusicArtist
+import dev.jellystructure.model.MusicHealth
 import dev.jellystructure.model.MusicMatch
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.reencodesOnPhone
 import dev.jellystructure.tv.normalizeGuid
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.AtomicLong
 import kotlin.concurrent.AtomicReference
@@ -153,19 +152,6 @@ class MusicStore(private val db: JellystructureDb) {
             parts.filterNotNull().joinToString(" ").lowercase().replace(Regex("\\s+"), " ").trim()
     }
 }
-
-@Serializable
-data class MusicHealth(
-    val artists: Int,
-    val albums: Int,
-    val tracks: Int,
-    val matched: Int,
-    @SerialName("needs_you") val needsYou: Int,
-    val unmatched: Int,
-    @SerialName("covers_missing") val coversMissing: Int,
-    @SerialName("artist_images_missing") val artistImagesMissing: Int,
-    val reencodes: Int,
-)
 
 /**
  * FR-275-4 — the films' visibility rule for a music row: a restricted Jellyfin user sees it only when its library

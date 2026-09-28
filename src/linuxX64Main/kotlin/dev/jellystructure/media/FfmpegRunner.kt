@@ -525,6 +525,20 @@ object FfmpegRunner {
      * Int.MAX_VALUE) then narrowed to Int — same bit pattern, just reinterpreted as signed, which is all
      * XOR/popcount frame comparison ever needs. Null on any fpcalc failure (not installed, corrupt file).
      */
+    /**
+     * Phase 276 (FR-276-3 rung 4) — the **compressed** Chromaprint fingerprint AcoustID's lookup takes (fpcalc's
+     * default output, the first 120 s), and the file's whole length in seconds. Not [computeFingerprint]'s `-raw`
+     * ints, which are for comparing two files here. Null on any fpcalc failure. Through the shared ProcessGate: a
+     * handful per album, only when text search did not decide.
+     */
+    suspend fun acoustIdFingerprint(filePath: String): Pair<String, Int>? {
+        val escaped = filePath.replace("'", "'\\''")
+        val output = captureCommand("nice -n 19 ionice -c3 fpcalc '$escaped' 2>&1") ?: return null
+        val fp = Regex("""FINGERPRINT=([A-Za-z0-9_\-]+)""").find(output)?.groupValues?.get(1) ?: return null
+        val duration = Regex("""DURATION=(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        return fp to duration
+    }
+
     suspend fun computeFingerprint(filePath: String, windowSec: Int = FINGERPRINT_WINDOW_SEC): List<Int>? {
         val escaped = filePath.replace("'", "'\\''")
         // Same nice/ionice treatment as detectCreditsStart — fpcalc shells out to libavcodec for audio
