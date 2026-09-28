@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-27 with admin **274**, from
+`✓ Built` 2026-09-28, **deployed** with 274 (build notes at the end) — written 2026-09-27 with admin **274**, from
 `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` §3. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified
 against `main` `e437def3`: Ravilo taken through **R319**. Builds on **R171** (the Request tab), **137** (Request
 feeds), **R318** (unknown row kinds never break an app), **155** (unrated is 18).
@@ -75,3 +75,24 @@ Four items; item 1 is a correction that changes FR-R320-6's mechanism.
    (`req.suggested`) and the admin's rename still wins. FR-R320-7 amended.
 4. **`WIRE_ROOTS` is hand-listed** (`shared/src/linuxX64Test/…/wire/WireRoots.kt:6`); `SeerrFeed` is already
    covered through `RaviloConfig`; the new flag has a default → `WireCompatTest` passes. Run it before shipping.
+
+## Build notes (2026-09-28)
+
+Built with 274 (the server side is all of it; no app changed).
+
+1. **On the wire (dev review 1):** `SeerrFeed.suggested: Boolean = false`, additive with a default; the editor stores the
+   feed as `endpoint = TRENDING` plus `suggested = true`, and the server resolves it to an ordinary `DiscoverRow`. No
+   enum gained a value; `WireCompatTest` passes against the released baseline, so an app built before this phase shows
+   the row like any other (acceptance 5, by the test).
+2. **The row:** `getRequestFeeds` serves a suggested feed from `suggestion_viewer` for the device's user and 269's scope
+   key (any scope the user has, when this one has none yet), drops what has reached the library since the build, and
+   leaves out the row entirely when the list is empty — no history, no row (FR-R320-3). Every Request feed, this one
+   included, drops Seerr's blocklist and 274's dismissals (FR-R320-5).
+3. **Kids (FR-R320-4, dev review 2):** decided at build time from the viewer's own Jellyfin parental cap and 155's age
+   for the film's certification; no certification ⇒ not in a kids profile's list. Only this row is gated.
+4. **The string (FR-R320-7 as amended by dev review 3):** no viewer i18n key. The row's title is the feed's name, typed
+   in the admin editor like every other Request feed; the editor fills in *Suggested for you* and the admin can rename
+   it. A per-language default would need the server to localise system feed names, which nothing does today.
+5. **Not tried on a device:** the household's Request config has no *Suggested for you* row yet — adding it (Ravilo
+   config ▸ Request ▸ Add row) is the owner's choice. The stored per-viewer lists were built on the household server
+   (274's build notes).

@@ -9,7 +9,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
+`✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
 round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
 the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
 `e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
@@ -266,3 +266,60 @@ two corrections (1, 2), the rest confirmations and build anchors.
 
 **Net effect.** Five Seerr client methods, one step object + registry branch, one AI job, four tables (59),
 one route family, one sidebar link, one filter in the Request feeds. Nothing an installed app decodes changes.
+
+## Build notes (2026-09-28)
+
+Built on `main` in four commits (the engine and Seerr calls, the backend, the admin, the fixes below) and deployed to
+the household server with the dev compose (migration **61**; schema 62).
+
+1. **The engine** (`SuggestionEngine`, pure, 9 tests): FR-274-2's weights, FR-274-3's floor, FR-274-4's score and one film
+   per franchise (the first film when the library owns none of the collection, the graph's pick as the franchise note;
+   an excluded first film falls back to the best member), FR-274-5's fixed six, shares **split evenly** between the
+   clusters a title touches (so no title counts twice), series at a tenth of a film per episode capped at three, and
+   the 20 slots by largest remainder with a floor of one and a ceiling of what a group has.
+2. **The build** (`SuggestionService`, `build_suggestions`): 269's recently seen viewers and their Jellyfin history
+   (dev review 4); Seerr is asked about the household's 60 heaviest sources plus each viewer's own 20 (recommendations
+   and similar, two calls each), details are read for the best 120 (and each viewer's best 40), and one collection
+   lookup per franchise the library doesn't own. Excluded: the library (films only), anything Seerr says is requested,
+   processing or available, the blocklist, our dismissals (a write still pending counts), our requests, and the
+   viewers' own sources. The step is seeded once after `build_recommendations`, is **absent from every run and from the
+   pre-run dialog while Seerr is off**, and a run started by hand builds. *Rebuild now* and the first save that
+   connects Seerr queue a build in the background — never inline — rather than starting a whole pipeline run.
+3. **Deviations, each deliberate:**
+   - **Scope key:** 269's `RecommendationEngine.scopeKey` (a stable FNV hash, already stored by 269), not the Home cache's
+     `allowedHash` (dev review 9), which is an in-memory `hashCode()` and not stable across restarts.
+   - **Dashboard card:** its own `GET /api/suggestions/summary` (404 without Seerr, 204 before a first build) rather than a
+     field on `/api/stats`, which stays as it is.
+   - **Test accounts (FR-274-2):** "as 269" pointed at nothing — 269 has no such rule, and Jellyfin marks nothing that
+     tells a test account from a person (every user in the household is hidden, none disabled). The rule is the name:
+     a user whose name starts with the word *Test* is left out. Found live — see 6. **Open for the owner:** keep the
+     name rule, or name the excluded accounts in a setting.
+   - **Kids (R320 FR-R320-4):** each viewer's own Jellyfin *MaxParentalRating*, read once per build; a candidate's
+     certification through 155's cascade and age map (the seed when the map is empty); no rating ⇒ never for a kids
+     profile. Decided at build time, so the Request row serves stored rows.
+   - **The request note (dev review 1):** kept here (`suggestion_request`) and shown on the tile as *suggested for
+     {viewer}*; the Seerr request is the admin's plain request.
+   - **Copy:** *Seerr's blocklist* where the admin reads it (dev review 2), `/blacklist` in code.
+4. **The AI job** (*Suggestion clusters*, `[ai.clusters]`, off by default): one request per build on 272's queue, the
+   household's watching and the candidates as genre and keyword ids with their names — no viewer, no title, no synopsis,
+   and no TMDB id leaves the house (a candidate is `c1…`) — and a pure validator (3–8 groups, a name of 3–32 characters,
+   distinct names, every candidate exactly once, no id it wasn't given; 4 tests). An accepted answer regroups the stored
+   list in place with the shares counted here; a refused, expired or lost one leaves the genre groups, and a *waiting*
+   note turns into *couldn't be used* once nothing is queued or out.
+5. **The page, the card, the editor:** as drawn — `design/app/suggestions.css` now holds the mockup's `sg-*` rules and
+   both the mockup and the admin load it. The sidebar entry sits between Library and Activity and appears only when the
+   server says Seerr is connected. Ravilo config ▸ Request ▸ *Add row* offers *Suggested for you* under *From this
+   viewer's watching*, stored as an existing endpoint plus R320's `suggested` flag.
+6. **On the household server (2026-09-28):** a build took about 30 seconds: **108 finished films** from the viewers who
+   watch films, **50 kept and 20 shown** in five genre groups (no candidate landed in Drama). *Family & animation*
+   had the most candidates by far (31) and got **7** of the 20 — the proportional rule doing what Q3 asked. 20 of the 50
+   were reached by two viewers, 49 carry an age rating, and 15 are *first of a series you don't have*. The page, the
+   Dashboard card (*50 films waiting · most room: …*) and the sidebar entry were checked in a browser with every
+   write blocked. **Found and fixed from that run:** a test account's watching was on the *because* lines and in the
+   household's taste (the name rule above), and the card named the two groups with the biggest *share* rather than the
+   most slots — a group with two films led it.
+   **Not tried on the live data:** *Download* (a real request — Radarr would download the film), *No thanks* (writes
+   the owner's Seerr blocklist), and the AI job (off in the household's config, and it costs money). Acceptance 2's AI
+   half and its refusal are covered by the validator's tests; 3 by the engine's; 1 by the pipeline filter's test and
+   the routes' 404s, not by switching the household's Seerr off; 4–7 wait for the owner's first real *Download* and
+   *No thanks*.

@@ -152,7 +152,7 @@ class SuggestionService(
         val devices = HashMap<String, DeviceData>()
         val taste = ArrayList<AiRequests.TasteLine>()
         val tasteFilms = ArrayList<Boolean>()
-        for (device in rs.viewers()) {
+        for (device in rs.viewers().filterNot { SuggestionEngine.isTestAccount(it.jellyfinUsername) }) {
             val h = rs.historyOf(device) ?: continue
             val sources = LinkedHashMap<Int, SuggestionEngine.Source>()
             fun add(s: SuggestionEngine.Source) { val prev = sources[s.tmdbId]; if (prev == null || prev.weight < s.weight) sources[s.tmdbId] = s }
@@ -564,7 +564,9 @@ class SuggestionService(
         val prev = info.prevIds.toSet()
         return SuggestionsSummaryDto(
             waiting = ids.size, newCount = if (info.prevBuiltAt == null) 0 else ids.count { it !in prev }, since = info.prevBuiltAt,
-            topClusters = db.suggestionsQueries.clusters().executeAsList().take(2).map { it.name }, builtAt = b.built_at,
+            // FR-274-14 — the two largest groups: the most of the 20 slots, share order breaking a tie.
+            topClusters = db.suggestionsQueries.clusters().executeAsList().sortedWith(compareByDescending<dev.jellystructure.db.Suggestion_cluster> { it.slots }.thenBy { it.position })
+                .take(2).map { it.name }, builtAt = b.built_at,
         )
     }
 

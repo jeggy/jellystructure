@@ -90,6 +90,15 @@ class SuggestionEngineTest {
         assertEquals(listOf(2, 18), SuggestionEngine.slots(listOf(9.0, 1.0), listOf(2, 40)), "never more than a cluster has")
     }
 
+    @Test fun a_test_account_is_named_test_and_nothing_else_is() {
+        assertTrue(SuggestionEngine.isTestAccount("Test Stream"))
+        assertTrue(SuggestionEngine.isTestAccount("test"))
+        assertTrue(SuggestionEngine.isTestAccount("TEST-2"))
+        assertFalse(SuggestionEngine.isTestAccount("Tester"))
+        assertFalse(SuggestionEngine.isTestAccount("Testa"))
+        assertFalse(SuggestionEngine.isTestAccount("Ann Test"))
+    }
+
     @Test fun a_candidate_falls_in_the_first_fallback_cluster_its_genres_touch() {
         assertEquals("Horror", SuggestionEngine.fallbackCluster(listOf(53, 27)))
         assertEquals("Family & animation", SuggestionEngine.fallbackCluster(listOf(16, 35)))

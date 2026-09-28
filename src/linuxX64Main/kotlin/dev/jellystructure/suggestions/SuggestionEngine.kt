@@ -43,6 +43,11 @@ object SuggestionEngine {
         val finished: Int get() = sources.count { it.verb == VERB_FINISHED }
     }
 
+    /** FR-274-2 — *test accounts excluded*. Jellyfin marks nothing that tells a test account from a person (every
+     *  user in the household is hidden, none disabled), so the rule is the name: a user whose name starts with the
+     *  word *Test* (`Test Stream`, `Test Føroyskt`) is left out. Not `Tester` or `Testa`. */
+    fun isTestAccount(name: String): Boolean = Regex("^test(\\b|$)", RegexOption.IGNORE_CASE).containsMatchIn(name.trim())
+
     const val VERB_FINISHED = "finished"
     const val VERB_WATCHING = "watching"
 
