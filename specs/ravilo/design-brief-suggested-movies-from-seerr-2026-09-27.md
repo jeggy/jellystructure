@@ -248,3 +248,59 @@ Ravilo (`ravilo-i18n.js` / `i18n/*.json`): **one** new key — the feed's defaul
 - `ravilo/Ravilo TV.html` + `Ravilo Mobile.html`: the feed in Discover ▸ Request — **confirm nothing new is
   needed** rather than draw; one frame each is enough.
 - Q1–Q5 as marked options on the canvas.
+
+## 8. Added 2026-09-28 — Download asks first (owner decision; amends FR-274-10's "one tap")
+
+> Owner, 2026-09-28, on the built page: *"there is a download button, which I think is way too fast to just send
+> off the request. We want a popup … the popup acts as a confirm popup and also asks what quality it should
+> download it in; its available options should come from Seerr itself."*
+
+**What changes.** *Download* on a tile (and on the Dashboard card's tiles, if drawn there) no longer sends the
+request. It opens a **confirm sheet** for that one film; the request goes only from the sheet's own button. The
+tile's state chain after that (*Requested → Approved → Downloading · {n}% → ✓ In the library*) is unchanged.
+
+**What the sheet holds**, top to bottom:
+
+1. Poster, title, year, the *because* line (so the admin sees why it was suggested), the age rating.
+2. **Quality** — a choice list of the Radarr **quality profiles as Seerr reports them** for the server the request
+   would go to: Seerr's `GET /service/radarr` (the servers: name, `is4k`, `isDefault`, `activeProfileId`) and
+   `GET /service/radarr/{id}` (`profiles[] {id, name}`, `rootFolders[] {path, freeSpace}`). Pre-selected: the
+   server's active (default) profile, marked *Seerr's default*. The names are Radarr's own (*HD-1080p*,
+   *Ultra-HD*, *Any*) — never invented, never translated.
+3. **Server**, only when Seerr has more than one Radarr (a 4K server beside the HD one): a second choice, which
+   re-lists the profiles for the chosen server. One server ⇒ no control, the sheet says *to {server name}* as a
+   fact. This is where a *4K* pick lives — it is a server in Seerr, not a quality.
+4. **Folder**, folded under *More* with its free space, pre-selected to the server's active folder. Lean: keep
+   it out of round 1 unless the household actually has two folders (§8 Q3).
+5. The request's note as it will be sent: *Suggested for {viewer}* (FR-274-10), read-only.
+6. **Cancel** · **Download in {profile}** (primary). While the options load, the primary reads *Asking Seerr…*
+   and is disabled; if Seerr cannot be asked, the sheet says so in one line and the primary is disabled with
+   the same reason the page's banner uses. The choice is sent as `profileId` (+ `serverId` when chosen, `is4k`
+   when the chosen server is the 4K one) on `POST /request` — fields Seerr already accepts, and `profileId` the
+   backend's Seerr client already sends for 139's language steering, so the wire change is small.
+
+**Rules.**
+- The list is **Seerr's list**, fetched when the sheet opens (cached for the page's life), never a jellystructure
+  setting. If Seerr says the admin's user may not choose (no advanced-request permission), the sheet shows the
+  default as a fact and explains in one line; the request still goes.
+- **No remembered choice** across films in round 1 (§8 Q1): every sheet opens on Seerr's default, because the
+  default is Seerr's own decision and the admin should see it each time.
+- Escape / Cancel / tapping outside sends nothing; the tile is untouched.
+- The same sheet is the confirm for *Download* wherever 274 draws it; there is no second, quicker path.
+- Nothing about this reaches Ravilo: the viewer's request row (R320) keeps Seerr's defaults, as R171 does.
+
+**States to draw.** Loading options · one server with three profiles · two servers (HD + 4K) with the profile
+list swapping · Seerr unreachable · admin may not choose (default shown as a fact) · request refused by Seerr
+after confirm (the tile's one-line refusal, FR-274-10) · a single profile only (the choice reads as a fact).
+
+**Questions (round 1, leans).**
+| # | Question | Lean |
+|---|---|---|
+| Q1 | Remember the last chosen profile for the next sheet | **No** in round 1; Seerr's default every time |
+| Q2 | Sheet or dialog | **Sheet** on narrow, centred dialog on wide — the segment editor's confirmation idiom (260) |
+| Q3 | Show the folder chooser | **Only when the server has two or more folders**; otherwise nothing |
+| Q4 | Show the free space beside a folder | **Yes**, as Seerr reports it — it is the one fact that changes the choice |
+| Q5 | Should *No thanks* get a confirm too | **No** — it has Undo (6 s) and Bring back; a confirm on both would make the page slow to use |
+
+**Spec home:** an amendment to 274 (FR-274-10a), not a new phase — the backend gains two read-throughs of Seerr's
+service endpoints and three optional fields on the download route.
