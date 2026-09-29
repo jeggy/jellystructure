@@ -8,6 +8,14 @@ import { test, expect, Page, Browser } from "@playwright/test";
  * this test exists so a REAL regression in either half (backend connectivity plumbing or the
  * frontend's show/hide logic) fails CI instead of relying on manual verification again.
  *
+ * Phase 285 replaced the summary card with one overview: Bazarr now reaches the Dashboard as the
+ * *Subtitles* group -- its advisor's findings, read live from Bazarr's own settings -- and the group is
+ * absent while Bazarr is off. The mock answers /api/system/settings as a fresh Bazarr (the hook off),
+ * so a connected Bazarr always has one row to show. The rows are asserted on /api/dashboard, the one
+ * endpoint the page renders: this file runs before any scan, and an empty library shows *Nothing scanned
+ * yet* instead of rows (FR-285's first-run state) -- so the page's own chip is checked only once the
+ * library holds something.
+ *
  * Everything here is mocked, same as the rest of this suite -- tests/mock-bazarr/server.js, wired up
  * via docker-compose.test.yml as `bazarr-mock` alongside jellyfin-mock/tmdb-mock. No real external
  * service is ever required to run this file. Reads BAZARR_URL/BAZARR_API_KEY/JELLYFIN_USER/PASS from
@@ -55,7 +63,25 @@ async function setBazarrEnabled(page: Page, on: boolean) {
   if (isOn !== on) await toggle.click();
 }
 
-test.describe.serial("Bazarr subtitles — Dashboard summary card", () => {
+/** Phase 285 — the overview has loaded: its body no longer says Loading… (a row list, or an empty state). */
+async function openDashboard(page: Page) {
+  await page.goto("/#/dashboard");
+  await expect(page.locator(".statgrid")).toBeVisible();
+  await expect(page.locator("#ov-body")).not.toContainText("Loading", { timeout: 15_000 });
+  await expect(page.locator("#ov-body")).not.toContainText("Couldn’t load the overview");
+}
+
+type Overview = { firstRun?: boolean; rows: { domain: string; label: string }[] };
+
+/** The same /api/dashboard the page renders, with the page's own session. */
+async function overview(page: Page): Promise<Overview> {
+  const res = await page.request.get("/api/dashboard");
+  expect(res.ok()).toBeTruthy();
+  const body = await res.json();
+  return { firstRun: body.first_run === true, rows: body.rows ?? [] };
+}
+
+test.describe.serial("Bazarr subtitles — the Dashboard's Subtitles group", () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
@@ -67,16 +93,17 @@ test.describe.serial("Bazarr subtitles — Dashboard summary card", () => {
     await page.close();
   });
 
-  test("card is hidden when Bazarr is disabled", async () => {
+  test("the Subtitles group is absent when Bazarr is disabled", async () => {
     await setBazarrEnabled(page, false);
     await saveSettings(page);
 
-    await page.goto("/#/dashboard");
-    await expect(page.locator(".statgrid")).toBeVisible();
-    await expect(page.locator("#dash-subtitles-card")).toBeHidden();
+    await openDashboard(page);
+    expect((await overview(page)).rows.filter((r) => r.domain === "subs")).toEqual([]);
+    await expect(page.locator('#ov-body [data-chip="subs"]')).toHaveCount(0);
+    await expect(page.locator("#ov-body .ov-dom", { hasText: "Subtitles" })).toHaveCount(0);
   });
 
-  test("card shows live data when Bazarr is enabled and reachable", async () => {
+  test("Bazarr's findings reach the Dashboard when it is enabled and reachable", async () => {
     await setBazarrEnabled(page, true);
     await page.fill("#bazarr-url", BAZARR_URL);
     await page.fill("#bazarr-key", BAZARR_API_KEY);
@@ -87,15 +114,18 @@ test.describe.serial("Bazarr subtitles — Dashboard summary card", () => {
 
     await saveSettings(page);
 
-    await page.goto("/#/dashboard");
-    await expect(page.locator(".statgrid")).toBeVisible();
-    await expect(page.locator("#dash-subtitles-card")).toBeVisible({ timeout: 15_000 });
-    // Not just "visible" -- assert the placeholder ("Loading…") resolved to real content, so a
-    // regression where the card un-hides but never populates (e.g. a silently-failing overview()
-    // call) still fails this test.
-    await expect(page.locator("#dash-subtitles-body")).not.toContainText("Loading", { timeout: 15_000 });
-    await expect(page.locator("#dash-subtitles-body")).toContainText("Wanted:");
-    await expect(page.locator("#dash-subtitles-body")).toContainText("Providers:");
+    await openDashboard(page);
+    // The row is read live from the mock's /api/system/settings, so a regression where the backend stops
+    // reaching Bazarr (or the overview stops asking it) fails here.
+    const ov = await overview(page);
+    const subs = ov.rows.filter((r) => r.domain === "subs");
+    expect(subs.map((r) => r.label)).toContainEqual(expect.stringContaining("tell jellystructure when it places a subtitle"));
+    if (!ov.firstRun) {
+      const chip = page.locator('#ov-body [data-chip="subs"]');
+      await expect(chip).toBeVisible({ timeout: 15_000 });
+      await chip.click();
+      await expect(page.locator("#ov-body .ov-row", { hasText: "tell jellystructure when it places a subtitle" })).toBeVisible();
+    }
 
     // Clean up so this test doesn't leave Bazarr enabled for every other suite that runs after it.
     await setBazarrEnabled(page, false);

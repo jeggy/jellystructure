@@ -139,6 +139,13 @@ const server = http.createServer(async (req, res) => {
   }
   if (path === "/api/providers" && method === "GET") return send(res, 200, { data: PROVIDERS });
   if (path === "/api/system/languages/profiles" && method === "GET") return send(res, 200, PROFILES);
+  // Phase 273's Bazarr advisor reads Bazarr's whole configuration; phase 285's Dashboard shows its findings as
+  // the Subtitles group. A fresh Bazarr: the post-processing hook off (one finding), everything else at values the
+  // advisor accepts — so bazarr-dashboard.spec.ts sees exactly what a newly connected Bazarr would show.
+  if (path === "/api/system/settings" && method === "GET") return send(res, 200, {
+    general: { use_postprocessing: false, postprocessing_cmd: "", upgrade_subs: false, minimum_score: 90, minimum_score_movie: 70 },
+    subsync: { use_subsync: true, max_offset_seconds: 600, no_fix_framerate: false },
+  });
   if (path === "/api/movies/history" && method === "GET") return send(res, 200, paged(HISTORY, url));
   if (path === "/api/episodes/history" && method === "GET") return send(res, 200, paged(HISTORY, url));
   if (path === "/api/system/tasks" && method === "GET") return send(res, 200, { data: TASKS });
