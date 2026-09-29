@@ -404,6 +404,7 @@
     "note": "R279 — was accent-stripped (`Ledur inn...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
   "error.generic": "Nakað gekk skeivt",
+  "player.unavailable": "Avspæling er ikki tøk í hesi útgávuni",
   "error.load.reauth.title": {
     "text": "Rita inn av nýggjum",
     "note": "Draft — the shipped table wins wherever a string already exists."

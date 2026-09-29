@@ -27,7 +27,12 @@ import dev.jellystructure.shared.tv.TvApiError
  * otherwise. [GENERIC] is the honest fallback for a failure we could not classify; [UNREACHABLE]
  * means we could not get an answer, or exhausted a retryable failure's budget.
  */
-enum class LoadErrorKind { REAUTH, FORBIDDEN, GONE, UNREACHABLE, GENERIC }
+enum class LoadErrorKind { REAUTH, FORBIDDEN, GONE, UNREACHABLE, GENERIC,
+    /** R335 (FR-R335-7) — this build has no player engine at all (a Linux without libmpv); not a fault of the stream. */
+    PLAYBACK_UNAVAILABLE }
+
+/** R335 — set by a platform whose player has no engine, so a failed start says so instead of *Something went wrong*. */
+object PlaybackAvailability { var unavailable: Boolean = false }
 
 /** R237 (FR-R237-1) — the verdict on a single failed attempt: can trying again plausibly change it? */
 data class FailureClass(
@@ -85,6 +90,7 @@ fun loadErrorTitleKey(kind: LoadErrorKind): String = when (kind) {
     // and a second key saying the same thing is the drift R279 spent a phase removing.
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
     LoadErrorKind.GENERIC -> "error.generic"
+    LoadErrorKind.PLAYBACK_UNAVAILABLE -> "player.unavailable"
 }
 
 /** R280 (FR-R280-5) — the sentence under the heading, or null where there is no honest next step. */
@@ -93,7 +99,7 @@ fun loadErrorBodyKey(kind: LoadErrorKind): String? = when (kind) {
     LoadErrorKind.FORBIDDEN -> "error.load.forbidden.body"
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
     // GONE has no next step, and GENERIC has no honest sentence beyond its heading.
-    LoadErrorKind.GONE, LoadErrorKind.GENERIC -> null
+    LoadErrorKind.GONE, LoadErrorKind.GENERIC, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
 }
 
 /**

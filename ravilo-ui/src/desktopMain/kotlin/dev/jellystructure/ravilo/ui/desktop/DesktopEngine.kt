@@ -80,6 +80,7 @@ internal class MacEngine(private val p: MacPlayer) : DesktopEngine {
 internal object DesktopEngines {
     val isMpv: Boolean get() = !DesktopPaths.isMac && Mpv.lib != null
 
-    fun film(): DesktopEngine = if (DesktopPaths.isMac) MacEngine(MacPlayer(audioOnly = false)) else MpvPlayer(audioOnly = false)
+    fun film(): DesktopEngine = (if (DesktopPaths.isMac) MacEngine(MacPlayer(audioOnly = false)) else MpvPlayer(audioOnly = false))
+        .also { dev.jellystructure.ravilo.ui.components.PlaybackAvailability.unavailable = !it.available }   // FR-R335-7
     fun music(): DesktopEngine = if (DesktopPaths.isMac) MacEngine(MacPlayer(audioOnly = true)) else MpvPlayer(audioOnly = true)
 }

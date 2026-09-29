@@ -4232,13 +4232,14 @@ private fun PlayerSessionErrorOverlay(
         LoadErrorKind.GONE -> "error.play.gone.title"
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
         LoadErrorKind.GENERIC -> "error.generic"
+        LoadErrorKind.PLAYBACK_UNAVAILABLE -> "player.unavailable"   // R335 (FR-R335-7)
     }
     val errBody = when (error.kind) {
         LoadErrorKind.REAUTH -> "error.play.reauth.body"
         LoadErrorKind.FORBIDDEN -> "error.play.forbidden.body"
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
         // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
-        LoadErrorKind.GONE, LoadErrorKind.GENERIC -> null
+        LoadErrorKind.GONE, LoadErrorKind.GENERIC, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
     }
     // FR-R237-3 — Retry stays only where trying again can plausibly change the answer. Offering it for
     // a verdict that is deterministic for ten minutes is the same mistake as the retry loop, moved into

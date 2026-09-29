@@ -434,6 +434,7 @@
   "screens.playing_on": "Playing on {device}",
   "loading": "Loading...",
   "error.generic": "Something went wrong",
+  "player.unavailable": "Playback is not available in this build",
   "error.load.reauth.title": {
     "text": "Sign in again",
     "note": "R280 (FR-R280-5) — a screen failed to load because this device's session no longer works (401 or 409). Deliberately not the player's wording: that one says \"to keep watching\", which is wrong on Settings. Names what the viewer must do, never the component that failed."

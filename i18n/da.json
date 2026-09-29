@@ -404,6 +404,7 @@
     "note": "R279 — was accent-stripped (`Indlaeder...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
   "error.generic": "Noget gik galt",
+  "player.unavailable": "Afspilning er ikke tilgængelig i denne udgave",
   "error.load.reauth.title": {
     "text": "Log ind igen",
     "note": "Draft — the shipped table wins wherever a string already exists."

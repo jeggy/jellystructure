@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import dev.jellystructure.ravilo.ui.components.FailureClass
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.PlaybackAvailability
 import dev.jellystructure.ravilo.ui.components.classifyLoadFailure
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -431,7 +432,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
             while (isActive && _state.value is PlayerSessionState.Ready) {
                 delay(FAILURE_POLL_MS)
                 if (latch.observe(failed())) {
-                    _state.value = PlayerSessionState.Error("The player failed after the stream started", LoadErrorKind.GENERIC)
+                    _state.value = PlayerSessionState.Error("The player failed after the stream started",
+                        if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC)
                     break
                 }
             }
