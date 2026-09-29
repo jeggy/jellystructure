@@ -1,0 +1,252 @@
+name: Deploy — Ravilo for Mac (.dmg)
+
+# R331 — builds Ravilo for the Mac (R328–R330), signs the whole bundle with the ONE code-signing certificate of our
+# own, verifies it, and makes `ravilo-mac-<N>.dmg`.
+#
+# ── No Apple account, ever (owner, 2026-09-29) ──────────────────────────────────────────────────────────────────
+# There is no Developer ID and no notarisation. The app is signed with a self-signed certificate made once on the
+# MacBook and kept in two repository secrets. macOS records a Gatekeeper approval, a Keychain item's access and the
+# Local Network permission by the app's designated requirement — its bundle id plus the certificate that signed it —
+# so a Mac approves Ravilo once (System Settings → Privacy & Security → Open Anyway) and every later release opens,
+# keeps its sign-in and keeps its permissions without asking. An ad-hoc signature would ask again on every update,
+# which is why a missing secret FAILS this job instead of falling back to one.
+#
+# ── The secrets (made once; the .p12 and its password also live in the household's password manager) ──────────
+#   MACOS_SIGNING_P12_BASE64    base64 -i ravilo-signing.p12   (the whole output, one line)
+#   MACOS_SIGNING_P12_PASSWORD  the password given to `openssl pkcs12 -export`
+# The certificate is made once, on a Mac, with the steps in ravilo-desktop/README.md (a 20-year self-signed
+# code-signing certificate named "Ravilo"). Losing it costs every Mac one more Open Anyway.
+#
+# ── When it runs (R331 D1) ───────────────────────────────────────────────────────────────────────────────────────
+# By hand (workflow_dispatch on an existing vX.Y tag, or on `main` via the `ref` input before any tag carries the
+# Mac app) it keeps the .dmg as this run's artifact and touches no release. It attaches to a GitHub release only when called from publish.yml on a published release — and that
+# caller job is added by the commit that marks R328–R330 ✓ Built, not before.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      skip_ci:
+        description: "true only when the caller has already run ci.yml for this commit"
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.44 — must match an existing vX.Y tag"
+        required: true
+      skip_ci:
+        description: "Skip the CI gate (only for a tag whose commit already passed CI)"
+        type: boolean
+        required: false
+        default: false
+      ref:
+        description: "Build this branch or commit instead of the vX.Y tag (e.g. main) — for a .dmg before any release carries one; `version` then only labels it"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      version: ${{ steps.resolve.outputs.version }}
+      package_version: ${{ steps.resolve.outputs.package_version }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+          REF_INPUT: ${{ inputs.ref }}
+        run: |
+          RAW="${RAW_VERSION#v}"
+          if ! [[ "$RAW" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Version '$RAW' is not a plain MAJOR.MINOR number (e.g. 1.44) — refusing to build."
+            exit 1
+          fi
+          if [ "${BASH_REMATCH[1]}" -lt 1 ]; then
+            echo "::error::jpackage needs a MAJOR of at least 1 (R331 dev review 4); '$RAW' has ${BASH_REMATCH[1]}."
+            exit 1
+          fi
+          echo "tag=v$RAW" >> "$GITHUB_OUTPUT"
+          if [ -n "$REF_INPUT" ] && ! [[ "$REF_INPUT" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::'$REF_INPUT' is not a branch, tag or commit name."
+            exit 1
+          fi
+          echo "ref=${REF_INPUT:-v$RAW}" >> "$GITHUB_OUTPUT"
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          echo "package_version=$RAW.0" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    if: ${{ !inputs.skip_ci }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.version.outputs.ref }}
+
+  build:
+    needs: [version, ci]
+    if: ${{ always() && needs.version.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    runs-on: macos-15   # Apple Silicon (R331 D3), free on a public repository
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
+
+      # First, before anything slow: a missing secret fails in seconds and says which one (FR-R331-3).
+      - name: The signing secrets are there
+        env:
+          P12_B64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          P12_PW: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          missing=()
+          [ -n "$P12_B64" ] || missing+=("MACOS_SIGNING_P12_BASE64")
+          [ -n "$P12_PW" ] || missing+=("MACOS_SIGNING_P12_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secret(s): ${missing[*]}. The Mac app is signed with the Ravilo certificate, never ad hoc (R331 FR-R331-3) — an ad-hoc build would make every Mac approve every update again. See ravilo-desktop/README.md for how to create them."
+            exit 1
+          fi
+          echo "KEYCHAIN=$RUNNER_TEMP/ravilo-signing.keychain-db" >> "$GITHUB_ENV"
+
+      - name: A temporary keychain with the Ravilo certificate
+        id: keychain
+        env:
+          P12_B64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          P12_PW: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          P12="$RUNNER_TEMP/ravilo-signing.p12"
+          if ! printf '%s' "$P12_B64" | base64 --decode > "$P12" 2>/dev/null || [ ! -s "$P12" ]; then
+            echo "::error::MACOS_SIGNING_P12_BASE64 does not decode as base64. Re-create it with: base64 -i ravilo-signing.p12 | pbcopy — and paste the whole line."
+            exit 1
+          fi
+          # The certificate's SHA-1 names the identity exactly, whatever else the runner's keychains hold.
+          if ! openssl pkcs12 -in "$P12" -clcerts -nokeys -passin env:P12_PW -out "$RUNNER_TEMP/ravilo-signing.pem" 2>/dev/null \
+             && ! openssl pkcs12 -legacy -in "$P12" -clcerts -nokeys -passin env:P12_PW -out "$RUNNER_TEMP/ravilo-signing.pem" 2>/dev/null; then
+            echo "::error::The .p12 in MACOS_SIGNING_P12_BASE64 does not open with MACOS_SIGNING_P12_PASSWORD."
+            exit 1
+          fi
+          SHA1=$(openssl x509 -in "$RUNNER_TEMP/ravilo-signing.pem" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')
+          SUBJECT=$(openssl x509 -in "$RUNNER_TEMP/ravilo-signing.pem" -noout -subject)
+          echo "Signing certificate: $SUBJECT (SHA-1 $SHA1)"
+
+          KC_PW=$(openssl rand -hex 24)
+          security create-keychain -p "$KC_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PW" "$KEYCHAIN"
+          if ! security import "$P12" -k "$KEYCHAIN" -P "$P12_PW" -f pkcs12 -T /usr/bin/codesign; then
+            # R331 dev review 1 — only if macOS refuses a modern PKCS#12: re-wrap it in the legacy form, once.
+            echo "security import refused the .p12; re-wrapping it with openssl's legacy algorithms and trying again."
+            openssl pkcs12 -in "$P12" -passin env:P12_PW -nodes -out "$RUNNER_TEMP/ravilo-signing.all.pem"
+            openssl pkcs12 -export -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+              -in "$RUNNER_TEMP/ravilo-signing.all.pem" -name Ravilo -passout env:P12_PW -out "$P12"
+            rm -f "$RUNNER_TEMP/ravilo-signing.all.pem"
+            security import "$P12" -k "$KEYCHAIN" -P "$P12_PW" -f pkcs12 -T /usr/bin/codesign
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$P12"
+          echo "identity=$SHA1" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the Swift library and the app
+        run: |
+          ./gradlew :ravilo-desktop:buildMacNative :ravilo-desktop:createDistributable \
+            -Pravilo.macPackageVersion=${{ needs.version.outputs.package_version }} \
+            -Pjellystructure.version=$VERSION --no-daemon
+          APP=ravilo-desktop/build/compose/binaries/main/app/Ravilo.app
+          test -d "$APP" || { echo "::error::createDistributable produced no Ravilo.app"; exit 1; }
+          LIB=$(find "$APP" -name libravilo-mac.dylib | head -1)
+          test -n "$LIB" || { echo "::error::libravilo-mac.dylib is not in the bundle (R328 FR-R328-4)"; exit 1; }
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "Swift library: $LIB"
+
+      # R331 dev review 2 — every binary signed with our identity: the nested code first (the Swift library and the
+      # runtime's own libraries, which --deep does not reach when they sit outside Frameworks), then the bundle.
+      # No hardened runtime, no entitlements, no timestamp: those serve notarisation, which this app never has.
+      - name: Sign the whole bundle with the Ravilo certificate
+        env:
+          IDENTITY: ${{ steps.keychain.outputs.identity }}
+        run: |
+          set -euo pipefail
+          find "$APP/Contents" -type f \( -name '*.dylib' -o -name '*.jnilib' -o -name '*.so' \) -print0 \
+            | xargs -0 -n 20 codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY"
+          # jpackage's runtime is a bundle of its own (Contents/runtime/Contents/Info.plist): sealed before the app.
+          if [ -d "$APP/Contents/runtime" ]; then
+            codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$APP/Contents/runtime"
+          fi
+          codesign --force --deep --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$APP"
+
+      - name: Verify the signature and run the self-test
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --verbose=2 "$APP" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier)=' || true
+          # FR-R331-4 — the bundle's own launcher, not `open`: its exit code is the app's.
+          "$APP/Contents/MacOS/Ravilo" --self-test | tee "$RUNNER_TEMP/self-test.txt"
+
+      - name: Make ravilo-mac-${{ needs.version.outputs.version }}.dmg
+        env:
+          IDENTITY: ${{ steps.keychain.outputs.identity }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/dmg"
+          mkdir -p "$STAGE" "$RUNNER_TEMP/out"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          DMG="$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg"
+          hdiutil create -volname Ravilo -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$DMG"
+          ls -l "$DMG"
+          {
+            echo "### Ravilo for Mac $VERSION"
+            echo
+            echo "**Signed with the Ravilo certificate — not notarised.** The first time on a Mac: System Settings → Privacy & Security → *Open Anyway*."
+            echo
+            echo "- \`ravilo-mac-$VERSION.dmg\`: $(du -h "$DMG" | cut -f1)"
+            echo "- self-test: $(cat "$RUNNER_TEMP/self-test.txt")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the temporary keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-mac-dmg
+          path: ${{ runner.temp }}/out/*.dmg
+          retention-days: 30
+
+      # R331 FR-R331-5/-6 — only when publish.yml calls this for a published release (D1); by hand, never.
+      - name: Attach to the GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg" --clobber
+          # FR-R331-6 — one fixed paragraph under the house-style notes, added once.
+          BODY=$(gh release view "$TAG" --json body --jq .body)
+          if ! printf '%s' "$BODY" | grep -q "Ravilo for Mac:"; then
+            NOTE="Ravilo for Mac: download \`ravilo-mac-$VERSION.dmg\`, open it and drag Ravilo to Applications (macOS 14 or later, Apple Silicon). The first time, macOS will refuse to open it because the app is not registered with Apple: open System Settings → Privacy & Security, scroll to the Ravilo line and choose **Open Anyway** — once per Mac; later versions open normally. (From a terminal, \`xattr -dr com.apple.quarantine /Applications/Ravilo.app\` does the same.)"
+            printf '%s\n\n%s\n' "$BODY" "$NOTE" > "$RUNNER_TEMP/notes.md"
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi

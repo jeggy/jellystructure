@@ -35,3 +35,48 @@ Ravilo.app/Contents/MacOS/Ravilo --self-test
 
 loads the Swift library, reads the version and the data directory, prints one line and exits 0 — without a window.
 The release workflow runs it before uploading (R331 FR-R331-4).
+
+## The signing certificate (once, on a Mac)
+
+Every release is signed with **one** self-signed certificate of our own (R331 FR-R331-3). It is what lets a Mac
+approve Ravilo once and open every later version without asking; there is no Apple account and no notarisation.
+Make it once, on the MacBook, in an empty folder:
+
+```sh
+cat > ravilo-signing.cnf <<'CNF'
+[req]
+distinguished_name = dn
+prompt = no
+x509_extensions = ext
+[dn]
+CN = Ravilo
+O = jellystructure
+[ext]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+CNF
+
+/usr/bin/openssl req -x509 -newkey rsa:3072 -sha256 -days 7300 -nodes \
+  -config ravilo-signing.cnf -keyout ravilo-signing.key -out ravilo-signing.crt
+/usr/bin/openssl pkcs12 -export -inkey ravilo-signing.key -in ravilo-signing.crt \
+  -name Ravilo -out ravilo-signing.p12          # asks for the export password twice
+```
+
+`/usr/bin/openssl` is macOS's own (LibreSSL), which writes the `.p12` in the form `security import` reads on every
+macOS version. The certificate is valid for 20 years; it must never need replacing, since a new one costs every Mac one
+more *Open Anyway*.
+
+Then give it to GitHub as two repository secrets (with the GitHub CLI signed in, from that folder):
+
+```sh
+base64 -i ravilo-signing.p12 | gh secret set MACOS_SIGNING_P12_BASE64 --repo jeggy/jellystructure
+gh secret set MACOS_SIGNING_P12_PASSWORD --repo jeggy/jellystructure    # paste the export password
+```
+
+(or on github.com: Settings → Secrets and variables → Actions → *New repository secret*, same two names). Put
+`ravilo-signing.p12` and its password in the password manager, then delete the four files from the folder — the
+`.key` is the private key, unencrypted.
+
+`deploy-macos.yml` refuses to build without both secrets; it never falls back to an ad-hoc signature.
+

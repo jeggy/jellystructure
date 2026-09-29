@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
+`⚠ Partial` — **workflow built 2026-09-29, never run: it waits for the two secrets and for these commits to reach `main`** (§Build notes). Written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
 build from it; **owner, 2026-09-29: no Apple bills, and (same day) one signing identity of our own, kept in CI's secrets, so
 the household approves the app once, not once per update.** Number verified free. **Last of four**
 (R328 → R329 → R330 → **R331**).
@@ -185,3 +185,42 @@ The owner's decision reshapes FR-R331-3; the rest is the Tizen workflow with `jp
    `infoPlist { extraKeysRawXml = … }`.
 10. **Size, to record:** a `jlink`ed JDK 21 runtime (~45 MB) + Compose/Skiko (~30 MB) + the app — expect a `.dmg`
     around 80–100 MB compressed. **Wire:** none.
+
+## Build notes (2026-09-29)
+
+Built from the dev review; **never run** — the certificate does not exist yet, and a `workflow_dispatch` needs the
+workflow on `main`. `⚠ Partial` until acceptance 1–5 are seen on GitHub and on the MacBook.
+
+1. **FR-R331-1 — `deploy-macos.yml`**: `workflow_call` and `workflow_dispatch` with `version` and `skip_ci`, the Tizen
+   workflow's plain `MAJOR.MINOR` validation (and jpackage's major ≥ 1), `packageVersion` `MAJOR.MINOR.0` passed as
+   `-Pravilo.macPackageVersion`, the app's own string the version (`-Pjellystructure.version`); jobs `version` →
+   `ci` → `build`. **One addition:** a `ref` input for a hand run, because the only tag today (`v1.44`) predates the Mac
+   app — `ref: main` builds a `.dmg` before any release carries one, `version` then only labels it. Inputs reach the
+   shell through `env`, never by interpolation.
+2. **FR-R331-3 first, before anything slow:** both secrets missing is one error naming both, in seconds; never an
+   ad-hoc build. Then a temporary keychain with a random password, `security import … -T /usr/bin/codesign` (re-wrapped
+   once with 3DES/SHA-1 only if macOS refuses the `.p12`), `set-key-partition-list`, and the keychain deleted in an
+   `always()` step. **The identity is named by the certificate's SHA-1**, not by the string "Ravilo", so nothing else in
+   the runner's keychains can match.
+3. **FR-R331-2 — build and sign** on `macos-15`: `buildMacNative` + `createDistributable`, a check that
+   `libravilo-mac.dylib` is in the bundle, then every `.dylib`/`.jnilib`/`.so` signed, jpackage's runtime signed as its
+   own bundle, and the app signed `--deep` — no hardened runtime, no entitlements, no timestamp. The `.dmg` is made with
+   `hdiutil` (the app plus an *Applications* link to drag onto) and is itself signed.
+4. **FR-R331-4:** `codesign --verify --deep --strict`, then the bundle's own launcher `--self-test`, whose line goes to
+   the job summary with the size and *Signed with the Ravilo certificate — not notarised*.
+5. **FR-R331-5/-6:** the `.dmg` is always the run's artifact; it is attached to a release only when the caller's event
+   is a published release — and **`publish.yml` has no `macos:` job yet** (D1: added by the commit that marks R328–R330
+   ✓ Built). When attached, the fixed *Ravilo for Mac* paragraph is appended to the release notes once, since the notes
+   are written by hand.
+6. **FR-R331-7:** `ci.yml` gains a `macos` job — built only when something Mac-shaped changed (a `git diff` against the
+   PR base or the pushed-over commit, since a reusable workflow cannot filter on `paths:`), then the self-test. It is
+   `continue-on-error` until the Mac app first ships: the Swift library has never been compiled, and `ci.yml` gates every
+   release. The Android job also runs `:ravilo-castv2:jvmTest`.
+7. **The certificate recipe** is in `ravilo-desktop/README.md`: a config file instead of `-addext`, run with macOS's own
+   `/usr/bin/openssl` (LibreSSL), whose `.p12` every macOS `security import` reads; the secrets set with `gh secret set`.
+   The recipe was checked here with a throwaway password (subject *Ravilo, jellystructure*, 20 years, Code Signing,
+   critical) and the files deleted.
+8. **Owed:** the first run (acceptance 1), *Open Anyway* once and then **no prompt on the next release** (acceptance 2,
+   two consecutive releases), the self-test failing without the library (acceptance 4), the missing-secrets failure
+   (acceptance 5), and the `.dmg`'s size (open question 3).
+
