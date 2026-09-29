@@ -1,6 +1,7 @@
 # A Ravilo app for the Mac — what it would take
 
 > Owner, 2026-09-29: *"Lets investigate whats needed for us to create a macosx desktop app for Ravilo as well?"*
+> — and, the same hour: *"I would like to be able to stream music from this app to the wifi speakers etc as well."*
 
 Research only — no spec, no code. Measured against `main` `429cffe9`. Next free numbers are 288 / R328 if this
 becomes a phase.
@@ -20,22 +21,26 @@ becomes a phase.
    heavyweight AWT surface VLC used to draw into no longer exists there. Two engines fit (§3); the
    recommended one is **AVPlayer**, because the backend already negotiates exactly what it needs (the
    Chromecast receiver's `hls_only` path) and it brings hardware decode, HDR and AirPlay.
-5. **Cast from a Mac is the screens path only** (R265's *Play on a TV* to a Ravilo TV works from common code);
-   there is no Google Cast SDK for macOS or the JVM.
+5. **Music to the Wi-Fi speakers (and films to the TVs) works from a Mac app — by speaking the Cast protocol
+   ourselves.** There is no Google Cast SDK for macOS or the JVM, but the protocol is small and public (the
+   2026-09-18 report §5 described it; what stopped the *backend* from speaking it was TLS in Kotlin/Native — the
+   JVM has TLS built in). With a Cast v2 client behind the existing `CastSender`/`rememberCastRoutes` seams, all of
+   R324's music-mode sheet, hand-off, queue remote and ⋯ block light up from common code, against the same 286
+   receiver the phone uses (§4). The web app in the Dock (road 0) **cannot** do this in Safari at all.
 6. **Building and shipping needs the MacBook and, for a clean install, an Apple Developer ID** (US$99/yr —
    the same account TestFlight would need): `.dmg` packaging cannot be cross-built from Debian, and an
    unnotarised app has to be opened past Gatekeeper by hand.
 
-Rough size of road 2, as an estimate, not a measurement: **3–5 weeks**, the first 2–3 days a player spike that
-decides the engine.
+Rough size of road 2, as an estimate, not a measurement: **3–5 weeks**, plus **1–2 weeks for casting** (§4); the
+first days are two spikes on the MacBook — the player's frames, and discovering and launching on a speaker.
 
 ## 1. The three roads, and two rejected
 
 | | What it is | New code | Plays | Cast | Verdict |
 |---|---|---|---|---|---|
-| **0 · Web app in the Dock** | `ravilo-web` via Safari *File → Add to Dock* ([Apple](https://support.apple.com/en-us/104996)) or Chrome *Install* | none | the browser's: Safari HLS incl. HEVC, no MKV; Chrome MKV only with H.264/VP9 + AAC/Opus; nothing plays DTS/TrueHD | Chrome only (Web Sender, not built yet); *Play on a TV* everywhere | **available today** |
+| **0 · Web app in the Dock** | `ravilo-web` via Safari *File → Add to Dock* ([Apple](https://support.apple.com/en-us/104996)) or Chrome *Install* | none | the browser's: Safari HLS incl. HEVC, no MKV; Chrome MKV only with H.264/VP9 + AAC/Opus; nothing plays DTS/TrueHD | Chrome only (Web Sender, not built yet); *Play on a TV* everywhere; **music has no web build yet** (R321 FR-R321-2) | **available today, films only** |
 | **1 · Finish the web player** | the §4 work of `ravilo-web-pwa-player-cast-2026-09-18.md` (track switching, waiting states, honest capabilities, Chrome Cast sender) | web actuals | as road 0, done properly | Chrome + screens | helps the Mac, iPhone, Windows and Linux at once |
-| **2 · Compose Desktop app** | a `jvm("desktop")` target of `shared`/`ravilo-i18n`/`ravilo-ui` + a `:ravilo-desktop` app module → `.dmg` | 62 actuals + a player + packaging | §3 — everything via HLS with AVPlayer, or everything direct with libVLC | screens (+ AirPlay with AVPlayer) | **the native answer** |
+| **2 · Compose Desktop app** | a `jvm("desktop")` target of `shared`/`ravilo-i18n`/`ravilo-ui` + a `:ravilo-desktop` app module → `.dmg` | 62 actuals + a player + packaging + a Cast v2 client | §3 — everything via HLS with AVPlayer, or everything direct with libVLC | **speakers, groups, the hub and the TVs** (§4) + screens (+ AirPlay with AVPlayer) | **the native answer** |
 | ✗ Kotlin/Native macOS UI | Compose on `macosArm64` | — | — | — | not supported by Compose Multiplatform |
 | ✗ Electron / Tauri / WKWebView shell | the web bundle in a native window | a shell | the web player's, unchanged | as the web | nothing road 0 does not already give |
 
@@ -54,7 +59,7 @@ Measured: `androidMain` 34 files / 62 actuals / 3 543 lines; `wasmJsMain` 34 fil
 | **Device facts (≈8)** | `deviceDisplayName`, `detectLinkState`, `systemPrefersReducedMotion`, `rememberDeviceStateProbe`, `rememberAppOnScreen`, `createTvApiClient` | host name; `NetworkInterface`; window focus; Ktor **OkHttp** (+ CIO for the WebSocket, as Android does) |
 | **Window & input (≈8)** | `PlatformBackHandler`, `rememberExitAction`, `Modifier.safeAreaPadding`, `Modifier.wakeOnPointerMove`, `setPointerCursorHidden`, `Modifier.reportTextFieldFocus`, `PlayerImmersiveEffect`, `rememberHandsetPlayerControls` | Esc = Back; native full screen; hide the cursor while playing. The layout is the TV's (`isHandset` is false), driven by arrow keys and the mouse — what the web app already does on a desktop |
 | **Photos (2)** | `rememberChoosePhotoLauncher`, `rememberTakePhotoLauncher` | `FileDialog`; no camera |
-| **Cast (1)** | `rememberCastSender` | `ActiveCastSender(chromecast = null, ScreenSender)` — common code already handles *Play on a TV* |
+| **Cast (3)** | `rememberCastSender`, `rememberCastRoutes`, `hasCastSdk` | a Cast v2 sender and mDNS routes of our own (§4); `hasCastSdk = true` |
 | **Player (≈11)** | `RaviloPlayer`, `PlayerVideoSurface`, `PlayerLifecycleEffect`, `PlayerChromeBridge`, `FrameTracker`, `supportedVideoCodecs`, `supportedAudioCodecs`, `supportsEmbeddedTextSubtitles`, `supportsHevcOverHls`, `switchesHlsAudioRenditions`, `warmAudioRendition`, `detectDecoderLimits`, `detectHdrSupport`, `TrailerEmbed` | **§3** |
 | **Music (1, large)** | `MusicEngine` | the same engine as video, audio only; Now Playing / media keys need `MPNowPlayingInfoCenter` (native) |
 
@@ -87,7 +92,59 @@ HLS masters through AVPlayer with Compose chrome drawn over it, measuring frame 
 frames, CPU) and trying an HLS audio-rendition switch. If frames cannot be delivered smoothly, libVLC's CPU path
 won't be better, and road 1 becomes the Mac answer.
 
-## 4. Shipping it
+## 4. Music to the household's speakers from the Mac
+
+The owner's ask: stream music from the Mac app to the Wi-Fi speakers (Stue, Gæsteværelse, their group, the Nest
+Hub) — and, by the same road, films to the TVs.
+
+**What already exists and is reused unchanged.** 286 made our receiver play music on an audio-only device and own
+the queue; R324 made the phone its remote. Everything the phone needs from the platform sits behind three seams —
+`CastSender` (load, play/pause/seek, `send(json)` on our namespace, `setVolume`), `rememberCastRoutes` (a list of
+`CastRoute(id, name, kind, busyWith, select)`) and `hasCastSdk` — and everything above them is common code:
+`MusicCast`/`MusicPlayback`, the *Play on…* sheet with speakers first, take-over (*Stop Spotify and play here?*),
+hand-off both ways, the Queue tab as a remote, the ⋯ volume / lyrics / *Play on this phone* block, the mini bar's
+*· Stue*. A Mac app that fills those three seams gets all of it.
+
+**Why the Mac can do what the backend could not.** No Cast SDK exists for macOS or the JVM, so the app speaks the
+protocol itself — the one the 2026-09-18 report (§5, route 2) and 286's road C describe:
+
+- **Discovery:** mDNS `_googlecast._tcp` (JmDNS, Apache 2.0). Each speaker, group and display advertises itself;
+  the TXT record carries the friendly name, the model and a capability mask (no video output ⇒ `speaker`; a
+  group is its own service) — *verify the exact TXT keys on the household's five devices in the spike*, including
+  whether the running app's name is in the record (it would give *Busy · Spotify* without connecting).
+- **Session:** TLS to port 8009 (self-signed — accepted, as every sender does), length-prefixed protobuf
+  `CastMessage`s (five fields; hand-encodable), a heartbeat, then `LAUNCH` our application id on the receiver
+  namespace, `CONNECT` to the running app, `LOAD` on the media namespace with 286's `CastLoadData` in `customData`,
+  and our own `urn:x-cast:dev.jellystructure.ravilo` namespace for `CastCommand`/`CastReceiverMessage`.
+  `GET_STATUS` names the app already running (take-over), `SET_VOLUME` is the ⋯ slider, `STOP` is *Stop casting*.
+  What blocked the *backend* was opening that TLS socket from Kotlin/Native; the JVM has it.
+- **Library or our own:** [chromecast-java-api-v2](https://github.com/vitalidze/chromecast-java-api-v2) (Apache 2.0)
+  does this, but describes itself as "not stable … a lot of bugs". **Lean: our own client, ~600–800 lines**,
+  written in `shared` behind a small TLS-socket `expect` — the JVM actual now, and the same client becomes 286's
+  **road C (the backend as sender, which is what finally reaches an iPhone)** once a Kotlin/Native TLS actual
+  exists.
+
+**Mac-specific requirements.**
+- **Local Network permission (macOS 15+):** the app bundle must carry `NSLocalNetworkUsageDescription` and
+  `NSBonjourServices = _googlecast._tcp` in its `Info.plist`, or macOS silently blocks discovery and never asks
+  ([Apple](https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription)).
+  Compose's packaging DSL can add raw `Info.plist` keys; *verify in the spike that the permission attaches to the
+  bundle when the JVM does the multicast.*
+- **Step 5a on the Cast console** (286 FR-286-1) — the same checkbox the phone needs; until it is ticked the
+  speakers do not answer for our application id at all.
+- **The receiver needs nothing new**: a LOAD from the Mac is indistinguishable from one from the phone.
+- **Away from home** (the owner's phone on the VPN today): mDNS does not cross the VPN, so casting from a Mac is a
+  home-network feature, as it is on the phone.
+
+**What the Mac does not get:** Google's lock-screen notification for the cast (FR-R324-9) is the SDK's; on a Mac the
+equivalent is *Now Playing* in Control Center (`MPNowPlayingInfoCenter` + media keys through the same native shim
+as the music engine) — worth a line in the spec, not a blocker.
+
+**The cast spike (1–2 days, with step 5a ticked):** from a JVM `main` on the MacBook — discover all five devices,
+read their kinds, launch our app on Stue, send a two-song `CastLoadData`, skip with `next`, set the volume, stop.
+Every step is a message the phone already sends through the SDK, so success here means the rest is plumbing.
+
+## 5. Shipping it
 
 - **Build on the Mac.** Compose's native distributions cannot cross-build: `packageDmg` runs on macOS only, needs
   JDK 17+ for `jpackage`, and `jlink` trims the bundled runtime to the modules listed
@@ -101,9 +158,12 @@ won't be better, and road 1 becomes the Mac answer.
 - **Backend:** additive only — a `desktop` value for R252's `X-Ravilo-Platform` (Users & devices label *Mac*) and the
   capabilities the chosen engine really has. No new routes.
 
-## 5. Open questions for the owner
+## 6. Open questions for the owner
 
 1. **What is the Mac app for?** A nicer window than a browser tab ⇒ road 0 now, road 1 next. Plays everything, HDR,
-   AirPlay, feels native ⇒ road 2.
+   AirPlay, **music on the speakers** ⇒ road 2 — speakers settle it: neither the web app nor Safari can cast, so the
+   owner's second ask needs the native app.
 2. Is an Apple Developer ID acceptable (also unblocks TestFlight if an iOS app ever happens)?
 3. Which Macs — Apple Silicon only (lean yes: smaller bundle, one architecture) or Intel too?
+4. Should the Cast v2 client be written once in `shared` so it later becomes the backend's sender (286 road C —
+   the iPhone's only way to the speakers)? Lean yes: it costs a small `expect` now and saves writing it twice.
