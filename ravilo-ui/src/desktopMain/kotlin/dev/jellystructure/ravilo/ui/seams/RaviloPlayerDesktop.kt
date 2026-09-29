@@ -251,6 +251,10 @@ actual class RaviloPlayer actual constructor() {
         )
     }
 
+    /** R335 path (b): the engine wants a native window of its own; the surface gives it one and draws no frames. */
+    internal val usesWindow: Boolean get() = engine.usesWindow
+    internal fun attachWindow(id: Long) = engine.attachWindow(id)
+
     /** The newest decoded frame for the surface (FR-R329-1 path (b)); [surfaceW]/[surfaceH] in pixels, for a renderer that scales (R335). */
     internal fun takeFrame(surfaceW: Int = 0, surfaceH: Int = 0): ImageBitmap? {
         if (surfaceW > 0 && surfaceH > 0) engine.surfaceHint(surfaceW, surfaceH)
@@ -272,6 +276,29 @@ actual fun PlayerVideoSurface(
     fill: Boolean,
     subtitleBottomInset: Dp,
 ) {
+    if (player.usesWindow) {
+        // R335 (FR-R335-4) — a heavyweight AWT canvas is an X11 window; mpv draws into it (vo=gpu-next). The chrome
+        // over it is Compose's, which needs `compose.interop.blending` (set by Main for `-Dravilo.video=gpu`).
+        // The engine must let go of the window before AWT destroys it, or Xlib's BadWindow ends the process.
+        androidx.compose.runtime.DisposableEffect(player) { onDispose { player.releaseEngine() } }
+        Box(modifier.background(Color.Black)) {
+            androidx.compose.ui.awt.SwingPanel(
+                background = Color.Black,
+                modifier = Modifier.fillMaxSize(),
+                factory = {
+                    java.awt.Canvas().apply {
+                        background = java.awt.Color.BLACK
+                        addHierarchyListener { e ->
+                            if (e.changeFlags and java.awt.event.HierarchyEvent.DISPLAYABILITY_CHANGED.toLong() != 0L && isDisplayable) {
+                                runCatching { com.sun.jna.Native.getComponentID(this) }.getOrNull()?.takeIf { it != 0L }?.let(player::attachWindow)
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        return
+    }
     var frame by remember(player) { mutableStateOf<ImageBitmap?>(null) }
     var cueText by remember(player) { mutableStateOf<String?>(null) }
     var surfacePx by remember(player) { mutableStateOf(0 to 0) }

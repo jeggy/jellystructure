@@ -1,5 +1,11 @@
 package dev.jellystructure.ravilo.ui.desktop
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlin.system.measureNanoTime
 
 /**
@@ -53,4 +59,35 @@ object MpvBench {
     }
 
     private fun handleOf(p: MpvPlayer) = p.handleForBench()
+
+    /**
+     * `Ravilo --mpv-window <file> [seconds]`: the real surface in a real window, with a red Compose box over the
+     * picture — a screenshot from outside says whether the chrome draws over the video (path (b) needs that; path (a)
+     * always has it). Exits after [seconds].
+     */
+    fun window(args: List<String>) {
+        val file = args.getOrNull(0) ?: run { println("usage: --mpv-window <file-or-url> [seconds]"); return }
+        val seconds = args.getOrNull(1)?.toIntOrNull() ?: 12
+        androidx.compose.ui.window.application {
+            val player = androidx.compose.runtime.remember { dev.jellystructure.ravilo.ui.seams.RaviloPlayer() }
+            androidx.compose.ui.window.Window(onCloseRequest = ::exitApplication, title = "mpv-window",
+                state = androidx.compose.ui.window.rememberWindowState(width = androidx.compose.ui.unit.Dp(1280f), height = androidx.compose.ui.unit.Dp(760f))) {
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(600)
+                    player.load(file, 0L, emptyList(), emptyList(), title = "bench", subtitle = null, artworkUrl = null)
+                    player.play()
+                    kotlinx.coroutines.delay(seconds * 1000L)
+                    println(player.qoeSnapshot()); println("usesWindow=${player.usesWindow} firstFrame=${player.hasRenderedFirstFrame} pos=${player.positionMs}")
+                    player.release()
+                    exitApplication()
+                }
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface(player, androidx.compose.ui.Modifier.fillMaxSize(), {}, {}, false, androidx.compose.ui.unit.Dp(48f))
+                    androidx.compose.foundation.layout.Box(
+                        androidx.compose.ui.Modifier.padding(24.dp).size(320.dp, 90.dp).background(Color(0xCCFF2D2D)).align(androidx.compose.ui.Alignment.TopStart),
+                    ) { androidx.compose.material3.Text("CHROME OVER VIDEO", color = Color.White, modifier = androidx.compose.ui.Modifier.padding(16.dp)) }
+                }
+            }
+        }
+    }
 }

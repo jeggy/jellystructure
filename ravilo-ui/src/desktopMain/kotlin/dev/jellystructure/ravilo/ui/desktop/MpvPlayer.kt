@@ -32,6 +32,8 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     private val lib = Mpv.lib
     private var handle: Pointer? = null
     private var render: Pointer? = null
+    /** Path (b), FR-R335-4: the X11 window mpv draws into itself (`vo=gpu-next`); 0 = path (a), the ring. */
+    private var windowId = 0L
     private var events: Thread? = null
     private val running = AtomicBoolean(false)
 
@@ -76,6 +78,16 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
             opt("vid", "no")
             opt("audio-display", "no")
             opt("gapless-audio", "weak")
+        } else if (windowId != 0L) {
+            opt("vo", System.getProperty("ravilo.mpv.vo") ?: "gpu-next")
+            opt("wid", "$windowId")
+            opt("hwdec", System.getProperty("ravilo.hwdec") ?: "auto-safe")
+            opt("force-window", "yes")
+            opt("stop-screensaver", "no")
+            opt("cursor-autohide", "no")
+            opt("input-cursor", "no")
+            opt("sub-auto", "no")
+            opt("sub-pos", "92")
         } else {
             opt("vo", "libmpv")
             opt("hwdec", System.getProperty("ravilo.hwdec") ?: "auto-copy-safe")
@@ -86,7 +98,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
         val rc = l.mpv_initialize(h)
         if (rc < 0) { lastError = "mpv_initialize: " + l.mpv_error_string(rc); l.mpv_terminate_destroy(h); return null }
         l.mpv_request_log_messages(h, "warn")
-        if (!audioOnly) {
+        if (!audioOnly && windowId == 0L) {
             val api = Mpv.cString("sw")
             val params = Mpv.params(Mpv.RENDER_PARAM_API_TYPE to api)
             val out = PointerByReference()
@@ -106,6 +118,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
                 Mpv.EVENT_SHUTDOWN -> return
                 Mpv.EVENT_START_FILE -> { item = 0; firstFrame = false; lastError = null }
                 Mpv.EVENT_FILE_LOADED -> { item = 1; if (audioOnly) firstFrame = true }
+                Mpv.EVENT_PLAYBACK_RESTART -> if (windowId != 0L) firstFrame = true   // path (b): mpv drew it itself
                 Mpv.EVENT_END_FILE -> when (ev.endFileReason) {
                     Mpv.END_FILE_ERROR -> { lastError = l.mpv_error_string(ev.endFileError); item = 2 }
                     Mpv.END_FILE_EOF -> Unit   // keep-open: `eof-reached` says it
@@ -161,6 +174,16 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     }
 
     override fun surfaceHint(width: Int, height: Int) { hintW = width; hintH = height }
+
+    override val usesWindow: Boolean get() = !audioOnly && System.getProperty("ravilo.video") == "gpu"
+
+    /** Path (b): the surface's X11 window, known once AWT has created it; the engine is (re)created on it. */
+    override fun attachWindow(id: Long) {
+        if (audioOnly || id == windowId) return
+        val had = handle != null
+        if (had) release()
+        windowId = id
+    }
 
     /** The bench reads a property or two straight from mpv (MpvBench). */
     internal fun handleForBench(): Pointer = handle ?: Pointer.NULL

@@ -39,6 +39,9 @@ internal interface DesktopEngine {
     /** [index] is a position in [subtitleTracks]; -1 = off. */
     fun selectSubtitle(index: Int) {}
     fun setSubtitleScale(scale: Float) {}
+    /** Path (b), FR-R335-4: the engine draws into a native window of its own instead of the ring. */
+    val usesWindow: Boolean get() = false
+    fun attachWindow(id: Long) {}
 }
 
 /** One track of the loaded file, as the engine lists it (mpv's `track-list`). */

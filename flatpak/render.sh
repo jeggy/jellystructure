@@ -32,8 +32,10 @@ if [ "$mode" = "--local" ]; then
 import re, sys
 t, o, v, d, root, c = sys.argv[1:]
 s = open(t).read()
-s = re.sub(r"      - type: git\n        url: .*?\n        tag: .*?\n        commit: .*?\n        x-checker-data:\n          type: git\n          tag-pattern: .*?\n",
-           "      - type: git\n        url: file://%s\n        commit: %s\n" % (root, c), s, count=1, flags=re.S)
+# The app module's own git source (the one with x-checker-data), matched line by line — never across modules.
+s = re.sub(r"      - type: git\n        url: [^\n]*\n        tag: [^\n]*\n        commit: [^\n]*\n        x-checker-data:\n          type: git\n          tag-pattern: [^\n]*\n",
+           "      - type: git\n        url: file://%s\n        commit: %s\n" % (root, c), s, count=1)
+assert "x-checker-data" not in s and "nv-codec-headers.git" in s, "render.sh: the app module's source was not the one replaced"
 s = s.replace("@VERSION@", v).replace("@DATE@", d).replace("@COMMIT@", c)
 open(o, "w").write(s)
 PY

@@ -122,3 +122,34 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest /tmp/rav
 
 Inside the Flatpak the app's files live in `~/.var/app/net.jebster.Ravilo/data/ravilo/` (`$XDG_DATA_HOME`, which
 the sandbox sets). It plays nothing yet on Linux — the player is a later phase; it browses, signs in and casts.
+
+## Linux: the player (R335)
+
+On Linux the engine is **mpv through `libmpv`** (`ravilo-ui/src/desktopMain/…/desktop/Mpv.kt`, `MpvPlayer.kt`), behind
+the same `DesktopEngine` surface the Mac's AVPlayer sits behind. It direct-plays what the household has (MKV, HEVC,
+AV1, DTS, TrueHD, PGS), decodes on the GPU where `hwdec` finds one, tone-maps HDR itself, and renders subtitles itself.
+Two ways to the screen:
+
+- **the ring** (default): mpv's software renderer writes each new frame, at the surface's size, into R329's
+  three-buffer ring and Skia draws it — 3 ms a frame at 1080p, 5 ms for 4K scaled to a 1080p surface (measured in the
+  Fedora container, software decode);
+- **the GPU window** (`-Dravilo.video=gpu`): mpv's own `vo=gpu-next` into an X11 child window embedded in the Compose
+  window, hardware decode to display with no copy; the chrome over it needs Compose's experimental interop blending,
+  which `Main` switches on for this mode.
+
+Knobs, all system properties: `ravilo.video=sw|gpu` · `ravilo.hwdec=<mpv hwdec>` · `ravilo.mpv.vo=<vo>` (gpu mode) ·
+`ravilo.mpv.ao=null` (a machine with no sound server).
+
+**Without libmpv** the app browses and casts but plays nothing (R237's card); a Linux distribution's `libmpv.so.2`
+or the Flatpak (which builds mpv) provides it. This host has none, so:
+
+```sh
+# the bench, in the Fedora container (~/fedora, libmpv from Fedora, the app image built here):
+./gradlew -Pravilo.desktopOnly=true :ravilo-desktop:createDistributable
+docker exec fedora-desktop su - xfce -c 'cd /srv/jellystructure/ravilo-desktop/build/compose/binaries/main/app/Ravilo && \
+  JAVA_TOOL_OPTIONS=-Dravilo.mpv.ao=null ./bin/Ravilo --mpv-bench /home/xfce/media/test1080.mkv 6'
+#   → first frame, fps through the ring, render ms/frame, hwdec, the tracks, a seek, an audio switch, a subtitle pick
+docker exec fedora-desktop su - xfce -c 'cd … && DISPLAY=:1 JAVA_TOOL_OPTIONS="-Dravilo.mpv.ao=null -Dravilo.video=gpu" \
+  ./bin/Ravilo --mpv-window /home/xfce/media/test1080.mkv 12'
+#   → the real surface in a window with a red Compose box over the picture; screenshot :1 to see whether it draws over
+```
