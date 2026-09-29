@@ -165,7 +165,9 @@ const server = http.createServer(async (req, res) => {
   // in ANONYMOUS_ROUTES requires the credential form 12.1 actually authenticates. Before this phase
   // seven data routes checked nothing at all, so the e2e suite could not tell a product that sends a
   // correct credential from one that sends none — which is how phase 238's regression shipped green.
-  if (!ANONYMOUS_ROUTES.has(path) && !ANONYMOUS_ROUTE_PATTERNS.some((re) => re.test(path))) {
+  // local verification only (2026-09-29): a direct-play stream URL carries `apikey=<token>` (the backend's withJellyfinToken), which the real server accepts on /Audio and /Videos streams
+  const streamKeyOk = process.env.AUDIO_MAP && /^\/Audio\/[^/]+\/stream/.test(path) && url.searchParams.get("apikey") === "mock-access-token";
+  if (!streamKeyOk && !ANONYMOUS_ROUTES.has(path) && !ANONYMOUS_ROUTE_PATTERNS.some((re) => re.test(path))) {
     const cred = credentialOf(req.headers);
     if (cred !== "valid") {
       return send(res, 401, { message: cred === "absent" ? "Token is required." : "Invalid token." });
@@ -267,6 +269,21 @@ const server = http.createServer(async (req, res) => {
       MediaSources: [{ Id: id, Container: "mkv", SupportsDirectPlay: true, SupportsDirectStream: true, SupportsTranscoding: false, MediaStreams: [] }],
       PlaySessionId: "mock-play-session-" + id,
     });
+  }
+  // local verification only (2026-09-29, 286/R324): serve a seeded song's bytes from AUDIO_MAP (id → file path), with Range
+  const audioMatch = path.match(/^\/Audio\/([^/]+)\/stream/);
+  if (method === "GET" && audioMatch && process.env.AUDIO_MAP) {
+    const map = JSON.parse(require("fs").readFileSync(process.env.AUDIO_MAP, "utf8"));
+    const file = map[audioMatch[1]];
+    if (!file) return send(res, 404, { message: "no such song in AUDIO_MAP" });
+    const fs = require("fs"); const size = fs.statSync(file).size;
+    const ext = file.split(".").pop().toLowerCase();
+    const type = { mp3: "audio/mpeg", flac: "audio/flac", wma: "audio/x-ms-wma", m4a: "audio/mp4" }[ext] ?? "application/octet-stream";
+    const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+    let start = 0, end = size - 1;
+    if (range) { if (range[1]) start = Number(range[1]); if (range[2]) end = Number(range[2]); if (!range[1] && range[2]) { start = size - Number(range[2]); end = size - 1; } }
+    res.writeHead(range ? 206 : 200, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": end - start + 1, ...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) });
+    fs.createReadStream(file, { start, end }).pipe(res); return;
   }
   const vttMatch = path.match(/^\/Videos\/([^/]+)\/[^/]+\/Subtitles\/(\d+)\/\d+\/Stream\.vtt$/);
   if (method === "GET" && vttMatch && vttMatch[1] === TRACKS_ITEM_ID) {

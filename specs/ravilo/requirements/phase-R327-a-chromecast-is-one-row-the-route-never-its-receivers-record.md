@@ -112,3 +112,7 @@ Built as reviewed, in one commit (`1ac58a7d`):
    where they did.
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+### Verified locally (2026-09-29)
+
+Emulator, films mode, four `kind = cast` receiver rows in the scratch DB: the *Play on a TV* sheet lists none of them.

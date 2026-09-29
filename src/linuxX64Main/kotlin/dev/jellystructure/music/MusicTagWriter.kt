@@ -232,7 +232,7 @@ class MusicTagWriter(
 
     /** Writes the album's songs; [embedCover] null keeps the album's own choice. Returns the outcome or null for an unknown album. */
     suspend fun writeAlbum(albumId: String, embedCover: Boolean? = null, removeJunk: Boolean = false, take: String? = null, onFile: suspend (Int) -> Unit = {}, cancelled: () -> Boolean = { false }): Outcome? {
-        var album = store.album(albumId) ?: return null
+        var album = store.album(albumId) ?: run { Logger.warn("write_tags: album $albumId is not in the store (${store.snapshot().albums.size} albums, ${store.snapshot().tracks.size} tracks)", "music"); return null }
         if (embedCover != null && embedCover != album.embedCover) { album = album.copy(embedCover = embedCover); store.putAlbum(album) }
         if (take == "file" && album.matchLocked) {
             // FR-284-4 — *Take the file's*: the lock stays, our facts become the files' (the ingest keeps ours while locked).

@@ -168,3 +168,17 @@ reaches the page (dev review 5's fallback — the transport row auto-hides after
 owner's to tick on the console** before any speaker appears; nothing here can be exercised until it is.
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+### Verified locally (2026-09-29, no hardware)
+
+The real `ravilo-cast.js` bundle in headless Chromium behind a fake CAF (the e2e helper's shape, extended with
+`getDeviceCapabilities`, `MusicTrackMediaMetadata`, the `QUEUE_*` message types and `setSupportedMediaCommands`),
+against the backend binary on a scratch config with three seeded albums and the e2e Jellyfin mock streaming the
+files: **display 24/24, headless 17/17.** A music LOAD answers an `audio/*` content type and a `MusicTrackMediaMetadata`
+block; the status carries the queue snapshot; `QUEUE_NEXT|QUEUE_PREV` are advertised (one fix on the way: `or` on a
+`dynamic` is a JS method call, so the flags are now combined in JS); Now playing paints and follows `TIME_UPDATE`;
+Enter toggles, ▼ turns lyrics on (status says so), Back hides the row and never stops, ▶ tap self-loads the next song;
+Google's `QUEUE_NEXT` is swallowed and lands on the list; `queue_add`/`repeat`/`play_at` round-trip; the queue's end
+is `ended` and the idle view; the headless receiver builds no DOM, enrols with `platform = cast-audio`,
+`speakers_confirmed_at` flips and names it; the admin shows step 5a, the speaker line, the *audio only* device row,
+and the Dashboard's Services line appears before the first speaker cast and is gone after it.

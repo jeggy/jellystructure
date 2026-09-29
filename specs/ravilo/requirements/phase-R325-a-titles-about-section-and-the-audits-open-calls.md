@@ -123,3 +123,8 @@ Built from the dev review (commit `12feb9c4`):
 5. 32 strings × en/da/fo (da/fo drafts; the shipped table wins, R279).
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+### Verified locally (2026-09-29)
+
+Emulator against the local backend: a film's detail shows the About section under the actions — *Released ·
+Original language · In your library since* for the fixture film, then More Like This.

@@ -252,3 +252,15 @@ Built from the dev review (commit `bad7bf8e`):
    cannot hold.
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+### Verified locally (2026-09-29)
+
+Backend binary + the admin bundle in headless Chromium on a scratch config, three matched albums seeded from copies
+of a WMA, an MP3 and a FLAC: the Files tab shows the grid with the differing row, *Save → files* is offered, the
+`write_tags` job runs on the media lane, and afterwards the file carries the page's six MusicBrainz ids, the date and
+the track number while its 31 unmanaged frames are left alone (`differ_count` 0, *written by jellystructure today
+09:06*); the Dashboard counts *Songs whose files don't say what they are* in songs; Library → Music opens on Artists;
+the Lidarr box's *Test* against the household's real Lidarr 3.1 (a read) answers *Connected · v3.1.0.4875* with its
+root folder, and a wrong key *Reachable, but the API key was rejected*. One false alarm on the way — a stale second
+backend process made the job say *That album isn't in the library any more*; the writer now logs the store's size
+when that happens, so the next reader is not misled.

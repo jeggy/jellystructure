@@ -346,6 +346,9 @@ private fun BottomRow(t: MusicTrackItem, lyricsOn: Boolean, onLyrics: () -> Unit
         if (t.hasLyrics) Box(Modifier.size(46.dp).tap(onLyrics), contentAlignment = Alignment.Center) {
             MusicGlyph(MusicIcon.LYRICS, if (lyricsOn) colors.accentSecondary else colors.textSecondary, 22.dp, description = str("music.lyrics"))
         }
+        // R324 (FR-R324-1/4) — the cast glyph on Now playing itself (the design's placement): opens the music-mode
+        // sheet, lit while a speaker plays. Absent, never greyed, when there is nothing to cast to.
+        dev.jellystructure.ravilo.ui.components.CastButton(Modifier.size(46.dp))
         Spacer(Modifier.weight(1f))
         Box(Modifier.size(46.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 22.dp, description = str("music.more")) }
     }

@@ -174,3 +174,13 @@ Built from the dev review (commit `86addb87`, together with 286):
 description's contents, the take-over's actual stop, and Google's `QUEUE_*` messages from the Home app.
 
 Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
+
+### Verified locally (2026-09-29, Android emulator, no Cast hardware)
+
+The debug build on a Pixel 9 AVD (API 35, Google APIs) against the local backend: the listening mode switches, Listen
+lists the seeded albums, an album plays (the e2e Jellyfin mock now streams the seeded files with `AUDIO_MAP`), the mini
+bar and the Queue tab follow, the ⋯ sheet has no cast block while nothing is linked, and the sheet opened from the
+app bar **and from Now playing's own glyph** (added on this pass — the design's placement) is titled *Play on…*; in
+films mode it is *Play on a TV* and lists **no receiver records** (four `kind = cast` rows in the DB — R327). An
+emulator sees no Cast routes (no mDNS across its NAT), so every route-dependent step — speaker rows, take-over,
+hand-off, the ⋯ block, volume, the notification actions, reconnect — is still owed to the Pixel 9 and a speaker.

@@ -397,9 +397,10 @@ private class Receiver {
         durationMs = t.durationMs ?: 0L
         paused = false
         // Dev review 4 — advertise next/previous, or the Home app hides its buttons.
+        // `or` on a `dynamic` is a JS method call, not a bitwise or — the flags are combined in JS itself.
         runCatching {
-            val cmd = messages.Command
-            playerManager.setSupportedMediaCommands(cmd.PAUSE or cmd.SEEK or cmd.STREAM_VOLUME or cmd.STREAM_MUTE or cmd.QUEUE_NEXT or cmd.QUEUE_PREV, true)
+            val flags: dynamic = js("cast.framework.messages.Command.PAUSE | cast.framework.messages.Command.SEEK | cast.framework.messages.Command.STREAM_VOLUME | cast.framework.messages.Command.STREAM_MUTE | cast.framework.messages.Command.QUEUE_NEXT | cast.framework.messages.Command.QUEUE_PREV")
+            playerManager.setSupportedMediaCommands(flags, true)
         }
         lyrics = null; lyricsJob?.cancel()
         if (!isHeadless() && t.hasLyrics) lyricsJob = GlobalScope.launch { lyrics = runCatching { api.getLyrics(t.id) }.getOrNull()?.takeIf { !it.synced.isNullOrEmpty() }; paintLyrics() }
