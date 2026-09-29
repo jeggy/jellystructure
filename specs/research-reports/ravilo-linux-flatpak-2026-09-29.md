@@ -419,12 +419,12 @@ key; revisit if the household wants a password-manager-shaped store), and any ch
 
 | Phase | What | Size |
 |---|---|---|
-| **R333 — Ravilo on Linux plays: mpv** | the spike; `libmpv` JNA binding; the Linux `RaviloPlayer` and `MusicEngine` on it (music and books on the same engine, audio-only); honest capabilities and direct play; subtitles by mpv at R180's position; MPRIS + the Inhibit portal via dbus-java; `X-Ravilo-Platform: linux` becomes the shipped value | 2–3 weeks |
-| **R334 — Ravilo as a Flatpak** | `ravilo.desktopOnly`; the meshtastic plugin and the offline init script; the manifest template, metainfo, desktop file, icon (SVG); the mpv modules; a local build and lint on this box; `ci.yml` builds `desktopOnly` too | ~1 week (can start before R333; a Flatpak that browses is a real first milestone) |
-| **R335 — the `.flatpak` on every release, and Flathub** | `deploy-linux.yml` (bundle, lint, attach, notes), the Flathub submission by hand, the per-release PR from CI, `flathub.json`, the yearly runtime bump | 3–5 days + the reviewers' queue |
+| **Rx — Ravilo on Linux plays: mpv** (a later phase; numbered when written) | the spike; `libmpv` JNA binding; the Linux `RaviloPlayer` and `MusicEngine` on it (music and books on the same engine, audio-only); honest capabilities and direct play; subtitles by mpv at R180's position; MPRIS + the Inhibit portal via dbus-java; `X-Ravilo-Platform: linux` becomes the shipped value | 2–3 weeks |
+| **R333 — Ravilo as a Flatpak** (written and built 2026-09-29) | `ravilo.desktopOnly`; the meshtastic plugin and the offline init script; the manifest template, metainfo, desktop file, icon; a local build and lint on this box; `ci.yml` builds `desktopOnly` too | ~1 week — a Flatpak that browses is a real first milestone |
+| **R334 — the `.flatpak` on every release, and Flathub** (written 2026-09-29) | `deploy-linux.yml` (bundle, lint, attach, notes), the Flathub submission by hand, the per-release PR from CI, `flathub.json`, the yearly runtime bump | 3–5 days + the reviewers' queue |
 
-Numbers are prospective (local `main` tops at R332; verify on `main` before writing). Order: R334's spike (§3.4) first
-because it is cheap and settles the offline build; R333's spike second; then the three phases as listed.
+R333 and R334 were written and built the same evening (the owner: *start making the Flatpak*); the player phase takes
+the next free number when its spike is done.
 
 ## Sources
 

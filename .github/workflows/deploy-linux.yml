@@ -1,0 +1,245 @@
+name: Deploy — Ravilo for Linux (.flatpak)
+
+# R334 — builds Ravilo as a Flatpak (R333) the way Flathub does, offline from the manifest, and makes
+# `ravilo-linux-<N>.flatpak`: a single-file bundle any distribution with Flatpak installs with one command.
+#
+# ── Three jobs, because three tools ─────────────────────────────────────────────────────────────────────────────
+#   sources   (ubuntu)     a JDK and network: captures every artefact the desktop build downloads from an EMPTY Gradle
+#                          home (R333 FR-R333-2), replays it offline (FR-R333-5), renders the manifest for this tag.
+#   flatpak   (container)  Flathub's own image: flatpak-builder builds the rendered manifest — no network, no
+#                          Android, the exact build Flathub's machines will run — and bundles it.
+#   attach    (ubuntu)     `gh release upload` on a published release, plus the Flathub pull request (FR-R334-4).
+#
+# ── When it runs (R334 D1) ───────────────────────────────────────────────────────────────────────────────────────
+# By hand (workflow_dispatch on an existing vX.Y tag, or on `main` via `ref`) it keeps the bundle as this run's
+# artifact and touches no release and no Flathub repository. It attaches to a GitHub release only when called from
+# publish.yml on a published release — and that caller job is added by the commit that marks R333 ✓ Built.
+#
+# ── Flathub (FR-R334-4) — one pull request per release, never a push ──────────────────────────────────────────────
+# Flathub builds from the manifest in ITS repository, flathub/net.jebster.Ravilo, which exists only once the owner has
+# made the one-time submission by hand (R334 §The owner's steps). With the repository secret FLATHUB_TOKEN set (a
+# fine-grained token with contents + pull-requests on that one repository), the attach job opens a PR there carrying
+# the rendered manifest and the fresh sources file; the owner merges it. Without the secret the step says so and
+# skips — nothing here fails a release over Flathub.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      skip_ci:
+        description: "true only when the caller has already run ci.yml for this commit"
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.46 — must match an existing vX.Y tag"
+        required: true
+      skip_ci:
+        description: "Skip the CI gate (only for a tag whose commit already passed CI)"
+        type: boolean
+        required: false
+        default: false
+      ref:
+        description: "Build this branch or commit instead of the vX.Y tag (e.g. main) — for a bundle before any release carries one; `version` then only labels it"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  APP_ID: net.jebster.Ravilo
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+          REF_INPUT: ${{ inputs.ref }}
+        run: |
+          RAW="${RAW_VERSION#v}"
+          if ! [[ "$RAW" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '$RAW' is not a plain MAJOR.MINOR number (e.g. 1.46) — refusing to build."
+            exit 1
+          fi
+          if [ -n "$REF_INPUT" ] && ! [[ "$REF_INPUT" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::'$REF_INPUT' is not a branch, tag or commit name."
+            exit 1
+          fi
+          echo "tag=v$RAW" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF_INPUT:-v$RAW}" >> "$GITHUB_OUTPUT"
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    if: ${{ !inputs.skip_ci }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.version.outputs.ref }}
+
+  sources:
+    needs: [version, ci]
+    if: ${{ always() && needs.version.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # No gradle/actions cache here on purpose: the capture must see every download (R333 FR-R333-2).
+      - name: Capture every artefact the desktop build downloads (empty Gradle home)
+        run: |
+          set -euo pipefail
+          ./gradlew --no-build-cache --no-daemon -Dgradle.user.home="$RUNNER_TEMP/gh-capture" \
+            -Pravilo.desktopOnly=true -Pjellystructure.version=${{ needs.version.outputs.version }} \
+            -Pravilo.macPackageVersion=${{ needs.version.outputs.version }}.0 \
+            :ravilo-desktop:createDistributable :captureFlatpakSources
+          N=$(python3 -c "import json; print(len(json.load(open('build/flatpak-sources.json'))))")
+          echo "captured $N artefacts"
+          # The whole point of the capture is what the app links against; a short list means it ran too early.
+          python3 - <<'PY'
+          import json, sys
+          urls = [e["url"] for e in json.load(open("build/flatpak-sources.json"))]
+          for needle in ("org/jetbrains/compose/desktop/desktop-jvm-linux-x64", "skiko-awt-runtime-linux-x64", "com/squareup/okhttp3/okhttp", "org/jmdns/jmdns"):
+              if not any(needle in u for u in urls):
+                  sys.exit(f"::error::flatpak-sources.json lacks {needle} — the capture missed the app's own dependencies")
+          PY
+      - name: Replay the build offline from the captured list (R333 FR-R333-5)
+        run: flatpak/verify-offline.sh "$RUNNER_TEMP/offline" "$RUNNER_TEMP/gh-capture"
+      - name: Render the manifest for ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.version.outputs.ref }}" = "${{ needs.version.outputs.tag }}" ]; then
+            flatpak/render.sh "$RUNNER_TEMP/manifest" "${{ needs.version.outputs.version }}" "$(git rev-parse HEAD)" "$(date -u +%F)"
+          else
+            # A bundle from a branch: the tag does not exist yet, so the git source becomes this commit alone.
+            flatpak/render.sh "$RUNNER_TEMP/manifest" "${{ needs.version.outputs.version }}" "$(git rev-parse HEAD)" "$(date -u +%F)"
+            sed -i "/^        tag: v/d" "$RUNNER_TEMP/manifest/$APP_ID.yml"
+          fi
+          cp flatpak/gradle-offline.init.gradle.kts "$RUNNER_TEMP/manifest/"
+          cat "$RUNNER_TEMP/manifest/$APP_ID.yml"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-flatpak-manifest
+          path: ${{ runner.temp }}/manifest/
+          retention-days: 30
+
+  flatpak:
+    needs: [version, sources]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ravilo-flatpak-manifest
+          path: manifest
+      - name: Lint the manifest as Flathub would
+        run: |
+          set -euo pipefail
+          flatpak install -y --noninteractive flathub org.flatpak.Builder
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest "manifest/$APP_ID.yml"
+      - name: flatpak-builder — offline, from the manifest, bundled
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: manifest/${{ env.APP_ID }}.yml
+          bundle: ravilo-linux-${{ needs.version.outputs.version }}.flatpak
+          runtime-repo: https://flathub.org/repo/flathub.flatpakrepo
+          arch: x86_64
+          upload-artifact: false
+          cache-key: flatpak-builder-${{ hashFiles('manifest/flatpak-sources.json', 'manifest/*.yml') }}
+      - name: Lint what was built
+        run: |
+          set -euo pipefail
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ravilo-linux-flatpak
+          path: ravilo-linux-${{ needs.version.outputs.version }}.flatpak
+          retention-days: 30
+
+  attach:
+    needs: [version, sources, flatpak]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ravilo-linux-flatpak
+      - uses: actions/download-artifact@v4
+        with:
+          name: ravilo-flatpak-manifest
+          path: manifest
+      - name: Attach to the GitHub Release (FR-R334-2)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "ravilo-linux-$VERSION.flatpak" --clobber --repo "$REPO"
+          BODY=$(gh release view "$TAG" --repo "$REPO" --json body --jq .body)
+          if ! printf '%s' "$BODY" | grep -q "Ravilo for Linux:"; then
+            NOTE="Ravilo for Linux: download \`ravilo-linux-$VERSION.flatpak\` and run \`flatpak install ravilo-linux-$VERSION.flatpak\` (Flatpak fetches the runtime from Flathub on first install) — or install Ravilo from Flathub, which updates itself."
+            printf '%s\n\n%s\n' "$BODY" "$NOTE" > notes.md
+            gh release edit "$TAG" --repo "$REPO" --notes-file notes.md
+          fi
+      # FR-R334-4 — the Flathub pull request: only once the owner has made the submission and set the token.
+      - name: Is there a Flathub token?
+        id: flathub
+        env:
+          TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::FLATHUB_TOKEN is not set — no Flathub pull request (R334 §The owner's steps)."; fi
+      - name: Check out flathub/${{ env.APP_ID }}
+        if: steps.flathub.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: flathub/${{ env.APP_ID }}
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          path: flathub-repo
+      - name: Put this release's manifest and sources in it
+        if: steps.flathub.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          cp "manifest/$APP_ID.yml" "manifest/flatpak-sources.json" flathub-repo/
+          [ -f flathub-repo/flathub.json ] || printf '{\n  "only-arches": ["x86_64"]\n}\n' > flathub-repo/flathub.json
+      - name: Open the pull request (FR-R334-4)
+        if: steps.flathub.outputs.present == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: flathub-repo
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          branch: ravilo-${{ needs.version.outputs.version }}
+          commit-message: "Ravilo ${{ needs.version.outputs.version }}"
+          title: "Ravilo ${{ needs.version.outputs.version }}"
+          body: |
+            Ravilo ${{ needs.version.outputs.version }} — https://github.com/${{ github.repository }}/releases/tag/${{ needs.version.outputs.tag }}
+
+            Rendered by the release workflow: the manifest at tag `${{ needs.version.outputs.tag }}` (commit `${{ needs.sources.outputs.commit }}`) and the sources file captured from that commit's build.
