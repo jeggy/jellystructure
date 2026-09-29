@@ -58,6 +58,7 @@ internal object Mpv {
     // ── render.h ──
     const val RENDER_PARAM_INVALID = 0
     const val RENDER_PARAM_API_TYPE = 1
+    const val RENDER_PARAM_BLOCK_FOR_TARGET_TIME = 12
     const val RENDER_PARAM_SW_SIZE = 17
     const val RENDER_PARAM_SW_FORMAT = 18
     const val RENDER_PARAM_SW_STRIDE = 19

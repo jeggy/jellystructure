@@ -248,6 +248,8 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     private val size = Memory(8)
     private val stride = Memory(8)
     private val format = Mpv.cString("bgr0")
+    /** 0: render the frame that is ready and return — the wait for its display time is ours (the update flag), not mpv's. */
+    private val noBlock = Memory(4).also { it.setInt(0, 0) }
 
     override fun takeFrame(): Image? {
         val l = lib ?: return null
@@ -279,6 +281,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
             Mpv.RENDER_PARAM_SW_FORMAT to format,
             Mpv.RENDER_PARAM_SW_STRIDE to stride,
             Mpv.RENDER_PARAM_SW_POINTER to buf,
+            Mpv.RENDER_PARAM_BLOCK_FOR_TARGET_TIME to noBlock,
         )
         if (l.mpv_render_context_render(ctx, params) < 0) return null
         firstFrame = true

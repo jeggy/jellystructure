@@ -23,13 +23,17 @@ if [ "$mode" = "--local" ]; then
   pkg=$(printf '%s' "$version" | grep -oE '^[0-9]+\.[0-9]+' || echo 1.0)
   date=$(date -u +%F)
   commit=$(cd "$root" && git rev-parse HEAD)   # the screenshot URL points at it — valid once this commit is pushed
-  # The working tree instead of the tag: flatpak-builder copies it (build outputs left out).
+  # HEAD of this checkout instead of a tag: flatpak-builder clones the checkout's own repository, so only committed
+  # files go in (a `dir` source would walk every build directory and every file only the host's user can read).
+  if [ -n "$(cd "$root" && git status --porcelain --untracked-files=no)" ]; then
+    echo "render.sh: note — uncommitted changes are NOT in a --local build (it clones HEAD $commit)" >&2
+  fi
   python3 - "$template" "$out/net.jebster.Ravilo.yml" "$pkg" "$date" "$root" "$commit" <<'PY'
 import re, sys
 t, o, v, d, root, c = sys.argv[1:]
 s = open(t).read()
 s = re.sub(r"      - type: git\n        url: .*?\n        tag: .*?\n        commit: .*?\n        x-checker-data:\n          type: git\n          tag-pattern: .*?\n",
-           f"      - type: dir\n        path: {root}\n        skip: ['.git', '.gradle', 'build', '**/build', 'node_modules', 'kotlin-js-store']\n", s, count=1, flags=re.S)
+           "      - type: git\n        url: file://%s\n        commit: %s\n" % (root, c), s, count=1, flags=re.S)
 s = s.replace("@VERSION@", v).replace("@DATE@", d).replace("@COMMIT@", c)
 open(o, "w").write(s)
 PY
