@@ -3,8 +3,8 @@
 > Owner, 2026-09-29: *"Lets investigate whats needed for us to create a macosx desktop app for Ravilo as well?"*
 > — and, the same hour: *"I would like to be able to stream music from this app to the wifi speakers etc as well."*
 
-Research only — no spec, no code. Measured against `main` `429cffe9`. Next free numbers are 288 / R328 if this
-becomes a phase.
+Research, measured against `main` `429cffe9`. **Spec'd the same day as R328 (the app) · R329 (films and music) ·
+R330 (casting, speakers first) · R331 (the `.dmg` on every GitHub release).**
 
 ## 0. The answer in six lines
 
