@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `specs/design-brief-dashboard-one-overview-2026-09-28.md` (§A–§G) and the mockup
+`✓ Built` 2026-09-29 (§Build notes; commit `7de3625c`) — written 2026-09-28 from `specs/design-brief-dashboard-one-overview-2026-09-28.md` (§A–§G) and the mockup
 `design/app/index.html` on `design/app/dashboard-data.js` · `dashboard.js` · `dashboard.css`, with the dock removed
 from `design/app/app-shell.js`. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main` 2026-09-28. A presentation
 phase in the shape of 146/257, plus one count-endpoint change (FR-285-9).
@@ -155,3 +155,22 @@ from one endpoint. Eleven items.
     `index.html`'s `<link>` set, and its fragile rules registered in `scripts/check-mobile-css.sh` (the 8th-incident
     lesson: a new stylesheet not on those lists ships with no CSS).
 11. **Wire:** admin only; `RemoteDevice`/Ravilo untouched.
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `7de3625c`):
+
+1. **One overview** — `DashboardRoutes.kt` (new): every row is decided server-side (`Spec`s: severity, the unit, the
+   sentence, what fixing means), grouped into the eight domains, **counted in the things with the problem** (1 065
+   tracks, not 48 series) with the titles in the sentence; zero rows ⇒ the group is silent. The attention counts the
+   sidebar shows come from the same list (`TriageRoutes.kt` reshaped to share it; `DashboardApi.kt`).
+2. **Since your last visit** — per admin: `dashboard_visit` (migration 63, `Dashboard.sq`), stamped when the page
+   opens; `MediaHistory` gained the one query the "new since" line needs.
+3. **The Dashboard page** (`Dashboard.kt`, rewritten): severity first, domain chips, 3 + *more* per group, the row
+   grammar (*one click here · open the item · change elsewhere · for information*), the scan states in place. The
+   two intro rows are gone (a missing intro is not a jellystructure problem — owner).
+4. **Settings holds settings only** — the advisor cards are one indicator each (*N findings · see the Dashboard →*).
+5. **The floating attention dock is removed** from `Shell.kt` (the queue, the palette entries, the n/p/o keys) and the
+   served `app.css`; the sidebar count links to the Dashboard.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

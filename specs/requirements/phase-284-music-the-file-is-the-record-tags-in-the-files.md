@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the research report `research-reports/music-tags-in-the-files-2026-09-28.md`
+`✓ Built` 2026-09-29 (§Build notes; commit `bad7bf8e`) — written 2026-09-28 from the research report `research-reports/music-tags-in-the-files-2026-09-28.md`
 (§0–§9) and the mockups `design/app/files-tab.js` (the Files tab, shared by Album and Book), `design/app/album.js`,
 `design/app/audiobook.js`, `design/app/artist.js`, `design/app/music-library.js`, `design/app/settings.html`
 (Music providers card), `design/app/activity.html`, `design/app/dashboard-data.js`. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number
@@ -226,3 +226,29 @@ we exist. Twelve items.
 11. **Wire:** admin only; Ravilo untouched. R319 WireCompat: nothing.
 12. **Acceptance 1 is stale:** the library is 130 files now (the 15 Lidarr-imported albums carry ids; the 38 WMA
     carry none) — pick a WMA album for the test, and expect the ids to arrive via *Convert and tag*.
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `bad7bf8e`):
+
+1. **One tag reader/writer** — `scripts/tagwrite.py` (python3 + mutagen, shipped in the image; `MusicTagWriter.kt`
+   drives it through a plan file): `read` answers the logical tags, the format, the ID3 version, the junk keys, the
+   cover and lyrics presence per file; `write` is **copy → save → ffprobe verify → rename**, never in place, so the
+   seeding guard and Lidarr's path matching see a new file only when it is whole. ID3 version kept (v2.4 only where
+   none), frames we do not manage left alone (both switchable). ffmpeg's lowercase ASF duplicates (`title`, `date`)
+   are read as a fallback and normalised on write. **Tried locally on copies of a WMA, an MP3 and a FLAC from the
+   library:** every value read back, ffprobe accepted each file, the ID3 file stayed v2.3.
+2. **The Files tab** on Album and Book (`MusicFilesTab.kt`, shared): Picard's pending-changes grid — file value vs
+   the page's, ✓ · ≠ · ∅ per cell, the seeding and no-tagger states; the Tracks tab's glyphs open the row.
+3. **The moments** — the split Save (*Save everything* · *Save → files*), a manual match, the bulk *Write tags…* with
+   its preview (`/bulk/tags-preview`), the converted file (`MusicConvert.kt`) and the `write_tags` pipeline step on the
+   **media** lane (`MediaJobQueue`, `PipelineEngine`; `MusicMatchTest` updated for the step order).
+4. **macOS leftovers** (`._*`, `.DS_Store`, an empty `__MACOSX`) removed by every scan (`MacLeftovers.kt`, Activity line).
+5. **Lidarr, read-only** (`LidarrClient.kt`, `[lidarr]` in `AppConfig`, the Settings box with Test and root folders):
+   what it rewrites, whether it writes NFOs, which release it chose, a `RescanFolders` after our write; two Dashboard
+   rows when it would fight us. The audiobook writer now goes through the same script.
+6. An album's lock now survives a re-ingest (`MusicIngest.kt` carries the locked title/artists/year/genres).
+7. Not run against the library itself (no deploy this round); the WMA comparison ignores the track total, which ASF
+   cannot hold.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

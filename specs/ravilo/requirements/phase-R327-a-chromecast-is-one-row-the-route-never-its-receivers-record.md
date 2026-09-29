@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written and **dev-reviewed 2026-09-28** against `main` `32daeee2`, from the owner's screenshot and the
+`✓ Built` 2026-09-29 (§Build notes; commit `1ac58a7d`) — written and **dev-reviewed 2026-09-28** against `main` `32daeee2`, from the owner's screenshot and the
 production device table (read-only). Number verified free (Ravilo tops at R326). No design change: the mockups never
 drew a receiver's record. **Amends** R265 FR-R265-3 (what tier 2 lists) and 236 FR-236-4 (what the device list
 carries). **Builds on** 218 (a receiver enrols as a `ravilo_device`, `kind = cast`, named *Chromecast via Ravilo ·
@@ -97,3 +97,18 @@ Written with the spec. Four items, all small.
 4. **Why not make the record online instead:** the receiver would have to hold an events socket for the whole session
    only so a row could say *Playing* beside the route that already says it — and on iPhone/web nothing could act on
    it. The route is the truth on Android; there is no truth to show elsewhere until road C.
+
+## Build notes (2026-09-29)
+
+Built as reviewed, in one commit (`1ac58a7d`):
+
+1. **FR-R327-2 — the server side** (`RemoteRoutes.kt`): `GET /api/remote/devices` omits `kind = cast` rows. A receiver's
+   record has no events socket, so it is never online or nearby and can never be driven through `/api/remote`; the
+   Cast SDK's route is the one row a Chromecast gets. This repairs every installed phone on the next backend release,
+   with no app update. Covered by `RemoteListingTest` (a cast row is filtered; a screen row is not).
+2. **FR-R327-1 — the phone** (`ScreensSheet.kt`): the sheet filters `DeviceKind.SCREEN` explicitly as well, so an
+   app against an older server also shows each Chromecast once.
+3. Nothing else changed: the ceiling, the dashboard name, Users & devices and reconnect all still read `kind = cast`
+   where they did.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

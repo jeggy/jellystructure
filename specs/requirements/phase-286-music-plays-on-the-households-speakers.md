@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§0–§9, road B) and the
+`✓ Built` 2026-09-29 (§Build notes; commit `86addb87`) — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§0–§9, road B) and the
 mockups `design/ravilo/Speakers - Directions.html` (§E, the display receiver), `design/app/settings.html` (the
 Chromecast card's step 5a and registered-state lines), `design/app/ravilo-users.html` (a speaker row) and
 `design/app/dashboard-data.js` (the Services line). **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main`
@@ -136,3 +136,35 @@ screenless speakers — today the phone's sheet sees only the three displays (th
     `RaviloConfig.cast.music = true` (additive, default false) gates R324's music-mode sheet.
 11. **Build order:** 279 (built) → this phase → R324; the two ship in one release because the receiver and the phone's
     music sender share the shapes in item 10.
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `86addb87`, together with R324):
+
+1. **FR-286-1/2** — step **5a** on the Chromecast card and the registered state's speaker line (*reachable · {speaker}
+   played music …* / *not confirmed — tick step 5a…*); `ChromecastStatus.speakers_confirmed_at` = the newest `last_seen`
+   of a receiver whose platform is `cast-audio` (`CastService.kt`). No backend probe.
+2. **FR-286-3** — the receiver asks `getDeviceCapabilities().display_supported` once; on a headless device the body is
+   emptied and every element lookup lands on a detached node, so nothing is ever drawn; its `TvApiClient` says
+   `cast-audio`; the audio capability set is fixed (MP3 · AAC · FLAC · Opus · Vorbis direct); the metadata block is
+   `MusicTrackMediaMetadata` with the cover.
+3. **FR-286-4** — `CastLoadData.tracks/repeat/shuffle` (additive); each song is negotiated through `playMusic` with the
+   receiver's own token and reported per song; repeat and shuffle live on the receiver; `QUEUE_NEXT` / `QUEUE_PREV` /
+   `QUEUE_UPDATE` are intercepted onto its list and `supportedMediaCommands` advertises next/previous.
+4. **FR-286-5/6** — the Now playing screen (`cast-receiver/index.html`, `vw`-scaled so the hub and a TV share one
+   drawing), the key handling (OK/Enter · Play/Pause · Stop · ◀ ▶ · held seek · ▼ · Back hides only; a click on the
+   hub toggles), the transport row for 5 s, synced lyrics as five lines with the per-display switch in `localStorage`.
+   The queue's end **is** the idle view.
+5. **FR-286-7/8/9** — the *audio only* badge and capability line in Users & devices; `TrackedPlayback.directPlay` and
+   `activeDirectDeviceIds()`: a receiver counts against the ceiling only while it converts, and a music start checks
+   the ceiling only when it transcodes; the Dashboard's *speakers not confirmed — step 5a* line (285's Services).
+6. **Wire** — `CastReceiverMessage.queue/queue_index/repeat/shuffle/lyrics_on/headless`, the new `CastCommand` fields,
+   `CastCapability.music = true` — all additive (R319).
+
+**Unverified on hardware, and named here rather than assumed:** whether CAF plays audio with no `<cast-media-player>`
+in an emptied body (the framework's own documentation says an audio receiver needs no UI); whether the Nest Wifi
+points accept the queue LOAD and whether `QUEUE_UPDATE` carries `jump`; whether Back on a Chromecast with Google TV
+reaches the page (dev review 5's fallback — the transport row auto-hides after 5 s either way). **Step 5a is the
+owner's to tick on the console** before any speaker appears; nothing here can be exercised until it is.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

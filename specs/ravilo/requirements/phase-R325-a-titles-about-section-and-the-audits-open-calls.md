@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `research-reports/ravilo-design-vs-implementation-audit-2026-09-27.md` §2.1, §2.2,
+`✓ Built` 2026-09-29 (§Build notes; commit `12feb9c4`) — written 2026-09-28 from `research-reports/ravilo-design-vs-implementation-audit-2026-09-27.md` §2.1, §2.2,
 §2.5 and the mockups `design/ravilo/ravilo-app.js` (TV detail, `tileQ()`), `design/ravilo/Ravilo Mobile.html`
 (`aboutHTML()`, `.pb`), `design/ravilo/Focus Detail - Directions.html` §F. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free
 on `main` 2026-09-28 (Ravilo tops at R323; R324 is the speakers phase).
@@ -105,3 +105,21 @@ items.
    `about.seasons`, `about.in_library_since`, `about.per_episode`); language names through the existing native-name
    table (R180); country names through the platform's locale (`Locale` display names — no table of ours).
 9. **Wire:** all additive (`about`, `quality_badge`, `people`, `genres`, `person=`) — R319 passes.
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `12feb9c4`):
+
+1. **The About section** — `AboutSection.kt` (TV + phone), under the detail's rows on both `MovieDetailScreen` and
+   `SeriesDetailScreen`: the synopsis and every fact the payload carries. The facts the payload lacked are added
+   additively to `MediaDetail` (`Models.kt`: production countries, original title/language, studios/networks,
+   status, first/last aired…), filled by `DetailService.kt` from what the scanner now keeps (`Media.kt`,
+   `Scanner.kt`, `TmdbClient.kt`, respecting `TmdbMatchLock`). Country codes are named client-side (`CountryNames.kt`).
+2. **The tile badge is only 4K / HDR** — one resolver, `Quality.kt` (`tileQuality`), used by the home feed, browse and
+   channel cards (`Tile.kt`); the hero and the detail meta are unchanged.
+3. **A Cast or crew facet** in browse (`BrowseService.kt`, `SeededBrowseScreen.kt`) — the same person filter R190 gave
+   the admin workbench.
+4. **Search matches genres, as their own result group** (`SearchScreen.kt`, `BrowseService.kt`).
+5. 32 strings × en/da/fo (da/fo drafts; the shipped table wins, R279).
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

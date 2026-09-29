@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the owner's answers and the mockups `design/app/music-library.js`,
+`✓ Built` 2026-09-29 (§Build notes; commit `cadc0b80`) — written 2026-09-28 from the owner's answers and the mockups `design/app/music-library.js`,
 `design/app/activity.html`, `design/app/audiobook.js`. **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main`
 2026-09-28. **Amends the built 275, 278, 279 and 281** — where they differ, this phase wins. The phone side of the
 same answers is **R326**.
@@ -78,3 +78,22 @@ Three of the five are already the built state or two lines; one contradicts 280'
    (Jellyfin's plugin, the *arr routes) and Settings → Notifications holds those; no outbound push, mail or webhook
    exists for attention rows. The FR is the standing rule for 285.
 6. **Wire:** none (admin only).
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `cadc0b80`), the four items that were not already the built state:
+
+1. **FR-287-1** — Library → Music opens on **Artists** (`MusicLibrary.kt`: `muView = "artists"`, the tab order, `?mview=`
+   with `artists` as the default that drops out of the URL).
+2. **FR-287-3** — the Metadata providers card's Audnexus row says *asked only for an ASIN you paste on a book*.
+3. **FR-287-4** — the two-column **Split preview** (`AudiobookPage.kt`): parts dragged between *Book 1* and *Book 2*,
+   both titles editable, *Split* disabled while a column is empty, *Cancel* touches nothing; the grouping and the titles
+   are persisted on the parts and the folder's book row (`Audiobooks.kt`, `AudiobooksIngest.kt`, `AudiobooksMediaService.kt`,
+   the `/split-preview` and `/split` routes). The split stays **virtual** (280's build was right about the disk); the
+   album tag pre-fills the columns.
+4. **FR-287-2 / FR-287-5** — statements of fact, nothing to build: the music steps are pipeline steps, not pool
+   jobs (`MusicTvService.kt` lost a music-lane remnant), and nothing sends notifications.
+
+`design/app/music.css` gained the split-preview rules and `check-mobile-css.sh` fences them.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

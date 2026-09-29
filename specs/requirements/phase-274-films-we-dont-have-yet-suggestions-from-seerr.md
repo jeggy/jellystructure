@@ -10,7 +10,7 @@
 ## Status
 
 `✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — **plus FR-274-10a (*Download asks first*),
-`Planned`, written 2026-09-28, dev-reviewed 2026-09-28 (§Dev review — FR-274-10a)** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
+`✓ Built` 2026-09-29 (commit `3de0ffe1`, §Build notes — FR-274-10a), written 2026-09-28, dev-reviewed 2026-09-28 (§Dev review — FR-274-10a)** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
 round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
 the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
 `e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
@@ -390,3 +390,15 @@ Buildable on the built 274. Seven items.
    (`Suggestions.kt:172`, handler `:295`) opens the dialog first and sends from it.
 6. **Seerr 3.5 (282):** nothing here changes; `hideRequested` does not touch `/service/radarr`.
 7. **Wire:** admin only; R320 unchanged.
+
+## Build notes — FR-274-10a (2026-09-29)
+
+Built from the dev review (commit `3de0ffe1`): *Download* always opens the confirm dialog first (`Suggestions.kt`),
+which lists Seerr's own Radarr quality profiles with *Seerr's default* marked, the server only with two or more
+Radarrs (4K), the folder under *More* only with two or more folders, and a note that is kept **locally** — Seerr has no
+note field (`suggestion_request.profile_name` / `server_name`, migration 62). `GET /api/suggestions/request-options`
+reads `/api/v1/service/radarr` and `/api/v1/service/radarr/{id}` (`SeerrClient.kt`); `POST …/download` takes the
+optional body (`SuggestionsRoutes.kt`, `SuggestionService.kt`, `SeerrDiscoverService.kt`). The seven states of the
+mockup are the dialog's: loading, one profile, several, two servers, no folder choice, Seerr unreachable (Download
+disabled with its reason), and sent. Not deployed and not tried against the household's Seerr: the owner withdrew
+backend-restart permission on 2026-09-29.

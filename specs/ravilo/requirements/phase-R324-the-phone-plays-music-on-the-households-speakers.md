@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§6.6–§6.11, §7, §8)
+`✓ Built` 2026-09-29 (§Build notes; commit `86addb87`) — written 2026-09-28 from `research-reports/music-cast-to-speakers-2026-09-28.md` (§6.6–§6.11, §7, §8)
 and the mockups `design/ravilo/Speakers - Directions.html` (round 1) and the build in `design/ravilo/Ravilo
 Mobile.html` → `mobile/ravilo-speakers.js` (+ the `spk-*` rules in `mobile/ravilo-music.css`). **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review).
 Number verified free on `main` 2026-09-28. The receiver side is admin **286**; both ship together.
@@ -137,3 +137,40 @@ device it is, and that the music engine can hand its queue to the sender. Twelve
 12. **Wire:** shares 286's additive shapes; the music-mode sheet is offered only when `RaviloConfig.cast.music` is
     true (286 item 10), so a new app against an older server keeps today's sheet. **Not the same bug as R327:** the
     server's receiver *records* (`kind = cast`) never appear in this sheet — speakers are routes.
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `86addb87`, together with 286):
+
+1. **FR-R324-1/2** — `CastRoute.kind` (from `CastDevice.CAPABILITY_VIDEO_OUT` and the group route type) and
+   `busyWith` (the route's description — verify against Spotify on a speaker; empty ⇒ *Ready*, never a guess). In music
+   mode the sheet is *Play on…*, the audio routes lead *On this network* (speaker glyph · *Speaker · Ready*, group glyph
+   · *Speaker group · …*), a busy route opens *Stop {app} and play here?* with *Play on {device}* · *Cancel*; a route
+   already running Ravilo reads *Playing Ravilo* and tapping joins. Video mode lists no audio route and says nothing.
+   The app bar's glyph opens the music-mode sheet through `LocalMusicMode`; `RaviloConfig.cast.music` gates it
+   (`CastController.musicEnabled`).
+2. **FR-R324-3/4** — `MusicCast` (the bridge) and `MusicPlayback` (the facade every music screen now calls): the
+   session connecting from the music sheet hands the engine's queue and position over (`castMusic`) and the engine
+   stops with its queue parked; while linked, the Playing tab, the Queue tab and the mini bar are rebuilt from the
+   receiver's snapshot and every command is a `CastCommand` (`prev` · `play_at` · `queue_move` · `queue_remove` ·
+   `queue_add` · `queue_play_next` · `repeat` · `shuffle` · `lyrics`); an album started while casting replaces the
+   speaker's queue (Q1). *Playing on {device}* chip under the credits; lyrics stay on the phone and follow the
+   receiver's position.
+3. **FR-R324-5/6** — the ⋯ sheet's block titled with the device: a volume slider in 5 % steps (`CastSession.setVolume`),
+   *Lyrics on {device}* only when the receiver reports `lyrics_on` (a display), disabled with *This song has no timed
+   lyrics*; *Play on this phone* (queue and position back into the engine, the speaker stops); *Stop casting* in the
+   warning colour. The volume keys already reach the selected route through `MediaRouter`.
+4. **FR-R324-7** — the mini bar's *{artist} · 🔈 {device}* (the device never truncated before the artist); swipe-down
+   only hides the bar (`MusicCast.barHidden`) with the *Still playing on {device}* · **Stop** toast (5 s); opening
+   Playing or a new song brings it back; the film cast bar no longer shows for a music cast (`castMiniBarVisible`).
+5. **FR-R324-8** — reconnect is R245's: the receiver's `status` on resume carries the queue, so the bar shows the song
+   the room is on; a finished queue is silence (no bar), and Playing shows the engine's last paused song.
+6. **FR-R324-9** — `NotificationActionsProvider`: previous · play/pause · next · stop for a `MEDIA_TYPE_MUSIC_TRACK`,
+   R245's four for a film.
+7. **FR-R324-10/11** — `hasCastSdk` (Android true, web false) shows *Speakers need the Android app for now* once, under
+   the rows; twelve strings × en/da/fo (`cast.sheet_music` … `cast.volume`, plus `cast.no_timed_lyrics`).
+
+**Owed to a device:** every acceptance step (the Pixel 9 was not available this round); in particular the route
+description's contents, the take-over's actual stop, and Google's `QUEUE_*` messages from the Home app.
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.

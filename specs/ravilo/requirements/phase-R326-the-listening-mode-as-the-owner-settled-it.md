@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-28 from the owner's answers and the mockup `design/ravilo/Ravilo Mobile.html` →
+`✓ Built` 2026-09-29 (§Build notes; commit `b0b96d0b`) — written 2026-09-28 from the owner's answers and the mockup `design/ravilo/Ravilo Mobile.html` →
 `mobile/ravilo-music.js`, `mobile/ravilo-music-player.js`, `mobile/ravilo-books.js`, `mobile/ravilo-music.css`.
 **Dev-reviewed 2026-09-28** against `main` `32daeee2` (§Dev review). Number verified free on `main` 2026-09-28. **Amends the built R321, R322 and R323** — where
 this phase and theirs differ, this phase wins. The admin side of the same answers is **287**.
@@ -131,3 +131,15 @@ Most of this phase is already the built state; the review names what actually ch
 8. **Speed and the sleep timer** stay the book player's (`BookPlayback.kt`) ✓; `ab.speed_note` and friends untouched.
 9. **Strings:** `music.less` only. The design's `mode.switch_video` / `mode.switch_music` are not adopted (item 4).
 10. **Wire:** none new; the mix row's removal is a server-side omission (279 amended in place).
+
+## Build notes (2026-09-29)
+
+Built from the dev review (commit `b0b96d0b`): the artist's bio **expands in place** (*More ⇄ Less*, no sheet —
+`MusicDetailScreens.kt`); the bottom bar stays on an album, an artist, a playlist, a book and its author (`RaviloApp.kt`
+`barShows`); the mode row reads *Switch to films & series* / *Switch to music* (three strings × en/da/fo); *Continue
+listening* is a row at the top of Listen when a book is in progress (`MusicListenScreen.kt`); the Mix row is gone
+(a stale `mix` context keeps its own label in *Playing from*); speed and the sleep timer are the book player's only
+(`BookPlayerScreens.kt`); a finished book **stops** — *Finished* + *Start over*, nothing auto-advances
+(`AudiobookScreens.kt`, `BookPlayerScreens.kt`).
+
+Not deployed and not device-tested: the owner withdrew backend-restart and device permission on 2026-09-29, mid-round. Verified by compile (`compileKotlinLinuxX64` · `compileKotlinWasmJs` · `:ravilo-ui:compileDebugKotlinAndroid` · `:ravilo-web:compileKotlinWasmJs` · `:ravilo-cast:compileKotlinJs`), the unit tests named below, and the six fences.
