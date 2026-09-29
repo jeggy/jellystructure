@@ -42,6 +42,10 @@ COPY ravilo-web ./ravilo-web
 COPY ravilo-cast ./ravilo-cast
 COPY ravilo-screen ./ravilo-screen
 COPY ravilo-receiver-core ./ravilo-receiver-core
+# R328/R330 — :ravilo-desktop (the Mac app) and :ravilo-castv2 (its Cast v2 sender) are in the same unconditional
+# list, and ravilo-ui's desktop target depends on :ravilo-castv2: both directories must exist for Gradle to configure.
+COPY ravilo-castv2 ./ravilo-castv2
+COPY ravilo-desktop ./ravilo-desktop
 # R279 — :ravilo-i18n is in that same unconditional list, and `i18n/` is its input: the whole Ravilo
 # string table is generated from i18n/*.json at build time, so the module directory has to exist for
 # Gradle to configure and the JSON has to exist for the generator to run. Missing them fails the

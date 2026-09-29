@@ -40,6 +40,10 @@ COPY ravilo-receiver-core ./ravilo-receiver-core
 COPY ravilo-i18n ./ravilo-i18n
 COPY i18n ./i18n
 COPY web-static-server ./web-static-server
+# R328/R330 — :ravilo-desktop (the Mac app) and :ravilo-castv2 (its Cast v2 sender) are in the same unconditional
+# list, and ravilo-ui's desktop target depends on :ravilo-castv2: both directories must exist for Gradle to configure.
+COPY ravilo-castv2 ./ravilo-castv2
+COPY ravilo-desktop ./ravilo-desktop
 COPY design ./design
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \

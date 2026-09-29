@@ -45,6 +45,10 @@ COPY i18n ./i18n
 COPY ravilo-cast ./ravilo-cast
 COPY cast-receiver ./cast-receiver
 COPY web-static-server ./web-static-server
+# R328/R330 — :ravilo-desktop (the Mac app) and :ravilo-castv2 (its Cast v2 sender) are in the same unconditional
+# list, and ravilo-ui's desktop target depends on :ravilo-castv2: both directories must exist for Gradle to configure.
+COPY ravilo-castv2 ./ravilo-castv2
+COPY ravilo-desktop ./ravilo-desktop
 # wasmJsBrowserDistribution's doLast block (build.gradle.kts) copies wf.css/app.css/detail.css/
 # metadata.css/seeding.css/seeding.js + flags.css/flags/** from design/ into the production dist
 # so the admin frontend ships styled -- Gradle's Copy task silently no-ops when its `from` source
