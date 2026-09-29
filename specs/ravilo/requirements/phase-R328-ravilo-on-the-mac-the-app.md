@@ -5,7 +5,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-29 and run on Linux; never run on a Mac** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
+`⚠ Partial` — **built 2026-09-29; runs on a real Mac the same day (signs in, keeps its tokens in the Keychain, plays) — the menu bar's handlers, the Dock reopen and the update line are still owed** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
 (road 2). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free: `origin/main` `e828c944` and local `main` top at R327.
 
 **One of four, built in order:** **R328** (this — the app) → **R329** (it plays films and music) → **R330** (it
@@ -248,4 +248,8 @@ has never been compiled and nothing Mac-specific has run. `⚠ Partial` until a 
     information* prompt a `gradle run` build is expected to show), the Computer Name, the system menu bar and its
     handlers, the Dock reopen, full screen. The macOS icon (`icons/ravilo.icns`) is rendered from the brand mark
     on Linux.
-
+12. **First run on a real Mac (2026-09-29, the owner's MacBook Pro, macOS 27.0.1, Apple Silicon).** The signed app
+    from the `.dmg` opens once approved, signs in and browses; its tokens are in the Keychain (service
+    `dev.jellystructure.ravilo`, no `tokens.json` in the data directory), and the server recorded the device as `mac`,
+    version 1.46, under the Mac's Computer Name. `--self-test` passes on the Mac. Quitting from the player sends the
+    stop. Still owed: the menu bar's handlers, the Dock reopen, full screen by the menu, and the update line.

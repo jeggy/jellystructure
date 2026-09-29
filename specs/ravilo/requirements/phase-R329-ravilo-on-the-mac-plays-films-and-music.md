@@ -4,7 +4,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-29; never run on a Mac, so the spike (FR-R329-1) has not been measured and nothing has played** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
+`⚠ Partial` — **built 2026-09-29; a film played on a real Mac the same day (a 4K HDR film as the server's 1080p SDR, text subtitles, seeking) — music, the media keys and the spike's 4K numbers are still owed** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
 **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Second of four** (R328 → **R329** → R330 → R331). **Builds on** R328's native
 library, the receiver's `hls_only` negotiation (the Chromecast path, `2b19966f`), R218 (waiting states), R180/R195
 (the picker), R282/R285 (burn-in by restream), R322/R323 (the music and book engine), phase 180 (the stop).
@@ -239,4 +239,19 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
 12. **Owed to a Mac:** everything that plays — the spike's numbers for 1080p H.264 and 4K HEVC, acceptance 2–6, the
     rendition switch, whether AVFoundation's 8-bit conversion of HDR is good enough to claim HDR, and the Swift
     library's first compile.
-
+13. **First run on a real Mac (2026-09-29, the owner's MacBook Pro, macOS 27.0.1, Apple Silicon).** The Swift library
+    compiled first time on `macos-15`. **1.45's `.dmg` never started a film:** R290's start latch waits for
+    `hasRenderedFirstFrame` before it calls `play()`, and `AVPlayerItemVideoOutput` hands out no frame while the player
+    is paused, so the cold start waited forever. Fixed in `2c36a521`: once the item is ready and no start seek is
+    pending, the tick counts the first frame as reached. The same commit adds `ravilo_player_debug` (ABI 4) and a log,
+    `~/Library/Logs/Ravilo/ravilo.log` (5 MB, one rotation), which writes the player's state once a second until the
+    first frame, every five seconds while it buffers, and on a failure.
+    **Verified by the owner on that build:** a 4K HEVC HDR film starts from Home and plays with text subtitles, a skip
+    of twenty minutes buffers and carries on, the display stays awake while it plays (`pmset -g assertions`: *Ravilo is
+    playing a film*), and quitting sends the stop. QoE: 0 dropped frames, 0 rebuffers, over Ethernet.
+    **Finding: the Mac is served 1080p SDR.** The source was 3840×2160 HDR at 22 Mbps; AVPlayer's presentation size
+    was 1920×1080 and the server transcoded (`directPlay=false`), since the Mac claims no HDR on the 8-bit path
+    (item 3). Why 1080p rather than 4K SDR is not yet known. Real 4K HDR needs a different frame path (an
+    `AVPlayerLayer`, or a 10-bit one) and is a phase of its own.
+    **Still owed:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS, and 5 (music, the media keys,
+    Control Center).

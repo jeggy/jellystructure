@@ -5,7 +5,7 @@
 
 ## Status
 
-`⚠ Partial` — **workflow built 2026-09-29, never run: it waits for the two secrets and for these commits to reach `main`** (§Build notes). Written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
+`⚠ Partial` — **the workflow runs: signed, self-tested and installed on a real Mac 2026-09-29; `publish.yml`'s `macos:` job waits for R328–R330** (§Build notes). Written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
 build from it; **owner, 2026-09-29: no Apple bills, and (same day) one signing identity of our own, kept in CI's secrets, so
 the household approves the app once, not once per update.** Number verified free. **Last of four**
 (R328 → R329 → R330 → **R331**).
@@ -223,4 +223,11 @@ workflow on `main`. `⚠ Partial` until acceptance 1–5 are seen on GitHub and 
 8. **Owed:** the first run (acceptance 1), *Open Anyway* once and then **no prompt on the next release** (acceptance 2,
    two consecutive releases), the self-test failing without the library (acceptance 4), the missing-secrets failure
    (acceptance 5), and the `.dmg`'s size (open question 3).
-
+9. **First runs (2026-09-29).** The workflow signs with the owner's certificate (Authority *Ravilo*, identifier
+   `dev.jellystructure.ravilo`); `codesign --verify --deep --strict` passes on the Mac, and `--self-test` passes on the
+   runner and on the Mac (macOS 27.0.1). The `.dmg` is 86 MB. At the owner's request a release carries the `.dmg`
+   before D1's condition is met, uploaded by hand from a `workflow_dispatch` run: v1.45 (whose build could not start a
+   film — R329 build note 13), then v1.47. v1.46's pipeline had started before the fix, so it carries none.
+   `publish.yml` still has no `macos:` job. On macOS 27 `hdiutil attach` warns that it is deprecated in favour of
+   `diskutil image attach`; the runner is macOS 15, so nothing changes yet. Still owed: acceptance 2 (no prompt on
+   the next release), 4 and 5.
