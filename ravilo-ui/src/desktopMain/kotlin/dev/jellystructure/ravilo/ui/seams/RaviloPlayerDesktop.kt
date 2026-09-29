@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.DesktopApp
+import dev.jellystructure.ravilo.ui.desktop.DesktopLog
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import dev.jellystructure.ravilo.ui.desktop.MacNowPlaying
 import dev.jellystructure.ravilo.ui.desktop.MacPlayer
@@ -100,6 +101,7 @@ actual class RaviloPlayer actual constructor() {
         loadedAtMs = System.currentTimeMillis()
         if (!engine.available) { noEngineFailure = true; return }
         noEngineFailure = false
+        println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
         engine.load(streamUrl, startMs = startPositionMs)
         npTitle = title; npKicker = subtitle; npArtwork = artworkUrl
         MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.FILM)
@@ -112,8 +114,12 @@ actual class RaviloPlayer actual constructor() {
         if (watchJob?.isActive == true) return
         watchJob = scope.launch {
             var awake = false
+            var ticks = 0
             while (isActive && engine.loaded) {
                 val s = engine.state
+                // Until the first frame (and whenever it fails or waits), AVFoundation's own account, once a second.
+                if (!s.firstFrame || s.failed || (s.buffering && ticks % 5 == 0)) println("${DesktopLog.stamp()} [player] ${engine.debug()}")
+                ticks++
                 val playing = s.wantsPlay && !s.ended && !s.failed
                 if (playing != awake) { awake = playing; MacNative.lib?.ravilo_display_keep_awake(if (playing) 1 else 0) }
                 MacNowPlaying.update(nowPlaying, npTitle, npKicker, null, s.durationMs, s.positionMs, 1.0, playing && s.timeControl == 2, video = true)

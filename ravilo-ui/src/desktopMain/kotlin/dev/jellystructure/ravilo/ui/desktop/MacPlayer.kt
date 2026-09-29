@@ -76,6 +76,9 @@ internal class MacPlayer(private val audioOnly: Boolean) {
 
     fun error(): String? = lib?.takeIf { handle != 0L }?.let { MacNative.take(it.ravilo_player_error(handle)) }
 
+    /** One line of AVFoundation's own view of the item, for the log (no URL query strings, so no tokens). */
+    fun debug(): String = lib?.takeIf { handle != 0L }?.let { MacNative.take(it.ravilo_player_debug(handle)) } ?: "no player"
+
     /** The audible group as AVFoundation sees it (name and language per line, `*` on the selected one). */
     fun audioOptions(): String? = lib?.takeIf { handle != 0L }?.let { MacNative.take(it.ravilo_player_audio_options(handle)) }
 

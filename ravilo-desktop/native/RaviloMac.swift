@@ -9,7 +9,7 @@ import Security
 import SystemConfiguration
 
 @_cdecl("ravilo_abi")
-public func ravilo_abi() -> Int32 { 3 }
+public func ravilo_abi() -> Int32 { 4 }
 
 @_cdecl("ravilo_free")
 public func ravilo_free(_ p: UnsafeMutablePointer<CChar>?) { free(p) }

@@ -27,6 +27,7 @@ import dev.jellystructure.ravilo.ui.RaviloRoot
 import dev.jellystructure.ravilo.ui.TeardownWork
 import dev.jellystructure.ravilo.ui.components.AppCommand
 import dev.jellystructure.ravilo.ui.components.AppCommands
+import dev.jellystructure.ravilo.ui.desktop.DesktopLog
 import dev.jellystructure.ravilo.ui.desktop.DesktopShutdown
 import dev.jellystructure.ravilo.ui.desktop.DesktopWindow
 import dev.jellystructure.ravilo.ui.desktop.SelfTest
@@ -51,6 +52,8 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if ("--self-test" in args) exitProcess(SelfTest.run())
+    DesktopLog.install()
+    println("${DesktopLog.stamp()} Ravilo ${dev.jellystructure.shared.raviloVersion()} starting · Mac library: ${if (dev.jellystructure.ravilo.ui.desktop.MacNative.lib != null) "loaded" else "absent (${dev.jellystructure.ravilo.ui.desktop.MacNative.loadError})"}")
     // FR-R328-5 — before AWT loads: the menu bar in macOS's own bar, the app's name in it, a dark title bar.
     System.setProperty("apple.laf.useScreenMenuBar", "true")
     System.setProperty("apple.awt.application.name", "Ravilo")

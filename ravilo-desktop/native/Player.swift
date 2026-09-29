@@ -214,6 +214,12 @@ public func ravilo_player_tick(_ h: Int64) {
         b.readyHandled = true
         b.onReady()
     }
+    // R290's start latch waits for a first frame before it plays — ExoPlayer draws one while paused. AVPlayer's video
+    // output only delivers frames once it runs, so waiting for a copied frame would wait forever. Ready and parked at
+    // the start position is what the latch needs to know; the picture follows the moment it plays.
+    if b.readyHandled && b.pendingStartMs == 0 {
+        b.locked { if !b.seeking && b.failedReason == nil { b.firstFrame = true } }
+    }
     if b.readyHandled { b.startIfWanted() }
 }
 
@@ -296,6 +302,47 @@ public func ravilo_player_audio_options(_ h: Int64) -> UnsafeMutablePointer<CCha
     let selected = it.currentMediaSelection.selectedMediaOption(in: group)
     let lines = group.options.map { o in "\(o == selected ? "*" : "")\(o.displayName)\t\(o.extendedLanguageTag ?? "")" }
     return cString(lines.joined(separator: "\n"))
+}
+
+/// One line of what AVFoundation itself says about the item, for the app's log: its status, why the player waits,
+/// the last HLS error and access log entries. URLs lose their query string, so no token reaches a log.
+@_cdecl("ravilo_player_debug")
+public func ravilo_player_debug(_ h: Int64) -> UnsafeMutablePointer<CChar>? {
+    guard let b = box(h) else { return cString("no player") }
+    guard let it = b.item else { return cString("no item") }
+    func path(_ uri: String?) -> String { (uri ?? "").components(separatedBy: "?").first ?? "" }
+    var parts: [String] = []
+    let status: String
+    switch it.status {
+    case .readyToPlay: status = "ready"
+    case .failed: status = "failed"
+    default: status = "unknown"
+    }
+    parts.append("item=\(status)")
+    switch b.player.timeControlStatus {
+    case .paused: parts.append("player=paused")
+    case .waitingToPlayAtSpecifiedRate: parts.append("player=waiting(\(b.player.reasonForWaitingToPlay?.rawValue ?? "?"))")
+    case .playing: parts.append("player=playing")
+    @unknown default: parts.append("player=?")
+    }
+    let flags = b.locked { (b.ready, b.seeking, b.firstFrame, b.failedReason) }
+    parts.append("readySeen=\(flags.0) readyHandled=\(b.readyHandled) seeking=\(flags.1) firstFrame=\(flags.2) want=\(b.wantPlay) pendingStartMs=\(b.pendingStartMs)")
+    parts.append("t=\(String(format: "%.1f", b.player.currentTime().seconds)) size=\(Int(it.presentationSize.width))x\(Int(it.presentationSize.height))")
+    let ranges = it.loadedTimeRanges.map { v -> String in
+        let r = v.timeRangeValue
+        return String(format: "%.1f+%.1f", r.start.seconds, r.duration.seconds)
+    }
+    parts.append("loaded=[\(ranges.joined(separator: ","))]")
+    if let e = it.error as NSError? { parts.append("error=\(e.domain)/\(e.code) \(e.localizedDescription)") }
+    if let r = flags.3 { parts.append("failedReason=\(r)") }
+    if let ev = it.errorLog()?.events.last {
+        parts.append("errorLog=\(ev.errorStatusCode) \(ev.errorDomain) \(ev.errorComment ?? "") \(path(ev.uri))")
+    }
+    if let ev = it.accessLog()?.events.last {
+        parts.append("accessLog=requests:\(ev.numberOfMediaRequests) bitrate:\(Int(ev.indicatedBitrate)) stalls:\(ev.numberOfStalls) \(path(ev.uri))")
+    }
+    parts.append("hasOutput=\(b.output != nil)")
+    return cString(parts.joined(separator: " "))
 }
 
 /// FR-R329-1 path (b) — copies the newest frame into [dst] as tightly packed BGRA and returns 1; 0 when there is no

@@ -15,7 +15,7 @@ import java.io.File
  * [ABI] is bumped whenever an export changes shape, so a stale library is refused rather than called wrongly.
  */
 object MacNative {
-    const val ABI = 3
+    const val ABI = 4
     const val LIBRARY_FILE = "libravilo-mac.dylib"
 
     @Suppress("FunctionName")
@@ -45,6 +45,7 @@ object MacNative {
         fun ravilo_player_state(h: Long, out: LongArray, count: Int)
         fun ravilo_player_error(h: Long): Pointer?
         fun ravilo_player_audio_options(h: Long): Pointer?
+        fun ravilo_player_debug(h: Long): Pointer?
         fun ravilo_player_copy_frame(h: Long, dst: Pointer?, capacity: Long, dims: IntArray): Int
         fun ravilo_player_release(h: Long)
         fun ravilo_caps_playable(mime: String): Int
