@@ -14,28 +14,36 @@ import groovy.json.JsonSlurper
 // four targets load resources four different ways, and a sideloaded Tizen .wgt is a local file with
 // no origin to fetch from at all.
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.library) apply false // R333 — applied below, unless this is the Flatpak's desktop-only build
     alias(libs.plugins.kotlin.multiplatform)
 }
 
-android {
-    namespace = "dev.jellystructure.ravilo.i18n"
-    compileSdk = 36
-    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+// R333 (FR-R333-1) — the Flatpak's build declares only the `desktop` target (see settings.gradle.kts).
+val desktopOnly: Boolean = providers.gradleProperty("ravilo.desktopOnly").orNull == "true"
+
+if (!desktopOnly) {
+    apply(plugin = libs.plugins.android.library.get().pluginId)
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "dev.jellystructure.ravilo.i18n"
+        compileSdk = 36
+        defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
+        }
     }
 }
 
 kotlin {
-    androidTarget {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    if (!desktopOnly) {
+        androidTarget {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+            }
         }
-    }
 
-    linuxX64()
+        linuxX64()
+    }
 
     // R328 — Compose Desktop (the Mac app) is a JVM target.
     jvm("desktop") {
@@ -44,12 +52,14 @@ kotlin {
         }
     }
 
-    wasmJs {
-        browser()
-    }
+    if (!desktopOnly) {
+        wasmJs {
+            browser()
+        }
 
-    js(IR) {
-        browser()
+        js(IR) {
+            browser()
+        }
     }
 
     sourceSets {

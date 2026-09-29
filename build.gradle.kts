@@ -4,9 +4,9 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 
 plugins {
-    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.multiplatform) apply false // R333 — applied below, unless this is the Flatpak's desktop-only build
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.sqldelight)
+    alias(libs.plugins.sqldelight) apply false           // R333 — likewise
     // AGP declared here (apply=false) so its classes are on the shared classpath
     // before KGP's AgpWithBuiltInKotlinAppliedCheck fires in :ravilo-ui/:ravilo-android.
     alias(libs.plugins.android.library) apply false
@@ -14,7 +14,28 @@ plugins {
 }
 
 
-sqldelight {
+// R333 (FR-R333-2) — `:captureFlatpakSources` (the settings plugin in settings.gradle.kts puts its extension here).
+// The task must run LAST: a compile classpath is resolved when its compile task runs, so a capture that ran first
+// (Gradle's default order for two unrelated tasks) listed the plugins and nothing the app links against (R333 build
+// notes: 477 of ~740 artefacts the first time). The Linux natives (Skiko) are named so a capture on another host
+// would still list them.
+extensions.findByType(org.meshtastic.flatpak.sources.FlatpakSourcesExtension::class.java)?.apply {
+    mustRunAfterTasks.set(listOf(":ravilo-desktop:createDistributable"))
+    targetPlatforms.set(setOf("linux-x64"))
+    platformDependencies.set(setOf("org.jetbrains.compose.desktop:desktop-jvm-{platform}:${libs.versions.compose.multiplatform.get()}"))
+}
+
+// R333 (FR-R333-1) — the Flatpak's build (`-Pravilo.desktopOnly=true`, see settings.gradle.kts): the backend is not
+// part of it, so this project declares no targets, no database and none of its tasks; only `buildVersion` and the
+// version-catalogue plugins below are used by the desktop modules.
+val desktopOnly: Boolean = providers.gradleProperty("ravilo.desktopOnly").orNull == "true"
+
+if (!desktopOnly) {
+    apply(plugin = libs.plugins.kotlin.multiplatform.get().pluginId)
+    apply(plugin = libs.plugins.sqldelight.get().pluginId)
+}
+
+if (!desktopOnly) configure<app.cash.sqldelight.gradle.SqlDelightExtension> {
     databases {
         create("JellystructureDb") {
             packageName.set("dev.jellystructure.db")
@@ -22,7 +43,7 @@ sqldelight {
     }
 }
 
-kotlin {
+if (!desktopOnly) configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
     linuxX64 {
         binaries {
             executable {
@@ -380,7 +401,7 @@ tasks.named("wasmJsBrowserDistribution") {
 // commonMain — so it would fail to resolve sqldelight:runtime (no wasmJs artifact exists).
 // Fix: after the SQLDelight plugin has wired itself up, reroute its generated source directory
 // and its runtime dependency from commonMain to linuxX64Main.
-afterEvaluate {
+if (!desktopOnly) afterEvaluate {
     val kotlin = extensions.getByType(org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension::class.java)
     val generatedDir = layout.buildDirectory
         .dir("generated/sqldelight/code/JellystructureDb/commonMain")
@@ -458,5 +479,5 @@ val generateBuildInfo by tasks.registering {
         )
     }
 }
-kotlin.sourceSets.getByName("commonMain").kotlin.srcDir(generateBuildInfo.map { buildInfoDir.get() })
+if (!desktopOnly) the<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>().sourceSets.getByName("commonMain").kotlin.srcDir(generateBuildInfo.map { buildInfoDir.get() })
 tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(generateBuildInfo) }

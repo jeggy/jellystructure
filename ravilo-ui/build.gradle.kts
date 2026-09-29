@@ -1,25 +1,31 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.library) apply false // R333 — applied below, unless this is the Flatpak's desktop-only build
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.plugin.compose)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.serialization)   // R292 — the resume record is one saved string (PlayerResume.kt)
 }
 
-android {
-    namespace = "dev.jellystructure.ravilo.ui"
-    compileSdk = 36
-    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+// R333 (FR-R333-1) — the Flatpak's build declares only the `desktop` target (see settings.gradle.kts).
+val desktopOnly: Boolean = providers.gradleProperty("ravilo.desktopOnly").orNull == "true"
+
+if (!desktopOnly) {
+    apply(plugin = libs.plugins.android.library.get().pluginId)
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "dev.jellystructure.ravilo.ui"
+        compileSdk = 36
+        defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
+        }
     }
 }
 
 kotlin {
-    androidTarget {
+    if (!desktopOnly) androidTarget {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
         }
@@ -39,7 +45,7 @@ kotlin {
         }
     }
 
-    wasmJs {
+    if (!desktopOnly) wasmJs {
         browser {
             // Phase 198 — `browser()` creates a wasmJsBrowserTest task that `check`/`allTests` both
             // depend on, and it FAILS ("test sources present … did not discover any tests") because
@@ -87,7 +93,7 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
-        val androidMain by getting {
+        if (!desktopOnly) sourceSets.getByName("androidMain") {
             dependencies {
                 implementation(libs.coil.svg) // SVG channel logos
                 implementation(libs.ktor.client.cio) // WebSocket-only client now (R210) — CIO supports WS, the Android engine does not
@@ -126,7 +132,7 @@ kotlin {
                 implementation(kotlin("test"))
             }
         }
-        val wasmJsMain by getting {
+        if (!desktopOnly) sourceSets.getByName("wasmJsMain") {
             dependencies {
                 implementation(libs.ktor.client.js)
                 implementation(libs.coil.network.ktor) // R316 — images through the browser's fetch; moved here from commonMain

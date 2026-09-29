@@ -142,6 +142,10 @@ jobs:
         # The Swift library and the .dmg are macOS-only (R331); this catches a broken desktop source set on
         # every push.
         run: ./gradlew :shared:desktopTest :ravilo-i18n:desktopTest :ravilo-ui:desktopTest :ravilo-castv2:jvmTest :ravilo-desktop:compileKotlinDesktop --no-daemon
+      - name: The desktop app configures alone (R333 FR-R333-1)
+        # The Flatpak builds with `-Pravilo.desktopOnly=true` — no Android plugin, no Kotlin/Native, no Wasm — so a
+        # build script change that breaks that mode must fail here, not on Flathub's builders.
+        run: ./gradlew -Pravilo.desktopOnly=true :ravilo-desktop:compileKotlinDesktop --no-daemon
       - name: Player dex register guard (FR-231-2)
         run: ./scripts/check-player-dex.sh
       # R316 (FR-R316-5) — Ktor's Android engine crashed a fast scroll; the release APK fetches over OkHttp only.

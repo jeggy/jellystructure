@@ -1,29 +1,38 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.library) apply false // R333 — applied below, unless this is the Flatpak's desktop-only build
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
 }
 
-android {
-    namespace = "dev.jellystructure.shared"
-    compileSdk = 36
-    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+// R333 (FR-R333-1) — the Flatpak's build has no Android SDK, no Kotlin/Native toolchain and no Node: only the
+// `desktop` target is declared. Every other build is exactly as before.
+val desktopOnly: Boolean = providers.gradleProperty("ravilo.desktopOnly").orNull == "true"
+
+if (!desktopOnly) {
+    apply(plugin = libs.plugins.android.library.get().pluginId)
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "dev.jellystructure.shared"
+        compileSdk = 36
+        defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
+        }
     }
 }
 
 kotlin {
-    androidTarget {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    if (!desktopOnly) {
+        androidTarget {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+            }
         }
-    }
 
-    linuxX64()
+        linuxX64()
+    }
 
     // R328 — the Mac (and, for development, the Linux box): Compose Desktop is a JVM target. The name is
     // `desktop`, not `jvm`, so the source set reads `desktopMain` and never collides with a future server module.
@@ -33,15 +42,17 @@ kotlin {
         }
     }
 
-    wasmJs {
-        browser()
-    }
+    if (!desktopOnly) {
+        wasmJs {
+            browser()
+        }
 
-    // R189, superseded by R264 — Kotlin/JS IR (distinct from wasmJs above): compiles to plain,
-    // old-engine-compatible JS (no WasmGC requirement), so ravilo-screen can target 2016-2018 Samsung
-    // Tizen TVs, whose bundled WebKit/Chromium predates even non-GC WebAssembly (Chrome 57, 2017).
-    js(IR) {
-        browser()
+        // R189, superseded by R264 — Kotlin/JS IR (distinct from wasmJs above): compiles to plain,
+        // old-engine-compatible JS (no WasmGC requirement), so ravilo-screen can target 2016-2018 Samsung
+        // Tizen TVs, whose bundled WebKit/Chromium predates even non-GC WebAssembly (Chrome 57, 2017).
+        js(IR) {
+            browser()
+        }
     }
 
     sourceSets {
