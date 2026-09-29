@@ -795,6 +795,7 @@
   "ab.series": "Series",
   "ab.finished": "Finished",
   "ab.mark_finished": "Mark as finished",
+  "ab.mark_unfinished": "Mark as not finished",
   "ab.speed": "Speed",
   "ab.sleep": "Sleep timer",
   "ab.sleep_end_chapter": "End of chapter",

@@ -741,6 +741,7 @@
   "ab.series": "Serier",
   "ab.finished": "Færdig",
   "ab.mark_finished": "Marker som færdig",
+  "ab.mark_unfinished": "Marker som ikke færdig",
   "ab.speed": "Hastighed",
   "ab.sleep": "Sleep-timer",
   "ab.sleep_end_chapter": "Kapitlets slutning",

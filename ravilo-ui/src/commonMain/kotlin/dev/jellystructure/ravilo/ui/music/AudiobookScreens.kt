@@ -365,25 +365,27 @@ fun AudiobookDetailScreen(
             }
         }
         DetailBack(onBack)
-        BookMenuSheet(menu, d, api, store, onDismiss = { menu = false }, onOpenAuthor = onOpenAuthor)
+        BookMenuSheet(menu, d, started, finished, api, store, onDismiss = { menu = false }, onOpenAuthor = onOpenAuthor)
     }
 }
 
-/** ⋯ on a book: Start over · Mark as finished · Go to author. */
+/** ⋯ on a book: Start over (once started) · Mark as finished, or *Mark as not finished* on a finished one (R332) · Go to author. */
 @Composable
-fun BookMenuSheet(visible: Boolean, d: AudiobookDetail, api: TvApiClient, store: AudiobookStore, onDismiss: () -> Unit, onOpenAuthor: (String) -> Unit) {
+fun BookMenuSheet(visible: Boolean, d: AudiobookDetail, started: Boolean, finished: Boolean, api: TvApiClient, store: AudiobookStore, onDismiss: () -> Unit, onOpenAuthor: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     HandsetSheet(visible = visible, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 14.dp)) {
-            BookSheetRow(str("ab.start_over"), MusicIcon.PREVIOUS) {
+            if (started) BookSheetRow(str("ab.start_over"), MusicIcon.PREVIOUS) {
                 onDismiss()
                 scope.launch { runCatching { api.setAudiobookFinished(d.id, false) }; resumeBook(api, d.id, fromStart = true); store.refresh(d.id) }
             }
-            BookSheetRow(str("ab.mark_finished"), MusicIcon.CHECK) {
+            // FR-R332-1 — the same row, the other way: the lit check is the state, the words are what a tap does.
+            BookSheetRow(str(if (finished) "ab.mark_unfinished" else "ab.mark_finished"), MusicIcon.CHECK, lit = finished) {
                 onDismiss()
                 scope.launch {
+                    // FR-R332-2 — nothing plays: the engine lets go of the book, and the page reads *Start* again.
                     if (MusicEngine.state.value.book?.id == d.id) MusicEngine.clear()
-                    runCatching { api.setAudiobookFinished(d.id, true) }
+                    runCatching { api.setAudiobookFinished(d.id, !finished) }
                     store.refresh(d.id)
                 }
             }

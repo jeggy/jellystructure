@@ -178,7 +178,7 @@ fun BookPlayingScreen(
         SleepSheet(sheet == "sleep", b.sleep) { sheet = null }
         ChaptersSheet(sheet == "chapters" || sheet == "bookmarks", api, d, bookPos, startOnBookmarks = sheet == "bookmarks") { sheet = null }
         AddBookmarkSheet(sheet == "add", api, d, bookPos) { sheet = null }
-        if (store != null) BookMenuSheet(sheet == "menu", d, api, store, onDismiss = { sheet = null }, onOpenAuthor = onOpenAuthor)
+        if (store != null) BookMenuSheet(sheet == "menu", d, started = true, finished = b.finished, api, store, onDismiss = { sheet = null }, onOpenAuthor = onOpenAuthor)
     }
 }
 
