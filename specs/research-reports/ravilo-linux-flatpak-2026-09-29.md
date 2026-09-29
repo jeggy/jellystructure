@@ -259,17 +259,14 @@ own domain. **Owner, 2026-09-29: `net.jebster.Ravilo`.** It costs nothing, it is
 `/.well-known/org.flathub.VerifiedApps.txt` on the domain, over HTTPS), and the last component is capitalised by
 convention. The Mac bundle id and the Android package stay `dev.jellystructure.ravilo`; nothing links them.
 
-**What the choice makes public, and what stays scrubbed.** The household's domain was scrubbed from this public repo
-and its history on 2026-09-23, and `scripts/check-deanonymization.sh` still bans it. An app id is the most public
-string an app carries — the Flathub repository `flathub/net.jebster.Ravilo`, the store page, the manifest, the
-metainfo, the desktop file, `FLATPAK_ID`, the release notes and every install's `~/.var/app/net.jebster.Ravilo` — and
-the owner has accepted that the *bare domain* is readable from it. The rule that remains, and the fence that keeps it:
+**What the choice makes public.** The household's domain was scrubbed from this public repo and its history on
+2026-09-23. An app id is the most public string an app carries — the Flathub repository `flathub/net.jebster.Ravilo`,
+the store page, the manifest, the metainfo, the desktop file, `FLATPAK_ID`, the release notes and every install's
+`~/.var/app/net.jebster.Ravilo` — so **the owner lifted the ban on the domain the same day**: its hash is out of
+`scripts/check-deanonymization.sh`, and the domain may be written in the repo (the fence keeps guarding the IP
+addresses, the trackers and the library's titles). Two things still hold:
 
-- the fence matches the domain's two words *in domain order* (as a hostname or URL is written); the reverse-DNS id
-  puts them the other way round, so **the id passes the fence unchanged and the fence stays as it is**;
-- **the domain written as a hostname or URL never appears in the repo** — not the bare domain, not the server's
-  hostnames under it; the metainfo's `homepage` and `bugtracker` point at the GitHub repository, the verification
-  file's URL is not written down here, and prose says "the household's domain";
+- the metainfo's `homepage` and `bugtracker` point at the GitHub repository, because that is where the project is;
 - **everything outside this repository is the owner's to do by hand** (owner, 2026-09-29): the verification file on
   the web server, the Flathub submission, the Flathub repository's settings and secrets. This plan lists those steps;
   it does not perform them.
