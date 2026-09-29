@@ -11,9 +11,13 @@ becomes a phase.
 1. **A Mac can already "install" Ravilo** — `ravilo-web` added to the Dock from Safari (macOS 14+) or installed
    from Chrome runs in its own window from the Dock and Spotlight. No new code. What it lacks is the web
    player's (the 2026-09-18 report's §4): no track switching, no waiting states, and Cast only from Chrome.
-2. **A real native app is Compose Desktop — a JVM target of `ravilo-ui`**, packaged as a signed `.dmg`. Native
-   Kotlin for macOS is not an option: Compose Multiplatform does not support a `macosArm64` UI target
-   ([CMP-4580](https://youtrack.jetbrains.com/projects/CMP/issues/CMP-4580/Compose-Multiplatform-support-for-Mac-OS-native-apps) is still open).
+2. **A real native app is Compose Desktop — a JVM target of `ravilo-ui`**, packaged as a signed `.dmg`. This is
+   how Compose supports macOS: *Desktop (JVM) — Stable*, covering Windows, macOS and Linux
+   ([stability table](https://kotlinlang.org/docs/multiplatform/supported-platforms.html),
+   [product page](https://kotlinlang.org/compose-multiplatform/)). The one route that is *not* available is
+   compiling the UI for macOS with Kotlin/Native (a `macosArm64` target, the way iOS works) —
+   [CMP-4580](https://youtrack.jetbrains.com/projects/CMP/issues/CMP-4580/Compose-Multiplatform-support-for-Mac-OS-native-apps)
+   is still open — and nothing here needs it.
 3. **The shared code is ready for a third platform.** Everything platform-specific already sits behind
    **62 `expect` seams** in `ravilo-ui` (+2 in `shared`); a Mac build needs 62 `desktopMain` actuals, and about
    three quarters of them are storage, no-ops or one-liners (§2).
@@ -41,7 +45,7 @@ first days are two spikes on the MacBook — the player's frames, and discoverin
 | **0 · Web app in the Dock** | `ravilo-web` via Safari *File → Add to Dock* ([Apple](https://support.apple.com/en-us/104996)) or Chrome *Install* | none | the browser's: Safari HLS incl. HEVC, no MKV; Chrome MKV only with H.264/VP9 + AAC/Opus; nothing plays DTS/TrueHD | Chrome only (Web Sender, not built yet); *Play on a TV* everywhere; **music has no web build yet** (R321 FR-R321-2) | **available today, films only** |
 | **1 · Finish the web player** | the §4 work of `ravilo-web-pwa-player-cast-2026-09-18.md` (track switching, waiting states, honest capabilities, Chrome Cast sender) | web actuals | as road 0, done properly | Chrome + screens | helps the Mac, iPhone, Windows and Linux at once |
 | **2 · Compose Desktop app** | a `jvm("desktop")` target of `shared`/`ravilo-i18n`/`ravilo-ui` + a `:ravilo-desktop` app module → `.dmg` | 62 actuals + a player + packaging + a Cast v2 client | §3 — everything via HLS with AVPlayer, or everything direct with libVLC | **speakers, groups, the hub and the TVs** (§4) + screens (+ AirPlay with AVPlayer) | **the native answer** |
-| ✗ Kotlin/Native macOS UI | Compose on `macosArm64` | — | — | — | not supported by Compose Multiplatform |
+| ✗ Kotlin/Native macOS UI | Compose compiled for `macosArm64` (the iOS way), instead of the JVM | — | — | — | not offered by Compose (macOS is supported through the JVM target — road 2) |
 | ✗ Electron / Tauri / WKWebView shell | the web bundle in a native window | a shell | the web player's, unchanged | as the web | nothing road 0 does not already give |
 
 A third native route exists only as a by-product: an **iOS app runs unmodified on Apple-Silicon Macs** ("Designed
