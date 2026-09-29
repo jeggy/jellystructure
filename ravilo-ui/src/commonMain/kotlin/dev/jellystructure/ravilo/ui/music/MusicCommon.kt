@@ -314,7 +314,7 @@ private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
                 if (can) MusicCast.setLyrics(!lyricsOn)
             }
         }
-        SheetRow(str("cast.play_here"), MusicIcon.PLAY) { onDismiss(); MusicCast.playHere() }
+        SheetRow(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), MusicIcon.PLAY) { onDismiss(); MusicCast.playHere() }
         Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { onDismiss(); MusicCast.stop() }, verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.width(34.dp))
             Text(str("cast.stop"), color = Color(0xFFFF9B8A), fontSize = 15.sp, fontFamily = Sora)

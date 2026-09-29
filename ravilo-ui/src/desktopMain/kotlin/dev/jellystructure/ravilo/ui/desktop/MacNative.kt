@@ -15,7 +15,7 @@ import java.io.File
  * [ABI] is bumped whenever an export changes shape, so a stale library is refused rather than called wrongly.
  */
 object MacNative {
-    const val ABI = 2
+    const val ABI = 3
     const val LIBRARY_FILE = "libravilo-mac.dylib"
 
     @Suppress("FunctionName")
@@ -56,6 +56,11 @@ object MacNative {
         fun ravilo_nowplaying_artwork(bytes: ByteArray?, length: Long)
         fun ravilo_nowplaying_clear()
         fun ravilo_display_keep_awake(on: Int)
+
+        // ── R330 — Bonjour (Bonjour.swift; see MacBonjour) ──
+        fun ravilo_bonjour_start()
+        fun ravilo_bonjour_stop()
+        fun ravilo_bonjour_snapshot(): Pointer?
     }
 
     /** A media key or Control Center: `command` as NowPlaying.swift numbers them, `value` in seconds. */

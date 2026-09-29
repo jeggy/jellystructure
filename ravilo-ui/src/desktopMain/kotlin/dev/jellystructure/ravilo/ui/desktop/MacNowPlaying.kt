@@ -37,6 +37,7 @@ internal object MacNowPlaying {
         }
     }
 
+    @Synchronized
     fun claim(target: Target, mode: Mode) {
         val l = lib ?: return
         if (!handlerInstalled) { l.ravilo_nowplaying_set_handler(callback); handlerInstalled = true }
@@ -45,8 +46,10 @@ internal object MacNowPlaying {
         l.ravilo_nowplaying_set_mode(mode.code)
     }
 
+    @Synchronized
     fun owns(target: Target): Boolean = owner === target
 
+    @Synchronized
     fun update(target: Target, title: String, artist: String?, album: String?, durationMs: Long, positionMs: Long,
                rate: Double, playing: Boolean, video: Boolean) {
         if (owner !== target) return
@@ -55,6 +58,7 @@ internal object MacNowPlaying {
     }
 
     /** The cover by URL; fetched once per URL, applied only if the same owner still holds the card. */
+    @Synchronized
     fun artwork(target: Target, url: String?) {
         val l = lib ?: return
         if (owner !== target || url == artworkUrl) return
@@ -70,6 +74,7 @@ internal object MacNowPlaying {
         }
     }
 
+    @Synchronized
     fun release(target: Target) {
         if (owner !== target) return
         owner = null

@@ -196,6 +196,14 @@ private fun ScreensSheetBody(
             if (music && !hasCastSdk) {
                 Text(str("cast.speakers_ios"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
             }
+            // R330 (FR-R330-8) — the Mac was refused Local Network access: said once, under the rows, with the way to it.
+            val lanDenied by dev.jellystructure.ravilo.ui.seams.CastPlatform.localNetworkDenied.collectAsState()
+            if (lanDenied) {
+                Text(str("mac.local_network"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+                dev.jellystructure.ravilo.ui.seams.CastPlatform.openLocalNetworkSettings?.let { open ->
+                    SimpleRow(icon = {}, label = str("mac.open_settings"), onClick = open)
+                }
+            }
         }
         // Tier 3 — R270's footnote form: one quiet line, the caveat inside the label itself, one step
         // below the TV rows, never a full row with its own second line (supersedes FR-R265-4's original shape).

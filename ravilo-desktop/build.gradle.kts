@@ -99,6 +99,15 @@ compose.desktop {
                 minimumSystemVersion = "14.0"   // R328 D2 / R331 FR-R331-2
                 appCategory = "public.app-category.entertainment"
                 iconFile.set(project.file("icons/ravilo.icns"))
+                // R330 (FR-R330-8) — without these macOS 15 blocks Bonjour silently; the first scan asks the viewer.
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSLocalNetworkUsageDescription</key>
+                        <string>Ravilo looks for your speakers and TVs on this network.</string>
+                        <key>NSBonjourServices</key>
+                        <array><string>_googlecast._tcp</string></array>
+                    """.trimIndent()
+                }
             }
             linux {
                 iconFile.set(project.file("icons/ravilo.png"))

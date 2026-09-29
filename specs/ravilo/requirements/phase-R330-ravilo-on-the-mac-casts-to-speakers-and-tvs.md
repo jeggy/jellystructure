@@ -4,7 +4,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4.
+`⚠ Partial` — **built 2026-09-29; the protocol is tested against a fake device, but nothing has talked to a real Cast device, and the Swift half has not been compiled** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4.
 **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Third of four** (R328 → R329 → **R330** → R331).
 
 **Builds on:**
@@ -189,3 +189,52 @@ the spike on the household's five devices. Thirteen items.
     That is 286's road C, and the iPhone's route to the speakers.
 13. **Wire:** none — the phone, the receiver and the backend see nothing new. **Size:** about two weeks including the
     spike, on top of R328/R329.
+
+## Build notes (2026-09-29)
+
+Built from the dev review. **Nothing here has spoken to a real Cast device** — device control was off-limits for
+this round, and the Linux box would have found and queried the household's own Chromecasts — so the protocol is
+tested against a fake device only, and the six TXT keys (dev review 1) and open question 1 are still owed to the
+spike on the five devices. `⚠ Partial`.
+
+1. **FR-R330-1 — `:ravilo-castv2`** (a `jvm()` target; `linuxX64()` later needs only the transport actual).
+   `CastMessage` encodes and decodes the seven protobuf fields by hand, framed by a 4-byte big-endian length;
+   `CastFrameReader` reassembles frames from any split (tested at every cut point, and one byte at a time). The
+   golden bytes in `CastMessageTest` come from an independent encoder, not this one. `CastSession` is the state
+   machine over any `CastTransport`: an ordered outbox, `CONNECT` to `receiver-0`, `PING` every 5 s with three
+   unanswered pings closing it (any message counts as an answer; a device's `PING` gets `PONG`), `requestId` pairing
+   with a 10 s timeout, `GET_STATUS`, `GET_APP_AVAILABILITY`, `LAUNCH` or join, a second `CONNECT` to the app's
+   `transportId`, media commands carrying the last `mediaSessionId`, our channel both ways, `SET_VOLUME`, `STOP`.
+   CAF sends `media` in a `MEDIA_STATUS` only when it changed, so a report without it keeps the last one's for the
+   same media session. The app closing, or another sender's app replacing ours, ends the session. The JVM transport
+   is an `SSLSocket` that accepts the device's own certificate. Tests: `CastMessageTest`, `CastDeviceTest`,
+   `CastMediaStatusTest`, `CastSessionTest` (23, virtual time).
+2. **FR-R330-2 — discovery.** On a Mac with the library, `NWBrowser` in `Bonjour.swift` (the address resolved once
+   with a short TCP connection); Kotlin polls a snapshot once a second — nothing calls into the JVM. Elsewhere,
+   JmDNS. Reference-counted: browsing runs while the sheet is open on screen (R293) or the start-up reconnect needs
+   it. `kind` comes from `ca` (32 → group, no video out → speaker), `busyWith` from `rs`, except for the name our
+   own app runs under (learned from any status). A device is listed only after `GET_APP_AVAILABILITY` says yes
+   (D2); only a definite answer is remembered, so a device that was asleep is asked again.
+3. **FR-R330-3 — the sender** (`CastSenderDesktop`, handed to `ActiveCastSender` beside `ScreenSender`;
+   `hasCastSdk = true`). The row's `select` opens a session (launch or join); `load` sends the `LOAD` the phone's SDK
+   sends — `contentId` `ravilo://{id}`, the same metadata types and fields, `CastLoadData` as `customData` on both the
+   request and the media — waiting for the session when it is not open yet, as Android's pending load does. **The
+   status merge moved to common code** (`mergeCastStatus`, `foldReceiverMessage`, `isCastBurnIn` over a neutral
+   `CastMediaSnapshot`, `CastStatusMergeTest`); `CastSenderAndroid.rebuildStatus` now maps the SDK into the snapshot
+   and calls it, rule for rule as before. Subtitle and audio picks follow R285 exactly as on Android. A dropped
+   connection is rejoined up to three times; a stop, the app ending or being replaced is silence (FR-R245-5).
+4. **FR-R330-5 — reconnect.** The device last cast to is remembered (`cast.last_device`, cleared by *Stop
+   casting*); once the server's app id is known at start-up, the Mac looks for it for up to 15 s, joins only if our
+   app runs there, and keeps the session only if the media channel reports something loaded — otherwise nothing
+   shows. Then it asks the receiver for its `status`, which rebuilds the queue (`MusicCast`, unchanged).
+5. **FR-R330-7 — Now Playing while casting**: the speaker's song (or the TV's film), its position and play state,
+   with play, pause, seek, and next/previous sent to the receiver as `CastCommand`s. `MacNowPlaying` is now
+   synchronized, since the sender updates it off Compose's thread.
+6. **FR-R330-8.** `NSLocalNetworkUsageDescription` and `NSBonjourServices = _googlecast._tcp` in the bundle's
+   Info.plist. A refusal (`kDNSServiceErr_PolicyDenied`) puts one line under the sheet's rows —
+   *Ravilo needs Local Network access to find speakers and TVs* · *Open Settings* (the Local Network pane) — through a
+   small common `CastPlatform` the Mac sets. **Open question 2:** yes — *Play on this Mac* (`cast.play_here_mac`).
+7. **Owed to real devices:** acceptance 1–7 — the TXT keys on Stue, Gæsteværelse, their group, the hub and a TV;
+   whether audio-only devices answer `GET_APP_AVAILABILITY` like displays (open question 1); a take-over from
+   Spotify; the volume slider; the Local Network prompt on macOS 15 (only the packaged app gets it, dev review 8).
+

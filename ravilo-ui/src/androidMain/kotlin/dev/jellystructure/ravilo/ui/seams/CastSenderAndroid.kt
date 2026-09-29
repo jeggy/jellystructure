@@ -134,10 +134,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }
     private val messageCallback = com.google.android.gms.cast.Cast.MessageReceivedCallback { _, _, message ->
         runCatching { json.decodeFromString(CastReceiverMessage.serializer(), message) }.getOrNull()?.let { msg ->
-            receiverSaid = when (msg.type) {
-                "status", "tracks" -> msg
-                else -> (receiverSaid ?: msg).copy(type = msg.type, retryAfter = msg.retryAfter, sinceMs = msg.sinceMs, nextupSecs = msg.nextupSecs, nextTitle = msg.nextTitle, receiverId = msg.receiverId ?: receiverSaid?.receiverId)
-            }
+            receiverSaid = foldReceiverMessage(receiverSaid, msg)   // R330 — the rule both senders share
             rebuildStatus(msg.type)
         }
     }
@@ -212,59 +209,36 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         session = null
     }
 
-    /** Everything the remote shows is rebuilt here from the SDK's media status + the receiver's last message. */
+    /** Everything the remote shows is rebuilt from the SDK's media status + the receiver's last message — by the
+     *  common [mergeCastStatus] (R330 FR-R330-3), which the Mac's own sender uses too. */
     private fun rebuildStatus(event: String? = null) {
+        _status.value = mergeCastStatus(_status.value, receiverSaid, mediaSnapshot(), event, System.currentTimeMillis())
+    }
+
+    /** The Cast SDK's view of the receiver's media, in [mergeCastStatus]'s neutral shape. */
+    private fun mediaSnapshot(): CastMediaSnapshot {
         val rmc = session?.remoteMediaClient
         val ms = rmc?.mediaStatus
         val info = rmc?.mediaInfo
         val meta = info?.metadata
-        val said = receiverSaid
-        val prev = _status.value ?: CastRemoteStatus()
-        val idle = ms == null || ms.playerState == MediaStatus.PLAYER_STATE_IDLE
-        val ended = event == "ended" || (ms != null && ms.playerState == MediaStatus.PLAYER_STATE_IDLE && ms.idleReason == MediaStatus.IDLE_REASON_FINISHED)
-        val active = ms?.activeTrackIds?.toSet() ?: emptySet()
-        val subs = said?.subtitleTracks ?: emptyList()
-        // R285 — an active CAF text track is the selection; with none active, a burned-in subtitle
-        // (which has no CAF track at all) is — and only the receiver can know that. Audio is never a
-        // CAF track on an HLS cast, so the receiver's word is the only word.
-        val selectedSub = subs.indexOfFirst { it.trackId != null && it.trackId in active }
-            .takeIf { it >= 0 } ?: said?.selectedSub?.takeIf { isBurnIn(subs.getOrNull(it)) } ?: -1
-        val audios = said?.audioTracks ?: emptyList()
-        val selectedAudio = said?.selectedAudio ?: 0
-        _status.value = prev.copy(
-            itemId = said?.itemId ?: prev.itemId,
-            title = said?.title ?: meta?.getString(MediaMetadata.KEY_TITLE) ?: prev.title,
-            kicker = said?.kicker ?: meta?.getString(MediaMetadata.KEY_SUBTITLE) ?: prev.kicker,
-            artUrl = said?.artUrl ?: meta?.images?.firstOrNull()?.url?.toString() ?: prev.artUrl,
-            positionMs = rmc?.approximateStreamPosition?.coerceAtLeast(0) ?: prev.positionMs,
-            durationMs = rmc?.streamDuration?.coerceAtLeast(0) ?: prev.durationMs,
-            playing = ms?.playerState == MediaStatus.PLAYER_STATE_PLAYING,
-            buffering = ms?.playerState == MediaStatus.PLAYER_STATE_BUFFERING || ms?.playerState == MediaStatus.PLAYER_STATE_LOADING,
-            loaded = !idle || said?.type == "status",
-            ended = ended,
-            // R299 — set by the receiver's own word, cleared by the next load's status.
-            failed = dev.jellystructure.ravilo.ui.screens.failedAfter(event, prev.failed),
-            hasNext = said?.hasNext ?: prev.hasNext,
-            nextUpSecs = if (event == "nextup") said?.nextupSecs else if (event == "status" || ended) null else prev.nextUpSecs,
-            nextTitle = said?.nextTitle ?: prev.nextTitle,
-            busyRetryAfter = if (event == "busy") said?.retryAfter else if (event == "status" || event == "tracks") null else prev.busyRetryAfter,
-            busySinceMs = if (event == "busy") (said?.sinceMs ?: System.currentTimeMillis()) else if (event == "status" || event == "tracks") null else prev.busySinceMs,
-            noServer = if (event == "noserver") true else if (event == "status" || event == "tracks") false else prev.noServer,
-            audioTracks = audios.ifEmpty { prev.audioTracks },
-            subtitleTracks = subs.ifEmpty { prev.subtitleTracks },
-            selectedAudio = if (audios.isNotEmpty()) selectedAudio else prev.selectedAudio,
-            selectedSub = if (subs.isNotEmpty()) selectedSub else prev.selectedSub,
-            transcoding = said?.transcoding ?: prev.transcoding,
-            subSize = said?.subSize?.firstOrNull() ?: prev.subSize,
-            receiverId = said?.receiverId ?: prev.receiverId,
-            // R324 (FR-R324-4/8) — the receiver's queue snapshot, rebuilt from its word (286 dev review 10). A LOAD
-            // this phone issued seeds it (see loadOnMain) until the receiver's first status replaces it.
-            music = said?.queue?.isNotEmpty() ?: prev.music,
-            queue = said?.queue ?: prev.queue,
-            queueIndex = said?.queueIndex ?: prev.queueIndex,
-            repeat = said?.repeat ?: prev.repeat,
-            shuffle = said?.shuffle ?: prev.shuffle,
-            lyricsOn = if (said != null) said.lyricsOn else prev.lyricsOn,
+        return CastMediaSnapshot(
+            playerState = ms?.playerState?.let {
+                when (it) {
+                    MediaStatus.PLAYER_STATE_PLAYING -> "PLAYING"
+                    MediaStatus.PLAYER_STATE_PAUSED -> "PAUSED"
+                    MediaStatus.PLAYER_STATE_BUFFERING -> "BUFFERING"
+                    MediaStatus.PLAYER_STATE_LOADING -> "LOADING"
+                    else -> "IDLE"
+                }
+            },
+            idleFinished = ms != null && ms.playerState == MediaStatus.PLAYER_STATE_IDLE && ms.idleReason == MediaStatus.IDLE_REASON_FINISHED,
+            positionMs = rmc?.approximateStreamPosition,
+            durationMs = rmc?.streamDuration,
+            activeTrackIds = ms?.activeTrackIds?.toSet() ?: emptySet(),
+            mediaTrackIds = info?.mediaTracks?.map { it.id }?.toSet(),
+            title = meta?.getString(MediaMetadata.KEY_TITLE),
+            subtitle = meta?.getString(MediaMetadata.KEY_SUBTITLE),
+            imageUrl = meta?.images?.firstOrNull()?.url?.toString(),
         )
     }
 
@@ -341,10 +315,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }
     override fun stop() = onMain { castContext.sessionManager.endCurrentSession(true) }
     /** R285 — a listed subtitle with no CAF Track behind it is a burn-in (PGS) candidate. */
-    private fun isBurnIn(track: dev.jellystructure.shared.tv.CastTrack?): Boolean {
-        val id = track?.trackId ?: return false
-        return session?.remoteMediaClient?.mediaInfo?.mediaTracks?.none { it.id == id } ?: false
-    }
+    private fun isBurnIn(track: dev.jellystructure.shared.tv.CastTrack?): Boolean = isCastBurnIn(track, mediaSnapshot())
 
     private fun command(type: String, index: Int) =
         send(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand(type, index = index)))

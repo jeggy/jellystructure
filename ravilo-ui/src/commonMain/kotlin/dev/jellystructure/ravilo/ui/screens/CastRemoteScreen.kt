@@ -243,7 +243,7 @@ fun CastRemoteScreen(
         // ── Footer / state actions ──
         when {
             state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.itemId?.let { id -> RemotePill(str("cast.play_here"), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
+                s.itemId?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
                 RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
             }
             unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }

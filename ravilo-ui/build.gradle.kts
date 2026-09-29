@@ -118,6 +118,7 @@ kotlin {
                 implementation(libs.coil.network.okhttp)
                 implementation("com.squareup.okhttp3:okhttp") { version { strictly(libs.versions.okhttp.get()) } }
                 implementation(libs.jna) // R328 — the Swift library's C exports (MacNative)
+                implementation(projects.raviloCastv2) // R330 — the Mac's own Cast v2 sender
             }
         }
         val desktopTest by getting {
