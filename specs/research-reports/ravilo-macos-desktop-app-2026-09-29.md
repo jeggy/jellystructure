@@ -10,7 +10,7 @@ becomes a phase.
 
 1. **A Mac can already "install" Ravilo** — `ravilo-web` added to the Dock from Safari (macOS 14+) or installed
    from Chrome runs in its own window from the Dock and Spotlight. No new code. What it lacks is the web
-   player's (§4): no track switching, no waiting states, and Cast only from Chrome.
+   player's (the 2026-09-18 report's §4): no track switching, no waiting states, and Cast only from Chrome.
 2. **A real native app is Compose Desktop — a JVM target of `ravilo-ui`**, packaged as a signed `.dmg`. Native
    Kotlin for macOS is not an option: Compose Multiplatform does not support a `macosArm64` UI target
    ([CMP-4580](https://youtrack.jetbrains.com/projects/CMP/issues/CMP-4580/Compose-Multiplatform-support-for-Mac-OS-native-apps) is still open).
@@ -54,7 +54,7 @@ Measured: `androidMain` 34 files / 62 actuals / 3 543 lines; `wasmJsMain` 34 fil
 
 | Kind | Seams | Mac answer |
 |---|---|---|
-| **Constants / no-ops (≈20)** | `isTvPlatform`, `isWebPlatform`, `isIOSWebPlatform`, `hasCastSdk`, `platformAirPlay`*, `playsHlsForAirPlay`, `installCardDismissed`/`dismissInstallCard`/`triggerNativeInstall`/`rememberInstallPromptAvailable`/`rememberIsStandaloneWebApp`, `installHashListener`, `pushRoute`/`replaceRoute`, `reloadForUpdate`/`rememberUpdateAvailable`, `rememberNotificationAsk`, `rememberCastRoutes` (empty), `playerTapTogglesChrome`, `playerBackdropColor` | `false` / empty / nothing. *AirPlay becomes real with AVPlayer (`AVRoutePickerView`). |
+| **Constants / no-ops (≈18)** | `isTvPlatform`, `isWebPlatform`, `isIOSWebPlatform`, `platformAirPlay`*, `playsHlsForAirPlay`, `installCardDismissed`/`dismissInstallCard`/`triggerNativeInstall`/`rememberInstallPromptAvailable`/`rememberIsStandaloneWebApp`, `installHashListener`, `pushRoute`/`replaceRoute`, `reloadForUpdate`/`rememberUpdateAvailable`, `rememberNotificationAsk`, `playerTapTogglesChrome`, `playerBackdropColor` | `false` / empty / nothing. *AirPlay becomes real with AVPlayer (`AVRoutePickerView`). |
 | **Storage (≈10)** | `TokenStore`, `MultiTokenStore`, `DeviceIdStore`, `DeviceLanguageStore`, `PlaybackPrefsStore`, `ScreensSheetPrefs`, `HomeSnapshotCache`, `MusicDeviceStore`, `saveBaseUrl`/`raviloBaseUrl` | files under `~/Library/Application Support/Ravilo` (tokens in the Keychain later) |
 | **Device facts (≈8)** | `deviceDisplayName`, `detectLinkState`, `systemPrefersReducedMotion`, `rememberDeviceStateProbe`, `rememberAppOnScreen`, `createTvApiClient` | host name; `NetworkInterface`; window focus; Ktor **OkHttp** (+ CIO for the WebSocket, as Android does) |
 | **Window & input (≈8)** | `PlatformBackHandler`, `rememberExitAction`, `Modifier.safeAreaPadding`, `Modifier.wakeOnPointerMove`, `setPointerCursorHidden`, `Modifier.reportTextFieldFocus`, `PlayerImmersiveEffect`, `rememberHandsetPlayerControls` | Esc = Back; native full screen; hide the cursor while playing. The layout is the TV's (`isHandset` is false), driven by arrow keys and the mouse — what the web app already does on a desktop |
