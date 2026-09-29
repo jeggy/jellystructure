@@ -6,8 +6,8 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-29 on Debian; the offline build is proven by replay, not yet by `flatpak-builder`, which is
-not installed here** (§Build notes). Written 2026-09-29 (dev-authored) from the research report's §2–§4. Number verified
+`⚠ Partial` — **built 2026-09-29; `flatpak-builder` built it in a Fedora container, it installed and ran on that
+desktop; the two remaining lint findings are the screenshot URL of a commit not yet pushed** (§Build notes). Written 2026-09-29 (dev-authored) from the research report's §2–§4. Number verified
 free: `origin/main` `2c36a521` and local `main` top at R332.
 
 **First of two:** **R333** (this — the Flatpak, built offline the way Flathub builds) → **R334** (the `.flatpak` on
@@ -113,8 +113,9 @@ submission) · any change to the Mac app.
 
 ## Build notes (2026-09-29)
 
-Built on Debian; `flatpak` and `flatpak-builder` are **not installed on this host** (a host change, the owner's —
-D8), so acceptance 3 and 4 wait for the owner's `apt install flatpak flatpak-builder` or for R334's CI.
+Built on Debian. The owner does not want Flatpak on the host, so the sandbox build ran in **a Fedora 44 desktop
+container the owner asked for the same evening** (`~/fedora`, outside the repo: XFCE on TigerVNC, sshd, noVNC,
+`flatpak` + `flatpak-builder`, the checkout bind-mounted) — acceptance 3 passed there, 4 all but the screenshot.
 
 1. **FR-R333-1 works, and cost one surprise.** With the Kotlin Multiplatform plugin applied to the root but no target
    declared, KGP prints an *error*-level diagnostic (*No Kotlin Targets Declared*) even though the build passes; the
@@ -140,5 +141,17 @@ D8), so acceptance 3 and 4 wait for the owner's `apt install flatpak flatpak-bui
 5. **`jpackage`'s version:** `ravilo.macPackageVersion` (R331's property, `MAJOR.MINOR.0`) serves Linux too; the name
    is the Mac's and was not changed, since `deploy-macos.yml` passes it.
 
-6. **The metainfo's placeholders are `%VERSION%`/`%DATE%`, not `@…@`:** the manifest's own `sed` that fills them is
+6. **Acceptance 3, in the Fedora container:** `render.sh --local`, then `flatpak-builder --user --install
+   --install-deps-from=flathub --force-clean --disable-rofiles-fuse --state-dir ~/.flatpak-builder --repo ~/repo`:
+   every one of the 834 sources downloaded, Gradle ran offline inside the sandbox (*BUILD SUCCESSFUL in 2m*), the app
+   exported and installed (162 MB); `flatpak run net.jebster.Ravilo` opened the server screen on the VNC desktop in
+   three seconds, WM_CLASS as the desktop file names it, files under `~/.var/app/net.jebster.Ravilo/data/ravilo/`.
+   Two things the container taught: Fedora's `flatpak-builder` unpacks a zip with **`bsdunzip`** (its own package),
+   and without `/dev/dri` the sandbox has no GL, so Skia draws in software there (a real desktop has `dri`).
+7. **Acceptance 4:** `flatpak-builder-lint manifest` — clean. `appstream` and `repo` — one finding each, the same one:
+   the screenshot URL (now the commit's, not the tag's — `%COMMIT%`) is unreachable until that commit is pushed, so
+   the catalogue mirrors no screenshot (`appstream-missing-screenshots`, `appstream-screenshots-not-mirrored-in-ostree`).
+   The `control` relations moved from `requires` to `recommends` on the linter's advice. Both pass once pushed;
+   R334's CI lints only pushed commits.
+8. **The metainfo's placeholders are `%VERSION%`/`%DATE%`/`%COMMIT%`, not `@…@`:** the manifest's own `sed` that fills them is
    itself rendered, and `s/@VERSION@/@VERSION@/` would have become `s/1.46/1.46/`.

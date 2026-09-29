@@ -76,3 +76,6 @@ __pycache__/
 design/presentation/
 design/uploads/
 design/screenshots/
+
+# R333 — flatpak-builder state, if it is ever run from the checkout
+.flatpak-builder/

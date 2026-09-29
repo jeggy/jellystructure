@@ -60,9 +60,9 @@ modules:
       - mkdir -p /app/ravilo && cp -a ravilo-desktop/build/compose/binaries/main/app/Ravilo/. /app/ravilo/
       - install -Dm755 flatpak/ravilo /app/bin/ravilo
       - install -Dm644 ravilo-desktop/linux/net.jebster.Ravilo.desktop -t /app/share/applications
-      # The metainfo's release row is this build's (FR-R333-4): the version and date the render put here.
+      # The metainfo's release row and screenshot URL are this build's (FR-R333-4): the version, date and commit the render put here.
       - >-
-        sed -e 's/%VERSION%/@VERSION@/g' -e 's/%DATE%/@DATE@/g'
+        sed -e 's/%VERSION%/@VERSION@/g' -e 's/%DATE%/@DATE@/g' -e 's/%COMMIT%/@COMMIT@/g'
         ravilo-desktop/linux/net.jebster.Ravilo.metainfo.xml > net.jebster.Ravilo.metainfo.xml
       - install -Dm644 net.jebster.Ravilo.metainfo.xml -t /app/share/metainfo
       - install -Dm644 ravilo-desktop/icons/ravilo.png /app/share/icons/hicolor/512x512/apps/net.jebster.Ravilo.png

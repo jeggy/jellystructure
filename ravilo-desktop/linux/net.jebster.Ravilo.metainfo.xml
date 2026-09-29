@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- R333 (FR-R333-4) — what Flathub and the desktop's software centre show. %VERSION% and %DATE% are filled by the
+<!-- R333 (FR-R333-4) — what Flathub and the desktop's software centre show. %VERSION%, %DATE% and %COMMIT% are filled by the
      manifest's build command from the release being built (flatpak/net.jebster.Ravilo.yml); nothing here is edited
      per release by hand. -->
 <component type="desktop-application">
@@ -27,7 +27,7 @@
   <url type="vcs-browser">https://github.com/jeggy/jellystructure</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/jeggy/jellystructure/v%VERSION%/ravilo-desktop/linux/screenshots/server.png</image>
+      <image>https://raw.githubusercontent.com/jeggy/jellystructure/%COMMIT%/ravilo-desktop/linux/screenshots/server.png</image>
       <caption>The first screen asks for the household's server</caption>
     </screenshot>
   </screenshots>
@@ -55,10 +55,12 @@
     <keyword>audiobooks</keyword>
   </keywords>
   <requires>
-    <control>keyboard</control>
-    <control>pointing</control>
     <display_length compare="ge">768</display_length>
   </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
   <supports>
     <internet>always</internet>
   </supports>
