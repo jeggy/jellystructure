@@ -801,5 +801,19 @@
   "about.month.11": {"text": "november", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.month.12": {"text": "desember", "note": "R325 — a draft; the design carries no translation of this key"},
   "browse.facet.people": {"text": "Leikarar og lið", "note": "R325 — a draft; the design carries no translation of this key"},
-  "search.genres": {"text": "Sjangrar", "note": "R325 — a draft; the design carries no translation of this key"}
+  "search.genres": {"text": "Sjangrar", "note": "R325 — a draft; the design carries no translation of this key"},
+  "mac.update_available": {"text": "Ravilo {version} til Mac er tøkt", "note": "Draft (R328). macOS has no Faroese, so the viewer's macOS labels are Danish or English — mac.open_anyway names them in English."},
+  "mac.download": "Heinta",
+  "mac.open_anyway": "Um macOS ikki vil lata hana upp, vel «Open Anyway» í System Settings → Privacy & Security.",
+  "mac.about_signed_in": "Innritað á {server}",
+  "mac.about_version": "Útgáva {version}",
+  "mac.menu_about": "Um Ravilo",
+  "mac.menu_settings": "Stillingar…",
+  "mac.menu_quit": "Lat Ravilo aftur",
+  "mac.menu_view": "Vísing",
+  "mac.menu_enter_full_screen": "Fullan skerm",
+  "mac.menu_exit_full_screen": "Úr fullum skermi",
+  "mac.menu_window": "Vindeyga",
+  "mac.menu_minimise": "Minka",
+  "mac.menu_close": "Lat aftur"
 }

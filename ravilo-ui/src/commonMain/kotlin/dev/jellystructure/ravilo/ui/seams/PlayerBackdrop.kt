@@ -18,3 +18,10 @@ expect val playerBackdropColor: Color
  * that a tap always acts on the focused control, since D-pad focus IS the pointer on that platform.
  */
 expect val playerTapTogglesChrome: Boolean
+
+/**
+ * R329 (FR-R329-6) — do ← and → seek (−10 s / +30 s) in the player? On the Mac, yes: a keyboard's arrows seek, as
+ * in every desktop player. On a TV they move focus along the transport row (a hidden chrome is revealed first,
+ * R251), and a phone has no arrows.
+ */
+expect val playerArrowsSeek: Boolean

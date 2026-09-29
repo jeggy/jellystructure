@@ -801,5 +801,19 @@
   "about.month.11": {"text": "november", "note": "R325 — a draft; the design carries no translation of this key"},
   "about.month.12": {"text": "december", "note": "R325 — a draft; the design carries no translation of this key"},
   "browse.facet.people": {"text": "Skuespillere og hold", "note": "R325 — a draft; the design carries no translation of this key"},
-  "search.genres": {"text": "Genrer", "note": "R325 — a draft; the design carries no translation of this key"}
+  "search.genres": {"text": "Genrer", "note": "R325 — a draft; the design carries no translation of this key"},
+  "mac.update_available": {"text": "Ravilo {version} til Mac er klar", "note": "Draft (R328)."},
+  "mac.download": "Hent",
+  "mac.open_anyway": "Hvis macOS ikke vil åbne den, så vælg Åbn alligevel i Systemindstillinger → Anonymitet og sikkerhed.",
+  "mac.about_signed_in": "Logget ind på {server}",
+  "mac.about_version": "Version {version}",
+  "mac.menu_about": "Om Ravilo",
+  "mac.menu_settings": "Indstillinger…",
+  "mac.menu_quit": "Afslut Ravilo",
+  "mac.menu_view": "Vis",
+  "mac.menu_enter_full_screen": "Slå fuld skærm til",
+  "mac.menu_exit_full_screen": "Slå fuld skærm fra",
+  "mac.menu_window": "Vindue",
+  "mac.menu_minimise": "Minimer",
+  "mac.menu_close": "Luk"
 }

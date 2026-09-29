@@ -25,6 +25,20 @@ kotlin {
         }
     }
 
+    // R328 — the Mac app. Compose Desktop is a JVM target; the source set is `desktopMain`.
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    freeCompilerArgs.add("-Xexpect-actual-classes")
+                }
+            }
+        }
+    }
+
     wasmJs {
         browser {
             // Phase 198 — `browser()` creates a wasmJsBrowserTest task that `check`/`allTests` both
@@ -91,6 +105,24 @@ kotlin {
                 implementation(libs.androidx.activity.compose) // BackHandler (PlatformBackHandler bug fix)
                 implementation(libs.play.services.cast.framework) // R245 — the Cast sender (CastContext, RemoteMediaClient, MediaRouteButton)
                 implementation(libs.androidx.mediarouter)         // R245 — MediaRouteButton / MediaTransferReceiver (Output Switcher)
+            }
+        }
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.common) // R328 — WindowPlacement, the AWT/Skiko interop the actuals read
+                implementation(libs.kotlinx.coroutines.swing) // Dispatchers.Main for the Mac
+                implementation(libs.coil.svg) // SVG channel logos
+                implementation(libs.ktor.client.cio) // the WebSocket-only client, as on Android (R210)
+                // R316 — one OkHttpClient for REST and images, as on Android; the same strict pin.
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.coil.network.okhttp)
+                implementation("com.squareup.okhttp3:okhttp") { version { strictly(libs.versions.okhttp.get()) } }
+                implementation(libs.jna) // R328 — the Swift library's C exports (MacNative)
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
             }
         }
         val wasmJsMain by getting {

@@ -48,3 +48,14 @@ fun raviloReleasesBehind(device: String?, latest: String?): Int? {
     if (d.major != l.major) return null
     return (l.minor - d.minor).coerceAtLeast(0)
 }
+
+/**
+ * R328 (FR-R328-8) — the release the server runs when it is newer than this app and both are plain releases: the
+ * Mac's one update line. A dev build on either side (`-N-g…`), a blank or `dev` says nothing. A leading `v` — the
+ * tag's own spelling, which a server image may report from its `BUILD_VERSION` — is ignored on both sides.
+ */
+fun raviloNewerRelease(app: String?, server: String?): RaviloVersion? {
+    val a = parseRaviloRelease(app?.trim()?.removePrefix("v")) ?: return null
+    val s = parseRaviloRelease(server?.trim()?.removePrefix("v")) ?: return null
+    return s.takeIf { it > a }
+}

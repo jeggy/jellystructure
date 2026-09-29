@@ -137,6 +137,11 @@ jobs:
         # fixtures (stock Media3 must still fail on them, the patched copy must not) and fail the build
         # the moment Media3 moves off the version the copy was taken from.
         run: ./gradlew :ravilo-ui:testDebugUnitTest :ravilo-player:testDebugUnitTest :ravilo-android:assembleRelease --no-daemon
+      - name: The Mac app's Kotlin (R328 FR-R328-1)
+        # Unit tests and a compile only — Compose Desktop's window needs a display, which the runner has not.
+        # The Swift library and the .dmg are macOS-only (R331); this catches a broken desktop source set on
+        # every push.
+        run: ./gradlew :shared:desktopTest :ravilo-i18n:desktopTest :ravilo-ui:desktopTest :ravilo-desktop:compileKotlinDesktop --no-daemon
       - name: Player dex register guard (FR-231-2)
         run: ./scripts/check-player-dex.sh
       # R316 (FR-R316-5) — Ktor's Android engine crashed a fast scroll; the release APK fetches over OkHttp only.

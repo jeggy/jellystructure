@@ -23,3 +23,7 @@ expect fun rememberChoosePhotoLauncher(onPicked: (PickedPhoto) -> Unit): () -> U
 
 @Composable
 expect fun rememberTakePhotoLauncher(onPicked: (PickedPhoto) -> Unit): () -> Unit
+
+/** R328 (FR-R328-3) — whether this platform has a *Take a photo* row at all. The Mac has no camera picker, so the
+ *  row is absent there, never greyed; the others open their picker (see above). */
+expect val offersTakePhoto: Boolean

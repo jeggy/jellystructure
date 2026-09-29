@@ -72,12 +72,12 @@ class HomeFeedFocusFactsPlatformTest {
     private suspend fun homeOn(platform: String?) = service.getHomeFeed(device.copy(platform = platform))
 
     @Test
-    fun `a phone and the web app get no facts but a TV and an unreported platform do`() = runBlocking {
+    fun `a phone the web app and the Mac get no facts but a TV and an unreported platform do`() = runBlocking {
         val tv = homeOn("tv")
         assertEquals(2, tv.cards().size)
         assertTrue(tv.cards().all { it.focusDetail != null }, "a TV keeps R240's facts")
         assertTrue(homeOn(null).cards().all { it.focusDetail != null }, "no reported platform is treated as before")
-        for (p in listOf("phone", "web")) {
+        for (p in listOf("phone", "web", "mac", "linux")) {   // R328 — the Mac app and its Linux dev build
             val feed = homeOn(p)
             assertEquals(tv.cards().map { it.id }, feed.cards().map { it.id }, p)
             assertTrue(feed.cards().all { it.focusDetail == null }, "$p gets no facts")

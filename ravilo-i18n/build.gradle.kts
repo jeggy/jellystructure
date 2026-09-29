@@ -37,6 +37,13 @@ kotlin {
 
     linuxX64()
 
+    // R328 — Compose Desktop (the Mac app) is a JVM target.
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+
     wasmJs {
         browser()
     }

@@ -8,8 +8,11 @@ import dev.jellystructure.shared.tv.HomeFeed
  * 61 % of production's `/api/tv/home` and three quarters of its gzip bytes, parsed and thrown away on
  * every Home load and live refresh of a phone on mobile data. `platform` is R252's `X-Ravilo-Platform`,
  * refreshed on every request (`DeviceData.platform`). An unreported platform keeps the facts, as does `tv`.
+ * R328 — the Mac app (and its Linux development build) is not a TV either: `isTvPlatform` is false there.
  */
-internal fun focusFactsReach(platform: String?): Boolean = platform != "phone" && platform != "web"
+internal fun focusFactsReach(platform: String?): Boolean = platform !in NO_FOCUS_FACTS
+
+private val NO_FOCUS_FACTS = setOf("phone", "web", "mac", "linux")
 
 /**
  * The feed without any row card's facts. A projection over what the Home cache returned, never part of

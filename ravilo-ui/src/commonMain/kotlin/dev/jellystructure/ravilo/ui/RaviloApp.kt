@@ -775,6 +775,21 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
         }
 
+        // R328 (FR-R328-5) — the Mac's menu: *Settings…* (⌘,) opens Settings over what is on screen once a viewer is
+        // signed in. Never over a film or live TV: opening a page there would end the playback.
+        LaunchedEffect(Unit) {
+            dev.jellystructure.ravilo.ui.components.AppCommands.requests.collect { cmd ->
+                when (cmd) {
+                    dev.jellystructure.ravilo.ui.components.AppCommand.OPEN_SETTINGS -> {
+                        val top = stack.lastOrNull()
+                        if (activeUserId != null && top !is Dest.Settings && top !is Dest.Player && top !is Dest.LiveTv) {
+                            push(Dest.Settings(MultiTokenStore.getActive()?.displayName.orEmpty()))
+                        }
+                    }
+                }
+            }
+        }
+
         // R80: write the initial URL on first composition, then listen for browser Back/Forward.
         LaunchedEffect(Unit) {
             replaceRoute(stack.last().toRoute())

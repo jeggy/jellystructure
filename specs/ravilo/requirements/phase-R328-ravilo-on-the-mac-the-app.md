@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
+`⚠ Partial` — **built 2026-09-29 and run on Linux; never run on a Mac** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
 (road 2). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free: `origin/main` `e828c944` and local `main` top at R327.
 
 **One of four, built in order:** **R328** (this — the app) → **R329** (it plays films and music) → **R330** (it
@@ -186,3 +186,66 @@ Buildable as written, with one owner decision folded in and one seam that needs 
     has one, the headless verification stack of 2026-09-29 does not. Fine for development, not for CI.
 11. **Wire:** none. **Value:** R328 alone browses and signs in but plays nothing; it is the milestone the other three
     stand on, and the owner's "when fully implemented" (R331 D1) already says the release waits for all of them.
+
+## Build notes (2026-09-29)
+
+Built from the dev review. **Run on Linux only** — this host has no Mac and no Swift compiler, so the Swift library
+has never been compiled and nothing Mac-specific has run. `⚠ Partial` until a Mac confirms acceptance 2 and 4.
+
+1. **FR-R328-1 — the targets.** `jvm("desktop")` (JVM 17) in `shared`, `ravilo-i18n` and `ravilo-ui`; `-Xexpect-actual-classes`
+   in `ravilo-ui`. The Android job in `ci.yml` runs `:shared:desktopTest :ravilo-i18n:desktopTest :ravilo-ui:desktopTest
+   :ravilo-desktop:compileKotlinDesktop` (the task is `compileKotlinDesktop`, not the review's `compileKotlin`).
+2. **FR-R328-3 — the 62 seams**, in `ravilo-ui/src/desktopMain`. Stores are small JSON files (`PrefsFile`: in memory,
+   written through by temporary file + atomic rename; corrupt reads as empty). Tokens go through `SecretStore`: the
+   Keychain when the library loaded, else `tokens.json` at `0600`, served from memory after the first read (every
+   request asks for the token). `MultiTokenStore` keeps who each session is in `ravilo_sessions.json` and each token
+   under `session.<userId>`, never in the plain file. The player, music and cast seams give the absent answers (a
+   load fails at once, so R237's card shows rather than a spinner; `MusicEngine.supported = false`; the screen sender
+   alone) until R329/R330.
+3. **FR-R328-4 — one native library, loaded through JNA.** `native/RaviloMac.swift` exports plain C functions
+   (`@_cdecl`): the ABI number, the Keychain (`SecItemCopyMatching`/`SecItemUpdate`/`SecItemAdd`/`SecItemDelete`,
+   generic password, service `dev.jellystructure.ravilo`, the login keychain) and the Computer Name
+   (`SCDynamicStoreCopyComputerName`). Kotlin calls them through **JNA** (`MacNative`, the one load point) rather than
+   hand-written JNI: no C glue and no `Java_…` names to keep in step, and a stale library is refused by its ABI
+   number. `buildMacNative` runs `xcrun swiftc` only on a macOS host and drops the dylib into Compose's app
+   resources, where `run` and the bundle both find it (`compose.application.resources.dir`). Missing: one log line,
+   the file fallback, never a crash.
+4. **FR-R328-5 — window, keys, menu.** Minimum 960 × 600, size and position remembered (`ravilo_window.json`; a
+   position off every display opens centred). Arrows, Return and Esc needed nothing: every `Key.Back` site in
+   common code also answers `Key.Escape` (checked), so the desktop `PlatformBackHandler` is empty. macOS draws the
+   app menu itself; `Desktop.setAboutHandler`/`setPreferencesHandler`/`setQuitHandler` and `AppReopenedListener`
+   receive it (`MacAppHooks`). View and Window are Compose's `MenuBar`. On Linux, where nothing draws an app menu,
+   About · Settings… · Quit are a menu of our own. *Settings…* reaches the app through a new common `AppCommands`
+   flow (never over a film or live TV, which it would stop). About is a small window: the mark, *Version …*,
+   *Signed in to …*; Esc closes it.
+5. **FR-R328-6.** `X-Ravilo-Platform: mac` — and `linux` for the development build, which is honest and free text
+   (R252). `RaviloUsers.kt` maps both. **One more server reader than the review counted:** R314's
+   `focusFactsReach` also reads the platform, and the desktop is not a TV (`isTvPlatform = false`), so `mac` and
+   `linux` join `phone` and `web` in getting no focus facts (`HomeFeedFocusFactsPlatformTest`).
+6. **FR-R328-8 — the update line** is in **Settings ▸ Account** (on the TV layout, Profile → Settings is the Settings
+   page; there is no Profile page off a phone), between *Signed in as* and *Change password*, in the explicit
+   D-pad chain. `UpdateCheck` asks `/api/health` once the app knows its server, every 24 hours after, a quarter of
+   an hour after a failure; `raviloNewerRelease` (in `shared`, tested) ignores a leading `v` on both sides — prod
+   reported `v1.44-49-g…`. Only a Mac is offered a `.dmg`, at R331's name on the tag's release. Under *Download*,
+   R331's *Open Anyway* sentence (`mac.open_anyway`).
+7. **FR-R328-9 — closing.** The red button and ⌘W hide the window while music plays, otherwise quit; the Dock icon
+   brings it back; ⌘Q cancels the system's quit and runs ours, which gives registered stops two seconds
+   (`DesktopShutdown`) before exiting.
+8. **FR-R328-10 — strings.** `mac.update_available`, `mac.download`, `mac.open_anyway`, `mac.about_signed_in`,
+   `mac.about_version` and seven menu items × en/da/fo (da/fo drafts; Faroese names macOS's own labels in English,
+   since macOS has no Faroese).
+9. **Two small changes beyond the spec.** The Account page's *Take a photo* row is absent on the desktop (a new
+   `offersTakePhoto` seam, `true` elsewhere), as the seam table says; and Esc at Home does nothing — the table said
+   the exit action closes the window, but a viewer pressing Esc a few times to get back to Home must not lose it.
+   `rememberAppOnScreen` is *shown and not minimised*, not *focused*: a film on a second display while the viewer
+   types elsewhere is on screen.
+10. **Verified on Linux (Xvfb, the local stack):** server setup → sign-in → Home; arrows move focus, Return opens a
+    detail, Esc comes back with focus restored and does nothing at Home; *Settings…* opens Settings; About; Quit
+    exits 0; a relaunch goes straight to Home. The token sits only in `tokens.json` (`0600`); the server recorded the
+    device as `linux` with its version and host name. Tests: `shared` 51, `ravilo-i18n` 24, `ravilo-ui` 271 on
+    the desktop target; Android, both web targets and the admin compile; every fence script passes.
+11. **Owed to a Mac:** the Swift library's first compile, the Keychain round trip (and the *confidential
+    information* prompt a `gradle run` build is expected to show), the Computer Name, the system menu bar and its
+    handlers, the Dock reopen, full screen. The macOS icon (`icons/ravilo.icns`) is rendered from the brand mark
+    on Linux.
+

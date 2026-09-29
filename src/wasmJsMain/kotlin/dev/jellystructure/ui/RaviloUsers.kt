@@ -93,6 +93,7 @@ private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice, vhId: Strin
         null -> null
         "tv" -> "TV"; "phone" -> "Phone"; "web" -> "Web"; "tizen" -> "Tizen"; "cast" -> "Chromecast"
         "cast-audio" -> "Chromecast · <span class=\"badge\">audio only</span>"   // 286 (FR-286-7)
+        "mac" -> "Mac"; "linux" -> "Linux"   // R328 (FR-R328-6) — the desktop app; Linux is its development build
         else -> d.platform.esc()
     }
     val version = d.appVersion?.let { "Ravilo <b>${it.esc()}</b>" }

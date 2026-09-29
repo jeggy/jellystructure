@@ -20,6 +20,10 @@ coil = "3.2.0"
 # requires compileSdk 37; AGP 9.0.1 builds against 36. 5.4.0 is the newest that needs 36, and every OkHttp
 # member Ktor's engine and Coil's fetcher reference exists in it (checked by javap against both jars).
 okhttp = "5.4.0"
+# R328/R329 — the Mac app calls its Swift library (Keychain, AVPlayer, Now Playing) through JNA's C calls.
+jna = "5.19.1"
+# R330 — Cast discovery on the Linux dev build; the Mac browses with Bonjour in the Swift library.
+jmdns = "3.6.3"
 # R213 — Baseline Profile generation (Macrobenchmark). Kept separate from the app's own AndroidX
 # versions since this only ever runs in :ravilo-android-benchmark, never shipped in the app itself.
 # Bumped 1.3.4 -> 1.4.1 (2026-09-02): 1.3.4's amStartAndWait failed with "Unable to confirm activity
@@ -54,6 +58,10 @@ ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "kto
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }  # R328 — Dispatchers.Main on the Mac app
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }  # R330 — virtual time for the Cast sender's PING/PONG
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }

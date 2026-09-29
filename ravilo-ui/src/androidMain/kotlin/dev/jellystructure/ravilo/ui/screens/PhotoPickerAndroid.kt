@@ -28,3 +28,5 @@ actual fun rememberChoosePhotoLauncher(onPicked: (PickedPhoto) -> Unit): () -> U
 @Composable
 actual fun rememberTakePhotoLauncher(onPicked: (PickedPhoto) -> Unit): () -> Unit =
     rememberChoosePhotoLauncher(onPicked)
+
+actual val offersTakePhoto: Boolean = true

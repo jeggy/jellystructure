@@ -16,10 +16,11 @@ while IFS= read -r hit; do
     */linuxX64Test/*|*/commonTest/*|*Test.kt|scripts/*|*.md|*.sh) continue ;;
   esac
   echo "FAIL: a socket URL carries the token: $hit"; fail=1
-done < <(grep -rn --include=*.kt --include=*.ts --include=*.js -E 'events\?token=' ravilo-ui/src ravilo-android/src shared/src/commonMain shared/src/androidMain shared/src/linuxX64Main 2>/dev/null || true)
+done < <(grep -rn --include=*.kt --include=*.ts --include=*.js -E 'events\?token=' ravilo-ui/src ravilo-android/src ravilo-desktop/src shared/src/commonMain shared/src/androidMain shared/src/linuxX64Main shared/src/desktopMain 2>/dev/null || true)
 
 # 2. The flag's native actuals say false; the browser actuals say true; the helper is gated on it.
-for f in shared/src/androidMain/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt shared/src/linuxX64Main/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt; do
+# R328 — the Mac app is a native build too: a header, never the query.
+for f in shared/src/androidMain/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt shared/src/linuxX64Main/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt shared/src/desktopMain/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt; do
   grep -q 'WS_TOKEN_IN_QUERY: Boolean = false' "$f" || { echo "FAIL: $f must set WS_TOKEN_IN_QUERY = false"; fail=1; }
 done
 for f in shared/src/wasmJsMain/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt shared/src/jsMain/kotlin/dev/jellystructure/shared/tv/WebSocketAuth.kt; do

@@ -11,3 +11,4 @@ import androidx.compose.ui.graphics.Color
 // (the video promotes above the canvas, not by punching a hole in the canvas itself).
 actual val playerBackdropColor: Color = Color.Black
 actual val playerTapTogglesChrome: Boolean = true
+actual val playerArrowsSeek: Boolean = false

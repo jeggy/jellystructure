@@ -124,6 +124,7 @@ import dev.jellystructure.ravilo.ui.seams.isKnownLanguage
 import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.seams.sameLanguage
 import dev.jellystructure.ravilo.ui.seams.playerBackdropColor
+import dev.jellystructure.ravilo.ui.seams.playerArrowsSeek
 import dev.jellystructure.ravilo.ui.seams.playerTapTogglesChrome
 import dev.jellystructure.ravilo.ui.seams.setPointerCursorHidden
 import dev.jellystructure.ravilo.ui.seams.wakeOnPointerMove
@@ -1522,6 +1523,9 @@ fun PlayerScreen(
                 focusRequester = playerFR,
                 onFocused = {},
                 onLeft = {
+                    // R329 (FR-R329-6) — on the Mac the arrows seek by the TV's steps; next-up, the rail and
+                    // the picker keep them for moving.
+                    if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(-SKIP_BACK_MS); return@dpadFocusable }
                     // R251 (FR-R251-1) — captured before wake(), like onSelect's: a hidden chrome is
                     // only revealed; the NEXT press moves.
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.LEFT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
@@ -1544,6 +1548,7 @@ fun PlayerScreen(
                     }
                 },
                 onRight = {
+                    if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(SKIP_FWD_MS); return@dpadFocusable }   // R329
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.RIGHT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
                     wake()
                     if (!revealOnly) when {

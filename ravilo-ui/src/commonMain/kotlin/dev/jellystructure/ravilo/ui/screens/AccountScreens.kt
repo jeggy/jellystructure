@@ -356,8 +356,10 @@ fun YourProfileScreen(
             Spacer(Modifier.height(28.dp))
 
             AccountActionButton(str("account.photo_choose"), chooseFR, onSelect = { if (state != PhotoState.Busy) launchChoose() })
-            Spacer(Modifier.height(10.dp))
-            AccountActionButton(str("account.photo_camera"), takeFR, onSelect = { if (state != PhotoState.Busy) launchTake() })
+            if (offersTakePhoto) {
+                Spacer(Modifier.height(10.dp))
+                AccountActionButton(str("account.photo_camera"), takeFR, onSelect = { if (state != PhotoState.Busy) launchTake() })
+            }
             if (avatarUrl != null) {
                 Spacer(Modifier.height(10.dp))
                 AccountActionButton(

@@ -25,6 +25,14 @@ kotlin {
 
     linuxX64()
 
+    // R328 — the Mac (and, for development, the Linux box): Compose Desktop is a JVM target. The name is
+    // `desktop`, not `jvm`, so the source set reads `desktopMain` and never collides with a future server module.
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+
     wasmJs {
         browser()
     }
@@ -43,6 +51,13 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.websockets)
+            }
+        }
+        // R328 — commonTest already holds tests written against kotlin.test; linuxX64Test resolves it its own way,
+        // the desktop target needs it named.
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
             }
         }
     }

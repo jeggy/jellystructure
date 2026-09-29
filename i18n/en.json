@@ -855,5 +855,19 @@
   "about.month.11": "November",
   "about.month.12": "December",
   "browse.facet.people": "Cast or crew",
-  "search.genres": "Genres"
+  "search.genres": "Genres",
+  "mac.update_available": {"text": "Ravilo {version} for Mac is available", "note": "R328 FR-R328-8 — the Mac's one update line, in Settings ▸ Account; {version} is MAJOR.MINOR. Shown only when the server runs a newer release."},
+  "mac.download": "Download",
+  "mac.open_anyway": {"text": "If macOS won't open it, choose Open Anyway in System Settings → Privacy & Security.", "note": "R331 FR-R331-6 — under Download. Open Anyway and the pane's name are macOS's own labels; keep them as the viewer's macOS shows them."},
+  "mac.about_signed_in": {"text": "Signed in to {server}", "note": "R328 FR-R328-5 — the About window; {server} is the server's host name."},
+  "mac.about_version": "Version {version}",
+  "mac.menu_about": {"text": "About Ravilo", "note": "R328 FR-R328-5 — the Mac's menu bar. On a Mac, macOS draws About, Settings…, Hide and Quit itself; these are for the menus it does not draw."},
+  "mac.menu_settings": "Settings…",
+  "mac.menu_quit": "Quit Ravilo",
+  "mac.menu_view": "View",
+  "mac.menu_enter_full_screen": "Enter Full Screen",
+  "mac.menu_exit_full_screen": "Exit Full Screen",
+  "mac.menu_window": "Window",
+  "mac.menu_minimise": "Minimise",
+  "mac.menu_close": "Close"
 }

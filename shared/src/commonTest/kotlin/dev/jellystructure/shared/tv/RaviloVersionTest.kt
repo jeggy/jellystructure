@@ -42,4 +42,19 @@ class RaviloVersionTest {
         assertNull(raviloReleasesBehind("1.37-68-gade0523d", "1.38"))
         assertNull(raviloReleasesBehind("1.36", "1.38-10-g1234567"), "a dev-build server names no latest")
     }
+
+    @Test
+    fun `the update line names a newer plain release and nothing else`() {
+        assertEquals(RaviloVersion(1, 46), raviloNewerRelease("1.45", "1.46"))
+        assertEquals(RaviloVersion(2, 0), raviloNewerRelease("1.45", "2.0"), "a MAJOR step is still newer")
+        assertEquals(RaviloVersion(1, 46), raviloNewerRelease("1.45", "v1.46"), "the tag's own spelling reads the same")
+        assertEquals(RaviloVersion(1, 46), raviloNewerRelease("v1.45", " 1.46 "))
+        assertNull(raviloNewerRelease("1.46", "1.46"), "the same release offers nothing")
+        assertNull(raviloNewerRelease("1.47", "1.46"), "an app ahead of its server offers nothing")
+        assertNull(raviloNewerRelease("1.45-3-gabcdef0", "1.46"), "a dev-build app never shows it")
+        assertNull(raviloNewerRelease("1.45", "v1.46-49-g429cffe9"), "a dev-build server never shows it")
+        assertNull(raviloNewerRelease("dev", "1.46"))
+        assertNull(raviloNewerRelease("1.45", null))
+        assertNull(raviloNewerRelease("1.45", ""))
+    }
 }

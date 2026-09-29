@@ -413,6 +413,9 @@ private fun SettingsContent(
     val langFRs = remember { UI_LANGUAGES.map { FocusRequester() } }
     val progressFR = remember { FocusRequester() }
     val autoplayFR = remember { FocusRequester() }
+    // R328 (FR-R328-8) — the Mac's update line, between the identity and Change password when there is one.
+    val updateOffer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
+    val updateFR = remember { FocusRequester() }
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
@@ -521,10 +524,11 @@ private fun SettingsContent(
         focusRequester = autoplayFR,
         onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
         onUp = { progressFR.requestFocus() },
-        onDown = { changePwFR.requestFocus() },
+        onDown = { (if (updateOffer != null) updateFR else changePwFR).requestFocus() },
     )
-    // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. The phone only.
-    if (dev.jellystructure.ravilo.ui.theme.LocalHandset.current && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) {
+    // R322 (FR-R322-9, J6's lean) — Settings ▸ Listening: *Even out volume*, on by default. Wherever music plays
+    // and the device is not a TV: the phone, and (R329) the Mac.
+    if ((dev.jellystructure.ravilo.ui.theme.LocalHandset.current || !dev.jellystructure.ravilo.ui.isTvPlatform) && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) {
         Spacer(Modifier.height(32.dp))
         SectionHeader(str("music.listening"))
         Spacer(Modifier.height(12.dp))
@@ -569,6 +573,14 @@ private fun SettingsContent(
     Spacer(Modifier.height(12.dp))
     Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.textSecondary, fontSize = 15.sp)
     Spacer(Modifier.height(16.dp))
+    updateOffer?.let { offer ->
+        dev.jellystructure.ravilo.ui.components.AppUpdateLine(
+            offer, updateFR,
+            onUp = { autoplayFR.requestFocus() },
+            onDown = { changePwFR.requestFocus() },
+        )
+        Spacer(Modifier.height(16.dp))
+    }
     // R234 (FR-R234-4) — a password is a credential, not a preference, so it lives here on every
     // platform (TV included) rather than gated like the phone/web-only "Your profile" photo screen.
     var changePwFocused by rememberFocusVisual()
@@ -580,7 +592,7 @@ private fun SettingsContent(
                 focusRequester = changePwFR,
                 onFocused = { changePwFocused = true },
                 onBlurred = { changePwFocused = false },
-                onUp = { autoplayFR.requestFocus() },
+                onUp = { (if (updateOffer != null) updateFR else autoplayFR).requestFocus() },
                 onDown = { (if (isWebPlatform) installFR else signOutFR).requestFocus() },
                 onSelect = onChangePassword,
             )
