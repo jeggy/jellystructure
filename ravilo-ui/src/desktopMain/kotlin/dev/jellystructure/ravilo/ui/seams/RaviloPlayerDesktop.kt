@@ -31,9 +31,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.DesktopApp
 import dev.jellystructure.ravilo.ui.desktop.DesktopLog
+import dev.jellystructure.ravilo.ui.desktop.DesktopEngine
+import dev.jellystructure.ravilo.ui.desktop.DesktopEngines
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import dev.jellystructure.ravilo.ui.desktop.MacNowPlaying
-import dev.jellystructure.ravilo.ui.desktop.MacPlayer
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 import dev.jellystructure.shared.tv.VttCue
@@ -53,11 +54,13 @@ import java.net.URI
 /**
  * R329 (FR-R329-2) — the Mac's film player: AVPlayer through [MacPlayer], the picture copied into Compose
  * ([PlayerVideoSurface]), text subtitles drawn by Compose from the ticket's WebVTT (FR-R329-5), audio picks as
- * rendition switches in AVPlayer's audible group (FR-R329-4). Without the Swift library (Linux) every load fails at
- * once, so the player shows R237's card rather than waiting forever.
+ * rendition switches in AVPlayer's audible group (FR-R329-4). On Linux the engine is mpv (R335): it renders the
+ * subtitles itself and lists the container's tracks, so the cue overlay and the ticket's lists step aside there.
+ * Without an engine (a Mac without its library, a Linux without libmpv) every load fails at once, so the player
+ * shows R237's card rather than waiting forever.
  */
 actual class RaviloPlayer actual constructor() {
-    private val engine = MacPlayer(audioOnly = false)
+    private val engine: DesktopEngine = DesktopEngines.film()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var noEngineFailure = false
     private var streamUrl = ""
@@ -103,6 +106,8 @@ actual class RaviloPlayer actual constructor() {
         noEngineFailure = false
         println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
         engine.load(streamUrl, startMs = startPositionMs)
+        // R335 (FR-R335-5) — mpv draws the ticket's sidecar files itself; the embedded ones it already has.
+        if (engine.rendersSubtitles) textTracks.forEach { t -> t.url?.let { engine.addSubtitle(absolute(it), t.label, t.language) } }
         npTitle = title; npKicker = subtitle; npArtwork = artworkUrl
         MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.FILM)
         MacNowPlaying.artwork(nowPlaying, artworkUrl)
@@ -139,6 +144,7 @@ actual class RaviloPlayer actual constructor() {
     /** FR-R329-5 — [index] is a position in [subtitleTracks]; -1 = off. The cues are fetched and parsed here. */
     actual fun selectSubtitleTrack(index: Int) {
         subJob?.cancel()
+        if (engine.rendersSubtitles) { engine.selectSubtitle(index); cues = emptyList(); return }
         val url = textTracks.getOrNull(index)?.url?.let(::absolute)
         if (url == null) { cues = emptyList(); return }
         subJob = scope.launch {
@@ -176,7 +182,7 @@ actual class RaviloPlayer actual constructor() {
     actual fun recordRestoredAfterRecreate() { restoredAfterRecreate++ }
     actual fun setSessionActive(active: Boolean) { if (!active) MacNowPlaying.release(nowPlaying) }
     actual fun setChromeVisible(visible: Boolean) {}
-    actual fun setSubtitleScale(scale: Float) { captionScale = scale }
+    actual fun setSubtitleScale(scale: Float) { captionScale = scale; engine.setSubtitleScale(scale) }
 
     actual val positionMs: Long get() = engine.state.positionMs
     actual val durationMs: Long get() = engine.state.durationMs.coerceAtLeast(0L)
@@ -194,9 +200,17 @@ actual class RaviloPlayer actual constructor() {
     actual val isBuffering: Boolean get() = engine.state.let { it.buffering && !it.failed }
     actual val isSeeking: Boolean get() = engine.state.seeking
 
-    /** The ticket's audio, once AVPlayer is ready (R181 resolves against tracks that exist). */
+    /** The ticket's audio, once AVPlayer is ready (R181 resolves against tracks that exist) — or mpv's own list (R335). */
     actual val audioTracks: List<PlayerAudioTrack>
-        get() = if (!engine.state.ready) emptyList() else audioMeta.mapIndexed { i, a ->
+        get() = if (!engine.state.ready) emptyList() else engine.audioTracks()?.mapIndexed { i, t ->
+            PlayerAudioTrack(
+                index = i,
+                label = t.title?.takeIf { it.isNotBlank() } ?: languageName(t.language) ?: t.language?.uppercase() ?: "Track ${i + 1}",
+                language = t.language,
+                channels = t.channels,
+                isDefault = t.isDefault,
+            )
+        } ?: audioMeta.mapIndexed { i, a ->
             PlayerAudioTrack(
                 index = i,
                 label = a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language?.uppercase() ?: "Track ${i + 1}",
@@ -207,7 +221,16 @@ actual class RaviloPlayer actual constructor() {
         }
 
     actual val subtitleTracks: List<PlayerSubtitleTrack>
-        get() = if (!engine.state.ready) emptyList() else textTracks.mapIndexed { i, s ->
+        get() = if (!engine.state.ready) emptyList() else engine.subtitleTracks()?.mapIndexed { i, t ->
+            PlayerSubtitleTrack(
+                index = i,
+                label = t.title?.takeIf { it.isNotBlank() } ?: languageName(t.language) ?: t.language?.uppercase() ?: "Sub ${i + 1}",
+                language = t.language,
+                forced = t.forced,
+                isDefault = t.isDefault,
+                deliveryMethod = if (t.external) "external" else "embedded",
+            )
+        } ?: textTracks.mapIndexed { i, s ->
             PlayerSubtitleTrack(
                 index = i,
                 label = s.label?.takeIf { it.isNotBlank() } ?: languageName(s.language) ?: s.language?.uppercase() ?: "Sub ${i + 1}",
@@ -223,13 +246,16 @@ actual class RaviloPlayer actual constructor() {
             droppedFrames = s.droppedFrames.toInt(),
             rebufferCount = s.stalls.toInt(),
             bandwidthEstimateBps = s.observedBitrate.takeIf { it > 0 },
-            videoDecoder = if (engine.available) "AVFoundation" else null,
+            videoDecoder = if (engine.available) engine.decoderName else null,
             restoredAfterRecreate = restoredAfterRecreate,
         )
     }
 
-    /** The newest decoded frame for the surface (FR-R329-1 path (b)). */
-    internal fun takeFrame(): ImageBitmap? = engine.takeFrame()?.toComposeImageBitmap()
+    /** The newest decoded frame for the surface (FR-R329-1 path (b)); [surfaceW]/[surfaceH] in pixels, for a renderer that scales (R335). */
+    internal fun takeFrame(surfaceW: Int = 0, surfaceH: Int = 0): ImageBitmap? {
+        if (surfaceW > 0 && surfaceH > 0) engine.surfaceHint(surfaceW, surfaceH)
+        return engine.takeFrame()?.toComposeImageBitmap()
+    }
 }
 
 /**
@@ -248,15 +274,17 @@ actual fun PlayerVideoSurface(
 ) {
     var frame by remember(player) { mutableStateOf<ImageBitmap?>(null) }
     var cueText by remember(player) { mutableStateOf<String?>(null) }
+    var surfacePx by remember(player) { mutableStateOf(0 to 0) }
     LaunchedEffect(player) {
         while (isActive) {
             withFrameNanos { }
-            player.takeFrame()?.let { frame = it }
+            player.takeFrame(surfacePx.first, surfacePx.second)?.let { frame = it }
             val text = activeCueText(player.cues, player.positionMs)
             if (text != cueText) cueText = text
         }
     }
     BoxWithConstraints(modifier.background(Color.Black)) {
+        with(LocalDensity.current) { surfacePx = maxWidth.roundToPx() to maxHeight.roundToPx() }
         frame?.let {
             Image(it, contentDescription = null, contentScale = if (fill) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }

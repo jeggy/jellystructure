@@ -123,7 +123,8 @@ kotlin {
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.coil.network.okhttp)
                 implementation("com.squareup.okhttp3:okhttp") { version { strictly(libs.versions.okhttp.get()) } }
-                implementation(libs.jna) // R328 — the Swift library's C exports (MacNative)
+                implementation(libs.jna) // R328 — the Swift library's C exports (MacNative); R335 — libmpv
+                implementation(libs.kotlinx.serialization.json) // R335 — mpv's track-list arrives as JSON
                 implementation(projects.raviloCastv2) // R330 — the Mac's own Cast v2 sender
             }
         }

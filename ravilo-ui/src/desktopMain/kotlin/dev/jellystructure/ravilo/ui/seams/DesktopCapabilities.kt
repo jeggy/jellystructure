@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import dev.jellystructure.ravilo.ui.desktop.DesktopEngines
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import java.net.NetworkInterface
 
@@ -13,11 +14,15 @@ private fun playable(mime: String): Boolean = MacNative.lib?.ravilo_caps_playabl
 
 private val hevc: Boolean by lazy { playable("video/mp4; codecs=\"hvc1.1.6.L150.90\"") }
 
-/** AAC and MP3 everywhere AVFoundation is; AC-3 and E-AC-3 where the probe says yes; never DTS or TrueHD. */
+/** R335 (FR-R335-7, D6) — mpv on Linux plays everything the household has, direct. */
+private val mpv: Boolean by lazy { DesktopEngines.isMpv }
+
+/** AAC and MP3 everywhere AVFoundation is; AC-3 and E-AC-3 where the probe says yes; never DTS or TrueHD. mpv: all of them. */
 actual fun supportedAudioCodecs(): List<String> = audioCodecs
 
 private val audioCodecs: List<String> by lazy {
-    if (MacNative.lib == null) listOf("aac", "mp3")
+    if (mpv) listOf("aac", "mp3", "ac3", "eac3", "dts", "truehd", "flac", "opus", "vorbis", "pcm_s16le", "pcm_s24le", "alac")
+    else if (MacNative.lib == null) listOf("aac", "mp3")
     else listOfNotNull(
         "aac", "mp3",
         "ac3".takeIf { playable("audio/mp4; codecs=\"ac-3\"") },
@@ -25,19 +30,24 @@ private val audioCodecs: List<String> by lazy {
     )
 }
 
-actual fun supportsHevcOverHls(): Boolean = hevc
+actual fun supportsHevcOverHls(): Boolean = mpv || hevc
 
-actual fun supportedVideoCodecs(): List<String> = if (hevc) listOf("h264", "hevc") else listOf("h264")
+actual fun supportedVideoCodecs(): List<String> = when {
+    mpv -> listOf("h264", "hevc", "av1", "vp9", "mpeg4", "mpeg2video")
+    hevc -> listOf("h264", "hevc")
+    else -> listOf("h264")
+}
 
-/** AVPlayer plays no MKV: every film arrives as HLS (the Chromecast receiver's negotiation, unchanged). */
-actual fun playsOnlyHls(): Boolean = MacNative.lib != null
+/** AVPlayer plays no MKV: every film arrives as HLS (the Chromecast receiver's negotiation, unchanged). mpv direct-plays. */
+actual fun playsOnlyHls(): Boolean = !mpv && MacNative.lib != null
 
 actual fun playsHlsForAirPlay(): Boolean = false
 
 /** FR-R329-4 — AVPlayer switches the composed master's audio renditions in place (R291). */
 actual fun switchesHlsAudioRenditions(): Boolean = MacNative.lib != null
 
-actual fun supportsEmbeddedTextSubtitles(): Boolean = false
+/** R335 (FR-R335-5) — mpv renders the container's own text and PGS tracks. */
+actual fun supportsEmbeddedTextSubtitles(): Boolean = mpv
 actual fun warmAudioRendition(index: Int) {}
 
 /** AirPlay from the Mac is out of scope (R329 §Out of scope). */
@@ -50,7 +60,10 @@ actual val platformAirPlay: AirPlay? = null
  * for that measurement.
  */
 actual fun detectHdrSupport(): HdrSupport =
-    if (System.getProperty("ravilo.hdr") == "true" && hevc) HdrSupport(
+    // R335 (D5) — mpv tone-maps HDR10 and HLG to the window itself, so the file direct-plays and looks right; a `false`
+    // would make the server transcode it to SDR instead. Dolby Vision profile 8 rides the HDR10 base layer.
+    if (mpv) HdrSupport(hdr10 = true, hlg = true)
+    else if (System.getProperty("ravilo.hdr") == "true" && hevc) HdrSupport(
         hdr10 = true,
         hlg = true,
         dolbyVision = playable("video/mp4; codecs=\"dvh1.08.06\""),

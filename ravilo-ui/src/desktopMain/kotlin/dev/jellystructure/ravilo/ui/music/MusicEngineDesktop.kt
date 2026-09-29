@@ -6,7 +6,9 @@ import dev.jellystructure.ravilo.ui.createTvApiClient
 import dev.jellystructure.ravilo.ui.desktop.DesktopShutdown
 import dev.jellystructure.ravilo.ui.desktop.MacNative
 import dev.jellystructure.ravilo.ui.desktop.MacNowPlaying
-import dev.jellystructure.ravilo.ui.desktop.MacPlayer
+import dev.jellystructure.ravilo.ui.desktop.DesktopEngine
+import dev.jellystructure.ravilo.ui.desktop.DesktopEngines
+import dev.jellystructure.ravilo.ui.desktop.DesktopPaths
 import dev.jellystructure.ravilo.ui.raviloBaseUrl
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.shared.tv.AudiobookDetail
@@ -44,7 +46,7 @@ actual object MusicEngine {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val q = MusicQueue()
-    private val player = MacPlayer(audioOnly = true)
+    private val player: DesktopEngine = DesktopEngines.music()
     private var context: MusicContext? = null
     private var repeat = RepeatMode.OFF
     private var api: TvApiClient? = null
@@ -70,8 +72,11 @@ actual object MusicEngine {
     private var pendingPlay = false
     private var lastChapter = -1
 
-    /** R329 — capabilities the direct-play profile reads (dev review 5). */
-    private val musicCapabilities = ClientCapabilities(
+    /** R329 — capabilities the direct-play profile reads (dev review 5); R335 (FR-R335-8) — mpv's on Linux, WMA included. */
+    private val musicCapabilities = if (DesktopEngines.isMpv) ClientCapabilities(
+        containers = listOf("mp3", "flac", "m4a", "mp4", "aac", "wav", "ogg", "opus", "wma", "asf", "mka", "webm"),
+        audioCodecs = listOf("mp3", "aac", "flac", "alac", "pcm_s16le", "pcm_s24le", "opus", "vorbis", "wmav2", "wmapro", "ac3", "eac3"),
+    ) else ClientCapabilities(
         containers = listOf("mp3", "flac", "m4a", "mp4", "aac", "wav"),
         audioCodecs = listOf("mp3", "aac", "flac", "alac", "pcm_s16le", "pcm_s24le"),
     )

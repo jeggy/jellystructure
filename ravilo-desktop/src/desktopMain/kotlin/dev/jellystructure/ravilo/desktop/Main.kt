@@ -52,6 +52,8 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if ("--self-test" in args) exitProcess(SelfTest.run())
+    // R335 (FR-R335-11) — the Linux engine alone, no window: `Ravilo --mpv-bench <file> [seconds]`.
+    args.indexOf("--mpv-bench").takeIf { it >= 0 }?.let { exitProcess(dev.jellystructure.ravilo.ui.desktop.MpvBench.run(args.drop(it + 1))) }
     DesktopLog.install()
     println("${DesktopLog.stamp()} Ravilo ${dev.jellystructure.shared.raviloVersion()} starting · Mac library: ${if (dev.jellystructure.ravilo.ui.desktop.MacNative.lib != null) "loaded" else "absent (${dev.jellystructure.ravilo.ui.desktop.MacNative.loadError})"}")
     // FR-R328-5 — before AWT loads: the menu bar in macOS's own bar, the app's name in it, a dark title bar.

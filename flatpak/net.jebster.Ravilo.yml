@@ -18,6 +18,16 @@ sdk-extensions:
 command: ravilo
 separate-locales: false
 
+# R335 (FR-R335-10) — mpv links the runtime's FFmpeg at build time; at run time the ffmpeg-full extension's libraries
+# (the patented decoders: H.264, HEVC, AC-3, …) take their place through this path. Installed with the app.
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    version: '26.08'
+    directory: lib/ffmpeg
+    add-ld-path: .
+    no-autodownload: false
+    autodelete: false
+
 finish-args:
   # OpenJDK's AWT is X11-only (no Wayland toolkit in JDK 21); XWayland serves it on a Wayland desktop. X11 needs ipc.
   - --socket=x11
@@ -33,11 +43,77 @@ cleanup:
   - /gradle
   - /include
   - /lib/pkgconfig
+  - /lib/cmake
   - /share/man
+  - /share/doc
   - '*.la'
   - '*.a'
+cleanup-commands:
+  - mkdir -p ${FLATPAK_DEST}/lib/ffmpeg
 
 modules:
+  # ── R335 (FR-R335-10): the player — mpv as a library, the recipe jellyfin-media-player's Flathub manifest uses ──
+  - name: libass
+    buildsystem: meson
+    config-opts: [-Ddefault_library=shared, -Dfontconfig=enabled]
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz
+        sha256: 78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a
+  - name: nv-codec-headers
+    buildsystem: simple
+    build-commands:
+      - make PREFIX=/app install
+    sources:
+      - type: git
+        url: https://github.com/FFmpeg/nv-codec-headers.git
+        tag: n13.1.15.0
+        commit: 0a6fba9a2820628b8103464f4c8753ee05838baa
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Ddefault_library=shared
+      - -Dopengl=enabled
+      - -Dvulkan=disabled
+      - -Dshaderc=disabled
+      - -Dglslang=disabled
+      - -Dlcms=disabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.351.0
+        commit: 3188549fba13bbdf3a5a98de2a38c2e71f04e21e
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dbuild-date=false
+      - -Dmanpage-build=disabled
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dlibplacebo=enabled
+      - -Dlibarchive=disabled
+      - -Duchardet=disabled
+      - -Drubberband=disabled
+      - -Dsdl2=disabled
+      - -Dvulkan=disabled
+      - -Dvaapi=enabled
+      - -Dcuda-hwaccel=enabled
+      - -Dpipewire=enabled
+      - -Dpulse=enabled
+      - -Dalsa=disabled
+      - -Dwayland=enabled
+      - -Dx11=enabled
+      - -Degl=enabled
+      - -Dgl=enabled
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
   - name: ravilo
     buildsystem: simple
     build-options:
