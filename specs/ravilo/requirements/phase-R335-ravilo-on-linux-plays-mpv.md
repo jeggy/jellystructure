@@ -6,8 +6,9 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-09-30; the engine is verified in the Fedora container (software decode, both files at their
-frame rate through the ring); a real GPU, a real 4K display and path (b) are unverified** (§Build notes). Written
+`⚠ Partial` — **built 2026-09-30; the engine and the Flatpak are verified in the Fedora container (software decode, 1080p
+and 4K HEVC at their frame rate through the ring, inside the sandbox too); a real GPU, a real 4K display, HDR's look and
+path (b) are unverified** (§Build notes). Written
 2026-09-30 (dev-authored) from `research-reports/ravilo-linux-flatpak-2026-09-29.md` §5. Number verified free:
 `origin/main` tops at R332, local `main` at R334.
 
@@ -48,7 +49,7 @@ never invented).
 |---|---|---|
 | D1 | Engine | **mpv via `libmpv`** (research §5.2). GStreamer, the runtime's own, stays the fallback plan if mpv proves unbuildable on Flathub — nothing in the seams would change |
 | D2 | Binding | **JNA in Kotlin**, no C of our own: ~20 functions (`mpv_create/initialize/set_option_string/command/get_property/set_property/observe_property/wait_event/terminate_destroy`, the render context's `create/render/update/free`), events on one daemon thread, properties polled into a snapshot with the Mac's 15 ms TTL |
-| D3 | The picture | **(a) software render into the ring first** — the proven R329 path, at the surface's size so a 1080p window never pays for 4K; **(b) the embedded GPU window second**, behind a probe (an X11 display, GL, and Compose's interop blending drawing the chrome over a heavyweight child); (b) is on when the probe passes, (a) otherwise, and `-Dravilo.video=sw|gpu` forces either for measuring |
+| D3 | The picture | **(a) software render into the ring, the default everywhere** — the proven R329 path, at the surface's size so a 1080p window never pays for 4K, and (measured, build note 2) 3 ms a frame at 1080p, 5 ms for 4K on a 1080p surface. **Owner, 2026-09-30:** the users are on **GNOME with Wayland** on Ubuntu, Debian, Fedora or Arch, through the Flatpak — a path with no dependency on graphics-stack particulars is the one that works the same on all of them (the app reaches the Wayland session through XWayland, which every GNOME session ships). **(b) the embedded GPU window** exists behind `-Dravilo.video=gpu` as an experiment (an X11 child window, `vo=gpu-next`, Compose's interop blending for the chrome) and stays off until a real desktop shows the chrome drawing over it |
 | D4 | Decoding | `hwdec=auto-safe` (VA-API, NVDEC, Vulkan — whatever the machine and the sandbox expose; a copy-back variant on path (a)) |
 | D5 | HDR | **`supportsHdr10 = supportsHlg = true`**: mpv tone-maps (libplacebo) to the SDR window, so the file direct-plays and looks right. Dolby Vision profile 8 rides that (its HDR10 base layer); `supportsDolbyVision` stays false (profile 5 needs a DV decoder). When a Wayland/HDR display path exists for a child window, D5 is revisited |
 | D6 | Capabilities | containers mkv/mp4/mov/avi/ts/webm; video h264/hevc/av1/vp9/mpeg2video/mpeg4; audio aac/mp3/ac3/eac3/dts/truehd/flac/opus/vorbis/pcm; `supportsEmbeddedTextSubs = true`; `hlsOnly = false`; decoder limits unknown |
@@ -180,10 +181,22 @@ track, 4K HEVC 10-bit — and `Ravilo --mpv-bench` / `--mpv-window` (FR-R335-11)
 5. **FR-R335-7's copy** (*Playback is not available in this build*) is **not done**: the failure card's text comes from
    `PlayerSessionState.Error` in common code with one generic kind, and a new kind touches every platform; R237's card
    shows as before. Owed.
-6. **The Flatpak (FR-R335-10):** the four modules and the `ffmpeg-full` extension are in the manifest. The
-   `--local` render of R333 had to change twice for it: it now clones the checkout's HEAD (a `dir` source walked every
-   module's build output and the backend's unreadable files), and matches the app module's source line by line (its
-   regex had crossed into the mpv modules). The build's result is recorded below when it lands.
-7. **Not measured anywhere yet:** hardware decode (`hwdec` reports `no` in the container — CUDA has no driver there,
+6. **The Flatpak (FR-R335-10) builds and plays.** Modules: libass 0.17.4, nv-codec-headers n13.1.15.0, libplacebo
+   v7.351.0 (Vulkan off), libXpresent 1.0.1 (mpv's X11 output wants it; the SDK lacks it), zimg 3.0.6 (build note 8),
+   mpv v0.41.0 as a library (`-Dlibplacebo`/`-Dsdl2` are not options any more). **No codec extension is declared**: in
+   Freedesktop 26.08 the decoders come with the runtime's own `codecs-extra` extension, installed with the runtime
+   (the `ffmpeg-full` extension of 24.08 is gone from Flathub) — inside the sandbox H.264 and HEVC decode. The bench
+   inside the sandbox (`flatpak run --filesystem=<media>:ro --command=/app/ravilo/bin/Ravilo net.jebster.Ravilo
+   --mpv-bench …`): both files play, tracks, seek and picks as outside; `hwdec` picked `vulkan-copy` on the container's
+   software Vulkan (a real GPU's Vulkan is a hardware decoder there). R333's `--local` render changed twice for this:
+   it clones the checkout's HEAD (a `dir` source walked every module's build output and the backend's unreadable
+   files) and matches the app module's source line by line (its regex had crossed into the mpv modules).
+7. **FR-R335-7's copy is done after all:** `LoadErrorKind.PLAYBACK_UNAVAILABLE`, *Playback is not available in this
+   build* (da/fo drafts), raised by the player store when the desktop reported no engine; Android and web compile.
+8. **zimg.** The first sandbox build rendered a 1080p frame in 30 ms and a 4K one in 50 ms against 3 and 5 ms outside:
+   mpv's meson had found no zimg in the SDK and used swscale. With zimg as a module the sandbox matches the bare
+   engine — **1080p 24.6 fps at 3.5 ms a frame, 4K HEVC 24.7 fps at 6.7 ms**, software decode; with `auto-copy-safe`
+   the container's software Vulkan is picked (`vulkan-copy`, 17 ms at 4K), which on a real GPU is a hardware decoder.
+9. **Not measured anywhere yet:** hardware decode (`hwdec` reports `no` in the container — CUDA has no driver there,
    VA-API no device), a 4K surface, a real display's frame pacing, HDR tone-mapping's look. Acceptance 2 is the
    owner's Linux desktop with a GPU.
