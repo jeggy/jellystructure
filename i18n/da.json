@@ -816,5 +816,8 @@
   "mac.menu_exit_full_screen": "Slå fuld skærm fra",
   "mac.menu_window": "Vindue",
   "mac.menu_minimise": "Minimer",
-  "mac.menu_close": "Luk"
+  "mac.menu_close": "Luk",
+  "mac.local_network": "Ravilo skal have adgang til lokalt netværk for at finde højttalere og tv",
+  "mac.open_settings": "Åbn Indstillinger",
+  "cast.play_here_mac": "Afspil på denne Mac"
 }

@@ -870,5 +870,8 @@
   "mac.menu_exit_full_screen": "Exit Full Screen",
   "mac.menu_window": "Window",
   "mac.menu_minimise": "Minimise",
-  "mac.menu_close": "Close"
+  "mac.menu_close": "Close",
+  "mac.local_network": {"text": "Ravilo needs Local Network access to find speakers and TVs", "note": "R330 FR-R330-8 — once, under the Play on… sheet's rows, when macOS refused Local Network access."},
+  "mac.open_settings": {"text": "Open Settings", "note": "Opens macOS's Privacy & Security → Local Network pane."},
+  "cast.play_here_mac": {"text": "Play on this Mac", "note": "R330 open question 2 — the Mac's cast.play_here."}
 }
