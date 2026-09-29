@@ -1,0 +1,5 @@
+#!/bin/sh
+# R333 — Ravilo's entry point inside the Flatpak: jpackage's own launcher, which reads lib/app/Ravilo.cfg and runs the
+# jlinked runtime beside it. `$XDG_DATA_HOME` is the sandbox's (~/.var/app/net.jebster.Ravilo/data), so the app's
+# files land there without knowing they are sandboxed (DesktopPaths).
+exec /app/ravilo/bin/Ravilo "$@"

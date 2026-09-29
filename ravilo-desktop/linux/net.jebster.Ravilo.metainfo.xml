@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- R333 (FR-R333-4) — what Flathub and the desktop's software centre show. %VERSION% and %DATE% are filled by the
+     manifest's build command from the release being built (flatpak/net.jebster.Ravilo.yml); nothing here is edited
+     per release by hand. -->
+<component type="desktop-application">
+  <id>net.jebster.Ravilo</id>
+  <name>Ravilo</name>
+  <summary>Films, series and music from your server</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="net.jebster">
+    <name>jeggy</name>
+  </developer>
+  <description>
+    <p>
+      Ravilo is the viewer for a household's jellystructure server: the films, series, music and audiobooks the
+      household keeps, laid out the way the living-room TV shows them, driven here by a keyboard and a mouse.
+    </p>
+    <p>
+      It needs a jellystructure server to sign in to; the first screen asks for its address. Music can be sent to the
+      household's Cast speakers and films to its TVs from this app.
+    </p>
+  </description>
+  <launchable type="desktop-id">net.jebster.Ravilo.desktop</launchable>
+  <url type="homepage">https://github.com/jeggy/jellystructure</url>
+  <url type="bugtracker">https://github.com/jeggy/jellystructure/issues</url>
+  <url type="vcs-browser">https://github.com/jeggy/jellystructure</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/jeggy/jellystructure/v%VERSION%/ravilo-desktop/linux/screenshots/server.png</image>
+      <caption>The first screen asks for the household's server</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="%VERSION%" date="%DATE%">
+      <url>https://github.com/jeggy/jellystructure/releases/tag/v%VERSION%</url>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#aa5cc3</color>
+    <color type="primary" scheme_preference="dark">#000b25</color>
+  </branding>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+  <keywords>
+    <keyword>jellystructure</keyword>
+    <keyword>jellyfin</keyword>
+    <keyword>films</keyword>
+    <keyword>series</keyword>
+    <keyword>music</keyword>
+    <keyword>audiobooks</keyword>
+  </keywords>
+  <requires>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <internet>always</internet>
+  </supports>
+</component>

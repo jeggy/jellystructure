@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ravilo
+Comment=Films, series and music from your jellystructure server
+Exec=ravilo
+Icon=net.jebster.Ravilo
+Terminal=false
+Categories=AudioVideo;Video;Audio;Player;
+Keywords=jellystructure;jellyfin;films;series;music;audiobooks;
+# What AWT names the window (measured under Xvfb, R333 build notes) — so the desktop groups it with this launcher.
+StartupWMClass=dev-jellystructure-ravilo-desktop-MainKt

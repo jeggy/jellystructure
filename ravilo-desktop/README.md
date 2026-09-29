@@ -80,3 +80,45 @@ gh secret set MACOS_SIGNING_P12_PASSWORD --repo jeggy/jellystructure    # paste 
 
 `deploy-macos.yml` refuses to build without both secrets; it never falls back to an ad-hoc signature.
 
+
+## The Flatpak (Linux)
+
+R333 packages the same app for Linux as `net.jebster.Ravilo`, built the way Flathub builds — offline, from a manifest
+whose sources are the Gradle distribution and every Maven artefact — and R334 attaches `ravilo-linux-<N>.flatpak` to
+each release and opens Flathub's pull request. The pieces:
+
+- `flatpak/net.jebster.Ravilo.yml` — the manifest **template** (`@VERSION@`, `@COMMIT@`, `@DATE@`).
+- `flatpak/render.sh` — fills it for a release, or renders the working tree for a local build.
+- `flatpak/gradle-offline.init.gradle.kts` — makes every Gradle repository the offline directory.
+- `flatpak/verify-offline.sh` — proves the offline build here, without `flatpak-builder`.
+- `flatpak/ravilo` — the launcher (`/app/bin/ravilo` → jpackage's `bin/Ravilo`).
+- `linux/` — the desktop file, the metainfo (release row filled at build time) and the screenshot.
+
+**The desktop-only build.** `-Pravilo.desktopOnly=true` configures only `:shared`, `:ravilo-i18n`, `:ravilo-ui`,
+`:ravilo-castv2` and `:ravilo-desktop`, each with its `desktop` target alone — no Android SDK, no Kotlin/Native, no
+Node — which is all Flathub's sandbox can run. `ci.yml` compiles it on every push.
+
+```sh
+# 1. Capture every download from an EMPTY Gradle home (a warm cache downloads nothing, so it would capture nothing).
+GH=$(mktemp -d)
+./gradlew --no-build-cache --no-daemon -Dgradle.user.home="$GH" -Pravilo.desktopOnly=true \
+  -Pravilo.macPackageVersion=1.0.0 :ravilo-desktop:createDistributable :captureFlatpakSources
+#    → build/flatpak-sources.json (≈830 artefacts, ≈250 MB)
+
+# 2. Prove the offline build: an offline repository from that list, the manifest's own Gradle, an empty home.
+flatpak/verify-offline.sh /tmp/ravilo-offline "$GH"
+
+# 3. Render the manifest — for this working tree (a `dir` source) …
+flatpak/render.sh /tmp/ravilo-manifest --local
+#    … or for a release (the tag and its commit):
+flatpak/render.sh /tmp/ravilo-manifest 1.46 "$(git rev-parse v1.46)"
+
+# 4. Build and run it (needs flatpak + flatpak-builder on this machine, and the Flathub remote):
+flatpak-builder --user --install --force-clean /tmp/ravilo-build /tmp/ravilo-manifest/net.jebster.Ravilo.yml
+flatpak run net.jebster.Ravilo
+#    and lint as Flathub does (org.flatpak.Builder from Flathub):
+flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest /tmp/ravilo-manifest/net.jebster.Ravilo.yml
+```
+
+Inside the Flatpak the app's files live in `~/.var/app/net.jebster.Ravilo/data/ravilo/` (`$XDG_DATA_HOME`, which
+the sandbox sets). It plays nothing yet on Linux — the player is a later phase; it browses, signs in and casts.
