@@ -18,15 +18,8 @@ sdk-extensions:
 command: ravilo
 separate-locales: false
 
-# R335 (FR-R335-10) — mpv links the runtime's FFmpeg at build time; at run time the ffmpeg-full extension's libraries
-# (the patented decoders: H.264, HEVC, AC-3, …) take their place through this path. Installed with the app.
-add-extensions:
-  org.freedesktop.Platform.ffmpeg-full:
-    version: '26.08'
-    directory: lib/ffmpeg
-    add-ld-path: .
-    no-autodownload: false
-    autodelete: false
+# R335 (FR-R335-10) — the decoders (H.264, HEVC, AC-3, …) come with the runtime's own codecs-extra extension in 26.08,
+# which Flatpak installs with the runtime; the app declares nothing for them (the ffmpeg-full extension of 24.08 is gone).
 
 finish-args:
   # OpenJDK's AWT is X11-only (no Wayland toolkit in JDK 21); XWayland serves it on a Wayland desktop. X11 needs ipc.
@@ -48,8 +41,6 @@ cleanup:
   - /share/doc
   - '*.la'
   - '*.a'
-cleanup-commands:
-  - mkdir -p ${FLATPAK_DEST}/lib/ffmpeg
 
 modules:
   # ── R335 (FR-R335-10): the player — mpv as a library, the recipe jellyfin-media-player's Flathub manifest uses ──
@@ -91,6 +82,15 @@ modules:
       - type: archive
         url: https://xorg.freedesktop.org/archive/individual/lib/libXpresent-1.0.1.tar.xz
         sha256: b964df9e5a066daa5e08d2dc82692c57ca27d00b8cc257e8e960c9f1cf26231b
+  - name: zimg
+    # mpv's software renderer scales and converts with zimg where it exists (3 ms a 1080p frame); without it, swscale (30 ms).
+    buildsystem: autotools
+    config-opts: [--disable-static, --disable-testapp, --disable-example, --disable-unit-test]
+    sources:
+      - type: git
+        url: https://github.com/sekrit-twc/zimg.git
+        tag: release-3.0.6
+        commit: f819b14e8f39d1282400b0d9543e8ef73c1b2bbd
   - name: mpv
     buildsystem: meson
     config-opts:
