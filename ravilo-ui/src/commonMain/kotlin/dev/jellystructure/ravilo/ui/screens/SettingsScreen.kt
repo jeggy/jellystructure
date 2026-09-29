@@ -542,16 +542,19 @@ private fun SettingsContent(
         Spacer(Modifier.height(6.dp))
         Text(str("music.even_volume_sub"), color = colors.textSecondary, fontSize = 13.sp)
         // R323 (FR-R323-9) — the two book settings: skip silences (off) and the sleep timer's fade (on).
-        Spacer(Modifier.height(16.dp))
-        var silence by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.skipSilence) }
-        ToggleRow(
-            label = str("ab.skip_silence"),
-            checked = silence,
-            focusRequester = remember { FocusRequester() },
-            onToggle = { silence = !silence; dev.jellystructure.ravilo.ui.music.MusicEngine.setSkipSilence(silence) },
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(str("ab.skip_silence_sub"), color = colors.textSecondary, fontSize = 13.sp)
+        // R329 — skipping silences is a player's feature, and only where the player has it (not AVPlayer).
+        if (dev.jellystructure.ravilo.ui.music.playerSkipsSilence) {
+            Spacer(Modifier.height(16.dp))
+            var silence by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.skipSilence) }
+            ToggleRow(
+                label = str("ab.skip_silence"),
+                checked = silence,
+                focusRequester = remember { FocusRequester() },
+                onToggle = { silence = !silence; dev.jellystructure.ravilo.ui.music.MusicEngine.setSkipSilence(silence) },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(str("ab.skip_silence_sub"), color = colors.textSecondary, fontSize = 13.sp)
+        }
         Spacer(Modifier.height(16.dp))
         var fade by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.sleepFade) }
         ToggleRow(

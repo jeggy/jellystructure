@@ -8,3 +8,8 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 expect fun rememberNotificationAsk(): () -> Unit
+
+/** R329 — this platform's music player can skip silences in an audiobook (Media3 can; AVPlayer cannot, so the
+ *  Mac shows no such setting — absent, never greyed). */
+expect val playerSkipsSilence: Boolean
+

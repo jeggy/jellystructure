@@ -51,3 +51,11 @@ expect fun playsHlsForAirPlay(): Boolean
  * and says so, never silently.
  */
 expect fun switchesHlsAudioRenditions(): Boolean
+
+/**
+ * R329 (FR-R329-3) — this player takes nothing but HLS: the Mac's AVPlayer plays no MKV, so every film arrives as the
+ * Chromecast receiver's would (`hls_only`), with HEVC in fMP4 where [supportsHevcOverHls] says so. False on Android
+ * and the web, whose Safari case is [playsHlsForAirPlay].
+ */
+expect fun playsOnlyHls(): Boolean
+

@@ -15,7 +15,7 @@ import java.io.File
  * [ABI] is bumped whenever an export changes shape, so a stale library is refused rather than called wrongly.
  */
 object MacNative {
-    const val ABI = 1
+    const val ABI = 2
     const val LIBRARY_FILE = "libravilo-mac.dylib"
 
     @Suppress("FunctionName")
@@ -31,6 +31,36 @@ object MacNative {
         /** 0 on success or when there was nothing to delete, else the `OSStatus`. */
         fun ravilo_keychain_delete(service: String, account: String): Int
         fun ravilo_computer_name(): Pointer?
+
+        // ── R329 — the player (Player.swift; see MacPlayer) ──
+        fun ravilo_player_create(): Long
+        fun ravilo_player_load(h: Long, url: String, mime: String, startMs: Long, audioOnly: Int)
+        fun ravilo_player_play(h: Long)
+        fun ravilo_player_pause(h: Long)
+        fun ravilo_player_seek(h: Long, ms: Long)
+        fun ravilo_player_set_rate(h: Long, rate: Float)
+        fun ravilo_player_set_volume(h: Long, volume: Float)
+        fun ravilo_player_select_audio(h: Long, index: Int)
+        fun ravilo_player_tick(h: Long)
+        fun ravilo_player_state(h: Long, out: LongArray, count: Int)
+        fun ravilo_player_error(h: Long): Pointer?
+        fun ravilo_player_audio_options(h: Long): Pointer?
+        fun ravilo_player_copy_frame(h: Long, dst: Pointer?, capacity: Long, dims: IntArray): Int
+        fun ravilo_player_release(h: Long)
+        fun ravilo_caps_playable(mime: String): Int
+
+        // ── R329 — Now Playing and the media keys (NowPlaying.swift), display sleep (Power.swift) ──
+        fun ravilo_nowplaying_set_handler(cb: RemoteCallback?)
+        fun ravilo_nowplaying_set_mode(mode: Int)
+        fun ravilo_nowplaying_update(title: String, artist: String, album: String, durationMs: Long, positionMs: Long, rate: Double, playing: Int, video: Int)
+        fun ravilo_nowplaying_artwork(bytes: ByteArray?, length: Long)
+        fun ravilo_nowplaying_clear()
+        fun ravilo_display_keep_awake(on: Int)
+    }
+
+    /** A media key or Control Center: `command` as NowPlaying.swift numbers them, `value` in seconds. */
+    fun interface RemoteCallback : com.sun.jna.Callback {
+        fun invoke(command: Int, value: Double)
     }
 
     /** Why the library is absent, for `--self-test` and the log; null when it loaded. */

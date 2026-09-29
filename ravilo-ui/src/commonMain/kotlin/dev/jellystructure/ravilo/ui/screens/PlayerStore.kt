@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
+import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
@@ -172,10 +173,14 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     // R265 (FR-R265-8) — Safari takes only HLS and shows the manifest's subtitles, so
                     // AirPlay has a stream to hand to the TV with its subtitles inside it.
                     val airplayHls = playsHlsForAirPlay()
+                    // R329 (FR-R329-3) — a player that takes nothing but HLS (the Mac's AVPlayer), and HEVC in it
+                    // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
+                    val hlsOnly = airplayHls || playsOnlyHls()
                     val capabilities = ClientCapabilities(
                         containers = listOf("mkv", "mp4", "avi", "mov"),
                         videoCodecs = supportedVideoCodecs(),
-                        hlsOnly = airplayHls,
+                        hlsOnly = hlsOnly,
+                        hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls(),
                         hlsSubtitles = airplayHls,
                         // R291 (FR-R291-2) — every audio track in one master, switched in the player.
                         hlsAudioRenditions = switchesHlsAudioRenditions(),
@@ -298,7 +303,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
         // own doc), not an error to work around.
         val startupMs = startupMsProvider?.invoke()
         startupMsProvider = null
-        exitScope.launch {
+        // R328 (FR-R328-9) — tracked, so a desktop that quits waits for the stop to reach the server.
+        dev.jellystructure.ravilo.ui.TeardownWork.track(exitScope.launch {
             // Phase 180 — found live 2026-08-29 on real stue TV hardware: a single failed attempt here
             // permanently orphans whatever Jellyfin is doing for this session, up to and including a
             // real GPU transcode — confirmed live, an NVENC job survived 20+ seconds after Back with
@@ -318,7 +324,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
                 runCatching { apiClient.markPlayed(itemId, watched = true) }
                 WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
             }
-        }
+        })
         _state.value = PlayerSessionState.Idle
     }
 

@@ -24,6 +24,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.jellystructure.ravilo.i18n.LastLanguage
 import dev.jellystructure.ravilo.ui.RaviloRoot
+import dev.jellystructure.ravilo.ui.TeardownWork
 import dev.jellystructure.ravilo.ui.components.AppCommand
 import dev.jellystructure.ravilo.ui.components.AppCommands
 import dev.jellystructure.ravilo.ui.desktop.DesktopShutdown
@@ -37,6 +38,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.Dimension
 import javax.swing.SwingUtilities
 import kotlin.system.exitProcess
@@ -65,8 +68,18 @@ private fun ApplicationScope.RaviloDesktopApp() {
     val lang by produceState(LastLanguage.read() ?: "en") {
         while (true) { delay(2_000); value = LastLanguage.read() ?: "en" }
     }
-    val quit: () -> Unit = remember {
-        { SwingUtilities.invokeLater { DesktopShutdown.runAll(); exitApplication() } }
+    // FR-R328-9 — quitting first takes the app out of the window, so a playing film's screen disposes and sends its
+    // stop (phase 180); then those stops get two seconds to reach the server before the process ends.
+    var quitting by remember { mutableStateOf(false) }
+    val quit: () -> Unit = remember { { SwingUtilities.invokeLater { quitting = true } } }
+    LaunchedEffect(quitting) {
+        if (!quitting) return@LaunchedEffect
+        delay(150)
+        withContext(Dispatchers.IO) {
+            withTimeoutOrNull(2_000) { TeardownWork.awaitAll() }
+            DesktopShutdown.runAll()
+        }
+        exitApplication()
     }
     val bounds = remember { WindowBounds.load() }
     val state = rememberWindowState(position = bounds.position, size = bounds.size)
@@ -118,7 +131,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onMinimise = { state.isMinimized = true },
             onClose = ::close,
         )
-        RaviloRoot()
+        if (!quitting) RaviloRoot()
     }
 
     if (aboutOpen) AboutWindow(lang = lang, onClose = { aboutOpen = false })

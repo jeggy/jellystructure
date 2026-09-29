@@ -4,7 +4,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
+`⚠ Partial` — **built 2026-09-29; never run on a Mac, so the spike (FR-R329-1) has not been measured and nothing has played** (§Build notes). Written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
 **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Second of four** (R328 → **R329** → R330 → R331). **Builds on** R328's native
 library, the receiver's `hls_only` negotiation (the Chromecast path, `2b19966f`), R218 (waiting states), R180/R195
 (the picker), R282/R285 (burn-in by restream), R322/R323 (the music and book engine), phase 180 (the stop).
@@ -172,3 +172,71 @@ The spike is the phase; the rest is known. Twelve items.
     `detectDecoderLimits` answers nulls (phase 185's *not measured yet* is the honest line in Users & devices).
 11. **Trailers:** `Desktop.browse(url)` — no embed, as the FR says.
 12. **Wire:** none. The ad-hoc signing decision (R331) does not touch this phase beyond signing the dylib.
+
+## Build notes (2026-09-29)
+
+Built from the dev review on Linux. **Nothing here has played**: the Swift library has never been compiled and no Mac
+has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until they are in and meet the bar.
+
+1. **The Swift library** (`ravilo-desktop/native/`, ABI 2): `Player.swift` (AVPlayer behind a handle),
+   `NowPlaying.swift` (`MPNowPlayingInfoCenter`/`MPRemoteCommandCenter`, every call hopped to the main queue, the
+   commands back through one C callback), `Power.swift` (a `PreventUserIdleDisplaySleep` assertion). The player
+   never calls into the JVM: AVFoundation's threads only set flags under the handle's lock, and Kotlin drives the
+   rest — the start seek, AVPlayer's own subtitles off, a queued audio pick, starting — from one `ravilo_player_tick`
+   on Compose's thread every 50 ms. So every AVPlayer mutation happens on one thread. A seek before the item is
+   ready is kept and made once it is (AVFoundation cancels a seek outside the seekable range), and playing waits for
+   it, so frame 0 never flashes.
+2. **FR-R329-1 path (b), as the review ordered.** `AVPlayerItemVideoOutput` asks for 32BGRA;
+   `ravilo_player_copy_frame` copies the newest `CVPixelBuffer` row by row into memory Kotlin owns (a ring of
+   **three** JNA buffers, not two: a frame is written while the screen may still draw either of the two before it),
+   and Skia wraps that memory without a second copy (`Data.makeWithoutCopy` → `Image.makeRaster`). The surface
+   pulls once per display frame on Compose's thread. `qoeSnapshot` carries the access log's dropped frames, stalls
+   and observed bitrate, which is what the spike's numbers come from. **Not measured.**
+3. **FR-R329-3 — capabilities.** `isPlayableExtendedMIMEType` probes `hvc1` (→ `hevc` and `hls_hevc`), `ac-3` and
+   `ec-3`; AAC and MP3 always; never DTS or TrueHD. A new common seam, `playsOnlyHls()`, makes PlayerStore send
+   `hls_only` for the Mac (Android and the web negotiate exactly as before; `hls_hevc` stays false for them).
+   **HDR is not claimed**, a deliberate deviation: the frame path is 8-bit BGRA, so an HDR stream would reach the
+   screen as whatever AVFoundation's 8-bit conversion makes of it; the server's tone-mapped SDR is the honest answer
+   until the spike shows otherwise. `-Dravilo.hdr=true` claims what the probes allow, for that measurement.
+   `detectDecoderLimits` answers *unknown* (phase 185's line).
+4. **FR-R329-4.** `hls_audio_renditions = true`; an audio pick selects the audible option named `a{position}` (the
+   backend's composed master, R291 — as Android finds it), else by position. The player lists the ticket's audio
+   once AVPlayer is ready.
+5. **FR-R329-5.** The ticket's text tracks (a `url`, not `encode`) are the player's subtitle tracks; picking one
+   fetches its WebVTT (a path is resolved against the stream's own server), `parseVtt` parses it, and the surface
+   draws `activeCueText` at the bottom above R251's inset, in R110's look (white, a soft ~80 % black outline) at
+   Android's size — 0.0533 × 0.9 of the **picture's** height (R300) × the Subtitle size row. Burn-in stays the
+   common player's R282 restream. AVPlayer's legible group is switched off.
+6. **FR-R329-6/7.** Space, Return and clicks were already the player's (FocusModifiers maps Space to play/pause;
+   `playerTapTogglesChrome`). A new constant, `playerArrowsSeek` (true only on the desktop), makes ← and → seek
+   −10 s/+30 s instead of moving along the transport row, except in next-up, the rail and the picker. **F** and
+   **Esc** (out of full screen first) are the window's, only while a film's player is on screen; a double-click on
+   the picture toggles full screen (`wakeOnPointerMove`'s desktop actual). Full screen is macOS's own
+   (`WindowPlacement.Fullscreen`); the player never enters it by itself (open question 2's lean), and leaving the
+   player leaves it only if the player entered it. The chrome and cursor keep the shared timings (3.6 s and R157's
+   2 s) rather than a Mac-only 3 s.
+7. **FR-R329-8/10.** While a film is loaded, once a second: the display assertion follows *playing*, and the Now
+   Playing card follows the player (title, the kicker as the artist line, the artwork fetched once per URL).
+   `MacNowPlaying` gives the card to one owner at a time, so a film that stops cannot clear a song's card.
+8. **FR-R329-9 — the music engine** is the Android engine ported to an audio-only AVPlayer, polled four times a
+   second where the phone listens (the end, a failure, playing/buffering changes; for a book the early fetch, the
+   card's chapter and the sleep timer). Songs direct-play with `mp3, flac, m4a, mp4, aac, wav` / `mp3, aac, flac,
+   alac, pcm` (not Opus), and since a direct-play URL has no extension, AVPlayer is told the file's type
+   (`AVURLAssetOverrideMIMETypeKey`, from the container). A book's next part is fetched early on direct play and
+   played from that ticket at the boundary — on AVPlayer that shortens the gap rather than removing it. AVPlayer has
+   no skip-silence: a new `playerSkipsSilence` seam hides that setting on the Mac. Settings ▸ Listening now shows
+   wherever music plays off a TV (the phone, the Mac). Media keys: play, pause, toggle, next/previous (songs),
+   ±30 s (books), seek.
+9. **Stops reach the server on quit** (FR-R328-9 with a film): quitting first takes the app out of the window so the
+   player's screen disposes and sends its stop, and a new common `TeardownWork` lets the quit wait (two seconds at
+   most) for stops that were sent; the music engine registers its own. Verified on Linux: quitting from the player
+   sent `playback stop` to the local server.
+10. **R237 on a load-time failure.** R306's latch arms only on a clear read, so a failure this player knows at once
+    (no library; a URL AVFoundation refuses) is reported from a second after the load. Verified on Linux: Play
+    shows the cold start, then *Something went wrong* · Retry · Back, and Esc returns to the detail page.
+11. **Tests:** `MacPlayerStateTest`, `MusicMimeTest`, `TeardownWorkTest` (ravilo-ui desktop: 276). Android, both web
+    targets and the desktop app compile.
+12. **Owed to a Mac:** everything that plays — the spike's numbers for 1080p H.264 and 4K HEVC, acceptance 2–6, the
+    rendition switch, whether AVFoundation's 8-bit conversion of HDR is good enough to claim HDR, and the Swift
+    library's first compile.
+

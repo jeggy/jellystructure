@@ -31,3 +31,5 @@ actual fun playsHlsForAirPlay(): Boolean = false
  * picture never stops.
  */
 actual fun switchesHlsAudioRenditions(): Boolean = true
+
+actual fun playsOnlyHls(): Boolean = false

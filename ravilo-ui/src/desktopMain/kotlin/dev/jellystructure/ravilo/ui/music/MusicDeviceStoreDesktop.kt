@@ -12,3 +12,6 @@ actual object MusicDeviceStore {
 /** A desktop has no notification permission to ask for: Now Playing needs none (R329 FR-R329-10). */
 @Composable
 actual fun rememberNotificationAsk(): () -> Unit = {}
+
+/** R329 — AVPlayer has no skip-silence, so the Mac shows no such setting. */
+actual val playerSkipsSilence: Boolean = false

@@ -23,3 +23,5 @@ actual fun rememberNotificationAsk(): () -> Unit {
         }
     }
 }
+
+actual val playerSkipsSilence: Boolean = true

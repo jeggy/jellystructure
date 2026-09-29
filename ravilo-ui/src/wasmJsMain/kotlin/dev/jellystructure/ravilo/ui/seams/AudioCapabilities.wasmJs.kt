@@ -72,3 +72,5 @@ private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlay
 /** R291 (FR-R291-4) — not yet on the web: hls.js and Safari each switch renditions their own way, and
  *  neither is built or measured here, so a browser keeps R284's restream. */
 actual fun switchesHlsAudioRenditions(): Boolean = false
+
+actual fun playsOnlyHls(): Boolean = false
