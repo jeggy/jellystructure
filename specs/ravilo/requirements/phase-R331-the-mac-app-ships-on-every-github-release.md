@@ -6,7 +6,8 @@
 ## Status
 
 `Planned` — written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
-build from it; **owner, 2026-09-29: no Apple bills — the `.dmg` is ad-hoc signed, never notarised.** Number verified free. **Last of four**
+build from it; **owner, 2026-09-29: no Apple bills, and (same day) one signing identity of our own, kept in CI's secrets, so
+the household approves the app once, not once per update.** Number verified free. **Last of four**
 (R328 → R329 → R330 → **R331**).
 
 **Mirrors** R264's `deploy-tizen-tv.yml`, which signs and attaches `ravilo-tizen-<N>.wgt`, and the Android release
@@ -18,7 +19,7 @@ its own CI is green.
 | # | Question | Lean |
 |---|---|---|
 | D1 | When the release starts carrying it | **Only once R328–R330 are ✓ Built** (the owner's "when fully implemented"). Until then the workflow runs by hand only and keeps its `.dmg` as a workflow artifact |
-| D2 | Signing | ~~Developer ID + notarisation when the Apple secrets exist; ad-hoc otherwise~~ **Ad-hoc, always** (owner, 2026-09-29: *"I will not pay any apple bills. I only want dmg version of the app"*). No secrets, no notarisation, one path; the notes always carry the *Open Anyway* line |
+| D2 | Signing | ~~Developer ID + notarisation~~ ~~ad-hoc~~ **Our own self-signed code-signing certificate, created once, kept as two repository secrets, the same on every release** (owner, 2026-09-29: no Apple bills; *"supply it to the ci workflow via secrets, so … the users only have to approve the application once and not once per update"*). No notarisation, one path; the notes carry the *Open Anyway* line, which applies once per Mac |
 | D3 | Runner | GitHub's **`macos-15`** (Apple Silicon) — free on a public repository |
 | D4 | File name | **`ravilo-mac-<N>.dmg`**, beside `ravilo-<N>-release.apk` and `ravilo-tizen-<N>.wgt` |
 
@@ -39,8 +40,9 @@ its own CI is green.
 3. Build the Swift library (R329's).
 4. Run `:ravilo-desktop:createDistributable` — Compose's native distribution uses `jpackage` and `jlink`, and an app
    bundle for macOS can only be built on macOS.
-5. **Sign the whole bundle ad-hoc ourselves:** `codesign --force --deep --sign - Ravilo.app` (dev review 2 — on Apple
-   Silicon every binary must carry at least an ad-hoc signature, and jpackage does not sign the Swift library).
+5. **Sign the whole bundle with our identity:** `codesign --force --deep --sign "Ravilo" Ravilo.app` from the
+   temporary keychain of FR-R331-3 (dev review 2 — on Apple Silicon every binary must carry a signature, and jpackage
+   does not sign the Swift library; `--deep` reaches it).
 6. Make the image ourselves: `hdiutil create -volname Ravilo -srcfolder … -format UDZO ravilo-mac-<N>.dmg`.
 
 The bundle carries:
@@ -50,8 +52,31 @@ The bundle carries:
 - R328's icon;
 - no hardened runtime and no entitlements — those exist for notarisation, which this app never has.
 
-**FR-R331-3 — Signing: ad-hoc, always** (owner, 2026-09-29: no Apple bills). No Developer ID, no notarisation, no
-secrets. The job summary says **ad-hoc signed — not notarised** on every run, so nobody wonders.
+**FR-R331-3 — Signing: one identity of our own, forever.**
+
+*Created once, by hand, on the MacBook* — a self-signed code-signing certificate with a long life, so it never has to
+be replaced (a replacement would cost every Mac one more *Open Anyway*):
+
+```
+openssl req -x509 -newkey rsa:3072 -sha256 -days 7300 -nodes -keyout ravilo-signing.key -out ravilo-signing.crt \
+  -subj "/CN=Ravilo/O=jellystructure" -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=codeSigning"
+openssl pkcs12 -export -inkey ravilo-signing.key -in ravilo-signing.crt -name "Ravilo" -out ravilo-signing.p12
+```
+
+The `.p12` and its password go into the household's password manager, and into two repository secrets —
+`MACOS_SIGNING_P12_BASE64` (`base64 -w0 ravilo-signing.p12`) and `MACOS_SIGNING_P12_PASSWORD` — the Tizen workflow's
+pattern. Neither ever reaches a log line.
+
+*On every run:* `security create-keychain` with a random password → `security import` the `.p12` (`-T /usr/bin/codesign`)
+→ `security set-key-partition-list -S apple-tool:,apple: -s` so `codesign` can use the key without a prompt →
+`codesign … --sign "Ravilo"` → delete the keychain. **Both secrets missing:** the job fails with one line naming them —
+never a silent ad-hoc build, because an ad-hoc signature would undo the one-approval promise (dev review 1). The job
+summary says **signed with the Ravilo certificate — not notarised**.
+
+*What the identity buys (dev review 1):* macOS records a Gatekeeper approval, a Keychain item's access and a privacy
+permission by the app's **designated requirement** — its bundle id and the certificate that signed it — so a Mac that
+opened one version via *Open Anyway* opens every later one, keeps its sign-in tokens (R328 D5) and keeps its Local
+Network permission (R330) without asking again.
 
 **FR-R331-4 — Verify before uploading.**
 
@@ -74,8 +99,8 @@ secrets. The job summary says **ad-hoc signed — not notarised** on every run, 
 
 > *Ravilo for Mac: download `ravilo-mac-<N>.dmg`, open it and drag Ravilo to Applications (macOS 14 or later, Apple
 > Silicon). The first time, macOS will refuse to open it because the app is not registered with Apple: open System
-> Settings → Privacy & Security, scroll to the Ravilo line and choose **Open Anyway** — once per install. (From a
-> terminal, `xattr -dr com.apple.quarantine /Applications/Ravilo.app` does the same.)*
+> Settings → Privacy & Security, scroll to the Ravilo line and choose **Open Anyway** — once per Mac; later versions
+> open normally. (From a terminal, `xattr -dr com.apple.quarantine /Applications/Ravilo.app` does the same.)*
 
 R328's update line (FR-R328-8) repeats the *Open Anyway* sentence under *Download*.
 
@@ -86,23 +111,26 @@ push.
 
 ## Out of scope
 
-The Mac App Store · notarisation and any Apple account (owner) · Homebrew casks · an auto-updater (R328 FR-R328-8 is
+The Mac App Store · notarisation and any Apple account (owner) · a certificate rotation plan (the certificate is made
+to outlive the project; if it is ever lost, every Mac approves once more, and that is all) · Homebrew casks · an auto-updater (R328 FR-R328-8 is
 the update line) · universal (Intel) builds.
 
 ## Acceptance
 
 1. `workflow_dispatch` on an existing tag produces `ravilo-mac-<N>.dmg` as an artifact; it opens on the MacBook, signs
    in and plays (R329) and casts (R330).
-2. The job summary says *ad-hoc signed — not notarised*, and on a Mac that has never seen the app it opens after one
-   *Open Anyway* — on macOS 14 and on 15.
+2. The job summary says *signed with the Ravilo certificate — not notarised*; on a Mac that has never seen the app it
+   opens after one *Open Anyway* — on macOS 14 and on 15 — and **the next release opens with no prompt at all**, keeps
+   the sign-in and keeps the Local Network permission (the one-approval promise, checked on two consecutive releases).
 3. After R328–R330 are built, the next GitHub release carries `ravilo-<N>-release.apk`, `ravilo-tizen-<N>.wgt` and
    `ravilo-mac-<N>.dmg`.
 4. Deleting the Swift library from the bundle makes FR-R331-4's self-test fail the job.
+5. With the two signing secrets removed, the job fails naming them; nothing is uploaded.
 
 ## Open questions
 
-1. ~~Apple Developer ID~~ **Answered 2026-09-29: no.** Every household Mac opens the app once via *Open Anyway* per
-   install (dev review 1).
+1. ~~Apple Developer ID~~ **Answered 2026-09-29: no — and, the same day, our own certificate in CI's secrets instead**,
+   so *Open Anyway* is once per Mac, not per update (FR-R331-3, dev review 1).
 2. On 2026-09-24 GitHub stopped this repository's jobs over billing. macOS minutes are free on a public repository,
    but a billing block stops them too.
 3. The `.dmg` size: Compose's `jlink` runtime plus the app should land somewhere around 100 MB; measure and record.
@@ -119,11 +147,23 @@ The owner's decision reshapes FR-R331-3; the rest is the Tizen workflow with `jp
    is therefore always the second version, and R328's update line (FR-R328-8) should repeat it under *Download*, so the
    step is read at the moment it is needed. Terminal users may `xattr -dr com.apple.quarantine /Applications/Ravilo.app`
    instead; the notes may say so in one line.
-2. **Sign the whole bundle ourselves, then make the `.dmg` ourselves.** On Apple Silicon every binary must carry at
-   least an ad-hoc signature to run, and Compose's `packageDmg` signs only what jpackage knows about — not the Swift
-   library shipped through `appResourcesRootDir`. The dependable sequence: `:ravilo-desktop:createDistributable` →
-   `codesign --force --deep --sign - Ravilo.app` → `hdiutil create -volname Ravilo -srcfolder … -format UDZO
-   ravilo-mac-<N>.dmg`. This also frees the job from Compose's output name (`Ravilo-<version>.dmg` under
+   **Same day, the owner's follow-up — a signing identity of our own in CI's secrets — makes that approval once per Mac
+   rather than once per update, and it is right.** *Open Anyway* writes a Gatekeeper rule for the app's *designated
+   requirement*; `codesign` generates that requirement from the bundle identifier and the signing certificate's leaf,
+   so every later build signed with the same certificate under the same identifier matches the rule. An ad-hoc
+   signature has no certificate, its requirement is the build's own hash, and that is exactly why every update would
+   have asked again. The same identity is what a Keychain item's access list and a TCC permission are bound to, so
+   R328 gets the Keychain back and R330's Local Network consent survives updates. The one thing this does not buy is
+   the very first approval on a Mac: without notarisation, Gatekeeper still refuses a fresh download once. **Verify on
+   the first two releases** (acceptance 2) — Gatekeeper's bookkeeping is Apple's to change. Practicalities: make the
+   certificate long-lived (`-days 7300`); `security import` on macOS 14 reads a modern PKCS#12 (fall back to
+   `openssl pkcs12 -legacy` only if it refuses, the Tizen lesson); `--timestamp` is not needed for a self-signed
+   identity.
+2. **Sign the whole bundle ourselves, then make the `.dmg` ourselves.** On Apple Silicon every binary must carry a
+   signature to run, and Compose's `packageDmg` signs only what jpackage knows about — not the Swift library shipped
+   through `appResourcesRootDir`. The dependable sequence: `:ravilo-desktop:createDistributable` →
+   `codesign --force --deep --sign "Ravilo" Ravilo.app` (the identity from FR-R331-3's temporary keychain) →
+   `hdiutil create -volname Ravilo -srcfolder … -format UDZO ravilo-mac-<N>.dmg`. This also frees the job from Compose's output name (`Ravilo-<version>.dmg` under
    `build/compose/binaries/main/dmg/`). Hardened runtime and entitlements are notarisation's concern; without it,
    leave them off.
 3. **`macos-15` is arm64 and free here** — GitHub-hosted macOS runners cost nothing on a public repository (the 10×

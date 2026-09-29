@@ -22,7 +22,7 @@ table).
 | D2 | Which Macs | **Apple Silicon, macOS 14 (Sonoma) or later.** One architecture, a smaller bundle; Sonoma is the release that also added Safari's web apps in the Dock, so road 0 covers older Macs |
 | D3 | Which layout | **The TV layout** (`isTvPlatform = false`, `isHandset = false` — R256), driven by the keyboard and the mouse. It is what the web app already shows on a desktop |
 | D4 | What it says it is | `X-Ravilo-Platform: mac`; Users & devices reads **Mac** |
-| D5 | Where secrets live | ~~the macOS Keychain~~ **a `0600` file** under `~/Library/Application Support/Ravilo/` — dev review 1: with no Developer ID (owner, 2026-09-29) every build is ad-hoc signed and the Keychain would prompt on every update |
+| D5 | Where secrets live | the device tokens in the **macOS Keychain**; everything else in `~/Library/Application Support/Ravilo/`. (Briefly a `0600` file on 2026-09-29, while the build was to be ad-hoc signed; restored the same day once R331 gained one signing identity of our own — a Keychain item's access list is bound to it and survives updates. Dev review 1a.) |
 | D6 | Updates | **a line, not an updater**: when the server is newer than the app, Profile says so and links to that release's `.dmg` |
 | D7 | Closing the window | quits, **unless music is playing** — then the app stays in the Dock and the music plays on (the Music app's rule); ⌘Q always quits |
 
@@ -144,6 +144,12 @@ Buildable as written, with one owner decision folded in and one seam that needs 
    FR-R328-4's Swift library moves whole to R329 (the player, Now Playing, the display-sleep assertion), and the
    Computer Name is `scutil --get ComputerName` (a subprocess, macOS only) with `InetAddress.getLocalHost().hostName`
    as the Linux fallback. R328 is then a pure-JVM phase that builds and runs on Debian end to end.
+   **1a. Superseded the same day.** The owner's follow-up — one self-signed certificate of our own, kept in CI's secrets
+   and used on every release (R331 FR-R331-3) — gives the app a stable designated requirement, which is what a
+   Keychain item's access list is bound to. So D5 stands as first written: tokens in the Keychain through the Swift
+   library (`SecItemAdd`/`SecItemCopyMatching`, service `dev.jellystructure.ravilo`), FR-R328-4 stays in this phase,
+   and the Linux fallback is the `0600` file. The one price: a **development build signed with a different identity
+   (ad-hoc, from `gradle run`) will prompt for the Keychain** — expected, and worth one line in the module's README.
 2. **FR-R328-1 is plumbing, not porting.** `shared` and `ravilo-i18n` are Kotlin + Ktor + serialization only;
    `ravilo-ui`'s common dependencies (Compose 1.9.3, Material 3, Coil 3.2, Ktor 3.6, kotlinx-datetime) all publish
    JVM artefacts, and both modules already compile for four targets each (`androidTarget`, `linuxX64`, `wasmJs`,
