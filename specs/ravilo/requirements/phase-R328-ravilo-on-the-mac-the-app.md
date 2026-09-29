@@ -6,7 +6,7 @@
 ## Status
 
 `Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md`
-(road 2). Not dev-reviewed. Number verified free: `origin/main` `e828c944` and local `main` top at R327.
+(road 2). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free: `origin/main` `e828c944` and local `main` top at R327.
 
 **One of four, built in order:** **R328** (this — the app) → **R329** (it plays films and music) → **R330** (it
 casts, speakers first) → **R331** (the `.dmg` on every GitHub release). R331 wires the release only once the first
@@ -22,7 +22,7 @@ table).
 | D2 | Which Macs | **Apple Silicon, macOS 14 (Sonoma) or later.** One architecture, a smaller bundle; Sonoma is the release that also added Safari's web apps in the Dock, so road 0 covers older Macs |
 | D3 | Which layout | **The TV layout** (`isTvPlatform = false`, `isHandset = false` — R256), driven by the keyboard and the mouse. It is what the web app already shows on a desktop |
 | D4 | What it says it is | `X-Ravilo-Platform: mac`; Users & devices reads **Mac** |
-| D5 | Where secrets live | the device tokens in the **macOS Keychain**; everything else in `~/Library/Application Support/Ravilo/` |
+| D5 | Where secrets live | ~~the macOS Keychain~~ **a `0600` file** under `~/Library/Application Support/Ravilo/` — dev review 1: with no Developer ID (owner, 2026-09-29) every build is ad-hoc signed and the Keychain would prompt on every update |
 | D6 | Updates | **a line, not an updater**: when the server is newer than the app, Profile says so and links to that release's `.dmg` |
 | D7 | Closing the window | quits, **unless music is playing** — then the app stays in the Dock and the music plays on (the Music app's rule); ⌘Q always quits |
 
@@ -117,8 +117,9 @@ them possible later; not asked) · an auto-updater · iCloud sync of settings.
 
 ## Open questions
 
-1. **The owner's four from the research report:** is the native app worth it (the speakers need it); an Apple
-   Developer ID (R331); Apple Silicon only (D2); the Cast client written for reuse by the backend (R330, D1).
+1. **The owner's four from the research report:** is the native app worth it (the speakers need it); ~~an Apple
+   Developer ID~~ — **answered 2026-09-29: no Apple bills, a `.dmg` only** (R331 dev review 1); Apple Silicon only (D2); the
+   Cast client written for reuse by the backend (R330, D1).
 2. Should the TV layout get a desktop density by default (smaller tiles at a desk), or keep R174's grid-columns
    config and let the household set it? Lean: keep the config — no new setting.
 3. Is *Computer Name* the right device name, given that Macs are often named *{person}'s MacBook Air*? It is what
@@ -130,3 +131,52 @@ them possible later; not asked) · an auto-updater · iCloud sync of settings.
   actuals and `wasmJsMain` 1 576.
 - `shared` already carries `parseVtt`/`activeCueText` (`ReceiverSubtitles.kt`), which R329 reuses.
 - Android sends `platform = if (isTelevision) "tv" else "phone"` (`RaviloRootActuals.kt`); the web sends `"web"`.
+
+## Dev review (2026-09-29, against `main` `4c67e49f`)
+
+Buildable as written, with one owner decision folded in and one seam that needs more than a mapping. Eleven items.
+
+1. **Owner, 2026-09-29: "I will not pay any apple bills. I only want dmg version of the app."** For this phase that
+   retires the Keychain (D5): an ad-hoc signature differs on every build, and a Keychain item's access list is bound to
+   the signing identity, so each update would prompt *Ravilo wants to use your confidential information* or refuse.
+   Tokens go in `~/Library/Application Support/Ravilo/tokens.json`, mode `0600` — the same class of protection the
+   web build has in `localStorage` and Android in its preferences. **With that, R328 has no native code at all**:
+   FR-R328-4's Swift library moves whole to R329 (the player, Now Playing, the display-sleep assertion), and the
+   Computer Name is `scutil --get ComputerName` (a subprocess, macOS only) with `InetAddress.getLocalHost().hostName`
+   as the Linux fallback. R328 is then a pure-JVM phase that builds and runs on Debian end to end.
+2. **FR-R328-1 is plumbing, not porting.** `shared` and `ravilo-i18n` are Kotlin + Ktor + serialization only;
+   `ravilo-ui`'s common dependencies (Compose 1.9.3, Material 3, Coil 3.2, Ktor 3.6, kotlinx-datetime) all publish
+   JVM artefacts, and both modules already compile for four targets each (`androidTarget`, `linuxX64`, `wasmJs`,
+   `js(IR)`), so a fifth is a line per module. Their JVM settings (`jvmTarget 11`) can stay; only R331's packaging
+   needs JDK 17+.
+3. **Back is the one seam that is not a mapping.** Common code reads `Key.Back` at 11 sites and `Key.Escape` at 5
+   (`grep` 2026-09-29). On a Mac no key produces `Key.Back` — Compose Desktop has no physical key for it — so the
+   desktop `PlatformBackHandler` actual must make **Esc** reach every Back handler: one `onPreviewKeyEvent` on the
+   window that, when nothing below consumed Escape, calls the registered handler (R275's `BackToTopRegistry` is the
+   shape the phone already uses). The 5 `Key.Escape` sites (the player, sheets) keep working as they are. The web
+   build has the same gap and covers it with the browser's Back button, which a Mac window lacks.
+4. **Arrow keys already are the D-pad.** `Key.DirectionUp/Down/Left/Right/DirectionCenter/Enter` are what the TV
+   layout reads in common code, and Compose Desktop maps the arrow keys and Return to exactly those — the web build on
+   a desktop proves the path today. Nothing to write.
+5. **FR-R328-8 verified.** `GET /api/health` is exempt from auth by exact path match (`AuthPlugin.kt:130`) and answers
+   `{"status":"ok","version":"v1.44-49-g429cffe9"}` (measured on prod today). The app's own string is
+   `dev.jellystructure.shared.BuildInfo.version`, generated in `shared` from the root's `buildVersion`, so the desktop
+   module inherits it with no wiring. Compare `MAJOR.MINOR` only when **both** are plain tags; a `-N-g…` suffix on
+   either side hides the line, as the FR says.
+6. **D7 (closing) has the JDK APIs it needs:** `java.awt.desktop.AppReopenedListener` for the Dock click,
+   `QuitHandler` for ⌘Q, and Compose's `Window(onCloseRequest)` deciding hide-vs-exit while the `application` scope
+   stays alive with the window `visible = false`. Nothing platform-specific to write in Swift.
+7. **The menu bar** is Compose Desktop's `MenuBar` with `-Dapple.laf.useScreenMenuBar=true` in the JVM args (so it
+   lands in the system menu bar, not the window); *About* and *Settings…* use `Desktop.setAboutHandler` /
+   `setPreferencesHandler` (JDK 9+), which macOS places under the app menu with ⌘, itself. *Verify the property is
+   still needed with Compose 1.9.3 — it may set it.*
+8. **FR-R328-6 is one line:** `RaviloUsers.kt:94` gains `"mac" -> "Mac"`. The only server code that reads a platform
+   value is 286's `cast-audio` check; free text on the wire (R252), so R319 is untouched.
+9. **CI (FR-R328-1's last sentence):** `ci.yml`'s `checks` job runs only the fence scripts; the Kotlin builds live in
+   the `linuxX64Test` step and the Android job. Add `./gradlew :shared:desktopTest :ravilo-i18n:desktopTest
+   :ravilo-ui:desktopTest :ravilo-desktop:compileKotlin` to the Android job (it already has the JDK and the Gradle
+   cache). Unit tests only — Compose Desktop's UI needs a display, which the runner has not.
+10. **Acceptance 1 on Debian needs a display**: `:ravilo-desktop:run` opens a real window (X11/Wayland); the dev box
+    has one, the headless verification stack of 2026-09-29 does not. Fine for development, not for CI.
+11. **Wire:** none. **Value:** R328 alone browses and signs in but plays nothing; it is the milestone the other three
+    stand on, and the owner's "when fully implemented" (R331 D1) already says the release waits for all of them.

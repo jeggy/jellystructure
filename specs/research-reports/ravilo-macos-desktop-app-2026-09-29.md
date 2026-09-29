@@ -167,7 +167,8 @@ Every step is a message the phone already sends through the SDK, so success here
 1. **What is the Mac app for?** A nicer window than a browser tab ⇒ road 0 now, road 1 next. Plays everything, HDR,
    AirPlay, **music on the speakers** ⇒ road 2 — speakers settle it: neither the web app nor Safari can cast, so the
    owner's second ask needs the native app.
-2. Is an Apple Developer ID acceptable (also unblocks TestFlight if an iOS app ever happens)?
+2. ~~Is an Apple Developer ID acceptable?~~ **Owner, 2026-09-29: no Apple bills — the `.dmg` is ad-hoc signed and opened
+   once via *Open Anyway* per install (R331).**
 3. Which Macs — Apple Silicon only (lean yes: smaller bundle, one architecture) or Intel too?
 4. Should the Cast v2 client be written once in `shared` so it later becomes the backend's sender (286 road C —
    the iPhone's only way to the speakers)? Lean yes: it costs a small `expect` now and saves writing it twice.

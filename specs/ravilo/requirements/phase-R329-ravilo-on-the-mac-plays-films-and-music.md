@@ -4,8 +4,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3. Not
-dev-reviewed. Number verified free. **Second of four** (R328 → **R329** → R330 → R331). **Builds on** R328's native
+`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §3.
+**Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Second of four** (R328 → **R329** → R330 → R331). **Builds on** R328's native
 library, the receiver's `hls_only` negotiation (the Chromecast path, `2b19966f`), R218 (waiting states), R180/R195
 (the picker), R282/R285 (burn-in by restream), R322/R323 (the music and book engine), phase 180 (the stop).
 
@@ -115,8 +115,8 @@ screen stops the song (FR-R322-12).
 
 ## Open questions
 
-1. Does AVPlayer need the server to package HEVC as fMP4 HLS (`hvc1`), and does Jellyfin's HLS for an `hls_only`
-   client already do so? The Chromecast path says yes for `hlsHevc`; verify in the spike.
+1. ~~Does AVPlayer need the server to package HEVC as fMP4 HLS?~~ **Answered (dev review 2): yes, and the backend
+   already does — `hlsHevc` selects the transcoding profile whose URL comes back `SegmentContainer=mp4`.**
 2. Should a film play windowed first (lean) or go straight to full screen?
 
 ## Dev notes
@@ -124,3 +124,51 @@ screen stops the song (FR-R322-12).
 - `ClientCapabilities` already has `hlsOnly`, `hlsHevc`, `supportsHdr10`, `supportsHlg` and `supportsDolbyVision`
   (`shared/.../Models.kt`).
 - The Chromecast receiver's `capabilities()` (`ravilo-cast/.../Receiver.kt`) is the model for probe → capabilities.
+
+## Dev review (2026-09-29, against `main` `4c67e49f`)
+
+The spike is the phase; the rest is known. Twelve items.
+
+1. **FR-R329-1's two frame paths are the wrong way round.** (a) — handing AVPlayer's IOSurface-backed pixel buffers to
+   Compose without a copy — has **no public API in Skiko** (its `Image` constructors are `makeFromBitmap`,
+   `makeFromPixmap`, `makeRaster`, `makeFromEncoded`; nothing imports a Metal texture). (b) — copy each
+   `CVPixelBuffer` into a Skia bitmap — is the path every shipped Compose Desktop player uses: ComposeMediaPlayer's
+   macOS backend and JetBrains' own vlcj sample. **Build (b) first, with a pool of two bitmaps** (no allocation per
+   frame); 1080p60 is ~500 MB/s of copies and 4K24 ~800 MB/s, which Apple Silicon does. Try (a) only if (b) misses the
+   bar, and then it is Skiko work, not ours. A third fallback exists and is worse: an `AVPlayerLayer` in a child
+   `NSWindow` ordered beneath a transparent, undecorated Compose window — it loses the title bar and native full
+   screen. The bar in the FR stands.
+2. **HEVC over HLS is already fMP4.** `JellyfinClient.kt:104` — `capabilities.hlsHevc` picks the transcoding profile
+   whose URL comes back `SegmentContainer=mp4`, the form AVPlayer requires for HEVC. Open question 1 answered.
+3. **FR-R329-4 is R291's feature, not R285's.** For a client that says `hlsAudioRenditions = true`, `withRenditions`
+   (`PlaybackService.kt:371`) points a transcode's ticket at a **composed master carrying every audio track**; AVPlayer
+   switches those through its audible `AVMediaSelectionGroup`. The Mac never direct-plays a film (`hlsOnly`), so every
+   film is a transcode and every audio pick is a rendition switch. R285's restream stays only for burn-in.
+4. **Subtitles reuse the receiver's split.** With `hlsSubtitles = false` the ticket lists text tracks with a WebVTT
+   `url` and burn-in candidates with `deliveryMethod = "encode"`; `receiverSubtitles()` and `receiverSubPick()` in
+   `shared` already tell the two apart for the Chromecast — reuse both, fetch the same URL CAF loads, parse with
+   `parseVtt`, draw with `activeCueText`. One subtitle look, as D3 wants.
+5. **Music should direct-play, not go through HLS.** AVPlayer plays MP3, AAC, ALAC and FLAC files natively (FLAC since
+   macOS 10.13); `startMusicPlayback` negotiates with `audio = true` and only converts what the client cannot decode,
+   so the music engine's capabilities say `mp3, aac, flac, alac` (not Opus — AVPlayer takes Opus only inside CAF/MP4)
+   and WMA is converted by the server, exactly as for the phone (286 FR-286-7's line).
+6. **`MusicEngine`'s desktop actual is ~700 lines of new code**, the size of the Android one, because the Android
+   engine is ExoPlayer/Media3-shaped throughout. What it reuses unchanged: `MusicQueue`, `BookMath`/`BookPlayback`,
+   `MusicQueueStore` and every screen (they call `MusicPlayback`, R324). Same rule as Android: one Jellyfin session per
+   song, progress every 10 s, stop on leaving.
+7. **Now Playing needs the main thread.** `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` must be touched on the
+   main thread and deliver their commands there; the Swift library hops with `DispatchQueue.main` on the way in and
+   the JNI callback posts to Compose's main dispatcher on the way out. Same shape as the Android engine's
+   `Dispatchers.Main.immediate`.
+8. **Full screen:** Compose Desktop's `WindowPlacement.Fullscreen` uses macOS's own full screen (its own Space) —
+   FR-R329-7 needs no native code. **Display sleep** (FR-R329-8) does: `IOPMAssertionCreateWithName(NoDisplaySleep)` in
+   the Swift library, released on pause.
+9. **The Swift library arrives with this phase** (R328 dev review 1): player, Now Playing, the assertion. Built with
+   `xcrun swiftc -emit-library -target arm64-apple-macos14.0`, loaded once with `System.load`, absent on Linux with
+   `RaviloPlayer` reporting *not supported* and `MusicEngine.supported = false` — the Linux build browses, the Mac
+   plays.
+10. **Capabilities honesty (FR-R329-3):** `ClientCapabilities` already carries `hlsOnly`, `hlsHevc`, `hlsSubtitles`,
+    `hlsAudioRenditions`, `supportsHdr10/Hlg/DolbyVision`; the Chromecast receiver's `capabilities()` is the model.
+    `detectDecoderLimits` answers nulls (phase 185's *not measured yet* is the honest line in Users & devices).
+11. **Trailers:** `Desktop.browse(url)` — no embed, as the FR says.
+12. **Wire:** none. The ad-hoc signing decision (R331) does not touch this phase beyond signing the dylib.

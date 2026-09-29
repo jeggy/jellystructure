@@ -4,8 +4,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4. Not
-dev-reviewed. Number verified free. **Third of four** (R328 → R329 → **R330** → R331).
+`Planned` — written 2026-09-29 (dev-authored) from `research-reports/ravilo-macos-desktop-app-2026-09-29.md` §4.
+**Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from it. Number verified free. **Third of four** (R328 → R329 → **R330** → R331).
 
 **Builds on:**
 
@@ -136,3 +136,56 @@ VPN).
 1. Is `GET_APP_AVAILABILITY` answered by audio-only devices the same way as by displays? Verify in the cast spike
    (research report §4) before FR-R330-2 is built.
 2. Should *Play on this phone* read *Play on this Mac* on the Mac? Lean yes — one more string (`cast.play_here_mac`).
+
+## Dev review (2026-09-29, against `main` `4c67e49f`)
+
+Buildable; the protocol facts below are from the public Cast v2 documentation and open senders, to be confirmed in
+the spike on the household's five devices. Thirteen items.
+
+1. **Discovery: lean macOS's own Bonjour, not JmDNS, on the Mac.** `NWBrowser` for `_googlecast._tcp` in the Swift
+   library (R329's) sees every interface the system does and is what macOS 15's Local Network prompt is designed
+   around; JmDNS stays for the Linux dev build. The TXT keys a Cast device publishes: `id` (device id), `fn` (friendly
+   name), `md` (model), `ca` (capability bits — the SDK's `CastDevice` constants: 1 video out, 2 video in, 4 audio
+   out, 8 audio in, 32 multizone group), `rs` (receiver status — the **running app's display name**, which is what the
+   SDK shows as R324's route description), `st`. So `kind` and `busyWith` come from the record alone, before any
+   connection. *Verify all six keys on Stue, Gæsteværelse, their group, the hub and a TV.*
+2. **Protocol facts to pin (FR-R330-1):** sender id `sender-0`, the platform receiver `receiver-0`; `LAUNCH` answers
+   with a `RECEIVER_STATUS` carrying the app's `transportId` and `sessionId`; a **second** `CONNECT` goes to that
+   transport id, and every media and custom-namespace message is addressed to it; media commands carry the
+   `mediaSessionId` from the last `MEDIA_STATUS`; `requestId` correlates answers. `GET_APP_AVAILABILITY` answers
+   `availability[appId] ∈ {APP_AVAILABLE, APP_UNAVAILABLE}`; `SET_VOLUME {volume: {level}}` on the receiver
+   namespace sets the device (or group) volume; `LAUNCH` replaces whatever runs, with no confirmation from the device
+   — R324's sheet is the only gate, as FR-R330-4 says. Our custom namespace works because the receiver registers it
+   (`addCustomMessageListener(CAST_NAMESPACE)`) and CAF advertises it in the app's status.
+3. **`CastMessage` by hand is small:** seven fields — `protocol_version` (enum, 0), `source_id`, `destination_id`,
+   `namespace`, `payload_type` (0 string / 1 binary), `payload_utf8`, `payload_binary` — behind a 4-byte big-endian
+   length. No protobuf library; golden-byte tests as the FR says.
+4. **Heartbeat:** `PING` every 5 s on `receiver-0`; CAF drops a sender that goes quiet for ~10 s, so a missed
+   `PONG` window of three (15 s) is the right close rule. The heartbeat runs on the platform connection, not the app's.
+5. **`rebuildStatus` moves to common code with a small neutral input.** `CastSenderAndroid.rebuildStatus` touches
+   the SDK at 16 lines (`MediaStatus`, `RemoteMediaClient`, `MediaMetadata`); extract `mergeStatus(prev, said, media:
+   MediaSnapshot, event)` into `commonMain` with `MediaSnapshot(playerState, idleReason, positionMs, durationMs,
+   activeTrackIds, title, subtitle, imageUrl, metadataType)`, Android mapping the SDK into it, the Mac mapping
+   `MEDIA_STATUS` JSON. `MusicCast` (R324) reads only `CastRemoteStatus`, so it is untouched.
+6. **The controller is untouched.** `rememberCastSender`'s desktop actual returns
+   `ActiveCastSender(CastSenderDesktop(...), ScreenSender(api))`; `castOnChromecast(route, music)` calls
+   `route.select()`, which on the Mac opens the session; `pendingMusicHandoff` and the hand-off code
+   (`POST /api/tv/cast/handoff`, the Mac's own session — `TvRoutes.kt:662`) work exactly as on the phone.
+7. **Reconnect (FR-R330-5) without an SDK:** `ScreensSheetPrefs.lastDevice` already remembers the device; on start,
+   once discovery finds it, `GET_STATUS` on the receiver namespace says whether our application id is running; if so
+   `CONNECT` to its transport id and send our `status` command — the receiver answers with 286's queue snapshot and
+   `MusicCast` rebuilds. Both of FR-R245-5's outcomes fall out; nothing is remembered about the media itself.
+8. **Local Network (FR-R330-8) and development.** TCC binds the prompt to the **bundle**; a bare `java` process from
+   `:ravilo-desktop:run` gets no prompt on macOS 15 and multicast fails silently. Develop discovery against the
+   packaged app (`createDistributable`, then run `Ravilo.app`), and say so in the module's README. Ad-hoc signing
+   (owner, no Apple bills) does not affect the prompt.
+9. **`hasCastSdk = true` on the Mac** hides R324's *Speakers need the Android app for now* line — correct, the Mac has
+   its own sender.
+10. **Away from home:** nothing to build — mDNS does not cross the VPN, the sheet stays absent-not-empty (R265).
+11. **Films (FR-R330-6):** `CastLoadData.episodes` and R245's remote already ride the same `load`; the receiver cannot
+    tell the Mac from the phone. Verified by reading `Receiver.kt`'s `intercept`: it reads `customData` only.
+12. **Module and later reuse (D1):** `:ravilo-castv2` with `jvm()` now; a `linuxX64()` target later needs only the TLS
+    transport actual (the Kotlin/Native gap the 2026-09-18 report named) — nothing in the protocol layer changes.
+    That is 286's road C, and the iPhone's route to the speakers.
+13. **Wire:** none — the phone, the receiver and the backend see nothing new. **Size:** about two weeks including the
+    spike, on top of R328/R329.
