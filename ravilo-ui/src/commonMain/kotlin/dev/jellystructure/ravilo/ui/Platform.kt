@@ -25,3 +25,9 @@ fun isHandset(isTv: Boolean, widthPx: Int, heightPx: Int, density: Float): Boole
     val shortPx = minOf(widthPx, heightPx)
     return shortPx > 0 && shortPx / density < 600f
 }
+
+/**
+ * R324 (FR-R324-10) — whether this build carries a Cast sender at all. The music-mode sheet lists speakers only
+ * through the SDK; where there is none (the web build, an iPhone) it says so once, under the rows.
+ */
+expect val hasCastSdk: Boolean

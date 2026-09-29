@@ -83,6 +83,9 @@ data class ChromecastStatus(
     @SerialName("last_cast_at") val lastCastAt: Long? = null,
     @SerialName("max_sessions") val maxSessions: Int = 2,
     @SerialName("active_sessions") val activeSessions: Int = 0,
+    // 286 (FR-286-2)
+    @SerialName("speakers_confirmed_at") val speakersConfirmedAt: Long? = null,
+    @SerialName("speaker_name") val speakerName: String? = null,
 )
 
 @Serializable

@@ -20,6 +20,8 @@ import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.SessionProvider
 import com.google.android.gms.cast.framework.media.CastMediaOptions
 import com.google.android.gms.cast.framework.media.MediaIntentReceiver
+import com.google.android.gms.cast.framework.media.NotificationAction
+import com.google.android.gms.cast.framework.media.NotificationActionsProvider
 import com.google.android.gms.cast.framework.media.NotificationOptions
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.common.images.WebImage
@@ -40,15 +42,19 @@ import org.json.JSONObject
 class RaviloCastOptionsProvider : OptionsProvider {
     override fun getCastOptions(context: Context): CastOptions {
         val notification = NotificationOptions.Builder()
-            .setActions(
-                listOf(
-                    MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK,
-                    MediaIntentReceiver.ACTION_REWIND,
-                    MediaIntentReceiver.ACTION_FORWARD,
-                    MediaIntentReceiver.ACTION_STOP_CASTING,
-                ),
-                intArrayOf(0, 3),
-            )
+            // R324 (FR-R324-9, dev review 7) — the actions depend on what is loaded: a song gets previous · play/pause
+            // · next · stop (music actions, not ±30 s); a film keeps R245's four. Decided per notification.
+            .setNotificationActionsProvider(object : NotificationActionsProvider(context) {
+                private fun music(): Boolean = runCatching {
+                    CastContext.getSharedInstance(context).sessionManager.currentCastSession?.remoteMediaClient?.mediaInfo?.metadata?.mediaType == MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
+                }.getOrDefault(false)
+                override fun getNotificationActions(): List<NotificationAction> {
+                    val actions = if (music()) listOf(MediaIntentReceiver.ACTION_SKIP_PREV, MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK, MediaIntentReceiver.ACTION_SKIP_NEXT, MediaIntentReceiver.ACTION_STOP_CASTING)
+                        else listOf(MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK, MediaIntentReceiver.ACTION_REWIND, MediaIntentReceiver.ACTION_FORWARD, MediaIntentReceiver.ACTION_STOP_CASTING)
+                    return actions.map { NotificationAction.Builder().setAction(it).build() }
+                }
+                override fun getCompactViewActionIndices(): IntArray = if (music()) intArrayOf(1, 2) else intArrayOf(0, 3)
+            })
             .setSkipStepMs(30_000L)
             .build()
         val media = CastMediaOptions.Builder()
@@ -251,6 +257,14 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             transcoding = said?.transcoding ?: prev.transcoding,
             subSize = said?.subSize?.firstOrNull() ?: prev.subSize,
             receiverId = said?.receiverId ?: prev.receiverId,
+            // R324 (FR-R324-4/8) — the receiver's queue snapshot, rebuilt from its word (286 dev review 10). A LOAD
+            // this phone issued seeds it (see loadOnMain) until the receiver's first status replaces it.
+            music = said?.queue?.isNotEmpty() ?: prev.music,
+            queue = said?.queue ?: prev.queue,
+            queueIndex = said?.queueIndex ?: prev.queueIndex,
+            repeat = said?.repeat ?: prev.repeat,
+            shuffle = said?.shuffle ?: prev.shuffle,
+            lyricsOn = if (said != null) said.lyricsOn else prev.lyricsOn,
         )
     }
 
@@ -284,7 +298,14 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         val s = session ?: run { pendingLoad = data; return }
         pendingLoad = null
         val rmc = s.remoteMediaClient ?: return
-        val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
+        val song = data.tracks.getOrNull(data.currentIndex)
+        val meta = if (song != null) MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
+            // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
+            putString(MediaMetadata.KEY_TITLE, song.title)
+            song.artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
+            song.album?.let { putString(MediaMetadata.KEY_ALBUM_TITLE, it) }
+            (song.coverUrl ?: data.artUrl)?.let { addImage(WebImage(Uri.parse(if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it))) }
+        } else MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
             putString(MediaMetadata.KEY_TITLE, data.title)
             data.kicker?.let { putString(MediaMetadata.KEY_SUBTITLE, it) }
             // FR-R245-11 — a landscape still/backdrop for the notification, never a poster.
@@ -294,7 +315,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         // never hands it a media URL — that is the whole point of the receiver being its own device.
         val info = MediaInfo.Builder("ravilo://${data.itemId}")
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType("application/x-mpegURL")
+            .setContentType(if (song != null) "audio/mpeg" else "application/x-mpegURL")
             .setMetadata(meta)
             .setCustomData(JSONObject(json.encodeToString(CastLoadData.serializer(), data)))
             .build()
@@ -305,9 +326,13 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             .setCustomData(JSONObject(json.encodeToString(CastLoadData.serializer(), data)))
             .build()
         receiverSaid = null
-        _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true)
+        _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
+            music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
         rmc.load(req)
     }
+
+    /** R324 (FR-R324-5) — the cast session's volume, in 5 % steps from the ⋯ slider; the keys reach it by themselves. */
+    override fun setVolume(level: Double) = onMain { runCatching { session?.volume = level.coerceIn(0.0, 1.0) } }
 
     override fun play() = onMain { session?.remoteMediaClient?.play() }
     override fun pause() = onMain { session?.remoteMediaClient?.pause() }

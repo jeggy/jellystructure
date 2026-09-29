@@ -403,10 +403,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     // R265 (dev review item 5) — same shape as castAppId: server-pushed, so the glyph can be present
     // for a household's very first screen (an empty device list alone can't answer "is this on at all").
     var screensEnabled by remember { mutableStateOf(false) }
+    // R324 (dev review 12) — `RaviloConfig.cast.music`: the receiver on this server plays music queues (286).
+    var castMusic by remember { mutableStateOf(false) }
     fun refreshConfig() {
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 castAppId = cfg.cast?.appId
+                castMusic = cfg.cast?.music == true   // R324 (dev review 12)
                 screensEnabled = cfg.screens?.enabled == true
                 // Remembered as well as applied, so signing out of this profile does not take the
                 // household's language with it.
@@ -874,7 +877,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 resetTo(Dest.Home(destDisplayName(stack.lastOrNull())))
             }
         }
-        val musicState by dev.jellystructure.ravilo.ui.music.MusicEngine.state.collectAsState()
+        val musicState by dev.jellystructure.ravilo.ui.music.MusicPlayback.state.collectAsState()
+        val musicBarHidden by dev.jellystructure.ravilo.ui.music.MusicCast.barHidden.collectAsState()
         // R323 — the viewer's shelf and book pages, kept across navigation; commands to the engine run on the main thread.
         val bookStore = remember(activeUserId) { dev.jellystructure.ravilo.ui.music.AudiobookStore(apiClient) }
         val uiScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -887,8 +891,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val askNotifications = dev.jellystructure.ravilo.ui.music.rememberNotificationAsk()
         LaunchedEffect(musicState.playing) { if (musicState.playing) askNotifications() }
         // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
-        fun musicMiniOver(d: Dest) = handset && musicState.active && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
+        fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
             d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
+        // FR-R324-7 — opening Playing brings a hidden bar back.
+        LaunchedEffect(stack.lastOrNull()) { if (stack.lastOrNull() is Dest.MusicPlaying) dev.jellystructure.ravilo.ui.music.MusicCast.barHidden.value = false }
         // FR-R322-6 — landscape Playing is full-screen, not a tab.
         // R326 (FR-R326-2) — in music mode the bar stays on an album, an artist, a playlist, a book and its author
         // (R321/R322's "one title's detail hides the bar" holds for video mode only — R278 stands there).
@@ -913,7 +919,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val castSender = rememberCastSender(apiClient)
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
-        SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId }
+        SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId; castController.musicEnabled = castMusic }
+        // R324 — the music bridge reads the one controller; the screens read MusicPlayback, which follows the link.
+        LaunchedEffect(castController) { dev.jellystructure.ravilo.ui.music.MusicCast.bind(castController) }
         // R265 (FR-R265-1) — present when the user has a TV to send to OR AirPlay is available here.
         val airplayAvailable by (platformAirPlay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
         val castActive = if (castAppId != null || screensEnabled || airplayAvailable) castController else null
@@ -939,7 +947,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // mints one when the Chromecast is the side that connected, so the hand-off needs no gate beyond
         // "something can be cast to" (R265's first build gated it on castAppId, leaving a screen-only
         // household with no way to move a playing title to the TV).
-        CompositionLocalProvider(LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
+        CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
             castActive.cast(
                 itemId = d.itemId, title = d.title, kicker = d.kicker,

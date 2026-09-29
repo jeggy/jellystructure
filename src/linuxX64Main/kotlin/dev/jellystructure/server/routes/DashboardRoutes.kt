@@ -178,6 +178,9 @@ class DashboardService(
         runCatching { castService?.status(dev.jellystructure.tv.activePlaybackDevices()) }.getOrNull()?.let { cs ->
             if (cs.enabled && cs.appIdSet && !cs.verified) rows += DashboardRow("svc_cast", "svc", WARNING, "Chromecast isn’t confirmed by a real cast",
                 "The receiver is registered, but only a cast from a phone proves it reaches a TV.", fix = "info", href = "/settings?tab=connections")
+            // 286 (FR-286-9) — for information until the first speaker cast; nothing once they are confirmed.
+            if (cs.enabled && cs.appIdSet && cs.verified && cs.speakersConfirmedAt == null) rows += DashboardRow("svc_cast_speakers", "svc", INFO, "Chromecast · speakers not confirmed — step 5a",
+                "Tick *Supports casting to audio-only devices* on the console, then cast a song to a speaker once.", fix = "info", href = "/settings?tab=connections")
         }
 
         // ── Order, headline, domains ──

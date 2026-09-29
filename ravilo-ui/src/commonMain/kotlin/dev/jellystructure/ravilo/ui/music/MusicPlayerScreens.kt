@@ -65,6 +65,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
+import dev.jellystructure.ravilo.ui.components.CastMarkGlyph
+import dev.jellystructure.ravilo.ui.components.LocalCast
+import dev.jellystructure.ravilo.ui.components.SpeakerGlyph
+import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.components.ChevronGlyph
 import dev.jellystructure.ravilo.ui.components.GlyphDirection
 import dev.jellystructure.ravilo.ui.components.MusicGlyph
@@ -91,8 +95,8 @@ import kotlin.math.roundToInt
 /** The song's live position, sampled while a screen shows it (the engine publishes on changes, not every frame). */
 @Composable
 fun rememberLivePosition(): Long {
-    var pos by remember { mutableLongStateOf(MusicEngine.currentPositionMs()) }
-    LaunchedEffect(Unit) { while (true) { pos = MusicEngine.currentPositionMs(); delay(250) } }
+    var pos by remember { mutableLongStateOf(MusicPlayback.currentPositionMs()) }
+    LaunchedEffect(Unit) { while (true) { pos = MusicPlayback.currentPositionMs(); delay(250) } }
     return pos
 }
 
@@ -113,7 +117,7 @@ fun MusicPlayingScreen(
     onOpenBookAuthor: (String) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
-    val st by MusicEngine.state.collectAsState()
+    val st by MusicPlayback.state.collectAsState()
     if (st.book != null) { BookPlayingScreen(api, books, onClose, onOpenBook, onOpenBookAuthor); return }
     val portrait = LocalPortrait.current
     var showLyrics by remember { mutableStateOf(false) }
@@ -128,6 +132,7 @@ fun MusicPlayingScreen(
                 Spacer(Modifier.width(28.dp))
                 Column(Modifier.weight(1f)) {
                     Credits(t, onOpenAlbum, onOpenArtist, onFavorite)
+                    DeviceChip()
                     Spacer(Modifier.height(10.dp))
                     SeekBar(st.durationMs)
                     Transport(st)
@@ -162,6 +167,7 @@ fun MusicPlayingScreen(
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { SwipeCover(t) }
                 Spacer(Modifier.height(18.dp))
                 Credits(t, onOpenAlbum, onOpenArtist, onFavorite)
+                DeviceChip()
             }
             Spacer(Modifier.height(12.dp))
             SeekBar(st.durationMs)
@@ -169,6 +175,26 @@ fun MusicPlayingScreen(
             BottomRow(t, showLyrics, { showLyrics = !showLyrics }) { onTrackMore(t) }
         }
         FailureSheet(st.failed)
+    }
+}
+
+/** R324 (FR-R324-4) — *Playing on {device}* under the credits while a speaker plays; a tap opens the sheet. */
+@Composable
+private fun DeviceChip() {
+    val colors = RaviloTheme.colors
+    val linked by MusicCast.linked.collectAsState()
+    val device by MusicCast.deviceName.collectAsState()
+    val cast = LocalCast.current
+    val name = device
+    if (!linked || name == null) return
+    val display = MusicCast.status.collectAsState().value?.lyricsOn != null
+    Row(
+        Modifier.padding(top = 8.dp).background(colors.surfaceVariant, RoundedCornerShape(16.dp)).tap { cast?.openSheet(music = true) }.padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (display) CastMarkGlyph(tint = colors.accentSecondary, link = CastLinkState.CONNECTED, sizeDp = 16) else SpeakerGlyph(colors.accentSecondary, group = false, sizeDp = 16)
+        Spacer(Modifier.width(8.dp))
+        Text(str("cast.playing_on", mapOf("device" to name)), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -201,8 +227,8 @@ private fun SwipeCover(t: MusicTrackItem) {
                             val v = dx.value
                             scope.launch {
                                 when {
-                                    v < -w * 0.25f -> { dx.animateTo(-w, tween(160)); MusicEngine.next() }
-                                    v > w * 0.25f -> { dx.animateTo(w, tween(160)); MusicEngine.previous() }
+                                    v < -w * 0.25f -> { dx.animateTo(-w, tween(160)); MusicPlayback.next() }
+                                    v > w * 0.25f -> { dx.animateTo(w, tween(160)); MusicPlayback.previous() }
                                     else -> dx.animateTo(0f, tween(160))
                                 }
                             }
@@ -249,11 +275,11 @@ private fun SeekBar(durationMs: Long) {
             Canvas(Modifier.fillMaxSize().pointerInput(dur) {
                 detectHorizontalDragGestures(
                     onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
-                    onDragEnd = { dragFrac?.let { MusicEngine.seekTo((it * dur).toLong()) }; dragFrac = null },
+                    onDragEnd = { dragFrac?.let { MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
                     onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
                 )
-            }.pointerInput(dur) { detectTapGestures { o -> MusicEngine.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
+            }.pointerInput(dur) { detectTapGestures { o -> MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
                 val y = size.height / 2
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.textDim.copy(0.35f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
@@ -280,18 +306,18 @@ private fun Transport(st: MusicPlayerState) {
     val msgRepeat = mapOf(RepeatMode.OFF to str("music.repeat_all"), RepeatMode.ALL to str("music.repeat_one"), RepeatMode.ONE to str("music.repeat_off"))
     val msgShuffle = if (st.shuffle) str("music.shuffle_off") else str("music.shuffle_on")
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Box(Modifier.size(48.dp).tap { MusicEngine.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).tap { MusicPlayback.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
             MusicGlyph(MusicIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp, description = str("music.shuffle"))
         }
-        Box(Modifier.size(52.dp).tap { MusicEngine.previous() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.PREVIOUS, colors.text, 26.dp) }
-        Box(Modifier.size(64.dp).clip(CircleShape).background(colors.accentGradient).tap { MusicEngine.togglePlay() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(52.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.PREVIOUS, colors.text, 26.dp) }
+        Box(Modifier.size(64.dp).clip(CircleShape).background(colors.accentGradient).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
             // FR-R322-5 — buffering: the play glyph's place shows R218's pulse, and nothing else moves.
             if (st.buffering) Pulse(colors.onAccent) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.onAccent, 28.dp)
         }
-        Box(Modifier.size(52.dp).then(if (st.hasNext) Modifier.tap { MusicEngine.next() } else Modifier), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(52.dp).then(if (st.hasNext) Modifier.tap { MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
             if (st.hasNext) MusicGlyph(MusicIcon.NEXT, colors.text, 26.dp)
         }
-        Box(Modifier.size(48.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicEngine.cycleRepeat() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicPlayback.cycleRepeat() }, contentAlignment = Alignment.Center) {
             MusicGlyph(MusicIcon.REPEAT, if (st.repeat != RepeatMode.OFF) colors.accentSecondary else colors.textSecondary, 22.dp, description = str("music.repeat_all"))
             // Repeat one — the badge (drawn: a filled dot, the toast names it).
             if (st.repeat == RepeatMode.ONE) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).background(colors.accentSecondary, CircleShape))
@@ -328,15 +354,15 @@ private fun BottomRow(t: MusicTrackItem, lyricsOn: Boolean, onLyrics: () -> Unit
 /** FR-R322-5 — *Couldn't play this* with Try again and Skip; no cause is named. */
 @Composable
 private fun FailureSheet(failed: Boolean) {
-    HandsetSheet(visible = failed, onDismiss = { MusicEngine.skip() }) {
+    HandsetSheet(visible = failed, onDismiss = { MusicPlayback.skip() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
             Text(str("music.fail_t"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
             Text(str("music.fail_p"), color = Color.White.copy(0.7f), fontSize = 14.sp, fontFamily = Sora)
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton(str("music.try_again"), null, primary = true, Modifier.weight(1f)) { MusicEngine.retry() }
-                PillButton(str("music.skip"), null, primary = false, Modifier.weight(1f)) { MusicEngine.skip() }
+                PillButton(str("music.try_again"), null, primary = true, Modifier.weight(1f)) { MusicPlayback.retry() }
+                PillButton(str("music.skip"), null, primary = false, Modifier.weight(1f)) { MusicPlayback.skip() }
             }
         }
     }
@@ -374,7 +400,7 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) 
                     line.line.ifBlank { "·" },
                     color = when { i == current -> lit; i < current -> colors.textDim; else -> colors.textSecondary },
                     fontSize = 24.sp, lineHeight = 31.sp, fontWeight = if (i == current) FontWeight.Bold else FontWeight.SemiBold, fontFamily = SpaceGrotesk,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp).tap { MusicEngine.seekTo(line.tMs) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp).tap { MusicPlayback.seekTo(line.tMs) },
                 )
             }
         }
@@ -386,7 +412,7 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) 
 @Composable
 fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Unit) {
     val colors = RaviloTheme.colors
-    val st by MusicEngine.state.collectAsState()
+    val st by MusicPlayback.state.collectAsState()
     val density = LocalDensity.current
     val rowPx = with(density) { 60.dp.toPx() }
     var dragging by remember { mutableStateOf<Int?>(null) }
@@ -396,7 +422,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
         if (cur == null) EmptyLine(str("music.queue_empty"))
         else LazyColumn(contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
             item(key = "now-h") { Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("music.now_playing")) } }
-            item(key = "now") { Box(Modifier.padding(horizontal = raviloHPad)) { TrackRow(cur, showCover = true, onPlay = { MusicEngine.togglePlay() }, onMore = { onTrackMore(cur) }) } }
+            item(key = "now") { Box(Modifier.padding(horizontal = raviloHPad)) { TrackRow(cur, showCover = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) }) } }
             val up = st.upNext
             item(key = "up-h") {
                 Column(Modifier.padding(horizontal = raviloHPad)) {
@@ -405,7 +431,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to fmtTotal(left.coerceAtLeast(0L)))), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                         if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
-                            modifier = Modifier.tap { up.indices.reversed().forEach { MusicEngine.remove(st.index + 1 + it) } }.padding(vertical = 8.dp))
+                            modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = 8.dp))
                     }
                 }
             }
@@ -423,7 +449,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                             detectHorizontalDragGestures(
                                 onDragEnd = {
                                     scope.launch {
-                                        if (swipe.value < -rowPx * 1.8f) { swipe.animateTo(-rowPx * 6, tween(140)); MusicEngine.remove(queueIndex) }
+                                        if (swipe.value < -rowPx * 1.8f) { swipe.animateTo(-rowPx * 6, tween(140)); MusicPlayback.remove(queueIndex) }
                                         else swipe.animateTo(0f, tween(140))
                                     }
                                 },
@@ -432,7 +458,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.weight(1f)) { TrackRow(t, showCover = true, onPlay = { MusicEngine.playAt(queueIndex) }, onMore = { onTrackMore(t) }) }
+                    Box(Modifier.weight(1f)) { TrackRow(t, showCover = true, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) }) }
                     // The drag handle: lift and move; the row lands where it is dropped.
                     Box(Modifier.size(40.dp).pointerInput(queueIndex) {
                         detectVerticalDragGestures(
@@ -440,7 +466,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                             onDragEnd = {
                                 val steps = (dragDy / rowPx).roundToInt()
                                 val to = (queueIndex + steps).coerceIn(st.index + 1, st.queue.lastIndex)
-                                if (to != queueIndex) MusicEngine.move(queueIndex, to)
+                                if (to != queueIndex) MusicPlayback.move(queueIndex, to)
                                 dragging = null; dragDy = 0f
                             },
                             onDragCancel = { dragging = null; dragDy = 0f },
@@ -459,7 +485,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
 @Composable
 fun MusicMiniBar(onOpen: () -> Unit) {
     val colors = RaviloTheme.colors
-    val st by MusicEngine.state.collectAsState()
+    val st by MusicPlayback.state.collectAsState()
     if (st.book != null) { BookMiniBar(onOpen); return }   // R323 (FR-R323-7)
     val t = st.current ?: return
     val live = rememberLivePosition()
@@ -467,6 +493,11 @@ fun MusicMiniBar(onOpen: () -> Unit) {
     val dy = remember { Animatable(0f) }
     val density = LocalDensity.current
     val limit = with(density) { 60.dp.toPx() }
+    // R324 (FR-R324-7) — while a speaker plays, swipe-down only hides the bar; a toast says so, with *Stop*.
+    val linked by MusicCast.linked.collectAsState()
+    val device by MusicCast.deviceName.collectAsState()
+    val stillPlaying = str("cast.still_playing", mapOf("device" to (device ?: "")))
+    val stopWord = str("cast.stop_room")
     Column(
         Modifier.fillMaxWidth().height(RaviloDimens.musicMiniBarHeight)
             .offset { IntOffset(0, dy.value.roundToInt()) }.alpha(1f - (dy.value / (limit * 1.6f)).coerceIn(0f, 0.9f))
@@ -474,7 +505,7 @@ fun MusicMiniBar(onOpen: () -> Unit) {
             // J5's lean — swipe down stops: the bar follows the finger, fades, and the queue is cleared.
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
-                    onDragEnd = { scope.launch { if (dy.value > limit) { dy.animateTo(limit * 2, tween(140)); MusicEngine.clear(); dy.snapTo(0f) } else dy.animateTo(0f, tween(140)) } },
+                    onDragEnd = { scope.launch { if (dy.value > limit) { dy.animateTo(limit * 2, tween(140)); MusicPlayback.clear(); if (linked) MusicToasts.show(stillPlaying, stopWord to { MusicCast.stop() }); dy.snapTo(0f) } else dy.animateTo(0f, tween(140)) } },
                     onVerticalDrag = { _, d -> scope.launch { dy.snapTo((dy.value + d).coerceAtLeast(0f)) } },
                 )
             }
@@ -490,12 +521,22 @@ fun MusicMiniBar(onOpen: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.title, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(artistLine(t), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // FR-R324-7 — *{artist} · 🔈 Stue*: the device is never truncated before the artist.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(artistLine(t), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    val d = device
+                    if (linked && d != null) {
+                        Text(" · ", color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora)
+                        SpeakerGlyph(colors.textSecondary, group = false, sizeDp = 12)
+                        Spacer(Modifier.width(4.dp))
+                        Text(d, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1)
+                    }
+                }
             }
-            Box(Modifier.size(46.dp).tap { MusicEngine.togglePlay() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(46.dp).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
                 if (st.buffering) PlayingBars(true, colors.text, 18.dp) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.text, 22.dp)
             }
-            if (st.hasNext) Box(Modifier.size(46.dp).tap { MusicEngine.next() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.NEXT, colors.text, 20.dp) }
+            if (st.hasNext) Box(Modifier.size(46.dp).tap { MusicPlayback.next() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.NEXT, colors.text, 20.dp) }
         }
     }
 }

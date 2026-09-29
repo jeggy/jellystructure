@@ -48,6 +48,35 @@
     #nextup .t { font-size: 24px; font-weight: 700; margin: 6px 0 12px; }
     #nextup .c { font-size: 18px; color: var(--ink-soft); }
     .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
+    /* 286 (FR-286-5) — Now playing on a display: cover · title · artist · album · year, a hairline progress with
+       times, and one quiet "Next" line. No on-screen controls: the display's own remote works (the transport row
+       shows for ~5 s on a key and hides again; Back hides it and never stops). Scaled from 1920×1080 with vw so the
+       hub's 1024×600 gets the same picture. */
+    #nowplaying { background: #000; flex-direction: row; justify-content: flex-start; text-align: left; padding: 0 6vw; box-sizing: border-box; gap: 4vw; }
+    #np-cover { width: 30vw; height: 30vw; max-height: 62vh; max-width: 62vh; border-radius: 1.2vw; background: #1a1d28 linear-gradient(135deg, #AA5CC3, #00A4DC); object-fit: cover; box-shadow: 0 1.4vw 4vw rgba(0,0,0,.6); flex: none; }
+    #np-cover.none { background: linear-gradient(135deg, #2b2450, #0b2c3c); }
+    #np-side { flex: 1; min-width: 0; }
+    #np-k { font-size: 1.1vw; letter-spacing: .25vw; color: var(--accent2); font-weight: 700; text-transform: uppercase; margin-bottom: .6vw; }
+    #np-t { font-size: 3.2vw; font-weight: 700; letter-spacing: -.06vw; line-height: 1.12; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #np-a { font-size: 1.9vw; color: var(--ink-soft); margin-top: .5vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #np-al { font-size: 1.4vw; color: var(--ink-dim); margin-top: .3vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #np-bar { height: .32vw; border-radius: .2vw; background: rgba(255,255,255,.18); margin: 2.4vw 0 .7vw; }
+    #np-bar i { display: block; height: 100%; width: 0; border-radius: .2vw; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    #np-time { font-size: 1.25vw; color: var(--ink-dim); display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+    #np-next { font-size: 1.3vw; color: var(--ink-dim); margin-top: 1.6vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #np-next:empty { display: none; }
+    /* FR-286-6 — synced lyrics: the current line and two either side, under the cover row */
+    #np-ly { position: fixed; left: 6vw; right: 6vw; bottom: 3.5vh; display: none; text-align: center; }
+    #np-ly.on { display: block; }
+    #np-ly div { font-size: 1.5vw; color: var(--ink-dim); line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #np-ly div.cur { font-size: 2.1vw; color: var(--ink); font-weight: 700; }
+    /* the transport row, only while a key was pressed */
+    #np-tr { position: fixed; left: 6vw; bottom: 3.5vh; display: none; align-items: center; gap: 1vw; font-size: 1.3vw; color: var(--ink-soft); }
+    #np-tr.on { display: flex; }
+    #np-tr .g { width: 2.6vw; height: 2.6vw; border-radius: 50%; background: rgba(255,255,255,.14); display: flex; align-items: center; justify-content: center; }
+    #np-tr .g i { display: block; width: .45vw; height: 1.3vw; background: var(--ink); margin: 0 .2vw; }
+    #np-tr .g.play i { width: 0; height: 0; margin: 0 0 0 .3vw; border-left: 1.1vw solid var(--ink); border-top: .7vw solid transparent; border-bottom: .7vw solid transparent; background: none; }
+    body.ly #np-tr { bottom: 14vh; }
   </style>
 </head>
 <body>
@@ -61,6 +90,9 @@
   <section id="buffering" class="screen"><div class="spinner"></div></section>
   <section id="noserver" class="screen"><div class="mark"></div><div id="noserver-t" class="title"></div><div id="noserver-s" class="sub"></div></section>
   <section id="busy" class="screen"><div class="mark"></div><div id="busy-t" class="title"></div><div id="busy-s" class="sub"></div><div id="busy-wait" class="wait"></div></section>
+  <section id="nowplaying" class="screen"><img id="np-cover" alt=""><div id="np-side"><div id="np-k"></div><div id="np-t"></div><div id="np-a"></div><div id="np-al"></div><div id="np-bar"><i id="np-fill"></i></div><div id="np-time"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div><div id="np-next"></div></div></section>
+  <div id="np-ly"><div id="ly-0"></div><div id="ly-1"></div><div id="ly-2" class="cur"></div><div id="ly-3"></div><div id="ly-4"></div></div>
+  <div id="np-tr"><div class="g" id="np-tr-g"><i></i><i></i></div><span id="np-tr-t"></span></div>
   <div id="overlay"><div class="row"><div class="glyph"><i></i><i></i></div><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
   <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
 

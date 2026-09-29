@@ -92,6 +92,8 @@ internal class TrackedPlayback(
     // PlaybackInfo was unavailable and startPlayback fell back to a plain direct-play URL (no encode to
     // ever release).
     val jellyfinPlaySessionId: String? = null,
+    /** 286 (FR-286-8) — the ticket was a direct play: for a cast receiver, not a session against the ceiling. */
+    val directPlay: Boolean = false,
 )
 
 private const val STOP_WATCHDOG_MS = 90_000L
@@ -156,13 +158,14 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         jellyfinId: String,
         positionMs: Long,
         jellyfinPlaySessionId: String? = null,
+        directPlay: Boolean = false,
     ): StartResult {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         return mutex.withLock {
             stoppedUntilMs.remove(key)  // an explicit new start ends the post-stop grace window
             val stopAlreadyArrived = pendingStops.remove(key) != null
             val superseded = active[key]
-            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId)
+            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId, directPlay)
             lastSeen[key] = device to clock()
             publish()
             StartResult(stopAlreadyArrived, superseded)
@@ -253,6 +256,12 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
         val active = snapshot.values.map { it.device }
         val grace = lastSeenSnapshot.values.filter { (_, ts) -> now - ts <= PLAYBACK_DEFER_GRACE_MS }.map { it.first }
         return (active + grace).distinctBy { it.deviceId }
+    }
+
+    /** 286 (FR-286-8) — the devices whose every active playback is a direct play (nothing converting for them). */
+    fun activeDirectDeviceIds(): Set<String> {
+        val byDevice = snapshot.values.groupBy { it.device.deviceId }
+        return byDevice.filterValues { list -> list.all { it.directPlay } }.keys
     }
 
     /** Has [playback] gone [STOP_WATCHDOG_MS] without a heartbeat (app kill / network drop / HDMI-off)? */
@@ -474,7 +483,7 @@ class PlaybackService(
         requireVisible(device, jellyfinId)
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
         // (CastCeilingException → Server.kt StatusPages), never a spinner forever. A TV is never gated.
-        castService?.checkCeiling(device, playbackTracker.activeDeviceObjects())
+        castService?.checkCeiling(device, playbackTracker.activeDeviceObjects(), playbackTracker.activeDirectDeviceIds())
         // Phase 185 (FR-185-1) — every negotiation that reports at least one decode ceiling persists it,
         // regardless of what this particular file needs (ClientCapabilities always reports both
         // hevc/h264 ceilings together, not just the one this session happens to select).
@@ -625,9 +634,12 @@ class PlaybackService(
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         val jellyfinPlaySessionId = info?.playSessionId
         Logger.info("PlaybackInfo (music): item=$trackId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode", "tv")
+        // 286 (FR-286-8) — a speaker counts against the cast ceiling only while it converts (a WMA); a direct-played
+        // MP3 is a file download and never does.
+        if (needsTranscode) castService?.checkCeiling(device, playbackTracker.activeDeviceObjects(), playbackTracker.activeDirectDeviceIds())
         val url = if (needsTranscode) source?.transcodingUrl!!.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
             else withJellyfinToken("$jellyfinBase/Audio/$trackId/stream?Static=true&MediaSourceId=$trackId&DeviceId=${identity.deviceId}", token)
-        val startResult = playbackTracker.started(device, trackId, startMs, jellyfinPlaySessionId)
+        val startResult = playbackTracker.started(device, trackId, startMs, jellyfinPlaySessionId, directPlay = !needsTranscode)
         startResult.superseded?.let { old -> withContext(NonCancellable) { releaseSession(device, trackId, old.positionMs, old.jellyfinPlaySessionId) } }
         if (startResult.stopAlreadyArrived) withContext(NonCancellable) {
             playbackTracker.stopped(device, trackId)

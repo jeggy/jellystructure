@@ -66,4 +66,5 @@ class ActiveCastSender(
     override fun selectSubtitle(trackId: Long?) = active.selectSubtitle(trackId)
     override fun selectAudio(trackId: Long?) = active.selectAudio(trackId)
     override fun send(json: String) = active.send(json)
+    override fun setVolume(level: Double) = active.setVolume(level)
 }

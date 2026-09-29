@@ -379,6 +379,21 @@
   "srv.busy": "The server is busy right now",
   "srv.busy_sub": "It will start as soon as it can.",
   "cast.waiting": "waiting {n} s",
+  "cast.sheet_music": {
+    "text": "Play on…",
+    "note": "R324 (FR-R324-1) — the sheet's title in music mode: a speaker is not a TV. Video mode keeps screens.title."
+  },
+  "cast.speaker": "Speaker",
+  "cast.group": "Speaker group",
+  "cast.busy_with": "Busy · {app}",
+  "cast.take_over": "Stop {app} and play here?",
+  "cast.take_over_sub": "{device} is playing {app}. Playing here stops it for whoever started it.",
+  "cast.speakers_ios": "Speakers need the Android app for now",
+  "cast.still_playing": "Still playing on {device}",
+  "cast.stop_room": "Stop",
+  "cast.lyrics_on": "Lyrics on {device}",
+  "cast.no_timed_lyrics": "This song has no timed lyrics",
+  "cast.volume": "Volume",
   "screens.title": {
     "text": "Play on a TV",
     "note": "R265 — one glyph, three tiers (Play on a TV). No product, protocol or status code in any of these."

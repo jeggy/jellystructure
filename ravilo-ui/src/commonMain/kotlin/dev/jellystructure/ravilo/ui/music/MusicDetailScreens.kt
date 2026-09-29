@@ -122,8 +122,8 @@ fun MusicAlbumScreen(
                         }
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicEngine.playQueue(d.tracks, 0, context) }
-                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicEngine.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(d.tracks, 0, context) }
+                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                         }
                         Spacer(Modifier.height(10.dp))
                     }
@@ -137,7 +137,7 @@ fun MusicAlbumScreen(
                         else -> ""
                     }
                     Box(Modifier.padding(horizontal = raviloHPad)) {
-                        TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub, onPlay = { MusicEngine.playQueue(d.tracks, i, context) }, onMore = { onTrackMore(t) })
+                        TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub, onPlay = { MusicPlayback.playQueue(d.tracks, i, context) }, onMore = { onTrackMore(t) })
                     }
                 }
                 if (d.moreFromArtist.isNotEmpty()) item(key = "more") {
@@ -206,8 +206,8 @@ fun MusicArtistScreen(
                         }
                         Spacer(Modifier.height(8.dp))
                         if (d.topTracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicEngine.playQueue(d.topTracks, 0, context) }
-                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicEngine.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                            PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(d.topTracks, 0, context) }
+                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                         }
                     }
                 }
@@ -230,7 +230,7 @@ fun MusicArtistScreen(
                     }
                     itemsIndexed(shown, key = { _, t -> "t-" + t.id }) { i, t ->
                         Box(Modifier.padding(horizontal = raviloHPad)) {
-                            TrackRow(t, showCover = true, subtitle = t.album, onPlay = { MusicEngine.playQueue(d.topTracks, i, context) }, onMore = { onTrackMore(t) })
+                            TrackRow(t, showCover = true, subtitle = t.album, onPlay = { MusicPlayback.playQueue(d.topTracks, i, context) }, onMore = { onTrackMore(t) })
                         }
                     }
                 }
@@ -299,14 +299,14 @@ fun MusicPlaylistScreen(
                     if (l != null) Text(songsCount(l.tracks.size), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                     Spacer(Modifier.height(14.dp))
                     if (l != null && l.tracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicEngine.playQueue(l.tracks, 0, context) }
-                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicEngine.playQueue(l.tracks, l.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(l.tracks, 0, context) }
+                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(l.tracks, l.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                     }
                 }
             }
             if (l != null) itemsIndexed(l.tracks, key = { i, t -> "$i-" + t.id }) { i, t ->
                 Box(Modifier.padding(horizontal = raviloHPad)) {
-                    TrackRow(t, showCover = true, onPlay = { MusicEngine.playQueue(l.tracks, i, context) }, onMore = { onTrackMore(t) })
+                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, context) }, onMore = { onTrackMore(t) })
                 }
             }
         }

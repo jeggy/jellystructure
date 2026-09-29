@@ -110,7 +110,7 @@ private fun ListenRow(
         when {
             row.tracks.isNotEmpty() -> Column(Modifier.padding(horizontal = raviloHPad)) {
                 row.tracks.forEachIndexed { i, t ->
-                    TrackRow(t, showCover = true, onPlay = { MusicEngine.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
+                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
                 }
             }
             row.artists.isNotEmpty() -> LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {

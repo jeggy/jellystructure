@@ -71,6 +71,7 @@ import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
+import dev.jellystructure.shared.tv.CastTrackItem
 import dev.jellystructure.shared.tv.RemoteDevice
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -108,6 +109,13 @@ class CastController(
     /** The active viewer's (Jellyfin) user id — what a screen's `session_user_id` is compared with to
      *  tell *mine* (Playing, tappable) from *someone else's* (Busy, not tappable) — FR-R270-3. */
     var userId by mutableStateOf<String?>(null)
+    /** R324 (dev review 12) — `RaviloConfig.cast.music`: this server's receiver plays music queues (286). Against an
+     *  older server the sheet stays R265's and no song is ever handed to a receiver that cannot play it. */
+    var musicEnabled by mutableStateOf(false)
+    /** R324 (FR-R324-3) — set when a route is tapped from the music-mode sheet: the moment the session connects,
+     *  the music bridge hands the phone's queue over (or joins, with nothing playing here). */
+    var pendingMusicHandoff: Boolean = false
+        internal set
 
     val connected: Boolean get() = sender.link.value == CastLinkState.CONNECTED
 
@@ -147,6 +155,32 @@ class CastController(
     }
 
     /**
+     * R324 (FR-R324-3) / 286 (FR-286-4) — hand a music queue to the receiver: one LOAD carrying every song, the one to
+     * start and its position. The receiver negotiates each song itself; the phone becomes a remote.
+     */
+    fun castMusic(
+        tracks: List<CastTrackItem>, currentIndex: Int, positionMs: Long?, repeat: String, shuffle: Boolean, lang: String = "en",
+        onError: (Throwable) -> Unit = {},
+    ) {
+        if (tracks.isEmpty()) return
+        val t = tracks.getOrNull(currentIndex.coerceIn(0, tracks.lastIndex)) ?: return
+        scope.launch {
+            val code = runCatching { api.castHandoff() }.getOrElse { onError(it); return@launch }
+            sender.load(CastLoadData(
+                serverUrl = serverUrl, code = code.code,
+                itemId = t.id, title = t.title, kicker = t.artist, artUrl = t.coverUrl?.let { if (it.startsWith("http")) it else serverUrl.trimEnd('/') + it },
+                positionMs = positionMs, deviceName = sender.deviceName.value, receiverId = sender.status.value?.receiverId,
+                lang = lang, tracks = tracks, currentIndex = currentIndex.coerceIn(0, tracks.lastIndex), repeat = repeat, shuffle = shuffle,
+            ))
+        }
+    }
+
+    /** R324 (dev review 5) — a queue edit, a mode or the lyrics switch, sent to the receiver as one command. */
+    fun musicCommand(type: String, index: Int? = null, to: Int? = null, track: CastTrackItem? = null, on: Boolean? = null, mode: String? = null) {
+        sender.send(json.encodeToString(CastCommand.serializer(), CastCommand(type, index = index, to = to, track = track, on = on, mode = mode)))
+    }
+
+    /**
      * R265 (FR-R265-6) — starts [itemId] on a specific, not-yet-linked screen (a sheet row tapped with
      * something queued to play). Stops whichever side is currently connected first (dev review item 4's
      * "at most one linked at a time" — this covers the Chromecast-was-live direction; [cast] above covers
@@ -164,8 +198,9 @@ class CastController(
      * that TV, the TV keeps playing. The SDK then starts the session from the selected route exactly as
      * its own dialog would, and the in-player hand-off (FR-R245-4) fires on the connection as before.
      */
-    fun castOnChromecast(route: dev.jellystructure.ravilo.ui.seams.CastRoute) {
+    fun castOnChromecast(route: dev.jellystructure.ravilo.ui.seams.CastRoute, music: Boolean = false) {
         if (sender.screen.link.value != CastLinkState.NONE) sender.screen.unlink()
+        pendingMusicHandoff = music
         route.select()
     }
 
@@ -176,7 +211,8 @@ class CastController(
      * the glyph never showed anything. Null = closed; otherwise what to start on a tapped screen.
      */
     val sheet = MutableStateFlow<SheetRequest?>(null)
-    fun openSheet(playContext: ScreenPlayContext? = null) { sheet.value = SheetRequest(playContext) }
+    /** [music] — R324 (FR-R324-1): the music-mode sheet, titled *Play on…*, listing the audio routes first. */
+    fun openSheet(playContext: ScreenPlayContext? = null, music: Boolean = false) { sheet.value = SheetRequest(playContext, music && musicEnabled) }
     fun closeSheet() { sheet.value = null }
 
     /** FR-R245-10 — the sheet's *Stop casting*: explicit, ends the session on whichever side is linked. */
@@ -211,9 +247,12 @@ fun reconnectsTo(d: RemoteDevice, userId: String): Boolean {
 }
 
 /** R265 — an open "Play on a TV" sheet, and what it should start on a tapped screen (null: join only). */
-data class SheetRequest(val playContext: ScreenPlayContext?)
+data class SheetRequest(val playContext: ScreenPlayContext?, val music: Boolean = false)
 
 val LocalCast = staticCompositionLocalOf<CastController?> { null }
+
+/** R324 (FR-R324-1) — true while the app is in the listening mode, so the app bar's glyph opens the music-mode sheet. */
+val LocalMusicMode = staticCompositionLocalOf { false }
 
 /** R245 (FR-R245-4) — set by the app while the local player is on screen: called with the live position
  *  the instant a cast session connects, so the player stops and the remote takes over — one act. */
@@ -239,12 +278,13 @@ fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = 
     if (isTvPlatform) return
     val cast = LocalCast.current ?: return
     val link by cast.sender.link.collectAsState()
+    val musicMode = LocalMusicMode.current
     // R265 (FR-R265-4) — AirPlay has no sender and no session here, only the <video>'s own state; while
     // the picture is on an AirPlay TV the glyph takes its connected form (WebKit names no TV to show).
     val airplaying by (platformAirPlay?.wireless ?: remember { MutableStateFlow(false) }).collectAsState()
     Box(
         modifier.size(40.dp).clip(CircleShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { cast.openSheet(playContext) },
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { cast.openSheet(playContext, music = musicMode) },
         contentAlignment = Alignment.Center,
     ) { CastMarkGlyph(tint = RaviloTheme.colors.text, link = if (airplaying) CastLinkState.CONNECTED else link) }
 }
@@ -256,7 +296,7 @@ fun CastSheetHost(cast: CastController) {
     val airplay = platformAirPlay
     val airplayAvailable by (airplay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
     ScreensSheet(
-        cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext,
+        cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext, music = request?.music == true,
         // R265 (FR-R265-4) / R270 (FR-R270-1) — the footnote row, only where WebKit reported a target.
         airplayAvailable = airplayAvailable, onAirplay = { airplay?.showPicker() },
     )

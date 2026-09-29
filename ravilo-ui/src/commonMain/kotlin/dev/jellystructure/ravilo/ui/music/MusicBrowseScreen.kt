@@ -311,7 +311,7 @@ private fun LazyListScope.searchResults(
         item(key = "h-songs") { Group(str("mlib.songs"), r.songsTotal, if (r.songsTotal > 3 && expanded != "songs") ({ onExpand("songs") }) else null) }
         itemsIndexed(shown, key = { _, t -> "s-" + t.id }) { i, t ->
             Box(Modifier.padding(horizontal = raviloHPad)) {
-                TrackRow(t, showCover = true, onPlay = { MusicEngine.playQueue(r.songs, i, MusicContext("search", query)) }, onMore = { onTrackMore(t) })
+                TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(r.songs, i, MusicContext("search", query)) }, onMore = { onTrackMore(t) })
             }
         }
     }
@@ -391,7 +391,7 @@ private fun LazyListScope.listChip(
             chip == "artists" -> Grid(l.artists, 3, 12.dp, { paged.more() }) { a, w -> ArtistCardView(a, w) { onOpenArtist(a.id) } }
             else -> Column(Modifier.padding(horizontal = raviloHPad)) {
                 l.tracks.forEachIndexed { i, t ->
-                    TrackRow(t, showCover = true, onPlay = { MusicEngine.playQueue(l.tracks, i, MusicContext("songs", t.title)) }, onMore = { onTrackMore(t) })
+                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, MusicContext("songs", t.title)) }, onMore = { onTrackMore(t) })
                     if (i == l.tracks.lastIndex) LaunchedEffect(l.tracks.size) { paged.more() }
                 }
             }

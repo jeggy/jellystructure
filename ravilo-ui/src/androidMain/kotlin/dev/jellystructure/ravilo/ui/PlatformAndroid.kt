@@ -4,3 +4,6 @@ package dev.jellystructure.ravilo.ui
  *  runtime hardware check, not a build-flavor one, since :ravilo-android is one universal app. */
 actual val isTvPlatform: Boolean
     get() = RaviloAppContext.isTelevision
+
+/** R324 — the Android build is the one with a Cast sender. */
+actual val hasCastSdk: Boolean = true

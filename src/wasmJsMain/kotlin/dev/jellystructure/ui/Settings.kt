@@ -222,7 +222,14 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                          Chromecast built in: the printed hardware serial is not what the console
                          wants. -->
                     <p class="tiny muted" style="margin:0 0 4px"><b>A Chromecast dongle:</b> the serial number is printed on the device and shown in the Google Home app.</p>
-                    <p class="tiny muted" style="margin:0"><b>A TV with Chromecast built in:</b> the <i>Cast software</i> serial, under <b>Settings › Device Preferences › Google Cast</b> on the TV itself — <b>not</b> the serial printed on the back, and it changes if the TV is factory reset.</p>
+                    <p class="tiny muted" style="margin:0 0 10px"><b>A TV with Chromecast built in:</b> the <i>Cast software</i> serial, under <b>Settings › Device Preferences › Google Cast</b> on the TV itself — <b>not</b> the serial printed on the back, and it changes if the TV is factory reset.</p>
+                  </div></div>
+                  <!-- 286 (FR-286-1) — step 5a: one more box on the SAME application. No new Cast app, no second
+                       fee, no new receiver URL; this is what lets Ravilo see the household's speakers. -->
+                  <div class="cc-step" style="margin:12px 0 0;"><span class="step-n">5a</span><div style="flex:1;min-width:0">
+                    <p style="margin:0 0 6px">For the household's speakers: on the console's <b>Applications</b> page, open Ravilo → <b>Edit</b> and tick <b>Supports casting to audio-only devices</b> — this is what lets Ravilo see the speakers. Same application ID, no second fee.</p>
+                    <p class="tiny muted" style="margin:0 0 4px"><span class="badge">optional · music only</span> a speaker never gets video.</p>
+                    <p class="tiny muted" style="margin:0">It can take up to 15 minutes to reach the devices, and a speaker may need a restart before it asks again.</p>
                   </div></div>
                 </div>
 
@@ -3446,6 +3453,12 @@ private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?)
         verified -> """<div><span class="cc-dot"></span> Application ID <b>set and confirmed by a real cast</b></div>"""
         else -> """<div><span class="cc-dot off"></span> <b>Cast from your phone once to confirm it works.</b> Jellystructure can't check an application ID with Google — only a real cast can.</div>"""
     }
+    // 286 (FR-286-2) — the speakers, said honestly: only a real cast to an audio-only device confirms the box.
+    val speakerLine = when {
+        st == null || !verified -> ""
+        st.speakersConfirmedAt != null -> """<div><span class="cc-dot"></span> Speakers <b>reachable</b> · ${(st.speakerName ?: "a speaker").esc()} played music ${formatRelativeTime(st.speakersConfirmedAt).esc()} — only a real cast confirms it; jellystructure can't ask Google</div>"""
+        else -> """<div><span class="cc-dot off"></span> Speakers <b>not confirmed</b> — tick step 5a, then cast a song to one once.</div>"""
+    }
     val castLines = if (st != null && st.devices.isNotEmpty()) {
         val last = st.lastCastAt?.let { formatRelativeTime(it) } ?: "—"
         val n = st.devices.size
@@ -3454,7 +3467,7 @@ private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?)
         """<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · ${st.devices.first().name.esc()}</b></div>""" +
         (if (st.activeSessions > 0) """<div><span class="cc-dot"></span> <b>${st.activeSessions} of ${st.maxSessions}</b> cast sessions in use right now</div>""" else "")
     } else ""
-    stat.innerHTML = reachLine + idLine + castLines
+    stat.innerHTML = reachLine + idLine + castLines + speakerLine
 }
 
 private fun ccNowMs(): Double = js("Date.now()")

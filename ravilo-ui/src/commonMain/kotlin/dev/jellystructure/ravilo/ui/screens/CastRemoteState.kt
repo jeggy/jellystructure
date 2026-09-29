@@ -27,7 +27,8 @@ fun remoteTransportEnabled(s: CastRemoteStatus, unreachable: Boolean): Boolean =
 
 /** The mini bar shows while a cast has something to show: never after an end or a failure. */
 fun castMiniBarVisible(link: CastLinkState, s: CastRemoteStatus?): Boolean =
-    link == CastLinkState.CONNECTED && s != null && s.loaded && !s.ended && !s.failed
+    // R324 (FR-R324-7) — a music cast is the MUSIC mini bar's to show ({song} · {artist} · Stue), never this one's.
+    link == CastLinkState.CONNECTED && s != null && s.loaded && !s.ended && !s.failed && !s.music
 
 /**
  * R299 — the phone's `failed` flag after a receiver message: set by "failed", cleared by the next

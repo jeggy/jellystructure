@@ -40,6 +40,10 @@ data class ChromecastStatus(
     @SerialName("last_cast_at") val lastCastAt: Long?,
     @SerialName("max_sessions") val maxSessions: Int,
     @SerialName("active_sessions") val activeSessions: Int,
+    /** 286 (FR-286-2) — the newest `last_seen` of a receiver that enrolled from an audio-only device
+     *  (`platform = "cast-audio"`); null until the first real cast to a speaker. No backend probe (Q6). */
+    @SerialName("speakers_confirmed_at") val speakersConfirmedAt: Long? = null,
+    @SerialName("speaker_name") val speakerName: String? = null,
 )
 
 /**
@@ -67,6 +71,8 @@ class CastService(
         // Phase 236 (FR-236-1, dev review item 4) — kind, not the display name; DEVICE_PREFIX is kept
         // only as the string actually shown (this card, the Jellyfin dashboard identity).
         fun isCastDevice(device: DeviceData): Boolean = device.kind == "cast"
+        /** 286 (dev review 1) — the receiver's own `X-Ravilo-Platform` on an audio-only device (FR-286-3). */
+        const val AUDIO_PLATFORM = "cast-audio"
     }
 
     /** FR-218-3/11 — null unless enabled AND an 8-hex application id is set. Nothing derived from the
@@ -74,7 +80,7 @@ class CastService(
     fun capability(cfg: AppConfig = configStore.current): CastCapability? {
         val cc = cfg.chromecast ?: return null
         if (!cc.enabled || !cc.hasAppId()) return null
-        return CastCapability(appId = cc.appId.trim().uppercase(), receiverUrl = cfg.receiverUrl())
+        return CastCapability(appId = cc.appId.trim().uppercase(), receiverUrl = cfg.receiverUrl(), music = true /* 286 */)
     }
 
     fun maxSessions(): Int = configStore.current.chromecast?.effectiveMaxSessions() ?: 2
@@ -132,9 +138,11 @@ class CastService(
      *  already playing. A receiver starting its next episode never counts against itself. Phase 236
      *  (FR-236-9) — a Tizen/webOS screen counts like a TV (one transcode per playing device), never
      *  against this ceiling; only `kind == "cast"` does. */
-    fun checkCeiling(device: DeviceData, activeDevices: List<DeviceData>) {
+    fun checkCeiling(device: DeviceData, activeDevices: List<DeviceData>, directDeviceIds: Set<String> = emptySet()) {
         if (!isCastDevice(device)) return
-        val others = activeDevices.count { isCastDevice(it) && it.deviceId != device.deviceId }
+        // 286 (FR-286-8) — a receiver whose session is a direct play (an MP3 on a speaker) is a file download,
+        // not a transcode: it never counts. Only the converting ones do.
+        val others = activeDevices.count { isCastDevice(it) && it.deviceId != device.deviceId && it.deviceId !in directDeviceIds }
         val max = maxSessions()
         if (others >= max) {
             throw CastCeilingException(30, "All $max cast sessions are in use — try again in a moment")
@@ -181,6 +189,8 @@ class CastService(
             lastCastAt = receivers.maxOfOrNull { it.lastSeen },
             maxSessions = cc?.effectiveMaxSessions() ?: 2,
             activeSessions = activeDevices.count { isCastDevice(it) },
+            speakersConfirmedAt = receivers.filter { it.platform == AUDIO_PLATFORM }.maxOfOrNull { it.lastSeen },
+            speakerName = receivers.filter { it.platform == AUDIO_PLATFORM }.maxByOrNull { it.lastSeen }?.displayName?.removePrefix("$DEVICE_PREFIX · "),
         )
     }
 }

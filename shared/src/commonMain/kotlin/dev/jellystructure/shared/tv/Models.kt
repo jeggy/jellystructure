@@ -1370,6 +1370,8 @@ data class FavoriteRequest(
 data class CastCapability(
     @SerialName("app_id") val appId: String,
     @SerialName("receiver_url") val receiverUrl: String? = null,
+    /** 286 (dev review 10) — this server's receiver plays music queues; R324 offers the music-mode sheet only then. */
+    val music: Boolean = false,
 )
 
 /** Phase 218 (FR-218-9) — what `POST /api/tv/cast/handoff` returns to the phone: a short-lived,

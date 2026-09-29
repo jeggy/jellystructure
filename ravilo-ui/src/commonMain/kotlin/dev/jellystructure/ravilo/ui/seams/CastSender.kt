@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.seams
 import androidx.compose.runtime.Composable
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastTrack
+import dev.jellystructure.shared.tv.CastTrackItem
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.StateFlow
 
@@ -50,6 +51,15 @@ data class CastRemoteStatus(
     val receiverId: String? = null,
     /** FR-R245-19 — the receiver said its stream is a server-side conversion, not the original file. */
     val transcoding: Boolean = false,
+    // R324 (FR-R324-4) — the receiver's music snapshot (286 dev review 10): the queue, where it is, and its modes.
+    val music: Boolean = false,
+    val queue: List<CastTrackItem> = emptyList(),
+    val queueIndex: Int = -1,
+    /** `off` · `all` · `one` */
+    val repeat: String = "off",
+    val shuffle: Boolean = false,
+    /** FR-286-6 — lyrics on the display; null = a speaker (nothing to show them on). */
+    val lyricsOn: Boolean? = null,
 )
 
 interface CastSender {
@@ -69,6 +79,8 @@ interface CastSender {
     fun selectAudio(trackId: Long?)
     /** A [dev.jellystructure.shared.tv.CastCommand], already JSON-encoded, on the custom namespace. */
     fun send(json: String)
+    /** R324 (FR-R324-5) — the receiver's volume, 0.0–1.0; a no-op where the platform has no session volume. */
+    fun setVolume(level: Double) {}
 }
 
 /**
@@ -86,7 +98,13 @@ expect fun rememberCastSender(api: TvApiClient): ActiveCastSender
  * starts the session exactly as its own dialog would (the dialog does nothing more than select a route),
  * so the sender, the hand-off code and the remote are untouched.
  */
-class CastRoute(val id: String, val name: String, val selected: Boolean, val select: () -> Unit)
+class CastRoute(
+    val id: String, val name: String, val selected: Boolean, val select: () -> Unit,
+    /** R324 (dev review 1) — `display` · `speaker` · `group`; a route without a video output is a speaker. */
+    val kind: String = "display",
+    /** The receiver app another sender left running on it, as the route provider reports it; null = nothing known. */
+    val busyWith: String? = null,
+)
 
 /**
  * R265 (FR-R265-3) — the Chromecasts that answer for [appId], actively scanned for only while

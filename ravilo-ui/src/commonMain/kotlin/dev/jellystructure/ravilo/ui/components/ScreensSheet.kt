@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.hasCastSdk
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.screens.HandsetSheet
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -75,11 +76,15 @@ fun ScreensSheet(
     playContext: ScreenPlayContext?,
     airplayAvailable: Boolean = false,
     onAirplay: () -> Unit = {},
+    /** R324 (FR-R324-1) — the music-mode sheet: *Play on…*, the audio routes first; video mode lists no speaker. */
+    music: Boolean = false,
 ) {
     var devices by remember { mutableStateOf<List<RemoteDevice>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var tier2Open by remember { mutableStateOf(ScreensSheetPrefs.tier2Open()) }
     var addTvOpen by remember { mutableStateOf(false) }
+    // R324 (FR-R324-2) — a busy speaker asks first: the route waiting for *Play on {device}*.
+    var takeOver by remember { mutableStateOf<CastRoute?>(null) }
     val link by cast.sender.link.collectAsState()
     val deviceName by cast.sender.deviceName.collectAsState()
     // Scan for Chromecasts while the app is on screen (and never while it is not — R293's rule): the SDK
@@ -91,6 +96,7 @@ fun ScreensSheet(
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
         addTvOpen = false
+        takeOver = null
         loaded = false
         devices = if (cast.screensEnabled) cast.screenDevices() else emptyList()
         loaded = true
@@ -106,18 +112,27 @@ fun ScreensSheet(
     // name, which is the route's name (seen on the Pixel 9: the connected TV read "Ready").
     val castingTo = deviceName.takeIf { link == CastLinkState.CONNECTED && cast.sender.screen.link.value == CastLinkState.NONE }
     fun connectedTo(r: CastRoute) = r.selected || (castingTo != null && r.name == castingTo)
-    fun tapRoute(r: CastRoute) {
+    fun startRoute(r: CastRoute) {
         onClose()
         ScreensSheetPrefs.setLastDevice(r.id)
-        if (!connectedTo(r)) cast.castOnChromecast(r)
+        if (!connectedTo(r)) cast.castOnChromecast(r, music = music)
+    }
+    fun tapRoute(r: CastRoute) {
+        // R324 (FR-R324-2, owner) — a device another app holds is tappable, and asks first. Selecting the route
+        // launches Ravilo on it — that IS the stop; the confirmation is the only gate (dev review 3).
+        if (music && r.busyWith != null && !connectedTo(r) && !r.busyWith.equals("Ravilo", ignoreCase = true)) { takeOver = r; return }
+        startRoute(r)
     }
     HandsetSheet(visible = open, onDismiss = onClose) {
+        val pending = takeOver
         if (addTvOpen) {
             AddTvSheetBody(cast = cast, onBack = { addTvOpen = false }, onPaired = { addTvOpen = false })
+        } else if (pending != null) {
+            TakeOverSheetBody(route = pending, onBack = { takeOver = null }, onConfirm = { takeOver = null; startRoute(pending) })
         } else {
             ScreensSheetBody(
                 devices = devices, routes = routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,
-                playingTitle = status?.takeIf { it.loaded }?.title,
+                playingTitle = status?.takeIf { it.loaded }?.title, music = music,
                 tier2Open = tier2Open,
                 onToggleTier2 = { tier2Open = !tier2Open; ScreensSheetPrefs.setTier2Open(tier2Open) },
                 onTapDevice = ::tapDevice, onTapRoute = ::tapRoute, isConnected = ::connectedTo,
@@ -133,7 +148,7 @@ fun ScreensSheet(
 @Composable
 private fun ScreensSheetBody(
     devices: List<RemoteDevice>, routes: List<CastRoute>, loaded: Boolean, lastDevice: String?, myUserId: String?,
-    playingTitle: String?, tier2Open: Boolean, onToggleTier2: () -> Unit,
+    playingTitle: String?, music: Boolean, tier2Open: Boolean, onToggleTier2: () -> Unit,
     onTapDevice: (RemoteDevice) -> Unit, onTapRoute: (CastRoute) -> Unit, isConnected: (CastRoute) -> Boolean, onAddTv: (() -> Unit)?,
     airplayAvailable: Boolean, onAirplay: () -> Unit, onStop: (() -> Unit)?, onClose: () -> Unit,
 ) {
@@ -146,18 +161,23 @@ private fun ScreensSheetBody(
         .sortedByDescending { it.deviceId == lastDevice }
     val near = screens.filter { it.nearby }
     val rest = screens.filter { !it.nearby }
-    val castRows = routes.sortedByDescending { it.id == lastDevice }
+    // R324 (FR-R324-1) — in video mode no audio-only route is listed, and nothing says so (Google's rule; R265's
+    // absent-not-empty). In music mode the audio routes lead: speakers, groups, then the displays and the TVs.
+    val visibleRoutes = if (music) routes else routes.filter { it.kind == "display" }
+    val audioRows = if (music) visibleRoutes.filter { it.kind != "display" }.sortedWith(compareByDescending<CastRoute> { it.id == lastDevice }.thenBy { it.kind != "speaker" }) else emptyList()
+    val castRows = visibleRoutes.filter { it.kind == "display" }.sortedByDescending { it.id == lastDevice }
     val tier2Count = rest.size + castRows.size
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        SheetHeader(str("screens.title"), onClose)
+        SheetHeader(str(if (music) "cast.sheet_music" else "screens.title"), onClose)
         if (!loaded) {
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.5.dp, modifier = Modifier.height(28.dp).width(28.dp))
             }
         } else {
             // FR-R265-2 — absent when empty, never an empty box.
-            if (near.isNotEmpty()) {
+            if (near.isNotEmpty() || audioRows.isNotEmpty()) {
                 SectionLabel(str("screens.nearby"))
+                audioRows.forEach { ChromecastRow(it, isConnected(it), playingTitle, onClick = { onTapRoute(it) }) }
                 near.forEach { DeviceRow(it, myUserId, onClick = { onTapDevice(it) }) }
             }
             // FR-R265-3 — every paired TV the server does not call nearby, and (Android) every Chromecast
@@ -169,8 +189,12 @@ private fun ScreensSheetBody(
                     castRows.forEach { ChromecastRow(it, isConnected(it), playingTitle, onClick = { onTapRoute(it) }) }
                 }
             }
-            if (near.isEmpty() && tier2Count == 0 && !airplayAvailable && onAddTv != null) {
+            if (near.isEmpty() && audioRows.isEmpty() && tier2Count == 0 && !airplayAvailable && onAddTv != null) {
                 Text(str("screens.add"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            }
+            // R324 (FR-R324-10) — no Cast sender here (an iPhone, the web): the speakers are said to be missing, once.
+            if (music && !hasCastSdk) {
+                Text(str("cast.speakers_ios"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
             }
         }
         // Tier 3 — R270's footnote form: one quiet line, the caveat inside the label itself, one step
@@ -189,7 +213,17 @@ private fun ScreensSheetBody(
 @Composable
 private fun ChromecastRow(route: CastRoute, connected: Boolean, playingTitle: String?, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
-    val state = if (connected && playingTitle != null) str("screens.playing", mapOf("title" to playingTitle)) else str("screens.ready")
+    val ourselves = route.busyWith.equals("Ravilo", ignoreCase = true)
+    // R324 (FR-R324-2) — Ready · Playing {title} (this phone's session) · Playing Ravilo (another phone's — tapping
+    // joins) · Busy · {app} (tappable; asks first). The kind leads the state on an audio route.
+    val kindWord = when (route.kind) { "speaker" -> str("cast.speaker"); "group" -> str("cast.group"); else -> null }
+    val state = when {
+        connected && playingTitle != null -> str("screens.playing", mapOf("title" to playingTitle))
+        !connected && ourselves -> str("screens.playing", mapOf("title" to "Ravilo"))
+        !connected && route.busyWith != null -> str("cast.busy_with", mapOf("app" to route.busyWith))
+        else -> str("screens.ready")
+    }
+    val line = listOfNotNull(kindWord, state).joinToString(" · ")
     Row(
         Modifier.fillMaxWidth().heightIn(min = 54.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
@@ -197,14 +231,49 @@ private fun ChromecastRow(route: CastRoute, connected: Boolean, playingTitle: St
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.height(36.dp).width(36.dp).background(colors.surfaceVariant, CircleShape), contentAlignment = Alignment.Center) {
-            CastMarkGlyph(tint = colors.text, link = if (connected) CastLinkState.CONNECTED else CastLinkState.NONE, sizeDp = 20)
+            when (route.kind) {
+                "speaker" -> SpeakerGlyph(colors.text, group = false)
+                "group" -> SpeakerGlyph(colors.text, group = true)
+                else -> CastMarkGlyph(tint = colors.text, link = if (connected) CastLinkState.CONNECTED else CastLinkState.NONE, sizeDp = 20)
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(route.name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(state, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(line, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text("›", color = colors.textDim, fontSize = 18.sp)
+    }
+}
+
+/** R324 (FR-R324-2) — *Stop {app} and play here?* · what it does to whoever started it · Play on {device} · Cancel. */
+@Composable
+private fun TakeOverSheetBody(route: CastRoute, onBack: () -> Unit, onConfirm: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val app = route.busyWith.orEmpty()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        SheetHeader(str("cast.take_over", mapOf("app" to app)), onBack)
+        Text(str("cast.take_over_sub", mapOf("device" to route.name, "app" to app)), color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp))
+        Spacer(Modifier.height(8.dp))
+        SimpleRow(icon = { SpeakerGlyph(colors.text, group = route.kind == "group") }, label = str("cast.play_on", mapOf("device" to route.name)), onClick = onConfirm)
+        SimpleRow(icon = {}, label = str("action.cancel"), onClick = onBack, labelColor = colors.textSecondary)
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+/** A speaker — a box with a cone — and, for a group, a second smaller one behind it. Drawn, like the Cast mark. */
+@Composable
+internal fun SpeakerGlyph(tint: Color, group: Boolean, sizeDp: Int = 20) {
+    androidx.compose.foundation.Canvas(Modifier.height(sizeDp.dp).width(sizeDp.dp)) {
+        val w = size.width; val h = size.height
+        val stroke = w * 0.09f
+        fun one(x: Float, y: Float, bw: Float, bh: Float) {
+            drawRoundRect(tint, topLeft = androidx.compose.ui.geometry.Offset(x, y), size = androidx.compose.ui.geometry.Size(bw, bh), cornerRadius = androidx.compose.ui.geometry.CornerRadius(bw * 0.18f), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+            drawCircle(tint, radius = bw * 0.22f, center = androidx.compose.ui.geometry.Offset(x + bw / 2, y + bh * 0.64f), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+            drawCircle(tint, radius = bw * 0.07f, center = androidx.compose.ui.geometry.Offset(x + bw / 2, y + bh * 0.28f))
+        }
+        if (group) { one(w * 0.42f, h * 0.02f, w * 0.44f, h * 0.7f); one(w * 0.08f, h * 0.22f, w * 0.5f, h * 0.76f) }
+        else one(w * 0.22f, h * 0.04f, w * 0.56f, h * 0.92f)
     }
 }
 

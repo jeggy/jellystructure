@@ -69,6 +69,9 @@ private suspend fun loadUsersCard(scope: CoroutineScope) {
  * build has told us).
  */
 private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): String {
+    // 286 (FR-286-7) — a speaker takes no picture at all; what it takes is audio, and it counts as a session only
+    // while the server converts for it (FR-286-8).
+    if (d.platform == "cast-audio") return "audio only · MP3 · AAC · FLAC · Opus direct; WMA converted on the server · counts as a session only while converting"
     val hevc = d.decodeMaxBitrateHevc
     val h264 = d.decodeMaxBitrateH264
     if (hevc == null && h264 == null) return "picture it can take · not measured yet"
@@ -89,6 +92,7 @@ private fun appVersionLine(d: dev.jellystructure.api.OverviewDevice, vhId: Strin
     val platform = when (d.platform) {
         null -> null
         "tv" -> "TV"; "phone" -> "Phone"; "web" -> "Web"; "tizen" -> "Tizen"; "cast" -> "Chromecast"
+        "cast-audio" -> "Chromecast · <span class=\"badge\">audio only</span>"   // 286 (FR-286-7)
         else -> d.platform.esc()
     }
     val version = d.appVersion?.let { "Ravilo <b>${it.esc()}</b>" }

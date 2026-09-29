@@ -26,6 +26,24 @@ data class CastEpisode(
 )
 
 /**
+ * 286 (FR-286-4) / R324 — one song in the queue the receiver owns. Ids and titles only: 30 songs ≈ 4 KB, far under
+ * the Cast message ceiling, so the whole queue rides one LOAD (286 dev review 3). [coverUrl] is server-relative, as
+ * the app receives it; the receiver makes it absolute against its own server URL.
+ */
+@Serializable
+data class CastTrackItem(
+    val id: String,
+    val title: String,
+    val artist: String? = null,
+    val album: String? = null,
+    @SerialName("album_artist") val albumArtist: String? = null,
+    val year: Int? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("has_lyrics") val hasLyrics: Boolean = false,
+)
+
+/**
  * The LOAD request's `customData`. [code] is the single-use hand-off code; [receiverId] is the
  * receiver's own persisted device id when its storage survived since the last cast (so the same
  * `ravilo_device` row is reused), else null. [positionMs] is set only when the phone hands a live
@@ -47,6 +65,12 @@ data class CastLoadData(
     @SerialName("current_index") val currentIndex: Int = -1,
     val lang: String = "en",
     @SerialName("sub_size") val subSize: String = "M",
+    // 286 (FR-286-4) — a music LOAD: the queue, in play order; [currentIndex] is the song to start. Empty = a film
+    // or an episode as before. A receiver older than this field ignores all three.
+    val tracks: List<CastTrackItem> = emptyList(),
+    /** `off` · `all` · `one` */
+    val repeat: String = "off",
+    val shuffle: Boolean = false,
 )
 
 /** A track the receiver reports back so the phone's picker can render it (R180/R195 shape). */
@@ -83,12 +107,31 @@ data class CastReceiverMessage(
     /** FR-R245-19 — the stream the receiver is playing is a server-side conversion of the file, not the
      *  file itself (`StreamTicket.directPlay == false`). Null from a receiver older than this field. */
     @SerialName("transcoding") val transcoding: Boolean? = null,
+    // 286 (dev review 10) — the music snapshot R324 mirrors: the receiver's queue and where it is in it. Null from a
+    // receiver that predates music, and on a film.
+    val queue: List<CastTrackItem>? = null,
+    @SerialName("queue_index") val queueIndex: Int? = null,
+    val repeat: String? = null,
+    val shuffle: Boolean? = null,
+    /** FR-286-6 — lyrics on this display; null on a speaker (nothing to show them on). */
+    @SerialName("lyrics_on") val lyricsOn: Boolean? = null,
+    /** FR-286-3 — the receiver runs on an audio-only device. */
+    val headless: Boolean? = null,
 )
 
-/** Phone → receiver. */
+/** Phone → receiver. 286/R324 add `prev` · `play_at` · `queue_move` · `queue_remove` · `queue_add` · `queue_play_next`
+ *  · `repeat` · `shuffle` · `lyrics` — the same shape, extended (additive). */
 @Serializable
 data class CastCommand(
     val type: String,                                  // subtitle | audio | subsize | next | nextup_cancel | nextup_play | status
     val index: Int? = null,
     val size: String? = null,
+    /** `queue_move`'s destination. */
+    val to: Int? = null,
+    /** `queue_add` / `queue_play_next`. */
+    val track: CastTrackItem? = null,
+    /** `lyrics` (on/off) and `shuffle`. */
+    val on: Boolean? = null,
+    /** `repeat`: `off` · `all` · `one`. */
+    val mode: String? = null,
 )

@@ -10,6 +10,8 @@ import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
+import dev.jellystructure.shared.tv.CastTrackItem
+import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.ReceiverSubPick
 import dev.jellystructure.shared.tv.receiverSelectedAudio
@@ -33,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.promise
 import kotlinx.serialization.json.Json
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLImageElement
+import org.w3c.dom.events.KeyboardEvent
 import kotlin.js.Promise
 
 /**
@@ -51,6 +55,10 @@ private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; isLen
 private const val TOKEN_KEY = "ravilo.cast.token"
 private const val RECEIVER_ID_KEY = "ravilo.cast.receiverId"
 private const val PROGRESS_EVERY_MS = 10_000L
+/** 286 (FR-286-6) — lyrics on THIS display, remembered beside the receiver id. */
+private const val LYRICS_KEY = "ravilo.cast.lyrics"
+/** FR-286-5 — how long the transport row stays after a key. */
+private const val TRANSPORT_MS = 5_000L
 
 private class Receiver {
     private val cast: dynamic = js("window.cast")
@@ -78,15 +86,38 @@ private class Receiver {
     private var introSkipped = false
     private var subSize = "M"
 
+    // ── 286 — music: the receiver owns the queue (FR-286-4) ──
+    /** Null until the first LOAD asked; true on an audio-only device (FR-286-3), where no screen is ever built. */
+    private var headless: Boolean? = null
+    private val music: Boolean get() = current?.tracks?.isNotEmpty() == true
+    private var lyricsOn = localStorage.getItem(LYRICS_KEY) == "1"
+    private var lyrics: TrackLyrics? = null
+    private var lyricsJob: Job? = null
+    private var transportJob: Job? = null
+    /** The order the phone sent, kept so Shuffle → off restores it. */
+    private var unshuffled: List<CastTrackItem> = emptyList()
+
     // ── screens ──
-    private fun el(id: String) = document.getElementById(id) as HTMLElement
+    /** FR-286-3 — on a headless device the body is empty, so every element lookup lands on this detached one. */
+    private val nowhere: HTMLElement = document.createElement("div") as HTMLElement
+    private fun el(id: String) = document.getElementById(id) as? HTMLElement ?: nowhere
     private fun show(vararg on: String) {
-        for (id in listOf("idle", "loading", "buffering", "noserver", "busy")) el(id).classList.toggle("on", id in on)
+        for (id in listOf("idle", "loading", "buffering", "noserver", "busy", "nowplaying")) el(id).classList.toggle("on", id in on)
+        if ("nowplaying" !in on) { el("np-ly").classList.remove("on"); el("np-tr").classList.remove("on") }
     }
     private fun idle() {
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         show("idle")
+    }
+
+    /** FR-286-3 — `display_supported` from CAF, asked once the context has started; false ⇒ the DOM is emptied. */
+    private fun isHeadless(): Boolean {
+        headless?.let { return it }
+        val h = runCatching { (context.getDeviceCapabilities()?.display_supported as? Boolean) == false }.getOrDefault(false)
+        headless = h
+        if (h) runCatching { document.body?.innerHTML = "" }
+        return h
     }
 
     fun start() {
@@ -118,6 +149,29 @@ private class Receiver {
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
+        // 286 (dev review 4) — Google's own next/previous (the Home app, the Assistant, a display's remote) arrive
+        // as queue messages; on a music LOAD they land on OUR list, never on CAF's (which holds one item).
+        for (type in listOf(messages.MessageType.QUEUE_NEXT, messages.MessageType.QUEUE_PREV, messages.MessageType.QUEUE_UPDATE)) {
+            playerManager.setMessageInterceptor(type) { request: dynamic ->
+                if (!music) request
+                else {
+                    val jump = (request.jump as? Int) ?: (request.jump as? Double)?.toInt()
+                    when {
+                        request.type == "QUEUE_PREV" || (request.type == "QUEUE_UPDATE" && jump != null && jump < 0) -> musicPrevious()
+                        request.type == "QUEUE_NEXT" || (request.type == "QUEUE_UPDATE" && jump != null && jump > 0) -> musicNext(byViewer = true)
+                        request.type == "QUEUE_UPDATE" && request.repeatMode != null -> setRepeat(when (request.repeatMode as String) { "REPEAT_ALL", "REPEAT_ALL_AND_SHUFFLE" -> "all"; "REPEAT_SINGLE" -> "one"; else -> "off" })
+                        request.type == "QUEUE_UPDATE" && request.shuffle != null -> setShuffle(request.shuffle as Boolean)
+                        request.type == "QUEUE_UPDATE" && request.currentItemId != null -> Unit
+                    }
+                    null
+                }
+            }
+        }
+        // FR-286-5 — the display's own remote: media keys come as commands (the interceptors above), the D-pad
+        // as key events, and a tap on the hub as a click. None of it exists on a speaker (no DOM, no remote).
+        document.addEventListener("keydown", { ev -> onKey(ev as KeyboardEvent) })
+        document.addEventListener("keyup", { ev -> onKeyUp(ev as KeyboardEvent) })
+        document.addEventListener("click", { _ -> if (music) toggle() })
         val opts: dynamic = js("({})")
         opts.disableIdleTimeout = false
         context.start(opts)
@@ -127,7 +181,9 @@ private class Receiver {
         val a = api
         if (a != null && serverUrl == base) return a
         serverUrl = base.trimEnd('/')
-        return TvApiClient(client = HttpClient(Js), baseUrl = serverUrl, deviceToken = { token }, platform = "cast" /* R252 */).also { api = it }
+        // 286 (dev review 1) — an audio-only device says so on every request (`cast-audio`): it is what flips the
+        // admin card's speaker line and what Users & devices badges; the row's `kind` stays `cast`.
+        return TvApiClient(client = HttpClient(Js), baseUrl = serverUrl, deviceToken = { token }, platform = if (isHeadless()) "cast-audio" else "cast" /* R252 */).also { api = it }
     }
 
     private suspend fun intercept(request: dynamic): dynamic {
@@ -142,7 +198,9 @@ private class Receiver {
         subSize = data.subSize
         current = data
         introSkipped = false
+        isHeadless()
         val api = apiFor(data.serverUrl)
+        if (data.tracks.isNotEmpty()) return interceptMusic(request, data, api)
         el("loading-kicker").textContent = data.kicker ?: ""
         el("loading-title").textContent = data.title
         el("loading-label").textContent = ReceiverStrings.t("loading")
@@ -252,10 +310,9 @@ private class Receiver {
     }
 
     /** Busy (phase 182's 503 + Retry-After) waits and retries; unreachable shows the no-server screen. */
-    private suspend fun negotiate(api: TvApiClient, itemId: String): StreamTicket? {
-        val caps = capabilities()
+    private suspend fun negotiate(api: TvApiClient, itemId: String, start: suspend () -> StreamTicket = { api.startPlayback(itemId, capabilities()) }): StreamTicket? {
         while (true) {
-            val r = runCatching { api.startPlayback(itemId, caps) }
+            val r = runCatching { start() }
             val e = r.exceptionOrNull() ?: run { busySinceMs = null; return r.getOrNull() }
             val http = e as? TvApiError.Http
             if (http != null && http.status == 503) {
@@ -276,6 +333,243 @@ private class Receiver {
         }
     }
 
+
+    // ── 286 — music ──
+
+    /** FR-286-3 — a fixed audio set; `canDisplayType` means nothing on a speaker (dev review 2). */
+    private fun audioCapabilities(): ClientCapabilities = ClientCapabilities(
+        containers = listOf("mp3", "flac", "ogg", "opus", "m4a", "mp4", "aac", "webm"),
+        videoCodecs = emptyList(),
+        audioCodecs = listOf("mp3", "aac", "flac", "opus", "vorbis"),
+        maxAudioChannels = 2,
+        hlsOnly = false,
+        linkKind = "unknown",
+    )
+
+    private fun absolute(url: String?): String? = url?.let { if (it.startsWith("http")) it else serverUrl + (if (it.startsWith("/")) it else "/$it") }
+
+    private fun track(i: Int = current?.currentIndex ?: -1): CastTrackItem? = current?.tracks?.getOrNull(i)
+
+    /** FR-286-4 — one song: its own ticket, its own session; reported per song through progress/stop as before. */
+    private suspend fun interceptMusic(request: dynamic, data: CastLoadData, api: TvApiClient): dynamic {
+        val i = data.currentIndex.coerceIn(0, data.tracks.lastIndex)
+        val t = data.tracks[i]
+        if (unshuffled.isEmpty() || unshuffled.map { it.id }.toSet() != data.tracks.map { it.id }.toSet()) unshuffled = data.tracks
+        current = data.copy(itemId = t.id, title = t.title, kicker = t.artist, artUrl = absolute(t.coverUrl), currentIndex = i)
+        el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
+        if (!isHeadless()) { paintNow(); show("nowplaying", "buffering") }
+        if (token == null || (data.receiverId != null && data.receiverId != receiverId) || receiverId == null) {
+            val enrolled = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }
+            val pr = enrolled.getOrElse { e -> return failLoad(e) }
+            token = pr.deviceToken; receiverId = pr.session.deviceId
+            localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
+        }
+        if (config == null) config = runCatching { api.getConfig() }.getOrNull()
+        ReceiverStrings.adopt(data.lang, config?.uiLanguage)
+        val startAt = data.positionMs
+        val ticket = negotiate(api, t.id) { api.playMusic(t.id, audioCapabilities(), startAt?.takeIf { it > 0 }) } ?: return null
+        this.ticket = ticket
+        val messages = cast.framework.messages
+        val url = absolute(ticket.hlsUrl) ?: ticket.hlsUrl.orEmpty()
+        request.media.contentId = url
+        request.media.contentUrl = url
+        request.media.contentType = when {
+            url.contains(".m3u8") -> "application/x-mpegURL"
+            else -> when (ticket.container.lowercase()) {
+                "flac" -> "audio/flac"; "ogg", "oga", "opus", "vorbis" -> "audio/ogg"; "m4a", "mp4", "aac", "alac" -> "audio/mp4"; "webm" -> "audio/webm"; "wav" -> "audio/wav"
+                else -> "audio/mpeg"
+            }
+        }
+        request.media.streamType = messages.StreamType.BUFFERED
+        request.media.tracks = js("[]")
+        // FR-286-3 — the metadata block the Home app and the Assistant read: title · artist · album · album artist · cover.
+        val meta = js("new cast.framework.messages.MusicTrackMediaMetadata()")
+        meta.title = t.title
+        meta.artist = t.artist ?: ""
+        meta.albumName = t.album ?: ""
+        meta.albumArtist = t.albumArtist ?: t.artist ?: ""
+        t.year?.let { meta.releaseDate = "$it-01-01" }
+        absolute(t.coverUrl)?.let { c -> val img = js("({})"); img.url = c; val arr = js("[]"); arr.push(img); meta.images = arr }
+        request.media.metadata = meta
+        request.currentTime = ((startAt ?: ticket.startPositionMs) / 1000.0)
+        request.autoplay = true
+        positionMs = startAt ?: ticket.startPositionMs
+        durationMs = t.durationMs ?: 0L
+        paused = false
+        // Dev review 4 — advertise next/previous, or the Home app hides its buttons.
+        runCatching {
+            val cmd = messages.Command
+            playerManager.setSupportedMediaCommands(cmd.PAUSE or cmd.SEEK or cmd.STREAM_VOLUME or cmd.STREAM_MUTE or cmd.QUEUE_NEXT or cmd.QUEUE_PREV, true)
+        }
+        lyrics = null; lyricsJob?.cancel()
+        if (!isHeadless() && t.hasLyrics) lyricsJob = GlobalScope.launch { lyrics = runCatching { api.getLyrics(t.id) }.getOrNull()?.takeIf { !it.synced.isNullOrEmpty() }; paintLyrics() }
+        sendStatus()
+        return request
+    }
+
+    private fun nextIndex(byViewer: Boolean): Int? {
+        val d = current ?: return null
+        val i = d.currentIndex
+        return when {
+            d.repeat == "one" && !byViewer -> i
+            i < d.tracks.lastIndex -> i + 1
+            d.repeat == "all" || (d.repeat == "one" && byViewer && d.tracks.isNotEmpty()) -> 0
+            else -> null
+        }
+    }
+
+    /** The next song by repeat's rule; at the end of the queue the screen IS the idle view (FR-286-5). */
+    private fun musicNext(byViewer: Boolean) {
+        val n = nextIndex(byViewer)
+        if (n == null) { musicEnded(); return }
+        loadTrack(n)
+    }
+
+    private fun musicPrevious() {
+        val d = current ?: return
+        if (positionMs > 3_000L || d.currentIndex <= 0) { playerManager.seek(0.0); return }
+        loadTrack(d.currentIndex - 1)
+    }
+
+    private fun musicEnded() {
+        val d = current ?: return
+        stopSession()
+        runCatching { playerManager.stop() }
+        send(CastReceiverMessage(type = "ended", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl, hasNext = false, receiverId = receiverId,
+            queue = d.tracks, queueIndex = d.currentIndex, repeat = d.repeat, shuffle = d.shuffle, lyricsOn = if (isHeadless()) null else lyricsOn, headless = headless))
+        current = null
+        idle()
+    }
+
+    /** A LOAD the receiver issues to itself for song [i]; [interceptMusic] does the rest. */
+    private fun loadTrack(i: Int, positionMs: Long? = null) {
+        val d = current ?: return
+        val t = d.tracks.getOrNull(i) ?: return
+        stopSession()
+        val data = d.copy(itemId = t.id, title = t.title, kicker = t.artist, artUrl = absolute(t.coverUrl), positionMs = positionMs, currentIndex = i, code = "")
+        val req = js("new cast.framework.messages.LoadRequestData()")
+        req.media = js("new cast.framework.messages.MediaInformation()")
+        req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), data))
+        req.media.customData = req.customData
+        req.autoplay = true
+        playerManager.load(req)
+    }
+
+    private fun setRepeat(mode: String) { current = current?.copy(repeat = mode); sendStatus() }
+
+    private fun setShuffle(on: Boolean) {
+        val d = current ?: return
+        val cur = d.tracks.getOrNull(d.currentIndex)
+        val list = if (on) {
+            val rest = d.tracks.filterIndexed { i, _ -> i != d.currentIndex }.shuffled()
+            listOfNotNull(cur) + rest
+        } else unshuffled.ifEmpty { d.tracks }
+        val idx = list.indexOfFirst { it.id == cur?.id }.coerceAtLeast(0)
+        current = d.copy(tracks = list, currentIndex = idx, shuffle = on)
+        paintNow(); sendStatus()
+    }
+
+    private fun toggle() {
+        if (!music) return
+        showTransport()
+        if ((playerManager.getPlayerState() as String) == "PLAYING") playerManager.pause() else playerManager.play()
+    }
+
+    private var keyDownAt = 0L
+    private var keyHeld = false
+    private var lastSeekAt = 0L
+
+    /** FR-286-5 — OK/Enter · Play/Pause toggle; Stop stops; ◀ ▶ previous/next, held = seek 10 s; ▼ lyrics; Back hides only. */
+    private fun onKey(ev: KeyboardEvent) {
+        if (!music || isHeadless()) return
+        when (ev.key) {
+            "Enter", " ", "MediaPlayPause", "MediaPlay", "MediaPause" -> { ev.preventDefault(); toggle() }
+            "MediaStop" -> { ev.preventDefault(); musicEnded() }
+            "MediaTrackNext" -> { ev.preventDefault(); showTransport(); musicNext(byViewer = true) }
+            "MediaTrackPrevious" -> { ev.preventDefault(); showTransport(); musicPrevious() }
+            "ArrowLeft", "ArrowRight" -> {
+                ev.preventDefault()
+                val now = nowMs()
+                if (!ev.repeat) { keyDownAt = now; keyHeld = false; return }
+                if (now - keyDownAt < 450) return
+                keyHeld = true
+                if (now - lastSeekAt < 250) return
+                lastSeekAt = now
+                val to = (positionMs + if (ev.key == "ArrowRight") 10_000L else -10_000L).coerceIn(0L, durationMs.coerceAtLeast(0L))
+                playerManager.seek(to / 1000.0); showTransport()
+            }
+            "ArrowDown" -> { ev.preventDefault(); setLyrics(!lyricsOn) }
+            "GoBack", "BrowserBack", "Escape", "Backspace" -> { ev.preventDefault(); ev.stopPropagation(); el("np-tr").classList.remove("on"); transportJob?.cancel() }
+        }
+    }
+
+    private fun onKeyUp(ev: KeyboardEvent) {
+        if (!music || isHeadless()) return
+        if (ev.key != "ArrowLeft" && ev.key != "ArrowRight") return
+        ev.preventDefault()
+        if (keyHeld) { keyHeld = false; return }
+        showTransport()
+        if (ev.key == "ArrowRight") musicNext(byViewer = true) else musicPrevious()
+    }
+
+    private fun setLyrics(on: Boolean) {
+        lyricsOn = on
+        localStorage.setItem(LYRICS_KEY, if (on) "1" else "0")
+        paintLyrics(); sendStatus()
+    }
+
+    private fun showTransport() {
+        if (isHeadless()) return
+        el("np-tr").classList.add("on")
+        transportJob?.cancel()
+        transportJob = GlobalScope.launch { delay(TRANSPORT_MS); el("np-tr").classList.remove("on") }
+        paintTransport()
+    }
+
+    private fun paintTransport() {
+        val playing = runCatching { (playerManager.getPlayerState() as String) == "PLAYING" }.getOrDefault(!paused)
+        el("np-tr-g").classList.toggle("play", !playing)
+        el("np-tr-t").textContent = "${hms(positionMs)} / ${hms(durationMs)}"
+    }
+
+    /** FR-286-5 — cover · Now playing · title · artist · album · year · Next. */
+    private fun paintNow() {
+        if (isHeadless()) return
+        val d = current ?: return
+        val t = track() ?: return
+        val cover = el("np-cover")
+        val c = absolute(t.coverUrl)
+        if (c != null) { (cover as? HTMLImageElement)?.src = c; cover.classList.remove("none") } else { (cover as? HTMLImageElement)?.removeAttribute("src"); cover.classList.add("none") }
+        el("np-k").textContent = ReceiverStrings.t("music.now_playing")
+        el("np-t").textContent = t.title
+        el("np-a").textContent = t.artist ?: ""
+        el("np-al").textContent = listOfNotNull(t.album, t.year?.toString()).joinToString(" · ")
+        val next = nextIndex(byViewer = false)?.takeIf { it != d.currentIndex }?.let { d.tracks.getOrNull(it) }
+        el("np-next").textContent = next?.let { "${ReceiverStrings.t("music.up_next")} · ${it.title}" } ?: ""
+        paintProgress(); paintLyrics()
+    }
+
+    private fun paintProgress() {
+        if (isHeadless() || !music) return
+        val frac = if (durationMs > 0) (positionMs.toDouble() / durationMs).coerceIn(0.0, 1.0) else 0.0
+        el("np-fill").style.width = "${(frac * 1000).toInt() / 10.0}%"
+        el("np-pos").textContent = hms(positionMs)
+        el("np-dur").textContent = hms(durationMs)
+        if (el("np-tr").classList.contains("on")) paintTransport()
+    }
+
+    /** FR-286-6 — the current line and two either side, following the receiver's own position. */
+    private fun paintLyrics() {
+        if (isHeadless() || !music) return
+        val lines = lyrics?.synced
+        val on = lyricsOn && !lines.isNullOrEmpty()
+        el("np-ly").classList.toggle("on", on)
+        document.body?.classList?.toggle("ly", on)
+        if (!on || lines == null) return
+        val cur = lines.indexOfLast { it.tMs <= positionMs + 200 }
+        for (k in 0..4) el("ly-$k").textContent = lines.getOrNull(cur - 2 + k)?.line?.ifBlank { "·" } ?: ""
+    }
+
     private fun textStyle(): dynamic {
         val style = js("new cast.framework.messages.TextTrackStyle()")
         style.fontScale = when (subSize) { "S" -> 0.85; "L" -> 1.25; else -> 1.0 }
@@ -292,7 +586,8 @@ private class Receiver {
         positionMs = ms.toLong()
         durationMs = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
         val data = current ?: return
-        if (el("loading").classList.contains("on")) show()
+        if (music) { if (el("buffering").classList.contains("on")) show("nowplaying"); paintProgress(); paintLyrics() }
+        else if (el("loading").classList.contains("on")) show()
         // FR-R245-14 — Skip Intro on the receiver, when the household's setting is Auto.
         val ep = data.episodes.getOrNull(data.currentIndex)
         val iStart = ep?.introStartMs
@@ -316,9 +611,9 @@ private class Receiver {
     private fun onPlayerState() {
         val st = playerManager.getPlayerState() as String
         when (st) {
-            "BUFFERING" -> if (!el("loading").classList.contains("on")) show("buffering")
-            "PLAYING" -> { paused = false; show(); }
-            "PAUSED" -> { paused = true; show(); flashOverlay(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true) } } }
+            "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
+            "PLAYING" -> { paused = false; if (music) { show("nowplaying"); paintTransport() } else show() }
+            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true) } } }
             "IDLE" -> {}
         }
         sendStatus()
@@ -386,6 +681,8 @@ private class Receiver {
         stopSession()
         // R297 (FR-R297-2) — only a real end moves on. An error used to walk the whole queue, ~2 s an episode.
         val reachedEnd = endedReason == null || endedReason == cast.framework.events.EndedReason.END_OF_STREAM
+        // 286 (FR-286-4) — a song's end: the next by repeat's rule; the queue's end is the idle view.
+        if (music) { if (reachedEnd) musicNext(byViewer = false) else failed(); return }
         if (reachedEnd && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) { loadNext(); return }
         // R299 (FR-R299-1) — a load that failed is not an end. The phone used to read "ended" with no
         // media session as R245's "Lost contact… it may still be playing", every clause of it false.
@@ -416,6 +713,31 @@ private class Receiver {
     // ── phone → receiver ──
     private fun onCommand(raw: String) {
         val cmd = runCatching { json.decodeFromString(CastCommand.serializer(), raw) }.getOrNull() ?: return
+        if (music) when (cmd.type) {
+            "next" -> { musicNext(byViewer = true); return }
+            "prev" -> { musicPrevious(); return }
+            "play_at" -> { cmd.index?.let { loadTrack(it) }; return }
+            "queue_move" -> {
+                val d = current ?: return; val from = cmd.index ?: return; val to = cmd.to ?: return
+                if (from !in d.tracks.indices || to !in d.tracks.indices) return
+                val list = d.tracks.toMutableList(); val item = list.removeAt(from); list.add(to, item)
+                val idx = list.indexOfFirst { it.id == d.itemId }.coerceAtLeast(0)
+                current = d.copy(tracks = list, currentIndex = idx); paintNow(); sendStatus(); return
+            }
+            "queue_remove" -> {
+                val d = current ?: return; val i = cmd.index ?: return
+                if (i !in d.tracks.indices || i == d.currentIndex) return
+                val list = d.tracks.toMutableList(); list.removeAt(i)
+                current = d.copy(tracks = list, currentIndex = if (i < d.currentIndex) d.currentIndex - 1 else d.currentIndex); paintNow(); sendStatus(); return
+            }
+            "queue_add" -> { val d = current ?: return; val t = cmd.track ?: return; current = d.copy(tracks = d.tracks + t); paintNow(); sendStatus(); return }
+            "queue_play_next" -> { val d = current ?: return; val t = cmd.track ?: return; val list = d.tracks.toMutableList(); list.add(d.currentIndex + 1, t); current = d.copy(tracks = list); paintNow(); sendStatus(); return }
+            "repeat" -> { setRepeat(cmd.mode ?: "off"); paintNow(); return }
+            "shuffle" -> { setShuffle(cmd.on == true); return }
+            "lyrics" -> { setLyrics(cmd.on == true); return }
+            "status" -> { sendStatus(); return }
+            else -> return
+        }
         when (cmd.type) {
             "subsize" -> { subSize = cmd.size ?: "M"; playerManager.setTextTrackStyle(textStyle()); sendStatus() }
             "next" -> loadNext()
@@ -474,11 +796,14 @@ private class Receiver {
         val active: dynamic = runCatching { playerManager.getMediaInformation()?.let { playerManager.getPlayerState(); playerManager.getStats() } }.getOrNull()
         send(CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
-            hasNext = nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
+            hasNext = if (music) nextIndex(byViewer = true) != null else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.
             selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
+            // 286 (dev review 10) — the music snapshot the phone mirrors (R324 FR-R324-4).
+            queue = d.tracks.takeIf { it.isNotEmpty() }, queueIndex = d.currentIndex.takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
+            lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
         ))
     }
 

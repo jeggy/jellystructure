@@ -26,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +55,7 @@ import dev.jellystructure.shared.tv.MusicTrackItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -201,7 +204,7 @@ fun TrackRow(
     subtitle: String? = null,
 ) {
     val colors = RaviloTheme.colors
-    val st by MusicEngine.state.collectAsState()
+    val st by MusicPlayback.state.collectAsState()
     val isCurrent = st.current?.id == t.id
     Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).tap(onPlay).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         when {
@@ -267,8 +270,9 @@ fun TrackActionsSheet(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            SheetRow(str("music.play_next"), MusicIcon.NEXT) { MusicEngine.playNext(t); MusicToasts.show(msgNext); onDismiss() }
-            SheetRow(str("music.add_queue"), MusicIcon.QUEUE) { MusicEngine.addToQueue(t); MusicToasts.show(msgQueued); onDismiss() }
+            CastBlock(t, onDismiss)
+            SheetRow(str("music.play_next"), MusicIcon.NEXT) { MusicPlayback.playNext(t); MusicToasts.show(msgNext); onDismiss() }
+            SheetRow(str("music.add_queue"), MusicIcon.QUEUE) { MusicPlayback.addToQueue(t); MusicToasts.show(msgQueued); onDismiss() }
             SheetRow(str("music.add_playlist"), MusicIcon.LISTEN, dim = true, trailing = str("music.phase2")) { onDismiss() }
             t.albumId?.let { id -> SheetRow(str("music.go_album"), MusicIcon.BROWSE) { onDismiss(); onGoAlbum(id) } }
             t.artists.firstOrNull()?.let { a -> SheetRow(str("music.go_artist"), MusicIcon.LISTEN) { onDismiss(); onGoArtist(a.id) } }
@@ -276,6 +280,48 @@ fun TrackActionsSheet(
             val fav = favs[t.id] ?: t.favorite
             SheetRow(str("nav.my_list"), if (fav) MusicIcon.HEART_FILLED else MusicIcon.HEART) { onFavorite(t, !fav); onDismiss() }
         }
+    }
+}
+
+/**
+ * R324 (FR-R324-5) — while a speaker plays, a block titled with the device above the song's own entries: a volume
+ * slider in 5 % steps · *Lyrics on {device}* (displays only; disabled when the song has no timed lyrics) · *Play on
+ * this phone* · *Stop casting* in the warning colour.
+ */
+@Composable
+private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
+    val linked by MusicCast.linked.collectAsState()
+    val device by MusicCast.deviceName.collectAsState()
+    val st by MusicCast.status.collectAsState()
+    val name = device
+    if (!linked || name == null) return
+    val colors = RaviloTheme.colors
+    var volume by remember { mutableStateOf(0.5f) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Text(name.uppercase(), color = Color.White.copy(0.5f), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 6.dp))
+        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(str("cast.volume"), color = Color.White, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.width(88.dp))
+            androidx.compose.material3.Slider(
+                value = volume, onValueChange = { v -> volume = (v * 20).roundToInt() / 20f }, onValueChangeFinished = { MusicCast.setVolume(volume.toDouble()) },
+                steps = 19, modifier = Modifier.weight(1f),
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = colors.accentSecondary, inactiveTrackColor = Color.White.copy(0.2f), activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+            )
+        }
+        val lyricsOn = st?.lyricsOn
+        if (lyricsOn != null) {
+            val can = t.hasLyrics
+            SheetRow(str("cast.lyrics_on", mapOf("device" to name)), MusicIcon.LYRICS, dim = !can, trailing = if (!can) str("cast.no_timed_lyrics") else if (lyricsOn) str("on") else str("off")) {
+                if (can) MusicCast.setLyrics(!lyricsOn)
+            }
+        }
+        SheetRow(str("cast.play_here"), MusicIcon.PLAY) { onDismiss(); MusicCast.playHere() }
+        Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { onDismiss(); MusicCast.stop() }, verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(34.dp))
+            Text(str("cast.stop"), color = Color(0xFFFF9B8A), fontSize = 15.sp, fontFamily = Sora)
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(0.1f)))
+        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -305,21 +351,33 @@ object MusicFavorites {
 object MusicToasts {
     private val _msg = MutableStateFlow<Pair<String, Long>?>(null)
     val message: StateFlow<Pair<String, Long>?> = _msg
+    /** R324 (FR-R324-7) — an action beside the text (*Still playing on Stue* · **Stop**); the toast then stays 5 s. */
+    private val _action = MutableStateFlow<Pair<String, () -> Unit>?>(null)
+    val action: StateFlow<Pair<String, () -> Unit>?> = _action
     private var n = 0L
-    fun show(text: String) { _msg.value = text to ++n }
-    fun hide(id: Long) { if (_msg.value?.second == id) _msg.value = null }
+    fun show(text: String, action: Pair<String, () -> Unit>? = null) { _action.value = action; _msg.value = text to ++n }
+    fun hide(id: Long) { if (_msg.value?.second == id) { _msg.value = null; _action.value = null } }
 }
 
 @Composable
 fun MusicToastHost(bottomInset: Dp) {
     val m by MusicToasts.message.collectAsState()
-    LaunchedEffect(m?.second) { m?.let { delay(2200); MusicToasts.hide(it.second) } }
+    val action by MusicToasts.action.collectAsState()
+    LaunchedEffect(m?.second) { m?.let { delay(if (action != null) 5_000 else 2200); MusicToasts.hide(it.second) } }
     Box(Modifier.fillMaxSize().padding(bottom = bottomInset + 12.dp), contentAlignment = Alignment.BottomCenter) {
         AnimatedVisibility(visible = m != null, enter = fadeIn(), exit = fadeOut()) {
-            Text(
-                m?.first ?: "", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
-                modifier = Modifier.background(Color(0xE6202433), RoundedCornerShape(20.dp)).border(1.dp, Color.White.copy(0.08f), RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
-            )
+            Row(
+                Modifier.background(Color(0xE6202433), RoundedCornerShape(20.dp)).border(1.dp, Color.White.copy(0.08f), RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(m?.first ?: "", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                val a = action
+                if (a != null) {
+                    Spacer(Modifier.width(14.dp))
+                    Text(a.first, color = RaviloTheme.colors.accentSecondary, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = Sora,
+                        modifier = Modifier.tap { a.second(); m?.let { MusicToasts.hide(it.second) } })
+                }
+            }
         }
     }
 }
