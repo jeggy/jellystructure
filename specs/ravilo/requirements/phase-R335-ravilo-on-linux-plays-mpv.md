@@ -6,8 +6,10 @@
 
 ## Status
 
-`Planned` — written 2026-09-30 (dev-authored) from `research-reports/ravilo-linux-flatpak-2026-09-29.md` §5. Number
-verified free: `origin/main` tops at R332, local `main` at R334.
+`⚠ Partial` — **built 2026-09-30; the engine is verified in the Fedora container (software decode, both files at their
+frame rate through the ring); a real GPU, a real 4K display and path (b) are unverified** (§Build notes). Written
+2026-09-30 (dev-authored) from `research-reports/ravilo-linux-flatpak-2026-09-29.md` §5. Number verified free:
+`origin/main` tops at R332, local `main` at R334.
 
 **Builds on** R328 (the desktop app; on Linux every seam but the player already answers), R329 (the player seam's
 shape on the desktop: an engine behind `RaviloPlayer`/`MusicEngine`, frames copied into a three-buffer ring Skia
@@ -151,3 +153,37 @@ follow-up) · Windows.
 3. **A 4K window on path (a)**: 33 MB per frame through zimg and a Skia upload; at 24 fps plausible on a desktop
    CPU, at 60 fps probably not. The build notes carry the numbers from wherever they can be measured.
 4. **The failure copy for "no libmpv"** — three languages, R279's table.
+
+## Build notes (2026-09-30)
+
+Built the same day, on Debian, run in the Fedora container (`~/fedora`, D9): Fedora's `mpv-libs` 0.41 (libmpv API 2.5),
+RPM Fusion's FFmpeg for H.264/HEVC decoders, two generated files — 1080p H.264 with two audio tracks and a SubRip
+track, 4K HEVC 10-bit — and `Ravilo --mpv-bench` / `--mpv-window` (FR-R335-11), added to the app for exactly this.
+
+1. **FR-R335-1/2 as specified.** `Mpv.kt` (the JNA surface), `MpvPlayer.kt` (the engine), `DesktopEngine.kt` (the
+   shared surface; the Mac's `MacPlayer` is wrapped, not changed). Both desktop players pick the engine by platform;
+   `MacPlayerState` stays the state's name on both — renaming it would have touched the Mac's files for nothing.
+2. **The ring (path a) plays at the file's frame rate**: 1080p H.264 — first frame in 413 ms, 133 frames in 5.6 s
+   (23.7 fps), 6 drops; 4K HEVC 10-bit — first frame in 850 ms, 24.0 fps, software decode on 32 cores. The first
+   measurement said 33 ms of "render" at every size; that was mpv holding each frame until its display time
+   (`MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME`, on by default). Off, the real cost is **3 ms a frame at 1080p and 5 ms
+   for 4K scaled to a 1080p surface**, and the update flag paces the frames. `sw-fast` changed nothing measurable.
+3. **Tracks, seek, picks:** mpv's `track-list` gives both audio tracks with language and channels and the subtitle
+   with its codec; a seek to 2 s lands at 2.08 s; `aid` and `sid` follow the picks. Unit tests cover the JSON, the
+   param layout and the honest absence.
+4. **Path (b) is unproven** (open question 1). The plumbing works — with mpv's `x11` output the picture paints inside
+   the embedded canvas — but the container has no GL for anyone: Skia falls back to software, mpv's `gpu`/`gpu-next`
+   stay black, and the red Compose box of `--mpv-window` does not draw over the canvas. Whether interop blending
+   composes the chrome over a native child on a real desktop is the first thing to try there; until then the ring is
+   the default and `-Dravilo.video=gpu` is an experiment. The engine releases mpv before AWT destroys the canvas
+   (Xlib's BadWindow would otherwise end the process).
+5. **FR-R335-7's copy** (*Playback is not available in this build*) is **not done**: the failure card's text comes from
+   `PlayerSessionState.Error` in common code with one generic kind, and a new kind touches every platform; R237's card
+   shows as before. Owed.
+6. **The Flatpak (FR-R335-10):** the four modules and the `ffmpeg-full` extension are in the manifest. The
+   `--local` render of R333 had to change twice for it: it now clones the checkout's HEAD (a `dir` source walked every
+   module's build output and the backend's unreadable files), and matches the app module's source line by line (its
+   regex had crossed into the mpv modules). The build's result is recorded below when it lands.
+7. **Not measured anywhere yet:** hardware decode (`hwdec` reports `no` in the container — CUDA has no driver there,
+   VA-API no device), a 4K surface, a real display's frame pacing, HDR tone-mapping's look. Acceptance 2 is the
+   owner's Linux desktop with a GPU.
