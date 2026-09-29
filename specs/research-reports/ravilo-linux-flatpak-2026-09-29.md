@@ -24,11 +24,11 @@ no spec written. Prospective phases at the end (§9); numbers to be verified fre
    and its software render API writes BGRA frames into a buffer we own — the same `takeFrame()` path Compose already
    draws. Flathub has the exact recipe (jellyfin-media-player builds mpv + libplacebo + libass as modules). GStreamer
    is the runtime-native alternative and the fallback (§5).
-4. **The app id needs a decision.** The Mac bundle and the Android package are `dev.jellystructure.ravilo`, but
-   Flathub requires the domain to be the project's and reachable over HTTPS, and **`jellystructure.dev` is not
-   registered** (Google's RDAP: *not found*, 2026-09-29). Either register it (a domain, not an Apple bill — owner's
-   call) and use `dev.jellystructure.Ravilo`, or use `io.github.jeggy.Ravilo` forever — an id cannot change later
-   without an end-of-life rebase (§4).
+4. **The app id is `net.jebster.Ravilo`** (owner, 2026-09-29): the household's own domain, which Flathub accepts
+   because the owner controls it and it answers over HTTPS. The Mac bundle and the Android package stay
+   `dev.jellystructure.ravilo` (`jellystructure.dev` is unregistered — Google's RDAP: *not found*, 2026-09-29 — and
+   nothing links the three ids). What the choice costs and what stays scrubbed is in §4; an id cannot change later
+   without an end-of-life rebase.
 5. **Permissions are six lines, and one of them is X11.** OpenJDK 21 has no Wayland toolkit (the pure-Wayland
    *Wakefield* toolkit is a prototype on OpenJDK 25), so the app needs `--socket=x11` + `--share=ipc`, served by
    XWayland on a Wayland desktop; plus network, PulseAudio, `dri` for Skia's OpenGL and mpv's hardware decode, an
@@ -91,7 +91,7 @@ Plus `flathub.json` in the Flathub repository: `{"only-arches": ["x86_64"]}` for
 ### 2.2 The build, inside the sandbox
 
 ```yaml
-app-id: dev.jellystructure.Ravilo            # or io.github.jeggy.Ravilo — §4
+app-id: net.jebster.Ravilo                   # owner's choice — §4
 runtime: org.freedesktop.Platform
 runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
@@ -253,14 +253,26 @@ projects on GitHub that use a code-hosting id **must** use `io.github.<user>.<ap
 reserved. Verification (the badge) later asks for a token at `https://<domain>/.well-known/org.flathub.VerifiedApps.txt`
 or, for `io.github`, a repository named after the app.
 
-| Option | Id | What it needs | Consequence |
-|---|---|---|---|
-| **A. Own the domain** | `dev.jellystructure.Ravilo` | registering `jellystructure.dev` (unregistered on 2026-09-29 — Google's RDAP answers *not found*; a `.dev` costs about US$12 a year at any registrar) and serving one text file over HTTPS on it (Caddy already fronts the household) | one identity across Android (`dev.jellystructure.ravilo`), the Mac bundle, the Cast console and Flathub; verifiable |
-| **B. The GitHub id** | `io.github.jeggy.Ravilo` | nothing | free, allowed, verifiable through the repo; the Linux app is the odd one out for ever, and the id is tied to the account name |
+Three ids were possible: `dev.jellystructure.Ravilo` (registering `jellystructure.dev`, unregistered on 2026-09-29 —
+Google's RDAP answers *not found*), `io.github.jeggy.Ravilo` (free, tied to the account name), and the household's
+own domain. **Owner, 2026-09-29: `net.jebster.Ravilo`.** It costs nothing, it is verifiable (one text file at
+`/.well-known/org.flathub.VerifiedApps.txt` on the domain, over HTTPS), and the last component is capitalised by
+convention. The Mac bundle id and the Android package stay `dev.jellystructure.ravilo`; nothing links them.
 
-Lean: **A** — the identity already exists in three places, and it is not an Apple bill. But it is money and a
-renewal, so it is the owner's (§7 D1). Either way the last component is capitalised by convention; the Mac bundle id
-stays as it is (macOS is case-insensitive about neither, and nothing links them).
+**What the choice makes public, and what stays scrubbed.** The household's domain was scrubbed from this public repo
+and its history on 2026-09-23, and `scripts/check-deanonymization.sh` still bans it. An app id is the most public
+string an app carries — the Flathub repository `flathub/net.jebster.Ravilo`, the store page, the manifest, the
+metainfo, the desktop file, `FLATPAK_ID`, the release notes and every install's `~/.var/app/net.jebster.Ravilo` — and
+the owner has accepted that the *bare domain* is readable from it. The rule that remains, and the fence that keeps it:
+
+- the fence matches the domain's two words *in domain order* (as a hostname or URL is written); the reverse-DNS id
+  puts them the other way round, so **the id passes the fence unchanged and the fence stays as it is**;
+- **the domain written as a hostname or URL never appears in the repo** — not the bare domain, not the server's
+  hostnames under it; the metainfo's `homepage` and `bugtracker` point at the GitHub repository, the verification
+  file's URL is not written down here, and prose says "the household's domain";
+- **everything outside this repository is the owner's to do by hand** (owner, 2026-09-29): the verification file on
+  the web server, the Flathub submission, the Flathub repository's settings and secrets. This plan lists those steps;
+  it does not perform them.
 
 Note the reviewers test what they can: an app that needs its own server is accepted (every Jellyfin client on Flathub
 is one), but the metainfo should say plainly in its first sentence that Ravilo is the viewer for a household's
@@ -354,8 +366,8 @@ it, or install from Flathub*. Everything runs on GitHub's free runners; no secre
 Getting on Flathub ([submission](https://docs.flathub.org/docs/for-app-authors/submission)) is a human act, once:
 fork `flathub/flathub` with all branches, `git clone --branch=new-pr`, a branch from `new-pr` holding the manifest,
 `flatpak-sources.json`, `flathub.json` and (if not in our repo) the metainfo and desktop file; a PR **against `new-pr`**
-titled *Add dev.jellystructure.Ravilo*; `bot, build` for a test build; reviewer comments answered on the same PR. On
-approval Flathub creates `flathub/dev.jellystructure.Ravilo`, invites the owner's GitHub account (2FA required, accept
+titled *Add net.jebster.Ravilo*; `bot, build` for a test build; reviewer comments answered on the same PR. On
+approval Flathub creates `flathub/net.jebster.Ravilo`, invites the owner's GitHub account (2FA required, accept
 within a week), and the first official build publishes within 1–2 hours.
 
 After that ([maintenance](https://docs.flathub.org/docs/for-app-authors/maintenance)): updates are **pull requests to
@@ -392,7 +404,7 @@ calendar reminder should own, because an EOL runtime is refused for new submissi
 
 | # | Question | Lean |
 |---|---|---|
-| D1 | **The app id** — register `jellystructure.dev` for `dev.jellystructure.Ravilo`, or `io.github.jeggy.Ravilo`? | **register the domain** (§4) — one identity everywhere; it is the only cost in this whole plan |
+| D1 | **The app id** — register `jellystructure.dev` for `dev.jellystructure.Ravilo`, `io.github.jeggy.Ravilo`, or the household's own domain? | **Decided (owner, 2026-09-29): `net.jebster.Ravilo`** (§4). The domain stays out of the repo as a hostname; every step outside the repo is the owner's, by hand |
 | D2 | **The player** — mpv (built as modules) or the runtime's GStreamer? | **mpv** (§5.2), decided by the two-day spike |
 | D3 | **Flathub at all, or only the `.flatpak` on the release?** The bundle alone needs no account, no review, no yearly runtime PR; Flathub gives discoverability and automatic updates for every household Linux machine | **both** — the bundle first (one phase), Flathub when the player is in, so reviewers see a player that plays |
 | D4 | **Architectures** — `x86_64` only, or `aarch64` too (a Raspberry Pi as a Ravilo box is not absurd) | `x86_64` first (`only-arches`); arm64 is one more `targetPlatforms` entry plus a QEMU or `ubuntu-24.04-arm` job later |
