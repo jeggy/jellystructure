@@ -21,7 +21,19 @@ data class HomeSnapshot(
     val gridColumns: Int,
     val portraitGridColumns: Int,
     val savedAtEpochMs: Long,
+    // R338 — the viewer's theme settings as last drawn, so a cold start resolves the right theme before the config
+    // arrives (a snapshot from an older build has none and draws [skin], as before).
+    val theme: String? = null,
+    val themeFollow: Boolean? = null,
+    val themeLight: String? = null,
+    val themeDark: String? = null,
 )
+
+/** R338 — the theme settings a snapshot carries, or null from a build before R338. */
+fun HomeSnapshot.themeSettings(): dev.jellystructure.ravilo.ui.theme.ThemeSettings? = themeFollow?.let { follow ->
+    val skinId = dev.jellystructure.shared.tv.RaviloThemes.fromSkin(skin)
+    dev.jellystructure.ravilo.ui.theme.ThemeSettings(follow, themeLight ?: dev.jellystructure.shared.tv.RaviloThemes.DAYLIGHT, themeDark ?: skinId, theme ?: skinId)
+}
 
 /** A snapshot older than this is treated as absent (phase-R212 FR-RV-R212-4) — a starting point,
  *  not load-bearing; easy to tune without any structural change. */

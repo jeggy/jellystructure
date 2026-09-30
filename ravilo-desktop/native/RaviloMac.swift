@@ -69,3 +69,11 @@ public func ravilo_keychain_delete(_ service: UnsafePointer<CChar>, _ account: U
 public func ravilo_computer_name() -> UnsafeMutablePointer<CChar>? {
     cString(SCDynamicStoreCopyComputerName(nil, nil) as String?)
 }
+
+// ── R338 — the system's light/dark ──────────────────────────────────────────────────────────────────────────────────
+// The system-wide setting, not NSApp.effectiveAppearance: the app pins itself to DarkAqua (Main.kt), so its own
+// appearance always says dark. `AppleInterfaceStyle` is "Dark" in Dark mode (and while Auto is dark) and absent in Light.
+@_cdecl("ravilo_appearance_dark")
+public func ravilo_appearance_dark() -> Int32 {
+    UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? 1 : 0
+}

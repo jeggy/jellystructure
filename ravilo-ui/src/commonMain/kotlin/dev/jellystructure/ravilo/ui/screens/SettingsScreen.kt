@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.RaviloThemes
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.horizontalScroll
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -94,6 +98,22 @@ class SettingsStore(private val apiClient: TvApiClient) {
         scope.launch { runCatching { apiClient.putViewerSettings(skin = skin) } }
     }
 
+    /**
+     * R338 (FR-R338-3/5) — the theme settings; only the fields given change. Applied here at once (the drawn theme
+     * follows the returned config) and confirmed by the server's push. Returns the updated config, or null when
+     * Settings has not loaded.
+     */
+    fun saveTheme(theme: String? = null, follow: Boolean? = null, light: String? = null, dark: String? = null): RaviloConfig? {
+        val cur = (_state.value as? SettingsState.Loaded)?.config ?: return null
+        val updated = cur.copy(
+            theme = theme ?: cur.theme, themeFollow = follow ?: cur.themeFollow,
+            themeLight = light ?: cur.themeLight, themeDark = dark ?: cur.themeDark,
+        )
+        _state.value = SettingsState.Loaded(updated)
+        scope.launch { runCatching { apiClient.putViewerSettings(theme = theme, themeFollow = follow, themeLight = light, themeDark = dark) } }
+        return updated
+    }
+
     fun saveShowContinueProgress(v: Boolean) {
         val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
         val updated = cur.copy(showContinueProgress = v)
@@ -174,6 +194,8 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onBack: () -> Unit,
     onSkinChange: (Skin) -> Unit = {},
+    // R338 — the theme settings changed here; the caller redraws in them at once.
+    onThemeChange: (RaviloConfig) -> Unit = {},
     // R340 (FR-R340-3) — fires after "Everyone on this TV": every session this device holds is revoked
     // (store.unpairDevice() has completed); the caller forgets the server and returns to server setup.
     onSignedOutEveryone: () -> Unit = {},
@@ -248,6 +270,7 @@ fun SettingsScreen(
                     store = store,
                     onSignOut = { showSignOutConfirm = true },
                     onSkinChange = onSkinChange,
+                    onThemeChange = onThemeChange,
                     onChangePassword = onChangePassword,
                     onInstallRavilo = { showInstallCard = true },
                 )
@@ -513,6 +536,7 @@ private fun SettingsContent(
     store: SettingsStore,
     onSignOut: () -> Unit,
     onSkinChange: (Skin) -> Unit,
+    onThemeChange: (RaviloConfig) -> Unit = {},
     onChangePassword: () -> Unit = {},
     // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
     // web (isWebPlatform), never a greyed/inert row.
@@ -537,8 +561,14 @@ private fun SettingsContent(
     val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
 
+    // R338 — the theme settings, when the server has them (FR-R338-5); an older server keeps the three skins below.
+    val themeEntryFR = remember { FocusRequester() }
+    if (config.allowSkinOverride && config.hasThemes()) {
+        ThemeSection(config, store, entryFR = themeEntryFR, downFR = langFRs[0], onThemeChange = onThemeChange)
+        Spacer(Modifier.height(32.dp))
+    }
     // Skin section
-    if (config.allowSkinOverride) {
+    if (config.allowSkinOverride && !config.hasThemes()) {
         SectionHeader(str("settings.appearance"))
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -604,7 +634,8 @@ private fun SettingsContent(
                         onBlurred = { focused = false },
                         onLeft  = { if (i > 0) langFRs[i - 1].requestFocus() },
                         onRight = { if (i < UI_LANGUAGES.lastIndex) langFRs[i + 1].requestFocus() },
-                        onUp = skinFRs?.let { frs -> { frs[0].requestFocus() } },
+                        onUp = if (config.allowSkinOverride && config.hasThemes()) ({ themeEntryFR.requestFocus() })
+                            else skinFRs?.let { frs -> { frs[0].requestFocus() } },
                         onDown = { progressFR.requestFocus() },
                         onSelect = { store.saveUiLanguage(code) },
                     )
@@ -764,6 +795,154 @@ private fun SettingsContent(
 
     // R340 (FR-R340-2) — the separate "Unpair this TV" section is gone: Sign out above asks whom, and
     // "Everyone on this TV" is what it did (plus the server forgotten). One way out, and it always asks.
+}
+
+/**
+ * R338 (FR-R338-5) — Settings ▸ Theme.
+ *
+ * - **A TV-layout device** (a TV, the web app in a desktop browser) is dark-only (D6): one row of the four dark themes,
+ *   *This TV is always dark*. A pick is the dark pick, and also the one pick while the viewer is not following the
+ *   system and their one pick is dark — so a pick on the TV is what the viewer sees on every dark screen.
+ * - **A phone, or the desktop**: *Match the phone's light and dark* (the computer's wording on the desktop); on, a
+ *   light row (Daylight) and a dark row (the four), the row in use marked; off, one row of all five. A dark one pick
+ *   is also written as the dark pick, so the TV follows it.
+ *
+ * The foot line says the settings are the viewer's, on every device.
+ */
+@Composable
+private fun ThemeSection(
+    config: RaviloConfig,
+    store: SettingsStore,
+    entryFR: FocusRequester,
+    downFR: FocusRequester,
+    onThemeChange: (RaviloConfig) -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val desk = dev.jellystructure.ravilo.ui.isDesktopPlatform
+    val darkOnly = !(LocalHandset.current || desk)
+    val follow = config.themeFollow == true
+    val drawnLight = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current.isLight
+    fun save(theme: String? = null, follow: Boolean? = null, light: String? = null, dark: String? = null) {
+        store.saveTheme(theme, follow, light, dark)?.let(onThemeChange)
+    }
+    class ThemeRow(val caption: String?, val ids: List<String>, val active: String?, val pick: (String) -> Unit)
+    val rows: List<ThemeRow> = when {
+        darkOnly -> listOf(ThemeRow(null, RaviloThemes.darkThemes, config.themeDark) { id ->
+            save(dark = id, theme = if (!follow && RaviloThemes.isDark(config.theme)) id else null)
+        })
+        follow -> listOf(
+            ThemeRow(
+                str(if (desk) "theme.light" else "theme.when_light") + if (drawnLight) " · " + str("theme.in_use") else "",
+                RaviloThemes.lightThemes, config.themeLight,
+            ) { id -> save(light = id) },
+            ThemeRow(
+                str(if (desk) "theme.dark" else "theme.when_dark") + if (!drawnLight) " · " + str("theme.in_use") else "",
+                RaviloThemes.darkThemes, config.themeDark,
+            ) { id -> save(dark = id) },
+        )
+        else -> listOf(ThemeRow(null, RaviloThemes.all, config.theme) { id ->
+            save(theme = id, dark = id.takeIf { RaviloThemes.isDark(it) })
+        })
+    }
+    val pillFRs = remember(rows.map { it.ids.size }) { rows.map { r -> r.ids.map { FocusRequester() } } }
+    val followFR = entryFR
+
+    SectionHeader(str("settings.appearance"))
+    Spacer(Modifier.height(12.dp))
+    if (!darkOnly) {
+        ToggleRow(
+            label = str(if (desk) "theme.follow_desk" else "theme.follow"),
+            checked = follow,
+            focusRequester = followFR,
+            onToggle = { save(follow = !follow) },
+            onDown = { pillFRs.firstOrNull()?.firstOrNull()?.requestFocus() },
+        )
+        if (!desk) {
+            Spacer(Modifier.height(6.dp))
+            Text(str("theme.follow_sub"), color = colors.textSecondary, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+    rows.forEachIndexed { r, row ->
+        row.caption?.let {
+            Text(it, color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(
+            Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            row.ids.forEachIndexed { i, id ->
+                val fr = if (darkOnly && r == 0 && i == 0) entryFR else pillFRs[r][i]
+                ThemePill(
+                    id = id,
+                    active = id == row.active,
+                    focusRequester = fr,
+                    onLeft = { if (i > 0) pillFRs[r][i - 1].requestFocus() },
+                    onRight = { if (i < row.ids.lastIndex) pillFRs[r][i + 1].requestFocus() },
+                    onUp = when {
+                        r > 0 -> ({ pillFRs[r - 1][0].requestFocus() })
+                        !darkOnly -> ({ followFR.requestFocus() })
+                        else -> null
+                    },
+                    onDown = { if (r < rows.lastIndex) pillFRs[r + 1][0].requestFocus() else downFR.requestFocus() },
+                    onSelect = { row.pick(id) },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+    if (darkOnly) {
+        Text(str(if (dev.jellystructure.ravilo.ui.seams.isWebPlatform) "theme.dark_only_web" else "theme.dark_only"), color = colors.textSecondary, fontSize = 13.sp)
+        Spacer(Modifier.height(6.dp))
+    }
+    Text(str("theme.synced"), color = colors.textDim, fontSize = 13.sp)
+}
+
+/** R338 — one theme: a small two-tone swatch (the theme's page and its accent), then its name. */
+@Composable
+private fun ThemePill(
+    id: String,
+    active: Boolean,
+    focusRequester: FocusRequester,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    onUp: (() -> Unit)?,
+    onDown: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val swatch = (dev.jellystructure.ravilo.ui.theme.ThemeId.of(id) ?: dev.jellystructure.ravilo.ui.theme.ThemeId.AURORA).colors()
+    var focused by rememberFocusVisual()
+    Row(
+        modifier = Modifier
+            .background(if (active) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
+            .then(if (focused && !active) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onLeft = onLeft,
+                onRight = onRight,
+                onUp = onUp,
+                onDown = onDown,
+                onSelect = onSelect,
+            )
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(Modifier.size(18.dp).clip(CircleShape).border(1.dp, colors.fg.copy(alpha = 0.25f), CircleShape)) {
+            Box(Modifier.weight(1f).fillMaxHeight().background(swatch.background))
+            Box(Modifier.weight(1f).fillMaxHeight().background(swatch.accent))
+        }
+        Text(
+            text = str("theme.$id"),
+            color = if (active) colors.onAccent else if (focused) colors.text else colors.textSecondary,
+            fontSize = 14.sp,
+            fontWeight = if (active || focused) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
 }
 
 @Composable

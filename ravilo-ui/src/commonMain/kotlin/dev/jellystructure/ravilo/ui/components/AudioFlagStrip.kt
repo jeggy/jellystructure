@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -156,7 +157,7 @@ fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifi
     ) {
         Text(
             text = label,
-            color = Color.White.copy(alpha = 0.55f),
+            color = RaviloTheme.colors.fg.copy(alpha = 0.55f),
             fontSize = 9.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.8.sp,
@@ -170,7 +171,7 @@ fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifi
                 modifier = Modifier
                     .size(width = 26.dp, height = 18.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(3.dp)),
+                    .border(0.5.dp, RaviloTheme.colors.fg.copy(alpha = 0.18f), RoundedCornerShape(3.dp)),
             )
         }
         if (extra > 0) {
@@ -182,7 +183,7 @@ fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifi
             ) {
                 Text(
                     text = "+$extra",
-                    color = Color.White.copy(alpha = 0.70f),
+                    color = RaviloTheme.colors.fg.copy(alpha = 0.70f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = sora,
@@ -235,7 +236,7 @@ private fun FlagLineContent(audioLanguages: List<String>, subtitleLanguages: Lis
     ) {
         if (hasAudio) AudioFlagStrip(audioLanguages, label = str("fd.audio"), maxFlags = audioMax)
         if (hasAudio && hasSub) {
-            Text("·", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, fontFamily = Sora)
+            Text("·", color = RaviloTheme.colors.fg.copy(alpha = 0.35f), fontSize = 14.sp, fontFamily = Sora)
         }
         if (hasSub) AudioFlagStrip(subtitleLanguages, label = str("fd.subs"), maxFlags = subMax)
     }

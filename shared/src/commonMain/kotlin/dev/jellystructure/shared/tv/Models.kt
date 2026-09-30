@@ -1080,6 +1080,19 @@ data class RaviloConfig(
     // Per-viewer skin choice, kept separate from the operator's defaultSkin so an operator
     // default change still reaches viewers who never picked a skin. Null = no override.
     @SerialName("viewer_skin_override") val viewerSkinOverride: Skin? = null,
+    // R338 — themes by id ([RaviloThemes]), strings so a new theme never breaks an installed app (dev review 1).
+    // The four `default_theme*` fields are the global defaults, stored with the global config; the four below them
+    // are this viewer's resolved values (viewer → admin → global), overwritten on every per-user read path the way
+    // [viewerSkinOverride] is. All absent from an older server: the app then offers the three skins as before.
+    // [defaultSkin]/[viewerSkinOverride] stay, written by the server as the mirror older apps draw.
+    @SerialName("default_theme") val defaultTheme: String? = null,
+    @SerialName("default_theme_follow") val defaultThemeFollow: Boolean? = null,
+    @SerialName("default_theme_light") val defaultThemeLight: String? = null,
+    @SerialName("default_theme_dark") val defaultThemeDark: String? = null,
+    val theme: String? = null,
+    @SerialName("theme_follow") val themeFollow: Boolean? = null,
+    @SerialName("theme_light") val themeLight: String? = null,
+    @SerialName("theme_dark") val themeDark: String? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("autoplay_next") val autoplayNext: Boolean = true,
     // R182 — Skip Intro / Skip Credits, global defaults (per-user overrides via BehaviourOverlay).
@@ -1134,6 +1147,16 @@ data class RaviloConfig(
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
 
+    /** R338 — the global defaults, with the pre-R338 answer where a field is absent (a server not yet migrated). */
+    fun globalTheme(): String = defaultTheme?.takeIf { RaviloThemes.isKnown(it) } ?: RaviloThemes.fromSkin(defaultSkin)
+    fun globalThemeFollow(): Boolean = defaultThemeFollow ?: false
+    fun globalThemeLight(): String = defaultThemeLight?.takeIf { RaviloThemes.isLight(it) } ?: RaviloThemes.DAYLIGHT
+    fun globalThemeDark(): String = defaultThemeDark?.takeIf { RaviloThemes.isDark(it) }
+        ?: globalTheme().takeIf { RaviloThemes.isDark(it) } ?: RaviloThemes.AURORA
+
+    /** R338 — whether this config carries the theme settings at all (a server from R338 on). */
+    fun hasThemes(): Boolean = themeFollow != null
+
     /** FR-202-2 — `rowOpen` wins whenever it's on, regardless of [focusDetailLine]. Recompute this
      *  (never trust a stored/round-tripped [focusDetail] value) before a config leaves the server. */
     fun resolvedFocusDetail(): String = when {
@@ -1157,6 +1180,15 @@ data class BehaviourOverlay(
     @SerialName("ui_language_writer") val uiLanguageWriter: String? = null,
     val skin: Skin? = null,
     @SerialName("skin_writer") val skinWriter: String? = null,
+    // R338 (FR-R338-3) — the theme settings, beside skin, with the same writer tags and resolution.
+    val theme: String? = null,
+    @SerialName("theme_writer") val themeWriter: String? = null,
+    @SerialName("theme_follow") val themeFollow: Boolean? = null,
+    @SerialName("theme_follow_writer") val themeFollowWriter: String? = null,
+    @SerialName("theme_light") val themeLight: String? = null,
+    @SerialName("theme_light_writer") val themeLightWriter: String? = null,
+    @SerialName("theme_dark") val themeDark: String? = null,
+    @SerialName("theme_dark_writer") val themeDarkWriter: String? = null,
     @SerialName("tile_shape") val tileShape: TileShape? = null,
     @SerialName("tile_shape_writer") val tileShapeWriter: String? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
@@ -1198,6 +1230,11 @@ data class ResolvedBehaviour(
     // Phase 139 — "global" here means "the catalog's default-flagged intent" (or the kids-default
     // intent for a kids device), resolved server-side since only the backend has the AppConfig catalog.
     @SerialName("request_language") val requestLanguage: ResolvedBehaviourField<String>,
+    // R338 — the theme settings; defaulted so an admin page from before R338 still decodes the answer.
+    val theme: ResolvedBehaviourField<String> = ResolvedBehaviourField(RaviloThemes.AURORA, "global"),
+    @SerialName("theme_follow") val themeFollow: ResolvedBehaviourField<Boolean> = ResolvedBehaviourField(false, "global"),
+    @SerialName("theme_light") val themeLight: ResolvedBehaviourField<String> = ResolvedBehaviourField(RaviloThemes.DAYLIGHT, "global"),
+    @SerialName("theme_dark") val themeDark: ResolvedBehaviourField<String> = ResolvedBehaviourField(RaviloThemes.AURORA, "global"),
 )
 
 /** R159 — portrait-only display overrides. Each field null = that override is off; the block itself
@@ -1333,6 +1370,11 @@ data class ViewerSettingsRequest(
     @SerialName("skip_intro") val skipIntro: SkipMode? = null,
     @SerialName("skip_credits") val skipCredits: SkipMode? = null,
     @SerialName("skip_secs") val skipSecs: Int? = null,
+    // R338 (FR-R338-3) — theme ids ([RaviloThemes]); a light id in theme_dark (or the reverse) is refused with a 400.
+    val theme: String? = null,
+    @SerialName("theme_follow") val themeFollow: Boolean? = null,
+    @SerialName("theme_light") val themeLight: String? = null,
+    @SerialName("theme_dark") val themeDark: String? = null,
 )
 
 @Serializable

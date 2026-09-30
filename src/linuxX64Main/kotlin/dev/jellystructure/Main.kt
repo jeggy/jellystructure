@@ -233,6 +233,7 @@ fun main() = runBlocking {
         },
     )
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
+    raviloConfigService.migrateThemeDefaults()             // R338 (FR-R338-6): one-time, idempotent — follow OFF on an existing server
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus, artworkDownloader)
     // Phase 205 (FR-205-2) — background-refresh Continue Watching and the whole-catalog playstate map
     // for recently-seen devices, instead of building either on a viewer's own request. Both used to

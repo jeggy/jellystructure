@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.jellystructure.shared.tv.RaviloThemes
 import dev.jellystructure.shared.tv.Skin
 
 data class RaviloColors(
@@ -27,6 +28,12 @@ data class RaviloColors(
     val textDim: Color,           // tertiary metadata, role text, "see all" links
     val card: Color,              // inner card surface (channel card bg base, episode card)
     val tileRadius: Dp,           // skin-specific corner radius for tiles and cards
+    // R338 (FR-R338-1) — the ink every translucent fill, border and track is drawn in, at its own alpha: white on a
+    // dark theme, near-black on a light one. Never used over artwork or video, which stays white on every theme.
+    val fg: Color = Color.White,
+    val isLight: Boolean = false,
+    // R338 — where the accent gradient ends: accentSecondary, except Graphite, whose gradient is its one blue, flat.
+    val gradientEnd: Color = accentSecondary,
 )
 
 val AuroraColors = RaviloColors(
@@ -95,6 +102,88 @@ val NoirColors = RaviloColors(
     tileRadius      = 6.dp,
 )
 
+// R338 (FR-R338-1) — Graphite: dark and neutral, one blue.
+val GraphiteColors = RaviloColors(
+    background      = Color(0xFF1C1C1F),
+    surface         = Color(0xFF2A2A2E),
+    surfaceVariant  = Color(0xFF323237),
+    accent          = Color(0xFF4F8EF0),
+    accentDim       = Color(0xFF1E3A66),
+    onAccent        = Color(0xFFFFFFFF),
+    text            = Color(0xFFF2F2F4),
+    textSecondary   = Color(0xFFB4B4BB),
+    textDim         = Color(0xFF85858D),
+    focusRing       = Color(0xFF4F8EF0),
+    focusGlow       = Color(0x804F8EF0),
+    overlay         = Color(0xCC1C1C1F),
+    progressFill    = Color(0xFF4F8EF0),
+    progressBg      = Color(0x334F8EF0),
+    badgeWatched    = Color(0xFF2DD49A),
+    badgeNew        = Color(0xFF6FB0F5),
+    accentSecondary = Color(0xFF6FB0F5),
+    card            = Color(0xFF242428),
+    tileRadius      = 10.dp,
+    gradientEnd     = Color(0xFF4F8EF0),
+)
+
+// R338 (FR-R338-1) — Daylight: Ravilo's first light theme. Text contrast on bg, bg-2 and card checked at 4.5 : 1
+// (textDim #6D7286 on #FBFBFD is 4.8 : 1).
+val DaylightColors = RaviloColors(
+    background      = Color(0xFFFBFBFD),
+    surface         = Color(0xFFF1F2F6),
+    surfaceVariant  = Color(0xFFE8EAF0),
+    accent          = Color(0xFF5B4EE0),
+    accentDim       = Color(0xFFE3E0FB),
+    onAccent        = Color(0xFFFFFFFF),
+    text            = Color(0xFF15171F),
+    textSecondary   = Color(0xFF4A4F63),
+    textDim         = Color(0xFF6D7286),
+    focusRing       = Color(0xFF5B4EE0),
+    focusGlow       = Color(0x4D5B4EE0),
+    overlay         = Color(0x8015171F),
+    progressFill    = Color(0xFF5B4EE0),
+    progressBg      = Color(0x295B4EE0),
+    badgeWatched    = Color(0xFF1F9E72),
+    badgeNew        = Color(0xFF0F73C2),
+    accentSecondary = Color(0xFF0F73C2),
+    card            = Color(0xFFF1F2F6),
+    tileRadius      = 12.dp,
+    fg              = Color(0xFF10121E),
+    isLight         = true,
+)
+
+/**
+ * R338 — the five themes inside the app. [family] is the original skin whose look a theme follows wherever the code
+ * branches on one (every such branch is "Noir or not": Noir alone drops the accent tints), so Graphite takes
+ * Midnight's side and Daylight Aurora's without any branch changing.
+ */
+enum class ThemeId(val id: String, val family: Skin) {
+    AURORA(RaviloThemes.AURORA, Skin.AURORA),
+    MIDNIGHT(RaviloThemes.MIDNIGHT, Skin.MIDNIGHT),
+    NOIR(RaviloThemes.NOIR, Skin.NOIR),
+    GRAPHITE(RaviloThemes.GRAPHITE, Skin.MIDNIGHT),
+    DAYLIGHT(RaviloThemes.DAYLIGHT, Skin.AURORA);
+
+    val isLight: Boolean get() = RaviloThemes.isLight(id)
+
+    fun colors(): RaviloColors = when (this) {
+        AURORA -> AuroraColors
+        MIDNIGHT -> MidnightColors
+        NOIR -> NoirColors
+        GRAPHITE -> GraphiteColors
+        DAYLIGHT -> DaylightColors
+    }
+
+    companion object {
+        fun of(id: String?): ThemeId? = entries.firstOrNull { it.id == id }
+        fun fromSkin(skin: Skin): ThemeId = when (skin) {
+            Skin.AURORA -> AURORA
+            Skin.MIDNIGHT -> MIDNIGHT
+            Skin.NOIR -> NOIR
+        }
+    }
+}
+
 fun Skin.colors(): RaviloColors = when (this) {
     Skin.AURORA   -> AuroraColors
     Skin.MIDNIGHT -> MidnightColors
@@ -105,4 +194,4 @@ fun Skin.colors(): RaviloColors = when (this) {
 // callers inside Modifier.background() are safe (structural equality prevents recompose).
 // Callers storing the result in a val should wrap with remember(colors.accent, colors.accentSecondary).
 val RaviloColors.accentGradient: Brush
-    get() = Brush.linearGradient(listOf(accent, accentSecondary))
+    get() = Brush.linearGradient(listOf(accent, gradientEnd))

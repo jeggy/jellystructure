@@ -263,7 +263,7 @@ private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long) {
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.textDim.copy(0.35f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
                 drawRoundRect(gradient, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
-                drawCircle(Color.White, (if (dragFrac != null) 9.dp else 6.dp).toPx(), Offset(size.width * frac, y))
+                drawCircle(colors.fg, (if (dragFrac != null) 9.dp else 6.dp).toPx(), Offset(size.width * frac, y))
             }
         }
         Row {
@@ -337,9 +337,9 @@ private fun BookFailureSheet(failed: Boolean) {
     // A tap beside the sheet keeps the book (paused where it is); only *Close* clears the player.
     HandsetSheet(visible = failed, onDismiss = {}, dismissible = false) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-            Text(str("music.fail_t"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(str("music.fail_t"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
-            Text(str("ab.fail_p"), color = Color.White.copy(0.7f), fontSize = 14.sp, fontFamily = Sora)
+            Text(str("ab.fail_p"), color = RaviloTheme.colors.fg.copy(0.7f), fontSize = 14.sp, fontFamily = Sora)
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton(str("music.try_again"), null, primary = true, Modifier.weight(1f)) { MusicEngine.retry() }
@@ -357,20 +357,20 @@ private fun SpeedSheet(visible: Boolean, current: Double, onDismiss: () -> Unit)
     val colors = RaviloTheme.colors
     HandsetSheet(visible = visible, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-            Text(str("ab.speed"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(str("ab.speed"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(12.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 4) {
                 BOOK_SPEEDS.forEach { s ->
                     val on = kotlin.math.abs(s - current) < 0.001
                     Box(
-                        Modifier.weight(1f).heightIn(min = 46.dp).then(if (on) Modifier.background(colors.accentGradient, RoundedCornerShape(12.dp)) else Modifier.background(Color.White.copy(0.08f), RoundedCornerShape(12.dp)))
+                        Modifier.weight(1f).heightIn(min = 46.dp).then(if (on) Modifier.background(colors.accentGradient, RoundedCornerShape(12.dp)) else Modifier.background(RaviloTheme.colors.fg.copy(0.08f), RoundedCornerShape(12.dp)))
                             .tap { MusicEngine.setSpeed(s); onDismiss() },
                         contentAlignment = Alignment.Center,
-                    ) { Text("${speedText(s)}×", color = if (on) colors.onAccent else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
+                    ) { Text("${speedText(s)}×", color = if (on) colors.onAccent else RaviloTheme.colors.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(str("ab.speed_note"), color = Color.White.copy(0.6f), fontSize = 13.sp, fontFamily = Sora)
+            Text(str("ab.speed_note"), color = RaviloTheme.colors.fg.copy(0.6f), fontSize = 13.sp, fontFamily = Sora)
         }
     }
 }
@@ -379,7 +379,7 @@ private fun SpeedSheet(visible: Boolean, current: Double, onDismiss: () -> Unit)
 private fun SleepSheet(visible: Boolean, current: SleepTimer?, onDismiss: () -> Unit) {
     HandsetSheet(visible = visible, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 14.dp)) {
-            Text(str("ab.sleep"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(str("ab.sleep"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
             SLEEP_MINUTES.forEach { m ->
                 BookSheetRow(str("ab.sleep_min", mapOf("n" to m.toString())), MusicIcon.SLEEP, lit = current?.minutes == m && current.endsAtMs != null) {
@@ -388,7 +388,7 @@ private fun SleepSheet(visible: Boolean, current: SleepTimer?, onDismiss: () -> 
             }
             BookSheetRow(str("ab.sleep_end_chapter"), MusicIcon.CHAPTERS, lit = current?.endOfChapter == true) { MusicEngine.setSleep(SleepTimer(endOfChapter = true)); onDismiss() }
             if (current != null) BookSheetRow(str("ab.off"), MusicIcon.PAUSE) { MusicEngine.setSleep(null); onDismiss() }
-            if (BookPrefs.sleepFade) Text(str("ab.sleep_fade_note"), color = Color.White.copy(0.55f), fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp))
+            if (BookPrefs.sleepFade) Text(str("ab.sleep_fade_note"), color = RaviloTheme.colors.fg.copy(0.55f), fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp))
         }
     }
 }
@@ -412,15 +412,15 @@ private fun ChaptersSheet(visible: Boolean, api: TvApiClient, d: AudiobookDetail
                 itemsIndexed(d.chapters) { i, c ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).tap { MusicEngine.seekBook(c.startMs); MusicEngine.play(); onDismiss() }, verticalAlignment = Alignment.CenterVertically) {
                         if (i == cur) Box(Modifier.width(30.dp)) { PlayingBars(true, colors.accentSecondary, 14.dp) }
-                        else Text((i + 1).toString(), color = Color.White.copy(0.45f), fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.width(30.dp))
-                        Text(chapterTitle(c.title, i), color = if (i == cur) colors.accentSecondary else if (i < cur) Color.White.copy(0.45f) else Color.White,
+                        else Text((i + 1).toString(), color = RaviloTheme.colors.fg.copy(0.45f), fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.width(30.dp))
+                        Text(chapterTitle(c.title, i), color = if (i == cur) colors.accentSecondary else if (i < cur) RaviloTheme.colors.fg.copy(0.45f) else RaviloTheme.colors.fg,
                             fontSize = 14.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text(fmtLen(c.lengthMs), color = Color.White.copy(0.45f), fontSize = 12.5.sp, fontFamily = Sora)
+                        Text(fmtLen(c.lengthMs), color = RaviloTheme.colors.fg.copy(0.45f), fontSize = 12.5.sp, fontFamily = Sora)
                     }
                 }
             } else {
                 val l = marks
-                if (l != null && l.isEmpty()) Text(str("ab.no_bookmarks"), color = Color.White.copy(0.6f), fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(vertical = 18.dp))
+                if (l != null && l.isEmpty()) Text(str("ab.no_bookmarks"), color = RaviloTheme.colors.fg.copy(0.6f), fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(vertical = 18.dp))
                 else LazyColumn {
                     itemsIndexed(l.orEmpty()) { _, m ->
                         val i = BookMath.chapterAt(d, m.positionMs)
@@ -430,8 +430,8 @@ private fun ChaptersSheet(visible: Boolean, api: TvApiClient, d: AudiobookDetail
                             MusicGlyph(MusicIcon.BOOKMARK, colors.accentSecondary, 18.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(m.note ?: chName, color = Color.White, fontSize = 14.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("$chName · ${fmtLen(m.positionMs - (ch?.startMs ?: 0L))}", color = Color.White.copy(0.55f), fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1)
+                                Text(m.note ?: chName, color = RaviloTheme.colors.fg, fontSize = 14.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("$chName · ${fmtLen(m.positionMs - (ch?.startMs ?: 0L))}", color = RaviloTheme.colors.fg.copy(0.55f), fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1)
                             }
                         }
                     }
@@ -451,12 +451,12 @@ private fun AddBookmarkSheet(visible: Boolean, api: TvApiClient, d: AudiobookDet
     val added = str("ab.bookmark_added")
     HandsetSheet(visible = visible, onDismiss = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-            Text(str("ab.bookmark_add"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(str("ab.bookmark_add"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             val i = BookMath.chapterAt(d, at)
             val ch = d.chapters.getOrNull(i)
-            Text("${ch?.let { chapterTitle(it.title, i) } ?: d.title} · ${fmtLen(at - (ch?.startMs ?: 0L))}", color = Color.White.copy(0.6f), fontSize = 13.5.sp, fontFamily = Sora)
+            Text("${ch?.let { chapterTitle(it.title, i) } ?: d.title} · ${fmtLen(at - (ch?.startMs ?: 0L))}", color = RaviloTheme.colors.fg.copy(0.6f), fontSize = 13.5.sp, fontFamily = Sora)
             Spacer(Modifier.height(12.dp))
-            Text(str("ab.note"), color = Color.White.copy(0.6f), fontSize = 12.5.sp, fontFamily = Sora)
+            Text(str("ab.note"), color = RaviloTheme.colors.fg.copy(0.6f), fontSize = 12.5.sp, fontFamily = Sora)
             Spacer(Modifier.height(4.dp))
             val save = {
                 scope.launch {
@@ -465,16 +465,16 @@ private fun AddBookmarkSheet(visible: Boolean, api: TvApiClient, d: AudiobookDet
                 }
                 Unit
             }
-            Box(Modifier.fillMaxWidth().height(48.dp).background(Color.White.copy(0.08f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.fillMaxWidth().height(48.dp).background(RaviloTheme.colors.fg.copy(0.08f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
                 BasicTextField(
                     value = note, onValueChange = { note = it.take(200) },
                     modifier = Modifier.fillMaxWidth().reportTextFieldFocus(),
-                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontFamily = Sora),
+                    textStyle = TextStyle(color = RaviloTheme.colors.fg, fontSize = 15.sp, fontFamily = Sora),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { save() }),
                     cursorBrush = SolidColor(colors.accent),
-                    decorationBox = { inner -> if (note.isEmpty()) Text(str("ab.note_ph"), color = Color.White.copy(0.4f), fontSize = 15.sp, fontFamily = Sora); inner() },
+                    decorationBox = { inner -> if (note.isEmpty()) Text(str("ab.note_ph"), color = RaviloTheme.colors.fg.copy(0.4f), fontSize = 15.sp, fontFamily = Sora); inner() },
                 )
             }
             Spacer(Modifier.height(14.dp))

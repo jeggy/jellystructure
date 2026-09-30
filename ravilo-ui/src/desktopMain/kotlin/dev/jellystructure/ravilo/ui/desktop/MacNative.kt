@@ -57,6 +57,9 @@ object MacNative {
         fun ravilo_nowplaying_artwork(bytes: ByteArray?, length: Long)
         fun ravilo_nowplaying_clear()
         fun ravilo_display_keep_awake(on: Int)
+        // R338 — 1 when the system is in Dark mode. Added without an ABI bump (no existing export changed shape);
+        // a library from before it has no such symbol and the call throws, which DesktopAppearance catches.
+        fun ravilo_appearance_dark(): Int
 
         // ── R330 — Bonjour (Bonjour.swift; see MacBonjour) ──
         fun ravilo_bonjour_start()

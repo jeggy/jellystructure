@@ -62,8 +62,23 @@ import dev.jellystructure.shared.tv.MediaCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
+/** R338 (FR-R338-2) — the hero sits on artwork, so it keeps dark tokens in a light theme ([KeepDark]). */
 @Composable
 fun HeroCarousel(
+    items: List<Hero>,
+    focusRequester: FocusRequester,
+    heightDp: Dp = 460.dp,
+    autoAdvanceSeconds: Int = 7,
+    onOpenDetail: (MediaCard) -> Unit = {},
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+    driftEnabled: () -> Boolean = { true },
+) = dev.jellystructure.ravilo.ui.theme.KeepDark {
+    HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled)
+}
+
+@Composable
+private fun HeroCarouselContent(
     items: List<Hero>,
     focusRequester: FocusRequester,
     heightDp: Dp = 460.dp,

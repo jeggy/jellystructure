@@ -398,10 +398,10 @@ fun BookMenuSheet(visible: Boolean, d: AudiobookDetail, started: Boolean, finish
 internal fun BookSheetRow(label: String, icon: MusicIcon, trailing: String? = null, lit: Boolean = false, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap(onClick), verticalAlignment = Alignment.CenterVertically) {
-        MusicGlyph(icon, if (lit) colors.accentSecondary else Color.White.copy(0.85f), 20.dp)
+        MusicGlyph(icon, if (lit) colors.accentSecondary else RaviloTheme.colors.fg.copy(0.85f), 20.dp)
         Spacer(Modifier.width(14.dp))
-        Text(label, color = if (lit) colors.accentSecondary else Color.White, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, color = Color.White.copy(0.5f), fontSize = 12.5.sp, fontFamily = Sora)
+        Text(label, color = if (lit) colors.accentSecondary else RaviloTheme.colors.fg, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+        if (trailing != null) Text(trailing, color = RaviloTheme.colors.fg.copy(0.5f), fontSize = 12.5.sp, fontFamily = Sora)
     }
 }
 

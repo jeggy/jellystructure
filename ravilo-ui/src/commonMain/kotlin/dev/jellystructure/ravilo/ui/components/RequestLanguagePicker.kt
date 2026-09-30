@@ -71,8 +71,8 @@ fun RequestLanguagePicker(
             modifier = Modifier
                 .width(420.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFF0E1119).copy(alpha = 0.96f))
-                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                .background((if (RaviloTheme.colors.isLight) RaviloTheme.colors.surface else Color(0xFF0E1119)).copy(alpha = 0.96f))   // R338 — a light theme's panel is its own surface
+                .border(1.dp, RaviloTheme.colors.fg.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
                 .padding(22.dp),
         ) {
             Text(str("request.in_language"), color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
@@ -106,7 +106,7 @@ private fun RequestLanguageOptionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (focused) RaviloTheme.colors.fg.copy(alpha = 0.10f) else Color.Transparent)
             .border(
                 width = if (focused) 2.dp else 0.dp,
                 color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
@@ -131,7 +131,7 @@ private fun RequestLanguageOptionRow(
                 .size(22.dp)
                 .clip(CircleShape)
                 .background(if (selected) colors.accent else Color.Transparent)
-                .border(2.dp, if (selected) colors.accent else Color.White.copy(0.35f), CircleShape),
+                .border(2.dp, if (selected) colors.accent else RaviloTheme.colors.fg.copy(0.35f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (selected) CheckGlyph(colors.onAccent, 12.dp)

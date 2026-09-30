@@ -265,8 +265,8 @@ fun TrackActionsSheet(
                 MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(52.dp), corner = 6.dp, requestedWidth = 140, wordmarkSize = 9)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(t.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(listOfNotNull(artistLine(t).ifBlank { null }, t.album).joinToString(" — "), color = Color.White.copy(0.65f), fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.title, color = RaviloTheme.colors.fg, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(listOfNotNull(artistLine(t).ifBlank { null }, t.album).joinToString(" — "), color = RaviloTheme.colors.fg.copy(0.65f), fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -298,13 +298,13 @@ private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
     val colors = RaviloTheme.colors
     var volume by remember { mutableStateOf(0.5f) }
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        Text(name.uppercase(), color = Color.White.copy(0.5f), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 6.dp))
+        Text(name.uppercase(), color = RaviloTheme.colors.fg.copy(0.5f), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 6.dp))
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(str("cast.volume"), color = Color.White, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.width(88.dp))
+            Text(str("cast.volume"), color = RaviloTheme.colors.fg, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.width(88.dp))
             androidx.compose.material3.Slider(
                 value = volume, onValueChange = { v -> volume = (v * 20).roundToInt() / 20f }, onValueChangeFinished = { MusicCast.setVolume(volume.toDouble()) },
                 steps = 19, modifier = Modifier.weight(1f),
-                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = colors.accentSecondary, inactiveTrackColor = Color.White.copy(0.2f), activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = RaviloTheme.colors.fg, activeTrackColor = colors.accentSecondary, inactiveTrackColor = RaviloTheme.colors.fg.copy(0.2f), activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
             )
         }
         val lyricsOn = st?.lyricsOn
@@ -320,7 +320,7 @@ private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
             Text(str("cast.stop"), color = Color(0xFFFF9B8A), fontSize = 15.sp, fontFamily = Sora)
         }
         Spacer(Modifier.height(4.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(0.1f)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(RaviloTheme.colors.fg.copy(0.1f)))
         Spacer(Modifier.height(4.dp))
     }
 }
@@ -328,10 +328,10 @@ private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
 @Composable
 private fun SheetRow(label: String, icon: MusicIcon, dim: Boolean = false, trailing: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap(onClick), verticalAlignment = Alignment.CenterVertically) {
-        MusicGlyph(icon, Color.White.copy(if (dim) 0.4f else 0.85f), 20.dp)
+        MusicGlyph(icon, RaviloTheme.colors.fg.copy(if (dim) 0.4f else 0.85f), 20.dp)
         Spacer(Modifier.width(14.dp))
-        Text(label, color = Color.White.copy(if (dim) 0.45f else 1f), fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, color = Color.White.copy(0.4f), fontSize = 12.sp, fontFamily = Sora)
+        Text(label, color = RaviloTheme.colors.fg.copy(if (dim) 0.45f else 1f), fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+        if (trailing != null) Text(trailing, color = RaviloTheme.colors.fg.copy(0.4f), fontSize = 12.sp, fontFamily = Sora)
     }
 }
 

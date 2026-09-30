@@ -229,12 +229,12 @@ fun MusicBrowseScreen(
                 if (chip == "audiobooks" && books != null) AUDIOBOOK_SORTS.forEach { (key, label) ->
                     val on = bookSort == key
                     Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { books.sort.value = key; sortOpen = false }, verticalAlignment = Alignment.CenterVertically) {
-                        Text(str(label), color = if (on) colors.accentSecondary else Color.White, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
+                        Text(str(label), color = if (on) colors.accentSecondary else RaviloTheme.colors.fg, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
                     }
                 } else SORTS.forEach { (key, label) ->
                     val on = (sorts[chip] ?: "added") == key
                     Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).tap { store.setSort(chip, key); sortOpen = false }, verticalAlignment = Alignment.CenterVertically) {
-                        Text(str(label), color = if (on) colors.accentSecondary else Color.White, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
+                        Text(str(label), color = if (on) colors.accentSecondary else RaviloTheme.colors.fg, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, fontFamily = Sora)
                     }
                 }
             }

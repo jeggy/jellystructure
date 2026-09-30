@@ -13,6 +13,10 @@ package dev.jellystructure.ravilo.ui
  */
 expect val isTvPlatform: Boolean
 
+/** R337/R338 — the desktop target (macOS, Linux). A layout and appearance question, never an input one: the desktop
+ *  keeps [isTvPlatform] `false`, and a desktop window under 600 dp is laid out as a phone (R337 FR-R337-2). */
+expect val isDesktopPlatform: Boolean
+
 /**
  * R256 — "is this a phone", as a pure function. Form factor first, size second: **every Android TV
  * is 960 x 540 dp** (1920x1080 @ density 2.0, 3840x2160 @ 4.0), so its shorter side is *under*

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -853,13 +854,15 @@ internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: 
                     // against where the sheet is placed, and a translated layer would hand it zero after two steps.
                     .offset { IntOffset(0, dragY.floatValue.roundToInt()) }
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    .background(CARD.copy(alpha = 0.97f))
+                    // R338 — a light theme's sheet is its own surface; a dark theme's (and the film player's, which is always
+                    // dark, KeepDark) keeps CARD, so nothing changes where the theme is dark.
+                    .background((if (RaviloTheme.colors.isLight) RaviloTheme.colors.surface else CARD).copy(alpha = 0.97f))
                     // a sheet takes its own taps so they never reach the scrim or the video
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(top = 8.dp),
             ) {
-                Box(Modifier.align(Alignment.CenterHorizontally).width(36.dp).height(4.dp).background(Color.White.copy(0.25f), RoundedCornerShape(2.dp)))
+                Box(Modifier.align(Alignment.CenterHorizontally).width(36.dp).height(4.dp).background(RaviloTheme.colors.fg.copy(0.25f), RoundedCornerShape(2.dp)))
                 Spacer(Modifier.height(8.dp))
                 content()
             }

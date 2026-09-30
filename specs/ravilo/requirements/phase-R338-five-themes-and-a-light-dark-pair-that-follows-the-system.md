@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` §T and the phone built in
+`⚠ Partial` 2026-09-30 (§Build notes: built; Linux reads its light/dark once R337's D-Bus client lands; not deployed, not device-tested) — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` §T and the phone built in
 `design/ravilo/Ravilo Mobile.html` (Settings ▸ Theme, every screen in Daylight). **Dev-reviewed 2026-09-30** (§Dev review; the wire shape changes: item 1; the owner took item 8's lean the same day — the receivers are out of scope). Number verified
 free (after R337). **Builds on** R161/R162 (the viewer's settings, server-owned, the behaviour overlay), R234 (the TV's
 Settings focus chain), R304 (the phone's Settings row), R337 (the desktop).
@@ -241,3 +241,71 @@ items. One is for the owner (item 8, lean given).
     (d) the Android and web phone;
     (e) the TV's Settings;
     (f) the desktop, after R337.
+
+## Build notes (2026-09-30)
+
+Built from the dev review. **Not deployed, not device-tested.** Compiled: server (linuxX64), admin (wasm), Ravilo for
+Android, web and desktop. Tests: `ThemeConfigTest` (10, server), `ThemesTest` (5), `WireCompatTest` (7, every release
+from v1.23 still decodes), `ravilo-ui` desktopTest (286).
+
+**Wire (dev review 1).** `shared/tv/Themes.kt`: `RaviloThemes` (ids, `isLight`/`isDark`, `legacySkin`) and
+`resolveTheme(follow, light, dark, single, deviceDark)`. New string/boolean fields on `RaviloConfig` (`default_theme*`
+stored, `theme` · `theme_follow` · `theme_light` · `theme_dark` resolved per viewer), `BehaviourOverlay` (+ writers),
+`ResolvedBehaviour` (defaulted), `ViewerSettingsRequest`. `Skin` is unchanged; `viewer_skin_override` is the mirror of the
+viewer's dark pick, `default_skin` the mirror of `default_theme` (written in `normalize`).
+
+**Server.**
+- Resolution viewer → admin → global for the four fields. **A skin picked before R338 stands in** for the one pick and
+  the dark pick until the viewer picks a theme; the first theme write from a new app turns it into the theme fields and
+  drops it, so a later pick equal to the global default cannot bring the old skin back.
+- **An old app writing `skin`** is treated as D6's TV pick: the dark pick, and the one pick when not following and the one
+  pick is dark.
+- `allowSkinOverride = false` gives every viewer the global theme settings.
+- `PUT /tv/settings` and `PUT /tv/admin/behaviour` refuse a wrong id with a 400 naming the field (`themeFieldError`).
+  The admin gets `setAdminTheme*`, and `DELETE …/behaviour?field=theme|theme_follow|theme_light|theme_dark` resets.
+- **Migration** (`migrateThemeDefaults`, at boot, idempotent): a stored global config without the fields gets follow
+  **off**, one pick and dark pick = the default skin, light = Daylight. A fresh install gets follow on.
+- **Pre-existing bug fixed on the way:** `applyViewerSettings` rebuilt the overlay from five fields, so any Settings
+  change on a TV erased the admin's per-viewer Skip Intro/Credits and request-language overrides. It now copies the
+  stored overlay.
+
+**App.**
+- `ThemeId` (five, each with the family its "Noir or not" branches follow: Graphite → Midnight's side, Daylight →
+  Aurora's, so none of the 13 branches changed). Graphite and Daylight token sets; `RaviloColors` gains `fg`, `isLight`,
+  `gradientEnd` (Graphite's gradient is its one blue).
+- `RaviloThemeState` holds the settings and the device's appearance and resolves the theme. The appearance is set
+  before `RaviloTheme` reads it, so a cold start never draws a wrong-theme frame, and the Home snapshot carries the
+  theme settings (R212).
+- **Appearance** (`seams/ThemeAppearance.kt`):
+  - Android: `isSystemInDarkTheme()` (no recreation — `uiMode` is in `configChanges`).
+  - Web: `prefers-color-scheme`, read once a second.
+  - Mac: `ravilo_appearance_dark()` — the system's `AppleInterfaceStyle` through a new Swift export, polled once a second.
+    Added without an ABI bump and guarded, so an older library just means "unknown" (drawn dark).
+  - **Linux:** `DesktopAppearance.set` is ready; the Settings-portal reader comes with R337's D-Bus client.
+  - Only a phone layout or the desktop reads its appearance; the TV layout is dark-only (D6).
+- `SystemBarsAppearance` follows the resolved theme: the phone's status and navigation bar icons, and the Mac window's
+  own appearance (`apple.awt.windowAppearance`).
+- **Stays dark** (`KeepDark`, Aurora's tokens in a light theme): the film player, the Live TV player, the cast remote
+  (it draws the player's picker sheets) and the hero.
+- **The white sweep:** 49 whites on theme surfaces became `colors.fg` (identical in every dark theme) — the music, book
+  and profile sheets, the flag strip, the genre chips, the Playing page's scrubber knob, the sort sheet. `HandsetSheet`
+  and the request-language panel take the theme's surface only when the theme is light. What stays white sits on
+  artwork, an accent or brand fill, a badge, a toast or the cast mini bar (a fixed dark bar in every theme).
+  **`scripts/check-theme-whites.sh`** (in CI) holds each file to its count.
+- **Settings ▸ Appearance** (`ThemeSection`):
+  - The TV layout: the four dark themes and *This TV is always dark* (*Always dark here* on the web). A pick is the dark
+    pick, and also the one pick when not following and the one pick is dark.
+  - Phone and desktop: the follow switch, then the light and dark rows (the one in use marked *In use now*), or all five.
+    **Also:** a dark one pick is written as the dark pick too, so the TV shows what the phone picked.
+  - An older server shows the three skins as before.
+- Strings `theme.*` (16) × en/da/fo. The five names are the same in every language, as Aurora/Midnight/Noir always were.
+
+**Admin** (`app/ravilo-config` in Kotlin): *Default theme*, *Follow the device's light and dark*, *Light theme*, *Dark
+theme* in global scope; the same four as per-viewer rows with R162's state chips. **The global Save now carries the
+theme defaults** — it rebuilds `RaviloConfig` field by field, and without them every admin Save would have dropped them.
+
+**Deviations.**
+- The desktop's settings are the phone's Theme section in the computer's words, not the Mac's General pane or GNOME's
+  `AdwPreferencesDialog` (FR-R338-5). The content is the same; the platform shape is R337's to draw.
+- The receivers are out of scope (owner, dev review 8).
+- The web's `<meta name="theme-color">` is not updated.

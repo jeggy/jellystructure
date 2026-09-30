@@ -1289,7 +1289,12 @@ fun Route.tvRoutes(
         val req = runCatching { call.receive<ViewerSettingsRequest>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request: ${it.message}")); return@put
         }
+        themeFieldError(req)?.let { return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to it)) }
         req.skin?.let { raviloConfigService.setAdminSkin(userId, it) }
+        req.theme?.let { raviloConfigService.setAdminTheme(userId, it) }
+        req.themeFollow?.let { raviloConfigService.setAdminThemeFollow(userId, it) }
+        req.themeLight?.let { raviloConfigService.setAdminThemeLight(userId, it) }
+        req.themeDark?.let { raviloConfigService.setAdminThemeDark(userId, it) }
         req.tileShape?.let { raviloConfigService.setAdminTileShape(userId, it) }
         req.showContinueProgress?.let { raviloConfigService.setAdminShowContinueProgress(userId, it) }
         req.autoplayNext?.let { raviloConfigService.setAdminAutoplayNext(userId, it) }
@@ -1419,6 +1424,9 @@ fun Route.tvRoutes(
     put("/tv/settings") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<ViewerSettingsRequest>()
+        // R338 (FR-R338-3) — a theme id must name a theme, and the light and dark picks must be of their kind; a wrong
+        // one is refused, never stored.
+        themeFieldError(req)?.let { return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to it)) }
         raviloConfigService.applyViewerSettings(
             userId = device.jellyfinUserId,
             skin = req.skin,
@@ -1426,9 +1434,21 @@ fun Route.tvRoutes(
             autoplayNext = req.autoplayNext,
             tileShape = req.tileShape,
             uiLanguage = req.uiLanguage,
+            theme = req.theme,
+            themeFollow = req.themeFollow,
+            themeLight = req.themeLight,
+            themeDark = req.themeDark,
         )
         call.respond(mapOf("status" to "ok"))
     }
+}
+
+/** R338 (FR-R338-3) — the one field a settings write gets wrong, named, or null when every theme id is right. */
+internal fun themeFieldError(req: ViewerSettingsRequest): String? = when {
+    req.theme != null && !dev.jellystructure.shared.tv.RaviloThemes.isKnown(req.theme) -> "theme: unknown theme '${req.theme}'"
+    req.themeLight != null && !dev.jellystructure.shared.tv.RaviloThemes.isLight(req.themeLight) -> "theme_light: '${req.themeLight}' is not a light theme"
+    req.themeDark != null && !dev.jellystructure.shared.tv.RaviloThemes.isDark(req.themeDark) -> "theme_dark: '${req.themeDark}' is not a dark theme"
+    else -> null
 }
 
 /**

@@ -10,6 +10,7 @@ import dev.jellystructure.historyPushState
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelButtonPadding
+import dev.jellystructure.shared.tv.RaviloThemes
 import dev.jellystructure.shared.tv.ChannelButtonSpec
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelRowsConfig
@@ -472,6 +473,11 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             t is HTMLSelectElement && t.id == "beh-u-lang" -> ViewerSettingsRequest(uiLanguage = t.value)
             t is HTMLSelectElement && t.id == "beh-u-reqlang" -> ViewerSettingsRequest(requestLanguage = t.value)
             t is HTMLSelectElement && t.id == "beh-u-skin" -> runCatching { Skin.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skin = it) }
+            // R338 — the theme settings, per viewer
+            t is HTMLSelectElement && t.id == "beh-u-theme" -> ViewerSettingsRequest(theme = t.value)
+            t is HTMLInputElement && t.id == "beh-u-theme-follow" -> ViewerSettingsRequest(themeFollow = t.checked)
+            t is HTMLSelectElement && t.id == "beh-u-theme-light" -> ViewerSettingsRequest(themeLight = t.value)
+            t is HTMLSelectElement && t.id == "beh-u-theme-dark" -> ViewerSettingsRequest(themeDark = t.value)
             t is HTMLInputElement && t.id == "beh-u-progress" -> ViewerSettingsRequest(showContinueProgress = t.checked)
             t is HTMLInputElement && t.id == "beh-u-autoplay" -> ViewerSettingsRequest(autoplayNext = t.checked)
             t is HTMLSelectElement && t.id == "beh-u-skip-intro" -> runCatching { SkipMode.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skipIntro = it) }
@@ -2445,10 +2451,6 @@ private fun renderBehaviour(container: Element) {
 /** Global scope: no overlay concept — these fields ARE the shared defaults, bundled into `currentConfig`
  *  and saved through the normal Save button like heroes/channels/rows. */
 private fun renderBehaviourGlobal(sect: Element) {
-    val skinOptions = Skin.entries.joinToString("") { s ->
-        val sel = if (s == currentConfig.defaultSkin) " selected" else ""
-        """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
-    }
     val tileButtons = TileShape.entries.joinToString("") { s ->
         val onAttr = if (s == currentConfig.tileShape) " class=\"on\"" else ""
         """<button data-tile-shape="${s.name}"$onAttr>${TILE_SHAPE_LABELS[s] ?: s.name}</button>"""
@@ -2457,6 +2459,15 @@ private fun renderBehaviourGlobal(sect: Element) {
         val sel = if (d == currentConfig.uiDensity) " selected" else ""
         """<option value="${d.name}"$sel>${DENSITY_LABELS[d] ?: d.name}</option>"""
     }
+    // R338 — the theme defaults (FR-R338-5): one pick, follow the system, the light pick and the dark pick.
+    fun themeOptions(ids: List<String>, current: String) = ids.joinToString("") { id ->
+        val sel = if (id == current) " selected" else ""
+        """<option value="$id"$sel>${themeLabel(id)}</option>"""
+    }
+    val themeAllOptions = themeOptions(RaviloThemes.all, currentConfig.globalTheme())
+    val themeLightOptions = themeOptions(RaviloThemes.lightThemes, currentConfig.globalThemeLight())
+    val themeDarkOptions = themeOptions(RaviloThemes.darkThemes, currentConfig.globalThemeDark())
+    val themeFollowChecked = if (currentConfig.globalThemeFollow()) " checked" else ""
     val overrideChecked = if (currentConfig.allowSkinOverride) " checked" else ""
     val progressChecked = if (currentConfig.showContinueProgress) " checked" else ""
     val autoplayChecked = if (currentConfig.autoplayNext) " checked" else ""
@@ -2495,8 +2506,20 @@ private fun renderBehaviourGlobal(sect: Element) {
               <select id="beh-lang" class="input" style="width:160px;font-size:.85rem">$langOptions</select>
             </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-              <span style="font-size:.9rem">Default skin <span class="tiny muted">· viewer-editable on the TV</span></span>
-              <select id="beh-skin" class="input" style="width:160px;font-size:.85rem">$skinOptions</select>
+              <span style="font-size:.9rem">Default theme <span class="tiny muted">· when the device does not follow its system · viewer-editable</span></span>
+              <select id="beh-theme" class="input" style="width:160px;font-size:.85rem">$themeAllOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+              <input type="checkbox" id="beh-theme-follow"$themeFollowChecked>
+              Follow the device's light and dark <span class="tiny muted">· phones and computers; a TV always shows the dark theme</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Light theme <span class="tiny muted">· when the device is light</span></span>
+              <select id="beh-theme-light" class="input" style="width:160px;font-size:.85rem">$themeLightOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Dark theme <span class="tiny muted">· when the device is dark, and always on a TV</span></span>
+              <select id="beh-theme-dark" class="input" style="width:160px;font-size:.85rem">$themeDarkOptions</select>
             </label>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <div><span style="font-size:.9rem">Tile shape</span><div class="tiny muted">How rows render on the TV. Continue Watching stays landscape.</div></div>
@@ -2512,7 +2535,7 @@ private fun renderBehaviourGlobal(sect: Element) {
             </div>
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-skin-override"$overrideChecked>
-              Allow users to override skin on their device
+              Allow users to pick their own theme on their devices
             </label>
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-progress"$progressChecked>
@@ -2564,6 +2587,14 @@ private fun renderBehaviourGlobal(sect: Element) {
 /** One resolved-field row: control + its "Following global"/"Overridden"/"Set by viewer" state,
  *  with a Reset action when there's something to reset. `disabledAttr` locks the control itself when
  *  the viewer set it on their TV — the editor's only action there is Reset (R161's guardrail). */
+/** R338 — a theme's name in the admin (the ids are lower-case). */
+private fun themeLabel(id: String): String = id.replaceFirstChar { it.uppercase() }
+
+private fun userThemeOptions(ids: List<String>, current: String): String = ids.joinToString("") { id ->
+    val sel = if (id == current) " selected" else ""
+    """<option value="$id"$sel>${themeLabel(id)}</option>"""
+}
+
 private fun behFieldRow(label: String, sub: String?, controlHtml: String, source: String, resetAttr: String): String {
     val stateHtml = when (source) {
         "viewer" -> """<span class="tiny" style="color:#2dd49a;font-weight:600">✱ Set by viewer on their TV</span><span class="btn sm ghost" $resetAttr style="padding:2px 9px;font-size:.72rem">Reset to default</span>"""
@@ -2599,11 +2630,6 @@ private fun renderBehaviourUser(sect: Element) {
         val sel = if (code == r.uiLanguage.value) " selected" else ""
         """<option value="$code"$sel>$label</option>"""
     }
-    val skinDisabled = if (r.skin.source == "viewer") " disabled" else ""
-    val skinOptions = Skin.entries.joinToString("") { s ->
-        val sel = if (s == r.skin.value) " selected" else ""
-        """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
-    }
     val tileButtons = TileShape.entries.joinToString("") { s ->
         val onAttr = if (s == r.tileShape.value) " class=\"on\"" else ""
         """<button data-beh-tile="${s.name}"$onAttr>${TILE_SHAPE_LABELS[s] ?: s.name}</button>"""
@@ -2637,9 +2663,24 @@ private fun renderBehaviourUser(sect: Element) {
               r.uiLanguage.source, "id=\"beh-reset-ui_language\"",
           )}
           ${behFieldRow(
-              "Skin", "Viewer-editable on the TV",
-              """<select id="beh-u-skin" class="input" style="width:160px;font-size:.85rem"$skinDisabled>$skinOptions</select>""",
-              r.skin.source, "id=\"beh-reset-skin\"",
+              "Theme", "When the device does not follow its system · viewer-editable",
+              """<select id="beh-u-theme" class="input" style="width:160px;font-size:.85rem"${if (r.theme.source == "viewer") " disabled" else ""}>${userThemeOptions(RaviloThemes.all, r.theme.value)}</select>""",
+              r.theme.source, "id=\"beh-reset-theme\"",
+          )}
+          ${behFieldRow(
+              "Follow the device's light and dark", "Phones and computers; a TV always shows the dark theme",
+              """<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="beh-u-theme-follow"${if (r.themeFollow.value) " checked" else ""}${if (r.themeFollow.source == "viewer") " disabled" else ""}></label>""",
+              r.themeFollow.source, "id=\"beh-reset-theme_follow\"",
+          )}
+          ${behFieldRow(
+              "Light theme", "When the device is light",
+              """<select id="beh-u-theme-light" class="input" style="width:160px;font-size:.85rem"${if (r.themeLight.source == "viewer") " disabled" else ""}>${userThemeOptions(RaviloThemes.lightThemes, r.themeLight.value)}</select>""",
+              r.themeLight.source, "id=\"beh-reset-theme_light\"",
+          )}
+          ${behFieldRow(
+              "Dark theme", "When the device is dark, and always on a TV",
+              """<select id="beh-u-theme-dark" class="input" style="width:160px;font-size:.85rem"${if (r.themeDark.source == "viewer") " disabled" else ""}>${userThemeOptions(RaviloThemes.darkThemes, r.themeDark.value)}</select>""",
+              r.themeDark.source, "id=\"beh-reset-theme_dark\"",
           )}
           ${behFieldRow(
               "Tile shape", "How rows render on the TV. Continue Watching stays landscape.",
@@ -2845,8 +2886,16 @@ private fun collectConfig(container: Element) {
     val heroHeight   = (container.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
     val autoAdvance  = (container.querySelector("#auto-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
     val uiLanguage   = (container.querySelector("#beh-lang") as? HTMLSelectElement)?.value ?: "en"
-    val defaultSkin  = runCatching { Skin.valueOf((container.querySelector("#beh-skin") as? HTMLSelectElement)?.value ?: "AURORA") }
-        .getOrDefault(Skin.AURORA)
+    // R338 — the theme defaults; per-user scope keeps what is stored (the controls render in global scope only).
+    val defaultTheme = (container.querySelector("#beh-theme") as? HTMLSelectElement)?.value?.takeIf { RaviloThemes.isKnown(it) }
+        ?: currentConfig.defaultTheme
+    val defaultThemeFollow = (container.querySelector("#beh-theme-follow") as? HTMLInputElement)?.checked ?: currentConfig.defaultThemeFollow
+    val defaultThemeLight = (container.querySelector("#beh-theme-light") as? HTMLSelectElement)?.value?.takeIf { RaviloThemes.isLight(it) }
+        ?: currentConfig.defaultThemeLight
+    val defaultThemeDark = (container.querySelector("#beh-theme-dark") as? HTMLSelectElement)?.value?.takeIf { RaviloThemes.isDark(it) }
+        ?: currentConfig.defaultThemeDark
+    // The three-value skin older apps draw: the mirror of the default theme (the server writes the same on save).
+    val defaultSkin = defaultTheme?.let { RaviloThemes.legacySkin(it, defaultThemeDark) } ?: currentConfig.defaultSkin
     val tileShape = run {
         val btns = container.querySelectorAll("[data-tile-shape]")
         var shapeName = "POSTER"
@@ -2906,6 +2955,10 @@ private fun collectConfig(container: Element) {
         rows = rows,
         mergeNewlyAdded = mergeNewlyAdded,
         defaultSkin = defaultSkin,
+        defaultTheme = defaultTheme,
+        defaultThemeFollow = defaultThemeFollow,
+        defaultThemeLight = defaultThemeLight,
+        defaultThemeDark = defaultThemeDark,
         allowSkinOverride = allowOverride,
         // Preserve viewer-set fields that are not exposed in the admin UI.
         viewerSkinOverride = currentConfig.viewerSkinOverride,

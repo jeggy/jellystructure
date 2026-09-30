@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui
 
+import dev.jellystructure.ravilo.ui.screens.themeSettings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
@@ -399,7 +400,10 @@ fun RaviloApp(
     // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
     var gridColumns by remember { mutableStateOf(initialSnapshot?.gridColumns ?: 6) }
     var portraitGridColumns by remember { mutableStateOf(initialSnapshot?.portraitGridColumns ?: 2) }
-    val themeState = rememberRaviloTheme(initial = initialSnapshot?.skin ?: Skin.AURORA)
+    val themeState = rememberRaviloTheme(
+        initial = initialSnapshot?.skin ?: Skin.AURORA,
+        initialSettings = initialSnapshot?.themeSettings(),   // R338 — the theme settings the last session drew
+    )
 
     // Fetch the active user's config and apply server-owned interface prefs (language + skin)
     val configScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
@@ -420,7 +424,7 @@ fun RaviloApp(
                 // Remembered as well as applied, so signing out of this profile does not take the
                 // household's language with it.
                 lang = resolveAndRememberLanguage(cfg.uiLanguage)
-                themeState.skin = cfg.effectiveSkin()
+                themeState.apply(cfg)   // R338 — the viewer's theme settings (or, from an older server, the skin)
                 tileScale = cfg.uiDensity.tileScale()
                 gridColumns = cfg.gridColumns
                 portraitGridColumns = cfg.portrait?.gridColumns ?: 2
@@ -538,6 +542,18 @@ fun RaviloApp(
             if (eventsCatchUp.onPollRev(rev)) liveConfig.emit(rev)
         }
     }
+
+    // R338 (FR-R338-4, D6) — the device's own light/dark reaches the theme only where the layout has one: a phone
+    // layout (a phone, the iPhone web app, a desktop window under 600 dp) and the desktop. The TV layout — a TV, the web
+    // app in a desktop browser — is dark-only and shows the dark pick. Written here, before RaviloTheme reads it, so a
+    // cold start on a light phone never draws one dark frame first.
+    val appearanceWindow = LocalWindowInfo.current
+    val appearanceDensity = LocalDensity.current
+    val hasAppearance = dev.jellystructure.ravilo.ui.isDesktopPlatform ||
+        isHandset(isTvPlatform, appearanceWindow.containerSize.width, appearanceWindow.containerSize.height, appearanceDensity.density)
+    val systemDark = dev.jellystructure.ravilo.ui.seams.systemDarkAppearance()
+    themeState.deviceDark = if (hasAppearance) (systemDark ?: true) else null
+    dev.jellystructure.ravilo.ui.seams.SystemBarsAppearance(light = themeState.theme.isLight)
 
     RaviloTheme(state = themeState) {
     WithLocale(lang) {
@@ -1178,7 +1194,7 @@ fun RaviloApp(
                 // fresh content, so the next cold start can seed instantly instead of a bare shimmer.
                 // Always an exact copy of what's already on screen — never computed/derived.
                 val homeState by store.state.collectAsState()
-                LaunchedEffect(homeState, lang, themeState.skin, tileScale, gridColumns, portraitGridColumns) {
+                LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, gridColumns, portraitGridColumns) {
                     val loaded = homeState as? HomeState.Loaded ?: return@LaunchedEffect
                     val uid = activeUserId ?: return@LaunchedEffect
                     HomeSnapshotCache.save(uid, HomeSnapshot(
@@ -1189,6 +1205,10 @@ fun RaviloApp(
                         gridColumns = gridColumns,
                         portraitGridColumns = portraitGridColumns,
                         savedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
+                        theme = themeState.settings?.single,
+                        themeFollow = themeState.settings?.follow,
+                        themeLight = themeState.settings?.light,
+                        themeDark = themeState.settings?.dark,
                     ))
                 }
                 HomeScreen(
@@ -1620,7 +1640,7 @@ fun RaviloApp(
                 )
             }
 
-            is Dest.Player -> {
+            is Dest.Player -> dev.jellystructure.ravilo.ui.theme.KeepDark {   // R338 (FR-R338-2) — the film player stays dark
                 // remember(dest.itemId) — an auto-advance/next-episode does replaceTop(Dest.Player(…)),
                 // which keeps the SAME PlayerScreen composed and only swaps dest.itemId, so a new store
                 // is built per episode. Bug fix: the outgoing one used to be silently dropped and kept
@@ -1689,7 +1709,8 @@ fun RaviloApp(
             is Dest.CastRemote -> {
                 val cc = castActive
                 if (cc == null) { LaunchedEffect(Unit) { pop() } }
-                else CastRemoteScreen(
+                // R338 — the remote draws the film player's own picker sheets, so it stays dark like the player.
+                else dev.jellystructure.ravilo.ui.theme.KeepDark { CastRemoteScreen(
                     cast = cc,
                     onBack = { pop() },
                     onPlayAgain = { itemId ->
@@ -1703,7 +1724,7 @@ fun RaviloApp(
                         pop()
                         push(Dest.Player(itemId = itemId, title = title, kicker = kicker, displayName = dest.displayName))
                     },
-                )
+                ) }
             }
 
             is Dest.LiveTv -> {
@@ -1711,11 +1732,13 @@ fun RaviloApp(
                 // SAME store instance in place (LiveTvPlayerStore.tune), it does not push a new Dest;
                 // this key only matters if the caller navigates to a genuinely different channel Dest.
                 val store = remember(dest.channelId) { LiveTvPlayerStore(apiClient) }
-                LiveTvPlayerScreen(
-                    channelId = dest.channelId,
-                    store = store,
-                    onBack = { pop() },
-                )
+                dev.jellystructure.ravilo.ui.theme.KeepDark {   // R338 (FR-R338-2) — a player stays dark
+                    LiveTvPlayerScreen(
+                        channelId = dest.channelId,
+                        store = store,
+                        onBack = { pop() },
+                    )
+                }
             }
 
             is Dest.LiveTvGuide -> {
@@ -1898,6 +1921,7 @@ fun RaviloApp(
                     store = store,
                     displayName = dest.displayName,
                     onSkinChange = { themeState.skin = it },
+                    onThemeChange = { themeState.apply(it) },   // R338
                     // R191 — SettingsScreen already revoked/forgot just the active profile
                     // (store.signOutActiveSession()) before this fires; route to the profile picker
                     // if another cached profile remains, else all the way back to Login.

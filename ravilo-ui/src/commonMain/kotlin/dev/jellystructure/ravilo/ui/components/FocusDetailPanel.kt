@@ -209,7 +209,7 @@ private fun InertGenreChips(genres: List<String>) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         genres.take(PANEL_GENRE_CAP).forEachIndexed { i, g ->
             val lead = i == 0
-            val bg = when { lead && !noir -> colors.accent.copy(alpha = 0.22f); lead -> colors.surfaceVariant; else -> Color.White.copy(alpha = 0.06f) }
+            val bg = when { lead && !noir -> colors.accent.copy(alpha = 0.22f); lead -> colors.surfaceVariant; else -> RaviloTheme.colors.fg.copy(alpha = 0.06f) }
             val ink = if (lead) colors.text else colors.textSecondary
             val weight = if (lead) FontWeight.SemiBold else FontWeight.Medium
             Box(modifier = Modifier.background(bg, shape).padding(horizontal = 14.dp, vertical = 7.dp)) {

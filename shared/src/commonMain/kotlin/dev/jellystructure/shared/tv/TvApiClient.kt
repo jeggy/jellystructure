@@ -621,10 +621,19 @@ class TvApiClient(
         // override then the global default (RaviloConfigService.resolveBehaviour) — never written
         // back to the Jellystructure profile itself.
         uiLanguage: String? = null,
+        // R338 — theme ids ([RaviloThemes]); sent only by an app that saw `theme_follow` in its config, so an older
+        // server never receives them.
+        theme: String? = null,
+        themeFollow: Boolean? = null,
+        themeLight: String? = null,
+        themeDark: String? = null,
     ) {
         client.put("$baseUrl/api/tv/settings") {
             auth()
-            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, autoplayNext, tileShape, uiLanguage)))
+            jsonBody(json.encodeToString(ViewerSettingsRequest(
+                skin = skin, showContinueProgress = showContinueProgress, autoplayNext = autoplayNext, tileShape = tileShape,
+                uiLanguage = uiLanguage, theme = theme, themeFollow = themeFollow, themeLight = themeLight, themeDark = themeDark,
+            )))
         }.assertSuccess()
     }
 

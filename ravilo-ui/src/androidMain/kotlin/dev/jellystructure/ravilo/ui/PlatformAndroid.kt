@@ -7,3 +7,5 @@ actual val isTvPlatform: Boolean
 
 /** R324 — the Android build is the one with a Cast sender. */
 actual val hasCastSdk: Boolean = true
+
+actual val isDesktopPlatform: Boolean = false

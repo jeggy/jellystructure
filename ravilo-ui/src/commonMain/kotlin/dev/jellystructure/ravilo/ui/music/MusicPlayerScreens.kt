@@ -284,7 +284,7 @@ private fun SeekBar(durationMs: Long) {
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.textDim.copy(0.35f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
                 drawRoundRect(gradient, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
-                drawCircle(Color.White, (if (dragFrac != null) 9.dp else 6.dp).toPx(), Offset(size.width * frac, y))
+                drawCircle(colors.fg, (if (dragFrac != null) 9.dp else 6.dp).toPx(), Offset(size.width * frac, y))
             }
             dragFrac?.let { f ->
                 Text(fmtLen((f * dur).toLong()), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora,
@@ -359,9 +359,9 @@ private fun BottomRow(t: MusicTrackItem, lyricsOn: Boolean, onLyrics: () -> Unit
 private fun FailureSheet(failed: Boolean) {
     HandsetSheet(visible = failed, onDismiss = { MusicPlayback.skip() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-            Text(str("music.fail_t"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(str("music.fail_t"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
-            Text(str("music.fail_p"), color = Color.White.copy(0.7f), fontSize = 14.sp, fontFamily = Sora)
+            Text(str("music.fail_p"), color = RaviloTheme.colors.fg.copy(0.7f), fontSize = 14.sp, fontFamily = Sora)
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton(str("music.try_again"), null, primary = true, Modifier.weight(1f)) { MusicPlayback.retry() }

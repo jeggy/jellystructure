@@ -115,7 +115,7 @@ fun GenreChipRow(
 private fun GenreRowLabel(text: String) {
     Text(
         text = text,
-        color = Color.White.copy(alpha = 0.55f),
+        color = RaviloTheme.colors.fg.copy(alpha = 0.55f),
         fontSize = 9.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 0.8.sp,
@@ -147,7 +147,7 @@ private fun GenreChip(
         focused -> colors.accent
         lead && !noir -> colors.accent.copy(alpha = 0.22f)
         lead -> colors.surfaceVariant
-        else -> Color.White.copy(alpha = 0.06f)
+        else -> RaviloTheme.colors.fg.copy(alpha = 0.06f)
     }
     val border = when {
         focused -> Color.Transparent

@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.BehaviourOverlay
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.RaviloThemes
 import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.ResolvedBehaviourField
 import dev.jellystructure.shared.tv.RowConfig
@@ -43,6 +44,12 @@ private val DEFAULT_CONFIG = RaviloConfig(
     allowSkinOverride = true,
     showContinueProgress = true,
     tileShape = TileShape.POSTER,
+    // R338 (D5) — a new install follows the system: Daylight when it is light, Aurora when it is dark. An existing
+    // server is migrated to follow OFF instead ([RaviloConfigService.migrateThemeDefaults]).
+    defaultTheme = RaviloThemes.AURORA,
+    defaultThemeFollow = true,
+    defaultThemeLight = RaviloThemes.DAYLIGHT,
+    defaultThemeDark = RaviloThemes.AURORA,
 )
 
 class RaviloConfigService(
@@ -82,8 +89,18 @@ class RaviloConfigService(
         } else getGlobalConfig()
         if (userId == GLOBAL_USER_ID) return base
         val resolved = resolveBehaviour(userId)
+        // R338 (dev review 1) — an app from before R338 draws only [Skin]: give it the mirror of the viewer's dark pick
+        // (those apps were dark-only), and only when something about the viewer's look is not the global default.
+        val themeSources = listOf(resolved.skin.source, resolved.theme.source, resolved.themeFollow.source, resolved.themeLight.source, resolved.themeDark.source)
+        // allowSkinOverride gates the theme settings as it gates skin: off, every viewer gets the global defaults.
+        val own = base.allowSkinOverride
+        val g = if (own) null else getGlobalConfig()
         return base.copy(
-            viewerSkinOverride = resolved.skin.value.takeIf { resolved.skin.source != "global" },
+            viewerSkinOverride = RaviloThemes.legacySkin(resolved.themeDark.value).takeIf { themeSources.any { it != "global" } },
+            theme = g?.globalTheme() ?: resolved.theme.value,
+            themeFollow = g?.globalThemeFollow() ?: resolved.themeFollow.value,
+            themeLight = g?.globalThemeLight() ?: resolved.themeLight.value,
+            themeDark = g?.globalThemeDark() ?: resolved.themeDark.value,
             showContinueProgress = resolved.showContinueProgress.value,
             autoplayNext = resolved.autoplayNext.value,
             tileShape = resolved.tileShape.value,
@@ -138,6 +155,14 @@ class RaviloConfigService(
         // Phase 218 — server-resolved on read, never persisted (a stale stored value could resurrect a
         // cast button after the admin switched Chromecast off).
         cast = null,
+        // R338 — the viewer's resolved theme fields are written on every read, never stored; the global defaults are
+        // kept only when they name a theme of the right kind, and default_skin follows default_theme as its mirror.
+        theme = null, themeFollow = null, themeLight = null, themeDark = null,
+        defaultTheme = config.defaultTheme?.takeIf { RaviloThemes.isKnown(it) },
+        defaultThemeLight = config.defaultThemeLight?.takeIf { RaviloThemes.isLight(it) },
+        defaultThemeDark = config.defaultThemeDark?.takeIf { RaviloThemes.isDark(it) },
+        defaultSkin = config.defaultTheme?.takeIf { RaviloThemes.isKnown(it) }
+            ?.let { RaviloThemes.legacySkin(it, config.defaultThemeDark) } ?: config.defaultSkin,
         heroes = config.heroes
             .filter { it.itemId.isNotBlank() }
             .mapIndexed { i, h -> h.copy(order = i) },
@@ -229,6 +254,14 @@ class RaviloConfigService(
         return ResolvedBehaviour(
             uiLanguage = field(overlay.uiLanguage, overlay.uiLanguageWriter, global.uiLanguage),
             skin = field(overlay.skin, overlay.skinWriter, global.defaultSkin),
+            // R338 (FR-R338-6) — a skin a viewer picked before R338 stands in for their one pick and their dark pick
+            // until they pick a theme (every skin is dark), so nobody's look changes on the upgrade.
+            theme = if (overlay.theme != null) field(overlay.theme, overlay.themeWriter, global.globalTheme())
+                else field(overlay.skin?.let { RaviloThemes.fromSkin(it) }, overlay.skinWriter, global.globalTheme()),
+            themeFollow = field(overlay.themeFollow, overlay.themeFollowWriter, global.globalThemeFollow()),
+            themeLight = field(overlay.themeLight, overlay.themeLightWriter, global.globalThemeLight()),
+            themeDark = if (overlay.themeDark != null) field(overlay.themeDark, overlay.themeDarkWriter, global.globalThemeDark())
+                else field(overlay.skin?.let { RaviloThemes.fromSkin(it) }, overlay.skinWriter, global.globalThemeDark()),
             tileShape = field(overlay.tileShape, overlay.tileShapeWriter, global.tileShape),
             showContinueProgress = field(overlay.showContinueProgress, overlay.showContinueProgressWriter, global.showContinueProgress),
             autoplayNext = field(overlay.autoplayNext, overlay.autoplayNextWriter, global.autoplayNext),
@@ -247,9 +280,34 @@ class RaviloConfigService(
      * personal record (the R141 §D orphaning trap). Setting a value equal to the current global
      * default clears back to "follow global" instead of storing a stale override.
      */
-    fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, autoplayNext: Boolean?, tileShape: TileShape?, uiLanguage: String? = null) {
+    fun applyViewerSettings(
+        userId: String, skin: Skin?, showContinueProgress: Boolean?, autoplayNext: Boolean?, tileShape: TileShape?, uiLanguage: String? = null,
+        theme: String? = null, themeFollow: Boolean? = null, themeLight: String? = null, themeDark: String? = null,
+    ) {
         val global = getGlobalConfig()
-        val current = getBehaviourOverlay(userId)
+        var current = getBehaviourOverlay(userId)
+        // R338 — the first theme write from a new app turns a skin picked before R338 into the theme fields it stood in
+        // for, then drops it; otherwise a later pick equal to the global default would clear itself and let the old
+        // skin show through again (see resolveBehaviour).
+        val themeWrite = theme != null || themeFollow != null || themeLight != null || themeDark != null
+        val legacySkin = current.skin
+        if (themeWrite && legacySkin != null) {
+            val id = RaviloThemes.fromSkin(legacySkin)
+            current = current.copy(
+                theme = current.theme ?: id, themeWriter = current.themeWriter ?: current.skinWriter,
+                themeDark = current.themeDark ?: id, themeDarkWriter = current.themeDarkWriter ?: current.skinWriter,
+                skin = null, skinWriter = null,
+            )
+        }
+        // R338 (D6) — an app from before R338 picks a skin on a dark-only screen: that is a dark pick, and also the one
+        // pick while the viewer is not following the system and their one pick is dark — the same rule the new TV uses.
+        var inTheme = theme
+        var inThemeDark = themeDark
+        if (skin != null && !themeWrite) {
+            val r = resolveBehaviour(userId)
+            inThemeDark = RaviloThemes.fromSkin(skin)
+            if (!r.themeFollow.value && RaviloThemes.isDark(r.theme.value)) inTheme = RaviloThemes.fromSkin(skin)
+        }
         fun <T> next(incoming: T?, curValue: T?, curWriter: String?, globalDefault: T): Pair<T?, String?> = when {
             incoming == null -> curValue to curWriter
             incoming == globalDefault -> null to null   // follow-global is sticky (FR-R162-3)
@@ -260,11 +318,19 @@ class RaviloConfigService(
         val (ts, tsW) = next(tileShape, current.tileShape, current.tileShapeWriter, global.tileShape)
         val (scp, scpW) = next(showContinueProgress, current.showContinueProgress, current.showContinueProgressWriter, global.showContinueProgress)
         val (apn, apnW) = next(autoplayNext, current.autoplayNext, current.autoplayNextWriter, global.autoplayNext)
+        val (th, thW) = next(inTheme, current.theme, current.themeWriter, global.globalTheme())
+        val (thf, thfW) = next(themeFollow, current.themeFollow, current.themeFollowWriter, global.globalThemeFollow())
+        val (thl, thlW) = next(themeLight, current.themeLight, current.themeLightWriter, global.globalThemeLight())
+        val (thd, thdW) = next(inThemeDark, current.themeDark, current.themeDarkWriter, global.globalThemeDark())
         saveBehaviourOverlay(
             userId,
-            BehaviourOverlay(
+            current.copy(
                 uiLanguage = uiLang, uiLanguageWriter = uiLangW,
                 skin = sk, skinWriter = skW,
+                theme = th, themeWriter = thW,
+                themeFollow = thf, themeFollowWriter = thfW,
+                themeLight = thl, themeLightWriter = thlW,
+                themeDark = thd, themeDarkWriter = thdW,
                 tileShape = ts, tileShapeWriter = tsW,
                 showContinueProgress = scp, showContinueProgressWriter = scpW,
                 autoplayNext = apn, autoplayNextWriter = apnW,
@@ -283,6 +349,30 @@ class RaviloConfigService(
         val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
         val (v, w) = setAdminBehaviourOverride(cur.skin, cur.skinWriter, value, global.defaultSkin)
         saveBehaviourOverlay(userId, cur.copy(skin = v, skinWriter = w))
+    }
+    // R338 — the theme settings, admin side: same stickiness, same refusal to overwrite a viewer's entry.
+    fun setAdminTheme(userId: String, value: String) {
+        if (!RaviloThemes.isKnown(value)) return
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.theme, cur.themeWriter, value, global.globalTheme())
+        saveBehaviourOverlay(userId, cur.copy(theme = v, themeWriter = w))
+    }
+    fun setAdminThemeFollow(userId: String, value: Boolean) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.themeFollow, cur.themeFollowWriter, value, global.globalThemeFollow())
+        saveBehaviourOverlay(userId, cur.copy(themeFollow = v, themeFollowWriter = w))
+    }
+    fun setAdminThemeLight(userId: String, value: String) {
+        if (!RaviloThemes.isLight(value)) return
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.themeLight, cur.themeLightWriter, value, global.globalThemeLight())
+        saveBehaviourOverlay(userId, cur.copy(themeLight = v, themeLightWriter = w))
+    }
+    fun setAdminThemeDark(userId: String, value: String) {
+        if (!RaviloThemes.isDark(value)) return
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.themeDark, cur.themeDarkWriter, value, global.globalThemeDark())
+        saveBehaviourOverlay(userId, cur.copy(themeDark = v, themeDarkWriter = w))
     }
     fun setAdminTileShape(userId: String, value: TileShape) {
         val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
@@ -339,6 +429,10 @@ class RaviloConfigService(
         val next = when (field) {
             "ui_language" -> cur.copy(uiLanguage = null, uiLanguageWriter = null)
             "skin" -> cur.copy(skin = null, skinWriter = null)
+            "theme" -> cur.copy(theme = null, themeWriter = null)
+            "theme_follow" -> cur.copy(themeFollow = null, themeFollowWriter = null)
+            "theme_light" -> cur.copy(themeLight = null, themeLightWriter = null)
+            "theme_dark" -> cur.copy(themeDark = null, themeDarkWriter = null)
             "tile_shape" -> cur.copy(tileShape = null, tileShapeWriter = null)
             "show_continue_progress" -> cur.copy(showContinueProgress = null, showContinueProgressWriter = null)
             "autoplay_next" -> cur.copy(autoplayNext = null, autoplayNextWriter = null)
@@ -373,6 +467,26 @@ class RaviloConfigService(
             uiLanguage = legacy.uiLanguage.takeIf { it != global.uiLanguage }, uiLanguageWriter = "admin".takeIf { legacy.uiLanguage != global.uiLanguage },
         )
         if (overlay != BehaviourOverlay()) saveBehaviourOverlay(userId, overlay)
+    }
+
+    /**
+     * R338 (FR-R338-6, dev review 7) — once, at boot: a server that already has a global config gets the theme
+     * defaults written with **follow the system OFF**, so no viewer's Ravilo turns light the first time their phone
+     * does. The one pick and the dark pick are today's default skin; the light pick is Daylight. A fresh install never
+     * gets here with a stored config lacking the fields, so it keeps [DEFAULT_CONFIG]'s follow ON. Viewers need no rows:
+     * a skin they picked stands in for their theme in [resolveBehaviour]. Idempotent.
+     */
+    fun migrateThemeDefaults() {
+        val stored = db.raviloConfigQueries.getByUser(GLOBAL_USER_ID).executeAsOneOrNull() ?: return
+        val global = runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrNull() ?: return
+        if (global.defaultThemeFollow != null) return
+        val skinId = RaviloThemes.fromSkin(global.defaultSkin)
+        save(GLOBAL_USER_ID, global.copy(
+            defaultTheme = global.defaultTheme ?: skinId,
+            defaultThemeFollow = false,
+            defaultThemeLight = global.defaultThemeLight ?: RaviloThemes.DAYLIGHT,
+            defaultThemeDark = global.defaultThemeDark ?: skinId,
+        ))
     }
 
     /** Run [migrateLegacyBehaviourFields] once at boot for every existing per-user layout record. */

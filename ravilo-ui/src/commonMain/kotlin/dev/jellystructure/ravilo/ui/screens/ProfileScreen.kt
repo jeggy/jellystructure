@@ -216,9 +216,9 @@ fun ProfileScreen(
         // FR-R304-3 — the page's only sheet.
         HandsetSheet(visible = showSignOut, onDismiss = { showSignOut = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-                Text(str("profile.signout_title"), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+                Text(str("profile.signout_title"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                 Spacer(Modifier.height(8.dp))
-                Text(str("profile.signout_body"), color = Color.White.copy(0.7f), fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora)
+                Text(str("profile.signout_body"), color = RaviloTheme.colors.fg.copy(0.7f), fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora)
                 Spacer(Modifier.height(18.dp))
                 SheetButton(str("profile.signout_confirm"), primary = true) {
                     showSignOut = false
@@ -302,10 +302,10 @@ private fun RowDivider() {
 private fun SheetButton(label: String, primary: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .background(if (primary) DANGER else Color.White.copy(alpha = 0.10f), RoundedCornerShape(24.dp))
+            .background(if (primary) DANGER else RaviloTheme.colors.fg.copy(alpha = 0.10f), RoundedCornerShape(24.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
+    ) { Text(label, color = if (primary) Color.White else RaviloTheme.colors.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
 }
 
 private val DANGER = Color(0xFFF5667A)
