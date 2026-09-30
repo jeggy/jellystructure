@@ -13,6 +13,12 @@ falling back to a configured global language if none match. A series resolves pe
 Untagged audio tracks are surfaced in the UI for manual tagging rather than silently defaulting to
 English. Track default flags are never changed automatically — that's a manual UI action.
 
+## Written with AI
+
+This project — jellystructure, the Ravilo apps, their documentation, their packaging and their build and release
+workflows — is written with an AI coding assistant (Anthropic's Claude), directed and reviewed by its maintainer.
+Treat it as AI-generated software.
+
 ## What it manages
 
 - **NFO files.** Kodi-compatible XML, written atomically and never with `<lockdata>`, so Jellyfin

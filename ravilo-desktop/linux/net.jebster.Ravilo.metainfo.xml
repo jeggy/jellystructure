@@ -20,6 +20,10 @@
       It needs a jellystructure server to sign in to; the first screen asks for its address. Music can be sent to the
       household's Cast speakers and films to its TVs from this app.
     </p>
+    <p>
+      Ravilo's code, documentation and packaging are written with an AI coding assistant (Anthropic's Claude), directed
+      and reviewed by its maintainer.
+    </p>
   </description>
   <launchable type="desktop-id">net.jebster.Ravilo.desktop</launchable>
   <url type="homepage">https://github.com/jeggy/jellystructure</url>
