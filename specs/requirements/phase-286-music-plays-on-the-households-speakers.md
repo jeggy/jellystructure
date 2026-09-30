@@ -227,9 +227,10 @@ More probes the same afternoon pinned it down (all silent, Google's default rece
 And from two machines on the LAN, addressing the house's public address directly: the Jellyfin port answers in
 20 ms; **443 and 80 time out**. So:
 
-1. A Google speaker (and a Chromecast dongle) resolves names through Google's public DNS, whatever the network
-   hands out. The router's own record for the server (the LAN address) is never seen by it. The TVs run Android TV
-   and use the network's DNS, which is why casting to them works.
+1. These two speakers (Nest Wifi points) resolve names through a public resolver, whatever the network hands out.
+   The router's own record for the server (the LAN address) is never seen by them. **Not every Google device does
+   this:** the kitchen's Nest Hub, given the same router-only name, resolved it and played — it uses the network's
+   DNS, as the Android TVs do, which is why casting to those works.
 2. It therefore goes to the house's public address, and this router loops every forwarded port back inside **except
    80 and 443** (its own management interface sits on those). The receiver page, the API and every stream are on 443.
 3. A receiver page loaded over HTTPS may not call a plain-HTTP address: tried on the bedroom TV with the LOAD's
@@ -246,8 +247,8 @@ house**, the choices are in *What the product should do* below.
 **What the product should do (proposed, not built):**
 - *Say it.* The Chromecast card's reachability check (218 FR-218-7) fetches `/cast/` from the server itself, where
   the name resolves locally — it passes while a speaker cannot get in. It should resolve the public name through a
-  public resolver and fetch through that answer, and say in one sentence when that fails: *"Google's speakers and
-  Chromecasts cannot reach this address from inside your network."* The failure is otherwise silent on every
+  public resolver and fetch through that answer, and say in one sentence when that fails: *"Some Google speakers
+  cannot reach this address from inside your network."* The failure is otherwise silent on every
   screen: the app says *Ready*, then nothing.
 - *Not depend on it* (a phase of its own, the owner's call): a speaker that cannot start the Ravilo receiver is
   played through Google's own receiver page with the queue handed to the device (`QUEUE_LOAD`) and the media
