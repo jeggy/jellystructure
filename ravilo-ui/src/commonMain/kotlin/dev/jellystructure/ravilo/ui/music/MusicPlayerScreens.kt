@@ -588,7 +588,9 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                     val left = (cur.durationMs ?: 0L) - st.positionMs + up.sumOf { it.durationMs ?: 0L }
                     if (panel) PanelHeading(str("music.up_next")) else MusicSectionHeader(str("music.up_next"))
                     Row(Modifier.padding(horizontal = if (panel) 18.dp else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to fmtTotal(left.coerceAtLeast(0L)))), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                        // One song is "1 song", not "1 songs" (the last song of a queue on a speaker, 2026-09-30).
+                        val leftText = fmtTotal(left.coerceAtLeast(0L))
+                        Text(if (up.isEmpty()) songsCount(1) + " · " + str("ab.left", mapOf("t" to leftText)) else str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to leftText)), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                         if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = if (panel) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
                             modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = if (panel) 4.dp else 8.dp))
                     }

@@ -38,6 +38,7 @@ import javax.swing.SwingUtilities
  *   coordinates are the ones `click` takes), or at the display's own scale. The last drawn frame, replayed by Skia —
  *   nothing is read from the screen. macOS's own title bar and menu bar are not in it.
  * - `click <x> <y>` · `dclick <x> <y>` · `move <x> <y>` · `scroll <x> <y> <notches>` — the mouse, in points.
+ * - `cursor <x> <y>` — moves there and answers with the pointer the app asks for (`Hand Cursor`, `Default Cursor`, …).
  * - `key <name> [meta+shift+…]` — a key by its `KeyEvent.VK_` name (`key ESCAPE`, `key COMMA meta`); `type <text>`.
  * - `cmd <AppCommand>` — what a menu item sends (`cmd MODE_MUSIC`): macOS's menu bar cannot be reached from here.
  * - `quiet` (`quiet off`) — the app plays at nothing; the volume the person set stays shown and remembered.
@@ -56,7 +57,7 @@ internal object TestDriver {
     private val dir: File? = (System.getProperty("ravilo.testdriver") ?: System.getenv("RAVILO_TESTDRIVER"))
         ?.trim()?.ifBlank { null }?.let(::File)
     @Volatile private var started = false
-    private val INPUT = setOf("click", "dclick", "move", "scroll", "key", "type", "size", "cmd")
+    private val INPUT = setOf("click", "dclick", "move", "cursor", "scroll", "key", "type", "size", "cmd")
 
     fun start(window: ComposeWindow) {
         val d = dir ?: return
@@ -150,6 +151,12 @@ internal object TestDriver {
             "click" -> { press(int(1), int(2), 1); "ok" }
             "dclick" -> { press(int(1), int(2), 1); Thread.sleep(60); press(int(1), int(2), 2); "ok" }
             "move" -> { mouse(MouseEvent.MOUSE_MOVED, int(1), int(2), MouseEvent.NOBUTTON, 0, 0); "ok" }
+            // Which pointer the app asks for at a point — no picture of the canvas shows the cursor.
+            "cursor" -> {
+                mouse(MouseEvent.MOUSE_MOVED, int(1), int(2), MouseEvent.NOBUTTON, 0, 0)
+                Thread.sleep(150)
+                onEdt { "ok ${target.cursor.name}" }
+            }
             "scroll" -> onEdt {
                 target.dispatchEvent(MouseWheelEvent(target, MouseEvent.MOUSE_WHEEL, System.currentTimeMillis(), 0, int(1), int(2),
                     0, false, MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, int(3)))

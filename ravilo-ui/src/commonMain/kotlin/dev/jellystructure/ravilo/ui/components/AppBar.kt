@@ -361,17 +361,17 @@ private fun DesktopToolbar(title: String?, solid: Boolean, modifier: Modifier) {
             if (mac) {
                 // `.gl.two` — one glass pill, two chevrons; each is dimmed until there is a page that way.
                 Row(Modifier.height(32.dp).deskGlass(RoundedCornerShape(16.dp)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(width = 26.dp, height = 32.dp).clickable(enabled = back != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { back?.invoke() }
+                    Box(Modifier.size(width = 26.dp, height = 32.dp).then(if (back != null) Modifier.handCursor() else Modifier).clickable(enabled = back != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { back?.invoke() }
                         .semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
                         DeskIcon(DeskIcon.BACK, colors.text.copy(alpha = if (back != null) 1f else 0.4f), 16.dp)
                     }
-                    Box(Modifier.size(width = 26.dp, height = 32.dp).clickable(enabled = forward != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { forward?.invoke() }
+                    Box(Modifier.size(width = 26.dp, height = 32.dp).then(if (forward != null) Modifier.handCursor() else Modifier).clickable(enabled = forward != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { forward?.invoke() }
                         .semantics { contentDescription = forwardLabel }, contentAlignment = Alignment.Center) {
                         DeskIcon(DeskIcon.FORWARD, colors.text.copy(alpha = if (forward != null) 1f else 0.4f), 16.dp)
                     }
                 }
             } else if (back != null) {
-                Box(Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = back).semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).handCursor().clickable(onClick = back).semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
                     DeskIcon(DeskIcon.BACK, colors.text, 18.dp)
                 }
             }
@@ -406,7 +406,7 @@ private fun DeskCastButton() {
     val shape = if (mac) RoundedCornerShape(16.dp) else RoundedCornerShape(6.dp)
     Box(
         (if (mac) Modifier.size(width = 46.dp, height = 32.dp).deskGlass(shape) else Modifier.size(34.dp).clip(shape))
-            .clickable { cast.openSheet(null, music = musicMode) }.semantics { contentDescription = label },
+            .handCursor().clickable { cast.openSheet(null, music = musicMode) }.semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { DeskIcon(DeskIcon.CAST, tint, if (mac) 16.dp else 18.dp) }
 }

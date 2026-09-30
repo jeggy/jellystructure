@@ -236,7 +236,7 @@ private fun MenuButton(onMenu: () -> Unit) {
     val colors = RaviloTheme.colors
     val menuLabel = str("desk.menu")
     Box(
-        Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onMenu).semantics { contentDescription = menuLabel },
+        Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).handCursor().clickable(onClick = onMenu).semantics { contentDescription = menuLabel },
         contentAlignment = Alignment.Center,
     ) { DeskIcon(DeskIcon.MENU, colors.text, 18.dp) }
 }
@@ -274,7 +274,7 @@ private fun ModeSwitch(rail: Boolean, music: Boolean, onMode: (Boolean) -> Unit)
         val ink = if (on) colors.text else colors.textSecondary
         val name = str(if (isMusic) "mode.music" else "mode.video")
         Box(
-            modifier.then(fill).clip(shape).clickable { onMode(isMusic) }.semantics { contentDescription = name },
+            modifier.then(fill).clip(shape).handCursor().clickable { onMode(isMusic) }.semantics { contentDescription = name },
             contentAlignment = Alignment.Center,
         ) {
             if (rail) DeskIcon(if (isMusic) DeskIcon.NOTE else DeskIcon.FILM, ink, 17.dp)
@@ -326,7 +326,7 @@ private fun SearchField(placeholder: String, query: String, onQuery: (String) ->
         )
         if (query.isNotEmpty()) {
             val clear = str("search.clear")
-            Box(Modifier.size(22.dp).clip(CircleShape).clickable { onQuery("") }.semantics { contentDescription = clear }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(22.dp).clip(CircleShape).handCursor().clickable { onQuery("") }.semantics { contentDescription = clear }, contentAlignment = Alignment.Center) {
                 DeskIcon(DeskIcon.CLOSE, colors.textDim, 12.dp, stroke = 2.4f)
             }
         }
@@ -353,7 +353,7 @@ private fun SidebarRow(p: DesktopPage, on: Boolean, live: Boolean, count: Int?, 
     }
     Row(
         Modifier.fillMaxWidth().height(if (mac) 28.dp else 36.dp).clip(RoundedCornerShape(if (mac) 7.dp else 6.dp)).background(bg)
-            .hoverable(hover).clickable(interactionSource = hover, indication = null, onClick = onClick).padding(horizontal = if (mac) 8.dp else 10.dp),
+            .hoverable(hover).handCursor().clickable(interactionSource = hover, indication = null, onClick = onClick).padding(horizontal = if (mac) 8.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(if (mac) 9.dp else 12.dp),
     ) {
@@ -378,7 +378,7 @@ private fun RailItem(p: DesktopPage, on: Boolean, dot: Boolean, onClick: () -> U
     }
     Box(
         Modifier.fillMaxWidth().height(if (mac) 50.dp else 52.dp).clip(RoundedCornerShape(if (mac) 7.dp else 6.dp)).background(if (on) selBg else Color.Transparent)
-            .clickable(onClick = onClick),
+            .handCursor().clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -396,7 +396,7 @@ private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSett
     val avatar = LocalUserAvatarUrl.current
     @Composable
     fun photo(size: Dp) {
-        Box(Modifier.size(size).clip(CircleShape).background(colors.accentGradient).clickable(onClick = onViewer), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(size).clip(CircleShape).background(colors.accentGradient).handCursor().clickable(onClick = onViewer), contentAlignment = Alignment.Center) {
             if (avatar != null) RemoteImage(avatar, name, Modifier.fillMaxSize())
             else Text(name.take(1).uppercase().ifEmpty { "?" }, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
         }
@@ -408,13 +408,13 @@ private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSett
     Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         photo(26.dp)
         Column(Modifier.weight(1f)) {
-            Text(name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onViewer))
+            Text(name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onViewer))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(str("pm.settings"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSettings))
+                Text(str("pm.settings"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSettings))
                 Text("·", color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont)
-                Text(str("pm.sign_out"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSignOut))
+                Text(str("pm.sign_out"), color = colors.textDim, fontSize = 11.5.sp, fontFamily = SystemUiFont, modifier = Modifier.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSignOut))
             }
         }
-        Box(Modifier.size(22.dp).clip(CircleShape).clickable(onClick = onViewer), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.UP, colors.textDim, 14.dp) }
+        Box(Modifier.size(22.dp).clip(CircleShape).handCursor().clickable(onClick = onViewer), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.UP, colors.textDim, 14.dp) }
     }
 }

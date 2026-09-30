@@ -53,13 +53,22 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         .takeIf { it >= 0 } ?: said?.selectedSub?.takeIf { isCastBurnIn(subs.getOrNull(it), media) } ?: -1
     val audios = said?.audioTracks ?: emptyList()
     val selectedAudio = said?.selectedAudio ?: 0
+    // A song's length: what the device reports, else what the queue says of the song. A speaker reports none for a
+    // FLAC (the guest-room speaker, 2026-09-30: the bar read 2:17 of 0:00 and had no progress), and the last song's
+    // length must not stand in for the next one's.
+    val queue = said?.queue ?: p.queue
+    val queueIndex = said?.queueIndex ?: p.queueIndex
+    val itemId = said?.itemId ?: p.itemId
+    val duration = media.durationMs?.takeIf { it > 0 }
+        ?: queue.getOrNull(queueIndex)?.durationMs?.takeIf { it > 0 }
+        ?: (if (queue.isNotEmpty() && itemId != p.itemId) 0L else p.durationMs)
     return p.copy(
-        itemId = said?.itemId ?: p.itemId,
+        itemId = itemId,
         title = said?.title ?: media.title ?: p.title,
         kicker = said?.kicker ?: media.subtitle ?: p.kicker,
         artUrl = said?.artUrl ?: media.imageUrl ?: p.artUrl,
         positionMs = media.positionMs?.coerceAtLeast(0) ?: p.positionMs,
-        durationMs = media.durationMs?.coerceAtLeast(0) ?: p.durationMs,
+        durationMs = duration,
         playing = media.playerState == "PLAYING",
         buffering = media.playerState == "BUFFERING" || media.playerState == "LOADING",
         loaded = !idle || said?.type == "status",
@@ -81,8 +90,8 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         receiverId = said?.receiverId ?: p.receiverId,
         // R324 (FR-R324-4/8) — the receiver's queue snapshot, rebuilt from its word (286 dev review 10).
         music = said?.queue?.isNotEmpty() ?: p.music,
-        queue = said?.queue ?: p.queue,
-        queueIndex = said?.queueIndex ?: p.queueIndex,
+        queue = queue,
+        queueIndex = queueIndex,
         repeat = said?.repeat ?: p.repeat,
         shuffle = said?.shuffle ?: p.shuffle,
         lyricsOn = if (said != null) said.lyricsOn else p.lyricsOn,

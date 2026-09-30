@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
@@ -106,7 +107,7 @@ fun DeskButton(label: String, icon: DeskIcon? = null, primary: Boolean = false, 
     val ink = if (primary) colors.background else colors.text
     Row(
         modifier.height(38.dp).clip(RoundedCornerShape(10.dp)).background(if (primary) colors.text else colors.fg.copy(alpha = 0.10f))
-            .clickable(onClick = onClick).padding(horizontal = if (label.isEmpty()) 11.dp else 18.dp),
+            .handCursor().clickable(onClick = onClick).padding(horizontal = if (label.isEmpty()) 11.dp else 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -114,6 +115,13 @@ fun DeskButton(label: String, icon: DeskIcon? = null, primary: Boolean = false, 
         if (label.isNotEmpty()) Text(label, color = ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
     }
 }
+
+/**
+ * R337 — what can be clicked shows the hand under a mouse (owner, 2026-09-30). Worn by the app's click helpers
+ * ([dev.jellystructure.ravilo.ui.music.tap], `dpadFocusable` with a select, the desktop's own buttons and rows), so a
+ * page gets it without saying so. A touch screen and a TV have no pointer to change.
+ */
+fun Modifier.handCursor(): Modifier = this.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
 
 /** R337 — a pointer's feedback on a computer: the row under it takes a faint plate. Nothing on a TV or a phone. */
 @Composable
@@ -161,6 +169,7 @@ fun ArrowRow(
                     .border(1.dp, colors.fg.copy(alpha = 0.14f), androidx.compose.foundation.shape.CircleShape)
                     // A tap, not `clickable`: a click must not take the focus. A focused child makes the row bring itself
                     // into view and scroll back to its focused tile — the page jumped and the row stayed (GNOME, 2026-09-30).
+                    .handCursor()
                     .pointerInput(direction) {
                         detectTapGestures(onTap = {
                             scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.8f * direction) }

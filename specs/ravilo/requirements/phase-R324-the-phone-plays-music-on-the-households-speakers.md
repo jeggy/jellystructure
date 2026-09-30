@@ -184,3 +184,19 @@ app bar **and from Now playing's own glyph** (added on this pass — the design'
 films mode it is *Play on a TV* and lists **no receiver records** (four `kind = cast` rows in the DB — R327). An
 emulator sees no Cast routes (no mDNS across its NAT), so every route-dependent step — speaker rows, take-over,
 hand-off, the ⋯ block, volume, the notification actions, reconnect — is still owed to the Pixel 9 and a speaker.
+
+## Seen on a real speaker (2026-09-30, the Mac's sender — R337's third pass)
+
+The first route-dependent steps seen on a device: the speaker row, the hand-off (the song continues on the speaker
+from where the computer was), the counter and the bar, pause and seek, the speaker's own next song, volume, the
+queue, *Stop casting*. Two things changed in the shared code, so the phone has them too:
+
+- **Stop casting brings the speaker's queue back, paused where it stopped** (`MusicCast.stop`; FR-R324-5's *keeps
+  what it had* used to mean the song the hand-off left behind — wrong once anything else had been started on the
+  speaker). *Play on this phone* is the same with playback going on.
+- **A connected speaker is where a new queue goes**, also after its own queue has ended (`MusicCast.holdsDevice`).
+
+*Next*, *Previous*, a song picked from the queue and an album started over a playing one fail on a real device
+with the receiver as deployed — 289. Still owed to the Pixel 9 and a speaker: take-over of a busy speaker, the
+notification's actions, the volume keys, reconnect.
+

@@ -46,6 +46,13 @@ object MusicCast {
     /** FR-R324-7 — swipe-down hid the mini bar; the room plays on. Cleared when Playing opens or a new song starts. */
     val barHidden = MutableStateFlow(false)
     private var lastItemId: String? = null
+    /**
+     * A device is connected and is not showing a film: what is started next plays there. True from the moment a speaker
+     * is chosen until *Stop casting* — also after its queue has played out, when [linked] is false again. Without it
+     * a song picked then played on the computer, with the speaker still lit as chosen (the Mac, 2026-09-30).
+     */
+    @kotlin.concurrent.Volatile var holdsDevice: Boolean = false
+        private set
 
     /** The full items behind the ids the receiver echoes back: artists' ids, album ids, lyrics flags survive a round trip. */
     private val known = LinkedHashMap<String, MusicTrackItem>()
@@ -66,6 +73,7 @@ object MusicCast {
                 _status.value = st
                 _device.value = name
                 _linked.value = nowLinked
+                holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || !st.loaded || st.ended || st.failed)
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
                 // join with nothing playing here (FR-R324-2's second remote).
@@ -114,8 +122,19 @@ object MusicCast {
         c.stopCasting()
     }
 
-    /** FR-R324-5 — *Stop casting*: the room goes quiet; the phone keeps what it had, paused. */
-    fun stop() { cast?.stopCasting() }
+    /**
+     * FR-R324-5 — *Stop casting*: the room goes quiet; the phone keeps what was playing, paused. What was playing is
+     * the speaker's queue where it stopped — an album started while casting never reached the engine, and the bar
+     * used to fall back to the song the hand-off left behind (the Mac, 2026-09-30).
+     */
+    fun stop() {
+        val st = _status.value
+        if (_linked.value && st != null) {
+            val s = state(st)
+            if (s.queue.isNotEmpty() && s.index >= 0) MusicEngine.loadPaused(s.queue, s.index, MusicPlayback.currentPositionMs(), context)
+        }
+        cast?.stopCasting()
+    }
 
     /** FR-R324-1 (Q1) — an album started while casting replaces the speaker's queue. */
     fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) {
@@ -159,12 +178,16 @@ object MusicPlayback {
             combine(MusicEngine.state, MusicCast.linked, MusicCast.status) { local, linked, st -> if (linked && st != null) MusicCast.state(st) else local }
                 .collect { _state.value = it }
         }
+        // When the device last said where it is: between its reports the position moves on by itself (below).
+        scope.launch {
+            MusicCast.status.collect { st -> castSaid = st?.let { it.positionMs to kotlin.time.TimeSource.Monotonic.markNow() } }
+        }
     }
 
     private val casting: Boolean get() = MusicCast.linked.value
 
     fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean = false) {
-        if (casting) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
+        if (casting || MusicCast.holdsDevice) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
     }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
     fun togglePlay() { if (casting) { if (_state.value.playing) pause() else play() } else MusicEngine.togglePlay() }
@@ -189,7 +212,21 @@ object MusicPlayback {
     fun stopForVideo() = MusicEngine.stopForVideo()
     fun retry() { if (casting) MusicCast.controller?.sender?.play() else MusicEngine.retry() }
     fun skip() { if (casting) MusicCast.command("next") else MusicEngine.skip() }
-    fun currentPositionMs(): Long = if (casting) (MusicCast.status.value?.positionMs ?: 0L) else MusicEngine.currentPositionMs()
+    @kotlin.concurrent.Volatile private var castSaid: Pair<Long, kotlin.time.TimeMark>? = null
+
+    /**
+     * Where the song is now. While casting the device's word arrives about once a second; a line of lyrics lit up to a
+     * second late reads as out of step, so the position runs on from the last report while the device is playing
+     * (never more than two seconds, and never past the song's end).
+     */
+    fun currentPositionMs(): Long {
+        if (!casting) return MusicEngine.currentPositionMs()
+        val st = MusicCast.status.value ?: return 0L
+        val said = castSaid
+        if (!st.playing || said == null || said.first != st.positionMs) return st.positionMs
+        val ahead = said.second.elapsedNow().inWholeMilliseconds.coerceIn(0L, 2_000L)
+        return (st.positionMs + ahead).let { if (st.durationMs > 0) it.coerceAtMost(st.durationMs) else it }
+    }
     fun setEvenVolume(on: Boolean) = MusicEngine.setEvenVolume(on)
 
     // ── R323 — a book never casts (out of scope); every call reaches the engine ──

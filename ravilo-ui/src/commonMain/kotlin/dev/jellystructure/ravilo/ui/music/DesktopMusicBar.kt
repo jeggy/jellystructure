@@ -145,7 +145,7 @@ fun DesktopMusicBar(
                     else DeskIcon(if (st.playing) DeskIcon.PAUSE else DeskIcon.PLAY, playInk, 16.dp)
                 }
                 if (b != null) BookSkip(MusicIcon.FWD30, colors.text) { MusicPlayback.skipBy(30_000) }
-                else BarButton(DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, str("desk.key_next")) { if (st.hasNext) MusicPlayback.next() }
+                else BarButton(DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, str("desk.key_next"), enabled = st.hasNext) { MusicPlayback.next() }
             }
             SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -163,10 +163,11 @@ fun DesktopMusicBar(
 
 /** `.pb-ctl .b` / `.pb-r .b` — a 30 dp button; a lit one (the queue while it is open) sits on a faint plate. */
 @Composable
-private fun BarButton(icon: DeskIcon, tint: androidx.compose.ui.graphics.Color, label: String, on: Boolean = false, onClick: () -> Unit) {
+private fun BarButton(icon: DeskIcon, tint: androidx.compose.ui.graphics.Color, label: String, on: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
     Box(
-        Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).then(if (on) Modifier.background(colors.fg.copy(alpha = 0.07f)) else Modifier).tap(onClick)
+        Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).then(if (on) Modifier.background(colors.fg.copy(alpha = 0.07f)) else Modifier)
+            .then(if (enabled) Modifier.tap(onClick) else Modifier)   // a dimmed button takes no click and shows no hand
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { DeskIcon(icon, tint, 18.dp) }

@@ -494,3 +494,49 @@ tabs, the window as tall as each tab's content (373 / 428 / 219 points); the arr
 book-player and Profile pages; and **the volume while casting** — with the bedroom TV playing, the capsule's slider
 showed the TV's level (zero), ⌘↑ took the TV to 0.10 and ⌘↓ back, watched from a second Cast connection; *Stop
 casting* returned the capsule to the Mac's own level.
+
+## The third pass (2026-09-30, late afternoon) — music on a speaker as the computer shows it, and the hand
+
+The owner's router rule made the guest-room speaker reach the server (286's notes), and the sound was right. What
+the Mac showed while it played was not. Seen on the Mac with a second Cast connection reading the speaker, the
+speaker's volume at 2 %:
+
+- **The counter and the bar.** A speaker's player reports no length for a FLAC, so the bar read `0:00 / 0:00` and
+  never moved. The length now comes from the device when it gives one, else from the queue's own entry for the
+  song (`mergeCastStatus`, a test beside the others). Seen: `0:13 / 3:19` against the speaker's 14.8 s a moment
+  later; paused, the counter holds (0:31 twice, four seconds apart); a click on the bar at the middle gave 1:43
+  against the speaker's 104.8 s.
+- **Lyrics in step.** The device says where it is about once a second; a line lit a second late reads as wrong.
+  Between two reports the position runs on by itself while the device is playing — never more than two seconds
+  ahead, never past the end (`MusicPlayback.currentPositionMs`).
+- **A speaker that is chosen is where music goes.** After its queue had played out the speaker was still lit as
+  chosen, and a song picked then played on the computer. `MusicCast.holdsDevice` — connected and not showing a
+  film — now decides where a new queue goes. Seen: *Play* on an album with the speaker idle starts there.
+- **The song that follows** (the receiver's own, at a song's end) shows at once: title, `0:29 / 4:11`.
+- **Volume** is the speaker's while it plays (seen: a click at a tenth of the slider → 0.11 on the speaker, back
+  to 0.03). **The queue panel** lists the speaker's queue. ***Play on…*** names what plays (*Speaker · Playing …*).
+- ***Stop casting* keeps what was playing** (FR-R324-5 read as the listener means it): the speaker's queue comes
+  back to the computer, paused where it stopped. It used to fall back to the song the hand-off had left behind —
+  an album started while casting never reached the computer's own player. The sheet's row and the ⋯ menu's row are
+  one call now (`MusicCast.stop`). Seen: stopped at 2:08 of a song, the capsule holds the song at 2:08, paused.
+- *1 song*, not *1 songs*, on the queue's line.
+
+**What failed, and is the receiver's** (289): with a song playing, *Next* and *Play* on another album both end in
+silence on the speaker. Fixed in the receiver and pinned by a test; it reaches the speakers with the next deploy.
+Until then the computer shows its own last song again and says nothing (289's open question 1).
+
+**The hand under the mouse** (owner: *when hovering something that's clickable, the cursor changes to a pointer*).
+One modifier, `handCursor()`, and the two places nearly every clickable thing goes through: `dpadFocusable` (a
+tile, a button, a row — where a click does what Select does, so not the film player's whole surface, whose tap
+only shows its controls) and the music pages' `tap`. Added by hand where a bare `clickable` is used: the sidebar
+and the rail, Back / Forward, the cast button, the arrows on a row, the desktop's buttons, the Settings window's
+tabs, choices and rows. A disabled Back or Forward and a dimmed *Next* keep the arrow (the dimmed *Next* takes no
+click at all now). Sliders keep the arrow, as the Mac's and GNOME's own do; a text field keeps the I-beam. The web
+app gets the same hand from the same code; a phone and a TV have no pointer.
+
+No picture of the canvas shows the cursor, so the test driver has `cursor <x> <y>`: it moves there and answers
+with the pointer the app asks for. On the Mac: *Hand* on an album tile, a sidebar row, the mode switch, a row of
+*Recently played*, *See all*, a row's arrow, *Settings* and *Sign out*, the capsule's buttons, the hero and its
+two buttons and dots, a genre chip, *Resume*, *+ My List*, *more*, Back when there is somewhere to go back to, and
+in the Settings window a tab, the checkbox and its label, a theme, a language; *Default* on a heading, on empty
+page, on a backdrop, on Forward with nothing ahead; *Text* in the search field.

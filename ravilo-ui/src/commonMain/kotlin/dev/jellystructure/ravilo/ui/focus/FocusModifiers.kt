@@ -23,6 +23,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import dev.jellystructure.ravilo.ui.PlatformBackHandler
 import dev.jellystructure.ravilo.ui.isTvPlatform
@@ -160,7 +162,9 @@ fun Modifier.dpadFocusable(
     .onFocusChanged { if (it.isFocused) onFocused() else onBlurred() }
     .focusable()
     .then(
-        if (onTap != null) Modifier.pointerInput(onTap, focusRequester) {
+        // R337 — the hand under a mouse where a click does what Select does (a tile, a button, a row). Not where the
+        // tap means something else than Select (the film player's whole surface toggles its chrome).
+        if (onTap != null) (if (onTap === onSelect) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier).pointerInput(onTap, focusRequester) {
             detectTapGestures(onTap = {
                 // Pull focus so the focus ring follows the pointer and subsequent
                 // D-pad/keyboard navigation continues from the tapped item.

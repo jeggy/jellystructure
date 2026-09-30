@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.music
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
 import dev.jellystructure.ravilo.ui.components.deskHover
+import dev.jellystructure.ravilo.ui.components.handCursor
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -252,9 +253,9 @@ fun TrackRow(
     }
 }
 
-/** A plain tap target without a ripple (the app's idiom on the phone). */
+/** A plain tap target without a ripple (the app's idiom on the phone); under a mouse it shows the hand ([handCursor]). */
 @Composable
-fun Modifier.tap(onClick: () -> Unit): Modifier = this.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+fun Modifier.tap(onClick: () -> Unit): Modifier = this.handCursor().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
 
 @Composable
 fun PillButton(label: String, icon: MusicIcon?, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {

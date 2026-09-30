@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.i18n.LastLanguage
 import dev.jellystructure.ravilo.i18n.SUPPORTED_LANGUAGES
 import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
+import dev.jellystructure.ravilo.ui.components.handCursor
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.isWebPlatform
@@ -461,7 +462,7 @@ fun DesktopSettingsPanel(
                             val on = tab == i
                             Column(
                                 Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) colors.fg.copy(alpha = 0.10f) else Color.Transparent)
-                                    .clickable { tab = i }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    .handCursor().clickable { tab = i }.padding(horizontal = 12.dp, vertical = 6.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
                                 dev.jellystructure.ravilo.ui.components.DeskIcon(icon, if (on) colors.text else colors.textSecondary, 18.dp)
@@ -592,7 +593,7 @@ private fun AdwGroupScope.AdwRow(title: String, sub: String? = null, onClick: ((
     val index = remember { rows++ }
     if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.fg.copy(alpha = 0.08f)))
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).then(if (onClick != null) Modifier.deskHoverRow().clickable(onClick = onClick) else Modifier).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).then(if (onClick != null) Modifier.deskHoverRow().handCursor().clickable(onClick = onClick) else Modifier).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -643,7 +644,7 @@ private fun AdwGroupScope.AdwCombo(
                 Column(Modifier.width(200.dp).shadow(18.dp, shape).clip(shape).background(colors.surfaceVariant).border(1.dp, colors.fg.copy(alpha = 0.10f), shape).padding(6.dp)) {
                     options.forEach { (id, label) ->
                         Row(
-                            Modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(6.dp)).deskHoverRow().clickable { open = false; if (id != picked) onPick(id) }.padding(horizontal = 10.dp),
+                            Modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(6.dp)).deskHoverRow().handCursor().clickable { open = false; if (id != picked) onPick(id) }.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             lead?.invoke(id)
@@ -673,7 +674,7 @@ private fun DeskChoice(label: String, selected: Boolean, onPick: () -> Unit) {
     val colors = RaviloTheme.colors
     Box(
         Modifier.height(30.dp).clip(RoundedCornerShape(8.dp)).background(if (selected) colors.accent else colors.fg.copy(alpha = 0.08f))
-            .clickable(onClick = onPick).padding(horizontal = 14.dp),
+            .handCursor().clickable(onClick = onPick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (selected) colors.onAccent else colors.text, fontSize = 13.sp,

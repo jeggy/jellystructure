@@ -138,7 +138,8 @@ fun ScreensSheet(
                 onTapDevice = ::tapDevice, onTapRoute = ::tapRoute, isConnected = ::connectedTo,
                 onAddTv = if (cast.screensEnabled) ({ addTvOpen = true }) else null,
                 airplayAvailable = airplayAvailable, onAirplay = { onClose(); onAirplay() },
-                onStop = if (link != CastLinkState.NONE) ({ onClose(); cast.stopCasting() }) else null,
+                // Music on a speaker: its queue comes back, paused where it stopped (FR-R324-5) — the same as the ⋯ menu's row.
+                onStop = if (link != CastLinkState.NONE) ({ onClose(); if (dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) dev.jellystructure.ravilo.ui.music.MusicCast.stop() else cast.stopCasting() }) else null,
                 onClose = onClose,
             )
         }

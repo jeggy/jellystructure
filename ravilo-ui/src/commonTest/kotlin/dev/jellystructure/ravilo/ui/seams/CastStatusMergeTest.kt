@@ -62,4 +62,20 @@ class CastStatusMergeTest {
             CastReceiverMessage(type = "nextup", nextupSecs = 5))
         assertEquals(q, folded.queue); assertEquals("r1", folded.receiverId); assertEquals(5, folded.nextupSecs)
     }
+
+    @Test
+    fun `a song's length comes from the queue when the device reports none`() {
+        // A speaker plays a FLAC and reports no duration at all: the bar read 2:17 of 0:00.
+        val queue = listOf(CastTrackItem(id = "a", title = "One", durationMs = 217_000), CastTrackItem(id = "b", title = "Two"))
+        val noLength = CastMediaSnapshot(playerState = "PLAYING", positionMs = 137_000)
+        val first = mergeCastStatus(null, CastReceiverMessage(type = "status", itemId = "a", queue = queue, queueIndex = 0), noLength, "status", 0)
+        assertEquals(217_000, first.durationMs)
+        // The device's own word wins when it has one.
+        assertEquals(216_500, mergeCastStatus(first, null, noLength.copy(durationMs = 216_500), null, 0).durationMs)
+        // The next song has no length anywhere: nothing is shown, not the last song's.
+        val second = mergeCastStatus(first, CastReceiverMessage(type = "status", itemId = "b", queue = queue, queueIndex = 1), noLength.copy(positionMs = 1_000), "status", 0)
+        assertEquals(0, second.durationMs)
+        // A film's report without a length keeps the one it had.
+        assertEquals(5_400_000, mergeCastStatus(mergeCastStatus(null, null, playing, null, 0), null, CastMediaSnapshot(playerState = "PAUSED", positionMs = 5), null, 0).durationMs)
+    }
 }
