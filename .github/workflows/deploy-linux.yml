@@ -182,7 +182,10 @@ jobs:
       - name: Lint what was built
         run: |
           set -euo pipefail
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
+          # Two errors are Flathub's own build service's job — it mirrors the screenshots to its media host and into the
+          # repository — and this bundle is a release file, not built there. Written here, so any tag can be rebuilt.
+          printf '{"%s": {"appstream-external-screenshot-url": "mirrored by Flathub builds only", "appstream-screenshots-not-mirrored-in-ostree": "mirrored by Flathub builds only"}}' "$APP_ID" > lint-exceptions.json
+          flatpak run --command=flatpak-builder-lint org.flatpak.Builder --exceptions --user-exceptions lint-exceptions.json repo repo
       - uses: actions/upload-artifact@v4
         with:
           name: ravilo-linux-flatpak
