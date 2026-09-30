@@ -540,3 +540,12 @@ with the pointer the app asks for. On the Mac: *Hand* on an album tile, a sideba
 two buttons and dots, a genre chip, *Resume*, *+ My List*, *more*, Back when there is somewhere to go back to, and
 in the Settings window a tab, the checkbox and its label, a theme, a language; *Default* on a heading, on empty
 page, on a backdrop, on Forward with nothing ahead; *Text* in the search field.
+
+**On GNOME** (the container, the same build): *Hand* on a tile, a sidebar row, the mode switch, the bar's play
+button, the cast button, the sidebar's toggle, *See all*; *Default* on a heading, on the header bar (it drags the
+window), on the window's own close and maximise buttons (as libadwaita's), on a dimmed *Next*; *Text* in search.
+
+**A window opened with no display** (found there: GNOME's remote login with nobody connected has a 0 × 0 screen):
+the saved place is on no display, so the window was centred — on nothing, at −640, −376, its header off the
+display that appears when someone connects. With no display at all it opens at 48, 48 (`WindowBounds.load`).
+

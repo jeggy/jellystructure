@@ -25,8 +25,14 @@ internal object WindowBounds {
         val w = file.get("w")?.toFloatOrNull()?.coerceAtLeast(360f)   // R337 FR-R337-11 — the minimum is 360 × 600 now
         val h = file.get("h")?.toFloatOrNull()?.coerceAtLeast(600f)
         val size = if (w != null && h != null) DpSize(w.dp, h.dp) else DEFAULT_SIZE
-        val position = if (x != null && y != null && onSomeDisplay(x.toInt(), y.toInt())) WindowPosition(x.dp, y.dp)
-        else WindowPosition(Alignment.Center)
+        val position = when {
+            x != null && y != null && onSomeDisplay(x.toInt(), y.toInt()) -> WindowPosition(x.dp, y.dp)
+            // A session with no display yet (a remote desktop nobody is connected to — seen in GNOME's remote login,
+            // 2026-09-30): centred on a 0 × 0 screen the window sat at −640, −376, its header off the display that
+            // appeared later. Near the origin it is on that display when it comes.
+            !anyDisplay() -> WindowPosition(48.dp, 48.dp)
+            else -> WindowPosition(Alignment.Center)
+        }
         return Bounds(position, size)
     }
 
@@ -37,6 +43,10 @@ internal object WindowBounds {
         file.put("w", size.width.value.toString())
         file.put("h", size.height.value.toString())
     }
+
+    private fun anyDisplay(): Boolean = runCatching {
+        GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.any { !it.defaultConfiguration.bounds.isEmpty }
+    }.getOrDefault(true)
 
     /** The title bar's top-left 100 × 30 must be on a display, or the window could not be dragged back. */
     private fun onSomeDisplay(x: Int, y: Int): Boolean = runCatching {
