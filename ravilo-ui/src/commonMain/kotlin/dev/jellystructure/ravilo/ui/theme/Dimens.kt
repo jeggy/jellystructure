@@ -23,6 +23,27 @@ val LocalCompact = staticCompositionLocalOf { false }
 // (RaviloApp → isHandset) checks isTvPlatform first.
 val LocalHandset = staticCompositionLocalOf { false }
 
+/**
+ * R337 (FR-R337-1) — the three view families. **A layout seam, never an input one**: [isTvPlatform] keeps every
+ * D-pad path it gates, and the web app is the TV family here while being no TV at all (dev review 1).
+ *
+ * - [TV] — a TV, and the web app in a desktop browser;
+ * - [PHONE] — a phone, the iPhone web app, and **a desktop window under 600 dp** (the phone's screens, unchanged);
+ * - [DESKTOP] — a desktop window 600 dp and wider: the sidebar (≥ 840) or the rail (600–839).
+ */
+enum class LayoutFamily { TV, DESKTOP, PHONE }
+val LocalLayoutFamily = staticCompositionLocalOf { LayoutFamily.TV }
+
+/** R337 — the window's width, for the desktop's width classes ([WindowWidths]). */
+val LocalWindowWidth = staticCompositionLocalOf { 0.dp }
+
+/** R337 (FR-R337-1, dev review 2) — Compose's window-size-class edges, in one place. */
+object WindowWidths {
+    val MEDIUM = 600.dp
+    val EXPANDED = 840.dp
+    val LARGE = 1200.dp
+}
+
 // R145: responsive horizontal content gutter — tight on phones, TV-wide otherwise. Replaces the fixed
 // 48dp screenPadH at every content-margin call site.
 val raviloHPad: Dp

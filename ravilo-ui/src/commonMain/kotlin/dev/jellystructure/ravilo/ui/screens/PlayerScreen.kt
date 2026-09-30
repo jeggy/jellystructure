@@ -401,7 +401,7 @@ fun PlayerScreen(
 
     // R244 — the handset chrome's own state; none of it exists on a TV. `handset` is LocalHandset
     // (smallest side < 600 dp, orientation-stable) — the gate the spec's dev review confirmed.
-    val handset = LocalHandset.current
+    val handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform   // R337 dev review 9 — R329's chrome at every desktop width
     val portrait = LocalPortrait.current
     val handsetControls = if (handset) rememberHandsetPlayerControls() else null
     val haptics = LocalHapticFeedback.current
@@ -3706,7 +3706,7 @@ private fun BufferingSpinner(colors: RaviloColors) {
  */
 @Composable
 private fun PlayerStartScreen(colors: RaviloColors, itemKicker: String?, itemTitle: String, retrying: Boolean) {
-    val isPhone = LocalHandset.current
+    val isPhone = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform   // R337 dev review 9
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BrandPulse(colors, dotSize = if (isPhone) 10.dp else 16.dp, gap = if (isPhone) 9.dp else 14.dp)

@@ -49,7 +49,7 @@ fun PlaybackNoteLine(note: PlaybackNote, compact: Boolean = false) {
     val noir = LocalRaviloSkin.current == Skin.NOIR
     val sora = Sora
 
-    val device = note.device.ifBlank { str(if (compact) "this_phone" else "this_tv") }
+    val device = note.device.ifBlank { str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "this_computer" else if (compact) "this_phone" else "this_tv") }
     val lead = str("slow_lead", mapOf("device" to device))
     val tail = if (note.basis == "measured" && note.seconds != null)
         str("slow_tail_measured", mapOf("n" to note.seconds.toString()))

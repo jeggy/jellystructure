@@ -504,6 +504,7 @@ actual object MusicEngine {
 
     actual fun currentPositionMs(): Long = if (openTrackId != null) exo?.currentPosition ?: parkedPositionMs else parkedPositionMs
 
+    actual fun setUserVolume(level: Float) = Unit   // R337 — the desktop bar's; a phone's volume is its keys
     actual fun setEvenVolume(on: Boolean) {
         MusicPrefs.evenVolume = on
         val t = q.current ?: return

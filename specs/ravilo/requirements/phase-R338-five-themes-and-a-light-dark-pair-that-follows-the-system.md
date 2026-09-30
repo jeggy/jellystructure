@@ -309,3 +309,7 @@ theme defaults** — it rebuilds `RaviloConfig` field by field, and without them
   `AdwPreferencesDialog` (FR-R338-5). The content is the same; the platform shape is R337's to draw.
 - The receivers are out of scope (owner, dev review 8).
 - The web's `<meta name="theme-color">` is not updated.
+
+**Addendum (2026-09-30, with R337):** Linux's light/dark source is in — `DesktopAppearance` reads the Settings portal's
+`color-scheme` through `LinuxPortal` (GIO over JNA) before the first frame and follows `SettingChanged`. Still `⚠
+Partial`: nothing of R338 has been seen on a screen (R337's verification run hit a host incident; see R337's build notes).

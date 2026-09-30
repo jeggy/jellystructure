@@ -20,7 +20,8 @@ import dev.jellystructure.shared.tv.TvApiClient
 @Composable
 actual fun rememberCastSender(api: TvApiClient): ActiveCastSender {
     remember {
-        CastPlatform.playHereKey = "cast.play_here_mac"
+        // R337 — "this Mac" only on a Mac; Linux said it too until R337 (dev review 14).
+        CastPlatform.playHereKey = if (DesktopPaths.isMac) "cast.play_here_mac" else "cast.play_here_desk"
         if (DesktopPaths.isMac) CastPlatform.openLocalNetworkSettings = {
             runCatching { ProcessBuilder("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork").start() }
         }

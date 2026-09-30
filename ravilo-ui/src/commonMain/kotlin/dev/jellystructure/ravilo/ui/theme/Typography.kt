@@ -36,3 +36,14 @@ val Sora: FontFamily
         val semiBold = Font(Res.font.sora, weight = FontWeight.SemiBold)
         return remember(normal, medium, semiBold) { FontFamily(normal, medium, semiBold) }
     }
+
+/**
+ * R337 (FR-R337-5, Q9) — the desktop's chrome (sidebar, rail, header bars, menus, dialogs) is set in the platform's own
+ * UI font in every theme; titles, tiles and the player keep Sora and Space Grotesk. Sora wherever there is no platform
+ * font to take (a phone, a TV, the web app).
+ */
+val SystemUiFont: FontFamily
+    @Composable get() = platformUiFontFamily ?: Sora
+
+/** R337 — the platform's UI font family, or null (Android, the web). */
+expect val platformUiFontFamily: FontFamily?

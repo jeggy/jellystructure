@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -97,6 +98,12 @@ fun AppBar(
     brandBadge: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // R337 (FR-R337-5, dev review 5) — on the desktop the page's top bar is the platform's toolbar: the sidebar or rail
+    // holds the pages, the search and the viewer, so every screen's AppBar call stays as it is.
+    if (dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP) {
+        DesktopToolbar(title = title, solid = opaque || scrolled, modifier = modifier)
+        return
+    }
     val colors = RaviloTheme.colors
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
@@ -307,6 +314,45 @@ fun AppBar(
         // (maxValue > 0); a wide screen where everything fits shows nothing, same as before this fix.
         if (compact && navScrollState.maxValue > 0) {
             NavScrollIndicator(navScrollState, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+/** R337 — whether this page has somewhere to go back to (the stack is deeper than one), provided by the frame. */
+val LocalDesktopBack = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+/** R337 — room at the toolbar's start for the Mac's traffic lights when no sidebar is there to hold them. */
+val LocalDesktopChromeStart = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
+
+/**
+ * R337 (FR-R337-5) — the desktop's toolbar over a page. **macOS:** transparent, a glass Back button, *Play on…* at the
+ * end, laid over the page's hero. **GNOME:** the content's header bar (46 dp), the page's title centred, the close
+ * button on the right (drawn by the window frame). Solid once the page scrolls under it.
+ */
+@Composable
+private fun DesktopToolbar(title: String?, solid: Boolean, modifier: Modifier) {
+    val colors = RaviloTheme.colors
+    val mac = dev.jellystructure.ravilo.ui.isMacPlatform
+    val back = LocalDesktopBack.current
+    val bg by animateColorAsState(if (solid) colors.surface.copy(alpha = 0.95f) else Color.Transparent, tween(180), label = "deskBar")
+    Box(modifier.fillMaxWidth().height(if (mac) 52.dp else 46.dp).background(bg)) {
+        Row(
+            Modifier.matchParentSize().padding(start = 12.dp + LocalDesktopChromeStart.current, end = if (mac) 14.dp else 52.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (back != null) {
+                Box(
+                    Modifier.size(32.dp).clip(if (mac) CircleShape else RoundedCornerShape(6.dp))
+                        .background(if (mac) colors.surface.copy(alpha = 0.7f) else colors.fg.copy(alpha = 0.08f))
+                        .clickable(onClick = back),
+                    contentAlignment = Alignment.Center,
+                ) { ChevronGlyph(GlyphDirection.LEFT, colors.text, 14.dp, description = str("action.back")) }
+            }
+            Box(Modifier.weight(1f), contentAlignment = if (mac) Alignment.CenterStart else Alignment.Center) {
+                if (!mac && title != null) Text(title, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, maxLines = 1)
+            }
+            CastButton()
         }
     }
 }

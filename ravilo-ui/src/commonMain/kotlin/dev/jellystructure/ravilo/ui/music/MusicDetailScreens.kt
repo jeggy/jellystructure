@@ -98,14 +98,21 @@ fun MusicAlbumScreen(
             val context = MusicContext("album", a.title, a.id)
             val albumArtistIds = a.artists.map { it.id }.toSet()
             val compilation = a.type == "compilation"
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                item(key = "cover") {
+            // R337 (dev review 5) — on the desktop the album's header sits beside a 240 dp cover, as the mockup draws it.
+            val deskWide = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
+            LazyColumn(contentPadding = PaddingValues(top = if (deskWide) dev.jellystructure.ravilo.ui.theme.RaviloDimens.appBarHeight else 0.dp, bottom = 24.dp)) {
+                if (!deskWide) item(key = "cover") {
                     Box(Modifier.fillMaxWidth().background(groundTint())) {
                         MusicCover(a.imageUrl, a.title, Modifier.fillMaxWidth().aspectRatio(1f), corner = 0.dp, requestedWidth = 900, wordmarkSize = 30)
                     }
                 }
                 item(key = "head") {
-                    Column(Modifier.padding(horizontal = raviloHPad).padding(top = 16.dp)) {
+                    Row(Modifier.padding(horizontal = raviloHPad).padding(top = 16.dp), verticalAlignment = Alignment.Bottom) {
+                    if (deskWide) {
+                        MusicCover(a.imageUrl, a.title, Modifier.size(240.dp), corner = 10.dp, requestedWidth = 600, wordmarkSize = 22)
+                        Spacer(Modifier.width(24.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
                         Text(a.title, color = colors.text, fontSize = 24.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                         Spacer(Modifier.height(4.dp))
                         // FR-R321-7 — the artist is a link; several are several links.
@@ -126,6 +133,7 @@ fun MusicAlbumScreen(
                             PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                         }
                         Spacer(Modifier.height(10.dp))
+                    }
                     }
                 }
                 itemsIndexed(d.tracks, key = { _, t -> t.id }) { i, t ->

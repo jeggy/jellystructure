@@ -189,14 +189,17 @@ fun MusicBrowseScreen(
     val bookSortable = query.isBlank() && chip == "audiobooks" && books != null && bookView == "books"
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
+        // R337 (dev review 5) — on the desktop the sidebar is the chip strip, and its search field opens this page as the
+        // search page: the page's own field shows only then (or while a query is typed), the chips never.
+        val deskFamily = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
         LazyColumn(state = list, contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
-            item(key = "field") {
+            if (!deskFamily || focusInput || query.isNotBlank()) item(key = "field") {
                 SearchField(query, store::onQuery, fieldFR) { keyboard?.hide() }
             }
             if (query.isNotBlank()) {
                 searchResults(results, query, expanded, { expanded = it }, onOpenAlbum, onOpenArtist, onTrackMore)
             } else {
-                item(key = "chips") {
+                if (!deskFamily) item(key = "chips") {
                     LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {
                         items(MUSIC_CHIPS + listOfNotNull(if (books != null) "audiobooks" else null), key = { it }) { c -> Chip(chipLabel(c), c == chip) { expanded = null; onChip(c) } }
                     }
@@ -403,12 +406,15 @@ private fun LazyListScope.listChip(
 /** A grid inside the page's one scrolling column (the chip strip and the field scroll away with it). */
 @Composable
 internal fun <T> Grid(items: List<T>, columns: Int, gap: Dp, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit) {
+    val desk = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(horizontal = raviloHPad).fillMaxWidth()) {
-        val w = (maxWidth - gap * (columns - 1)) / columns
+        // R337 (dev review 5) — at desktop widths the grid takes as many ~180 dp columns as fit, never fewer than the phone's.
+        val cols = if (desk) maxOf(columns, ((maxWidth + gap) / (180.dp + gap)).toInt()) else columns
+        val w = (maxWidth - gap * (cols - 1)) / cols
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items.chunked(columns).forEachIndexed { r, row ->
+            items.chunked(cols).forEachIndexed { r, row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) { row.forEach { cell(it, w) } }
-                if (r == (items.size - 1) / columns) LaunchedEffect(items.size) { onEnd() }
+                if (r == (items.size - 1) / cols) LaunchedEffect(items.size) { onEnd() }
             }
         }
     }

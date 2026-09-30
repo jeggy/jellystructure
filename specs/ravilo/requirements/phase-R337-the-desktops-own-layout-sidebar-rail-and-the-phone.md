@@ -9,7 +9,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions
+`⚠ Partial` 2026-09-30 (§Build notes: built and compiled; not seen on screen — the verification run hit a host incident) — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions
 answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review; the owner took the leans on items 4 and 7 the same day — Q12, Q13). Number verified free: `main`
 tops at R335, and R335 names **R336** for MPRIS and the Inhibit portal, so this starts at R337.
 
@@ -316,3 +316,61 @@ the owner (items 4 and 7, leans given); everything else is the build's.
     (d) the bar, queue and Playing by width;
     (e) the GNOME window, the single instance and the Background portal;
     (f) keys, menus and strings.
+
+## Build notes (2026-09-30)
+
+Built from the dev review; compiled for desktop (`:ravilo-ui`, `:ravilo-desktop`), Android and web, all fences green.
+**Not seen on screen, not deployed, not device-tested:** the one verification run (the desktop app under Xvfb against
+the local stack) ended in a host incident, below, before a single correct frame was captured.
+
+- **The seam (items 1, 3, 9).** `LayoutFamily` + `LocalLayoutFamily`, `LocalWindowWidth`, `WindowWidths`
+  (600/840/1200), `isDesktopPlatform`, `isMacPlatform`. Music on the desktop at every width (`listeningLayout`), and
+  the R335 bug fixed: `MusicEngineDesktop.supported` now asks for libmpv on Linux. Profile is a page on the desktop, and
+  the players keep R329's chrome at every desktop width.
+- **The frame.**
+  - `components/DesktopNav.kt`: the sidebar (≥ 840) or the rail (600–839), in each platform's shape; the switch; the
+    search field (it opens the mode's search page with its field focused); the pages; the counts (`kindCounts` from
+    `getFacets`, and each music list's `total` — no server change was needed); the viewer with *Settings · Sign out*,
+    and no Switch (Q12).
+  - The music Library is `MUSIC_LIBRARY` = the phone's chips (Q13). The rail says *Audiobooks*, not the mockup's
+    *Books* (the owner's naming rule).
+  - The lit row is derived from the stack. `RaviloApp` puts a `Row` around the page.
+  - `AppBar` draws the desktop toolbar: Back when the stack is deeper than one, the title centred on GNOME, *Play on…*,
+    and room for the traffic lights when the sidebar is hidden.
+- **Music.**
+  - `music/DesktopMusicBar.kt`: the bar (capsule on the Mac, docked on GNOME; the medium width drops shuffle, lyrics
+    and volume) with Q2/Q10's films-mode rule, and the queue panel (pushes at ≥ 1200, overlays from 600 to 1199).
+  - The volume is a new `MusicEngine.setUserVolume`, multiplied into ReplayGain and the sleep fade; a no-op on
+    Android and the web.
+  - Browse drops its chips on the desktop. Grids take columns by width. The album header sits beside a 240 dp cover.
+- **Menus and keys.**
+  - Mac: *View* gains the modes, *Hide Sidebar*, *Show Queue*, *Show Lyrics* and *Keyboard Shortcuts*.
+  - Linux: no Swing menu bar. GNOME's primary menu ☰ (`DesktopPrimaryMenu`), the shortcuts window
+    (`DesktopShortcutsOverlay`), and every key in `desktopKeys`.
+  - All of them reach the app through `AppCommand`.
+- **The GNOME window (item 11).** Undecorated unless `-Dravilo.csd=false`. `DesktopTitleStrip` (drag, double-click to
+  maximise, close) and `DesktopWindowFrame` (6 dp resize edges, 1 dp border). Square corners, as the lean said.
+- **Linux platform (item 12).** `LinuxPortal`: GIO through JNA, one session-bus connection, no new artefact for the
+  Flatpak's offline sources (a deviation from the `dbus-java` lean). It gives the Settings portal — light/dark live
+  (R338's Linux source) and the interface font — and the Background portal (`DesktopBackground`: asked once, the answer
+  remembered). `SingleInstance`: a Unix-domain socket in the runtime directory; a second launch shows the first and
+  exits.
+- **Fonts (Q9).** `SystemUiFont` = the Mac's `.AppleSystemUIFont` or GNOME's interface font (Sora elsewhere), used in
+  the sidebar, rail, menus and toolbar.
+- **Minimum window 360 × 600.** `WindowBounds` no longer forces a remembered width back up to 960.
+- **Strings.** 18 `desk.*` and the computer-worded `mode.label_desk`, `profile.signout_title_desk`, `this_computer`,
+  `cast.play_here_desk`, `cast.failed_sub_desk` × en/da/fo. `CastDesktop` said *Play on this Mac* on Linux too — fixed.
+
+**Not done or not verified.**
+- The macOS window properties, glass and system font are unverified (no Mac run).
+- On Linux, the portal, single instance, CSD drag/resize and Background ask are unverified.
+- The wide artist and book headers are the phone's.
+- Ctrl/⌘ + arrows are taken even while typing in a field.
+
+**Host incident, 2026-09-30 03:30.** The verification run's first launch landed on a pre-existing Xvfb `:99` (it hosts
+the paused Tizen emulator; the test Xvfb could not claim `:99`), where Skiko tried a GL context through the NVIDIA
+driver. Around the moment that process was killed, CPU 0 stopped ticking entirely, and since then RCU grace periods
+never complete. Container `runc exec` health checks pile up in D state and containers read *unhealthy*, while
+production kept serving. A second Xvfb with GLX then hung in the same NVIDIA GBM path. **Lesson:** never run Skiko,
+Compose Desktop or Xvfb with GLX on this host; use `Xvfb -extension GLX` and a display number checked free first — or
+the Fedora container.

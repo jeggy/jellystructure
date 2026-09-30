@@ -91,6 +91,8 @@ expect object MusicEngine {
     fun currentPositionMs(): Long
     /** FR-R322-9 — *Even out volume*. */
     fun setEvenVolume(on: Boolean)
+    /** R337 (FR-R337-6) — the desktop bar's volume slider, 0..1; the phone has hardware keys (a no-op there). */
+    fun setUserVolume(level: Float)
 
     // ── R323 — a book ──
 

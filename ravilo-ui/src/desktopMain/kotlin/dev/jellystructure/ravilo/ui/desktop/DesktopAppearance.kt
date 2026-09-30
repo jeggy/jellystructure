@@ -18,8 +18,8 @@ import javax.swing.SwingUtilities
  * - **macOS:** the system's `AppleInterfaceStyle`, read through the Mac library once a second. Not
  *   `NSApp.effectiveAppearance`: `Main.kt` pins the app to DarkAqua (R328), so the app's own appearance always says
  *   dark (dev review 5). A library without the call (an older build) leaves this unknown.
- * - **Linux:** the Settings portal's `org.freedesktop.appearance color-scheme`, pushed in by the D-Bus client
- *   ([set]); `0` (no preference) is light, as GNOME's *Default* style is.
+ * - **Linux:** the Settings portal's `org.freedesktop.appearance color-scheme` ([LinuxPortal]), followed through its
+ *   `SettingChanged` signal; `0` (no preference) is light, as GNOME's *Default* style is.
  *
  * Unknown (`null`) is drawn as dark, Ravilo's look before R338.
  */
@@ -33,13 +33,15 @@ object DesktopAppearance {
             CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
                 while (isActive) { delay(1_000); macDark()?.let { _dark.value = it } }
             }
+        } else {
+            // R337/R338 — the Settings portal: read before the first frame, then followed through SettingChanged.
+            _dark.value = LinuxPortal.colorSchemeDark()
+            LinuxPortal.watchColorScheme { dark -> _dark.value = dark }
         }
     }
 
     private fun macDark(): Boolean? = runCatching { MacNative.lib?.ravilo_appearance_dark()?.let { it == 1 } }.getOrNull()
 
-    /** Linux: the portal's answer, from the D-Bus client (R337's). */
-    fun set(dark: Boolean?) { _dark.value = dark }
 
     /** The window's own appearance on the Mac (traffic lights, menus, the About window's title bar). */
     fun applyToWindow(light: Boolean) {

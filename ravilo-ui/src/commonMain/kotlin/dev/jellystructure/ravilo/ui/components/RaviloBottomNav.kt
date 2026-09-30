@@ -278,7 +278,7 @@ private fun ProfileDot(initials: String, selected: Boolean, ring: Boolean = sele
  * It also puts Discover back: the design draws a **compass**, and `✧` had quietly become a sparkle.
  */
 @Composable
-private fun BottomNavGlyph(item: BottomNavItem, tint: Color) {
+internal fun BottomNavGlyph(item: BottomNavItem, tint: Color) {
     Canvas(Modifier.size(GLYPH_BOX)) {
         val u = size.minDimension / 24f           // one viewBox unit
         val sw = 2f * u                           // the design's stroke-width: 2, the SAME for all four

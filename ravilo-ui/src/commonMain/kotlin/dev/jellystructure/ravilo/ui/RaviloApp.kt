@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Row
 import dev.jellystructure.ravilo.ui.screens.themeSettings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -808,6 +810,7 @@ fun RaviloApp(
                             push(Dest.Settings(MultiTokenStore.getActive()?.displayName.orEmpty()))
                         }
                     }
+                    else -> Unit   // R337 — the desktop's other commands are handled with the frame, below
                 }
             }
         }
@@ -876,10 +879,20 @@ fun RaviloApp(
         val handset = remember(windowInfo.containerSize.width, windowInfo.containerSize.height, density) {
             isHandset(isTvPlatform, windowInfo.containerSize.width, windowInfo.containerSize.height, density.density)
         }
+        // R337 (FR-R337-1) — the view family. A desktop window under 600 dp is handset by the same test (its minimum
+        // height is 600, so "the shorter side is under 600" is "the width is under 600"): the phone's screens, unchanged.
+        val family = when {
+            handset -> dev.jellystructure.ravilo.ui.theme.LayoutFamily.PHONE
+            isDesktopPlatform -> dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
+            else -> dev.jellystructure.ravilo.ui.theme.LayoutFamily.TV
+        }
+        val desktop = family == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
+        val windowWidth = with(density) { windowInfo.containerSize.width.toDp() }
         // R304 (FR-R304-1/5) — the avatar opens a PAGE on a phone and the dropdown on a TV. One place, so
         // the nine AppBar call sites cannot disagree; the phone's dropdown is gone by construction.
         fun openProfile() {
-            if (handset) {
+            // R337 (dev review 4, Q12) — a computer holds one viewer, as a phone does: Profile is its page there too.
+            if (handset || desktop) {
                 val top = stack.lastOrNull()
                 if (top !is Dest.Profile) resetTo(Dest.Profile(destDisplayName(top)))
             } else profileMenuOpen = true
@@ -898,15 +911,17 @@ fun RaviloApp(
         var musicAvailable by remember { mutableStateOf<Boolean?>(null) }
         var booksAvailable by remember { mutableStateOf(false) }
         LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.music.MusicEngine.attach(apiClient) }
-        LaunchedEffect(activeUserId, handset) {
+        // R337 (dev review 3a) — the listening mode on a phone AND on the desktop, at every width.
+        val listeningLayout = handset || desktop
+        LaunchedEffect(activeUserId, listeningLayout) {
             musicMode = dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC
             // R323 — the listening mode is there for music or for audiobooks (either is enough).
-            booksAvailable = if (activeUserId == null || !handset || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
+            booksAvailable = if (activeUserId == null || !listeningLayout || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
                 else runCatching { apiClient.getAudiobooks()?.books?.isNotEmpty() == true }.getOrDefault(false)
-            musicAvailable = if (activeUserId == null || !handset || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
+            musicAvailable = if (activeUserId == null || !listeningLayout || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
                 else booksAvailable || runCatching { apiClient.getMusicHome().rows.isNotEmpty() }.getOrDefault(false)
         }
-        val inMusic = handset && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
+        val inMusic = listeningLayout && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
         // FR-R321-2 — a mode stored for a viewer who lost the grant falls back to video, silently.
         LaunchedEffect(musicAvailable) {
@@ -938,6 +953,125 @@ fun RaviloApp(
         fun musicDetail(d: Dest) = d is Dest.AlbumDetail || d is Dest.ArtistDetail || d is Dest.PlaylistDetail || d is Dest.AudiobookDetail || d is Dest.AudiobookAuthor
         fun barShows(d: Dest) = (bottomBarShows(d) || (inMusic && musicDetail(d))) && !(d is Dest.MusicPlaying && !portrait)
         var trackSheet by remember { mutableStateOf<dev.jellystructure.ravilo.ui.music.TrackSheetRequest?>(null) }
+
+        // ─── R337 — the desktop's frame: sidebar or rail, the player bar, the queue panel ────────────────────────
+        var queueOpen by remember { mutableStateOf(false) }
+        var sidebarHidden by remember { mutableStateOf(runCatching { dev.jellystructure.ravilo.ui.music.MusicDeviceStore.get("desk_sidebar_hidden") }.getOrNull() == "1") }
+        var deskMenuOpen by remember { mutableStateOf(false) }
+        var shortcutsOpen by remember { mutableStateOf(false) }
+        var deskSignOutAsk by remember { mutableStateOf(false) }
+        val deskMedium = windowWidth < dev.jellystructure.ravilo.ui.theme.WindowWidths.EXPANDED
+        val deskLarge = windowWidth >= dev.jellystructure.ravilo.ui.theme.WindowWidths.LARGE
+        fun deskFramed(d: Dest) = desktop && activeUserId != null && d !is Dest.Player && d !is Dest.LiveTv && d !is Dest.CastRemote &&
+            d !is Dest.Login && d !is Dest.ProfilePicker
+        // FR-R337-9 — a film hides the sidebar, the rail and the bar; ⌃⌘S hides the sidebar at will (remembered).
+        fun deskNavShows(d: Dest) = deskFramed(d) && !sidebarHidden
+        fun deskPageOf(d: Dest): dev.jellystructure.ravilo.ui.components.DesktopPage? = when {
+            d is Dest.Home -> dev.jellystructure.ravilo.ui.components.DesktopPage.HOME
+            d is Dest.Discover -> dev.jellystructure.ravilo.ui.components.DesktopPage.DISCOVER
+            d is Dest.Browse && d.kind == BrowseKind.MY_LIST -> dev.jellystructure.ravilo.ui.components.DesktopPage.MY_LIST
+            d is Dest.Browse && d.kind == BrowseKind.MOVIES -> dev.jellystructure.ravilo.ui.components.DesktopPage.FILMS
+            d is Dest.Browse && d.kind == BrowseKind.SERIES -> dev.jellystructure.ravilo.ui.components.DesktopPage.SERIES
+            d is Dest.Search -> dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH
+            d is Dest.MusicListen -> dev.jellystructure.ravilo.ui.components.DesktopPage.LISTEN
+            d is Dest.MusicPlaying -> dev.jellystructure.ravilo.ui.components.DesktopPage.PLAYING
+            d is Dest.MusicBrowse && d.focusInput -> dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH
+            d is Dest.MusicBrowse -> when (d.chip) {
+                "artists" -> dev.jellystructure.ravilo.ui.components.DesktopPage.ARTISTS
+                "albums" -> dev.jellystructure.ravilo.ui.components.DesktopPage.ALBUMS
+                "songs" -> dev.jellystructure.ravilo.ui.components.DesktopPage.SONGS
+                "genres" -> dev.jellystructure.ravilo.ui.components.DesktopPage.GENRES
+                "playlists" -> dev.jellystructure.ravilo.ui.components.DesktopPage.PLAYLISTS
+                "audiobooks" -> dev.jellystructure.ravilo.ui.components.DesktopPage.AUDIOBOOKS
+                else -> null
+            }
+            else -> null
+        }
+        // Dev review 6 — the lit row is worked out from the stack, never stored: the page itself, else the nearest page
+        // below it (a detail opened from Albums keeps Albums lit). The phone's Browse(ALL) lights neither Films nor Series.
+        fun deskLit(): dev.jellystructure.ravilo.ui.components.DesktopPage? = stack.asReversed().firstNotNullOfOrNull { deskPageOf(it) }
+        fun openDeskPage(p: dev.jellystructure.ravilo.ui.components.DesktopPage) {
+            val name = destDisplayName(stack.lastOrNull())
+            val cur = stack.lastOrNull()
+            when (p) {
+                dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH ->
+                    if (inMusic) resetTo(Dest.MusicBrowse(name, chip = (cur as? Dest.MusicBrowse)?.chip ?: "artists", focusInput = true))
+                    else resetTo(Dest.Search(name, focusInput = true))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.HOME -> resetTo(Dest.Home(name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.DISCOVER -> resetTo(Dest.Discover(name, null))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.MY_LIST -> resetTo(Dest.Browse(BrowseKind.MY_LIST, name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.FILMS -> resetTo(Dest.Browse(BrowseKind.MOVIES, name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.LISTEN -> resetTo(Dest.MusicListen(name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.PLAYING -> resetTo(Dest.MusicPlaying(name))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.QUEUE -> queueOpen = !queueOpen
+                dev.jellystructure.ravilo.ui.components.DesktopPage.ARTISTS -> resetTo(Dest.MusicBrowse(name, "artists"))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.ALBUMS -> resetTo(Dest.MusicBrowse(name, "albums"))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.SONGS -> resetTo(Dest.MusicBrowse(name, "songs"))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.GENRES -> resetTo(Dest.MusicBrowse(name, "genres"))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.PLAYLISTS -> resetTo(Dest.MusicBrowse(name, "playlists"))
+                dev.jellystructure.ravilo.ui.components.DesktopPage.AUDIOBOOKS -> resetTo(Dest.MusicBrowse(name, "audiobooks"))
+            }
+        }
+        // FR-R337-3 — the switch changes the sidebar and the content together; the mode's first page.
+        fun switchMode(music: Boolean) {
+            if (music == musicMode) return
+            musicMode = music
+            dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (music) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
+            val name = destDisplayName(stack.lastOrNull())
+            if (desktop) resetTo(if (music) Dest.MusicListen(name) else Dest.Home(name))
+        }
+        // FR-R337-6 / Q2 + Q10 — in music mode the bar is always there; in films mode only while music plays, and a pause
+        // from the bar keeps it until the viewer leaves the page.
+        var deskBarKeptOn by remember { mutableStateOf<Dest?>(null) }
+        LaunchedEffect(musicState.playing, stack.lastOrNull()) {
+            if (musicState.playing) deskBarKeptOn = stack.lastOrNull()
+            else if (deskBarKeptOn != stack.lastOrNull()) deskBarKeptOn = null
+        }
+        fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && d !is Dest.MusicPlaying &&
+            (inMusic || musicState.playing || deskBarKeptOn == d)
+        // FR-R337-3 — the counts beside Films, Series and the music Library, once per session.
+        var deskCounts by remember { mutableStateOf<Map<dev.jellystructure.ravilo.ui.components.DesktopPage, Int>>(emptyMap()) }
+        LaunchedEffect(activeUserId, desktop) {
+            if (!desktop || activeUserId == null) return@LaunchedEffect
+            val m = HashMap<dev.jellystructure.ravilo.ui.components.DesktopPage, Int>()
+            runCatching { apiClient.getFacets(null).kindCounts }.getOrNull()?.let { k ->
+                k["movie"]?.let { m[dev.jellystructure.ravilo.ui.components.DesktopPage.FILMS] = it }
+                k["series"]?.let { m[dev.jellystructure.ravilo.ui.components.DesktopPage.SERIES] = it }
+            }
+            if (musicAvailable == true) {
+                runCatching { apiClient.browseMusic("artists").total }.getOrNull()?.let { m[dev.jellystructure.ravilo.ui.components.DesktopPage.ARTISTS] = it }
+                runCatching { apiClient.browseMusic("albums").total }.getOrNull()?.let { m[dev.jellystructure.ravilo.ui.components.DesktopPage.ALBUMS] = it }
+                runCatching { apiClient.browseMusic("tracks").total }.getOrNull()?.let { m[dev.jellystructure.ravilo.ui.components.DesktopPage.SONGS] = it }
+            }
+            deskCounts = m
+        }
+        // FR-R337-10 — the View menu and the keys, from the desktop app (AppCommands).
+        LaunchedEffect(Unit) {
+            dev.jellystructure.ravilo.ui.components.AppCommands.requests.collect { cmd ->
+                val top = stack.lastOrNull()
+                when (cmd) {
+                    dev.jellystructure.ravilo.ui.components.AppCommand.MODE_VIDEO -> if (activeUserId != null) switchMode(false)
+                    dev.jellystructure.ravilo.ui.components.AppCommand.MODE_MUSIC -> if (activeUserId != null && musicAvailable == true) switchMode(true)
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SEARCH -> if (activeUserId != null && top !is Dest.Player) openDeskPage(dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH)
+                    dev.jellystructure.ravilo.ui.components.AppCommand.TOGGLE_SIDEBAR -> {
+                        sidebarHidden = !sidebarHidden
+                        runCatching { dev.jellystructure.ravilo.ui.music.MusicDeviceStore.put("desk_sidebar_hidden", if (sidebarHidden) "1" else "0") }
+                    }
+                    dev.jellystructure.ravilo.ui.components.AppCommand.TOGGLE_QUEUE -> if (musicState.active) {
+                        if (handset) { if (top !is Dest.MusicQueue) push(Dest.MusicQueue(destDisplayName(top))) } else queueOpen = !queueOpen
+                    }
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SHOW_LYRICS -> if (musicState.active && top !is Dest.MusicPlaying) push(Dest.MusicPlaying(destDisplayName(top)))
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SHORTCUTS -> shortcutsOpen = true
+                    dev.jellystructure.ravilo.ui.components.AppCommand.NEXT_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.next()
+                    dev.jellystructure.ravilo.ui.components.AppCommand.PREVIOUS_SONG -> if (musicState.active) dev.jellystructure.ravilo.ui.music.MusicPlayback.previous()
+                    dev.jellystructure.ravilo.ui.components.AppCommand.VOLUME_UP -> dev.jellystructure.ravilo.ui.music.MusicVolume.nudge(0.1f)
+                    dev.jellystructure.ravilo.ui.components.AppCommand.VOLUME_DOWN -> dev.jellystructure.ravilo.ui.music.MusicVolume.nudge(-0.1f)
+                    dev.jellystructure.ravilo.ui.components.AppCommand.SIGN_OUT -> if (activeUserId != null) deskSignOutAsk = true
+                    dev.jellystructure.ravilo.ui.components.AppCommand.OPEN_SETTINGS -> Unit   // handled above, where it always was
+                }
+            }
+        }
         val musicFavoriteAdded = str("music.my_list_added")
         val musicFavoriteRemoved = str("music.my_list_removed")
         fun setMusicFavorite(t: dev.jellystructure.shared.tv.MusicTrackItem, fav: Boolean) {
@@ -994,7 +1128,7 @@ fun RaviloApp(
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides !handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (!handset || isDesktopPlatform), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 configScope.launch {
                     signOutActiveSession(apiClient)
@@ -1079,6 +1213,27 @@ fun RaviloApp(
         // R92: direction-aware transitions — push slides left, pop slides right, resets fade.
         // Slide is 25% of screen width (subtle) at ScreenEnterMs/ScreenExitMs durations.
         // contentKey = class means same-class tab switches (Browse→Browse) skip the transition.
+        // R337 (FR-R337-3/4) — on the desktop, the sidebar (≥ 840 dp) or the rail (600–839 dp) beside the page; the page
+        // itself is the same AnimatedContent every layout uses.
+        Row(Modifier.fillMaxSize()) {
+        if (deskNavShows(dest)) dev.jellystructure.ravilo.ui.components.DesktopNav(
+            rail = deskMedium,
+            inMusic = inMusic,
+            musicAvailable = musicAvailable == true,
+            booksAvailable = booksAvailable,
+            lit = deskLit(),
+            queueOpen = queueOpen,
+            musicPlaying = musicState.playing,
+            counts = deskCounts,
+            viewerName = MultiTokenStore.getActive()?.displayName ?: destDisplayName(dest),
+            onPage = ::openDeskPage,
+            onMode = ::switchMode,
+            onViewer = { openProfile() },
+            onSettings = { push(Dest.Settings(destDisplayName(dest))) },
+            onSignOut = { deskSignOutAsk = true },
+            onMenu = { deskMenuOpen = !deskMenuOpen },
+        )
+        Box(Modifier.weight(1f).fillMaxHeight()) {
         AnimatedContent(
             targetState = dest,
             transitionSpec = {
@@ -1120,6 +1275,8 @@ fun RaviloApp(
             // FR-R257-5, R259 FR-R259-2). Applied here, where the per-destination insets already are,
             // so the four pages do not each have to remember it.
             val navBarInset = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
+                // R337 (FR-R337-6) — and by the desktop's player bar while it shows.
+                (if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
                 // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
                 // bar floats over this page, the page pads by it as well, or its last row sits under it.
                 (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp) +
@@ -1130,7 +1287,14 @@ fun RaviloApp(
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
                 // max(ime, systemBars + bar), so a keyboard-up page ends at the keys rather than 68 dp
                 // above them, and a keyboard-down page still clears the gesture inset AND the bar.
-                else Modifier.fillMaxSize().safeAreaPadding(plusBottom = navBarInset),
+                else Modifier.fillMaxSize().safeAreaPadding(plusBottom = navBarInset)
+                    // R337 (FR-R337-2) — the phone layout on a computer: a 32 dp strip at the top for the window's controls.
+                    .padding(top = if (handset && isDesktopPlatform) 32.dp else 0.dp),
+            ) {
+            // R337 — what the desktop's toolbar needs from the frame: a Back to offer, and room for the traffic lights.
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.jellystructure.ravilo.ui.components.LocalDesktopBack provides (if (stack.size > 1) ({ pop() }) else null),
+                dev.jellystructure.ravilo.ui.components.LocalDesktopChromeStart provides (if (isMacPlatform && !deskNavShows(dest)) 78.dp else 0.dp),
             ) {
             when (dest) {
             is Dest.ProfilePicker -> {
@@ -1957,7 +2121,52 @@ fun RaviloApp(
                     }
                 },
             )
-        } } } // Box (per-dest insets, R261) / when / AnimatedContent
+        } } } } // CompositionLocalProvider (R337) / Box (per-dest insets, R261) / when / AnimatedContent
+        // R337 (FR-R337-6) — the desktop's player bar at the content's foot.
+        if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopMusicBar(
+            medium = deskMedium,
+            queueOpen = queueOpen,
+            onOpenPlaying = { if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest))) },
+            onQueue = { queueOpen = !queueOpen },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+        // R337 (FR-R337-8) — 600–1199 dp: the queue over the content, from the right.
+        if (desktop && queueOpen && !deskLarge && deskFramed(dest) && musicState.active) {
+            dev.jellystructure.ravilo.ui.music.DesktopQueuePanel(overlay = true, onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) }, modifier = Modifier.align(Alignment.TopEnd))
+        }
+        // FR-R337-2/5 — the window's own controls where Ravilo draws the frame (GNOME), and the drag area.
+        if (desktop || (handset && isDesktopPlatform)) dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip(Modifier.align(Alignment.TopCenter))
+        } // Box (the page)
+        // R337 (FR-R337-8) — 1200 dp and wider: the queue as a side panel that pushes the content.
+        if (desktop && queueOpen && deskLarge && deskFramed(dest) && musicState.active) {
+            dev.jellystructure.ravilo.ui.music.DesktopQueuePanel(overlay = false, onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) })
+        }
+        } // Row (R337)
+        // R337 — GNOME's primary menu ☰ (FR-R337-10), the keyboard shortcuts window, and Sign out (R304's one-profile ask).
+        if (deskMenuOpen) dev.jellystructure.ravilo.ui.components.DesktopPrimaryMenu(
+            viewerName = MultiTokenStore.getActive()?.displayName ?: "",
+            musicAvailable = musicAvailable == true,
+            onDismiss = { deskMenuOpen = false },
+            onMode = { deskMenuOpen = false; switchMode(it) },
+            onSettings = { deskMenuOpen = false; push(Dest.Settings(destDisplayName(dest))) },
+            onShortcuts = { deskMenuOpen = false; shortcutsOpen = true },
+            onAbout = { deskMenuOpen = false; dev.jellystructure.ravilo.ui.seams.showAboutWindow() },
+            onSignOut = { deskMenuOpen = false; deskSignOutAsk = true },
+        )
+        if (shortcutsOpen) dev.jellystructure.ravilo.ui.components.DesktopShortcutsOverlay(onDismiss = { shortcutsOpen = false })
+        if (deskSignOutAsk) dev.jellystructure.ravilo.ui.screens.ConfirmOverlay(
+            title = str("profile.signout_title_desk"),
+            description = str("profile.signout_body"),
+            confirmLabel = str("profile.signout_confirm"),
+            onCancel = { deskSignOutAsk = false },
+            onConfirm = {
+                deskSignOutAsk = false
+                uiScope.launch {
+                    dev.jellystructure.ravilo.ui.screens.signOutActiveSession(apiClient)
+                    resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
+                }
+            },
+        )
 
         // R267 (FR-R267-5/-7/-10) — the phone's page navigation. Drawn HERE, as a child of the root
         // Box, deliberately outside AnimatedContent: a bar that animated in and out with every content
@@ -2137,6 +2346,7 @@ fun RaviloApp(
         Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false
         ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
         UpdateToast()  // R263 (FR-R263-5): no-op off the web
+        dev.jellystructure.ravilo.ui.seams.DesktopWindowFrame()  // R337 — GNOME's undecorated window: resize edges and a border
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)
     } // WithLocale

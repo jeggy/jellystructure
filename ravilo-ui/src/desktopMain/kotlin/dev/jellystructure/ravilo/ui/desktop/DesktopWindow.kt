@@ -27,6 +27,20 @@ object DesktopWindow {
     /** The app's full-screen switch (FR-R329-7); a no-op until the app installs it. */
     @Volatile var setFullScreenHandler: (Boolean) -> Unit = {}
 
+    /**
+     * R337 (FR-R337-5, dev review 11) — Ravilo draws the window's frame itself: GNOME (every Linux desktop) gets an
+     * undecorated window with our header bars; `-Dravilo.csd=false` falls back to the system's title bar above them.
+     */
+    val drawsOwnFrame: Boolean = !DesktopPaths.isMac && System.getProperty("ravilo.csd") != "false"
+
+    /** R337 — the app's own close (the D7 rule), maximise toggle and About window; no-ops until the app installs them. */
+    @Volatile var closeHandler: () -> Unit = {}
+    @Volatile var maximizeHandler: () -> Unit = {}
+    @Volatile var aboutHandler: () -> Unit = {}
+    fun requestClose() = closeHandler()
+    fun toggleMaximized() = maximizeHandler()
+    fun showAbout() = aboutHandler()
+
     /** True while a film's player is on screen (F, Esc and double-click mean something only then). */
     @Volatile var playerActive: Boolean = false
 

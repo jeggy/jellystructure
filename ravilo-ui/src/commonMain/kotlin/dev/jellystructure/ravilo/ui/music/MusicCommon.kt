@@ -395,7 +395,7 @@ fun ListeningModeCard(musicMode: Boolean, withBooks: Boolean = false, onSwitch: 
     val videoName = str("mode.video"); val musicName = if (withBooks) str("mode.music_books") else str("mode.music")
     fun switch(on: Boolean) { onSwitch(on); MusicToasts.show(if (on) musicName else videoName) }
     Column {
-        Text(str("mode.label").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
+        Text(str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "mode.label_desk" else "mode.label").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(16.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             ModeHalf(str("mode.video"), str("mode.video_sub"), MusicIcon.FILM, selected = !musicMode, Modifier.weight(1f)) { if (musicMode) switch(false) }

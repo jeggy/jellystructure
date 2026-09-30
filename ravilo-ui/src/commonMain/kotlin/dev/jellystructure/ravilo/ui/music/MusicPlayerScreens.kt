@@ -413,7 +413,7 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) 
 // ── FR-R322-8: the Queue tab ──
 
 @Composable
-fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Unit) {
+fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Unit, showAppBar: Boolean = true) {
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     val density = LocalDensity.current
@@ -423,7 +423,8 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
     Box(Modifier.fillMaxSize().background(colors.background)) {
         val cur = st.current
         if (cur == null) EmptyLine(str("music.queue_empty"))
-        else LazyColumn(contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
+        // R337 — inside the desktop's queue panel there is no app bar to clear.
+        else LazyColumn(contentPadding = PaddingValues(top = if (showAppBar) RaviloDimens.appBarHeight + 6.dp else 14.dp, bottom = 24.dp)) {
             item(key = "now-h") { Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("music.now_playing")) } }
             item(key = "now") { Box(Modifier.padding(horizontal = raviloHPad)) { TrackRow(cur, showCover = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) }) } }
             val up = st.upNext
@@ -479,7 +480,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                 }
             }
         }
-        dev.jellystructure.ravilo.ui.components.AppBar(onProfile = onProfile, scrolled = true, brandBadge = { MusicModeBadge() })
+        if (showAppBar) dev.jellystructure.ravilo.ui.components.AppBar(onProfile = onProfile, scrolled = true, brandBadge = { MusicModeBadge() })
     }
 }
 

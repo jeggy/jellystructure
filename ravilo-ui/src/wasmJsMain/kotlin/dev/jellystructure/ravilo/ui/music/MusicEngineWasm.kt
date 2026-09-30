@@ -33,6 +33,7 @@ actual object MusicEngine {
     actual fun retry() = Unit
     actual fun skip() = Unit
     actual fun currentPositionMs(): Long = 0L
+    actual fun setUserVolume(level: Float) = Unit   // R337 — the desktop bar's; a phone's volume is its keys
     actual fun setEvenVolume(on: Boolean) = Unit
     actual fun playBook(detail: dev.jellystructure.shared.tv.AudiobookDetail, part: Int, positionMs: Long, play: Boolean) = Unit
     actual fun skipBy(deltaMs: Long) = Unit

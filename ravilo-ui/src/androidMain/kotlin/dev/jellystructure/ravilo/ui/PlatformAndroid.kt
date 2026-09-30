@@ -9,3 +9,5 @@ actual val isTvPlatform: Boolean
 actual val hasCastSdk: Boolean = true
 
 actual val isDesktopPlatform: Boolean = false
+
+actual val isMacPlatform: Boolean = false

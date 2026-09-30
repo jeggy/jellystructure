@@ -104,7 +104,7 @@ fun LiveTvPlayerScreen(
     // chrome with no seek bar, the channel name + Now/Next in place of the title, Guide and Lock on the
     // rail, and a vertical swipe on the right EDGE to change channel (the volume swipe is not offered
     // here — open question 4, so the edge is channel and nothing else).
-    val handset = LocalHandset.current
+    val handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform   // R337 dev review 9
     var locked by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
     if (handset) PlayerImmersiveEffect(followSensor = true)
@@ -404,7 +404,7 @@ private fun NowNextOverlay(
     onDismiss: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val handset = LocalHandset.current
+    val handset = LocalHandset.current && !dev.jellystructure.ravilo.ui.isDesktopPlatform   // R337 dev review 9
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f))
             // R244 — a phone taps away; the TV's Back path is unchanged.

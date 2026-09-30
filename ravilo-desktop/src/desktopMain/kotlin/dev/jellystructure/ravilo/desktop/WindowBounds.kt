@@ -22,7 +22,7 @@ internal object WindowBounds {
     fun load(): Bounds {
         val x = file.get("x")?.toFloatOrNull()
         val y = file.get("y")?.toFloatOrNull()
-        val w = file.get("w")?.toFloatOrNull()?.coerceAtLeast(960f)
+        val w = file.get("w")?.toFloatOrNull()?.coerceAtLeast(360f)   // R337 FR-R337-11 — the minimum is 360 × 600 now
         val h = file.get("h")?.toFloatOrNull()?.coerceAtLeast(600f)
         val size = if (w != null && h != null) DpSize(w.dp, h.dp) else DEFAULT_SIZE
         val position = if (x != null && y != null && onSomeDisplay(x.toInt(), y.toInt())) WindowPosition(x.dp, y.dp)

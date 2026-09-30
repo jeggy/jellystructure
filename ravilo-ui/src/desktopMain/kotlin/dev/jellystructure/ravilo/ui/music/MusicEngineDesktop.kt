@@ -40,13 +40,20 @@ import kotlinx.coroutines.launch
  * [MacNowPlaying] (FR-R329-10). Without the Swift library, [supported] is false and music mode is absent (R321).
  */
 actual object MusicEngine {
-    actual val supported: Boolean = MacNative.lib != null
+    // R337 (dev review 3b) — on Linux the engine is mpv (R335 FR-R335-8); this used to ask for the Mac library on every
+    // desktop, so music could never appear on Linux.
+    actual val supported: Boolean = if (DesktopPaths.isMac) MacNative.lib != null else dev.jellystructure.ravilo.ui.desktop.Mpv.lib != null
     private val _state = MutableStateFlow(MusicPlayerState())
     actual val state: StateFlow<MusicPlayerState> = _state
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val q = MusicQueue()
     private val player: DesktopEngine = DesktopEngines.music()
+    /** R337 (FR-R337-6) — the desktop bar's volume, multiplied into every level the engine sets (gain, sleep fade). */
+    private var userVolume = 1f
+    private var lastLevel = 1f
+    private fun applyVolume(level: Float) { lastLevel = level; player.setVolume((level * userVolume).coerceIn(0f, 1f)) }
+    actual fun setUserVolume(level: Float) { userVolume = level.coerceIn(0f, 1f); player.setVolume((lastLevel * userVolume).coerceIn(0f, 1f)) }
     private var context: MusicContext? = null
     private var repeat = RepeatMode.OFF
     private var api: TvApiClient? = null
@@ -126,7 +133,7 @@ actual object MusicEngine {
         endHandled = false
         player.load(absolute(ticket.hlsUrl.orEmpty()), musicMimeFor(ticket.directPlay, ticket.container), startMs)
         player.setRate(rate)
-        player.setVolume(volume)
+        applyVolume(volume)
         if (play) player.play()
         startMonitor()
     }
@@ -402,7 +409,7 @@ actual object MusicEngine {
     actual fun setEvenVolume(on: Boolean) {
         MusicPrefs.evenVolume = on
         val t = q.current ?: return
-        if (book == null) player.setVolume(musicVolumeScale(t, context, q.shuffled, on))
+        if (book == null) applyVolume(musicVolumeScale(t, context, q.shuffled, on))
     }
 
     // ── R323: the book ──
@@ -410,7 +417,7 @@ actual object MusicEngine {
     private fun dropBook() {
         if (book == null) return
         book = null; prefetched = null; prefetching = false; lastChapter = -1
-        player.setRate(1f); player.setVolume(1f)
+        player.setRate(1f); applyVolume(1f)
     }
 
     private fun endBook() {
@@ -486,10 +493,10 @@ actual object MusicEngine {
             else -> Long.MAX_VALUE
         }
         if (leftMs <= 0) {
-            player.pause(); player.setVolume(1f)
+            player.pause(); applyVolume(1f)
             book = book?.copy(sleep = null)
             publish(); reportProgress()
-        } else if (BookPrefs.sleepFade && leftMs < 10_000) player.setVolume((leftMs / 10_000f).coerceIn(0f, 1f))
+        } else if (BookPrefs.sleepFade && leftMs < 10_000) applyVolume((leftMs / 10_000f).coerceIn(0f, 1f))
     }
 
     actual fun playBook(detail: AudiobookDetail, part: Int, positionMs: Long, play: Boolean) {
@@ -534,7 +541,7 @@ actual object MusicEngine {
         val b = book ?: return
         val t = timer?.let { if (it.endOfChapter) it.copy(chapter = BookMath.chapterAt(b.detail, bookPositionMs())) else it }
         book = b.copy(sleep = t)
-        if (t == null) player.setVolume(1f)
+        if (t == null) applyVolume(1f)
         publish()
     }
 

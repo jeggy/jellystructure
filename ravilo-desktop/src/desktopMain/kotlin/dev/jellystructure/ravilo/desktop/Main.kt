@@ -14,6 +14,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -58,6 +59,8 @@ fun main(args: Array<String>) {
     if (System.getProperty("ravilo.video") == "gpu") System.setProperty("compose.interop.blending", "true")
     args.indexOf("--mpv-window").takeIf { it >= 0 }?.let { dev.jellystructure.ravilo.ui.desktop.MpvBench.window(args.drop(it + 1)); exitProcess(0) }
     DesktopLog.install()
+    // R337 (dev review 12) — one Ravilo per Linux session: a second launch shows the running one's window and leaves.
+    if (!dev.jellystructure.ravilo.ui.desktop.SingleInstance.claim()) exitProcess(0)
     println("${DesktopLog.stamp()} Ravilo ${dev.jellystructure.shared.raviloVersion()} starting · Mac library: ${if (dev.jellystructure.ravilo.ui.desktop.MacNative.lib != null) "loaded" else "absent (${dev.jellystructure.ravilo.ui.desktop.MacNative.loadError})"}")
     // FR-R328-5 — before AWT loads: the menu bar in macOS's own bar, the app's name in it, a dark title bar.
     System.setProperty("apple.laf.useScreenMenuBar", "true")
@@ -91,7 +94,13 @@ private fun ApplicationScope.RaviloDesktopApp() {
     }
     val bounds = remember { WindowBounds.load() }
     val state = rememberWindowState(position = bounds.position, size = bounds.size)
-    fun close() { if (MusicEngine.state.value.playing) shown = false else quit() }
+    fun close() {
+        if (MusicEngine.state.value.playing) {
+            shown = false
+            // FR-R337-12 — on Linux the first close while music plays asks the Background portal once.
+            dev.jellystructure.ravilo.ui.desktop.DesktopBackground.onCloseWhilePlaying(quit)
+        } else quit()
+    }
     fun openSettings() { shown = true; AppCommands.send(AppCommand.OPEN_SETTINGS) }
     fun setFullScreen(on: Boolean) { state.placement = if (on) WindowPlacement.Fullscreen else WindowPlacement.Floating }
 
@@ -110,13 +119,29 @@ private fun ApplicationScope.RaviloDesktopApp() {
         visible = shown,
         title = "Ravilo",
         icon = AppImages.icon,
-        onPreviewKeyEvent = ::playerWindowKeys,
+        // R337 (FR-R337-5, dev review 11) — GNOME's shape is drawn by Ravilo: an undecorated window with our header bars.
+        undecorated = DesktopWindow.drawsOwnFrame,
+        onPreviewKeyEvent = { playerWindowKeys(it) || desktopKeys(it, quit) },
     ) {
         val focused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(Unit) {
-            window.minimumSize = Dimension(960, 600)   // FR-R328-5
+            window.minimumSize = Dimension(360, 600)   // R337 FR-R337-11 (was 960 × 600): a window can reach the phone layout
             DesktopWindow.awtWindow = window
             DesktopWindow.setFullScreenHandler = ::setFullScreen
+            // R337 — what the frame the app draws asks of the window.
+            DesktopWindow.closeHandler = { SwingUtilities.invokeLater { close() } }
+            DesktopWindow.maximizeHandler = {
+                state.placement = if (state.placement == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized
+            }
+            DesktopWindow.aboutHandler = { aboutOpen = true }
+            dev.jellystructure.ravilo.ui.desktop.SingleInstance.onShowRequest { SwingUtilities.invokeLater { shown = true; window.toFront() } }
+            // R337 (FR-R337-5, dev review 10) — the Mac: a transparent, full-size-content title bar, so the traffic lights
+            // sit in the sidebar and the page runs up under them.
+            if (dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac) window.rootPane.run {
+                putClientProperty("apple.awt.fullWindowContent", true)
+                putClientProperty("apple.awt.transparentTitleBar", true)
+                putClientProperty("apple.awt.windowTitleVisible", false)
+            }
         }
         // Shown again from the Dock or the menu: in front. Only then — raising on every focus change would bury
         // the About window under the main one.
@@ -129,7 +154,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
                 .debounce(500)
                 .collect { (position, size, placement) -> if (placement == WindowPlacement.Floating) WindowBounds.save(position, size) }
         }
-        RaviloMenuBar(
+        // R337 — the menu bar is the Mac's; on Linux the primary menu ☰ and the keys below replace it (dev review 11).
+        if (dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac) RaviloMenuBar(
             lang = lang,
             fullScreen = state.placement == WindowPlacement.Fullscreen,
             onAbout = { aboutOpen = true },
@@ -154,6 +180,37 @@ private fun playerWindowKeys(ev: KeyEvent): Boolean {
     return when {
         ev.key == Key.Escape && DesktopWindow.fullScreen.value -> { DesktopWindow.setFullScreenHandler(false); true }
         ev.key == Key.F && !ev.isMetaPressed && !ev.isCtrlPressed && !ev.isAltPressed -> { DesktopWindow.togglePlayerFullScreen(); true }
+        else -> false
+    }
+}
+
+/**
+ * R337 (FR-R337-10) — the desktop's keys, for both platforms (⌘ on the Mac, Ctrl elsewhere). On the Mac the View menu
+ * carries ⌘1/⌘2, ⌃⌘S, ⌥⌘U and ⌥⌘L itself; everything else is here. Linux has no menu bar, so all of them are here.
+ * Esc = Back is the app's own (R328), and the mode keys work in the phone layout too.
+ */
+private fun desktopKeys(ev: KeyEvent, quit: () -> Unit): Boolean {
+    if (ev.type != KeyEventType.KeyDown) return false
+    val mac = dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac
+    val cmd = if (mac) ev.isMetaPressed else ev.isCtrlPressed
+    fun send(c: AppCommand): Boolean { AppCommands.send(c); return true }
+    if (!mac && ev.key == Key.F11) { DesktopWindow.setFullScreenHandler(!DesktopWindow.fullScreen.value); return true }
+    if (!cmd) return false
+    return when {
+        ev.key == Key.F -> send(AppCommand.SEARCH)
+        ev.key == Key.DirectionUp -> send(AppCommand.VOLUME_UP)
+        ev.key == Key.DirectionDown -> send(AppCommand.VOLUME_DOWN)
+        ev.key == Key.DirectionRight && !DesktopWindow.playerActive -> send(AppCommand.NEXT_SONG)
+        ev.key == Key.DirectionLeft && !DesktopWindow.playerActive -> send(AppCommand.PREVIOUS_SONG)
+        mac -> false
+        ev.key == Key.One -> send(AppCommand.MODE_VIDEO)
+        ev.key == Key.Two -> send(AppCommand.MODE_MUSIC)
+        ev.key == Key.U -> send(AppCommand.TOGGLE_QUEUE)
+        ev.key == Key.L -> send(AppCommand.SHOW_LYRICS)
+        ev.key == Key.S && ev.isShiftPressed -> send(AppCommand.TOGGLE_SIDEBAR)
+        ev.key == Key.Comma -> send(AppCommand.OPEN_SETTINGS)
+        ev.key == Key.Slash && ev.isShiftPressed -> send(AppCommand.SHORTCUTS)   // Ctrl+?
+        ev.key == Key.Q -> { quit(); true }
         else -> false
     }
 }

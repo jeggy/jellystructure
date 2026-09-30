@@ -45,7 +45,13 @@ object AppUpdate {
 }
 
 /** R328 (FR-R328-5) — what the operating system asked the app to do from its own menu: *Settings…* (⌘,). */
-enum class AppCommand { OPEN_SETTINGS }
+/** Commands from outside the composition: the Mac's menu bar, the desktop's keys (R337 FR-R337-10). */
+enum class AppCommand {
+    OPEN_SETTINGS,
+    // R337 — the desktop's View menu and keys
+    MODE_VIDEO, MODE_MUSIC, SEARCH, TOGGLE_SIDEBAR, TOGGLE_QUEUE, SHOW_LYRICS, SHORTCUTS,
+    NEXT_SONG, PREVIOUS_SONG, VOLUME_UP, VOLUME_DOWN, SIGN_OUT,
+}
 
 object AppCommands {
     private val _requests = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)

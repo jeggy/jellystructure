@@ -216,7 +216,7 @@ fun ProfileScreen(
         // FR-R304-3 — the page's only sheet.
         HandsetSheet(visible = showSignOut, onDismiss = { showSignOut = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
-                Text(str("profile.signout_title"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+                Text(str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "profile.signout_title_desk" else "profile.signout_title"), color = RaviloTheme.colors.fg, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                 Spacer(Modifier.height(8.dp))
                 Text(str("profile.signout_body"), color = RaviloTheme.colors.fg.copy(0.7f), fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora)
                 Spacer(Modifier.height(18.dp))

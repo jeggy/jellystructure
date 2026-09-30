@@ -17,6 +17,9 @@ expect val isTvPlatform: Boolean
  *  keeps [isTvPlatform] `false`, and a desktop window under 600 dp is laid out as a phone (R337 FR-R337-2). */
 expect val isDesktopPlatform: Boolean
 
+/** R337 (FR-R337-5) — the desktop's platform shape: macOS draws its own; every other desktop gets GNOME's. */
+expect val isMacPlatform: Boolean
+
 /**
  * R256 — "is this a phone", as a pure function. Form factor first, size second: **every Android TV
  * is 960 x 540 dp** (1920x1080 @ density 2.0, 3840x2160 @ 4.0), so its shorter side is *under*
