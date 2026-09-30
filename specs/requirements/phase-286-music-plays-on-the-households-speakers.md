@@ -200,3 +200,35 @@ a headless browser and fails on *"failed to start"*; both of these would have be
 both of the household's screenless speakers answer `APP_UNAVAILABLE` for it. Until *Supports casting to audio only
 devices* is ticked (and saved) on the Cast console, no Ravilo client can list or reach a speaker.
 
+
+## 2026-09-30, afternoon — step 5a is live, and the speakers still cannot start the app: they cannot reach the server
+
+The owner ticked the box; within about two hours both speakers answered `APP_AVAILABLE` and the Mac's *Play on…*
+lists them (*Speaker · Ready*). Choosing one does nothing for a minute, then the speaker gives a short tone.
+
+Watched from a second, passive Cast connection: the speaker opens a playback session for the app, no application
+ever appears in its receiver status, and after 60 s the session is gone — the same 60-second wait as a receiver page
+that never starts. The page is not the cause this time:
+
+| The speaker (volume zero, Google's default receiver) is asked to play a file from | Result |
+|---|---|
+| the server's **LAN address**, plain HTTP | `PLAYING` after 0.6 s |
+| the server's **public name** (the name the receiver page and every stream use) | stays `IDLE`; nothing is fetched |
+
+Inside the house the public name resolves to the server's LAN address because the router's own DNS says so; asked of
+a public resolver it is the house's WAN address, and **that address does not answer from inside** (tried from two
+machines: the connection times out — the router does not loop the forward back). Google's speakers and Chromecasts
+resolve names through Google's public DNS rather than the network's, so they get the WAN address and never reach the
+receiver page. The TVs (Android TV) use the network's DNS, which is why casting to them works.
+
+This is the network's to fix, not the product's (either one is enough):
+1. **Loop-back for the public address**: traffic from the LAN to the WAN address on 443 goes to the server (NAT
+   loopback / a destination-NAT rule for LAN → the public address).
+2. **The speakers use the network's DNS**: DNS from those devices to public resolvers is redirected to the router
+   (or blocked — they then fall back to the DNS the network hands out).
+
+**What the product should do about it (proposed, not built):** the Chromecast card's reachability check (218
+FR-218-7) fetches `/cast/` from the server itself, where the name resolves locally — it passes while a speaker cannot
+get in. It should also resolve the public name through a public resolver and fetch through that answer, and say in
+one sentence when the two differ and the second fails: *"Google's speakers and Chromecasts cannot reach this address
+from inside your network."* The failure is otherwise silent on every screen: the app says *Ready*, then nothing.

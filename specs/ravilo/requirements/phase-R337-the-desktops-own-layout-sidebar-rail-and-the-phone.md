@@ -488,6 +488,9 @@ casting* ends it) — plus both themes live, the three width classes, a film in 
 spellings exist across Home, the detail page and Upcoming). The container's session had no audio output at all
 (nothing played until a silent sink was made) — an environment matter, noted in its README.
 
-**Not seen on a Mac yet:** this pass's Mac halves (the Settings window's tabs and its traffic lights, the device
-volume while casting, the pages above at the Mac's sizes). The owner was listening in the installed app; the test
-build is built and signed on the Mac and waits.
+**Seen on the Mac the same afternoon** (the owner handed the Mac over; the test build, silenced with the driver's
+`quiet`): the Settings window — its traffic lights at (22, 22) over the tabs' bar by AppKit's own report, the three
+tabs, the window as tall as each tab's content (373 / 428 / 219 points); the arrows on a row; the artist, audiobook,
+book-player and Profile pages; and **the volume while casting** — with the bedroom TV playing, the capsule's slider
+showed the TV's level (zero), ⌘↑ took the TV to 0.10 and ⌘↓ back, watched from a second Cast connection; *Stop
+casting* returned the capsule to the Mac's own level.
