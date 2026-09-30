@@ -240,3 +240,11 @@ build's code-directory hash, so each release asked for the login password again.
 the tokens are in the app's own file. Acceptance 2 ("a Mac that approved one release opens the next without asking")
 is now reachable; it was not before.
 
+## D1 moved (owner, 2026-09-30)
+
+*"So next time dmg will be built and attached as part of the gh ci release workflow."* `publish.yml` has a `mac` job
+that calls `deploy-macos.yml` on every published release, after CI, with `skip_ci` — the same shape as the Play,
+Samsung and Linux jobs. v1.47 and v1.48 had the `.dmg` built by hand and attached from the run's artifact. The
+Linux job now runs after it (pass or fail), because both append a paragraph to the release notes by reading the
+body and writing it back. Not yet seen on a release: the first one after this commit is the test.
+

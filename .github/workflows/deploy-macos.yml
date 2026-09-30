@@ -19,8 +19,9 @@ name: Deploy — Ravilo for Mac (.dmg)
 #
 # ── When it runs (R331 D1) ───────────────────────────────────────────────────────────────────────────────────────
 # By hand (workflow_dispatch on an existing vX.Y tag, or on `main` via the `ref` input before any tag carries the
-# Mac app) it keeps the .dmg as this run's artifact and touches no release. It attaches to a GitHub release only when called from publish.yml on a published release — and that
-# caller job is added by the commit that marks R328–R330 ✓ Built, not before.
+# Mac app) it keeps the .dmg as this run's artifact and touches no release. It attaches to a GitHub release only when
+# called from publish.yml on a published release — its `mac` job, wired 2026-09-30 on the owner's ask (D1 had waited
+# for R328–R330 to be ✓ Built).
 
 on:
   workflow_call:
@@ -234,7 +235,7 @@ jobs:
           path: ${{ runner.temp }}/out/*.dmg
           retention-days: 30
 
-      # R331 FR-R331-5/-6 — only when publish.yml calls this for a published release (D1); by hand, never.
+      # R331 FR-R331-5/-6 — only when publish.yml's `mac` job calls this for a published release; by hand, never.
       - name: Attach to the GitHub Release
         if: github.event_name == 'release'
         env:
