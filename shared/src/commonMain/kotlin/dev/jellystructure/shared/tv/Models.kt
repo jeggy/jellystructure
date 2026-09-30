@@ -95,6 +95,13 @@ data class ClientCapabilities(
      * R284's restream, exactly as before (FR-R291-4 — the web and the receivers, until each is measured).
      */
     @SerialName("hls_audio_renditions") val hlsAudioRenditions: Boolean = false,
+    /**
+     * Phase 288 (FR-288-1) — this player cannot seek in a file that has no index: to find a time it would read the file
+     * from its start. Set by the Cast receiver (a FLAC without a `SEEKTABLE`, asked to begin at 2:40, ended at once on
+     * a TV); the server then negotiates such a file as a conversion, which seeks by segment. Default false: every
+     * other player seeks in such a file itself.
+     */
+    @SerialName("seek_needs_index") val seekNeedsIndex: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to

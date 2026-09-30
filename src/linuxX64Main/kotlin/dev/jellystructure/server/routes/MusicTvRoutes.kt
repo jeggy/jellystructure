@@ -71,8 +71,11 @@ fun Route.musicTvRoutes(
             return@post call.respond(playback.startMusicPlayback(device, partId, req.capabilities, req.startPositionMs))
         }
         val trackId = req.trackId ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "track_id or audiobook_id"))
-        if (!svc.visible(device, trackId) || store.track(trackId) == null) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
-        call.respond(playback.startMusicPlayback(device, trackId, req.capabilities, req.startPositionMs))
+        val track = store.track(trackId)
+        if (!svc.visible(device, trackId) || track == null) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
+        // Phase 288 — a FLAC with no seek table, for a player that cannot scan it, is negotiated as a conversion.
+        val capabilities = dev.jellystructure.music.FlacIndex.capabilitiesFor(req.capabilities, track.container, track.codec, track.path)
+        call.respond(playback.startMusicPlayback(device, trackId, capabilities, req.startPositionMs))
         svc.forget(device)   // Recently played moved.
     }
 

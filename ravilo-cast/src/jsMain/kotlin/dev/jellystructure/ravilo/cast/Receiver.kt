@@ -353,6 +353,9 @@ private class Receiver {
         maxAudioChannels = 2,
         hlsOnly = false,
         linkKind = "unknown",
+        // Phase 288 — a FLAC with no seek table is read from its start to find a time; a TV asked to begin at 2:40
+        // reported the end of the song instead. The server converts such a file for a player that says this.
+        seekNeedsIndex = true,
     )
 
     private fun absolute(url: String?): String? = url?.let { if (it.startsWith("http")) it else serverUrl + (if (it.startsWith("/")) it else "/$it") }
