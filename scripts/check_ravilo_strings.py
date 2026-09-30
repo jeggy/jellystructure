@@ -45,8 +45,9 @@ ALLOW = re.compile(
     r'|E[\s\u00b7]*'
     r')$'
 )
-# Chrome the viewer never sees: the dev FPS overlay.
-SKIP_FILES = {'FrameTracker.kt'}
+# Chrome the viewer never sees: the dev FPS overlay, and R335's `--mpv-window` bench (a developer's window title and
+# a red test box over the video — the app never opens it).
+SKIP_FILES = {'FrameTracker.kt', 'MpvBench.kt'}
 
 
 def read_literal(src, i):
