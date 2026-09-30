@@ -215,20 +215,41 @@ that never starts. The page is not the cause this time:
 | the server's **LAN address**, plain HTTP | `PLAYING` after 0.6 s |
 | the server's **public name** (the name the receiver page and every stream use) | stays `IDLE`; nothing is fetched |
 
-Inside the house the public name resolves to the server's LAN address because the router's own DNS says so; asked of
-a public resolver it is the house's WAN address, and **that address does not answer from inside** (tried from two
-machines: the connection times out — the router does not loop the forward back). Google's speakers and Chromecasts
-resolve names through Google's public DNS rather than the network's, so they get the WAN address and never reach the
-receiver page. The TVs (Android TV) use the network's DNS, which is why casting to them works.
+More probes the same afternoon pinned it down (all silent, Google's default receiver):
 
-This is the network's to fix, not the product's (either one is enough):
-1. **Loop-back for the public address**: traffic from the LAN to the WAN address on 443 goes to the server (NAT
-   loopback / a destination-NAT rule for LAN → the public address).
-2. **The speakers use the network's DNS**: DNS from those devices to public resolvers is redirected to the router
-   (or blocked — they then fall back to the DNS the network hands out).
+| The speaker is asked to play a file from | Result | What it shows |
+|---|---|---|
+| a name **only the router's DNS knows** | `LOAD_FAILED` at once | the speaker does not use the network's DNS |
+| a public DNS name that answers with the LAN address, plain HTTP | plays | it resolves through a public resolver and reaches LAN addresses |
+| the server's public name on the **Jellyfin port**, plain HTTP | plays | the public address loops back on that port |
+| the server's public name on **443** | never loads | it does not on 443 |
 
-**What the product should do about it (proposed, not built):** the Chromecast card's reachability check (218
-FR-218-7) fetches `/cast/` from the server itself, where the name resolves locally — it passes while a speaker cannot
-get in. It should also resolve the public name through a public resolver and fetch through that answer, and say in
-one sentence when the two differ and the second fails: *"Google's speakers and Chromecasts cannot reach this address
-from inside your network."* The failure is otherwise silent on every screen: the app says *Ready*, then nothing.
+And from two machines on the LAN, addressing the house's public address directly: the Jellyfin port answers in
+20 ms; **443 and 80 time out**. So:
+
+1. A Google speaker (and a Chromecast dongle) resolves names through Google's public DNS, whatever the network
+   hands out. The router's own record for the server (the LAN address) is never seen by it. The TVs run Android TV
+   and use the network's DNS, which is why casting to them works.
+2. It therefore goes to the house's public address, and this router loops every forwarded port back inside **except
+   80 and 443** (its own management interface sits on those). The receiver page, the API and every stream are on 443.
+3. A receiver page loaded over HTTPS may not call a plain-HTTP address: tried on the bedroom TV with the LOAD's
+   `server_url` pointed at a plain-HTTP listener on the LAN — the page reported *noserver* at once and the listener
+   saw no request. (A media element may: the default receiver plays plain-HTTP files.) So "give the receiver the
+   LAN address" is not available for the API as the receiver is built.
+
+Spotify plays on the same speaker because its receiver page and its audio come from Spotify's servers on the
+internet; nothing in that path is inside the house.
+
+**For this house** one rule fixes it: destination NAT for LAN → the public address on 443 → the server. **For any
+house**, the choices are in *What the product should do* below.
+
+**What the product should do (proposed, not built):**
+- *Say it.* The Chromecast card's reachability check (218 FR-218-7) fetches `/cast/` from the server itself, where
+  the name resolves locally — it passes while a speaker cannot get in. It should resolve the public name through a
+  public resolver and fetch through that answer, and say in one sentence when that fails: *"Google's speakers and
+  Chromecasts cannot reach this address from inside your network."* The failure is otherwise silent on every
+  screen: the app says *Ready*, then nothing.
+- *Not depend on it* (a phase of its own, the owner's call): a speaker that cannot start the Ravilo receiver is
+  played through Google's own receiver page with the queue handed to the device (`QUEUE_LOAD`) and the media
+  addressed on the LAN over plain HTTP. It needs a LAN address the media answers on, and gives up what the Ravilo
+  receiver does itself (its own session, progress while no app is connected, lyrics on a display).
