@@ -885,19 +885,22 @@ private fun ThemeSection(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             row.ids.forEachIndexed { i, id ->
-                val fr = if (darkOnly && r == 0 && i == 0) entryFR else pillFRs[r][i]
+                // The requester a pill really wears. On a TV the first pill wears the section's entry requester, and
+                // its neighbours used to ask the one it does not wear: Left from the second theme did nothing, so a
+                // viewer on Midnight could not step back to Aurora (bedroom TV, 2026-09-30).
+                fun frOf(row: Int, col: Int) = if (darkOnly && row == 0 && col == 0) entryFR else pillFRs[row][col]
                 ThemePill(
                     id = id,
                     active = id == row.active,
-                    focusRequester = fr,
-                    onLeft = { if (i > 0) pillFRs[r][i - 1].requestFocus() },
-                    onRight = { if (i < row.ids.lastIndex) pillFRs[r][i + 1].requestFocus() },
+                    focusRequester = frOf(r, i),
+                    onLeft = { if (i > 0) frOf(r, i - 1).requestFocus() },
+                    onRight = { if (i < row.ids.lastIndex) frOf(r, i + 1).requestFocus() },
                     onUp = when {
-                        r > 0 -> ({ pillFRs[r - 1][0].requestFocus() })
+                        r > 0 -> ({ frOf(r - 1, 0).requestFocus() })
                         !darkOnly -> ({ followFR.requestFocus() })
                         else -> null
                     },
-                    onDown = { if (r < rows.lastIndex) pillFRs[r + 1][0].requestFocus() else downFR.requestFocus() },
+                    onDown = { if (r < rows.lastIndex) frOf(r + 1, 0).requestFocus() else downFR.requestFocus() },
                     onSelect = { row.pick(id) },
                 )
             }
@@ -1013,7 +1016,10 @@ private fun ThemePill(
     Row(
         modifier = Modifier
             .background(if (active) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
-            .then(if (focused && !active) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
+            // Always a border, clear when there is no ring to draw. A modifier that comes and goes ahead of the focus
+            // target re-creates it: the pill a D-pad had just picked became the active one, lost its ring's modifier
+            // and with it the focus — no ring anywhere on the TV until the next key press (bedroom TV, 2026-09-30).
+            .border(2.dp, if (focused && !active) colors.focusRing else Color.Transparent, RoundedCornerShape(10.dp))
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },

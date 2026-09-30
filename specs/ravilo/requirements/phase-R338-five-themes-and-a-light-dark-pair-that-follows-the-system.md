@@ -327,3 +327,14 @@ one on screen; it now keeps the theme in use at that moment (T·g), on the deskt
 
 Still unseen: the phone, the TVs' dark-only row, the admin's editor, and a live push from another device.
 
+## Seen on the bedroom TV (2026-09-30, the debug build beside the released app)
+
+The dark-only row is there — Aurora · Midnight · Noir · Graphite, *This TV is always dark*, the profile line — and a
+pick repaints the TV at once. Two defects of this phase's own, both fixed:
+
+- **Left from the second theme did nothing.** The first pill wears the section's entry requester on a TV, and its
+  neighbours asked the requester it does not wear; a viewer on Midnight could not step back to Aurora with the D-pad.
+- **The picked pill lost the focus.** Its focus ring was a modifier that came and went ahead of the focus target, so
+  becoming the active pill re-created the target; no ring anywhere until the next key press. The ring is always a
+  border now, clear when there is nothing to draw.
+
