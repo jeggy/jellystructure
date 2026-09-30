@@ -131,7 +131,7 @@
     const b = B.book(id), s = BS[id];
     const row = (a, l) => '<button class="mp-row" data-bs="' + a + '" data-v="' + id + '"><span><span class="nm">' + l + '</span></span></button>';
     P.openSheet('bkmenu', '<div class="mp-sh" style="gap:12px">' + cover(b, 'sm') + '<div style="min-width:0"><h4 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(b.title) + '</h4><div style="font-size:13px;color:var(--ink-dim);margin-top:2px">' + esc(B.authorNames(b.authors)) + '</div></div></div>'
-      + (started(b) || s.finished ? row('startover', t('ab.start_over')) : '') + (!s.finished ? row('finish', t('ab.mark_finished')) : '') + row('mylist', '♡ ' + (t('pm.my_list') !== 'pm.my_list' ? t('pm.my_list') : 'My List')) + row('goauthor', t('ab.go_author')));
+      + (started(b) || s.finished ? row('startover', t('ab.start_over')) : '') + (!s.finished ? row('finish', t('ab.mark_finished')) : row('unfinish', t('ab.mark_unfinished'))) + row('mylist', '♡ ' + (t('pm.my_list') !== 'pm.my_list' ? t('pm.my_list') : 'My List')) + row('goauthor', t('ab.go_author')));
   }
   P.sheet.addEventListener('click', e => {
     const x = e.target.closest('[data-bs]'); if (!x) return;
@@ -142,6 +142,7 @@
     else if (k === 'gomark') { const m = BS[K.cur].marks[+v]; BS[K.cur].pos = m.pos; P.closeSheet(); P.paintNow(); }
     else if (k === 'savemark') { BS[K.cur].marks.push({ pos: BS[K.cur].pos, note: ($('bkNote').value || '').trim() }); P.closeSheet(); H.phToast('✓ ' + t('ab.bookmark_added')); }
     else if (k === 'startover') { BS[v].finished = false; BS[v].pos = 0; P.closeSheet(); if (K.cur === v) { K.playing = true; P.paintNow(); } else resume(v, 0); refresh(); }
+    else if (k === 'unfinish') { BS[v].finished = false; BS[v].pos = 0; if (K.cur === v) { K.playing = false; P.paintNow(); } P.closeSheet(); refresh(); }   // R332 — back to unstarted, nothing plays
     else if (k === 'finish') { BS[v].finished = true; BS[v].pos = B.book(v).len; if (K.cur === v) { K.playing = false; P.paintNow(); } P.closeSheet(); refresh(); H.phToast('✓ ' + t('ab.finished')); }
     else if (k === 'mylist') { P.closeSheet(); H.phToast('✓ My List'); }
     else if (k === 'goauthor') { P.closeSheet(); P.closeNow(); RM.openDet('bauthor', B.book(v).authors[0]); }

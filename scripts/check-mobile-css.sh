@@ -202,6 +202,14 @@ check "$MUSICCSS" "audiobook split preview part row (.ab-spart)" \
 check "$MUSICCSS" "audiobook split preview empty column (.ab-sempty)" \
   ".ab-sempty{padding:26px 8px;text-align:center;"
 
+# R332 (2026-09-29) — a finished audiobook can be marked not finished. Made repo-side in the phone mockup and its
+# string table; the 2026-09-30 export (18th incident) dropped both, the strings under R340's new ones.
+check "design/ravilo/mobile/ravilo-books.js" "R332 book sheet: Mark as not finished row" \
+  "row('unfinish', t('ab.mark_unfinished'))"
+check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (en)" "'ab.mark_unfinished': 'Mark as not finished'"
+check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (da)" "'ab.mark_unfinished': 'Markér som ikke færdig'"
+check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (fo)" "'ab.mark_unfinished': 'Merk sum ikki liðugt'"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else

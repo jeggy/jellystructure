@@ -14,7 +14,7 @@ half for the owner's one-time submission** (§Build notes). Written 2026-09-29 (
 
 | # | Question | Decision |
 |---|---|---|
-| D1 | When the release starts carrying it | **Only once R333 is ✓ Built** — until then the workflow runs by hand (`workflow_dispatch`, a tag or `main` via `ref`) and keeps its bundle as a run artifact; `publish.yml` gains a `linux:` job in the commit that flips R333 |
+| D1 | When the release starts carrying it | ~~Only once R333 is ✓ Built~~ **From the next release (owner, 2026-09-30: a Flathub publish on every release)** — `publish.yml`'s `linux:` job calls this workflow on a published release; by hand it still keeps its bundle as a run artifact and touches nothing |
 | D2 | Where it builds | **Flathub's own container image** (`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08`, `--privileged`) with `flatpak/flatpak-github-actions/flatpak-builder@v6` — the same tools Flathub's builders run |
 | D3 | How Flathub learns of a release | **a pull request to `flathub/net.jebster.Ravilo`, opened by this workflow** with `peter-evans/create-pull-request` (the one third-party action Flathub allows in its repositories), carrying the rendered manifest and the fresh sources file; the owner merges. Not a push (Flathub asks that pushes be rare and deliberate), and not the `flatpak-external-data-checker` bot alone — it bumps the tag but cannot regenerate the sources file, so its PR would fail the first time a dependency moved |
 | D4 | The file name | **`ravilo-linux-<N>.flatpak`**, beside `ravilo-<N>-release.apk`, `ravilo-tizen-<N>.wgt` and `ravilo-mac-<N>.dmg` |
