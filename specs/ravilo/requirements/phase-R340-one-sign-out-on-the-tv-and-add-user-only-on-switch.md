@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo TV.html` (built there the same day:
+`✓ Built` 2026-09-30 (§Build notes; not deployed, not device-tested) — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo TV.html` (built there the same day:
 `ravilo-app.js` `renderSignoutConfirm`, `.so-*` in `ravilo.css`, `so_*` strings in `ravilo-i18n.js`).
 **Dev-reviewed 2026-09-30** (§Dev review). Number verified free (after R339). **Changes** R170 (the profile menu), R175 FR-B4 (the menu's
 *Add user* row), R191 FR-R191-3 (two affordances, two confirmations) and R161/R234 (Settings' *Unpair this TV*
@@ -102,3 +102,25 @@ items.
 6. **Where R340 applies.** It covers the TV family only (TVs and the web app). The phone keeps R304's sheet, and so does
    the desktop, which under R337 has no profile menu (R337 dev review 4). The receiver-only app is untouched, as the
    spec says.
+
+## Build notes (2026-09-30)
+
+Built as the dev review says; compiled for Android, web and desktop. **Not deployed, not device-tested.**
+
+- **`SettingsScreen.kt`** — `SignOutChoiceOverlay` (two radio rows, *Only {name}* chosen and focused on arrival; ↑/↓
+  between them, OK picks one, ↓ from the second reaches the buttons, Back cancels; the confirm button reads *Yes, sign
+  out* or *Sign out everyone*) replaces `SignOutConfirmOverlay` and `UnpairConfirmOverlay`. Settings' Unpair section is
+  gone; its Sign out opens this dialog **in the TV layout only** (`!LocalHandset`). A phone reaching Settings from
+  Profile keeps a one-profile confirm worded as R304's Profile page words it (`profile.signout_*`).
+- **`ProfileMenu.kt`** — rows *Switch · (Your profile, web) · My List · Settings · Sign out*; `onAddUser` and
+  `onUnpaired` are gone, `onSignedOutEveryone` is new.
+- **Everyone on this TV** = `unpairAllSessions` (which now also calls `forgetListening()`), then `RaviloApp`'s new
+  `onSignedOutEveryone`, which `RaviloRoot` wires to forget the server and show `ServerSetupScreen` with a `notice`.
+  **Deviation:** the spec's toast is a line above the setup screen's title. By the time it would show, `RaviloApp` (and
+  its toast host) has been replaced by the setup screen; the line stays until a server is entered.
+- **Strings** (`i18n/*.json`): `signout.title · one · one_sub · one_sub_last · all · all_sub · all_sub_one · yes_all`
+  and `toast.signed_out_all`, × en/da/fo. Retired: `pm.add_user`, `pm.unpair`, `settings.unpair`, `…_desc`, `…_confirm`,
+  `…_yes`, `settings.sign_out_confirm`, `settings.sign_out_desc`, `toast.unpaired` (already unused). **Copy
+  correction:** `signout.one_sub_last` says *…so this TV goes back to the sign-in screen* — the design's *Ravilo will ask
+  who is watching next time* was not what happens: with no profile left, R191's path lands on sign-in. Danish keeps the
+  shipped table's *TV* (the design wrote *tv*).

@@ -376,7 +376,13 @@ private sealed class Dest {
 // ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
-fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
+fun RaviloApp(
+    apiClient: TvApiClient,
+    initialDisplayName: String = "",
+    onChangeServer: () -> Unit = {},
+    // R340 (FR-R340-3) — "Everyone on this TV": every session is already revoked; forget the server and say so.
+    onSignedOutEveryone: () -> Unit = onChangeServer,
+) {
     // R212 — the last-known Home feed + display settings for this device's single cached session
     // (if any), read once at cold start. Mirrors initialDest's own bare `remember{}` below: it only
     // ever matters for the single-session fast path — a profile switch mid-session is already
@@ -1899,10 +1905,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
                     },
                     onBack = { pop() },
-                    // R161: unpair revokes every session this device holds (store.unpairDevice() has
-                    // already cleared MultiTokenStore by the time this fires) — always lands on the
-                    // login gate, matching the "no sessions" boot state.
-                    onUnpair = { resetTo(Dest.Login) },
+                    // R340 — "Everyone on this TV" (store.unpairDevice() has already cleared MultiTokenStore):
+                    // the server is forgotten too, so the TV starts again at server setup.
+                    onSignedOutEveryone = onSignedOutEveryone,
                     onChangePassword = { push(Dest.ChangePassword(dest.displayName)) },
                 )
             }
@@ -2042,16 +2047,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 onSettings = { profileMenuOpen = false; push(Dest.Settings(currentDisplayName)) },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
                 onYourProfile = { profileMenuOpen = false; push(Dest.YourProfile(currentDisplayName)) },
-                // R175 — "Add user" opens the same LoginScreen; a successful sign-in resets the stack
-                // to the new profile's Home (see the Dest.Login branch above).
-                onAddUser = { profileMenuOpen = false; push(Dest.Login) },
                 // R191 — mirrors onUnpair's shape but only one profile was revoked/forgotten; go to
                 // the picker if another cached profile remains, else all the way to Login.
                 onSignedOut = {
                     profileMenuOpen = false
                     resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
                 },
-                onUnpaired = { profileMenuOpen = false; resetTo(Dest.Login) },
+                onSignedOutEveryone = { profileMenuOpen = false; onSignedOutEveryone() },
             )
             }
         }

@@ -33,8 +33,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
-import dev.jellystructure.ravilo.ui.screens.SignOutConfirmOverlay
-import dev.jellystructure.ravilo.ui.screens.UnpairConfirmOverlay
+import dev.jellystructure.ravilo.ui.screens.SignOutChoiceOverlay
 import dev.jellystructure.ravilo.ui.screens.signOutActiveSession
 import dev.jellystructure.ravilo.ui.screens.unpairAllSessions
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -46,7 +45,8 @@ private val DANGER_RED = Color(0xFFE0393A)
 
 /**
  * R170 — the avatar opens this dropdown instead of the full "Who's watching" grid: My List, Settings,
- * Sign out, Unpair this TV, plus a Switch-profile action in the header. Render-only re-routing of
+ * Sign out, plus a Switch-profile action in the header. R340 (FR-R340-1) — *Add user* and *Unpair this TV* are gone:
+ * adding a user is Switch's ＋ tile, and Sign out asks whether it means this profile or everyone on this TV. Render-only re-routing of
  * existing destinations/actions (constitution: no new server state) — modeled on the detail screen's
  * modal overlay pattern (one focusable column, Back closes). [apiClient] is needed for the Sign out
  * ([signOutActiveSession]) and Unpair ([unpairAllSessions]) actions — the same logic `SettingsStore`
@@ -59,12 +59,12 @@ fun ProfileMenu(
     onMyList: () -> Unit,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
-    onAddUser: () -> Unit,
-    // R191 — fires after this ONE profile's session is revoked/forgotten; distinct from [onUnpaired],
+    // R191 — fires after this ONE profile's session is revoked/forgotten; distinct from [onSignedOutEveryone],
     // which fires after every profile on the device is gone. The caller decides Login vs
     // ProfilePicker based on whether any session remains locally.
     onSignedOut: () -> Unit,
-    onUnpaired: () -> Unit,
+    // R340 (FR-R340-3) — "Everyone on this TV": every session revoked; the caller forgets the server.
+    onSignedOutEveryone: () -> Unit,
     // R234 (FR-R234-1) — phone/web only (gated below on isTvPlatform, never on window size); opens the
     // Your profile screen. Optional so a TV caller need not supply a destination that never shows.
     onYourProfile: (() -> Unit)? = null,
@@ -72,26 +72,18 @@ fun ProfileMenu(
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
     var showSignOutConfirm by remember { mutableStateOf(false) }
-    var showUnpairConfirm by remember { mutableStateOf(false) }
 
     if (showSignOutConfirm) {
-        SignOutConfirmOverlay(
+        SignOutChoiceOverlay(
             displayName = MultiTokenStore.getActive()?.displayName.orEmpty(),
             onCancel = { showSignOutConfirm = false },
-            onConfirm = {
+            onOnly = {
                 showSignOutConfirm = false
                 scope.launch { signOutActiveSession(apiClient); onSignedOut() }
             },
-        )
-        return
-    }
-
-    if (showUnpairConfirm) {
-        UnpairConfirmOverlay(
-            onCancel = { showUnpairConfirm = false },
-            onConfirm = {
-                showUnpairConfirm = false
-                scope.launch { unpairAllSessions(apiClient); onUnpaired() }
+            onEveryone = {
+                showSignOutConfirm = false
+                scope.launch { unpairAllSessions(apiClient); onSignedOutEveryone() }
             },
         )
         return
@@ -100,16 +92,14 @@ fun ProfileMenu(
     // R234 — a list-based focus chain (rather than the previous hand-linked FocusRequesters) so an
     // optional row (Your profile, phone/web only) can slot in without every other row's up/down needing
     // to be re-wired by hand. Row order matches the mockup: Switch profile · Your profile · My List ·
-    // Settings · Add user · Sign out · Unpair.
+    // Settings · Sign out (R340 — Add user and Unpair removed; Your profile stays on the web app, R234).
     data class MenuItem(val label: String, val onSelect: () -> Unit, val bold: Boolean = false, val danger: Boolean = false)
     val items = buildList {
         add(MenuItem(str("pm.switch"), onSwitchProfile, bold = true))
         if (!isTvPlatform && onYourProfile != null) add(MenuItem(str("pm.your_profile"), onYourProfile))
         add(MenuItem(str("pm.my_list"), onMyList))
         add(MenuItem(str("pm.settings"), onSettings))
-        add(MenuItem(str("pm.add_user"), onAddUser))
         add(MenuItem(str("pm.sign_out"), { showSignOutConfirm = true }))
-        add(MenuItem(str("pm.unpair"), { showUnpairConfirm = true }, danger = true))
     }
     val focusRequesters = remember(items.size) { items.map { FocusRequester() } }
     LaunchedEffect(Unit) { runCatching { focusRequesters.first().requestFocus() } }

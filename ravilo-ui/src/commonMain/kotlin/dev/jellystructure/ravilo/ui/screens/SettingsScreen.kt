@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.isWebPlatform
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Skin
@@ -142,6 +145,7 @@ suspend fun unpairAllSessions(apiClient: TvApiClient) {
         PlaybackPrefsStore.clearProfile(it.userId)   // R181 — local playback memory
         HomeSnapshotCache.clear(it.userId)           // R212 — cached Home snapshot
     }
+    dev.jellystructure.ravilo.ui.music.forgetListening()   // R340 — as signOutActiveSession does; the next viewer starts in video mode
 }
 
 /**
@@ -170,16 +174,15 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onBack: () -> Unit,
     onSkinChange: (Skin) -> Unit = {},
-    // R161: fires after the device's sessions are actually revoked (store.unpairDevice() has
-    // completed) — the caller navigates to the pairing gate, mirroring onSignOut's role.
-    onUnpair: () -> Unit = {},
+    // R340 (FR-R340-3) — fires after "Everyone on this TV": every session this device holds is revoked
+    // (store.unpairDevice() has completed); the caller forgets the server and returns to server setup.
+    onSignedOutEveryone: () -> Unit = {},
     // R234 (FR-R234-4) — every platform (TV included); opens the dedicated Change password screen.
     onChangePassword: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val scope = rememberCoroutineScope()
-    var showUnpairConfirm by remember { mutableStateOf(false) }
     // Bug fix: Sign out used to fire immediately on Select, no confirmation at all — unlike Unpair,
     // even though "Sign out" here means the same thing (the string is literally "Sign out / Unpair")
     // and needs the Jellyfin username+password to recover. Confirmed live on soveværelse TV: an
@@ -245,7 +248,6 @@ fun SettingsScreen(
                     store = store,
                     onSignOut = { showSignOutConfirm = true },
                     onSkinChange = onSkinChange,
-                    onUnpairRequest = { showUnpairConfirm = true },
                     onChangePassword = onChangePassword,
                     onInstallRavilo = { showInstallCard = true },
                 )
@@ -265,32 +267,30 @@ fun SettingsScreen(
         // R161: 2-D nav is "steps out one level" for Back/Esc — the confirm overlay owns input while
         // shown (dpadFocusable's onBack on Cancel closes it) and defaults focus to the non-destructive
         // Cancel choice.
+        // R340 (FR-R340-2/3) — in the TV layout Settings' Sign out opens the same dialog as the profile menu:
+        // this profile only, or everyone on this TV (the old Unpair, plus the server forgotten). The phone
+        // keeps R304's one-profile sign-out, worded as its Profile page words it.
         if (showSignOutConfirm) {
-            ConfirmOverlay(
-                title = str("settings.sign_out_confirm", mapOf("name" to displayName)),
-                description = str("settings.sign_out_desc", mapOf("name" to displayName)),
-                confirmLabel = str("settings.sign_out_yes"),
-                onCancel = { showSignOutConfirm = false },
-                onConfirm = {
-                    showSignOutConfirm = false
-                    // R191 — revoke + forget only this profile before navigating (mirrors onUnpair's
-                    // "store.unpairDevice() then onUnpair()" shape); onSignOut decides Login vs
-                    // ProfilePicker based on whether any session remains.
-                    scope.launch { store.signOutActiveSession(); onSignOut() }
-                },
-            )
-        }
-        if (showUnpairConfirm) {
-            ConfirmOverlay(
-                title = str("settings.unpair_confirm"),
-                description = str("settings.unpair_desc"),
-                confirmLabel = str("settings.unpair_yes"),
-                onCancel = { showUnpairConfirm = false },
-                onConfirm = {
-                    showUnpairConfirm = false
-                    scope.launch { store.unpairDevice(); onUnpair() }
-                },
-            )
+            if (!LocalHandset.current) {
+                SignOutChoiceOverlay(
+                    displayName = displayName,
+                    onCancel = { showSignOutConfirm = false },
+                    // R191 — revoke + forget only this profile; onSignOut decides Login vs ProfilePicker.
+                    onOnly = { showSignOutConfirm = false; scope.launch { store.signOutActiveSession(); onSignOut() } },
+                    onEveryone = { showSignOutConfirm = false; scope.launch { store.unpairDevice(); onSignedOutEveryone() } },
+                )
+            } else {
+                ConfirmOverlay(
+                    title = str("profile.signout_title"),
+                    description = str("profile.signout_body"),
+                    confirmLabel = str("profile.signout_confirm"),
+                    onCancel = { showSignOutConfirm = false },
+                    onConfirm = {
+                        showSignOutConfirm = false
+                        scope.launch { store.signOutActiveSession(); onSignOut() }
+                    },
+                )
+            }
         }
     }
 }
@@ -356,29 +356,147 @@ fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onC
     }
 }
 
-/** Non-private: reused by R170's avatar ProfileMenu (a different file), not just this screen. */
+/**
+ * R340 (FR-R340-3) — the one way out of a TV: Sign out asks whom. Two radio rows — **Only {name}** (the default, and
+ * where focus lands) and **Everyone on this TV** — then Cancel · the confirm button, whose label says what it will do.
+ * Used by Settings and by R170's avatar [dev.jellystructure.ravilo.ui.components.ProfileMenu]. D-pad: ↑/↓ between the
+ * rows, OK picks one, ↓ from the second row reaches the buttons, Back cancels. It is the only confirmation — there is
+ * no second one for Everyone. [onOnly] is R191's per-profile sign-out; [onEveryone] is what *Unpair this TV* did, and
+ * the caller also forgets the server.
+ */
 @Composable
-fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
-    ConfirmOverlay(
-        title = str("settings.unpair_confirm"),
-        description = str("settings.unpair_desc"),
-        confirmLabel = str("settings.unpair_yes"),
-        onCancel = onCancel,
-        onConfirm = onConfirm,
-    )
+fun SignOutChoiceOverlay(displayName: String, onCancel: () -> Unit, onOnly: () -> Unit, onEveryone: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val signedIn = remember { MultiTokenStore.getAll().size.coerceAtLeast(1) }
+    var everyone by remember { mutableStateOf(false) }
+    val oneFR = remember { FocusRequester() }
+    val allFR = remember { FocusRequester() }
+    val cancelFR = remember { FocusRequester() }
+    val confirmFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { oneFR.requestFocus() } }
+    val confirm = { if (everyone) onEveryone() else onOnly() }
+    Box(
+        modifier = Modifier.fillMaxSize().background(colors.overlay),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(24.dp)
+                .widthIn(max = 620.dp)
+                .background(colors.surface, RoundedCornerShape(14.dp))
+                .padding(32.dp),
+        ) {
+            Text(str("signout.title"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            SignOutChoiceRow(
+                title = str("signout.one", mapOf("name" to displayName)),
+                sub = str(if (signedIn > 1) "signout.one_sub" else "signout.one_sub_last"),
+                selected = !everyone,
+                focusRequester = oneFR,
+                onUp = null,
+                onDown = { allFR.requestFocus() },
+                onSelect = { everyone = false },
+                onBack = onCancel,
+            )
+            Spacer(Modifier.height(12.dp))
+            SignOutChoiceRow(
+                title = str("signout.all"),
+                sub = if (signedIn > 1) str("signout.all_sub", mapOf("n" to signedIn.toString())) else str("signout.all_sub_one"),
+                selected = everyone,
+                focusRequester = allFR,
+                onUp = { oneFR.requestFocus() },
+                onDown = { confirmFR.requestFocus() },
+                onSelect = { everyone = true },
+                onBack = onCancel,
+            )
+            Spacer(Modifier.height(26.dp))
+            Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                var cancelFocused by rememberFocusVisual()
+                Box(
+                    modifier = Modifier
+                        .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                        .then(if (cancelFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .dpadFocusable(
+                            focusRequester = cancelFR,
+                            onFocused = { cancelFocused = true },
+                            onBlurred = { cancelFocused = false },
+                            onUp = { allFR.requestFocus() },
+                            onRight = { runCatching { confirmFR.requestFocus() } },
+                            onSelect = onCancel,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) { Text(str("action.cancel"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                var confirmFocused by rememberFocusVisual()
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFFE0393A), RoundedCornerShape(8.dp))
+                        .then(if (confirmFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .dpadFocusable(
+                            focusRequester = confirmFR,
+                            onFocused = { confirmFocused = true },
+                            onBlurred = { confirmFocused = false },
+                            onUp = { allFR.requestFocus() },
+                            onLeft = { runCatching { cancelFR.requestFocus() } },
+                            onSelect = confirm,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        str(if (everyone) "signout.yes_all" else "settings.sign_out_yes"),
+                        color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
 }
 
-/** R191 — non-private: reused by R170's avatar ProfileMenu, same shape as [UnpairConfirmOverlay]
- *  but for the single-profile "Sign out" action; names the profile being signed out. */
+/** R340 — one radio row of [SignOutChoiceOverlay]: a ring that fills with the accent when chosen, the title, one line. */
 @Composable
-fun SignOutConfirmOverlay(displayName: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    ConfirmOverlay(
-        title = str("settings.sign_out_confirm", mapOf("name" to displayName)),
-        description = str("settings.sign_out_desc", mapOf("name" to displayName)),
-        confirmLabel = str("settings.sign_out_yes"),
-        onCancel = onCancel,
-        onConfirm = onConfirm,
-    )
+private fun SignOutChoiceRow(
+    title: String,
+    sub: String,
+    selected: Boolean,
+    focusRequester: FocusRequester,
+    onUp: (() -> Unit)?,
+    onDown: () -> Unit,
+    onSelect: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    var focused by rememberFocusVisual()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (focused || selected) colors.surfaceVariant else Color.Transparent, RoundedCornerShape(12.dp))
+            .border(2.dp, if (focused) colors.focusRing else colors.textDim.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onUp = onUp,
+                onDown = onDown,
+                onSelect = onSelect,
+                onBack = onBack,
+            )
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            Modifier.padding(top = 2.dp).size(22.dp)
+                .border(2.dp, if (selected) colors.accent else colors.textDim, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(12.dp).background(colors.accent, CircleShape))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(sub, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+    }
 }
 
 // R161 — endonyms, not translated (a language picker names languages in themselves regardless of
@@ -395,7 +513,6 @@ private fun SettingsContent(
     store: SettingsStore,
     onSignOut: () -> Unit,
     onSkinChange: (Skin) -> Unit,
-    onUnpairRequest: () -> Unit,
     onChangePassword: () -> Unit = {},
     // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
     // web (isWebPlatform), never a greyed/inert row.
@@ -419,7 +536,6 @@ private fun SettingsContent(
     val changePwFR = remember { FocusRequester() }
     val installFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
-    val unpairFR = remember { FocusRequester() }
 
     // Skin section
     if (config.allowSkinOverride) {
@@ -638,7 +754,6 @@ private fun SettingsContent(
                 // ring would have stuck the same way ToggleRow's did.
                 onBlurred = { focused = false },
                 onUp = { (if (isWebPlatform) installFR else changePwFR).requestFocus() },
-                onDown = { unpairFR.requestFocus() },
                 onSelect = onSignOut,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -647,32 +762,8 @@ private fun SettingsContent(
         Text(str("profile.sign_out"), color = colors.text, fontSize = 14.sp)
     }
 
-    Spacer(Modifier.height(32.dp))
-
-    // R161 — "Unpair this TV": a device-scoped action distinct from the per-session Sign out above
-    // (revokes every session this device holds). Danger-styled; requires the confirm overlay.
-    SectionHeader(str("settings.unpair").uppercase())
-    Spacer(Modifier.height(12.dp))
-    var unpairFocused by rememberFocusVisual()
-    Box(
-        modifier = Modifier
-            .background(Color(0xFFE0393A).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-            .then(if (unpairFocused) Modifier.border(2.dp, Color(0xFFE0393A), RoundedCornerShape(8.dp)) else Modifier)
-            .dpadFocusable(
-                focusRequester = unpairFR,
-                onFocused = { unpairFocused = true },
-                onBlurred = { unpairFocused = false },
-                onUp = { signOutFR.requestFocus() },
-                onSelect = onUnpairRequest,
-            )
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-    ) {
-        Column {
-            Text(str("settings.unpair"), color = Color(0xFFE0393A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(2.dp))
-            Text(str("settings.unpair_desc"), color = colors.textSecondary, fontSize = 12.sp)
-        }
-    }
+    // R340 (FR-R340-2) — the separate "Unpair this TV" section is gone: Sign out above asks whom, and
+    // "Everyone on this TV" is what it did (plus the server forgotten). One way out, and it always asks.
 }
 
 @Composable

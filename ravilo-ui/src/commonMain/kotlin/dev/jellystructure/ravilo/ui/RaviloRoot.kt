@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.screens.ServerSetupScreen
 import dev.jellystructure.shared.tv.TvApiClient
@@ -100,12 +101,18 @@ expect fun rememberExitAction(): () -> Unit
 @Composable
 fun RaviloRoot() {
     var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }
+    // R340 (FR-R340-3) — "Everyone on this TV" lands here, and the setup screen says what just happened.
+    var signedOutEveryone by remember { mutableStateOf(false) }
 
     if (baseUrl.isEmpty()) {
-        ServerSetupScreen(onUrlSaved = { url ->
-            saveBaseUrl(url)
-            baseUrl = url
-        })
+        ServerSetupScreen(
+            notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
+            onUrlSaved = { url ->
+                saveBaseUrl(url)
+                signedOutEveryone = false
+                baseUrl = url
+            },
+        )
         return
     }
 
@@ -118,6 +125,11 @@ fun RaviloRoot() {
         apiClient = apiClient,
         onChangeServer = {
             saveBaseUrl("")
+            baseUrl = ""
+        },
+        onSignedOutEveryone = {
+            saveBaseUrl("")
+            signedOutEveryone = true
             baseUrl = ""
         },
     )

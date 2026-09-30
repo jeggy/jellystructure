@@ -37,7 +37,12 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 
 @Composable
-fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
+fun ServerSetupScreen(
+    onUrlSaved: (String) -> Unit,
+    // R340 (FR-R340-3) — one line above the prompt after "Everyone on this TV" (the app that would have shown a
+    // toast is gone by then); null otherwise.
+    notice: String? = null,
+) {
     val colors = RaviloTheme.colors
     var host by remember { mutableStateOf("") }
 
@@ -61,6 +66,15 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
                 .padding(vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            if (notice != null) {
+                Text(
+                    notice,
+                    color = colors.text,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.background(colors.surfaceVariant, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             Text("Ravilo", color = colors.accent, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
             Text(
                 str("setup.server_prompt"),
