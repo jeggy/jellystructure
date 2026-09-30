@@ -145,6 +145,9 @@ jobs:
 
   flatpak:
     needs: [version, sources]
+    # always(): `ci` is skipped when the caller already ran it, and a skipped job skips everything downstream of it
+    # unless the condition says otherwise — v1.48's release built the sources and then skipped the bundle.
+    if: ${{ always() && needs.sources.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
@@ -184,7 +187,7 @@ jobs:
 
   attach:
     needs: [version, sources, flatpak]
-    if: github.event_name == 'release'
+    if: ${{ always() && github.event_name == 'release' && needs.flatpak.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
