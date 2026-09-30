@@ -165,7 +165,11 @@ jobs:
         run: |
           set -euo pipefail
           flatpak install -y --noninteractive flathub org.flatpak.Builder
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest "manifest/$APP_ID.yml"
+          # The linter runs flatpak-builder, which makes a `.flatpak-builder` state folder where it is started. Inside
+          # the Flatpak sandbox the checkout (the runner's own folder, mode 755) is not writable — v1.48's first run
+          # stopped here with "Can't create state directory … Permission denied". A folder of its own, open to it.
+          mkdir -p lint && cp -r manifest/. lint/ && chmod -R a+rwX lint
+          cd lint && flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest "$APP_ID.yml"
       - name: flatpak-builder — offline, from the manifest, bundled
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
