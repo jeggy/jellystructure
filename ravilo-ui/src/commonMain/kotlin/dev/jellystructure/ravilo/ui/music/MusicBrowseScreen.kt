@@ -78,8 +78,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/** The Browse page's chips, in the strip's order (FR-R321-6). Audiobooks joins with R323. */
-val MUSIC_CHIPS = listOf("albums", "artists", "songs", "genres", "playlists")
+/** The Browse page's chips, in the strip's order. Audiobooks joins with R323. R339 (FR-R339-1) — the admin's Library →
+ *  Music order (287): Artists first, and Artists is the chip shown on arrival ([Dest.MusicBrowse]'s default). */
+val MUSIC_CHIPS = listOf("artists", "albums", "songs", "genres", "playlists")
 private val SORTS = listOf("added" to "music.sort_added", "title" to "music.sort_az", "year" to "music.sort_year", "played" to "music.sort_played")
 
 /** A browse list that grows a page at a time as the viewer scrolls to its end. */

@@ -141,6 +141,8 @@ fun RaviloBottomNav(
                         userInitials = userInitials,
                         onClick = { onSelect(item) },
                         modifier = Modifier.weight(1f),
+                        // R339 (FR-R339-2) — music mode's Profile keeps the pill and drops the ring round the photo.
+                        profileRing = items != MUSIC_BAR,
                     )
                 }
             }
@@ -182,6 +184,7 @@ private fun BottomNavCell(
     userInitials: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    profileRing: Boolean = true,
 ) {
     val colors = RaviloTheme.colors
     Column(
@@ -204,7 +207,7 @@ private fun BottomNavCell(
             when (item) {
                 // FR-R267-5d — the profile item's icon is the viewer's own avatar: the photo when
                 // there is one, initials when there is not.
-                BottomNavItem.PROFILE -> ProfileDot(userInitials, isSelected)
+                BottomNavItem.PROFILE -> ProfileDot(userInitials, isSelected, ring = isSelected && profileRing)
                 else -> {
                     val tint = if (isSelected) colors.onAccent else colors.textSecondary
                     // R321 — music mode's four marks, drawn on the same 24-unit grid.
@@ -230,14 +233,15 @@ private fun BottomNavCell(
 }
 
 @Composable
-private fun ProfileDot(initials: String, selected: Boolean) {
+private fun ProfileDot(initials: String, selected: Boolean, ring: Boolean = selected) {
     val colors = RaviloTheme.colors
     val avatarUrl = LocalUserAvatarUrl.current
     // R304 (FR-R304-1) — the ring only while lit: a 1.5 dp white ring with a 2 dp gap around the avatar,
-    // so the photo never sits on the pill's gradient unreadably.
-    val ring = if (selected) Modifier.border(RING_WIDTH, Color.White, CircleShape).padding(RING_WIDTH + RING_GAP) else Modifier.padding(RING_WIDTH + RING_GAP)
+    // so the photo never sits on the pill's gradient unreadably. R339 (FR-R339-2) — not in music mode, where
+    // the owner wants the pill alone; the gap stays, so the photo is the same size either way.
+    val ringMod = if (ring) Modifier.border(RING_WIDTH, Color.White, CircleShape).padding(RING_WIDTH + RING_GAP) else Modifier.padding(RING_WIDTH + RING_GAP)
     Box(
-        Modifier.size(GLYPH_BOX + (RING_WIDTH + RING_GAP) * 2).then(ring).background(colors.surfaceVariant, CircleShape),
+        Modifier.size(GLYPH_BOX + (RING_WIDTH + RING_GAP) * 2).then(ringMod).background(colors.surfaceVariant, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         if (avatarUrl != null) {

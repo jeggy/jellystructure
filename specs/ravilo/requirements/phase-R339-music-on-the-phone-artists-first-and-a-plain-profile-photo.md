@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo Mobile.html` (built there the same day).
+`✓ Built` 2026-09-30 (§Build notes; not deployed, not device-tested) — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo Mobile.html` (built there the same day).
 **Dev-reviewed 2026-09-30** (§Dev review — one sentence struck, item 2). Number verified free (after R338). Two small changes; they hold in the desktop's compact layout
 too, which is the phone (R337 FR-R337-2).
 
@@ -47,3 +47,14 @@ Small, and ready to build as written apart from one sentence (item 2).
    by the bar, not the dot, so it stays. Films mode is unchanged (R304).
 5. No wire change and no new strings. The desktop's compact layout inherits both changes. The desktop sidebar's list is
    R337 dev review 7.
+
+## Build notes (2026-09-30)
+
+Built as the dev review says; **not deployed, not device-tested** (compiled for web; the phone build shares the code).
+
+- `MusicBrowseScreen.kt` — `MUSIC_CHIPS` reads `artists, albums, songs, genres, playlists`; `RaviloApp.kt` —
+  `Dest.MusicBrowse`'s default chip is `artists`. The Songs shortcut (`chip = "songs"`) and the genre drill-in to Albums
+  are unchanged.
+- `RaviloBottomNav.kt` — `BottomNavCell` takes `profileRing` (`items != MUSIC_BAR`), and `ProfileDot` draws the ring only
+  when lit *and* asked to. The 2 dp gap stays either way, so the photo is the same size in both modes; the pill is the
+  bar's and is untouched.

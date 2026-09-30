@@ -327,7 +327,7 @@ private sealed class Dest {
     // R321 — music mode's pages (the phone only). The four tabs sit on the bar; the three details hide it (R278's rule).
     data class MusicListen(val displayName: String) : Dest()
     /** [focusInput] — a re-tap of Browse raises the keyboard (R277's rule), consumed like [Search.focusInput]. */
-    data class MusicBrowse(val displayName: String, val chip: String = "albums", val focusInput: Boolean = false) : Dest()
+    data class MusicBrowse(val displayName: String, val chip: String = "artists", val focusInput: Boolean = false) : Dest()   // R339 — Artists on arrival
     data class MusicPlaying(val displayName: String) : Dest()
     data class MusicQueue(val displayName: String) : Dest()
     data class AlbumDetail(val id: String, val displayName: String) : Dest()
