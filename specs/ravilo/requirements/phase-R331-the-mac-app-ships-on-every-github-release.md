@@ -231,3 +231,12 @@ workflow on `main`. `⚠ Partial` until acceptance 1–5 are seen on GitHub and 
    `publish.yml` still has no `macos:` job. On macOS 27 `hdiutil attach` warns that it is deprecated in favour of
    `diskutil image attach`; the runner is macOS 15, so nothing changes yet. Still owed: acceptance 2 (no prompt on
    the next release), 4 and 5.
+
+## Correction (2026-09-30): what the one certificate does and does not keep
+
+FR-R331-3's reason stands for **Gatekeeper** (one *Open Anyway* per Mac) and for **Local Network** access, which
+follow the app's designated requirement. It was wrong about the **Keychain**: without a team ID an item is bound to the
+build's code-directory hash, so each release asked for the login password again. R328's D5 is amended accordingly —
+the tokens are in the app's own file. Acceptance 2 ("a Mac that approved one release opens the next without asking")
+is now reachable; it was not before.
+

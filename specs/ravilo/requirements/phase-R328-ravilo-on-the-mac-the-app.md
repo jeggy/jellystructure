@@ -253,3 +253,15 @@ has never been compiled and nothing Mac-specific has run. `⚠ Partial` until a 
     `dev.jellystructure.ravilo`, no `tokens.json` in the data directory), and the server recorded the device as `mac`,
     version 1.46, under the Mac's Computer Name. `--self-test` passes on the Mac. Quitting from the player sends the
     stop. Still owed: the menu bar's handlers, the Dock reopen, full screen by the menu, and the update line.
+
+## D5 amended (owner, 2026-09-30): tokens in the app's own file, not the Keychain
+
+D5 kept each device token as a Keychain item, on R331's premise that one signing certificate lets every later build
+read it. It does not. macOS binds a Keychain item to a **team ID** when the app has one and to the **exact build**
+(its code-directory hash) when it has none, and an app signed with a certificate of our own has none. *Always Allow*
+therefore lasted until the next update; every update — and every test build — asked for the Mac's login password
+again, which the owner met a dozen times in one morning. Tokens now live in `tokens.json` (mode `0600`) in the app's
+data directory, as the Linux app's always have; a token left in the Keychain by an earlier build is moved across on
+first use and its Keychain item removed. A token is a Ravilo device token, revocable in Users & devices — never the
+viewer's password. `ravilo_keychain_*` stay in the Swift library for that one migration.
+
