@@ -8,19 +8,19 @@ name: Deploy — Ravilo for Linux (.flatpak)
 #                          home (R333 FR-R333-2), replays it offline (FR-R333-5), renders the manifest for this tag.
 #   flatpak   (container)  Flathub's own image: flatpak-builder builds the rendered manifest — no network, no
 #                          Android, the exact build Flathub's machines will run — and bundles it.
-#   attach    (ubuntu)     `gh release upload` on a published release, plus the Flathub pull request (FR-R334-4).
+#   attach    (ubuntu)     `gh release upload` on a published release, and one fixed paragraph in the notes.
 #
 # ── When it runs (R334 D1) ───────────────────────────────────────────────────────────────────────────────────────
 # By hand (workflow_dispatch on an existing vX.Y tag, or on `main` via `ref`) it keeps the bundle as this run's
-# artifact and touches no release and no Flathub repository. It attaches to a GitHub release only when called from
+# artifact and touches no release. It attaches to a GitHub release only when called from
 # publish.yml on a published release — and that caller job is added by the commit that marks R333 ✓ Built.
 #
-# ── Flathub (FR-R334-4) — one pull request per release, never a push ──────────────────────────────────────────────
-# Flathub builds from the manifest in ITS repository, flathub/net.jebster.Ravilo, which exists only once the owner has
-# made the one-time submission by hand (R334 §The owner's steps). With the repository secret FLATHUB_TOKEN set (a
-# fine-grained token with contents + pull-requests on that one repository), the attach job opens a PR there carrying
-# the rendered manifest and the fresh sources file; the owner merges it. Without the secret the step says so and
-# skips — nothing here fails a release over Flathub.
+# ── No Flathub automation, by Flathub's own rule ─────────────────────────────────────────────────────────────────
+# Flathub's generative-AI policy (docs.flathub.org → requirements → Generative AI policy, read 2026-09-30): "AI tools
+# or agents must not open or automate Flathub submission pull requests, or generate their commit messages,
+# descriptions, review comments, or replies", and "Flathub manifests must not contain AI-generated or AI-assisted
+# content". This project is written with an AI, this workflow included, so it opens nothing on Flathub. The pull
+# request step R334 first had (FR-R334-4) was removed the same day, before it ever ran.
 
 on:
   workflow_call:
@@ -205,41 +205,7 @@ jobs:
           gh release upload "$TAG" "ravilo-linux-$VERSION.flatpak" --clobber --repo "$REPO"
           BODY=$(gh release view "$TAG" --repo "$REPO" --json body --jq .body)
           if ! printf '%s' "$BODY" | grep -q "Ravilo for Linux:"; then
-            NOTE="Ravilo for Linux: download \`ravilo-linux-$VERSION.flatpak\` and run \`flatpak install ravilo-linux-$VERSION.flatpak\` (Flatpak fetches the runtime from Flathub on first install) — or install Ravilo from Flathub, which updates itself."
+            NOTE="Ravilo for Linux: download \`ravilo-linux-$VERSION.flatpak\` and run \`flatpak install ravilo-linux-$VERSION.flatpak\` (Flatpak fetches the runtime from Flathub on first install)."
             printf '%s\n\n%s\n' "$BODY" "$NOTE" > notes.md
             gh release edit "$TAG" --repo "$REPO" --notes-file notes.md
           fi
-      # FR-R334-4 — the Flathub pull request: only once the owner has made the submission and set the token.
-      - name: Is there a Flathub token?
-        id: flathub
-        env:
-          TOKEN: ${{ secrets.FLATHUB_TOKEN }}
-        run: |
-          if [ -n "$TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"
-          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "::notice::FLATHUB_TOKEN is not set — no Flathub pull request (R334 §The owner's steps)."; fi
-      - name: Check out flathub/${{ env.APP_ID }}
-        if: steps.flathub.outputs.present == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: flathub/${{ env.APP_ID }}
-          token: ${{ secrets.FLATHUB_TOKEN }}
-          path: flathub-repo
-      - name: Put this release's manifest and sources in it
-        if: steps.flathub.outputs.present == 'true'
-        run: |
-          set -euo pipefail
-          cp "manifest/$APP_ID.yml" "manifest/flatpak-sources.json" flathub-repo/
-          [ -f flathub-repo/flathub.json ] || printf '{\n  "only-arches": ["x86_64"]\n}\n' > flathub-repo/flathub.json
-      - name: Open the pull request (FR-R334-4)
-        if: steps.flathub.outputs.present == 'true'
-        uses: peter-evans/create-pull-request@v7
-        with:
-          path: flathub-repo
-          token: ${{ secrets.FLATHUB_TOKEN }}
-          branch: ravilo-${{ needs.version.outputs.version }}
-          commit-message: "Ravilo ${{ needs.version.outputs.version }}"
-          title: "Ravilo ${{ needs.version.outputs.version }}"
-          body: |
-            Ravilo ${{ needs.version.outputs.version }} — https://github.com/${{ github.repository }}/releases/tag/${{ needs.version.outputs.tag }}
-
-            Rendered by the release workflow: the manifest at tag `${{ needs.version.outputs.tag }}` (commit `${{ needs.sources.outputs.commit }}`) and the sources file captured from that commit's build.

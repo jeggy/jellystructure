@@ -85,7 +85,8 @@ gh secret set MACOS_SIGNING_P12_PASSWORD --repo jeggy/jellystructure    # paste 
 
 R333 packages the same app for Linux as `net.jebster.Ravilo`, built the way Flathub builds — offline, from a manifest
 whose sources are the Gradle distribution and every Maven artefact — and R334 attaches `ravilo-linux-<N>.flatpak` to
-each release and opens Flathub's pull request. The pieces:
+each release. It is **not** submitted to Flathub: Flathub's generative-AI policy forbids AI-written manifests and
+AI-opened pull requests (R334 §Flathub's AI policy). The pieces:
 
 - `flatpak/net.jebster.Ravilo.yml` — the manifest **template** (`@VERSION@`, `@COMMIT@`, `@DATE@`).
 - `flatpak/render.sh` — fills it for a release, or renders the working tree for a local build.

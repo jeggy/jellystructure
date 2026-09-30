@@ -6,6 +6,11 @@
 **Date:** 2026-09-29. Research, measured against local `main` `27aae1d1` (R328–R331 built, unpushed). Nothing built,
 no spec written. Prospective phases at the end (§9); numbers to be verified free on `main` before writing.
 
+> **Correction, 2026-09-30:** everything below about submitting to Flathub (§0 item 7, §4's verification, §6.2–§6.3,
+> §7 D3/D5) is **void**. Flathub's generative-AI policy forbids AI-written manifests and AI-opened or AI-automated
+> pull requests, and this project is written with an AI end to end; see R334 §Flathub's AI policy. The `.flatpak` on
+> every GitHub release (§6.1) stands.
+
 ## 0. The answer in eight lines
 
 1. **The Linux app already exists — as far as browsing goes.** R328 runs on Debian today (`./gradlew :ravilo-desktop:run`,
