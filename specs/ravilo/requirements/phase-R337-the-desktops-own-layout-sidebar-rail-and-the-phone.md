@@ -10,7 +10,7 @@
 ## Status
 
 `Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions
-answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review — two items for the owner: 4 and 7). Number verified free: `main`
+answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review; the owner took the leans on items 4 and 7 the same day — Q12, Q13). Number verified free: `main`
 tops at R335, and R335 names **R336** for MPRIS and the Inhibit portal, so this starts at R337.
 
 **Supersedes R328 D3** (*the TV layout, driven by the keyboard and the mouse*) and the layout half of **FR-R328-5**
@@ -43,6 +43,8 @@ A desktop window is not a fourth layout: it is the desktop family at 600 dp and 
 | Q8 | 600–839 dp | **The sidebar folds into a rail** (icon + label), not a sidebar behind a button |
 | Q10 | Music paused while in films mode | **The bar stays until the viewer leaves the page**, then goes |
 | Q11 | The phone gets R338 too | **Yes** (R338) |
+| Q12 | Profiles on a computer | **One viewer, as on the phone** (owner, 2026-09-30 — dev review 4): Profile is R304's page, there is no *Switch profile*, and Sign out is R304's one-profile sheet |
+| Q13 | The music sidebar's Library | **The same list as the phone's Browse chips** (owner, 2026-09-30 — dev review 7): Artists · Albums · Songs · Genres · Playlists · Audiobooks |
 
 ## Requirements
 
@@ -70,10 +72,11 @@ top to bottom:
    greyed — without a music library (R321's rule);
 3. **the search field** for the mode (`desk.search_video` / `desk.search_music`), ⌘F / Ctrl+F focuses it;
 4. **the mode's pages:** films — *Home · Discover · My List*, then a **Library** heading with *Films · Series* and
-   their counts; music — *Listen · Playing · Queue*, then **Library** with **Artists · Albums · Songs · Audiobooks**
-   (R339's order; Audiobooks absent without the books library). *Playing* shows a small live equaliser while
+   their counts; music — *Listen · Playing · Queue*, then **Library** with **Artists · Albums · Songs · Genres · Playlists ·
+   Audiobooks** — the phone's Browse chips, one list (Q13; R339's order; Audiobooks absent without the books library). *Playing* shows a small live equaliser while
    something plays;
-5. at the foot, **the viewer** (photo, name, *Settings · Sign out*), opening R304's Profile content as a page.
+5. at the foot, **the viewer** (photo, name, *Settings · Sign out*), opening R304's Profile content as a page. There
+   is no *Switch profile*: a computer holds one viewer, as the phone does (Q12).
 
 The content pane is R256's page for the mode, with desktop density (R328 OQ 2's lean stands: R174's grid config, no
 new setting). The mode switch changes the sidebar and the content together; the page shown is the mode's first
@@ -215,7 +218,7 @@ the owner (items 4 and 7, leans given); everything else is the build's.
    (b) **An existing R335 bug:** `MusicEngineDesktop.kt:43` sets `supported = MacNative.lib != null`, which is `false` on
    Linux, so R335's mpv music engine (FR-R335-8) cannot be reached even once (a) is open. It becomes
    `if (DesktopPaths.isMac) MacNative.lib != null else Mpv.lib != null`. This goes in R337's first commit.
-4. **Profile on the desktop works as on the phone (R304) — owner to confirm (lean: yes).** `openProfile()`
+4. **Profile on the desktop works as on the phone (R304) — decided (owner, 2026-09-30): yes, Q12.** `openProfile()`
    (`RaviloApp.kt:859`) opens the Profile page for `PHONE` and for `DESKTOP`. `ProfileMenu`, the TV dropdown, stays
    in the TV family. The spec does not say what follows from this: **the desktop has no *Switch profile***. The
    sidebar's foot and GNOME's ☰ hold only *Settings · Sign out*, and Sign out is R304's one-profile sheet. The reason:
@@ -241,7 +244,7 @@ the owner (items 4 and 7, leans given); everything else is the build's.
    - The desktop's Films and Series are `Browse(MOVIES)` and `Browse(SERIES)`. In compact they light Library.
    - `Dest.Search` is the phone's Search page in compact. At 600 dp and up it is the same page, with the sidebar's
      field focused.
-7. **The music sidebar should list what the chips list — owner to confirm (lean: yes).** FR-R337-3 and the mockup
+7. **The music sidebar should list what the chips list — decided (owner, 2026-09-30): yes, Q13.** FR-R337-3 and the mockup
    show *Artists · Albums · Songs · Audiobooks*. The phone's chips (R339) are *Artists · Albums · Songs · Genres ·
    Playlists · Audiobooks*. Without Genres, the genre drill-in cannot be reached at 600 dp and up. Build the sidebar's
    Library from `MUSIC_CHIPS` (plus Audiobooks) so the two lists cannot drift apart. FR-R339-1 already says "the

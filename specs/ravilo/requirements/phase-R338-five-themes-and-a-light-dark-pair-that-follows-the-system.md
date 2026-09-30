@@ -9,7 +9,7 @@
 ## Status
 
 `Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` §T and the phone built in
-`design/ravilo/Ravilo Mobile.html` (Settings ▸ Theme, every screen in Daylight). **Dev-reviewed 2026-09-30** (§Dev review — one item for the owner: 8; the wire shape changes: item 1). Number verified
+`design/ravilo/Ravilo Mobile.html` (Settings ▸ Theme, every screen in Daylight). **Dev-reviewed 2026-09-30** (§Dev review; the wire shape changes: item 1; the owner took item 8's lean the same day — the receivers are out of scope). Number verified
 free (after R337). **Builds on** R161/R162 (the viewer's settings, server-owned, the behaviour overlay), R234 (the TV's
 Settings focus chain), R304 (the phone's Settings row), R337 (the desktop).
 
@@ -22,7 +22,7 @@ Settings focus chain), R304 (the phone's Settings row), R337 (the desktop).
 | D3 | Where it is kept | **On the viewer, across devices** (owner) — like `ui_language`. Only the light/dark *state* is each device's |
 | D4 | When it changes | **Live**, the moment the system changes; nothing restarts, nothing that plays stops |
 | D5 | Defaults | new install: follow **on**, light **Daylight**, dark **Aurora**. Existing viewer: follow **off**, one pick = their current `skin` |
-| D6 | A device with no light/dark of its own (the TV, the receiver, the web app in a desktop browser) | **It is a dark-mode-only device** (owner, 2026-09-30): it always shows **the dark pick** (`theme_dark`), whether follow is on or off, and it never shows a light theme. So one synced setting still means the same thing everywhere |
+| D6 | A device with no light/dark of its own (the TV, the web app in a desktop browser; the receivers are out of scope — dev review 8) | **It is a dark-mode-only device** (owner, 2026-09-30): it always shows **the dark pick** (`theme_dark`), whether follow is on or off, and it never shows a light theme. So one synced setting still means the same thing everywhere |
 
 ## Requirements
 
@@ -46,7 +46,7 @@ Contrast is checked for text on bg, bg-2 and card at 4.5 : 1 (ink-dim included o
 is 4.8 : 1).
 
 **FR-R338-2 — No white is hard-coded in the shared UI.** Every translucent white fill, border and track in
-`ravilo-ui` (and the web and receiver CSS) becomes `fg` at the same alpha; every scrim that fades to the page uses
+`ravilo-ui` (and the web app's CSS) becomes `fg` at the same alpha; every scrim that fades to the page uses
 `bgRgb`. **Three surfaces keep dark tokens in a light theme**, because they sit on artwork or video: the hero card /
 hero backdrop's text block, the film player and its sheets, and the receiver. The mockups show the rule
 (`Ravilo Mobile.html`: `html[data-appearance="light"] .hcard, .mp`).
@@ -67,7 +67,7 @@ a **dark-only device** (D6) ⇒ always `theme_dark`; otherwise follow on and the
 | the iPhone web app / a phone browser | `prefers-color-scheme` | `matchMedia(...).change` |
 | macOS | `NSApp.effectiveAppearance` (R328's native library) | KVO on `effectiveAppearance` |
 | Linux | the Settings portal: `org.freedesktop.appearance` `color-scheme` (1 dark, 2 light, 0 no preference ⇒ light) | `SettingChanged` |
-| TV, receiver, web on a desktop browser | none — **dark-only** (D6) | — |
+| TV, web on a desktop browser | none — **dark-only** (D6) | — |
 
 A change recomposes with the new colours in place: no restart, no navigation, no pause.
 
@@ -105,7 +105,8 @@ appearance* · `theme.follow_sub` *Switches the moment the phone does* · `theme
 
 An accent colour taken from the system (macOS's accent, GNOME 47's accent portal, Material You) — the themes carry
 their own · a per-device override of the synced setting · more light themes (the list is built to grow) · scheduling
-(the system already has one).
+(the system already has one) · **the receivers** (`ravilo-cast`, `ravilo-screen`), which keep their fixed look (owner,
+2026-09-30 — dev review 8).
 
 ## Acceptance
 
@@ -214,10 +215,10 @@ items. One is for the owner (item 8, lean given).
      `default_skin`.
 
    (The CLAUDE.md note "the one pick = the first device opened after the update" is not in the spec and is not needed.)
-8. **The receivers — owner to confirm (lean: out of scope).** Neither `ravilo-cast` nor `ravilo-screen` reads a skin
+8. **The receivers — decided (owner, 2026-09-30): out of scope.** Neither `ravilo-cast` nor `ravilo-screen` reads a skin
    today; both draw a fixed Aurora look. "The receiver shows the dark pick" (D6's list) would need the theme in the
-   cast load payload and a second token set in two Kotlin/JS apps. Lean: the receivers keep their look, and D6's list
-   drops the receiver.
+   cast load payload and a second token set in two Kotlin/JS apps. The receivers keep their look; D6's list,
+   FR-R338-4's table and §Out of scope say so.
 9. **The TV's Settings.** `SettingsScreen.kt:412–459` walks `Skin.entries`. It walks the four dark `ThemeId`s instead:
    Graphite is one more pill in a chain that is already list-based. The write follows D6: `PUT /tv/settings` with
    `theme_dark`, plus `theme` when follow is off and the current pick is dark.
