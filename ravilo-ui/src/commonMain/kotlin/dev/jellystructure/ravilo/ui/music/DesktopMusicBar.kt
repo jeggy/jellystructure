@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -206,19 +207,46 @@ private fun SeekLine(positionMs: Long, durationMs: Long, modifier: Modifier, tim
     }
 }
 
-/** R337 (FR-R337-6/10) — the desktop's music volume, shared by the bar's slider and ⌘↑/⌘↓ (Ctrl on GNOME). */
+/**
+ * R337 (FR-R337-6/10) — the desktop's music volume, shared by the bar's slider and ⌘↑/⌘↓ (Ctrl on GNOME). On this
+ * computer it is the engine's own level, remembered between launches; **while a speaker or TV plays it is that
+ * device's volume** — the slider shows what the device reports and moves it, and the computer's own level is left as
+ * it was for when the music comes back.
+ */
 object MusicVolume {
-    private val _level = kotlinx.coroutines.flow.MutableStateFlow(1f)
+    private val _level = kotlinx.coroutines.flow.MutableStateFlow(
+        runCatching { MusicDeviceStore.get("desk_volume")?.toFloatOrNull() }.getOrNull()?.coerceIn(0f, 1f) ?: 1f,
+    )
     val level: kotlinx.coroutines.flow.StateFlow<Float> = _level
-    fun set(v: Float) { _level.value = v.coerceIn(0f, 1f); MusicEngine.setUserVolume(_level.value) }
-    fun nudge(delta: Float) = set(_level.value + delta)
+    private var applied = false
+    /**
+     * The test driver's `quiet`: the engine plays at nothing while the level the viewer set — shown, and remembered —
+     * stays theirs. A build checked on someone's computer must not be heard, and must not leave their volume at zero.
+     */
+    @kotlin.concurrent.Volatile var silenced = false
+        set(value) { field = value; MusicEngine.setUserVolume(if (value) 0f else _level.value) }
+    /** The remembered level reaches the engine once, before the first song. */
+    fun applyRemembered() { if (!applied) { applied = true; MusicEngine.setUserVolume(if (silenced) 0f else _level.value) } }
+    fun set(v: Float) {
+        val to = v.coerceIn(0f, 1f)
+        if (MusicCast.linked.value) { MusicCast.setVolume(to.toDouble()); return }
+        _level.value = to
+        MusicEngine.setUserVolume(if (silenced) 0f else to)
+        runCatching { MusicDeviceStore.put("desk_volume", to.toString()) }
+    }
+    fun nudge(delta: Float) = set((if (MusicCast.linked.value) (MusicCast.deviceVolume?.value?.toFloat() ?: 0.3f) else _level.value) + delta)
 }
 
 /** The bar's volume (`.vol`): the desktop engine's own level, multiplied into the song's gain (R322's *even out volume*). */
 @Composable
 private fun VolumeLine(modifier: Modifier) {
     val colors = RaviloTheme.colors
-    val level by MusicVolume.level.collectAsState()
+    val own by MusicVolume.level.collectAsState()
+    // While casting the slider is the device's: what it reports (or, until it has, a guess it is quiet).
+    val casting by MusicCast.linked.collectAsState()
+    val device = MusicCast.deviceVolume?.collectAsState()?.value
+    val level = if (casting) (device?.toFloat() ?: 0f) else own
+    LaunchedEffect(Unit) { MusicVolume.applyRemembered() }
     var held by remember { mutableStateOf(false) }
     BoxWithConstraints(modifier.height(20.dp)) {
         val wPx = with(LocalDensity.current) { maxWidth.toPx() }

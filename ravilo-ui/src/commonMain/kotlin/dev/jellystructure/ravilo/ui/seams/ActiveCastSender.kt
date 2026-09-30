@@ -67,4 +67,6 @@ class ActiveCastSender(
     override fun selectAudio(trackId: Long?) = active.selectAudio(trackId)
     override fun send(json: String) = active.send(json)
     override fun setVolume(level: Double) = active.setVolume(level)
+    /** A screen driven through the server reports no volume; a Chromecast session does where its platform says. */
+    override val volume: StateFlow<Double?> get() = chromecast?.volume ?: screen.volume
 }

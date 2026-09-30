@@ -132,6 +132,8 @@ object MusicCast {
     }
 
     fun setVolume(level: Double) { cast?.sender?.setVolume(level) }
+    /** The speaker's or TV's own volume as it last reported it; null when it does not say (or nothing is linked). */
+    val deviceVolume: kotlinx.coroutines.flow.StateFlow<Double?>? get() = cast?.sender?.volume
     fun setLyrics(on: Boolean) = command("lyrics", on = on)
 
     private fun MusicTrackItem.toCast() = CastTrackItem(

@@ -81,7 +81,11 @@ interface CastSender {
     fun send(json: String)
     /** R324 (FR-R324-5) — the receiver's volume, 0.0–1.0; a no-op where the platform has no session volume. */
     fun setVolume(level: Double) {}
+    /** R337 — the device's own volume as it last reported it, 0.0–1.0; null where the platform does not say. */
+    val volume: StateFlow<Double?> get() = UNKNOWN_VOLUME
 }
+
+private val UNKNOWN_VOLUME: StateFlow<Double?> = kotlinx.coroutines.flow.MutableStateFlow(null)
 
 /**
  * R265 — never null: every platform has at least [ScreenSender] (commonMain, no platform SDK needed).

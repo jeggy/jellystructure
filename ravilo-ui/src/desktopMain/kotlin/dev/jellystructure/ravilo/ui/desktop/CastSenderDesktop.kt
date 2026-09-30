@@ -56,6 +56,9 @@ internal object CastSenderDesktop : CastSender {
     override val deviceName: StateFlow<String?> = _device.asStateFlow()
     private val _status = MutableStateFlow<CastRemoteStatus?>(null)
     override val status: StateFlow<CastRemoteStatus?> = _status.asStateFlow()
+    private val _volume = MutableStateFlow<Double?>(null)
+    /** The device's (or group's) own volume, from its receiver status — what the capsule's slider shows while casting. */
+    override val volume: StateFlow<Double?> = _volume.asStateFlow()
     private val _connectedId = MutableStateFlow<String?>(null)
     /** The device a session is open to, for the sheet's selected row. */
     val connectedDeviceId: StateFlow<String?> = _connectedId.asStateFlow()
@@ -106,6 +109,7 @@ internal object CastSenderDesktop : CastSender {
         watch?.cancel()
         watch = scope.launch {
             launch { s.media.collect { rebuild(null) } }
+            launch { s.receiver.collect { r -> r?.volumeLevel?.let { _volume.value = it } } }
             launch {
                 s.custom.collect { raw ->
                     val msg = runCatching { json.decodeFromString(CastReceiverMessage.serializer(), raw) }.getOrNull() ?: return@collect
@@ -169,6 +173,7 @@ internal object CastSenderDesktop : CastSender {
         _link.value = CastLinkState.NONE
         _device.value = null
         _status.value = null
+        _volume.value = null
         _connectedId.value = null
         said = null; device = null
         CastNowPlaying.end()
@@ -252,7 +257,7 @@ internal object CastSenderDesktop : CastSender {
 
     override fun send(json: String) { scope.launch { session?.sendCustom(json) } }
 
-    override fun setVolume(level: Double) { scope.launch { session?.setVolume(level) } }
+    override fun setVolume(level: Double) { scope.launch { _volume.value = level.coerceIn(0.0, 1.0); session?.setVolume(level) } }
 
     private fun command(type: String, index: Int) =
         session?.sendCustom(json.encodeToString(CastCommand.serializer(), CastCommand(type, index = index)))
