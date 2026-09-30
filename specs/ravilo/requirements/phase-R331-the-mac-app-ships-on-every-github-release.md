@@ -11,7 +11,7 @@ the household approves the app once, not once per update.** Number verified free
 (R328 → R329 → R330 → **R331**).
 
 **Mirrors** R264's `deploy-tizen-tv.yml`, which signs and attaches `ravilo-tizen-<N>.wgt`, and the Android release
-build that attaches `ravilo-<N>-release.apk`. v1.44 carries both. **Builds on** phase 231: a release publishes only if
+build that attaches `ravilo-android-<N>.apk` (named `ravilo-<N>-release.apk` until 2026-09-30). v1.44 carries both. **Builds on** phase 231: a release publishes only if
 its own CI is green.
 
 ## Decisions (leans)
@@ -21,7 +21,7 @@ its own CI is green.
 | D1 | When the release starts carrying it | **Only once R328–R330 are ✓ Built** (the owner's "when fully implemented"). Until then the workflow runs by hand only and keeps its `.dmg` as a workflow artifact |
 | D2 | Signing | ~~Developer ID + notarisation~~ ~~ad-hoc~~ **Our own self-signed code-signing certificate, created once, kept as two repository secrets, the same on every release** (owner, 2026-09-29: no Apple bills; *"supply it to the ci workflow via secrets, so … the users only have to approve the application once and not once per update"*). No notarisation, one path; the notes carry the *Open Anyway* line, which applies once per Mac |
 | D3 | Runner | GitHub's **`macos-15`** (Apple Silicon) — free on a public repository |
-| D4 | File name | **`ravilo-mac-<N>.dmg`**, beside `ravilo-<N>-release.apk` and `ravilo-tizen-<N>.wgt` |
+| D4 | File name | **`ravilo-mac-<N>.dmg`**, beside `ravilo-android-<N>.apk` and `ravilo-tizen-<N>.wgt` |
 
 ## Requirements
 
@@ -122,7 +122,7 @@ the update line) · universal (Intel) builds.
 2. The job summary says *signed with the Ravilo certificate — not notarised*; on a Mac that has never seen the app it
    opens after one *Open Anyway* — on macOS 14 and on 15 — and **the next release opens with no prompt at all**, keeps
    the sign-in and keeps the Local Network permission (the one-approval promise, checked on two consecutive releases).
-3. After R328–R330 are built, the next GitHub release carries `ravilo-<N>-release.apk`, `ravilo-tizen-<N>.wgt` and
+3. After R328–R330 are built, the next GitHub release carries `ravilo-android-<N>.apk`, `ravilo-tizen-<N>.wgt` and
    `ravilo-mac-<N>.dmg`.
 4. Deleting the Swift library from the bundle makes FR-R331-4's self-test fail the job.
 5. With the two signing secrets removed, the job fails naming them; nothing is uploaded.

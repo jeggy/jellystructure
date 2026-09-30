@@ -90,12 +90,14 @@ android {
         compose = true
     }
 
-    // Keep APK filename readable: ravilo-1.0-release.apk
+    // The release APK is named like every other release asset — ravilo-<platform>-<version>.<extension>
+    // (owner, 2026-09-30: ravilo-android-1.47.apk beside ravilo-tizen-1.47.wgt, ravilo-mac-1.47.dmg and
+    // ravilo-linux-1.47.flatpak; was ravilo-1.47-release.apk). A debug build keeps its suffix so the two never look alike.
     applicationVariants.all {
         val v = this
         v.outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "ravilo-${v.versionName}-${v.buildType.name}.apk"
+            output.outputFileName = if (v.buildType.name == "release") "ravilo-android-${v.versionName}.apk" else "ravilo-android-${v.versionName}-${v.buildType.name}.apk"
         }
     }
 }

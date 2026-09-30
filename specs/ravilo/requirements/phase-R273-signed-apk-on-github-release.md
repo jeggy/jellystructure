@@ -72,7 +72,7 @@ documented in this file's own header (`ANDROID_KEYSTORE_BASE64`/`_PASSWORD`, `AN
    both signed with the real upload keystore (verified locally with a throwaway keystore standing in
    for the real one, proving the command chain and naming — the real keystore itself is never
    available outside CI).
-2. The APK is attached to the GitHub Release as `ravilo-<version>-release.apk` before the Play Store
+2. The APK is attached to the GitHub Release as `ravilo-<version>-release.apk` (**renamed `ravilo-android-<version>.apk` on 2026-09-30** — owner: every release asset is `ravilo-<platform>-<version>.<extension>`) before the Play Store
    upload is attempted.
 3. Reverting `permissions: contents: write` back to `read` makes the attach step fail with a clear
    permissions error, not a silent no-op — confirms the permission is actually load-bearing.
