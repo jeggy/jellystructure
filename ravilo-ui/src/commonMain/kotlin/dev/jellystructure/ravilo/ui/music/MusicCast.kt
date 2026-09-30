@@ -77,7 +77,8 @@ object MusicCast {
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
                 // join with nothing playing here (FR-R324-2's second remote).
-                if (link == CastLinkState.CONNECTED && c.pendingMusicHandoff) {
+                if (link != CastLinkState.CONNECTED) awaitNewLink = false
+                if (link == CastLinkState.CONNECTED && c.pendingMusicHandoff && !awaitNewLink) {
                     c.pendingMusicHandoff = false
                     handOff(c)
                 }
@@ -128,13 +129,29 @@ object MusicCast {
      * used to fall back to the song the hand-off left behind (the Mac, 2026-09-30).
      */
     fun stop() {
-        val st = _status.value
-        if (_linked.value && st != null) {
-            val s = state(st)
-            if (s.queue.isNotEmpty() && s.index >= 0) MusicEngine.loadPaused(s.queue, s.index, MusicPlayback.currentPositionMs(), context)
-        }
+        takeBack()
         cast?.stopCasting()
     }
+
+    /** The speaker's queue and position into this device's own player, paused. */
+    private fun takeBack() {
+        val st = _status.value
+        if (!_linked.value || st == null) return
+        val s = state(st)
+        if (s.queue.isNotEmpty() && s.index >= 0) MusicEngine.loadPaused(s.queue, s.index, MusicPlayback.currentPositionMs(), context)
+    }
+
+    /**
+     * Another device was chosen while this one plays music: what plays comes back, this device stops, and the hand-off
+     * waits for the NEW connection — the one still open must not be handed the queue it just gave up.
+     */
+    fun moveAway() {
+        if (!_linked.value) return
+        takeBack()
+        awaitNewLink = true
+        cast?.stopCasting()
+    }
+    @kotlin.concurrent.Volatile private var awaitNewLink = false
 
     /** FR-R324-1 (Q1) — an album started while casting replaces the speaker's queue. */
     fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) {

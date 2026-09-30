@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
@@ -70,6 +71,8 @@ internal object CastSenderDesktop : CastSender {
     private var pendingLoad: CastLoadData? = null
     private var watch: Job? = null
     private var reconnectTried = false
+    /** The session [stop] was asked for, until it has closed. */
+    @Volatile private var stopping: CastSession? = null
 
     fun appIdForDebug(): String? = appId
 
@@ -85,7 +88,13 @@ internal object CastSenderDesktop : CastSender {
 
     private suspend fun open(d: CastDevice, launch: Boolean, confirm: suspend (CastSession) -> Boolean = { true }): Boolean {
         val app = appId ?: return false
+        // A device that was told to stop (music moving on to another one) gets the moment it needs to hear it:
+        // closing the connection at once could drop the STOP still waiting to be written.
+        stopping?.let { old -> stopping = null; if (old === session) withTimeoutOrNull(1_500) { old.state.first { it == CastSession.State.CLOSED } } }
         closeQuietly()
+        // Nothing the device before said describes this one — its receiver id least of all: sent along with the
+        // first LOAD, it made the new device's receiver ask to enrol again on its own next load (289 FR-289-7).
+        _status.value = null; _volume.value = null; said = null
         _link.value = if (launch) CastLinkState.CONNECTING else CastLinkState.RECONNECTING
         _device.value = d.name
         val s = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }.getOrNull()
@@ -115,6 +124,14 @@ internal object CastSenderDesktop : CastSender {
                     val msg = runCatching { json.decodeFromString(CastReceiverMessage.serializer(), raw) }.getOrNull() ?: return@collect
                     said = foldReceiverMessage(said, msg)
                     rebuild(msg.type)
+                }
+            }
+            // 289 — what the receiver's player did (a load, an error's code, why an item ended), into this app's log:
+            // a speaker has no screen and no DevTools, and "it went quiet" is otherwise all anyone can say.
+            launch {
+                s.notes.collect { raw ->
+                    val note = runCatching { json.parseToJsonElement(raw).jsonObject["note"]?.jsonPrimitive?.content }.getOrNull() ?: return@collect
+                    println("${DesktopLog.stamp()} cast: ${device?.name} · $note")
                 }
             }
             // Android's progress listener: the position moves on between reports, and the card follows.
@@ -249,6 +266,7 @@ internal object CastSenderDesktop : CastSender {
 
     /** FR-R245-10 — only ever explicit: the app stops on the device, and nothing is rejoined next time. */
     override fun stop() {
+        stopping = session
         scope.launch {
             DesktopApp.prefs.put(LAST_DEVICE, null)
             session?.stopApp() ?: endQuietly()

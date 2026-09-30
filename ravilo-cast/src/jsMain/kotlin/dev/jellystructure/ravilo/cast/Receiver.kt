@@ -5,6 +5,7 @@ import dev.jellystructure.ravilo.receiver.audioTracksOf
 import dev.jellystructure.ravilo.receiver.hms
 import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.ravilo.receiver.subtitleTracksOf
+import dev.jellystructure.shared.tv.CAST_LOG_NAMESPACE
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastEpisode
@@ -120,7 +121,13 @@ private class Receiver {
         headless?.let { return it }
         val h = runCatching { (context.getDeviceCapabilities()?.display_supported as? Boolean) == false }.getOrDefault(false)
         headless = h
-        if (h) runCatching { document.body?.innerHTML = "" }
+        // Our own screens go; the framework's player element stays. Emptying the whole body took `<cast-media-player>`
+        // with it, and on a speaker (2026-09-30, read through the log channel) every load after the first then failed
+        // with 905, and every converted song with Shaka's "Cannot read property 'insertRule' of null" (289 FR-289-5).
+        if (h) runCatching {
+            val own = document.querySelectorAll("body > section, body > div")
+            for (i in 0 until own.length) own.item(i)?.let { it.parentNode?.removeChild(it) }
+        }
         return h
     }
 
@@ -141,10 +148,11 @@ private class Receiver {
         for (type in listOf(et.PLAYING, et.PAUSE, et.BUFFERING)) {
             playerManager.addEventListener(type) { _: dynamic -> onPlayerState() }
         }
-        playerManager.addEventListener(et.MEDIA_FINISHED) { ev: dynamic -> onFinished(ev.endedReason as String?) }
+        playerManager.addEventListener(et.MEDIA_FINISHED) { ev: dynamic -> note("finished ${ev.endedReason} loading=$loading state=${playerManager.getPlayerState()}"); onFinished(ev.endedReason as String?) }
         // R297 (FR-R297-3) — record why a stream failed, so the next failure is read through DevTools, not guessed.
         playerManager.addEventListener(et.ERROR) { ev: dynamic ->
             console.error("ravilo-cast: media error", ev.detailedErrorCode, ev.reason, ev.error)
+            note("error code=${ev.detailedErrorCode} reason=${ev.reason} loading=$loading state=${playerManager.getPlayerState()} ${runCatching { JSON.stringify(ev.error) as String? }.getOrNull()?.take(300) ?: ""}")
             // R299 (FR-R299-1) — a load that never reached a media session gets no MEDIA_FINISHED; CAF
             // reports it here with the player still IDLE. Say so once; a mid-play error is followed by
             // MEDIA_FINISHED(ERROR), which onFinished turns into the same message.
@@ -153,6 +161,8 @@ private class Receiver {
         }
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
+        // 289 — registered so that the receiver may speak on it; nothing is ever said to it.
+        runCatching { context.addCustomMessageListener(CAST_LOG_NAMESPACE) { _: dynamic -> } }
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
         // 286 (dev review 4) — Google's own next/previous (the Home app, the Assistant, a display's remote) arrive
         // as queue messages; on a music LOAD they land on OUR list, never on CAF's (which holds one item).
@@ -214,6 +224,7 @@ private class Receiver {
         // second film): what it replaces is stopped and reported HERE, under its own id and position. The player's
         // own MEDIA_FINISHED for it arrives after `current` is the new item. The receiver's own loads (next song,
         // next episode, a restream) carry no code and have dealt with the item before themselves.
+        note("load ${data.itemId} own=${data.code.isEmpty()} tracks=${data.tracks.size} state=${playerManager.getPlayerState()} before=${current?.itemId} open=$sessionOpen")
         if (data.code.isNotEmpty()) replaced(data.itemId)
         current = data
         introSkipped = false
@@ -226,7 +237,7 @@ private class Receiver {
         el("nextup").classList.remove("on")
         show("loading")
         // 218 FR-218-9 — enrol once per receiver when storage survived, else per cast.
-        if (token == null || (data.receiverId != null && data.receiverId != receiverId) || receiverId == null) {
+        if (mustEnrol(data)) {
             val enrolled = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }
             val pr = enrolled.getOrElse { e -> return failLoad(e) }
             token = pr.deviceToken; receiverId = pr.session.deviceId
@@ -287,6 +298,15 @@ private class Receiver {
         sendStatus()
         return request
     }
+
+    /**
+     * 218 FR-218-9 — enrol once per receiver when storage survived, else per cast. Only a sender's LOAD can enrol: it
+     * carries the code. The receiver's own loads (the next song, the next episode, a restream) repeat the sender's
+     * data without one — and a sender that had just come from another device sent that device's id along, so the
+     * first *Next* on the TV asked to enrol with an empty code and showed the no-server screen (289 FR-289-7).
+     */
+    private fun mustEnrol(data: CastLoadData): Boolean =
+        data.code.isNotEmpty() && (token == null || receiverId == null || (data.receiverId != null && data.receiverId != receiverId))
 
     private fun failLoad(e: Throwable): dynamic {
         el("noserver-t").textContent = ReceiverStrings.t("cast.no_server"); el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
@@ -381,7 +401,7 @@ private class Receiver {
         current = data.copy(itemId = t.id, title = t.title, kicker = t.artist, artUrl = absolute(t.coverUrl), currentIndex = i)
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         if (!isHeadless()) { paintNow(); show("nowplaying", "buffering") }
-        if (token == null || (data.receiverId != null && data.receiverId != receiverId) || receiverId == null) {
+        if (mustEnrol(data)) {
             val enrolled = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }
             val pr = enrolled.getOrElse { e -> return failLoad(e) }
             token = pr.deviceToken; receiverId = pr.session.deviceId
@@ -432,6 +452,7 @@ private class Receiver {
         lyrics = null; lyricsJob?.cancel()
         if (!isHeadless() && t.hasLyrics) lyricsJob = GlobalScope.launch { lyrics = runCatching { api.getLyrics(t.id) }.getOrNull()?.takeIf { !it.synced.isNullOrEmpty() }; paintLyrics() }
         sendStatus()
+        note("hand ${t.id} ${request.media.contentType} direct=${ticket.directPlay} at=${request.currentTime} state=${playerManager.getPlayerState()}")
         return request
     }
 
@@ -859,6 +880,11 @@ private class Receiver {
             queue = d.tracks.takeIf { it.isNotEmpty() }, queueIndex = d.currentIndex.takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
             lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
         ))
+    }
+
+    /** 289 — one line on the log channel ([CAST_LOG_NAMESPACE]); never anything a sender's state depends on. */
+    private fun note(text: String) {
+        runCatching { val m: dynamic = js("({})"); m.at = nowMs().toDouble(); m.note = text; context.sendCustomMessage(CAST_LOG_NAMESPACE, undefined, m) }
     }
 
     private fun send(msg: CastReceiverMessage) {

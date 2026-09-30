@@ -142,4 +142,23 @@ test.describe("Chromecast receiver (R297, R299)", () => {
     expect((await castSent(page)).filter((m) => m.type === "failed")).toHaveLength(0);
     expect(pageErrors).toEqual([]);
   });
+
+  // 289 (FR-289-5) — a speaker has no display, and the receiver used to empty the whole page there. That took the
+  // framework's own <cast-media-player> with it: on a real speaker every load after the first failed with 905, and
+  // every converted song with Shaka's "Cannot read property 'insertRule' of null".
+  test("on a speaker the receiver removes its own screens and leaves the framework's player (289)", async ({ page }) => {
+    await openReceiver(page, APP_URL, { headless: true });
+    await expect(page.locator("cast-media-player")).toHaveCount(1);
+    await expect(page.locator("#idle")).toHaveCount(1);   // nothing is removed before the first LOAD asks what the device is
+    // What the device is gets asked at the top of the LOAD, before any request: a server nothing answers on is enough
+    // (and keeps this test out of the sign-in limiter's count).
+    const load = await page.evaluate((d) => (window as any).__castLoad(d), { server_url: "http://127.0.0.1:9", code: "000000", item_id: "none", title: "—", device_name: "E2E Speaker", lang: "en", sub_size: "M" });
+    expect(load, "no server, no stream").toBeNull();
+    await expect(page.locator("cast-media-player")).toHaveCount(1);
+    await expect(page.locator("body > section, body > div")).toHaveCount(0);
+    // The log channel says what was loaded, apart from the messages a phone builds its state from.
+    const notes = await page.evaluate(() => ((window as any).__castNotes as any[]).map((n) => String(n.note)));
+    expect(notes.some((n) => n.startsWith("load none"))).toBe(true);
+    expect((await castSent(page)).map((m) => m.type)).toEqual(["noserver"]);
+  });
 });

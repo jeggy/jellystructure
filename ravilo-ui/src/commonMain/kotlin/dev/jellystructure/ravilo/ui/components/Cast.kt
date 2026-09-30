@@ -201,6 +201,10 @@ class CastController(
      */
     fun castOnChromecast(route: dev.jellystructure.ravilo.ui.seams.CastRoute, music: Boolean = false) {
         if (sender.screen.link.value != CastLinkState.NONE) sender.screen.unlink()
+        // R324 — music playing on one speaker and another is chosen: the music moves. Its queue comes back to this
+        // device, the first speaker goes quiet, and the hand-off on connection sends it on from where it was. (It used
+        // to play on where it was, with nothing attached to it, while the new device got an older queue.)
+        if (music) dev.jellystructure.ravilo.ui.music.MusicCast.moveAway()
         pendingMusicHandoff = music
         route.select()
     }

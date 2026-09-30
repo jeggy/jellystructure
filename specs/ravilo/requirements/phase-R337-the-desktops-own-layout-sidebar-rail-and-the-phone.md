@@ -521,9 +521,11 @@ speaker's volume at 2 %:
   one call now (`MusicCast.stop`). Seen: stopped at 2:08 of a song, the capsule holds the song at 2:08, paused.
 - *1 song*, not *1 songs*, on the queue's line.
 
-**What failed, and is the receiver's** (289): with a song playing, *Next* and *Play* on another album both end in
-silence on the speaker. Fixed in the receiver and pinned by a test; it reaches the speakers with the next deploy.
-Until then the computer shows its own last song again and says nothing (289's open question 1).
+**What failed, and was the receiver's** (289): with a song playing, *Next* and *Play* on another album both ended
+in silence on the speaker. Fixed in the receiver, deployed the same evening, and seen: a song over a song, an album
+over a song, *Next*, *Previous*, on the speaker and on the bedroom TV; and the music moved from the speaker to the
+TV by choosing the TV in *Play on…* (R324's note). The Mac's log now carries the receiver's own notes
+(`cast: {device} · …`). A song that really cannot be played still says nothing (289's open question 1).
 
 **The hand under the mouse** (owner: *when hovering something that's clickable, the cursor changes to a pointer*).
 One modifier, `handCursor()`, and the two places nearly every clickable thing goes through: `dpadFocusable` (a

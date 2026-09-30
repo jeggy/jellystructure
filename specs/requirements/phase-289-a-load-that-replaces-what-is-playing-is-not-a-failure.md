@@ -1,6 +1,6 @@
 # Phase 289 — a load that replaces what is playing is not a failure
 
-**Status:** Planned → built the same day (see *Build notes*). Dev-authored 2026-09-30, from a device finding.
+**Status:** Built and deployed 2026-09-30; seen on the guest-room speaker and the bedroom TV (see *Seen on the devices*). Dev-authored 2026-09-30, from a device finding.
 **Depends on:** 218 / R245 (the Cast receiver), 286 (the receiver owns the music queue), R285 (a track change is a
 reload), 180 (a stop that arrives before its start ends the start).
 
@@ -62,6 +62,23 @@ framework that never sends `INTERRUPTED`, and R285's receivers are marked unveri
 - **FR-289-4 — no wire change.** `CastLoadData`, `CastReceiverMessage` and `CastCommand` are as they were; an app
   of any version works with this receiver, and this receiver with any app.
 
+- **FR-289-5 — on a speaker the receiver removes its own screens, never the framework's player.** 286 emptied the
+  whole page on a device with no display (FR-286-3). That removed `<cast-media-player>`, and the framework then
+  failed **every load after the first** with error 905, and **every converted song** (HLS) with Shaka's *Cannot read
+  property 'insertRule' of null* — a first song that was a plain file played, which is why it looked like it worked.
+  The receiver removes `body > section, body > div` — its own — and nothing else.
+- **FR-289-6 — the receiver says what its player did, on a channel of its own.** A speaker has no screen and no
+  DevTools; FR-R297-3's "record why a stream failed" went to a console nobody can open. One line of text per event —
+  a load taken, the stream handed to the player, an error's code and the framework's own error object, why an item
+  ended — on `urn:x-cast:dev.jellystructure.ravilo.log`. No sender builds state from it; the desktop app writes the
+  lines to its own log (`cast: {device} · …`), and a second Cast connection can read them. FR-289-5 and FR-289-7
+  were both found by reading it.
+- **FR-289-7 — only a sender's LOAD can enrol the receiver.** The receiver's own loads repeat the sender's data
+  with no hand-off code. A sender that had come from another device sent that device's receiver id along; the
+  receiver read the mismatch as "enrol again", tried with an empty code, and the first *Next* on the TV showed the
+  no-server screen. Enrolment is asked only when the LOAD carries a code; and a sender forgets what the device
+  before said when it opens a session to another one.
+
 Not in this phase: what the phone or the computer shows when a song really cannot be played on a speaker (today
 the bar goes back to what the device itself last had, with no word said) — see *Open questions*.
 
@@ -89,10 +106,42 @@ the bar goes back to what the device itself last had, with no word said) — see
   with `["status", "failed", "failed"]` — what the speaker did.
 - `tests/mock-jellyfin/server.js`: a 204 was sent with `Content-Length: 2` and no body; the backend's client failed
   each stop write on it and retried, and the mock counted every retry as a stop. A 204 has no body now.
-- **Not seen on a device yet.** The receiver is served by the backend; it reaches the speakers with the next
-  deploy. Until then *Next* and a new album over a playing one fail on a speaker or a Chromecast as described.
+- `isHeadless()` removes the receiver's own screens only (FR-289-5); `note()` and the log namespace
+  (`CAST_LOG_NAMESPACE` in `CastMessages.kt`, `CastSession.notes` in `ravilo-castv2`, printed by
+  `CastSenderDesktop`); `mustEnrol()` (FR-289-7); `CastSenderDesktop.open` clears the status, the volume and the
+  receiver's last message of the device before.
+- e2e: *on a speaker the receiver removes its own screens and leaves the framework's player* — the fake framework
+  answers `display_supported: false`; after a LOAD the player element is there, the receiver's sections are not,
+  the log channel carries the load, and the phone's channel carries only `noserver`. The fake keeps the two
+  channels apart (`__castSent`, `__castNotes`).
 
-## 6. Open questions
+## 6. Seen on the devices (2026-09-30, evening)
+
+Deployed with the owner's permission: the backend at `v1.47-46` (a restart), then the receiver's script alone
+copied into the running container three times while the log channel was read (no restart; the image was rebuilt
+from the same commit afterwards, so a recreated container serves the same script).
+
+With the first deploy — FR-289-1 to -4 only — *Next* and an album over a song were still silent on the speaker, now
+without a `failed`. The log channel said why: `error code=905 … loading=1` at every load over a playing item, and
+`shakaErrorCode 7999 … Cannot read property 'insertRule' of null` on every converted song. With FR-289-5:
+
+| Guest-room speaker (Nest Wifi point), from the Mac | |
+|---|---|
+| a song picked over a playing one, plain file → converted, converted → converted | plays, 1.5 s after the click |
+| *Play* on another album | plays its first song |
+| *Next*; *Previous* twice (restart, then the song before) | plays |
+| a song's own end | the next one follows |
+| the speaker's `MEDIA_STATUS` | carries the song's length (`216.746`) — it was `null` |
+
+| Bedroom TV (BRAVIA, Chromecast built-in), from the Mac | |
+|---|---|
+| the music moved there from the speaker (R324's note) | continues at 46.1 s; the speaker's app has closed |
+| *Next* — before FR-289-7 | the no-server screen (`noserver`, the receiver asking to enrol with no code) |
+| *Next*, *Previous* twice — with FR-289-7 | plays |
+
+Not seen: a film's audio or burned-in subtitle change on a Chromecast (R285) — the same code path, not tried.
+
+## 7. Open questions
 
 1. **A song that cannot be played on the speaker says nothing on the sender.** `MusicCast.linked` goes false on
    `failed`, and the bar shows the device's own last song. R299 gave films *{device} couldn't play this · Play on
@@ -101,3 +150,6 @@ the bar goes back to what the device itself last had, with no word said) — see
 2. **Should a failed song skip to the next?** R297 made a film's failure stop the queue (an error used to walk it,
    two seconds an episode). For music a single unplayable file ends the album. Lean: skip once, stop on the second
    failure in a row.
+3. **Whose session is it?** A receiver that kept its token plays as the viewer who enrolled it, whoever casts next:
+   a second viewer's phone sends no receiver id on its first LOAD, so nothing asks for a new enrolment (218
+   FR-218-9 as built). Seen while reading FR-289-7; not changed here.

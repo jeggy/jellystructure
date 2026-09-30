@@ -196,7 +196,14 @@ queue, *Stop casting*. Two things changed in the shared code, so the phone has t
   speaker). *Play on this phone* is the same with playback going on.
 - **A connected speaker is where a new queue goes**, also after its own queue has ended (`MusicCast.holdsDevice`).
 
-*Next*, *Previous*, a song picked from the queue and an album started over a playing one fail on a real device
-with the receiver as deployed — 289. Still owed to the Pixel 9 and a speaker: take-over of a busy speaker, the
-notification's actions, the volume keys, reconnect.
+- **Another device chosen while a speaker plays: the music moves** (`MusicCast.moveAway`, from
+  `castOnChromecast`). The speaker's queue comes back, the speaker's app stops, and the hand-off on the new
+  connection sends the queue on from where it was. It used to stay playing on the first speaker with nothing
+  attached to it, while the new device was handed whatever this device had last played itself. Seen: speaker →
+  bedroom TV at 0:46 of a song, the TV continues at 46.1 s, the speaker is idle. The phone has the same code and has
+  not been tried.
+
+*Next*, *Previous*, a song picked from the queue and an album started over a playing one failed on a real device
+until 289 (deployed the same evening, and seen working on the speaker and the TV). Still owed to the Pixel 9 and a
+speaker: take-over of a busy speaker, the notification's actions, the volume keys, reconnect, and the move above.
 

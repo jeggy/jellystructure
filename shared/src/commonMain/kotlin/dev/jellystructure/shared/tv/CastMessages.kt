@@ -12,6 +12,12 @@ import kotlinx.serialization.Serializable
 
 /** The custom namespace both sides register on the Cast session. */
 const val CAST_NAMESPACE = "urn:x-cast:dev.jellystructure.ravilo"
+/**
+ * 289 — the receiver's own notes on what its player did (a load, an error's code, why an item ended), one short line
+ * of text each. A speaker has no screen and no DevTools; this is the only place its errors can be read. A channel of
+ * its own, so that no sender's state is built from it: a sender that does not listen never sees it.
+ */
+const val CAST_LOG_NAMESPACE = "urn:x-cast:dev.jellystructure.ravilo.log"
 
 /** One episode the receiver may advance to by itself (FR-R245-14) — ids and the markers it needs. */
 @Serializable

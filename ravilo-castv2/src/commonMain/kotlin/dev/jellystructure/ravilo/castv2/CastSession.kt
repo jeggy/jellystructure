@@ -68,6 +68,9 @@ class CastSession(
     private val _custom = MutableSharedFlow<String>(extraBufferCapacity = 64)
     /** Every payload the app sent on [CastNamespaces.RAVILO]. */
     val custom: SharedFlow<String> = _custom.asSharedFlow()
+    private val _notes = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    /** Every payload the app sent on [CastNamespaces.RAVILO_LOG] — for the log only (289). */
+    val notes: SharedFlow<String> = _notes.asSharedFlow()
 
     /** The app this session joined, once [launchOrJoin] succeeded. */
     var app: CastApp? = null
@@ -255,6 +258,7 @@ class CastSession(
                 _media.value = CastParse.mediaStatus(body)?.withMediaFrom(_media.value)
             }
             CastNamespaces.RAVILO -> m.payloadUtf8?.let { _custom.tryEmit(it) }
+            CastNamespaces.RAVILO_LOG -> m.payloadUtf8?.let { _notes.tryEmit(it) }
         }
         val id = body?.let(CastParse::requestId) ?: return
         if (id == 0) return

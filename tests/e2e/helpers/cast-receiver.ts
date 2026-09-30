@@ -13,6 +13,7 @@ import { expect, type Page } from "@playwright/test";
 export function fakeCafInitScript() {
   const w = window as any;
   w.__castSent = [];            // messages the receiver sent to the phone (sendCustomMessage)
+  w.__castNotes = [];           // what it said on its log channel (289)
   w.__castCanDisplay = [];      // every canDisplayType(mime, codec) probe
   w.__castState = "IDLE";       // what getPlayerState() answers; a test flips it
   w.__castLoads = [];           // playerManager.load(request) calls
@@ -39,8 +40,10 @@ export function fakeCafInitScript() {
       return !(/ac-3|ec-3/.test(codec));
     },
     addEventListener: noop,
-    addCustomMessageListener(_ns: string, cb: (ev: any) => void) { w.__castCommand = (data: any) => cb({ data }); },
-    sendCustomMessage(_ns: string, _sender: unknown, msg: any) { w.__castSent.push(msg); },
+    // 289 — the receiver's log channel (…ravilo.log) is kept apart: notes are text, never what a phone's state is built from.
+    addCustomMessageListener(ns: string, cb: (ev: any) => void) { if (!/\.log$/.test(ns)) w.__castCommand = (data: any) => cb({ data }); },
+    sendCustomMessage(ns: string, _sender: unknown, msg: any) { (/\.log$/.test(ns) ? w.__castNotes : w.__castSent).push(msg); },
+    getDeviceCapabilities() { return { display_supported: !w.__castHeadless }; },
     start(opts: any) { w.__castStarted = opts; },
   };
   function ctor(this: any) { return this; }
@@ -78,8 +81,9 @@ export async function castSent(page: Page): Promise<any[]> {
 
 /** Loads the receiver page with the fake in place of Google's SDK script, and waits for the real
  *  bundle to register its LOAD interceptor (Receiver.start() runs on window load). */
-export async function openReceiver(page: Page, appUrl: string) {
+export async function openReceiver(page: Page, appUrl: string, opts: { headless?: boolean } = {}) {
   await page.addInitScript(fakeCafInitScript);
+  if (opts.headless) await page.addInitScript(() => { (window as any).__castHeadless = true; });   // a speaker: no display
   await page.route("https://www.gstatic.com/**", (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: "/* CAF stubbed by the e2e suite */" }));
   await page.goto(`${appUrl}/cast/`, { waitUntil: "load", timeout: 15_000 });
   await expect.poll(() => page.evaluate(() => (window as any).__castHasInterceptor?.() === true), { timeout: 10_000 }).toBe(true);

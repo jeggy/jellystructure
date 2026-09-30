@@ -28,6 +28,8 @@ object CastNamespaces {
     const val MEDIA = "urn:x-cast:com.google.cast.media"
     /** Ravilo's own channel (`CastCommand` / `CastReceiverMessage`), registered by the receiver. */
     const val RAVILO = "urn:x-cast:dev.jellystructure.ravilo"
+    /** 289 — the receiver's own notes on what its player did; text for a log, never state. */
+    const val RAVILO_LOG = "urn:x-cast:dev.jellystructure.ravilo.log"
 }
 
 const val PLATFORM_RECEIVER = "receiver-0"
