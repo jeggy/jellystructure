@@ -14,9 +14,11 @@ cd "$(dirname "$0")/.."
 ROOT=ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui
 # file (under $ROOT)                            allowed
 ALLOWED="
+  components/AppBar.kt                          1
   components/Cast.kt                            8
   components/CertBadge.kt                       4
   components/ChannelCard.kt                     2
+  components/DesktopNav.kt                      4
   components/EpisodeCard.kt                     4
   components/HeroCarousel.kt                    1
   components/MultiEpisodeCard.kt                3
@@ -24,9 +26,10 @@ ALLOWED="
   components/ServerMessageHost.kt               1
   components/Tile.kt                            7
   music/BookPlayerScreens.kt                    1
+  music/DesktopMusicBar.kt                      1
   music/MusicCommon.kt                          4
   music/MusicDetailScreens.kt                   3
-  music/MusicPlayerScreens.kt                   2
+  music/MusicPlayerScreens.kt                   3
   screens/CastRemoteScreen.kt                   2
   screens/HomeScreen.kt                         1
   screens/LiveTvPlayerScreen.kt                 1
@@ -34,7 +37,7 @@ ALLOWED="
   screens/PlayerIdent.kt                        1
   screens/PlayerScreen.kt                       73
   screens/ProfileScreen.kt                      1
-  screens/SettingsScreen.kt                     2
+  screens/SettingsScreen.kt                     4
   screens/UpcomingScreen.kt                     5
   theme/Colors.kt                               1
 "

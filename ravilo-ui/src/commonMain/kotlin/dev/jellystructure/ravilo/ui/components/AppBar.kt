@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +43,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.seams.windowDragArea
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -323,38 +328,81 @@ val LocalDesktopBack = androidx.compose.runtime.staticCompositionLocalOf<(() -> 
 /** R337 — room at the toolbar's start for the Mac's traffic lights when no sidebar is there to hold them. */
 val LocalDesktopChromeStart = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
 
+/** R337 — the page Back left, for the toolbar's Forward; null when there is none. */
+val LocalDesktopForward = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
 /**
- * R337 (FR-R337-5) — the desktop's toolbar over a page. **macOS:** transparent, a glass Back button, *Play on…* at the
- * end, laid over the page's hero. **GNOME:** the content's header bar (46 dp), the page's title centred, the close
- * button on the right (drawn by the window frame). Solid once the page scrolls under it.
+ * R337 (FR-R337-5) — the desktop's toolbar over a page (`.mtb` / `.ghb` in `design/ravilo/desktop-directions.css`).
+ * **macOS:** 52 dp, transparent, a glass pill with Back and Forward at its start and *Play on…* in a glass pill at its
+ * end, laid over the page's hero; empty toolbar moves the window, as a title bar does. **GNOME:** the content's header
+ * bar (46 dp), a flat Back, the page's title centred, the close button on the right (drawn by the window frame).
+ * Solid once the page scrolls under it.
  */
 @Composable
 private fun DesktopToolbar(title: String?, solid: Boolean, modifier: Modifier) {
     val colors = RaviloTheme.colors
     val mac = dev.jellystructure.ravilo.ui.isMacPlatform
     val back = LocalDesktopBack.current
-    val bg by animateColorAsState(if (solid) colors.surface.copy(alpha = 0.95f) else Color.Transparent, tween(180), label = "deskBar")
-    Box(modifier.fillMaxWidth().height(if (mac) 52.dp else 46.dp).background(bg)) {
+    val forward = LocalDesktopForward.current
+    val bg by animateColorAsState(if (solid) colors.background.copy(alpha = 0.94f) else Color.Transparent, tween(180), label = "deskBar")
+    Box(modifier.fillMaxWidth().height(if (mac) 52.dp else 46.dp).background(bg).windowDragArea()) {
         Row(
-            Modifier.matchParentSize().padding(start = 12.dp + LocalDesktopChromeStart.current, end = if (mac) 14.dp else 52.dp),
+            Modifier.matchParentSize().padding(start = (if (mac) 14.dp else 6.dp) + LocalDesktopChromeStart.current, end = if (mac) 14.dp else 46.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (mac) 8.dp else 6.dp),
         ) {
-            if (back != null) {
-                Box(
-                    Modifier.size(32.dp).clip(if (mac) CircleShape else RoundedCornerShape(6.dp))
-                        .background(if (mac) colors.surface.copy(alpha = 0.7f) else colors.fg.copy(alpha = 0.08f))
-                        .clickable(onClick = back),
-                    contentAlignment = Alignment.Center,
-                ) { ChevronGlyph(GlyphDirection.LEFT, colors.text, 14.dp, description = str("action.back")) }
+            val backLabel = str("action.back")
+            val forwardLabel = str("desk.forward")
+            if (mac) {
+                // `.gl.two` — one glass pill, two chevrons; each is dimmed until there is a page that way.
+                Row(Modifier.height(32.dp).deskGlass(RoundedCornerShape(16.dp)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(width = 26.dp, height = 32.dp).clickable(enabled = back != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { back?.invoke() }
+                        .semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
+                        DeskIcon(DeskIcon.BACK, colors.text.copy(alpha = if (back != null) 1f else 0.4f), 16.dp)
+                    }
+                    Box(Modifier.size(width = 26.dp, height = 32.dp).clickable(enabled = forward != null, interactionSource = remember { MutableInteractionSource() }, indication = null) { forward?.invoke() }
+                        .semantics { contentDescription = forwardLabel }, contentAlignment = Alignment.Center) {
+                        DeskIcon(DeskIcon.FORWARD, colors.text.copy(alpha = if (forward != null) 1f else 0.4f), 16.dp)
+                    }
+                }
+            } else if (back != null) {
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = back).semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
+                    DeskIcon(DeskIcon.BACK, colors.text, 18.dp)
+                }
             }
-            Box(Modifier.weight(1f), contentAlignment = if (mac) Alignment.CenterStart else Alignment.Center) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 if (!mac && title != null) Text(title, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                     fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, maxLines = 1)
             }
-            CastButton()
+            DeskCastButton()
         }
     }
+}
+
+/** The Mac's glass, drawn: a translucent fill and a hairline (`.gl`). Nothing is blurred — Skia's backdrop blur costs a layer per button. */
+@Composable
+fun Modifier.deskGlass(shape: androidx.compose.ui.graphics.Shape): Modifier {
+    val colors = RaviloTheme.colors
+    val fill = if (colors.isLight) Color.White.copy(alpha = 0.72f) else colors.surface.copy(alpha = 0.62f)
+    return clip(shape).background(fill).border(1.dp, colors.fg.copy(alpha = 0.12f), shape)
+}
+
+/** R337 — *Play on…* in the desktop toolbar: a glass pill on the Mac, a flat button on GNOME; absent where nothing can be cast to. */
+@Composable
+private fun DeskCastButton() {
+    val cast = LocalCast.current ?: return
+    val colors = RaviloTheme.colors
+    val mac = dev.jellystructure.ravilo.ui.isMacPlatform
+    val link by cast.sender.link.collectAsState()
+    val musicMode = LocalMusicMode.current
+    val label = str("cast.sheet_music")
+    val tint = if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) colors.text else colors.accentSecondary
+    val shape = if (mac) RoundedCornerShape(16.dp) else RoundedCornerShape(6.dp)
+    Box(
+        (if (mac) Modifier.size(width = 46.dp, height = 32.dp).deskGlass(shape) else Modifier.size(34.dp).clip(shape))
+            .clickable { cast.openSheet(null, music = musicMode) }.semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { DeskIcon(DeskIcon.CAST, tint, if (mac) 16.dp else 18.dp) }
 }
 
 @Composable

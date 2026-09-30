@@ -68,4 +68,23 @@ object DesktopWindow {
         if (fullScreenByPlayer && _fullScreen.value) setFullScreenHandler(false)
         fullScreenByPlayer = false
     }
+
+    /** For the test driver: the Mac's traffic lights and who takes a click in the title area, as AppKit reports them. */
+    fun chromeDebug(): String? = runCatching { MacNative.take(MacNative.lib?.ravilo_window_debug()) }.getOrNull()
+
+    /**
+     * For the test driver: what speaker and TV discovery sees right now — the Bonjour browser's state (1 = macOS
+     * refused Local Network access), every device found, and whether each said our app can run on it.
+     */
+    fun castDebug(): String = runCatching {
+        CastDiscovery.acquire()
+        try {
+            Thread.sleep(3_500)
+            val raw = MacNative.lib?.let { MacNative.take(it.ravilo_bonjour_snapshot()) }?.lineSequence()?.firstOrNull() ?: "jmdns"
+            val app = CastSenderDesktop.appIdForDebug()
+            raw + " app=" + app + " | " + CastDiscovery.devices.value.joinToString(" | ") { d ->
+                "${d.name} [${d.model}] ${d.host}:${d.port} ours=${app?.let { a -> CastAvailability.known(d, a) }}"
+            }
+        } finally { CastDiscovery.release() }
+    }.getOrElse { "failed: ${it.message}" }
 }

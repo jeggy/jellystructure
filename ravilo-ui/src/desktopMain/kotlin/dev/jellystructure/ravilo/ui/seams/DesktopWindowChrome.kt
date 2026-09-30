@@ -3,6 +3,8 @@ package dev.jellystructure.ravilo.ui.seams
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -112,3 +114,18 @@ actual fun DesktopWindowFrame() {
 }
 
 actual fun showAboutWindow() = DesktopWindow.showAbout()
+
+actual fun Modifier.windowDragArea(): Modifier =
+    if (!dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac) dragsWindow()
+    // The Mac: AppKit moves the window (snapping and tiling included) from the press it already has; the app only says
+    // that this press was on empty chrome. A press a control took never gets here (requireUnconsumed).
+    else pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = true)
+            runCatching { dev.jellystructure.ravilo.ui.desktop.MacNative.lib?.ravilo_window_drag() }
+        }
+    }
+
+actual fun placeWindowControls(x: Float, y: Float) {
+    runCatching { dev.jellystructure.ravilo.ui.desktop.MacNative.lib?.ravilo_window_lights(x.toDouble(), y.toDouble()) }
+}

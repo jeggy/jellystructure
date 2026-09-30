@@ -2209,7 +2209,9 @@ private fun PlayerChrome(
                 .fillMaxWidth()
                 .height(68.dp)
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 48.dp),
+                .padding(horizontal = 48.dp)
+                // R337 (FR-R337-9) — the Mac's traffic lights float over the picture's top-left: Back sits after them.
+                .padding(start = MAC_LIGHTS_PAD),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BackButton(
@@ -2617,6 +2619,10 @@ private fun TrackButton(label: String, focused: Boolean, onClick: () -> Unit = {
         )
     }
 }
+
+/** R337 (FR-R337-9) — room for the Mac's traffic lights before the player's Back. A constant, not an expression in the
+ *  chrome: that function is near ART's register ceiling (R258). */
+private val MAC_LIGHTS_PAD = if (dev.jellystructure.ravilo.ui.isMacPlatform) 44.dp else 0.dp
 
 @Composable
 private fun BackButton(focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {

@@ -11,3 +11,7 @@ actual fun DesktopTitleStrip(modifier: Modifier) {}
 actual fun DesktopWindowFrame() {}
 
 actual fun showAboutWindow() {}
+
+actual fun Modifier.windowDragArea(): Modifier = this
+
+actual fun placeWindowControls(x: Float, y: Float) {}

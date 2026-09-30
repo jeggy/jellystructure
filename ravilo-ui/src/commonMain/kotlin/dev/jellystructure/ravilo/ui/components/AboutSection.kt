@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,9 +37,9 @@ fun AboutSection(about: AboutFacts, series: Boolean, twoColumns: Boolean, modifi
     if (rows.isEmpty()) return
     val colors = RaviloTheme.colors
     Column(modifier.fillMaxWidth().padding(horizontal = raviloHPad)) {
-        Spacer(Modifier.height(RaviloDimens.rowGap))
+        Spacer(Modifier.height(raviloRowGap))
         Text(str("about.title"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, fontFamily = SpaceGrotesk, letterSpacing = (-0.3).sp)
-        Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+        Spacer(Modifier.height(raviloRowHeadPadB))
         val perRow = if (twoColumns) 2 else 1
         rows.chunked(perRow).forEach { chunk ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {

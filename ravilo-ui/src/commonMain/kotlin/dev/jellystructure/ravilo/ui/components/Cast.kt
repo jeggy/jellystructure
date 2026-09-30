@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -407,7 +408,17 @@ fun CastConnectingBar() {
             CastLinkState.RECONNECTING -> str("cast.reconnecting", mapOf("device" to name))
             else -> str("cast.connected", mapOf("device" to name))
         }
-        Box(
+        // R337 — in a computer's window the same sentence is a small glass pill at the head of the page, not a bar
+        // across the sidebar and the title area.
+        if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) Box(Modifier.fillMaxWidth().padding(top = 58.dp), contentAlignment = Alignment.Center) {
+            Row(
+                Modifier.deskGlass(RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DeskIcon(DeskIcon.CAST, colors.accentSecondary, 15.dp)
+                Text(text, color = colors.text, fontSize = 12.5.sp, fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, fontWeight = FontWeight.SemiBold)
+            }
+        } else Box(
             Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 60.dp).padding(horizontal = 12.dp),
         ) {
             Text(

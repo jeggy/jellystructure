@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
+import dev.jellystructure.ravilo.ui.i18n.str
+import androidx.compose.foundation.clickable
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -73,8 +75,14 @@ fun HeroCarousel(
     onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
     driftEnabled: () -> Boolean = { true },
-) = dev.jellystructure.ravilo.ui.theme.KeepDark {
-    HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled)
+    /** R337 — a computer's hero carries *Play* beside *More Info* (the TV's is button-less: OK opens the title). */
+    onPlay: ((MediaCard) -> Unit)? = null,
+) {
+    // The layout is read here, outside KeepDark (which only swaps the colours).
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    dev.jellystructure.ravilo.ui.theme.KeepDark {
+        HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled, desk, onPlay)
+    }
 }
 
 @Composable
@@ -89,6 +97,8 @@ private fun HeroCarouselContent(
     /** R101: Ken Burns drifts only while this is true (false ⇒ frozen). HomeScreen passes
      *  `!isScrollInProgress` so the hero stops its per-frame scaled redraw during a scroll gesture. */
     driftEnabled: () -> Boolean = { true },
+    desk: Boolean = false,
+    onPlay: ((MediaCard) -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -230,7 +240,7 @@ private fun HeroCarouselContent(
                 .align(Alignment.BottomStart)
                 .padding(
                     start  = raviloHPad,
-                    bottom = RaviloDimens.heroBodyBot,
+                    bottom = if (desk) 30.dp else RaviloDimens.heroBodyBot,
                     end    = 40.dp,
                 ),
         ) {
@@ -259,12 +269,12 @@ private fun HeroCarouselContent(
                 Text(
                     text = kicker.uppercase(),
                     color = colors.accentSecondary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = if (desk) 11.5.sp else 14.sp,
+                    fontWeight = if (desk) FontWeight.Bold else FontWeight.SemiBold,
                     fontFamily = sora,
-                    letterSpacing = 1.5.sp,
+                    letterSpacing = if (desk) 1.6.sp else 1.5.sp,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(if (desk) 10.dp else 8.dp))
             }
 
             // R130: clearlogo when it loads, else the title as readable text — a missing or 404 logo
@@ -272,7 +282,7 @@ private fun HeroCarouselContent(
             TitleLogoOrText(
                 logoUrl = active.logoUrl, logoInk = active.logoInk,
                 title = active.item.title,
-                logoModifier = Modifier.height(80.dp).width(300.dp),
+                logoModifier = if (desk) Modifier.height(74.dp).width(280.dp) else Modifier.height(80.dp).width(300.dp),
             )
 
             // Meta: year · rating
@@ -282,7 +292,19 @@ private fun HeroCarouselContent(
             val meta = remember(active.item.year, active.item.rating) {
                 listOfNotNull(active.item.year?.toString(), active.item.rating).joinToString(" · ")
             }
-            if (meta.isNotEmpty()) {
+            if (desk) {
+                // `.meta` — the year in plain type, the rating as a tag.
+                if (active.item.year != null || !active.item.rating.isNullOrBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        active.item.year?.let { Text(it.toString(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = sora) }
+                        active.item.rating?.takeIf { it.isNotBlank() }?.let {
+                            Text(it, color = colors.text, fontSize = 12.sp, fontFamily = sora,
+                                modifier = Modifier.background(colors.fg.copy(alpha = 0.10f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
+                        }
+                    }
+                }
+            } else if (meta.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = meta,
@@ -295,17 +317,26 @@ private fun HeroCarouselContent(
             // Synopsis — overview from the hero item (server-provided)
             val synopsis = active.synopsis
             if (!synopsis.isNullOrBlank()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(if (desk) 12.dp else 10.dp))
                 Text(
                     text = synopsis,
                     color = colors.textSecondary,
-                    fontSize = 14.sp,
+                    fontSize = if (desk) 13.5.sp else 14.sp,
                     lineHeight = 20.sp,
                     fontFamily = sora,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(560.dp),
+                    modifier = Modifier.width(if (desk) 480.dp else 560.dp),
                 )
+            }
+
+            // R337 — a computer's hero has its buttons (`.btns`): a pointer wants something to press.
+            if (desk) {
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (onPlay != null) DeskButton(str("action.play"), DeskIcon.PLAY, primary = true) { onPlay(active.item) }
+                    DeskButton(str("action.more_info"), primary = onPlay == null) { onOpenDetail(active.item) }
+                }
             }
 
             // R53: no action buttons — the whole hero opens detail; Left/Right pages the carousel.
@@ -316,21 +347,23 @@ private fun HeroCarouselContent(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 48.dp, bottom = RaviloDimens.heroBodyBot),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(end = if (desk) 28.dp else 48.dp, bottom = if (desk) 34.dp else RaviloDimens.heroBodyBot),
+                horizontalArrangement = Arrangement.spacedBy(if (desk) 6.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEachIndexed { i, _ ->
                     val dotWidth: Dp by animateDpAsState(
-                        targetValue = if (i == activeIndex) 28.dp else 8.dp,
+                        targetValue = if (i == activeIndex) (if (desk) 20.dp else 28.dp) else (if (desk) 6.dp else 8.dp),
                         animationSpec = tween(RaviloMotion.HERO_DOT_TWEEN_MS),
                         label = "dot$i",
                     )
                     Box(
                         modifier = Modifier
-                            .size(dotWidth, 8.dp)
+                            .size(dotWidth, if (desk) 6.dp else 8.dp)
                             .clip(CircleShape)
-                            .background(if (i == activeIndex) colors.accent else dotInactiveColor),
+                            .background(if (i == activeIndex) colors.accent else dotInactiveColor)
+                            // R337 — a pointer picks a slide by its dot.
+                            .then(if (desk) Modifier.clickable { activeIndex = i; resetTick++ } else Modifier),
                     )
                 }
             }

@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -276,10 +279,11 @@ fun <T> StaticContentRow(
                     // platform (confirmed live: tapping "TV Guide" on the Home screen did nothing).
                     // dpadFocusable's onSelect covers both D-pad Enter and a pointer tap (see its doc).
                     var seeAllFocused by rememberFocusVisual()
+                    val deskMore = dev.jellystructure.ravilo.ui.theme.isDesktopLayout   // R337 — `.rh .more`
                     Text(
                         text = seeAllLabel,
-                        color = colors.accent,
-                        fontSize = 15.sp,
+                        color = if (deskMore) colors.textDim else colors.accent,
+                        fontSize = if (deskMore) 12.5.sp else 15.sp,
                         fontWeight = FontWeight.Medium,
                         textDecoration = if (seeAllFocused) TextDecoration.Underline else TextDecoration.None,
                         modifier = Modifier.dpadFocusable(
@@ -292,7 +296,7 @@ fun <T> StaticContentRow(
                     Text(text = trailingInfo, color = colors.textDim, fontSize = 13.sp, fontFamily = spaceGrotesk)
                 }
             }
-            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+            Spacer(Modifier.height(raviloRowHeadPadB))
         }
         // Phase R240 (FR-R240-8) — while J holds an open panel in this row, the row's measured height
         // may only ever grow, never shrink back, until focus leaves the row entirely (openAfterKey
@@ -330,7 +334,7 @@ fun <T> StaticContentRow(
         // depends on the panel having been laid out first.
         val density = LocalDensity.current
         val panelWidthPx = with(density) { openPanelWidth.toPx() }
-        val itemSpacingPx = with(density) { RaviloDimens.itemSpacing.toPx() }
+        val itemSpacingPx = with(density) { raviloItemSpacing.toPx() }
         // R250 (FR-R250-4) — 0 = no clamp (the declared width stands); set from the tile's measured
         // landing once the scroll has settled, and reset the moment another tile opens.
         var panelMaxWidthPx by remember { mutableStateOf(0f) }
@@ -381,10 +385,10 @@ fun <T> StaticContentRow(
                     .focusRestorer()
                     .heightIn(min = heldHeightDp)
                     .then(if (openAfterKey != null) Modifier.onSizeChanged { if (it.height > heldHeightPx) heldHeightPx = it.height } else Modifier),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                 contentPadding = PaddingValues(
                     horizontal = raviloHPad,
-                    vertical = RaviloDimens.trackPadV,
+                    vertical = raviloTrackPadV,
                 ),
             ) {
                 if (leadingItem != null) {

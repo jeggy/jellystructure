@@ -126,6 +126,7 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
         animationSpec = if (visible && !dismissed) tween(toast.durationMs.toInt(), easing = LinearEasing) else snap(),
     )
     val colors = RaviloTheme.colors
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout || (dev.jellystructure.ravilo.ui.isDesktopPlatform)
 
     // Both of the design's decorations — `border-left: 4px solid var(--accent)` and the absolutely
     // positioned `.rv-msg-bar` — are PAINTED, not laid out. That is the whole fix.
@@ -152,7 +153,8 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
                 translationX = offsetX.toPx()
                 this.alpha = alpha
             }
-            .widthIn(min = 300.dp, max = 460.dp)
+            // R337 — in a computer's window the card is a notification's size, not a TV's.
+            .widthIn(min = if (desk) 240.dp else 300.dp, max = if (desk) 360.dp else 460.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(colors.surface.copy(alpha = 0.93f))
             .border(1.dp, colors.textDim.copy(alpha = 0.25f), RoundedCornerShape(15.dp))
@@ -174,20 +176,21 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
             ) { if (!dismissed) dismissed = true },
     ) {
         Row(
-            modifier = Modifier.padding(start = 19.dp, top = 16.dp, end = 19.dp, bottom = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(15.dp),
+            modifier = if (desk) Modifier.padding(start = 15.dp, top = 11.dp, end = 14.dp, bottom = 13.dp) else Modifier.padding(start = 19.dp, top = 16.dp, end = 19.dp, bottom = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (desk) 11.dp else 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(if (desk) 28.dp else 40.dp)
+                    .clip(RoundedCornerShape(if (desk) 8.dp else 12.dp))
                     .background(stripeBrush),
                 contentAlignment = Alignment.Center,
             ) {
-                EnvelopeGlyph(Color.White, 24.dp)   // R315 — drawn, not typed
+                EnvelopeGlyph(Color.White, if (desk) 16.dp else 24.dp)   // R315 — drawn, not typed
             }
-            Text(toast.text, color = colors.text, fontSize = 19.sp, lineHeight = 26.sp)
+            Text(toast.text, color = colors.text, fontSize = if (desk) 13.sp else 19.sp, lineHeight = if (desk) 18.sp else 26.sp,
+                fontFamily = if (desk) dev.jellystructure.ravilo.ui.theme.SystemUiFont else null)
         }
     }
 }

@@ -61,6 +61,11 @@ object MacNative {
         // a library from before it has no such symbol and the call throws, which DesktopAppearance catches.
         fun ravilo_appearance_dark(): Int
 
+        // ── R337 — the window (Window.swift). Added the same way: a library without them throws, and MacWindow catches. ──
+        fun ravilo_window_lights(x: Double, y: Double)
+        fun ravilo_window_drag()
+        fun ravilo_window_debug(): Pointer?
+
         // ── R330 — Bonjour (Bonjour.swift; see MacBonjour) ──
         fun ravilo_bonjour_start()
         fun ravilo_bonjour_stop()

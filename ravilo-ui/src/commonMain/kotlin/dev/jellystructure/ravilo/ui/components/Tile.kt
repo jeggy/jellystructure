@@ -75,6 +75,30 @@ private const val LANDSCAPE_IMAGE_W = 640
 fun tileRequestedWidth(variant: TileVariant): Int? =
     if (variant == TileVariant.LANDSCAPE) LANDSCAPE_IMAGE_W else null
 
+// R337 — a computer's tiles, as `design/ravilo/desktop-directions.css` draws them (`.po` 138, `.ls` 236, `.al` 150).
+private val DESK_POSTER_W    = 138.dp
+private val DESK_POSTER_H    = 207.dp
+private val DESK_LANDSCAPE_W = 236.dp
+private val DESK_LANDSCAPE_H = 133.dp
+private val DESK_SQUARE      = 150.dp
+
+/** A tile's size in this layout: the desktop's own, else the TV's scaled by the operator's content size. */
+@Composable
+private fun tileSize(variant: TileVariant): Pair<Dp, Dp> {
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) return when (variant) {
+        TileVariant.POSTER -> DESK_POSTER_W to DESK_POSTER_H
+        TileVariant.LANDSCAPE -> DESK_LANDSCAPE_W to DESK_LANDSCAPE_H
+        TileVariant.SQUARE -> DESK_SQUARE to DESK_SQUARE
+    }
+    // Operator-configured content size (R: ui_density) scales every grid/row tile uniformly.
+    val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
+    return when (variant) {
+        TileVariant.POSTER -> POSTER_W to POSTER_H
+        TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
+        TileVariant.SQUARE -> SQUARE_W to SQUARE_H
+    }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
+}
+
 /** A tile's own resting width, before [dev.jellystructure.ravilo.ui.LocalTileScale] and before
  *  R240's open-growth. Exposed so J can size its panel to the space a grown tile of this variant
  *  actually leaves — see [focusDetailPanelWidthFor]. */
@@ -134,18 +158,14 @@ fun Tile(
     // Snappier focus feel (R43): StiffnessMedium settles fast; soft StiffnessMediumLow read laggy.
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
-    val scale         by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "tileScale")
+    // R337 — a computer's tile does not grow when focused: the ring alone says where the keyboard is.
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    val scale         by animateFloatAsState(if (focused && !desk) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "tileScale")
     val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "tileBorder")
     val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
 
-    // Operator-configured content size (R: ui_density) scales every grid/row tile uniformly.
-    val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
-    val (baseW, baseH) = when (variant) {
-        TileVariant.POSTER -> POSTER_W to POSTER_H
-        TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
-        TileVariant.SQUARE -> SQUARE_W to SQUARE_H
-    }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
+    val (baseW, baseH) = tileSize(variant)
 
     // R240 (FR-R240-7) — unlike the focus scale below, this DOES change real layout width: J's whole
     // point is the row band growing, so the lazy row's measured bounds must actually move. Only ever
@@ -304,9 +324,9 @@ fun Tile(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = title,
-                color = if (focused) colors.text else colors.textSecondary,
-                fontSize = 18.sp,
-                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (focused || desk) colors.text else colors.textSecondary,
+                fontSize = if (desk) 13.sp else 18.sp,
+                fontWeight = if (focused || desk) FontWeight.SemiBold else FontWeight.Medium,
                 fontFamily = sora,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -316,7 +336,7 @@ fun Tile(
                 Text(
                     text = subtitle,
                     color = colors.textDim,
-                    fontSize = 14.sp,
+                    fontSize = if (desk) 12.sp else 14.sp,
                     fontFamily = sora,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -357,17 +377,13 @@ fun SeeAllTile(
     var focused by rememberFocusVisual()
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
-    val scale         by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "seeAllScale")
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    val scale         by animateFloatAsState(if (focused && !desk) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "seeAllScale")
     val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "seeAllBorder")
     val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "seeAllShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
 
-    val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
-    val (w, h) = when (variant) {
-        TileVariant.POSTER -> POSTER_W to POSTER_H
-        TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
-        TileVariant.SQUARE -> SQUARE_W to SQUARE_H
-    }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
+    val (w, h) = tileSize(variant)
 
     Column(
         modifier = Modifier
@@ -423,7 +439,7 @@ fun SeeAllTile(
         // Blank label lines so the tile's total height matches its poster/landscape siblings exactly
         // (Tile always reserves a title line below the image) — keeps the row's baseline aligned.
         Spacer(Modifier.height(2.dp))
-        Text(text = "", fontSize = 15.sp, fontFamily = sora, modifier = Modifier.width(w))
+        Text(text = "", fontSize = if (desk) 11.sp else 15.sp, fontFamily = sora, modifier = Modifier.width(w))
     }
 }
 

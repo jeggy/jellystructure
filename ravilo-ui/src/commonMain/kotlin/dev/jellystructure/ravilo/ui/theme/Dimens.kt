@@ -47,7 +47,27 @@ object WindowWidths {
 // R145: responsive horizontal content gutter — tight on phones, TV-wide otherwise. Replaces the fixed
 // 48dp screenPadH at every content-margin call site.
 val raviloHPad: Dp
-    @Composable get() = if (LocalCompact.current) 20.dp else RaviloDimens.screenPadH
+    @Composable get() = when {
+        LocalCompact.current -> 20.dp
+        isDesktopLayout -> 28.dp   // R337 — `.pad` in design/ravilo/desktop-directions.css
+        else -> RaviloDimens.screenPadH
+    }
+
+/** R337 — true in the desktop family (a computer's window 600 dp and wider): the desktop's own density applies. */
+val isDesktopLayout: Boolean
+    @Composable get() = LocalLayoutFamily.current == LayoutFamily.DESKTOP
+
+// R337 — the spacings between and inside content rows. The TV's leave room for a focused tile's scale and glow; a
+// computer's tiles do not grow (a pointer needs no such cue), so its rows sit as close as the mockup draws them
+// (`.rh { margin: 22px 0 12px }`, `.row { gap: 14px }`).
+val raviloRowGap: Dp
+    @Composable get() = if (isDesktopLayout) 22.dp else RaviloDimens.rowGap
+val raviloTrackPadV: Dp
+    @Composable get() = if (isDesktopLayout) 4.dp else RaviloDimens.trackPadV
+val raviloItemSpacing: Dp
+    @Composable get() = if (isDesktopLayout) 14.dp else RaviloDimens.itemSpacing
+val raviloRowHeadPadB: Dp
+    @Composable get() = if (isDesktopLayout) 8.dp else RaviloDimens.rowHeadPadB
 
 object RaviloDimens {
     val appBarHeight  = 60.dp   // overlay nav bar height (R65 tokenized)

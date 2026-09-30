@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -156,6 +159,8 @@ fun SearchScreen(
     onFocusInputConsumed: () -> Unit = {},
     /** R325 (FR-R325-5) — a genre chip opens Browse seeded to it; null hides the group (no navigation available). */
     onOpenGenre: ((dev.jellystructure.shared.tv.SearchGenreHit) -> Unit)? = null,
+    /** R337 — the desktop sidebar's search text: the page has no field of its own then. Null everywhere else. */
+    externalQuery: String? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -165,7 +170,9 @@ fun SearchScreen(
     // R259 — the store outlives this composable (it survives a push to a detail page), the text field
     // did not: Back from a result showed the previous results under an EMPTY field, relabelled
     // "Suggestions" (stue TV, 2026-09-17). The field starts from the query the results belong to.
-    var query by remember { mutableStateOf((store.state.value as? SearchState.Loaded)?.query.orEmpty()) }
+    var query by remember { mutableStateOf(externalQuery ?: (store.state.value as? SearchState.Loaded)?.query.orEmpty()) }
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    LaunchedEffect(externalQuery) { if (externalQuery != null && (externalQuery != query || (store.state.value as? SearchState.Loaded)?.query != externalQuery)) { query = externalQuery; store.onQuery(externalQuery) } }
 
     val items = when (val s = state) {
         is SearchState.Loaded -> s.results.items
@@ -196,7 +203,8 @@ fun SearchScreen(
     // they want to type, covering the suggestions the page exists to show. A phone viewer who wants to
     // type taps the field.
     val handset = LocalHandset.current
-    val focusInput: () -> Unit = {
+    val focusInput: () -> Unit = focus@{
+        if (externalQuery != null) return@focus   // the field is the sidebar's
         textFieldFR.requestFocus()
         // Called even when the field already holds focus: Back dismisses the IME without moving focus,
         // so requestFocus() is a no-op there and show() is the half that does the work (FR-R277-2).
@@ -238,7 +246,7 @@ fun SearchScreen(
             // a handset while Search had no top row; R267's open item closed 2026-09-25 by giving it
             // the same brand · cast row as every other page (FR-R267-2, and the mockup's persistent
             // row), so the gap is the ordinary one again on every platform.
-            .padding(top = RaviloDimens.appBarHeight + 24.dp)
+            .padding(top = if (desk) 58.dp else RaviloDimens.appBarHeight + 24.dp)
             // Back from results grid → text field + IME; Back from text field → pops screen.
             .backToTopOnBack(
                 atTop = { !inGrid },
@@ -255,13 +263,13 @@ fun SearchScreen(
             Text(
                 str("nav.search"),
                 color = colors.text,
-                fontSize = 28.sp,
+                fontSize = if (desk) 30.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
                 letterSpacing = (-0.5).sp,
             )
             Spacer(Modifier.weight(1f))
-            if (query.isNotEmpty()) {
+            if (query.isNotEmpty() && externalQuery == null) {
                 // R277 (FR-R277-3) — this was a plain Text: an accent-coloured affordance that had
                 // never been clickable. It clears and nothing else; raising the keyboard is the
                 // field's job and the bar's, and clearing mid-typing keeps the IME up on its own
@@ -290,7 +298,7 @@ fun SearchScreen(
         Spacer(Modifier.height(12.dp))
 
         // Native IME text field — the OS keyboard appears automatically on focus
-        Box(
+        if (externalQuery == null) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = raviloHPad)
@@ -334,12 +342,12 @@ fun SearchScreen(
                 },
             )
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(if (externalQuery != null) 4.dp else 24.dp))
 
         // R325 (FR-R325-5) — the viewer's genres the query names, as their own group above the titles.
         val genreHits = (state as? SearchState.Loaded)?.results?.genres.orEmpty()
         if (genreHits.isNotEmpty() && onOpenGenre != null && query.isNotEmpty()) {
-            Text(str("search.genres"), color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora, modifier = Modifier.padding(horizontal = raviloHPad))
+            Text(str("search.genres"), color = colors.textSecondary, fontSize = if (desk) 13.sp else 16.sp, fontFamily = sora, modifier = Modifier.padding(horizontal = raviloHPad))
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = raviloHPad),
@@ -360,7 +368,7 @@ fun SearchScreen(
         Text(
             label,
             color = colors.textSecondary,
-            fontSize = 16.sp,
+            fontSize = if (desk) 13.sp else 16.sp,
             fontFamily = sora,
             modifier = Modifier.padding(horizontal = raviloHPad),
         )
@@ -368,7 +376,8 @@ fun SearchScreen(
 
         if (items.isNotEmpty()) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(cols),
+                // R337 — a computer's grid takes as many of its own tiles as fit.
+                columns = if (desk) GridCells.Adaptive(138.dp) else GridCells.Fixed(cols),
                 state = gridState,
                 modifier = Modifier
                     .focusRequester(gridFR)
@@ -376,7 +385,7 @@ fun SearchScreen(
                     // Native traversal moves between cells; intercept only the top-edge (Up) and
                     // left-edge (Left) exits to return focus to the text field, re-showing the IME.
                     .onPreviewKeyEvent { ev ->
-                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (ev.type != KeyEventType.KeyDown || desk) return@onPreviewKeyEvent false
                         when (ev.key) {
                             Key.DirectionUp ->
                                 if (focusedGridIdx < cols) { inGrid = false; true } else false
@@ -387,10 +396,10 @@ fun SearchScreen(
                     },
                 contentPadding = PaddingValues(
                     horizontal = raviloHPad,
-                    vertical = RaviloDimens.trackPadV,
+                    vertical = raviloTrackPadV,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
+                horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
+                verticalArrangement = Arrangement.spacedBy(raviloRowGap),
             ) {
                 items(items.size, key = { i -> items[i].id }) { i ->
                     val card = items[i]
@@ -411,7 +420,7 @@ fun SearchScreen(
     }
     // R267 (FR-R267-2) — the handset's top row: brand · cast, as on every other page. The TV keeps no
     // bar here (unchanged), and the phone's search and profile live in the bottom bar.
-    if (handset) AppBar()
+    if (handset || desk) AppBar()
     }
 }
 

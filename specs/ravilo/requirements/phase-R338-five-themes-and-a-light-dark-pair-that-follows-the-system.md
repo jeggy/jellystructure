@@ -313,3 +313,17 @@ theme defaults** — it rebuilds `RaviloConfig` field by field, and without them
 **Addendum (2026-09-30, with R337):** Linux's light/dark source is in — `DesktopAppearance` reads the Settings portal's
 `color-scheme` through `LinuxPortal` (GIO over JNA) before the first frame and follows `SettingChanged`. Still `⚠
 Partial`: nothing of R338 has been seen on a screen (R337's verification run hit a host incident; see R337's build notes).
+
+## Seen on the Mac (2026-09-30, after the backend was deployed)
+
+The server half went to production with `v1.47-29` (11:12) and the Mac app showed it at once: the migration had set
+*follow* off and kept Aurora. Picking Daylight repaints the whole window while it is looked at — sidebar, toolbar,
+capsule, pages — and the selected sidebar row fills with the accent, as the mockup's T·a draws it; picking Aurora
+returns it. With *Match the system appearance* on, the Mac (dark) shows the dark pick and *In use now* sits under
+**Dark** (`ravilo_appearance_dark` reads the system). The desktop's Theme section is the mockup's swatches.
+
+One fix: turning *follow* off used to fall back to the stored single pick, which could be the other family from the
+one on screen; it now keeps the theme in use at that moment (T·g), on the desktop and on the phone.
+
+Still unseen: the phone, the TVs' dark-only row, the admin's editor, and a live push from another device.
+

@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+import dev.jellystructure.ravilo.ui.components.deskHover
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -155,14 +158,25 @@ private fun initials(name: String) = name.split(' ').map { w -> w.filter { it.is
 @Composable
 fun MusicSectionHeader(title: String, count: String? = null, onSeeAll: (() -> Unit)? = null) {
     val colors = RaviloTheme.colors
-    Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+    val desk = isDesktopLayout   // R337 — `.rh` in design/ravilo/desktop-directions.css
+    Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = if (desk) 12.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = colors.text, fontSize = if (desk) 18.sp else 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
         if (count != null) { Spacer(Modifier.width(8.dp)); Text(count, color = colors.textDim, fontSize = 12.sp, fontFamily = Sora) }
         Spacer(Modifier.weight(1f))
         if (onSeeAll != null) Text(
-            str("music.see_all"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+            str("music.see_all"), color = if (desk) colors.textDim else colors.accentSecondary, fontSize = if (desk) 12.5.sp else 13.sp,
+            fontWeight = if (desk) FontWeight.Normal else FontWeight.SemiBold, fontFamily = Sora,
             modifier = Modifier.tap(onSeeAll).padding(vertical = 6.dp, horizontal = 2.dp),
         )
+    }
+}
+
+/** R337 — a music page's title on the desktop (`.h1`): the sidebar names the page, the page says it large. */
+@Composable
+fun DeskPageTitle(title: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
+    Row(modifier.fillMaxWidth().padding(horizontal = raviloHPad).padding(top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = RaviloTheme.colors.text, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.6).sp, modifier = Modifier.weight(1f))
+        trailing?.invoke()
     }
 }
 
@@ -174,7 +188,7 @@ fun AlbumCardView(a: MusicAlbumCard, width: Dp, onOpen: () -> Unit, showYear: Bo
         Spacer(Modifier.height(7.dp))
         Text(a.title, color = colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val sub = listOfNotNull(a.artists.joinToString(" & ") { it.name }.ifBlank { null }, if (showYear) a.year?.toString() else null).joinToString(" · ")
-        if (sub.isNotEmpty()) Text(sub, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (sub.isNotEmpty()) Text(sub, color = if (isDesktopLayout) colors.textDim else colors.textSecondary, fontSize = if (isDesktopLayout) 12.sp else 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -202,26 +216,39 @@ fun TrackRow(
     number: String? = null,
     showCover: Boolean = false,
     subtitle: String? = null,
+    /** R337 — the desktop's track list is striped (`.trk .tr:nth-child(odd)`); true for every other row. */
+    striped: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     val isCurrent = st.current?.id == t.id
-    Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).tap(onPlay).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // R337 — the desktop's row (`.trk .tr`): 38 dp, 13 sp, 8 dp corners, the number in a 34 dp column.
+    val desk = isDesktopLayout
+    val frame = if (desk) {
+        Modifier.fillMaxWidth().heightIn(min = if (showCover) 44.dp else 38.dp).clip(RoundedCornerShape(8.dp))
+            .then(if (striped) Modifier.background(colors.fg.copy(alpha = 0.025f)) else Modifier).deskHover().tap(onPlay).padding(start = 10.dp)
+    } else Modifier.fillMaxWidth().heightIn(min = 54.dp).tap(onPlay).padding(vertical = 4.dp)
+    Row(frame, verticalAlignment = Alignment.CenterVertically) {
+        val lead = if (desk) 24.dp else 28.dp
         when {
-            showCover -> MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(44.dp), corner = 6.dp, requestedWidth = 120, wordmarkSize = 9)
-            isCurrent -> Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) { PlayingBars(st.playing, colors.accentSecondary, 16.dp) }
-            else -> Text(number ?: "", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.width(28.dp))
+            showCover -> MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(if (desk) 32.dp else 44.dp), corner = if (desk) 5.dp else 6.dp, requestedWidth = 120, wordmarkSize = if (desk) 7 else 9)
+            isCurrent -> Box(Modifier.width(lead), contentAlignment = Alignment.CenterStart) { PlayingBars(st.playing, colors.accentSecondary, if (desk) 13.dp else 16.dp) }
+            else -> Text(number ?: "", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.width(lead))
         }
-        if (showCover && isCurrent) { Spacer(Modifier.width(8.dp)); PlayingBars(st.playing, colors.accentSecondary, 14.dp) }
-        Spacer(Modifier.width(12.dp))
+        if (showCover && isCurrent) { Spacer(Modifier.width(8.dp)); PlayingBars(st.playing, colors.accentSecondary, if (desk) 12.dp else 14.dp) }
+        Spacer(Modifier.width(if (desk) 10.dp else 12.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.title, color = if (isCurrent) colors.accentSecondary else colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                t.title, color = if (isCurrent) colors.accentSecondary else colors.text, fontSize = if (desk) 13.sp else 14.5.sp,
+                fontWeight = if (desk && !isCurrent) FontWeight.Normal else if (desk) FontWeight.SemiBold else FontWeight.Medium,
+                fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
             val sub = subtitle ?: artistLine(t)
-            if (sub.isNotBlank()) Text(sub, color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sub.isNotBlank()) Text(sub, color = if (desk) colors.textDim else colors.textSecondary, fontSize = if (desk) 11.5.sp else 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (t.hasLyrics) { MusicGlyph(MusicIcon.LYRICS, colors.textDim, 15.dp); Spacer(Modifier.width(8.dp)) }
-        Text(fmtLen(t.durationMs), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora)
-        Box(Modifier.size(40.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 18.dp, description = str("music.more")) }
+        if (t.hasLyrics) { MusicGlyph(MusicIcon.LYRICS, colors.textDim, if (desk) 13.dp else 15.dp); Spacer(Modifier.width(8.dp)) }
+        Text(fmtLen(t.durationMs), color = colors.textDim, fontSize = if (desk) 12.sp else 12.5.sp, fontFamily = Sora)
+        Box(Modifier.size(if (desk) 34.dp else 40.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, if (desk) 16.dp else 18.dp, description = str("music.more")) }
     }
 }
 
@@ -232,6 +259,18 @@ fun Modifier.tap(onClick: () -> Unit): Modifier = this.clickable(interactionSour
 @Composable
 fun PillButton(label: String, icon: MusicIcon?, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
+    if (isDesktopLayout) {
+        // R337 — the desktop's button (`.bt` / `.bt.pri`): 38 dp, 10 dp corners, the primary one ink on the page's colour.
+        val ink = if (primary) colors.background else colors.text
+        Row(
+            modifier.height(38.dp).clip(RoundedCornerShape(10.dp)).background(if (primary) colors.text else colors.fg.copy(alpha = 0.10f)).tap(onClick).padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+        ) {
+            if (icon != null) { MusicGlyph(icon, ink, 15.dp); Spacer(Modifier.width(8.dp)) }
+            Text(label, color = ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
+        }
+        return
+    }
     val bg = if (primary) Modifier.background(colors.accentGradient, RoundedCornerShape(24.dp)) else Modifier.background(colors.surfaceVariant, RoundedCornerShape(24.dp))
     Row(
         modifier.heightIn(min = 46.dp).then(bg).tap(onClick).padding(horizontal = 20.dp),
@@ -241,6 +280,10 @@ fun PillButton(label: String, icon: MusicIcon?, primary: Boolean, modifier: Modi
         Text(label, color = if (primary) colors.onAccent else colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
     }
 }
+
+/** A phone's two buttons share the row's width; a computer's keep their own (R337). */
+@Composable
+fun androidx.compose.foundation.layout.RowScope.pillWidth(): Modifier = if (isDesktopLayout) Modifier else Modifier.weight(1f)
 
 // ── the track sheet (FR-R322-11) ──
 

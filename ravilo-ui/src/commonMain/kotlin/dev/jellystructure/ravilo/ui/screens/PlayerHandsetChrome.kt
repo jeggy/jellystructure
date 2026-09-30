@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.ui.draw.shadow
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -760,6 +761,9 @@ internal object SheetDrag {
  *  a sheet that must be answered: tap-away and drag both leave it where it is. */
 @Composable
 internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: Boolean = true, content: @Composable () -> Unit) {
+    // R337 — a computer's window shows the same content as a dialog in its middle: a sheet rising from the foot of a
+    // 1200 dp window, across the sidebar, is a phone's gesture. (The phone layout in a narrow window keeps the sheet.)
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { DeskDialog(visible, onDismiss, dismissible, content); return }
     val density = LocalDensity.current
     val flingPx = with(density) { SheetDrag.FLING_DP_PER_SEC.dp.toPx() }
     val overPx = with(density) { SheetDrag.MAX_OVER_DP.dp.toPx() }
@@ -866,6 +870,31 @@ internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: 
                 Spacer(Modifier.height(8.dp))
                 content()
             }
+        }
+    }
+}
+
+/** R337 — [HandsetSheet]'s content in a computer's window: a card in the middle, 440 dp wide, over a scrim; a click beside it dismisses. */
+@Composable
+private fun DeskDialog(visible: Boolean, onDismiss: () -> Unit, dismissible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(visible = visible, enter = fadeIn(tween(140)), exit = fadeOut(tween(120))) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.40f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { if (dismissible) onDismiss() }),
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val maxH = maxHeight * 0.78f
+        AnimatedVisibility(visible = visible, enter = fadeIn(tween(140)) + androidx.compose.animation.scaleIn(tween(140), initialScale = 0.97f), exit = fadeOut(tween(120))) {
+            val shape = RoundedCornerShape(14.dp)
+            Column(
+                Modifier.padding(24.dp).width(440.dp).heightIn(max = maxH)
+                    .shadow(30.dp, shape).clip(shape)
+                    .background(if (RaviloTheme.colors.isLight) RaviloTheme.colors.surface else CARD)
+                    .border(1.dp, RaviloTheme.colors.fg.copy(alpha = 0.10f), shape)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                    .padding(top = 14.dp),
+            ) { content() }
         }
     }
 }

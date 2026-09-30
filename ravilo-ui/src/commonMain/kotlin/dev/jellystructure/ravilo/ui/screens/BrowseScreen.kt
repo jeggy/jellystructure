@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -433,9 +436,9 @@ private fun BrowseGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
         modifier = Modifier.focusRestorer(),
-        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
-        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-        verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
+        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
+        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
+        verticalArrangement = Arrangement.spacedBy(raviloRowGap),
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]

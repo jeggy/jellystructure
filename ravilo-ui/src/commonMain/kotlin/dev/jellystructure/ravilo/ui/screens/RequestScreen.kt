@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -110,7 +111,7 @@ fun RequestContent(
             // strict-waiting pick from days ago is easy to find again (and switch, from its detail page).
             if (myRequests.isNotEmpty()) {
                 item(key = "discover-in-progress") {
-                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    Spacer(Modifier.height(raviloRowGap))
                     StaticContentRow(
                         title = str("request.in_progress"),
                         items = myRequests,
@@ -134,7 +135,7 @@ fun RequestContent(
             }
             items(data.rows.size, key = { ri -> data.rows[ri].feedId }) { ri ->
                 val row = data.rows[ri]
-                Spacer(Modifier.height(RaviloDimens.rowGap))
+                Spacer(Modifier.height(raviloRowGap))
                 StaticContentRow(
                     title = row.feedName,
                     items = row.entries,

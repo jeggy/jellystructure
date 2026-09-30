@@ -1,5 +1,12 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.deskHover
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.blur
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode as AnimRepeat
@@ -119,6 +126,8 @@ fun MusicPlayingScreen(
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     if (st.book != null) { BookPlayingScreen(api, books, onClose, onOpenBook, onOpenBookAuthor); return }
+    // R337 (FR-R337-7) — the desktop's Playing page: the cover beside the lyrics, the transport under the cover.
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { DeskPlaying(api, st, onOpenAlbum, onOpenArtist, onTrackMore, onFavorite); return }
     val portrait = LocalPortrait.current
     var showLyrics by remember { mutableStateOf(false) }
     val t = st.current
@@ -175,6 +184,134 @@ fun MusicPlayingScreen(
             BottomRow(t, showLyrics, { showLyrics = !showLyrics }) { onTrackMore(t) }
         }
         FailureSheet(st.failed)
+    }
+}
+
+/**
+ * R337 (FR-R337-7) — Playing in a computer's window, drawn to `.np` in `design/ravilo/desktop-directions.css`: the cover
+ * (380 dp at 1200 dp and wider, 280 below) with the title, the device chip, the seek line and the transport under it,
+ * and the lyrics beside it in large type; between 600 and 839 dp the cover sits above the lyrics. The cover, blurred
+ * and faint, is the page's ground. A song without lyrics keeps the cover's column alone, centred.
+ */
+@Composable
+private fun DeskPlaying(
+    api: TvApiClient,
+    st: MusicPlayerState,
+    onOpenAlbum: (String) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onTrackMore: (MusicTrackItem) -> Unit,
+    onFavorite: (MusicTrackItem, Boolean) -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val t = st.current
+    val width = dev.jellystructure.ravilo.ui.theme.LocalWindowWidth.current
+    val stacked = width < dev.jellystructure.ravilo.ui.theme.WindowWidths.EXPANDED
+    val coverSize = if (width >= dev.jellystructure.ravilo.ui.theme.WindowWidths.LARGE) 380.dp else if (stacked) 220.dp else 280.dp
+    Box(Modifier.fillMaxSize().background(colors.background)) {
+        if (t == null) { EmptyLine(str("music.nothing_played")); dev.jellystructure.ravilo.ui.components.AppBar(); return@Box }
+        // `.np .bl` — the cover as the page's ground.
+        t.imageUrl?.let { RemoteImage(it, null, Modifier.fillMaxSize().blur(70.dp).alpha(if (colors.isLight) 0.18f else 0.35f), requestedWidth = 240) }
+        @Composable
+        fun head(modifier: Modifier) {
+            Column(modifier) {
+                MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(coverSize).shadow(30.dp, RoundedCornerShape(16.dp)), corner = 16.dp, requestedWidth = 900, wordmarkSize = 26)
+                Spacer(Modifier.height(22.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(t.title, color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.5).sp, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee())
+                    val favs by MusicFavorites.overrides.collectAsState()
+                    val fav = favs[t.id] ?: t.favorite
+                    Box(Modifier.size(32.dp).tap { onFavorite(t, !fav) }, contentAlignment = Alignment.Center) {
+                        MusicGlyph(if (fav) MusicIcon.HEART_FILLED else MusicIcon.HEART, if (fav) colors.accentSecondary else colors.textSecondary, 20.dp, description = str("nav.my_list"))
+                    }
+                    Box(Modifier.size(32.dp).tap { onTrackMore(t) }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 20.dp, description = str("music.more")) }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    t.artists.firstOrNull()?.let { a -> Text(artistLine(t), color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenArtist(a.id) }) }
+                    t.album?.let { al -> t.albumId?.let { id ->
+                        Text("·", color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora)
+                        Text(al, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAlbum(id) })
+                    } }
+                }
+                DeviceChip()
+                Spacer(Modifier.height(18.dp))
+                DeskSeek(st.durationMs)
+                Spacer(Modifier.height(10.dp))
+                DeskTransport(st)
+            }
+        }
+        val pad = if (stacked) 28.dp else 48.dp
+        if (stacked) Column(Modifier.fillMaxSize().padding(top = 60.dp, start = pad, end = pad)) {
+            head(Modifier.width(coverSize).align(Alignment.CenterHorizontally))
+            if (t.hasLyrics) LyricsView(api, t, Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp), large = true)
+        } else Row(Modifier.fillMaxSize().padding(top = 70.dp, start = pad, end = pad), horizontalArrangement = if (t.hasLyrics) Arrangement.spacedBy(48.dp) else Arrangement.Center) {
+            head(Modifier.width(coverSize).verticalScroll(rememberScrollState()))
+            if (t.hasLyrics) LyricsView(api, t, Modifier.weight(1f).fillMaxHeight(), large = true)
+        }
+        dev.jellystructure.ravilo.ui.components.AppBar()
+        FailureSheet(st.failed)
+    }
+}
+
+/** `.np .seek` — a 5 dp line in ink with the two times under it; a click or a drag seeks. */
+@Composable
+private fun DeskSeek(durationMs: Long) {
+    val colors = RaviloTheme.colors
+    val live = rememberLivePosition()
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    val dur = durationMs.coerceAtLeast(1L)
+    val frac = dragFrac ?: (live.toFloat() / dur).coerceIn(0f, 1f)
+    Column {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(17.dp)) {
+            val wPx = with(LocalDensity.current) { maxWidth.toPx() }
+            Canvas(Modifier.fillMaxSize().pointerInput(dur) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
+                    onDragEnd = { dragFrac?.let { MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
+                    onDragCancel = { dragFrac = null },
+                    onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
+                )
+            }.pointerInput(dur) { detectTapGestures { o -> MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
+                val y = size.height / 2
+                val h = 5.dp.toPx()
+                drawRoundRect(colors.fg.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
+                drawRoundRect(colors.text, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
+                if (dragFrac != null) drawCircle(colors.text, 7.dp.toPx(), Offset(size.width * frac, y))
+            }
+        }
+        Row(Modifier.padding(top = 1.dp)) {
+            Text(fmtLen(dragFrac?.let { (it * dur).toLong() } ?: live), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+            Spacer(Modifier.weight(1f))
+            Text(fmtLen(durationMs), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+        }
+    }
+}
+
+/** `.np .tp` — shuffle · previous · play/pause (58 dp, ink) · next · repeat, centred. */
+@Composable
+private fun DeskTransport(st: MusicPlayerState) {
+    val colors = RaviloTheme.colors
+    val graphite = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current == dev.jellystructure.ravilo.ui.theme.ThemeId.GRAPHITE
+    val msgRepeat = mapOf(RepeatMode.OFF to str("music.repeat_all"), RepeatMode.ALL to str("music.repeat_one"), RepeatMode.ONE to str("music.repeat_off"))
+    val msgShuffle = if (st.shuffle) str("music.shuffle_off") else str("music.shuffle_on")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally)) {
+        Box(Modifier.size(36.dp).tap { MusicPlayback.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
+            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp)
+        }
+        Box(Modifier.size(36.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) {
+            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.PREVIOUS, colors.text, 22.dp)
+        }
+        Box(Modifier.size(58.dp).clip(CircleShape).background(if (graphite) colors.accent else colors.text).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
+            val ink = if (graphite) Color.White else colors.background
+            if (st.buffering) Pulse(ink) else dev.jellystructure.ravilo.ui.components.DeskIcon(if (st.playing) dev.jellystructure.ravilo.ui.components.DeskIcon.PAUSE else dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY, ink, 22.dp)
+        }
+        Box(Modifier.size(36.dp).then(if (st.hasNext) Modifier.tap { MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
+            dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, 22.dp)
+        }
+        Box(Modifier.size(36.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicPlayback.cycleRepeat() }, contentAlignment = Alignment.Center) {
+            MusicGlyph(MusicIcon.REPEAT, if (st.repeat != RepeatMode.OFF) colors.accentSecondary else colors.textSecondary, 20.dp, description = str("music.repeat_all"))
+            if (st.repeat == RepeatMode.ONE) Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(7.dp).background(colors.accentSecondary, CircleShape))
+        }
     }
 }
 
@@ -374,7 +511,7 @@ private fun FailureSheet(failed: Boolean) {
 // ── FR-R322-7: lyrics ──
 
 @Composable
-private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) {
+private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier, large: Boolean = false) {
     val colors = RaviloTheme.colors
     var lyrics by remember(t.id) { mutableStateOf<TrackLyrics?>(null) }
     LaunchedEffect(t.id) { lyrics = runCatching { api.getLyrics(t.id) }.getOrNull() }
@@ -382,7 +519,7 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) 
     val synced = l.synced
     if (synced.isNullOrEmpty()) {
         LazyColumn(modifier, contentPadding = PaddingValues(vertical = 16.dp)) {
-            item { Text(l.plain.orEmpty(), color = colors.text, fontSize = 17.sp, lineHeight = 26.sp, fontFamily = Sora) }
+            item { Text(l.plain.orEmpty(), color = colors.text, fontSize = if (large) 19.sp else 17.sp, lineHeight = if (large) 30.sp else 26.sp, fontFamily = Sora) }
         }
         return
     }
@@ -396,14 +533,20 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier) 
     BoxWithConstraints(modifier) {
         val h = with(LocalDensity.current) { maxHeight.toPx() }
         LaunchedEffect(current, follow) { if (follow) runCatching { list.animateScrollToItem(current, -(h * 0.4f).roundToInt()) } }
-        val lit = if (LocalRaviloSkin.current == Skin.NOIR) colors.text else colors.accentSecondary
-        LazyColumn(state = list, contentPadding = PaddingValues(vertical = (maxHeight * 0.4f))) {
+        // The desktop's lyrics (`.lyr`): 30 sp, the line being sung in ink and the rest dim, fading out at both ends.
+        val lit = if (large || LocalRaviloSkin.current == Skin.NOIR) colors.text else colors.accentSecondary
+        val fade = if (large) Modifier.graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen).drawWithContent {
+            drawContent()
+            drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.10f to Color.Black, 0.75f to Color.Black, 1f to Color.Transparent), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+        } else Modifier
+        LazyColumn(state = list, contentPadding = PaddingValues(vertical = (maxHeight * 0.4f)), modifier = fade) {
             itemsIndexed(synced) { i, line ->
                 Text(
                     line.line.ifBlank { "·" },
-                    color = when { i == current -> lit; i < current -> colors.textDim; else -> colors.textSecondary },
-                    fontSize = 24.sp, lineHeight = 31.sp, fontWeight = if (i == current) FontWeight.Bold else FontWeight.SemiBold, fontFamily = SpaceGrotesk,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp).tap { MusicPlayback.seekTo(line.tMs) },
+                    color = when { i == current -> lit; large -> colors.textDim; i < current -> colors.textDim; else -> colors.textSecondary },
+                    fontSize = if (large) 30.sp else 24.sp, lineHeight = if (large) 38.sp else 31.sp,
+                    fontWeight = if (i == current || large) FontWeight.Bold else FontWeight.SemiBold, fontFamily = SpaceGrotesk,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = if (large) 9.dp else 7.dp).tap { MusicPlayback.seekTo(line.tMs) },
                 )
             }
         }
@@ -417,25 +560,34 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
     val density = LocalDensity.current
-    val rowPx = with(density) { 60.dp.toPx() }
+    // R337 (FR-R337-8) — the desktop's queue panel (`.qp`, `.qr` in design/ravilo/desktop-directions.css): 300 dp, the
+    // sidebar's shade, small headings, a row of cover · title · artist and length · grip, the playing one tinted.
+    val panel = !showAppBar
+    val hPad = if (panel) 12.dp else raviloHPad
+    val rowPx = with(density) { (if (panel) 50.dp else 60.dp).toPx() }
     var dragging by remember { mutableStateOf<Int?>(null) }
     var dragDy by remember { mutableFloatStateOf(0f) }
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    Box(Modifier.fillMaxSize().background(if (panel) colors.card else colors.background)) {
         val cur = st.current
         if (cur == null) EmptyLine(str("music.queue_empty"))
         // R337 — inside the desktop's queue panel there is no app bar to clear.
-        else LazyColumn(contentPadding = PaddingValues(top = if (showAppBar) RaviloDimens.appBarHeight + 6.dp else 14.dp, bottom = 24.dp)) {
-            item(key = "now-h") { Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("music.now_playing")) } }
-            item(key = "now") { Box(Modifier.padding(horizontal = raviloHPad)) { TrackRow(cur, showCover = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) }) } }
+        else LazyColumn(contentPadding = PaddingValues(top = if (showAppBar) RaviloDimens.appBarHeight + 6.dp else 0.dp, bottom = 24.dp)) {
+            item(key = "now-h") { if (panel) PanelHeading(str("music.now_playing")) else Box(Modifier.padding(horizontal = hPad)) { MusicSectionHeader(str("music.now_playing")) } }
+            item(key = "now") {
+                Box(Modifier.padding(horizontal = hPad)) {
+                    if (panel) QueuePanelRow(cur, now = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
+                    else TrackRow(cur, showCover = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
+                }
+            }
             val up = st.upNext
             item(key = "up-h") {
-                Column(Modifier.padding(horizontal = raviloHPad)) {
+                Column(Modifier.padding(horizontal = if (panel) 0.dp else hPad)) {
                     val left = (cur.durationMs ?: 0L) - st.positionMs + up.sumOf { it.durationMs ?: 0L }
-                    MusicSectionHeader(str("music.up_next"))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to fmtTotal(left.coerceAtLeast(0L)))), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                        if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
-                            modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = 8.dp))
+                    if (panel) PanelHeading(str("music.up_next")) else MusicSectionHeader(str("music.up_next"))
+                    Row(Modifier.padding(horizontal = if (panel) 18.dp else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to fmtTotal(left.coerceAtLeast(0L)))), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                        if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = if (panel) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                            modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = if (panel) 4.dp else 8.dp))
                     }
                 }
             }
@@ -445,7 +597,7 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                 val scope = rememberCoroutineScope()
                 val lifted = dragging == i
                 Row(
-                    Modifier.padding(horizontal = raviloHPad).fillMaxWidth().heightIn(min = 60.dp)
+                    Modifier.padding(horizontal = hPad).fillMaxWidth().heightIn(min = if (panel) 50.dp else 60.dp)
                         .offset { IntOffset(swipe.value.roundToInt(), if (lifted) dragDy.roundToInt() else 0) }
                         .background(if (lifted) colors.surfaceVariant else Color.Transparent, RoundedCornerShape(10.dp))
                         // Swipe left to remove.
@@ -462,9 +614,12 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.weight(1f)) { TrackRow(t, showCover = true, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) }) }
+                    Box(Modifier.weight(1f)) {
+                        if (panel) QueuePanelRow(t, now = false, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
+                        else TrackRow(t, showCover = true, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
+                    }
                     // The drag handle: lift and move; the row lands where it is dropped.
-                    Box(Modifier.size(40.dp).pointerInput(queueIndex) {
+                    Box(Modifier.size(if (panel) 26.dp else 40.dp).pointerInput(queueIndex) {
                         detectVerticalDragGestures(
                             onDragStart = { dragging = i; dragDy = 0f },
                             onDragEnd = {
@@ -476,11 +631,34 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                             onDragCancel = { dragging = null; dragDy = 0f },
                             onVerticalDrag = { _, d -> dragDy += d },
                         )
-                    }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.DRAG, colors.textDim, 20.dp) }
+                    }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.DRAG, colors.textDim, if (panel) 15.dp else 20.dp) }
                 }
             }
         }
         if (showAppBar) dev.jellystructure.ravilo.ui.components.AppBar(onProfile = onProfile, scrolled = true, brandBadge = { MusicModeBadge() })
+    }
+}
+
+/** `.qp h5` — a heading inside the desktop's queue panel. */
+@Composable
+private fun PanelHeading(title: String) {
+    Text(title, color = RaviloTheme.colors.textDim, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 8.dp))
+}
+
+/** `.qr` — one song in the desktop's queue panel: cover · title over artist and length · ⋯; the playing one sits on a tint of the accent. */
+@Composable
+private fun QueuePanelRow(t: MusicTrackItem, now: Boolean, onPlay: () -> Unit, onMore: () -> Unit) {
+    val colors = RaviloTheme.colors
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).then(if (now) Modifier.background(colors.accent.copy(alpha = 0.22f)) else Modifier.deskHover()).tap(onPlay).padding(6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(38.dp), corner = 6.dp, requestedWidth = 120, wordmarkSize = 7)
+        Column(Modifier.weight(1f)) {
+            Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(listOf(artistLine(t), fmtLen(t.durationMs)).filter { it.isNotBlank() }.joinToString(" · "), color = colors.textDim, fontSize = 11.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.size(24.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textDim, 15.dp, description = str("music.more")) }
     }
 }
 

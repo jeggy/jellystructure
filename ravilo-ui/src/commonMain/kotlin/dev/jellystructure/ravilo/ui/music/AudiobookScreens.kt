@@ -327,7 +327,7 @@ fun AudiobookDetailScreen(
                             started -> str("ab.continue_from", mapOf("t" to fmtTotal(bookPos)))
                             else -> str("ab.start")
                         }
-                        PillButton(label, MusicIcon.PLAY, primary = true, Modifier.weight(1f)) {
+                        PillButton(label, MusicIcon.PLAY, primary = true, pillWidth()) {
                             if (here != null && !finished) { MusicEngine.play(); onOpenPlaying() }
                             else scope.launch { resumeBook(api, id, fromStart = finished); store.refresh(id); onOpenPlaying() }
                         }

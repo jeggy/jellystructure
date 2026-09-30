@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Brush
@@ -402,15 +406,15 @@ private fun MovieDetailLoaded(
             }
             if (detail.cast.isNotEmpty()) item(key = "cast") {
                 Column {
-                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    Spacer(Modifier.height(raviloRowGap))
                     Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
-                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    Spacer(Modifier.height(raviloRowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
-                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
                             val person = detail.cast[i]
@@ -423,15 +427,15 @@ private fun MovieDetailLoaded(
             // More Like This — own lazy item.
             if (detail.related.isNotEmpty()) item(key = "related") {
                 Column {
-                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    Spacer(Modifier.height(raviloRowGap))
                     Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
-                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    Spacer(Modifier.height(raviloRowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
-                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
                             val card = detail.related[i]

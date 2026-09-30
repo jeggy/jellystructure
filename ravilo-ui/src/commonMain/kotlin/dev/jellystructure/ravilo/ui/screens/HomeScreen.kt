@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.components.GridGlyph
 import dev.jellystructure.shared.tv.offersSeeAll
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -180,9 +181,11 @@ private fun HomeLoaded(
     val portraitHeroPct = feed.portraitHeroHeightPct
     val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
         portraitHeroPct.coerceIn(20, 100) else feed.heroHeightPct.coerceIn(40, 100)
-    val heroHeight = if (containerH > 0)
+    val tvHeroHeight = if (containerH > 0)
         with(density) { containerH.toDp() } * (heroPct / 100f)
     else 460.dp
+    // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
+    val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
 
     val hasHero     = feed.heroes.isNotEmpty()
     val hasChannels = feed.channels.isNotEmpty()
@@ -307,6 +310,7 @@ private fun HomeLoaded(
                         focusRequester = heroFR,
                         heightDp = heroHeight,
                         autoAdvanceSeconds = feed.autoAdvanceSeconds,
+                        onPlay = onItemPlay,   // R337 — the desktop hero's Play
                         // R53: button-less — the whole hero opens detail (movie + series alike); the detail
                         // screen owns Play/resume. Left/Right pages the carousel inside HeroCarousel.
                         // R139: opened from the hero (not a tile) → clear the saved key so Back returns to the hero.
@@ -364,7 +368,7 @@ private fun HomeLoaded(
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
-                Spacer(Modifier.height(RaviloDimens.rowGap))
+                Spacer(Modifier.height(raviloRowGap))
                 // Phase R240 — On Now isn't a Home content row either (spec non-goal list).
                 HeadingClearOfAppBar(listState) {
                 Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
@@ -465,7 +469,7 @@ private fun ContentRowItem(
     // J's panel takes whatever a grown tile of THIS row's variant leaves — see focusDetailPanelWidthFor.
     // Passed to StaticContentRow too so its scroll target and the panel it scrolls agree on one number.
     val panelWidth = focusDetailPanelWidthFor(rowVariant)
-    Spacer(Modifier.height(RaviloDimens.rowGap))
+    Spacer(Modifier.height(raviloRowGap))
     // R187 (FR-RV-BROWSE1-1) — a "→ See all" TILE (not a header link — see SeeAllTile's doc comment)
     // only when there's more than a screen's worth AND the row has something to resolve into: CONTINUE
     // has its own dedicated seed-less path (still navigable, HomeFeedService.continueWatchingAll),

@@ -161,8 +161,13 @@ fun MusicBrowseScreen(
     onResumeBook: (String) -> Unit = {},
     onOpenBook: (String) -> Unit = {},
     onOpenBookAuthor: (String) -> Unit = {},
+    /** R337 — the desktop sidebar's search text; null where the page has its own field (a phone, the rail). */
+    externalQuery: String? = null,
+    /** R337 — the rail's Search item opened this page: its own field shows. */
+    ownField: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
+    LaunchedEffect(externalQuery) { if (externalQuery != null) store.onQuery(externalQuery) }
     val query by store.query.collectAsState()
     val bookSort by remember(books) { books?.sort ?: kotlinx.coroutines.flow.MutableStateFlow("added") }.collectAsState()
     val bookView by remember(books) { books?.view ?: kotlinx.coroutines.flow.MutableStateFlow("books") }.collectAsState()
@@ -179,7 +184,7 @@ fun MusicBrowseScreen(
     LaunchedEffect(focusInput) {
         if (focusInput) {
             runCatching { list.animateScrollToItem(0) }
-            runCatching { fieldFR.requestFocus() }
+            if (externalQuery == null) runCatching { fieldFR.requestFocus() }
             keyboard?.show()
             onFocusInputConsumed()
         }
@@ -192,9 +197,20 @@ fun MusicBrowseScreen(
         // R337 (dev review 5) — on the desktop the sidebar is the chip strip, and its search field opens this page as the
         // search page: the page's own field shows only then (or while a query is typed), the chips never.
         val deskFamily = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
-        LazyColumn(state = list, contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
-            if (!deskFamily || focusInput || query.isNotBlank()) item(key = "field") {
+        LazyColumn(state = list, contentPadding = PaddingValues(top = if (deskFamily) 52.dp else RaviloDimens.appBarHeight + 6.dp, bottom = 24.dp)) {
+            if (!deskFamily || (externalQuery == null && (ownField || focusInput || query.isNotBlank()))) item(key = "field") {
                 SearchField(query, store::onQuery, fieldFR) { keyboard?.hide() }
+            }
+            if (deskFamily && query.isNotBlank()) item(key = "search-title") { DeskPageTitle(str("nav.search")) }
+            // R337 — the desktop page says its own name (`.h1`), with the sort beside it (the phone's top row holds it there).
+            if (deskFamily && query.isBlank() && !ownField) item(key = "title") {
+                DeskPageTitle(if (chip == "albums" && genre != null) genre!! else chipLabel(chip)) {
+                    when {
+                        sortable -> SortPill(str(SORTS.first { it.first == (sorts[chip] ?: "added") }.second)) { sortOpen = true }
+                        bookSortable -> SortPill(str(AUDIOBOOK_SORTS.first { it.first == bookSort }.second)) { sortOpen = true }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
             }
             if (query.isNotBlank()) {
                 searchResults(results, query, expanded, { expanded = it }, onOpenAlbum, onOpenArtist, onTrackMore)
@@ -408,12 +424,14 @@ private fun LazyListScope.listChip(
 internal fun <T> Grid(items: List<T>, columns: Int, gap: Dp, onEnd: () -> Unit, cell: @Composable (T, Dp) -> Unit) {
     val desk = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(horizontal = raviloHPad).fillMaxWidth()) {
-        // R337 (dev review 5) — at desktop widths the grid takes as many ~180 dp columns as fit, never fewer than the phone's.
-        val cols = if (desk) maxOf(columns, ((maxWidth + gap) / (180.dp + gap)).toInt()) else columns
-        val w = (maxWidth - gap * (cols - 1)) / cols
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // R337 — the desktop's grid (`.grid`: as many 150 dp columns as fit, 18 dp between them, 22 dp between rows;
+        // the phone's column count is the floor).
+        val colGap = if (desk) 18.dp else gap
+        val cols = if (desk) maxOf(columns, ((maxWidth + colGap) / (150.dp + colGap)).toInt()) else columns
+        val w = (maxWidth - colGap * (cols - 1)) / cols
+        Column(verticalArrangement = Arrangement.spacedBy(if (desk) 22.dp else 16.dp)) {
             items.chunked(cols).forEachIndexed { r, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) { row.forEach { cell(it, w) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(colGap)) { row.forEach { cell(it, w) } }
                 if (r == (items.size - 1) / cols) LaunchedEffect(items.size) { onEnd() }
             }
         }

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,12 +69,15 @@ fun MusicListenScreen(
     val list = rememberLazyListState()
     LaunchedEffect(Unit) { loader.load() }
     OnReselect(scrollToTopTick) { runCatching { list.animateScrollToItem(0) } }
+    val desk = isDesktopLayout
+    val listenTitle = str("mnav.listen")
     Box(Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is Load.Ready -> if (s.value.rows.isEmpty() && books == null) EmptyLine(str("mhome.empty")) else LazyColumn(
                 state = list,
-                contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(top = if (isDesktopLayout) 52.dp else RaviloDimens.appBarHeight + 4.dp, bottom = 24.dp),
             ) {
+                if (desk) item(key = "title") { DeskPageTitle(listenTitle) }
                 if (books != null) continueListeningRow(books, onResumeBook)
                 items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
             }
@@ -110,15 +114,15 @@ private fun ListenRow(
         when {
             row.tracks.isNotEmpty() -> Column(Modifier.padding(horizontal = raviloHPad)) {
                 row.tracks.forEachIndexed { i, t ->
-                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
+                    TrackRow(t, showCover = true, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
                 }
             }
             row.artists.isNotEmpty() -> LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(row.artists, key = { it.id }) { r -> ArtistCardView(r, 96.dp) { onOpenArtist(r.id) } }
+                items(row.artists, key = { it.id }) { r -> ArtistCardView(r, if (isDesktopLayout) 120.dp else 96.dp) { onOpenArtist(r.id) } }
             }
             else -> LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // FR-R321-5 — square cards two and a half across.
-                items(row.albums, key = { it.id }) { a -> AlbumCardView(a, 140.dp, onOpen = { onOpenAlbum(a.id) }) }
+                items(row.albums, key = { it.id }) { a -> AlbumCardView(a, if (isDesktopLayout) 150.dp else 140.dp, onOpen = { onOpenAlbum(a.id) }) }
             }
         }
     }

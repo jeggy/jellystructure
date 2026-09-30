@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -216,10 +219,10 @@ fun SeerrSearchScreen(
                     },
                 contentPadding = PaddingValues(
                     horizontal = raviloHPad,
-                    vertical = RaviloDimens.trackPadV,
+                    vertical = raviloTrackPadV,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
+                horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
+                verticalArrangement = Arrangement.spacedBy(raviloRowGap),
             ) {
                 items(items.size, key = { i -> items[i].entry.tmdbId }) { i ->
                     val e = items[i]

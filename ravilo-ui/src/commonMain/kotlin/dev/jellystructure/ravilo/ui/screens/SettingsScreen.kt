@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.accentGradient
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import dev.jellystructure.shared.tv.RaviloThemes
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -230,6 +233,7 @@ fun SettingsScreen(
     // Appearance/Language pill rows and the toggle pills into the squeezed/character-wrapped state
     // reported live. LocalCompact (< 600dp width, R145) already exists for exactly this.
     val compact = LocalCompact.current
+    val deskLayout = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
     // Bug fix (found via live TV testing) — this Column had no scroll at all: on a display short
     // enough that Playback is the last visible section, the whole Account block (identity, Change
     // password, Sign out) and the Unpair section below it were composed but permanently off-screen
@@ -242,9 +246,11 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp),
+                .padding(horizontal = if (compact) 20.dp else if (deskLayout) 28.dp else 80.dp, vertical = if (deskLayout) 0.dp else 40.dp)
+                // R337 — a computer's Settings is a column of its own width (the mockup's 600 dp sheet), under the toolbar.
+                .then(if (deskLayout) Modifier.padding(top = 58.dp, bottom = 28.dp).widthIn(max = 640.dp) else Modifier),
         ) {
-            Text(
+            if (!deskLayout) Text(
                 "‹ ${str("action.back")}",
                 color = if (backFocused) colors.text else colors.textSecondary,
                 fontSize = 13.sp,
@@ -258,8 +264,9 @@ fun SettingsScreen(
                     .padding(horizontal = 6.dp, vertical = 4.dp),
             )
             Spacer(Modifier.height(8.dp))
-            Text(str("nav.settings"), color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(40.dp))
+            Text(str("nav.settings"), color = colors.text, fontSize = if (deskLayout) 30.sp else 32.sp, fontWeight = FontWeight.Bold,
+                fontFamily = if (deskLayout) dev.jellystructure.ravilo.ui.theme.SpaceGrotesk else null, letterSpacing = if (deskLayout) (-0.6).sp else 0.sp)
+            Spacer(Modifier.height(if (deskLayout) 22.dp else 40.dp))
 
             when (val s = state) {
                 is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
@@ -287,6 +294,8 @@ fun SettingsScreen(
                 }
             }
         }
+        // R337 — the desktop's toolbar (Back, Play on…) in place of the page's own Back.
+        if (deskLayout) dev.jellystructure.ravilo.ui.components.AppBar()
         // R161: 2-D nav is "steps out one level" for Back/Esc — the confirm overlay owns input while
         // shown (dpadFocusable's onBack on Cancel closes it) and defaults focus to the non-destructive
         // Cancel choice.
@@ -819,9 +828,11 @@ private fun ThemeSection(
 ) {
     val colors = RaviloTheme.colors
     val desk = dev.jellystructure.ravilo.ui.isDesktopPlatform
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { DeskThemeSection(config, store, entryFR, onThemeChange); return }
     val darkOnly = !(LocalHandset.current || desk)
     val follow = config.themeFollow == true
     val drawnLight = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current.isLight
+    val drawn = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current.id
     fun save(theme: String? = null, follow: Boolean? = null, light: String? = null, dark: String? = null) {
         store.saveTheme(theme, follow, light, dark)?.let(onThemeChange)
     }
@@ -854,7 +865,8 @@ private fun ThemeSection(
             label = str(if (desk) "theme.follow_desk" else "theme.follow"),
             checked = follow,
             focusRequester = followFR,
-            onToggle = { save(follow = !follow) },
+            // Turning it off keeps the theme in use at that moment (R338's T·g), whichever pick that was.
+            onToggle = { save(follow = !follow, theme = if (follow) drawn else null) },
             onDown = { pillFRs.firstOrNull()?.firstOrNull()?.requestFocus() },
         )
         if (!desk) {
@@ -897,6 +909,90 @@ private fun ThemeSection(
         Spacer(Modifier.height(6.dp))
     }
     Text(str("theme.synced"), color = colors.textDim, fontSize = 13.sp)
+}
+
+/**
+ * R338 in a computer's window, drawn to the mockup's Settings sheet (`.setw`, `.throw`, `.slot`, `.sw` in
+ * `design/ravilo/desktop-directions.css`): a checkbox *Match the system appearance*; on, a **Light** row and a **Dark**
+ * row of swatches, the row in use now saying so; off, one row of all five. The same fields as every other device's
+ * Theme section — this is only their desktop form.
+ */
+@Composable
+private fun DeskThemeSection(config: RaviloConfig, store: SettingsStore, entryFR: FocusRequester, onThemeChange: (RaviloConfig) -> Unit) {
+    val colors = RaviloTheme.colors
+    val follow = config.themeFollow == true
+    val drawnLight = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current.isLight
+    val drawnId = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current.id
+    fun save(theme: String? = null, follow: Boolean? = null, light: String? = null, dark: String? = null) {
+        store.saveTheme(theme, follow, light, dark)?.let(onThemeChange)
+    }
+    val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+    Text(str("settings.appearance"), color = colors.textSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = ui)
+    Spacer(Modifier.height(10.dp))
+    var boxFocused by rememberFocusVisual()
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp))
+            .then(if (boxFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+            // Turning it off keeps the theme in use at that moment (the mockup's T·g), whichever pick that was.
+            .dpadFocusable(focusRequester = entryFR, onFocused = { boxFocused = true }, onBlurred = { boxFocused = false }, onSelect = { save(follow = !follow, theme = if (follow) drawnId else null) })
+            .padding(vertical = 3.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier.size(16.dp).clip(RoundedCornerShape(4.dp))
+                .then(if (follow) Modifier.background(colors.accent) else Modifier.border(1.5.dp, colors.textDim, RoundedCornerShape(4.dp))),
+            contentAlignment = Alignment.Center,
+        ) { if (follow) Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+        Text(str("theme.follow_desk"), color = colors.text, fontSize = 13.sp, fontFamily = ui)
+    }
+    Spacer(Modifier.height(14.dp))
+    @Composable
+    fun swatches(ids: List<String>, active: String?, columns: Int, pick: (String) -> Unit) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ids.forEach { id -> ThemeSwatch(id, id == active, Modifier.weight(1f)) { pick(id) } }
+            repeat(columns - ids.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+    @Composable
+    fun slot(label: String, inUse: Boolean, ids: List<String>, active: String?, pick: (String) -> Unit) {
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.width(120.dp).padding(top = 10.dp)) {
+                Text(label, color = colors.textSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = ui)
+                if (inUse) Text(str("theme.in_use"), color = colors.accentSecondary, fontSize = 11.5.sp, fontFamily = ui, modifier = Modifier.padding(top = 3.dp))
+            }
+            Box(Modifier.weight(1f)) { swatches(ids, active, 4, pick) }
+        }
+    }
+    if (follow) {
+        slot(str("theme.light"), drawnLight, RaviloThemes.lightThemes, config.themeLight) { id -> save(light = id) }
+        slot(str("theme.dark"), !drawnLight, RaviloThemes.darkThemes, config.themeDark) { id -> save(dark = id) }
+    } else {
+        swatches(RaviloThemes.all, config.theme, 5) { id -> save(theme = id, dark = id.takeIf { RaviloThemes.isDark(it) }) }
+    }
+    Spacer(Modifier.height(14.dp))
+    Text(str("theme.synced"), color = colors.textDim, fontSize = 12.sp, fontFamily = ui)
+}
+
+/** `.sw > div` — a theme as a small picture of itself: its page colour, a bar of its accent, its name under it; the pick wears a ring. */
+@Composable
+private fun ThemeSwatch(id: String, active: Boolean, modifier: Modifier, onPick: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val theme = (dev.jellystructure.ravilo.ui.theme.ThemeId.of(id) ?: dev.jellystructure.ravilo.ui.theme.ThemeId.AURORA).colors()
+    var focused by rememberFocusVisual()
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        modifier.dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onPick),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(16f / 10f)
+                .then(if (active) Modifier.border(3.dp, colors.accent, shape) else Modifier.border(1.dp, colors.fg.copy(alpha = if (focused) 0.5f else 0.16f), shape))
+                .padding(if (active) 3.dp else 1.dp).clip(RoundedCornerShape(if (active) 7.dp else 9.dp)).background(theme.background),
+            contentAlignment = androidx.compose.ui.BiasAlignment(-0.62f, 0.62f),
+        ) { Box(Modifier.fillMaxWidth(0.58f).fillMaxHeight(0.14f).background(theme.accentGradient, RoundedCornerShape(4.dp))) }
+        Text(str("theme.$id"), color = if (active) colors.text else colors.textSecondary, fontSize = 12.5.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont)
+    }
 }
 
 /** R338 — one theme: a small two-tone swatch (the theme's page and its accent), then its name. */
@@ -962,11 +1058,12 @@ private fun ToggleRow(
 ) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
+    val deskLayout = dev.jellystructure.ravilo.ui.theme.isDesktopLayout   // R337 — a switch, the platforms' own control
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surfaceVariant, RoundedCornerShape(10.dp))
+            .background(if (deskLayout) colors.surface else colors.surfaceVariant, RoundedCornerShape(10.dp))
             .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
             .dpadFocusable(
                 focusRequester = focusRequester,
@@ -979,7 +1076,7 @@ private fun ToggleRow(
                 onUp = onUp,
                 onDown = onDown,
             )
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = if (deskLayout) 14.dp else 20.dp, vertical = if (deskLayout) 11.dp else 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -990,11 +1087,16 @@ private fun ToggleRow(
         // remainder instead, on any screen width.
         Text(
             label,
-            color = if (focused) colors.text else colors.textSecondary,
-            fontSize = 15.sp,
+            color = if (focused || deskLayout) colors.text else colors.textSecondary,
+            fontSize = if (deskLayout) 13.5.sp else 15.sp,
+            fontFamily = if (deskLayout) dev.jellystructure.ravilo.ui.theme.SystemUiFont else null,
             modifier = Modifier.weight(1f).padding(end = 12.dp),
         )
-        Box(
+        if (deskLayout) Box(
+            Modifier.size(width = 38.dp, height = 22.dp).background(if (checked) colors.accent else colors.fg.copy(alpha = 0.16f), RoundedCornerShape(11.dp)).padding(2.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+        ) { Box(Modifier.size(18.dp).background(Color.White, CircleShape)) }
+        else Box(
             modifier = Modifier
                 .background(if (checked) colors.accent else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50))
                 .padding(horizontal = 12.dp, vertical = 4.dp),

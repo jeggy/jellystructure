@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.height
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -60,6 +62,31 @@ fun RaviloButton(
     )
     val buttonShape = remember { RoundedCornerShape(10.dp) }
     val ghostBorderColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
+    // R337 — a computer's button is the mockup's `.bt` / `.bt.pri`: 38 dp, ink on the page's colour for the primary
+    // one and a faint plate for the rest; it does not grow or lift — a ring marks it for the keyboard.
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) {
+        val primary = style == ButtonStyle.PRIMARY
+        Box(
+            modifier.dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true; onFocused() },
+                onBlurred = { focused = false },
+                onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
+            ),
+            contentAlignment = Alignment.Center,
+            propagateMinConstraints = true,   // a caller's minimum width is the pill's (R295's rule)
+        ) {
+            Box(
+                Modifier.height(38.dp).clip(buttonShape).background(if (primary) colors.text else colors.fg.copy(alpha = 0.10f))
+                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, buttonShape) else Modifier).padding(horizontal = 18.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (primary) colors.background else colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, softWrap = false)
+            }
+        }
+        return
+    }
 
     // Focusable outer keeps a constant layout size; the scale, lift and glow run draw-only on the inner
     // layer so the actions row never chases the focus animation → no viewport jump (R42/R43, now on the

@@ -12,7 +12,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import dev.jellystructure.ravilo.ui.seams.windowDragArea
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -657,14 +664,20 @@ fun RaviloApp(
         // R100: captured at composition so the detail-open click handlers can pre-warm a backdrop.
         val imageCtx = LocalPlatformContext.current
 
+        // R337 — the desktop toolbar's Forward: the pages Back left, until the viewer goes somewhere new.
+        var forwardStack by remember { mutableStateOf<List<Dest>>(emptyList()) }
         fun push(dest: Dest) {
             navDir = NavDir.Forward
+            forwardStack = emptyList()
             stack = stack + dest
             if (!fromHistory.flag) pushRoute(dest.toRoute())
         }
         fun pop() {
             if (stack.size > 1) {
                 navDir = NavDir.Back
+                // A player is not a page to go forward to: leaving it is the end of that play.
+                val left = stack.last()
+                forwardStack = if (left is Dest.Player || left is Dest.LiveTv || left is Dest.CastRemote) emptyList() else forwardStack + left
                 stack = stack.dropLast(1)
                 // On browser, hashchange already moved the URL — don't push another entry.
                 // On Android, replaceRoute is a no-op, so calling it is harmless.
@@ -672,8 +685,16 @@ fun RaviloApp(
             }
         }
         // Replace the whole stack (tab resets, sign-out) and sync the browser URL.
+        fun goForward() {
+            val next = forwardStack.lastOrNull() ?: return
+            navDir = NavDir.Forward
+            forwardStack = forwardStack.dropLast(1)
+            stack = stack + next
+            if (!fromHistory.flag) pushRoute(next.toRoute())
+        }
         fun resetTo(dest: Dest) {
             navDir = NavDir.Reset
+            forwardStack = emptyList()
             stack = listOf(dest)
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
         }
@@ -954,6 +975,9 @@ fun RaviloApp(
         fun barShows(d: Dest) = (bottomBarShows(d) || (inMusic && musicDetail(d))) && !(d is Dest.MusicPlaying && !portrait)
         var trackSheet by remember { mutableStateOf<dev.jellystructure.ravilo.ui.music.TrackSheetRequest?>(null) }
 
+        // R337 — on a computer the focus ring follows the keyboard: it shows once an arrow or Tab is pressed and goes
+        // when the pointer is used again, as the platforms' own focus rings do. (R298's rule for a phone: never.)
+        var deskKeyboardNav by remember { mutableStateOf(false) }
         // ─── R337 — the desktop's frame: sidebar or rail, the player bar, the queue panel ────────────────────────
         var queueOpen by remember { mutableStateOf(false) }
         var sidebarHidden by remember { mutableStateOf(runCatching { dev.jellystructure.ravilo.ui.music.MusicDeviceStore.get("desk_sidebar_hidden") }.getOrNull() == "1") }
@@ -989,14 +1013,36 @@ fun RaviloApp(
         }
         // Dev review 6 — the lit row is worked out from the stack, never stored: the page itself, else the nearest page
         // below it (a detail opened from Albums keeps Albums lit). The phone's Browse(ALL) lights neither Films nor Series.
-        fun deskLit(): dev.jellystructure.ravilo.ui.components.DesktopPage? = stack.asReversed().firstNotNullOfOrNull { deskPageOf(it) }
+        // The sidebar's search: what is typed in its field. Music's results take the Browse page's place, films' the
+        // Search page's; any page picked from the sidebar, and a change of mode, empties it.
+        var deskQuery by remember { mutableStateOf("") }
+        val deskSearchFocus = remember { kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+        // The rail has no field: its Search item opens the mode's page with the page's own field.
+        var deskRailSearch by remember { mutableStateOf(false) }
+        val deskSidebarShown = desktop && !deskMedium && !sidebarHidden
+        fun deskLit(): dev.jellystructure.ravilo.ui.components.DesktopPage? = when {
+            deskRailSearch && deskMedium -> dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH
+            deskQuery.isNotBlank() && deskSidebarShown && stack.lastOrNull() is Dest.MusicBrowse -> null
+            else -> stack.asReversed().firstNotNullOfOrNull { deskPageOf(it) }
+        }
+        fun deskSearch(q: String) {
+            deskQuery = q
+            if (q.isBlank()) return
+            val name = destDisplayName(stack.lastOrNull())
+            val cur = stack.lastOrNull()
+            if (inMusic) { if (cur !is Dest.MusicBrowse) resetTo(Dest.MusicBrowse(name)) }
+            else if (cur !is Dest.Search) resetTo(Dest.Search(name))
+        }
         fun openDeskPage(p: dev.jellystructure.ravilo.ui.components.DesktopPage) {
             val name = destDisplayName(stack.lastOrNull())
             val cur = stack.lastOrNull()
+            if (p != dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH && p != dev.jellystructure.ravilo.ui.components.DesktopPage.QUEUE) { deskQuery = ""; deskRailSearch = false }
             when (p) {
                 dev.jellystructure.ravilo.ui.components.DesktopPage.SEARCH ->
-                    if (inMusic) resetTo(Dest.MusicBrowse(name, chip = (cur as? Dest.MusicBrowse)?.chip ?: "artists", focusInput = true))
-                    else resetTo(Dest.Search(name, focusInput = true))
+                    // The sidebar's own field takes ⌘F; the rail opens the page with its field.
+                    if (deskSidebarShown) deskSearchFocus.tryEmit(Unit)
+                    else if (inMusic) { deskRailSearch = true; resetTo(Dest.MusicBrowse(name, chip = (cur as? Dest.MusicBrowse)?.chip ?: "artists", focusInput = true)) }
+                    else { deskRailSearch = true; resetTo(Dest.Search(name, focusInput = true)) }
                 dev.jellystructure.ravilo.ui.components.DesktopPage.HOME -> resetTo(Dest.Home(name))
                 dev.jellystructure.ravilo.ui.components.DesktopPage.DISCOVER -> resetTo(Dest.Discover(name, null))
                 dev.jellystructure.ravilo.ui.components.DesktopPage.MY_LIST -> resetTo(Dest.Browse(BrowseKind.MY_LIST, name))
@@ -1016,6 +1062,7 @@ fun RaviloApp(
         // FR-R337-3 — the switch changes the sidebar and the content together; the mode's first page.
         fun switchMode(music: Boolean) {
             if (music == musicMode) return
+            deskQuery = ""; deskRailSearch = false
             musicMode = music
             dev.jellystructure.ravilo.ui.music.ListeningMode.write(if (music) dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC else dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
             val name = destDisplayName(stack.lastOrNull())
@@ -1030,6 +1077,27 @@ fun RaviloApp(
         }
         fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && d !is Dest.MusicPlaying &&
             (inMusic || musicState.playing || deskBarKeptOn == d)
+        // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing
+        // playing there is no bar, and a queue beside a film's page would be a panel about nothing on screen.
+        fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && (deskBarShows(d) || d is Dest.MusicPlaying)
+        // FR-R322-3 — nothing playing: the last queue this device kept (where it was), else the viewer's last-played song,
+        // loaded paused and not started. The phone does it on the Playing tab; the desktop on entering music mode, where
+        // the player bar is always there (FR-R337-6).
+        suspend fun restoreLastListening() {
+            if (musicState.active || dev.jellystructure.ravilo.ui.music.MusicPlayback.state.value.active) return
+            val uid = MultiTokenStore.getActive()?.userId
+            // R323 — the last thing listened to was a book: load it paused where this viewer is.
+            val lastBook = dev.jellystructure.ravilo.ui.music.BookLastStore.load()?.takeIf { it.first == uid && dev.jellystructure.ravilo.ui.music.MusicQueueStore.load() == null }
+            val book = lastBook?.let { runCatching { apiClient.getAudiobook(it.second) }.getOrNull() }
+            if (book != null) { dev.jellystructure.ravilo.ui.music.MusicEngine.playBook(book, book.position?.part ?: 0, book.position?.positionMs ?: 0L, play = false); return }
+            val snap = dev.jellystructure.ravilo.ui.music.MusicQueueStore.load()?.takeIf { it.userId == uid && it.tracks.isNotEmpty() }
+            if (snap != null) dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(snap.tracks, snap.index, snap.positionMs, snap.context)
+            else runCatching { apiClient.lastPlayedMusic() }.getOrNull()?.let { lp ->
+                dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(listOf(lp.track), 0, 0L,
+                    dev.jellystructure.ravilo.ui.music.MusicContext("album", lp.album?.title ?: lp.track.album.orEmpty(), lp.album?.id))
+            }
+        }
+        LaunchedEffect(desktop, inMusic, activeUserId) { if (desktop && inMusic && activeUserId != null) restoreLastListening() }
         // FR-R337-3 — the counts beside Films, Series and the music Library, once per session.
         var deskCounts by remember { mutableStateOf<Map<dev.jellystructure.ravilo.ui.components.DesktopPage, Int>>(emptyMap()) }
         LaunchedEffect(activeUserId, desktop) {
@@ -1128,7 +1196,7 @@ fun RaviloApp(
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (!handset || isDesktopPlatform), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 configScope.launch {
                     signOutActiveSession(apiClient)
@@ -1191,14 +1259,43 @@ fun RaviloApp(
         // content lambda below (none for the two playing destinations; safeAreaPadding(), not plain
         // safeDrawing, for everything else) plus explicitly on the profile menu and FPS overlays, which
         // are this root Box's other children.
+        // R337 (FR-R337-5) — the Mac's traffic lights go where the layout has room for them: inside the sidebar's or the
+        // rail's glass, in the phone layout's 32 dp strip, and in the toolbar's own band where there is no sidebar.
+        if (isMacPlatform) {
+            val lights = when {
+                handset -> 18f to 16f
+                deskNavShows(dest) && deskMedium -> 26f to 29f
+                deskNavShows(dest) -> 29f to 29f
+                dest is Dest.Player || dest is Dest.LiveTv -> 24f to 34f   // beside the player's Back, in its 68 dp bar
+                else -> 24f to 26f
+            }
+            LaunchedEffect(lights) { dev.jellystructure.ravilo.ui.seams.placeWindowControls(lights.first, lights.second) }
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // R337 — a computer's window is the page's colour edge to edge: the sidebar's glass and the toolbar sit on it.
+                .then(if (isDesktopPlatform) Modifier.background(RaviloTheme.colors.background)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type == KeyEventType.KeyDown && (ev.key == Key.Tab || ev.key == Key.DirectionUp || ev.key == Key.DirectionDown ||
+                                ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight)) deskKeyboardNav = true
+                        false
+                    }
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                if (deskKeyboardNav && (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press || e.type == androidx.compose.ui.input.pointer.PointerEventType.Move)) deskKeyboardNav = false
+                            }
+                        }
+                    } else Modifier)
                 .onKeyEvent { ev ->
                     when {
                         ev.type != KeyEventType.KeyDown -> false
                         ev.key == Key.F5 -> { fpsOverlay = !fpsOverlay; true }  // R94 debug toggle
                         ownsItsOwnBack -> false
+                        // FR-R337-8 — Esc closes the queue while it lies over the content.
+                        ev.key == Key.Escape && desktop && queueOpen && !deskLarge -> { queueOpen = false; true }
                         (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && stack.size > 1 ->
                             { pop(); true }
                         // Bug fix: same root-exit treatment as PlatformBackHandler above, for the TV
@@ -1232,6 +1329,9 @@ fun RaviloApp(
             onSettings = { push(Dest.Settings(destDisplayName(dest))) },
             onSignOut = { deskSignOutAsk = true },
             onMenu = { deskMenuOpen = !deskMenuOpen },
+            searchQuery = deskQuery,
+            onSearchQuery = ::deskSearch,
+            searchFocus = deskSearchFocus,
         )
         Box(Modifier.weight(1f).fillMaxHeight()) {
         AnimatedContent(
@@ -1294,6 +1394,7 @@ fun RaviloApp(
             // R337 — what the desktop's toolbar needs from the frame: a Back to offer, and room for the traffic lights.
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.jellystructure.ravilo.ui.components.LocalDesktopBack provides (if (stack.size > 1) ({ pop() }) else null),
+                dev.jellystructure.ravilo.ui.components.LocalDesktopForward provides (if (forwardStack.isNotEmpty()) ({ goForward() }) else null),
                 dev.jellystructure.ravilo.ui.components.LocalDesktopChromeStart provides (if (isMacPlatform && !deskNavShows(dest)) 78.dp else 0.dp),
             ) {
             when (dest) {
@@ -1618,6 +1719,7 @@ fun RaviloApp(
                     onItemSelect = { openDetail(it, dest.displayName) },
                     focusInputOnEntry = dest.focusInput,
                     onFocusInputConsumed = { replaceTop(dest.copy(focusInput = false)) },
+                    externalQuery = if (deskSidebarShown) deskQuery else null,   // R337 — the sidebar's field
                     // R325 (FR-R325-5) — a genre chip opens Browse seeded to it, R221's contract.
                     onOpenGenre = { hit -> openGenreBrowse(listOf(hit.label), searchTitle, dest.displayName) },
                 )
@@ -1986,6 +2088,8 @@ fun RaviloApp(
                     onChip = { c -> replaceTop(dest.copy(chip = c, focusInput = false)) },
                     focusInput = dest.focusInput,
                     onFocusInputConsumed = { replaceTop(dest.copy(focusInput = false)) },
+                    externalQuery = if (deskSidebarShown) deskQuery else null,   // R337 — the sidebar's field
+                    ownField = deskRailSearch,
                     onProfile = { openProfile() },
                     onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
                     onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
@@ -2001,21 +2105,7 @@ fun RaviloApp(
             is Dest.MusicPlaying -> {
                 // FR-R322-3 — nothing playing: the last queue this phone kept (where it was), else the viewer's last-played
                 // song, loaded paused and not started.
-                LaunchedEffect(Unit) {
-                    if (!musicState.active) {
-                        val uid = MultiTokenStore.getActive()?.userId
-                        // R323 — the last thing listened to was a book: load it paused where this viewer is.
-                        val lastBook = dev.jellystructure.ravilo.ui.music.BookLastStore.load()?.takeIf { it.first == uid && dev.jellystructure.ravilo.ui.music.MusicQueueStore.load() == null }
-                        val book = lastBook?.let { runCatching { apiClient.getAudiobook(it.second) }.getOrNull() }
-                        if (book != null) { dev.jellystructure.ravilo.ui.music.MusicEngine.playBook(book, book.position?.part ?: 0, book.position?.positionMs ?: 0L, play = false); return@LaunchedEffect }
-                        val snap = dev.jellystructure.ravilo.ui.music.MusicQueueStore.load()?.takeIf { it.userId == uid && it.tracks.isNotEmpty() }
-                        if (snap != null) dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(snap.tracks, snap.index, snap.positionMs, snap.context)
-                        else runCatching { apiClient.lastPlayedMusic() }.getOrNull()?.let { lp ->
-                            dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(listOf(lp.track), 0, 0L,
-                                dev.jellystructure.ravilo.ui.music.MusicContext("album", lp.album?.title ?: lp.track.album.orEmpty(), lp.album?.id))
-                        }
-                    }
-                }
+                LaunchedEffect(Unit) { restoreLastListening() }
                 dev.jellystructure.ravilo.ui.music.MusicPlayingScreen(
                     api = apiClient,
                     onClose = { if (stack.size > 1) pop() else resetTo(homeDest(dest.displayName)) },
@@ -2129,16 +2219,22 @@ fun RaviloApp(
             onOpenPlaying = { if (inMusic) resetTo(Dest.MusicPlaying(destDisplayName(dest))) else push(Dest.MusicPlaying(destDisplayName(dest))) },
             onQueue = { queueOpen = !queueOpen },
             modifier = Modifier.align(Alignment.BottomCenter),
+            queueOverlay = queueOpen && !deskLarge && deskQueueShows(dest),
         )
         // R337 (FR-R337-8) — 600–1199 dp: the queue over the content, from the right.
-        if (desktop && queueOpen && !deskLarge && deskFramed(dest) && musicState.active) {
+        if (desktop && queueOpen && !deskLarge && deskQueueShows(dest)) {
+            // A click beside the panel closes it (the capsule's queue button and Esc do too).
+            Box(Modifier.fillMaxSize().padding(bottom = dev.jellystructure.ravilo.ui.music.desktopMusicBarInset())
+                .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { queueOpen = false })
             dev.jellystructure.ravilo.ui.music.DesktopQueuePanel(overlay = true, onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) }, modifier = Modifier.align(Alignment.TopEnd))
         }
         // FR-R337-2/5 — the window's own controls where Ravilo draws the frame (GNOME), and the drag area.
         if (desktop || (handset && isDesktopPlatform)) dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip(Modifier.align(Alignment.TopCenter))
+        // FR-R337-2 — the phone layout on a Mac: its 32 dp strip holds the traffic lights and moves the window.
+        if (handset && isMacPlatform) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(32.dp).windowDragArea())
         } // Box (the page)
         // R337 (FR-R337-8) — 1200 dp and wider: the queue as a side panel that pushes the content.
-        if (desktop && queueOpen && deskLarge && deskFramed(dest) && musicState.active) {
+        if (desktop && queueOpen && deskLarge && deskQueueShows(dest)) {
             dev.jellystructure.ravilo.ui.music.DesktopQueuePanel(overlay = false, onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) })
         }
         } // Row (R337)

@@ -17,3 +17,17 @@ expect fun DesktopWindowFrame()
 
 /** R337 — GNOME's primary menu opens the desktop app's About window (the Mac's comes from its app menu). */
 expect fun showAboutWindow()
+
+/**
+ * R337 (FR-R337-5) — empty chrome that behaves as a title bar: a drag moves the window, a double-click does what the
+ * system says a title bar's does. The Mac's window runs its content under a transparent title bar, where AWT takes
+ * every press, so the app says where the window may be moved from; GNOME's undecorated window has no title bar at all.
+ */
+expect fun Modifier.windowDragArea(): Modifier
+
+/**
+ * R337 (FR-R337-5) — where the Mac's traffic lights sit: the close button's centre from the window's top-left, in
+ * points. The layout says it (inside the sidebar's glass, inside the rail, in the phone layout's strip, over a film).
+ * Nothing on any other platform.
+ */
+expect fun placeWindowControls(x: Float, y: Float)

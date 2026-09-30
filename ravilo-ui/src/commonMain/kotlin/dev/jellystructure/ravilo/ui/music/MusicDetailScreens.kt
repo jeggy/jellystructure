@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -60,9 +61,10 @@ import dev.jellystructure.shared.tv.MusicVideoCard
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-/** The floating Back on a detail page (the bar is hidden there, R278's rule). */
+/** The floating Back on a detail page (the bar is hidden there, R278's rule). On the desktop the page has its toolbar (R337). */
 @Composable
 internal fun DetailBack(onBack: () -> Unit) {
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { dev.jellystructure.ravilo.ui.components.AppBar(); return }
     Box(
         Modifier.padding(start = 10.dp, top = 10.dp).size(42.dp).clip(CircleShape).background(Color.Black.copy(0.45f)).tap(onBack),
         contentAlignment = Alignment.Center,
@@ -98,20 +100,37 @@ fun MusicAlbumScreen(
             val context = MusicContext("album", a.title, a.id)
             val albumArtistIds = a.artists.map { it.id }.toSet()
             val compilation = a.type == "compilation"
-            // R337 (dev review 5) — on the desktop the album's header sits beside a 240 dp cover, as the mockup draws it.
-            val deskWide = dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily.current == dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP
-            LazyColumn(contentPadding = PaddingValues(top = if (deskWide) dev.jellystructure.ravilo.ui.theme.RaviloDimens.appBarHeight else 0.dp, bottom = 24.dp)) {
+            // R337 — on the desktop the album's header is the mockup's `.alh`: a 210 dp cover, the kind and year above a
+            // 36 sp title, the artist as a link, the facts, then Play and Shuffle; the page has the desktop's toolbar.
+            val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+            LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 0.dp, bottom = 24.dp)) {
                 if (!deskWide) item(key = "cover") {
                     Box(Modifier.fillMaxWidth().background(groundTint())) {
                         MusicCover(a.imageUrl, a.title, Modifier.fillMaxWidth().aspectRatio(1f), corner = 0.dp, requestedWidth = 900, wordmarkSize = 30)
                     }
                 }
-                item(key = "head") {
-                    Row(Modifier.padding(horizontal = raviloHPad).padding(top = 16.dp), verticalAlignment = Alignment.Bottom) {
-                    if (deskWide) {
-                        MusicCover(a.imageUrl, a.title, Modifier.size(240.dp), corner = 10.dp, requestedWidth = 600, wordmarkSize = 22)
-                        Spacer(Modifier.width(24.dp))
+                val total = d.tracks.sumOf { it.durationMs ?: 0L }
+                if (deskWide) item(key = "head") {
+                    Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        MusicCover(a.imageUrl, a.title, Modifier.size(210.dp).shadow(24.dp, RoundedCornerShape(12.dp)), corner = 12.dp, requestedWidth = 600, wordmarkSize = 22)
+                        Column(Modifier.weight(1f)) {
+                            Text(listOfNotNull(musicTypeLabel(a.type) ?: str("music.type.album"), a.year?.toString()).joinToString(" · "), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                            Text(a.title, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                a.artists.forEach { r ->
+                                    Text(r.name, color = colors.accentSecondary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onOpenArtist(r.id) })
+                                }
+                            }
+                            Text(listOf(songsCount(d.tracks.size), fmtTotal(total)).joinToString(" · "), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                PillButton(str("music.play"), MusicIcon.PLAY, primary = true) { MusicPlayback.playQueue(d.tracks, 0, context) }
+                                PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                            }
+                        }
                     }
+                } else item(key = "head") {
+                    Row(Modifier.padding(horizontal = raviloHPad).padding(top = 16.dp), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         Text(a.title, color = colors.text, fontSize = 24.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                         Spacer(Modifier.height(4.dp))
@@ -123,14 +142,13 @@ fun MusicAlbumScreen(
                         }
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val total = d.tracks.sumOf { it.durationMs ?: 0L }
                             Text(listOfNotNull(a.year?.toString(), songsCount(d.tracks.size), fmtTotal(total)).joinToString(" · "), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                             musicTypeLabel(a.type)?.let { TypeBadge(it) }
                         }
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(d.tracks, 0, context) }
-                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true, pillWidth()) { MusicPlayback.playQueue(d.tracks, 0, context) }
+                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, pillWidth()) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                         }
                         Spacer(Modifier.height(10.dp))
                     }
@@ -145,7 +163,7 @@ fun MusicAlbumScreen(
                         else -> ""
                     }
                     Box(Modifier.padding(horizontal = raviloHPad)) {
-                        TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub, onPlay = { MusicPlayback.playQueue(d.tracks, i, context) }, onMore = { onTrackMore(t) })
+                        TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(d.tracks, i, context) }, onMore = { onTrackMore(t) })
                     }
                 }
                 if (d.moreFromArtist.isNotEmpty()) item(key = "more") {
@@ -191,7 +209,7 @@ fun MusicArtistScreen(
             val context = MusicContext("artist", r.name, r.id)
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                 item(key = "head") {
-                    Box(Modifier.fillMaxWidth().height(250.dp)) {
+                    Box(Modifier.fillMaxWidth().height(if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) 280.dp else 250.dp)) {
                         if (d.backgroundUrl != null) RemoteImage(d.backgroundUrl!!, null, Modifier.fillMaxSize(), requestedWidth = 1080)
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))))
                         if (d.backgroundUrl == null) Box(Modifier.fillMaxSize().background(groundTint()))
@@ -214,8 +232,8 @@ fun MusicArtistScreen(
                         }
                         Spacer(Modifier.height(8.dp))
                         if (d.topTracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(d.topTracks, 0, context) }
-                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                            PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true, pillWidth()) { MusicPlayback.playQueue(d.topTracks, 0, context) }
+                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, pillWidth()) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                         }
                     }
                 }
@@ -307,8 +325,8 @@ fun MusicPlaylistScreen(
                     if (l != null) Text(songsCount(l.tracks.size), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                     Spacer(Modifier.height(14.dp))
                     if (l != null && l.tracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, Modifier.weight(1f)) { MusicPlayback.playQueue(l.tracks, 0, context) }
-                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, Modifier.weight(1f)) { MusicPlayback.playQueue(l.tracks, l.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, pillWidth()) { MusicPlayback.playQueue(l.tracks, 0, context) }
+                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, pillWidth()) { MusicPlayback.playQueue(l.tracks, l.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
                     }
                 }
             }

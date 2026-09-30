@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.layout.PaddingValues
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
+import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
+import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import dev.jellystructure.ravilo.ui.components.CheckGlyph
 import dev.jellystructure.ravilo.ui.components.CloseGlyph
 import dev.jellystructure.ravilo.ui.components.TriangleGlyph
@@ -621,12 +626,18 @@ private fun FacetBar(
         if (all.any { it.people.isNotEmpty() }) add(BrowseFacetKey.PEOPLE)   // R325 (FR-R325-4)
     }
     val chipShape = remember { RoundedCornerShape(18.dp) }
+    // R337 — a computer's chips are the mockup's (`.chips b`: 30 dp, 12.5 sp, a faint plate; the active one ink on the
+    // page's colour), so the whole bar — sort included — fits a 1200 dp window without scrolling sideways.
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    val chipPad = if (desk) PaddingValues(horizontal = 13.dp, vertical = 7.dp) else PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+    val chipFont = if (desk) 12.5.sp else 14.sp
+    val chipIdle = if (desk) colors.fg.copy(alpha = 0.07f) else colors.surfaceVariant
     LazyRow(
         // R187 (FR-RV-BROWSE1-10) — the strip comes back scrolled as it was left, like the grid.
         state = store.facetBarState,
         modifier = Modifier.focusRestorer(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (desk) 8.dp else 10.dp),
     ) {
         items(facets.size, key = { i -> facets[i].name }) { i ->
             val key = facets[i]
@@ -639,7 +650,7 @@ private fun FacetBar(
             var focused by rememberFocusVisual()
             // R187 fix — was an instant color snap; a short tween reads as one more small, restrained
             // bit of polish rather than a jarring toggle (same idiom as AppBar's own scrolled-bg tween).
-            val chipBg by animateColorAsState(if (active) colors.accent else colors.surfaceVariant, tween(150), label = "facetChipBg")
+            val chipBg by animateColorAsState(if (active) (if (desk) colors.text else colors.accent) else chipIdle, tween(150), label = "facetChipBg")
             Box(
                 Modifier
                     .background(chipBg, chipShape)
@@ -656,14 +667,14 @@ private fun FacetBar(
                         // explicitly; every chip in between is untouched (still pure native search).
                         onLeft = { }.takeIf { i == 0 },
                     )
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(chipPad),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     if (badge != null) "$label ($badge)" else label,
-                    color = if (active) colors.onAccent else if (focused) colors.text else colors.textSecondary,
-                    fontSize = 14.sp, fontFamily = Sora,
-                    fontWeight = if (active || focused) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (active) (if (desk) colors.background else colors.onAccent) else if (focused) colors.text else colors.textSecondary,
+                    fontSize = chipFont, fontFamily = Sora,
+                    fontWeight = if (active || focused || desk) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -673,17 +684,17 @@ private fun FacetBar(
                 var focused by rememberFocusVisual()
                 Box(
                     Modifier
-                        .background(colors.surfaceVariant, chipShape)
+                        .background(chipIdle, chipShape)
                         .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
                         .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = { store.resetFilters() }, onUp = onBarUp)
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(chipPad),
                     contentAlignment = Alignment.Center,
                 ) {
                     // R315 — the ✕ is drawn, not typed.
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CloseGlyph(colors.textSecondary, 13.dp)
                         Spacer(Modifier.width(6.dp))
-                        Text(str("browse.reset"), color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
+                        Text(str("browse.reset"), color = colors.textSecondary, fontSize = chipFont, fontFamily = Sora)
                     }
                 }
             }
@@ -692,7 +703,7 @@ private fun FacetBar(
             var focused by rememberFocusVisual()
             Box(
                 Modifier
-                    .background(colors.surfaceVariant, chipShape)
+                    .background(chipIdle, chipShape)
                     .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
                     .dpadFocusable(
                         focusRequester = sortChipFR,
@@ -703,13 +714,13 @@ private fun FacetBar(
                         // row's true last item, so Right here must no-op rather than escape to the avatar.
                         onRight = { },
                     )
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(chipPad),
                 contentAlignment = Alignment.Center,
             ) {
                 // R315 — the direction triangle is drawn, not typed.
                 val ink = if (focused) colors.text else colors.textSecondary
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(str("browse.sort") + ": " + sortLabel(store.sortField, store.sourceLabel), color = ink, fontSize = 14.sp, fontFamily = Sora)
+                    Text(str("browse.sort") + ": " + sortLabel(store.sortField, store.sourceLabel), color = ink, fontSize = chipFont, fontFamily = Sora, fontWeight = if (desk) FontWeight.SemiBold else FontWeight.Normal)
                     Spacer(Modifier.width(6.dp))
                     TriangleGlyph(if (store.sortDir == SortDir.DESC) GlyphDirection.DOWN else GlyphDirection.UP, ink, 12.dp)
                 }
@@ -1023,9 +1034,9 @@ private fun BrowseCardGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
         modifier = Modifier.focusRestorer(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
-        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-        verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
+        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
+        verticalArrangement = Arrangement.spacedBy(raviloRowGap),
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]
@@ -1042,15 +1053,15 @@ private fun BrowseCardGrid(
         }
         if (seerrOverflow.isNotEmpty() && onRequestSelect != null) {
             item(key = "seerr-overflow", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.padding(top = RaviloDimens.rowGap)) {
+                Column(Modifier.padding(top = raviloRowGap)) {
                     Text(
                         seerrRowLabel, color = RaviloTheme.colors.text, fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold, fontFamily = Sora,
                     )
-                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    Spacer(Modifier.height(raviloRowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         items(seerrOverflow.size, key = { i -> "overflow:${seerrOverflow[i].entry.tmdbId}" }) { i ->
                             val e = seerrOverflow[i]

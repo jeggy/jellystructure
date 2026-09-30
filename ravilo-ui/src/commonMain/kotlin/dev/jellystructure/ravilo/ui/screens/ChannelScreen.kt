@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.shared.tv.offersSeeAll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.getValue
@@ -191,9 +192,11 @@ fun ChannelScreen(
                     val portraitHeroPct = s.feed.portraitHeroHeightPct
                     val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
                         portraitHeroPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
-                    val heroHeight = if (containerH > 0)
+                    val tvHeroHeight = if (containerH > 0)
                         with(density) { containerH.toDp() } * (heroPct / 100f)
                     else 460.dp
+                    // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
+                    val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
 
                     LaunchedEffect(hasHero) {
                         // R139: Back-return from a tile → its row restores focus to the exact tile; skip default.
@@ -248,7 +251,7 @@ fun ChannelScreen(
                                 val canSeeAll = row.offersSeeAll()   // R187 / R318
                                 val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
                                                   else s.feed.tileShape.toTileVariant()
-                                Spacer(Modifier.height(RaviloDimens.rowGap))
+                                Spacer(Modifier.height(raviloRowGap))
                                 StaticContentRow(
                                     title = row.title,
                                     items = row.items,

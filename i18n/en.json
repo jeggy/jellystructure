@@ -903,6 +903,7 @@
   "desk.shortcuts": "Keyboard shortcuts",
   "desk.bg_keep": "Keep playing in the background?",
   "desk.menu": "Menu",
+  "desk.forward": {"text": "Forward", "note": "R337 — the desktop toolbar's Forward button, beside Back."},
   "desk.close_window": "Close",
   "desk.key_play": "Play or pause",
   "desk.key_space": "Space",

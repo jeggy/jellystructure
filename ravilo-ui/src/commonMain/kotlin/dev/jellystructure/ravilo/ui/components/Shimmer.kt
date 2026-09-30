@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
+import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -104,7 +106,7 @@ fun HomeLoadingShell() {
             brush = brush,
             radius = 0f,
         )
-        Spacer(Modifier.height(RaviloDimens.rowGap))
+        Spacer(Modifier.height(raviloRowGap))
 
         // Two skeleton rows
         repeat(2) {
@@ -114,11 +116,11 @@ fun HomeLoadingShell() {
             Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.padding(horizontal = raviloHPad),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(raviloItemSpacing),
             ) {
                 repeat(5) { TileShimmer() }
             }
-            Spacer(Modifier.height(RaviloDimens.rowGap))
+            Spacer(Modifier.height(raviloRowGap))
         }
     }
 }

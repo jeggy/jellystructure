@@ -17,12 +17,13 @@ GitHub release (R331).
 ```
 
 works on a Mac and on Linux. On Linux, and on a Mac without the Swift library, the app browses and signs in but
-plays nothing, and keeps its tokens in `tokens.json` (mode `0600`) instead of the Keychain. `XDG_DATA_HOME` (or
+plays nothing. `XDG_DATA_HOME` (or
 `-Dravilo.data.dir`) gives a second copy its own sign-in.
 
-**A development build asks for the Keychain.** A Keychain item remembers the signing identity of the app that
-made it. Releases are signed with one certificate of our own (R331), so an installed Ravilo never asks; a build from
-`gradle run` is signed differently, so macOS asks *Ravilo wants to use your confidential information* — expected.
+**Sign-in lives in a file.** Device tokens are in `tokens.json` (mode `0600`) in the app's data directory, on the Mac
+as on Linux. Not the Keychain: an app without a team ID gets a Keychain item bound to the exact build, so every update
+asked for the login password again (R328 D5, amended 2026-09-30). A token an older build left in the Keychain is moved
+across on first use.
 
 **Discovery needs the packaged app.** macOS grants Local Network access to an app bundle, not to a bare `java`
 process: develop Chromecast discovery against `createDistributable`'s `Ravilo.app`, not against `run` (R330).
@@ -35,6 +36,23 @@ Ravilo.app/Contents/MacOS/Ravilo --self-test
 
 loads the Swift library, reads the version and the data directory, prints one line and exits 0 — without a window.
 The release workflow runs it before uploading (R331 FR-R331-4).
+
+## Seeing and driving a build without its screen
+
+`RAVILO_TESTDRIVER=<dir>` (or `-Dravilo.testdriver=<dir>`) makes the app listen on `<dir>/ctl.sock` and answer one line
+per command — a picture of what the window draws, a click, a key, a menu command, what speaker discovery sees:
+
+```
+open -g --env RAVILO_TESTDRIVER=/tmp/ravilo-td Ravilo.app
+echo "shot home"      | nc -U /tmp/ravilo-td/ctl.sock     # → /tmp/ravilo-td/home.png, one pixel per point
+echo "click 120 264"  | nc -U /tmp/ravilo-td/ctl.sock
+echo "cmd MODE_MUSIC" | nc -U /tmp/ravilo-td/ctl.sock     # an AppCommand: what a menu item sends
+echo "chrome"         | nc -U /tmp/ravilo-td/ctl.sock     # the traffic lights' place, who takes a title-area click
+```
+
+It is how a build is checked on a Mac over SSH, where macOS gives a remote shell neither the screen nor the keyboard.
+Off unless asked for; input commands refuse while the person at the computer used the app in the last minute. The
+commands are listed at the top of `TestDriver.kt`.
 
 ## The signing certificate (once, on a Mac)
 

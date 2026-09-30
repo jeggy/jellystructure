@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -179,7 +180,7 @@ fun TaxonomyContent(
                 items(rows.size, key = { ri -> "taxo-row-$ri" }) { ri ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = raviloHPad).padding(top = if (ri == 0) 12.dp else 0.dp, bottom = 26.dp),
-                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                        horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         rows[ri].forEach { item ->
                             val key = "$kind:${item.name}"

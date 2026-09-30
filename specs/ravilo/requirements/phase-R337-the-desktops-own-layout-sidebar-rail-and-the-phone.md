@@ -374,3 +374,62 @@ never complete. Container `runc exec` health checks pile up in D state and conta
 production kept serving. A second Xvfb with GLX then hung in the same NVIDIA GBM path. **Lesson:** never run Skiko,
 Compose Desktop or Xvfb with GLX on this host; use `Xvfb -extension GLX` and a display number checked free first — or
 the Fedora container.
+
+## The Mac pass (2026-09-30, daytime) — the mockup is the target, number for number
+
+The first build was put on the owner's MacBook and rejected on sight: *"It doesn't look in any way like a proper Mac
+themed app, like from the designs files."* The dev review's reading — the TV's pages at "desktop density" inside a
+drawn sidebar — was a simplification the owner had never been shown. This pass takes `design/ravilo/Desktop - D1.html`
+(`desktop-kit.js`, `desktop-directions.css`) as the specification, with every frame rendered to a picture and the
+running app's own frames laid beside it. **Seen on the Mac** (macOS 27, a 1× display) at 1200, 1040, 720 and 480 dp;
+GNOME's forms were changed with the same numbers from `.gn`/`.gside`/`.gbar` and are **still unseen**.
+
+- **The window.** The page's colour is drawn edge to edge (nothing was behind the sidebar before: the window's own
+  grey showed through). The traffic lights are placed by AppKit from `Window.swift` — (29, 29) inside the sidebar's
+  glass, (26, 29) in the rail, (18, 16) in the phone layout's strip, (24, 34) beside the film player's Back — and kept
+  there across resizes. AWT's view tells AppKit a press on it may move the window, so every click in the title area
+  was AppKit's and the toolbar's buttons were deaf; the view now says no (`mouseDownCanMoveWindow`), and empty chrome
+  (`Modifier.windowDragArea()`: the sidebar's head, the toolbar, the phone strip) hands the press to
+  `NSWindow.performDrag`, which moves, snaps and tiles as a title bar does; a double-click does what System Settings
+  says a title bar's does.
+- **The sidebar and the rail** to `.mside`, `.seg`, `.sfield`, `.nav`, `.who`, `.rail`: the panel a veil of ink on the
+  page's colour, a neutral switch with two equal halves, 28 dp rows with the mockup's own icons (`DeskIcons.kt`, drawn
+  from the kit's path data) in the theme's second accent, the selected row tinted with the accent (filled with it in
+  Graphite and Daylight), *Library* in sentence case, the viewer with a 26 dp photo.
+- **The sidebar's search field is a field.** It was a button that opened a page whose own field then vanished; typing
+  did nothing. What is typed now searches the mode — music's results take Browse's place, films' the Search page's —
+  ⌘F focuses it, Esc or ✕ empties it, and any page picked from the sidebar ends the search. The rail keeps the page's
+  own field.
+- **The toolbar** (`.mtb`): a glass pill with Back **and Forward** (a real forward history: the pages Back left, until
+  the viewer goes somewhere new) and *Play on…* in a glass pill. Music's detail pages and Playing had a phone's
+  floating Back; they have the toolbar now.
+- **Density.** 28 dp gutters; tiles 138 / 236 / 150 dp with 13 sp captions; rows 22 dp apart; a tile does not grow
+  under focus. The hero is the mockup's band (half the window, never under 380 dp) with **Play** and **More Info** —
+  *More Info* where the mockup says *My List*, because the Home feed does not carry a title's My List state and a
+  toggle that cannot show its state is not drawn. Browse's filter chips are `.chips b` (the whole bar fits 1200 dp).
+  Detail pages' buttons are `.bt` / `.bt.pri`.
+- **Music.** Pages say their name (`.h1`) with the sort beside it; grids take 150 dp columns; a song is a 38 dp striped
+  row; the album page is `.alh` (210 dp cover, the kind and year, a 36 sp title); **Playing is `.np`** — the cover
+  (380 / 280 dp) with the transport under it beside 30 sp synced lyrics, on the blurred cover; the queue panel is
+  `.qp` (`.qr` rows, the playing one tinted) and, over the content, the Mac's floating sheet clear of the toolbar, with
+  the capsule shortened beside it; the capsule is `.cap-bar` and, in music mode, is there from the start (the
+  last-played song loaded paused on entering the mode — it used to appear only after a visit to Playing).
+- **Sheets are dialogs.** Every `HandsetSheet` (Play on…, a song's ⋯, the sort, a failure) is a 440 dp card in the
+  middle of a computer's window rather than a sheet rising across the sidebar. *Connecting to …* is a glass pill, and a
+  server message is a notification's size.
+- **The focus ring follows the keyboard**: shown after an arrow or Tab, gone when the pointer is used.
+- **Settings** has the toolbar in place of its own Back, and R338's theme section as the mockup's swatches.
+
+**Verified by use on the Mac:** the three things the owner named — *show lyrics* (Playing, synced, the line sung in
+ink), *search for music* (the sidebar field), *cast music* (to the bedroom TV: joined, the song on its screen, *Stop
+casting* ends it) — plus both themes live, the three width classes, a film in the window and back.
+
+**Not done, and known:**
+- A separate Settings window with General · Playback · Account tabs (the mockup's T·e); Settings is a page.
+- The book player, the artist page's header and the Profile page are the phone's at the desktop's sizes.
+- Rows of tiles have no pointer affordance for scrolling sideways (a mouse without a trackpad needs Shift + wheel).
+- The capsule's volume is the app's own; while casting it should be the device's.
+- No blur anywhere: the glass is drawn, as the dev review said.
+- **The test driver** (`ravilo-desktop/…/TestDriver.kt`, off unless `RAVILO_TESTDRIVER` names a directory) is how
+  this was seen and driven over SSH, where macOS gives a remote shell neither the screen nor the keyboard.
+
