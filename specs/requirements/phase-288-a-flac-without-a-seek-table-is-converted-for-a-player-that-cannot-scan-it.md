@@ -84,4 +84,8 @@ A player that cannot seek without an index says so, and the server gives it a st
 - `shared/…/Models.kt`: `ClientCapabilities.seekNeedsIndex`. `ravilo-cast/…/Receiver.kt`: `audioCapabilities()` sets it.
 - `src/linuxX64Main/…/music/FlacIndex.kt`: the block-header reader and its cache; `MusicTvRoutes.kt`: the song's
   capabilities lose `flac` when the file has no seek table.
-- Seen on the bedroom TV before the fix (the table above). **Not deployed; acceptance 1–3 wait for a deploy.**
+- Seen on the bedroom TV before the fix (the table above).
+- **Deployed 2026-09-30 (the owner's go), `v1.47-40`.** Acceptance 1, on the bedroom TV with the same song at 2:40:
+  the ticket is a conversion (`directPlay=false transcode=true` in the server's log, `application/x-mpegurl` on the
+  TV), `PLAYING` at 159.3 s, and no *finished*. Acceptance 2 (a seek from a remote) and 3 (a FLAC with a seek table
+  still direct-plays — the ten files that have one are not in the music library yet) are not seen.
