@@ -68,6 +68,8 @@ internal object CastSenderDesktop : CastSender {
     private var watch: Job? = null
     private var reconnectTried = false
 
+    fun appIdForDebug(): String? = appId
+
     override fun setAppId(appId: String) {
         scope.launch {
             this@CastSenderDesktop.appId = appId
@@ -85,6 +87,7 @@ internal object CastSenderDesktop : CastSender {
         _device.value = d.name
         val s = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }.getOrNull()
         val joined = s != null && (if (launch) s.launchOrJoin() else s.joinIfRunning()) && confirm(s)
+        println("${DesktopLog.stamp()} cast: ${if (launch) "connect" else "rejoin"} ${d.name} [${d.model}] → ${if (s == null) "no connection" else if (joined) "joined" else "not joined (${s.closedReason ?: "no app"})"}")
         if (s == null || !joined) {
             s?.close("not joined")
             _link.value = CastLinkState.NONE; _device.value = null
@@ -147,6 +150,7 @@ internal object CastSenderDesktop : CastSender {
         if (session !== s) return
         val reason = s.closedReason
         val d = device
+        println("${DesktopLog.stamp()} cast: session to ${d?.name} closed ($reason)")
         session = null
         watch?.cancel(); watch = null
         val silent = reason == null || reason == "stopped" || reason == "replaced by another app" || reason == "the device closed the app"
@@ -228,6 +232,7 @@ internal object CastSenderDesktop : CastSender {
             put("customData", custom)
         }
         said = null
+        println("${DesktopLog.stamp()} cast: load ${if (song != null) "music, ${data.tracks.size} in the queue" else "a film"} on ${device?.name}")
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
         s.load(media, (data.positionMs ?: 0L) / 1000.0, autoplay = true, customData = custom)

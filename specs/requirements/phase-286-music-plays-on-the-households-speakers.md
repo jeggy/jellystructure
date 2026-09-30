@@ -182,3 +182,21 @@ Google's `QUEUE_NEXT` is swallowed and lands on the list; `queue_add`/`repeat`/`
 is `ended` and the idle view; the headless receiver builds no DOM, enrols with `platform = cast-audio`,
 `speakers_confirmed_at` flips and names it; the admin shows step 5a, the speaker line, the *audio only* device row,
 and the Dashboard's Services line appears before the first speaker cast and is gone after it.
+
+## The receiver did not start (found and fixed 2026-09-30)
+
+From the hour this phase was deployed (2026-09-29 11:26) until 2026-09-30 12:02, **no cast worked from any sender**,
+films included. The queue interceptors this phase added call `setMessageInterceptor(QUEUE_NEXT)`, which the live
+framework (CAF 3.0.0156) refuses by throwing *"Unknown message type - QUEUE_NEXT"*; the exception left
+`Receiver.start()` before `context.start()`. The page showed its idle screen, the device waited 60 s for the app to
+reach RUNNING and aborted it (`APP_ERROR_TIMEOUT` in the TV's log). Each interceptor is now registered on its own and
+may fail with a warning; `QUEUE_UPDATE`, which carries next and previous from every sender SDK, is accepted.
+
+The round that verified this phase ran against a stand-in framework that accepted the call — the same shape as R245's
+amendment (`PLAYER_STATE_CHANGED`). **Owed:** a check that loads the built `/cast/` page against the real framework in
+a headless browser and fails on *"failed to start"*; both of these would have been caught by it.
+
+**Step 5a is still not done on Google's side:** the app's published configuration carries no audio-only support, and
+both of the household's screenless speakers answer `APP_UNAVAILABLE` for it. Until *Supports casting to audio only
+devices* is ticked (and saved) on the Cast console, no Ravilo client can list or reach a speaker.
+

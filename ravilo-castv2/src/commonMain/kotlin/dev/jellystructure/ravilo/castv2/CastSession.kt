@@ -45,6 +45,9 @@ class CastSession(
     private val heartbeatMs: Long = 5_000L,
     private val maxMissedPongs: Int = 3,
     private val requestTimeoutMs: Long = 10_000L,
+    /** After a LAUNCH that was not answered with the app: how often, and how many times, the device is asked for it. */
+    private val launchPollMs: Long = 2_000L,
+    private val launchPolls: Int = 10,
 ) {
     enum class State { CONNECTING, CONNECTED, JOINED, CLOSED }
 
@@ -100,17 +103,31 @@ class CastSession(
         request(CastNamespaces.RECEIVER, PLATFORM_RECEIVER, obj("type" to "GET_STATUS"))?.let(CastParse::receiverStatus)
 
     /** D2 — whether [appId] can run on this device at all. */
-    suspend fun appAvailable(): Boolean =
+    suspend fun appAvailable(): Boolean = appAvailableOrNull() ?: false
+
+    /** As [appAvailable], but null when the device gave no answer in time — not a "no", and not to be remembered as one. */
+    suspend fun appAvailableOrNull(): Boolean? =
         request(CastNamespaces.RECEIVER, PLATFORM_RECEIVER, obj("type" to "GET_APP_AVAILABILITY", "appId" to listOf(appId)))
-            ?.let { CastParse.available(it, appId) } ?: false
+            ?.let { CastParse.available(it, appId) }
 
     /** FR-R330-3/4 — joins [appId] when it runs, else launches it; true once its transport is connected. */
     suspend fun launchOrJoin(): Boolean {
         val running = (requestReceiverStatus() ?: return false).apps.firstOrNull { it.appId == appId }
-        val target = running ?: request(CastNamespaces.RECEIVER, PLATFORM_RECEIVER, obj("type" to "LAUNCH", "appId" to appId))
-            ?.let(CastParse::receiverStatus)?.apps?.firstOrNull { it.appId == appId }
-            ?: return false
-        join(target)
+        var target = running
+        if (target == null) {
+            val answer = request(CastNamespaces.RECEIVER, PLATFORM_RECEIVER, obj("type" to "LAUNCH", "appId" to appId))
+            if (answer != null && CastParse.type(answer) == "LAUNCH_ERROR") return false
+            target = answer?.let(CastParse::receiverStatus)?.apps?.firstOrNull { it.appId == appId }
+            // A TV asleep wakes for the launch and answers late — after the request has given up, or with a status
+            // from before the app was up. The app is asked for until it is there (found on a BRAVIA, 2026-09-30: the
+            // receiver came up on the TV while the sender had already dropped the connection).
+            var tries = 0
+            while (target == null && tries++ < launchPolls && _state.value != State.CLOSED) {
+                delay(launchPollMs)
+                target = requestReceiverStatus()?.apps?.firstOrNull { it.appId == appId }
+            }
+        }
+        join(target ?: return false)
         return true
     }
 

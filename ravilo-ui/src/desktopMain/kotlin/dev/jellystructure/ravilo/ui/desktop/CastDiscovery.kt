@@ -105,7 +105,7 @@ internal object CastAvailability {
                         coroutineScope {
                             val s = CastSession(openCastTransport(device.host, device.port), appId, this).also { session = it }
                             s.start()
-                            val available = s.appAvailable()
+                            val available = s.appAvailableOrNull()   // null = no answer: asked again next time
                             s.requestReceiverStatus()?.apps?.firstOrNull { it.appId == appId }?.displayName?.let { ourDisplayName = it }
                             s.close("asked")
                             available

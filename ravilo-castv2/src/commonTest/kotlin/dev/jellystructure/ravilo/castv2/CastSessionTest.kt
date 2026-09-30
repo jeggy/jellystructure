@@ -91,6 +91,43 @@ class CastSessionTest {
     }
 
     @Test
+    fun `a TV that wakes for the launch is asked again until the app is up`() = runTest {
+        // A BRAVIA asleep (2026-09-30): LAUNCH is answered with a LAUNCH_STATUS and no app; the app shows up in the
+        // receiver's status a few seconds later.
+        var asked = 0
+        val device = FakeDevice { m, body ->
+            when (body?.let(CastParse::type)) {
+                "GET_STATUS" -> if (m.namespace == CastNamespaces.RECEIVER) listOf(if (asked++ < 2) receiverStatus(reqId(body)) else receiverStatus(reqId(body), app(APP))) else emptyList()
+                "LAUNCH" -> listOf(fromDevice(CastNamespaces.RECEIVER, """{"type":"LAUNCH_STATUS","launchRequestId":${reqId(body)},"requestId":${reqId(body)},"status":"USER_ALLOWED"}"""))
+                else -> emptyList()
+            }
+        }
+        val s = session(device)
+        val joined = async { s.launchOrJoin() }
+        advanceTimeBy(4_500); runCurrent()   // two polls, 2 s apart
+        assertTrue(joined.await())
+        assertEquals(CastSession.State.JOINED, s.state.value)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
+    fun `a launch the device refuses is not waited for`() = runTest {
+        val device = FakeDevice { m, body ->
+            when (body?.let(CastParse::type)) {
+                "GET_STATUS" -> if (m.namespace == CastNamespaces.RECEIVER) listOf(receiverStatus(reqId(body))) else emptyList()
+                "LAUNCH" -> listOf(fromDevice(CastNamespaces.RECEIVER, """{"type":"LAUNCH_ERROR","requestId":${reqId(body)},"reason":"NOT_FOUND"}"""))
+                else -> emptyList()
+            }
+        }
+        val s = session(device)
+        val joined = async { s.launchOrJoin() }
+        runCurrent()
+        assertFalse(joined.await())
+        assertEquals(1, device.types(CastNamespaces.RECEIVER).count { it == "GET_STATUS" })
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
     fun `an app that already runs is joined without a launch`() = runTest {
         val device = FakeDevice { m, body ->
             if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()

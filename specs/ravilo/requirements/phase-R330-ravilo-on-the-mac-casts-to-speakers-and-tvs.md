@@ -238,3 +238,22 @@ spike on the five devices. `⚠ Partial`.
    whether audio-only devices answer `GET_APP_AVAILABILITY` like displays (open question 1); a take-over from
    Spotify; the volume slider; the Local Network prompt on macOS 15 (only the packaged app gets it, dev review 8).
 
+## First real devices (2026-09-30)
+
+From the owner's Mac, on the household's network: discovery (the Swift Bonjour browser) finds the three displays and
+the two screenless speakers, and Local Network access was already granted.
+
+- **A TV asleep answers the launch late.** `LAUNCH` came back as a `LAUNCH_STATUS` with no app, the sender gave up,
+  and the receiver came up on the TV with nobody connected. `launchOrJoin` now asks the receiver's status every 2 s
+  for up to 20 s after a launch that was not answered with the app, and leaves at once on `LAUNCH_ERROR`.
+- **No answer is not "no".** `GET_APP_AVAILABILITY` timing out was remembered as *cannot run our app* for the rest of
+  the session; only a definite answer is remembered now.
+- **Music to the bedroom TV works:** joined, the song on its Now playing screen, *Stop casting* ends it and the Mac's
+  own state returns. (It could not have worked before 286's receiver fix of the same day — see 286.)
+- **The two speakers say `APP_UNAVAILABLE` for our app** while answering `APP_AVAILABLE` for the default media
+  receiver: Google's published configuration for the app has no audio-only support (286's step 5a, the owner's to
+  tick on the Cast console). Nothing in the app can change that answer; the sheet rightly does not list them (D2).
+- The cast path now writes a line to the log on connect, load and close.
+- Open: a song handed over at 2:40 ended at once on the TV and the queue moved on (the server logged the stop at the
+  song's full length); not yet understood, and not the Mac's alone if it is the receiver's seek.
+
