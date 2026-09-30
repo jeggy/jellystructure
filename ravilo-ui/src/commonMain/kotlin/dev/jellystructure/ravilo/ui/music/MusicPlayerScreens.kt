@@ -531,8 +531,11 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier, 
     var follow by remember(t.id) { mutableStateOf(true) }
     LaunchedEffect(dragged) { if (dragged) follow = false }
     BoxWithConstraints(modifier) {
-        val h = with(LocalDensity.current) { maxHeight.toPx() }
-        LaunchedEffect(current, follow) { if (follow) runCatching { list.animateScrollToItem(current, -(h * 0.4f).roundToInt()) } }
+        // The list is padded by 40 % of its height at each end, and an item scrolled to with no offset rests at that
+        // padding's edge: the line being sung sits two fifths of the way down, with what has been sung above it and
+        // more of what comes below. (It used to be pushed a further 40 % down — four fifths of the way, two lines from
+        // the foot — on the phone and the desktop alike.)
+        LaunchedEffect(current, follow) { if (follow) runCatching { list.animateScrollToItem(current, 0) } }
         // The desktop's lyrics (`.lyr`): 30 sp, the line being sung in ink and the rest dim, fading out at both ends.
         val lit = if (large || LocalRaviloSkin.current == Skin.NOIR) colors.text else colors.accentSecondary
         val fade = if (large) Modifier.graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen).drawWithContent {
