@@ -178,12 +178,9 @@ jobs:
   # R334 — the Linux Flatpak bundle attached to the release, and the pull request to Flathub (with FLATHUB_TOKEN set;
   # without it the step says so and skips), on a published release only, and only after CI (231). Wired 2026-09-30 on
   # the owner's ask for a Flathub publish on every release (R334 D1 was "once R333 is ✓ Built"; the owner moved it).
-  #
-  # After `mac`, whether it passed or not: both append one paragraph to the release notes by reading the body and
-  # writing it back, and two of those at once would lose one paragraph.
   linux:
-    needs: [version, ci, publish, mac]
-    if: ${{ always() && github.event_name == 'release' && needs.ci.result == 'success' && needs.publish.result == 'success' }}
+    needs: [version, ci, publish]
+    if: github.event_name == 'release'
     uses: ./.github/workflows/deploy-linux.yml
     with:
       version: ${{ needs.version.outputs.version }}

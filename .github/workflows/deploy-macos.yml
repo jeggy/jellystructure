@@ -235,7 +235,8 @@ jobs:
           path: ${{ runner.temp }}/out/*.dmg
           retention-days: 30
 
-      # R331 FR-R331-5/-6 — only when publish.yml's `mac` job calls this for a published release; by hand, never.
+      # R331 FR-R331-5 — only when publish.yml's `mac` job calls this for a published release; by hand, never.
+      # The file only: the release notes say what the release contains, not how to install it (owner, 2026-09-30).
       - name: Attach to the GitHub Release
         if: github.event_name == 'release'
         env:
@@ -244,10 +245,3 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG" "$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg" --clobber
-          # FR-R331-6 — one fixed paragraph under the house-style notes, added once.
-          BODY=$(gh release view "$TAG" --json body --jq .body)
-          if ! printf '%s' "$BODY" | grep -q "Ravilo for Mac:"; then
-            NOTE="Ravilo for Mac: download \`ravilo-mac-$VERSION.dmg\`, open it and drag Ravilo to Applications (macOS 14 or later, Apple Silicon). The first time, macOS will refuse to open it because the app is not registered with Apple: open System Settings → Privacy & Security, scroll to the Ravilo line and choose **Open Anyway** — once per Mac; later versions open normally. (From a terminal, \`xattr -dr com.apple.quarantine /Applications/Ravilo.app\` does the same.)"
-            printf '%s\n\n%s\n' "$BODY" "$NOTE" > "$RUNNER_TEMP/notes.md"
-            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
-          fi

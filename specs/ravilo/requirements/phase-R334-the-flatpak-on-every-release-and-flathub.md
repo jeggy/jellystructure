@@ -105,3 +105,10 @@ Written beside R333, never run (D1: the caller in `publish.yml` waits for R333 �
 on `main`). The `sources` job is the same three commands this host ran (capture → replay → render); the `flatpak`
 job is the action's documented shape; the `attach` job is `deploy-macos.yml`'s with the Flathub PR added. The first
 run will say which of the container assumptions (open question 1) holds.
+
+## FR-R334-3 withdrawn (owner, 2026-09-30)
+
+The release notes carry no install paragraph: *"People downloading dmg already know how to install a dmg, and the
+same with flatpak, wgt etc."* The workflow attaches the file and leaves the notes alone. Release notes say
+concretely what the release contains — no install steps, no account of what was or was not tested.
+

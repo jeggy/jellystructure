@@ -248,3 +248,9 @@ Samsung and Linux jobs. v1.47 and v1.48 had the `.dmg` built by hand and attache
 Linux job now runs after it (pass or fail), because both append a paragraph to the release notes by reading the
 body and writing it back. Not yet seen on a release: the first one after this commit is the test.
 
+## FR-R331-6 withdrawn (owner, 2026-09-30)
+
+The release notes carry no install paragraph: *"People downloading dmg already know how to install a dmg, and the
+same with flatpak, wgt etc."* The workflow attaches the file and leaves the notes alone. Release notes say
+concretely what the release contains — no install steps, no account of what was or was not tested.
+

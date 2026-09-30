@@ -210,9 +210,3 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "$TAG" "ravilo-linux-$VERSION.flatpak" --clobber --repo "$REPO"
-          BODY=$(gh release view "$TAG" --repo "$REPO" --json body --jq .body)
-          if ! printf '%s' "$BODY" | grep -q "Ravilo for Linux:"; then
-            NOTE="Ravilo for Linux: download \`ravilo-linux-$VERSION.flatpak\` and run \`flatpak install ravilo-linux-$VERSION.flatpak\` (Flatpak fetches the runtime from Flathub on first install)."
-            printf '%s\n\n%s\n' "$BODY" "$NOTE" > notes.md
-            gh release edit "$TAG" --repo "$REPO" --notes-file notes.md
-          fi
