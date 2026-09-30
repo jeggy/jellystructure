@@ -38,6 +38,7 @@ SOURCES = [
     ("NotoSans", NOTO.format("NotoSans")),                    # Latin extras, Greek, Cyrillic, arrows
     ("NotoSansSymbols2", NOTO.format("NotoSansSymbols2")),    # ✓ ★ ▴ ▾ ◂ ▸ ▷
     ("NotoSansMath", NOTO.format("NotoSansMath")),            # ↵
+    ("NotoSansSymbols", NOTO.format("NotoSansSymbols")),      # ⌃ (the Mac's Control key, in the shortcuts list)
     ("NotoSansArabic", NOTO.format("NotoSansArabic")),
     ("NotoSansHebrew", NOTO.format("NotoSansHebrew")),
     ("NotoSansSyriac", NOTO.format("NotoSansSyriac")),
