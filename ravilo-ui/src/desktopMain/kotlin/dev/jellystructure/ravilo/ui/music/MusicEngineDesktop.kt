@@ -134,7 +134,9 @@ actual object MusicEngine {
         player.load(absolute(ticket.hlsUrl.orEmpty()), musicMimeFor(ticket.directPlay, ticket.container), startMs)
         player.setRate(rate)
         applyVolume(volume)
-        if (play) player.play()
+        // A load that is not to play says so: mpv starts whatever it loads (AVPlayer waits for play), so a book restored
+        // at launch — loaded paused where the viewer left it — read itself aloud on Linux (Fedora, 2026-09-30).
+        if (play) player.play() else player.pause()
         startMonitor()
     }
 
