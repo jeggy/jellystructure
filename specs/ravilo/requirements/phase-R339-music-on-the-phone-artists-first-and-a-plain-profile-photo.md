@@ -7,7 +7,7 @@
 ## Status
 
 `Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Ravilo Mobile.html` (built there the same day).
-**Not dev-reviewed.** Number verified free (after R338). Two small changes; they hold in the desktop's compact layout
+**Dev-reviewed 2026-09-30** (§Dev review — one sentence struck, item 2). Number verified free (after R338). Two small changes; they hold in the desktop's compact layout
 too, which is the phone (R337 FR-R337-2).
 
 ## Requirements
@@ -28,3 +28,22 @@ Supersedes **FR-R304-1**'s white ring in music mode only; films mode keeps R304 
 1. Music mode → Browse opens on Artists; the chips read Artists · Albums · Songs · Genres · Playlists (· Audiobooks).
 2. Music mode → Profile: the pill sits behind the photo as on the other tabs, with no ring round the photo; films mode →
    Profile still has R304's ring.
+
+## Dev review (2026-09-30, against `main` `c4258560`)
+
+Small, and ready to build as written apart from one sentence (item 2).
+
+1. **FR-R339-1:** reorder `MUSIC_CHIPS` (`MusicBrowseScreen.kt:82`) to `artists, albums, songs, genres, playlists`, and
+   change `Dest.MusicBrowse`'s default chip from `"albums"` to `"artists"` (`RaviloApp.kt:330`). The genre drill-in still
+   lands on Albums (`onChip("albums")`, `MusicBrowseScreen.kt:205`), which is right: a genre narrows albums. Artists
+   already sort by title (`sorts`, `:118`), the right default for the chip you arrive on.
+2. **Strike "Re-tapping Browse still steps to the next chip (R170's ladder)".** That is not what the app does. A re-tap
+   on Browse **focuses the search field**: R321 FR-R321-4/-6 as built (`RaviloApp.kt:1981–1983`,
+   `replaceTop(dest.copy(focusInput = true))`), and the owner's 2026-09-27 rule for the merged Browse + Search. Nothing
+   steps through the chips. The FR keeps its other sentences.
+3. Search results keep the built order *Songs · Albums · Artists* (`MusicBrowseScreen.kt:311/320/325`) ✓.
+4. **FR-R339-2:** the ring is drawn in `ProfileDot` (`RaviloBottomNav.kt:233–240`) whenever the item is selected.
+   `BottomNavCell` passes `ring = isSelected && items != MUSIC_BAR`; the bar already receives `items`. The pill is drawn
+   by the bar, not the dot, so it stays. Films mode is unchanged (R304).
+5. No wire change and no new strings. The desktop's compact layout inherits both changes. The desktop sidebar's list is
+   R337 dev review 7.

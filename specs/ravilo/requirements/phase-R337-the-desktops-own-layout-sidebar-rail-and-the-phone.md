@@ -10,7 +10,7 @@
 ## Status
 
 `Planned` — written 2026-09-30 (design-authored) from `design/ravilo/Desktop - D1.html` (round 2, all eleven questions
-answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Not dev-reviewed.** Number verified free: `main`
+answered) and `design/ravilo/Desktop - Directions.html` (round 1). **Dev-reviewed 2026-09-30** (§Dev review — two items for the owner: 4 and 7). Number verified free: `main`
 tops at R335, and R335 names **R336** for MPRIS and the Inhibit portal, so this starts at R337.
 
 **Supersedes R328 D3** (*the TV layout, driven by the keyboard and the mouse*) and the layout half of **FR-R328-5**
@@ -188,3 +188,128 @@ music layout in the web app · AirPlay from the Mac (R329 D5) · a mini-player w
   phone's own bottom bar.
 - Mockups: `design/ravilo/Desktop - D1.html` (C·a–C·d compact, M·a–M·c rail, E·a/E·b/L·a, S1–S6 shared, the ruler),
   `design/ravilo/Desktop - Directions.html` (round 1; D1·a–D1·d), builders in `desktop-kit.js`.
+
+## Dev review (2026-09-30, against `main` `c4258560`)
+
+Read against `ravilo-ui` (commonMain + desktopMain), `ravilo-desktop`, the Flatpak manifest and the design files. The
+direction holds; seventeen items say where the code disagrees with the prose or where the prose leaves a gap. Two need
+the owner (items 4 and 7, leans given); everything else is the build's.
+
+1. **`LayoutFamily` is a layout seam, not an input seam.** `isTvPlatform` keeps everything it gates today — R256's
+   key-only paths, R314's focus detail, R234's Settings chain. The web app is the TV *family* for layout, but
+   `:ravilo-web`'s `isTvPlatform` is `false` and must stay so (it has no D-pad). So FR-R337-1's "read where
+   `isTvPlatform`/`isHandset` are read today" narrows to the sites that choose a *layout*. Add
+   `expect val isDesktopPlatform: Boolean` (desktop `true`, the rest `false`) and compute the family once in
+   `RaviloApp`, beside `compact`/`handset` (`RaviloApp.kt:847–856`), provided as `LocalLayoutFamily`:
+   `PHONE` = `handset`; `DESKTOP` = `isDesktopPlatform && !handset`; `TV` otherwise. `isHandset` needs no change on
+   the desktop: with the minimum height at 600 dp (FR-R337-11), "the shorter side is under 600" and "the width is under
+   600" are the same test.
+2. **No `material3-adaptive`.** It is not on the classpath. `NavigationSuiteScaffold` cannot be used anyway: the phone's
+   bar is R267's own `RaviloBottomNav` (the sliding pill, R274's geometry) and the sidebar and rail are drawn to the
+   platform's shape. The three edges (600 / 840 / 1200) are constants in one place (`Dimens.kt`), measured from
+   `LocalWindowInfo` as `compact` already is. A new dependency would also grow the Flatpak's offline sources
+   (R333/R334) for three numbers. The dev note about `NavigationSuiteScaffold` is withdrawn.
+3. **Music on the desktop has two locks to open.**
+   (a) `RaviloApp.kt:879–890`: `musicAvailable`, `booksAvailable` and `inMusic` all require `handset`. They become
+   `family != TV`.
+   (b) **An existing R335 bug:** `MusicEngineDesktop.kt:43` sets `supported = MacNative.lib != null`, which is `false` on
+   Linux, so R335's mpv music engine (FR-R335-8) cannot be reached even once (a) is open. It becomes
+   `if (DesktopPaths.isMac) MacNative.lib != null else Mpv.lib != null`. This goes in R337's first commit.
+4. **Profile on the desktop works as on the phone (R304) — owner to confirm (lean: yes).** `openProfile()`
+   (`RaviloApp.kt:859`) opens the Profile page for `PHONE` and for `DESKTOP`. `ProfileMenu`, the TV dropdown, stays
+   in the TV family. The spec does not say what follows from this: **the desktop has no *Switch profile***. The
+   sidebar's foot and GNOME's ☰ hold only *Settings · Sign out*, and Sign out is R304's one-profile sheet. The reason:
+   a window resized across 600 dp must not gain or lose the ability to hold several profiles. Today's desktop (R328's
+   TV layout) shows the TV menu with Switch and Add user. A Mac with several profiles signed in before the update
+   keeps them stored. Only the active profile is used, and Sign out goes to R191's picker when another profile is
+   still stored (the existing path).
+5. **The content pane uses the TV family's pages without the TV's top bar.** Each screen draws its own `AppBar` (nine
+   call sites). On `DESKTOP`, `AppBar` draws the platform's toolbar or header bar instead (back/forward, the title on
+   GNOME, *Play on…*), so no screen has to change. The films pages are R256's TV pages, used with a pointer. **The music
+   pages exist only in the phone's shape** (`MusicListenScreen`, `MusicBrowseScreen`, `MusicDetailScreens`,
+   `AudiobookScreens`). At 600 dp and up they need wide versions: rows on Listen, a grid for Albums and Artists, and the
+   album page's header beside its track list. Take them from `Desktop - D1.html` (E·a, E·b, L·a, M·b, M·c) and
+   `desktop-kit.js` (`listen()`, `albumPage()`, `albumsGrid()`). This is the largest part of the music half, and the
+   spec does not list it. Build them as width branches inside the same composables, not as new screens, so the
+   compact layout stays exactly the phone's. On the desktop, `MusicBrowse(chip)` *is* the sidebar's Library row: the
+   page draws no chip strip and no query field, and the sidebar's field sets the same query.
+6. **One navigation stack on both sides of 600 dp.** The stack is shared, and crossing 600 dp never rewrites it. The
+   sidebar works out its lit row from the stack, the way `bottomItemOf()` does (`sidebarItemOf()`). Three mappings
+   need a rule:
+   - The phone's Library is `Browse(ALL)`. At 600 dp and up it lights neither Films nor Series, and the page keeps its
+     type control.
+   - The desktop's Films and Series are `Browse(MOVIES)` and `Browse(SERIES)`. In compact they light Library.
+   - `Dest.Search` is the phone's Search page in compact. At 600 dp and up it is the same page, with the sidebar's
+     field focused.
+7. **The music sidebar should list what the chips list — owner to confirm (lean: yes).** FR-R337-3 and the mockup
+   show *Artists · Albums · Songs · Audiobooks*. The phone's chips (R339) are *Artists · Albums · Songs · Genres ·
+   Playlists · Audiobooks*. Without Genres, the genre drill-in cannot be reached at 600 dp and up. Build the sidebar's
+   Library from `MUSIC_CHIPS` (plus Audiobooks) so the two lists cannot drift apart. FR-R339-1 already says "the
+   desktop sidebar's Library uses the same order".
+8. **Counts.** R310's `FacetsSummary` (`/api/tv/facets/summary`) has no film or series counts. Add two nullable fields,
+   `movies` and `series`; when they are absent (an old server), the sidebar shows no number, never *0*. The music
+   counts come from each list's existing `total` (`Music.kt:81`).
+9. **The film player uses R329's chrome at every width (for the player, FR-R337-9 wins over FR-R337-2).**
+   `PlayerScreen.kt:404/3709` and `LiveTvPlayerScreen.kt:107/407` choose the touch chrome from `LocalHandset`. On the
+   desktop they must test `handset && !isDesktopPlatform`, or a 500 dp window gets double-tap seek and a brightness
+   swipe that no brightness control stands behind. The same goes for `LocalFocusVisible provides !handset`
+   (`RaviloApp.kt:975`): on the desktop, focus shows once the keyboard moves it, at any width.
+10. **The macOS window.** In `Main.kt`, set three standard JDK properties on the root pane:
+    `apple.awt.transparentTitleBar`, `apple.awt.fullWindowContent` and `apple.awt.windowTitleVisible = false`.
+    **Open question 2 (glass), lean: draw an approximation.** Compose can make a window transparent only when the
+    window is undecorated, and an undecorated window loses the traffic lights. So a real `NSVisualEffectView` behind
+    Compose is out of reach without native changes. Draw the sidebar and the capsule as flat panels one step lighter
+    than the page, with a 1 dp inner highlight and no blur. Revisit only if it does not read as the Mac's.
+11. **The GNOME window (open question 1).** The Flatpak runs on X11 through XWayland (`--socket=x11`, R333 D5), with
+    stock OpenJDK 21, so JBR's custom-title-bar API is not there. An undecorated window is still feasible:
+    - `WindowDraggableArea` over the header bar;
+    - a double-click toggles maximised;
+    - 6 dp invisible edge handles set the window's bounds;
+    - mutter still tiles and snaps it (Super+arrows).
+
+    What it cannot cheaply have is GNOME's shadow and 12 dp corners: a transparent ARGB window under R335's frame ring
+    is untested and may cost frames. **Lean:** square corners and a 1 dp border in round 1 (that is how GNOME draws a
+    tiled window anyway), with `-Dravilo.csd=false` falling back to mutter's own title bar.
+    Separately, `RaviloMenuBar` draws a Swing menu bar *inside* the window on Linux today (Ravilo · View · Window).
+    Under R337 the menu bar is macOS only. Its shortcuts (Ctrl+Q, Ctrl+,, F11) move into one key table in
+    `onPreviewKeyEvent` (`Main.kt`'s `playerWindowKeys`), which the Mac's menu items call too. Ctrl+Q stays, because
+    GNOME's primary menu holds no Quit.
+12. **On Linux, "closing keeps the music" needs a single instance.** The window is hidden and music plays, so the next
+    launch from the app grid starts a second JVM: two engines and two sessions. Fix: own the app id `net.jebster.Ravilo`
+    on the session bus (a Flatpak app may own its own id without a finish-arg). A second launch then calls `Activate`
+    on it and exits.
+    This needs a D-Bus client. **One** client covers five needs: this single instance, the Background portal
+    (FR-R337-12), R338's appearance, the interface font (item 13) and R336's MPRIS/Inhibit. Use `dbus-java` with the
+    JDK's own Unix-socket transport, in desktopMain, loaded on Linux only. It adds one dependency, so R334's sources
+    file regenerates on the next release (it already does on every release).
+13. **Fonts (Q9).** The runtime is `org.freedesktop.Platform` 26.08, not GNOME's (R333), and it ships neither Adwaita
+    Sans nor Cantarell. So "resolved through fontconfig" alone gives DejaVu on some hosts.
+    - **GNOME:** read `org.gnome.desktop.interface` `font-name` through the Settings portal (the same client), and
+      resolve it with fontconfig, which sees the host's fonts at `/run/host/fonts`. The fallback is `sans-serif`.
+    - **macOS:** `FontFamily(SystemFont(".AppleSystemUIFont"))` through Skia. This needs verifying on the Mac; the
+      fallback is Helvetica Neue.
+14. **Strings: the compact layout says *phone*.** Five shipped strings the desktop reaches in compact are false on a
+    computer:
+    - `mode.label` *This phone* (`MusicCommon.kt:398`);
+    - `profile.signout_title` *Sign out of this phone?*;
+    - `this_phone` (`PlaybackNoteLine.kt:52`);
+    - `cast.play_here`;
+    - `cast.failed_sub`.
+
+    Add `_desk` variants (*This computer* · *Sign out of this computer?* · *this computer* · *Play here* · *…play it
+    here*), chosen by `isDesktopPlatform`. The Mac keeps R330's `cast.play_here_mac`. The spec's `desk.*` keys match the
+    table's dotted naming.
+15. **Keys.** ⌃⌘F already exists (the View menu), and F and Esc exist (`playerWindowKeys`). New: ⌘1/⌘2, ⌘F, ⌃⌘S,
+    ⌥⌘U, ⌥⌘L, ⌘↑/⌘↓ and ⌘→/⌘←. They reach `RaviloApp` through `AppCommands`, the channel `OPEN_SETTINGS` already
+    uses. The mode keys work in compact, as the spec says.
+16. **Wire and installed versions.** The phase is client-only apart from item 8, which is additive and nullable. It
+    was checked against the contract `WireCompatTest` holds (every release from v1.23). An old server answers without
+    counts, and nothing else changes. No new enum values.
+17. **Build order.** R337 comes before R338's desktop half, because R338's macOS and GNOME settings live in R337's
+    Settings. The slices, each shippable:
+    (a) the family seam, music on the desktop and the R335 fix (items 1 and 3);
+    (b) the sidebar and rail, with `AppBar` as the toolbar;
+    (c) the wide music pages;
+    (d) the bar, queue and Playing by width;
+    (e) the GNOME window, the single instance and the Background portal;
+    (f) keys, menus and strings.
