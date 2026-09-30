@@ -58,7 +58,7 @@ export function fakeCafInitScript() {
       },
       events: {
         EventType: { TIME_UPDATE: "TIME_UPDATE", PLAYING: "PLAYING", PAUSE: "PAUSE", BUFFERING: "BUFFERING", MEDIA_FINISHED: "MEDIA_FINISHED", ERROR: "ERROR", SEEKED: "SEEKED" },
-        EndedReason: { END_OF_STREAM: "END_OF_STREAM", ERROR: "ERROR", STOPPED: "STOPPED" },
+        EndedReason: { END_OF_STREAM: "END_OF_STREAM", ERROR: "ERROR", STOPPED: "STOPPED", INTERRUPTED: "INTERRUPTED" },
       },
       system: { EventType: { SHUTDOWN: "SHUTDOWN" } },
     },

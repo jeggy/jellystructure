@@ -92,4 +92,54 @@ test.describe("Chromecast receiver (R297, R299)", () => {
 
     expect(pageErrors).toEqual([]);
   });
+
+  // 289 — a LOAD over something that is playing. CAF ends the item before with MEDIA_FINISHED(INTERRUPTED), and it
+  // does so after the receiver has taken the new item as its own: on a real speaker (2026-09-30) the receiver then
+  // stopped the NEW item on the server, said "failed" and went idle — Next, an album over an album and a film's
+  // track change all ended in silence.
+  test("a load that replaces what is playing is neither an end nor a failure (289)", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    const login = await request.post("/api/tv/login", {
+      data: { username: JF_USER, password: JF_PASS, device_id: "e2e-cast-phone-289", device_name: "E2E Cast Phone 289" }, headers: R252,
+    });
+    expect(login.status(), await login.text()).toBe(200);
+    const phoneToken = (await login.json()).device_token as string;
+    const code = async () => (await (await request.post("/api/tv/cast/handoff", { headers: { authorization: `Bearer ${phoneToken}`, ...R252 } })).json()).code as string;
+    const itemId = await scannedItemId(request, phoneToken, "Sintel", { username: JF_USER, password: JF_PASS });
+    const data = async () => ({ server_url: APP_URL, code: await code(), item_id: itemId, title: "Sintel", device_name: "E2E Chromecast 289", lang: "en", sub_size: "M" });
+
+    await openReceiver(page, APP_URL);
+    expect(await page.evaluate((d) => (window as any).__castLoad(d), await data())).not.toBeNull();
+    await page.evaluate(() => { (window as any).__castState = "PLAYING"; });
+    const statsBefore = await (await request.get(`${JF_URL}/__mock/stats`)).json();
+
+    // The second LOAD, with the framework's INTERRUPTED both while the load is being prepared and once it is handed over.
+    const second = await page.evaluate(async (d) => {
+      const w = window as any;
+      const pending = w.__castLoad(d);
+      w.__castFire("MEDIA_FINISHED", { endedReason: "INTERRUPTED" });
+      await new Promise((r) => setTimeout(r, 0));
+      w.__castFire("MEDIA_FINISHED", { endedReason: "INTERRUPTED" });
+      const r = await pending;
+      w.__castFire("MEDIA_FINISHED", { endedReason: "INTERRUPTED" });
+      return r;
+    }, await data());
+    expect(second, "the new item is handed to the player").not.toBeNull();
+    expect(second.contentId).toBeTruthy();
+    await page.waitForTimeout(1_000); // bounded: a "failed" or a second stop would follow the event within a tick
+    const types = (await castSent(page)).map((m) => m.type);
+    expect(types).not.toContain("failed");
+    expect(types).not.toContain("ended");
+    await expect(page.locator("#idle")).not.toHaveClass(/\bon\b/);
+    // The item before was stopped once, under its own session; the new one was not stopped at all.
+    expect((await (await request.get(`${JF_URL}/__mock/stats`)).json()).stopped - statsBefore.stopped).toBe(1);
+
+    // The new item is alive: its own end is still an end.
+    await page.evaluate(() => (window as any).__castFire("MEDIA_FINISHED", { endedReason: "END_OF_STREAM" }));
+    await expect.poll(async () => (await castSent(page)).filter((m) => m.type === "ended").length, { timeout: 10_000 }).toBe(1);
+    expect((await castSent(page)).filter((m) => m.type === "failed")).toHaveLength(0);
+    expect(pageErrors).toEqual([]);
+  });
 });

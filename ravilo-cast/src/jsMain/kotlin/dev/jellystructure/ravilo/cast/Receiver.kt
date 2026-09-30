@@ -73,6 +73,10 @@ private class Receiver {
 
     private var current: CastLoadData? = null
     private var ticket: StreamTicket? = null
+    /** The server holds a playback session for [current]: true from a negotiated ticket until its stop is sent. */
+    private var sessionOpen = false
+    /** A LOAD is being prepared (enrolment, the ticket): the player has not been handed the new item yet. */
+    private var loading = 0
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
     // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
     private var pendingRestream: Triple<Int, Int?, Int>? = null
@@ -126,7 +130,7 @@ private class Receiver {
         // FR-R245-13 — the LOAD interceptor: enrol if needed, negotiate our own ticket, then hand CAF the
         // real media. The phone never hands us a media URL.
         playerManager.setMessageInterceptor(messages.MessageType.LOAD) { request: dynamic ->
-            GlobalScope.promise { intercept(request) }
+            GlobalScope.promise { loading++; try { intercept(request) } finally { loading-- } }
         }
         val et = cast.framework.events.EventType
         playerManager.addEventListener(et.TIME_UPDATE) { ev: dynamic -> onTime(((ev.currentMediaTime as Double?) ?: 0.0) * 1000) }
@@ -144,7 +148,8 @@ private class Receiver {
             // R299 (FR-R299-1) — a load that never reached a media session gets no MEDIA_FINISHED; CAF
             // reports it here with the player still IDLE. Say so once; a mid-play error is followed by
             // MEDIA_FINISHED(ERROR), which onFinished turns into the same message.
-            if ((playerManager.getPlayerState() as String) == "IDLE" && current != null) { stopSession(); failed() }
+            // 289 — not while a LOAD is being prepared: whatever failed then is the item before, and `current` is the new one.
+            if (loading == 0 && (playerManager.getPlayerState() as String) == "IDLE" && current != null) { stopSession(); failed() }
         }
         playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
@@ -205,6 +210,11 @@ private class Receiver {
         // remembered, so the idle screen after this cast stays in their language too.
         ReceiverStrings.adopt(data.lang)
         subSize = data.subSize
+        // 289 (FR-289-2) — a sender's LOAD over something that is playing (an album started while another plays, a
+        // second film): what it replaces is stopped and reported HERE, under its own id and position. The player's
+        // own MEDIA_FINISHED for it arrives after `current` is the new item. The receiver's own loads (next song,
+        // next episode, a restream) carry no code and have dealt with the item before themselves.
+        if (data.code.isNotEmpty()) replaced(data.itemId)
         current = data
         introSkipped = false
         isHeadless()
@@ -234,6 +244,7 @@ private class Receiver {
             runCatching { api.restream(data.itemId, restream.first, data.positionMs ?: positionMs, capabilities(), restream.second) }.getOrNull() ?: return null
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
+        sessionOpen = true
         val messages = cast.framework.messages
         request.media.contentId = t.hlsUrl
         request.media.contentUrl = t.hlsUrl
@@ -381,6 +392,7 @@ private class Receiver {
         val startAt = data.positionMs
         val ticket = negotiate(api, t.id) { api.playMusic(t.id, audioCapabilities(), startAt?.takeIf { it > 0 }) } ?: return null
         this.ticket = ticket
+        sessionOpen = true
         val messages = cast.framework.messages
         val url = absolute(ticket.hlsUrl) ?: ticket.hlsUrl.orEmpty()
         request.media.contentId = url
@@ -394,6 +406,9 @@ private class Receiver {
         }
         request.media.streamType = messages.StreamType.BUFFERED
         request.media.tracks = js("[]")
+        // The song's length, said with the load: a speaker's player reports none for a FLAC, and every sender's bar
+        // (the Home app's too) then reads 0:00 with no progress.
+        t.durationMs?.takeIf { it > 0 }?.let { request.media.duration = it / 1000.0 }
         // FR-286-3 — the metadata block the Home app and the Assistant read: title · artist · album · album artist · cover.
         val meta = js("new cast.framework.messages.MusicTrackMediaMetadata()")
         meta.title = t.title
@@ -597,7 +612,9 @@ private class Receiver {
     // ── playback events ──
     private fun onTime(ms: Double) {
         positionMs = ms.toLong()
-        durationMs = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
+        // A speaker's player reports no length for a FLAC; the song's own, from the queue, stands in (289 FR-289-3).
+        val said = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
+        durationMs = if (said > 0) said else track()?.durationMs ?: 0L
         val data = current ?: return
         if (music) { if (el("buffering").classList.contains("on")) show("nowplaying"); paintProgress(); paintLyrics() }
         else if (el("loading").classList.contains("on")) show()
@@ -689,6 +706,13 @@ private class Receiver {
 
     private fun onFinished(endedReason: String?) {
         if (current == null) return   // R299 — already reported as failed
+        // 289 (FR-289-1) — a new LOAD took the player. That is neither an end nor a failure: `current` is already
+        // the new item, so a stop sent from here stopped THAT one on the server (which then ended the session the
+        // load was about to play), and the "failed" that followed emptied the receiver. Next, Previous, a song
+        // picked from the queue, an album started over another and a film's track change all ended in silence.
+        // Compared as text: a constant this framework build lacks would be `undefined`, and equal to no reason.
+        // The same while a LOAD is being prepared, whatever reason this framework build gives.
+        if (endedReason == "INTERRUPTED" || loading > 0) return
         nextUpJob?.cancel(); nextUpJob = null
         el("nextup").classList.remove("on")
         stopSession()
@@ -720,7 +744,24 @@ private class Receiver {
         val d = current ?: return
         val a = api ?: return
         val pos = positionMs
+        sessionOpen = false
         GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }
+    }
+
+    /**
+     * 289 (FR-289-2) — the item a sender's new LOAD replaces, reported as stopped where it was. When the new item is
+     * the same one (a song started again), the stop is awaited: the server reads a stop that arrives after the new
+     * start as the viewer having left, and ends the new session (180's FR-180-3). An item whose stop was already sent
+     * (it ended, it failed) is not stopped twice — for the same reason.
+     */
+    private suspend fun replaced(byItemId: String) {
+        val d = current ?: return
+        val a = api ?: return
+        if (!sessionOpen) return
+        sessionOpen = false
+        val pos = positionMs
+        if (d.itemId == byItemId) runCatching { a.stopPlayback(d.itemId, pos) }
+        else GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }
     }
 
     // ── phone → receiver ──

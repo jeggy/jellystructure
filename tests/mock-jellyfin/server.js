@@ -71,6 +71,9 @@ const ADMIN_PASS = process.env.JELLYFIN_PASS ?? "password";
 const MEDIA_ROOT = process.env.MEDIA_ROOT ?? "/media";
 
 function send(res, status, body) {
+  // A 204 has no body: Node drops it, and a Content-Length that promises one makes the backend's HTTP client fail the
+  // request ("Content-Length mismatch") — every stop write was then retried, and counted here again each time.
+  if (status === 204) { res.writeHead(204); res.end(); return; }
   const json = JSON.stringify(body);
   res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(json) });
   res.end(json);
