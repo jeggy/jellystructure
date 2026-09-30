@@ -151,8 +151,17 @@ private class Receiver {
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
         // 286 (dev review 4) — Google's own next/previous (the Home app, the Assistant, a display's remote) arrive
         // as queue messages; on a music LOAD they land on OUR list, never on CAF's (which holds one item).
-        for (type in listOf(messages.MessageType.QUEUE_NEXT, messages.MessageType.QUEUE_PREV, messages.MessageType.QUEUE_UPDATE)) {
-            playerManager.setMessageInterceptor(type) { request: dynamic ->
+        //
+        // 2026-09-30 — each one is registered on its own and may fail: the live framework (CAF 3.0.0156) refuses an
+        // interceptor for QUEUE_NEXT ("Unknown message type - QUEUE_NEXT") by throwing, which ended start() before
+        // `context.start()`. The receiver's page showed its idle screen, the device never saw the app reach RUNNING,
+        // aborted it after 60 s, and EVERY cast — films included — failed from the day 286 was deployed. The same
+        // shape as R245's amendment above (`PLAYER_STATE_CHANGED`): a constant or a call this framework build does not
+        // take must cost that one feature, never the receiver. QUEUE_UPDATE carries next/previous (`jump`) from every
+        // sender SDK and is accepted.
+        for (type in listOf(messages.MessageType.QUEUE_UPDATE, messages.MessageType.QUEUE_NEXT, messages.MessageType.QUEUE_PREV)) {
+            if (type == null) continue
+            runCatching { playerManager.setMessageInterceptor(type) { request: dynamic ->
                 if (!music) request
                 else {
                     val jump = (request.jump as? Int) ?: (request.jump as? Double)?.toInt()
@@ -165,7 +174,7 @@ private class Receiver {
                     }
                     null
                 }
-            }
+            } }.onFailure { console.warn("ravilo-cast: no interceptor for $type on this framework (${it.message})") }
         }
         // FR-286-5 — the display's own remote: media keys come as commands (the interceptors above), the D-pad
         // as key events, and a tap on the hub as a click. None of it exists on a speaker (no DOM, no remote).
