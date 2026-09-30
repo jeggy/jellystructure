@@ -510,7 +510,7 @@
   Object.assign(STR.en, { 'mnav.audiobooks': 'Audiobooks', 'mode.music_books': 'Music & audiobooks', 'mlib.playlists': 'Playlists',
     'ab.continue': 'Continue listening', 'ab.continue_from': 'Continue · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start over', 'ab.left': '{t} left', 'ab.whole_book': 'Book', 'ab.read_by': 'Read by {narrator}',
     'ab.chapters_n': '{n} chapters', 'ab.chapter_n': 'Chapter {n}', 'ab.part_of': 'Part {n} of {m}', 'ab.book_of': 'Book {n} of {m}', 'ab.authors': 'Authors', 'ab.series': 'Series',
-    'ab.finished': 'Finished', 'ab.mark_finished': 'Mark as finished', 'ab.mark_unfinished': 'Mark as not finished', 'ab.speed': 'Speed', 'ab.sleep': 'Sleep timer', 'ab.sleep_end_chapter': 'End of chapter', 'ab.sleep_min': '{n} min',
+    'ab.finished': 'Finished', 'ab.mark_finished': 'Mark as finished', 'ab.speed': 'Speed', 'ab.sleep': 'Sleep timer', 'ab.sleep_end_chapter': 'End of chapter', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Add bookmark', 'ab.bookmarks': 'Bookmarks', 'ab.skip_back': '30 s back', 'ab.skip_fwd': '30 s forward', 'ab.skip_silence': 'Skip silences in audiobooks', 'ab.empty': 'Nothing filed as audiobooks yet',
     'ab.all_books': 'All books', 'ab.books_n': '{n} books', 'ab.books_one': '1 book', 'ab.chapters': 'Chapters', 'ab.go_author': 'Go to author', 'ab.off': 'Off', 'ab.note': 'Note (optional)', 'ab.note_ph': 'What happens here', 'ab.save': 'Save',
     'ab.bookmark_added': 'Bookmark added', 'ab.no_bookmarks': 'No bookmarks yet. Tap the bookmark on the player to add one.', 'ab.sort_title': 'Title', 'ab.sort_author': 'Author', 'ab.sort_series': 'Series',
@@ -519,7 +519,7 @@
   Object.assign(STR.da, { 'mnav.audiobooks': 'Lydbøger', 'mode.music_books': 'Musik og lydbøger', 'mlib.playlists': 'Playlister',
     'ab.continue': 'Fortsæt med at lytte', 'ab.continue_from': 'Fortsæt · {t}', 'ab.start': 'Start', 'ab.start_over': 'Start forfra', 'ab.left': '{t} tilbage', 'ab.whole_book': 'Bog', 'ab.read_by': 'Indlæst af {narrator}',
     'ab.chapters_n': '{n} kapitler', 'ab.chapter_n': 'Kapitel {n}', 'ab.part_of': 'Del {n} af {m}', 'ab.book_of': 'Bog {n} af {m}', 'ab.authors': 'Forfattere', 'ab.series': 'Serier',
-    'ab.finished': 'Færdig', 'ab.mark_finished': 'Markér som færdig', 'ab.mark_unfinished': 'Markér som ikke færdig', 'ab.speed': 'Hastighed', 'ab.sleep': 'Sleep-timer', 'ab.sleep_end_chapter': 'Kapitlets slutning', 'ab.sleep_min': '{n} min',
+    'ab.finished': 'Færdig', 'ab.mark_finished': 'Markér som færdig', 'ab.speed': 'Hastighed', 'ab.sleep': 'Sleep-timer', 'ab.sleep_end_chapter': 'Kapitlets slutning', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Tilføj bogmærke', 'ab.bookmarks': 'Bogmærker', 'ab.skip_back': '30 sek. tilbage', 'ab.skip_fwd': '30 sek. frem', 'ab.skip_silence': 'Spring over pauser i lydbøger', 'ab.empty': 'Ingen lydbøger endnu',
     'ab.all_books': 'Alle bøger', 'ab.books_n': '{n} bøger', 'ab.books_one': '1 bog', 'ab.chapters': 'Kapitler', 'ab.go_author': 'Gå til forfatter', 'ab.off': 'Fra', 'ab.note': 'Note (valgfri)', 'ab.note_ph': 'Hvad der sker her', 'ab.save': 'Gem',
     'ab.bookmark_added': 'Bogmærke tilføjet', 'ab.no_bookmarks': 'Ingen bogmærker endnu. Tryk på bogmærket i afspilleren for at tilføje et.', 'ab.sort_title': 'Titel', 'ab.sort_author': 'Forfatter', 'ab.sort_series': 'Serie',
@@ -528,7 +528,7 @@
   Object.assign(STR.fo, { 'mnav.audiobooks': 'Ljóðbøkur', 'mode.music_books': 'Tónleikur og ljóðbøkur', 'mlib.playlists': 'Spælilistar',
     'ab.continue': 'Hald fram at lurta', 'ab.continue_from': 'Hald fram · {t}', 'ab.start': 'Byrja', 'ab.start_over': 'Byrja av nýggjum', 'ab.left': '{t} eftir', 'ab.whole_book': 'Bók', 'ab.read_by': 'Lisin av {narrator}',
     'ab.chapters_n': '{n} kapitlar', 'ab.chapter_n': 'Kapittul {n}', 'ab.part_of': 'Partur {n} av {m}', 'ab.book_of': 'Bók {n} av {m}', 'ab.authors': 'Høvundar', 'ab.series': 'Røðir',
-    'ab.finished': 'Liðugt', 'ab.mark_finished': 'Merk sum liðugt', 'ab.mark_unfinished': 'Merk sum ikki liðugt', 'ab.speed': 'Ferð', 'ab.sleep': 'Svøvnur', 'ab.sleep_end_chapter': 'Enda á kapitli', 'ab.sleep_min': '{n} min',
+    'ab.finished': 'Liðugt', 'ab.mark_finished': 'Merk sum liðugt', 'ab.speed': 'Ferð', 'ab.sleep': 'Svøvnur', 'ab.sleep_end_chapter': 'Enda á kapitli', 'ab.sleep_min': '{n} min',
     'ab.bookmark_add': 'Legg bókamerki afturat', 'ab.bookmarks': 'Bókamerki', 'ab.skip_back': '30 sek. aftur', 'ab.skip_fwd': '30 sek. fram', 'ab.skip_silence': 'Leyp um tøgn í ljóðbókum', 'ab.empty': 'Ongar ljóðbøkur enn',
     'ab.all_books': 'Allar bøkur', 'ab.books_n': '{n} bøkur', 'ab.books_one': '1 bók', 'ab.chapters': 'Kapitlar', 'ab.go_author': 'Far til høvund', 'ab.off': 'Av', 'ab.note': 'Viðmerking (valfrí)', 'ab.note_ph': 'Hvat hendir her', 'ab.save': 'Goym',
     'ab.bookmark_added': 'Bókamerki lagt afturat', 'ab.no_bookmarks': 'Eingi bókamerki enn. Trýst á bókamerkið í spælaranum.', 'ab.sort_title': 'Heiti', 'ab.sort_author': 'Høvundur', 'ab.sort_series': 'Røð',
@@ -555,4 +555,9 @@
     return s;
   };
   window.__raviloLang = 'en';
+
+  // ---- R340 (2026-09-30): one Sign out with two scopes (Unpair folded in); Add user only on Switch's grid. da/fo drafts ----
+  Object.assign(STR.en, { so_title: 'Sign out', so_one: 'Only {name}', so_one_sub: 'Everyone else stays signed in on this TV.', so_one_sub_last: 'You are the only one signed in, so Ravilo will ask who is watching next time.', so_all: 'Everyone on this TV', so_all_sub: 'Signs out all {n} profiles and forgets the server. Next time Ravilo starts from the beginning.', so_yes_all: 'Sign out everyone', toast_signed_out_all: 'Everyone is signed out' });
+  Object.assign(STR.da, { so_title: 'Log ud', so_one: 'Kun {name}', so_one_sub: 'Alle andre forbliver logget ind på dette tv.', so_one_sub_last: 'Du er den eneste, der er logget ind, så Ravilo spørger, hvem der ser med, næste gang.', so_all: 'Alle på dette tv', so_all_sub: 'Logger alle {n} profiler ud og glemmer serveren. Næste gang starter Ravilo forfra.', so_yes_all: 'Log alle ud', toast_signed_out_all: 'Alle er logget ud' });
+  Object.assign(STR.fo, { so_title: 'Rita út', so_one: 'Bara {name}', so_one_sub: 'Øll hini verða verandi innritað á hesum sjónvarpinum.', so_one_sub_last: 'Tú ert tann einasti innritaði, so Ravilo spyr næstu ferð, hvør sær.', so_all: 'Øll á hesum sjónvarpinum', so_all_sub: 'Ritar øll {n} út og gloymir ambætaran. Næstu ferð byrjar Ravilo av nýggjum.', so_yes_all: 'Rita øll út', toast_signed_out_all: 'Øll eru ritað út' });
 })();

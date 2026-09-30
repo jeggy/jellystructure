@@ -51,7 +51,8 @@
       </div>`;
     stage.appendChild(appbar);
 
-    // ---- profile menu (avatar dropdown: My List / Continue / Settings / Unpair / Switch) ----
+    // ---- profile menu (avatar dropdown: Switch / My List / Settings / Sign out). R340: Add user lives only on
+    //      Switch's grid, and Unpair is Sign out's "Everyone on this TV". ----
     const profmenu = el('div', 'profmenu');
     profmenu.innerHTML = `
       <div class="pm-head">
@@ -61,10 +62,8 @@
       </div>
       <div class="pm-div"></div>
       <div class="pm-row foc" data-pm="mylist"><span class="pm-ic">＋</span> ${t('nav_mylist')}</div>
-      <div class="pm-row foc" data-pm="adduser"><span class="pm-ic">＋</span> ${t('add_user')}</div>
       <div class="pm-row foc" data-pm="settings"><span class="pm-ic">⚙</span> ${t('pm_settings')}</div>
-      <div class="pm-row foc" data-pm="signout"><span class="pm-ic">⇥</span> ${t('pm_sign_out')}</div>
-      <div class="pm-row foc" data-pm="unpair"><span class="pm-ic">⏏</span> ${t('pm_unpair')}</div>`;
+      <div class="pm-row foc" data-pm="signout"><span class="pm-ic">⇥</span> ${t('pm_sign_out')}</div>`;
     stage.appendChild(profmenu);
     function pmItems() { return [...profmenu.querySelectorAll('.foc')]; }
     function openProfMenu() {
@@ -91,11 +90,9 @@
       const f = profmenu.querySelector('.foc.focused'); if (!f) return;
       const a = f.dataset.pm; closeProfMenu();
       if (a === 'mylist') go({ type: 'grid', kind: 'mylist', title: t('nav_mylist'), nav: 'mylist' });
-      else if (a === 'adduser') openSignin();
       else if (a === 'settings') openSettings();
       else if (a === 'switch') openProfiles('switch');
       else if (a === 'signout') { soBack = 'menu'; renderSignoutConfirm(); prof.style.display = 'flex'; }
-      else if (a === 'unpair') { renderUnpairConfirm(); prof.style.display = 'flex'; }
     }
     profmenu.addEventListener('click', e => { e.stopPropagation(); const r = e.target.closest('.foc'); if (!r) return; pmItems().forEach(x => x.classList.remove('focused')); r.classList.add('focused'); activateProfMenu(); });
 
@@ -2033,20 +2030,31 @@
     function setTog(k, label) { return '<div class="lang-chip set-tog foc' + (playPrefs[k] ? ' cur' : '') + '" data-pid="__tog:' + k + '"><span class="tog-sw"></span><span class="lang-endo">' + label + '</span></div>'; }
     // R191: sign out ONE profile, behind a confirmation. Everyone else on this TV stays signed in.
     let soBack = 'settings';
-    function renderSignoutConfirm() {
+    // R340: one Sign out, two scopes — this profile (R191) or everyone on this TV, which also forgets the server
+    //      (what "Unpair this TV" was). The profile's own scope is the default; the choice is two rows, then the buttons.
+    let soScope = 'one';
+    function renderSignoutConfirm(keepFocus) {
+      if (pMode !== 'signout') soScope = 'one';
       pMode = 'signout';
       const u = currentUser() || {}; const nm = esc(u.name || '');
+      const n = profiles.filter(p => p.signedIn).length;
+      const opt = (k, h, s) => '<div class="so-opt foc' + (soScope === k ? ' cur' : '') + '" data-pid="__so:' + k + '"><span class="so-radio"></span><div><b>' + h + '</b><span>' + s + '</span></div></div>';
       prof.className = 'profiles switch';
       prof.innerHTML =
-        '<div class="signin-panel"><h3>' + t('so_confirm', { name: nm }) + '</h3>' +
-        '<div class="sub">' + t('so_desc', { name: nm }).replace('{name}', nm) + '</div>' +
-        '<div class="row center" style="gap:14px;justify-content:center;display:flex;margin-top:6px;">' +
+        '<div class="signin-panel so-panel"><h3>' + t('so_title') + '</h3>' +
+        '<div class="so-opts">' +
+          opt('one', t('so_one', { name: nm }).replace('{name}', nm), n > 1 ? t('so_one_sub') : t('so_one_sub_last')) +
+          opt('all', t('so_all'), t('so_all_sub', { n: n }).replace('{n}', n)) +
+        '</div>' +
+        '<div class="row center" style="gap:14px;justify-content:center;display:flex;margin-top:26px;">' +
           '<span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span>' +
-          '<span class="btn danger foc" data-pid="__signout-confirm"><span class="ic">⇥</span> ' + t('so_yes') + '</span>' +
+          '<span class="btn danger foc" data-pid="__signout-confirm"><span class="ic">⇥</span> ' + (soScope === 'all' ? t('so_yes_all') : t('so_yes')) + '</span>' +
         '</div></div>';
-      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
+      const keep = keepFocus ? pIdx : 0;
+      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = keep; paintP();
     }
     function doSignout() {
+      if (soScope === 'all') { doLogout(); return; }
       const u = currentUser(); if (u) u.signedIn = false;
       try { localStorage.removeItem(PKEY); } catch (e) {}
       const left = profiles.filter(p => p.signedIn);
@@ -2073,9 +2081,6 @@
             '<div><div class="who-name">' + esc(u.name || '') + '</div><div class="who-sub">' + (u.isAdmin ? t('admin') : t('signed_in_as', { name: esc(u.name || '') })) + '</div></div></div>' +
           '<div class="set-acct-btns"><div class="btn foc" data-pid="__pw"><span class="ic">🔑</span> ' + t('pw_change') + '</div>' +
           '<div class="btn foc" data-pid="__signout"><span class="ic">⇥</span> ' + t('pm_sign_out') + '</div></div></div>' +
-        '<div class="set-sec set-danger"><div class="prof-langs-h">' + t('unpair') + '</div>' +
-          '<div class="set-danger-desc">' + t('unpair_desc') + '</div>' +
-          '<div class="btn danger foc" data-pid="__logout"><span class="ic">⏻</span> ' + t('unpair') + '</div></div>' +
         '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('back') + '</span></div>';
       pTiles = [...prof.querySelectorAll('.foc')];
       pIdx = Math.min(pIdx, pTiles.length - 1);
@@ -2089,9 +2094,11 @@
       renderSettings();
     }
     function doLogout() {
+      profiles.forEach(p => { p.signedIn = false; });
       try { localStorage.removeItem(PKEY); } catch (e) {}
-      flash(t('toast_unpaired'));
-      openProfiles('gate');
+      flash(t('toast_signed_out_all'));
+      // the real app returns to R225/R226's server setup (the address is forgotten); the mockup has no such screen, so sign-in
+      openSignin();
     }
     // unpair is destructive — confirm before signing everyone out
     function renderUnpairConfirm() {
@@ -2194,6 +2201,7 @@
       if (pid === '__logout') { renderUnpairConfirm(); return; }
       if (pid === '__signout') { soBack = 'settings'; renderSignoutConfirm(); return; }
       if (pid === '__signout-confirm') { doSignout(); return; }
+      if (pid && pid.indexOf('__so:') === 0) { soScope = pid.slice(5); renderSignoutConfirm(true); return; }
       if (pid && pid.indexOf('__tog:') === 0) { const k = pid.slice(6); playPrefs[k] = !playPrefs[k]; renderSettings(); return; }
       if (pid === '__logout-confirm') { doLogout(); return; }
       if (pid === '__close') { if (pMode === 'signout') { if (soBack === 'menu') closeProfiles(); else openSettings(); return; } if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'pw') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }

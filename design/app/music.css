@@ -304,18 +304,3 @@
 .ft-g.n{color:var(--ink-soft);border-style:dashed}
 .ft-g:hover{background:var(--fill-3)}
 .mu-bulkc{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:10px;border:1px solid var(--line-2);background:var(--fill-2);margin:-4px 0 12px;font-size:.84rem}
-
-/* Phase 287 (FR-287-4) — the two-column split preview. RESTORED-CLASS RULES: the design tool keeps these inline in
-   audiobook.html; the served page loads only the synced stylesheets, so they live here too (fenced in
-   scripts/check-mobile-css.sh). */
-.ab-scols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-@media (max-width:640px){.ab-scols{grid-template-columns:minmax(0,1fr)}}
-.ab-scol{border:1px solid var(--line-2);border-radius:12px;padding:10px;min-height:180px;background:var(--fill-2)}
-.ab-scol.over{border-color:var(--hi);background:var(--hi-soft)}
-.ab-sh{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
-.ab-sh input{font:inherit;font-weight:700;font-size:.9rem;padding:5px 8px;border-radius:7px;border:1px solid transparent;background:none;color:var(--ink)}
-.ab-sh input:hover,.ab-sh input:focus{border-color:var(--line-2);outline:none}
-.ab-spart{display:grid;grid-template-columns:18px 26px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-radius:8px;background:var(--fill);border:1px solid var(--line);margin-top:6px;font-size:.84rem;cursor:grab}
-.ab-spart.drag{opacity:.4}
-.ab-spart .ab-mv{cursor:pointer;padding:0 6px;color:var(--ink-dim);font-size:1.1rem}
-.ab-sempty{padding:26px 8px;text-align:center;color:var(--ink-dim);font-size:.8rem;border:1px dashed var(--line-2);border-radius:8px}

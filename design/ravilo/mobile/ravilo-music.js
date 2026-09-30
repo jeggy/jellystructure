@@ -16,10 +16,11 @@
   const U = new URLSearchParams(location.search);
   const MS = window.RaviloMusicState = {
     mode: (localStorage.getItem(MKEY) === 'music') ? 'music' : 'video', granted: U.get('music') !== 'none',
-    size: U.get('mlib') || 'household', q, libChip: 'albums', libSort: 0, det: null, detStack: [], srch: '', srchAll: null,
+    size: U.get('mlib') || 'household', q, libChip: 'artists', libSort: 0, det: null, detStack: [], srch: '', srchAll: null,
     favs: new Set(['salt-on-the-window-1']), playlists: [], evenVol: true, genre: null,
   };
   if (U.get('mode') === 'music') MS.mode = 'music';
+  if (U.get('mode') === 'video') MS.mode = 'video';
   const setQ = (k, v) => { q[k] = v; try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch (e) {} };
 
   /* ---- glyphs ---- */
@@ -130,7 +131,8 @@
     return '<div class="mu-gen">' + M.genres().map(g => '<button data-mu="genre" data-id="' + esc(g.name) + '">' + esc(g.name) + ' <span>' + g.albums + '</span></button>').join('') + '</div>';
   }
   // (a) and (c): Playlists is a Library chip; with Playlists in the bar (a′) or no Audiobooks tab (a′, c) books are a chip too
-  const CHIPS = () => ['albums', 'artists', 'songs', 'genres'].concat(['a', 'c', 'np', 'cnp', 'cnp6'].indexOf(q.j2) >= 0 ? ['playlists'] : []).concat(['ap', 'c', 'cnp', 'cnp6'].indexOf(q.j2) >= 0 ? ['books'] : []);
+  // owner 2026-09-30: the same order as jellystructure's Library → Music — Artists · Albums · Songs, then the rest; Artists first
+  const CHIPS = () => ['artists', 'albums', 'songs', 'genres'].concat(['a', 'c', 'np', 'cnp', 'cnp6'].indexOf(q.j2) >= 0 ? ['playlists'] : []).concat(['ap', 'c', 'cnp', 'cnp6'].indexOf(q.j2) >= 0 ? ['books'] : []);
   function library() {
     if (empty()) return '<div class="mu-empty">' + t('mhome.empty') + '</div>';
     const c = MS.libChip;

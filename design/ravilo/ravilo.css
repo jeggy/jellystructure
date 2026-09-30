@@ -1175,3 +1175,15 @@ body.fd-line #chrome { bottom: 122px; }
 .st-err .acts{display:flex;gap:24px;margin-top:56px}
 .st-err .b{height:84px;padding:0 48px;border-radius:42px;display:flex;align-items:center;font-size:30px;font-weight:600;background:rgba(255,255,255,.08);color:var(--ink);cursor:pointer}
 .st-err .b.f{background:var(--ink);color:var(--bg);box-shadow:0 0 0 6px var(--bg),0 0 0 10px var(--accent-2)}
+
+/* R340 — Sign out asks which: this profile, or everyone on this TV (and the server) */
+.so-panel { width: 700px; }
+.so-opts { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.so-opt { display: flex; align-items: flex-start; gap: 18px; padding: 18px 20px; border-radius: 16px; border: 2px solid var(--line); background: rgba(255,255,255,.04); cursor: pointer; transition: border-color .2s, box-shadow .2s, background .2s; }
+.so-opt b { display: block; font-size: 21px; font-weight: 600; color: var(--ink); }
+.so-opt span:not(.so-radio) { display: block; font-size: 16px; line-height: 1.45; color: var(--ink-soft); margin-top: 4px; }
+.so-radio { flex: none; width: 24px; height: 24px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--ink-dim); position: relative; }
+.so-opt.cur .so-radio { border-color: var(--accent); }
+.so-opt.cur .so-radio::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--accent); }
+.so-opt.cur { background: rgba(255,255,255,.07); }
+.so-opt.focused { border-color: var(--ring); box-shadow: 0 0 0 3px var(--ring-glow); background: rgba(255,255,255,.09); }
