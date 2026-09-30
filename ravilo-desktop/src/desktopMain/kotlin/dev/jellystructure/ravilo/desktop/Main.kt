@@ -1,5 +1,11 @@
 package dev.jellystructure.ravilo.desktop
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,6 +127,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
         icon = AppImages.icon,
         // R337 (FR-R337-5, dev review 11) — GNOME's shape is drawn by Ravilo: an undecorated window with our header bars.
         undecorated = DesktopWindow.drawsOwnFrame,
+        // …with libadwaita's round corners: the window is see-through and the app is clipped to the rounded shape.
+        transparent = DesktopWindow.drawsOwnFrame,
         onPreviewKeyEvent = { playerWindowKeys(it) || desktopKeys(it, quit) },
     ) {
         val focused = LocalWindowInfo.current.isWindowFocused
@@ -134,6 +142,7 @@ private fun ApplicationScope.RaviloDesktopApp() {
             DesktopWindow.maximizeHandler = {
                 state.placement = if (state.placement == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized
             }
+            DesktopWindow.minimizeHandler = { state.isMinimized = true }
             DesktopWindow.aboutHandler = { aboutOpen = true }
             dev.jellystructure.ravilo.ui.desktop.SingleInstance.onShowRequest { SwingUtilities.invokeLater { shown = true; window.toFront() } }
             // R337 (FR-R337-5, dev review 10) — the Mac: a transparent, full-size-content title bar, so the traffic lights
@@ -150,6 +159,9 @@ private fun ApplicationScope.RaviloDesktopApp() {
         LaunchedEffect(shown, state.isMinimized, focused, state.placement) {
             DesktopWindow.report(shown, state.isMinimized, focused, state.placement == WindowPlacement.Fullscreen)
         }
+        // R337 — a window that fills the screen has square corners; a floating one has libadwaita's 12 dp.
+        val filled = state.placement != WindowPlacement.Floating
+        LaunchedEffect(filled) { DesktopWindow.reportFilled(filled) }
         LaunchedEffect(state) {
             snapshotFlow { Triple(state.position, state.size, state.placement) }
                 .debounce(500)
@@ -166,7 +178,12 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onMinimise = { state.isMinimized = true },
             onClose = ::close,
         )
-        if (!quitting) RaviloRoot()
+        if (!quitting) {
+            if (DesktopWindow.drawsOwnFrame) Box(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(if (filled) 0.dp else dev.jellystructure.ravilo.ui.seams.WINDOW_CORNER)),
+            ) { RaviloRoot() }
+            else RaviloRoot()
+        }
     }
 
     if (aboutOpen) AboutWindow(lang = lang, onClose = { aboutOpen = false })

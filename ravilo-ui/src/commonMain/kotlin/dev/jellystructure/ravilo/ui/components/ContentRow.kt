@@ -378,7 +378,7 @@ fun <T> StaticContentRow(
 
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
-            LazyRow(
+            ArrowRow(
                 state = listState,
                 modifier = Modifier
                     .then(if (rowFocusRequester != null) Modifier.focusRequester(rowFocusRequester) else Modifier)

@@ -3,6 +3,15 @@ package dev.jellystructure.ravilo.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.launch
+import dev.jellystructure.ravilo.ui.i18n.str
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -61,6 +70,7 @@ enum class DeskIcon(internal val d: String, internal val filled: Boolean = false
     VOLUME("M4 9v6h4l5 4V5L8 9z" + "M16 9a4 4 0 0 1 0 6"),
     LYRICS("M4 5h16v11H9l-5 4z" + "M8 9h8M8 12h5"),
     MENU("M4 7h16M4 12h16M4 17h16"),
+    SIDEBAR(rect(3f, 4f, 18f, 16f, 2f) + "M9 4v16"),
     BACK("M15 5l-7 7 7 7"),
     FORWARD("M9 5l7 7-7 7"),
     CLOSE("M6 6l12 12M18 6L6 18"),
@@ -112,4 +122,55 @@ fun Modifier.deskHover(shape: androidx.compose.ui.graphics.Shape = androidx.comp
     val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val hovered = source.collectIsHoveredAsState().value
     return this.hoverable(source).then(if (hovered) Modifier.background(RaviloTheme.colors.fg.copy(alpha = alpha), shape) else Modifier)
+}
+
+/**
+ * R337 — a row that scrolls sideways, with the desktop's way to do it. A trackpad swipes a `LazyRow`; a plain mouse
+ * wheel cannot, and the mockup's rows run off the pane's edge with nothing to press. On a computer the row shows a
+ * glass arrow at each end it can still scroll towards, while the pointer is over it; a click moves it by most of what
+ * is on screen. On a TV and a phone this **is** `LazyRow`, parameter for parameter — nothing is wrapped.
+ */
+@Composable
+fun ArrowRow(
+    modifier: Modifier = Modifier,
+    state: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
+    contentPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(0.dp),
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    verticalAlignment: Alignment.Vertical = Alignment.Top,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    if (!dev.jellystructure.ravilo.ui.theme.isDesktopLayout) {
+        androidx.compose.foundation.lazy.LazyRow(modifier = modifier, state = state, contentPadding = contentPadding,
+            horizontalArrangement = horizontalArrangement, verticalAlignment = verticalAlignment, content = content)
+        return
+    }
+    val colors = RaviloTheme.colors
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val hovered = source.collectIsHoveredAsState().value
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val back = str("desk.row_back")
+    val forward = str("desk.row_forward")
+    androidx.compose.foundation.layout.Box(Modifier.hoverable(source)) {
+        androidx.compose.foundation.lazy.LazyRow(modifier = modifier, state = state, contentPadding = contentPadding,
+            horizontalArrangement = horizontalArrangement, verticalAlignment = verticalAlignment, content = content)
+        @Composable
+        fun arrow(icon: DeskIcon, label: String, align: Alignment, direction: Float) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.align(align).padding(horizontal = 8.dp).size(32.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background((if (colors.isLight) colors.background else colors.surface).copy(alpha = 0.92f))
+                    .border(1.dp, colors.fg.copy(alpha = 0.14f), androidx.compose.foundation.shape.CircleShape)
+                    // A tap, not `clickable`: a click must not take the focus. A focused child makes the row bring itself
+                    // into view and scroll back to its focused tile — the page jumped and the row stayed (GNOME, 2026-09-30).
+                    .pointerInput(direction) {
+                        detectTapGestures(onTap = {
+                            scope.launch { state.animateScrollBy(state.layoutInfo.viewportSize.width * 0.8f * direction) }
+                        })
+                    }
+                    .semantics { contentDescription = label; role = androidx.compose.ui.semantics.Role.Button },
+                contentAlignment = Alignment.Center,
+            ) { DeskIcon(icon, colors.text, 16.dp) }
+        }
+        if (hovered && state.canScrollBackward) arrow(DeskIcon.BACK, back, Alignment.CenterStart, -1f)
+        if (hovered && state.canScrollForward) arrow(DeskIcon.FORWARD, forward, Alignment.CenterEnd, 1f)
+    }
 }

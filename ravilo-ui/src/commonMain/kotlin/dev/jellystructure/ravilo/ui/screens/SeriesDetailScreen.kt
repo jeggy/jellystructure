@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
@@ -755,7 +756,7 @@ private fun SeriesDetailLoaded(
                         epRowState.scrollToItem(scrollTo)
                     }
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         state = epRowState,
                         // R296 — the single-season Up bridge to the hero lives on each card (cardUp below),
                         // not on this row: on the row it also swallowed Up from the Watched toggle under a
@@ -824,7 +825,7 @@ private fun SeriesDetailLoaded(
                         fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         modifier = Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
@@ -845,7 +846,7 @@ private fun SeriesDetailLoaded(
                         fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         modifier = Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),

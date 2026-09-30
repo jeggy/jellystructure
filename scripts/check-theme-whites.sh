@@ -25,7 +25,7 @@ ALLOWED="
   components/RaviloBottomNav.kt                 1
   components/ServerMessageHost.kt               1
   components/Tile.kt                            7
-  music/BookPlayerScreens.kt                    1
+  music/BookPlayerScreens.kt                    2
   music/DesktopMusicBar.kt                      1
   music/MusicCommon.kt                          4
   music/MusicDetailScreens.kt                   3

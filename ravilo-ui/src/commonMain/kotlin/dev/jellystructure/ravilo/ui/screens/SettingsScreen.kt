@@ -5,6 +5,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import dev.jellystructure.shared.tv.RaviloThemes
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.horizontalScroll
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -50,6 +57,7 @@ import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.isWebPlatform
+import dev.jellystructure.ravilo.ui.seams.windowDragArea
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -324,6 +332,352 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * R337 — what a computer's Settings window holds (`DesktopSettingsWindow`; the mockup's T·e and T·h). The same
+ * settings as the page on a TV and a phone, written through the same [SettingsStore] — this is only their desktop form.
+ *
+ * - **The Mac**: three tabs in the window's bar — *General* (theme, language), *Playback* (the playback and listening
+ *   switches), *Account* (who is signed in, an update when there is one, the password, Sign out).
+ * - **GNOME**: one page, the same three under their headings, as a preferences dialog with few rows is.
+ *
+ * Change password and Sign out are the app's own pages and questions, so they close this window and hand over.
+ */
+@Composable
+fun DesktopSettingsPanel(
+    store: SettingsStore,
+    displayName: String,
+    onSkinChange: (Skin) -> Unit,
+    onThemeChange: (RaviloConfig) -> Unit,
+    onChangePassword: () -> Unit,
+    onSignOut: () -> Unit,
+    onClose: () -> Unit,
+) {
+    // The window is a desktop surface whatever the app's own window is doing (it may be as narrow as a phone).
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP,
+        LocalCompact provides false,
+        LocalHandset provides false,
+    ) {
+        val colors = RaviloTheme.colors
+        val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+        val state by store.state.collectAsState()
+        val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
+        LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
+        val mac = dev.jellystructure.ravilo.ui.isMacPlatform
+        var tab by remember { mutableStateOf(0) }
+        val tabs = listOf(
+            dev.jellystructure.ravilo.ui.components.DeskIcon.SIDEBAR to str("settings.general"),
+            dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY to str("settings.playback"),
+            dev.jellystructure.ravilo.ui.components.DeskIcon.PERSON to str("settings.account"),
+        )
+
+        @Composable
+        fun heading(text: String, first: Boolean = false) {
+            if (!first) Spacer(Modifier.height(20.dp))
+            Text(text, color = colors.textSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = ui)
+            Spacer(Modifier.height(10.dp))
+        }
+        @Composable
+        fun note(text: String) = Text(text, color = colors.textDim, fontSize = 12.sp, fontFamily = ui, modifier = Modifier.padding(start = 2.dp, top = 6.dp))
+
+        @Composable
+        fun general(config: RaviloConfig) {
+            if (config.allowSkinOverride && config.hasThemes()) {
+                DeskThemeSection(config, store, remember { FocusRequester() }, onThemeChange)
+                Spacer(Modifier.height(20.dp))
+            } else if (config.allowSkinOverride) {
+                // A server from before R338: the three skins.
+                heading(str("settings.appearance"), first = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Skin.entries.forEach { skin ->
+                        DeskChoice(skin.name.lowercase().replaceFirstChar { it.uppercaseChar() }, config.effectiveSkin() == skin) {
+                            store.saveSkin(skin); onSkinChange(skin)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+            heading(str("settings.language"), first = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                UI_LANGUAGES.forEach { (code, label) -> DeskChoice(label, config.uiLanguage == code) { store.saveUiLanguage(code) } }
+            }
+        }
+
+        @Composable
+        fun playback(config: RaviloConfig, first: Boolean) {
+            heading(str("settings.playback"), first)
+            ToggleRow(str("settings.show_progress"), config.showContinueProgress, remember { FocusRequester() },
+                onToggle = { store.saveShowContinueProgress(!config.showContinueProgress) })
+            Spacer(Modifier.height(8.dp))
+            ToggleRow(str("settings.autoplay_next"), config.autoplayNext, remember { FocusRequester() },
+                onToggle = { store.saveAutoplayNext(!config.autoplayNext) })
+            // R322 (FR-R322-9) / R323 (FR-R323-9) — the listening switches, where music plays.
+            if (dev.jellystructure.ravilo.ui.music.MusicEngine.supported) {
+                heading(str("music.listening"))
+                var even by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.MusicPrefs.evenVolume) }
+                ToggleRow(str("music.even_volume"), even, remember { FocusRequester() },
+                    onToggle = { even = !even; dev.jellystructure.ravilo.ui.music.MusicEngine.setEvenVolume(even) })
+                note(str("music.even_volume_sub"))
+                if (dev.jellystructure.ravilo.ui.music.playerSkipsSilence) {
+                    Spacer(Modifier.height(10.dp))
+                    var silence by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.skipSilence) }
+                    ToggleRow(str("ab.skip_silence"), silence, remember { FocusRequester() },
+                        onToggle = { silence = !silence; dev.jellystructure.ravilo.ui.music.MusicEngine.setSkipSilence(silence) })
+                    note(str("ab.skip_silence_sub"))
+                }
+                Spacer(Modifier.height(10.dp))
+                var fade by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.sleepFade) }
+                ToggleRow(str("ab.sleep_fade"), fade, remember { FocusRequester() },
+                    onToggle = { fade = !fade; dev.jellystructure.ravilo.ui.music.BookPrefs.sleepFade = fade })
+                note(str("ab.sleep_fade_sub"))
+            }
+        }
+
+        @Composable
+        fun account(first: Boolean) {
+            heading(str("settings.account"), first)
+            Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.text, fontSize = 13.5.sp, fontFamily = ui)
+            val offer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
+            offer?.let {
+                Spacer(Modifier.height(14.dp))
+                dev.jellystructure.ravilo.ui.components.AppUpdateLine(it, remember { FocusRequester() }, onUp = {}, onDown = {})
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                dev.jellystructure.ravilo.ui.components.DeskButton(str("account.pw_change"), onClick = onChangePassword)
+                dev.jellystructure.ravilo.ui.components.DeskButton(str("profile.sign_out"), onClick = onSignOut)
+            }
+        }
+
+        Column(Modifier.fillMaxWidth()) {
+            if (mac) {
+                // `.setw .tb` — 74 points, the tabs in the middle under the lights' line; empty bar moves the window.
+                Box(Modifier.fillMaxWidth().height(74.dp).background(colors.surface).windowDragArea()) {
+                    Row(Modifier.align(Alignment.Center).padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        tabs.forEachIndexed { i, (icon, label) ->
+                            val on = tab == i
+                            Column(
+                                Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) colors.fg.copy(alpha = 0.10f) else Color.Transparent)
+                                    .clickable { tab = i }.padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                dev.jellystructure.ravilo.ui.components.DeskIcon(icon, if (on) colors.text else colors.textSecondary, 18.dp)
+                                Text(label, color = if (on) colors.text else colors.textSecondary, fontSize = 11.5.sp, fontFamily = ui, maxLines = 1)
+                            }
+                        }
+                    }
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(1.dp).background(colors.fg.copy(alpha = 0.08f)))
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = if (mac) 22.dp else 8.dp, bottom = 28.dp)) {
+                when (val s = state) {
+                    is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 13.sp, fontFamily = ui)
+                    is SettingsState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onClose)
+                    is SettingsState.Loaded -> if (mac) when (tab) {
+                        0 -> general(s.config)
+                        1 -> playback(s.config, first = true)
+                        else -> account(first = true)
+                    } else GnomePreferences(s.config, store, displayName, onSkinChange, onThemeChange, onChangePassword, onSignOut)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * R337 — GNOME's preferences (the mockup's T·h, an `AdwPreferencesDialog`): groups of rows in boxed lists. A switch row
+ * is a switch, a choice is a combo row with the pick and ▾ at its end, an action is a row with ›. Appearance follows
+ * R338: *Match the system appearance*; on, a Light row and a Dark row, the one in use saying so; off, one Theme row
+ * with all five.
+ */
+@Composable
+private fun GnomePreferences(
+    config: RaviloConfig,
+    store: SettingsStore,
+    displayName: String,
+    onSkinChange: (Skin) -> Unit,
+    onThemeChange: (RaviloConfig) -> Unit,
+    onChangePassword: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+    fun save(theme: String? = null, follow: Boolean? = null, light: String? = null, dark: String? = null) {
+        store.saveTheme(theme, follow, light, dark)?.let(onThemeChange)
+    }
+    @Composable
+    fun themeDot(id: String) {
+        val t = (dev.jellystructure.ravilo.ui.theme.ThemeId.of(id) ?: dev.jellystructure.ravilo.ui.theme.ThemeId.AURORA).colors()
+        Box(Modifier.size(14.dp).clip(CircleShape).background(if (t.isLight) t.background else t.accent).border(1.dp, colors.fg.copy(alpha = 0.25f), CircleShape))
+    }
+    if (config.allowSkinOverride) {
+        AdwGroup(str("settings.appearance"), note = if (config.hasThemes()) str("theme.synced") else null, first = true) {
+            if (config.hasThemes()) {
+                val follow = config.themeFollow == true
+                val drawn = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current
+                // Turning it off keeps the theme in use at that moment (R338's T·g), whichever pick that was.
+                AdwRow(str("theme.follow_desk"), onClick = { save(follow = !follow, theme = if (follow) drawn.id else null) }) { DeskSwitch(follow) }
+                if (follow) {
+                    AdwCombo(str("theme.light"), if (drawn.isLight) str("theme.in_use") else null, RaviloThemes.lightThemes.map { it to str("theme.$it") }, config.themeLight,
+                        lead = { themeDot(it) }) { id -> save(light = id) }
+                    AdwCombo(str("theme.dark"), if (!drawn.isLight) str("theme.in_use") else null, RaviloThemes.darkThemes.map { it to str("theme.$it") }, config.themeDark,
+                        lead = { themeDot(it) }) { id -> save(dark = id) }
+                } else {
+                    AdwCombo(str("theme.one"), null, RaviloThemes.all.map { it to str("theme.$it") }, config.theme, lead = { themeDot(it) }) { id ->
+                        save(theme = id, dark = id.takeIf { RaviloThemes.isDark(it) })
+                    }
+                }
+            } else {
+                // A server from before R338: the three skins.
+                AdwCombo(str("theme.one"), null, Skin.entries.map { it.name to it.name.lowercase().replaceFirstChar { c -> c.uppercaseChar() } }, config.effectiveSkin().name) { name ->
+                    Skin.entries.firstOrNull { it.name == name }?.let { store.saveSkin(it); onSkinChange(it) }
+                }
+            }
+        }
+    }
+    AdwGroup(str("settings.language"), first = !config.allowSkinOverride) {
+        AdwCombo(str("settings.language"), null, UI_LANGUAGES, config.uiLanguage) { code -> store.saveUiLanguage(code) }
+    }
+    AdwGroup(str("settings.playback")) {
+        AdwRow(str("settings.show_progress"), onClick = { store.saveShowContinueProgress(!config.showContinueProgress) }) { DeskSwitch(config.showContinueProgress) }
+        AdwRow(str("settings.autoplay_next"), onClick = { store.saveAutoplayNext(!config.autoplayNext) }) { DeskSwitch(config.autoplayNext) }
+    }
+    // R322 (FR-R322-9) / R323 (FR-R323-9) — the listening switches, where music plays.
+    if (dev.jellystructure.ravilo.ui.music.MusicEngine.supported) AdwGroup(str("music.listening")) {
+        var even by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.MusicPrefs.evenVolume) }
+        AdwRow(str("music.even_volume"), str("music.even_volume_sub"), onClick = { even = !even; dev.jellystructure.ravilo.ui.music.MusicEngine.setEvenVolume(even) }) { DeskSwitch(even) }
+        if (dev.jellystructure.ravilo.ui.music.playerSkipsSilence) {
+            var silence by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.skipSilence) }
+            AdwRow(str("ab.skip_silence"), str("ab.skip_silence_sub"), onClick = { silence = !silence; dev.jellystructure.ravilo.ui.music.MusicEngine.setSkipSilence(silence) }) { DeskSwitch(silence) }
+        }
+        var fade by remember { mutableStateOf(dev.jellystructure.ravilo.ui.music.BookPrefs.sleepFade) }
+        AdwRow(str("ab.sleep_fade"), str("ab.sleep_fade_sub"), onClick = { fade = !fade; dev.jellystructure.ravilo.ui.music.BookPrefs.sleepFade = fade }) { DeskSwitch(fade) }
+    }
+    AdwGroup(str("settings.account")) {
+        AdwRow(str("profile.signed_in", mapOf("name" to displayName)))
+        val offer by dev.jellystructure.ravilo.ui.components.AppUpdate.offer.collectAsState()
+        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+        offer?.let { o -> AdwRow(str("mac.update_available", mapOf("version" to o.version)), onClick = { runCatching { uri.openUri(o.downloadUrl) } }) { AdwChevron() } }
+        AdwRow(str("account.pw_change"), onClick = onChangePassword) { AdwChevron() }
+        AdwRow(str("profile.sign_out"), onClick = onSignOut) { AdwChevron() }
+    }
+}
+
+/** `.gn.setw h6` + `.grp` — a heading, an optional line under it, and the rows in one bordered card with hairlines between them. */
+@Composable
+private fun AdwGroup(title: String, note: String? = null, first: Boolean = false, rows: @Composable AdwGroupScope.() -> Unit) {
+    val colors = RaviloTheme.colors
+    val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+    if (!first) Spacer(Modifier.height(18.dp))
+    Text(title, color = colors.textSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = ui)
+    if (note != null) Text(note, color = colors.textDim, fontSize = 12.sp, fontFamily = ui, modifier = Modifier.padding(top = 2.dp))
+    Spacer(Modifier.height(10.dp))
+    val shape = RoundedCornerShape(12.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(colors.surface).border(1.dp, colors.fg.copy(alpha = 0.08f), shape)) {
+        AdwGroupScope().rows()
+    }
+}
+
+/** Counts the rows of one group, so every row after the first draws the hairline above it. */
+private class AdwGroupScope { var rows = 0 }
+
+/** `.grp > div` — one row: 52 dp at least, its name (and a quieter line under it), its control at the end. */
+@Composable
+private fun AdwGroupScope.AdwRow(title: String, sub: String? = null, onClick: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
+    val colors = RaviloTheme.colors
+    val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+    val index = remember { rows++ }
+    if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.fg.copy(alpha = 0.08f)))
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).then(if (onClick != null) Modifier.deskHoverRow().clickable(onClick = onClick) else Modifier).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, color = colors.text, fontSize = 13.5.sp, fontFamily = ui)
+            if (sub != null) Text(sub, color = colors.textDim, fontSize = 12.sp, fontFamily = ui)
+        }
+        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun Modifier.deskHoverRow(): Modifier {
+    val source = remember { MutableInteractionSource() }
+    val hovered = source.collectIsHoveredAsState().value
+    return this.hoverable(source).then(if (hovered) Modifier.background(RaviloTheme.colors.fg.copy(alpha = 0.04f)) else Modifier)
+}
+
+@Composable
+private fun AdwChevron() = dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.FORWARD, RaviloTheme.colors.textDim, 14.dp)
+
+/** `.combo` — a row whose end reads the pick and ▾; a click opens the choices under it, the pick ticked. */
+@Composable
+private fun AdwGroupScope.AdwCombo(
+    title: String,
+    sub: String?,
+    options: List<Pair<String, String>>,
+    picked: String?,
+    lead: (@Composable (String) -> Unit)? = null,
+    onPick: (String) -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val ui = dev.jellystructure.ravilo.ui.theme.SystemUiFont
+    var open by remember { mutableStateOf(false) }
+    AdwRow(title, sub, onClick = { open = true }) {
+        Box {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (picked != null) lead?.invoke(picked)
+                Text(options.firstOrNull { it.first == picked }?.second ?: picked.orEmpty(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = ui)
+                dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.UP, colors.textSecondary, 12.dp, Modifier.graphicsLayer { rotationZ = 180f })
+            }
+            if (open) androidx.compose.ui.window.Popup(
+                alignment = Alignment.TopEnd,
+                offset = androidx.compose.ui.unit.IntOffset(0, with(androidx.compose.ui.platform.LocalDensity.current) { 26.dp.roundToPx() }),
+                onDismissRequest = { open = false },
+                properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+            ) {
+                val shape = RoundedCornerShape(12.dp)
+                Column(Modifier.width(200.dp).shadow(18.dp, shape).clip(shape).background(colors.surfaceVariant).border(1.dp, colors.fg.copy(alpha = 0.10f), shape).padding(6.dp)) {
+                    options.forEach { (id, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(6.dp)).deskHoverRow().clickable { open = false; if (id != picked) onPick(id) }.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            lead?.invoke(id)
+                            Text(label, color = colors.text, fontSize = 13.sp, fontFamily = ui, modifier = Modifier.weight(1f))
+                            if (id == picked) dev.jellystructure.ravilo.ui.components.CheckGlyph(colors.text, 12.dp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The platforms' switch, drawn: a 38 × 22 track in the accent when on, a white knob. */
+@Composable
+private fun DeskSwitch(checked: Boolean) {
+    val colors = RaviloTheme.colors
+    Box(
+        Modifier.size(width = 38.dp, height = 22.dp).background(if (checked) colors.accent else colors.fg.copy(alpha = 0.16f), RoundedCornerShape(11.dp)).padding(2.dp),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) { Box(Modifier.size(18.dp).background(Color.White, CircleShape)) }
+}
+
+/** A choice among a few, on a computer (the language, an old server's skins): a small plate, the pick in the accent. */
+@Composable
+private fun DeskChoice(label: String, selected: Boolean, onPick: () -> Unit) {
+    val colors = RaviloTheme.colors
+    Box(
+        Modifier.height(30.dp).clip(RoundedCornerShape(8.dp)).background(if (selected) colors.accent else colors.fg.copy(alpha = 0.08f))
+            .clickable(onClick = onPick).padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (selected) colors.onAccent else colors.text, fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, maxLines = 1)
     }
 }
 
@@ -1098,10 +1452,7 @@ private fun ToggleRow(
             fontFamily = if (deskLayout) dev.jellystructure.ravilo.ui.theme.SystemUiFont else null,
             modifier = Modifier.weight(1f).padding(end = 12.dp),
         )
-        if (deskLayout) Box(
-            Modifier.size(width = 38.dp, height = 22.dp).background(if (checked) colors.accent else colors.fg.copy(alpha = 0.16f), RoundedCornerShape(11.dp)).padding(2.dp),
-            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
-        ) { Box(Modifier.size(18.dp).background(Color.White, CircleShape)) }
+        if (deskLayout) DeskSwitch(checked)
         else Box(
             modifier = Modifier
                 .background(if (checked) colors.accent else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50))

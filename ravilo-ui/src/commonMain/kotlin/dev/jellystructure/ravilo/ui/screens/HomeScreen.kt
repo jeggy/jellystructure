@@ -660,11 +660,12 @@ private fun HeadingClearOfAppBar(listState: androidx.compose.foundation.lazy.Laz
         )
         if (up < 0f) runCatching { listState.animateScrollBy(up) }
     }
-    Box(
-        Modifier
-            .onFocusChanged { hasFocus = it.hasFocus }
-            .onGloballyPositioned { c -> topPx = c.positionInWindow().y; footPx = topPx + c.size.height },
-    ) { content() }
+    val measured = Modifier
+        .onFocusChanged { hasFocus = it.hasFocus }
+        .onGloballyPositioned { c -> topPx = c.positionInWindow().y; footPx = topPx + c.size.height }
+    // R337 — a row is its gap and then the row. In a Box the two overlap and the gap is lost: a computer's rows sat on
+    // each other (seen on GNOME, 2026-09-30). The TV keeps the Box it has been measured and seen with.
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) Column(measured) { content() } else Box(measured) { content() }
 }
 
 @Composable

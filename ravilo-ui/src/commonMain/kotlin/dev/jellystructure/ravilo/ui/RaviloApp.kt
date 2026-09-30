@@ -666,7 +666,11 @@ fun RaviloApp(
 
         // R337 — the desktop toolbar's Forward: the pages Back left, until the viewer goes somewhere new.
         var forwardStack by remember { mutableStateOf<List<Dest>>(emptyList()) }
+        // R337 — on a computer Settings is a window of its own beside the app's (the mockup's T·e, ⌘, on the Mac), so
+        // every way to Settings opens that window and the app's own page stays where it is.
+        var deskSettingsOpen by remember { mutableStateOf(false) }
         fun push(dest: Dest) {
+            if (dest is Dest.Settings && isDesktopPlatform) { deskSettingsOpen = true; return }
             navDir = NavDir.Forward
             forwardStack = emptyList()
             stack = stack + dest
@@ -1395,7 +1399,13 @@ fun RaviloApp(
             androidx.compose.runtime.CompositionLocalProvider(
                 dev.jellystructure.ravilo.ui.components.LocalDesktopBack provides (if (stack.size > 1) ({ pop() }) else null),
                 dev.jellystructure.ravilo.ui.components.LocalDesktopForward provides (if (forwardStack.isNotEmpty()) ({ goForward() }) else null),
-                dev.jellystructure.ravilo.ui.components.LocalDesktopChromeStart provides (if (isMacPlatform && !deskNavShows(dest)) 78.dp else 0.dp),
+                dev.jellystructure.ravilo.ui.components.LocalDesktopChromeStart provides (when {
+                    deskNavShows(dest) -> 0.dp
+                    isMacPlatform -> 78.dp
+                    // GNOME with its buttons on the left and no sidebar to hold them: the toolbar starts after them.
+                    else -> dev.jellystructure.ravilo.ui.seams.windowControlsWidth(true).let { if (it > 0.dp) it + 14.dp else 0.dp }
+                }),
+                dev.jellystructure.ravilo.ui.components.LocalDesktopTitle provides deskPageOf(dest)?.let { dev.jellystructure.ravilo.ui.components.desktopPageLabel(it) },
             ) {
             when (dest) {
             is Dest.ProfilePicker -> {
@@ -2229,7 +2239,11 @@ fun RaviloApp(
             dev.jellystructure.ravilo.ui.music.DesktopQueuePanel(overlay = true, onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) }, modifier = Modifier.align(Alignment.TopEnd))
         }
         // FR-R337-2/5 — the window's own controls where Ravilo draws the frame (GNOME), and the drag area.
-        if (desktop || (handset && isDesktopPlatform)) dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip(Modifier.align(Alignment.TopCenter))
+        // The start buttons (a desktop that keeps them on the left) are the sidebar's or the rail's while that shows; the
+        // page's own toolbar moves the window on a framed page, so the strip only adds its drag area where there is none.
+        if (desktop || (handset && isDesktopPlatform)) dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip(
+            Modifier.align(Alignment.TopCenter), startControls = !deskNavShows(dest), drag = !deskFramed(dest),
+        )
         // FR-R337-2 — the phone layout on a Mac: its 32 dp strip holds the traffic lights and moves the window.
         if (handset && isMacPlatform) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(32.dp).windowDragArea())
         } // Box (the page)
@@ -2250,6 +2264,24 @@ fun RaviloApp(
             onSignOut = { deskMenuOpen = false; deskSignOutAsk = true },
         )
         if (shortcutsOpen) dev.jellystructure.ravilo.ui.components.DesktopShortcutsOverlay(onDismiss = { shortcutsOpen = false })
+        // R337 — the Settings window. Change password and Sign out are the app's own page and question: the window
+        // closes and the app's window takes over.
+        LaunchedEffect(activeUserId) { if (activeUserId == null) deskSettingsOpen = false }
+        if (deskSettingsOpen && activeUserId != null) {
+            val settingsName = MultiTokenStore.getActive()?.displayName.orEmpty()
+            val settingsStore = remember(activeUserId) { SettingsStore(apiClient) }
+            dev.jellystructure.ravilo.ui.seams.DesktopSettingsWindow(title = str(if (isMacPlatform) "nav.settings" else "desk.preferences"), onClose = { deskSettingsOpen = false }) {
+                dev.jellystructure.ravilo.ui.screens.DesktopSettingsPanel(
+                    store = settingsStore,
+                    displayName = settingsName,
+                    onSkinChange = { themeState.skin = it },
+                    onThemeChange = { themeState.apply(it) },
+                    onChangePassword = { deskSettingsOpen = false; push(Dest.ChangePassword(settingsName)) },
+                    onSignOut = { deskSettingsOpen = false; deskSignOutAsk = true },
+                    onClose = { deskSettingsOpen = false },
+                )
+            }
+        }
         if (deskSignOutAsk) dev.jellystructure.ravilo.ui.screens.ConfirmOverlay(
             title = str("profile.signout_title_desk"),
             description = str("profile.signout_body"),

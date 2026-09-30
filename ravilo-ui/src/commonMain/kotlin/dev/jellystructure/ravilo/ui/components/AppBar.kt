@@ -325,6 +325,8 @@ fun AppBar(
 
 /** R337 — whether this page has somewhere to go back to (the stack is deeper than one), provided by the frame. */
 val LocalDesktopBack = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+/** R337 — the page's name for GNOME's header bar (the sidebar's own name for it), when the page does not give one. */
+val LocalDesktopTitle = androidx.compose.runtime.staticCompositionLocalOf<String?> { null }
 /** R337 — room at the toolbar's start for the Mac's traffic lights when no sidebar is there to hold them. */
 val LocalDesktopChromeStart = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
 
@@ -344,10 +346,13 @@ private fun DesktopToolbar(title: String?, solid: Boolean, modifier: Modifier) {
     val mac = dev.jellystructure.ravilo.ui.isMacPlatform
     val back = LocalDesktopBack.current
     val forward = LocalDesktopForward.current
-    val bg by animateColorAsState(if (solid) colors.background.copy(alpha = 0.94f) else Color.Transparent, tween(180), label = "deskBar")
+    // The Mac's toolbar floats over the page (a hero runs up under it) and turns solid once the page scrolls. GNOME's
+    // is a header bar (`.ghb`): always there, the page's colour, the page's name in the middle — the page starts under it.
+    val bg by animateColorAsState(if (!mac) colors.background else if (solid) colors.background.copy(alpha = 0.94f) else Color.Transparent, tween(180), label = "deskBar")
+    val shownTitle = title ?: LocalDesktopTitle.current
     Box(modifier.fillMaxWidth().height(if (mac) 52.dp else 46.dp).background(bg).windowDragArea()) {
         Row(
-            Modifier.matchParentSize().padding(start = (if (mac) 14.dp else 6.dp) + LocalDesktopChromeStart.current, end = if (mac) 14.dp else 46.dp),
+            Modifier.matchParentSize().padding(start = (if (mac) 14.dp else 6.dp) + LocalDesktopChromeStart.current, end = if (mac) 14.dp else dev.jellystructure.ravilo.ui.seams.windowControlsWidth(false).let { if (it > 0.dp) it + 20.dp else 8.dp }),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (mac) 8.dp else 6.dp),
         ) {
@@ -370,12 +375,13 @@ private fun DesktopToolbar(title: String?, solid: Boolean, modifier: Modifier) {
                     DeskIcon(DeskIcon.BACK, colors.text, 18.dp)
                 }
             }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                if (!mac && title != null) Text(title, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, maxLines = 1)
-            }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             DeskCastButton()
         }
+        // `.ghb.center .tt` — the title sits in the middle of the bar, whatever is on either side of it.
+        if (!mac && shownTitle != null) Text(shownTitle, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            fontFamily = dev.jellystructure.ravilo.ui.theme.SystemUiFont, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 96.dp))
     }
 }
 

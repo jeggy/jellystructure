@@ -5,6 +5,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.blur
+import dev.jellystructure.ravilo.ui.components.deskHover
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -123,7 +128,10 @@ fun BookPlayingScreen(
     val ci = BookMath.chapterAt(d, bookPos)
     val chapter = d.chapters.getOrNull(ci)
     var sheet by remember { mutableStateOf<String?>(null) }   // speed · sleep · chapters · bookmarks · add · menu
-    Box(Modifier.fillMaxSize().background(playingGround())) {
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+    Box(Modifier.fillMaxSize().then(if (desk) Modifier.background(colors.background) else Modifier.background(playingGround()))) {
+        // R337 (FR-R337-7) — a computer's window: the Playing page's shape (`.np`), with the chapters where a song's lyrics are.
+        if (desk) DeskBookPlaying(api, store, st, b, bookPos, ci, onOpenBook, onOpenAuthor) { sheet = it }
         val content: @Composable () -> Unit = {
             Column {
                 Text(chapter?.let { chapterTitle(it.title, ci) } ?: d.title, color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -151,7 +159,7 @@ fun BookPlayingScreen(
                 }
             }
         }
-        if (!portrait) {
+        if (desk) Unit else if (!portrait) {
             Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 MusicCover(d.coverUrl, d.title, Modifier.fillMaxHeight(0.86f).aspectRatio(1f).shadow(18.dp, RoundedCornerShape(14.dp)), corner = 14.dp, requestedWidth = 720, wordmarkSize = 24)
                 Spacer(Modifier.width(28.dp))
@@ -180,6 +188,128 @@ fun BookPlayingScreen(
         AddBookmarkSheet(sheet == "add", api, d, bookPos) { sheet = null }
         if (store != null) BookMenuSheet(sheet == "menu", d, started = true, finished = b.finished, api, store, onDismiss = { sheet = null }, onOpenAuthor = onOpenAuthor)
     }
+}
+
+/**
+ * R337 (FR-R337-7) — a book in a computer's window. The Playing page's shape (`.np` in `design/ravilo/desktop-directions.css`):
+ * the cover with the chapter's name, the book and its author, the chapter's seek line, the whole book's scrubber and
+ * the transport under it; and beside it, where a song has its lyrics, the book's chapters — the one being read marked,
+ * a click reads from there. Between 600 and 839 dp the chapters sit under the cover. A book of one chapter keeps the
+ * cover's column alone, centred. Speed, the sleep timer, bookmarks and ⋯ open the phone's sheets as dialogs.
+ */
+@Composable
+private fun DeskBookPlaying(
+    api: TvApiClient,
+    store: AudiobookStore?,
+    st: MusicPlayerState,
+    b: BookPlayback,
+    bookPos: Long,
+    ci: Int,
+    onOpenBook: (String) -> Unit,
+    onOpenAuthor: (String) -> Unit,
+    onSheet: (String) -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val d = b.detail
+    val chapter = d.chapters.getOrNull(ci)
+    val width = dev.jellystructure.ravilo.ui.theme.LocalWindowWidth.current
+    val stacked = width < dev.jellystructure.ravilo.ui.theme.WindowWidths.EXPANDED
+    val coverSize = if (width >= dev.jellystructure.ravilo.ui.theme.WindowWidths.LARGE) 380.dp else if (stacked) 220.dp else 280.dp
+    val graphite = dev.jellystructure.ravilo.ui.theme.LocalRaviloTheme.current == dev.jellystructure.ravilo.ui.theme.ThemeId.GRAPHITE
+    // `.np .bl` — the cover as the page's ground.
+    d.coverUrl?.let {
+        dev.jellystructure.ravilo.ui.seams.RemoteImage(it, null,
+            Modifier.fillMaxSize().blur(70.dp).alpha(if (colors.isLight) 0.18f else 0.35f), requestedWidth = 240)
+    }
+    @Composable
+    fun head(modifier: Modifier) {
+        Column(modifier) {
+            MusicCover(d.coverUrl, d.title, Modifier.size(coverSize).shadow(30.dp, RoundedCornerShape(16.dp)), corner = 16.dp, requestedWidth = 900, wordmarkSize = 26)
+            Spacer(Modifier.height(22.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(chapter?.let { chapterTitle(it.title, ci) } ?: d.title, color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk,
+                    letterSpacing = (-0.5).sp, maxLines = 1, modifier = Modifier.weight(1f).basicMarquee())
+                Box(Modifier.size(32.dp).tap { onSheet("add") }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.BOOKMARK, colors.textSecondary, 19.dp, description = str("ab.bookmark_add")) }
+                Box(Modifier.size(32.dp).tap { onSheet("menu") }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, 20.dp, description = str("music.more")) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(d.title, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenBook(d.id) })
+                d.authors.firstOrNull()?.let { a ->
+                    Text("·", color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora)
+                    Text(a.name, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAuthor(a.id) })
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            ChapterSeekBar(d, ci, bookPos, desk = true)
+            Spacer(Modifier.height(6.dp))
+            WholeBookBar(d, bookPos)
+            Text(str("ab.left", mapOf("t" to fmtTotal((BookMath.length(d) - bookPos).coerceAtLeast(0L)))), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+            Spacer(Modifier.height(6.dp))
+            if (b.finished) FinishedRow(api, store, d)
+            // `.np .tp` — the speed · −30 s · play/pause (58 dp, ink) · +30 s · the sleep timer, centred.
+            else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
+                Box(Modifier.size(width = 52.dp, height = 36.dp).tap { onSheet("speed") }, contentAlignment = Alignment.Center) {
+                    Text("${speedText(b.speed)}×", color = if (b.speed != 1.0) colors.accentSecondary else colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                        modifier = Modifier.border(1.dp, colors.fg.copy(alpha = 0.22f), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                }
+                RepeatSkip(MusicIcon.BACK30, str("ab.skip_back"), small = true) { MusicEngine.skipBy(-30_000L) }
+                Box(Modifier.size(58.dp).clip(CircleShape).background(if (graphite) colors.accent else colors.text).tap { MusicEngine.togglePlay() }, contentAlignment = Alignment.Center) {
+                    val ink = if (graphite) Color.White else colors.background
+                    if (st.buffering) Pulse(ink) else dev.jellystructure.ravilo.ui.components.DeskIcon(
+                        if (st.playing) dev.jellystructure.ravilo.ui.components.DeskIcon.PAUSE else dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY, ink, 22.dp)
+                }
+                RepeatSkip(MusicIcon.FWD30, str("ab.skip_fwd"), small = true) { MusicEngine.skipBy(30_000L) }
+                Box(Modifier.size(width = 52.dp, height = 36.dp).tap { onSheet("sleep") }, contentAlignment = Alignment.Center) {
+                    val sleep = b.sleep
+                    MusicGlyph(MusicIcon.SLEEP, if (sleep != null) colors.accentSecondary else colors.textSecondary, 20.dp, description = str("ab.sleep"))
+                    if (sleep?.endsAtMs != null) {
+                        var now by remember { mutableLongStateOf(bookNowMs()) }
+                        LaunchedEffect(sleep) { while (true) { now = bookNowMs(); delay(1000) } }
+                        val mins = ((sleep.endsAtMs - now + 59_999) / 60_000).coerceAtLeast(0)
+                        Text(mins.toString(), color = colors.accentSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, modifier = Modifier.align(Alignment.BottomEnd))
+                    }
+                }
+            }
+        }
+    }
+    @Composable
+    fun chapters(modifier: Modifier) {
+        val list = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (ci - 3).coerceAtLeast(0))
+        Column(modifier) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(str("ab.chapters"), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.weight(1f))
+                Text(str("ab.bookmarks"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onSheet("bookmarks") }.padding(vertical = 4.dp))
+            }
+            LazyColumn(state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
+                itemsIndexed(d.chapters) { i, c ->
+                    val now = i == ci
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(8.dp))
+                            .then(if (now) Modifier.background(colors.fg.copy(alpha = 0.08f)) else Modifier)
+                            .deskHover().tap { MusicEngine.seekBook(c.startMs); MusicEngine.play() }.padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (now) Box(Modifier.width(30.dp)) { PlayingBars(st.playing, colors.accentSecondary, 14.dp) }
+                        else Text((i + 1).toString(), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.width(30.dp))
+                        Text(chapterTitle(c.title, i), color = if (now) colors.accentSecondary else if (i < ci) colors.textDim else colors.text, fontSize = 14.sp,
+                            fontWeight = if (now) FontWeight.SemiBold else FontWeight.Normal, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(fmtLen(c.lengthMs), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora)
+                    }
+                }
+            }
+        }
+    }
+    val many = d.chapters.size > 1
+    val pad = if (stacked) 28.dp else 48.dp
+    if (stacked) Column(Modifier.fillMaxSize().padding(top = 60.dp, start = pad, end = pad)) {
+        head(Modifier.width(coverSize).align(Alignment.CenterHorizontally))
+        if (many) chapters(Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp))
+    } else Row(Modifier.fillMaxSize().padding(top = 70.dp, start = pad, end = pad), horizontalArrangement = if (many) Arrangement.spacedBy(48.dp) else Arrangement.Center) {
+        head(Modifier.width(coverSize).verticalScroll(rememberScrollState()))
+        if (many) chapters(Modifier.weight(1f).fillMaxHeight())
+    }
+    dev.jellystructure.ravilo.ui.components.AppBar()
 }
 
 /** R326 (FR-R326-9) — the whole book as a small labelled scrubber: *Book* · a thin bar with a knob · elapsed / total.
@@ -240,7 +370,7 @@ private fun ChapterStrip(d: AudiobookDetail, ci: Int) {
 
 /** FR-R323-4 — the chapter's seek bar (*12:40 / 29:05*), dragged or tapped, in book time underneath. */
 @Composable
-private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long) {
+private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long, desk: Boolean = false) {
     val colors = RaviloTheme.colors
     val start = d.chapters.getOrNull(ci)?.startMs ?: 0L
     val end = if (ci >= 0) BookMath.chapterEnd(d, ci) else BookMath.length(d)
@@ -249,7 +379,7 @@ private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long) {
     val frac = dragFrac ?: ((bookPos - start).toFloat() / len).coerceIn(0f, 1f)
     val gradient = colors.accentGradient
     Column {
-        BoxWithConstraints(Modifier.fillMaxWidth().height(34.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(if (desk) 17.dp else 34.dp)) {
             val wPx = with(LocalDensity.current) { maxWidth.toPx() }
             Canvas(Modifier.fillMaxSize().pointerInput(ci, len) {
                 detectHorizontalDragGestures(
@@ -260,6 +390,14 @@ private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long) {
                 )
             }.pointerInput(ci, len) { detectTapGestures { o -> MusicEngine.seekBook(start + ((o.x / wPx).coerceIn(0f, 1f) * len).toLong()) } }) {
                 val y = size.height / 2
+                if (desk) {
+                    // `.np .seek` — a 5 dp line in ink; the knob only while it is dragged.
+                    val h = 5.dp.toPx()
+                    drawRoundRect(colors.fg.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
+                    drawRoundRect(colors.text, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
+                    if (dragFrac != null) drawCircle(colors.text, 7.dp.toPx(), Offset(size.width * frac, y))
+                    return@Canvas
+                }
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.textDim.copy(0.35f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
                 drawRoundRect(gradient, Offset(0f, y - h / 2), Size(size.width * frac, h), CornerRadius(h / 2, h / 2))
@@ -267,9 +405,9 @@ private fun ChapterSeekBar(d: AudiobookDetail, ci: Int, bookPos: Long) {
             }
         }
         Row {
-            Text(fmtLen((frac * len).toLong()), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
+            Text(fmtLen((frac * len).toLong()), color = if (desk) colors.textDim else colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
             Spacer(Modifier.weight(1f))
-            Text(fmtLen(len), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
+            Text(fmtLen(len), color = if (desk) colors.textDim else colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
         }
     }
 }
@@ -302,11 +440,11 @@ private fun BookTransport(st: MusicPlayerState, b: BookPlayback, onSpeed: () -> 
 }
 
 @Composable
-private fun RepeatSkip(icon: MusicIcon, description: String, onSkip: () -> Unit) {
+private fun RepeatSkip(icon: MusicIcon, description: String, small: Boolean = false, onSkip: () -> Unit) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
     Box(
-        Modifier.size(56.dp).pointerInput(Unit) {
+        Modifier.size(if (small) 40.dp else 56.dp).pointerInput(Unit) {
             detectTapGestures(onPress = {
                 onSkip()
                 val job = scope.launch { delay(500); while (true) { onSkip(); delay(400) } }
@@ -315,7 +453,7 @@ private fun RepeatSkip(icon: MusicIcon, description: String, onSkip: () -> Unit)
             })
         },
         contentAlignment = Alignment.Center,
-    ) { MusicGlyph(icon, colors.text, 30.dp, description = description) }
+    ) { MusicGlyph(icon, colors.text, if (small) 26.dp else 30.dp, description = description) }
 }
 
 /** FR-R323-6 — the last part played through: *Finished* and *Start over* in place of the transport. */

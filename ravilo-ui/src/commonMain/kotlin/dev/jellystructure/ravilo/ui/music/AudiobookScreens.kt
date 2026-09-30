@@ -40,6 +40,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.widthIn
+import dev.jellystructure.ravilo.ui.components.deskHover
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -288,8 +291,64 @@ fun AudiobookDetailScreen(
         val started = d.position != null && (d.position!!.bookPositionMs > 0 || d.position!!.finished) || here != null
         val finished = here?.finished ?: (d.position?.finished == true)
         val length = BookMath.length(d)
-        LazyColumn(contentPadding = PaddingValues(top = 56.dp, bottom = 32.dp)) {
-            item(key = "head") {
+        // R337 — on the desktop the book's header is the album header's shape (`.alh`): a 210 dp cover, the kind and year
+        // above a 36 sp title, the author as a link, the narrator and the length, where the viewer is in it, then the
+        // one action and ⋯; the description and the chapters (striped, as an album's tracks) follow.
+        val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+        val action: @Composable () -> Unit = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val label = when {
+                    finished -> str("ab.start_over")
+                    started -> str("ab.continue_from", mapOf("t" to fmtTotal(bookPos)))
+                    else -> str("ab.start")
+                }
+                PillButton(label, MusicIcon.PLAY, primary = true, if (deskWide) Modifier else pillWidth()) {
+                    if (here != null && !finished) { MusicEngine.play(); onOpenPlaying() }
+                    else scope.launch { resumeBook(api, id, fromStart = finished); store.refresh(id); onOpenPlaying() }
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.size(if (deskWide) 38.dp else 46.dp).clip(if (deskWide) RoundedCornerShape(10.dp) else CircleShape)
+                    .background(if (deskWide) colors.fg.copy(alpha = 0.10f) else colors.surfaceVariant).tap { menu = true }, contentAlignment = Alignment.Center) {
+                    MusicGlyph(MusicIcon.MORE, colors.text, if (deskWide) 18.dp else 20.dp, description = str("music.more"))
+                }
+            }
+        }
+        LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 56.dp, bottom = 32.dp)) {
+            if (deskWide) item(key = "head") {
+                Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    MusicCover(d.coverUrl, d.title, Modifier.size(210.dp).shadow(24.dp, RoundedCornerShape(12.dp)), corner = 12.dp, requestedWidth = 600, wordmarkSize = 22)
+                    Column(Modifier.weight(1f)) {
+                        Text(listOfNotNull(str("music.type.audiobook"), d.year?.toString(), d.series?.let { sr -> d.seriesPosition?.let { "$sr · ${str("ab.series_book", mapOf("n" to it))}" } ?: sr }).joinToString(" · "),
+                            color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                        Text(d.title, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                        d.subtitle?.let { Text(it, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.padding(bottom = 4.dp)) }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            d.authors.forEach { a -> Text(a.name, color = colors.accentSecondary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onOpenAuthor(a.id) }) }
+                        }
+                        val facts = listOfNotNull(
+                            d.narrators.takeIf { it.isNotEmpty() }?.let { str("ab.read_by", mapOf("narrator" to it.joinToString(", "))) },
+                            fmtTotal(length), chaptersCount(d.chapters.size),
+                        ).joinToString(" · ")
+                        Text(facts, color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp))
+                        if (started && !finished) Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            BookRing(bookPos.toFloat() / length.coerceAtLeast(1L), 20.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(str("ab.left", mapOf("t" to fmtTotal((length - bookPos).coerceAtLeast(0L)))), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                        } else if (finished) Text(str("ab.finished"), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.padding(top = 10.dp))
+                        Spacer(Modifier.height(16.dp))
+                        action()
+                    }
+                }
+                Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad)) {
+                    d.description?.takeIf { it.isNotBlank() }?.let { text ->
+                        Text(text, color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 20.sp, fontFamily = Sora, maxLines = if (desc) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 14.dp).widthIn(max = 720.dp).animateContentSize(tween(340)))
+                        Text(str(if (desc) "music.less" else "music.more"), color = colors.accentSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { desc = !desc }.padding(vertical = 4.dp))
+                    }
+                    MusicSectionHeader(str("ab.chapters"), count = d.chapters.size.toString())
+                }
+            } else item(key = "head") {
                 Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad), horizontalAlignment = Alignment.CenterHorizontally) {
                     MusicCover(d.coverUrl, d.title, Modifier.fillMaxWidth(0.62f).aspectRatio(1f), corner = 14.dp, requestedWidth = 720, wordmarkSize = 22)
                 }
@@ -321,21 +380,7 @@ fun AudiobookDetailScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     // One primary action: Continue · {where} / Start / Start over, plus ⋯.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val label = when {
-                            finished -> str("ab.start_over")
-                            started -> str("ab.continue_from", mapOf("t" to fmtTotal(bookPos)))
-                            else -> str("ab.start")
-                        }
-                        PillButton(label, MusicIcon.PLAY, primary = true, pillWidth()) {
-                            if (here != null && !finished) { MusicEngine.play(); onOpenPlaying() }
-                            else scope.launch { resumeBook(api, id, fromStart = finished); store.refresh(id); onOpenPlaying() }
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Box(Modifier.size(46.dp).clip(CircleShape).background(colors.surfaceVariant).tap { menu = true }, contentAlignment = Alignment.Center) {
-                            MusicGlyph(MusicIcon.MORE, colors.text, 20.dp, description = str("music.more"))
-                        }
-                    }
+                    action()
                     d.description?.takeIf { it.isNotBlank() }?.let { text ->
                         Spacer(Modifier.height(16.dp))
                         Text(text, color = colors.textSecondary, fontSize = 14.sp, lineHeight = 21.sp, fontFamily = Sora, maxLines = if (desc) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.animateContentSize(tween(340)))   // R326 (FR-R326-1)
@@ -349,11 +394,15 @@ fun AudiobookDetailScreen(
                 val current = here != null && bookPos >= c.startMs && bookPos < end
                 val heard = started && bookPos >= end
                 Row(
-                    Modifier.padding(horizontal = raviloHPad).fillMaxWidth().heightIn(min = 52.dp).tap {
-                        if (here != null) { MusicEngine.seekBook(c.startMs); MusicEngine.play() }
-                        else MusicEngine.playBook(d, c.part, c.partOffsetMs)
-                        store.refresh(id)
-                    },
+                    Modifier.padding(horizontal = raviloHPad).fillMaxWidth().heightIn(min = if (deskWide) 38.dp else 52.dp)
+                        // `.trk .tr` — striped and rounded on a computer, with the pointer's plate.
+                        .then(if (deskWide) Modifier.clip(RoundedCornerShape(8.dp)).background(if (i % 2 == 0) colors.fg.copy(alpha = 0.035f) else Color.Transparent).deskHover() else Modifier)
+                        .tap {
+                            if (here != null) { MusicEngine.seekBook(c.startMs); MusicEngine.play() }
+                            else MusicEngine.playBook(d, c.part, c.partOffsetMs)
+                            store.refresh(id)
+                        }
+                        .then(if (deskWide) Modifier.padding(horizontal = 10.dp) else Modifier),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (current) Box(Modifier.width(30.dp), contentAlignment = Alignment.CenterStart) { PlayingBars(st.playing, colors.accentSecondary, 16.dp) }
@@ -364,7 +413,7 @@ fun AudiobookDetailScreen(
                 }
             }
         }
-        DetailBack(onBack)
+        DetailBack(onBack, title = d.title)
         BookMenuSheet(menu, d, started, finished, api, store, onDismiss = { menu = false }, onOpenAuthor = onOpenAuthor)
     }
 }
@@ -415,8 +464,23 @@ fun AudiobookAuthorScreen(store: AudiobookStore, id: String, onBack: () -> Unit,
     LaunchedEffect(id) { loader.load() }
     Box(Modifier.fillMaxSize().background(colors.background)) {
         val a = (state as? Load.Ready)?.value
-        if (a != null) LazyColumn(contentPadding = PaddingValues(top = 60.dp, bottom = 32.dp)) {
-            item(key = "head") {
+        val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+        if (a != null) LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 60.dp, bottom = 32.dp)) {
+            // R337 — the artist header's shape for an author: the round picture, the kind, the name, the count, the biography.
+            if (deskWide) item(key = "head") {
+                Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 22.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    ArtistCircle(null, a.name, Modifier.size(180.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(str("ab.sort_author"), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                        Text(a.name, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                        Text(booksCount(a.books.size), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora)
+                        a.bio?.takeIf { it.isNotBlank() }?.let { bio ->
+                            Text(bio, color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp).widthIn(max = 640.dp))
+                        }
+                    }
+                }
+            } else item(key = "head") {
                 Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad), horizontalAlignment = Alignment.CenterHorizontally) {
                     ArtistCircle(null, a.name, Modifier.size(132.dp))
                     Spacer(Modifier.height(12.dp))
@@ -430,6 +494,6 @@ fun AudiobookAuthorScreen(store: AudiobookStore, id: String, onBack: () -> Unit,
             }
             item(key = "books") { Grid(a.books, 2, 12.dp, {}) { c, w -> BookCell(c, w) { onOpenBook(c.id) } } }
         } else if (state is Load.Failed) EmptyLine(str("ab.empty"))
-        DetailBack(onBack)
+        DetailBack(onBack, title = a?.name)
     }
 }

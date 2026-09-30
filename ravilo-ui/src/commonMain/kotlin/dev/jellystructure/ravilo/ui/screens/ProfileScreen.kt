@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.components.CheckGlyph
 import dev.jellystructure.ravilo.ui.components.PencilGlyph
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -112,8 +114,61 @@ fun ProfileScreen(
     // handler, so it wins while enabled.
     dev.jellystructure.ravilo.ui.PlatformBackHandler(enabled = showSignOut) { showSignOut = false }
 
+    val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        Column(
+        // R337 — in a computer's window the page is the viewer and their list: the album header's shape (`.alh`) with
+        // the photo, the name and the two things a viewer does here (Settings…, Sign out), then My List as a row of the
+        // desktop's tiles. The language and the password are in the Settings window; the mode switch heads the sidebar.
+        if (desk) Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(top = 58.dp, bottom = 28.dp)) {
+            val hPad = dev.jellystructure.ravilo.ui.theme.raviloHPad
+            Row(Modifier.padding(horizontal = hPad).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Box(Modifier.size(132.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPhoto)) {
+                    Box(Modifier.fillMaxSize().clip(CircleShape).background(colors.accentGradient), contentAlignment = Alignment.Center) {
+                        if (avatarUrl != null) RemoteImage(avatarUrl, displayName, Modifier.fillMaxSize())
+                        else Text(displayName.take(2).uppercase(), color = colors.onAccent, fontSize = 44.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+                    }
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).padding(4.dp).size(30.dp).background(colors.surface, CircleShape).border(2.dp, colors.background, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { PencilGlyph(colors.text, 14.dp) }
+                }
+                Column(Modifier.weight(1f)) {
+                    if (isAdmin) Text(str("profile.admin"), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                    Text(displayName, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 4.dp))
+                    Text("Ravilo ${raviloVersion()} · ${str("profile.signed_in_to", mapOf("host" to serverHost))}", color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora)
+                    Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        dev.jellystructure.ravilo.ui.components.DeskButton(str("nav.settings") + "…", onClick = onSettings)
+                        dev.jellystructure.ravilo.ui.components.DeskButton(str("profile.sign_out")) { showSignOut = true }
+                    }
+                }
+            }
+            Row(Modifier.padding(horizontal = hPad).padding(top = 30.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(str("nav.my_list"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+                if (myListTotal > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(myListTotal.toString(), color = colors.textDim, fontSize = 13.sp, fontFamily = SpaceGrotesk)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${str("browse.see_all_short")} ›", color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora,
+                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onMyListSeeAll).padding(vertical = 4.dp),
+                    )
+                }
+            }
+            val list = myList
+            when {
+                list == null -> Box(Modifier.fillMaxWidth().height(207.dp))
+                list.isEmpty() -> Text(
+                    str("profile.mylist_empty"), color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 20.sp, fontFamily = Sora,
+                    modifier = Modifier.padding(horizontal = hPad).widthIn(max = 520.dp).background(colors.surface, RoundedCornerShape(12.dp)).padding(14.dp),
+                )
+                else -> ArrowRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = hPad), horizontalArrangement = Arrangement.spacedBy(dev.jellystructure.ravilo.ui.theme.raviloItemSpacing)) {
+                    items(list, key = { it.id }) { card ->
+                        Box(Modifier.width(138.dp)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
+                    }
+                }
+            }
+        } else Column(
             Modifier
                 .fillMaxSize()
                 .backToTopOnBack(atTop = { scroll.value == 0 }, onBackToTop = { scope.launch { scroll.animateScrollTo(0) } })
@@ -172,7 +227,7 @@ fun ProfileScreen(
                     str("profile.mylist_empty"), color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 20.sp, fontFamily = Sora,
                     modifier = Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(12.dp)).padding(14.dp),
                 )
-                else -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                else -> ArrowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(list, key = { it.id }) { card ->
                         Box(Modifier.width(TILE_WIDTH)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
                     }
@@ -213,6 +268,7 @@ fun ProfileScreen(
             )
         }
 
+        if (desk) dev.jellystructure.ravilo.ui.components.AppBar()
         // FR-R304-3 — the page's only sheet.
         HandsetSheet(visible = showSignOut, onDismiss = { showSignOut = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp)) {

@@ -9,16 +9,17 @@
 import AppKit
 
 private var lightsCentre: CGPoint? = nil      // the close button's centre from the window's top-left, in points
+private var titledCentres: [String: CGPoint] = [:]   // a window with a place of its own for them (Settings), by its title
 private var lastMouseDown: NSEvent? = nil
 private var installed = false
 
-/** Ravilo's main window: the one whose content runs under its title bar. About and other windows are left alone. */
+/** Ravilo's windows whose content runs under their title bar: the main one and Settings. About is left alone. */
 private func raviloWindows() -> [NSWindow] {
     NSApp.windows.filter { $0.styleMask.contains(.titled) && $0.styleMask.contains(.fullSizeContentView) && !($0 is NSPanel) }
 }
 
 private func layoutLights(_ window: NSWindow) {
-    guard let centre = lightsCentre,
+    guard let centre = titledCentres[window.title] ?? lightsCentre,
           let close = window.standardWindowButton(.closeButton),
           let mini = window.standardWindowButton(.miniaturizeButton),
           let zoom = window.standardWindowButton(.zoomButton),
@@ -71,6 +72,17 @@ private func install() {
 public func ravilo_window_lights(_ x: Double, _ y: Double) {
     DispatchQueue.main.async {
         lightsCentre = CGPoint(x: x, y: y)
+        install()
+        raviloWindows().forEach(layoutLights)
+    }
+}
+
+/** The same for one window, named by its title: Settings keeps its lights over its tabs wherever the main window's are. */
+@_cdecl("ravilo_window_lights_titled")
+public func ravilo_window_lights_titled(_ title: UnsafePointer<CChar>, _ x: Double, _ y: Double) {
+    let name = String(cString: title)
+    DispatchQueue.main.async {
+        titledCentres[name] = CGPoint(x: x, y: y)
         install()
         raviloWindows().forEach(layoutLights)
     }

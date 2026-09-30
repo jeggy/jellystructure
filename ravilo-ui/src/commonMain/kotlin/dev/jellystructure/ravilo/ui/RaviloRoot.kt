@@ -105,14 +105,20 @@ fun RaviloRoot() {
     var signedOutEveryone by remember { mutableStateOf(false) }
 
     if (baseUrl.isEmpty()) {
-        ServerSetupScreen(
-            notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
-            onUrlSaved = { url ->
-                saveBaseUrl(url)
-                signedOutEveryone = false
-                baseUrl = url
-            },
-        )
+        androidx.compose.foundation.layout.Box {
+            ServerSetupScreen(
+                notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
+                onUrlSaved = { url ->
+                    saveBaseUrl(url)
+                    signedOutEveryone = false
+                    baseUrl = url
+                },
+            )
+            // R337 — GNOME's window is drawn by Ravilo, here too: without these the first screen a new viewer sees could
+            // be neither moved nor closed (seen in the Fedora container, 2026-09-30). Nothing on any other platform.
+            dev.jellystructure.ravilo.ui.seams.DesktopTitleStrip()
+            dev.jellystructure.ravilo.ui.seams.DesktopWindowFrame()
+        }
         return
     }
 

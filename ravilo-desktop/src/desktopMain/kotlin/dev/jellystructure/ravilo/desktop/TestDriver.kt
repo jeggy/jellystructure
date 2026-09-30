@@ -40,8 +40,11 @@ import javax.swing.SwingUtilities
  * - `click <x> <y>` · `dclick <x> <y>` · `move <x> <y>` · `scroll <x> <y> <notches>` — the mouse, in points.
  * - `key <name> [meta+shift+…]` — a key by its `KeyEvent.VK_` name (`key ESCAPE`, `key COMMA meta`); `type <text>`.
  * - `cmd <AppCommand>` — what a menu item sends (`cmd MODE_MUSIC`): macOS's menu bar cannot be reached from here.
+ * - `quiet` (`quiet off`) — the app plays at nothing; the volume the person set stays shown and remembered.
  * - `cast` — what speaker discovery sees (3 s).
  * - `size <w> <h>` · `front` · `info` · `chrome` (the Mac's traffic lights and title-area hit test, from AppKit).
+ *
+ * `w2` before a command points it at the Settings window while that is open (`w2 shot settings`, `w2 click 300 40`).
  *
  * Input commands refuse while the person at the computer used the app in the last minute (`info` says `idle=`);
  * `force click …` overrides.
@@ -105,10 +108,14 @@ internal object TestDriver {
         return out!!.getOrThrow()
     }
 
+    @Suppress("NAME_SHADOWING")
     private fun handle(window: ComposeWindow, dir: File, line: String): String {
         val words = line.split(' ').filter { it.isNotEmpty() }
-        val forced = words.firstOrNull() == "force"
-        val parts = if (forced) words.drop(1) else words
+        val prefixes = words.takeWhile { it == "force" || it == "w2" }
+        val forced = "force" in prefixes
+        val parts = words.drop(prefixes.size)
+        val window = if ("w2" !in prefixes) window
+            else dev.jellystructure.ravilo.ui.desktop.DesktopWindow.secondWindow as? ComposeWindow ?: return "err no second window"
         val verb = parts.firstOrNull() ?: return "err empty"
         if (!forced && verb in INPUT && idleSeconds() < 60) return "err in use: real input ${idleSeconds()} s ago (wait, or prefix with force)"
         val layer = onEdt { layerOf(window) } ?: return "err no canvas yet"
@@ -172,6 +179,8 @@ internal object TestDriver {
                 "ok"
             }
             "cmd" -> { AppCommands.send(AppCommand.valueOf(parts[1])); "ok" }
+            // Nothing is heard from here on, and the volume the person set is left as it is (shown and remembered).
+            "quiet" -> { dev.jellystructure.ravilo.ui.music.MusicVolume.silenced = parts.getOrNull(1) != "off"; "ok" }
             "size" -> onEdt { window.setSize(int(1), int(2)); "ok" }
             "front" -> onEdt { window.toFront(); window.requestFocus(); target.requestFocus(); "ok" }
             "info" -> onEdt {

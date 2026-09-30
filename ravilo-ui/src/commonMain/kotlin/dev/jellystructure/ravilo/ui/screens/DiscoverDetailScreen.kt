@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorState
@@ -257,7 +258,7 @@ private fun CastSection(cast: List<Person>) {
     Column {
         Text(str("up.cast"), color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(10.dp))
-        LazyRow(
+        ArrowRow(
             modifier = Modifier.focusRestorer(),
             state = rememberLazyListState(),
             contentPadding = PaddingValues(horizontal = 0.dp),

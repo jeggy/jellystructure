@@ -9,7 +9,20 @@ import androidx.compose.ui.Modifier
  * the system draws the traffic lights and handles the drag; everywhere else there is no window. Drawn over the page.
  */
 @Composable
-expect fun DesktopTitleStrip(modifier: Modifier = Modifier)
+expect fun DesktopTitleStrip(modifier: Modifier = Modifier, startControls: Boolean = true, drag: Boolean = true)
+
+/**
+ * R337 — GNOME's window buttons on one side of the window, in the order and on the side the desktop's own setting
+ * says (`button-layout`: close alone on the right by default; minimise and maximise when the desktop adds them; all on
+ * the left where it puts them there). Drawn by whatever holds that corner of the window: the sidebar's header for the
+ * start, the page's strip for the end. Nothing where the system draws the window's buttons.
+ */
+@Composable
+expect fun WindowControlButtons(start: Boolean, modifier: Modifier = Modifier, compact: Boolean = false)
+
+/** The width [WindowControlButtons] takes on that side; zero when that side has none. */
+@Composable
+expect fun windowControlsWidth(start: Boolean, compact: Boolean = false): androidx.compose.ui.unit.Dp
 
 /** R337 (dev review 11) — invisible 6 dp edges that resize an undecorated window, and its 1 dp border. */
 @Composable
@@ -31,3 +44,12 @@ expect fun Modifier.windowDragArea(): Modifier
  * Nothing on any other platform.
  */
 expect fun placeWindowControls(x: Float, y: Float)
+
+/**
+ * R337 — on a computer Settings is a window of its own, beside the app's (the mockup's T·e and T·h; ⌘, on the Mac):
+ * 600 points wide, as tall as what it holds, not resizable. The Mac's has its traffic lights over the tabs' bar;
+ * GNOME's is drawn by Ravilo, a header bar with the title and a close button. It belongs to the app's composition, so
+ * what it draws is in the viewer's theme and language. Nothing on any other platform.
+ */
+@Composable
+expect fun DesktopSettingsWindow(title: String, onClose: () -> Unit, content: @Composable () -> Unit)

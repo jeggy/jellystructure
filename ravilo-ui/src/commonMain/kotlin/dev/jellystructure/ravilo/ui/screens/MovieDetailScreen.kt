@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
@@ -411,7 +412,7 @@ private fun MovieDetailLoaded(
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         modifier = Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
@@ -432,7 +433,7 @@ private fun MovieDetailLoaded(
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                         modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         modifier = Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),

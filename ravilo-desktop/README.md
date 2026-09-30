@@ -52,7 +52,8 @@ echo "chrome"         | nc -U /tmp/ravilo-td/ctl.sock     # the traffic lights' 
 
 It is how a build is checked on a Mac over SSH, where macOS gives a remote shell neither the screen nor the keyboard.
 Off unless asked for; input commands refuse while the person at the computer used the app in the last minute. The
-commands are listed at the top of `TestDriver.kt`.
+commands are listed at the top of `TestDriver.kt`. `w2` before a command points it at the Settings window while that is open
+(`w2 shot settings`).
 
 ## The signing certificate (once, on a Mac)
 

@@ -130,6 +130,23 @@ internal object LinuxPortal {
         }
     }
 
+    /**
+     * R337 — GNOME's window buttons as the desktop orders them (`org.gnome.desktop.wm.preferences button-layout`, which
+     * the Settings portal passes on so an app that draws its own header bar can follow it): `appmenu:close`,
+     * `close,minimize,maximize:`, `icon,menu:minimize,maximize,close`. Null where the portal has no such setting.
+     */
+    fun buttonLayout(): String? = readSetting("org.gnome.desktop.wm.preferences", "button-layout")?.let(::lastQuoted)
+
+    /** Calls [onChange] whenever the desktop's button layout changes (GNOME Tweaks, a `gsettings set`). */
+    fun watchButtonLayout(onChange: (String) -> Unit) {
+        subscribe("org.freedesktop.portal.Settings", "SettingChanged", PATH) { text ->
+            if ("'org.gnome.desktop.wm.preferences'" in text && "'button-layout'" in text) lastQuoted(text)?.let(onChange)
+        }
+    }
+
+    /** The last quoted string of a printed variant: the value in `(<<'x'>>,)` and in `('ns', 'key', <'x'>)`. */
+    private fun lastQuoted(text: String): String? = Regex("""'([^']*)'""").findAll(text).lastOrNull()?.groupValues?.get(1)
+
     /** R337 (Q9) — GNOME's interface font family (`Adwaita Sans 11` ⇒ `Adwaita Sans`), or null. */
     fun interfaceFontFamily(): String? {
         val text = readSetting("org.gnome.desktop.interface", "font-name") ?: return null

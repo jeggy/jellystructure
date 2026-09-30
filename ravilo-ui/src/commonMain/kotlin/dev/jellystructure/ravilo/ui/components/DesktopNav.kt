@@ -63,6 +63,9 @@ enum class DesktopPage { SEARCH, HOME, DISCOVER, MY_LIST, FILMS, SERIES, LISTEN,
 private val MUSIC_LIBRARY = listOf(DesktopPage.ARTISTS, DesktopPage.ALBUMS, DesktopPage.SONGS, DesktopPage.GENRES, DesktopPage.PLAYLISTS)
 
 @Composable
+fun desktopPageLabel(p: DesktopPage): String = label(p)
+
+@Composable
 private fun label(p: DesktopPage): String = when (p) {
     DesktopPage.SEARCH -> str("nav.search")
     DesktopPage.HOME -> str("nav.home")
@@ -173,8 +176,22 @@ fun DesktopNav(
             // The window's controls: macOS draws the traffic lights over this space (a transparent, full-size title
             // bar), and it moves the window as a title bar does; GNOME gets a header bar titled Ravilo with the menu.
             if (mac) Spacer(Modifier.fillMaxWidth().height(if (rail) 22.dp else 20.dp).windowDragArea())
-            else if (rail) Box(Modifier.fillMaxWidth().height(46.dp), contentAlignment = Alignment.Center) { MenuButton(onMenu) }
-            else Row(Modifier.fillMaxWidth().height(46.dp).padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            else if (rail) {
+                // The rail holds the window's start buttons when the desktop puts them on the left (small, to fit
+                // three); the menu moves under them. Empty header moves the window, as a header bar does.
+                val startButtons = dev.jellystructure.ravilo.ui.seams.windowControlsWidth(true, compact = true) > 0.dp
+                if (startButtons) Box(Modifier.fillMaxWidth().height(46.dp).windowDragArea(), contentAlignment = Alignment.Center) {
+                    dev.jellystructure.ravilo.ui.seams.WindowControlButtons(true, compact = true)
+                }
+                Box(Modifier.fillMaxWidth().height(46.dp).then(if (startButtons) Modifier else Modifier.windowDragArea()), contentAlignment = Alignment.Center) { MenuButton(onMenu) }
+            }
+            else Row(Modifier.fillMaxWidth().height(46.dp).windowDragArea().padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // The window's start buttons, when the desktop keeps them on the left, sit first in the leftmost header bar.
+                if (dev.jellystructure.ravilo.ui.seams.windowControlsWidth(true) > 0.dp) {
+                    dev.jellystructure.ravilo.ui.seams.WindowControlButtons(true, Modifier.padding(start = 4.dp, end = 10.dp))
+                }
+                BrandMark(size = 20.dp)
+                Spacer(Modifier.width(8.dp))
                 Text("Ravilo", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = SystemUiFont, modifier = Modifier.weight(1f))
                 MenuButton(onMenu)
             }

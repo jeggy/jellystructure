@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.foundation.layout.PaddingValues
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
@@ -1059,7 +1060,7 @@ private fun BrowseCardGrid(
                         fontWeight = FontWeight.SemiBold, fontFamily = Sora,
                     )
                     Spacer(Modifier.height(raviloRowHeadPadB))
-                    LazyRow(
+                    ArrowRow(
                         modifier = Modifier.focusRestorer(),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {

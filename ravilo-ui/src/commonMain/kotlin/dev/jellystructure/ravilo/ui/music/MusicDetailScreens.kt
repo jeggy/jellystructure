@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -34,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -63,8 +66,8 @@ import androidx.compose.foundation.verticalScroll
 
 /** The floating Back on a detail page (the bar is hidden there, R278's rule). On the desktop the page has its toolbar (R337). */
 @Composable
-internal fun DetailBack(onBack: () -> Unit) {
-    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { dev.jellystructure.ravilo.ui.components.AppBar(); return }
+internal fun DetailBack(onBack: () -> Unit, title: String? = null) {
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { dev.jellystructure.ravilo.ui.components.AppBar(title = title); return }
     Box(
         Modifier.padding(start = 10.dp, top = 10.dp).size(42.dp).clip(CircleShape).background(Color.Black.copy(0.45f)).tap(onBack),
         contentAlignment = Alignment.Center,
@@ -169,14 +172,14 @@ fun MusicAlbumScreen(
                 if (d.moreFromArtist.isNotEmpty()) item(key = "more") {
                     Column {
                         Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("music.more_from", mapOf("artist" to (a.artists.firstOrNull()?.name ?: "")))) }
-                        LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(d.moreFromArtist, key = { it.id }) { m -> AlbumCardView(m, 130.dp, onOpen = { onOpenAlbum(m.id) }, showYear = true) }
                         }
                     }
                 }
             }
         } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))
-        DetailBack(onBack)
+        DetailBack(onBack, title = d?.album?.title)
     }
 }
 
@@ -207,9 +210,37 @@ fun MusicArtistScreen(
         if (d != null) {
             val r = d.artist
             val context = MusicContext("artist", r.name, r.id)
+            // R337 — on the desktop the artist's header is the album header's shape (`.alh`) with the artist's round picture:
+            // the kind and the years above a 36 sp name, the biography, then Play all and Shuffle; the artist's backdrop,
+            // when there is one, lies faint behind it. The page has the desktop's toolbar.
+            val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                item(key = "head") {
-                    Box(Modifier.fillMaxWidth().height(if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) 280.dp else 250.dp)) {
+                if (deskWide) item(key = "head") {
+                    Box(Modifier.fillMaxWidth()) {
+                        if (d.backgroundUrl != null) {
+                            RemoteImage(d.backgroundUrl!!, null, Modifier.matchParentSize().alpha(if (colors.isLight) 0.25f else 0.4f), requestedWidth = 1600)
+                            Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(colors.background.copy(alpha = 0.15f), colors.background))))
+                        }
+                        Row(Modifier.padding(horizontal = raviloHPad).padding(top = 70.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                            ArtistCircle(r.imageUrl, r.name, Modifier.size(180.dp).shadow(24.dp, CircleShape))
+                            Column(Modifier.weight(1f)) {
+                                Text(listOfNotNull(d.type ?: str("music.type.artist"), d.span).joinToString(" · "), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                                Text(r.name, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                                d.biography?.takeIf { it.isNotBlank() }?.let { bio ->
+                                    Text(bio, color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, maxLines = if (bioOpen) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 640.dp).animateContentSize(tween(340)))
+                                    Text(str(if (bioOpen) "music.less" else "music.more"), color = colors.accentSecondary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { bioOpen = !bioOpen }.padding(vertical = 4.dp))
+                                }
+                                if (d.topTracks.isNotEmpty()) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    PillButton(str("music.play_all"), MusicIcon.PLAY, primary = true) { MusicPlayback.playQueue(d.topTracks, 0, context) }
+                                    PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false) { MusicPlayback.playQueue(d.topTracks, d.topTracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                                }
+                            }
+                        }
+                    }
+                } else item(key = "head") {
+                    Box(Modifier.fillMaxWidth().height(250.dp)) {
                         if (d.backgroundUrl != null) RemoteImage(d.backgroundUrl!!, null, Modifier.fillMaxSize(), requestedWidth = 1080)
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))))
                         if (d.backgroundUrl == null) Box(Modifier.fillMaxSize().background(groundTint()))
@@ -222,7 +253,7 @@ fun MusicArtistScreen(
                         }
                     }
                 }
-                item(key = "bio") {
+                if (!deskWide) item(key = "bio") {
                     Column(Modifier.padding(horizontal = raviloHPad).padding(top = 12.dp)) {
                         // FR-R321-8 — two lines and *More*; the source is never named.
                         d.biography?.takeIf { it.isNotBlank() }?.let { bio ->
@@ -241,7 +272,7 @@ fun MusicArtistScreen(
                     item(key = "g-" + g.type) {
                         Column {
                             Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(groupTitle(g.type), count = g.albums.size.toString()) }
-                            LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 items(g.albums, key = { it.id }) { a -> AlbumCardView(a, 132.dp, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
                             }
                         }
@@ -256,7 +287,7 @@ fun MusicArtistScreen(
                     }
                     itemsIndexed(shown, key = { _, t -> "t-" + t.id }) { i, t ->
                         Box(Modifier.padding(horizontal = raviloHPad)) {
-                            TrackRow(t, showCover = true, subtitle = t.album, onPlay = { MusicPlayback.playQueue(d.topTracks, i, context) }, onMore = { onTrackMore(t) })
+                            TrackRow(t, showCover = true, subtitle = t.album, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(d.topTracks, i, context) }, onMore = { onTrackMore(t) })
                         }
                     }
                 }
@@ -264,14 +295,14 @@ fun MusicArtistScreen(
                 if (d.videos.isNotEmpty()) item(key = "videos") {
                     Column {
                         Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("music.videos")) }
-                        LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(d.videos, key = { it.id }) { v -> VideoTile(v) { onPlayVideo(v) } }
                         }
                     }
                 }
             }
         } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))
-        DetailBack(onBack)
+        DetailBack(onBack, title = d?.artist?.name)
     }
 }
 
@@ -316,8 +347,24 @@ fun MusicPlaylistScreen(
     Box(Modifier.fillMaxSize().background(colors.background)) {
         val l = (state as? Load.Ready)?.value
         val context = MusicContext("playlist", name)
-        LazyColumn(contentPadding = PaddingValues(top = 64.dp, bottom = 24.dp)) {
-            item(key = "head") {
+        val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+        LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 64.dp, bottom = 24.dp)) {
+            // R337 — the album header's shape (`.alh`) for a playlist: its collage, the kind, the name, the count, Play and Shuffle.
+            if (deskWide) item(key = "head") {
+                Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    Collage(l?.tracks?.mapNotNull { it.imageUrl }?.distinct()?.take(4).orEmpty(), name, 210.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(str("music.type.playlist"), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+                        Text(name, color = colors.text, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, letterSpacing = (-0.7).sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                        if (l != null) Text(listOf(songsCount(l.tracks.size), fmtTotal(l.tracks.sumOf { it.durationMs ?: 0L })).joinToString(" · "), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(bottom = 16.dp))
+                        if (l != null && l.tracks.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true) { MusicPlayback.playQueue(l.tracks, 0, context) }
+                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false) { MusicPlayback.playQueue(l.tracks, l.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
+                        }
+                    }
+                }
+            } else item(key = "head") {
                 Column(Modifier.padding(horizontal = raviloHPad), horizontalAlignment = Alignment.CenterHorizontally) {
                     Collage(l?.tracks?.mapNotNull { it.imageUrl }?.distinct()?.take(4).orEmpty(), name, 180.dp)
                     Spacer(Modifier.height(12.dp))
@@ -332,10 +379,10 @@ fun MusicPlaylistScreen(
             }
             if (l != null) itemsIndexed(l.tracks, key = { i, t -> "$i-" + t.id }) { i, t ->
                 Box(Modifier.padding(horizontal = raviloHPad)) {
-                    TrackRow(t, showCover = true, onPlay = { MusicPlayback.playQueue(l.tracks, i, context) }, onMore = { onTrackMore(t) })
+                    TrackRow(t, showCover = true, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(l.tracks, i, context) }, onMore = { onTrackMore(t) })
                 }
             }
         }
-        DetailBack(onBack)
+        DetailBack(onBack, title = name)
     }
 }

@@ -63,6 +63,7 @@ object MacNative {
 
         // ── R337 — the window (Window.swift). Added the same way: a library without them throws, and MacWindow catches. ──
         fun ravilo_window_lights(x: Double, y: Double)
+        fun ravilo_window_lights_titled(title: String, x: Double, y: Double)
         fun ravilo_window_drag()
         fun ravilo_window_debug(): Pointer?
 

@@ -433,3 +433,61 @@ casting* ends it) — plus both themes live, the three width classes, a film in 
 - **The test driver** (`ravilo-desktop/…/TestDriver.kt`, off unless `RAVILO_TESTDRIVER` names a directory) is how
   this was seen and driven over SSH, where macOS gives a remote shell neither the screen nor the keyboard.
 
+
+## The second pass (2026-09-30, afternoon) — the four things owed, and GNOME seen for the first time
+
+**The four owed items from the Mac pass are built:**
+
+- **Settings is a window** (`DesktopSettingsWindow`, a seam; `DesktopSettingsPanel`). Every way to Settings on a
+  computer opens it (the sidebar, ⌘, / the menu, GNOME's ☰, the Profile page) and the app's own page stays where it
+  is. 600 points wide, as tall as what it holds, not resizable; Esc closes an open list of choices first, then the
+  window. *Change password* and *Sign out* close it and hand over to the app's window.
+  - **The Mac** (T·e): three tabs in the window's bar — General (theme, language) · Playback (the playback and
+    listening switches) · Account — with the traffic lights over the bar (`ravilo_window_lights_titled`: a window
+    with a place of its own for them, by its title).
+  - **GNOME** (T·h): *Preferences*, a header bar with the title and the close button, then boxed lists — a switch
+    row is a switch, a choice is a combo row (the pick and ▾; the choices under it, the pick ticked), an action is a
+    row with ›.
+- **The pages that were the phone's:** the **artist** page (`.alh`'s shape with the round picture, the kind and the
+  years, a 36 sp name, the biography in place, the backdrop faint behind), a **playlist**, the **audiobook** page
+  (cover, *Audiobook · year*, title, author, narrator · length · chapters, where the viewer is, the one action and ⋯;
+  chapters striped as an album's songs), the **author** page, the **book's Playing page** (`.np`: the cover, the
+  chapter's seek line, the whole book's scrubber, speed · −30 · play · +30 · sleep; the chapters where a song has
+  its lyrics, the one being read marked), and **Profile** (the photo, the name, *Settings…* and *Sign out*, then My
+  List as a row of the desktop's tiles — the language and the password are in the Settings window).
+- **A row of tiles has arrows** (`ArrowRow`): a glass arrow at each end the row can still scroll towards, while the
+  pointer is over the row; a click moves it by most of what is on screen. They take a tap, never the focus — a
+  focused child makes a row bring itself into view and scroll back to its focused tile.
+- **The capsule's volume is the device's while casting** (`CastSender.volume`, the device's level as it reports
+  it), and the app's own volume is remembered between launches.
+
+**GNOME, seen (the Fedora container's GNOME session, signed in to the household's server by the owner):**
+
+- **The header bar is a bar** (`.ghb`): always there, the page's colour, the page's name in the middle (the
+  sidebar's own name for the page, or the album / artist / book a page gives it); the page starts under it. It used
+  to float over a hero, where its buttons were dark ink on a dark picture.
+- **The sidebar's header** has the mark beside *Ravilo*, and **moves the window** when dragged (owner: only the
+  content's header did).
+- **The window's buttons follow the desktop** (owner): `org.gnome.desktop.wm.preferences button-layout`, read
+  through the Settings portal and followed live — close alone on the right by default; minimise and maximise when
+  the desktop adds them; all on the left where it keeps them there (then they sit first in the sidebar's header, or
+  the rail's, or the page's strip when neither shows). The Preferences window keeps its close button on the same
+  side. Seen: `icon,menu:minimize,maximize,close`, then a change to `:maximize,close` redrew the buttons at once.
+- **The window's corners are round** (owner): the window is see-through and the app is clipped to libadwaita's
+  12 dp, with the hairline following the curve; square again when maximised or full screen. The X window has a
+  32-bit visual under Mutter. **No shadow yet** — a window that draws its own needs a see-through margin and
+  `_GTK_FRAME_EXTENTS`, so that the desktop measures the window without it; not done.
+- **Rows had lost the gap above them** (a gap and a row in one `Box` overlap): headings sat on the row above. A
+  computer's rows are a column now; the TV keeps the box it has been measured with.
+- **The first screen** (server address) had no way to move or close the window; it has the strip and the edges now.
+- **A book restored at launch read itself aloud**: mpv starts what it loads, AVPlayer waits. A paused load says
+  pause (`MusicEngineDesktop.loadTicket`).
+- The theme follows GNOME's Dark Style live (R338), seen both ways.
+
+**Found and not fixed here:** episode badges on Home read `S1:E2` (the owner's rule is `S01E05` everywhere; three
+spellings exist across Home, the detail page and Upcoming). The container's session had no audio output at all
+(nothing played until a silent sink was made) — an environment matter, noted in its README.
+
+**Not seen on a Mac yet:** this pass's Mac halves (the Settings window's tabs and its traffic lights, the device
+volume while casting, the pages above at the Mac's sizes). The owner was listening in the installed app; the test
+build is built and signed on the Mac and waits.

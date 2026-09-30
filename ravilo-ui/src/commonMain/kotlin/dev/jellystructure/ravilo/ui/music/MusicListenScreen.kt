@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.isDesktopLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -117,10 +118,10 @@ private fun ListenRow(
                     TrackRow(t, showCover = true, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(row.tracks, i, MusicContext("played", title)) }, onMore = { onTrackMore(t) })
                 }
             }
-            row.artists.isNotEmpty() -> LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            row.artists.isNotEmpty() -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(row.artists, key = { it.id }) { r -> ArtistCardView(r, if (isDesktopLayout) 120.dp else 96.dp) { onOpenArtist(r.id) } }
             }
-            else -> LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            else -> ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // FR-R321-5 — square cards two and a half across.
                 items(row.albums, key = { it.id }) { a -> AlbumCardView(a, if (isDesktopLayout) 150.dp else 140.dp, onOpen = { onOpenAlbum(a.id) }) }
             }

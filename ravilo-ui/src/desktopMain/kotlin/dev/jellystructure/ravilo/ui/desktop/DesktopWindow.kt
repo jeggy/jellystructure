@@ -24,6 +24,9 @@ object DesktopWindow {
     /** The AWT window, for the cursor. */
     @Volatile var awtWindow: java.awt.Window? = null
 
+    /** The Settings window while it is open (the test driver's `w2`). */
+    @Volatile var secondWindow: java.awt.Window? = null
+
     /** The app's full-screen switch (FR-R329-7); a no-op until the app installs it. */
     @Volatile var setFullScreenHandler: (Boolean) -> Unit = {}
 
@@ -36,6 +39,36 @@ object DesktopWindow {
     /** R337 — the app's own close (the D7 rule), maximise toggle and About window; no-ops until the app installs them. */
     @Volatile var closeHandler: () -> Unit = {}
     @Volatile var maximizeHandler: () -> Unit = {}
+    @Volatile var minimizeHandler: () -> Unit = {}
+    fun requestMinimize() = minimizeHandler()
+
+    /** The window fills the screen (maximised or full screen): its corners are square then, as GNOME's own are. */
+    private val _filled = MutableStateFlow(false)
+    val filled: StateFlow<Boolean> = _filled.asStateFlow()
+    fun reportFilled(filled: Boolean) { _filled.value = filled }
+
+    /**
+     * R337 — which window buttons the desktop wants and on which side, where Ravilo draws the frame. GNOME says it in
+     * `button-layout` (close alone on the right by default; Tweaks adds minimise and maximise, or moves them left);
+     * the app follows it live. Where nothing says, GNOME's default.
+     */
+    data class Controls(val start: List<Control>, val end: List<Control>)
+    enum class Control { MINIMIZE, MAXIMIZE, CLOSE }
+    fun parseControls(layout: String?): Controls {
+        fun side(s: String) = s.split(',').mapNotNull {
+            when (it.trim()) { "close" -> Control.CLOSE; "minimize" -> Control.MINIMIZE; "maximize" -> Control.MAXIMIZE; else -> null }
+        }
+        val parts = (layout ?: "appmenu:close").split(':')
+        val parsed = Controls(side(parts.getOrElse(0) { "" }), side(parts.getOrElse(1) { "" }))
+        // A layout with no close button at all would leave the window without one: GNOME's default then.
+        return if (Control.CLOSE in parsed.start || Control.CLOSE in parsed.end) parsed else Controls(parsed.start, parsed.end + Control.CLOSE)
+    }
+    private val _controls by lazy {
+        MutableStateFlow(parseControls(if (drawsOwnFrame) runCatching { LinuxPortal.buttonLayout() }.getOrNull() else null)).also { flow ->
+            if (drawsOwnFrame) runCatching { LinuxPortal.watchButtonLayout { flow.value = parseControls(it) } }
+        }
+    }
+    val controls: StateFlow<Controls> get() = _controls
     @Volatile var aboutHandler: () -> Unit = {}
     fun requestClose() = closeHandler()
     fun toggleMaximized() = maximizeHandler()
