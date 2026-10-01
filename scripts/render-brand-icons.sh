@@ -192,11 +192,19 @@ def music_tile(small, style):
     R, cut, sw, note_t = (19, 21.5, 4.2, "translate(75 86.25) scale(.5)") if small else \
                          (15, 17, 2.6, "translate(75.48 85.01) scale(.42)")
     mono = {"clear-light": "#ffffff", "clear-dark": "rgba(255,255,255,.92)", "marks": "#ffffff"}.get(style)
-    tile = {"default": NAVY, "dark": "#05070E", "clear-light": "rgba(255,255,255,.38)",
+    # R352 (FR-R352-7) — Dark keeps the films icon's navy: the installed films icon is a plain .icns that macOS does not
+    # restyle, so a darker music tile made the two icons of one app disagree whenever the Mac is dark.
+    tile = {"default": NAVY, "dark": NAVY, "clear-light": "rgba(255,255,255,.38)",
             "clear-dark": "rgba(18,22,32,.55)", "tile": "#ffffff"}.get(style)
     stroke = {"clear-light": ' stroke="rgba(255,255,255,.75)" stroke-width="1.2"',
               "clear-dark": ' stroke="rgba(255,255,255,.28)" stroke-width="1.2"'}.get(style, "")
-    out = f'<rect x=".6" y=".6" width="98.8" height="98.8" rx="22.5" fill="{tile}"{stroke}/>' if tile else ""
+    # A stroked (Clear) tile is inset by half its stroke; an unstroked one is drawn edge to edge, as FILMS_TILE is.
+    if not tile:
+        out = ""
+    elif stroke:
+        out = f'<rect x=".6" y=".6" width="98.8" height="98.8" rx="22.5" fill="{tile}"{stroke}/>'
+    else:
+        out = f'<rect width="100" height="100" rx="22.5" fill="{tile}"/>'
     if style == "tile":
         return out
     jf = mono or "url(#rg)"
