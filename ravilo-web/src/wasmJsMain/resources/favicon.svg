@@ -1,18 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Ravilo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 24 72 72" role="img" aria-label="Ravilo">
+  <!-- R341 FR-R341-3 — the bare jellyfish drawn for 16 px: a fuller bell and three heavier tentacles, the app icon's
+       own gradient, no tile. The middle tentacle is a straight line, so its bounding box has no width and a
+       bounding-box gradient would not paint it at all (SVG's rule); it takes the same diagonal in user space. -->
   <defs>
     <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#AA5CC3"/>
       <stop offset="1" stop-color="#00A4DC"/>
     </linearGradient>
+    <linearGradient id="rgm" gradientUnits="userSpaceOnUse" x1="48" y1="58" x2="52" y2="88">
+      <stop offset="0" stop-color="#AA5CC3"/>
+      <stop offset="1" stop-color="#00A4DC"/>
+    </linearGradient>
   </defs>
-  <rect width="100" height="100" rx="22" fill="#000B25"/>
-  <g transform="translate(14 14) scale(0.9474) translate(-12 -20)">
-    <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#rg)"/>
-    <g stroke="url(#rg)" stroke-width="4.5" stroke-linecap="round" fill="none">
-      <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/>
-      <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/>
-      <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/>
-      <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/>
-    </g>
+  <path d="M18 56 C18 21 82 21 82 56 C70 49 60 49 50 53 C40 49 30 49 18 56 Z" fill="url(#rg)"/>
+  <g stroke="url(#rg)" stroke-width="9" stroke-linecap="round" fill="none">
+    <path d="M32 56 Q27 71 33 86"/>
+    <path d="M50 58 L50 88" stroke="url(#rgm)"/>
+    <path d="M68 56 Q73 71 67 86"/>
   </g>
 </svg>

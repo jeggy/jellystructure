@@ -8,7 +8,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html`. **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided the review's
+`✓ Built` 2026-10-01, not deployed (see *Build notes*). Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html`. **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided the review's
 open items the same day (see *Owner decisions* at the end of the Dev review); the requirements below include them.
 **Numbering:** checked against `main` (tree `f88c706e`) the same day. Ravilo is taken through **R340** (R336 is reserved
 by R335).
@@ -254,3 +254,52 @@ the end). One is a look on the Mac before rendering (item 6).
    `icon-192.png` stays for the manifest. This one was decided by the dev review and the owner was not asked. It
    follows D3. Written into FR-R341-3.
 4. **The Linux icon keeps the tile** (item 5). The owner checks Flathub's icon guidelines by hand when they submit.
+
+## Build notes (2026-10-01)
+
+**Built 2026-10-01, not deployed, not released.** I looked at the Mac icon as macOS 27 draws it (item 5). The web
+icons have not been seen in a real browser or on an iPhone.
+
+1. **The script (dev review 12): `scripts/render-brand-icons.sh [admin] [web] [mac] [dock]`.** It holds the placement
+   table once:
+   - Apple's template: a 1024 canvas with the 824 px tile at (100, 100), radius 185, and a baked shadow drawn outside
+     the tile only.
+   - The Mac mark: `translate(-9 -20.21) scale(1.18)` on the master's raw coordinates.
+   - R0's glow: `feDropShadow` with a 2.4-unit deviation, `#8a6ff0` at 0.6, on the mark's group so it scales with it.
+
+   Each SVG is drawn by Playwright's cached `chrome-headless-shell` (or `$CHROME`) with `--headless=new --disable-gpu`,
+   one transparent page per size. No Xvfb, no window. Pillow writes the `.ico`. The script writes the `.icns` itself,
+   because Pillow 11's ICNS writer has no `icp4`/`icp5` (16 and 32 px). The set is the shipped file's: `ic07`–`ic14`
+   plus `icp4`/`icp5`, PNG payloads, no TOC. Each size is drawn at its own pixel size, not scaled down from 1024.
+2. **Rendered:**
+   - `ravilo.icns`, and `icons/ravilo.png` (512) with `ravilo-icon.png` byte-identical to it (dev review 4). They are
+     on flat `#000B25` (owner decision 1), keep Apple's margin and shadow, and have the glow. The bell measures
+     **543 of 824 px = 65.9 %** of the visible tile.
+   - `apple-touch-icon-180.png`: full-bleed opaque navy, the same mark and glow, no inset (dev review 7).
+   - `favicon.ico` (16 + 32) from `favicon.svg`.
+3. **Deviation — the favicon's middle tentacle.** The spec's drawing (and the mockup's `b4`) strokes the middle
+   tentacle, `M50 58 L50 88`, with the bounding-box gradient. A straight vertical line has a bounding box with no width,
+   and SVG paints nothing with a bounding-box gradient on such a box. So the middle tentacle was **invisible** in every
+   browser: the B4 the owner judged had two tentacles. That tentacle now takes the same diagonal gradient in user space
+   (`#rgm`, x 48→52, y 58→88). This matches how the two curved ones look. Nothing else in the drawing changed. At 16 px
+   the bell and three tentacles are distinct, on white and on Chrome's dark tab colour (checked enlarged).
+4. **`index.html`:** the raster fallback is `<link rel="icon" href="favicon.ico" sizes="32x32">` (dev review 11).
+   `icon-192.png` stays for the manifest. `ravilo-web-headers.spec.ts` still matches: it checks the SVG line and that
+   `/favicon.ico` answers 200. It was not run, because no ravilo-web was started.
+5. **Dev review 6 (macOS 26+ and old-format icons), checked on the owner's Mac (macOS 27.0.1, build 26A434).**
+   `NSWorkspace.icon(forFile:)` is the icon Finder and the Dock draw. I read it for:
+   - the installed Ravilo (the old `.icns`);
+   - a throwaway probe bundle carrying the new `.icns` (in `/tmp`, since deleted);
+   - Calendar, for comparison.
+
+   macOS 27 does **not** put either `.icns` on a grey square. It reshapes both into its own squircle, with its glass
+   rim, at exactly Calendar's size. So the owner's "too little" was the jellyfish's size only, and the `.icns` is
+   enough on this macOS: no `Assets.car` is needed for R341. With the new file, the jellyfish fills about two-thirds
+   of the tile.
+6. **Nothing else changed:** Android, the Play listing, the TVs, the manifest's icons and the in-app logo
+   (FR-R341-5). The Flatpak and the `.dmg` pick the new icon up with the next release; no manifest edit is needed.
+7. **Still owed (devices):**
+   - **Mac:** install a build and look at the Dock. The Dock caches icons, so an old icon may show until it refreshes.
+   - **Desktop browser:** look at a light and a dark tab (FR-R341-4's contrast risk, the owner's call).
+   - **iPhone:** a fresh *Add to Home Screen*.
+   - **Android:** confirm the installed web app is unchanged.
