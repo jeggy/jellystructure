@@ -4,6 +4,7 @@ import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,12 +104,16 @@ fun SeerrSearchScreen(
     // R350 (FR-R350-4), as on the library's Search — on a TV the field takes focus without raising the keyboard
     // (OK on the field raises it), and Back from the results leaves, one press.
     val keyboardOnOk = isTvPlatform
+    // R350 re-test (FR-R350-13) — read-only until OK on a TV, or focusing the field raises the keyboard regardless.
+    val edit = rememberOkToEdit()
     LaunchedEffect(Unit) {
+        awaitFieldReady()   // R350 re-test — see OkToEdit
         textFieldFR.requestFocus()
         if (!keyboardOnOk) keyboardController?.show()
     }
     LaunchedEffect(inGrid) {
         if (!inGrid) {
+            awaitFieldReady()
             textFieldFR.requestFocus()
             if (!keyboardOnOk) keyboardController?.show()
         }
@@ -148,18 +153,20 @@ fun SeerrSearchScreen(
                 .padding(horizontal = raviloHPad)
                 .height(60.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
+                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(14.dp)) else Modifier)
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             BasicTextField(
                 value = query,
                 onValueChange = { query = it; store.onQuery(it) },
+                readOnly = edit.readOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(textFieldFR)
+                    .okToEdit(edit, keyboardController)
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        if (keyboardOnOk && ev.key == Key.DirectionCenter) { keyboardController?.show(); return@onPreviewKeyEvent true }
                         if (ev.key == Key.DirectionDown && items.isNotEmpty()) {
                             inGrid = true
                             scope.launch { runCatching { gridFR.requestFocus() } }
@@ -169,7 +176,7 @@ fun SeerrSearchScreen(
                     },
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp, fontFamily = sora),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = !keyboardOnOk),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (items.isNotEmpty()) {
                         inGrid = true

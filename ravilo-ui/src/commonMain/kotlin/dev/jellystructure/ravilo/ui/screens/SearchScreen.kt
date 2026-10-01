@@ -9,6 +9,8 @@ import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -82,6 +84,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** R350 — test tags. */
+internal object SearchTags {
+    const val FIELD = "search-field"
+}
 
 sealed class SearchState {
     data object Loading : SearchState()
@@ -209,6 +216,9 @@ fun SearchScreen(
     // arriving with a D-pad lands on the field with the suggestions in view, and Back is never spent closing a
     // keyboard they did not ask for. The phone keeps R277 (the keyboard comes with a tap on the field or the bar).
     val keyboardOnOk = isTvPlatform
+    // R350 re-test (FR-R350-13) — what makes "no keyboard on focus" true on the TV: the field is read-only until OK.
+    // `showKeyboardOnFocus = false` alone was ignored by this (legacy) text field, so arrival raised the keyboard.
+    val edit = rememberOkToEdit()
     val focusInput: (showKeyboard: Boolean) -> Unit = focus@{ showKeyboard ->
         if (externalQuery != null) return@focus   // the field is the sidebar's
         textFieldFR.requestFocus()
@@ -217,9 +227,10 @@ fun SearchScreen(
         if (showKeyboard) keyboardController?.show()
     }
 
-    // Auto-focus and open IME on screen entry — unless this is Back from a result, which lands on that
-    // result (R295 FR-R295-1). A phone takes no focus either way; it only keeps its place in the grid.
+    // Focus the field on screen entry (a TV: no keyboard until OK, R350) — unless this is Back from a result, which
+    // lands on that result (R295 FR-R295-1). A phone takes no focus either way; it only keeps its place in the grid.
     LaunchedEffect(Unit) {
+        if (!handset && returnIndex == null) awaitFieldReady()   // R350 re-test — see OkToEdit
         when {
             handset -> Unit
             returnIndex != null -> requestFocusRetrying(scope, returnFR)
@@ -230,7 +241,7 @@ fun SearchScreen(
     // Return focus to the text field when leaving the results grid (Up/Left from its edge) — R350: on a TV the
     // keyboard waits for OK.
     LaunchedEffect(inGrid) {
-        if (!inGrid && !handset) focusInput(!keyboardOnOk)
+        if (!inGrid && !handset) { awaitFieldReady(); focusInput(!keyboardOnOk) }
     }
 
     // FR-R277-2 — the bottom bar's own Search item, tapped while already here.
@@ -307,30 +318,31 @@ fun SearchScreen(
         }
         Spacer(Modifier.height(12.dp))
 
-        // Native IME text field — the OS keyboard appears automatically on focus
+        // Native IME text field. On a phone the OS keyboard comes with a tap; on a TV with OK (R350), and the field
+        // shows its focus with a ring meanwhile.
         if (externalQuery == null) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = raviloHPad)
                 .height(60.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
+                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(14.dp)) else Modifier)
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             BasicTextField(
                 value = query,
                 onValueChange = { query = it; store.onQuery(it) },
+                readOnly = edit.readOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(textFieldFR)
+                    .testTag(SearchTags.FIELD)
+                    // R350 (FR-R350-4/13) — on a TV, OK on the field is what makes it editable and raises the keyboard.
+                    .okToEdit(edit, keyboardController)
                     // D-pad Down moves focus into the results grid and hides the IME
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        // R350 (FR-R350-4) — OK on the field is what raises the keyboard on a TV.
-                        if (keyboardOnOk && ev.key == Key.DirectionCenter) {
-                            keyboardController?.show()
-                            return@onPreviewKeyEvent true
-                        }
                         if (ev.key == Key.DirectionDown && items.isNotEmpty()) {
                             inGrid = true
                             scope.launch { runCatching { gridFR.requestFocus() } }
@@ -340,7 +352,7 @@ fun SearchScreen(
                     },
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp, fontFamily = sora),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = !keyboardOnOk),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (items.isNotEmpty()) {
                         inGrid = true
