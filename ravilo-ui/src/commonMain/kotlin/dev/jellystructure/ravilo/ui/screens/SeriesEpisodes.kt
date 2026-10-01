@@ -88,11 +88,15 @@ internal fun railOpeningIndex(
 /** R350 (FR-R350-2) — the control that started playback on the series page, and the season open then. */
 internal sealed class SeriesReturnFocus {
     abstract val seasonIdx: Int
-    data class Play(override val seasonIdx: Int) : SeriesReturnFocus()
+    /** R350 (FR-R350-2, amended 2026-10-02) — the page's scroll when Play was pressed, so Back lands where it was. */
+    data class Play(override val seasonIdx: Int, val scroll: ListScroll? = null) : SeriesReturnFocus()
     data class Shuffle(override val seasonIdx: Int) : SeriesReturnFocus()
     /** [cardId] is the rail slot's first episode id (a multi-episode file's card counts as one). */
     data class Episode(override val seasonIdx: Int, val cardId: String) : SeriesReturnFocus()
 }
+
+/** A LazyColumn's scroll: its first visible item and that item's offset. */
+internal data class ListScroll(val index: Int, val offset: Int)
 
 /**
  * R350 (FR-R350-2) — held by the page's store, which outlives the page (only the top of the navigation stack is

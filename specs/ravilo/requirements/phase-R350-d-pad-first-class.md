@@ -324,3 +324,29 @@ device-tested.
 at the top on *‹ Back*; Down walks the sections); Change your password and sign-in (Down/Up through the fields with no
 keyboard, a ring on the focused field, OK opens the keyboard, *Next* carries on). And on the Pixel 9 that a tap on each
 of those fields still opens the keyboard at once (the phone path is untouched by design).
+
+## Amendment (2026-10-02) — Play and Start over come back where they were
+
+**Seen in the Mac re-test (backend `v1.48-54-gfefa9049`):** Back from a *Start over* play landed at the top of the series
+page, while Back after a *Shuffle* play kept the page's scroll and the control.
+
+**Why.** The page remembered Play as the control, but on the way back it ran the ordinary arrival (`focusPlay`: scroll to
+the top, then Play), and it reopened on the opening season rather than the one that was open. With a mouse, Play is
+pressed on a page scrolled down (Play still on screen above the Episodes section); a click does not move focus, so the
+page was never put back at the top before playback. On top of that, R72's reframe (focusing the hero's buttons scrolls
+the hero back into full view) would have undone any restored scroll.
+
+**FR-R350-2a — Play and Start over use the same return target as Shuffle.** Pressing Play / Resume / Start over records
+the open season and the page's scroll (first visible item and its offset) with the control. Back from the player (or the
+cast remote) reopens that season, puts the page at that scroll and focuses Play there; the one focus request that does
+so does not trigger R72's reframe. With no recorded scroll (an older store), the ordinary arrival stands. On a TV,
+pressing Play always has the page at the top (Play is reached by `focusPlay`), so the TV's result is unchanged except
+that the open season comes back too.
+
+**Built 2026-10-02 (FR-R350-2a), not deployed, not device-tested.** `SeriesReturnFocus.Play` carries a `ListScroll`;
+`returnSeason` no longer skips Play; the return path scrolls with `scrollToItem(index, offset)`, sets
+`keepScrollOnPlayFocus` and requests focus through `requestFocusRetrying`; the hero row's R72 reframe skips that one
+focus. New Robolectric walk in `SeriesDetailFocusTest` (desktop): swipe the page up 120 px, press Play, leave, come back
+— Play is focused at the same y; checked to fail without the fix (it came back at the top). All 17 walks pass.
+**Re-test (Mac):** a series → scroll down until the Episodes header shows with *Start over* (or *Resume*) still on
+screen → click it → Back: the page is where it was, *Start over / Resume* is focused, the same season is open.

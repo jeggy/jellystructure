@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.pressKey
 import dev.jellystructure.ravilo.ui.components.SeasonPickerTags
 import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
@@ -292,6 +294,28 @@ class SeriesDetailFocusTest {
         back()
         rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
     }
+
+    /** Amended 2026-10-02 — on the Mac, Start over / Play pressed with the page scrolled (a mouse scrolls it with Play
+     *  still on screen) came back at the top of the page; Shuffle kept its place. Play now keeps the page's scroll. */
+    @Test fun `R350-2 — Play pressed on a scrolled page, the player, Back keeps the scroll and lands on Play`() {
+        val d = series(3, 6, shuffle = true)
+        val back = renderLeavingForThePlayer(d, watched(d, upToSeason = 0), SeriesReturnTarget(), desktop = true)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        val atTop = playTop()
+        rule.onRoot().performTouchInput {
+            swipe(androidx.compose.ui.geometry.Offset(centerX, centerY), androidx.compose.ui.geometry.Offset(centerX, centerY - 120f), durationMillis = 800)
+        }
+        rule.waitForIdle()
+        val scrolled = playTop()
+        kotlin.test.assertTrue(scrolled < atTop - 20f, "the swipe scrolled the page (Play at $scrolled, was $atTop)")
+        press(Key.Enter)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertDoesNotExist()
+        back()
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        kotlin.test.assertEquals(scrolled, playTop(), 2f, "Back kept the page where it was")
+    }
+
+    private fun playTop(): Float = rule.onNodeWithTag(SeriesDetailTags.PLAY).fetchSemanticsNode().positionInRoot.y
 
     @Test fun `R350-3 — Resume names an episode in Season 3 — the page opens there and Down focuses Season 3`() {
         val d = series(3, 13, shuffle = true)

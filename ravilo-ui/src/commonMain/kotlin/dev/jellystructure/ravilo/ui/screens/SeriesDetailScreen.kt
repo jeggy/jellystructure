@@ -337,10 +337,10 @@ internal fun SeriesDetailLoaded(
     val density = LocalDensity.current
 
     // R350 (FR-R350-2) — the control that started playback, read once as the page is rebuilt on the way back.
-    // Shuffle and an episode card bring their season back with them; Play follows the opening rule (the episode it
-    // plays has usually moved on).
+    // Every control brings its season back with it — Play (and Start over) too, as Shuffle does (amended 2026-10-02:
+    // Play used to follow the opening rule and land at the top of the page).
     val returnFocus = remember(detail.card.id) { returnTarget?.take() }
-    val returnSeason = returnFocus?.takeIf { it !is SeriesReturnFocus.Play }?.seasonIdx?.takeIf { it in detail.seasons.indices }
+    val returnSeason = returnFocus?.seasonIdx?.takeIf { it in detail.seasons.indices }
     // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
     var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(returnSeason ?: 0) }
     // Auto-select the opening season once the playstate overlay arrives (one-shot).
@@ -443,6 +443,9 @@ internal fun SeriesDetailLoaded(
         }
     }
     val focusPlay: () -> Unit = { focusInList(0, playFR, 0) }
+    // R350 (FR-R350-2, amended 2026-10-02) — set for the one focus request that brings Play back on a scrolled page (a
+    // mouse can press Play with the page scrolled): R72's reframe to the top would undo the restored scroll.
+    var keepScrollOnPlayFocus by remember { mutableStateOf(false) }
     // Item 1 (the Episodes header, with the pills when there are any) parked just below the overlay AppBar.
     val belowBarPx = with(density) { (RaviloDimens.appBarHeight + 24.dp).toPx() }.toInt()
 
@@ -456,7 +459,16 @@ internal fun SeriesDetailLoaded(
                 val held = detail.seasons.getOrNull(selectedSeasonIdx)?.episodes?.any { it.id == returnFocus.cardId } == true
                 if (held) focusInList(1, returnCardFR, -belowBarPx) else focusPlay()
             }
-            else -> focusPlay()
+            // Amended 2026-10-02 — Play / Start over: the page's scroll as it was when it was pressed (a mouse may have
+            // scrolled the page with Play still on screen), then Play; never a jump to the top.
+            is SeriesReturnFocus.Play -> returnFocus.scroll?.let { at ->
+                scope.launch {
+                    runCatching { listState.scrollToItem(at.index, at.offset) }
+                    keepScrollOnPlayFocus = at.index > 0 || at.offset > 0   // R72's reframe stays out of it, once
+                    requestFocusRetrying(scope, playFR)
+                }
+            } ?: focusPlay()
+            null -> focusPlay()
         }
     }
 
@@ -670,7 +682,8 @@ internal fun SeriesDetailLoaded(
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),
                                 // so skip the competing scroll(UserInput) that otherwise fights bring-into-view
                                 // mid-transition (the open transition was the jankiest pass on-device).
-                                if (it.hasFocus && listState.firstVisibleItemScrollOffset > 0) scope.launch {
+                                if (it.hasFocus && keepScrollOnPlayFocus) keepScrollOnPlayFocus = false
+                                else if (it.hasFocus && listState.firstVisibleItemScrollOffset > 0) scope.launch {
                                     listState.scroll(MutatePriority.UserInput) {
                                         scrollBy(-listState.firstVisibleItemScrollOffset.toFloat())
                                     }
@@ -773,7 +786,7 @@ internal fun SeriesDetailLoaded(
                                         .takeIf { it >= 0 } ?: selectedSeasonIdx
                                     val seasonEps = detail.seasons.getOrNull(sIdx)?.episodes ?: episodes
                                     // R343 (FR-R343-4) — Start over plays S01E01 from 0:00 with `start_over`.
-                                    returnTarget?.remember(SeriesReturnFocus.Play(selectedSeasonIdx))   // R350 (FR-R350-2)
+                                    returnTarget?.remember(SeriesReturnFocus.Play(selectedSeasonIdx, ListScroll(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)))   // R350 (FR-R350-2)
                                     onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay, lang).copy(startOver = startOverNow))
                                 }
                             },
