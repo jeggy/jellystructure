@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `design/ravilo/Ravilo Mobile.html` and `design/ravilo/Ravilo Desktop.html`, both built the same day:
+`✓ Built` 2026-10-01 (see *Build notes*) · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `design/ravilo/Ravilo Mobile.html` and `design/ravilo/Ravilo Desktop.html`, both built the same day:
 - `mobile/ravilo-versions.js` (`window.RaviloVersions`), on `../app/versions.js`
 - `rv-*` in `mobile/ravilo-music.css` and `desktop/ravilo-desktop.css`
 - strings `ver.*` in `ravilo-i18n.js`
@@ -36,11 +36,16 @@ Dev-reviewed 2026-10-01. The number was checked free on `main` (tree `ef52889`, 
 | Song rows: Listen's *Recently played*, Browse → Songs, Search's songs, an artist's *Top songs* | **two, then +N** | three, then +N |
 | An album's track list | two, then +N | three, then +N |
 | The queue (sheet / page / side panel) | two, then +N | three, then +N |
+| A playlist's songs (dev review 4) | two, then +N | three, then +N |
 | **Now playing / the Playing page** | **all of them**, at the start of the artist · album line | all of them, under the artist · album line |
 | The mini bar, the desktop player bar, the lock screen / MPRIS / Now Playing centre | none | none |
 | The TV | — (no music mode) | — |
+| A speaker's display (286's Cast receiver; dev review 9) | none in round 1 | none in round 1 |
 
 The title keeps its single line and truncates **before** the chips, so the chips are never cut. The +N chip is dashed.
+
+A queue restored after a restart (R322) shows no chips until its songs are fetched again: they were saved before they
+had `versions` (dev review 10). That is expected.
 
 **FR-R344-4 — Strings** × en · da · fo in `i18n/*.json`. da and fo are drafts, and the shipped table wins.
 
@@ -187,3 +192,40 @@ items. Item 3 waited on an owner question in 292; it is now decided (see *Owner 
 2. **Any Instrumental blocks the lyrics fetch** (292 FR-292-5). Nothing to build here beyond 292's item 8(d): for such
    a song the lyrics route answers 404 and `has_lyrics` is false, so the phone shows no lyrics button.
 
+## Build notes (2026-10-01)
+
+**Server half** — `d6436271` (another stream): `MusicTrackItem.versions`, `MusicHome.version_types`
+(`MusicVersionType(key, color)`) and `shared`'s `MusicVersionDefaults.TYPES`, filled by `MusicTvService.trackItem` /
+`home()`. Not described further here.
+
+**Client half (this build):**
+- `ravilo-ui/.../music/VersionChips.kt` — one composable, `VersionChips(keys, modifier, fold, large)`, plus the pure
+  rules it draws from: `foldVersions` (unknown keys dropped first and not counted in *+N*, a repeated key drawn
+  once), `parseVersionColor`, `versionInk` / `versionTint` / `versionBorder`, and `MusicVersions` (the defaults from
+  `MusicVersionDefaults.TYPES`, the household's colours learnt from `MusicHome.version_types` — on the launch check
+  and on every Listen fetch; an empty list from an old server changes nothing; an unreadable colour keeps the default).
+- Chip: Sora 700, 10.5 sp (11.5 sp on the phone's Now playing, as the mockup's `.mu-nsub .rv-v`), `3dp 6dp`, 5 dp
+  radius, tint = colour at 15 %, border at 42 %, ink = the colour mixed toward the theme's text in Oklab
+  (`lerp`): 58 % colour on dark themes, **45 % on light ones** (dev review 6; the theme's own `isLight`, not the
+  system). *+N* is dashed (`fg` at 22 %), ink `textSecondary`.
+- Semantics: `clearAndSetSemantics` on the group, `ver.aria` as a template, `Version: {list}` (list joined with
+  *, *), so a screen reader hears one phrase after the title.
+- Placed: `TrackRow` (Listen's *Recently played*, an album, an artist's *Top songs*, a playlist, Search, Songs, the
+  phone queue) — title and chips in a `Row`, the title `weight(1f, fill = false)` so it truncates before the chips;
+  `QueuePanelRow` (desktop queue panel) by hand; the phone's Now playing `Credits` (all, first in the artist · album
+  line); the desktop's `DeskPlaying` (all, on their own line under the artist line). Fold: three at
+  `isDesktopLayout`, else two; Now playing / Playing: all. Nothing on the mini bar, `DesktopMusicBar`, the media
+  session / lock screen / MPRIS, the TV or the Cast receiver.
+- Strings: `ver.aria` + nine `ver.<key>` × en/da/fo in `i18n/*.json` (da/fo the spec's drafts); lexicon regenerated.
+- Session stays when Live is unticked: the app draws the set exactly as sent, and adds no rule of its own.
+
+**Deviations:** `ver.aria` is a template (`Version: {list}`), as dev review 7 asks, not the table's bare *Version:*.
+The chips live in their own file `VersionChips.kt` rather than inside `MusicCommon.kt`.
+
+**Verified:** `VersionChipsTest` (8 tests: two / three / all + N, no version, an unknown key, Session alone, colour
+parsing and fallback, and **contrast ≥ 4.5 : 1 for all nine default colours on the page, card and surface of all
+five themes**, Daylight included) and the whole `:ravilo-ui:testDebugUnitTest` — green; `:shared:desktopTest` green;
+Android, web (wasm) and desktop compile. No device.
+
+**Needs a device:** acceptance 1–7 on the Pixel 9 and the Mac (and TalkBack / VoiceOver for 6), against a backend
+that runs `d6436271` and has 292's versions set.

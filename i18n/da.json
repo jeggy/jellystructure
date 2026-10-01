@@ -869,5 +869,15 @@
   "profile.signout_title_desk": "Log ud af denne computer?",
   "this_computer": "denne computer",
   "cast.play_here_desk": "Afspil på denne computer",
-  "cast.failed_sub_desk": "Prøv en anden titel, eller afspil den på denne computer."
+  "cast.failed_sub_desk": "Prøv en anden titel, eller afspil den på denne computer.",
+  "ver.aria": "Version: {list}",
+  "ver.live": "Live",
+  "ver.demo": "Demo",
+  "ver.remix": "Remix",
+  "ver.instrumental": "Instrumental",
+  "ver.cover": "Cover",
+  "ver.acoustic": "Akustisk",
+  "ver.edit": "Edit",
+  "ver.alternate": "Alternativ",
+  "ver.session": "Session"
 }

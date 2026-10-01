@@ -18,6 +18,7 @@ adressuni
 aftur
 afturat
 airplay
+akustiskt
 aldri
 aldursmark
 allar
@@ -32,6 +33,7 @@ ambætarin
 android
 angra
 annan
+annað
 anyway
 app
 appina
@@ -79,18 +81,21 @@ bøkur
 børn
 cast
 casting
+cover
 dag
 dagar
 dagførd
 dagført
 daylight
 deil
+demo
 des
 desember
 digital
 drag
 dubbað
 døgum
+edit
 eftir
 eftirtekstir
 eftirtekstirnar
@@ -236,6 +241,7 @@ innritað
 innritaðar
 innritaði
 innset
+instrumentalt
 intro
 ið
 ja
@@ -288,6 +294,7 @@ lisin
 lista
 listi
 livandi
+live
 lið
 liðugt
 ljós
@@ -405,6 +412,7 @@ pørtum
 ravilo
 raða
 reinsa
+remix
 riggaði
 rita
 ritar
@@ -463,6 +471,7 @@ serium
 seriuna
 seriur
 sesong
+session
 sett
 settings
 singlar

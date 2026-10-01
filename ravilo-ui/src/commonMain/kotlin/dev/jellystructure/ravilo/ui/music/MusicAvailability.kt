@@ -52,6 +52,7 @@ suspend fun askMusic(block: suspend () -> Boolean): MusicAnswer = musicAnswerOf(
 /** R345 — both questions, asked of the server. `books` is also what the mode card's *with audiobooks* reads. */
 suspend fun askMusicAvailability(api: TvApiClient): Pair<MusicAnswer, Boolean?> {
     val books = askMusic { api.getAudiobooks()?.books?.isNotEmpty() == true }
-    val music = askMusic { api.getMusicHome().rows.isNotEmpty() }
+    // R344 — the household's version colours ride on MusicHome.
+    val music = askMusic { api.getMusicHome().also { MusicVersions.learn(it.versionTypes) }.rows.isNotEmpty() }
     return books to musicAvailability(books, music)
 }

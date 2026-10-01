@@ -869,5 +869,15 @@
   "profile.signout_title_desk": "Rita út av hesi teldu?",
   "this_computer": "hesi teldu",
   "cast.play_here_desk": "Spæl á hesi teldu",
-  "cast.failed_sub_desk": "Royn ein annan heiti, ella spæl tað á hesi teldu."
+  "cast.failed_sub_desk": "Royn ein annan heiti, ella spæl tað á hesi teldu.",
+  "ver.aria": "Útgáva: {list}",
+  "ver.live": "Live",
+  "ver.demo": "Demo",
+  "ver.remix": "Remix",
+  "ver.instrumental": "Instrumentalt",
+  "ver.cover": "Cover",
+  "ver.acoustic": "Akustiskt",
+  "ver.edit": "Edit",
+  "ver.alternate": "Annað tak",
+  "ver.session": "Session"
 }

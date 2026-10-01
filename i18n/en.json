@@ -923,5 +923,15 @@
   "profile.signout_title_desk": "Sign out of this computer?",
   "this_computer": "this computer",
   "cast.play_here_desk": {"text": "Play on this computer", "note": "R337 — cast.play_here on a Linux computer (the Mac has cast.play_here_mac)."},
-  "cast.failed_sub_desk": "Try another title, or play it on this computer."
+  "cast.failed_sub_desk": "Try another title, or play it on this computer.",
+  "ver.aria": {"text": "Version: {list}", "note": "R344 — what a screen reader says after a song's title. {list} is the version names joined with ', ' (e.g. 'Remix, Edit')."},
+  "ver.live": "Live",
+  "ver.demo": "Demo",
+  "ver.remix": "Remix",
+  "ver.instrumental": "Instrumental",
+  "ver.cover": "Cover",
+  "ver.acoustic": "Acoustic",
+  "ver.edit": "Edit",
+  "ver.alternate": {"text": "Alternate", "note": "R344 — a chip after a song's title, so short: the admin's 'Alternate version'."},
+  "ver.session": {"text": "Session", "note": "R344 — recorded live in a studio for radio, TV or a website."}
 }

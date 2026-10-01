@@ -2101,7 +2101,7 @@ fun RaviloApp(
 
             // ─── R321/R322 — music mode ───
             is Dest.MusicListen -> {
-                val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome() } }
+                val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome().also { dev.jellystructure.ravilo.ui.music.MusicVersions.learn(it.versionTypes) } } }
                 // R345 (acceptance 2) — the server answers again: a Listen page that failed loads without a relaunch.
                 LaunchedEffect(loader) {
                     serverOpens.drop(1).collect { if (loader.state.value is dev.jellystructure.ravilo.ui.music.Load.Failed) loader.load() }

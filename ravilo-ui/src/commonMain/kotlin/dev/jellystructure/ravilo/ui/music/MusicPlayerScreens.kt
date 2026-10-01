@@ -233,6 +233,8 @@ private fun DeskPlaying(
                         Text(al, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAlbum(id) })
                     } }
                 }
+                // R344 — the Playing page shows every version, on its own line under the artist · album line.
+                if (t.versions.isNotEmpty()) VersionChips(t.versions, Modifier.padding(top = 10.dp), fold = Int.MAX_VALUE)
                 DeviceChip()
                 Spacer(Modifier.height(18.dp))
                 DeskSeek(st.durationMs)
@@ -384,7 +386,9 @@ private fun Credits(t: MusicTrackItem, onOpenAlbum: (String) -> Unit, onOpenArti
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(t.title, color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, modifier = Modifier.basicMarquee())
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                // R344 — Now playing shows every version, at the start of the artist · album line.
+                if (t.versions.isNotEmpty()) VersionChips(t.versions, fold = Int.MAX_VALUE, large = true)
                 t.artists.firstOrNull()?.let { a -> Text(artistLine(t), color = colors.accentSecondary, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenArtist(a.id) }) }
                 t.album?.let { al -> t.albumId?.let { id -> Text(al, color = colors.textSecondary, fontSize = 14.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAlbum(id) }) } }
             }
@@ -660,7 +664,11 @@ private fun QueuePanelRow(t: MusicTrackItem, now: Boolean, onPlay: () -> Unit, o
     ) {
         MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(38.dp), corner = 6.dp, requestedWidth = 120, wordmarkSize = 7)
         Column(Modifier.weight(1f)) {
-            Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // R344 — the queue panel is not a TrackRow; its chips are placed here (three then +N, the desktop's fold).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (t.versions.isNotEmpty()) VersionChips(t.versions, Modifier.padding(start = 8.dp))
+            }
             Text(listOf(artistLine(t), fmtLen(t.durationMs)).filter { it.isNotBlank() }.joinToString(" · "), color = colors.textDim, fontSize = 11.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.size(24.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textDim, 15.dp, description = str("music.more")) }

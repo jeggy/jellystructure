@@ -30,6 +30,7 @@ afspilles
 afspillet
 afspilning
 airplay
+akustisk
 album
 aldersgrænse
 aldrig
@@ -37,6 +38,7 @@ alle
 allerede
 alligevel
 alt
+alternativ
 altid
 anden
 andre
@@ -89,6 +91,7 @@ caster
 casting
 computer
 computere
+cover
 dag
 dage
 daylight
@@ -97,6 +100,7 @@ dec
 december
 del
 dem
+demo
 den
 denne
 dens
@@ -112,6 +116,7 @@ dit
 drej
 du
 dubbet
+edit
 efter
 eller
 en
@@ -240,6 +245,7 @@ initialer
 installer
 installerede
 instruktør
+instrumental
 intet
 intro
 ja
@@ -404,6 +410,7 @@ prøv
 prøver
 på
 ravilo
+remix
 replikker
 resultat
 resultater
