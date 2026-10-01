@@ -20,6 +20,7 @@
   const tagSpec = () => ({ kind: 'album', title: A.title, artist: artist.name, total: A.total || ts.length, rel: isMatched() ? A.relMbid.slice(0, 8) + '…' : '', cover: hasCover,
     tracks: ts.map(t => ({ id: t.id, n: t.n, title: t.title, artist: M.artistNames(t.artistIds), codec: t.codec, rec: isMatched() ? M.mbid('rec' + t.id).slice(0, 8) + '…' : '', gain: t.gain.toFixed(2) + ' dB', lyrics: lyr[t.id] })) });
   const TQ = () => !!window.FilesTab;
+  const V = !!window.Versions;   // the song-versions brief (2026-10-01), round 1
   document.title = 'Jellystructure — ' + A.title;
 
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
@@ -27,7 +28,7 @@
   const coverHTML = (cls, st) => '<div class="' + cls + '" style="' + (hasCover ? M.coverStyle(A) : M.wordmarkStyle(A.title)) + (st || '') + '">' + (hasCover ? '' : '<span class="mu-wm">' + esc(A.title) + '</span><i class="mu-nocov"></i>') + '</div>';
 
   function fence() {
-    const S = [['glass-birds', 'Matched · partial · WMA'], ['salt-on-the-window', 'Full album · MP3 · drift'], ['low-tide-radio', 'Needs you'], ['summer-hits-2004', 'Compilation needs you'], ['kvold', 'Unmatched'], ['myrkrid-og-ljosid', 'Locked'], ['foghorn-lullabies', 'No cover after a match']];
+    const S = [['glass-birds', 'Matched · partial · WMA'], ['salt-on-the-window', 'Full album · MP3 · drift'], ['low-tide-radio', 'Needs you'], ['summer-hits-2004', 'Compilation needs you'], ['kvold', 'Unmatched'], ['myrkrid-og-ljosid', 'Locked'], ['foghorn-lullabies', 'No cover after a match'], ['live-at-the-harbour', 'Versions · live album'], ['tide-tables', 'Versions · box set']];
     $('al-fence').innerHTML = '<div class="mu-fence"><span class="fl">Preview · mockup only</span><span class="seg">' + S.map(s => '<a href="album.html?a=' + s[0] + '" class="' + (A.id === s[0] ? 'on' : '') + '" style="color:inherit;text-decoration:none;">' + s[1] + '</a>').join('') + '</span>'
       + '<span class="tiny muted">AcoustID key</span><span class="seg" id="al-ak"><span data-ak="1" class="' + (acoust ? 'on' : '') + '">set</span><span data-ak="0" class="' + (acoust ? '' : 'on') + '">not set</span></span></div>';
   }
@@ -64,7 +65,7 @@
     const primary = match === 'unmatched' ? '<span class="btn primary" data-a="find">Find match…</span>' : match === 'needs' ? '<span class="btn primary" data-a="find">Choose…</span>' : '<span class="btn sm ghost" data-a="find">Change match…</span>';
     $('al-head').innerHTML = '<div class="mu-pb">' + coverHTML('mu-cov', '') + '<div>'
       + '<div class="mu-by">by ' + artistLinks([A.artistId]) + '</div>'
-      + '<div class="mu-pbm"><span>' + A.year + '</span><span class="sep">·</span><span>' + (A.total && A.total > have ? have + ' of ' + A.total + ' songs' : have + (have === 1 ? ' song' : ' songs')) + '</span><span class="sep">·</span><span>' + M.fmtTotal(len) + '</span><span class="mu-type">' + M.TYPE_LABEL[A.type] + '</span><span class="sep">·</span>' + codecHTML + '</div>'
+      + '<div class="mu-pbm"><span>' + A.year + '</span><span class="sep">·</span><span>' + (A.total && A.total > have ? have + ' of ' + A.total + ' songs' : have + (have === 1 ? ' song' : ' songs')) + '</span><span class="sep">·</span><span>' + M.fmtTotal(len) + '</span><span class="mu-type">' + M.TYPE_LABEL[A.type] + '</span><span class="sep">·</span>' + codecHTML + (V ? Versions.albumSummary(ts) : '') + '</div>'
       + '<div class="mu-acts">' + matchChip() + primary + (isMatched() ? '<span class="chip" style="cursor:pointer" data-a="lock">' + (locked ? LOCK.replace('<svg', '<svg width="10" height="11"') + ' Locked' : 'Lock') + '</span>' : '') + '</div>'
       + (A.total && A.total > have ? '<div class="tiny muted" style="margin-top:10px;">Partial album — the release has ' + A.total + ' tracks, the library holds ' + have + '. Tracks shows the gaps.</div>' : '')
       + '</div></div>';
@@ -82,6 +83,8 @@
   /* ---- tabs ---- */
   function lyrCell(t) {
     const l = lyr[t.id];
+    if (V && Versions.noWords(t) && !l) return '<span class="mu-ly no" title="Never sung — never given lyrics">No words — MusicBrainz</span>';
+    if (l && V && Versions.lyricsIssue(Object.assign({}, t, { lyrics: l }))) return '<span class="mu-ly" style="color:var(--warn)" title="Lyrics beside a song with no singing — listed on the Dashboard">' + LYR + (l === 'synced' ? 'synced' : 'plain') + ' · no singing</span>';
     if (l) return '<span class="mu-ly">' + LYR + (l === 'synced' ? 'synced ✓' : 'plain ✓') + '</span>';
     if (!isMatched()) return '<span class="mu-ly no">—</span>';
     return Q('lyrics') === 'on' ? '<span class="mu-ly no">none · <a href="#" data-fetch="' + t.id + '">Fetch</a></span>' : '<span class="mu-ly no" title="Lyrics fetching is off in Settings">none</span>';
@@ -93,7 +96,7 @@
   }
   function trackRow(t) {
     const canPlay = !M.reencodes(t);
-    return '<tr class="' + (t.rec === 'other' && isMatched() ? 'off' : '') + '"><td class="n">' + t.n + '</td><td>' + esc(t.title) + (t.feat.length ? ' <span class="dim tiny">feat. ' + artistLinks(t.feat) + '</span>' : '') + (t.artistIds[0] !== A.artistId ? '<div class="tiny dim">' + artistLinks(t.artistIds) + '</div>' : '') + '</td>'
+    return '<tr class="' + (t.rec === 'other' && isMatched() ? 'off' : '') + (V && Versions.sel.has(t.id) ? ' vr-on' : '') + '"><td class="n">' + (V ? Versions.selCell(t) : t.n) + '</td><td>' + esc(t.title) + (V ? Versions.badges(t) : '') + (t.feat.length ? ' <span class="dim tiny">feat. ' + artistLinks(t.feat) + '</span>' : '') + (t.artistIds[0] !== A.artistId ? '<div class="tiny dim">' + artistLinks(t.artistIds) + '</div>' : '') + (V ? Versions.detail(t) : '') + '</td>'
       + '<td class="num">' + M.fmtLen(t.len) + '</td><td><span class="mu-fmt' + (canPlay ? '' : ' w') + '">' + t.codec + ' · ' + t.kbps + ' · ' + t.khz + ' kHz</span></td><td>' + recCell(t) + '</td><td>' + lyrCell(t) + '</td><td class="num mu-mono" style="font-size:.74rem">' + t.gain.toFixed(1) + ' dB</td>'
       + '<td>' + FilesTab.glyph(tagSpec(), t, ts.indexOf(t)) + '</td><td>' + (canPlay ? '<span class="mu-play' + (playing === t.id ? ' on' : '') + '" data-play="' + t.id + '" title="Play in this browser — your own Jellyfin session, direct play">' + (playing === t.id ? '❚❚' : '▶') + '</span>' : '<span class="tiny muted mu-tip" style="cursor:help">no direct play<span class="tp">A browser can’t direct-play WMA, and this page never asks Jellyfin to convert — direct play or nothing, the segment editor’s rule.</span></span>') + '</td></tr>'
       + (recOpen === t.id ? '<tr><td></td><td colspan="8"><div class="mu-cand on" style="cursor:default;margin:2px 0 6px;"><b class="tiny">Recordings of “' + esc(t.title) + '” by ' + esc(artist.name) + '</b>'
@@ -111,7 +114,8 @@
     return '<div class="row center" style="gap:10px;flex-wrap:wrap;margin-bottom:10px;"><span class="tiny muted">Album gain <b class="mono" style="color:var(--ink)">' + A.gain.toFixed(1) + ' dB</b> · from Jellyfin’s loudness scan · the phone applies album gain on an album, track gain on a mix</span><span class="spacer"></span>'
       + (isMatched() && missingLy && Q('lyrics') === 'on' ? '<span class="btn sm ghost" data-a="lyrics">Fetch missing lyrics (' + missingLy + ')</span>' : '') + '</div>'
       + (!A.total ? '<div class="note blue" style="margin-bottom:12px;">Positions come from the files’ tags. A match tells us how many tracks the release has — then the gaps show here.</div>' : '')
-      + '<div class="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th title="What the file says, against this page — opens the Files tab">File</th><th></th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+      + (V ? Versions.selBar(ts.map(t => t.id)) : '')
+      + '<div class="mu-scroll"><table class="mu-tbl' + (V && ts.some(t => Versions.sel.has(t.id)) ? ' vr-selecting' : '') + '"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th title="What the file says, against this page — opens the Files tab">File</th><th></th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
       + '<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>';
   }
   function artworkTab() {
@@ -262,6 +266,8 @@
   function repaint() { bar(); head(); banners(); panel(); }
   TagsQ.mount($('al-tq')); TagsQ.on(() => { bar(); if (tab === 'tracks') panel(); });
   if (window.MusicQ) { MusicQ.mount($('al-qs'), 'album'); MusicQ.on(() => { repaint(); if ($('fm-panel').classList.contains('on')) paintFM(); }); }
+  if (V) { Versions.mountQ($('al-vq')); Versions.on(() => { head(); if (tab === 'tracks') panel(); }); }
   fence(); repaint();
   if (P.get('find') === '1') openFM();
+  if (V && P.get('ver')) Versions.openPanel(P.get('ver'));
 })();

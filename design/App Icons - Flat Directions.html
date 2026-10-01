@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>App Icons — Flat Directions (round 1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;family=Sora:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+a{color:#9d93ff}a:hover{color:#c2bbff}
+.fr{position:absolute;background:#10131c;color:#e9ebf3;border-radius:18px;padding:34px 38px 38px;box-sizing:border-box;font-family:'Sora',sans-serif;font-size:14px;line-height:1.5}
+.fr h1{font:700 34px/1.1 'Space Grotesk',sans-serif;margin:0 0 10px;letter-spacing:-.01em}
+.fr h2{font:700 24px/1.15 'Space Grotesk',sans-serif;margin:0 0 6px;letter-spacing:-.01em}
+.fr h3{font:600 15px/1.3 'Space Grotesk',sans-serif;margin:0 0 4px;color:#f3f4fb}
+.kick{font:600 12px 'Space Grotesk',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#8f96b3;margin-bottom:8px}
+.sub{color:#aeb4cb;max-width:880px;text-wrap:pretty;margin:0 0 26px}
+.note{color:#aeb4cb;font-size:13px;text-wrap:pretty}
+.lean{display:inline-block;background:#7b6ef0;color:#fff;font:600 11px 'Space Grotesk',sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px;vertical-align:2px;margin-left:6px}
+.warn{display:inline-block;background:#3a2a12;color:#f5c26b;font:600 11px 'Space Grotesk',sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px;vertical-align:2px;margin-left:6px}
+.grid{display:grid;gap:22px}
+.opt{display:flex;flex-direction:column;gap:12px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:#141824}
+.opt.is-dec{border-color:#2dd49a;box-shadow:0 0 0 1px #2dd49a inset}.lean.dec{background:#2dd49a;color:#062118}
+.opt.is-lean{border-color:#7b6ef0;box-shadow:0 0 0 1px #7b6ef0 inset}
+.opt .art{display:flex;gap:14px;align-items:center;min-height:132px}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#8f96b3}
+.sec{font:600 13px 'Space Grotesk',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#8f96b3;margin:30px 0 14px}
+.sec:first-of-type{margin-top:0}
+.wall{background:linear-gradient(165deg,#8d98ad,#5d687c);border-radius:14px;padding:26px 28px;display:flex;flex-direction:column;gap:18px}
+.dockrow{display:grid;grid-template-columns:200px 1fr;align-items:center;gap:20px}
+.dockrow .lb{color:#fff;font-size:13px;line-height:1.35}.dockrow .lb b{font:600 14px 'Space Grotesk',sans-serif;display:block}
+.dock{justify-self:start;display:flex;gap:10px;padding:9px 12px;border-radius:24px;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.4);backdrop-filter:blur(12px)}
+.ph{width:60px;height:60px;border-radius:14px}
+.strip{border-radius:10px 10px 0 0;padding:8px 8px 0;display:flex;gap:2px;align-items:flex-end}
+.tab{display:flex;align-items:center;gap:9px;width:190px;height:34px;padding:0 12px;border-radius:9px 9px 0 0;font:13px 'Sora',sans-serif;box-sizing:border-box}
+.tab svg{flex:none}.tab .x{margin-left:auto;opacity:.55;font-size:13px}
+.strip.light{background:#dee1e6;color:#1f1f1f}.strip.light .tab.on{background:#fff}
+.strip.dark{background:#1f2023;color:#e8eaed}.strip.dark .tab.on{background:#35363a}
+.tabrow{display:grid;grid-template-columns:230px 1fr 1fr;gap:18px;align-items:center;padding:12px 0;border-top:1px solid rgba(255,255,255,.07)}
+.tabrow .lb{font-size:13px;color:#cfd3e2;line-height:1.4}.tabrow .lb b{display:block;font:600 14px 'Space Grotesk',sans-serif;color:#f3f4fb}
+.loupes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.lp{display:flex;flex-direction:column;gap:8px}
+.lp .pair{display:flex;gap:8px}
+.lp canvas{width:96px;height:96px;image-rendering:pixelated;border-radius:8px}
+.modes{display:grid;grid-template-columns:200px repeat(4,minmax(0,1fr));gap:16px;align-items:center}
+.mh{font:600 13px 'Space Grotesk',sans-serif;color:#cfd3e2;text-align:center}
+.mcell{display:flex;justify-content:center;padding:18px 0;border-radius:12px;background:linear-gradient(165deg,#3e4a5e,#232a38)}
+.themes{display:grid;grid-template-columns:150px repeat(5,minmax(0,1fr));gap:10px;align-items:stretch}
+.th{display:flex;align-items:center;gap:10px;padding:18px 16px;border-radius:12px;font:700 21px 'Space Grotesk',sans-serif;letter-spacing:-.01em}
+.qs{display:flex;flex-direction:column;gap:18px}
+.q{display:grid;grid-template-columns:44px 1fr;gap:14px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07)}
+.q .n{font:700 18px 'Space Grotesk',sans-serif;color:#7b6ef0}
+.q p{margin:4px 0 0;color:#aeb4cb;text-wrap:pretty}
+.inv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.inv div{padding:16px 18px;border-radius:12px;background:#141824;border:1px solid rgba(255,255,255,.07)}
+.inv ul{margin:6px 0 0;padding-left:18px;color:#aeb4cb;font-size:13px}
+.think{margin:0;padding-left:18px;color:#cfd3e2;display:flex;flex-direction:column;gap:8px}
+.think b{color:#f3f4fb}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<filter id="sysTint" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=".32 1.06 .11 0 0  .37 1.22 .12 0 0  .51 1.72 .17 0 0  0 0 0 1 0"></feColorMatrix></filter>
+<filter id="sysClear" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .62 2.1 .21 0 0"></feColorMatrix></filter>
+</svg>
+<script>
+(function(){
+const C={navy:'#000B25',p1:'#AA5CC3',p2:'#00A4DC',vi:'#7B6EF0',sky:'#3FB6F5'};
+let uid=0;
+const BELL='M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z';
+const TENT=['M33 51 q-5 12 1 20 q5 8 0 14','M44 52 q-4 13 1 21 q4 9 0 13','M56 52 q4 13 -1 21 q-4 9 0 13','M67 51 q5 12 -1 20 q-5 8 0 14'];
+const BELL_S='M18 56 C18 21 82 21 82 56 C70 49 60 49 50 53 C40 49 30 49 18 56 Z';
+const TENT_S=['M32 56 Q27 71 33 86','M50 58 L50 88','M68 56 Q73 71 67 86'];
+const X='xmlns="http://www.w3.org/2000/svg"';
+
+/* jelly mark. m: {grad:[a,b]} | {bell,tent}; small = the 16 px drawing; glow = today's lit halo */
+function jelly(m){
+  let defs='',b,t;
+  if(m.grad){const id='jg'+(++uid);defs+=`<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${m.grad[0]}"/><stop offset="1" stop-color="${m.grad[1]}"/></linearGradient>`;b=t=`url(#${id})`;}
+  else{b=m.bell;t=m.tent||m.bell;}
+  let fa='';
+  if(m.glow){const f='jf'+(++uid);defs+=`<filter id="${f}" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#8a6ff0" flood-opacity=".6"/></filter>`;fa=` filter="url(#${f})"`;}
+  const op=m.grad?[.9,.72,.72,.9]:[1,1,1,1];
+  const body=m.small
+    ?`<path d="${BELL_S}" fill="${b}"/><g stroke="${t}" stroke-width="9" stroke-linecap="round" fill="none">${TENT_S.map(d=>`<path d="${d}"/>`).join('')}</g>`
+    :`<path d="${BELL}" fill="${b}"/><g stroke="${t}" stroke-width="4.5" stroke-linecap="round" fill="none">${TENT.map((d,i)=>`<path d="${d}" opacity="${op[i]}"/>`).join('')}</g>`;
+  return {defs,body:`<g${fa}>${body}</g>`};
+}
+/* Ravilo icon. o: {tile, mark, rx, scale, cy, filter, tileOut} */
+function rav(size,o){
+  const j=jelly(o.mark);
+  const bare=!o.tile;
+  const s=o.scale||(bare?(o.mark.small?1.4:1.52):.82), cy=o.cy||(bare?(o.mark.small?56:58):59.5);
+  const tile=o.tile?`<rect width="100" height="100" rx="${o.rx==null?22.5:o.rx}" fill="${o.tile}"/>`:'';
+  const inner=`<g transform="translate(${(50-50*s).toFixed(2)} ${(50-cy*s).toFixed(2)}) scale(${s})">${j.body}</g>`;
+  const all=o.filter?`<g filter="url(#${o.filter})">${tile}${inner}</g>`:(o.markFilter?`${tile}<g filter="url(#${o.markFilter})">${inner}</g>`:tile+inner);
+  return `<svg ${X} width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><defs>${j.defs}</defs>${o.under||''}${all}</svg>`;
+}
+/* jellystructure admin icon. o: {tile:'grad'|color|null, ink} */
+function adm(size,o){
+  let defs='',tile='',ink=o.ink||'#fff',g='translate(13 13) scale(.74)';
+  if(o.tile==='grad'){const id='ag'+(++uid);defs=`<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/></linearGradient>`;tile=`<rect width="100" height="100" rx="23" fill="url(#${id})"/>`;}
+  else if(o.tile){tile=`<rect width="100" height="100" rx="23" fill="${o.tile}"/>`;}
+  else g='translate(-2 -2) scale(1.04)';
+  const q=`<g transform="${g}"><rect x="10" y="10" width="35" height="35" rx="9" fill="${ink}"/><rect x="55" y="10" width="35" height="35" rx="9" fill="${ink}" opacity=".5"/><rect x="10" y="55" width="35" height="35" rx="9" fill="${ink}" opacity=".5"/><rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke="${ink}" stroke-width="6"/><path d="M68 64 L84 72.5 L68 81 Z" fill="${ink}"/></g>`;
+  return `<svg ${X} width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><defs>${defs}</defs>${o.filter?`<g filter="url(#${o.filter})">${tile}${q}</g>`:tile+q}</svg>`;
+}
+const MAC=1.18;
+const R={
+  r0:(s,k)=>rav(s,{tile:C.navy,mark:{grad:[C.p1,C.p2],glow:true},scale:k}),
+  r1:(s,k)=>rav(s,{tile:C.navy,mark:{bell:C.vi},scale:k}),
+  r2:(s,k)=>rav(s,{tile:C.navy,mark:{bell:C.vi,tent:C.sky},scale:k}),
+  r3:(s,k)=>rav(s,{tile:C.vi,mark:{bell:'#fff'},scale:k}),
+  fav0:s=>rav(s,{tile:C.navy,mark:{grad:[C.p1,C.p2]},scale:1.2,cy:58,rx:20}),
+  b1:s=>rav(s,{mark:{bell:C.vi}}),
+  b2l:s=>rav(s,{mark:{bell:C.navy}}),
+  b2d:s=>rav(s,{mark:{bell:'#fff'}}),
+  b3:s=>rav(s,{mark:{bell:C.vi,small:true}}),
+  b4:s=>rav(s,{mark:{grad:[C.p1,C.p2],small:true}}),
+  b5:s=>rav(s,{mark:{grad:[C.p1,C.p2]}}),
+  a0:s=>adm(s,{tile:'grad'}),
+  a1:s=>adm(s,{tile:C.vi}),
+  a2:s=>adm(s,{ink:C.vi})
+};
+
+const frames=[];
+function frame(col,w,html){const d=document.createElement('div');d.className='fr';d.style.width=w+'px';d.innerHTML=html;document.body.appendChild(d);frames.push({d,col});return d;}
+const opt=(art,title,note,lean,code)=>`<div class="opt${lean==='d'?' is-dec':lean?' is-lean':''}"><div class="art">${art}</div><div><h3>${title}${lean==='d'?'<span class="lean dec">Decided</span>':lean?'<span class="lean">Lean</span>':''}</h3><div class="note">${note}</div>${code?`<div class="code" style="margin-top:6px">${code}</div>`:''}</div></div>`;
+const onBg=(svg,bg)=>`<div style="display:flex;padding:14px;border-radius:12px;background:${bg}">${svg}</div>`;
+
+/* ---------- header ---------- */
+frame(0,1280,`<div class="kick">Exploration · round 1 · nothing replaced</div>
+<h1>Flat icons: losing the gradient, and a bare jellyfish for favicons</h1>
+<p class="sub" style="margin-bottom:18px">Every icon below is drawn from the current master, <span class="code">ravilo/assets/brand/ravilo-mark.svg</span>, and the admin's <span class="code">BRAND()</span> in <span class="code">app/app-shell.js</span>. The shapes are the same. Only the colour, the tile, the small-size drawing and the jellyfish's size on the tile change. The jellyfish's size now depends on the platform. On <b>Mac, iPhone and Linux</b> it is about <b>66%</b> of the tile, because those systems don't crop it. Everywhere else, Android included, it stays at today's <b>46%</b>. No asset, spec or mockup has been touched.</p>
+<ol class="think">
+<li><b>Two gradients, two decisions.</b> Ravilo's tile is already flat navy, and its gradient lives in the jellyfish. The admin is the other way round: a gradient tile with a white glyph.</li>
+<li><b>Home screens, docks and TV launchers need a tile.</b> The bare jellyfish is only for browser tabs and the logo inside the apps.</li>
+<li><b>Decided (owner, 2026-10-01):</b> keep the gradient. The app icon stays <b>R0</b> and the admin stays <b>A0</b>, but A0's glyph is bigger: it now fills 59% of the tile, up from 51%. The Ravilo favicon is <b>bare</b>: the gradient jellyfish with no tile, redrawn for 16 px (B4). The admin favicon keeps its tile. Inside the apps the logo keeps <b>today's theme gradient</b>. The jellyfish is about 66% of the tile on Mac, iPhone and Linux, and stays at today's 46% everywhere else.</li><li><b>Earlier leans, kept for the record:</b> app icon <b>R1</b> (one flat violet on the same navy). Ravilo favicon <b>B3</b> (bare, redrawn for 16 px, one colour that works in light and dark). Admin favicon stays a <b>flat tile</b> (A1), so the two products stay apart in a tab strip. In-app logo in the <b>theme's accent, flat</b>.</li>
+</ol>`);
+
+/* ---------- directions ---------- */
+frame(0,1280,`<div class="kick">1 · The options</div><h2>Same jellyfish, five treatments</h2>
+<p class="sub">R0–R3 are app icons (they keep a tile). B1–B3 are bare marks for tabs and in-app use. The violet is Aurora's own accent, <span class="code">#7B6EF0</span>, so the icon and the default theme match.</p>
+<div class="sec">Ravilo · app icon</div>
+<div class="grid" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+${opt(R.r0(124),'R0 · Today','Gradient #AA5CC3 → #00A4DC plus the glow. The colours are close to Jellyfin\'s own. On Mac, iPhone and Linux the jellyfish is drawn at about 66% of the tile.','d','R62 “lit mark”')}
+${opt(R.r1(124),'R1 · One flat colour','The same navy tile with a violet jellyfish. One shape and one colour, which is what the system recolouring in §4 needs.',false,'#7B6EF0 on #000B25')}
+${opt(R.r2(124),'R2 · Two flat colours','The bell is violet and the tentacles are sky. It keeps some of today\'s two-tone feel without a gradient.',false,'#7B6EF0 + #3FB6F5')}
+${opt(R.r3(124),'R3 · Inverted','A flat violet tile with a white jellyfish. It\'s built the same way as the admin\'s icon, so the two look related but are easier to mix up in a dock.',false,'#fff on #7B6EF0')}
+</div>
+<div class="sec">Ravilo · bare (no tile)</div>
+<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+${opt(onBg(R.b1(84),'#fff')+onBg(R.b1(84),'#1f2023'),'B1 · Bare, one colour','The violet is about 3:1 or better against both a white and a near-black tab strip, so one file works on both. No light/dark switch is needed, and the <span class="code">.ico</span> fallback matches the SVG.')}
+${opt(onBg(R.b2l(84),'#fff')+onBg(R.b2d(84),'#1f2023'),'B2 · Bare, ink','Navy on light and white on dark is the strongest contrast, but it needs <span class="code">prefers-color-scheme</span> inside the SVG. The <span class="code">.ico</span> can only be one of the two, and §3 shows it vanishing in a dark tab strip.')}
+${opt(onBg(R.b3(84),'#fff')+onBg(R.b3(84),'#1f2023'),'B3 · Bare, drawn for 16 px','A second drawing for 32 px and below: a fuller bell and three tentacles at twice the weight. At 16 px the full mark\'s four strokes turn into a single smudge (see the loupes in §3).',false,'used ≤ 32 px only')}
+</div>
+<div class="sec">Ravilo · bare, with the gradient (decided)</div>
+<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+${opt(onBg(R.b5(84),'#fff')+onBg(R.b5(84),'#1f2023'),'B5 · Bare gradient, full mark','The full jellyfish in its gradient, used above 32 px: the web app\'s large icons and inside the apps.','d')}
+${opt(onBg(R.b4(84),'#fff')+onBg(R.b4(84),'#1f2023'),'B4 · Bare gradient, drawn for 16 px','The Ravilo favicon. The small drawing in the gradient: about 4:1 contrast at the purple end and 3:1 at the blue end on the light strip, and better on the dark one.','d','decided · used ≤ 32 px')}
+</div>
+<div class="sec">jellystructure admin</div>
+<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+${opt(R.a0(124),'A0 · Gradient tile','The glyph is now bigger: 59% of the tile, up from 51%. A three-stop gradient tile (#b15cd0 → #7b6ef0 → #00a4dc) with a white quartet-play glyph and a drop shadow. It keeps the tile everywhere, favicon included.','d')}
+${opt(R.a1(124),'A1 · Flat tile','The gradient\'s middle stop as one flat colour. Stays a tile everywhere, favicon included, so the admin keeps its square "tool" look next to Ravilo\'s round jellyfish.',false,'#fff on #7B6EF0')}
+${opt(onBg(R.a2(84),'#fff')+onBg(R.a2(84),'#1f2023'),'A2 · Bare glyph','Possible, but then both products are bare violet marks and only their outlines tell them apart. The half-tone squares also fade on the light strip.')}
+</div>`);
+
+/* ---------- dock ---------- */
+const ph=['#f2f2f4','#2c2e35','#d6dae2','#565b67','#eceef2'];
+const dock=(icons)=>`<div class="dock">${ph.slice(0,3).map(c=>`<div class="ph" style="background:${c}"></div>`).join('')}${icons.join('')}${ph.slice(3).map(c=>`<div class="ph" style="background:${c}"></div>`).join('')}</div>`;
+const drow=(lb,sub,icons)=>`<div class="dockrow"><div class="lb"><b>${lb}</b>${sub}</div>${dock(icons)}</div>`;
+frame(0,1280,`<div class="kick">2 · Where a tile is required</div><h2>In a dock, next to other apps</h2>
+<p class="sub">macOS dock at 60 px. Here the jellyfish is drawn at <b>Mac size, about 66% of the tile</b>, to match how full the neighbouring icons are. Everywhere else it stays at today's size, 46%. The grey squares stand in for other apps. On Ravilo's tile, flat colours and a flat navy hold up well among other icons. The last row shows why the bare mark can't go here: a missing tile looks like a broken icon.</p>
+<div class="wall">
+${drow('R0 + A0','today',[R.a0(60),R.r0(60,MAC)])}
+${drow('R1 + A1','lean',[R.a1(60),R.r1(60,MAC)])}
+${drow('R2 + A1','two flat colours',[R.a1(60),R.r2(60,MAC)])}
+${drow('R3 + A1','both violet tiles: siblings, but easy to mix up',[R.a1(60),R.r3(60,MAC)])}
+${drow('B1 + A2','bare, not allowed here',[`<div class="ph" style="display:flex;align-items:center;justify-content:center">${R.a2(52)}</div>`,`<div class="ph" style="display:flex;align-items:center;justify-content:center">${R.b1(56)}</div>`])}
+</div>
+<p class="note" style="margin-top:16px">Same rule on iPhone (the icon must be opaque), on an Android launcher (an adaptive icon always gets a mask), on the Android TV banner and in the Samsung launcher. Every one of these keeps a tile whatever you decide.</p>`);
+
+/* ---------- tabs ---------- */
+const tab=(icon,title,on)=>`<div class="tab${on?' on':''}">${icon}<span>${title}</span><span class="x">✕</span></div>`;
+const strip=(cls,rav,adm)=>`<div class="strip ${cls}">${tab(rav,'Ravilo',true)}${tab(adm,'jellystructure',false)}</div>`;
+const trow=(lb,sub,rl,al,rd,ad,flag)=>`<div class="tabrow"><div class="lb"><b>${lb}${flag||''}</b>${sub}</div>${strip('light',rl,al)}${strip('dark',rd||rl,ad||al)}</div>`;
+frame(1,1160,`<div class="kick">3 · Favicons</div><h2>Browser tabs at real size, light and dark</h2>
+<p class="sub">16 px, as Chrome draws them, with the active Ravilo tab beside an inactive jellystructure tab. These two often sit next to each other, so the question is whether you can still tell them apart at a glance.</p>
+<div class="tabrow" style="border-top:0;padding-top:0"><div></div><div class="mh">Light</div><div class="mh">Dark</div></div>
+${trow('Today','both tiled, both gradients',R.fav0(16),R.a0(16))}
+${trow('Flat tiles','R1-style tile + A1',rav(16,{tile:C.navy,mark:{bell:C.vi},scale:1.2,cy:58,rx:20}),R.a1(16))}
+${trow('B4 + A0','decided: bare gradient jellyfish, admin keeps its tile',R.b4(16),R.a0(16),null,null,'<span class="lean" style="background:#2dd49a;color:#062118">Decided</span>')}
+${trow('B3 + A1','earlier lean, flat',R.b3(16),R.a1(16))}
+${trow('B3 + A2','both bare: only the outline differs',R.b3(16),R.a2(16))}
+${trow('B2 without its dark variant','what the single-colour .ico would do',R.b2l(16),R.a1(16),R.b2l(16),R.a1(16),'<span class="warn">Fails</span>')}
+<div class="sec" style="margin-top:34px">Loupes: what the pixels actually are</div>
+<p class="note" style="margin:-6px 0 16px">Each icon rasterised at 16 px (1× screen) and 32 px (Retina), then enlarged. Light strip on the left, dark on the right.</p>
+<div class="loupes" id="loupes"></div>`);
+
+/* ---------- system recolouring ---------- */
+const glass='<rect width="100" height="100" rx="22.5" fill="#1d2230"/>';
+const clearGlass='<rect width="100" height="100" rx="22.5" fill="rgba(255,255,255,.16)" stroke="rgba(255,255,255,.35)" stroke-width="1.2"/>';
+const mrow=(lb,sub,cells)=>`<div class="lb" style="font-size:13px;color:#cfd3e2;line-height:1.4"><b style="display:block;font:600 14px 'Space Grotesk',sans-serif;color:#f3f4fb">${lb}</b>${sub}</div>${cells.map(c=>`<div class="mcell">${c}</div>`).join('')}`;
+frame(1,1160,`<div class="kick">4 · When the system recolours the icon</div><h2>macOS / iOS 26 icon modes, and Android themed icons</h2>
+<p class="sub">Newer systems repaint app icons. Apple's Clear and Tinted modes turn the icon into one tone. If the icon is one flat image (today), the system has to tone the whole picture. If it's in layers (flat), the system swaps the tile and tones the mark evenly. <i>These are approximations of what the system does, not Apple's renderer.</i></p>
+<div class="modes">
+<div></div><div class="mh">Default</div><div class="mh">Dark</div><div class="mh">Clear</div><div class="mh">Tinted</div>
+${mrow('R0 · one flat image','the glow is lost, and the purple end tones darker than the blue',[R.r0(96,MAC),R.r0(96,MAC),rav(96,{tile:C.navy,mark:{grad:[C.p1,C.p2],glow:true},scale:MAC,filter:'sysClear',under:clearGlass}),rav(96,{tile:C.navy,mark:{grad:[C.p1,C.p2],glow:true},scale:MAC,filter:'sysTint'})])}
+${mrow('R1 · tile + mark layers','even tone in every mode, and navy already is the dark version',[R.r1(96,MAC),R.r1(96,MAC),rav(96,{mark:{bell:C.vi},scale:MAC,cy:59.5,markFilter:'sysClear',under:clearGlass}),rav(96,{mark:{bell:C.vi},scale:MAC,cy:59.5,markFilter:'sysTint',under:glass})])}
+</div>
+<div class="sec" style="margin-top:30px">Android 13+ themed icons</div>
+<div style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+<div style="display:flex;gap:12px;align-items:center;padding:18px 22px;border-radius:14px;background:#e9edf6">${['r0','r1'].map(()=>rav(72,{tile:'#d3dcf0',mark:{bell:'#22324f'},rx:50})).join('')}</div>
+<p class="note" style="flex:1;min-width:260px;margin:0">Today's gradient icon and R1 look identical here, because Android draws the <b>monochrome</b> layer (it exists already) in the wallpaper's colours. A flat master means the monochrome layer is simply the same drawing, not a separate one to maintain.</p>
+</div>`);
+
+/* ---------- in-app ---------- */
+const TH=[['Aurora','#0a0c13','#f3f4fb','#7b6ef0','#3fb6f5'],['Midnight','#04101a','#eafcff','#19d6c6','#2a8cf0'],['Noir','#080807','#f7f3ea','#f5b542','#e0792f'],['Graphite','#1c1c1f','#f2f2f4','#4f8ef0','#6fb0f5'],['Daylight','#fbfbfd','#15171f','#5b4ee0','#0f73c2']];
+const throw_=(lb,sub,fn)=>`<div class="lb" style="font-size:13px;color:#cfd3e2;line-height:1.4;align-self:center"><b style="display:block;font:600 14px 'Space Grotesk',sans-serif;color:#f3f4fb">${lb}</b>${sub}</div>${TH.map(t=>`<div class="th" style="background:${t[1]};color:${t[2]}">${fn(t)}<span>Ravilo</span></div>`).join('')}`;
+frame(2,1160,`<div class="kick">5 · Inside the apps</div><h2>The logo next to the wordmark, across the five themes</h2>
+<p class="sub">Inside the apps the logo is already bare, and its gradient already follows the theme (<span class="code">--accent → --accent-2</span>). If the app icon goes flat, this goes flat too. The only question is whether it uses the theme's colour or the text colour.</p>
+<div class="themes">
+<div></div>${TH.map(t=>`<div class="mh">${t[0]}</div>`).join('')}
+${throw_('Today','theme gradient · <span class="lean" style="margin:4px 0 0;background:#2dd49a;color:#062118">Decided</span>',t=>rav(30,{mark:{grad:[t[3],t[4]]}}))}
+${throw_('Flat accent','earlier lean',t=>rav(30,{mark:{bell:t[3]}}))}
+${throw_('Ink','the text colour',t=>rav(30,{mark:{bell:t[2]}}))}
+</div>
+<p class="note" style="margin-top:16px">Flat accent keeps each theme's character (Noir's amber jellyfish, Midnight's teal) and stays clear on Daylight. Ink is the quietest option, but it means the brand colour only appears in the launcher icon. Note: the launcher icon itself never changes with the theme.</p>
+<div class="sec" style="margin-top:28px">Admin sidebar and login</div>
+<div style="display:flex;gap:14px;flex-wrap:wrap">
+${[['Today',R.a0(30)],['A1 · flat tile',R.a1(30)]].map(([l,s])=>`<div style="display:flex;flex-direction:column;gap:8px"><div class="mh" style="text-align:left">${l}</div><div class="th" style="background:#0b0d14;color:#f3f4fb;font-size:19px;padding:14px 18px">${s}<span>jellystructure</span></div></div>`).join('')}
+</div>`);
+
+/* ---------- questions ---------- */
+frame(2,1160,`<div class="kick">6 · What to decide, and what to think about</div><h2>Questions for you, with leans</h2>
+<p class="sub">Q1 is the one that matters. Phase R62 chose the Jellyfin-inspired gradient on purpose, so going flat reverses that decision.</p>
+<div class="qs">
+<div class="q"><div class="n">Q1</div><div><h3>Does the app icon drop its gradient? <span class="lean" style="background:#2dd49a;color:#062118">Decided: no, keep it</span></h3><p>Three reasons. The system recolouring in §4 works best on flat layers. Today's glow disappears in those modes anyway. And it moves Ravilo away from Jellyfin's colours, which fits the rule that viewers never see Jellyfin's name.</p></div></div>
+<div class="q"><div class="n">Q2</div><div><h3>One flat colour or two? <span class="lean" style="background:#2dd49a;color:#062118">Decided: R0, as today</span></h3><p>R2 keeps the two-tone memory, but at 16 px and in tinted modes the two colours merge anyway. R3 (white on a violet tile) is built the same way as the admin's icon. Only take it if they should look like a family.</p></div></div>
+<div class="q"><div class="n">Q3</div><div><h3>Which violet? <span class="warn">No longer applies</span></h3><p>Then the icon, the default theme and the admin's flat tile all share one colour. The navy tile #000B25 stays.</p></div></div>
+<div class="q"><div class="n">Q4</div><div><h3>Are favicons bare? <span class="lean" style="background:#2dd49a;color:#062118">Decided: Ravilo bare (gradient), admin tiled</span></h3><p>Ravilo gets the bare jellyfish redrawn for 16 px (B3) in one violet, so a single file works on light and dark and in the <span class="code">.ico</span>. The admin keeps a flat tile (A1). A round bare jellyfish next to a square tile is the easiest way to tell the two tabs apart.</p></div></div>
+<div class="q"><div class="n">Q5</div><div><h3>The in-app logo: theme accent or ink? <span class="lean" style="background:#2dd49a;color:#062118">Decided: today, the theme's gradient</span></h3><p>This keeps the brand colour visible inside the apps and gives each theme its own jellyfish. Use ink if you want the colour to belong only to the content.</p></div></div>
+<div class="q" style="border-bottom:0;padding-bottom:0"><div class="n">Q6</div><div><h3>Does the wordmark lockup follow? <span class="warn">No longer applies</span></h3><p>The TV banner and the Play feature graphic use <span class="code">ravilo-lockup.svg</span>, which has the same gradient. Leaving it as is would give Ravilo two brands.</p></div></div>
+</div>
+<div class="sec" style="margin-top:30px">Things to get right whichever way</div>
+<ol class="think">
+<li><b>One master file in layers</b> (tile and mark kept separate). Apple's Icon Composer, Android's adaptive icon (foreground, background and monochrome) and the Flatpak's scalable SVG all want it that way.</li>
+<li><b>A second drawing for 32 px and below.</b> It isn't the master scaled down; it's drawn for small sizes (B3).</li>
+<li><b>Safe zone.</b> Android masks crop the tile to a circle or squircle. On Android the jellyfish stays at today's 46% of the tile, well inside the safe circle (61% of the tile) that round launchers crop to. Mac, iPhone and Linux don't crop the tile, so they use a larger size, about 66%. It's the same drawing, placed at a different size per platform.</li>
+<li><b>Contrast for a bare mark</b>: at least 3:1 against both tab strips (the rule for non-text graphics). #7B6EF0 gets about 3–4:1, so check it against Safari and Firefox's strips too.</li>
+<li><b>The two products side by side</b>: the admin and Ravilo are on the same server, so they share bookmarks, tabs and history.</li>
+</ol>
+<div class="sec" style="margin-top:30px">What would change (only once you say go)</div>
+<div class="inv">
+<div><h3>App icon · Q1–Q3, Q6</h3><ul><li><span class="code">brand/ravilo-mark.svg</span>, <span class="code">ravilo-lockup.svg</span></li><li>Android mipmaps, round, adaptive, monochrome</li><li>Play 512 icon, feature graphic, TV banner</li><li>Web app 192/512/maskable/180</li><li>Mac <span class="code">.icns</span>, Flatpak icon, Samsung icon</li></ul></div>
+<div><h3>Favicons · Q4</h3><ul><li>Ravilo <span class="code">favicon.svg</span> + <span class="code">.ico</span> (R313)</li><li>Admin favicon</li><li>The new 16 px drawing</li></ul></div>
+<div><h3>In-app · Q5</h3><ul><li>The mark in Mobile, TV, Receiver, Receiver App and the desktop kit</li><li>Admin <span class="code">BRAND()</span>, <span class="code">login.html</span></li><li>Spec text: R62, R263, R313 mention the gradient</li><li><span class="code">Logo Options</span>, <span class="code">Android TV Assets</span></li></ul></div>
+</div>`);
+
+/* ---------- loupes ---------- */
+const LP=[['Today\'s tile',R.fav0],['Decided: bare gradient, 16 px drawing (B4)',R.b4],['Flat tile (R1)',s=>rav(s,{tile:C.navy,mark:{bell:C.vi},scale:1.2,cy:58,rx:20})],['Bare, full mark (B1)',R.b1],['Bare, 16 px drawing (B3)',R.b3]];
+const host=document.getElementById('loupes');
+LP.forEach(([lb,fn])=>{
+  const el=document.createElement('div');el.className='lp';
+  el.innerHTML=`<h3 style="font-size:13px">${lb}</h3><div class="pair"></div><div class="pair"></div><div class="code">top 16 px · bottom 32 px</div>`;
+  host.appendChild(el);
+  const pairs=el.querySelectorAll('.pair');
+  [16,32].forEach((px,i)=>['#fff','#1f2023'].forEach(bg=>{
+    const cv=document.createElement('canvas');cv.width=px;cv.height=px;pairs[i].appendChild(cv);
+    const img=new Image();img.onload=()=>{const c=cv.getContext('2d');c.fillStyle=bg;c.fillRect(0,0,px,px);c.drawImage(img,0,0,px,px);};
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(fn(px));
+  }));
+});
+
+/* ---------- layout: stack frames in three columns ---------- */
+const COLX=[60,1400,2620];
+function layout(){const y=[60,60,60];frames.forEach(f=>{f.d.style.left=COLX[f.col]+'px';f.d.style.top=y[f.col]+'px';y[f.col]+=f.d.offsetHeight+60;});}
+layout();
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(layout);
+})();
+</script>
+</body>
+</html>

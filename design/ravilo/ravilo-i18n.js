@@ -207,6 +207,22 @@
     fact_added: '\u00cd t\u00ednum savni s\u00ed\u00f0an',
   });
 
+  // ---- R343 — Reset progress + Shuffle on a series (direction B). da/fo are drafts. ----
+  Object.assign(STR.en, { shuffle: 'Shuffle', shuffle_next: 'Next · shuffled', all_watched: 'All {n} episodes watched',
+    reset_progress: 'Reset progress', reset_confirm: 'Press again · all {n} back to unwatched', reset_done: 'Progress reset · S01E01 is up next' });
+  Object.assign(STR.da, { shuffle: 'Bland', shuffle_next: 'Næste · blandet', all_watched: 'Alle {n} afsnit set',
+    reset_progress: 'Nulstil', reset_confirm: 'Tryk igen · alle {n} bliver usete', reset_done: 'Nulstillet · S01E01 er næste' });
+  Object.assign(STR.fo, { shuffle: 'Blanda', shuffle_next: 'Næsti · blandað', all_watched: 'Allir {n} partarnir sæddir',
+    reset_progress: 'Nullstilla', reset_confirm: 'Trýst aftur · allir {n} verða ósæddir', reset_done: 'Nullstilla · S01E01 er næstur' });
+
+  // ---- song versions (owner 2026-10-01: A · words, in jellystructure and Ravilo). The chip shows the short name. da/fo are drafts. ----
+  Object.assign(STR.en, { 'ver.aria': 'Version:', 'ver.live': 'Live', 'ver.demo': 'Demo', 'ver.remix': 'Remix', 'ver.instrumental': 'Instrumental', 'ver.cover': 'Cover',
+    'ver.acoustic': 'Acoustic', 'ver.edit': 'Edit', 'ver.alternate': 'Alternate', 'ver.session': 'Session' });
+  Object.assign(STR.da, { 'ver.aria': 'Version:', 'ver.live': 'Live', 'ver.demo': 'Demo', 'ver.remix': 'Remix', 'ver.instrumental': 'Instrumental', 'ver.cover': 'Cover',
+    'ver.acoustic': 'Akustisk', 'ver.edit': 'Edit', 'ver.alternate': 'Alternativ', 'ver.session': 'Session' });
+  Object.assign(STR.fo, { 'ver.aria': 'Útgáva:', 'ver.live': 'Live', 'ver.demo': 'Demo', 'ver.remix': 'Remix', 'ver.instrumental': 'Instrumentalt', 'ver.cover': 'Cover',
+    'ver.acoustic': 'Akustiskt', 'ver.edit': 'Edit', 'ver.alternate': 'Annað tak', 'ver.session': 'Session' });
+
   // ---- watched-state (R07) ----
   Object.assign(STR.en, {
     mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',

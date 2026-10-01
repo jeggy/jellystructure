@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="metadata.css">
 <link rel="stylesheet" href="detail.css">
 <link rel="stylesheet" href="music.css">
+<link rel="stylesheet" href="versions.css">
 </head>
 <body class="wf-body app-body">
 
@@ -25,6 +26,7 @@
     <span data-tab="networks">Networks</span>
     <span data-tab="genres">Genres</span>
     <span data-tab="musicgenres" id="tab-mg">Music genres</span>
+    <span data-tab="versions">Versions</span>
     <span data-tab="tags">Tags</span>
     <span data-tab="ages">Age ratings</span>
     <span data-tab="trackers">Trackers</span>
@@ -73,6 +75,9 @@
   <!-- MUSIC GENRES (music brief §D) — MusicBrainz's genres, their own id space; never merged with TMDB's.
        H3: own tab (lean) or a segment inside Genres — music-qs switches it; the wall is the same either way. -->
   <div class="tabpanel" data-panel="musicgenres" style="display:none;"><div id="mg-wall"></div></div>
+
+  <!-- VERSIONS (song-versions brief 2026-10-01, D3) — the nine types: colour, meaning, count, how many by hand -->
+  <div class="tabpanel" data-panel="versions" style="display:none;"><div id="vr-meta"></div><div id="vr-mq"></div></div>
 
   <!-- TAGS -->
   <div class="tabpanel" data-panel="tags" style="display:none;">
@@ -204,7 +209,9 @@
 
 <script src="app-shell.js"></script>
 <script src="music-data.js"></script>
+<script src="versions.js"></script>
 <script src="music-qs.js"></script>
+<script>Versions.mountMeta(document.getElementById('vr-meta')); Versions.mountQ(document.getElementById('vr-mq'));</script>
 <script>
 (function () {
   const M = window.MUSIC, gp = document.querySelector('[data-panel="genres"]'), mp = document.querySelector('[data-panel="musicgenres"]'), wall = document.getElementById('mg-wall');

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Start over &amp; Shuffle on a series: directions (prospective R343)</title>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+/* Page-local (rw-* TV, ph-* phone). Frames, skins, sheet and canvas furniture come from mobile-directions.css. */
+a{color:#9d93ff}a:hover{color:#c7c0ff}
+[data-skin="aurora"],:root{--bg-rgb:10,12,19}[data-skin="midnight"]{--bg-rgb:4,16,26}[data-skin="noir"]{--bg-rgb:8,8,7}
+.shot[data-skin]{color:var(--ink)}
+.tvs{background:var(--bg)}
+.ph-note{position:absolute;right:24px;bottom:18px;font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.55);z-index:2}
+.ph-note.big{right:96px;top:150px;bottom:auto;font-size:18px}
+.rw-bar{position:absolute;left:0;right:0;top:0;height:96px;display:flex;align-items:center;gap:40px;padding:0 64px;z-index:5}
+.rw-bar .mk{width:40px;height:40px;border-radius:12px;background:var(--grad)}
+.rw-bar .ni{font-size:21px;color:var(--ink-soft);font-weight:500}.rw-bar .ni.cur{color:var(--ink);font-weight:600}
+.rw-bar .rt{margin-left:auto;display:flex;align-items:center;gap:22px;font-size:19px;color:var(--ink-soft)}
+.rw-bar .av{width:46px;height:46px;border-radius:50%;background:linear-gradient(145deg,#f5b542,#e0792f);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px}
+.rw-hero{position:absolute;left:0;right:0;top:0;height:640px;overflow:hidden}
+.rw-hero .art{position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(255,255,255,.035) 0 2px,transparent 2px 22px),linear-gradient(125deg,#123a57 0%,#1f6b8f 40%,#58a9c4 64%,#f0b06a 100%)}
+.rw-hero .scr{position:absolute;inset:0;background:linear-gradient(90deg,rgba(var(--bg-rgb),.96) 0%,rgba(var(--bg-rgb),.72) 40%,rgba(var(--bg-rgb),0) 74%),linear-gradient(0deg,var(--bg) 0%,rgba(var(--bg-rgb),0) 42%)}
+.rw-body{position:absolute;left:64px;right:64px;bottom:480px;z-index:3}
+.rw-kick{display:flex;gap:10px;font-size:17px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--accent-2);margin-bottom:16px}
+.rw-kick .n{color:var(--ink-soft);letter-spacing:1px}
+.rw-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:72px;line-height:.98;letter-spacing:-2px;margin-bottom:14px;text-shadow:0 2px 18px rgba(0,0,0,.4)}
+.rw-meta{display:flex;align-items:center;gap:14px;font-size:19px;color:var(--ink-soft);margin-bottom:18px}
+.rw-meta .tag{padding:3px 11px;border-radius:7px;background:var(--chip);color:var(--ink);font-size:16px;font-weight:500}
+.rw-meta .cert{display:inline-flex;border-radius:8px;overflow:hidden;border:1px solid var(--line);font-size:15px;font-weight:700}
+.rw-meta .cert span{padding:2px 8px}.rw-meta .cert .rg{background:rgba(255,255,255,.1);color:var(--ink-soft)}.rw-meta .cert .cd{background:#2f9e5b;color:#fff}
+.rw-meta .wd{color:var(--good);font-weight:600}
+.rw-syn{max-width:760px;font-size:21px;line-height:1.5;color:var(--ink-soft);margin-bottom:20px}
+.rw-next{display:inline-flex;align-items:center;gap:11px;font-size:19px;font-weight:600;color:var(--ink);background:rgba(0,0,0,.4);border:1px solid var(--line);padding:9px 16px;border-radius:30px;margin-bottom:22px}
+.rw-next .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.rw-next .ck,.ph-done .ck{width:22px;height:22px;border-radius:50%;background:var(--good);color:#06281c;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.rw-acts{display:flex;width:fit-content;gap:16px;align-items:center;position:relative}
+.rw-btn{display:inline-flex;align-items:center;gap:12px;height:60px;padding:0 30px;border-radius:12px;font-size:21px;font-weight:600;white-space:nowrap;color:var(--ink);background:rgba(255,255,255,.08);border:1px solid var(--line);box-sizing:border-box}
+.rw-btn.pri{background:#fff;color:#0a0c13;border-color:transparent}
+.rw-btn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rw-btn svg circle{fill:currentColor;stroke:none}
+.rw-btn.f{transform:translateY(-2px) scale(1.03);box-shadow:0 0 0 4px var(--ring),0 18px 40px rgba(0,0,0,.5)}
+.rw-btn.ic{width:60px;padding:0;justify-content:center;border-radius:30px}
+.rw-btn.ic .l{display:none}
+.rw-btn.ic.f{width:auto;padding:0 26px 0 20px}.rw-btn.ic.f .l{display:inline}
+.rw-hint{margin-top:16px;font-size:18px;color:var(--ink-soft);display:flex;gap:10px;align-items:center}
+.rw-hint svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.rw-menu{position:absolute;right:0;bottom:78px;width:560px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:18px;padding:10px;box-shadow:0 30px 70px rgba(0,0,0,.6);z-index:8}
+.rw-mrow{display:flex;gap:18px;align-items:center;padding:16px 18px;border-radius:12px;font-size:21px;font-weight:600;color:var(--ink)}
+.rw-mrow svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rw-mrow .s{font-size:16px;font-weight:400;color:var(--ink-soft);margin-top:4px}
+.rw-mrow.f{background:var(--ink);color:#0a0c13}.rw-mrow.f .s{color:#454b5e}
+.rw-eps{position:absolute;left:64px;right:0;top:672px}
+.rw-eh{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.rw-eh h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:600;letter-spacing:-.5px}
+.rw-eh .sub{font-size:17px;color:var(--ink-soft)}
+.rw-eh .bar{width:180px;height:6px;border-radius:6px;background:var(--chip);overflow:hidden}.rw-eh .bar i{display:block;height:100%;border-radius:6px;background:var(--grad)}
+.rw-chip{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 20px;border-radius:23px;background:var(--chip);font-size:18px;font-weight:600;color:var(--ink-soft);margin-left:8px}
+.rw-chip svg,.rw-pill svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.rw-chip.f,.rw-pill.f{background:var(--ink);color:#0a0c13;transform:scale(1.05);box-shadow:0 0 0 4px var(--ring)}
+.rw-pills{display:flex;gap:12px;align-items:center}
+.rw-pill{position:relative;overflow:hidden;padding:11px 26px;border-radius:30px;background:var(--chip);color:var(--ink-soft);font-size:19px;font-weight:600;white-space:nowrap;display:inline-flex;align-items:center;gap:10px}
+.rw-pill.cur{color:var(--ink);box-shadow:inset 0 0 0 2px var(--accent)}
+.rw-pill.done{color:var(--ink);padding-right:18px}.rw-pill.done.cur{box-shadow:inset 0 0 0 2px var(--good)}
+.rw-pill .ck{width:24px;height:24px;margin-left:1px;margin-right:-8px;border-radius:50%;background:var(--good);color:#06281c;font-size:15px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.rw-pill.part{color:var(--ink);padding-right:16px}
+.rw-pill .fr{padding:2px 8px;border-radius:20px;background:rgba(255,255,255,.16);font-size:14px;font-weight:700;margin-right:-4px}
+.rw-pill .pg{position:absolute;left:4px;bottom:4px;height:3px;border-radius:3px;background:var(--accent)}
+.rw-pill.sh{color:var(--ink)}.rw-pill.sh.f{color:#0a0c13}
+.rw-sep{width:1px;height:34px;background:var(--line-2);margin:0 4px}
+.rw-cards{display:flex;gap:24px;margin-top:26px}
+.rw-card{width:392px;flex:none}
+.rw-still{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+.rw-still .num{position:absolute;left:14px;top:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.7);line-height:1}
+.rw-still .dur{position:absolute;right:12px;top:12px;background:rgba(0,0,0,.55);color:#fff;font-size:14px;padding:3px 9px;border-radius:7px}
+.rw-still .wk{position:absolute;right:12px;bottom:12px;width:30px;height:30px;border-radius:50%;background:var(--good);color:#06281c;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center}
+.rw-still .pb{position:absolute;left:12px;right:12px;bottom:10px;height:5px;border-radius:3px;background:rgba(255,255,255,.3)}.rw-still .pb i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.rw-still .rib{position:absolute;left:12px;bottom:12px;background:var(--grad);color:#fff;font-size:13px;font-weight:700;letter-spacing:.8px;padding:4px 10px;border-radius:7px}
+.rw-card .t{font-size:20px;font-weight:600;margin-top:12px}.rw-card .s{font-size:16px;color:var(--ink-dim);margin-top:4px}
+.rw-plogo{position:absolute;right:96px;top:72px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.6)}
+.rw-pk{display:flex;align-items:center;gap:12px}
+.rw-pk svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.tvnup .th{background-size:cover}
+.rw-nacts{display:flex;gap:14px;margin-top:22px}
+.rw-nacts b{flex:1;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;background:rgba(255,255,255,.1);border:1px solid var(--line)}
+.rw-nacts b.pri{background:#fff;color:#0a0c13;box-shadow:0 0 0 4px var(--ring)}
+/* phone */
+.ph{position:absolute;inset:0;background:var(--bg);overflow:hidden;color:var(--ink)}
+.ph .sbar .ic{font-size:12px;letter-spacing:1px}
+.ph-hero{height:300px;position:relative;background:repeating-linear-gradient(135deg,rgba(255,255,255,.035) 0 2px,transparent 2px 16px),linear-gradient(125deg,#123a57 0%,#1f6b8f 40%,#58a9c4 64%,#f0b06a 100%)}
+.ph-hero .scrim{position:absolute;inset:0;background:linear-gradient(0deg,var(--bg) 3%,rgba(var(--bg-rgb),.5) 45%,rgba(var(--bg-rgb),.1) 100%);z-index:auto}
+.ph-hero .ph-note{right:16px;bottom:auto;top:52px;font-size:11px}
+.ph-back{position:absolute;top:44px;left:14px;width:44px;height:44px;border-radius:50%;background:rgba(8,10,16,.55);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;z-index:3}
+.ph-body{padding:0 20px;margin-top:-58px;position:relative}
+.ph-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:27px;line-height:1.05}
+.ph-meta{display:flex;gap:8px;align-items:center;margin-top:9px;font-size:13px;color:var(--ink-soft)}
+.ph-meta .pg{border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:12px}
+.ph-done{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;font-weight:600;color:var(--ink)}
+.ph-done .ck{width:18px;height:18px;font-size:11px}
+.ph-btns{display:flex;gap:10px;margin-top:14px}
+.ph-btn{flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:7px;font-weight:600;font-size:15px;background:rgba(255,255,255,.13);color:var(--ink);white-space:nowrap;min-width:0}
+.ph-btn.pri{background:var(--ink);color:#0a0c13;flex:1.8}
+.ph-btn.ic{flex:none;width:44px;border-radius:50%}
+.ph-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ph-btn svg circle{fill:currentColor;stroke:none}
+.ph-syn{margin-top:14px;font-size:14px;line-height:1.6;color:var(--ink-soft)}
+.ph-sec{display:flex;align-items:center;gap:8px;margin:20px 0 10px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600}
+.ph-sec .s{font-family:'Sora',sans-serif;font-weight:400;font-size:13px;color:var(--ink-dim)}
+.ph-sec .r{margin-left:auto}
+.ph-chips{display:flex;gap:8px;margin-bottom:10px}
+.ph-chip{height:36px;padding:0 14px;border-radius:18px;display:inline-flex;align-items:center;gap:6px;font-family:'Sora',sans-serif;font-size:13px;font-weight:600;background:rgba(255,255,255,.07);color:var(--ink-soft);white-space:nowrap}
+.ph-chip.on{background:var(--ink);color:var(--bg)}
+.ph-chip.sh{color:var(--ink);background:rgba(255,255,255,.12)}
+.ph-chip svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+.ph-chip .ck{width:16px;height:16px;border-radius:50%;background:var(--good);color:#06281c;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.ph-reset{display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--ink-soft);margin:2px 0 12px;min-height:44px}
+.ph-link{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--accent-2)}
+.noir .ph-link,[data-skin="noir"] .ph-link{color:var(--ink)}
+.ph-link svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+.ph-ep{display:flex;gap:11px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:14px;margin-bottom:8px}
+.ph-th{width:104px;height:59px;border-radius:8px;position:relative;overflow:hidden;flex:none}
+.ph-th .n{position:absolute;left:7px;top:3px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:#fff;text-shadow:0 1px 5px rgba(0,0,0,.7)}
+.ph-th .wk{position:absolute;right:5px;bottom:5px;width:18px;height:18px;border-radius:50%;background:var(--good);color:#06281c;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.ph-th .pb{position:absolute;left:6px;right:6px;bottom:5px;height:3px;border-radius:2px;background:rgba(255,255,255,.32)}.ph-th .pb i{display:block;height:100%;border-radius:2px;background:var(--accent)}
+.ph-ep .b{min-width:0}.ph-ep .t{font-size:14px;font-weight:600}.ph-ep .d{font-size:13px;color:var(--ink-dim);margin-top:3px}
+.ph-shh{display:flex;gap:12px;align-items:center;padding:16px 20px 12px}
+.ph-shh .c{width:64px;height:40px;border-radius:8px;background:linear-gradient(125deg,#1f6b8f,#f0b06a)}
+.ph-shh .t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}.ph-shh .d{font-size:13px;color:var(--ink-dim);margin-top:2px}
+.ph-srow{display:flex;align-items:center;gap:15px;min-height:62px;padding:8px 20px;border-top:1px solid var(--line)}
+.ph-srow svg{width:22px;height:22px;fill:none;stroke:var(--ink-soft);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ph-srow .nm{font-size:15.5px;font-weight:600}.ph-srow .sub{font-size:13px;color:var(--ink-soft);margin-top:3px}
+.panel .opt h5 span{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:#6b7183;margin-right:6px}
+.panel code{font-family:'JetBrains Mono',monospace;font-size:.8em;background:#f0f1f6;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body style="width:3700px;height:7100px;position:relative">
+<div class="lbl w3" style="left:80px;top:80px"><span class="tag new">Round 1 · spec'd as R343 (2026-10-01) · direction B built</span><h2>Start over &amp; Shuffle on a series</h2><small>Two asks for the kids' rewatch loop: <b>reset a series' progress once it has been watched through</b>, and <b>shuffle a series</b> — without adding clutter. Drawn on the TV detail page (1920×1080, shown at half size) and the phone detail page, with the stand-in kids' show <b>Lundin og vinir</b> (3 seasons × 13 episodes × 11 min) on <b>Olivar</b>'s profile.</small></div>
+
+<div class="panel" style="left:80px;top:240px;width:1420px">
+<h2>Why a finished series needs this</h2>
+<div class="warn"><b>What the TV does today with a finished series</b> (frame on the right, built from <code>ravilo-app.js</code>): every episode is ticked, so <code>seriesProgressFrom</code> finds nothing in progress and nothing unwatched and falls back to the <b>last</b> episode — the page says <b>▶ Play · S03E13</b> and <i>Up next · S03E13</i>, and opens on Season 3 (R150-2 picks the first unfinished season, else the last). To go back to S01E01 a viewer has to untick 39 episodes one by one (Season <i>Mark all</i> was taken out of the TV in the 09-27 audit). And the ticks never clear on their own, so Up next stays stuck on S03E13 until they do.</div>
+<h4>Shared by all three directions</h4>
+<ul>
+<li><b>Finished</b> means every episode in the library has been watched by this viewer. A new episode arriving ends it, and the button goes back to <i>Play · S04E01</i>.</li>
+<li><b>A reset only touches this viewer.</b> Jellyfin keeps watched state per user, so a sibling's ticks stay.</li>
+<li><b>A finished series opens on Season 1</b>, where Start over goes, not on the last season.</li>
+<li><b>Shuffle is on every series with nine or more episodes</b>, not only finished ones (Q7, owner).</li>
+<li>Films don't change. They already have <i>Play Again</i> and <i>Mark Watched</i>.</li>
+</ul>
+</div>
+<div class="cap" style="left:1580px;top:240px">Today · finished series — plays the last episode</div>
+<div class="shot w2" style="left:1580px;top:270px" data-tv="1" data-v="T" data-st="today" data-f="play"></div>
+
+<div class="rule" style="left:80px;top:860px;width:3540px"></div>
+<div class="lbl" style="left:80px;top:900px"><span class="tag no">Direction A · not chosen</span><h3>The play button changes to Start over</h3><small>The reset adds <b>no button</b>. On a finished series, the primary button becomes <b>Start over · S01E01</b> in the spot where <i>Resume</i> was, and the pill above it says why (<i>All 39 episodes watched</i>, which replaces the meta's <i>✓ Watched</i> on a series). When focused, one quiet line says what will happen: <i>Every episode goes back to unwatched — only for Olivar.</i><br><br><b>Shuffle is the only permanent addition</b>: a 60 px circle right after Play, because it is a way to play. A bare icon is a guess on a TV, so <b>the circle shows its name when focused</b> and is only a circle otherwise. On the phone it's a 44 px circle (screen readers say <i>Shuffle</i>).<br><br>After Start over, the page looks like a fresh series: <i>Resume · S01E01</i>, one progress bar, no ticks (A4 / phone 3).</small><span class="cost"><b>Cost:</b> one new state for the primary button, one icon button, one line that shows on focus. Kids can reach both with one press from where the page opens.</span></div>
+<div class="cap" style="left:560px;top:900px">A1 · in progress — Shuffle is the one new thing</div>
+<div class="shot w2" style="left:560px;top:930px" data-tv="1" data-v="A" data-st="progress" data-f="play"></div>
+<div class="cap" style="left:1580px;top:900px">A2 · finished — Play changes to Start over (focused)</div>
+<div class="shot w2" style="left:1580px;top:930px" data-tv="1" data-v="A" data-st="done" data-f="play"></div>
+<div class="cap" style="left:2600px;top:900px">A3 · Shuffle focused shows its name · Noir</div>
+<div class="shot w2" data-skin="noir" style="left:2600px;top:930px" data-tv="1" data-v="A" data-st="done" data-f="shuf"></div>
+<div class="cap" style="left:560px;top:1540px">Phone 1 · in progress</div>
+<div class="dv and" style="left:560px;top:1570px" data-ph="1" data-v="A" data-st="progress"></div>
+<div class="cap" style="left:1060px;top:1540px">Phone 2 · finished</div>
+<div class="dv and" style="left:1060px;top:1570px" data-ph="1" data-v="A" data-st="done"></div>
+<div class="cap" style="left:1560px;top:1540px">Phone 3 · back after two minutes of S01E01</div>
+<div class="dv and" style="left:1560px;top:1570px" data-ph="1" data-v="A" data-st="after"></div>
+<div class="cap" style="left:2100px;top:1540px">A4 · TV, after Start over — a fresh series again</div>
+<div class="shot w2" style="left:2100px;top:1570px" data-tv="1" data-v="A" data-st="after" data-f="play"></div>
+<div class="sp-note lbl" style="left:2100px;top:2150px;width:960px"><small>Start over takes effect only <b>once S01E01 has really started</b>, at the point where Jellyfin starts keeping a resume position (5 %, about half a minute of an 11-minute episode). Backing out of the player in the first seconds changes nothing. So no dialog, and no Undo toast that a TV remote can't reach (Q3).</small></div>
+
+<div class="rule" style="left:80px;top:2580px;width:3540px"></div>
+<div class="lbl" style="left:80px;top:2620px"><span class="tag pick">Direction B · picked (owner, 2026-10-01) · built into Ravilo TV + Ravilo Mobile</span><h3>Both go with the episodes</h3><small>The hero stays exactly as it is today (only the fallback is fixed: <i>Play · S01E01</i>). Both new controls sit in the Episodes section, where <i>13 of 13 watched</i> and the bar already are: <b>Reset progress</b> joins the header once everything is ticked, and <b>Shuffle</b> is the last pill on the season row, after a divider. It's about episodes, so it sits with them.<br><br>Reset here doesn't play anything, which suits a parent tidying up for later.</small><span class="cost"><b>Cost:</b> Shuffle is two D-pad presses below Play, so a child won't find it. And Play on a finished series still has to start <i>something</i>: S01E01 without unticking only flows on if Up next follows the last episode played (Q1 b).</span></div>
+<div class="cap" style="left:560px;top:2620px">B1 · finished — Reset progress focused</div>
+<div class="shot w2" style="left:560px;top:2650px" data-tv="1" data-v="B" data-st="done" data-f="reset"></div>
+<div class="cap" style="left:1580px;top:2620px">B2 · finished — Shuffle pill focused · Midnight</div>
+<div class="shot w2" data-skin="midnight" style="left:1580px;top:2650px" data-tv="1" data-v="B" data-st="done" data-f="shufpill"></div>
+<div class="cap" style="left:2600px;top:2620px">Phone · finished</div>
+<div class="dv and" style="left:2600px;top:2650px" data-ph="1" data-v="B" data-st="done"></div>
+
+<div class="rule" style="left:80px;top:3660px;width:3540px"></div>
+<div class="lbl" style="left:80px;top:3700px"><span class="tag">Direction C</span><h3>One ⋯ for both</h3><small>The action row gets one <b>⋯</b> circle, and it opens a short menu: <b>Shuffle</b>, plus <b>Start over</b> once the series is finished. On the phone ⋯ opens a bottom sheet, the same shape as a book's ⋯ (<i>Start over</i> / <i>Mark as not finished</i>).<br><br>This puts the least on screen.</small><span class="cost"><b>Cost:</b> Shuffle is hidden behind two presses for the viewers who'll use it most. On a series that isn't finished the menu holds <b>one item</b> (C2). And ⋯ is a new pattern on the TV, where the profile menu is the only menu.</span></div>
+<div class="cap" style="left:560px;top:3700px">C1 · finished — menu open, Start over focused</div>
+<div class="shot w2" style="left:560px;top:3730px" data-tv="1" data-v="C" data-st="done" data-menu="1" data-mf="reset"></div>
+<div class="cap" style="left:1580px;top:3700px">C2 · in progress — a menu of one</div>
+<div class="shot w2" style="left:1580px;top:3730px" data-tv="1" data-v="C" data-st="progress" data-menu="1" data-mf="shuf"></div>
+<div class="cap" style="left:2600px;top:3700px">Phone · finished — the ⋯ sheet</div>
+<div class="dv and" style="left:2600px;top:3730px" data-ph="1" data-v="C" data-st="done" data-sheet="1"></div>
+
+<div class="rule" style="left:80px;top:4740px;width:3540px"></div>
+<div class="lbl" style="left:80px;top:4780px"><span class="tag new">Every direction</span><h3>Shuffle in the player</h3><small>The kicker reads <b>Shuffle · S02E07</b> (this is the series name in text from R303, because this stand-in has no logo). <b>Next · shuffled</b> on the next-up card, at the usual 20 s. Next and previous follow the shuffled order. The phone's Episodes rail still lists the season in order, with the playing episode highlighted.<br><br>Shuffle lasts until the viewer leaves the player, with nothing to switch off. Each episode plays once before any repeats (Q6).</small></div>
+<div class="cap" style="left:560px;top:4780px">P1 · chrome up — the kicker says Shuffle</div>
+<div class="shot w2" style="left:560px;top:4810px" data-pl="chrome"></div>
+<div class="cap" style="left:1580px;top:4780px">P2 · next-up — Next · shuffled</div>
+<div class="shot w2" style="left:1580px;top:4810px" data-pl="nup"></div>
+
+<div class="rule" style="left:80px;top:5450px;width:3540px"></div>
+<div class="panel" style="left:80px;top:5500px;width:1500px">
+<h2>Questions for the owner</h2>
+<p class="lead"><b>Q2 is decided: B.</b> The other answers below are what the build assumes under B. Leans are marked, so answer only the ones you disagree with.</p>
+<div class="opt">
+<div><h5><span>Q1</span>What does Start over do to the ticks?</h5><p>(a) Every tick for this viewer is cleared once S01E01 starts, and Up next works normally from there. (b) The ticks stay. Up next follows the episode after the last one played (Jellyfin's Next Up has a rewatching switch, so check its behaviour), and resetting is a separate tidy-up (Direction B's shape).</p><div class="ch"><span>a · clear them on start</span><span class="lean">b · keep them, follow on (built, under B)</span></div></div>
+<div><h5><span>Q2</span>Where do they live?</h5><p>A: Play changes to Start over, plus a Shuffle circle. B: both go in the Episodes section. C: both go behind one ⋯.</p><div class="ch"><span>A</span><span class="lean">B (decided)</span><span>C</span></div></div>
+<div><h5><span>Q3</span>How is an accidental Start over undone?</h5><p>Under B the reset plays nothing, so (a) is not possible. Built: <b>two presses</b>. The first press changes the chip to <i>Press again · all 39 back to unwatched</i> for 4 s, and the second press resets. (b) A confirmation, the same shape as Sign out's (R340). (c) An Undo toast: phone only, because a TV toast can't be focused.</p><div class="ch"><span class="lean">two presses (built)</span><span>b · confirm</span><span>c · undo toast</span></div></div>
+<div><h5><span>Q4</span>What does Shuffle pick from?</h5><p>The whole series, or only the season the page is on. A kids' show is usually watched as one big pile.</p><div class="ch"><span class="lean">whole series (lean)</span><span>this season</span></div></div>
+<div><h5><span>Q5</span>Does a shuffled episode leave a resume point?</h5><p>(a) No. A shuffled episode is ticked when it finishes, but stopping halfway leaves nothing, so <i>Resume</i> on the page and in Continue watching still means "where you were, in order". (b) It counts like any other play.</p><div class="ch"><span class="lean">a · tick only (lean)</span><span>b · like any play</span></div></div>
+<div><h5><span>Q6</span>When every episode has played once?</h5><p>39 × 11 min is about seven hours. Stop with the normal end of the series, or reshuffle and keep going.</p><div class="ch"><span class="lean">stop (lean)</span><span>reshuffle</span></div></div>
+<div><h5><span>Q7</span>Who gets Shuffle?</h5><p>Every series with nine or more episodes (owner, 2026-10-01), only finished series, or only kids' profiles.</p><div class="ch"><span class="lean">every series, 9+ episodes (decided)</span><span>only finished</span><span>only kids' profiles</span></div></div>
+</div>
+</div>
+<div class="panel" style="left:1660px;top:5500px;width:1300px">
+<h2>Strings</h2>
+<p>Two are reused as-is. Danish and Faroese are drafts, not reviewed by a native speaker.</p>
+<table class="tbl">
+<tr><th>Key</th><th>en</th><th>da</th><th>fo</th></tr>
+<tr><td><b>start_over</b><br>reuses <code>ab.start_over</code></td><td>Start over</td><td>Start forfra</td><td>Byrja av nýggjum</td></tr>
+<tr><td><b>shuffle</b><br>reuses <code>music.shuffle</code></td><td>Shuffle</td><td>Bland</td><td>Blanda</td></tr>
+<tr><td><b>all_watched</b></td><td>All {n} episodes watched</td><td>Alle {n} afsnit set</td><td>Allir {n} partarnir sæddir</td></tr>
+<tr><td><b>start_over_hint</b></td><td>Every episode goes back to unwatched — only for {name}</td><td>Alle afsnit bliver usete igen — kun for {name}</td><td>Allir partar verða ósæddir aftur — bara fyri {name}</td></tr>
+<tr><td><b>shuffle_next</b></td><td>Next · shuffled</td><td>Næste · blandet</td><td>Næsti · blandað</td></tr>
+<tr><td><b>shuffle_sub</b> (C only)</td><td>Every episode, in random order</td><td>Alle afsnit i tilfældig rækkefølge</td><td>Allir partar í tilvildarligari raðfylgju</td></tr>
+<tr><td><b>reset_progress</b> (B only)</td><td>Reset progress</td><td>Nulstil</td><td>Nullstilla</td></tr>
+</table>
+<div class="good"><b>Not in any direction:</b> a per-episode "mark unwatched", a <i>Mark all</i> per season, or shuffle on Home and in Browse tiles. Each one would be a second way to do the same thing.</div>
+</div>
+<script src="rewatch-directions.js"></script>
+</body>
+</html>

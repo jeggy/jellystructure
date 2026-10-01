@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Desktop — Music-mode App Icon (round 1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;family=Sora:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+a{color:#9d93ff}a:hover{color:#c2bbff}
+.fr{position:absolute;background:#10131c;color:#e9ebf3;border-radius:18px;padding:34px 38px 38px;box-sizing:border-box;font-family:'Sora',sans-serif;font-size:14px;line-height:1.5}
+.fr h1{font:700 34px/1.1 'Space Grotesk',sans-serif;margin:0 0 10px;letter-spacing:-.01em}
+.fr h2{font:700 24px/1.15 'Space Grotesk',sans-serif;margin:0 0 6px;letter-spacing:-.01em}
+.fr h3{font:600 15px/1.3 'Space Grotesk',sans-serif;margin:0 0 4px;color:#f3f4fb}
+.kick{font:600 12px 'Space Grotesk',sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#8f96b3;margin-bottom:8px}
+.sub{color:#aeb4cb;max-width:900px;text-wrap:pretty;margin:0 0 26px}
+.note{color:#aeb4cb;font-size:13px;text-wrap:pretty}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#8f96b3}
+.lean{display:inline-block;background:#7b6ef0;color:#fff;font:600 11px 'Space Grotesk',sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px;vertical-align:2px;margin-left:6px}
+.warn{display:inline-block;background:#3a2a12;color:#f5c26b;font:600 11px 'Space Grotesk',sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:6px;vertical-align:2px;margin-left:6px}
+.sec{font:600 13px 'Space Grotesk',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#8f96b3;margin:30px 0 14px}
+.opts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.opt .art svg{max-width:100%;height:auto}
+.opt{display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:#141824}
+.opt.is-dec{border-color:#2dd49a;box-shadow:0 0 0 1px #2dd49a inset}.lean.dec{background:#2dd49a;color:#062118}
+.opt.is-lean{border-color:#7b6ef0;box-shadow:0 0 0 1px #7b6ef0 inset}
+.opt .art{display:flex;justify-content:center;padding:6px 0}
+.opt .mini{display:flex;gap:10px;align-items:center;justify-content:center}
+.opt .mini span{font-size:12px;color:#8f96b3}
+.ref{display:flex;gap:28px;align-items:center;padding:18px 22px;border-radius:14px;background:#141824;border:1px solid rgba(255,255,255,.07);margin-bottom:22px}
+.ref .pair{display:flex;align-items:center;gap:12px;font:700 22px 'Space Grotesk',sans-serif;color:#f3f4fb}
+.ref .pn{font-size:15px;line-height:1;margin-left:-4px;background:linear-gradient(120deg,#7b6ef0,#3fb6f5);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700}
+.wall{background:linear-gradient(165deg,#8d98ad,#5d687c);border-radius:14px;padding:24px 26px;display:flex;flex-direction:column;gap:16px}
+.dockrow{display:grid;grid-template-columns:150px 1fr;align-items:center;gap:18px}
+.dockrow .lb{color:#fff;font-size:13px;line-height:1.35}.dockrow .lb b{font:600 14px 'Space Grotesk',sans-serif;display:block}
+.dock{justify-self:start;display:flex;gap:10px;padding:9px 12px;border-radius:24px;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.4)}
+.ph{width:60px;height:60px;border-radius:14px}
+.slot{display:flex;flex-direction:column;align-items:center;gap:4px}.slot i{width:4px;height:4px;border-radius:50%;background:rgba(0,0,0,.55)}
+.hud{display:inline-flex;gap:14px;padding:16px 18px;border-radius:26px;background:rgba(30,32,40,.72);border:1px solid rgba(255,255,255,.14)}
+.hud .it{padding:8px;border-radius:16px;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:#e6e8f0}
+.hud .it.on{background:rgba(255,255,255,.16)}
+.hud .phh{width:112px;height:112px;border-radius:26px}
+.seq{display:flex;gap:18px;align-items:flex-start}
+.seq .st{display:flex;flex-direction:column;gap:8px;align-items:center;font-size:12px;color:#aeb4cb;text-align:center;max-width:150px}
+.seq .ar{color:#6b7290;font-size:20px;margin-top:34px}
+.tbl{display:grid;grid-template-columns:1.4fr .7fr 1.6fr;border-top:1px solid rgba(255,255,255,.08)}
+.tbl>div{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13px;color:#cfd3e2}
+.tbl .h{font:600 12px 'Space Grotesk',sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#8f96b3}
+.tbl .y{color:#2dd49a;font-weight:600}.tbl .n{color:#f5a3a3;font-weight:600}.tbl .m{color:#f5c26b;font-weight:600}.y{color:#2dd49a}.n{color:#f5a3a3}.m{color:#f5c26b}
+.apg{display:grid;grid-template-columns:150px repeat(6,minmax(0,1fr));gap:12px;align-items:center}.apg .c{display:flex;justify-content:center;padding:14px 0;border-radius:12px}.apg .c.l{background:linear-gradient(165deg,#c9d3e3,#9fb0c8)}.apg .c.d{background:linear-gradient(165deg,#2c3446,#141925)}.apg .hd{font:600 13px 'Space Grotesk',sans-serif;color:#cfd3e2;text-align:center;line-height:1.3}.apg .hd span{display:block;font:400 11.5px 'Sora',sans-serif;color:#8f96b3}
+.ladder{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap}.ladder div{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:#8f96b3}
+.layers{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.layers .ly{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:#aeb4cb;text-align:center;max-width:130px}.layers .ly .box{width:110px;height:110px;border-radius:14px;background:repeating-conic-gradient(#1a1e2b 0 25%,#141824 0 50%) 0 0/16px 16px;display:flex;align-items:center;justify-content:center}
+.qs{display:flex;flex-direction:column;gap:18px}
+.q{display:grid;grid-template-columns:44px 1fr;gap:14px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07)}
+.q:last-child{border-bottom:0;padding-bottom:0}
+.q .num{font:700 18px 'Space Grotesk',sans-serif;color:#7b6ef0}
+.q p{margin:4px 0 0;color:#aeb4cb;text-wrap:pretty}
+</style>
+</head>
+<body>
+<script>
+(function(){
+const C={navy:'#000B25',p1:'#AA5CC3',p2:'#00A4DC'};
+let uid=0;const X='xmlns="http://www.w3.org/2000/svg"';
+const BELL='M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z';
+const TENT=['M33 51 q-5 12 1 20 q5 8 0 14','M44 52 q-4 13 1 21 q4 9 0 13','M56 52 q4 13 -1 21 q-4 9 0 13','M67 51 q5 12 -1 20 q-5 8 0 14'];
+const OP=[.9,.72,.72,.9];
+function grad(){const id='g'+(++uid);return {id,def:`<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${C.p1}"/><stop offset="1" stop-color="${C.p2}"/></linearGradient>`};}
+function glowDef(){const id='f'+(++uid);return {id,def:`<filter id="${id}" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#8a6ff0" flood-opacity=".6"/></filter>`};}
+/* ♪ drawn about its head; bounds ≈ x −9…21, y −38…7 */
+function note(fill){return `<ellipse cx="0" cy="0" rx="9" ry="6.8" transform="rotate(-22)" fill="${fill}"/><rect x="5.2" y="-38" width="4.6" height="38" rx="1.6" fill="${fill}"/><path d="M5.2 -38 L9.8 -38 C11 -30 23 -28 21.5 -13 C21 -10 19.5 -7.5 18 -6 C19 -12 17.5 -20 9.8 -24.5 Z" fill="${fill}"/>`;}
+function beam(fill){return `<ellipse cx="0" cy="0" rx="9" ry="6.8" transform="rotate(-22)" fill="${fill}"/><ellipse cx="22" cy="-5" rx="9" ry="6.8" transform="rotate(-22 22 -5)" fill="${fill}"/><rect x="5.2" y="-36" width="4.6" height="36" rx="1.6" fill="${fill}"/><rect x="27.2" y="-41" width="4.6" height="36" rx="1.6" fill="${fill}"/><path d="M5.2 -38 L31.8 -44 L31.8 -36 L5.2 -30 Z" fill="${fill}"/>`;}
+function jelly(fill,variant){
+  if(variant==='heads'){
+    const xs=[33,44,56,67];
+    return `<path d="${BELL}" fill="${fill}"/><g stroke="${fill}" stroke-width="4.5" stroke-linecap="round" fill="none">${xs.map((x,i)=>`<path d="M${x} ${i%3?52:51} L${x+(i<2?-1:1)} 78" opacity="${OP[i]}"/>`).join('')}</g>${xs.map((x,i)=>`<ellipse cx="${x+(i<2?-1:1)-3.6}" cy="80" rx="6.4" ry="4.8" transform="rotate(-22 ${x+(i<2?-1:1)-3.6} 80)" fill="${fill}" opacity="${OP[i]}"/>`).join('')}`;
+  }
+  return `<path d="${BELL}" fill="${fill}"/><g stroke="${fill}" stroke-width="4.5" stroke-linecap="round" fill="none">${TENT.map((d,i)=>`<path d="${d}" opacity="${OP[i]}"/>`).join('')}</g>`;
+}
+const at=(s,cx,cy,mx,my)=>`translate(${(cx-mx*s).toFixed(2)} ${(cy-my*s).toFixed(2)}) scale(${s})`;
+/* v: film | badge | lockup | heads | float. Mac size: jellyfish ≈ 66% of the tile (scale 1.18). */
+function icon(size,v){
+  const g=grad(),gn=grad(),f=glowDef();
+  let body='';
+  const tile=`<rect width="100" height="100" rx="22.5" fill="${v==='tint'?'#1c0b3a':C.navy}"/>`;
+  const J2=`<g filter="url(#${f.id})" transform="${at(1.06,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g>`;
+  const JS=k=>`<g filter="url(#${f.id})" transform="${at(k,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g>`;
+  const N=(s,x,y,o)=>`<g transform="${at(s,x,y,6,-15.5)}"${o?` opacity="${o}"`:''}>${note(`url(#${gn.id})`)}</g>`;
+  const NB=(s,x,y)=>`<g transform="${at(s,x,y,11.5,-18)}">${beam(`url(#${gn.id})`)}</g>`;
+  const ring=(x,y,r)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="url(#${gn.id})" stroke-width="1.4" opacity=".85"/>`;
+  if(v==='arc3')body=JS(.92)+`<g filter="url(#${f.id})">${N(.24,30,15,.8)}${N(.3,50,11)}${N(.36,71,14)}</g>`;
+  if(v==='sym')body=JS(.98)+`<g filter="url(#${f.id})">${N(.32,18,17,.85)}${N(.4,83,18)}</g>`;
+  if(v==='trail')body=JS(.96)+`<g filter="url(#${f.id})">${N(.42,85,23)}${N(.3,66,10)}${N(.2,45,9,.75)}</g>`;
+  if(v==='bubbles')body=JS(.96)+`<g filter="url(#${f.id})">${N(.44,85,22)}${N(.3,72,9,.85)}${ring(59,10,2.2)}${ring(56,17,1.4)}${ring(92,40,1.6)}</g>`;
+  if(v==='mixed')body=JS(.96)+`<g filter="url(#${f.id})">${NB(.4,81,17)}${N(.28,26,13,.85)}</g>`;
+  if(v==='bubbleBR')body=`<g filter="url(#${f.id})" transform="${at(1.18,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g><circle cx="78" cy="78" r="17" fill="${C.navy}"/><circle cx="78" cy="78" r="15" fill="rgba(255,255,255,.08)" stroke="url(#${gn.id})" stroke-width="2.6"/><g transform="${at(.42,78,78.5,6,-15.5)}">${note('#fff')}</g>`;
+  if(v==='pair')body=J2+`<g filter="url(#${f.id})"><g transform="${at(.46,86,22,6,-15.5)}">${note(`url(#${gn.id})`)}</g><g transform="${at(.3,74,10,6,-15.5)}" opacity=".85">${note(`url(#${gn.id})`)}</g></g>`;
+  if(v==='beam')body=J2+`<g filter="url(#${f.id})" transform="${at(.42,84,18,11.5,-18)}">${beam(`url(#${gn.id})`)}</g>`;
+  if(v==='bubble')body=J2+`<circle cx="84" cy="17" r="11.5" fill="rgba(255,255,255,.08)" stroke="url(#${gn.id})" stroke-width="2.4"/><g transform="${at(.32,84,17.5,6,-15.5)}">${note('#fff')}</g>`;
+  if(v==='white')body=J2+`<g transform="${at(.5,85,19,6,-15.5)}">${note('#fff')}</g>`;
+  if(v==='tint')body=J2+`<g filter="url(#${f.id})" transform="${at(.5,85,19,6,-15.5)}">${note(`url(#${gn.id})`)}</g>`;
+  if(v==='cut')body=`<g filter="url(#${f.id})" transform="${at(1.18,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g><g transform="${at(.38,50,27.5,6,-15.5)}">${note(C.navy)}</g>`;
+  if(v==='film')body=`<g filter="url(#${f.id})" transform="${at(1.18,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g>`;
+  if(v==='badge')body=`<g filter="url(#${f.id})" transform="${at(1.18,50,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g><circle cx="78" cy="78" r="18.5" fill="url(#${gn.id})" stroke="${C.navy}" stroke-width="3.5"/><g transform="${at(.62,78,78,6,-15.5)}">${note('#fff')}</g>`;
+  if(v==='lockup')body=`<g filter="url(#${f.id})" transform="${at(.98,40,50,50,59.5)}">${jelly(`url(#${g.id})`)}</g><g filter="url(#${f.id})" transform="${at(.78,78,52,6,-15.5)}">${note(`url(#${gn.id})`)}</g>`;
+  if(v==='heads')body=`<g filter="url(#${f.id})" transform="${at(1.18,50,50,50,57)}">${jelly(`url(#${g.id})`,'heads')}</g>`;
+  if(v==='float')body=J2+`<g filter="url(#${f.id})" transform="${at(.5,85,19,6,-15.5)}">${note(`url(#${gn.id})`)}</g>`;
+  return `<svg ${X} width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><defs>${g.def}${gn.def}${f.def}</defs>${tile}${body}</svg>`;
+}
+const VARS=[
+  ['trail','M5a · A trail over the top','Three notes drift from the right, over the bell, and off to the left, getting smaller as they go. It\'s M5\'s bubbles carried further, so it reads as one motion.'],
+  ['arc3','M5b · An arc of three','Three notes in a gentle arc over the bell, small to large from left to right. It\'s calmer and more symmetrical than the trail, almost a crown. The jellyfish shrinks the most here (about 52% of the tile).'],
+  ['sym','M5c · One in each corner','A small note top left and a larger one top right, framing the jellyfish. It\'s balanced and keeps the jellyfish biggest of the variations (about 55%), but it reads less as "rising".'],
+  ['bubbles','M5d · Notes and bubbles','M5\'s two notes plus three thin bubble rings, so it\'s more underwater than musical. It\'s the most alive at 168 px, but at Dock size the rings turn into specks.'],
+  ['mixed','M5e · ♫ and ♪','A beamed ♫ top right and a small ♪ top left. Mixing the two signs makes it the most clearly "music" at a glance. It\'s less like bubbles, more like a score.']
+];
+/* Every appearance (macOS 26). mode: film | music. ap: default | dark | clearL | clearD | tintL | tintD */
+function app(size,mode,ap,tint){
+  tint=tint||'#4f8ef0';
+  const g=grad(),gn=grad(),f=glowDef(),m='mk'+(++uid),sh='sh'+(++uid);
+  const mono={clearL:'#ffffff',clearD:'rgba(255,255,255,.92)',tintL:'#ffffff',tintD:tint}[ap];
+  const tileFill={default:C.navy,dark:'#05070e',clearL:'rgba(255,255,255,.38)',clearD:'rgba(18,22,32,.55)',tintL:tint,tintD:'#0c1322'}[ap];
+  const tileStroke=ap.startsWith('clear')?`stroke="rgba(255,255,255,${ap==='clearL'?.75:.28})" stroke-width="1.2"`:'';
+  const jf=mono||`url(#${g.id})`, rf=mono||`url(#${gn.id})`, nf=mono||'#fff';
+  const filt=mono?(ap==='clearL'?` filter="url(#${sh})"`:''):` filter="url(#${f.id})"`;
+  const music=mode==='music';
+  const small=size<=32;
+  const R=small?19:15, gap=small?21.5:17, sw=small?4.2:2.6, ns=small?.5:.42;
+  const defs=`${g.def}${gn.def}${f.def}<filter id="${sh}" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#1b2234" flood-opacity=".35"/></filter><mask id="${m}"><rect width="100" height="100" fill="#fff"/>${music?`<circle cx="78" cy="78" r="${gap}" fill="#000"/>`:''}</mask>`;
+  const jel=`<g mask="url(#${m})"><g${filt} transform="${at(1.18,50,50,50,59.5)}">${jelly(jf)}</g></g>`;
+  const bub=music?`<g${mono&&ap==='clearL'?` filter="url(#${sh})"`:''}><circle cx="78" cy="78" r="${R}" fill="${mono?'none':'rgba(255,255,255,.08)'}" stroke="${rf}" stroke-width="${sw}"/><g transform="${at(ns,78,78.5,6,-15.5)}">${note(nf)}</g></g>`:'';
+  return `<svg ${X} width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true"><defs>${defs}</defs><rect x=".6" y=".6" width="98.8" height="98.8" rx="22.5" fill="${tileFill}" ${tileStroke}/>${jel}${bub}</svg>`;
+}
+const APS=[['default','Default','the installed icon, as today'],['dark','Dark','tile a step darker, colours kept'],['clearL','Clear · light','white glass, white marks'],['clearD','Clear · dark','smoked glass, white marks'],['tintL','Tinted · light','the tint fills the tile'],['tintD','Tinted · dark','the tint colours the marks']];
+const frames=[];
+function frame(col,w,html){const d=document.createElement('div');d.className='fr';d.style.width=w+'px';d.innerHTML=html;document.body.appendChild(d);frames.push({d,col});}
+const OPTS=[
+  ['float','M1 · A note floats up','The jellyfish stays centred, only a little smaller (about 60% of the tile instead of 66%). One ♪ in the same gradient floats in the top-right corner, like a bubble it has let go of. It\'s one drawing rather than a sticker.'],
+  ['badge','M2 · A badge','The film icon unchanged, plus a round gradient badge with a white ♪ in the bottom-right corner. It\'s the clearest at 32 px and reads as "same app, different state". But on a Mac a corner badge also means "an app wrapped by another app" (Chrome\'s web apps use one), and the red notification badge sits in the opposite corner.'],
+  ['pair','M5 · Two notes rising','Like M1, but a small and a larger ♪ rise one after the other, a trail of bubbles. It feels more like music and less like a single mark. At 32 px the small note almost disappears, so it\'s the large one doing the work.'],
+  ['beam','M6 · A beamed pair ♫','The two-note ♫ in place of the single ♪. It\'s wider and heavier, so it reads as "music" sooner at Dock size. It differs slightly from the phone\'s ♪, so the phone could switch to ♫ as well.'],
+  ['bubble','M7 · The note in a bubble','A white ♪ inside a thin gradient ring, floating top right. It sits between M1 and M2: still a bubble from the jellyfish, but held in a shape so it reads at small sizes. Top right is where the red notification badge goes, so it\'s fine as long as Ravilo never shows one.'],
+  ['bubbleBR','M7b · M7\'s bubble in M2\'s corner','M7\'s thin gradient ring with a white ♪, placed bottom right where M2\'s badge was. The jellyfish keeps the full Mac size (66%) and stays centred. A navy gap separates the bubble from the tentacles it overlaps. It\'s lighter than M2\'s solid badge, so it reads less like "an app inside another app", and it stays clear of the red notification badge, which goes top right.','d'],
+  ['white','M8 · A white note','M1 with the ♪ in white instead of the gradient. It has the most contrast on the navy, so it\'s the easiest to spot in the Dock, but it\'s the only white in the icon and pulls the eye away from the jellyfish.'],
+  ['cut','M9 · The note cut into the bell','The films icon unchanged, with a ♪ cut out of the bell in navy. It\'s the quietest change, and it reads best in ⌘-Tab and Settings. In the Dock it\'s a small detail and may go unnoticed from across the room.'],
+  ['tint','M10 · A plum tile with the note','M1\'s floating note plus a deep plum tile (#1C0B3A) instead of navy. That gives two cues, and the colour change shows even at 16 px. It\'s also the biggest departure from R0, which you just kept.']
+];
+
+/* ---------- options ---------- */
+frame(0,1280,`<div class="kick">Desktop · round 1 · nothing built, no spec</div>
+<h1>The Mac app icon gains ♪ in music mode</h1>
+<p class="sub"><b style="color:#2dd49a">Decided: M7b</b> (owner, 2026-10-01). When the desktop app switches to music, the Dock icon switches too, just as the phone shows ♪ beside the Ravilo name in music mode. Every icon here is R0, kept as decided: the gradient, the glow, the navy tile and the jellyfish at Mac size (about 66% of the tile). Only the ♪ is new. <b>The jellyfish is centred in every option</b> (owner, 2026-10-01). Where a note sits beside it, the jellyfish shrinks slightly but never moves.</p>
+<div class="ref"><div><div class="kick" style="margin:0 0 6px">On the phone today</div><div class="pair"><svg ${X} width="30" height="30" viewBox="12 20 76 76"><defs>${grad().def.replace(/id="g\d+"/,'id="refg"')}</defs>${jelly('url(#refg)')}</svg><span>Ravilo</span><span class="pn">♪</span></div></div><p class="note" style="margin:0;max-width:640px">In music mode the phone puts ♪ beside the wordmark, in the theme's gradient (<span class="code">.mu-brandnote</span>). The note is a type character. For the icon it is drawn as a shape so it works at every size, and it uses the icon's own gradient rather than the theme's, because an app icon never follows the theme.</p></div>
+<div class="opts" id="mainOpts">${OPTS.map(([v,t,n,l])=>`<div class="opt${l==='d'?' is-dec':l?' is-lean':''}"><div class="art">${icon(168,v)}</div><div class="mini">${icon(64,'film')}<span>→</span>${icon(64,v)}<span>→</span>${icon(32,v)}</div><div><h3>${t}${l==='d'?'<span class="lean dec">Decided</span>':l?'<span class="lean">Lean</span>':''}</h3><div class="note">${n}</div></div></div>`).join('')}</div>
+<div class="sec" style="margin-top:34px">M5 variations: more notes, over the top too</div>
+<p class="note" style="margin:-6px 0 16px;max-width:900px">Every variation keeps the jellyfish centred. To make room above the bell it gets a little smaller, between 52% and 55% of the tile, against 60% in M5 and 66% in films mode.</p>
+<div class="opts">${VARS.map(([v,t,n,l])=>`<div class="opt${l==='d'?' is-dec':l?' is-lean':''}"><div class="art">${icon(168,v)}</div><div class="mini">${icon(64,'film')}<span>→</span>${icon(64,v)}<span>→</span>${icon(32,v)}</div><div><h3>${t}${l==='d'?'<span class="lean dec">Decided</span>':l?'<span class="lean">Lean</span>':''}</h3><div class="note">${n}</div></div></div>`).join('')}</div>`);
+
+/* ---------- dock ---------- */
+const ph=['#f2f2f4','#2c2e35','#d6dae2','#565b67','#eceef2'];
+const dock=(ic)=>`<div class="dock">${ph.slice(0,3).map(c=>`<div class="slot"><div class="ph" style="background:${c}"></div><i style="opacity:0"></i></div>`).join('')}<div class="slot">${ic}<i></i></div>${ph.slice(3).map(c=>`<div class="slot"><div class="ph" style="background:${c}"></div><i style="opacity:0"></i></div>`).join('')}</div>`;
+frame(0,1280,`<div class="kick">In the Dock</div><h2>At 60 px, among other apps</h2>
+<p class="sub">The grey squares stand in for other apps, and the dot shows Ravilo is running. The change must be visible from across the room, but Ravilo must still look like Ravilo, so nobody thinks a second app has opened.</p>
+<div class="wall">
+<div class="dockrow"><div class="lb"><b>Films &amp; series</b>today, R0</div>${dock(icon(60,'film'))}</div>
+${OPTS.concat(VARS).map(([v,t])=>`<div class="dockrow"><div class="lb"><b>${t.split(' · ')[0]} · music</b>${t.split(' · ')[1]}</div>${dock(icon(60,v))}</div>`).join('')}
+</div>`);
+
+/* ---------- switcher + the moment ---------- */
+frame(1,1100,`<div class="kick">⌘-Tab and the moment of switching</div><h2>The app switcher, and what happens when you switch</h2>
+<p class="sub">The ⌘-Tab switcher uses the running app's icon, so it follows the mode too. It's shown at 112 px here with M7b, the decided icon.</p>
+<div style="display:flex;gap:24px;flex-wrap:wrap;padding:30px;border-radius:14px;background:linear-gradient(165deg,#3e4a5e,#232a38)">
+<div class="hud"><div class="it"><div class="phh" style="background:#f2f2f4"></div>Finder</div><div class="it on">${icon(112,'film')}Ravilo</div><div class="it"><div class="phh" style="background:#2c2e35"></div>Terminal</div></div>
+<div class="hud"><div class="it"><div class="phh" style="background:#f2f2f4"></div>Finder</div><div class="it on">${icon(112,'bubbleBR')}Ravilo</div><div class="it"><div class="phh" style="background:#2c2e35"></div>Terminal</div></div>
+</div>
+<div class="sec">The switch</div>
+<div class="seq">
+<div class="st">${icon(96,'film')}Films mode</div><div class="ar">→</div>
+<div class="st">${icon(96,'bubbleBR')}<span>The viewer picks <i>Switch to music</i>. The icon changes at the same moment, without animation.</span></div><div class="ar">→</div>
+<div class="st">${icon(96,'bubbleBR')}Ravilo is quit while in music mode. The Dock keeps the music icon.</div><div class="ar">→</div>
+<div class="st">${icon(96,'bubbleBR')}It's opened again and starts in music mode</div>
+</div>
+<p class="note" style="margin-top:14px">Owner, 2026-10-01 (Q4): the mode is <b>remembered</b>. Ravilo opens in the mode it was closed in, and the closed icon shows that mode too. A swap without animation is the honest choice: the Dock can't cross-fade one icon into another, and faking it frame by frame would draw attention every time.</p>`);
+
+/* ---------- where it shows ---------- */
+frame(1,1100,`<div class="kick">Where the music icon appears</div><h2>macOS shows it in some places, and Linux mostly can't</h2>
+<p class="sub">This is from how the platforms work; nothing has been tried on a real Mac or GNOME machine yet. The rows marked <span class="m">probably</span> need a real device to confirm.</p>
+<div class="tbl">
+<div class="h">Place</div><div class="h">Music icon?</div><div class="h">Why</div>
+<div>macOS Dock, while running</div><div class="y">yes</div><div>The app sets its own Dock image at runtime.</div>
+<div>macOS ⌘-Tab switcher</div><div class="y">yes</div><div>It uses the running app's icon.</div>
+<div>macOS Force Quit, Activity Monitor</div><div class="m">probably</div><div>Both normally show the running app's image.</div>
+<div>macOS Dock after quitting (Q4: shows the last mode)</div><div class="y">yes</div><div>Through a Dock tile plug-in shipped inside the app: macOS runs it even while Ravilo is closed, and it draws the remembered mode's icon.</div>
+<div>macOS Finder, Launchpad, Spotlight</div><div class="m">if safe (Q7)</div><div>These read the icon from the installed app. Ravilo can rewrite its own icon file when the mode changes, but every update puts the films icon back, and it can clash with the app's security signature. Q7: nice to have, but only if it's safe.</div>
+<div>macOS notifications</div><div class="n">no</div><div>They use the installed icon.</div>
+<div>macOS 26 dark / clear / tinted icon styles</div><div class="y">yes, drawn (Q6)</div><div>An icon set while running is a plain picture and won't be re-styled by the system, so Ravilo ships its own picture for every style (see <i>Every appearance</i>) and swaps in the matching one.</div>
+<div>Linux · GNOME (the Flatpak)</div><div class="n">no</div><div>GNOME takes the icon from the app's <span class="code">.desktop</span> file, and an app on Wayland can't change it while running.</div>
+<div>Linux · KDE Plasma</div><div class="m">maybe</div><div>Plasma supports the newer protocol that lets a window set its own icon (<span class="code">xdg-toplevel-icon</span>), so the taskbar could follow the mode.</div>
+</div>`);
+
+/* ---------- every appearance ---------- */
+frame(2,1100,`<div class="kick">Q6 · Every appearance</div><h2>Both icons in every macOS 26 icon style</h2>
+<p class="sub">The films icon (R0) and the music icon (M7b), side by side in each style. In the clear and tinted styles the jellyfish, the ring and the note become one tone, so the ring's navy gap is now a real cut in the jellyfish. That way it works on glass too. <i>These are approximations: the real styles are rendered by Icon Composer from the layers below.</i></p>
+<div class="apg"><div></div>${APS.map(a=>`<div class="hd">${a[1]}<span>${a[2]}</span></div>`).join('')}
+${['film','music'].map(md=>`<div class="hd" style="text-align:left">${md==='film'?'Films &amp; series':'Music'}<span>${md==='film'?'R0':'M7b'}</span></div>${APS.map(a=>`<div class="c ${a[0]==='clearL'||a[0]==='tintL'?'l':'d'}">${app(84,md,a[0])}</div>`).join('')}`).join('')}
+</div>
+<div class="sec">Tinted with other colours</div>
+<div style="display:flex;gap:12px;flex-wrap:wrap">${['#e2683c','#3fb27f','#c4568f','#8f96b3'].map(c=>`<div class="c d" style="display:flex;gap:10px;padding:14px;border-radius:12px;background:linear-gradient(165deg,#2c3446,#141925)">${app(64,'film','tintD',c)}${app(64,'music','tintD',c)}</div>`).join('')}</div>
+<div class="sec">Layers for Icon Composer (music icon)</div>
+<div class="layers">
+<div class="ly"><div class="box"><svg ${X} width="84" height="84" viewBox="0 0 100 100"><rect width="100" height="100" rx="22.5" fill="${C.navy}"/></svg></div>1 · Background<br>navy #000B25</div>
+<div class="ly"><div class="box">${(()=>{const s=app(84,'music','default');return s.replace(/<rect x=".6"[^>]*\/>/,'').replace(/<g><circle[\s\S]*$/,'</svg>');})()}</div>2 · Jellyfish<br>gradient, glow, with the circle cut out</div>
+<div class="ly"><div class="box"><svg ${X} width="84" height="84" viewBox="0 0 100 100"><defs>${grad().def.replace(/id="g\d+"/,'id="lyg"')}</defs><circle cx="78" cy="78" r="15" fill="rgba(255,255,255,.08)" stroke="url(#lyg)" stroke-width="2.6"/></svg></div>3 · Ring<br>gradient stroke</div>
+<div class="ly"><div class="box"><svg ${X} width="84" height="84" viewBox="0 0 100 100"><g transform="${at(.42,78,78.5,6,-15.5)}">${note('#fff')}</g></svg></div>4 · Note<br>white</div>
+</div>
+<p class="note" style="margin-top:10px">The films icon is the same file without layers 3 and 4, and without the cut. Two <span class="code">.icon</span> files: the films one is installed, and both export their pictures for the runtime swap.</p>
+<div class="sec">Sizes</div>
+<div class="ladder">${[16,32,64,128,256].map(s=>`<div>${app(s,'music','default')}${s} px</div>`).join('')}</div>
+<p class="note" style="margin-top:12px">At 32 px and below the bubble is drawn bigger with a thicker ring (a 19-unit radius instead of 15, and a 4.2-unit stroke instead of 2.6), the same way the favicon got its own small drawing. Otherwise the ring disappears.</p>`);
+
+/* ---------- remembered mode ---------- */
+frame(1,1100,`<div class="kick">Q4 · The remembered mode</div><h2>How the closed state works</h2>
+<ol style="margin:14px 0 0;padding-left:20px;color:#cfd3e2;display:flex;flex-direction:column;gap:8px">
+<li><b>Stored on this Mac</b>, like the phone's last mode, and not synced to the profile: each device opens in the mode it was left in.</li>
+<li><b>On launch</b> Ravilo opens straight into the stored mode, with no films screen flashing first. The Dock tile already shows that mode while it starts up.</li>
+<li><b>While closed</b>, a Dock tile plug-in inside the app reads the same stored mode and draws the matching icon in the matching style. So the Dock is right even after a restart, before Ravilo has run.</li>
+<li><b>The fallback</b>: if music mode isn't available (no music library, no access for this viewer, signed out), Ravilo opens in films mode, stores films, and the icon follows.</li>
+<li><b>Two viewers on one Mac</b> isn't a case: the desktop has one viewer per computer (Q12).</li>
+</ol>`);
+
+/* ---------- questions ---------- */
+frame(2,1100,`<div class="kick">Questions for you, with leans</div><h2>What to decide</h2>
+<div class="qs" style="margin-top:18px">
+<div class="q"><div class="num">Q1</div><div><h3>Which drawing? <span class="lean dec">Decided: M7b</span></h3><p>Owner, 2026-10-01: M7's bubble (a thin gradient ring with a white ♪) in M2's bottom-right corner, with the jellyfish centred at the full Mac size. M3 and M4 have been dropped. The other options stay on the canvas for the record.</p></div></div>
+<div class="q"><div class="num">Q2</div><div><h3>Does the icon follow the mode, or what's playing? <span class="lean dec">Decided: the mode</span></h3><p>Owner, 2026-10-01: the icon follows the mode and nothing else. Music mode shows ♪ whether or not music or an audiobook is playing. Films mode shows the films icon, even while music plays on in the bar.</p></div></div>
+<div class="q"><div class="num">Q3</div><div><h3>Audiobooks too? <span class="lean dec">Decided: yes, the same ♪</span></h3><p>Owner, 2026-10-01: there is no audiobooks mode. Audiobooks are part of music mode, so they get the same ♪.</p></div></div>
+<div class="q"><div class="num">Q4</div><div><h3>When Ravilo is closed? <span class="lean dec">Decided: the mode is remembered</span></h3><p>Owner, 2026-10-01: Ravilo stores the mode it was left in. It opens in that mode, and the closed icon shows it too. If music mode can't be used on launch (no music library, no access, signed out), Ravilo opens in films mode and the icon follows.</p></div></div>
+<div class="q"><div class="num">Q5</div><div><h3>Linux in round 1? <span class="lean dec">Decided: Mac only for now</span></h3><p>On GNOME it can't be done, and GNOME is where the Flatpak mostly runs. KDE could do it later as its own small phase. The same goes for Windows when it comes: there, a small icon can be laid over the taskbar button (an overlay icon).</p></div></div>
+<div class="q"><div class="num">Q6</div><div><h3>In macOS 26's tinted and clear styles? <span class="lean dec">Decided: draw every style</span></h3><p>Owner, 2026-10-01: both icons get every style. The installed icons are two layered Icon Composer files, and the swapped-in pictures are exported from them, one per style. Still to check on a real Mac: whether an app can tell which style the user picked. If it can't, Ravilo follows light and dark only, and in Clear and Tinted it shows the matching Default or Dark picture.</p></div></div>
+<div class="q"><div class="num">Q7</div><div><h3>Should Finder, Launchpad and Spotlight follow the mode too? <span class="lean dec">Decided: nice to have, not required</span></h3><p>Owner, 2026-10-01: yes, if it can be done safely, but it isn't important. The Dock and ⌘-Tab are what must work. The developers may rewrite the app's own icon file on every mode change and after every update, but only if it doesn't break the app's security signature or updates. If it does, Finder, Launchpad and Spotlight keep the films icon.</p></div></div>
+</div>`);
+
+const COLX=[60,1400,2560];
+function layout(){const y=[60,60,60];frames.forEach(f=>{f.d.style.left=COLX[f.col]+'px';f.d.style.top=y[f.col]+'px';y[f.col]+=f.d.offsetHeight+60;});}
+layout();if(document.fonts&&document.fonts.ready)document.fonts.ready.then(layout);
+})();
+</script>
+</body>
+</html>

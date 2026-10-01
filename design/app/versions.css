@@ -1,0 +1,74 @@
+/* Song versions (design brief 2026-10-01) — vr-*. Chip text is the type's colour mixed toward the theme's ink,
+   so it reads on the dark and the light theme alike. */
+.vr-bs{display:inline-flex;align-items:center;gap:4px;margin-left:8px;vertical-align:1px;cursor:pointer;border-radius:7px;flex-wrap:wrap}
+.vr-bs:hover{outline:1px solid var(--hi);outline-offset:3px}
+.vr-b{display:inline-flex;align-items:center;font-size:.64rem;font-weight:700;letter-spacing:.02em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:color-mix(in oklch,var(--c) 58%,var(--ink));background:color-mix(in oklch,var(--c) 15%,transparent);border:1px solid color-mix(in oklch,var(--c) 42%,transparent)}
+.vr-more{display:inline-flex;align-items:center;font-size:.64rem;font-weight:700;line-height:1;color:var(--ink-soft);padding:3px 5px;border-radius:5px;border:1px dashed var(--line-2)}
+.vr-m{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:4px;font-family:'Space Grotesk',sans-serif;font-size:.62rem;font-weight:700;line-height:1;color:#0d0f15;background:var(--c)}
+.vr-m+.vr-more{height:18px;box-sizing:border-box}
+.vr-p{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:600;line-height:1;padding:4px 9px;border-radius:999px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink);white-space:nowrap}
+.vr-p i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c);margin-right:-1px}
+.vr-p .s{color:var(--ink-soft)}
+.vr-add{margin-left:8px;font-size:.64rem;font-weight:600;color:var(--ink-soft);cursor:pointer;opacity:0;padding:2px 6px;border-radius:5px;border:1px dashed var(--line-2);white-space:nowrap;transition:opacity .15s}
+tr:hover .vr-add{opacity:1}
+.vr-add:hover{color:var(--acc-ink);border-color:var(--hi)}
+.vr-of{font-size:.72rem;color:var(--ink-soft);margin-top:3px}
+.vr-of a{color:var(--ink-soft);text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:2px}
+.vr-sum{display:inline-flex;align-items:center;gap:7px}
+.vr-sum .vr-bs,.vr-sum .vr-b,.vr-sum .vr-m,.vr-sum .vr-p{margin-left:0}
+/* the row's number turns into a checkbox on hover, or while a selection is open */
+.vr-num{display:inline}
+.vr-sel{display:none;width:16px;height:16px;border-radius:4px;border:1.5px solid var(--line-2);align-items:center;justify-content:center;font-size:.6rem;font-weight:800;color:#fff;cursor:pointer;box-sizing:border-box}
+tr:hover .vr-sel,.vr-selecting .vr-sel{display:inline-flex}
+tr:hover .vr-num,.vr-selecting .vr-num{display:none}
+.vr-sel.on{background:var(--hi);border-color:var(--hi)}
+tr.vr-on td{background:var(--hi-soft)}
+/* side panel */
+.vr-panel{width:min(520px,100%)}
+.vr-ph .ttl{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.05rem;line-height:1.3;text-wrap:pretty}
+.vr-pv{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:22px;padding:12px 14px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line);margin:12px 0 14px}
+.vr-pv .vr-b{font-size:.74rem;padding:4px 8px}.vr-pv .vr-m{min-width:22px;height:22px;font-size:.72rem}.vr-pv .vr-p{font-size:.8rem;padding:5px 11px}
+.vr-rows{margin-top:6px}
+.vr-row{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:3px 12px;align-items:center;padding:10px 4px;border-top:1px solid var(--line);cursor:pointer;border-radius:8px}
+.vr-row:hover{background:var(--fill-2)}
+.vr-row .bx{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-size:.66rem;font-weight:800;color:#0d0f15;box-sizing:border-box}
+.vr-row.on .bx{background:var(--c);border-color:var(--c)}
+.vr-row .nm{font-weight:600;font-size:.88rem}
+.vr-row .src{font-size:.7rem;font-weight:600;color:var(--ink-soft);text-align:right;white-space:nowrap}
+.vr-row .src.you{color:var(--acc-ink)}.vr-row .src.rmv{color:var(--warn)}
+.vr-row .mn{grid-column:2/4;font-size:.74rem;color:var(--ink-soft);line-height:1.4}
+.vr-row.rm .nm{text-decoration:line-through;text-decoration-color:var(--ink-soft)}
+.vr-ofp{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:.86rem}
+.vr-dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+/* Set version… */
+.vr-bk{display:flex;flex-direction:column;margin-top:6px}
+.vr-bkr{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.vr-bkr .nm{font-weight:600;font-size:.86rem}
+.vr-bkr .seg span{padding:4px 10px;font-size:.74rem}
+/* facet */
+.vr-fpop{min-width:330px}
+.vr-fv{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:6px 8px;border-radius:8px}
+.vr-fv:hover{background:var(--fill-2)}
+.vr-fv .nm{display:flex;align-items:center;gap:8px;min-width:0}
+.vr-fv .nm .vr-b,.vr-fv .nm .vr-m,.vr-fv .nm .vr-p{margin:0}
+.vr-fv .ct{font-size:.72rem;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.vr-fv.zero{opacity:.5}
+.vr-ie{display:inline-flex;border:1px solid var(--line-2);border-radius:7px;overflow:hidden}
+.vr-ie span{font-size:.68rem;font-weight:600;padding:4px 9px;cursor:pointer;color:var(--ink-soft)}
+.vr-ie span+span{border-left:1px solid var(--line-2)}
+.vr-ie span:hover{color:var(--ink)}
+.vr-ie .i.on{background:var(--hi-soft);color:var(--acc-ink)}
+.vr-ie .x.on{background:var(--bad-soft);color:var(--bad)}
+.vr-words{display:inline-flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.95rem;color:var(--ink)}
+.vr-words .rm{cursor:pointer;color:var(--ink-soft);font-size:.8rem}
+/* artist doorway + Metadata tab + Q1 panel */
+.vr-al a{color:var(--ink)}.vr-al a:hover{color:var(--acc-ink)}
+.vr-al .vr-door{color:var(--acc-ink)}
+.vr-sw{display:inline-block;width:22px;height:22px;border-radius:6px;background:var(--c);cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)}
+.vr-sw:hover{outline:2px solid var(--hi);outline-offset:2px}
+.vr-mt td{vertical-align:middle}
+.vr-mt .vr-b,.vr-mt .vr-m,.vr-mt .vr-p{margin:0}
+.vr-mi{width:100%;min-width:220px;font:inherit;font-size:.82rem;padding:6px 9px;border-radius:7px;border:1px solid transparent;background:none;color:var(--ink)}
+.vr-mi:hover{border-color:var(--line-2)}.vr-mi:focus{outline:none;border-color:var(--hi);background:var(--fill-2)}
+.vr-qx{display:inline-flex;gap:12px;align-items:center;flex-wrap:wrap;margin-left:6px}
+.vr-qx>*{display:inline-flex;gap:4px;align-items:center}

@@ -386,3 +386,13 @@ body:not(.muq-open) .muq .mq-body{display:none}
 .phone.mu-on .mu-mini.abovenav{bottom:calc(var(--bnh,74px) + 8px)}
 /* owner 2026-09-30 — on Profile in music mode the pill stays as on every other tab; only the ring round the photo goes */
 .phone.mu-on .bn.on .avatar{box-shadow:none}
+
+/* ---- song versions (owner 2026-10-01: A · words, in Ravilo too) — read-only; same colours as jellystructure ---- */
+.rv-vb{display:inline-flex;align-items:center;gap:4px;flex:none;margin-left:7px}
+.rv-v{display:inline-flex;align-items:center;font-family:'Sora',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.01em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:color-mix(in oklch,var(--c) 58%,var(--ink));background:color-mix(in oklch,var(--c) 15%,transparent);border:1px solid color-mix(in oklch,var(--c) 42%,transparent)}
+.rv-vm{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;line-height:1;color:var(--ink-soft);padding:3px 5px;border-radius:5px;border:1px dashed var(--line-2)}
+.mu-song .t:has(.rv-vb),.mu-qrow .in .t:has(.rv-vb){display:flex;align-items:center}
+.rv-tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mu-tr .t .rv-vb{margin-left:0}
+.mu-nsub .rv-vb{margin:0 8px 0 0;vertical-align:2px}
+.mu-nsub .rv-v{font-size:11.5px;padding:3px 7px}

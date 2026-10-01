@@ -32,6 +32,7 @@
       + '<div class="mu-mono tiny muted">' + esc(R.sort) + '</div>'
       + '<div class="mu-pbm">' + (facts ? '<span>' + esc(facts) + '</span>' : '') + (R.disamb ? '<span class="sep">·</span><span class="muted">' + esc(R.disamb) + '</span>' : '') + '</div>'
       + '<div class="mu-pbm"><span>' + own.length + (own.length === 1 ? ' album' : ' albums') + '</span><span class="sep">·</span><span>' + M.tracksBy(R.id).length + ' songs in the library</span>' + (credited.length ? '<span class="sep">·</span><span>credited on ' + credited.map(a => '<a href="album.html?a=' + a.id + '">' + esc(a.title) + '</a>').join(', ') + '</span>' : '') + '</div>'
+      + (window.Versions ? Versions.artistLine(R.id) : '')
       + '<div class="mu-acts">' + chip + '</div>'
       + (!hasImg ? '<div class="tiny" style="margin-top:10px;color:var(--warn)">No artist picture — <a href="#" data-tabgo="artwork">choose one in Artwork</a>. MusicBrainz has none; they come from fanart.tv or Wikimedia Commons.</div>' : '')
       + '</div></div>';
@@ -109,5 +110,6 @@
     else if (k === 'sync') toast('Sync requested ↻');
   });
   if (window.MusicQ) { MusicQ.mount($('ar-qs'), 'artist'); MusicQ.on(repaint); }
+  if (window.Versions) Versions.on(repaint);
   fence(); repaint();
 })();

@@ -1,0 +1,166 @@
+/* Ravilo Desktop — the maintained desktop mockup (R337 · R338). Window chrome comes from ../desktop-directions.css;
+   this adds the design-only fence, the stage, and the live pages. Every class here is dx- (or reuses the kit's). */
+html,body{height:100%}
+body{background:#17181c;overflow:hidden;font-family:'Sora',sans-serif}
+/* ---- the design-only fence (never in the app) ---- */
+.dx-fence{position:fixed;left:0;right:0;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 16px;background:#0e0f12;border-bottom:1px dashed rgba(255,255,255,.22);color:#e9ebf3;font-size:12.5px}
+.dx-fence .tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0e0f12;background:#f5c84b;padding:3px 8px;border-radius:5px}
+.dx-fence .grp{display:flex;align-items:center;gap:8px}
+.dx-fence .grp>span{color:#aeb2c2;font-weight:600}
+.dx-seg{display:flex;padding:2px;border-radius:8px;background:rgba(255,255,255,.08);gap:2px}
+.dx-seg button{border:0;background:none;color:#c9ccd8;font:600 12.5px 'Sora',sans-serif;padding:5px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.dx-seg button:hover{color:#fff}
+.dx-seg button.on{background:#f3f4fb;color:#0e0f12}
+.dx-seg button small{font-weight:500;opacity:.7;margin-left:4px}
+.dx-sw{display:flex;gap:6px}
+.dx-sw button{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.dx-sw button.on{border-color:#f5c84b}
+.dx-fence .note2{margin-left:auto;color:#aeb2c2;font-size:12px}
+/* ---- the stage: the window, scaled to fit the pane ---- */
+.dx-stage{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(120% 90% at 30% 10%,#2a2d38,#121318 70%)}
+.dx-desk{transform-origin:center center;display:flex;flex-direction:column;align-items:center}
+.dx-menubar{width:100%;height:26px;margin-bottom:14px;border-radius:8px;background:rgba(28,28,34,.82);display:flex;align-items:center;gap:4px;padding:0 10px;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;font-size:13px;color:#f3f4fb;box-sizing:border-box;position:relative;z-index:30}
+.dx-menubar span{padding:2px 8px;border-radius:4px;cursor:default}
+.dx-menubar span.b{font-weight:700}
+.dx-menubar span[data-mb]{cursor:pointer}
+.dx-menubar span.on{background:rgba(255,255,255,.18)}
+.dx-menubar .pmenu{position:absolute;top:26px;z-index:40}
+.dx-menubar .pmenu .mi{cursor:pointer}.dx-menubar .pmenu .mi:hover{background:#6b62d8}
+/* ---- live window ---- */
+.dx-win{transition:width .25s,height .25s}
+.dx-win .body{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;padding-bottom:96px}
+.dx-win.gn .body{padding-bottom:28px}
+.dx-win [data-nav],.dx-win [data-act],.dx-win [data-mode],.dx-win [data-al],.dx-win [data-ar],.dx-win [data-film],.dx-win [data-song],.dx-win [data-q]{cursor:pointer}
+.dx-win .nav a:hover:not(.on){background:rgba(var(--fg),.06);color:var(--ink)}
+.dx-win .seg b{cursor:pointer}
+.dx-win .sfield{cursor:text}
+.dx-win .who{cursor:pointer}.dx-win .who:hover{background:rgba(var(--fg),.06)}
+.dx-win .who.on{background:rgba(var(--fg),.1)}
+.dx-win .gl,.dx-win .gb{cursor:pointer}
+.dx-win .gl.off,.dx-win .gb.off{opacity:.35;cursor:default}
+.dx-win .gb:hover{background:rgba(var(--fg),.08)}
+.dx-win .row{overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.dx-win .row::-webkit-scrollbar{display:none}
+.dx-win .po:hover .a,.dx-win .al:hover .a,.dx-win .ls:hover .a{outline:2px solid var(--accent-2);outline-offset:2px}
+.dx-win .ar:hover .a{outline:2px solid var(--accent-2);outline-offset:3px}
+.dx-win .bt{cursor:pointer;border:0}
+.dx-win .bt:hover{filter:brightness(1.1)}
+.dx-win .mtb .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50%}
+.dx-win .main>.mtb:not(.over){border-bottom:1px solid transparent}
+.dx-win .main{transition:padding-right .2s}
+.dx-win.qpush .main{padding-right:300px}
+.dx-win.qpush .qp{top:0}
+.dx-win .qp{overflow-y:auto;box-sizing:border-box}
+.dx-win{--good:#2dd49a}
+.dx-win.mac .qp.ov{top:58px;bottom:86px}
+.dx-win.gn .qp.ov{top:46px;bottom:0}
+.dx-win.mac.qover .cap-bar{right:326px}
+.dx-win.mac.qpush .cap-bar{right:316px}
+.dx-win .qr{cursor:pointer}.dx-win .qr:hover{background:rgba(var(--fg),.06)}
+.dx-win .qr .x{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-dim);opacity:0}
+.dx-win .qr:hover .x{opacity:1}.dx-win .qr .x:hover{background:rgba(var(--fg),.1);color:var(--ink)}
+.dx-win .qr .x .ic{width:12px;height:12px}
+.dx-win .qp .emp{padding:20px 8px;color:var(--ink-dim);font-size:13px;line-height:1.5}
+.dx-win .gbar{z-index:4}
+.dx-win .pb-ctl .b,.dx-win .pb-ctl .pp,.dx-win .pb-r .b{cursor:pointer}
+.dx-win .pb-r .b:hover,.dx-win .pb-ctl .b:hover{background:rgba(var(--fg),.08);border-radius:6px}
+.dx-win .pb-t{cursor:pointer}
+.dx-win .pb-seek .tr i,.dx-win .np .seek .tr i{width:0;transition:width .9s linear}
+.dx-win .pb-art{background-size:cover}
+/* the album / song lists */
+.dx-win .trk .tr{grid-template-columns:34px minmax(0,1fr) auto 60px;gap:10px;cursor:pointer}
+.dx-win .trk .tr:hover{background:rgba(var(--fg),.06)}
+.dx-win .trk .tr .tt{display:flex;align-items:center;min-width:0}
+.dx-win .trk .tr .tt>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dx-win .trk .tr .ar2{color:var(--ink-dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.dx-win .trk.songs .tr{grid-template-columns:34px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) 60px}
+.dx-win .trk .hd{display:grid;grid-template-columns:34px minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) 60px;gap:10px;padding:0 10px 8px;font-size:11.5px;font-weight:700;color:var(--ink-dim);border-bottom:1px solid var(--line);margin-bottom:6px}
+.dx-win .trk .hd span:last-child{text-align:right}
+.dx-win .trk .tr .dim{color:var(--ink-dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dx-win .alh .by[data-ar]:hover{text-decoration:underline}
+.dx-win .meta-l{font-size:12.5px;color:var(--ink-dim);margin:2px 0 14px}
+.dx-win .h1{color:var(--ink)}
+/* artist page */
+.dx-arh{display:flex;gap:26px;align-items:flex-end;padding:18px 28px 0}
+.dx-arh .img{width:180px;height:180px;border-radius:50%;flex:none;box-shadow:0 20px 50px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:48px;font-weight:700;color:rgba(255,255,255,.85)}
+.dx-arh .k{font-size:12px;color:var(--ink-dim)}
+.dx-arh .h1{font-size:40px;margin:6px 0}
+.dx-bio{max-width:640px;font-size:13.5px;line-height:1.6;color:var(--ink-soft);margin:18px 28px 0;text-wrap:pretty}
+/* genres + empty states */
+.dx-gl{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.dx-gl>div{padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line);cursor:pointer}
+.dx-gl>div:hover{border-color:var(--accent-2)}
+.dx-gl b{display:block;font-family:'Space Grotesk',sans-serif;font-size:16px;text-transform:capitalize}
+.dx-gl span{font-size:12px;color:var(--ink-dim)}
+.dx-empty{max-width:420px;margin:80px auto 0;text-align:center;color:var(--ink-soft);font-size:14px;line-height:1.55}
+.dx-empty b{display:block;font-family:'Space Grotesk',sans-serif;font-size:20px;color:var(--ink);margin-bottom:6px}
+/* search */
+.dx-srch{display:flex;align-items:center;gap:10px;height:44px;border-radius:12px;background:rgba(var(--fg),.07);padding:0 14px;margin:8px 0 18px;max-width:560px}
+.dx-srch .ic{color:var(--ink-dim)}
+.dx-srch input{flex:1;border:0;background:none;color:var(--ink);font:500 15px 'Sora',sans-serif;outline:none}
+.dx-srch input::placeholder{color:var(--ink-dim)}
+/* film detail */
+.dx-fd .hero{height:420px}
+.dx-fd .hero .ttl{font-family:'Space Grotesk',sans-serif;font-size:44px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin-bottom:12px}
+.dx-eps{display:flex;gap:14px}
+.dx-eps .ls .s b{color:var(--good)}
+/* film player */
+.dx-win .fp{z-index:30;cursor:default}
+.dx-win .fp .top,.dx-win .fp .bot{transition:opacity .25s}
+.dx-win .fp.hide .top,.dx-win .fp.hide .bot{opacity:0}
+.dx-win .fp .gl,.dx-win .fp .gb,.dx-win .fp .gx,.dx-win .fp .ct span,.dx-win .fp .ct .ic{cursor:pointer}
+.dx-win .fp .gx{width:28px;height:28px;background:rgba(255,255,255,.18)}
+.dx-win .fp .gx .ic{color:#fff}
+.dx-win .fp .top .gl,.dx-win .fp .top .gb{color:#fff}
+/* profile */
+.dx-prof{max-width:560px;margin:10px auto 0;padding:0 28px}
+.dx-prof .hd{display:flex;flex-direction:column;align-items:center;gap:10px;margin:18px 0 26px}
+.dx-prof .hd .av{width:96px;height:96px;font-size:38px}
+.dx-prof .hd b{font-family:'Space Grotesk',sans-serif;font-size:24px}
+.dx-prof .hd span{font-size:12.5px;color:var(--ink-dim)}
+.dx-prof h6{margin:18px 4px 8px;font-size:12px;font-weight:700;color:var(--ink-dim)}
+.dx-grp{border-radius:12px;background:var(--card);border:1px solid var(--line);overflow:hidden}
+.dx-grp>div{display:flex;align-items:center;gap:12px;min-height:46px;padding:0 16px;border-top:1px solid var(--line);font-size:13.5px;cursor:pointer}
+.dx-grp>div:first-child{border-top:0}
+.dx-grp>div:hover{background:rgba(var(--fg),.04)}
+.dx-grp .v{margin-left:auto;color:var(--ink-dim);font-size:12.5px}
+.dx-grp .red{color:#ff6b6b}
+.dx-prof .foot{text-align:center;font-size:12px;color:var(--ink-dim);margin:22px 0}
+/* primary menu (GNOME) + dialogs + toast */
+.dx-win .gpop{position:absolute;z-index:50}
+.dx-win .gpop .mi{cursor:pointer}.dx-win .gpop .mi:hover:not(.hd){background:rgba(255,255,255,.08)}
+.dx-dlg{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}
+.dx-dlg>div{width:340px;border-radius:14px;background:var(--card-2);border:1px solid var(--line-2);box-shadow:0 30px 80px rgba(0,0,0,.55);padding:22px;text-align:center;font-family:var(--sys)}
+.dx-dlg h4{margin:0 0 8px;font-size:15px}
+.dx-dlg p{margin:0 0 18px;font-size:13px;color:var(--ink-soft);line-height:1.5}
+.dx-dlg .bs{display:flex;gap:8px}
+.dx-dlg .bs span{flex:1;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;background:rgba(var(--fg),.1);cursor:pointer}
+.dx-dlg .bs span.red{background:#e5484d;color:#fff}
+.gn .dx-dlg>div{border-radius:12px}
+.dx-toast{position:absolute;left:50%;bottom:104px;transform:translateX(-50%);z-index:70;padding:10px 16px;border-radius:10px;background:rgba(20,22,30,.92);color:#fff;font-size:13px;font-family:var(--sys);box-shadow:0 10px 30px rgba(0,0,0,.4);white-space:nowrap;pointer-events:none}
+.gn .dx-toast{bottom:90px;border-radius:999px}
+/* compact window: the phone, embedded */
+.dx-win.cwin{height:760px}
+.dx-win .grid .po{width:auto}
+.dx-win .ar .a{display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:700;color:rgba(255,255,255,.85)}
+.dx-win .trk .eq{display:flex;gap:2px;align-items:flex-end;height:11px}
+.dx-win .trk .eq i{width:2px;background:var(--accent-2);border-radius:1px}
+.dx-win .np .by span{cursor:pointer}.dx-win .np .by span:hover{text-decoration:underline}
+.dx-win .np .tp .sm{cursor:pointer}
+.dx-win .lyr{scrollbar-width:none}
+/* song version chips (owner 2026-10-01: A · words) — same as the phone's rv-* */
+.rv-vb{display:inline-flex;align-items:center;gap:4px;flex:none;margin-left:8px}
+.rv-v{display:inline-flex;align-items:center;font-family:'Sora',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.01em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:color-mix(in oklch,var(--c) 58%,var(--ink));background:color-mix(in oklch,var(--c) 15%,transparent);border:1px solid color-mix(in oklch,var(--c) 42%,transparent)}
+.rv-vm{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;line-height:1;color:var(--ink-soft);padding:3px 5px;border-radius:5px;border:1px dashed var(--line-2)}
+.np .rv-vb{margin:10px 0 0}
+.lyr p{transition:color .3s}
+.lyr.none{font-size:15px;font-weight:500;font-family:'Sora',sans-serif;color:var(--ink-dim);-webkit-mask-image:none;mask-image:none}
+/* Medium: the Playing page stacks */
+.dx-win.med .np{grid-template-columns:1fr;gap:20px;padding:30px 32px 0;justify-items:center;text-align:center}
+.dx-win.med .np .cv{width:240px;height:240px}
+.dx-win.med .np .lyr{display:none}
+.dx-win.exp .np{grid-template-columns:280px 1fr;gap:36px;padding:50px 36px 0}
+.dx-win.exp .np .cv{width:280px;height:280px}
+.dx-win.med .alh,.dx-win.med .dx-arh{flex-direction:column;align-items:flex-start}
+.dx-win.med .alh .cv{width:160px;height:160px}
+.dx-win.med .hero{height:320px}

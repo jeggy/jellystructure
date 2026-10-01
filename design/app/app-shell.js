@@ -49,7 +49,7 @@
         '<stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/>' +
       '</linearGradient></defs>' +
       '<rect width="100" height="100" rx="23" fill="url(#' + id + ')"/>' +
-      '<g transform="translate(18 18) scale(.64)" fill="#fff">' +
+      '<g transform="translate(13 13) scale(.74)" fill="#fff">' +
         '<rect x="10" y="10" width="35" height="35" rx="9"/>' +
         '<rect x="55" y="10" width="35" height="35" rx="9" opacity=".5"/>' +
         '<rect x="10" y="55" width="35" height="35" rx="9" opacity=".5"/>' +

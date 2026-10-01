@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Song versions — round 1 · Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Sora:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="music.css">
+<link rel="stylesheet" href="dashboard.css">
+<link rel="stylesheet" href="versions.css">
+<style>
+html,body{background:transparent}
+body{font-family:'Sora',sans-serif}
+a{color:var(--acc-ink)}a:hover{color:var(--ink)}
+/* canvas furniture — text on the light-gray backdrop is dark ink (CLAUDE.md, 2026-10-01) */
+.lbl{position:absolute;width:760px;color:#12141b;font-family:'Space Grotesk',sans-serif}
+.lbl .tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#3b2fa8;margin-bottom:6px}
+.lbl .tag.rec{color:#0f6b48}
+.lbl h2{margin:0;font-size:2rem;letter-spacing:-.02em}
+.lbl h3{margin:0;font-size:1.2rem;letter-spacing:-.01em}
+.lbl p,.lbl li{font-family:'Sora',sans-serif;font-size:.84rem;line-height:1.65;color:#262a35;margin:8px 0 0}
+.lbl ul{margin:6px 0 0;padding-left:18px}
+.lbl b{color:#0b0c11}
+.lbl a{color:#3b2fa8}
+.cap{position:absolute;font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#262a35}
+.fr{position:absolute;background:var(--bg);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:20px 22px;box-shadow:0 24px 60px rgba(0,0,0,.35);color:var(--ink);box-sizing:border-box}
+.fr h4{margin:0 0 4px;font-family:'Space Grotesk',sans-serif;font-size:1.05rem;color:var(--ink)}
+.fr .k{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:700;margin:16px 0 8px}
+.fr .mu-tbl td{padding:7px 8px}
+.fr .mu-panel{position:relative;transform:none;width:auto;height:auto;inset:auto;box-shadow:none;border:1px solid var(--line-2);border-radius:14px;z-index:auto;overflow:hidden}
+.fr .mu-pbody{overflow:visible}
+.fr .mu-fc .mu-fpop{position:relative;top:auto;display:block;margin-top:8px;box-shadow:none}
+.fr .vr-add{opacity:1}
+.fr .mu-modal{position:relative;display:flex;inset:auto;background:none;padding:0}
+.fr .mu-modal .card{max-width:none}
+.lean{display:inline-block;margin-left:8px;font-family:'JetBrains Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.08em;padding:2px 7px;border-radius:5px;background:#e6f4ec;color:#0f5a3c;border:1px solid #b9dfcc;vertical-align:3px}
+.rule{position:absolute;height:1px;background:rgba(0,0,0,.18)}
+</style>
+</head>
+<body>
+<div class="lbl" style="left:0;top:0;width:1600px">
+  <span class="tag">jellystructure · admin · song versions · round 1 · 2026-10-01</span>
+  <h2>The badge on a song — three directions (Q1) · owner picked A, in jellystructure and Ravilo</h2>
+  <p>From <b>specs/design-brief-music-song-versions-2026-10-01.md</b>. Nine fixed types; a song has zero, one or many; a normal song shows nothing. The same six songs in each direction, on the album’s Tracks tab and in Library → Songs. Up to three, then <b>+1</b>. Everything below the line is shared and drawn in the lean. All three run live in the mockups — <a href="album.html?a=tide-tables">album</a> · <a href="library.html?kind=music&amp;mview=songs">Songs</a> · <a href="metadata.html#tab=versions">Metadata → Versions</a> · <a href="artist.html?ar=harbour-lights">artist</a> · <a href="index.html">Dashboard</a> — with the switch at the foot of each page.</p>
+</div>
+<div id="dirs"></div>
+<div id="shared"></div>
+<script src="music-data.js"></script>
+<script src="versions.js"></script>
+<script>
+(function () {
+  const M = window.MUSIC, V = window.Versions, esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const SIX = ['live-at-the-harbour-1', 'live-at-the-harbour-6', 'signal-found-4', 'tide-tables-31', 'tide-tables-1', 'tide-tables-35'].map(M.track);
+  const D = [
+    ['a', 'A · Words', true, ['Reads without a legend — the owner learns the nine by seeing them.', 'Colour carries the type at a glance; the word carries it for anyone who can’t tell coral from amber.', '<b>Cost:</b> the widest. Three chips on a long title wrap to a second line in Library → Songs at 1280 px.']],
+    ['b', 'B · Marks', false, ['Four marks fit where one word does; rows stay one line at any width.', 'Scans like a column — every L lines up.', '<b>Cost:</b> a legend to learn. <i>Ac</i> and <i>Alt</i>, <i>S</i> and <i>L</i> need hover until they’re known; colour alone does the rest, which is weak for colour-blind readers.']],
+    ['c', 'C · One phrase', false, ['One chip, one click target — it reads as a sentence: <i>Live · Session</i>.', 'Quietest on a page that already has match chips, format chips and lyrics marks.', '<b>Cost:</b> colour is a dot, so the Metadata colour matters less; a long phrase (<i>Acoustic · Alternate · Session +1</i>) is as wide as A.']],
+  ];
+  let h = '';
+  D.forEach((d, i) => {
+    const x = i * 820, rows = SIX.map(t => '<tr><td class="n">' + t.n + '</td><td>' + esc(t.title) + V.badges(t, d[0]) + V.detail(t) + '</td><td class="num">' + M.fmtLen(t.len) + '</td></tr>').join('');
+    const song = t => '<tr><td><a href="album.html?a=' + t.albumId + '">' + esc(t.title) + '</a>' + V.badges(t, d[0]) + '</td><td class="dim">' + esc(M.artistNames(t.artistIds)) + '</td><td class="dim">' + esc(M.album(t.albumId).title) + '</td></tr>';
+    h += '<div class="cap" style="left:' + x + 'px;top:150px">' + d[1] + (d[2] ? ' · picked' : '') + '</div>'
+      + '<div class="fr" data-dir="' + i + '" style="left:' + x + 'px;top:178px;width:780px" data-screen-label="Q1 ' + d[1] + '"><h4>' + d[1] + '</h4>'
+      + '<div class="k">Album → Tracks</div><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      + '<div class="k">Library → Songs</div><table class="mu-tbl"><tbody>' + [SIX[0], SIX[2], SIX[3]].map(song).join('') + '</tbody></table>'
+      + '<div class="k">Album header · when most songs are one kind</div><div class="mu-pbm" style="margin:0"><span>2011</span><span class="sep">·</span><span>3 songs</span><span class="sep">·</span><span class="mu-fmt">MP3 320</span>' + V.albumSummary(M.tracksOf('live-at-the-harbour'), d[0]) + '</div>'
+      + '</div>'
+      + '<div class="lbl" data-under="' + i + '" style="left:' + x + 'px;top:742px;width:780px"><h3>' + d[1] + (d[2] ? '<span class="lean">PICKED · OWNER 2026-10-01</span>' : '') + '</h3><ul>' + d[3].map(l => '<li>' + l + '</li>').join('') + '</ul></div>';
+  });
+  document.getElementById('dirs').innerHTML = h;
+
+  // shared, drawn in the lean (A)
+  const S = [];
+  const panel = id => '<div class="mu-panel vr-panel">' + V.panelHTML(M.track(id), 'a') + '</div>';
+  S.push([0, 'Side panel · Low Tide (acoustic, radio session)', 'Unticking an automatic type is kept as <i>removed by you</i>; Session brings Live with it.', 520, panel('live-at-the-harbour-6')]);
+  S.push([560, 'Side panel · the same recording on three albums', 'Keyed by the MusicBrainz recording: a change on one copy holds for all three. Title and length never link two songs.', 520, panel('live-at-the-harbour-1')]);
+  S.push([1120, 'Side panel · unmatched · from the title only', 'Only the title can say anything until the album is matched.', 520, panel('kvold-5')]);
+  S.push([1680, 'Side panel · Fog Bank — three types + lyrics', 'Instrumental’s detail line names the sung song; lyrics beside it go to the Dashboard.', 520, panel('tide-tables-31')]);
+  const vf = { inc: new Set(), exc: new Set(['live', 'remix']) };
+  const cnt = k => M.tracksBy('harbour-lights').filter(t => k === 'none' ? !V.list(t).length : V.list(t).indexOf(k) >= 0).length;
+  S.push([2240, 'Library → Songs · the Version facet', 'Each value <b>Only</b> or <b>Hide</b>; the filter reads in words. The owner’s case: an artist’s songs without Remix and Live.', 420,
+    '<div class="mu-active" style="margin-bottom:6px"><span class="vr-words">' + V.words(vf, 'Harbour Lights') + '<span class="rm">✕</span></span></div><div class="mu-facets">' + V.facetHTML(vf, true, cnt) + '</div>']);
+  S.push([2700, 'Dashboard · one row in 285’s grammar', 'Removed only by the owner’s button; telling LRCLIB is also by hand.', 760,
+    '<div class="ov-row sev-warning"><span class="ov-sev"></span><div class="ov-main"><div class="ov-l"><a href="index.html">Lyrics on an instrumental</a></div><div class="ov-s">These songs have no singing, but have lyrics beside them — nine instrumental demos on Tide Tables 1999–2012 and one B-side, Kite Weather (instrumental).</div></div><span class="ov-n"><b>10</b> songs</span><div class="ov-act"><span class="ov-fix k-here">One click here</span><span class="btn sm">Remove the lyrics</span><span class="btn sm ghost">Tell LRCLIB it is instrumental</span></div></div>'
+    + '<div class="k" style="margin-top:22px">Artist page · the doorway (D4)</div>' + V.artistLine('harbour-lights')
+    + '<div class="k" style="margin-top:22px">Metadata → Versions (D3) · two rows</div><div class="tiny muted">The nine with colour swatch, meaning, count and <i>by you</i> — <a href="metadata.html#tab=versions">open the tab</a>.</div>']);
+  let s = '<div class="rule" id="sh-rule" style="left:0;top:950px;width:3460px"></div><div class="lbl" id="sh-head" style="left:0;top:976px;width:1400px"><span class="tag rec">shared · drawn in A</span><h3>The editor, the filter and the Dashboard</h3><p>The side panel is the owner’s pick (Q2). Ticks save as you go and are kept across runs, as genres and JS tags are.</p></div>';
+  S.forEach(x => { s += '<div class="cap sh-cap" style="left:' + x[0] + 'px;top:1080px;width:' + x[3] + 'px">' + x[1] + '</div><div class="lbl sh-note" style="left:' + x[0] + 'px;top:1104px;width:' + x[3] + 'px"><p style="margin:0">' + x[2] + '</p></div><div class="fr sh-fr" style="left:' + x[0] + 'px;top:1170px;width:' + x[3] + 'px">' + x[4] + '</div>'; });
+  document.getElementById('shared').innerHTML = s;
+  // lay out from measured heights so frames and labels never overlap
+  function layout() {
+    const q = sel => [...document.querySelectorAll(sel)];
+    let labBottom = 0;
+    q('[data-dir]').forEach(f => { const l = document.querySelector('[data-under="' + f.dataset.dir + '"]'); const top = f.offsetTop + f.offsetHeight + 24; l.style.top = top + 'px'; labBottom = Math.max(labBottom, top + l.offsetHeight); });
+    const rule = labBottom + 40, head = document.getElementById('sh-head');
+    document.getElementById('sh-rule').style.top = rule + 'px'; head.style.top = (rule + 26) + 'px';
+    const capTop = rule + 26 + head.offsetHeight + 28;
+    q('.sh-cap').forEach(c => c.style.top = capTop + 'px');
+    let noteBottom = 0; q('.sh-note').forEach(n => { n.style.top = (capTop + 24) + 'px'; noteBottom = Math.max(noteBottom, capTop + 24 + n.offsetHeight); });
+    q('.sh-fr').forEach(f => f.style.top = (noteBottom + 18) + 'px');
+  }
+  layout(); if (document.fonts) document.fonts.ready.then(layout);
+  // the canvas is a picture: no clicks change the shared stand-ins here
+  window.addEventListener('click', e => { if (e.target.closest('.fr') && !e.target.closest('a')) { e.stopPropagation(); e.preventDefault(); } }, true);
+})();
+</script>
+</body>
+</html>

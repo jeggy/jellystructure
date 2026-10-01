@@ -76,7 +76,7 @@
   function metaHTML(x, a) {
     const long = x.title.length > 24;
     return '<div class="mu-nmeta"><div class="b"><div class="mu-mq' + (long ? ' long' : '') + '"><span>' + esc(x.title) + '</span></div>'
-      + '<div class="mu-nsub"><a data-np="artist">' + esc(M.artistNames(x.artistIds)) + '</a> · <a data-np="album">' + esc(a.title) + '</a></div>'
+      + '<div class="mu-nsub">' + (window.RaviloVersions ? RaviloVersions.chips(x, 9) : '') + '<a data-np="artist">' + esc(M.artistNames(x.artistIds)) + '</a> · <a data-np="album">' + esc(a.title) + '</a></div>'
       + (P.cast ? '<div class="mu-ndev"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span>' + esc(t('music.playing_on', { d: P.cast })) + '</div>' : '') + '</div>'
       + '<button class="mu-ib" data-np="fav" style="color:' + (MS.favs.has(x.id) ? 'var(--accent)' : 'var(--ink-soft)') + '" aria-label="My List">' + (MS.favs.has(x.id) ? IC.heart.replace('fill="none"', 'fill="currentColor"') : IC.heart) + '</button></div>';
   }
@@ -204,7 +204,7 @@
   }
   function queueRow(id, i, isNow) {
     const x = M.track(id), a = M.album(x.albumId);
-    return '<div class="mu-qrow' + (isNow ? ' now' : '') + '" data-qi="' + i + '">' + (isNow ? '' : '<div class="rm">Remove</div>') + '<div class="in">' + U.cover(a, 'sm') + '<div class="b"><div class="t">' + esc(x.title) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + '</div></div>'
+    return '<div class="mu-qrow' + (isNow ? ' now' : '') + '" data-qi="' + i + '">' + (isNow ? '' : '<div class="rm">Remove</div>') + '<div class="in">' + U.cover(a, 'sm') + '<div class="b"><div class="t">' + (window.RaviloVersions ? RaviloVersions.title(x, esc) : esc(x.title)) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + '</div></div>'
       + (isNow ? '<span class="mu-bars' + (P.playing ? '' : ' paused') + '" style="margin-right:16px"><i></i><i></i><i></i></span>' : '<span class="mu-handle" data-qh="' + i + '">' + IC.handle + '</span>') + '</div></div>';
   }
   function queueListHTML(compact) {

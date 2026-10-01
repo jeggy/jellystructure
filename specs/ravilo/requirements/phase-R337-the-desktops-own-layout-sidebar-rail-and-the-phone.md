@@ -189,7 +189,7 @@ music layout in the web app · AirPlay from the Mac (R329 D5) · a mini-player w
 - `NavigationSuiteScaffold` (material3-adaptive-navigation-suite) already switches NavigationBar → NavigationRail →
   drawer by width; the desktop's sidebar replaces its drawer, the rail is its rail, and Compact hands over to the
   phone's own bottom bar.
-- Mockups: `design/ravilo/Desktop - D1.html` (C·a–C·d compact, M·a–M·c rail, E·a/E·b/L·a, S1–S6 shared, the ruler),
+- Mockups: `design/ravilo/Ravilo Desktop.html` (**the maintained desktop mockup from 2026-10-01**: platform · window size · theme in a design-only fence; `desktop/ravilo-desktop.js/.css`), `design/ravilo/Desktop - D1.html` (C·a–C·d compact, M·a–M·c rail, E·a/E·b/L·a, S1–S6 shared, the ruler),
   `design/ravilo/Desktop - Directions.html` (round 1; D1·a–D1·d), builders in `desktop-kit.js`.
 
 ## Dev review (2026-09-30, against `main` `c4258560`)

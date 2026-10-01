@@ -58,7 +58,7 @@
   }
   function fixHTML(x) {
     if (x.zero) return '<span class="ov-fix k-open">Library filter</span>';
-    if (x.fix === 'here') return '<span class="ov-fix k-here">One click here</span><span class="btn sm" data-act="' + x.id + '">' + esc(x.act || 'Fix') + '</span>';
+    if (x.fix === 'here') return '<span class="ov-fix k-here">One click here</span><span class="btn sm" data-act="' + x.id + '">' + esc(x.act || 'Fix') + '</span>' + (x.act2 ? '<span class="btn sm ghost" data-act2="' + x.id + '">' + esc(x.act2) + '</span>' : '');
     if (x.fix === 'open') return '<span class="ov-fix k-open">Open the item</span><a class="btn sm ghost" href="' + x.href + '">' + esc(x.act || 'Open') + ' →</a>';
     if (x.fix === 'elsewhere') return '<span class="ov-fix k-else">Change ' + (x.where === 'the host' ? 'on ' : 'in ') + esc(x.where) + '</span>' + (x.act ? '<span class="btn sm ghost" data-act="' + x.id + '">' + esc(x.act) + '</span>' : '');
     return '<span class="ov-fix k-info">For information</span>' + (x.act ? '<a class="btn sm ghost" href="' + x.href + '">' + esc(x.act) + ' →</a>' : '');
@@ -181,12 +181,13 @@
   }
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-more],[data-less],[data-chip],[data-act],#ov-all,.seg > span');
+    const t = e.target.closest('[data-more],[data-less],[data-chip],[data-act],[data-act2],#ov-all,.seg > span');
     if (!t) return;
+    if (t.dataset.act2) { const x = D.ROWS.find(r => r.id === t.dataset.act2); return toast(x.done2 || x.act2); }
     if (t.dataset.more) { open[t.dataset.more] = true; return render(); }
     if (t.dataset.less) { open[t.dataset.less] = false; return render(); }
     if (t.dataset.chip) { chip = t.dataset.chip; return render(); }
-    if (t.dataset.act) { const x = D.ROWS.find(r => r.id === t.dataset.act); return toast(x.fix === 'here' ? x.act + ' — queued; watch it on Activity' : x.act === 'Re-check' ? 'Re-checking…' : 'Opening ' + x.where + '’s step'); }
+    if (t.dataset.act) { const x = D.ROWS.find(r => r.id === t.dataset.act); return toast(x.done || (x.fix === 'here' ? x.act + ' — queued; watch it on Activity' : x.act === 'Re-check' ? 'Re-checking…' : 'Opening ' + x.where + '’s step')); }
     if (t.id === 'ov-all') { showAll = !showAll; open = {}; localStorage.setItem(LSALL, showAll ? '1' : '0'); return render(); }
     const sg = t.parentElement;
     if (sg.id === 'ov-state') { state = t.dataset.s; syncFence(); return render(); }

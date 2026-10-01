@@ -235,6 +235,7 @@
     }
     function playItem(item, season) {
       if (item.kind === 'series') {
+        if (seriesFinished(item)) { openPlayer(episodeCtx(item, 0, R.episodesFor(item, 0), 0)); return; }   // R343
         season = season || 0;
         const eps = R.episodesFor(item, season);
         const prog = seriesProgressFrom(eps.map(e => W.epState(item.title, season, e.n, e.pct)));
@@ -595,6 +596,33 @@
       if (idx < 0) idx = states.length - 1;
       return { watched, idx };
     }
+    /* R343 (direction B) — a series is finished when this viewer has watched every episode in the library.
+       Finished ⇒ Play goes to S01E01 (not the last episode), the page opens on Season 1, and the Episodes
+       header gains Reset progress. Shuffle sits after the season pills on every series of 9+ episodes. */
+    const SHUF_SVG = '<svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
+    const RESET_SVG = '<svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
+    function seriesEpCount(item) { let c = 0; for (let s = 0; s < R.seasonsFor(item); s++) c += R.episodesFor(item, s).length; return c; }
+    function seriesFinished(item) {
+      for (let s = 0; s < R.seasonsFor(item); s++) if (!R.episodesFor(item, s).every(e => W.epState(item.title, s, e.n, e.pct).watched)) return false;
+      return true;
+    }
+    // Q4: the whole series; Q6: each episode once, then the series ends as usual
+    function shuffleOrder(item) {
+      const o = []; for (let s = 0; s < R.seasonsFor(item); s++) R.episodesFor(item, s).forEach((_, i) => o.push({ s, i }));
+      for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; }
+      return o;
+    }
+    // Q5: a shuffled episode is ticked when it ends but never leaves a resume point (always starts at 0)
+    function shuffleCtx(item, order, k) {
+      const o = order[k], c = episodeCtx(item, o.s, R.episodesFor(item, o.s), o.i), nx = order[k + 1];
+      c.kicker = t('shuffle'); c.position = 0; c.resumeNote = null;
+      if (nx) {
+        const ne = R.episodesFor(item, nx.s)[nx.i];
+        c.nextMeta = { ep: t('shuffle_next') + ' · ' + epCode(nx.s + 1, ne.n), title: ne.title, desc: ne.desc, grad: ne.grad };
+        c.resolveNext = () => shuffleCtx(item, order, k + 1);
+      } else { c.nextMeta = null; c.resolveNext = null; }
+      return c;
+    }
     function castCircle(c) {
       const t = el('div', 'cast foc'); t._cast = c;
       t.innerHTML = `<div class="cast-av" style="background:${R.grad(c.n)}"><span class="cast-in">${R.initials(c.n)}</span><span class="cast-go">→</span></div>
@@ -739,7 +767,7 @@
       const seasonWatched = (s) => R.episodesFor(item, s).every(e => W.epState(item.title, s, e.n, e.pct).watched);
       if (isSeries && autoSeasonDone !== item.title) {
         autoSeasonDone = item.title;
-        let target = seasons - 1;
+        let target = 0;   // R343: a finished series opens on Season 1 (was the last season)
         for (let s = 0; s < seasons; s++) { if (!seasonWatched(s)) { target = s; break; } }
         view.season = target;
       }
@@ -751,13 +779,15 @@
       const rState = isSeries ? states[prog.idx] : null;
       const wItem = W.itemState(item.title);
       const nextAir = isSeries ? R.nextAiringFor(item) : null;
+      const seriesDone = isSeries && seriesFinished(item), totalEps = isSeries ? seriesEpCount(item) : 0;
       const d = el('div', 'detail');
 
       let playLabel, upNote = '';
       // R309 as built: a file of several episodes is named as the whole file — S01E01–E03 — on play and resume
       const fEnd = e => { if (!e || !e.file) return null; const g = eps.filter(x => x.file === e.file); return g[g.length - 1].n; };
       if (isSeries) {
-        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · ' + epCode(season + 1, 1, fEnd(eps[0]));
+        if (seriesDone) playLabel = t('play') + ' · ' + epCode(1, 1);
+        else if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · ' + epCode(season + 1, 1, fEnd(eps[0]));
         else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · ${epCode(season + 1, rEp.n, fEnd(rEp))}`; upNote = `Resume ${epCode(season + 1, rEp.n, fEnd(rEp))} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
         else { playLabel = t('play') + ` · ${epCode(season + 1, rEp.n, fEnd(rEp))}`; upNote = `Up next · ${epCode(season + 1, rEp.n, fEnd(rEp))} “${rEp.title}”`; }
       } else {
@@ -774,11 +804,11 @@
         <div class="dhero-body">
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
-          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span>${certHTML}${imdbHTML(item)}${wItem.watched && !seriesDone ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${genreRowHTML(item)}
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${(R.synFor && R.synFor(item)) || item.syn || t('fd_nodesc')}</div><span class="syn-toggle">▾ more</span></div>
-          ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
+          ${(upNote || nextAirHTML || seriesDone) ? `<div class="dnext-row">${seriesDone ? `<div class="dnext done"><span class="dnext-ck">✓</span>${t('all_watched', { n: totalEps })}</div>` : upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
           ${playNoteHTML(item)}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
@@ -792,9 +822,9 @@
       if (isSeries) {
         const pctWatched = Math.round(prog.watched / eps.length * 100);
         const sec = el('div', 'dsec');
-        sec.innerHTML = `<div class="dsec-head"><h2>Episodes</h2>
+        sec.innerHTML = `<div class="dsec-head${seriesDone ? ' focus-row' : ''}"><h2>Episodes</h2>
           <span class="dsec-sub">${t('watched_of', { w: prog.watched, n: eps.length })}</span>
-          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>`;
+          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span>${seriesDone ? `<span class="rs-chip foc" data-reset="1">${RESET_SVG}<span class="rs-l">${t('reset_progress')}</span></span>` : ''}</div>`;
         const pills = el('div', 'seasonpills focus-row');
         for (let i = 0; i < seasons; i++) {
           const seps = R.episodesFor(item, i);
@@ -807,6 +837,12 @@
                     : part ? `<span class="spill-frac" aria-label="${w} of ${seps.length} watched">${w}/${seps.length}</span>` : '');
           if (part) { const pr = el('span', 'spill-prog'); pr.style.width = Math.round(w / seps.length * 100) + '%'; p.appendChild(pr); }
           pills.appendChild(p);
+        }
+        if (totalEps >= 9) {   // R343 Q7 — every series of 9+ episodes (owner)
+          pills.appendChild(el('span', 'spill-sep'));
+          const sh = el('div', 'spill foc spill-sh'); sh.dataset.shuffle = '1';
+          sh.innerHTML = SHUF_SVG + '<span>' + t('shuffle') + '</span>';
+          pills.appendChild(sh);
         }
         sec.appendChild(pills);
         d.appendChild(sec);
@@ -1639,6 +1675,20 @@
       if (f._epdone) { toggleEpisodeWatched(view.item, view.season || 0, f._epn, f._epidx); return; }
       if (f.dataset.trailer) { openTrailer(view.item); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
+      if (f.dataset.shuffle) { openPlayer(shuffleCtx(view.item, shuffleOrder(view.item), 0)); return; }
+      if (f.dataset.reset) {   // R343 Q3 (B): two presses — the first arms it and says what happens, for 4 s
+        const it = view.item, lbl = f.querySelector('.rs-l');
+        if (!f.classList.contains('armed')) {
+          f.classList.add('armed'); lbl.textContent = t('reset_confirm', { n: seriesEpCount(it) });
+          clearTimeout(f._rt); f._rt = setTimeout(() => { f.classList.remove('armed'); lbl.textContent = t('reset_progress'); }, 4000);
+          return;
+        }
+        clearTimeout(f._rt);
+        for (let s = 0; s < R.seasonsFor(it); s++) R.episodesFor(it, s).forEach(e => W.setEpWatched(it.title, s, e.n, false));
+        W.setItem(it.title, { watched: false, pct: 0 });
+        view.season = 0; flash(t('reset_done')); renderDetail(it); refocusSel('[data-play]');
+        return;
+      }
       if (f._season != null) {
         if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => { const sp = rows().findIndex(r => r.classList.contains('seasonpills')); focusRC(sp > 0 ? sp : 2, f._season); }, 20); }
         return;

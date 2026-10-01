@@ -171,7 +171,7 @@
     { id: 'g-scifi', title: 'Sci-Fi & Fantasy', kind: 'poster', items: row('', 'scifi', 'film').items },
     { id: 'g-comedy', title: 'Comedy', kind: 'poster', items: row('', 'comedy', 'series').items },
     { id: 'g-docs', title: 'Documentary', kind: 'poster', items: row('', 'docs', 'film').items },
-    { id: 'g-family', title: 'Family', kind: 'poster', items: row('', 'family', 'film').items },
+    { id: 'g-family', title: 'Family', kind: 'poster', items: [ { ...T('Lundin og vinir', 2021, 'Animation · Kids', 'G', 'series'), syn: 'Lundin the puffin and her friends on the bird cliff learn something new with every tide — a gentle animated series for the smallest viewers.' }, ...row('', 'family', 'film').items ] },
   ];
 
   // the "merged newly added" alternative (config toggle in Jellystructure)
@@ -198,7 +198,14 @@
     jbFile(19, [['Frankenbravo', '8m', 'A mad scientist decides Johnny’s physique is just the ticket.', 0], ['Mama’s New Boyfriend', '8m', 'Johnny vets his mother’s suspiciously slick new suitor.', 0], ['Panic in Jerky Town', '7m', 'A beef-jerky shortage drives the whole town to the brink.', 0]]),
     jbFile(22, [['Karma Krisis', '8m', 'Cosmic payback comes due for a lifetime of Johnny’s antics.', 0], ['Bravo Dooby-Doo II', '8m', 'The talking dog returns with a mystery twice as spooky.', 0], ['The Sensitive Male', '7m', 'Johnny discovers his feelings, to everyone’s alarm.', 0]])
   );
+  // R343 stand-in: a fictional kids' series, 3 × 13 × 11 min, already watched through (the rewatch case).
+  const LUNDIN = [
+    ['Fyrsta flogið', 'Holan í líðini', 'Stormurin', 'Sildin', 'Tokan', 'Fjaran', 'Bylgjan', 'Regnbogin', 'Myrkrið', 'Vinurin', 'Eggið', 'Ferðin', 'Heim aftur'],
+    ['Nýggja árið', 'Lomvigin', 'Bátsferðin', 'Vindurin', 'Skýggini', 'Hellisgjógvin', 'Mánin', 'Snjórin', 'Fiskurin', 'Ljósið', 'Klettarnir', 'Sólin', 'Várið'],
+    ['Stóra ferðin', 'Nýggir grannar', 'Toskurin', 'Ljósvitin', 'Hvalurin', 'Sangurin', 'Bjargið', 'Ólavsøka', 'Kavarokið', 'Gløggið', 'Skipið', 'Leikurin', 'Seinasta kvøldið']
+  ].map(names => names.map((t, i) => ep(i + 1, t, '11m', 'Lundin and her friends learn something new on the bird cliff.', 100)));
   const SERIES_EP = {
+    'Lundin og vinir': LUNDIN,
     'Johnny Bravo': [ JB_S1 ],
     'Nordvest': [
       [ // Season 1

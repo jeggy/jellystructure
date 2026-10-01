@@ -9,6 +9,8 @@
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
     note: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
     disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
+    plist: '<path d="M4 6h11M4 11h11M4 16h6"/><circle cx="16.5" cy="17.5" r="2.5"/><path d="M19 17.5V9l2-1"/>',
     person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
     book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M19 19v2H6"/>',
     phones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/>',
@@ -48,8 +50,8 @@
   const eq = '<span class="eq"><i style="height:6px"></i><i style="height:11px"></i><i style="height:8px"></i></span>';
   const NAV = {
     films: [[null, [['home', 'Home'], ['compass', 'Discover'], ['bookmark', 'My List']]], ['Library', [['film', 'Films', '412'], ['tv', 'Series', '96']]]],
-    music: [[null, [['phones', 'Listen'], ['wave', 'Playing'], ['queue', 'Queue']]], ['Library', [['person', 'Artists', '23'], ['disc', 'Albums', '30'], ['note', 'Songs', '60'], ['book', 'Audiobooks', '1']]]],
-    both: [['Watch', [['home', 'Home'], ['compass', 'Discover'], ['film', 'Films'], ['tv', 'Series'], ['bookmark', 'My List']]], ['Listen', [['phones', 'Listen'], ['person', 'Artists'], ['disc', 'Albums'], ['note', 'Songs'], ['book', 'Audiobooks']]]],
+    music: [[null, [['phones', 'Listen'], ['wave', 'Playing'], ['queue', 'Queue']]], ['Library', [['person', 'Artists', '23'], ['disc', 'Albums', '30'], ['note', 'Songs', '60'], ['tag', 'Genres', '18'], ['plist', 'Playlists', '2'], ['book', 'Audiobooks', '1']]]],
+    both: [['Watch', [['home', 'Home'], ['compass', 'Discover'], ['film', 'Films'], ['tv', 'Series'], ['bookmark', 'My List']]], ['Listen', [['phones', 'Listen'], ['person', 'Artists'], ['disc', 'Albums'], ['note', 'Songs'], ['tag', 'Genres'], ['plist', 'Playlists'], ['book', 'Audiobooks']]]],
   };
   function nav(set, active, playing) {
     return '<div class="nav">' + NAV[set].map(([h, items]) => (h ? `<h6>${h}</h6>` : '') + items.map(([i, l, n]) =>

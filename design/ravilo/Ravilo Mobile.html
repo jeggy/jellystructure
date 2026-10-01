@@ -354,6 +354,17 @@
   .aboutp .k{ font-size:10px; font-weight:600; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink-dim); }
   .aboutp .v{ font-size:14px; color:var(--ink); margin-top:3px; font-weight:500; }
   .seclbl{ font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; margin:22px 0 11px; }
+  /* R343 — Shuffle on the Episodes header, Reset progress under it once the series is finished */
+  .seclbl.mrow{ display:flex; align-items:center; gap:8px; }
+  .mshuf{ margin-left:auto; height:36px; padding:0 14px; border-radius:18px; display:inline-flex; align-items:center; gap:6px; font:600 13px 'Sora',sans-serif; background:rgba(var(--fg),.12); color:var(--ink); border:none; cursor:pointer; }
+  .mshuf svg,.mreset svg{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2.3; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .mdone{ display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; margin:-6px 0 8px; font-size:13px; color:var(--ink-soft); }
+  .mdone .l{ display:inline-flex; align-items:center; gap:7px; }
+  .mdone .ck,.methumb .mwk{ width:18px; height:18px; border-radius:50%; background:#2dd49a; color:#06281c; font-size:10px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+  .methumb .mwk{ position:absolute; right:5px; bottom:5px; }
+  .mreset{ display:inline-flex; align-items:center; gap:6px; background:none; border:none; padding:0 2px; min-height:44px; font:600 13px 'Sora',sans-serif; color:var(--accent-2); cursor:pointer; text-align:right; }
+  [data-skin="noir"] .mreset{ color:var(--ink); }
+  .mreset.armed{ color:var(--ink); }
 
   /* Multi-episode files — combined triptych card (Option B) */
   .melist{ display:flex; flex-direction:column; gap:14px; }
@@ -1090,13 +1101,26 @@
   /* ---- detail ---- */
   function mPad(n){ return String(n).padStart(2,'0'); }
   function mEpUnits(eps){ const u=[]; let cur=null; eps.forEach(e=>{ if(e.file){ if(cur&&cur.file===e.file){ cur.eps.push(e); } else { cur={file:e.file,eps:[e]}; u.push(cur); } } else { u.push({single:e}); cur=null; } }); return u; }
+  /* R343 (direction B) — the same rules as the TV: finished = every episode watched by this viewer;
+     Shuffle on the Episodes header of any series with 9+ episodes; Reset progress (two taps) once finished. */
+  const MW = R.watched;
+  const M_SHUF = '<svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
+  const M_RESET = '<svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
+  function mW(it, s, e){ return !!(MW && MW.epState(it.title, s, e.n, e.pct).watched); }
+  function mSeasons(it){ return R.seasonsFor ? R.seasonsFor(it) : 1; }
+  function mEpCount(it){ let c = 0; for(let s = 0; s < mSeasons(it); s++) c += R.episodesFor(it, s).length; return c; }
+  function mFinished(it){
+    if(it.kind !== 'series' || !R.episodesFor || !MW) return false;
+    for(let s = 0; s < mSeasons(it); s++) if(!R.episodesFor(it, s).every(e => mW(it, s, e))) return false;
+    return true;
+  }
   function episodesHTML(it){
     if(it.kind!=='series' || !R.episodesFor) return '';
     const eps = R.episodesFor(it, 0);
     const units = mEpUnits(eps);
     const cards = units.map(u=>{
       if(u.single){ const e=u.single; return '<div class="merow-single">'
-        + '<div class="methumb" style="background:'+e.grad+'"><span class="mn">'+mPad(e.n)+'</span></div>'
+        + '<div class="methumb" style="background:'+e.grad+'"><span class="mn">'+mPad(e.n)+'</span>'+(mW(it,0,e)?'<span class="mwk">✓</span>':'')+'</div>'
         + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div>'+epSlowHTML(it, e)+'</div></div>'; }
       const eps3=u.eps.slice(0,3);
       const tiles=eps3.map((e,i)=>'<div class="tp tp'+(i+1)+'" style="background:'+e.grad+'"></div>').join('');
@@ -1112,7 +1136,10 @@
         + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div>'
         + epSlowHTML(it, u.eps[0])+'</div></div>';
     }).join('');
-    return '<div class="seclbl">Episodes <span style="font-weight:400;color:var(--ink-dim);font-family:Sora,sans-serif;font-size:12px;">Season 1 \u00b7 '+units.length+' files</span></div>'
+    const tot = mEpCount(it), done = mFinished(it);
+    return '<div class="seclbl mrow">Episodes <span style="font-weight:400;color:var(--ink-dim);font-family:Sora,sans-serif;font-size:12px;">Season 1 \u00b7 '+units.length+' files</span>'
+      + (tot >= 9 ? '<button class="mshuf" data-mshuf="'+esc(it.title)+'">'+M_SHUF+'Shuffle</button>' : '') + '</div>'
+      + (done ? '<div class="mdone"><span class="l"><span class="ck">\u2713</span>All '+tot+' episodes watched</span><button class="mreset" data-mreset="'+esc(it.title)+'">'+M_RESET+'<span>Reset progress</span></button></div>' : '')
       + '<div class="melist">'+cards+'</div>';
   }
   function findItem(title){
@@ -1239,7 +1266,7 @@
       + genresHTML(it)
       + flagsHTML(it)
       + slowHTML(it)
-      + '<div class="dbtns"><button class="btn play" data-mplay="'+esc(it.title)+'">'+(CAST ? '<span class="rc-ic" style="width:18px;height:15px"><span class="bx"></span><span class="fl"></span></span> Play on '+esc(CAST.device) : '▶ '+esc(window.RaviloWeb ? RaviloWeb.playLabel(it) : 'Play'))+'</button><button class="btn ghost">＋ My List</button></div>'
+      + '<div class="dbtns"><button class="btn play" data-mplay="'+esc(it.title)+'">'+(CAST ? '<span class="rc-ic" style="width:18px;height:15px"><span class="bx"></span><span class="fl"></span></span> Play on '+esc(CAST.device) : '▶ '+esc(mFinished(it) ? 'Play · S01E01' : (window.RaviloWeb ? RaviloWeb.playLabel(it) : 'Play')))+'</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
       + (it.kind==='series' ? episodesHTML(it) : '')
       + aboutHTML(it)
@@ -1251,6 +1278,19 @@
     paintMiniOffset();
   }
   function closeDetail(){ detail.classList.remove('on'); paintMiniOffset(); }
+  /* R343 Q3 — two taps: the first says what will happen, for 4 s; the second clears this viewer's ticks */
+  function resetTap(b){
+    const it = findItem(b.dataset.mreset), lbl = b.querySelector('span');
+    if(!b.classList.contains('armed')){
+      b.classList.add('armed'); lbl.textContent = 'Tap again · all '+mEpCount(it)+' back to unwatched';
+      clearTimeout(b._t); b._t = setTimeout(()=>{ b.classList.remove('armed'); lbl.textContent = 'Reset progress'; }, 4000);
+      return;
+    }
+    clearTimeout(b._t);
+    for(let s = 0; s < mSeasons(it); s++) R.episodesFor(it, s).forEach(e => MW.setEpWatched(it.title, s, e.n, false));
+    MW.setItem(it.title, { watched:false, pct:0 });
+    const y = dscroll.scrollTop; openDetail(it.title); dscroll.scrollTop = y;
+  }
 
   /* ---- events ---- */
   /* Re-tapping the page you are already on always scrolls that page back to the top — the platform
@@ -1308,6 +1348,8 @@
   });
   dscroll.addEventListener('click', e=>{
     if(e.target.closest('#dback')){ closeDetail(); return; }
+    const shf = e.target.closest('[data-mshuf]'); if(shf){ const tt = shf.dataset.mshuf; closeDetail(); openPlayer(tt, { shuffle:true }); return; }
+    const rst = e.target.closest('[data-mreset]'); if(rst){ resetTap(rst); return; }
     const el = e.target.closest('[data-title]'); if(el){ openDetail(el.dataset.title); }
   });
   document.getElementById('searchBtn') && document.getElementById('searchBtn').addEventListener('click', ()=>{ tab='search'; render(); focusSearch(); });
@@ -1638,7 +1680,7 @@
   }
 
   /* ---- open / close ---- */
-  function openPlayer(title){
+  function openPlayer(title, opts){
     if(window.RaviloMusic) RaviloMusic.onVideoStart();   // starting a video stops the music; switching mode does not
     const it = findItem(title) || {};
     S.title = it.title || title; S.kind = it.kind || 'movie';
@@ -1657,6 +1699,16 @@
     $('mpBufTitle').textContent = S.kind === 'series' ? 'Threshold Night' : S.title;
     $('mpBufSub').textContent = S.kind === 'series' ? 'Season 2 · Episode ' + S.ep : (it.year ? String(it.year) : '');
     $('mpNupTitle').textContent = 'Bitter Honey';
+    const nupK = document.querySelector('#mpNup .k'); if(nupK) nupK.textContent = 'Next episode';
+    if(opts && opts.shuffle && S.kind === 'series' && R.episodesFor){   // R343 — whole series, random order
+      const pool = []; for(let s = 0; s < mSeasons(it); s++) R.episodesFor(it, s).forEach(e => pool.push({ s, e }));
+      for(let i = pool.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+      const a = pool[0], b = pool[1], cd = (s, n) => 'S' + String(s + 1).padStart(2, '0') + 'E' + String(n).padStart(2, '0');
+      $('mpKick').textContent = 'Shuffle · ' + cd(a.s, a.e.n); $('mpTitle').textContent = a.e.title;
+      $('mpBufTitle').textContent = a.e.title; $('mpBufSub').textContent = 'Shuffle · ' + cd(a.s, a.e.n);
+      if(b){ $('mpNupTitle').textContent = cd(b.s, b.e.n) + ' · ' + b.e.title; if(nupK) nupK.textContent = 'Next · shuffled'; }
+      S.pos = 0; S.dur = (parseInt(a.e.dur) || 11) * 60;
+    }
     mp.classList.add('on'); mp.classList.remove('hid', 'lock');
     closeSheet();
     // R218: 400ms debounce, then direction B's cold start. An instant start shows nothing.
@@ -2120,6 +2172,8 @@
 })();
 </script>
 <script src="../app/music-data.js"></script>
+<script src="../app/versions.js"></script>
+<script src="mobile/ravilo-versions.js"></script>
 <script src="mobile/ravilo-music.js"></script>
 <script src="mobile/ravilo-music-player.js"></script>
 <script src="../app/audiobook-data.js"></script>

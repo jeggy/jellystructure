@@ -1,7 +1,7 @@
 # Design brief — a song's version: Live, Remix, Instrumental, Edit …
 
 **Date:** 2026-10-01 · **For:** the design project (Cosmos) that owns `design/app/` (`album.html`, `library.html`,
-`metadata.html`, `index.html`) · **Status:** brief; the owner answered §G on 2026-10-01; round-1 directions wanted on the badge (Q1) · **Source:** the household's
+`metadata.html`, `index.html`) · **Status:** brief; the owner answered §G on 2026-10-01; **Q1 picked: A · words (owner, 2026-10-01) — spec'd as admin 292 + Ravilo R344** · **Source:** the household's
 music library on 2026-10-01 (read-only), MusicBrainz, and `research-reports/music-lyrics-that-do-not-belong-2026-10-01.md`.
 
 > Owner, 2026-10-01: *"I would like to have support for adding types of music, like Live, Remix, Instrumental …
@@ -151,7 +151,7 @@ change applies there too* · *Lyrics on an instrumental* · *Remove the lyrics*.
 | # | Question | Answer |
 |---|---|---|
 | Q0 | A piece that was never sung (an intro, a prelude) | **no version** (owner) — it is not Instrumental; MusicBrainz agrees |
-| Q1 | The badge: a text chip per type, a coloured dot, one combined chip, …? | **the designer's** — directions wanted |
+| Q1 | The badge: a text chip per type, a coloured dot, one combined chip, …? | **A · words** (owner, 2026-10-01) — one chip per type with its name; also in Ravilo (R344) |
 | Q2 | Where the editor opens | **the song's side panel** (owner) |
 | Q3 | A fixed list, or can the owner add types? | **fixed for now** (owner); colour and meaning editable |
 | Q4 | Is a Session also Live? | **yes** (owner) — ticking Session ticks Live |

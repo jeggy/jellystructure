@@ -62,7 +62,7 @@
   const songsN = n => n === 1 ? t('music.songs_one') : t('music.songs_n', { n });
   const albumsN = n => n === 1 ? t('music.albums_one') : t('music.albums_n', { n });
   const empty = () => MS.size === 'empty';
-  const RECENT = ['salt-on-the-window', 'glass-birds', 'signal-lost', 'brim', 'stormur', 'undertow', 'kite-weather', 'north-atlantic-songbook', 'last-stop-everybody', 'low-tide-radio'];
+  const RECENT = ['live-at-the-harbour', 'salt-on-the-window', 'glass-birds', 'signal-lost', 'brim', 'stormur', 'undertow', 'kite-weather', 'north-atlantic-songbook', 'last-stop-everybody', 'low-tide-radio'];
   const recentAlbums = () => RECENT.map(M.album);
   const recentPlayed = () => M.tracks.filter(x => x.last != null).sort((a, b) => a.last - b.last).slice(0, 5);
   const albumArtists = () => M.artists.filter(r => M.albumsOf(r.id).length).sort((a, b) => (b.image - a.image) || M.albumsOf(b.id).length - M.albumsOf(a.id).length);
@@ -70,10 +70,12 @@
 
   function acard(a) { return '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + esc(artistOf(a).name) + '</div></div>'; }
   function arc(r, sub) { return '<div class="mu-arc" data-mu="artist" data-id="' + r.id + '"><div class="c" style="' + artImg(r) + '">' + (r.image ? '' : esc(M.initials(r.name))) + '</div><div class="t">' + esc(r.name) + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>'; }
+  // owner 2026-10-01: a song's version as words (direction A) — ravilo-versions.js; absent ⇒ the title alone
+  const vtitle = x => window.RaviloVersions ? RaviloVersions.title(x, esc) : esc(x.title);
   function songRow(x, ctx, i) {
     const a = M.album(x.albumId), cur = MS.P && MS.P.cur() === x.id;
     return '<div class="mu-song' + (cur ? ' on' : '') + '" data-mu="song" data-id="' + x.id + '" data-ctx="' + ctx + '" data-i="' + i + '">' + cover(a, 'sm')
-      + '<div class="b"><div class="t">' + esc(x.title) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + ' — ' + esc(a.title) + '</div></div>'
+      + '<div class="b"><div class="t">' + vtitle(x) + '</div><div class="s">' + esc(M.artistNames(x.artistIds)) + ' — ' + esc(a.title) + '</div></div>'
       + '<span class="ln">' + M.fmtLen(x.len) + '</span><button class="mu-more" data-mu="menu" data-id="' + x.id + '" aria-label="More">' + G.more + '</button></div>';
   }
   MS.songRow = songRow;
@@ -206,7 +208,7 @@
       + '<div class="mu-dm"><span>' + a.year + '</span><span>·</span><span>' + songsN(ts.length) + '</span><span>·</span><span>' + M.fmtTotal(len) + '</span>' + (a.type !== 'album' ? '<span class="mu-badge">' + t('music.type.' + a.type) + '</span>' : '') + '</div>'
       + '<div class="mu-dacts"><button class="pri" data-mu="playctx" data-ctx="al:' + a.id + '">' + G.play + t('music.play') + '</button><button data-mu="shufctx" data-ctx="al:' + a.id + '">' + G.shuffle + t('music.shuffle') + '</button></div>'
       + '<div class="mu-trs">' + ts.map((x, i) => '<div class="mu-tr' + (cur === x.id ? ' on' : '') + '" data-mu="song" data-id="' + x.id + '" data-ctx="al:' + a.id + '" data-i="' + i + '"><span class="n">' + (cur === x.id ? '<span class="mu-bars' + (pl ? '' : ' paused') + '"><i></i><i></i><i></i></span>' : (i + 1)) + '</span>'
-        + '<span class="t">' + esc(x.title) + (x.feat.length ? ' <small>feat. ' + esc(M.artistNames(x.feat)) + '</small>' : '') + (x.artistIds[0] !== a.artistId ? ' <small>' + esc(M.artistNames(x.artistIds)) + '</small>' : '') + '</span>'
+        + '<span class="t"><span class="rv-tt">' + esc(x.title) + (x.feat.length ? ' <small>feat. ' + esc(M.artistNames(x.feat)) + '</small>' : '') + (x.artistIds[0] !== a.artistId ? ' <small>' + esc(M.artistNames(x.artistIds)) + '</small>' : '') + '</span>' + (window.RaviloVersions ? RaviloVersions.chips(x) : '') + '</span>'
         + '<span class="ln">' + (x.lyrics ? '<span class="ly" title="' + t('music.lyrics') + '">' + G.lyr + '</span>' : '') + M.fmtLen(x.len) + '</span><button class="mu-more" data-mu="menu" data-id="' + x.id + '">' + G.more + '</button></div>').join('') + '</div>'
       + (more.length ? '<div class="mu-sec">' + esc(t('music.more_from', { artist: r.name })) + '</div><div class="mu-track">' + more.map(acard).join('') + '</div>' : '')
       + '</div></div>';
