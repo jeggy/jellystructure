@@ -517,3 +517,25 @@ stop report writes that back over the clear. Fix: the stop that ends a cleared S
 sink sets the episode to unwatched at the stop's position in one write (`JellyfinClient.setUserData` →
 `POST /UserItems/{id}/UserData`, checked live on 12.1). Skipped when the stop is itself finished (R347's rule), so an
 episode watched to the end during a Start over is still ticked. `PlaybackWriterTest` covers the flag.
+
+### Amendment (2026-10-02) — the page right after a Start over stop
+
+**Seen on the Mac (backend `v1.48-34-g0a5a7e59`):** right after the stop of a Start over, the series page showed
+*1 of 20 · Resume · S01E02* for about 30 s, then corrected itself to *0 of 20 · Resume · S01E01*.
+
+**Why.** Between Jellyfin's stop (which writes the stale *watched* flag back, see above) and our write-back, the
+server's `PlaystateCache` and its Continue list can be refreshed from Jellyfin's state of that moment (a background
+cycle, or the stop's own refresh racing a slow write-back), and the page reads them the moment the player closes. The
+write-back itself fixed Jellyfin, but nothing put *its* result into the caches directly: the episode's row waited for
+a refresh that might time out (5 s budget, phase 230) and the page, once drawn, never read again — the series page
+did not listen to `home_changed`.
+
+**FR-R343-11 — The write-back refreshes what `PUT /tv/played` refreshes.** Once the unwatched write-back has landed,
+the server (1) writes the episode's new state (unwatched, at the stop's position) straight into `PlaystateCache`, then
+(2) runs `onSeriesCleared` — the same invalidation the clear and `PUT /tv/played` run: the series' playstate re-read,
+the Continue list rebuilt, `playstate_changed` and `home_changed` pushed. It replaces the stop's ordinary
+`onStopLanded` refresh for that write, so the work is not done twice. The stop request itself also writes that state
+into `PlaystateCache` before it is queued, so a page reading at once sees the episode unwatched.
+
+**FR-R343-12 — The page follows the push.** An open series page (or one under the remote) re-reads its playstate on
+`home_changed` (R351 FR-R351-7), so whatever the server corrects shows without leaving the page.
