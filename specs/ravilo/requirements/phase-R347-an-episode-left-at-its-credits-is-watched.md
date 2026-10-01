@@ -61,3 +61,39 @@ credits.
 3. The same episode played on a TV (a Ravilo screen or a Chromecast) and advanced there: it is ticked.
 4. An episode with no credits marker, stopped at 86 %: it is not ticked, and it keeps its resume point, as today.
 5. A film stopped past its credits marker is ticked.
+
+## Build notes (2026-10-01)
+
+Built 2026-10-01 (on `main` `f5d2b22b`), with R346 and R343 in the same stream. Not deployed, not device-tested.
+
+**What was built**
+
+- **FR-R347-1** — `shared/.../tv/PlaybackFinish.kt`: `playbackFinished(positionMs, durationMs, creditsStartMs)`
+  (≥ 90 %, or ≥ a trusted credits marker) and `trustedCreditsStartMs(...)`, the player's own trust rule moved out
+  of `PlayerScreen` (`CREDITS_MARKER_MIN_FRACTION` now lives in `:shared`). The player's next-up trigger uses the
+  same `trustedCreditsStartMs`, so the card and the tick can never disagree about where the credits are.
+- **FR-R347-3** — `PlayerScreen.advanceNext` and `skipCredits` tick through `playbackFinished` (then `WatchedBus`,
+  as before). `PlayerStore.stopSession` uses it too: the store now takes the episode's `creditsStartMs`
+  (`RaviloApp` passes `dest.segments.creditsStartMs`).
+- **FR-R347-2** — `PlaybackService.stopPlayback` judges every stop with `resolveStop` (`tv/SeriesReplay.kt`). The
+  item's duration and credits marker come from a per-session plan recorded at `startPlayback` (catalog file length,
+  else Jellyfin's `RunTimeTicks`; the marker through `DetailService.segmentsFor`, wired in `Main.kt` as
+  `playbackService.segmentsFor`), or, for a session this process never saw start, from the same lookup at stop.
+  The watchdog's forced stop goes through the same path.
+
+**Deviation, and why.** A stop that is finished at its credits but below 90 % is **reported to Jellyfin at the end
+of the file** (instead of at the playhead), and `mark` runs as well (on the service's scope, never awaited). The
+stop is queued and retried by the 219 writer, so a separate `mark` could land *before* it — and a stop at 86 %
+landing after a mark leaves Jellyfin with `Played = true` and an 86 % resume point (R185's bug class). Reported at
+the end, Jellyfin's own rule ticks it and zeroes the position in the stop itself, in order, on every client and
+receiver; `mark` then makes the tick explicit as the FR asks. Either order ends with the item played at 0.
+Multi-episode files take the LAST part's credits marker, as the player's episode entry does.
+
+**Verified:** `:shared` common tests (`EpisodeCodeAndFinishTest`: the 9:30-of-11:00 case, no marker keeps 90 %,
+an untrusted marker is ignored); backend `SeriesReplayTest` (`resolveStop`: credits ⇒ reported at the end and
+ticked; 86 % with no marker ⇒ unchanged; ≥ 90 % ⇒ the playhead). `compileKotlinLinuxX64`,
+`:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-android:assembleRelease`, `scripts/check-player-dex.sh` (238
+registers, limit 250). `scripts/verify-release-apk-on-art.sh` could not run here (no KVM for the emulator); CI runs it.
+
+**Needs a device:** acceptance 1–5 on the Pixel 9 / a TV with a short episode that has a detected credits marker,
+and on a Chromecast advance (acceptance 3). Nothing changes for an item without a trusted marker.

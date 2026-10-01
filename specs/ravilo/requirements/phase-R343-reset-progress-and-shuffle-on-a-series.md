@@ -437,3 +437,74 @@ are specced separately as R346 and R347.
    falling into these D-pad focus issues"*: no requester on a lazy item, one scroll-then-focus helper, and a Compose UI
    focus-path test under Robolectric in CI. → FR-R343-9, items 8 and 13.
 5. **The 9+ threshold and everything else stay as reviewed.**
+
+## Build notes (2026-10-01)
+
+Built 2026-10-01 (on `main` `f5d2b22b`), together with R346 (the episodes that count) and R347 (finished at the
+credits), which it depends on. Not deployed, not device-tested. No migration.
+
+**Server**
+- `SeriesDetail.start_over` (always true now) and `shuffle` (9+ counted episodes: rows with a Jellyfin item in
+  seasons ≥ 1) — FR-R343-10. `PlaybackStartRequest.start_over` / `shuffle`, `RemotePlayRequest.shuffle_queue` /
+  `start_over`, `CastLoadData.episodes_shuffled` / `start_over`, `PlayItemEnvelope.shuffled` — all additive with
+  defaults; no enum value added, nothing removed.
+- `PlaybackService` keeps a per-session `SessionPlan` (`tv/SeriesReplay.kt`) from `startPlayback` to the stop:
+  the series to clear (Start over), the file length and credits marker, the shuffle flag and the position the
+  episode had before (0 for a Played one). A Start over or a shuffled entry starts at 0:00 on the server too.
+- **Start over (FR-R343-4):** the first progress report (or the stop) at ≥ 5 % of the file (60 s with no length)
+  latches once per session and, on the service's scope, runs `setPlayed(series, false)` (the `PUT /tv/played`
+  fan-out, every season), writes the playing episode's live position back at once, then runs
+  `invalidatePlaystate(device, seriesId)` (`onSeriesCleared`, wired in `Main.kt`: Continue list rebuilt,
+  `playstate_changed` + `home_changed`). The latch and the job are registered under one lock; a stop waits for a
+  running clear (15 s, bounded) before it queues its own write. Below 5 % nothing happens.
+- **Shuffle (FR-R343-5, dev review 9):** a shuffled stop that is not finished (R347's rule) reports the prior
+  position instead of the playhead; a finished one reports the real position (or the end, at the credits).
+- **Ravilo screen (FR-R343-8):** `ScreenShuffles` (in memory, per screen): `/remote/play` with a queue starts a
+  context, a play for the queue's head advances it, any other id ends it, the watchdog's reap clears it. The
+  push's `next` is the queue's head (resolved like `nextEpisodeAfter`) with `shuffled: true`; the screen's own start
+  for the current id counts as shuffled / Start over. The screen app is unchanged; its card keeps saying *UP NEXT*
+  until its next build (Tizen work is paused).
+
+**App**
+- **Layout and focus (FR-R343-9):** hero → the Episodes header → the season pills (Shuffle last after a divider) →
+  the rail. Header and pills are one lazy item (`seasons`, item 1); with no pill row the header stays in the rail's
+  item. `SeasonPicker` is a plain `Row` with `horizontalScroll` (every pill composed; the R201 `scrollToItem`
+  workaround is gone). Play and the selected pill are focused only through one helper (`focusInList`: await the
+  scroll, then `requestFocusRetrying`); the auto-season one-shot sets the season only. A one-season series with
+  Shuffle draws one *Season 1* pill (TV family); the phone's Shuffle is a chip at the right of the header.
+- **Finished (FR-R343-1/2):** opens on Season 1; the accent line reads *✓ All {n} episodes watched* (drawn ✓) and
+  the *{w} of {n}* line is hidden (space kept); the button reads *Start over · S01E01* and plays it with
+  `start_over` (cast too); *Play · S01E01* when the server can't clear. Picking a card is unchanged.
+- **Shuffle (FR-R343-5, dev review 14):** `buildShufflePlan` — every counted episode once, a multi-episode file one
+  entry, random order per press; each entry is its own season's context with the kicker *Shuffle · S02E07* and its
+  next = the next entry (none after the last). `Dest.Player` carries the plan; the plan's next continues it, any
+  other id (a rail pick) plays on in that season's order. *UP NEXT · SHUFFLED* via a CompositionLocal
+  (`LocalShuffledNextUp`), not a `PlayerScreen` parameter. `ResumeRecord` gains `startOver` / `shuffle`.
+- **Cast (FR-R343-8):** from the page, a shuffle goes to a Chromecast as its episode list (`episodes_shuffled`) or to a
+  screen as `shuffle_queue`; the in-player hand-off sends the rest of the plan and `start_over`. The Chromecast
+  receiver sends `shuffle` on every start and `start_over` on the sender's first load only, from 0:00 or the
+  handed-over position, and its card reads *UP NEXT · SHUFFLED*.
+- **Strings (FR-R343-7):** `detail.start_over`, `detail.shuffle`, `detail.all_watched`, `player.up_next_shuffled`
+  × en/da/fo (Faroese *Allir {n} partar sæddir*, `partar` per R288; lexicon regenerated).
+
+**Deviations:** none from the decided FRs. The Episodes header's watched count on the TV moved into the `seasons`
+item with the header (it is the header's own line). The page's Play label now always names its episode (R346).
+
+**Verified:** `SeriesDetailFocusTest` — the repo's first Compose UI test, Robolectric (SDK 34, `w960dp-h540dp`), in
+CI's existing `:ravilo-ui:testDebugUnitTest` — 6 walks pass: R138/R232 (overlay one frame late; Down → selected pill
+first press → Right ×3 → Shuffle → Right stays → Down into the rail → Up → the pill row → Up → Play), R201 (11
+seasons, pill 11 first press), R296 (no pill row; rail and back; toggle → its card), finished (Start over, *All 39
+episodes watched*), an older server (*Play · S01E01*, no Shuffle), 1 × 13 (one pill + Shuffle). Two mutations were
+checked to fail it: Down from Play handed to native search (4 walks fail), and the helper requesting focus once
+without awaiting the scroll (5 walks fail). The R232 race itself depends on device timing; the test pins the
+sequence, not the race.
+Also `SeriesEpisodesTest` (the plan: every counted episode once, a 3-part file one entry, nexts chained, the last
+has none), `SeriesReplayTest` (stop decisions, the 5 % threshold, `ScreenShuffles`), `SeriesDetailMultiEpisodeFileTest`
+(the 9+ flag counts rows, not specials or unplayable rows). Compiles: backend, Android release, desktop, web,
+receiver; `check-player-dex.sh` 238/250. ART verification on an emulator could not run here (no KVM); CI runs it.
+Test-only dependencies added to the catalog: `androidx.compose.ui:ui-test-junit4` / `ui-test-manifest` 1.9.4 (the
+androidx Compose UI that CMP 1.9.3 resolves to on Android) and Robolectric 4.14.1 (as `:ravilo-player`).
+
+**Needs a device / deploy:** the server half (the clear, the shuffled stop, the screen queue) needs a deployed
+backend; verify the clear on a **test account** first (dev review 3: from Jellyfin's source, not a live write).
+Acceptance 1–8 on the Pixel 9, a Ravilo TV and a Chromecast; the D-pad walk of acceptance 8 on a TV.

@@ -78,3 +78,37 @@ R343's own changes.
 4. The Specials pill is the last pill, after the last season.
 5. A special stopped half-way still offers *Resume* on the page.
 6. Every code on the series page, the player, Home's Continue watching and Upcoming reads S01E05 / S01E01–E03.
+
+## Build notes (2026-10-01)
+
+Built 2026-10-01 (on `main` `f5d2b22b`), with R343 and R347 in the same stream. Not deployed, not device-tested.
+
+**What was built**
+
+- **FR-R346-1** — `ravilo-ui/.../screens/SeriesEpisodes.kt`: `countedEpisodes` (season index ≥ 1, an id that is not
+  a catalog path — `isCatalogOnly()` = starts with `/` or holds `#`, the shape `DetailService` gives a row with no
+  Jellyfin item), `seriesFinished`, `openingSeasonIndex`, `primaryEpisodeId`, `seriesStarted`. The server has the
+  same rule as `countedEpisodes(List<model.Episode>)` in `DetailService.kt` (R343's 9+ count).
+- **FR-R346-2** — `getSeriesDetail` orders the seasons 1, 2, …, 0. `Season.index` is unchanged.
+- **FR-R346-3** — the page opens on the first season of index ≥ 1 with an unwatched counted episode, else Season 1,
+  Specials only when alone; the Play fallback is the first unwatched counted episode. The Continue Watching
+  episode and any in-progress episode (a started special included) keep their place ahead of it.
+- **FR-R346-4** — *{w} of {n} episodes watched* counts counted episodes. The Specials pill keeps its own badge.
+- **FR-R346-5** — `shared/.../tv/EpisodeCode.kt` `episodeCode(season, episode, end?)` → `S01E05` / `S01E01–E03`,
+  used by the series page (kicker, button, resume line), the player (its kicker and rail come from the page),
+  Home's Continue Watching badge, Upcoming and its detail, the server's Continue Watching next-up label
+  (`EpisodeSpan.code`) and the play push's kicker and next kicker (`MediaStore.resolvePlayPush` /
+  `nextEpisodeAfter`, which now also name a multi-episode file's range). The admin's own codes are untouched.
+
+**Beyond the FRs, from acceptance 1–2:** the primary button names the episode it plays — *Play · S01E01* on an
+unstarted series, *Resume · S02E05* once begun — instead of the literal *Play · E1* (whose target already was the
+right episode). *Resume* means the series has a watched or in-progress counted episode, or the target is in progress.
+
+**Verified:** `SeriesEpisodesTest` (ravilo-ui common: counts, finished, opening season, the fallback never a special,
+a started special resumes); backend `SeriesDetailMultiEpisodeFileTest` (*Specials are listed after the last season*;
+the span codes now `S01E01–E03`) and `PlayPushResolverTest` (kickers `S02E07`); `SeriesDetailFocusTest` reads
+*Play · S01E01* on the page. Compiles: backend, Android, desktop, web, receiver.
+
+**Needs a device:** acceptance 1–6 on a series with a Specials folder (Pixel 9 and a TV): the opening season, the
+button, the counts, the pill order, a half-watched special's *Resume*, and the codes on Home / Upcoming / the player.
+An installed (older) app gets FR-R346-2's fix from the server alone.
