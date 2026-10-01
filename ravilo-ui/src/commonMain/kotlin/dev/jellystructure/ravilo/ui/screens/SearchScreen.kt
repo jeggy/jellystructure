@@ -62,6 +62,7 @@ import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -96,7 +97,8 @@ internal class SearchReturnTarget {
     fun take(visit: Long): String? = target?.takeIf { it.first == visit }?.second.also { target = null }
 }
 
-class SearchStore(private val apiClient: TvApiClient) {
+class SearchStore internal constructor(private val search: suspend (String) -> SearchResults) {
+    constructor(apiClient: TvApiClient) : this({ q -> apiClient.search(q) })
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SearchState>(SearchState.Loaded(
         SearchResults("", emptyList()), ""
@@ -121,14 +123,14 @@ class SearchStore(private val apiClient: TvApiClient) {
             delay(250)
             _state.value = SearchState.Loading
             _state.value = runCatching {
-                SearchState.Loaded(apiClient.search(query), query)
+                SearchState.Loaded(search(query), query)
             }.getOrElse { SearchState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
 
     private suspend fun loadSuggestions() {
         _state.value = runCatching {
-            SearchState.Loaded(apiClient.search(""), "")
+            SearchState.Loaded(search(""), "")
         }.getOrElse { SearchState.Error(it.message ?: "", loadErrorKindOf(it)) }
     }
 
@@ -203,12 +205,16 @@ fun SearchScreen(
     // they want to type, covering the suggestions the page exists to show. A phone viewer who wants to
     // type taps the field.
     val handset = LocalHandset.current
-    val focusInput: () -> Unit = focus@{
+    // R350 (FR-R350-4) — on a TV, focusing the field does not raise the keyboard: OK on the field does. A viewer
+    // arriving with a D-pad lands on the field with the suggestions in view, and Back is never spent closing a
+    // keyboard they did not ask for. The phone keeps R277 (the keyboard comes with a tap on the field or the bar).
+    val keyboardOnOk = isTvPlatform
+    val focusInput: (showKeyboard: Boolean) -> Unit = focus@{ showKeyboard ->
         if (externalQuery != null) return@focus   // the field is the sidebar's
         textFieldFR.requestFocus()
         // Called even when the field already holds focus: Back dismisses the IME without moving focus,
         // so requestFocus() is a no-op there and show() is the half that does the work (FR-R277-2).
-        keyboardController?.show()
+        if (showKeyboard) keyboardController?.show()
     }
 
     // Auto-focus and open IME on screen entry — unless this is Back from a result, which lands on that
@@ -217,13 +223,14 @@ fun SearchScreen(
         when {
             handset -> Unit
             returnIndex != null -> requestFocusRetrying(scope, returnFR)
-            else -> focusInput()
+            else -> focusInput(!keyboardOnOk)
         }
     }
 
-    // Return focus to the text field and re-open IME when leaving the results grid
+    // Return focus to the text field when leaving the results grid (Up/Left from its edge) — R350: on a TV the
+    // keyboard waits for OK.
     LaunchedEffect(inGrid) {
-        if (!inGrid && !handset) focusInput()
+        if (!inGrid && !handset) focusInput(!keyboardOnOk)
     }
 
     // FR-R277-2 — the bottom bar's own Search item, tapped while already here.
@@ -233,7 +240,7 @@ fun SearchScreen(
     LaunchedEffect(focusInputOnEntry) {
         if (focusInputOnEntry) {
             scope.launch { runCatching { gridState.animateScrollToItem(0) } }
-            focusInput()
+            focusInput(true)
             onFocusInputConsumed()
         }
     }
@@ -247,9 +254,12 @@ fun SearchScreen(
             // the same brand · cast row as every other page (FR-R267-2, and the mockup's persistent
             // row), so the gap is the ordinary one again on every platform.
             .padding(top = if (desk) 58.dp else RaviloDimens.appBarHeight + 24.dp)
-            // Back from results grid → text field + IME; Back from text field → pops screen.
+            // R350 (FR-R350-4) — on a TV, Back from the results (or the suggestions) leaves Search, one press: it
+            // used to move focus to the field and raise the keyboard, then close the keyboard, then leave. Back
+            // while the keyboard is up still closes it (the system's own handling, before the app sees the key).
+            // The phone keeps Back-to-top: a scrolled grid scrolls back first.
             .backToTopOnBack(
-                atTop = { !inGrid },
+                atTop = { !inGrid || isTvPlatform },
                 onBackToTop = {
                     inGrid = false
                     scope.launch { runCatching { gridState.animateScrollToItem(0) } }
@@ -316,6 +326,11 @@ fun SearchScreen(
                     // D-pad Down moves focus into the results grid and hides the IME
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        // R350 (FR-R350-4) — OK on the field is what raises the keyboard on a TV.
+                        if (keyboardOnOk && ev.key == Key.DirectionCenter) {
+                            keyboardController?.show()
+                            return@onPreviewKeyEvent true
+                        }
                         if (ev.key == Key.DirectionDown && items.isNotEmpty()) {
                             inGrid = true
                             scope.launch { runCatching { gridFR.requestFocus() } }
@@ -325,7 +340,7 @@ fun SearchScreen(
                     },
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp, fontFamily = sora),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = !keyboardOnOk),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (items.isNotEmpty()) {
                         inGrid = true
