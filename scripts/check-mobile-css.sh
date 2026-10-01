@@ -210,6 +210,13 @@ check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (en)" "'ab.
 check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (da)" "'ab.mark_unfinished': 'Markér som ikke færdig'"
 check "design/ravilo/ravilo-i18n.js" "R332 string ab.mark_unfinished (fo)" "'ab.mark_unfinished': 'Merk sum ikki liðugt'"
 
+# Phase 292 (dev review 16, 17, 2026-10-01) — versions.css is served; made repo-side: the chip is 11 px, and its text is
+# 45 % colour on a light theme (58 % fails 4.5 : 1). The design tool's copy has neither.
+VERCSS="design/app/versions.css"
+check "$VERCSS" "292 version chip 11 px" ".vr-b{display:inline-flex;align-items:center;font-size:11px;"
+check "$VERCSS" "292 version chip 45 % on light" '[data-theme="light"] .vr-b{color:color-mix(in oklch,var(--c) 45%,var(--ink))}'
+check "$VERCSS" "292 +N chip 11 px" ".vr-more{display:inline-flex;align-items:center;font-size:11px;"
+
 if [ "$fail" -eq 0 ]; then
   echo "OK — every design-sync-fragile CSS rule tracked here is present."
 else
