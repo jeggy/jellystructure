@@ -9,11 +9,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -90,6 +90,9 @@ fun CastRemoteScreen(
     onPlayAgain: (itemId: String) -> Unit,
     /** R299 (FR-R299-2) · Failed · "Play on this phone" — the app ends the cast and opens its own player. */
     onPlayHere: (itemId: String, title: String, kicker: String?) -> Unit,
+    /** A computer's window (macOS, Linux): the device's volume, the desktop's failure line, and every control kept on
+     *  screen (FR-R350-18). A parameter so a test can draw the computer's remote. */
+    desktop: Boolean = dev.jellystructure.ravilo.ui.isDesktopPlatform,
 ) {
     val colors = RaviloTheme.colors
     val portrait = LocalPortrait.current
@@ -112,158 +115,171 @@ fun CastRemoteScreen(
         while (true) { busyElapsed = ((nowMillis() - since) / 1000).toInt().coerceAtLeast(0); delay(1_000) }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(colors.background).windowInsetsPadding(WindowInsets.safeDrawing)
-            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // ── Header: back · device chip (the platform's dialog: switch device or stop) ──
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.size(20.dp)) {
-                    val p = Path().apply { moveTo(size.width * 0.62f, size.height * 0.12f); lineTo(size.width * 0.28f, size.height * 0.5f); lineTo(size.width * 0.62f, size.height * 0.88f) }
-                    drawPath(p, colors.text, style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round))
+    // R350 (FR-R350-18) — every control on screen on a computer's window, down to its minimum height (600 dp): the art
+    // card takes what the controls leave (16:9, never larger than it was), and a short window tightens the spacing and
+    // the transport. It used to be 60 % of the width at 16:9 — about 500 dp tall in a 1512 × 859 window, which put
+    // Audio & Subs, Next and Stop casting below the fold. A phone keeps its own layout (and its scroll).
+    BoxWithConstraints(Modifier.fillMaxSize().background(colors.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        val fit = desktop
+        val short = fit && maxHeight < REMOTE_SHORT_HEIGHT
+        fun gap(d: androidx.compose.ui.unit.Dp) = if (short) d / 2 else d
+        RemoteFitLayout(
+            fitHeight = if (fit) maxHeight - 16.dp else null,
+            artFraction = if (portrait) 1f else 0.6f,
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+            top = {
+                // ── Header: back · device chip (the platform's dialog: switch device or stop) ──
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(46.dp).clip(CircleShape)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Canvas(Modifier.size(20.dp)) {
+                            val p = Path().apply { moveTo(size.width * 0.62f, size.height * 0.12f); lineTo(size.width * 0.28f, size.height * 0.5f); lineTo(size.width * 0.62f, size.height * 0.88f) }
+                            drawPath(p, colors.text, style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round))
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        Modifier.background(colors.surfaceVariant, RoundedCornerShape(22.dp)).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(name, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                        // R265 — the same glyph and sheet as everywhere else (Stop casting lives in it), not the SDK's dialog.
+                        dev.jellystructure.ravilo.ui.components.CastButton()
+                    }
                 }
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                Modifier.background(colors.surfaceVariant, RoundedCornerShape(22.dp)).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(name, color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
-                // R265 — the same glyph and sheet as everywhere else (Stop casting lives in it), not the SDK's dialog.
-                dev.jellystructure.ravilo.ui.components.CastButton()
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-
-        // ── Art card (16:9, solid ground) ──
-        val artDim = !s.playing || unreachable || s.failed
-        Box(
-            Modifier.fillMaxWidth(if (portrait) 1f else 0.6f).aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp))
-                .background(colors.surfaceVariant).alpha(if (artDim) 0.6f else 1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            val art = s.artUrl
-            if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, requestedWidth = 1280)
-            else Text(s.title ?: name, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(24.dp))
-            if (s.buffering && !unreachable) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // ── Kicker + title + state line ──
-        s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
-        Text(s.title ?: "", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(4.dp))
-        val state = remoteState(s, unreachable)
-        val stateLine = when (state) {
-            RemoteState.FAILED -> str("cast.failed", mapOf("device" to name))
-            RemoteState.UNREACHABLE -> str("cast.lost", mapOf("device" to name))
-            RemoteState.NO_SERVER -> str("cast.no_server")
-            RemoteState.BUSY -> str("srv.busy")
-            RemoteState.ENDED -> str("player.end_of_episode").takeIf { s.hasNext } ?: str("player.end_of_movie")
-            RemoteState.PLAYING -> str("cast.playing_on", mapOf("device" to name))
-            RemoteState.PAUSED -> str("cast.paused_on", mapOf("device" to name))
-        }
-        Text(stateLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center)
-        // second line for the two "cannot" states + the busy wait
-        when (state) {
-            RemoteState.FAILED -> Text(str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "cast.failed_sub_desk" else "cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            RemoteState.UNREACHABLE -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            RemoteState.NO_SERVER -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            RemoteState.BUSY -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-            else -> {}
-        }
-        // ── FR-R245-19 — the stream is a conversion, not the file: say so, quietly, and explain on tap.
-        // Shown only while the receiver has media and is reachable; never a codec, protocol or product name.
-        if (s.transcoding && s.loaded && !unreachable && !s.noServer && !s.ended) {
-            Row(
-                Modifier.padding(top = 6.dp).clip(RoundedCornerShape(14.dp))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { convertedOpen = true }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                InfoGlyph(colors.textDim)
-                Spacer(Modifier.width(6.dp))
-                Text(str("cast.converted", mapOf("device" to name)), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-
-        // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
-        val nextUp = s.nextUpSecs
-        if (nextUp != null && !unreachable) {
-            Column(
-                Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp),
-            ) {
-                Text(str("player.up_next"), color = colors.accentSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                Text(s.nextTitle ?: str("detail.episode"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { cast.command("nextup_play") }
-                    RemotePill(str("player.watch_credits"), primary = false) { cast.command("nextup_cancel") }
+                Spacer(Modifier.height(gap(18.dp)))
+            },
+            art = {
+                // ── Art card (16:9, solid ground) ──
+                val artDim = !s.playing || unreachable || s.failed
+                Box(
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))
+                        .background(colors.surfaceVariant).alpha(if (artDim) 0.6f else 1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val art = s.artUrl
+                    if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop, requestedWidth = 1280)
+                    else Text(s.title ?: name, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(24.dp))
+                    if (s.buffering && !unreachable) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
                 }
-            }
-            Spacer(Modifier.height(18.dp))
-        }
+            },
+            bottom = {
+                Spacer(Modifier.height(gap(16.dp)))
 
-        // ── Seek bar + times ──
-        val transportEnabled = remoteTransportEnabled(s, unreachable)
-        RemoteSeekBar(
-            colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled,
-            onSeekStart = { ms -> scrubbing = true; scrubPos = ms },
-            onSeekDrag = { ms -> scrubPos = ms },
-            onSeekEnd = { scrubbing = false; cast.sender.seekTo(scrubPos) },
+                // ── Kicker + title + state line ──
+                s.kicker?.let { Text(it.uppercase(), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, maxLines = 1) }
+                Text(s.title ?: "", color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                val state = remoteState(s, unreachable)
+                val stateLine = when (state) {
+                    RemoteState.FAILED -> str("cast.failed", mapOf("device" to name))
+                    RemoteState.UNREACHABLE -> str("cast.lost", mapOf("device" to name))
+                    RemoteState.NO_SERVER -> str("cast.no_server")
+                    RemoteState.BUSY -> str("srv.busy")
+                    RemoteState.ENDED -> str("player.end_of_episode").takeIf { s.hasNext } ?: str("player.end_of_movie")
+                    RemoteState.PLAYING -> str("cast.playing_on", mapOf("device" to name))
+                    RemoteState.PAUSED -> str("cast.paused_on", mapOf("device" to name))
+                }
+                Text(stateLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, textAlign = TextAlign.Center)
+                // second line for the two "cannot" states + the busy wait
+                when (state) {
+                    RemoteState.FAILED -> Text(str(if (desktop) "cast.failed_sub_desk" else "cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                    RemoteState.UNREACHABLE -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                    RemoteState.NO_SERVER -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                    RemoteState.BUSY -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                    else -> {}
+                }
+                // ── FR-R245-19 — the stream is a conversion, not the file: say so, quietly, and explain on tap.
+                // Shown only while the receiver has media and is reachable; never a codec, protocol or product name.
+                if (s.transcoding && s.loaded && !unreachable && !s.noServer && !s.ended) {
+                    Row(
+                        Modifier.padding(top = 6.dp).clip(RoundedCornerShape(14.dp))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { convertedOpen = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InfoGlyph(colors.textDim)
+                        Spacer(Modifier.width(6.dp))
+                        Text(str("cast.converted", mapOf("device" to name)), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
+                    }
+                }
+                Spacer(Modifier.height(gap(18.dp)))
+
+                // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
+                val nextUp = s.nextUpSecs
+                if (nextUp != null && !unreachable) {
+                    Column(
+                        Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp),
+                    ) {
+                        Text(str("player.up_next"), color = colors.accentSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text(s.nextTitle ?: str("detail.episode"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { cast.command("nextup_play") }
+                            RemotePill(str("player.watch_credits"), primary = false) { cast.command("nextup_cancel") }
+                        }
+                    }
+                    Spacer(Modifier.height(gap(18.dp)))
+                }
+
+                // ── Seek bar + times ──
+                val transportEnabled = remoteTransportEnabled(s, unreachable)
+                RemoteSeekBar(
+                    colors = colors, positionMs = if (scrubbing) scrubPos else s.positionMs, durationMs = s.durationMs, enabled = transportEnabled,
+                    onSeekStart = { ms -> scrubbing = true; scrubPos = ms },
+                    onSeekDrag = { ms -> scrubPos = ms },
+                    onSeekEnd = { scrubbing = false; cast.sender.seekTo(scrubPos) },
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(hmsLabel(if (scrubbing) scrubPos else s.positionMs), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                    Text(hmsLabel(s.durationMs), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
+                }
+                Spacer(Modifier.height(gap(16.dp)))
+
+                // ── Transport ──
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (short) 24.dp else 30.dp), modifier = Modifier.alpha(if (transportEnabled) 1f else 0.4f)) {
+                    RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors, size = if (short) 44.dp else 54.dp) { cast.sender.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
+                    Box(
+                        Modifier.size(if (short) 64.dp else 80.dp).clip(CircleShape).background(colors.text)
+                            .clickable(enabled = transportEnabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { if (s.playing) cast.sender.pause() else cast.sender.play() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                        else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
+                    }
+                    RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors, size = if (short) 44.dp else 54.dp) { cast.sender.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
+                }
+                // R351 (FR-R351-6) — a computer has no volume keys that reach the device: the remote carries its volume, the
+                // same control the music bar has while casting (R337). The phone keeps its hardware keys.
+                if (desktop && !unreachable) {
+                    Spacer(Modifier.height(gap(18.dp)))
+                    RemoteVolume(cast, colors, Modifier.widthIn(max = 360.dp).fillMaxWidth())
+                }
+                Spacer(Modifier.height(gap(22.dp)))
+
+                // ── Footer / state actions ──
+                when {
+                    state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        s.itemId?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
+                        RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
+                    }
+                    unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }
+                    s.ended -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        s.itemId?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
+                        RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
+                    }
+                    else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f)) { sheetOpen = true }
+                        if (s.hasNext) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f)) { cast.command("next") }
+                        RemotePill(str("cast.stop"), primary = false, modifier = Modifier.weight(1f)) { cast.sender.stop(); onBack() }
+                    }
+                }
+                Spacer(Modifier.height(gap(24.dp)))
+            },
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(hmsLabel(if (scrubbing) scrubPos else s.positionMs), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
-            Text(hmsLabel(s.durationMs), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // ── Transport ──
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(30.dp), modifier = Modifier.alpha(if (transportEnabled) 1f else 0.4f)) {
-            RemoteSkip(label = "10 s", back = true, enabled = transportEnabled, colors = colors) { cast.sender.seekTo((s.positionMs - 10_000L).coerceAtLeast(0L)) }
-            Box(
-                Modifier.size(80.dp).clip(CircleShape).background(colors.text)
-                    .clickable(enabled = transportEnabled, interactionSource = remember { MutableInteractionSource() }, indication = null) { if (s.playing) cast.sender.pause() else cast.sender.play() },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
-                else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
-            }
-            RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors) { cast.sender.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
-        }
-        // R351 (FR-R351-6) — a computer has no volume keys that reach the device: the remote carries its volume, the
-        // same control the music bar has while casting (R337). The phone keeps its hardware keys.
-        if (dev.jellystructure.ravilo.ui.isDesktopPlatform && !unreachable) {
-            Spacer(Modifier.height(18.dp))
-            RemoteVolume(cast, colors, Modifier.widthIn(max = 360.dp).fillMaxWidth())
-        }
-        Spacer(Modifier.height(22.dp))
-
-        // ── Footer / state actions ──
-        when {
-            state == RemoteState.FAILED -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.itemId?.let { id -> RemotePill(str(dev.jellystructure.ravilo.ui.seams.CastPlatform.playHereKey), primary = true) { onPlayHere(id, s.title ?: "", s.kicker) } }
-                RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
-            }
-            unreachable -> RemotePill(str("action.retry"), primary = true) { cast.command("status") }
-            s.ended -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.itemId?.let { id -> RemotePill(str("action.play_again"), primary = true) { onPlayAgain(id) } }
-                RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
-            }
-            else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f)) { sheetOpen = true }
-                if (s.hasNext) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f)) { cast.command("next") }
-                RemotePill(str("cast.stop"), primary = false, modifier = Modifier.weight(1f)) { cast.sender.stop(); onBack() }
-            }
-        }
-        Spacer(Modifier.height(24.dp))
     }
 
     // ── FR-R245-8 — subtitles & audio: the SAME picker component the local player opens ──
@@ -407,6 +423,64 @@ private fun CastTrackSheet(cast: CastController, status: CastRemoteStatus, devic
     }
 }
 
+/** FR-R350-18 — below this a computer's remote tightens its spacing and its transport. */
+private val REMOTE_SHORT_HEIGHT = 760.dp
+/** FR-R350-18 — an art card that would be smaller than this is left out rather than drawn as a sliver. */
+private val REMOTE_ART_MIN_HEIGHT = 72.dp
+
+/**
+ * R350 (FR-R350-18) — the remote's column: [top] (the header), the 16:9 [art] card, then [bottom] (titles, next-up,
+ * seek, transport, volume, the footer). The art card is [artFraction] of the width at 16:9, as before; with a
+ * [fitHeight] it is no taller than what [top] and [bottom] leave of it (narrower to keep 16:9), and left out below
+ * [REMOTE_ART_MIN_HEIGHT]. Without one (a phone) nothing changes: the page scrolls.
+ */
+@Composable
+private fun RemoteFitLayout(
+    fitHeight: androidx.compose.ui.unit.Dp?,
+    artFraction: Float,
+    modifier: Modifier,
+    top: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    art: @Composable () -> Unit,
+    bottom: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val fitPx = fitHeight?.let { with(density) { it.roundToPx() } }
+    val minArtPx = with(density) { REMOTE_ART_MIN_HEIGHT.roundToPx() }
+    androidx.compose.ui.layout.Layout(
+        contents = listOf(
+            { Column(horizontalAlignment = Alignment.CenterHorizontally, content = top) },
+            art,
+            { Column(horizontalAlignment = Alignment.CenterHorizontally, content = bottom) },
+        ),
+        modifier = modifier,
+    ) { (topM, artM, bottomM), constraints ->
+        val w = constraints.maxWidth
+        val loose = androidx.compose.ui.unit.Constraints(maxWidth = w)
+        val t = topM.map { it.measure(loose) }
+        val b = bottomM.map { it.measure(loose) }
+        val used = t.sumOf { it.height } + b.sumOf { it.height }
+        val size = remoteArtSize(w, artFraction, fitPx?.let { it - used }, minArtPx)
+        val a = if (size == null) emptyList() else artM.map { it.measure(androidx.compose.ui.unit.Constraints.fixed(size.first, size.second)) }
+        val height = maxOf(used + (size?.second ?: 0), constraints.minHeight)
+        layout(w, height) {
+            var y = 0
+            for (p in t + a + b) { p.place((w - p.width) / 2, y); y += p.height }
+        }
+    }
+}
+
+/**
+ * FR-R350-18 — the art card's (width, height) in px: [fraction] of [width] at 16:9, no taller than [room] when there is
+ * a limit; null (left out) when that leaves less than [minHeight].
+ */
+internal fun remoteArtSize(width: Int, fraction: Float, room: Int?, minHeight: Int): Pair<Int, Int>? {
+    val naturalW = (width * fraction).toInt().coerceAtLeast(0)
+    val naturalH = naturalW * 9 / 16
+    if (room == null || room >= naturalH) return if (naturalH > 0) naturalW to naturalH else null
+    if (room < minHeight) return null
+    return room * 16 / 9 to room
+}
+
 @Composable
 private fun RemotePill(label: String, primary: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = RaviloTheme.colors
@@ -423,10 +497,10 @@ private fun RemotePill(label: String, primary: Boolean, modifier: Modifier = Mod
 }
 
 @Composable
-private fun RemoteSkip(label: String, back: Boolean, enabled: Boolean, colors: RaviloColors, onClick: () -> Unit) {
+private fun RemoteSkip(label: String, back: Boolean, enabled: Boolean, colors: RaviloColors, size: androidx.compose.ui.unit.Dp = 54.dp, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(54.dp).clip(CircleShape).background(colors.surfaceVariant)
+            Modifier.size(size).clip(CircleShape).background(colors.surfaceVariant)
                 .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
