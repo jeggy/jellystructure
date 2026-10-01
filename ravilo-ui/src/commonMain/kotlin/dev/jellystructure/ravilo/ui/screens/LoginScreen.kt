@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +33,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -58,6 +58,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** R348/R349 — test tags for the sign-in form (the Robolectric keyboard and D-pad tests find the fields by them). */
+object LoginTags {
+    const val USERNAME = "login-username"
+    const val PASSWORD = "login-password"
+    const val SIGN_IN = "login-sign-in"
+    const val CHANGE_SERVER = "login-change-server"
+}
 
 /** Phase 141/R175 — replaces the retired code-pairing flow (see git history for `PairingScreen`). */
 enum class LoginErrorKind { REQUIRED, INVALID, UNREACHABLE }
@@ -180,6 +188,7 @@ fun LoginScreen(
                         value = username,
                         onValueChange = { username = it },
                         focusRequester = usernameFR,
+                        tag = LoginTags.USERNAME,
                         enabled = !locked,
                         imeAction = ImeAction.Next,
                         onImeAction = { passwordFR.requestFocus() },
@@ -191,6 +200,7 @@ fun LoginScreen(
                         value = password,
                         onValueChange = { password = it },
                         focusRequester = passwordFR,
+                        tag = LoginTags.PASSWORD,
                         enabled = !locked,
                         masked = true,
                         imeAction = ImeAction.Done,
@@ -241,6 +251,7 @@ private fun LoginField(
     value: String,
     onValueChange: (String) -> Unit,
     focusRequester: FocusRequester,
+    tag: String,
     enabled: Boolean,
     imeAction: ImeAction,
     onImeAction: () -> Unit,
@@ -277,6 +288,7 @@ private fun LoginField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
+                    .testTag(tag)
                     .reportTextFieldFocus()
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -289,7 +301,8 @@ private fun LoginField(
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp),
                 singleLine = true,
                 visualTransformation = if (masked) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(imeAction = imeAction),
+                // R348 — a password field must say so to the keyboard, not only draw dots.
+                keyboardOptions = if (masked) secretKeyboardOptions(imeAction) else handleKeyboardOptions(imeAction),
                 keyboardActions = KeyboardActions(
                     onNext = { onImeAction() },
                     onDone = { onImeAction() },

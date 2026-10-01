@@ -94,6 +94,7 @@ fun ServerSetupScreen(
                 placeholder = { Text("192.168.1.1:8097") },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
+                    autoCorrectEnabled = false,   // R348 (FR-R348-4) — an address is not prose
                     imeAction = ImeAction.Go,
                 ),
                 keyboardActions = KeyboardActions(

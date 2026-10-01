@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -65,12 +65,21 @@ import kotlinx.coroutines.launch
  * FR-R234-6's requirement without a bespoke component). onMoveUp/onMoveDown carry Up/Down between
  * fields once the OS keyboard is dismissed, exactly like `LoginField`.
  */
+/** R348/R349 — test tags for Change your password's fields and button. */
+object ChangePasswordTags {
+    const val CURRENT = "pw-current"
+    const val NEW = "pw-new"
+    const val REPEAT = "pw-repeat"
+    const val SAVE = "pw-save"
+}
+
 @Composable
 private fun AccountField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     focusRequester: FocusRequester,
+    tag: String,
     imeAction: ImeAction,
     onImeAction: () -> Unit,
     masked: Boolean = false,
@@ -95,6 +104,7 @@ private fun AccountField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
+                    .testTag(tag)
                     .reportTextFieldFocus()
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -107,7 +117,8 @@ private fun AccountField(
                 textStyle = TextStyle(color = colors.text, fontSize = 16.sp),
                 singleLine = true,
                 visualTransformation = if (masked) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(imeAction = imeAction, autoCorrectEnabled = false),
+                // R348 — a password field must say so to the keyboard, not only draw dots.
+                keyboardOptions = if (masked) secretKeyboardOptions(imeAction) else handleKeyboardOptions(imeAction),
                 keyboardActions = KeyboardActions(onNext = { onImeAction() }, onDone = { onImeAction() }),
                 cursorBrush = SolidColor(colors.accent),
             )
@@ -242,19 +253,19 @@ fun ChangePasswordScreen(
             val busy = state is PwState.Busy || state is PwState.Done
             AccountField(
                 label = str("account.pw_cur"), value = current, onValueChange = { if (!busy) current = it },
-                focusRequester = curFR, imeAction = ImeAction.Next, onImeAction = { newFR.requestFocus() },
+                focusRequester = curFR, tag = ChangePasswordTags.CURRENT, imeAction = ImeAction.Next, onImeAction = { newFR.requestFocus() },
                 masked = true, onMoveDown = { newFR.requestFocus() },
             )
             Spacer(Modifier.height(14.dp))
             AccountField(
                 label = str("account.pw_new"), value = newPw, onValueChange = { if (!busy) newPw = it },
-                focusRequester = newFR, imeAction = ImeAction.Next, onImeAction = { repFR.requestFocus() },
+                focusRequester = newFR, tag = ChangePasswordTags.NEW, imeAction = ImeAction.Next, onImeAction = { repFR.requestFocus() },
                 masked = true, onMoveUp = { curFR.requestFocus() }, onMoveDown = { repFR.requestFocus() },
             )
             Spacer(Modifier.height(14.dp))
             AccountField(
                 label = str("account.pw_rep"), value = repeatPw, onValueChange = { if (!busy) repeatPw = it },
-                focusRequester = repFR, imeAction = ImeAction.Done, onImeAction = { submit() },
+                focusRequester = repFR, tag = ChangePasswordTags.REPEAT, imeAction = ImeAction.Done, onImeAction = { submit() },
                 masked = true, onMoveUp = { newFR.requestFocus() }, onMoveDown = { saveFR.requestFocus() },
             )
             Spacer(Modifier.height(20.dp))
