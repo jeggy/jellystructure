@@ -1,0 +1,86 @@
+name: Release info
+
+# The latest release, as two small files on the `release-info` branch (owner, 2026-10-01):
+#   latest.json  the version, the tag, the date and the files attached to it, each with its direct download URL.
+#                jellystructure.jebster.net reads it to point its download buttons at the newest files.
+#   badge.json   a shields.io endpoint badge with the version:
+#                https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeggy/jellystructure/release-info/badge.json
+#
+# Why a branch and not a release asset: a release's names carry the version (ravilo-android-1.48.apk), so
+# /releases/latest/download/<name> has no stable name to ask for, and github.com's download URLs send no CORS
+# header, so a web page cannot read a file attached to a release. raw.githubusercontent.com sends
+# `Access-Control-Allow-Origin: *` (and caches for up to five minutes).
+#
+# It lists the files that are really attached rather than names built from the version: a platform whose build
+# failed is simply absent, and the site falls back to the release page for it.
+#
+# Runs as publish.yml's last job on a published release (after every platform has attached its file, or failed),
+# when a release is edited or deleted, once a day as a safety net (a file attached by hand fires no event), and by hand.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  release:
+    types: [edited, deleted, unpublished]
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  write:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-info
+      cancel-in-progress: false
+    steps:
+      - name: Read the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          gh api "repos/$REPO/releases/latest" > release.json
+          jq '{
+                version: (.tag_name | ltrimstr("v")),
+                tag: .tag_name,
+                published_at: .published_at,
+                url: .html_url,
+                assets: ([.assets[]
+                  | select(.state == "uploaded")
+                  | (.name | capture("^ravilo-(?<platform>android|mac|linux|tizen)-.+\\.(apk|dmg|flatpak|wgt)$")) as $m
+                  | select($m != null)
+                  | {key: $m.platform, value: {name: .name, url: .browser_download_url, size: .size}}
+                ] | from_entries)
+              }' release.json > out/latest.json
+          jq '{schemaVersion: 1, label: "Ravilo", message: .version, color: "7b6ef0"}' out/latest.json > out/badge.json
+          cat out/latest.json
+          # A release with no tag would write an empty version and blank every download button.
+          jq -e '.version | test("^[0-9]+\\.[0-9]+$")' out/latest.json > /dev/null
+
+      - name: Write them to the release-info branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git init -q site && cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          if git fetch -q --depth 1 origin release-info 2>/dev/null; then
+            git checkout -q -B release-info FETCH_HEAD
+          else
+            git checkout -q --orphan release-info
+          fi
+          cp ../out/latest.json ../out/badge.json .
+          git add latest.json badge.json
+          if git diff --cached --quiet; then
+            echo "Unchanged — nothing to write."
+            exit 0
+          fi
+          git commit -q -m "release-info: $(jq -r .tag latest.json)"
+          git push -q origin release-info
+          echo "Wrote release-info for $(jq -r .tag latest.json)."

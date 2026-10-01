@@ -1,5 +1,7 @@
 # jellystructure
 
+[![Ravilo, latest release](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jeggy/jellystructure/release-info/badge.json)](https://github.com/jeggy/jellystructure/releases/latest)
+
 jellystructure owns the metadata for a Jellyfin library from outside Jellyfin. It writes the NFO
 files, fetches the artwork, edits the audio and subtitle flags inside the media files, and then asks
 Jellyfin to re-read what changed. Once it is running against a library you stop using Jellyfin's own

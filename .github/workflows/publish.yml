@@ -186,3 +186,10 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       skip_ci: true   # this pipeline's own `ci` job already gated it
     secrets: inherit
+
+  # The latest release as latest.json + badge.json on the `release-info` branch (owner, 2026-10-01): last, once every
+  # platform has attached its file or failed, so jellystructure.jebster.net's download buttons list what is really there.
+  release-info:
+    needs: [play-store, tizen-tv, mac, linux]
+    if: ${{ always() && github.event_name == 'release' }}
+    uses: ./.github/workflows/release-info.yml
