@@ -660,6 +660,21 @@ fun RaviloApp(
                         is ChannelStore -> s.onHomeChanged()
                     }
                 }
+                // R351 (FR-R351-7) / R343 (FR-R343-12) — a title's page in the stack (on screen, or under the remote or
+                // the player) reads its playstate again; retained pages no longer in the stack are left alone.
+                stack.forEach { d ->
+                    when (d) {
+                        is Dest.SeriesDetail -> (storeRegistry["series:${d.displayName}:${d.itemId}"] as? SeriesDetailStore)?.onHomeChanged()
+                        is Dest.MovieDetail -> (storeRegistry["movie:${d.displayName}:${d.itemId}"] as? MovieDetailStore)?.onHomeChanged()
+                        else -> {}
+                    }
+                }
+            }
+        }
+        // R352 (FR-R352-8) — a `playstate_changed` patch reaches a series page in the stack too, not only the tiles.
+        LaunchedEffect(Unit) {
+            WatchedBus.patches.collect { patch ->
+                stack.forEach { d -> if (d is Dest.SeriesDetail) (storeRegistry["series:${d.displayName}:${d.itemId}"] as? SeriesDetailStore)?.onPlaystatePatch(patch) }
             }
         }
         // R293 (FR-R293-2, dev review item 1) — the Live TV "On now" poll is a job on a retained store, not
@@ -1008,9 +1023,18 @@ fun RaviloApp(
         // Dev review 12 — the notification permission is asked on the first play, never at launch.
         val askNotifications = dev.jellystructure.ravilo.ui.music.rememberNotificationAsk()
         LaunchedEffect(musicState.playing) { if (musicState.playing) askNotifications() }
+        // FR-R337-6 / Q2 + Q10 — the page a pause happened on, while music is paused in films mode (see deskBarShows).
+        var deskBarKeptOn by remember { mutableStateOf<Dest?>(null) }
+        LaunchedEffect(musicState.playing, stack.lastOrNull()) {
+            if (musicState.playing) deskBarKeptOn = stack.lastOrNull()
+            else if (deskBarKeptOn != stack.lastOrNull()) deskBarKeptOn = null
+        }
         // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
+        // R352 (FR-R352-6) — on a computer the phone-layout window (< 600 dp) keeps the computer's films-mode rule
+        // (Q2 + Q10): paused music stays only on the page it was paused on. A real phone keeps FR-R322-10.
         fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
-            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
+            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker &&
+            (!isDesktopPlatform || inMusic || musicState.playing || deskBarKeptOn == d)
         // FR-R324-7 — opening Playing brings a hidden bar back.
         LaunchedEffect(stack.lastOrNull()) { if (stack.lastOrNull() is Dest.MusicPlaying) dev.jellystructure.ravilo.ui.music.MusicCast.barHidden.value = false }
         // FR-R322-6 — landscape Playing is full-screen, not a tab.
@@ -1114,12 +1138,7 @@ fun RaviloApp(
             if (desktop) resetTo(if (music) Dest.MusicListen(name) else Dest.Home(name))
         }
         // FR-R337-6 / Q2 + Q10 — in music mode the bar is always there; in films mode only while music plays, and a pause
-        // from the bar keeps it until the viewer leaves the page.
-        var deskBarKeptOn by remember { mutableStateOf<Dest?>(null) }
-        LaunchedEffect(musicState.playing, stack.lastOrNull()) {
-            if (musicState.playing) deskBarKeptOn = stack.lastOrNull()
-            else if (deskBarKeptOn != stack.lastOrNull()) deskBarKeptOn = null
-        }
+        // from the bar keeps it until the viewer leaves the page. (`deskBarKeptOn` is declared beside the mini bar's rule.)
         fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && d !is Dest.MusicPlaying &&
             (inMusic || musicState.playing || deskBarKeptOn == d)
         // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing

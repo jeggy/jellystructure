@@ -238,6 +238,12 @@ fun CastRemoteScreen(
             }
             RemoteSkip(label = "30 s", back = false, enabled = transportEnabled, colors = colors) { cast.sender.seekTo((s.positionMs + 30_000L).coerceAtMost(s.durationMs.coerceAtLeast(0L))) }
         }
+        // R351 (FR-R351-6) — a computer has no volume keys that reach the device: the remote carries its volume, the
+        // same control the music bar has while casting (R337). The phone keeps its hardware keys.
+        if (dev.jellystructure.ravilo.ui.isDesktopPlatform && !unreachable) {
+            Spacer(Modifier.height(18.dp))
+            RemoteVolume(cast, colors, Modifier.widthIn(max = 360.dp).fillMaxWidth())
+        }
         Spacer(Modifier.height(22.dp))
 
         // ── Footer / state actions ──
@@ -263,6 +269,45 @@ fun CastRemoteScreen(
     // ── FR-R245-8 — subtitles & audio: the SAME picker component the local player opens ──
     CastTrackSheet(cast = cast, status = s, deviceName = name, open = sheetOpen, onClose = { sheetOpen = false })
     if (convertedOpen) ConvertedPopover(deviceName = name, colors = colors) { convertedOpen = false }
+}
+
+/**
+ * R351 (FR-R351-6) — the device's volume on a computer: what it last reported ([CastSender.volume]), else the level set
+ * here last; a click or a drag sets it ([CastSender.setVolume]). A speaker glyph, then the line.
+ */
+@Composable
+private fun RemoteVolume(cast: CastController, colors: RaviloColors, modifier: Modifier = Modifier) {
+    val reported by cast.sender.volume.collectAsState()
+    var local by remember { mutableStateOf<Float?>(null) }
+    val level = (reported?.toFloat() ?: local ?: 0.5f).coerceIn(0f, 1f)
+    var held by remember { mutableStateOf(false) }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.size(18.dp)) {
+            val w = size.width; val h = size.height
+            val body = Path().apply {
+                moveTo(w * 0.08f, h * 0.36f); lineTo(w * 0.30f, h * 0.36f); lineTo(w * 0.56f, h * 0.12f)
+                lineTo(w * 0.56f, h * 0.88f); lineTo(w * 0.30f, h * 0.64f); lineTo(w * 0.08f, h * 0.64f); close()
+            }
+            drawPath(body, colors.textSecondary)
+            drawArc(colors.textSecondary, -45f, 90f, false, topLeft = Offset(w * 0.40f, h * 0.24f), size = Size(w * 0.44f, h * 0.52f), style = Stroke(1.6.dp.toPx(), cap = StrokeCap.Round))
+        }
+        Spacer(Modifier.width(12.dp))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).height(24.dp)) {
+            val wPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+            fun set(x: Float) { val v = (x / wPx).coerceIn(0f, 1f); local = v; cast.sender.setVolume(v.toDouble()) }
+            Canvas(
+                Modifier.fillMaxSize()
+                    .pointerInput(Unit) { detectDragGestures(onDragStart = { o -> held = true; set(o.x) }, onDragEnd = { held = false }, onDragCancel = { held = false }) { ch, _ -> set(ch.position.x) } }
+                    .pointerInput(Unit) { detectTapGestures { o -> set(o.x) } },
+            ) {
+                val y = size.height / 2
+                val th = 4.dp.toPx()
+                drawRoundRect(colors.textDim.copy(alpha = 0.35f), Offset(0f, y - th / 2), Size(size.width, th), CornerRadius(th / 2, th / 2))
+                drawRoundRect(colors.text, Offset(0f, y - th / 2), Size(size.width * level, th), CornerRadius(th / 2, th / 2))
+                drawCircle(colors.text, (if (held) 7.dp else 6.dp).toPx(), Offset(size.width * level, y))
+            }
+        }
+    }
 }
 
 /** FR-R245-19 — a small ⓘ: a ring with a dot and a stem, drawn, so it needs no icon asset on any platform. */

@@ -701,7 +701,8 @@ internal fun SeriesDetailLoaded(
                         val startOverNow = finished && canStartOver
                         val castDevice = castConnectedDeviceName()   // R245 (FR-R245-4)
                         val playLabel = when {
-                            castDevice != null -> str("cast.play_on", mapOf("device" to castDevice))
+                            // R351 (FR-R351-8) — connected, it still names the episode it will play (R346).
+                            castDevice != null -> str("cast.play_on", mapOf("device" to castDevice)) + (resumeShort?.let { " · $it" } ?: "")
                             startOverNow && resumeShort != null -> "${str("detail.start_over")} · $resumeShort"
                             hasResume && resumeShort != null -> "${str("action.resume")} · $resumeShort"
                             resumeShort != null -> "${str("action.play")} · $resumeShort"

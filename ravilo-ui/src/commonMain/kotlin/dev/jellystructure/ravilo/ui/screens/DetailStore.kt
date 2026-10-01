@@ -70,15 +70,26 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
     /** R207 — retry from the Error state's Retry button. */
     fun retry() { currentId?.let { load(it) } }
 
+    /** R351 (FR-R351-7) — re-entry keeps what is on screen until the new answers arrive; a failed read keeps it. */
     private fun refreshSilent(id: String) {
         loadJob?.cancel()
-        _playstateOverlay.value = emptyMap()
         loadJob = scope.launch {
-            val detail = runCatching { apiClient.getMovie(id) }.getOrNull() ?: return@launch
-            _state.value = MovieDetailState.Loaded(detail)
-            runCatching { apiClient.getPlaystate(listOf(id)) }.getOrNull()
-                ?.let { _playstateOverlay.value = it }
+            runCatching { apiClient.getMovie(id) }.getOrNull()?.let { _state.value = MovieDetailState.Loaded(it) }
+            readPlaystate(id)
         }
+    }
+
+    /** R351 (FR-R351-7) — `home_changed` while this page is in the stack: read its playstate again. */
+    fun onHomeChanged() {
+        val id = currentId ?: return
+        if (_state.value !is MovieDetailState.Loaded) return
+        scope.launch { readPlaystate(id) }
+    }
+
+    /** `getPlaystate` answers an empty map when the read fails: that never replaces what the page shows. */
+    private suspend fun readPlaystate(id: String) {
+        runCatching { apiClient.getPlaystate(listOf(id)) }.getOrNull()
+            ?.takeIf { it.isNotEmpty() }?.let { _playstateOverlay.value = it }
     }
 
     /** R142: mark this movie played/unplayed; patch the overlay from the server-returned authoritative state. */
@@ -147,18 +158,42 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     /** R207 — retry from the Error state's Retry button. */
     fun retry() { currentId?.let { load(it) } }
 
+    /**
+     * R351 (FR-R351-7) — re-entry keeps the page as it is until the new answers arrive. It used to empty the overlay
+     * first and fill it only if both reads succeeded, so a failed read (a cast failing on the TV, 2026-10-02) left the
+     * page without its progress lines until the next visit. A failed read now keeps the old detail and overlay.
+     */
     private fun refreshSilent(id: String) {
         loadJob?.cancel()
-        _playstateOverlay.value = emptyMap()
         loadJob = scope.launch {
-            val detail = runCatching { apiClient.getSeries(id) }.getOrNull() ?: return@launch
-            _state.value = SeriesDetailState.Loaded(detail)
-            val epIds = detail.seasons.flatMap { it.episodes }.map { it.id } + detail.card.id
-            if (epIds.isNotEmpty()) {
-                runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
-                    ?.let { _playstateOverlay.value = it }
-            }
+            runCatching { apiClient.getSeries(id) }.getOrNull()?.let { _state.value = SeriesDetailState.Loaded(it) }
+            readPlaystate()
         }
+    }
+
+    /** R351 (FR-R351-7) / R343 (FR-R343-12) — `home_changed` while this page is in the stack: read its playstate again,
+     *  so a page under the remote, or right after a Start over's stop, follows what the server now knows. */
+    fun onHomeChanged() {
+        if (_state.value !is SeriesDetailState.Loaded) return
+        scope.launch { readPlaystate() }
+    }
+
+    /** R352 (FR-R352-8) — a `playstate_changed` patch (a background refresh saw an episode change, e.g. marked in
+     *  Jellyfin's own UI): this series' episodes take it in place. The series' own row is left alone — the patch carries
+     *  no `continue_episode_id`, which only the playstate route adds. */
+    fun onPlaystatePatch(patch: Map<String, CardPlayState>) {
+        val detail = (_state.value as? SeriesDetailState.Loaded)?.detail ?: return
+        val mine = detail.seasons.flatMap { it.episodes }.mapTo(HashSet()) { it.id }
+        val hit = patch.filterKeys { it in mine }
+        if (hit.isNotEmpty()) _playstateOverlay.value = _playstateOverlay.value + hit
+    }
+
+    /** `getPlaystate` answers an empty map when the read fails: that never replaces what the page shows. */
+    private suspend fun readPlaystate() {
+        val detail = (_state.value as? SeriesDetailState.Loaded)?.detail ?: return
+        val epIds = detail.seasons.flatMap { it.episodes }.map { it.id } + detail.card.id
+        runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
+            ?.takeIf { it.isNotEmpty() }?.let { _playstateOverlay.value = it }
     }
 
     /** R142: toggle one episode's played state; patch the overlay from the server result. */
