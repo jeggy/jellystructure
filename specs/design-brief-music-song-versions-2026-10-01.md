@@ -1,7 +1,7 @@
 # Design brief — a song's version: Live, Remix, Instrumental, Edit …
 
 **Date:** 2026-10-01 · **For:** the design project (Cosmos) that owns `design/app/` (`album.html`, `library.html`,
-`metadata.html`, `index.html`) · **Status:** brief, awaiting round-1 directions on §G · **Source:** the household's
+`metadata.html`, `index.html`) · **Status:** brief; the owner answered §G on 2026-10-01 (one question still open, Q0), round-1 directions wanted on the badge (Q1) · **Source:** the household's
 music library on 2026-10-01 (read-only), MusicBrainz, and `research-reports/music-lyrics-that-do-not-belong-2026-10-01.md`.
 
 > Owner, 2026-10-01: *"I would like to have support for adding types of music, like Live, Remix, Instrumental …
@@ -29,14 +29,21 @@ mockup can be drawn at true weight. **No spec is written for this yet** (owner):
 
 1. **Nine version types** (§B). A song has **zero, one or many**: *Live + Acoustic*, *Remix + Edit*, *Demo +
    Instrumental*. **A normal song has no version** and shows nothing.
-2. **Instrumental is one type for both kinds**: an instrumental version of a sung song, and a piece that was never
-   sung (an intro, a prelude). The detail line tells them apart (§D1); the badge is the same.
+2. **Instrumental** — an instrumental version of a sung song. Whether a piece that was never sung (an intro, a
+   prelude) carries the same type is **still open** (§G Q0); the brief draws both under one badge with a detail line
+   that tells them apart (§D1) until the owner decides.
 3. **Found automatically wherever possible** (MusicBrainz first, then the title), **and managed by hand** — the
    owner's own choice always wins and is kept across runs, as genres and JS tags are.
+   **A change spreads only along a direct link** (owner): two songs share a version only when MusicBrainz says they
+   are the same recording. A song with the same title and the same length on another album is **not** linked — the
+   album name may be the only thing that differs, and nothing says it is the same version.
 4. **Where it is stored** — our own table (§C).
 5. **First version:** visible and editable in jellystructure, **badges**, and **filters** (include *and* exclude).
    Ravilo later — the filter example (an artist's songs without Remix and Live) is the use case to keep in mind.
-6. **Lyrics on an instrumental is an issue on the Dashboard** (§D5).
+6. **Lyrics on an instrumental is an issue on the Dashboard** (§D5), and **only the owner removes them** — a button
+   on the row, never automatic. The lyrics step stops *fetching* for a song MusicBrainz calls instrumental.
+7. **Telling LRCLIB** that a song is instrumental is a manual action in jellystructure, never automatic (§D5).
+8. **A Session is also Live** — ticking Session ticks Live, so *without Live* hides sessions too.
 
 ## B. The nine types
 
@@ -70,7 +77,7 @@ read (Picard writes none; MusicBrainz keeps them as relationship attributes, not
 music is *standards where one exists, our tables where none does and Ravilo gains*
 (`research-reports/music-tags-in-the-files-2026-09-28.md`). Keyed by the MusicBrainz recording, so the same
 recording on an album, a best-of and a box set carries one answer and a change on one copy holds for all; a song
-without a match is keyed by itself. Each type remembers **where it came from** (MusicBrainz · the title · you),
+without a match is keyed by itself and never shares. Title and length never link two songs (§A3). Each type remembers **where it came from** (MusicBrainz · the title · you),
 and a type you remove stays removed, as an unticked genre does. Writing a copy into the files (a free-text
 *version* or *subtitle* field) is left for later — no player found yet reads it.
 
@@ -80,9 +87,10 @@ and a type you remove stays removed, as an unticked genre does. Writing a copy i
 
 - **Badges** after each song's title: one small chip per type, in the type's colour. A song with no version shows
   nothing. Up to three chips; more fold into *+1*.
-- **Editing.** A song's chips open an editor with the nine types as toggles; each ticked type says where it came
+- **Editing.** A song's chips open its **side panel** (owner) with the nine types as toggles; each ticked type says where it came
   from (*MusicBrainz* · *the title* · *you*). Unticking an automatic one is kept (*removed by you*), with *Back to
-  automatic* on that song. The editor names the other copies: *also on 2 other albums — the change applies there too*.
+  automatic* on that song. The panel names the other copies — only the same MusicBrainz recording: *the same recording is also on 2 other
+  albums — the change applies there too*. Ticking *Session* ticks *Live* with it.
 - **Instrumental's detail line:** *Instrumental version of {song}* (linking to the sung song when it is in the
   library) or *An instrumental piece*.
 - **Many songs at once:** select rows → *Set version…* (add / remove a type on all of them).
@@ -111,9 +119,10 @@ earns its place; it is the doorway to the filter.
 ### D5. Dashboard — one row in 285's grammar
 
 **Lyrics on an instrumental** — *These songs are instrumental, but have lyrics beside them.* Count today: **10**
-(nine instrumental demos on one box set, one B-side titled *(instrumental)*). The action: **Remove the lyrics**
-(only sidecars jellystructure wrote; the song is then never given lyrics again). Opens Library → Songs filtered to
-*Instrumental · has lyrics*. Severity: warn.
+(nine instrumental demos on one box set, one B-side titled *(instrumental)*). The action: **Remove the lyrics** — a
+button, pressed by the owner, never run on its own (only sidecars jellystructure wrote; the song is then never given
+lyrics again). A second, quieter action, also only by hand: *Tell LRCLIB it is instrumental*. Opens Library →
+Songs filtered to *Instrumental · has lyrics*. Severity: warn.
 
 ### D6. States
 
@@ -135,13 +144,17 @@ Nothing for the viewer in round 1.
 · *Back to automatic* · *Instrumental version of {song}* · *An instrumental piece* · *also on {n} other albums — the
 change applies there too* · *Lyrics on an instrumental* · *Remove the lyrics*.
 
-## G. Round-1 questions (directions wanted, owner picks)
+## G. Questions
 
-| # | Question | Lean |
+| # | Question | Answer |
 |---|---|---|
-| Q1 | The badge: a text chip per type (*LIVE*), a coloured dot with the word on hover, or one combined chip (*Live · Acoustic*)? | text chip per type — readable at a glance, and it is what filters by |
-| Q2 | Where the editor opens: a popover on the song row, or the song's own side panel? | popover — a version is a two-second decision |
-| Q3 | A fixed list of nine, or can the owner add types (as JS tags can be added)? | fixed in round 1; colour and meaning editable |
-| Q4 | Is a Session also Live? (MusicBrainz marks sessions `live`) | yes, both — excluding Live should exclude sessions too |
-| Q5 | The name of the field: *Version*, *Song type*, or *Kind*? | *Version* — it is what the titles themselves say |
-| Q6 | Does *No version* need its own word in the facet (*Originals*, *Studio*)? | *No version* — *Studio* is wrong for a studio demo |
+| Q0 | A piece that was never sung (an intro, a prelude): the same *Instrumental* type, a type of its own, or no type? | **open** — the owner's |
+| Q1 | The badge: a text chip per type, a coloured dot, one combined chip, …? | **the designer's** — directions wanted |
+| Q2 | Where the editor opens | **the song's side panel** (owner) |
+| Q3 | A fixed list, or can the owner add types? | **fixed for now** (owner); colour and meaning editable |
+| Q4 | Is a Session also Live? | **yes** (owner) — ticking Session ticks Live |
+| Q5 | The name of the field | ***Version*** (owner) |
+| Q6 | The facet's word for songs with no type | ***No version*** (owner) |
+| Q7 | Does a change spread to other copies? | **only along a direct link** — the same MusicBrainz recording (owner) |
+| Q8 | Lyrics on an instrumental | **removed only by the owner's button** on the Dashboard row (owner) |
+| Q9 | Telling LRCLIB | **only by hand**, never automatic (owner) |
