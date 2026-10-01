@@ -71,7 +71,8 @@ class MusicMediaService(
     }
 
     /** FR-277-8 — where a track's lyrics stand now: a sidecar on disk wins over the last lookup's memory. */
-    fun lyricsStateOf(t: MusicTrack): String? = lyricsSidecar(t)?.second ?: t.lyricsState?.takeIf { it == MusicLyrics.INSTRUMENTAL || it == MusicLyrics.NONE }
+    fun lyricsStateOf(t: MusicTrack): String? = if (t.lyricsState == MusicLyrics.BLOCKED) MusicLyrics.BLOCKED
+        else lyricsSidecar(t)?.second ?: t.lyricsState?.takeIf { it == MusicLyrics.INSTRUMENTAL || it == MusicLyrics.NONE }
     fun lyricsFile(t: MusicTrack): String? = lyricsSidecar(t)?.first
 
     // ── Jellyfin ──
@@ -157,15 +158,35 @@ class MusicMediaService(
         var found = 0; var none = 0
         val touched = LinkedHashSet<String>()
         val updates = mutableListOf<MusicTrack>()
+        var skipped = 0
         for (t in snap.tracks.values.filter { it.missingSince == null && it.path != null && (albumIds == null || it.albumId in albumIds) }) {
-            lyricsSidecar(t)?.let { (_, state) -> if (t.lyricsState != state) updates += t.copy(lyricsState = state, lyricsCheckedAt = now); return@let }
-            if (lyricsSidecar(t) != null) continue
+            // Phase 292 (dev review 8b/8c) — *Remove the lyrics* is final; a song with no singing is never asked about.
+            if (t.lyricsState == MusicLyrics.BLOCKED) continue
+            val sidecar = lyricsSidecar(t)
+            if (sidecar != null) {
+                val (file, state) = sidecar
+                // Dev review 8a — backfill: a sidecar no newer than the last lookup was there before we looked.
+                val source = t.lyricsSource ?: run {
+                    val mtime = dev.jellystructure.media.FileIntegrityService.stampOf(file)?.mtime
+                    if (t.lyricsCheckedAt != null && mtime != null && mtime >= t.lyricsCheckedAt) dev.jellystructure.model.MusicLyricsSource.LRCLIB else dev.jellystructure.model.MusicLyricsSource.FOUND
+                }
+                val hash = t.lyricsHash ?: if (source == dev.jellystructure.model.MusicLyricsSource.LRCLIB) fileHash(file) else null
+                if (t.lyricsState != state || t.lyricsSource != source || t.lyricsHash != hash)
+                    updates += t.copy(lyricsState = state, lyricsCheckedAt = if (t.lyricsState != state) now else t.lyricsCheckedAt, lyricsSource = source, lyricsHash = hash)
+                continue
+            }
+            if (snap.versions.of(t).blocksLyrics) { skipped++; continue }
             val due = force || scopeAll || t.lyricsCheckedAt == null || now - t.lyricsCheckedAt >= LYRICS_RETRY_SEC
             if (!due) continue
             val artist = t.artists.firstOrNull()?.name ?: continue
             val album = t.albumId?.let { snap.albums[it]?.title }
             val l = Lrclib.find(artist, t.title, album, t.durationMs?.let { (it / 1000).toInt() }) ?: continue   // no answer: next time
             val base = t.path!!.substringBeforeLast('.')
+            val written = when {
+                l.synced != null -> l.synced
+                l.plain != null -> l.plain
+                else -> null
+            }
             val state = when {
                 l.synced != null -> if (writeText("$base.lrc", l.synced)) MusicLyrics.SYNCED else null
                 l.plain != null -> if (writeText("$base.txt", l.plain)) MusicLyrics.PLAIN else null
@@ -173,12 +194,77 @@ class MusicMediaService(
                 else -> MusicLyrics.NONE
             } ?: continue
             if (state == MusicLyrics.SYNCED || state == MusicLyrics.PLAIN) { found++; t.albumId?.let { touched += it } } else none++
-            updates += t.copy(lyricsState = state, lyricsCheckedAt = now)
+            // Dev review 8a — what was written, so only our own file is ever removed.
+            updates += if (written != null) t.copy(lyricsState = state, lyricsCheckedAt = now, lyricsSource = dev.jellystructure.model.MusicLyricsSource.LRCLIB, lyricsLrclibId = l.id, lyricsHash = dev.jellystructure.auth.sha256Hex(written))
+                else t.copy(lyricsState = state, lyricsCheckedAt = now)
         }
         store.putTracks(updates)
         refreshInJellyfin(touched.mapNotNull { snap.albums[it] }, emptyList())
         touched.forEach { history?.record(it, "music_lyrics", "Lyrics fetched from LRCLIB") }
-        return MusicStepSummary(listOf(if (found > 0) "$found songs got lyrics" else "", if (none > 0) "$none without" else ""))
+        return MusicStepSummary(listOf(if (found > 0) "$found songs got lyrics" else "", if (none > 0) "$none without" else "",
+            if (skipped > 0) "$skipped not looked up (no singing)" else ""))
+    }
+
+    private fun fileHash(path: String): String? = runCatching { FileIo.readText(Path(path)) }.getOrNull()?.let { dev.jellystructure.auth.sha256Hex(it) }
+
+    /**
+     * Phase 292 (FR-292-15 action 1, dev review 8) — *Remove the lyrics*, pressed by the admin, never run on its own:
+     * every song of the Dashboard row loses the sidecar **jellystructure wrote** (and only while the file is still
+     * what was written), keeps any embedded lyric and any file someone else put there, and is marked [MusicLyrics.BLOCKED]
+     * so no run gives it lyrics again. The albums are refreshed in Jellyfin.
+     */
+    suspend fun removeLyricsOnNoSinging(trackIds: Collection<String>? = null): String {
+        val snap = store.snapshot()
+        val songs = snap.tracks.values.filter { it.missingSince == null && (trackIds == null || it.id in trackIds) && snap.versions.lyricsOnNoSinging(it) }
+        if (songs.isEmpty()) return "Nothing to remove"
+        var deleted = 0; var kept = 0
+        val now = nowEpochSec()
+        val updates = songs.map { t ->
+            val file = lyricsFile(t)
+            if (file != null) {
+                val ours = t.lyricsSource == dev.jellystructure.model.MusicLyricsSource.LRCLIB && t.lyricsHash != null && fileHash(file) == t.lyricsHash
+                if (ours && platform.posix.remove(file) == 0) deleted++ else kept++
+            }
+            t.copy(lyricsState = MusicLyrics.BLOCKED, lyricsCheckedAt = now)
+        }
+        store.putTracks(updates)
+        val albums = songs.mapNotNull { it.albumId }.distinct()
+        refreshInJellyfin(albums.mapNotNull { snap.albums[it] }, emptyList())
+        val sentence = buildString {
+            append("Lyrics removed from ${updates.size} song${if (updates.size == 1) "" else "s"} with no singing")
+            if (deleted > 0) append(" · $deleted file${if (deleted == 1) "" else "s"} jellystructure wrote deleted")
+            if (kept > 0) append(" · $kept file${if (kept == 1) "" else "s"} not ours kept (hidden from viewers)")
+        }
+        albums.forEach { runCatching { history?.record(it, "music_lyrics", sentence) } }
+        return sentence
+    }
+
+    /**
+     * Phase 292 (FR-292-15 action 2, Q9) — *Tell LRCLIB it is instrumental*, by hand only: one publish per song of
+     * the Dashboard row, through [Lrclib.publishInstrumental]. Slow (a proof of work per song), so the caller runs it
+     * in the background; the outcome goes to each album's History.
+     */
+    suspend fun tellLrclibInstrumental(trackIds: Collection<String>? = null): String {
+        val snap = store.snapshot()
+        val songs = snap.tracks.values.filter { t ->
+            t.missingSince == null && (trackIds == null || t.id in trackIds) && snap.versions.of(t).blocksLyrics &&
+                (snap.versions.hasLyrics(t) || t.lyricsState == MusicLyrics.BLOCKED)
+        }
+        var ok = 0
+        val failed = mutableListOf<String>()
+        for (t in songs) {
+            val artist = t.artists.firstOrNull()?.name
+            val album = t.albumId?.let { snap.albums[it]?.title }
+            val dur = t.durationMs?.let { (it / 1000).toInt() }
+            if (artist == null || album == null || dur == null) { failed += "${t.title}: no artist, album or length"; continue }
+            val err = Lrclib.publishInstrumental(artist, t.title, album, dur)
+            if (err == null) ok++ else failed += "${t.title}: $err"
+        }
+        val sentence = "Told LRCLIB $ok of ${songs.size} song${if (songs.size == 1) "" else "s"} ${if (ok == 1) "is" else "are"} instrumental" +
+            if (failed.isNotEmpty()) " · ${failed.size} failed (${failed.first()})" else ""
+        songs.mapNotNull { it.albumId }.distinct().forEach { runCatching { history?.record(it, "music_lyrics", sentence) } }
+        Logger.info("lrclib publish: $sentence", "music")
+        return sentence
     }
 
     private suspend fun writeText(path: String, text: String): Boolean = runCatching {

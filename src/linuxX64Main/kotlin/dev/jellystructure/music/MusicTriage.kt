@@ -33,7 +33,12 @@ object MusicTriage {
         Key("music_no_picture", ARTIST, "Artists without a picture"),
         Key("music_reencodes", SONG, "Songs a phone plays only by re-encoding"),
         Key("music_files_no_ids", SONG, "Songs whose files don’t say what they are"),
+        // Phase 292 (FR-292-15) — songs with no singing that still have lyrics beside them (no-words pieces included,
+        // which no Version facet value can reach: they are *No version*).
+        Key(INSTRUMENTAL_LYRICS, SONG, "Lyrics on an instrumental"),
     ).associateBy { it.key }
+
+    const val INSTRUMENTAL_LYRICS = "music_instrumental_lyrics"
 
     val AUDIOBOOKS: Map<String, Key> = listOf(
         Key("audiobooks_missing_part", BOOK, "A part is missing"),
@@ -72,6 +77,7 @@ object MusicTriage {
             "music_reencodes" -> MusicFormats.reencodesOnPhone(t.container, t.codec)
             "music_files_no_ids" -> t.albumId?.let { snap.albums[it] }?.matchState == MusicMatch.MATCHED &&
                 t.jellyfinProviderIds.keys.none { k -> k.startsWith("MusicBrainz") }
+            INSTRUMENTAL_LYRICS -> snap.versions.lyricsOnNoSinging(t)
             else -> false
         }
 

@@ -59,6 +59,7 @@ class MusicScanner(
             val prev = store.snapshot()
             val rows = MusicIngest.build(lib, jf, prev.artists, prev.albums, prev.tracks, nowEpochSec(), exists)
             store.replaceLibrary(rows)
+            carryVersionChoices(prev, rows)
             lastScanAt = nowEpochSec()
             Logger.info("scan_music: ${lib.name} — ${jf.albums.size} albums, ${jf.tracks.size} tracks, ${rows.artists.size} artists", "music")
         }
@@ -69,6 +70,24 @@ class MusicScanner(
                 s.tracks.values.count { it.libraryId in ids && it.missingSince != null }
         }
         return MusicScanSummary(libs.size, h.artists, h.albums, h.tracks, missing, failed)
+    }
+
+    /**
+     * Phase 292 (dev review 6) — *Convert…* writes a new file beside the old one (same name, `.m4a`), and Jellyfin
+     * gives it a new item id. A song that is new in this scan and has the same base name, in the same folder, as a
+     * song that just went missing takes over that song's `trk:` version ticks. A file moved or renamed by hand loses
+     * them (accepted, and said in 292's build notes).
+     */
+    private suspend fun carryVersionChoices(prev: MusicStore.Snapshot, rows: MusicLibraryRows) {
+        if (prev.choices.keys.none { it.startsWith("trk:") }) return
+        fun base(p: String?) = p?.substringBeforeLast('.')
+        val gone = rows.tracks.filter { it.missingSince != null && prev.tracks[it.id]?.missingSince == null && "trk:${it.id}" in prev.choices }
+            .associateBy { base(it.path) }
+        if (gone.isEmpty()) return
+        for (t in rows.tracks.filter { it.missingSince == null && it.id !in prev.tracks }) {
+            val old = gone[base(t.path)] ?: continue
+            store.moveChoices("trk:${old.id}", "trk:${t.id}", copyOnly = true)
+        }
     }
 
     companion object {

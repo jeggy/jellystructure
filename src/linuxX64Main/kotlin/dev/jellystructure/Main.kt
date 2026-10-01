@@ -311,6 +311,7 @@ fun main() = runBlocking {
         ),
         // Phase 280 — audiobooks: the folder is the book.
         audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db)),
+        versions = dev.jellystructure.music.MusicVersionService(musicStore, mediaHistory),
     )
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)

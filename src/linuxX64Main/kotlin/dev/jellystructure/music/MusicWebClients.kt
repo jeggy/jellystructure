@@ -6,6 +6,10 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MusicArtCandidate
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -156,7 +160,8 @@ object WikipediaBio {
 object Lrclib {
     private val limiter = FixedRateLimiter(2.0, burst = 2.0)
 
-    data class Lyrics(val synced: String?, val plain: String?, val instrumental: Boolean)
+    /** [id] is LRCLIB's own id for the entry (292: recorded with the sidecar, dev review 8a). */
+    data class Lyrics(val synced: String?, val plain: String?, val instrumental: Boolean, val id: Long? = null)
 
     /** Exact lookup first, then a search whose duration is within 3 s. Null = no answer; a Lyrics with both texts
      *  null and instrumental false = nothing found. */
@@ -185,6 +190,56 @@ object Lrclib {
         val synced = o["syncedLyrics"].str()?.takeIf { it.isNotBlank() }
         val plain = o["plainLyrics"].str()?.takeIf { it.isNotBlank() }
         if (!instrumental && synced == null && plain == null) return null
-        return Lyrics(synced, plain, instrumental)
+        return Lyrics(synced, plain, instrumental, (o["id"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toLongOrNull())
     }
+
+    // ── Phase 292 (FR-292-15, Q9) — *Tell LRCLIB it is instrumental*, by hand only ──
+
+    /**
+     * LRCLIB's documented publish API (no account): `POST /api/request-challenge` answers `{prefix, target}`; the
+     * client finds a nonce whose SHA-256 of `prefix + nonce` is at most `target` (both hex), and sends
+     * `X-Publish-Token: prefix:nonce` with `POST /api/publish`. A publish with both lyrics fields empty marks the
+     * track instrumental. It adds an entry; it does not correct the copied one.
+     *
+     * **Not verified against the live API** (292 build notes): verifying needs a real write to a public database,
+     * which the build did not send. Every failure comes back as one sentence. Null = LRCLIB accepted it.
+     */
+    suspend fun publishInstrumental(artist: String, title: String, album: String, durationSec: Int, maxTries: Long = 200_000_000L): String? {
+        val challenge = postText("https://lrclib.net/api/request-challenge", null, null) ?: return "LRCLIB didn't hand out a challenge"
+        val o = runCatching { json.parseToJsonElement(challenge).jsonObject }.getOrNull() ?: return "LRCLIB's challenge could not be read"
+        val prefix = o["prefix"].str() ?: return "LRCLIB's challenge had no prefix"
+        val target = o["target"].str()?.lowercase() ?: return "LRCLIB's challenge had no target"
+        val nonce = solve(prefix, target, maxTries) ?: return "the challenge was not solved in time"
+        val body = kotlinx.serialization.json.buildJsonObject {
+            put("trackName", kotlinx.serialization.json.JsonPrimitive(title))
+            put("artistName", kotlinx.serialization.json.JsonPrimitive(artist))
+            put("albumName", kotlinx.serialization.json.JsonPrimitive(album))
+            put("duration", kotlinx.serialization.json.JsonPrimitive(durationSec))
+            put("plainLyrics", kotlinx.serialization.json.JsonPrimitive(""))
+            put("syncedLyrics", kotlinx.serialization.json.JsonPrimitive(""))
+        }.toString()
+        return if (postText("https://lrclib.net/api/publish", body, "$prefix:$nonce") != null) null else "LRCLIB did not accept it"
+    }
+
+    /** The proof of work: the first nonce whose hash is at most [target]. Yields now and then so it can be cancelled. */
+    suspend fun solve(prefix: String, target: String, maxTries: Long): Long? {
+        var n = 0L
+        while (n < maxTries) {
+            if (dev.jellystructure.auth.sha256Hex(prefix + n) <= target) return n
+            n++
+            if (n % 20_000L == 0L) kotlinx.coroutines.yield()
+        }
+        return null
+    }
+
+    private suspend fun postText(url: String, body: String?, token: String?): String? = runCatching {
+        OutboundHttp.withPermit {
+            val r = OutboundHttp.client.post(url) {
+                header(HttpHeaders.UserAgent, ua())
+                token?.let { header("X-Publish-Token", it) }
+                if (body != null) { contentType(ContentType.Application.Json); setBody(body) }
+            }
+            if (r.status.value in 200..299) r.bodyAsText() else { Logger.warn("LRCLIB $url answered ${r.status.value}", "music"); null }
+        }
+    }.getOrElse { e -> if (e is CancellationException) throw e; Logger.warn("LRCLIB $url failed: ${e.message}", "music"); null }
 }

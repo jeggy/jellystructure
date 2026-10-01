@@ -40,7 +40,7 @@ data class DashboardDomain(val id: String, val label: String, val rows: Int = 0)
 /**
  * FR-285-2 — one row grammar: severity · label + one plain sentence · the count of the things with the problem
  * (in [unit]) · the domain · what fixing means ([fix]: `here` · `open` · `elsewhere` · `info`) with at most one
- * action. An advisor finding carries its live value ([now]), the path to change it ([where] › [path]), what to set
+ * action — except 292's *Lyrics on an instrumental*, which amends FR-285-2 with a quieter second one ([action2]). An advisor finding carries its live value ([now]), the path to change it ([where] › [path]), what to set
  * and what you lose, and its own re-check / apply action ([actionKind] on [findingId]).
  */
 @Serializable
@@ -63,6 +63,9 @@ data class DashboardRow(
     val tradeoff: String? = null,
     @SerialName("action_kind") val actionKind: String? = null,
     @SerialName("finding_id") val findingId: String? = null,
+    /** Phase 292 (FR-292-15, dev review 9) — a second, quieter action, also pressed by hand only. Admin-only DTO. */
+    val action2: String? = null,
+    @SerialName("action2_id") val action2Id: String? = null,
 )
 
 @Serializable

@@ -26,7 +26,26 @@ import kotlinx.serialization.json.Json
 @Serializable data class MbArtistCredit(val name: String = "", val joinphrase: String = "", val artist: MbArtistRef? = null)
 @Serializable data class MbGenre(val name: String = "", val count: Int = 0)
 @Serializable data class MbUrl(val resource: String = "")
-@Serializable data class MbRelation(val type: String = "", val url: MbUrl? = null)
+/** Phase 292 (dev review 1) — a relationship as MusicBrainz sends it: the type, which way it points from the entity
+ *  asked about (`forward` = that entity is the first one in the type's phrase), its attributes, and the target. */
+@Serializable data class MbRelation(
+    val type: String = "",
+    val url: MbUrl? = null,
+    val direction: String? = null,
+    @SerialName("target-type") val targetType: String? = null,
+    val attributes: List<String> = emptyList(),
+    val work: MbWork? = null,
+    val recording: MbRecordingRef? = null,
+    val artist: MbArtistRef? = null,
+)
+/** A work as a relationship carries it; `language` is ISO 639-3 (`zxx` = no words), `languages` when several. */
+@Serializable data class MbWork(val id: String = "", val title: String = "", val language: String? = null, val languages: List<String> = emptyList())
+/** The other recording of a recording–recording relationship (no artist credit in that answer). */
+@Serializable data class MbRecordingRef(
+    val id: String = "",
+    val title: String = "",
+    @SerialName("artist-credit") val artistCredit: List<MbArtistCredit> = emptyList(),
+)
 @Serializable data class MbLifeSpan(val begin: String? = null, val end: String? = null, val ended: Boolean? = null)
 @Serializable data class MbAlias(val name: String = "")
 @Serializable data class MbLabel(val name: String = "")
@@ -41,6 +60,9 @@ data class MbRecording(
     val score: Int? = null,
     @SerialName("artist-credit") val artistCredit: List<MbArtistCredit> = emptyList(),
     val releases: List<MbRelease> = emptyList(),
+    /** Phase 292 — MusicBrainz's note (*instrumental demo*) and the recording's relationships, when asked for. */
+    val disambiguation: String? = null,
+    val relations: List<MbRelation> = emptyList(),
 )
 
 @Serializable
@@ -194,6 +216,20 @@ open class MusicBrainzClient(
 
     open suspend fun release(mbid: String): MbRelease? =
         get("/release/$mbid?inc=recordings+media+labels+artist-credits+release-groups", MbRelease.serializer())
+
+    /** Phase 292 (dev review 1) — the release with every recording's relationships: performances of works (with the
+     *  work's language), remix/edit/instrumental links and remixer credits. One request, and only ever for one release
+     *  — never added to [releasesOf], a browse of up to 25 pressings. */
+    open suspend fun releaseWithRels(mbid: String): MbRelease? =
+        get("/release/$mbid?inc=recordings+media+labels+artist-credits+release-groups+recording-level-rels+work-rels+artist-rels+recording-rels", MbRelease.serializer())
+
+    /** Phase 292 — one recording's relationships: a recording chosen by hand is not on the album's release. */
+    open suspend fun recordingRels(mbid: String): MbRecording? =
+        get("/recording/$mbid?inc=work-rels+artist-rels+recording-rels", MbRecording.serializer())
+
+    /** Phase 292 (dev review 14) — who a recording is by, for *Instrumental version of {song}* outside the library. */
+    open suspend fun recordingCredit(mbid: String): MbRecording? =
+        get("/recording/$mbid?inc=artist-credits", MbRecording.serializer())
 
     /** FR-276-5 — an artist's recordings of a title, for *Match this track…*. */
     open suspend fun searchRecordings(artist: String, title: String, limit: Int = 10): List<MbRecording>? {

@@ -53,6 +53,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
@@ -327,9 +328,13 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val triage = qp["filter"]?.takeIf { it in dev.jellystructure.music.MusicTriage.MUSIC }
             val view = dev.jellystructure.music.MusicTriage.viewOf(triage) ?: qp["view"]?.takeIf { it in MusicBrowse.VIEWS } ?: MusicBrowse.ALBUMS
             val selected = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["f.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
+            // Phase 292 (FR-292-11) — *Hide* rides `x.<key>=` beside `f.<key>=`; `artist=` narrows Songs to one artist.
+            val excluded = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["x.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
+            val artist = qp["artist"]?.takeIf { it.isNotBlank() }
             val libs = MusicScanner.musicLibraries(cfg)
             val snap = music.store.snapshot()
-            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage)
+            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage,
+                excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS })
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
@@ -337,6 +342,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 view = view, total = r.rowsTotal, facets = r.facets, albums = r.albums, artists = r.artists, songs = r.songs,
                 musicbrainzEnabled = cfg.musicbrainz.enabled,
                 filter = triage, filterLabel = triage?.let { dev.jellystructure.music.MusicTriage.MUSIC[it]?.label }, writeTags = cfg.music.writeTags,
+                sentence = r.sentence, artist = artist.takeIf { view == MusicBrowse.SONGS }, versionTypes = music.versions.chipTypes(snap),
             ))
         }
 
@@ -353,7 +359,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val all = dev.jellystructure.music.MusicFlags.raw(snap.albums.values, roots, withDismissed = true)[a.id].orEmpty()
             val shown = dev.jellystructure.music.MusicFlags.of(snap.albums.values, roots)[a.id].orEmpty()
             call.respond(MusicAlbumPageDto(
-                album = a, tracks = MusicBrowse.trackRows(tracks) { media.lyricsStateOf(it) },
+                album = a, tracks = MusicBrowse.trackRows(tracks, snap.versions) { media.lyricsStateOf(it) },
                 genres = a.effectiveGenres(),
                 coverUrl = if (a.coverState != dev.jellystructure.model.MusicArt.NONE) "/api/music/image/album/${a.id}?v=${a.updatedAt}" else null,
                 drift = media.albumDrift(a), lyricsEnabled = cfg.music.fetchLyrics, acoustId = matcher.acoustId.available,
@@ -362,6 +368,9 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 flags = shown, dismissedFlags = all.map { it.kind }.filter { k -> shown.none { it.kind == k } },
                 writeTags = cfg.music.writeTags && music.tags?.available() == true,   // Phase 284 (FR-284-7)
                 year = a.originalYear(),   // Phase 290 (FR-290-1)
+                // Phase 292 (FR-292-9) — the header's phrase from the shown sets.
+                versionSummary = dev.jellystructure.model.MusicVersions.albumSummary(tracks.map { snap.versions.of(it) }),
+                versionTypes = music.versions.chipTypes(snap),
             ))
         }
 
@@ -406,7 +415,49 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 videos = videos.map { MusicVideoRow(it.id, it.title, it.year, it.runtime?.let { m -> m * 60 }) },
                 genres = genres, jellyfinUrl = jellyfinWebUrl(cfg, r.id),
                 biography = r.biographyEdited ?: r.biographies["en"] ?: r.biographies.values.firstOrNull(),
+                versionCounts = music.versions.artistCounts(r.id),   // Phase 292 (FR-292-14)
             ))
+        }
+
+        // ── Phase 292: a song's version ──
+
+        /** The side panel (FR-292-7). */
+        get("/track/{id}/versions") {
+            call.respond(music.versions.panel(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+        }
+        /** One tick, saved at once. Session on also writes Live on; Live off leaves Session (dev review 7). */
+        put("/track/{id}/versions/{type}") {
+            val req = call.receive<dev.jellystructure.model.MusicVersionSetRequest>()
+            call.respond(music.versions.set(call.parameters["id"]!!, call.parameters["type"]!!, req.on) ?: return@put call.respond(HttpStatusCode.NotFound))
+        }
+        /** *Back to automatic*. */
+        delete("/track/{id}/versions") {
+            call.respond(music.versions.reset(call.parameters["id"]!!) ?: return@delete call.respond(HttpStatusCode.NotFound))
+        }
+        /** *Set version…*'s dialog: *N of M have it* per type, and the copies on other albums. */
+        post("/versions/preview") {
+            val req = call.receive<dev.jellystructure.model.MusicVersionBulkRequest>()
+            call.respond(music.versions.preview(req.trackIds))
+        }
+        post("/versions/bulk") {
+            val req = call.receive<dev.jellystructure.model.MusicVersionBulkRequest>()
+            call.respond(MusicBulkResult(music.versions.bulk(req.trackIds, req.add.toSet(), req.remove.toSet())))
+        }
+        /** Metadata → Versions (FR-292-13): saved as the owner edits, like JS tags — not Settings. */
+        get("/version-types") { call.respond(music.versions.types()) }
+        patch("/version-types") {
+            val req = call.receive<dev.jellystructure.model.MusicVersionTypePatch>()
+            call.respond(music.versions.patchType(req) ?: return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Unknown type or a colour that is not #rrggbb")))
+        }
+        /** FR-292-15 action 1 — by hand only: delete our sidecars beside songs with no singing, and block them. */
+        post("/lyrics/remove-instrumental") {
+            call.respond(MusicBulkResult(media.removeLyricsOnNoSinging()))
+        }
+        /** FR-292-15 action 2 — by hand only, in the background (a proof of work per song); the outcome goes to History. */
+        post("/lyrics/tell-lrclib") {
+            val n = music.store.snapshot().let { s -> s.tracks.values.count { it.missingSince == null && s.versions.lyricsOnNoSinging(it) } }
+            appScope.launch { runCatching { media.tellLrclibInstrumental() }.onFailure { Logger.warn("LRCLIB publish failed: ${it.message}", "music") } }
+            call.respond(MusicBulkResult("Telling LRCLIB about $n song${if (n == 1) "" else "s"} — the outcome goes to each album’s History"))
         }
 
         post("/artist/{id}/lock") {

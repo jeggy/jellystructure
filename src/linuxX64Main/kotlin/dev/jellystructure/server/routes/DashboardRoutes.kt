@@ -48,6 +48,7 @@ class DashboardService(
     private data class Spec(
         val domain: String?, val severity: String, val fix: String, val label: String, val sentence: String,
         val instanceUnit: String? = null, val action: String? = null, val actionId: String? = null,
+        val action2: String? = null, val action2Id: String? = null,
     )
 
     private val specs: Map<String, Spec> = mapOf(
@@ -75,6 +76,9 @@ class DashboardService(
         "music_no_picture" to Spec("music", WARNING, "open", "Artists without a picture", "Neither fanart.tv nor Wikimedia Commons had one."),
         "music_reencodes" to Spec("music", WARNING, "open", "Songs a phone plays only by re-encoding", "WMA. Convert… makes AAC copies and keeps the originals.", action = "Convert…"),
         "music_files_no_ids" to Spec("music", WARNING, "open", "Songs whose files don’t say what they are", "Matched, but none of it is in the files — no MusicBrainz ids. Write tags puts them there."),
+        // Phase 292 (FR-292-15) — two actions, both by hand (amends FR-285-2's one-action rule for this row only).
+        "music_instrumental_lyrics" to Spec("music", WARNING, "here", "Lyrics on an instrumental", "These songs have no singing, but have lyrics beside them.",
+            action = "Remove the lyrics", actionId = "music_lyrics_remove", action2 = "Tell LRCLIB it is instrumental", action2Id = "music_lyrics_lrclib"),
         "audiobooks_missing_part" to Spec("books", WARNING, "open", "A part is missing", "The folder’s files skip a number — the book will jump."),
         "audiobooks_two_in_one" to Spec("books", WARNING, "open", "Folder holds two books", "The parts carry two different book titles."),
         "audiobooks_no_cover" to Spec("books", WARNING, "open", "No cover", "No cover.jpg, no embedded art, no provider had one."),
@@ -107,7 +111,8 @@ class DashboardService(
                 "series" -> if (t.series > 0 || t.instances > 0) rows += mediaRow(t.key, spec, "series", "series", t.series.takeIf { it > 0 } ?: t.instances, t.seriesTitles.takeIf { it > 0 } ?: t.titles, series)
                 "music", "books" -> rows += DashboardRow(
                     id = t.key, domain = spec.domain, severity = spec.severity, label = spec.label, sentence = spec.sentence,
-                    count = t.instances, unit = unitForMusic(t.key), fix = spec.fix, action = spec.action,
+                    count = t.instances, unit = unitForMusic(t.key), fix = spec.fix, action = spec.action, actionId = spec.actionId,
+                    action2 = spec.action2, action2Id = spec.action2Id,
                     href = "/library?kind=${if (spec.domain == "music") "music" else "audiobooks"}&filter=${t.key}",
                 )
                 else -> rows += mediaRow(t.key, spec, spec.domain, "title", t.instances, t.titles, all)

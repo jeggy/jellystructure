@@ -17,12 +17,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicReference
 
-data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int) {
-    fun sentence(): String = if (tried == 0) "nothing to match" else buildString {
+data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0) {
+    fun sentence(): String = (if (tried == 0) "nothing to match" else buildString {
         append("$tried albums · $matched matched · $needsYou need you · $unmatched unmatched")
         if (artists > 0) append(" · $artists artists")
         if (failed > 0) append(" · MusicBrainz didn't answer for $failed")
-    }
+    }) + if (versions > 0) " · versions read for $versions album${if (versions == 1) "" else "s"}" else ""
 }
 
 /**
@@ -157,7 +157,7 @@ class MusicMatchService(
             }
         }.sortedBy { it.sortName ?: it.title }
         statusRef.value = MusicMatchStatus(running = true, done = 0, total = albums.size, startedAt = now)
-        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0
+        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0
         try {
             albums.forEachIndexed { i, a ->
                 statusRef.value = statusRef.value.copy(done = i, currentAlbum = a.title)
@@ -203,11 +203,54 @@ class MusicMatchService(
                     }
                 }
             }
+            // Phase 292 (dev review 5) — a matched album whose recordings were never read for versions is caught up
+            // here: once per album, at MusicBrainz's one request a second. A run over every album leaves out none.
+            if (ids == null) versions = catchUpVersionFacts()
         } finally {
-            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists)
+            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions)
             statusRef.value = MusicMatchStatus(running = false, done = albums.size, total = albums.size, lastSummary = summary.sentence())
         }
-        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists)
+        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions)
+    }
+
+    // ── Phase 292: version facts ──
+
+    /** Every matched album (a locked one too: facts are not a match) whose recordings have no facts yet. */
+    private suspend fun catchUpVersionFacts(): Int {
+        var n = 0
+        val due = store.snapshot().albums.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.releaseMbid != null && it.versionFactsAt == null }
+        for (a in due.sortedBy { it.sortName ?: it.title }) if (runCatching { readVersionFacts(a.id) }.getOrDefault(false)) n++
+        return n
+    }
+
+    /**
+     * Phase 292 (dev review 1, 5, 14) — read what MusicBrainz says about each recording of [albumId]: the release with
+     * its recordings' relationships (one request), each recording chosen by hand on its own, and the artist of an
+     * *instrumental version of* target that is not in the library. False when MusicBrainz did not answer (nothing is
+     * written, and the album is tried again next run).
+     */
+    suspend fun readVersionFacts(albumId: String): Boolean {
+        val album = store.album(albumId) ?: return false
+        val releaseMbid = album.releaseMbid ?: return false
+        val now = nowEpochSec()
+        val release = mb.releaseWithRels(releaseMbid) ?: return false
+        val facts = MusicVersionFacts.fromRelease(release, now).toMutableMap()
+        for (t in tracksOf(albumId)) {
+            val rec = t.recordingMbid ?: continue
+            if (t.recordingState == MusicRecording.MANUAL && rec !in facts) mb.recordingRels(rec)?.let { facts[rec] = MusicVersionFacts.from(it, now) }
+        }
+        val known = store.snapshot().tracks.values.mapNotNull { it.recordingMbid }.toSet()
+        val wanted = tracksOf(albumId).mapNotNull { it.recordingMbid }.toSet()
+        val out = facts.filterKeys { it in wanted }.mapValues { (_, f) ->
+            val target = f.instrumentalOf
+            if (target != null && target.artist == null && target.mbid !in known) {
+                val credit = mb.recordingCredit(target.mbid)?.artistCredit?.let { MusicScoring.creditText(it) }?.takeIf { it.isNotBlank() }
+                f.copy(instrumentalOf = target.copy(artist = credit))
+            } else f
+        }
+        store.putFacts(out.values.toList())
+        store.album(albumId)?.let { store.putAlbum(it.copy(versionFactsAt = now)) }
+        return true
     }
 
     // ── applying a match ──
@@ -242,7 +285,7 @@ class MusicMatchService(
             note(albumId, "music_match", "Matched to “${rg.title}” $how · ${agreement.hits.size} of ${tracks.size} tracks agree" + if (lock) " · locked" else "")
         }
         val byTrack = agreement.hits.associateBy { it.track.id }
-        store.putTracks(tracks.map { t ->
+        val updated = tracks.map { t ->
             val hit = byTrack[t.id]
             val mbt = hit?.mb
             if (t.recordingState == MusicRecording.MANUAL) t.copy(releaseTrackMbid = mbt?.id ?: t.releaseTrackMbid)
@@ -252,7 +295,11 @@ class MusicMatchService(
                 mbTitle = mbt?.title, mbLengthMs = mbt?.length ?: mbt?.recording?.length,
                 mbArtists = MusicScoring.credits(mbt?.artistCredit.orEmpty().ifEmpty { mbt?.recording?.artistCredit.orEmpty() }),
             )
-        })
+        }
+        store.putTracks(updated)
+        // Phase 292 (dev review 6) — a song that gained its recording takes its own version ticks along.
+        moveVersionChoices(tracks, updated)
+        runCatching { readVersionFacts(albumId) }.onFailure { Logger.warn("versions: $albumId: ${it.message}", "music") }
         return matchArtists(album.albumArtists.map { it.artistId to it.name }, mbArtists) +
             tracks.sumOf { t -> matchArtists(t.artists.map { it.artistId to it.name }, store.track(t.id)?.mbArtists.orEmpty()) }
     }
@@ -378,7 +425,21 @@ class MusicMatchService(
     suspend fun useRecording(trackId: String, recordingMbid: String): MusicTrack? {
         val t = store.track(trackId) ?: return null
         t.albumId?.let { note(it, "music_recording", "Recording chosen by hand for “${t.title}”") }
-        return t.copy(recordingMbid = recordingMbid, recordingState = MusicRecording.MANUAL).also { store.putTracks(listOf(it)) }
+        val next = t.copy(recordingMbid = recordingMbid, recordingState = MusicRecording.MANUAL).also { store.putTracks(listOf(it)) }
+        // Phase 292 (dev review 1, 6) — its ticks move to the recording, and the recording's own facts are read.
+        moveVersionChoices(listOf(t), listOf(next))
+        runCatching { mb.recordingRels(recordingMbid)?.let { store.putFacts(listOf(MusicVersionFacts.from(it, nowEpochSec()))) } }
+        return next
+    }
+
+    /** Dev review 6 — `trk:` ticks follow a song to its recording; a cleared match leaves them on the recording. */
+    private suspend fun moveVersionChoices(before: List<MusicTrack>, after: List<MusicTrack>) {
+        val old = before.associateBy { it.id }
+        for (t in after) {
+            val from = old[t.id]?.let { dev.jellystructure.model.MusicVersions.keyOf(it) } ?: continue
+            val to = dev.jellystructure.model.MusicVersions.keyOf(t)
+            if (from != to && from.startsWith("trk:") && to.startsWith("rec:")) store.moveChoices(from, to)
+        }
     }
 
     /** Settings' *Test* for one provider: one real, cheap request. */

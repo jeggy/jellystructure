@@ -130,17 +130,20 @@ class MusicStore(private val db: JellystructureDb) {
      * The owner's ticks: for every key in [keys], each type in [changes] becomes on (`true`), removed (`false`) or
      * goes back to automatic (`null`). One transaction for the whole selection.
      */
-    suspend fun setChoices(keys: Collection<String>, changes: Map<String, Boolean?>, now: Long) = writeLock.withLock {
-        if (keys.isEmpty() || changes.isEmpty()) return@withLock
+    suspend fun setChoices(keys: Collection<String>, changes: Map<String, Boolean?>, now: Long) = setChoices(keys.associateWith { changes }, now)
+
+    /** Per key, its own changes (*Set version…* on a selection: each recording once, one transaction). */
+    suspend fun setChoices(plans: Map<String, Map<String, Boolean?>>, now: Long) = writeLock.withLock {
+        if (plans.isEmpty()) return@withLock
         val q = db.musicVersionsQueries
         db.transaction {
-            for (k in keys) for ((type, on) in changes) {
+            for ((k, changes) in plans) for ((type, on) in changes) {
                 if (on == null) q.deleteChoice(k, type) else q.putChoice(k, type, if (on) STATE_ON else STATE_REMOVED, now)
             }
         }
         val prev = snapshot()
         val next = prev.choices.toMutableMap()
-        for (k in keys) {
+        for ((k, changes) in plans) {
             val m = next[k].orEmpty().toMutableMap()
             for ((type, on) in changes) if (on == null) m.remove(type) else m[type] = MusicVersionChoice(type, on, now)
             if (m.isEmpty()) next.remove(k) else next[k] = m

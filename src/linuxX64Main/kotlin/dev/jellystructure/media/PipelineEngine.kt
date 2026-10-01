@@ -79,6 +79,8 @@ class MusicPipeline(
     val media: dev.jellystructure.music.MusicMediaService,
     // Phase 280 — the audiobook libraries ride the music steps' run (never a single-item run, run with no film changed).
     val audiobooks: dev.jellystructure.audiobooks.AudiobooksScanner? = null,
+    // Phase 292 — a song's version: the panel, the ticks, Metadata → Versions.
+    val versions: dev.jellystructure.music.MusicVersionService = dev.jellystructure.music.MusicVersionService(store),
 ) {
     /** Phase 278 — *Convert…* (set in Main.kt once the seeding guard exists). */
     var convert: dev.jellystructure.music.MusicConvert? = null

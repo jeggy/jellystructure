@@ -177,6 +177,8 @@ data class MusicFacetValue(
     val on: Boolean = false,
     /** A warning line under the value (WMA: *plays on a phone only by re-encoding*). */
     val note: String? = null,
+    /** Phase 292 (FR-292-11, dev review 11) — the value is hidden (`x.<key>=`); *Hide* wins over *Only*. */
+    val off: Boolean = false,
 )
 
 @Serializable
@@ -235,6 +237,9 @@ data class MusicSongRow(
     /** [MusicRecording] or null (album not matched). */
     val recording: String? = null,
     @SerialName("album_matched") val albumMatched: Boolean = false,
+    /** Phase 292 (FR-292-10) — the song's version keys as shown, in the table's order; and *no words* (FR-292-5). */
+    val versions: List<String> = emptyList(),
+    @SerialName("no_words") val noWords: Boolean = false,
 )
 
 @Serializable
@@ -267,6 +272,12 @@ data class MusicBrowseDto(
     @SerialName("filter_label") val filterLabel: String? = null,
     /** Phase 293 (FR-293-5) — *Write tags into music files* is on, so the page's work also reaches the files' tags. */
     @SerialName("write_tags") val writeTags: Boolean = false,
+    /** Phase 292 (FR-292-11) — the Songs filter in words (*Songs by Harbour Lights · without Live, Remix*), and the
+     *  `artist=` it was narrowed to. */
+    val sentence: String? = null,
+    val artist: String? = null,
+    /** Phase 292 — the household's types (chip name, colour) for the chips. */
+    @SerialName("version_types") val versionTypes: List<MusicVersionTypeDto> = emptyList(),
 )
 
 /** One row of the Album page's Tracks tab (FR-278-6). */
@@ -288,6 +299,9 @@ data class MusicTrackRow(
     @SerialName("mb_length_ms") val mbLengthMs: Long? = null,
     val lyrics: String? = null,
     @SerialName("gain_db") val gainDb: Double? = null,
+    /** Phase 292 (FR-292-6) — the song's version keys as shown; and *no words* (FR-292-5). */
+    val versions: List<String> = emptyList(),
+    @SerialName("no_words") val noWords: Boolean = false,
 )
 
 @Serializable
@@ -313,6 +327,9 @@ data class MusicAlbumPageDto(
     @SerialName("write_tags") val writeTags: Boolean = false,
     /** Phase 290 (FR-290-1) — the year the album first came out: what the page shows. */
     val year: Int? = null,
+    /** Phase 292 (FR-292-9) — *Live · all 14 songs*, when at least half the songs share a type. */
+    @SerialName("version_summary") val versionSummary: String? = null,
+    @SerialName("version_types") val versionTypes: List<MusicVersionTypeDto> = emptyList(),
 )
 
 /** Phase 283 (FR-283-3) — one flag on an album: the two sides quoted, the other folders, and what Find match… can
@@ -355,6 +372,100 @@ data class MusicArtistPageDto(
     @SerialName("jellyfin_url") val jellyfinUrl: String? = null,
     /** The biography this page shows: the admin's own, else English, else the first language there is. */
     val biography: String? = null,
+    /** Phase 292 (FR-292-14) — the artist's songs per type (filter reading: Session counts as Live), types with at
+     *  least one song only. */
+    @SerialName("version_counts") val versionCounts: List<MusicVersionCount> = emptyList(),
+)
+
+// ── Phase 292 — a song's version ──
+
+/** One type as the admin's pages show it: chip name, the household's colour and meaning, and (Metadata → Versions)
+ *  the counts. [songs] uses the filter's reading (Session counts as Live), so it equals the list it opens. */
+@Serializable
+data class MusicVersionTypeDto(
+    val key: String,
+    val name: String,
+    val chip: String,
+    val color: String,
+    val meaning: String = "",
+    @SerialName("found_from") val foundFrom: String = "",
+    val songs: Int = 0,
+    /** Songs the owner ticked on, and took away. */
+    @SerialName("set_by_you") val setByYou: Int = 0,
+    @SerialName("removed_by_you") val removedByYou: Int = 0,
+)
+
+/** `GET /api/music/version-types` — Metadata → Versions. */
+@Serializable
+data class MusicVersionTypesDto(
+    val types: List<MusicVersionTypeDto>,
+    /** *No version* — an ordinary recording, and a piece that was never sung. */
+    @SerialName("no_version") val noVersion: Int = 0,
+    val palette: List<String> = emptyList(),
+)
+
+/** `PATCH /api/music/version-types` — saved as the owner edits (not Settings: no top Save). */
+@Serializable
+data class MusicVersionTypePatch(val key: String, val color: String? = null, val meaning: String? = null)
+
+@Serializable
+data class MusicVersionCount(val key: String, val label: String, val count: Int)
+
+/** One type's row in the side panel. [sources]: `musicbrainz` · `title` · `user` · `session` (with Session). */
+@Serializable
+data class MusicVersionPanelRow(
+    val key: String,
+    val name: String,
+    val meaning: String,
+    val color: String,
+    val on: Boolean,
+    val sources: List<String> = emptyList(),
+    val removed: Boolean = false,
+)
+
+/** Another album holding the same recording. */
+@Serializable
+data class MusicVersionCopy(@SerialName("album_id") val albumId: String, val title: String)
+
+/** *Instrumental version of {song}*: [trackId] when that song is in the library, else its title and artist. */
+@Serializable
+data class MusicVersionOf(@SerialName("track_id") val trackId: String? = null, @SerialName("album_id") val albumId: String? = null, val title: String, val artist: String? = null)
+
+/** `GET /api/music/track/{id}/versions` — the side panel (FR-292-7). */
+@Serializable
+data class MusicVersionPanelDto(
+    @SerialName("track_id") val trackId: String,
+    val title: String,
+    val artist: String = "",
+    val album: String? = null,
+    @SerialName("album_id") val albumId: String? = null,
+    val position: Int? = null,
+    val matched: Boolean = false,
+    val rows: List<MusicVersionPanelRow>,
+    @SerialName("no_words") val noWords: Boolean = false,
+    @SerialName("has_choices") val hasChoices: Boolean = false,
+    @SerialName("other_albums") val otherAlbums: List<MusicVersionCopy> = emptyList(),
+    @SerialName("lyrics_beside_no_singing") val lyricsBesideNoSinging: Boolean = false,
+    @SerialName("instrumental_of") val instrumentalOf: MusicVersionOf? = null,
+)
+
+@Serializable
+data class MusicVersionSetRequest(val on: Boolean)
+
+@Serializable
+data class MusicVersionBulkRequest(
+    @SerialName("track_ids") val trackIds: List<String>,
+    val add: List<String> = emptyList(),
+    val remove: List<String> = emptyList(),
+)
+
+/** *Set version…*'s dialog: per type *N of M have it*, and how many copies on other albums change with it. */
+@Serializable
+data class MusicVersionBulkPreview(
+    val songs: Int,
+    val counts: Map<String, Int> = emptyMap(),
+    @SerialName("other_copies") val otherCopies: Int = 0,
+    @SerialName("other_albums") val otherAlbums: Int = 0,
 )
 
 /** Metadata → Music genres (FR-278-13). */

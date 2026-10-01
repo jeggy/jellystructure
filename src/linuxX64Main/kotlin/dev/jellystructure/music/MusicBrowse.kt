@@ -36,7 +36,10 @@ object MusicBrowse {
     val FACETS = listOf(
         "match" to "Match", "cover" to "Cover", "artimg" to "Artist image", "format" to "Format", "genre" to "Genre",
         "decade" to "Decade", "type" to "Album type", "lyrics" to "Lyrics", "check" to "Check", "lib" to "Library",
+        // Phase 292 (FR-292-11) — offered in Songs only; *Only* rides `f.version=`, *Hide* `x.version=`.
+        "version" to "Version",
     )
+    const val VERSION = "version"
     private val FIXED: Map<String, List<Pair<String, String>>> = mapOf(
         "match" to listOf("matched" to "matched", MusicMatch.NEEDS_YOU to "needs you", MusicMatch.UNMATCHED to "unmatched", "locked" to "locked"),
         "cover" to listOf("has" to "has a cover", "missing" to "missing"),
@@ -46,6 +49,7 @@ object MusicBrowse {
         "lyrics" to listOf("has" to "has lyrics", "missing" to "missing"),
         // Phase 283 (FR-283-3) — what the folder and the songs disagree on.
         "check" to listOf(MusicFlags.SHARED to "one album in several folders", MusicFlags.FOLDER to "folder and songs disagree", "none" to "nothing to check"),
+        VERSION to (dev.jellystructure.model.MusicVersions.TYPES.map { it.key to it.name } + (dev.jellystructure.model.MusicVersions.NONE to "No version")),
     )
     private const val WMA_NOTE = "plays on a phone only by re-encoding"
     /** Containers a desktop browser plays as they are — the Tracks tab's ▶ (direct play or nothing). */
@@ -78,7 +82,7 @@ object MusicBrowse {
 
     private fun decade(y: Int?): String? = y?.let { (it / 10 * 10).toString() }
 
-    class Result(val rowsTotal: Int, val facets: List<MusicFacet>, val albums: List<MusicAlbumRow>, val artists: List<MusicArtistRow>, val songs: List<MusicSongRow>)
+    class Result(val rowsTotal: Int, val facets: List<MusicFacet>, val albums: List<MusicAlbumRow>, val artists: List<MusicArtistRow>, val songs: List<MusicSongRow>, val sentence: String? = null)
 
     /**
      * One view. [selected] maps a facet key to the values ticked (OR within a facet, AND across facets); [query]
@@ -93,6 +97,10 @@ object MusicBrowse {
         sort: String? = null,
         roots: Set<String> = emptySet(),
         triage: String? = null,
+        /** Phase 292 (FR-292-11) — hidden values per facet (`x.<key>=`): a row with any of them is dropped. */
+        excluded: Map<String, Set<String>> = emptyMap(),
+        /** Phase 292 — Songs by this artist: credited on the song, or the album's artist. */
+        artist: String? = null,
     ): Result {
         val ctx = Ctx(snap, roots)
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
@@ -105,14 +113,16 @@ object MusicBrowse {
             ARTISTS -> {
                 val all = ctx.artists.filter { hit(it.name, it.sortName) && (tp == null || tp.artist(tk!!, it)) }
                 val (shown, counts, universe) = apply(all, ctx::artistValues, selected)
-                Result(shown.size, facets(counts, universe, selected, libraryNames), emptyList(),
+                Result(shown.size, facets(counts, universe, selected, libraryNames, emptyMap(), songs = false), emptyList(),
                     shown.sortedBy { (it.sortName ?: it.name).lowercase() }.map { ctx.artistRow(it) }, emptyList())
             }
             SONGS -> {
-                val all = ctx.tracks.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) && (tp == null || tp.song(tk!!, t)) }
-                val (shown, counts, universe) = apply(all, ctx::songValues, selected)
+                val all = ctx.tracks.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) && (tp == null || tp.song(tk!!, t)) &&
+                    (artist == null || t.artists.any { it.artistId == artist } || t.albumId?.let { snap.albums[it] }?.albumArtists?.any { it.artistId == artist } == true) }
+                val (shown, counts, universe) = apply(all, ctx::songValues, selected, excluded)
                 val sorted = shown.sortedWith(compareBy({ it.albumId?.let { a -> snap.albums[a]?.title?.lowercase() } ?: "" }, { it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() }))
-                Result(shown.size, facets(counts, universe, selected, libraryNames), emptyList(), emptyList(), sorted.map { ctx.songRow(it) })
+                Result(shown.size, facets(counts, universe, selected, libraryNames, excluded, songs = true), emptyList(), emptyList(), sorted.map { ctx.songRow(it) },
+                    songsSentence(snap, artist, selected[VERSION].orEmpty(), excluded[VERSION].orEmpty()))
             }
             else -> {
                 val all = ctx.albums.filter { a -> hit(a.title, a.albumArtists.joinToString(" ") { it.name }) && (tp == null || tp.album(tk!!, a)) }
@@ -123,7 +133,7 @@ object MusicBrowse {
                     "artist" -> shown.sortedWith(compareBy({ it.albumArtists.firstOrNull()?.name?.lowercase() ?: "" }, { it.originalYear() ?: 0 }))
                     else -> shown.sortedWith(compareByDescending<MusicAlbum> { it.addedAt ?: it.createdAt }.thenBy { it.title.lowercase() })
                 }
-                Result(shown.size, facets(counts, universe, selected, libraryNames), sorted.map { ctx.albumRow(it) }, emptyList(), emptyList())
+                Result(shown.size, facets(counts, universe, selected, libraryNames, emptyMap(), songs = false), sorted.map { ctx.albumRow(it) }, emptyList(), emptyList())
             }
         }
     }
@@ -139,13 +149,31 @@ object MusicBrowse {
         return albums.map { (g, n) -> MusicGenreRow(g, n, songs[g] ?: 0) }.sortedWith(compareByDescending<MusicGenreRow> { it.albums }.thenBy { it.name.lowercase() })
     }
 
-    /** The Tracks tab's rows; [lyricsOf] answers from the files beside each track. */
-    fun trackRows(tracks: List<MusicTrack>, lyricsOf: (MusicTrack) -> String?): List<MusicTrackRow> = tracks.map { t ->
+    /**
+     * Phase 292 (FR-292-11) — the Songs filter in words: *Songs by Harbour Lights · without Live, Remix*, *Songs · only
+     * Instrumental*. Null when neither an artist nor a version narrows the list.
+     */
+    fun songsSentence(snap: MusicStore.Snapshot, artist: String?, only: Set<String>, hide: Set<String>): String? {
+        if (artist == null && only.isEmpty() && hide.isEmpty()) return null
+        fun names(keys: Set<String>) = (dev.jellystructure.model.MusicVersions.KEYS + dev.jellystructure.model.MusicVersions.NONE).filter { it in keys }
+            .joinToString(", ") { k -> if (k == dev.jellystructure.model.MusicVersions.NONE) "no version" else dev.jellystructure.model.MusicVersions.info(k)?.name ?: k }
+        return buildString {
+            append("Songs")
+            artist?.let { a -> append(" by ").append(snap.artists[a]?.name ?: "this artist") }
+            if (only.isNotEmpty()) append(" · only ").append(names(only))
+            if (hide.isNotEmpty()) append(" · without ").append(names(hide))
+        }
+    }
+
+    /** The Tracks tab's rows; [lyricsOf] answers from the files beside each track, [versions] each song's version. */
+    fun trackRows(tracks: List<MusicTrack>, versions: MusicVersionIndex? = null, lyricsOf: (MusicTrack) -> String?): List<MusicTrackRow> = tracks.map { t ->
+        val v = versions?.of(t)
         MusicTrackRow(
             id = t.id, disc = t.disc, position = t.position, title = t.title, artists = t.artists, lengthMs = t.durationMs,
             format = MusicFormats.label(t.container, t.codec, t.bitrate), sampleRate = t.sampleRate, reencodes = t.reencodesOnPhone(),
             browser = browserPlays(t), recording = t.recordingState, mbTitle = t.mbTitle, mbLengthMs = t.mbLengthMs,
             lyrics = lyricsOf(t), gainDb = t.trackGainDb,
+            versions = v?.shown.orEmpty(), noWords = v?.noWords == true,
         )
     }
 
@@ -179,7 +207,10 @@ object MusicBrowse {
         }
 
         fun songValues(t: MusicTrack): Map<String, Set<String>> {
-            val own = mapOf("format" to setOf(formatName(t)), "lyrics" to setOf(if (hasLyrics(t)) "has" else "missing"))
+            // Phase 292 (FR-292-4/11) — the filter's reading: Session counts as Live; a song with none is *No version*.
+            val a = snap.versions.of(t)
+            val version = (dev.jellystructure.model.MusicVersions.KEYS + dev.jellystructure.model.MusicVersions.NONE).filter { a.matches(it) }.toSet()
+            val own = mapOf("format" to setOf(formatName(t)), "lyrics" to setOf(if (hasLyrics(t)) "has" else "missing"), VERSION to version)
             val album = t.albumId?.let { snap.albums[it] } ?: return own + ("lib" to setOfNotNull(t.libraryId))
             return albumValues(album) + own
         }
@@ -223,16 +254,21 @@ object MusicBrowse {
                 reencodes = t.reencodesOnPhone(), lyrics = t.lyricsState?.takeIf { it == MusicLyrics.SYNCED || it == MusicLyrics.PLAIN }
                     ?: if (t.hasLyrics) "jellyfin" else null,
                 recording = t.recordingState, albumMatched = album?.matchState == MusicMatch.MATCHED,
+                versions = snap.versions.of(t).shown, noWords = snap.versions.of(t).noWords,
             )
         }
     }
 
     private data class Applied<T>(val shown: List<T>, val counts: Map<String, Map<String, Int>>, val universe: Map<String, Set<String>>)
 
-    private fun <T> apply(items: List<T>, values: (T) -> Map<String, Set<String>>, selected: Map<String, Set<String>>): Applied<T> {
+    private fun <T> apply(items: List<T>, values: (T) -> Map<String, Set<String>>, selected: Map<String, Set<String>>, excluded: Map<String, Set<String>> = emptyMap()): Applied<T> {
         val vs = items.map { it to values(it) }
         val active = selected.filterValues { it.isNotEmpty() }
-        fun passes(v: Map<String, Set<String>>, skip: String?) = active.all { (k, want) -> k == skip || v[k].orEmpty().any { it in want } }
+        val hidden = excluded.filterValues { it.isNotEmpty() }
+        // Phase 292 (FR-292-11) — *Only* keeps rows with any of its values; *Hide* drops rows with any of its values,
+        // and wins over *Only*. A facet's own values are counted against every *other* facet.
+        fun passes(v: Map<String, Set<String>>, skip: String?) = active.all { (k, want) -> k == skip || v[k].orEmpty().any { it in want } } &&
+            hidden.all { (k, no) -> k == skip || v[k].orEmpty().none { it in no } }
         val shown = vs.filter { passes(it.second, null) }.map { it.first }
         val counts = HashMap<String, Map<String, Int>>()
         val universe = HashMap<String, MutableSet<String>>()
@@ -248,11 +284,14 @@ object MusicBrowse {
         return Applied(shown, counts, universe)
     }
 
-    private fun facets(counts: Map<String, Map<String, Int>>, universe: Map<String, Set<String>>, selected: Map<String, Set<String>>, libraryNames: Map<String, String>): List<MusicFacet> =
-        FACETS.map { (key, label) ->
+    private fun facets(counts: Map<String, Map<String, Int>>, universe: Map<String, Set<String>>, selected: Map<String, Set<String>>, libraryNames: Map<String, String>, excluded: Map<String, Set<String>>, songs: Boolean): List<MusicFacet> =
+        FACETS.filter { songs || it.first != VERSION }.map { (key, label) ->
             val c = counts[key].orEmpty()
             val on = selected[key].orEmpty()
-            val values = FIXED[key]?.map { (v, l) -> MusicFacetValue(v, l, c[v] ?: 0, v in on, WMA_NOTE.takeIf { v == "WMA" }) }
+            val off = excluded[key].orEmpty()
+            val values = FIXED[key]?.map { (v, l) ->
+                MusicFacetValue(v, l, c[v] ?: 0, v in on, WMA_NOTE.takeIf { v == "WMA" } ?: "the originals".takeIf { key == VERSION && v == dev.jellystructure.model.MusicVersions.NONE }, off = v in off)
+            }
                 ?: (universe[key].orEmpty() + on).let { all ->
                     when (key) {
                         "decade" -> all.sortedBy { it }.map { MusicFacetValue(it, "${it}s", c[it] ?: 0, it in on) }

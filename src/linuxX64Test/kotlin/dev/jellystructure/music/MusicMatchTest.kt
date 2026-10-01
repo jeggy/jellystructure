@@ -140,6 +140,10 @@ class MusicMatchTest {
         override suspend fun releaseGroup(mbid: String) = if (down) null else groups.firstOrNull { it.id == mbid }?.copy(genres = listOf(MbGenre("folk", 12)))
         override suspend fun releasesOf(releaseGroupMbid: String) = if (down) null else releases[releaseGroupMbid].orEmpty()
         override suspend fun release(mbid: String) = if (down) null else releases.values.flatten().firstOrNull { it.id == mbid }
+        // Phase 292 — never MusicBrainz itself in a test.
+        override suspend fun releaseWithRels(mbid: String) = release(mbid)
+        override suspend fun recordingRels(mbid: String): MbRecording? = null
+        override suspend fun recordingCredit(mbid: String): MbRecording? = null
         override suspend fun artist(mbid: String) = if (down) null else MbArtist(id = mbid, name = "Harbour Lights", type = "Group", country = "NO", lifeSpan = MbLifeSpan("1999"))
     }
 

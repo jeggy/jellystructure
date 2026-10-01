@@ -533,7 +533,12 @@ internal fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, c
     // Phase 284 (FR-284-12) — matched songs whose files carry no MusicBrainz ids (Jellyfin reads them from the tags).
     val noIdSongs = p.count("music_files_no_ids")
     val noIdAlbums = p.songAlbums("music_files_no_ids")
+    // Phase 292 (FR-292-15) — songs with no singing that still have lyrics beside them.
+    val instLyrics = p.count(dev.jellystructure.music.MusicTriage.INSTRUMENTAL_LYRICS)
     return listOf(
+        TriageTypeCount(dev.jellystructure.music.MusicTriage.INSTRUMENTAL_LYRICS, "Lyrics on an instrumental",
+            "These songs have no singing — Instrumental (from MusicBrainz, the title or your tick) or a piece never sung — but have lyrics beside them. *Remove the lyrics* deletes only the files jellystructure wrote and stops the lyrics step for them.",
+            instLyrics, p.songAlbums(dev.jellystructure.music.MusicTriage.INSTRUMENTAL_LYRICS)),
         TriageTypeCount("music_files_no_ids", "Songs whose files don’t say what they are",
             "Matched, but the files carry no MusicBrainz ids — every other player still sees the folder’s guess. *Write tags* on the album (or Library → Music → Write tags…) puts the match into the files.",
             noIdSongs, noIdAlbums),

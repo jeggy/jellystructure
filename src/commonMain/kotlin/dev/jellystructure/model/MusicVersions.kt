@@ -180,6 +180,27 @@ object MusicVersions {
         )
     }
 
+    /**
+     * FR-292-4/7/8, dev review 7 — what the owner's change writes for one key: per type `true` (on), `false` (removed)
+     * or `null` (back to automatic for that type). Adding Session adds Live with it; removing Live leaves Session
+     * alone. A tick that only restates the automatic set writes nothing (it deletes the owner's earlier opposite tick).
+     */
+    fun plan(a: Answer, add: Set<String>, remove: Set<String>): Map<String, Boolean?> {
+        val out = LinkedHashMap<String, Boolean?>()
+        val adds = add.filter { it in ORDER }.toMutableSet()
+        if (SESSION in adds) adds += LIVE
+        for (t in adds) out[t] = if (t in a.automatic) null else true
+        for (t in remove.filter { it in ORDER && it !in adds }) out[t] = if (t in a.automatic) false else null
+        return out
+    }
+
+    /** The artist doorway's words (FR-292-14): *41 live* · *6 remixes*. */
+    fun countLabel(key: String, n: Int): String = "$n " + when (key) {
+        LIVE -> "live"; ACOUSTIC -> "acoustic"; REMIX -> if (n == 1) "remix" else "remixes"
+        ALTERNATE -> if (n == 1) "alternate version" else "alternate versions"
+        else -> (info(key)?.name?.lowercase() ?: key) + if (n == 1) "" else "s"
+    }
+
     /** FR-292-9 — the album header's phrase, from the shown sets: the most common type held by at least half the songs. */
     fun albumSummary(answers: List<Answer>): String? {
         val n = answers.size
