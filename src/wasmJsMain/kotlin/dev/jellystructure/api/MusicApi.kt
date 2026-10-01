@@ -32,9 +32,16 @@ import dev.jellystructure.model.MusicSoundResult
 import dev.jellystructure.model.MusicStatusDto
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.MusicUseRequest
+import dev.jellystructure.model.MusicVersionBulkPreview
+import dev.jellystructure.model.MusicVersionBulkRequest
+import dev.jellystructure.model.MusicVersionPanelDto
+import dev.jellystructure.model.MusicVersionSetRequest
+import dev.jellystructure.model.MusicVersionTypePatch
+import dev.jellystructure.model.MusicVersionTypesDto
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -186,10 +193,16 @@ object MusicApi {
     // ── Phase 278: the pages ──
 
     /** [facets] maps a facet key to the values ticked. */
-    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null, filter: String? = null): MusicBrowseDto? = runCatching {
+    suspend fun browse(
+        view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null, filter: String? = null,
+        hidden: Map<String, Set<String>> = emptyMap(), artist: String? = null,
+    ): MusicBrowseDto? = runCatching {
         val qs = buildList {
             add("view=$view")
             filter?.let { add("filter=${it.encodeURLParameter()}") }   // Phase 293 — a Dashboard row's key
+            // Phase 292 (FR-292-11) — *Hide* beside *Only*, and Songs by one artist.
+            hidden.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("x.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }
+            artist?.let { add("artist=${it.encodeURLParameter()}") }
             query?.takeIf { it.isNotBlank() }?.let { add("q=${it.encodeURLParameter()}") }
             sort?.let { add("sort=$it") }
             facets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }
@@ -230,6 +243,51 @@ object MusicApi {
     suspend fun convert(req: MusicConvertRequest): MusicConvertPlan? = runCatching {
         val r = httpClient.post("/api/music/convert") { contentType(ContentType.Application.Json); setBody(req) }
         if (r.status.isSuccess()) r.body<MusicConvertPlan>() else null
+    }.getOrNull()
+
+    // ── Phase 292: a song's version ──
+
+    suspend fun versionPanel(trackId: String): MusicVersionPanelDto? = runCatching {
+        val r = httpClient.get("/api/music/track/${trackId.encodeURLParameter()}/versions")
+        if (r.status.isSuccess()) r.body<MusicVersionPanelDto>() else null
+    }.getOrNull()
+
+    suspend fun setVersion(trackId: String, type: String, on: Boolean): MusicVersionPanelDto? = runCatching {
+        val r = httpClient.put("/api/music/track/${trackId.encodeURLParameter()}/versions/${type.encodeURLParameter()}") { contentType(ContentType.Application.Json); setBody(MusicVersionSetRequest(on)) }
+        if (r.status.isSuccess()) r.body<MusicVersionPanelDto>() else null
+    }.getOrNull()
+
+    suspend fun resetVersions(trackId: String): MusicVersionPanelDto? = runCatching {
+        val r = httpClient.delete("/api/music/track/${trackId.encodeURLParameter()}/versions")
+        if (r.status.isSuccess()) r.body<MusicVersionPanelDto>() else null
+    }.getOrNull()
+
+    suspend fun versionPreview(trackIds: List<String>): MusicVersionBulkPreview? = runCatching {
+        val r = httpClient.post("/api/music/versions/preview") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds)) }
+        if (r.status.isSuccess()) r.body<MusicVersionBulkPreview>() else null
+    }.getOrNull()
+
+    suspend fun versionBulk(trackIds: List<String>, add: List<String>, remove: List<String>): String? = runCatching {
+        val r = httpClient.post("/api/music/versions/bulk") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds, add, remove)) }
+        if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
+    }.getOrNull()
+
+    suspend fun versionTypes(): MusicVersionTypesDto? = runCatching { httpClient.get("/api/music/version-types").body<MusicVersionTypesDto>() }.getOrNull()
+
+    suspend fun patchVersionType(key: String, color: String? = null, meaning: String? = null): MusicVersionTypesDto? = runCatching {
+        val r = httpClient.patch("/api/music/version-types") { contentType(ContentType.Application.Json); setBody(MusicVersionTypePatch(key, color, meaning)) }
+        if (r.status.isSuccess()) r.body<MusicVersionTypesDto>() else null
+    }.getOrNull()
+
+    /** FR-292-15 — the Dashboard row's two by-hand actions. */
+    suspend fun removeInstrumentalLyrics(): String? = runCatching {
+        val r = httpClient.post("/api/music/lyrics/remove-instrumental")
+        if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
+    }.getOrNull()
+
+    suspend fun tellLrclibInstrumental(): String? = runCatching {
+        val r = httpClient.post("/api/music/lyrics/tell-lrclib")
+        if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
     }.getOrNull()
 
     suspend fun streamUrl(trackId: String): String? = runCatching {

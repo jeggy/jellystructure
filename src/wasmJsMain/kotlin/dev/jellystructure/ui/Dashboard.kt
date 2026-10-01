@@ -445,7 +445,10 @@ private fun ovRowHtml(r: dev.jellystructure.model.DashboardRow, domains: List<de
     }
     val fix = when (r.fix) {
         "here" -> """<span class="ov-fix k-here">One click here</span>""" + (r.actionId?.let { """<span class="btn sm" data-act="$it" data-row="${r.id.esc()}">${(r.action ?: "Fix").esc()}</span>""" }
-            ?: r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm" id="advisor-action-${it.esc()}">${(r.action ?: "Apply").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "")
+            ?: r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm" id="advisor-action-${it.esc()}">${(r.action ?: "Apply").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "") +
+            // Phase 292 (FR-292-15) — the quieter second action, by hand only.
+            (r.action2Id?.let { """<span class="btn sm ghost" data-act="$it" data-row="${r.id.esc()}">${(r.action2 ?: "More").esc()}</span>""" } ?: "") +
+            (if (r.actionId != null && r.href != null) """<a class="btn sm ghost" href="#${r.href}">Open →</a>""" else "")
         "open" -> """<span class="ov-fix k-open">Open the item</span>""" + (href?.let { """<a class="btn sm ghost" href="$it">${(r.action ?: "Open").esc()} →</a>""" } ?: "")
         "elsewhere" -> """<span class="ov-fix k-else">Change ${if (r.where == "the host") "on the host" else "in " + (r.where ?: "").esc()}</span>""" +
             (r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm ghost" id="advisor-action-${it.esc()}">${(r.action ?: "Re-check").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "")
@@ -474,6 +477,20 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
                 "artwork_repair" -> { out("Checking…"); out(if (MediaApi.batchArtworkRepair()) "Started ✓" else "Failed") }
                 "jf_push" -> { out("Writing…"); out(if (MediaApi.batchJellyfinPush()) "Started ✓" else "Failed") }
                 "jf_refresh" -> { out("Sending…"); out(if (MediaApi.jellyfinRefreshAll()) "Triggered ✓" else "Failed") }
+                // Phase 292 (FR-292-15) — never run on their own; each is this button.
+                "music_lyrics_remove" -> {
+                    out("Removing…")
+                    val s = dev.jellystructure.api.MusicApi.removeInstrumentalLyrics()
+                    out(if (s != null) "Done ✓" else "Failed")
+                    s?.let { muToast(it) }
+                    if (s != null) loadOverview(scope)
+                }
+                "music_lyrics_lrclib" -> {
+                    out("Sending…")
+                    val s = dev.jellystructure.api.MusicApi.tellLrclibInstrumental()
+                    out(if (s != null) "Started ✓" else "Failed")
+                    s?.let { muToast(it) }
+                }
             }
         }
     }

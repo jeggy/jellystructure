@@ -20,7 +20,8 @@ import org.w3c.dom.HTMLTextAreaElement
 
 // Phase 155 — "ages" slots in after "tags" per the spec (FR-AGE1-3).
 // Phase 278 (FR-278-13, H3's lean) — "musicgenres", its own tab beside Genres: MusicBrainz's genres never merge with TMDB's.
-private val TAB_LABELS = listOf("studios", "networks", "genres", "musicgenres", "tags", "ages", "trackers")
+// Phase 292 (FR-292-13) — "versions" after "musicgenres": the nine version types, their colour and meaning.
+private val TAB_LABELS = listOf("studios", "networks", "genres", "musicgenres", "versions", "tags", "ages", "trackers")
 
 fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String = "studios") {
     val activeTab = if (initialTab in TAB_LABELS) initialTab else "studios"
@@ -31,7 +32,7 @@ fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String
 
 private fun buildMetadataShell(activeTab: String): String {
     val tabs = TAB_LABELS.joinToString("") { tab ->
-        val label = when (tab) { "ages" -> "Age ratings"; "musicgenres" -> "Music genres"; else -> tab.replaceFirstChar { it.uppercase() } }
+        val label = when (tab) { "ages" -> "Age ratings"; "musicgenres" -> "Music genres"; "versions" -> "Versions"; else -> tab.replaceFirstChar { it.uppercase() } }
         val active = if (tab == activeTab) " on" else ""
         """<span class="$active" data-tab="$tab">$label</span>"""
     }
@@ -127,6 +128,16 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
                             } + "</div>" +
                             """<div class="tiny muted" style="margin-top:14px;line-height:1.6;max-width:720px">A film’s <i>Comedy</i> and an album’s <i>comedy rock</i> are different ids from different providers, so these never merge into the Genres tab. Names are MusicBrainz’s English ones.</div>"""
                     }
+                }
+            }
+            "versions" -> {
+                val d = dev.jellystructure.api.MusicApi.versionTypes()
+                if (d == null) content.innerHTML = errorHtml()
+                else {
+                    var palette = d.palette
+                    fun paint(x: dev.jellystructure.model.MusicVersionTypesDto) { palette = x.palette.ifEmpty { palette }; content.innerHTML = vrMetadataHtml(x) }
+                    paint(d)
+                    vrWireMetadata(content, scope, { palette }) { paint(it) }
                 }
             }
             "tags" -> {

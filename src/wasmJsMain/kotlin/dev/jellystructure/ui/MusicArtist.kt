@@ -122,6 +122,14 @@ private fun arHead(p: MusicArtistPageDto): String {
         append("""<div class="mu-pbm"><span>${muPlural(p.albums.size, "album")}</span><span class="sep">·</span><span>${muPlural(p.songs, "song")} in the library</span>""")
         if (p.creditedOn.isNotEmpty()) append("""<span class="sep">·</span><span>credited on ${p.creditedOn.joinToString(", ") { """<a href="#/album/${it.id}">${it.title.esc()}</a>""" }}</span>""")
         append("</div>")
+        // Phase 292 (FR-292-14) — the doorway: each type opens this artist's songs of that type; Session counts as Live.
+        if (p.versionCounts.isNotEmpty()) {
+            val base = "#/library?kind=music&mview=songs&artist=${dev.jellystructure.encodeURIComponent(r.id)}"
+            append("""<div class="mu-pbm vr-al"><a href="$base">${muPlural(p.songs, "song")}</a>""")
+            for (c in p.versionCounts) append("""<span class="sep">·</span><a href="$base&f.version=${c.key}">${c.label.esc()}</a>""")
+            if (p.versionCounts.any { it.key == "live" || it.key == "remix" }) append("""<span class="sep">·</span><a class="vr-door" href="$base&x.version=live,remix">songs without Live and Remix →</a>""")
+            append("</div>")
+        }
         append("""<div class="mu-acts">$chip</div>""")
         if (p.pictureUrl == null && r.path != null) append("""<div class="tiny" style="margin-top:10px;color:var(--warn)">No artist picture — <a href="#" data-tabgo="artwork">choose one in Artwork</a>. MusicBrainz has none; they come from fanart.tv or Wikimedia Commons.</div>""")
         append("</div></div>")

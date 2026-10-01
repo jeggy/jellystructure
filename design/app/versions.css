@@ -2,8 +2,11 @@
    so it reads on the dark and the light theme alike. */
 .vr-bs{display:inline-flex;align-items:center;gap:4px;margin-left:8px;vertical-align:1px;cursor:pointer;border-radius:7px;flex-wrap:wrap}
 .vr-bs:hover{outline:1px solid var(--hi);outline-offset:3px}
-.vr-b{display:inline-flex;align-items:center;font-size:.64rem;font-weight:700;letter-spacing:.02em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:color-mix(in oklch,var(--c) 58%,var(--ink));background:color-mix(in oklch,var(--c) 15%,transparent);border:1px solid color-mix(in oklch,var(--c) 42%,transparent)}
-.vr-more{display:inline-flex;align-items:center;font-size:.64rem;font-weight:700;line-height:1;color:var(--ink-soft);padding:3px 5px;border-radius:5px;border:1px dashed var(--line-2)}
+.vr-b{display:inline-flex;align-items:center;font-size:11px;font-weight:700;letter-spacing:.02em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:color-mix(in oklch,var(--c) 58%,var(--ink));background:color-mix(in oklch,var(--c) 15%,transparent);border:1px solid color-mix(in oklch,var(--c) 42%,transparent)}
+/* 292 (dev review 16, 17) — 11 px as the spec says; on a light theme the text is 45 % colour (58 % fails 4.5 : 1 for
+   Cover and Session on a light card). */
+[data-theme="light"] .vr-b{color:color-mix(in oklch,var(--c) 45%,var(--ink))}
+.vr-more{display:inline-flex;align-items:center;font-size:11px;font-weight:700;line-height:1;color:var(--ink-soft);padding:3px 5px;border-radius:5px;border:1px dashed var(--line-2)}
 .vr-m{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;box-sizing:border-box;border-radius:4px;font-family:'Space Grotesk',sans-serif;font-size:.62rem;font-weight:700;line-height:1;color:#0d0f15;background:var(--c)}
 .vr-m+.vr-more{height:18px;box-sizing:border-box}
 .vr-p{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:600;line-height:1;padding:4px 9px;border-radius:999px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink);white-space:nowrap}

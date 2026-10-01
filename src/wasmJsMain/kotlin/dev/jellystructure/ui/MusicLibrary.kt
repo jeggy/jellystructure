@@ -26,6 +26,10 @@ private var muQuery = ""
 private var muSort: String? = null
 /** Phase 293 (FR-293-2) — a Dashboard row's triage key; the server narrows the list to it and chooses the view. */
 private var muFilter: String? = null
+/** Phase 292 (FR-292-11) — *Hide* per facet (`x.<key>=`), Songs by one artist (`artist=`), and the songs ticked. */
+private val muHidden = LinkedHashMap<String, MutableSet<String>>()
+private var muArtist: String? = null
+private val muSongSel = LinkedHashSet<String>()
 private val muFacets = LinkedHashMap<String, MutableSet<String>>()
 private val muSelected = LinkedHashSet<String>()
 private var muOpenFacet: String? = null
@@ -42,6 +46,8 @@ private fun muUrl(): String = buildList {
     if (muQuery.isNotBlank()) add("q=${dev.jellystructure.encodeURIComponent(muQuery)}")
     muSort?.let { add("sort=$it") }
     muFacets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}") }
+    muHidden.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("x.$k=${v.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}") }
+    muArtist?.let { add("artist=${dev.jellystructure.encodeURIComponent(it)}") }
 }.joinToString("&").let { "#/library?$it" }
 
 fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<String, String>) {
@@ -49,8 +55,14 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
     muQuery = query["q"].orEmpty()
     muSort = query["sort"]
     muFilter = query["filter"]?.takeIf { it.isNotBlank() }
-    muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null
+    muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null; muHidden.clear(); muSongSel.clear()
     query.filterKeys { it.startsWith("f.") }.forEach { (k, v) -> muFacets[k.removePrefix("f.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
+    query.filterKeys { it.startsWith("x.") }.forEach { (k, v) -> muHidden[k.removePrefix("x.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
+    muArtist = query["artist"]?.takeIf { it.isNotBlank() }
+    // Phase 292 — the mockup's and the spec's `vi=` / `vx=` read as the Version facet's Only / Hide.
+    query["vi"]?.let { muFacets.getOrPut("version") { LinkedHashSet() } += it.split(',').filter { v -> v.isNotBlank() } }
+    query["vx"]?.let { muHidden.getOrPut("version") { LinkedHashSet() } += it.split(',').filter { v -> v.isNotBlank() } }
+    if (query["vi"] != null || query["vx"] != null) muView = "songs"
 
     container.innerHTML = """
         <div class="pagebar">
@@ -90,7 +102,7 @@ private fun muLoad(scope: CoroutineScope) {
     muLoadJob?.cancel()
     muLoadJob = scope.launch {
         historyReplaceState(muUrl())
-        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter)
+        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter, muHidden.mapValues { it.value.toSet() }, muArtist)
         if (dto == null) {
             (document.getElementById("mu-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the music library from the server.</div>"""
             return@launch
@@ -99,6 +111,7 @@ private fun muLoad(scope: CoroutineScope) {
         muFilter = dto.filter
         muView = dto.view
         historyReplaceState(muUrl())
+        vrRemember(dto.versionTypes)   // Phase 292 — chip names and colours
         muDto = dto
         muRender(scope)
         if (dto.match.running) muPollMatch(scope)
@@ -154,7 +167,8 @@ private fun statusLine(d: MusicBrowseDto): String {
 private fun facetBar(d: MusicBrowseDto): String = buildString {
     append("""<div class="mu-facets"><span class="muted tiny">filter:</span>""")
     for (f in d.facets) {
-        val n = f.values.count { it.on }
+        val n = f.values.count { it.on || it.off }
+        if (f.key == "version") { append(versionFacet(f, n)); continue }
         append("""<span class="mu-fc${if (muOpenFacet == f.key) " open" else ""}"><span class="mu-fbtn${if (n > 0) " on" else ""}" data-fopen="${f.key}">${f.label.esc()}${if (n > 0) """ <span class="c">$n</span>""" else ""} ▾</span><div class="mu-fpop">""")
         if (f.values.isEmpty()) append("""<div class="tiny muted" style="padding:6px 9px">None in the library</div>""")
         for (v in f.values) {
@@ -172,17 +186,32 @@ private fun facetBar(d: MusicBrowseDto): String = buildString {
     append("</div>")
 }
 
+/** Phase 292 (FR-292-11) — the Version facet: each type and *No version*, with its count, *Only* and *Hide*. */
+private fun versionFacet(f: dev.jellystructure.model.MusicFacet, n: Int): String = buildString {
+    append("""<span class="mu-fc${if (muOpenFacet == f.key) " open" else ""}"><span class="mu-fbtn${if (n > 0) " on" else ""}" data-fopen="${f.key}">${f.label.esc()}${if (n > 0) """ <span class="c">$n</span>""" else ""} ▾</span><div class="mu-fpop vr-fpop">""")
+    append("""<div class="tiny muted" style="padding:4px 8px 8px">A version belongs to a song. <b>Only</b> keeps the songs with it; <b>Hide</b> takes them out. A Session counts as Live.</div>""")
+    for (v in f.values) {
+        val name = if (v.value == "none") """<span class="tiny" style="font-weight:600">No version</span><span class="tiny muted">the originals</span>""" else vrChips(listOf(v.value)).ifEmpty { v.label.esc() }
+        append("""<div class="vr-fv${if (v.count == 0) " zero" else ""}"><span class="nm">$name</span><span class="ct">${v.count}</span><span class="vr-ie"><span class="i${if (v.on) " on" else ""}" data-vfi="${v.value.esc()}">Only</span><span class="x${if (v.off) " on" else ""}" data-vfx="${v.value.esc()}">Hide</span></span></div>""")
+    }
+    append("</div></span>")
+}
+
 private fun activeBar(d: MusicBrowseDto): String {
-    val act = d.facets.filter { f -> f.values.any { it.on } }
+    // Phase 292 — the Songs filter in words (*Songs by … · without Live, Remix*), built by the server.
+    val words = d.sentence?.let { """<span class="vr-words">${it.esc()} <span class="rm" data-vwrm title="Clear the artist and the Version filter">✕</span></span>""" }
+    val act = d.facets.filter { f -> f.key != "version" && f.values.any { it.on } }
     // Phase 293 (FR-293-4) — the Dashboard row's label, removable like any other filter.
     val issue = d.filterLabel?.let { """<span class="fxchip">Issue: ${it.esc()} <span class="rm" data-issue-rm style="cursor:pointer">✕</span></span>""" }
-    if (act.isEmpty() && issue == null) return ""
-    return (listOfNotNull(issue) + act.map { f ->
+    if (act.isEmpty() && issue == null && words == null) return ""
+    return (listOfNotNull(words, issue) + act.map { f ->
         """<span class="fxchip">${f.label.esc()} is ${f.values.filter { it.on }.joinToString(" or ") { it.label.esc() }} <span class="rm" data-frm="${f.key}" style="cursor:pointer">✕</span></span>"""
     }).joinToString(""" <span class="tiny muted">and</span> """) + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> ${muView} match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
 }
 
 private fun selBar(): String {
+    // Phase 292 (FR-292-12) — a song selection, and *Set version…* on it.
+    if (muView == "songs" && muSongSel.isNotEmpty()) return """<div class="mu-selbar on"><b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span></div>"""
     if (muView != "albums" || muSelected.isEmpty()) return """<div class="mu-selbar"></div>"""
     return buildString {
         append("""<div class="mu-selbar on"><b>${muSelected.size}</b> selected""")
@@ -209,10 +238,12 @@ private fun body(d: MusicBrowseDto): String {
             append("</div>")
         }
         "songs" -> buildString {
-            append("""<div class="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody>""")
+            append("""<div class="mu-scroll${if (muSongSel.isNotEmpty()) " vr-selecting" else ""}"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody>""")
             for (t in d.songs) {
                 val artists = t.artists.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }
-                append("""<tr><td class="n">${t.position ?: ""}</td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}</td>""")
+                // Phase 292 (FR-292-10/12) — chips after the title; the number turns into a checkbox on hover.
+                val on = t.id in muSongSel
+                append("""<tr${if (on) " class=\"vr-on\"" else ""}><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}${vrBadges(t.id, t.versions)}${if (t.noWords) """<span class="tiny muted" style="margin-left:8px">no words</span>""" else ""}</td>""")
                 append("""<td class="dim">$artists</td><td class="dim">${t.albumId?.let { """<a class="dim" href="#/album/$it">${t.album.orEmpty().esc()}</a>""" } ?: ""}</td>""")
                 append("""<td class="num">${muLen(t.lengthMs)}</td><td><span class="mu-fmt${if (t.reencodes) " w" else ""}">${t.format.esc()}${if (t.reencodes) """<span class="re">re-encodes on a phone</span>""" else ""}</span></td>""")
                 append("<td>${lyricsCell(t.lyrics)}</td><td>${recordingCell(t.recording, t.albumMatched)}</td></tr>")
@@ -260,9 +291,18 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         if (!muSelected.remove(id)) muSelected += id
         muRender(scope); return
     }
+    // Phase 292 — the chips open the version panel; a song's checkbox builds a selection for *Set version…*.
+    t.closest("[data-ver]")?.let { v -> ev.preventDefault(); ev.stopPropagation(); vrOpenPanel(scope, v.getAttribute("data-ver")!!) { muLoad(scope) }; return }
+    t.closest("[data-vsel]")?.let { s -> ev.preventDefault(); val id = s.getAttribute("data-vsel")!!; if (!muSongSel.remove(id)) muSongSel += id; muRender(scope); return }
+    if (t.closest("[data-vall]") != null) { muDto?.songs?.forEach { muSongSel += it.id }; muRender(scope); return }
+    if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muRender(scope); return }
+    if (t.closest("[data-vbulk]") != null) { vrOpenBulk(scope, muSongSel.toList()) { muSongSel.clear(); muLoad(scope) }; return }
+    t.closest("[data-vfi]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfi")!!, only = true); muSongSel.clear(); muLoad(scope); return }
+    t.closest("[data-vfx]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfx")!!, only = false); muSongSel.clear(); muLoad(scope); return }
+    if (t.closest("[data-vwrm]") != null) { muFacets.remove("version"); muHidden.remove("version"); muArtist = null; muLoad(scope); return }
     t.closest("[data-mview]")?.let { v ->
         // Phase 293 — a triage key belongs to one view; choosing another view leaves it.
-        muView = v.getAttribute("data-mview") ?: "artists"; muSelected.clear(); muOpenFacet = null; muFilter = null
+        muView = v.getAttribute("data-mview") ?: "artists"; muSelected.clear(); muOpenFacet = null; muFilter = null; muSongSel.clear()
         muLoad(scope); return
     }
     t.closest("[data-fopen]")?.let { f ->
@@ -281,7 +321,7 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         muSelected.clear(); muLoad(scope); return
     }
     t.closest("[data-frm]")?.let { f -> muFacets.remove(f.getAttribute("data-frm")); muLoad(scope); return }
-    if (t.closest("[data-fclear]") != null) { muFacets.clear(); muFilter = null; muLoad(scope); return }
+    if (t.closest("[data-fclear]") != null) { muFacets.clear(); muHidden.clear(); muArtist = null; muFilter = null; muLoad(scope); return }
     if (t.closest("[data-issue-rm]") != null) { muFilter = null; muSelected.clear(); muLoad(scope); return }
     t.closest("[data-bulk]")?.let { b ->
         when (val k = b.getAttribute("data-bulk")) {
@@ -326,6 +366,15 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
             "convert" -> muOpenConvert(scope, MusicConvertRequest()) { muLoad(scope) }
         }
     }
+}
+
+/** Phase 292 (FR-292-11) — a value is in *Only* or in *Hide*, never both; a second press takes it out. */
+private fun muToggleVersion(value: String, only: Boolean) {
+    val a = (if (only) muFacets else muHidden).getOrPut("version") { LinkedHashSet() }
+    val b = (if (only) muHidden else muFacets)["version"]
+    if (!a.remove(value)) { a += value; b?.remove(value) }
+    if (a.isEmpty()) (if (only) muFacets else muHidden).remove("version")
+    if (b?.isEmpty() == true) (if (only) muHidden else muFacets).remove("version")
 }
 
 /** *Matching… n of 30* on the button, then the page again when the pass ends. */
