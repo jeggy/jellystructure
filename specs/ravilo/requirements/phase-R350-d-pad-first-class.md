@@ -6,8 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored) from the owner's TV session, before any fix. Client-only (`:ravilo-ui`);
-no wire change, no server change. Number given by the coordinator.
+`✓ Built` — written 2026-10-02 (dev-authored) from the owner's TV session, before any fix; built the same day (see
+*Build notes*). Not deployed, not device-tested. Client-only (`:ravilo-ui`); no wire change, no server change. Number
+given by the coordinator.
 
 **Supersedes, in part:**
 - **R178 FR-RV-SEL1-1** (hiding the chrome resets the player's focus to Play) — see FR-R350-7. R178's Select guard
@@ -151,3 +152,78 @@ focused pill is always brought fully into view (R250's gutter).
 ## Verification
 Robolectric key-by-key walks under `:ravilo-ui:testDebugUnitTest` (R343's `SeriesDetailFocusTest` and siblings) for
 FR-1/2/3/4/5/9, pure tests for FR-6/7, plus the release APK and `check-player-dex.sh`.
+
+## Build notes (2026-10-02)
+
+**Built, all twelve FRs, client-only.** No wire or server change; no new strings (`detail.season` was already in the
+table, unused).
+
+- **FR-1** — `SeasonPicker`'s row lost `focusRestorer()` (Compose 1.9 runs a restorer's enter rule on a
+  `requestFocus()` aimed at a child, so Down from Play's request for the open season's pill came back as the restored
+  pill). The row now remembers the last focused pill itself and uses it only for `FocusDirection.Up` (Up from the
+  rail), in its own `focusGroup`.
+- **FR-2** — `SeriesDetailStore.returnTarget` (`SeriesReturnTarget`, read once): Play, Shuffle (TV pill or phone chip)
+  or an episode card (a multi-episode card by its first id) plus the open season. On the way back the page reopens on
+  that season and focuses the control through the page's one scroll-then-focus helper, item 1 parked below the app
+  bar; Play keeps the opening rule. Also covers the Mac's "the scroll position resets".
+- **FR-3** — `openingSeasonIndex(seasons, overlay, primaryId)`: the season holding `primaryEpisodeId`; R346's rule
+  without one. The rail's opening scroll (`railOpeningIndex`: the returned card, else the primary episode, else the
+  first unwatched, else 0) moved from the rail's lazy item to the page, on a hoisted `LazyListState` with
+  `requestScrollToItem`, keyed on the season and on the overlay *landing* — not on every overlay change, which used to
+  scroll the rail away from a focused card after a Watched toggle or the post-player refresh. (Running it inside the
+  lazy item against the hoisted state crashed with "performMeasureAndLayout called during measure".)
+- **FR-4** — TV only (`isTvPlatform`): `backToTopOnBack(atTop = { !inGrid || isTvPlatform })`, so Back from the grid
+  leaves; `showKeyboardOnFocus = false` and `DirectionCenter` on the field calls `show()`; arrival and Up-from-grid
+  focus the field without the keyboard. The phone keeps R277 (bar re-tap still shows it). The Seerr search got the
+  same rules. Whether Sony's IME honours `showKeyboardOnFocus = false` is the one thing only the TV can say.
+- **FR-5** — `DiscoverSegmentBar(activeFocusRequester, onUp)`: the app bar's Down lands on the selected tab (the
+  content when there are none); the strip redirects an Up/Down entry to the selected tab (Up from the wall took the
+  chip nearest above the tile — Studios over Networks); Up from a tab goes to the page's nav item.
+- **FR-6** — `playerRailSeasonLabel()`: *Season N* (`detail.season` + the number, carried on a new
+  `PlayerEpisodeEntry.seasonNumber`/`seasonName`, set by the series page), the season's own name for Specials, the
+  number read from the kicker when absent. TV rail and phone episode sheet.
+- **FR-7** — `hideChrome()` no longer moves focus; the auto-hide holds while paused, scrubbing or locked on every
+  form factor; `dpadRevealsOnly`: Left/Right/Up act on the first press from the remembered control, Down reveals only
+  unless it is the seek bar → Play move, OK stays play/pause and now puts the highlight on Play. Supersedes R178
+  FR-RV-SEL1-1 and R251 FR-R251-1/2 for those keys; R251's own rule (*the same keys reach the same control whether or
+  not the chrome hid*) is now exact, tested in `PlayerDpadRevealTest`. `PlayerScreen`'s widest R8 dex method:
+  **239 registers** (limit 250) — the changes added no local.
+- **FR-8** — the Home hero's inset ring (`HERO_FOCUS_RING_TAG`); `RaviloButton` (TV branch) draws a 2 dp ring 3 dp
+  outside the button, its layer no longer clips (the fills carry the shape); `DetailSynopsis` draws a ring around the
+  text; the trailer overlay's Close shows focus. All through `rememberFocusVisual()`, so a handset draws none.
+- **FR-9** — `BrowseCardGrid(onFirstRowUp)`: Up from a first-row tile requests the facet bar's first chip (its
+  `focusRestorer` hands it to the chip last focused there, if any).
+- **FR-10** — `EpisodeCard`/`MultiEpisodeCard(seasonNumber)`: *S01E01 · title* via `episodeCode`; *E1* only when no
+  season is known (nothing passes none today).
+- **FR-11** — `Modifier.arrowKeysMoveFocus(isDesktopPlatform)` at the app root (`ArrowKeysMoveFocus.kt`): an arrow no
+  focused element consumed calls `FocusManager.moveFocus`. Confirmed by reading CMP 1.9.3's `RootNodeOwner`
+  (`getFocusDirection` maps Tab, Shift+Tab, DirectionCenter and Back only). Not applied to the web build.
+- **FR-12** — on the desktop layout the pill row is a `FlowRow` (wraps); the TV/phone keep the scrolling `Row`.
+
+**Tests** (`:ravilo-ui:testDebugUnitTest`, 326 tests, all green): `SeriesDetailFocusTest` gained 12 walks (R350-1,
+Shuffle/card/Play → player → Back, the Resume-in-Season-3 opening, desktop walks for the pills → rail, *Mark watched*
+Up/Right/Down, card → player → Back, and 14-season pill rows on TV and desktop) — the desktop walks put the page in the
+desktop layout family with arrows moving only through `arrowKeysMoveFocus`, and fail without it (checked).
+New: `SearchFocusTest` (Robolectric `television` qualifier, so `isTvPlatform` is true; a recording
+`SoftwareKeyboardController`), `DiscoverFocusTest`, `BrowseFocusTest` (on `fakeTvApiClient`, an OkHttp interceptor
+answering by path — fails without the fix, checked), `HeroFocusRingTest`, `PlayerRailSeasonLabelTest`,
+`EpisodeCardCodeTest`; `SeriesEpisodesTest` and `PlayerDpadRevealTest` updated. `SearchStore` and `TaxonomyStore` take
+their fetch as a function (the `TvApiClient` constructors stay). Also green: `:ravilo-android:assembleRelease`,
+`:ravilo-web:compileKotlinWasmJs`, `-Pravilo.desktopOnly=true :ravilo-desktop:compileKotlinDesktop`, every CI check
+script that runs without a device (`verify-release-apk-on-art.sh` needs an emulator and was not run).
+
+**Not verified:** anything on a device — the Sony BRAVIA (acceptance 1–9), the Mac app's arrows, the phone (R277 path
+untouched by design, but not re-tapped). The two things only the TV can answer: the IME and `showKeyboardOnFocus`, and
+how the new button/hero rings read at 10 feet.
+
+**Seen, not fixed (recorded for a later phase):**
+- Back from a related title or a cast face on the series page still lands on Play (FR-2 covers playback only).
+- On the desktop, Settings' `clickable` rows and tabs (`SettingsScreen.kt` `deskHoverRow`) take keyboard focus with
+  no focus ring; the update toast and install card (web) likewise.
+- The web build has the same "arrows don't move focus" gap as the desktop had (FR-11 is desktop-only, unverified on
+  the web).
+- `ProfilePickerScreen`'s *Cancel* (add-user) shows no focus — left alone, it is part of the sign-in flow another
+  phase is changing.
+- The facet bar's `focusRestorer` has FR-1's shape: the app bar's Down asks for the first chip and gets the one last
+  focused. Arguably right there (it is the bar's memory), so left.
+
