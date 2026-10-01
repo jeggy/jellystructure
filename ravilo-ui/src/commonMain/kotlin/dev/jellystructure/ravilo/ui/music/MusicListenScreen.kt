@@ -82,7 +82,11 @@ fun MusicListenScreen(
                 if (books != null) continueListeningRow(books, onResumeBook)
                 items(s.value.rows, key = { it.key + ":" + it.title }) { row -> ListenRow(row, onOpenAlbum, onOpenArtist, onSeeAllPlayed, onTrackMore) }
             }
-            Load.Failed -> EmptyLine(str("mhome.empty"))
+            // R345 — a failed load is not "no music": it says why (most often, the server could not be reached).
+            Load.Failed -> dev.jellystructure.ravilo.ui.components.LoadErrorState(
+                dev.jellystructure.ravilo.ui.components.loadErrorKindOf(loader.lastFailure),
+                onRetry = { loader.load() },
+            )
             Load.Loading -> Unit
         }
         AppBar(onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, brandBadge = { MusicModeBadge() })

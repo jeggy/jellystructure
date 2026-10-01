@@ -78,11 +78,14 @@ class MusicLoader<T>(private val fetch: suspend () -> T) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<Load<T>>(Load.Loading)
     val state: StateFlow<Load<T>> = _state
+    /** R345 — why the last fetch failed, so a failed page can say *couldn't reach the server* rather than *no music*. */
+    var lastFailure: Throwable? = null
+        private set
     fun load() {
         scope.launch {
             runCatching { fetch() }
-                .onSuccess { _state.value = Load.Ready(it) }
-                .onFailure { if (_state.value !is Load.Ready) _state.value = Load.Failed }
+                .onSuccess { lastFailure = null; _state.value = Load.Ready(it) }
+                .onFailure { lastFailure = it; if (_state.value !is Load.Ready) _state.value = Load.Failed }
         }
     }
 }

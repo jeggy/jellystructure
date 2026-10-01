@@ -154,6 +154,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -459,6 +460,9 @@ fun RaviloApp(
     // the retained Home/channel stores (not the screens), so a push that lands while the player is still
     // on top refreshes the feed the viewer is about to return to.
     val liveHome = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
+    // R345 (FR-R345-3) — the events socket opened: the server answers again. An unknown music answer is asked again then.
+    // A count, not an event: an open that lands while the first question is still out is not lost.
+    val serverOpens = remember { MutableStateFlow(0) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
@@ -497,6 +501,7 @@ fun RaviloApp(
                     closeWhen = { onScreenFlow.first { !it }; "background" },
                     onOpen = {
                         openedAt = Clock.System.now()
+                        serverOpens.value = serverOpens.value + 1
                         // FR-R293-3 (dev review item 2) — an open is a config-rev check, not a refresh:
                         // the config re-pulls only when the rev moved, and Home only when the app was
                         // away longer than the server's push stream can be assumed to have covered.
@@ -938,13 +943,35 @@ fun RaviloApp(
         LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.music.MusicEngine.attach(apiClient) }
         // R337 (dev review 3a) — the listening mode on a phone AND on the desktop, at every width.
         val listeningLayout = handset || desktop
+        // R345 — asks the server. A definite no stores films (FR-R345-2), so the next launch opens there with no flip;
+        // a failure is unknown (null): Ravilo stays in the stored mode and asks again when the server next answers.
+        suspend fun askMusicNow() {
+            val (books, answer) = dev.jellystructure.ravilo.ui.music.askMusicAvailability(apiClient)
+            // R323 — the listening mode is there for music or for audiobooks (either is enough).
+            booksAvailable = books == dev.jellystructure.ravilo.ui.music.MusicAnswer.SOMETHING
+            musicAvailable = answer
+            if (answer == false) {
+                dev.jellystructure.ravilo.ui.music.ListeningMode.write(dev.jellystructure.ravilo.ui.music.ListeningMode.VIDEO)
+                musicMode = false
+            }
+        }
         LaunchedEffect(activeUserId, listeningLayout) {
             musicMode = dev.jellystructure.ravilo.ui.music.ListeningMode.read() == dev.jellystructure.ravilo.ui.music.ListeningMode.MUSIC
-            // R323 — the listening mode is there for music or for audiobooks (either is enough).
-            booksAvailable = if (activeUserId == null || !listeningLayout || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
-                else runCatching { apiClient.getAudiobooks()?.books?.isNotEmpty() == true }.getOrDefault(false)
-            musicAvailable = if (activeUserId == null || !listeningLayout || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) false
-                else booksAvailable || runCatching { apiClient.getMusicHome().rows.isNotEmpty() }.getOrDefault(false)
+            if (activeUserId == null || !listeningLayout || !dev.jellystructure.ravilo.ui.music.MusicEngine.supported) {
+                booksAvailable = false
+                musicAvailable = false
+                return@LaunchedEffect
+            }
+            musicAvailable = null
+            var seen = serverOpens.value
+            askMusicNow()
+            // FR-R345-3 — while the answer is unknown, the next socket open asks again (no timer, not every request).
+            serverOpens.collect { n ->
+                if (n != seen) {
+                    seen = n
+                    if (musicAvailable == null) askMusicNow()
+                }
+            }
         }
         val inMusic = listeningLayout && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
@@ -2075,6 +2102,10 @@ fun RaviloApp(
             // ─── R321/R322 — music mode ───
             is Dest.MusicListen -> {
                 val loader = keptStore("mlisten:${dest.displayName}") { dev.jellystructure.ravilo.ui.music.MusicLoader { apiClient.getMusicHome() } }
+                // R345 (acceptance 2) — the server answers again: a Listen page that failed loads without a relaunch.
+                LaunchedEffect(loader) {
+                    serverOpens.drop(1).collect { if (loader.state.value is dev.jellystructure.ravilo.ui.music.Load.Failed) loader.load() }
+                }
                 dev.jellystructure.ravilo.ui.music.MusicListenScreen(
                     loader = loader,
                     onProfile = { openProfile() },

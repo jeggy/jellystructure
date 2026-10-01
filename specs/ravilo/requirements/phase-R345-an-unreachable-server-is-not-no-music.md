@@ -4,7 +4,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (dev-authored), against `main` `44e26871`. Number verified free (Ravilo specs top at
+`✓ Built` 2026-10-01 (see Build notes). Written 2026-10-01 (dev-authored), against `main` `44e26871`. Number verified free (Ravilo specs top at
 R344). Not built.
 
 **Amends** nothing. It makes the code do what R321's FR-R321-2 already says: *"A mode stored for a viewer who lost the
@@ -78,3 +78,33 @@ applies then.
   - otherwise: `null`.
 - `getMusicHome()` calls `assertSuccess()` (`TvApiClient.kt:300–304`). Tell its 404 apart from other failures where
   it is caught, without changing the client's signature for its other callers.
+
+## Build notes (2026-10-01)
+
+**Built:**
+- `ravilo-ui/.../music/MusicAvailability.kt` — `MusicAnswer` (SOMETHING · EMPTY · FAILED), the pure
+  `musicAvailability(books, music): Boolean?` (FR-R345-1's combination exactly as the Dev notes put it) and
+  `musicAnswerOf(Result<Boolean>)`: a `TvApiError.Http` 404 is EMPTY (a server from before 279, and the shelf's own
+  404 already came back as `null` → empty), every other failure is FAILED. Cancellation is rethrown, never counted.
+  `TvApiClient` is untouched, so its other callers see no change.
+- `RaviloApp.kt` — the check is `askMusicNow()`: `false` writes `ListeningMode.VIDEO` and sets `musicMode = false`
+  (FR-R345-2); the existing `LaunchedEffect(musicAvailable)` still resets the stack. `null` stays `null` (still read as
+  "assume yes" by `inMusic`). The local reasons for *no* (signed out, a TV, no engine) stay `false` without writing
+  the stored mode — only the server's answer stores films.
+- FR-R345-3: the hook is the events socket's `onOpen` (R33/R293 — what already notices a reconnection). It bumps a
+  counter (`serverOpens`, a `StateFlow`, so an open that lands while the first question is still out is not lost);
+  the check re-runs on a bump only while the answer is `null`. No timer, not per request.
+- Acceptance 1/2 needed one more thing: the Listen page's failed load said *Nothing filed as music yet*, which is
+  the very "no music" this phase removes. It now draws R280's `LoadErrorState` for the failure's cause
+  (`MusicLoader.lastFailure` → `loadErrorKindOf`), so unreachable reads *Couldn't reach the server* with Retry — no
+  new string. The Listen page also reloads on the next socket open when its load had failed, so music comes back
+  without a relaunch.
+
+**Deviations:** the Listen page's error state above (not in the FRs; needed for acceptance 1 and 2). Other music
+pages (album, artist, Browse) keep their own existing failure rendering.
+
+**Verified:** `MusicAvailabilityTest` (4 tests: every combination of the three answers, 404 vs 5xx/401/network) under
+`:ravilo-ui:testDebugUnitTest` — green. Android, desktop and web compile.
+
+**Needs a device:** all five acceptance checks (Pixel 9 and the Mac): flight mode in music mode, network back,
+music access removed, an old server, a 5xx.
