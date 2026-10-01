@@ -6,11 +6,11 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
+`Planned` · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
 - `design/app/versions.js` + `versions.css` (`vr-*`), loaded by `album.html`, `library.html`, `metadata.html`, `artist.html` and `index.html`
 - the directions canvas `design/app/Song Versions - Directions.html`, where Q1 = **A · words** is picked and B/C are kept as declined
 
-Not dev-reviewed. The number was checked free on `main` (tree `ef52889`, admin tops at 290) on 2026-10-01. **Ravilo's side is R344.**
+Dev-reviewed 2026-10-01. The number was checked free on `main` (tree `ef52889`, admin tops at 290) on 2026-10-01. **Ravilo's side is R344.**
 
 **Builds on** 275 (the music library), 276 (MusicBrainz, the recording match, genres' override model), 277 (lyrics) and 285 (the Dashboard's row grammar). It borrows the tag model from phase 82/199.
 
@@ -181,3 +181,228 @@ and Remix →*.
 - **Stand-ins** (all fictional, added by `versions.js` on the admin pages): albums *Live at the Harbour* (2011), *Tide Tables 1999–2012* (box set), *Nordic Nights Vol. 2*, and extra tracks on *Signal Found*, *Kite Weather* and *Kvøld*.
 - **What each finder says** for a stand-in is the `VS` table. Your ticks are in localStorage `js-ver-ovr`, keyed like FR-292-2. Colours and meanings are in `js-ver-col`.
 - The Dashboard row is `m-instlyr` in `dashboard-data.js`, with `act2` in `dashboard.js` for the second action.
+
+## Dev review (2026-10-01, against `main` `44e26871`)
+
+Read against the music backend (275–290: `Music.sq` and `59.sqm`–`63.sqm`, `MusicBrainzClient`, `MusicMatchService`,
+`MusicMediaService`'s lyrics step, `MusicBrowse`, `MusicTagWriter`, `MusicTvService`), the admin pages
+(`MusicAlbum.kt`, `MusicLibrary.kt`, `MusicArtist.kt`, `Metadata.kt`, `Dashboard.kt`), the Dashboard and triage
+routes, the lyrics research (`research-reports/music-lyrics-that-do-not-belong-2026-10-01.md`) and the mockups
+(`design/app/versions.js`, `dashboard-data.js`, `dashboard.js`). MusicBrainz's relationship list was checked on
+musicbrainz.org the same day. **The direction holds.** MusicBrainz already says everything the spec wants, but today
+the client asks it for none of it, and two things the spec leans on do not exist: a record of which lyrics sidecars
+jellystructure wrote, and a Dashboard row with two actions. One shipped bug was found on the way (item 10). Twenty
+items; two need the owner (items 7 and 8c, leans given). Everything else is the build's.
+
+1. **MusicBrainz is never asked for versions today.** `MbRelation` holds only `type` and `url`
+   (`MusicBrainzClient.kt:29`). The release lookup asks for `recordings+media+labels+artist-credits+release-groups`
+   and no relationships (`:195–196`); the recording lookup asks for none either (`:205–206`). What to fetch:
+   - `release(id)` gains `recording-level-rels+work-rels+artist-rels+recording-rels`. This is the lean in the lyrics
+     research (idea A), and it costs no extra request where a release id is already known (`MusicMatchService.kt:225`).
+   - `MbRelation` gains `attributes`, `direction`, `target-type`, and the target objects `work` (with `language` and
+     `languages`), `recording` and `artist`. `MbRecording` gains `disambiguation` and `relations`.
+   - **Never add relationships to `releasesOf`.** It is a browse of up to 25 pressings with every track
+     (`:192–193`). When `applyMatch` picks the best pressing from that browse (`MusicMatchService.kt:227`), it makes one
+     more `release(id)` lookup for the chosen pressing only.
+   - A recording chosen by hand (`useRecording`, `MusicMatchService.kt:378`) is not on the release. It needs
+     `recording(id)?inc=work-rels+artist-rels+recording-rels`.
+   - Measure the answer for the household's nine-disc box set before relying on one request per release.
+
+   Checked on musicbrainz.org (2026-10-01): the recording–work *performance* relationship's attributes are `live`,
+   `cover`, `demo`, `instrumental`, `karaoke`, `medley`, `partial` and `acappella`. The recording–recording types
+   include `remix` (*remix of*), `instrumental` (*instrumental version of*), `karaoke` (*karaoke version of*) and
+   `edit` (*edit of*). So the table's MusicBrainz sources all exist, including `demo`.
+
+2. **The rule per type, written down.** FR-292-3 says *every* for Instrumental and leaves the others open. The build's
+   rule, from one performance-relationship list per recording:
+   - **Live, Demo, Cover:** any performance relationship carries the attribute.
+   - **Instrumental:** the recording performs at least one work that has words (a language other than `zxx`), and
+     every such performance is marked `instrumental` or `karaoke`. Performances of `zxx` works are left out of the
+     count, so a sung song with an instrumental intro piece is not Instrumental (the research's four live
+     recordings). An *instrumental version of* or *karaoke version of* relationship from this recording also counts.
+   - **No words (FR-292-5):** the recording has performance relationships and every one points at a `zxx` work.
+   - **Remix:** a *remix of* relationship from this recording, or a `remixer` artist relationship on it.
+   - **Edit:** an *edit of* relationship from this recording, as well as the title. MusicBrainz has it and it comes in
+     the same answer, so the table's *Found from* for Edit becomes *MusicBrainz · title*. Not an owner question.
+   - **The recording's disambiguation** (*instrumental demo*, *live*) is read by the title finder, with source
+     `musicbrainz`. The research's own case was named only there.
+   - **The album's release-group types (Live, Remix, Demo) are not used.** They describe an album, and the owner's
+     rule is one recording at a time (Q7). A live album with studio bonus tracks would otherwise mark them Live.
+
+3. **Store the facts and the owner's choices; compute the rest.** FR-292-2 stores `musicbrainz` and `title` rows. Those
+   are derived data: a scan must rewrite them, and a `title` row goes stale the moment a title changes. The lean is
+   migration **64** (the last is `63.sqm`), mirrored in a new `MusicVersions.sq`:
+   - `music_recording_facts(recording_mbid PK, json, fetched_at)`: the attributes, the no-words verdict, *instrumental
+     version of* (target id, title, artist), *remix of*, the disambiguation.
+   - `music_version_choice(recording_key, type, state, set_at, PK(recording_key, type))`, with `state ∈ {on, removed}`.
+     Only the owner's rows live here.
+   - `music_version_type(key PK, color, meaning)`: only the overrides of the nine defaults.
+
+   The title part is computed at read time from the title of **every copy** of the recording. The spec does not say
+   whose title counts when copies differ; the union of all copies is the only answer that keeps *one answer per
+   recording*. Load the three tables into `MusicStore.Snapshot` (`MusicStore.kt:31`) like the other music rows.
+
+   **One pure function** in commonMain's model, beside `originalDate()` (`Music.kt:225`):
+   `MusicVersions.of(track, copies, facts, choices) → (keys, source per key)`. The album page, Songs, the facet,
+   Metadata's counts, the Dashboard row, the lyrics step and `MusicTvService` (R344) all call it. That is 290's shape:
+   one fact, one function, every reader. Use explicit key prefixes, `rec:<mbid>` and `trk:<track id>`, as the mockup
+   does (`versions.js` `key()`), so a key's kind never depends on its shape.
+
+4. **Only a track that agrees, or was chosen by hand, shares its recording's answer.** `applyMatch` gives a track the
+   release's recording id even when its length disagrees (`MusicMatchService.kt:250`). `DISAGREES` means *often another
+   version — a single's, a live cut* (`Music.kt:211`). Keying such a track by that recording would spread the studio
+   recording's answer to a live cut, which is what the owner ruled out (Q7). Rule: `AGREES` and `MANUAL` tracks use
+   `rec:`; a `DISAGREES` track keeps `trk:` until *Match this track…* makes it `MANUAL`. Its MusicBrainz facts are not
+   used either. (Outside this phase: 284 writes that same id into the file, `MusicTagWriter.kt:129`. Worth a look.)
+
+5. **When the facts are read.** FR-292-3 says *on every music scan and every match*. A `missing`-scope run never
+   revisits a matched album (`MusicMatchService.kt:156`), so today's matched albums would never get facts. Lean: no new
+   pipeline step. Inside `match_musicbrainz`, after the album pass, a catch-up reads facts for every matched album
+   that has none (`versionFactsAt` in the album's JSON; no migration). That is one lookup per album, about 30 here, once,
+   at MusicBrainz's 1 per second. A `scope = all` run refreshes them. The title part needs no step at all. The step
+   order already puts the match before `fetch_lyrics` (`AppConfig.kt:191`), which FR-292-5 needs.
+
+6. **Moving `trk:` choices, and the cases the spec does not name.**
+   - On a match (`applyMatch`, `MusicMatchService.kt:245–254`) and on *Match this track…* (`:378`): move the track's
+     `trk:` rows to its `rec:` key in the same write. If two unmatched copies carried different choices for one type,
+     the newest `set_at` wins.
+   - On *Clear match* (`:346–357`): the rows stay on the recording. The track falls back to its own `trk:` key, which is
+     empty, and a later re-match finds them again. Nothing is copied back.
+   - *Convert…* (`MusicConvert`) makes a new file, so Jellyfin gives it a new item id. Copy the original's `trk:` rows
+     to the new id in the convert's own bookkeeping.
+   - A file moved or renamed by hand also gets a new id. An unmatched song's choices are lost then. Accept and say so.
+   - Record every change in the History of each album that holds a copy (`music_versions`), as `setGenres` does
+     (`MusicMatchService.kt:359–364`).
+
+7. **Session ⇒ Live: the spec and the mockup disagree — needs the owner.** FR-292-4 says unticking Live on a Session
+   leaves Session on, and the filter still treats it as Live. The mockup cannot reach that state: `list()` adds Live
+   whenever Session is there, `setType` unticks Session when Live is unticked, and the bulk dialog's *Remove Live* sets
+   *Remove Session* too (`versions.js`, the `data-vbp` handler). **Lean: the mockup.** One invariant, Session ⊂ Live,
+   means the chips, the panel and the filter always agree, and R344's `versions` needs no exception (its FR-R344-1
+   today would re-add a Live the owner removed). Open question 5 is then answered by the invariant: yes.
+
+8. **Lyrics: four things FR-292-5 and FR-292-15 assume that do not exist.**
+   - **(a) No record of which sidecars are ours.** `MusicTrack` keeps only `lyricsState` and `lyricsCheckedAt`
+     (`Music.kt:285–286`). `fetchLyrics` writes a file and forgets it (`MusicMediaService.kt:168–176`). The research
+     says the same (§2). Build its idea B: `lyricsSource`, the LRCLIB id and a hash of the written file on the track
+     (JSON, no migration), set in `fetchLyrics`. Backfill: a sidecar whose file time is at or after the track's `lyricsCheckedAt` was
+     written by a fetch run (439 of 439 here, per the research). *Remove the lyrics* deletes a file only when its hash
+     still matches.
+   - **(b) A "never again" mark.** Add `MusicLyrics.BLOCKED` (`Music.kt:294–302`). `fetchLyrics` skips it.
+     `lyricsStateOf` reports it.
+   - **(c) Which Instrumental stops the fetch — needs the owner.** FR-292-5 skips only *Instrumental from MusicBrainz*
+     (the brief's §A6). The research's idea A says any source, because wrong words on an instrumental are worse than
+     none. **Lean: any Instrumental in the song's set** (MusicBrainz, the title, or the owner's tick), plus every
+     no-words piece. An Instrumental *removed by you* lets the fetch run again.
+   - **(d) Ravilo would keep showing them.** The viewer's lyrics route asks Jellyfin first and falls back to our file
+     (`MusicTvService.kt:295–308`). A deleted sidecar keeps showing until Jellyfin refreshes the song, and an embedded
+     lyric forever. Rule: for a `BLOCKED` song, a no-words piece or an Instrumental, the route answers 404 and
+     `has_lyrics` is false (`MusicTvService.kt:132`). *Remove the lyrics* then refreshes the albums in Jellyfin
+     (`refreshInJellyfin`, `MusicMediaService.kt:77`).
+   - **(e) The count.** Jellyfin's `hasLyrics` (`Music.kt:271`) covers embedded and sidecar lyrics but only changes at
+     the next `scan_music`. The row counts songs that have lyrics (our sidecar, or Jellyfin's flag), have no singing,
+     and are not `BLOCKED`. After the button they are `BLOCKED`, so the count is 0 at once (acceptance 9). An embedded
+     lyric stays in the file, as the spec says, and (d) keeps it off the phone.
+
+9. **A row with two actions is a change to 285's grammar.** `DashboardRow` documents *at most one action*
+   (`Dashboard.kt:40–66`, model), and the page draws one button (`ui/Dashboard.kt:447`). Add `action2` and
+   `action2_id` to `DashboardRow` (admin-only DTO, same release, nothing else reads it) and two handlers beside
+   `fetch_artwork` (`ui/Dashboard.kt:467–477`): `music_lyrics_remove` and `music_lyrics_lrclib`. The row itself is a
+   new triage type, `music_instrumental_lyrics`, in `musicTriageCounts` (`TriageRoutes.kt:522–562`) with a `Spec`
+   beside the other music rows (`DashboardRoutes.kt:71–77`), `fix = "here"`. Say in this spec that it amends
+   FR-285-2's one-action rule for this row; the owner already drew the second action (Q9).
+
+10. **Shipped bug: every music and audiobooks row on the Dashboard opens the library unfiltered.** The row links to
+    `/library?kind=music&filter=<key>` (`DashboardRoutes.kt:111`). `renderMusicLibrary` reads only `mview`, `q`, `sort`
+    and `f.*` (`MusicLibrary.kt:44–49`); `AudiobookLibrary.kt:63` does the same. So *Albums need a match*, *Songs a
+    phone plays only by re-encoding* and the rest all land on the plain Artists view. Fix it first: teach the music
+    browse a `filter=` triage key (or map each key to its facets). It also **answers open question 4**: link the new
+    row to `filter=music_instrumental_lyrics`. A triage filter can include the no-words pieces; no Version facet value
+    can, because they are *No version*. Lean yes, with the sub-line *no words* on those songs.
+
+11. **The Version facet needs *Hide*, which the facet model does not have.** Today's facets are OR within a facet and AND
+    across (`MusicBrowse.kt:227–245`); `MusicFacetValue` has only `on` (`MusicApi.kt:173–180`). Add:
+    - `off` on `MusicFacetValue`, an `excluded` map in `MusicBrowse.browse`, and `x.<key>=` in the URL beside the
+      existing `f.<key>=` (`MusicLibrary.kt:41/49`, `api/MusicApi.kt:194`). So the spec's `vi=` / `vx=` become
+      `f.version=` / `x.version=`: one convention, and *Hide wins* is one line in the filter.
+    - **`lyr=` is not needed.** `f.lyrics=has` already exists (`MusicBrowse.kt:46`). The mockup's Dashboard link even
+      says `lyr=has` (`dashboard-data.js:59`) where the spec says `lyr=1`.
+    - **`artist=` is new.** There is no artist filter in the browse today. Songs where the artist is credited on the
+      track or is the album's artist.
+    - The facet is offered in the Songs view only. The sentence above the list (*Songs by … · without Live, Remix*) is
+      built by the server, so the page derives nothing.
+    - The Library already has an album-level *Album type* facet with a value *live* (`MusicBrowse.kt:45`). Keep both;
+      label them *Album type* and *Version* so they read apart.
+
+12. **The selections FR-292-8 and FR-292-12 need do not exist.** The Library's selection is albums only
+    (`MusicLibrary.kt:176`) and `MusicBulkRequest` takes album ids (`MusicApi.kt:360`). The album's Tracks rows have no
+    checkbox (`MusicAlbum.kt:319`). Build a song selection on both, and one route,
+    `POST /api/music/versions/bulk { track_ids, add, remove }`. It resolves each track's key, writes each recording
+    once, in one transaction, and records one History line per album touched.
+
+13. **Routes and DTOs (admin only, all additive).**
+    - `MusicTrackRow` and `MusicSongRow` gain `versions: List<String>` (`MusicApi.kt:221–238`, `:268–285`).
+    - `GET /api/music/track/{id}/versions`: the panel. Per type: on or off, and its source. Notes: unmatched, no words,
+      the other copies (album id and title), lyrics beside no singing. *Instrumental version of*: a track id when it is
+      in the library, else title and artist.
+    - `PUT /api/music/track/{id}/versions/{type}` with `{ on }`. Session on also writes Live on (item 7).
+    - `DELETE /api/music/track/{id}/versions`: *Back to automatic*.
+    - `GET` and `PATCH /api/music/version-types`: colour and meaning. Saved as the owner edits, like JS tags
+      (`JsTagStore.kt`, `MetadataRoutes.kt:403–413`). The Metadata page is not Settings, so the top-Save rule does not
+      apply.
+    - `MusicAlbumPageDto` gains the header phrase (FR-292-9); `MusicArtistPageDto` gains the per-type counts
+      (FR-292-14), on the existing *N songs in the library* line (`MusicArtist.kt:122`).
+    - Metadata: `"versions"` joins `TAB_LABELS` after `"musicgenres"` (`Metadata.kt:23`).
+    - Port `vr-*` from `design/app/versions.css` into the served stylesheet and run both CSS check scripts.
+
+14. ***Instrumental version of {song}* exists only when MusicBrainz has the link.** It comes from the recording's
+    *instrumental version of* relationship, stored with the facts. Never infer it from the work: two recordings of one
+    work are not each other's versions. The relationship's target recording carries an id and a title; an artist credit
+    for a target outside the library is not in that answer, so read it once, at fact time, with `recording(id)` (at most
+    12 here). Acceptance 4 assumes its fixture has the link; without it, the line is absent.
+
+15. **Title patterns (open questions 1 and 2).** One Kotlin object beside `MusicScoring`, with a unit test fed the
+    household's title shapes. A data file read at scan time adds a parse and a failure path, and buys nothing: the list
+    ships with the server either way, and no schema change is needed in both cases. Exclusions the test must hold:
+    *original mix*, *album version* and *remaster(ed)* are not Remix or Edit. Add the Danish *akustisk* for Acoustic.
+    **Open question 2:** *session* only. Agree.
+
+16. **On a light theme, the chip text fails 4.5 : 1.** Computed for the formula in FR-292-6 (58 % colour mixed in OKLCH
+    toward the ink, over a 15 % tint), with Ravilo's Daylight ink `#15171f`: Cover reads 4.28 : 1 on `#fbfbfd` and
+    3.99 : 1 on a `#f1f2f6` card; Session 4.50 and 4.20. At 50 % the worst case is 4.57 on `#e8eaf0`; at 45 %, 5.19. Lean:
+    58 % on dark themes, **45 % on light ones**, in the admin's Light theme and in Ravilo (R344's acceptance 5). On the
+    dark themes every type is above 8.7 : 1.
+
+17. **Small differences between the spec and the mockup. Take the spec.**
+    - The album summary: the mockup needs 60 % of the songs (`versions.js` `albumSummary`), the spec half. The mockup
+      also never names Session in the phrase; keep that, since Live already says it.
+    - The chip: the mockup's `.vr-b` is `.64rem` (about 10.2 px), the spec 11 px.
+
+18. **Not writing versions into the files is right (non-goal confirmed).** The tag writer writes the title from
+    `track.title`, the file's own (`MusicTagWriter.kt:116`), so the title finder keeps its source after a tag write.
+    The recording id is already written (`:129`), so the key travels with the file. The nearest standards are the
+    Vorbis `VERSION` comment (free text, FLAC and Ogg only), ID3's `TIT3`, and Picard's album-level `RELEASETYPE`. None
+    holds a set of types, and no player found reads one. That matches the owner's rule: a standard where one exists, our
+    table where none does and Ravilo gains.
+
+19. **A stale sentence on the Library page.** It says what the page maintains is written to `album.nfo` /
+    `artist.nfo`, *never into the files* (`MusicLibrary.kt:112`). Since 284 that is false whenever *Write tags into
+    music files* is on. Fix it in the same change.
+
+20. **Build order.** Each step can ship on its own.
+    (a) Item 10's filter links.
+    (b) The client fields, migration 64, `MusicVersions.of` and its tests, and the catch-up in the match step (items
+        1–6).
+    (c) The album page: chips, the panel, the routes.
+    (d) Songs: chips, the facet with *Hide*, the selection, *Set version…*.
+    (e) Metadata → Versions and the colours.
+    (f) The artist line.
+    (g) Lyrics provenance, `BLOCKED`, the route rule, the Dashboard row and *Remove the lyrics* (item 8).
+    (h) *Tell LRCLIB* last: it is the only part that writes outside the house.
+    R344 can start after (b).
+
+**Open question 3 (LRCLIB).** LRCLIB's documented publish API needs no account: the client asks for a challenge, solves
+a small proof of work, and sends the token with the publish. A publish with both lyrics fields empty marks the track
+instrumental. It adds an entry; it does not correct the copied one, and whether LRCLIB's `get` then prefers the new entry
+is unknown. Verify both against the live API before building step (h). If it cannot be done, the action opens the
+song's LRCLIB search page instead, as the spec says.

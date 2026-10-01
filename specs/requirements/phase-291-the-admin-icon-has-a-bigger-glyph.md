@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). Not dev-reviewed.
+`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end).
 **Numbering:** first written as 290; the dev side took 290 the same day (*an album's year is the year it first came
 out*), so this is **291**, checked free against `main` (tree `ef52889`) on 2026-10-01.
 
@@ -51,3 +51,67 @@ The code review comes later. These are left for it to answer.
 1. **16 px:** at 16 px the glyph's 6-unit outline on the fourth square is under 1 px. Does the outlined square still read in `favicon.ico`'s 16 px frame at the new size, or does that frame need its own heavier stroke?
 2. **The apple-touch icon:** at 13 % inset, does `apple-touch-icon.png`'s tile (inset on `#0b0d14` so iOS's rounding doesn't clip it) need its own inset re-checked?
 3. **The info site:** the info site lives outside this repository (264). Who re-renders its copy, and when?
+
+## Dev review (2026-10-01, against `main` `44e26871`)
+
+Read against the admin frontend (`Shell.kt`, `Login.kt`, `src/wasmJsMain/resources/`), the root `build.gradle.kts`,
+the e2e suite, Phase 264's spec and build notes, the design files and the info site's copy in the deployment
+directory. The change is small and holds as written. Eight items. One needs the owner (item 6, only a go-ahead); the
+three open questions are answered by the files themselves (items 4–6).
+
+1. **The design side is already done; the code still draws the old glyph in three inline copies.**
+   `design/app/app-shell.js:52` (`BRAND()`) and `design/app/login.html:24` already carry `translate(13 13) scale(.74)`.
+   The shipped admin has the old `translate(18 18) scale(.64)` in three hand-copied SVG strings: the sidebar
+   (`Shell.kt:584`, gradient id `jsg-side`), the top bar (`Shell.kt:612`, `jsg-tb`) and the login screen
+   (`Login.kt:18`, `jsg-login`). `syncDesignAssets` copies the design's CSS, not `app-shell.js`
+   (`build.gradle.kts:289-304`), so nothing reaches Kotlin by itself. FR-291-2 says the places "must stay one
+   drawing": build one Kotlin helper (`brandMarkSvg(gradientId)` beside `Shell.kt`'s shell) that returns the tile
+   and glyph, and call it from all three. Then the next change is one edit.
+2. **"The corner radius" is three radii today. Keep each.** The in-app marks use `rx="30"` (`Shell.kt:584/612`,
+   `Login.kt:18`, and the design's `login.html`), `favicon.svg` uses `rx="22"`, and the design's `BRAND()` uses
+   `rx="23"`. Each is what 264 shipped or drew. This phase changes only the glyph's transform; the radius drift
+   between `BRAND()` and `Shell.kt` is old and is not this phase's to fix. `app.css`'s drop shadow on `.brand-mark`
+   (`app.css:114`) and `Login.kt`'s inline `filter` stay as they are.
+3. **The geometry checks out; one phrase in FR-291-1 is loose.** The glyph's content spans 10–90 in its own units.
+   At `translate(13 13) scale(.74)` it lands at 20.4–79.6 on the tile: 59.2 % wide, centred (13 + 50 × .74 = 50).
+   Today it spans 24.4–75.6: 51.2 %. So 51 → 59 % is right. "The inset goes from 18 % to 13 %" is the transform's
+   offset, not what the eye sees: the visible margin round the glyph goes from 24.4 % to 20.4 %.
+4. **Open question 2 (apple-touch): the file has no `#0b0d14` ground, and needs none.** The shipped
+   `src/wasmJsMain/resources/apple-touch-icon.png` is a full-bleed, opaque gradient square: its corner pixel is the
+   gradient's start colour (`#b05cd0`, alpha 255), and `#0b0d14` appears nowhere in it. So 264's build note 2 and
+   FR-291-2's "(180, on its `#0b0d14` ground)" describe a file that does not exist. The full-bleed square is the right
+   form for iOS: iOS cuts its own rounded corners and has no transparency to fill with black. Re-render it the same
+   way, full-bleed. No inset is needed at the new size: the glyph's point nearest a corner sits about 22 units in from
+   each edge, and iOS's corner mask reaches about 7 units in along the diagonal.
+5. **Open question 1 (16 px): no special heavier stroke.** Everything in the glyph grows by the same 16 %. The
+   outlined square's 6-unit stroke goes from 0.61 px to 0.71 px at 16 px. The gap between squares goes from 1.02 px
+   to 1.18 px. Nothing gets thinner, so the 16 px frame reads at least as well as the one 264 shipped and the owner
+   accepted. Two facts limit what the `.ico` matters for: Chrome and Firefox draw the tab from `favicon.svg`
+   (`index.html:7`) at every size, so the `.ico`'s 16 px frame only reaches a client that takes no SVG icon. And at
+   16 px the glyph does not land on the pixel grid (the first square runs from 3.3 to 7.4 px). So: render, and look at
+   the 16 px frame enlarged. If the gap between squares smears into one grey pixel, nudge only that frame's
+   `translate` by up to half a pixel. Acceptance 2's "four squares stay separate" is the same bar as today, not a
+   new one.
+6. **Open question 3 (the info site): copy three files, edit three lines, rebuild the site — on the owner's word.
+   Needs the owner.** The site's `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` are byte-identical copies
+   of the repo's files, and each of its three pages draws one inline nav mark at the old `translate(18 18) scale(.64)`.
+   Its `Dockerfile` already names the three icon files in its `COPY`, so it needs no edit. The work: copy the three
+   new files over, change the three inline transforms, rebuild the site's container. That directory is outside this
+   repository and the rebuild is a deploy, so the owner does it or says go. **Lean:** the session that releases 291
+   does it right after that release reaches production, so the admin and the site change on the same day.
+7. **Which files change, and with which tool. Nothing pins their bytes.**
+   - `src/wasmJsMain/resources/favicon.svg`: one attribute, by hand.
+   - `favicon.ico` (16, 32 and 48 px PNG frames, as today) and `apple-touch-icon.png` (180 px): re-rendered from the
+     new SVG and committed. There is no render script in the repository; 264 rendered once in headless Chromium
+     through the Playwright in `tests/node_modules`. Do the same, or use R341's script if it lands first (R341 dev
+     review item 12). ImageMagick is on the host now, but it renders a gradient SVG flat, so use it for nothing here.
+     Pillow (on the host) packs the `.ico` from PNG frames.
+   - File names do not change, so `syncDesignAssets`' include list (`build.gradle.kts:304`), the production bundle
+     and the `Dockerfile` need no edit.
+   - The e2e check (`tests/e2e/auth.spec.ts:9-20`) asserts status and content type only, and no `scripts/check-*`
+     reads an icon. No test changes.
+   - Browsers cache icons on their own schedule even with 264's `no-cache` + ETag (FR-264-4). An iPhone's home-screen
+     icon is taken when the page is added, so acceptance needs a fresh *Add to Home Screen*.
+8. **Build order.** One commit: the Kotlin helper (item 1), `favicon.svg`, the two re-rendered files, run the
+   e2e `auth.spec.ts` against a dev run. Then the info site (item 6). No backend, route, config or API change. The
+   exploration file `design/app/Jellystructure Logo.html` keeps its old transforms; it is history, not a target.
