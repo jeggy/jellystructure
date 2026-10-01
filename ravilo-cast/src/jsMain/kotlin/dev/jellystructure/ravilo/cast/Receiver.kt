@@ -8,6 +8,7 @@ import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CAST_LOG_NAMESPACE
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastCommand
+import dev.jellystructure.shared.tv.CastDecodeProbe
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
@@ -262,6 +263,8 @@ private class Receiver {
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         sessionOpen = true
+        // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
+        note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
         val messages = cast.framework.messages
         request.media.contentId = t.hlsUrl
         request.media.contentUrl = t.hlsUrl
@@ -334,12 +337,15 @@ private class Receiver {
         val eac3 = can("audio/mp4", "ec-3")
         val opus = can("audio/mp4", "opus")
         val hdr10 = can("video/mp4", "hev1.2.6.L153.B0", 3840, 2160)
-        val uhd = can("video/mp4", "avc1.640033", 3840, 2160) || can("video/mp4", "hev1.1.6.L153.B0", 3840, 2160)
+        // R351 (FR-R351-1–4) — H.264's size, level and bitrate, and the channel count, asked as Shaka will ask them.
+        // These used to be declared without asking (1080p, level 5.1, no ceiling, six channels), and a Nest Hub was
+        // handed a 1080p copy its decoder refuses: every film cast to it failed with Shaka 4032.
+        val d = decode
         return ClientCapabilities(
             containers = listOf("mp4", "ts"),
             videoCodecs = listOfNotNull("h264", "hevc".takeIf { hevc }, "vp9".takeIf { vp9 }),
-            audioCodecs = listOfNotNull("aac", "mp3", "opus".takeIf { opus }, "ac3".takeIf { ac3 }, "eac3".takeIf { eac3 }),
-            maxAudioChannels = 6,
+            audioCodecs = listOfNotNull("aac", "mp3", "opus".takeIf { opus }, "ac3".takeIf { ac3 && multichannel("ac-3") }, "eac3".takeIf { eac3 && multichannel("ec-3") }),
+            maxAudioChannels = d.maxAudioChannels,
             hlsOnly = true,
             // R285 (FR-R285-5) / 253 — CAF plays fMP4 HLS, and `hevc` here is this device's own answer
             // to canDisplayType('video/mp4', hev1…): fMP4-HEVC is exactly what was probed. Without this
@@ -349,10 +355,45 @@ private class Receiver {
             supportsHlg = hdr10,
             supportsDolbyVision = false,
             supportsDolbyVisionEl = false,
-            maxH264Width = if (uhd) 3840 else 1920,
-            maxH264Height = if (uhd) 2160 else 1080,
+            maxH264Width = d.maxWidth,
+            maxH264Height = d.maxHeight,
+            maxH264Level = d.maxLevel,
+            maxVideoBitrate = d.maxBitrate,
+            maxH264Bitrate = d.maxBitrate,
             linkKind = "unknown",
         )
+    }
+
+    /** R351 (FR-R351-2) — `cast.__platform__`, the call Shaka itself makes on a Cast device; null elsewhere (a desktop
+     *  browser, the fake CAF in the receiver's e2e test). */
+    private val platform: dynamic by lazy {
+        js("(typeof cast !== 'undefined' && cast.__platform__ && typeof cast.__platform__.canDisplayType === 'function') ? cast.__platform__ : null")
+    }
+
+    /** One question in Shaka's extended MIME form; null when the platform cannot be asked that way. */
+    private fun platformCan(type: String): Boolean? {
+        val p = platform ?: return null
+        return runCatching { p.canDisplayType(type) as Boolean }.getOrNull()
+    }
+
+    /** FR-R351-4 — a surround codec counts only if the device takes six channels of it (Shaka asks with `channels`). */
+    private fun multichannel(codec: String): Boolean = platformCan(CastDecodeProbe.extendedType("audio/mp4", codec, channels = 6)) != false
+
+    /** FR-R351-1–4 — asked once per receiver start; the log channel carries the answer (FR-R351-5). */
+    private val decode: CastDecodeProbe.Answer by lazy {
+        val fps = CastDecodeProbe.PROBE_FPS
+        val a = CastDecodeProbe.decide(
+            h264 = { r ->
+                platformCan(CastDecodeProbe.extendedType("video/mp4", r.codecs, r.width, r.height, fps))
+                    ?: (context.canDisplayType("video/mp4", r.codecs, r.width, r.height, fps) as Boolean)
+            },
+            bitrate = if (platform == null) null else { r, bps ->
+                platformCan(CastDecodeProbe.extendedType("video/mp4", r.codecs, r.width, r.height, fps, bps)) == true
+            },
+            sixChannels = if (platform == null) null else { -> platformCan(CastDecodeProbe.extendedType("audio/mp4", "mp4a.40.2", channels = 6)) != false },
+        )
+        note("caps h264≤${a.maxWidth}x${a.maxHeight} L${a.maxLevel} ceiling=${if (a.maxBitrate > 0) "${a.maxBitrate / 1_000_000}Mbps" else "none"} ch=${a.maxAudioChannels} platform=${platform != null}")
+        a
     }
 
     /** Busy (phase 182's 503 + Retry-After) waits and retries; unreachable shows the no-server screen. */
