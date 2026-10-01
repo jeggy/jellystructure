@@ -539,3 +539,11 @@ into `PlaystateCache` before it is queued, so a page reading at once sees the ep
 
 **FR-R343-12 — The page follows the push.** An open series page (or one under the remote) re-reads its playstate on
 `home_changed` (R351 FR-R351-7), so whatever the server corrects shows without leaving the page.
+
+**Built 2026-10-02 (FR-R343-11/12), not deployed.** `PlaybackService.stopPlayback` writes the episode as unwatched at
+the stop's position into `PlaystateCache` (`PlaystateCache.patch`, favourite kept) before the stop is queued; the
+sink, once the stop has landed and the write-back succeeded, writes it again and runs `onSeriesCleared` (falls back to
+`onStopLanded` where unwired) instead of the ordinary stop refresh; the inline (no writer) path does the same.
+`SeriesDetailStore` re-reads its playstate on `home_changed` while its page is in the stack (R351). Unit-tested:
+`PlaystateCacheTest` (the patch). Not reproduced here: the 30 s window depends on Jellyfin's timing; acceptance is a
+Start over on the Mac or the Pixel 9 against a deployed backend, stopping after 5 % and checking the page at once.

@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
+`✓ Built` 2026-10-02 (build notes at the end), not deployed. Written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
 **Amends** R344 (the title beside the chips), R322 (FR-R322-3's last-played record, FR-R322-8's queue header,
 FR-R322-10's mini bar on a computer), R337 (FR-R337-6), R342 (the Dark picture) and phase 230 (the playstate
 rotation). No wire change, no new string.
@@ -103,3 +103,36 @@ next cycle the same way, and by the rotation).
    playing: it stays.
 7. Mac in dark mode, music mode: the Dock icon's tile is the same navy as in films mode.
 8. Mark a 20-episode series played in Jellyfin's web UI: the series page shows *20 of 20* within about 40 s.
+
+## Build notes (2026-10-02)
+
+Built 2026-10-02 on `main` `145fc0f9`. Not deployed, not device-tested; nothing was run on the Mac.
+
+- **(a) FR-R352-1:** `TitleWithVersions` (a `SubcomposeLayout` in `VersionChips.kt`) measures the title's natural width
+  and each allowed chip group (R344's fold down to *+N* alone), and `fitVersions` (pure, unit-tested) picks the split:
+  the largest group that fits beside the whole title, else the title truncates and the chips keep the largest group
+  within 40 % of the line. Used by `TrackRow` and `QueuePanelRow`.
+- **(b) FR-R352-2:** an 8 dp spacer before the lyrics mark / length in `TrackRow`.
+- **(c) FR-R352-3:** `AppBar`'s vignette is the theme's background at 55 % on a light theme, black at 55 % (unchanged)
+  on a dark one.
+- **(d) FR-R352-4:** `loadPaused` saves on both engines (Android, desktop); `MusicCast.follow` saves the speaker's
+  queue, song and position on a song change, a pause and every 15 s while linked.
+- **(e) FR-R352-5:** *Up next* counts `upNext` and sums its lengths; no heading or line when it is empty.
+- **(f) FR-R352-6:** `musicMiniOver` gains the films-mode rule on a desktop platform (`deskBarKeptOn`, now declared
+  before it and shared with `deskBarShows`).
+- **(g) FR-R352-7:** `render-brand-icons.sh` draws Dark on navy and unstroked tiles edge to edge; the 14 pictures were
+  re-rendered (6 changed: Default, Dark and the Tinted tile mask, 512 + 32 px). The Swift style rules are unchanged.
+- **(h) FR-R352-8:** `PlaystateCache.episodesOfChangedSeries` (unit-tested) — a background cycle that sees a series'
+  own row change reads that series' episodes in the same refresh (≤ 5 series per cycle, own 5 s budget). An open
+  series page also takes `playstate_changed` patches for its episodes (the series' own row is left alone, it carries
+  no `continue_episode_id`).
+
+**Why (h) took six minutes, for the record:** `PlaystateCache` refreshes every 20 s, but since phase 230 each cycle
+reads every title and only one fifteenth of the episodes, so any one episode is re-read once per 5 minutes (plus
+timeouts and pool-busy skips: ~6 min). A change made in Ravilo is refreshed at once (the stop / played routes);
+a change made in Jellyfin's own UI is only seen by the rotation — and the series page did not listen to
+`playstate_changed`.
+
+**Verified:** `VersionChipsTest` (fit cases), `PlaystateCacheTest` (whole-series cases, the patch), `:ravilo-ui`
+unit tests, backend `linuxX64Test`, desktop compile, Android release build. **Needs the Mac:** acceptance 1–7; 8 needs
+a deployed backend.

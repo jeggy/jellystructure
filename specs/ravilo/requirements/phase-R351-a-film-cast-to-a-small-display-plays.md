@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
+`✓ Built` 2026-10-02 (build notes at the end), not deployed. Written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
 **Amends** R245 (FR-R245-13, the receiver's capabilities; FR-R245-4, the page's button while connected; FR-R245-8,
 the remote). Reuses R343 (FR-R343-8, a shuffle carries over). No wire change: every field it sets already exists on
 `ClientCapabilities`. No new string.
@@ -63,9 +63,13 @@ first, and declares the first rung the device answers yes to:
 | Rung | Size | Level | Codec string |
 |---|---|---|---|
 | 4K | 3840 × 2160 | 5.1 | `avc1.640033` |
+| 1080p, 60 fps class | 1920 × 1080 | 4.2 | `avc1.64002A` |
 | 1080p | 1920 × 1080 | 4.1 | `avc1.640029` |
+| 720p, 60 fps class | 1280 × 720 | 4.1 | `avc1.640029` |
 | 720p | 1280 × 720 | 3.1 | `avc1.64001F` |
 | 480p | 854 × 480 | 3.0 | `avc1.64001E` |
+
+Each size is asked at its higher level first, so a device that takes a 60 fps source at that size keeps it as a copy.
 
 It sends that rung's `max_h264_width`, `max_h264_height` and `max_h264_level`. A device that answers no to every rung
 keeps today's declaration (1920 × 1080, no level), so a receiver in an environment that cannot answer behaves as
@@ -127,3 +131,32 @@ NEXT · SHUFFLED*. The capabilities of FR-R351-1–4 apply to every start of the
 4. On the Mac remote the volume line moves the hub's volume, and the hub's own volume change moves the line.
 5. Cast fails (any reason) → Back: the series page keeps *N of 20 episodes watched* and the up-next kicker.
 6. While connected the button reads *Play on {device} · S01E01*.
+
+## Build notes (2026-10-02)
+
+Built 2026-10-02 on `main` `145fc0f9`. Not deployed, not device-tested (no cast was made from this build).
+
+- **Receiver (FR-R351-1–5):** `CastDecodeProbe` in `:shared` (pure, unit-tested) holds the ladder, the bitrate steps,
+  the extended-MIME builder and the stream-URL summary. `Receiver.capabilities()` declares the chosen rung's
+  `max_h264_width/height/level`, `max_video_bitrate` + `max_h264_bitrate` (only below 120 Mbps), and
+  `max_audio_channels`; AC-3 / E-AC-3 also need a yes with `channels=6`. Asked once per receiver start (`lazy`), through
+  `cast.__platform__.canDisplayType` when present, else `CastReceiverContext.canDisplayType(…, 30)`. The log channel
+  carries `caps h264≤WxH L… ceiling=… ch=… platform=…` once and `ticket <id> direct=… caps=… master.m3u8 VideoCodec=…
+  MaxWidth=… …` on every film negotiation (named parameters only).
+- **Deviation:** the ladder asks each size at its higher level first (1080p at 4.2 then 4.1, 720p at 4.1 then 3.1), six
+  rungs instead of four, so a 60 fps source at a size the device takes is not re-encoded for its level alone.
+- **Desktop remote volume (FR-R351-6):** `RemoteVolume` under the transport on macOS/Linux — the sender's reported
+  volume, else the last set level; click or drag sets it.
+- **Detail stores (FR-R351-7):** `refreshSilent` no longer empties the overlay; an empty (failed) playstate answer never
+  replaces the shown one; both stores read their playstate again on `home_changed` while their page is in the stack.
+- **Button (FR-R351-8):** *Play on {device} · S01E01* on the series page.
+- **Shuffle (FR-R351-9):** checked in code, unchanged — the sender sends `episodes_shuffled`, the receiver keeps it on
+  every own load and asks every start with `shuffle`.
+
+**The cause is inferred from the code and Google's published decoder limits, not from a capture of the hub's
+answers.** The first cast with this receiver will say what the hub declares (`caps …`) and what it was sent
+(`ticket …`).
+
+**Verified:** `CastDecodeProbeTest` (8), `:ravilo-cast` production bundle, `:ravilo-ui` unit tests, backend
+`linuxX64Test`, desktop compile, Android release build. **Needs:** a deploy of the receiver (it is served by the
+backend) and a cast to the Nest Hub, the stue TV and the bedroom TV.
