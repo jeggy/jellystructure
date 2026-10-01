@@ -136,3 +136,15 @@ a change made in Jellyfin's own UI is only seen by the rotation — and the seri
 **Verified:** `VersionChipsTest` (fit cases), `PlaystateCacheTest` (whole-series cases, the patch), `:ravilo-ui`
 unit tests, backend `linuxX64Test`, desktop compile, Android release build. **Needs the Mac:** acceptance 1–7; 8 needs
 a deployed backend.
+
+## Amendment (2026-10-02) — a title that truncates sits beside *+N* alone
+
+**Seen in the Mac re-test (backend `v1.48-54-gfefa9049`):** at 1280 px the queue panel's current song read *Cave
+(acoustic…* beside *Live +2*. The build kept, beside a title that had to truncate, the largest chip group within 40 % of
+the line — a deviation from FR-R352-1, which says the chips are *+N* alone whenever the title truncates.
+
+**Built 2026-10-02, not deployed, not device-tested.** `fitVersions` now gives a title that cannot be whole the line less
+*+N* alone; the 40 % share (`VERSION_CHIPS_MAX_SHARE`) is gone. Unchanged: a title that fits whole keeps every chip
+group that fits beside it. `VersionChipsTest` (11) pins it, including the case a 40 % share would have allowed one named
+chip. **Re-test (Mac, 1280 px window, Queue panel open):** a song with a long title and two or more versions playing —
+the panel's current row shows the title as long as it can beside *+N* only; a short title still shows its named chips.

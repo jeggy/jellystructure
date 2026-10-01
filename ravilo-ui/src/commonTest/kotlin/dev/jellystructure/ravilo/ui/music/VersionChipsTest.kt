@@ -109,12 +109,15 @@ class VersionChipsTest {
     }
 
     @Test
-    fun a_long_title_truncates_and_the_chips_keep_at_most_their_share() {
+    fun a_long_title_truncates_only_beside_plus_n() {
         // The 300 dp queue panel: about 180 dp for title + chips, the title alone wider than that.
         val fit = fitVersions(400, 8, groups, 180)
-        assertEquals(0, fit.shown, "40 % of 180 is 72: +3 alone (24 + 8) fits, one chip (70 + 8) does not")
+        assertEquals(0, fit.shown, "+3 alone")
         assertEquals(180 - 8 - 24, fit.titleWidth)
-        assertEquals(VersionFit(2, 300 - 8 - 110), fitVersions(600, 8, groups, 300), "a wide row keeps two named chips and +1")
+        // Amended 2026-10-02 — the Mac's queue panel showed *Cave (acoustic…* beside *Live +2*: a title that has to
+        // truncate never shares the line with a named chip, however wide the row.
+        assertEquals(VersionFit(0, 300 - 8 - 24), fitVersions(600, 8, groups, 300))
+        assertEquals(VersionFit(0, 230 - 8 - 24), fitVersions(210, 8, groups, 230), "one chip would fit a 40 % share; the title still comes first")
     }
 
     @Test

@@ -151,20 +151,17 @@ fun VersionChips(keys: List<String>, modifier: Modifier = Modifier, fold: Int? =
 /** R352 (FR-R352-1) — how a line splits between a title and its chips: how many chips are named, and the title's width. */
 data class VersionFit(val shown: Int, val titleWidth: Int)
 
-/** When the title cannot be whole, the chips may take at most this share of the line. */
-const val VERSION_CHIPS_MAX_SHARE = 0.4f
-
 /**
  * R352 (FR-R352-1) — the title takes its space first. [variants] are the chip groups the fold allows, largest first
  * (`shown` named chips and their measured width; the last names none and is *+N* alone). The first group that fits
- * beside the whole title wins. When the whole title does not fit beside even *+N*, the title truncates and the chips
- * keep the largest group within [VERSION_CHIPS_MAX_SHARE] of the line (*+N* alone if none is).
+ * beside the whole title wins. When the whole title does not fit beside even *+N*, the chips are *+N* alone and the
+ * title truncates in the rest (amended 2026-10-02: a 40 % share for the chips left *Cave (acoustic…* beside *Live +2*
+ * in the 300 dp queue panel; the spec always said *+N* alone).
  */
 fun fitVersions(titleNatural: Int, gap: Int, variants: List<Pair<Int, Int>>, available: Int): VersionFit {
     if (variants.isEmpty()) return VersionFit(0, minOf(titleNatural, available))
     variants.firstOrNull { (_, w) -> titleNatural + gap + w <= available }?.let { (k, _) -> return VersionFit(k, titleNatural) }
-    val budget = (available * VERSION_CHIPS_MAX_SHARE).toInt()
-    val (k, w) = variants.firstOrNull { (_, w) -> gap + w <= budget } ?: variants.last()
+    val (k, w) = variants.last()
     return VersionFit(k, (available - gap - w).coerceAtLeast(0))
 }
 
