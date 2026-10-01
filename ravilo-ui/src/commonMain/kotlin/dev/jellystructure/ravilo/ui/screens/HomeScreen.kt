@@ -606,7 +606,7 @@ private fun ContentRowItem(
         val isContinue = row.kind == RowKind.CONTINUE
         // R309 (FR-R309-7): a multi-episode file reads S1:E1–3, as its series page does.
         val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
-            "S${card.seasonNumber}:E${card.episodeNumber}" + (card.episodeNumberEnd?.let { "–$it" } ?: "") else null
+            dev.jellystructure.shared.tv.episodeCode(card.seasonNumber!!, card.episodeNumber!!, card.episodeNumberEnd) else null   // R346 (FR-R346-5) — S01E05 / S01E01–E03
         Tile(
             title = card.title,
             subtitle = if (isContinue) null else card.nextUpLabel,

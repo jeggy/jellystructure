@@ -188,7 +188,7 @@ private fun UpcomingDetailContent(item: UpcomingItem, genres: List<String>, runt
             Spacer(Modifier.height(6.dp))
             val kindLabel = if (item.kind == MediaKind.MOVIE) str("up.movie") else str("up.episode")
             val epLine = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
-                "S${item.season}·E${item.episode}" + (item.episodeTitle?.let { " · $it" } ?: "")
+                dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
             } else null
             // R167 FR-R167-2 #4 — Discover-detail parity: prefer the live TMDB genre list + runtime
             // when the enrichment succeeded; fall back to the single *arr-derived genre otherwise.

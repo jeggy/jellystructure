@@ -662,7 +662,8 @@ class MediaStore(
         for (series in allItems()) {
             if (series.kind != MediaKind.TV_SHOW) continue
             val ep = series.episodes.firstOrNull { it.jellyfinId == jellyfinId } ?: continue
-            val kicker = if (ep.seasonNumber != null && ep.episodeNumber != null) "S${ep.seasonNumber} · E${ep.episodeNumber}" else null
+            // R346 (FR-R346-5) — S01E05, the one spelling; a multi-episode file reads S01E01–E03.
+            val kicker = if (ep.seasonNumber != null && ep.episodeNumber != null) dev.jellystructure.shared.tv.episodeCode(ep.seasonNumber!!, ep.episodeNumber!!, fileEnd(series, ep)) else null
             val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.episodeNumber?.let { "Episode $it" } ?: series.title
             return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series,
                 segmentItemId = series.id, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
@@ -670,6 +671,12 @@ class MediaStore(
         }
         return null
     }
+
+    /** R346 (FR-R346-5) / R309 — the highest episode number in [ep]'s own file (one Jellyfin id, one file),
+     *  for the code's range end; null for a lone episode. */
+    private fun fileEnd(series: MediaItem, ep: dev.jellystructure.model.Episode): Int? =
+        series.episodes.filter { it.jellyfinId != null && it.jellyfinId == ep.jellyfinId && it.path == ep.path }
+            .mapNotNull { it.episodeNumber }.maxOrNull()?.takeIf { end -> end > (ep.episodeNumber ?: end) }
 
     /**
      * R264 (FR-R264-3) — the episode after [ep] in [series]: season then episode order, specials (season 0)
@@ -684,7 +691,7 @@ class MediaStore(
         val at = ordered.indexOfFirst { it.jellyfinId == ep.jellyfinId }
         if (at < 0) return null
         val next = ordered.drop(at + 1).firstOrNull { it.jellyfinId != ep.jellyfinId } ?: return null
-        val kicker = if (next.seasonNumber != null && next.episodeNumber != null) "S${next.seasonNumber} · E${next.episodeNumber}" else null
+        val kicker = if (next.seasonNumber != null && next.episodeNumber != null) dev.jellystructure.shared.tv.episodeCode(next.seasonNumber!!, next.episodeNumber!!, fileEnd(series, next)) else null   // R346
         return NextEpisode(jellyfinId = next.jellyfinId!!, title = next.title?.takeIf { it.isNotBlank() }, kicker = kicker)
     }
 

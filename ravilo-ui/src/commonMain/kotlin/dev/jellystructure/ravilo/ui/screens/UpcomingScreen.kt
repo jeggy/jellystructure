@@ -422,7 +422,7 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
         Spacer(Modifier.height(6.dp))
         Text(item.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val sub = if (item.kind == MediaKind.SERIES && item.season != null && item.episode != null) {
-            "S${item.season}·E${item.episode}" + (item.episodeTitle?.let { " · $it" } ?: "")
+            dev.jellystructure.shared.tv.episodeCode(item.season!!, item.episode!!) + (item.episodeTitle?.let { " · $it" } ?: "")   // R346
         } else releaseTypeLabel(item.releaseType) ?: ""
         Text(sub, color = colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         val footer = listOfNotNull(item.network, item.year?.toString()).joinToString("  ·  ")

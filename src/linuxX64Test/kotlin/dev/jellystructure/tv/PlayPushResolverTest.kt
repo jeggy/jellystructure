@@ -65,7 +65,7 @@ class PlayPushResolverTest {
         val r = resolver.resolve("jf-ep")
         assertEquals("episode", r.kind)
         assertEquals("The Storm", r.title)
-        assertEquals("S2 · E7", r.kicker)
+        assertEquals("S02E07", r.kicker)
         assertEquals("Havets Hjarta", r.seriesName)
         assertNull(r.logoUrl, "no clearlogo on disk ⇒ no URL, never a URL that 404s")
         assertNull(r.logoInk)
@@ -75,7 +75,7 @@ class PlayPushResolverTest {
     fun `an untitled episode still names itself and a numberless one carries no kicker`() = runBlocking {
         mediaStore.addOrUpdate(series("hh", "Havets Hjarta", listOf(episode("jf-a", 1, 3, ""), episode("jf-b", null, null, null))))
         assertEquals("Episode 3", resolver.resolve("jf-a").title)
-        assertEquals("S1 · E3", resolver.resolve("jf-a").kicker)
+        assertEquals("S01E03", resolver.resolve("jf-a").kicker)
         val b = resolver.resolve("jf-b")
         assertEquals("Havets Hjarta", b.title); assertNull(b.kicker); assertEquals("Havets Hjarta", b.seriesName)
     }
@@ -107,7 +107,8 @@ class PlayPushResolverTest {
             episode("jf-s1e2", 1, 3, "The Storm, part two"),   // a multi-episode file: same id, next row
         )))
         val first = resolver.resolve("jf-s1e1")
-        assertEquals("jf-s1e2", first.next?.jellyfinId); assertEquals("S1 · E2", first.next?.kicker); assertEquals("The Storm", first.next?.title)
+        assertEquals("jf-s1e2", first.next?.jellyfinId); assertEquals("The Storm", first.next?.title)
+        assertEquals("S01E02–E03", first.next?.kicker, "R346 — the next is a two-episode file: its code names the range")
         assertEquals("jf-s2e1", resolver.resolve("jf-s1e2").next?.jellyfinId, "never the same file again")
         assertNull(resolver.resolve("jf-s2e1").next, "the last episode has no next")
         assertNull(resolver.resolve("jf-s0e1").next, "a special has no next")

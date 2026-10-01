@@ -11,10 +11,10 @@ import dev.jellystructure.model.MediaItem
  * than one episode; [episode] stays the lowest.
  */
 internal data class EpisodeSpan(val season: Int?, val episode: Int?, val episodeEnd: Int? = null) {
-    /** `S1E1`, `S1E1–3`, or null when the season or episode is unknown. */
+    /** `S01E01`, `S01E01–E03` (R346 FR-R346-5, the one spelling), or null when the season or episode is unknown. */
     val code: String?
         get() = if (season == null || episode == null) null
-        else "S${season}E$episode" + (episodeEnd?.let { "–$it" } ?: "")
+        else dev.jellystructure.shared.tv.episodeCode(season, episode, episodeEnd)
 }
 
 /**
