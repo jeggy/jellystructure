@@ -28,7 +28,8 @@ data class ApiKeyRow(
 class ApiKeyStore(private val db: JellystructureDb) {
     // O(1)-cached like device tokens (Phase 111 FR A.3) — most requests hit this, not the DB.
     private data class CacheEntry(val data: ApiKeyData, val cachedAt: Long)
-    private val cache = HashMap<String, CacheEntry>()
+    // Phase 294 (FR-294-2) — read and written by concurrent requests: a LockedMap, not a HashMap.
+    private val cache = dev.jellystructure.ops.LockedMap<String, CacheEntry>()
     private val cacheTtlMs = 5 * 60_000L
 
     fun create(name: String, jellyfinUserId: String, jellyfinUsername: String): String {
@@ -66,7 +67,7 @@ class ApiKeyStore(private val db: JellystructureDb) {
 
     fun revoke(id: String) {
         db.apiKeyQueries.revoke(id)
-        cache.entries.removeAll { it.value.data.id == id }
+        cache.removeIf { _, entry -> entry.data.id == id }
     }
 }
 

@@ -26,7 +26,8 @@ class SessionService(private val db: JellystructureDb) {
 
     // token -> last time last_used_at was actually written (debounce state; not a data cache like
     // RaviloDeviceService's, since a session's own row rarely changes underneath it).
-    private val lastUsedWritten = HashMap<String, Long>()
+    // Phase 294 (FR-294-2) — every admin request reads and writes this from its own thread: a LockedMap, not a HashMap.
+    private val lastUsedWritten = dev.jellystructure.ops.LockedMap<String, Long>()
 
     init {
         // Remove expired sessions on startup
@@ -56,10 +57,9 @@ class SessionService(private val db: JellystructureDb) {
         val row = db.sessionQueries.getByToken(token).executeAsOneOrNull() ?: return null
         if (row.expires_at < nowMs()) return null
         val now = nowMs()
-        if ((now - (lastUsedWritten[token] ?: 0L)) >= LAST_USED_DEBOUNCE_MS) {
-            db.sessionQueries.updateLastUsed(last_used_at = now, token = token)
-            lastUsedWritten[token] = now
-        }
+        var claimed = false
+        lastUsedWritten.update(token) { prev -> if (now - (prev ?: 0L) >= LAST_USED_DEBOUNCE_MS) { claimed = true; now } else prev }
+        if (claimed) db.sessionQueries.updateLastUsed(last_used_at = now, token = token)
         return SessionData(
             token = row.token,
             jellyfinUserId = row.jellyfin_user_id,

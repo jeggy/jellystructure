@@ -198,7 +198,8 @@ class DashboardService(
         return DashboardDto(headline, domains, ordered, since = since(jellyfinUserId, all), jellyfinReachable = jellyfinReachable, firstRun = all.isEmpty())
     }
 
-    private val lidarrCache = HashMap<String, Pair<Long, String?>>()
+    // Phase 294 (FR-294-2) — two Dashboard loads at once must not corrupt it: a LockedMap, not a HashMap.
+    private val lidarrCache = dev.jellystructure.ops.LockedMap<String, Pair<Long, String?>>()
     private suspend fun lidarrCached(key: String, fetch: suspend () -> String?): String? {
         val now = nowEpochSec()
         lidarrCache[key]?.takeIf { now - it.first < 300 }?.let { return it.second }

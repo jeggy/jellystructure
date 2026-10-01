@@ -91,8 +91,12 @@ fun policyChanges(row: DeviceData, live: DevicePolicy): List<PolicyChange> {
 class RaviloDeviceService(private val db: JellystructureDb) {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
-    private data class TokenEntry(val data: DeviceData, val cachedAt: Long, var lastSeenWritten: Long)
-    private val tokenCache = HashMap<String, TokenEntry>()
+    // Phase 294 (FR-294-1) — a LockedMap of immutable entries. It was a plain HashMap with a mutable field, read and
+    // written by every authenticated TV request on many threads at once; a concurrent insert corrupted it mid-rehash
+    // and a TV sign-in threw after its device row was written ("…grow-only hash array. Have object hashCodes
+    // changed?"). The lock covers map operations only; every database call stays outside it.
+    private data class TokenEntry(val data: DeviceData, val cachedAt: Long, val lastSeenWritten: Long)
+    private val tokenCache = dev.jellystructure.ops.LockedMap<String, TokenEntry>()
 
     /**
      * Phase 141 — direct username/password sign-in (`POST /api/tv/login`): upserts the `(deviceId,
@@ -200,13 +204,15 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // Cache hit within TTL: skip the DB SELECT.
         tokenCache[token]?.let { entry ->
             if ((now - entry.cachedAt) < TOKEN_CACHE_TTL_MS) {
-                // Debounce updateLastSeen: at most once per minute per token.
-                if ((now - entry.lastSeenWritten) >= LAST_SEEN_DEBOUNCE_MS) {
-                    db.raviloDeviceQueries.updateLastSeen(last_seen = now, device_token = token)
-                    entry.lastSeenWritten = now
+                // Debounce updateLastSeen: at most once per minute per token. The claim is one atomic step, so two
+                // concurrent requests can't both write it.
+                var claimedLastSeen = false
+                tokenCache.update(token) { cur ->
+                    if (cur != null && (now - cur.lastSeenWritten) >= LAST_SEEN_DEBOUNCE_MS) { claimedLastSeen = true; cur.copy(lastSeenWritten = now) } else cur
                 }
+                if (claimedLastSeen) db.raviloDeviceQueries.updateLastSeen(last_seen = now, device_token = token)
                 val data = recordAppInfo(entry.data, appVersion, platform)
-                if (data !== entry.data) tokenCache[token] = TokenEntry(data, entry.cachedAt, entry.lastSeenWritten)
+                if (data !== entry.data) tokenCache.update(token) { cur -> cur?.copy(data = data) }
                 DeviceIdentityRegistry.remember(data)
                 return data
             }

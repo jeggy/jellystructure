@@ -69,7 +69,8 @@ class BrowseService(
         val feedVer: Long,
         val allowedHash: Int,
     )
-    private val facetsCache = HashMap<String, FacetsEntry>()
+    // Phase 294 (FR-294-2) — per-user, written by concurrent requests: a LockedMap, not a HashMap.
+    private val facetsCache = dev.jellystructure.ops.LockedMap<String, FacetsEntry>()
     /**
      * R187 — resolves a "→ See all" seed (a [Row.seedQuery] condition tree, already channel-ANDed
      * where relevant, plus [mediaKind]) to the FULL matching set as [BrowseCard]s (genres, audio

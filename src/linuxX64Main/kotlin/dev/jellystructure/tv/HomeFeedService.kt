@@ -102,7 +102,9 @@ class HomeFeedService(
     // user had no list). A feed can never outlive the Continue list it was built from: a differing
     // stamp is a miss, which is what makes the background loop's work visible on Home at all.
     private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int, val continueStamp: Long)
-    private val feedCache = HashMap<String, FeedEntry>()
+    // Phase 294 (FR-294-2) — this and the three caches below are read and written by concurrent requests (Home right
+    // after a sign-in among them): LockedMaps, not HashMaps.
+    private val feedCache = dev.jellystructure.ops.LockedMap<String, FeedEntry>()
 
     // Phase 205 (FR-205-2) — playstate moved to PlaystateCache, a background-refreshed, cross-service
     // cache (also read by BrowseService and DetailService, neither of which had ANY cache before this
@@ -127,22 +129,22 @@ class HomeFeedService(
      *  must discard it like a new Continue list does. Both stamps only ever grow, so their sum changes
      *  whenever either does. */
     private fun rowStamp(userId: String): Long = continueStamp(userId) + (recommendations?.versionFor(userId) ?: 0L)
-    private val continueListCache = HashMap<String, ContinueListEntry>()
+    private val continueListCache = dev.jellystructure.ops.LockedMap<String, ContinueListEntry>()
     /** Phase 219 (FR-219-4) — the age of each user's last successful Continue Watching build, for /api/health. */
-    fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.mapValues { now - it.value.builtAt } }
+    fun continueRefreshAges(): Map<String, Long> { val now = nowMs(); return continueListCache.snapshot().mapValues { now - it.value.builtAt } }
 
     // Phase 206 (FR-206-3) — the channel rail cached once per user, same shape/signal as [feedCache],
     // shared by every entry point that needs it ([buildHomeFeed], [getChannels], [getChannelFeed]) so
     // it is computed once per (user, feedVersion, config, scope) rather than once per caller — resolves
     // the phase's own open question 2 in favour of "yes, one lookup."
     private data class RailEntry(val channels: List<Channel>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int)
-    private val channelRailCache = HashMap<String, RailEntry>()
+    private val channelRailCache = dev.jellystructure.ops.LockedMap<String, RailEntry>()
 
     // Phase 206 (FR-206-4) — [buildChannelContent]'s own cache, per (user, channelId), same TTL and
     // invalidation signal as [feedCache]. A viewer moving between channels pays for one build per
     // channel, not one per navigation.
     private data class ChannelContentEntry(val heroes: List<Hero>, val rows: List<Row>, val builtAt: Long, val feedVer: Long, val cfgHash: Int, val allowedHash: Int, val continueStamp: Long)
-    private val channelContentCache = HashMap<Pair<String, String>, ChannelContentEntry>()
+    private val channelContentCache = dev.jellystructure.ops.LockedMap<Pair<String, String>, ChannelContentEntry>()
 
     /**
      * R187 fix — just the channel id→name list, for callers that need Ravilo channel display names
@@ -243,7 +245,7 @@ class HomeFeedService(
         channelRailCache.remove(userId)
         // Phase 206 (FR-206-4) — same reasoning as the caches above: a channel whose Continue row just
         // changed must not keep serving a pre-stop build for the rest of FEED_TTL_MS.
-        channelContentCache.keys.filter { it.first == userId }.forEach { channelContentCache.remove(it) }
+        channelContentCache.removeIf { key, _ -> key.first == userId }
         // R248 (FR-R248-2) — only now, with the caches dropped and the Continue list rebuilt (or its
         // rebuild failed and the previous value standing), is a client re-pull guaranteed to see the
         // post-stop answer. Sent whether the refreshes above succeeded or not: the client shows whatever
