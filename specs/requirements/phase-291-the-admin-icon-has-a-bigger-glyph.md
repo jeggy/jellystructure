@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided its one open item the same day (see *Owner decisions* at the end
+`✓ Built` 2026-10-01, not deployed (see *Build notes*). Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided its one open item the same day (see *Owner decisions* at the end
 of the Dev review).
 **Numbering:** first written as 290; the dev side took 290 the same day (*an album's year is the year it first came
 out*), so this is **291**, checked free against `main` (tree `ef52889`) on 2026-10-01.
@@ -128,3 +128,30 @@ the files themselves (items 4–6).
    production, copy the three new icon files (`favicon.svg`, `favicon.ico`, `apple-touch-icon.png`) into the site,
    change the three pages' nav-mark transforms to `translate(13 13) scale(.74)`, and rebuild the site's container.
    The owner allowed this on 2026-10-01.
+
+## Build notes (2026-10-01)
+
+**Built 2026-10-01, not deployed.** Everything in this repository is done. The info site is the one step left, and
+it waits for the release (*Owner decisions* 1).
+
+1. **One drawing in Kotlin (dev review 1).** `src/wasmJsMain/kotlin/dev/jellystructure/ui/BrandMark.kt` has
+   `brandMarkSvg(gradientId, attrs)`. It returns the tile and the glyph at `translate(13 13) scale(.74)`. The
+   sidebar (`jsg-side`), the top bar (`jsg-tb`) and the login screen (`jsg-login`) all call it. Each caller keeps
+   its own attributes: the `brand-mark` class, or the login's inline size and drop shadow. The radius stays `rx="30"`
+   (dev review 2).
+2. **`favicon.svg`:** the one attribute, by hand. Its radius stays 22.
+3. **The rasters come from R341's script:** `scripts/render-brand-icons.sh admin` renders `favicon.svg` in headless
+   Chromium and Pillow packs `favicon.ico` (16, 32 and 48 px PNG frames). `apple-touch-icon.png` is 180 px, opaque
+   and full-bleed, with the tile's corners squared off, as shipped (dev review 4).
+4. **Deviation, the 16 px frame (dev review 5):** the frame is drawn half a pixel up and to the left
+   (`translate(9.875 9.875)`, that frame only). Centred, the gaps between the four squares sit across a pixel edge
+   and smear into two half-tone columns. Moved, each gap is one clean pixel column. The squares are separate either
+   way, and the shift can't be seen at 16 px. The 32 px, 48 px and SVG frames are centred.
+5. **Verified:** `compileKotlinWasmJs` passes. I looked at every frame enlarged: at 16 px the four squares are separate
+   and the play triangle shows. The e2e `auth.spec.ts` was not run, because no dev backend was started; it checks only
+   status and content type, and no file name changed.
+6. **Still owed:**
+   - **In a browser:** the sidebar, the top bar, the login screen and the tab should all show the bigger glyph. On an
+     iPhone, *Add to Home Screen* again to see the new touch icon.
+   - **The info site, after the release** (dev review 6): copy the three icon files over, change the three pages'
+     nav-mark transforms to `translate(13 13) scale(.74)`, and rebuild the site's container.

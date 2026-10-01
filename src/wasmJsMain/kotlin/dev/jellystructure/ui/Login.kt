@@ -15,7 +15,7 @@ fun renderLogin(onSuccess: suspend () -> Unit) {
         <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px">
           <div style="width:100%;max-width:408px">
             <div style="display:flex;align-items:center;gap:13px;justify-content:center;margin-bottom:26px">
-              <svg style="width:40px;height:40px;flex:none;border-radius:12px;filter:drop-shadow(0 6px 20px rgba(123,110,240,.5))" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="jsg-login" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/></linearGradient></defs><rect width="100" height="100" rx="30" fill="url(#jsg-login)"/><g transform="translate(18 18) scale(.64)" fill="#fff"><rect x="10" y="10" width="35" height="35" rx="9"/><rect x="55" y="10" width="35" height="35" rx="9" opacity=".5"/><rect x="10" y="55" width="35" height="35" rx="9" opacity=".5"/><rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke="#fff" stroke-width="6"/><path d="M68 64 L84 72.5 L68 81 Z"/></g></svg>
+              ${brandMarkSvg("jsg-login", "style=\"width:40px;height:40px;flex:none;border-radius:12px;filter:drop-shadow(0 6px 20px rgba(123,110,240,.5))\"")}
               <strong style="font-family:'Space Grotesk',sans-serif;font-size:1.5rem;font-weight:600;letter-spacing:-.01em">Jellystructure</strong>
             </div>
             <div class="card" style="padding:34px 32px">
