@@ -12,7 +12,7 @@ data class PlayerEpisodeEntry(
     val id: String,
     val numberLabel: String?,
     val title: String,
-    val kicker: String,        // e.g. "S1 · E3"
+    val kicker: String,        // e.g. "S01E03" (R346)
     val durationLabel: String, // e.g. "42m"
     val progressPct: Float,    // 0–1, from Jellyfin watched data
     val watched: Boolean,
@@ -23,7 +23,27 @@ data class PlayerEpisodeEntry(
      *  server base URL by the caller), for the player's OS media-session artwork. Null when the season
      *  has no poster on disk; PlayerScreen falls back to the series' own poster in that case. */
     val seasonPosterUrl: String? = null,
+    /** R350 (FR-R350-6) — the season this entry belongs to: its number (0 = Specials) and its own name, for the rail's
+     *  header. Null on an entry built without them (the header then reads the number from [kicker]). */
+    val seasonNumber: Int? = null,
+    val seasonName: String? = null,
 )
+
+/**
+ * R350 (FR-R350-6) — the player's episode rail (TV) and episode sheet (phone) are headed by their season: *Season 1*
+ * in the viewer's language ([seasonWord] is `detail.season`), the season's own name for Specials. It was
+ * `kicker.substringBefore("·")`, written for the old `S1 · E5` kicker — since R346 the kicker is `S01E05` and the
+ * whole code came through (*S01E01* over episode 3).
+ */
+internal fun playerRailSeasonLabel(episodes: List<PlayerEpisodeEntry>?, seasonWord: String): String {
+    val first = episodes?.firstOrNull() ?: return ""
+    val n = first.seasonNumber ?: Regex("""S(\d+)E\d+""").find(first.kicker)?.groupValues?.get(1)?.toIntOrNull()
+    return when {
+        n == null -> first.seasonName.orEmpty()
+        n == 0 -> first.seasonName ?: "$seasonWord 0"
+        else -> "$seasonWord $n"
+    }
+}
 
 /** Context built by SeriesDetailScreen when the user selects Play on an episode. */
 data class EpisodePlayContext(

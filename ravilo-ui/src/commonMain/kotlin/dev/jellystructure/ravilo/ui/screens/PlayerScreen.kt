@@ -186,20 +186,25 @@ internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, T
 internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
 
 /**
- * R251 (FR-R251-1/2) — a key that finds the chrome hidden reveals it and does nothing else. One rule
- * for all five keys, so **→ → OK** means the same thing whether or not the chrome auto-hid a moment
- * earlier: `hideChrome()` moves focus to PLAY (R178), and before this phase Left/Right acted on that
- * moved focus immediately while Select did not — the same three keys reached *Audio & Subs* or
- * *Next episode* depending on a timer the viewer was not watching (stue TV, 2026-09-16, twice).
+ * R251 / R350 (FR-R350-7) — what a key does when it finds the chrome hidden. Returns true when the press only
+ * reveals the chrome (the next press acts).
  *
- * "Hidden" is R178's own test with its live exceptions: the Skip Intro pill and the next-up/credits
- * card render regardless of `chromeVisible` and are genuinely focused when shown; the picker and the
- * episode rail hold the auto-hide off while open (see `LaunchedEffect(chromeRevision)`), so they can
- * never be found "hidden" — listed here so a future hide path cannot swallow a key aimed at them.
- * [key] is accepted so the rule is visibly the same for every key (the open question — Up revealing
- * *and* moving to the seek bar — is answered no: one rule for all five is the point).
+ * R251 made every key reveal-only, because `hideChrome()` used to move focus to PLAY (R178) and **→ → OK** then
+ * meant different things depending on a timer the viewer was not watching. R350 removes the cause instead: hiding
+ * never moves focus, so a hidden chrome is the visible chrome minus the drawing, and **Left, Right and Up act** on
+ * the first press — from the control the viewer last focused (Left/Right on the seek bar scrub, as when visible).
+ * Every Right after the chrome hid used to cost an extra press (owner, 2026-10-02).
+ *
+ * Two keys keep a hidden-chrome rule, because they would fire or open something the viewer cannot see:
+ * - **OK** stays R178's play/pause (the caller also puts focus on PLAY, so the highlight matches what OK did);
+ * - **Down** moves only within the transport (seek bar → Play); from anywhere else it would open the episode rail,
+ *   so from a hidden chrome it only reveals.
+ *
+ * "Hidden" is R178's own test with its live exceptions: the Skip Intro pill and the next-up/credits card render
+ * regardless of `chromeVisible` and are genuinely focused when shown; the picker and the episode rail hold the
+ * auto-hide off while open, so they can never be found hidden — listed so a future hide path cannot swallow a key
+ * aimed at them.
  */
-@Suppress("UNUSED_PARAMETER")
 internal fun dpadRevealsOnly(
     key: PlayerDpadKey,
     chromeVisible: Boolean,
@@ -207,7 +212,15 @@ internal fun dpadRevealsOnly(
     nextUpVisible: Boolean,
     epRailOpen: Boolean,
     pickerOpen: Boolean,
-): Boolean = !chromeVisible && focus != PlFocus.SKIP_INTRO && !nextUpVisible && !epRailOpen && !pickerOpen
+): Boolean {
+    val hidden = !chromeVisible && focus != PlFocus.SKIP_INTRO && !nextUpVisible && !epRailOpen && !pickerOpen
+    if (!hidden) return false
+    return when (key) {
+        PlayerDpadKey.LEFT, PlayerDpadKey.RIGHT, PlayerDpadKey.UP -> false
+        PlayerDpadKey.DOWN -> focus != PlFocus.SEEK_BAR
+        PlayerDpadKey.SELECT -> true
+    }
+}
 private enum class NuFocus { PLAY, STAY }
 
 // R218 (FR-R218-1) — "PlayerStore exposes a single derived buffering state, not three booleans." This
@@ -592,11 +605,11 @@ fun PlayerScreen(
 
     fun wake() { chromeVisible = true; chromeRevision++ }
     fun scheduleHide() { chromeRevision++ }
-    // R178 (FR-RV-SEL1-1): every site that hides the chrome must also drop the hand-rolled `focus`
-    // back to PLAY — otherwise a later Select re-dispatches on whatever control was focused when
-    // chrome hid (e.g. reopening Audio & Subs) instead of the expected play/pause. Route every
-    // chrome-hide through this single choke point rather than a bare `chromeVisible = false`.
-    fun hideChrome() { chromeVisible = false; focus = PlFocus.PLAY }
+    // Every chrome-hide goes through this single choke point rather than a bare `chromeVisible = false`.
+    // R350 (FR-R350-7) — it no longer moves `focus` (R178 FR-RV-SEL1-1 parked it on PLAY): the control the
+    // viewer last focused is still focused when the chrome comes back, and Left/Right move from it. A Select
+    // that finds the chrome hidden still never fires that control (R178 FR-RV-SEL1-2, see `dpadRevealsOnly`).
+    fun hideChrome() { chromeVisible = false }
 
     fun skip(ms: Long) {
         val newPos = (positionMs + ms).coerceIn(0L, durationMs.coerceAtLeast(0L))
@@ -1215,8 +1228,10 @@ fun PlayerScreen(
     LaunchedEffect(chromeRevision) {
         if (chromeRevision == 0L) return@LaunchedEffect
         delay(if (handset) HANDSET_CHROME_HIDE_MS else CHROME_HIDE_MS)
-        val handsetHold = handset && (scrubbing || locked || !isPlaying)
-        if (!pickerOpen && !nextUpVisible && !epRailOpen && !handsetHold) hideChrome()
+        // R350 (FR-R350-7) — the TV keeps its chrome while paused (and while scrubbing) too; play re-arms the hide
+        // (togglePlay wakes).
+        val hold = scrubbing || locked || !isPlaying
+        if (!pickerOpen && !nextUpVisible && !epRailOpen && !hold) hideChrome()
     }
 
     // R208 — auto-close the episode rail after inactivity. chromeRevision bumps on every D-pad input
@@ -1528,8 +1543,8 @@ fun PlayerScreen(
                     // R329 (FR-R329-6) — on the Mac the arrows seek by the TV's steps; next-up, the rail and
                     // the picker keep them for moving.
                     if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(-SKIP_BACK_MS); return@dpadFocusable }
-                    // R251 (FR-R251-1) — captured before wake(), like onSelect's: a hidden chrome is
-                    // only revealed; the NEXT press moves.
+                    // R251 / R350 (FR-R350-7) — captured before wake(), like onSelect's. Left/Right/Up act on
+                    // the first press from the remembered control; see `dpadRevealsOnly`.
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.LEFT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
                     wake()
                     if (!revealOnly) when {
@@ -1622,6 +1637,8 @@ fun PlayerScreen(
                     wake()
                     if (wasHidden) {
                         // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
+                        // R350 (FR-R350-7) — and the highlight lands on Play, the control OK just acted as.
+                        focus = PlFocus.PLAY
                         togglePlay()
                     } else when {
                         nextUpVisible -> {
@@ -3560,7 +3577,7 @@ private fun EpisodeRail(
     Box(modifier = Modifier.fillMaxWidth().background(gradient)) {
         Column(modifier = Modifier.padding(top = 32.dp, bottom = 40.dp)) {
             // Header
-            val seasonLabel = episodes.firstOrNull()?.kicker?.substringBefore("·")?.trim() ?: ""
+            val seasonLabel = playerRailSeasonLabel(episodes, str("detail.season"))   // R350 (FR-R350-6)
             Row(
                 modifier = Modifier.padding(horizontal = 48.dp),
                 verticalAlignment = Alignment.CenterVertically,

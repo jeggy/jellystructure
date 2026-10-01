@@ -267,6 +267,7 @@ private fun buildEpisodeContext(
                 // forward-compatible for whenever that scope limitation is lifted.
                 segments      = g.last().segments,
                 seasonPosterUrl = season?.posterUrl,  // R194
+                seasonNumber = sNum, seasonName = season?.name,  // R350 (FR-R350-6) — the rail's header
             )
         },
         currentEpIndex = groupIdx,

@@ -1,18 +1,41 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** R251 (FR-R251-1/2) — a key that finds the chrome hidden reveals it and does nothing else; all five keys, one rule. */
+/**
+ * R251 → R350 (FR-R350-7) — what a key does when it finds the player's chrome hidden. Hiding no longer moves focus,
+ * so Left, Right and Up act on the first press from the remembered control; OK stays play/pause (R178) and Down
+ * never opens the episode rail from a hidden chrome.
+ */
 class PlayerDpadRevealTest {
     private val keys = PlayerDpadKey.values().toList()
+    private fun hidden(k: PlayerDpadKey, f: PlFocus) =
+        dpadRevealsOnly(k, chromeVisible = false, focus = f, nextUpVisible = false, epRailOpen = false, pickerOpen = false)
 
     @Test
-    fun `every key only reveals when the chrome is hidden`() {
-        for (k in keys) for (f in PlFocus.values()) {
-            if (f == PlFocus.SKIP_INTRO) continue
-            assertTrue(dpadRevealsOnly(k, chromeVisible = false, focus = f, nextUpVisible = false, epRailOpen = false, pickerOpen = false), "$k from $f")
+    fun `Left, Right and Up act on the first press with the chrome hidden`() {
+        for (k in listOf(PlayerDpadKey.LEFT, PlayerDpadKey.RIGHT, PlayerDpadKey.UP)) for (f in PlFocus.values()) {
+            assertFalse(hidden(k, f), "$k from $f")
+        }
+    }
+
+    @Test
+    fun `OK with the chrome hidden never fires the remembered control`() {
+        for (f in PlFocus.values()) {
+            if (f == PlFocus.SKIP_INTRO) continue   // the pill is on screen and genuinely focused
+            assertTrue(hidden(PlayerDpadKey.SELECT, f), "SELECT from $f")
+        }
+    }
+
+    @Test
+    fun `Down with the chrome hidden moves within the transport but never opens the rail`() {
+        assertFalse(hidden(PlayerDpadKey.DOWN, PlFocus.SEEK_BAR), "seek bar → Play is a move")
+        for (f in PlFocus.values()) {
+            if (f == PlFocus.SEEK_BAR || f == PlFocus.SKIP_INTRO) continue
+            assertTrue(hidden(PlayerDpadKey.DOWN, f), "DOWN from $f would open the episode rail")
         }
     }
 
@@ -40,11 +63,11 @@ class PlayerDpadRevealTest {
     }
 
     @Test
-    fun `right right select reaches the same control whether or not the chrome hid (FR-R251-2)`() {
-        // Model of the handler: hidden ⇒ reveal only (focus stays PLAY); visible ⇒ move along the transport order.
+    fun `right right reaches the same control whether or not the chrome hid (R251's rule, kept by not moving focus)`() {
+        // Model of the handler: hiding keeps focus where it was; a direction key always moves along the transport.
         val order = listOf(PlFocus.SKIP_BACK, PlFocus.PLAY, PlFocus.SKIP_FWD, PlFocus.TRACKS, PlFocus.NEXT_EP)
-        fun run(startHidden: Boolean): PlFocus {
-            var focus = PlFocus.PLAY   // hideChrome() parks focus here (R178)
+        fun run(from: PlFocus, startHidden: Boolean): PlFocus {
+            var focus = from
             var visible = !startHidden
             repeat(2) {
                 val revealOnly = dpadRevealsOnly(PlayerDpadKey.RIGHT, visible, focus, false, false, false)
@@ -53,10 +76,8 @@ class PlayerDpadRevealTest {
             }
             return focus
         }
-        // Before R251: hidden ⇒ → → landed on TRACKS while visible-from-PLAY also landed on TRACKS, but a
-        // viewer whose chrome was visible with focus on TRACKS reached NEXT_EP — the sequence meant two
-        // different things. Now a hidden chrome always starts from PLAY after one reveal press:
-        assertTrue(run(startHidden = true) == PlFocus.SKIP_FWD)
-        assertTrue(run(startHidden = false) == PlFocus.TRACKS)
+        for (from in order) assertEquals(run(from, startHidden = false), run(from, startHidden = true), "from $from")
+        // The owner's case: focus on Play, the chrome hid while watching — Right, Right is Audio & Subs, two presses.
+        assertEquals(PlFocus.TRACKS, run(PlFocus.PLAY, startHidden = true))
     }
 }

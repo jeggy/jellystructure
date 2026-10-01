@@ -934,7 +934,7 @@ internal fun SeasonSheet(
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { listState.scrollToItem((currentEpIndex - 1).coerceAtLeast(0)) }
-    val seasonLabel = episodes.firstOrNull()?.kicker?.substringBefore("·")?.trim() ?: ""
+    val seasonLabel = playerRailSeasonLabel(episodes, str("detail.season"))   // R350 (FR-R350-6)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Text(str("pl.episodes") + (if (seasonLabel.isNotBlank()) " · $seasonLabel" else ""), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
         Spacer(Modifier.height(8.dp))
