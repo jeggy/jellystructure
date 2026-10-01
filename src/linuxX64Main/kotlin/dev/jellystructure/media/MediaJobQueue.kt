@@ -151,6 +151,9 @@ class MediaJobQueue(
     // worker threads without a mutex on the hot read path.
     @Volatile private var cooperativeCancelledIds: Set<String> = emptySet()
 
+    // Phase 295 (FR-295-2) — rows that stopped for playback wait here instead of being claimed again at once.
+    private val parking = PlaybackParking(nowMs = { epochSeconds() * 1000L })
+
     /** Boots the worker pool: any row left `running` from a prior crash/restart is re-queued (a
      *  media-queue row's temp copy, if any, is simply overwritten or ignored on the retry — the original
      *  file was never touched; a segments/subtitles-queue row is idempotent to re-run outright). */
@@ -465,7 +468,7 @@ class MediaJobQueue(
      *  candidates by `created_at` — comparing age honestly rather than iterating queues in a fixed order,
      *  so a queue with a steady trickle of new jobs can't starve one holding a single old job (open
      *  question 6 in the phase-213 spec). */
-    private fun claimNext(): Media_job? {
+    private suspend fun claimNext(): Media_job? {
         val candidates = mutableListOf<Media_job>()
         // Phase 261 (FR-261-2, dev review item 3) — ONE candidate per lane, read through the claim index:
         // the lane's next row, or while a TV plays (and the household defers, 262) its next row that does
@@ -475,6 +478,9 @@ class MediaJobQueue(
             if (lane in occupiedQueues) continue
             if (lane == "media" && bulkRunning) continue
             val next = if (holding) queries.nextQueuedNotDeferred(lane).executeAsOneOrNull() else queries.nextQueued(lane).executeAsOneOrNull()
+            // Phase 295 (FR-295-2) — a row that just stopped for playback waits while playback goes on; its lane waits
+            // with it (FIFO), and the worker sleeps instead of spinning.
+            if (next != null && parking.holds(next.id, dev.jellystructure.tv.isPlaybackActive())) continue
             next?.let { candidates += it }
         }
         for (chosen in candidates.sortedBy { it.created_at }) {
@@ -485,6 +491,7 @@ class MediaJobQueue(
             // driver pools connections, and a bare SELECT changes() after a bare UPDATE answers 0 from another.
             val won = queries.transactionWithResult { queries.markRunning(epochSeconds(), chosen.id); queries.changes().executeAsOne() > 0L }
             if (!won) continue
+            if (parking.release(chosen.id)) Logger.info("job ${chosen.id} (${chosen.type}) resumes — playback ended or its wait ran out", "jobs")
             occupiedQueues += chosen.lane
             if (chosen.lane == "media") runningJobId = chosen.id
             return snapshotRowOf(chosen.id) ?: chosen
@@ -529,7 +536,13 @@ class MediaJobQueue(
     /** Phase 262 (FR-262-1) — should a job that asked to defer actually wait for playback right now? The
      *  row's own flag is the `defer_while_playing` column (Phase 261); this is the household half, read live:
      *  switching `scan.defer_while_playing` off releases everything waiting, with no re-enqueue. */
-    private fun deferNow(): Boolean = deferDecision(true, configStore.current.scan.deferWhilePlaying) && dev.jellystructure.tv.isPlaybackActive()
+    private fun deferNow(): Boolean = waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())
+
+    /** Phase 295 (FR-295-1) — does a RUNNING [row] stop for playback? The same rule the claim applies to a waiting one
+     *  (FR-262-1: the row asked to, and the household switch is on), so a job never yields where the claim would not
+     *  have held it. */
+    private fun yieldsToPlayback(row: Media_job): Boolean =
+        waitsForPlayback(row.defer_while_playing != 0L, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())
 
     /** Runs a claimed job (any of the three queues) and applies its [Outcome] generically: this is what
      *  replaces the old per-lane `runJob`/`runSegmentsJob`'s own duplicated markFinished/broadcast/
@@ -559,6 +572,7 @@ class MediaJobQueue(
                 // FR-213-2/213-3 — same row, same id, `created_at` untouched: the job keeps its place in
                 // FIFO order instead of jumping to the back on every playback-deferral.
                 queries.requeueOne(row.id)
+                parking.park(row.id)   // Phase 295 (FR-295-2) — waits; one line per deferral, not per spin
                 Logger.info("job ${row.id} (${row.type}) re-queued — ${outcome.reason}", "jobs")
             } else {
                 // FR-213-4 — a bounded backoff retry: this row ends terminal, a fresh one is enqueued
@@ -1160,6 +1174,7 @@ class MediaJobQueue(
             onStreamWarmed = { warmedCount++ },
             isCancelled = ::isCancelled,
             references = subtitleChecks?.references,
+            yieldToPlayback = { yieldsToPlayback(row) },   // Phase 295 (FR-295-1)
         )
         return when (outcome) {
             is PipelineStepOps.PrewarmOutcome.Warmed -> {
@@ -1170,7 +1185,7 @@ class MediaJobQueue(
             PipelineStepOps.PrewarmOutcome.LookupFailed -> Failure("Could not read this item's subtitle stream list from Jellyfin")
             PipelineStepOps.PrewarmOutcome.Cancelled -> Cancelled()
             is PipelineStepOps.PrewarmOutcome.Deferred ->
-                Requeue(inPlace = true, reason = "a TV started playing (${outcome.warmedSoFar} already warmed)")
+                Requeue(inPlace = true, reason = "waiting for playback to end (${outcome.warmedSoFar} already warmed)")
             is PipelineStepOps.PrewarmOutcome.TimedOut -> {
                 val attempt = params.subtitleRetryCount + 1
                 if (attempt > 3) {
@@ -1293,6 +1308,11 @@ class MediaJobQueue(
         /** Phase 262 (FR-262-1) — one rule: a row waits for playback only if it asked to AND the household
          *  switch (`scan.defer_while_playing`) is on. */
         fun deferDecision(rowDefers: Boolean, householdDefers: Boolean): Boolean = rowDefers && householdDefers
+
+        /** Phase 295 (FR-295-1) — the one playback rule, for a waiting row (the claim, with the row's flag applied by
+         *  `nextQueuedNotDeferred`) and for a running one (the pre-warm walk between streams) alike. */
+        fun waitsForPlayback(rowDefers: Boolean, householdDefers: Boolean, playing: Boolean): Boolean =
+            deferDecision(rowDefers, householdDefers) && playing
 
         /** The three queue names — Phase 260's route validates against THIS list, not a copy. */
         val QUEUE_NAMES = listOf("media", "segments", "subtitles")

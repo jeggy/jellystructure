@@ -128,6 +128,10 @@ object PipelineStepOps {
         isCancelled: () -> Boolean = { false },
         // Phase 273 (FR-273-6) — keep one stream's text per video as the subtitle check's reference; null = discard.
         references: dev.jellystructure.subtitles.SubtitleReferences? = null,
+        // Phase 295 (FR-295-1) — whether to stop between streams for playback: the queue passes the SAME rule its
+        // claim uses (the row asked to defer, the household switch is on, and something is playing). Checking
+        // playback alone made the walk yield where the claim never held the row, and the two spun.
+        yieldToPlayback: () -> Boolean = { dev.jellystructure.tv.isPlaybackActive() },
     ): PrewarmOutcome {
         val base = cfg.apiKeys.jellyfinUrl
         val token = cfg.apiKeys.jellyfinToken
@@ -151,7 +155,7 @@ object PipelineStepOps {
             var confirmed = 0
             for (s in textSubs) {
                 if (isCancelled()) return StreamWalkResult.Cancelled
-                if (dev.jellystructure.tv.isPlaybackActive()) return StreamWalkResult.Deferred(confirmed)
+                if (yieldToPlayback()) return StreamWalkResult.Deferred(confirmed)
                 val track = if (needReference && !s.isForced) video!!.second.firstOrNull { it.streamIndex == s.index && it.kind == dev.jellystructure.model.TrackKind.SUBTITLE } else null
                 if (track != null) {
                     // The same request as the warm, keeping the body: the text is this video's timing reference.
