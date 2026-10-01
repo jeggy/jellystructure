@@ -28,7 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
@@ -73,6 +74,8 @@ fun SeasonPicker(
     // R343 (FR-R343-5) — the Shuffle pill's label and action; null draws no Shuffle.
     shuffleLabel: String? = null,
     onShuffle: (() -> Unit)? = null,
+    // R350 (FR-R350-2) — lets the series page put focus back on Shuffle when the viewer returns from the player.
+    shuffleFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -86,7 +89,12 @@ fun SeasonPicker(
     // avatar (a row just under the bar). No-op at both true ends of the row.
     val pillFocusRequesters = remember(seasons) { List(seasons.size) { FocusRequester() } }
     val hasShuffle = shuffleLabel != null && onShuffle != null
-    val shuffleFR = remember { FocusRequester() }
+    val ownShuffleFR = remember { FocusRequester() }
+    val shuffleFR = shuffleFocusRequester ?: ownShuffleFR
+    // R350 (FR-R350-1) — the row's memory, used for ONE direction: Up from the rail returns to the pill last
+    // focused. It was `focusRestorer()`, which in Compose 1.9 also redirects a `requestFocus()` aimed at a
+    // child: Down from Play asked for the open season's pill and got the restored one (Shuffle, typically).
+    val lastFocused = remember { arrayOfNulls<FocusRequester>(1) }
 
     // R250 (FR-R250-6) — a focused pill stays inside the safe area: bring-into-view keeps `raviloHPad`
     // as its margin on both sides, so the row never parks a focused pill against the screen edge.
@@ -95,7 +103,12 @@ fun SeasonPicker(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .focusRestorer()
+                .focusProperties {
+                    onEnter = {
+                        val last = lastFocused[0]
+                        if (requestedFocusDirection == FocusDirection.Up && last != null) runCatching { last.requestFocus() }
+                    }
+                }
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = raviloHPad),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -107,6 +120,7 @@ fun SeasonPicker(
                     isSelected = i == selectedIndex,
                     requester = pillFocusRequesters[i],
                     entryRequester = firstFocusRequester.takeIf { i == selectedIndex },
+                    onFocusedPill = { lastFocused[0] = pillFocusRequesters[i] },
                     isComplete = season.index in watchedSeasons,
                     watchedCount = watchedCounts[season.index] ?: 0,
                     onSelect = { onSelect(i) },
@@ -125,6 +139,7 @@ fun SeasonPicker(
                 ShufflePill(
                     label = shuffleLabel!!,
                     requester = shuffleFR,
+                    onFocusedPill = { lastFocused[0] = shuffleFR },
                     onSelect = onShuffle!!,
                     onLeft = { pillFocusRequesters.lastOrNull()?.let { runCatching { it.requestFocus() } } },
                     pillShape = pillShape, focusSpec = focusSpec, dpSpec = dpSpec, sora = sora,
@@ -140,6 +155,7 @@ private fun SeasonPill(
     isSelected: Boolean,
     requester: FocusRequester,
     entryRequester: FocusRequester?,
+    onFocusedPill: () -> Unit,
     isComplete: Boolean,
     watchedCount: Int,
     onSelect: () -> Unit,
@@ -167,7 +183,7 @@ private fun SeasonPill(
             .then(if (entryRequester != null) Modifier.focusRequester(entryRequester) else Modifier)
             .dpadFocusable(
                 focusRequester = requester,
-                onFocused = { focused = true },
+                onFocused = { focused = true; onFocusedPill() },
                 onBlurred = { focused = false },
                 onSelect = onSelect,
                 onLeft = onLeft,
@@ -250,6 +266,7 @@ private fun SeasonPill(
 private fun ShufflePill(
     label: String,
     requester: FocusRequester,
+    onFocusedPill: () -> Unit,
     onSelect: () -> Unit,
     onLeft: () -> Unit,
     pillShape: RoundedCornerShape,
@@ -267,7 +284,7 @@ private fun ShufflePill(
             .testTag(SeasonPickerTags.SHUFFLE)
             .dpadFocusable(
                 focusRequester = requester,
-                onFocused = { focused = true },
+                onFocused = { focused = true; onFocusedPill() },
                 onBlurred = { focused = false },
                 onSelect = onSelect,
                 onLeft = onLeft,

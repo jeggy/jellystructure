@@ -115,6 +115,8 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
 
 class SeriesDetailStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** R350 (FR-R350-2) — the control that started playback, so Back from the player lands on it. */
+    val returnTarget = SeriesReturnTarget()
     private val _state = MutableStateFlow<SeriesDetailState>(SeriesDetailState.Loading)
     val state: StateFlow<SeriesDetailState> = _state.asStateFlow()
     /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */

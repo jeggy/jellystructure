@@ -150,6 +150,7 @@ fun SeriesDetailScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 onShuffle = onShuffle,
+                returnTarget = store.returnTarget,
             )
         }
     }
@@ -321,6 +322,8 @@ internal fun SeriesDetailLoaded(
     onProfile: (() -> Unit)?,
     onSearch: (() -> Unit)?,
     onShuffle: (List<EpisodePlayContext>) -> Unit = {},
+    // R350 (FR-R350-2) — the store's, so it outlives this page; null = nothing to come back to.
+    returnTarget: SeriesReturnTarget? = null,
 ) {
     val colors = RaviloTheme.colors
     val lang = LocalLang.current  // R309 (FR-R309-5): the player's title for a multi-episode file
@@ -332,18 +335,23 @@ internal fun SeriesDetailLoaded(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
+    // R350 (FR-R350-2) — the control that started playback, read once as the page is rebuilt on the way back.
+    // Shuffle and an episode card bring their season back with them; Play follows the opening rule (the episode it
+    // plays has usually moved on).
+    val returnFocus = remember(detail.card.id) { returnTarget?.take() }
+    val returnSeason = returnFocus?.takeIf { it !is SeriesReturnFocus.Play }?.seasonIdx?.takeIf { it in detail.seasons.indices }
     // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
-    var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(0) }
-    // Auto-select the first incomplete season once the playstate overlay arrives (one-shot).
-    var autoSeasonDone by remember(detail.card.id) { mutableStateOf(false) }
+    var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(returnSeason ?: 0) }
+    // Auto-select the opening season once the playstate overlay arrives (one-shot).
+    var autoSeasonDone by remember(detail.card.id) { mutableStateOf(returnSeason != null) }
     // R343 (FR-R343-9, dev review item 13) — this one-shot sets the selected season ONLY; it never moves focus,
     // so no focus move on this page depends on when the overlay lands.
     LaunchedEffect(overlay, detail.card.id) {
         if (!autoSeasonDone && overlay.isNotEmpty()) {
             autoSeasonDone = true
-            // R346 (FR-R346-3) / R343 (FR-R343-2) — the first season (index ≥ 1) with an unwatched counted
-            // episode; a finished series opens on Season 1 (was: the LAST season); Specials only alone.
-            selectedSeasonIdx = openingSeasonIndex(detail.seasons, overlay)
+            // R350 (FR-R350-3) — the season holding the primary button's episode; without one, R346's rule (the
+            // first season of index ≥ 1 with an unwatched counted episode; a finished series opens on Season 1).
+            selectedSeasonIdx = openingSeasonIndex(detail.seasons, overlay, primaryEpisodeId(detail, overlay))
         }
     }
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
@@ -386,7 +394,31 @@ internal fun SeriesDetailLoaded(
     val hasPillRow = detail.seasons.size > 1 || pillShuffle
     val startShuffle: () -> Unit = {
         val plan = buildShufflePlan(detail, overlay, lang)
-        if (plan.isNotEmpty()) onShuffle(plan)
+        if (plan.isNotEmpty()) {
+            returnTarget?.remember(SeriesReturnFocus.Shuffle(selectedSeasonIdx))   // R350 (FR-R350-2)
+            onShuffle(plan)
+        }
+    }
+    // R350 (FR-R350-2) — an episode card starts playback: remember the card (its slot's first id) and the season.
+    val playCard: (cardId: String, ctx: EpisodePlayContext) -> Unit = { cardId, ctx ->
+        returnTarget?.remember(SeriesReturnFocus.Episode(selectedSeasonIdx, cardId))
+        onPlay(ctx)
+    }
+    val shuffleFR = remember { FocusRequester() }      // R350 (FR-R350-2) — Shuffle: the TV's pill or the phone's chip
+    val returnCardFR = remember { FocusRequester() }   // R350 (FR-R350-2) — the card the viewer comes back to
+    val returnCardId = (returnFocus as? SeriesReturnFocus.Episode)?.cardId
+    // R350 (FR-R350-3) — hoisted out of the rail's lazy item so the way back can scroll it before the item is composed.
+    val epRowState = rememberLazyListState()
+    // R350 (FR-R350-2/3) — `railOpenFor`: the rail opens on the card the viewer comes back to, else on the primary
+    // button's episode when this season holds it, else on the first unwatched one, else the start (the old
+    // `if (scrollTo > 0)` lesson kept: always scroll, including to 0). Keyed on the season and on the overlay having
+    // LANDED, not on every overlay change: a later change (the refresh after coming back from the player, a Watched
+    // toggle) used to scroll the rail away from the focused card. `requestScrollToItem` applies on the rail's next
+    // measure, so it is safe whether or not the rail's lazy item is composed right now.
+    val railGroups = remember(episodes) { episodeGroups(episodes) }
+    LaunchedEffect(selectedSeasonIdx, overlayLoaded, railGroups) {
+        if (!overlayLoaded) return@LaunchedEffect
+        epRowState.requestScrollToItem(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId))
     }
 
     val playFR = remember { FocusRequester() }
@@ -410,8 +442,22 @@ internal fun SeriesDetailLoaded(
         }
     }
     val focusPlay: () -> Unit = { focusInList(0, playFR, 0) }
+    // Item 1 (the Episodes header, with the pills when there are any) parked just below the overlay AppBar.
+    val belowBarPx = with(density) { (RaviloDimens.appBarHeight + 24.dp).toPx() }.toInt()
 
-    LaunchedEffect(Unit) { focusPlay() }
+    // R350 (FR-R350-2) — arriving: Play; coming back from the player: the control that started it, scrolled into
+    // view below the app bar. An episode card is focused once the rail has opened on it (railOpeningIndex anchors
+    // it), through the same scroll-then-focus sequence; a card the season no longer holds falls back to Play.
+    LaunchedEffect(Unit) {
+        when (returnFocus) {
+            is SeriesReturnFocus.Shuffle -> if (canShuffle) focusInList(1, shuffleFR, -belowBarPx) else focusPlay()
+            is SeriesReturnFocus.Episode -> {
+                val held = detail.seasons.getOrNull(selectedSeasonIdx)?.episodes?.any { it.id == returnFocus.cardId } == true
+                if (held) focusInList(1, returnCardFR, -belowBarPx) else focusPlay()
+            }
+            else -> focusPlay()
+        }
+    }
 
     // Bug fix: pressing UP from the season picker / episode rail / cast / related rows relied entirely
     // on Compose's native spatial focus search reaching the hero above — but the hero is a full-height
@@ -676,8 +722,7 @@ internal fun SeriesDetailLoaded(
                                         // settled before the first attempt, so retries are a pure safety
                                         // net rather than the only path to success. R343 (FR-R343-9) — that
                                         // sequence is now the page's one helper, [focusInList].
-                                        val insetPx = with(density) { (RaviloDimens.appBarHeight + 24.dp).toPx() }.toInt()
-                                        focusInList(1, seasonFirstFR, -insetPx)   // hero=0, Episodes header + pills=1
+                                        focusInList(1, seasonFirstFR, -belowBarPx)   // hero=0, Episodes header + pills=1
                                         true
                                     } else false
                                     else -> false
@@ -727,6 +772,7 @@ internal fun SeriesDetailLoaded(
                                         .takeIf { it >= 0 } ?: selectedSeasonIdx
                                     val seasonEps = detail.seasons.getOrNull(sIdx)?.episodes ?: episodes
                                     // R343 (FR-R343-4) — Start over plays S01E01 from 0:00 with `start_over`.
+                                    returnTarget?.remember(SeriesReturnFocus.Play(selectedSeasonIdx))   // R350 (FR-R350-2)
                                     onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay, lang).copy(startOver = startOverNow))
                                 }
                             },
@@ -769,6 +815,7 @@ internal fun SeriesDetailLoaded(
                     watchedLabel = if (overlayLoaded) "$seasonWatched / ${episodes.size} ${str("action.watched").lowercase()}" else null,
                     shuffleLabel = if (canShuffle && compact) str("detail.shuffle") else null,
                     onShuffle = startShuffle,
+                    shuffleFocusRequester = shuffleFR,
                 )
             }
 
@@ -796,6 +843,7 @@ internal fun SeriesDetailLoaded(
                         watchedCounts = watchedCounts,
                         shuffleLabel = if (pillShuffle) str("detail.shuffle") else null,
                         onShuffle = if (pillShuffle) startShuffle else null,
+                        shuffleFocusRequester = shuffleFR,
                         modifier = Modifier.onKeyEvent(upToHero),
                     )
                     Spacer(Modifier.height(4.dp))
@@ -815,9 +863,8 @@ internal fun SeriesDetailLoaded(
                     // group of 1. Built from server-pushed `file` only; never inspects filenames. Shared
                     // with buildEpisodeContext so the in-player episode picker groups the same way.
                     val episodeGroups = remember(episodes) { episodeGroups(episodes) }
-                    val epRowState = rememberLazyListState()
                     // Scroll to the GROUP containing the first unwatched episode whenever the selected
-                    // season or overlay changes. Bug fix: this used to index into the flat `episodes`
+                    // season changes. Bug fix: this used to index into the flat `episodes`
                     // list, which no longer matches the rail's item count once episodes are grouped.
                     //
                     // Bug fix (live-tested on stue TV): the old `if (scrollTo > 0)` guard skipped the
@@ -830,14 +877,8 @@ internal fun SeriesDetailLoaded(
                     // (focusRestorer() falls back to whatever's at the current scroll position once the
                     // old focused episode's composable is gone). Always scrolling -- including to 0 --
                     // fixes both: the rail visibly resets, and focus entering it lands on the right episode.
-                    LaunchedEffect(selectedSeasonIdx, overlay, episodeGroups) {
-                        if (overlay.isEmpty()) return@LaunchedEffect
-                        val firstUnwatchedEp = episodes.firstOrNull { ep -> overlay[ep.id]?.played != true }
-                        val scrollTo = firstUnwatchedEp
-                            ?.let { target -> episodeGroups.indexOfFirst { g -> g.any { it.id == target.id } } }
-                            ?.takeIf { it >= 0 } ?: 0
-                        epRowState.scrollToItem(scrollTo)
-                    }
+                    // R350 (FR-R350-2/3) — that scroll now runs at the page level (see `railOpenFor`), against the
+                    // hoisted [epRowState], so this item leaving and re-entering composition never re-runs it.
                     Spacer(Modifier.height(raviloRowHeadPadB))
                     ArrowRow(
                         state = epRowState,
@@ -866,9 +907,10 @@ internal fun SeriesDetailLoaded(
                                     Box(cardUp.testTag(SeriesDetailTags.card(group.first().id))) {
                                         MultiEpisodeCard(
                                             episodes = group,
+                                            focusRequester = if (group.first().id == returnCardId) returnCardFR else null,   // R350
                                             isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
                                             playstateOverlay = overlay,
-                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay, lang)) },
+                                            onSelect = { playCard(group.first().id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay, lang)) },
                                         )
                                     }
                                     Spacer(Modifier.height(6.dp))
@@ -881,10 +923,11 @@ internal fun SeriesDetailLoaded(
                                     Box(cardUp.testTag(SeriesDetailTags.card(ep.id))) {
                                         EpisodeCard(
                                             episode = ep,
+                                            focusRequester = if (ep.id == returnCardId) returnCardFR else null,   // R350 (FR-R350-2)
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
                                             isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
                                             playstateOverride = overlay[ep.id],
-                                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
+                                            onSelect = { playCard(ep.id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
                                         )
                                     }
                                     Spacer(Modifier.height(6.dp))
@@ -990,7 +1033,7 @@ internal fun SeriesDetailLoaded(
  * holds nothing focusable — Shuffle is the pill row's last pill there.
  */
 @Composable
-private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuffle: () -> Unit) {
+private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuffle: () -> Unit, shuffleFocusRequester: FocusRequester? = null) {
     val colors = RaviloTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = raviloHPad)
@@ -1017,7 +1060,7 @@ private fun EpisodesHeader(watchedLabel: String?, shuffleLabel: String?, onShuff
                     .clip(shape)
                     .background(colors.surfaceVariant)
                     .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
-                    .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onShuffle)
+                    .dpadFocusable(focusRequester = shuffleFocusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onShuffle)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

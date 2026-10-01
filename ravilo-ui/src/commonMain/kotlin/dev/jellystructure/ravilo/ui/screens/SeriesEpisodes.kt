@@ -24,11 +24,20 @@ internal fun seriesFinished(counted: List<Episode>, overlay: Map<String, CardPla
     counted.isNotEmpty() && counted.all { overlay[it.id]?.played == true }
 
 /**
- * R346 (FR-R346-3) / R343 (FR-R343-2) — which season the page opens on: the first season (index ≥ 1) with an
- * unwatched counted episode; on a finished series (or one whose seasons have nothing unwatched) the first
- * season of index ≥ 1; Specials only when the series has nothing else. Returns a position in [seasons].
+ * R350 (FR-R350-3) — which season the page opens on: the season holding [primaryId], the episode the primary
+ * button plays (the Continue Watching episode, one in progress, the first unwatched counted episode, or S01E01 on
+ * a finished series — [primaryEpisodeId]). It used to be the first season with anything unwatched, so a series
+ * whose button read *Resume · S13E19* opened on Season 1 and Down focused Season 1.
+ *
+ * With no primary episode (or one no season holds), R346 (FR-R346-3) / R343 (FR-R343-2): the first season (index
+ * ≥ 1) with an unwatched counted episode; on a finished series (or one whose seasons have nothing unwatched) the
+ * first season of index ≥ 1; Specials only when the series has nothing else. Returns a position in [seasons].
  */
-internal fun openingSeasonIndex(seasons: List<Season>, overlay: Map<String, CardPlayState>): Int {
+internal fun openingSeasonIndex(seasons: List<Season>, overlay: Map<String, CardPlayState>, primaryId: String? = null): Int {
+    if (primaryId != null) {
+        val holding = seasons.indexOfFirst { s -> s.episodes.any { it.id == primaryId } }
+        if (holding >= 0) return holding
+    }
     val regular = seasons.withIndex().filter { it.value.index >= 1 }
     if (regular.isEmpty()) return 0
     return regular.firstOrNull { (_, s) -> s.episodes.any { ep -> !ep.isCatalogOnly() && overlay[ep.id]?.played != true } }?.index
@@ -57,3 +66,42 @@ internal fun primaryEpisodeId(detail: SeriesDetail, overlay: Map<String, CardPla
  *  primary button then reads *Resume*, else *Play*. */
 internal fun seriesStarted(counted: List<Episode>, overlay: Map<String, CardPlayState>): Boolean =
     counted.any { ep -> overlay[ep.id].let { ps -> ps != null && (ps.played || ps.resumeMs > 0) } }
+
+/**
+ * R350 (FR-R350-3) — where the episode rail opens in a season: the slot holding [anchorId] (the card the viewer
+ * comes back to, FR-R350-2), else the slot holding [primaryId] (the primary button's episode), else the slot of
+ * the first unwatched episode, else the start. [groups] are the rail's slots (a multi-episode file is one).
+ */
+internal fun railOpeningIndex(
+    groups: List<List<Episode>>,
+    overlay: Map<String, CardPlayState>,
+    primaryId: String?,
+    anchorId: String? = null,
+): Int {
+    fun slotOf(id: String?) = id?.let { target -> groups.indexOfFirst { g -> g.any { it.id == target } } }?.takeIf { it >= 0 }
+    return slotOf(anchorId)
+        ?: slotOf(primaryId)
+        ?: slotOf(groups.flatten().firstOrNull { ep -> overlay[ep.id]?.played != true }?.id)
+        ?: 0
+}
+
+/** R350 (FR-R350-2) — the control that started playback on the series page, and the season open then. */
+internal sealed class SeriesReturnFocus {
+    abstract val seasonIdx: Int
+    data class Play(override val seasonIdx: Int) : SeriesReturnFocus()
+    data class Shuffle(override val seasonIdx: Int) : SeriesReturnFocus()
+    /** [cardId] is the rail slot's first episode id (a multi-episode file's card counts as one). */
+    data class Episode(override val seasonIdx: Int, val cardId: String) : SeriesReturnFocus()
+}
+
+/**
+ * R350 (FR-R350-2) — held by the page's store, which outlives the page (only the top of the navigation stack is
+ * composed, so coming back from the player rebuilds the page). Written when a control starts playback, read once
+ * when the page is composed again.
+ */
+class SeriesReturnTarget {
+    private var target: SeriesReturnFocus? = null
+    internal fun remember(focus: SeriesReturnFocus) { target = focus }
+    /** The control to land on, once. Forgets it either way. */
+    internal fun take(): SeriesReturnFocus? = target.also { target = null }
+}

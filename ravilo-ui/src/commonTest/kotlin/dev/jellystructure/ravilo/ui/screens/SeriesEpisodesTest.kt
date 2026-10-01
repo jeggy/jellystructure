@@ -72,4 +72,24 @@ class SeriesEpisodesTest {
         assertNull(plan.last().nextEpId, "the last entry ends playback")
         assertTrue(plan.all { it.kicker!!.startsWith("Shuffle · S0") }, plan.map { it.kicker }.toString())
     }
+
+    // ── R350 (FR-R350-3) ───────────────────────────────────────────────────────────────────────────
+
+    @Test fun `R350-3 — the page opens on the season holding the primary button's episode`() {
+        // Continue Watching names S02E03 while S01E04 is still unwatched: the button resumes S02E03, so the page
+        // opens on Season 2 (it opened on Season 1 before).
+        val overlay = played("s1e1", "s1e2", "s1e3", "s2e1", "s2e2") + ("series" to CardPlayState(continueEpisodeId = "s2e3"))
+        val primary = primaryEpisodeId(detail, overlay)
+        assertEquals("s2e3", primary)
+        assertEquals(1, openingSeasonIndex(detail.seasons, overlay, primary))
+        // A started special is what the button plays, so the page opens on Specials.
+        val startedSpecial = played(*season1) + ("s0e1" to CardPlayState(resumeMs = 60_000))
+        assertEquals(2, openingSeasonIndex(detail.seasons, startedSpecial, primaryEpisodeId(detail, startedSpecial)))
+        // Finished: Season 1 (the primary is S01E01).
+        val all = played(*season1, *season2)
+        assertEquals(0, openingSeasonIndex(detail.seasons, all, primaryEpisodeId(detail, all)))
+        // No primary, or one no season holds: R346's rule.
+        assertEquals(1, openingSeasonIndex(detail.seasons, played(*season1, "s2e1"), null))
+        assertEquals(1, openingSeasonIndex(detail.seasons, played(*season1, "s2e1"), "gone"))
+    }
 }

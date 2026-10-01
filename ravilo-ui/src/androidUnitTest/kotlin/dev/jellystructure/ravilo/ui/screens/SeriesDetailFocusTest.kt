@@ -191,4 +191,100 @@ class SeriesDetailFocusTest {
         press(Key.DirectionDown)
         focusedInside(SeriesDetailTags.RAIL)
     }
+
+    // ── R350 ───────────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `R350-1 — Down from Play focuses the open season even after Shuffle was the last pill`() {
+        val d = series(3, 13, shuffle = true)
+        render(d, watched(d, upToSeason = 0))
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionRight); press(Key.DirectionRight); press(Key.DirectionRight)
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.RAIL)
+        // The rail's own memory: Up returns to the pill last focused (Shuffle).
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        // Down from Play: the open season, never the restored Shuffle.
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+    }
+
+    /** The page as the app shows it: gone while the player is on top, rebuilt from scratch on Back (only the top
+     *  of the stack is composed), with the store's [SeriesReturnTarget] surviving in between. */
+    private fun renderLeavingForThePlayer(detail: SeriesDetail, overlay: Map<String, CardPlayState>, target: SeriesReturnTarget): () -> Unit {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            if (shown) SeriesDetailLoaded(
+                detail = detail, overlay = overlay, onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
+                onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
+                displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
+                onShuffle = { shown = false }, returnTarget = target,
+            )
+        }
+        rule.waitForIdle()
+        return { shown = true; rule.waitForIdle() }
+    }
+
+    @Test fun `R350-2 — Shuffle, the player, Back lands on Shuffle again`() {
+        val d = series(3, 13, shuffle = true)
+        val back = renderLeavingForThePlayer(d, watched(d, upToSeason = 0), SeriesReturnTarget())
+        press(Key.DirectionDown)
+        press(Key.DirectionRight); press(Key.DirectionRight); press(Key.DirectionRight)
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        press(Key.Enter)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertDoesNotExist()   // the player is on top
+        back()
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        // …and the page's own paths still hold from there.
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+    }
+
+    @Test fun `R350-2 — an episode card in Season 2, the player, Back lands on that card, on Season 2`() {
+        val d = series(3, 6, shuffle = false)
+        val back = renderLeavingForThePlayer(d, watched(d, upToSeason = 0), SeriesReturnTarget())
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionRight)
+        press(Key.Enter)                      // open Season 2
+        press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.card("s2e1"))
+        press(Key.DirectionRight)
+        focusedInside(SeriesDetailTags.card("s2e2"))
+        press(Key.Enter)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertDoesNotExist()
+        back()
+        focusedInside(SeriesDetailTags.card("s2e2"))
+        // A second arrival (the target is read once) is an ordinary one: Play.
+        press(Key.DirectionUp)
+        rule.onNode(isFocused() and inPillRow, useUnmergedTree = true).assertExists()
+    }
+
+    @Test fun `R350-2 — Play, the player, Back lands on Play`() {
+        val d = series(3, 6, shuffle = true)
+        val back = renderLeavingForThePlayer(d, watched(d, upToSeason = 0), SeriesReturnTarget())
+        press(Key.Enter)
+        back()
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+    }
+
+    @Test fun `R350-3 — Resume names an episode in Season 3 — the page opens there and Down focuses Season 3`() {
+        val d = series(3, 13, shuffle = true)
+        // Season 1 has unwatched episodes, but Continue Watching names S03E10 (R306) — the button resumes it.
+        val overlay = watched(d, upToSeason = 0) + ("series" to CardPlayState(continueEpisodeId = "s3e10")) +
+            ("s3e9" to CardPlayState(played = true, playedPct = 1f))
+        render(d, overlay)
+        rule.onNodeWithText("Resume · S03E10").assertExists()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(3), useUnmergedTree = true).assertIsFocused()
+        rule.onNodeWithTag(SeriesDetailTags.card("s3e10"), useUnmergedTree = true).assertExists()   // the rail opened on it
+        press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.card("s3e10"))
+    }
 }
