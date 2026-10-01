@@ -61,6 +61,8 @@ fun MultiEpisodeCard(
     isResumeGroup: Boolean = false,
     onSelect: (() -> Unit)? = null,
     playstateOverlay: Map<String, CardPlayState> = emptyMap(),
+    /** R350 (FR-R350-10) — see [EpisodeCard]'s `seasonNumber`. */
+    seasonNumber: Int? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -188,7 +190,7 @@ fun MultiEpisodeCard(
             Spacer(Modifier.height(6.dp))
             ordered.take(3).forEach { ep ->
                 Text(
-                    text = "E${ep.episodeNumber} · ${ep.title}",
+                    text = "${cardEpisodeCode(seasonNumber, ep.episodeNumber)} · ${ep.title}",
                     color = colors.textDim,
                     fontSize = 12.sp,
                     fontFamily = sora,

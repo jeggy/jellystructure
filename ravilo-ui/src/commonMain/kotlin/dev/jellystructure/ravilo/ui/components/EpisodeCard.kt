@@ -52,6 +52,9 @@ fun EpisodeCard(
     onSelect: (() -> Unit)? = null,
     /** R84: phase-2 overlay from /api/tv/playstate; null until hydrated. */
     playstateOverride: CardPlayState? = null,
+    /** R350 (FR-R350-10) — the season's number, so the card names its episode `S01E05` like every viewer screen
+     *  (R346 FR-R346-5). Null keeps the bare `E5`. */
+    seasonNumber: Int? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -201,7 +204,7 @@ fun EpisodeCard(
         // Text area
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
-                text = "E${episode.episodeNumber} · ${episode.title}",
+                text = "${cardEpisodeCode(seasonNumber, episode.episodeNumber)} · ${episode.title}",
                 color = if (focused) colors.text else colors.textSecondary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -273,3 +276,7 @@ private fun formatAirDate(iso: String): String? {
         mapOf("month" to str(EP_AIR_MONTH_KEYS[m - 1]), "day" to d.toString(), "year" to y.toString()),
     )
 }
+
+/** R350 (FR-R350-10) — an episode card's code: `S01E05` (R346's one spelling) when the season is known, else `E5`. */
+internal fun cardEpisodeCode(seasonNumber: Int?, episodeNumber: Int): String =
+    if (seasonNumber != null) dev.jellystructure.shared.tv.episodeCode(seasonNumber, episodeNumber) else "E$episodeNumber"

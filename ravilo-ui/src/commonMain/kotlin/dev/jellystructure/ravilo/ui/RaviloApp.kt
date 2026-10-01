@@ -42,6 +42,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
 import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
 import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
 import dev.jellystructure.ravilo.i18n.resolveAndRememberLanguage
@@ -1359,6 +1360,8 @@ fun RaviloApp(
                             }
                         }
                     } else Modifier)
+                // R350 (FR-R350-11) — an arrow no focused element consumed moves focus, as the D-pad does on a TV.
+                .arrowKeysMoveFocus(isDesktopPlatform)
                 .onKeyEvent { ev ->
                     when {
                         ev.type != KeyEventType.KeyDown -> false

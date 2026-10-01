@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.jellystructure.ravilo.ui.focus.rememberGutterBringIntoViewSpec
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -100,20 +101,18 @@ fun SeasonPicker(
     // as its margin on both sides, so the row never parks a focused pill against the screen edge.
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides rememberGutterBringIntoViewSpec(raviloHPad)) {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .focusProperties {
-                    onEnter = {
-                        val last = lastFocused[0]
-                        if (requestedFocusDirection == FocusDirection.Up && last != null) runCatching { last.requestFocus() }
-                    }
+        val rowModifier = modifier
+            .fillMaxWidth()
+            .focusProperties {
+                onEnter = {
+                    val last = lastFocused[0]
+                    if (requestedFocusDirection == FocusDirection.Up && last != null) runCatching { last.requestFocus() }
                 }
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = raviloHPad),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+            }
+            // The properties above belong to a focus group of their own; without one they had only the scroll's
+            // group to attach to, and a wrapping (non-scrolling) row has none.
+            .focusGroup()
+        val pills: @Composable () -> Unit = {
             seasons.forEachIndexed { i, season ->
                 SeasonPill(
                     season = season,
@@ -146,6 +145,25 @@ fun SeasonPicker(
                 )
             }
         }
+        if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) {
+            // R350 (FR-R350-12) — on a computer the pills wrap rather than scroll: a row that ran past the window cut
+            // Shuffle off at the right edge (seven seasons + Specials + Shuffle at 1280 px), and a mouse has no way
+            // to scroll a row sideways. Left/Right still walk the pills in order; Down from an upper line goes to the
+            // line below it, and from the last line to the rail.
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = rowModifier.padding(horizontal = raviloHPad),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) { pills() }
+        } else Row(
+            modifier = rowModifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = raviloHPad),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { pills() }
     }
 }
 

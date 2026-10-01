@@ -19,6 +19,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import dev.jellystructure.ravilo.ui.components.SeasonPickerTags
+import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
@@ -74,16 +75,34 @@ class SeriesDetailFocusTest {
         detail.seasons.filter { it.index <= upToSeason }.flatMap { it.episodes }.associate { it.id to CardPlayState(played = true, playedPct = 1f) } +
             mapOf(detail.card.id to CardPlayState())   // never empty: the overlay "has landed"
 
-    private fun render(detail: SeriesDetail, overlay: Map<String, CardPlayState>, overlayLate: Boolean = false) {
+    /**
+     * R350 (FR-R350-11) — the Mac/Linux app as the test sees it: the desktop layout family, and arrow keys that move
+     * focus ONLY through the app root's `arrowKeysMoveFocus` (Compose's desktop owner maps no arrow to a focus move;
+     * on Android the platform does). Wrapping the page in the helper makes it consume every arrow it can move, so
+     * Android's own native move never runs and the walk exercises the desktop's path.
+     */
+    @androidx.compose.runtime.Composable
+    private fun Platform(desktop: Boolean, content: @androidx.compose.runtime.Composable () -> Unit) {
+        if (!desktop) { content(); return }
+        androidx.compose.runtime.CompositionLocalProvider(
+            dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP,
+        ) {
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.arrowKeysMoveFocus(true)) { content() }
+        }
+    }
+
+    private fun render(detail: SeriesDetail, overlay: Map<String, CardPlayState>, overlayLate: Boolean = false, desktop: Boolean = false) {
         // What the app's Application.onCreate does (the platform seams read it, e.g. the cast state).
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var shown by mutableStateOf(if (overlayLate) emptyMap() else overlay)
         rule.setContent {
-            SeriesDetailLoaded(
-                detail = detail, overlay = shown, onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
-                onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
-                displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
-            )
+            Platform(desktop) {
+                SeriesDetailLoaded(
+                    detail = detail, overlay = shown, onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
+                    onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
+                    displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
+                )
+            }
         }
         if (overlayLate) {
             // R84 — the overlay lands after the catalog paint: one frame after the first composition.
@@ -216,16 +235,16 @@ class SeriesDetailFocusTest {
 
     /** The page as the app shows it: gone while the player is on top, rebuilt from scratch on Back (only the top
      *  of the stack is composed), with the store's [SeriesReturnTarget] surviving in between. */
-    private fun renderLeavingForThePlayer(detail: SeriesDetail, overlay: Map<String, CardPlayState>, target: SeriesReturnTarget): () -> Unit {
+    private fun renderLeavingForThePlayer(detail: SeriesDetail, overlay: Map<String, CardPlayState>, target: SeriesReturnTarget, desktop: Boolean = false): () -> Unit {
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         var shown by mutableStateOf(true)
         rule.setContent {
-            if (shown) SeriesDetailLoaded(
+            Platform(desktop) { if (shown) SeriesDetailLoaded(
                 detail = detail, overlay = overlay, onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
                 onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
                 displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
                 onShuffle = { shown = false }, returnTarget = target,
-            )
+            ) }
         }
         rule.waitForIdle()
         return { shown = true; rule.waitForIdle() }
@@ -286,5 +305,85 @@ class SeriesDetailFocusTest {
         rule.onNodeWithTag(SeriesDetailTags.card("s3e10"), useUnmergedTree = true).assertExists()   // the rail opened on it
         press(Key.DirectionDown)
         focusedInside(SeriesDetailTags.card("s3e10"))
+    }
+
+    // ── R350 — the desktop's arrow keys (FR-R350-11) and the pill row's end (FR-R350-12) ───────────────────
+
+    @Test fun `desktop — Down from Play, Down from a pill into the rail, Up back, and Down from Play to the open season`() {
+        val d = series(3, 13, shuffle = true)
+        render(d, watched(d, upToSeason = 0), desktop = true)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionRight); press(Key.DirectionRight); press(Key.DirectionRight)
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionDown)                     // did nothing on the Mac
+        focusedInside(SeriesDetailTags.RAIL)
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+    }
+
+    @Test fun `desktop — Mark watched answers Up, Right and Down`() {
+        val d = series(2, 6, shuffle = false)
+        render(d, watched(d, upToSeason = 0), desktop = true)
+        press(Key.DirectionDown)                     // Season 1 pill
+        press(Key.DirectionDown)                     // the rail
+        focusedInside(SeriesDetailTags.card("s1e1"))
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeriesDetailTags.toggle("s1e1"), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionRight)                    // stuck on the Mac
+        rule.onNodeWithTag(SeriesDetailTags.toggle("s1e2"), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionUp)                       // stuck on the Mac
+        focusedInside(SeriesDetailTags.card("s1e2"))
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeriesDetailTags.toggle("s1e2"), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionDown)                     // nothing below on this fixture: it stays, never lost
+        rule.onNodeWithTag(SeriesDetailTags.toggle("s1e2"), useUnmergedTree = true).assertIsFocused()
+    }
+
+    @Test fun `desktop — an episode card, the player, Back lands on that card`() {
+        val d = series(3, 6, shuffle = true)
+        val back = renderLeavingForThePlayer(d, watched(d, upToSeason = 0), SeriesReturnTarget(), desktop = true)
+        press(Key.DirectionDown); press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.card("s1e1"))
+        press(Key.DirectionRight); press(Key.DirectionRight)
+        focusedInside(SeriesDetailTags.card("s1e3"))
+        press(Key.Enter)
+        back()
+        focusedInside(SeriesDetailTags.card("s1e3"))
+    }
+
+    private fun shuffleInsideTheWindow() {
+        val root = rule.onRoot().fetchSemanticsNode().size.width
+        val pill = rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).fetchSemanticsNode()
+        val right = pill.positionInRoot.x + pill.size.width
+        kotlin.test.assertTrue(right <= root, "Shuffle ends at $right px, the window at $root px")
+        kotlin.test.assertTrue(pill.positionInRoot.x >= 0f, "Shuffle starts at ${pill.positionInRoot.x} px")
+    }
+
+    @Test fun `14 seasons — Right along the pills brings Shuffle fully into view (TV)`() {
+        val d = series(14, 2, shuffle = true)
+        render(d, watched(d, upToSeason = 0))
+        press(Key.DirectionDown)
+        repeat(14) { press(Key.DirectionRight) }
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        shuffleInsideTheWindow()
+    }
+
+    @Test fun `14 seasons on a computer — the pills wrap, Shuffle is in the window at rest, and Down from it reaches the rail`() {
+        val d = series(14, 2, shuffle = true)
+        render(d, watched(d, upToSeason = 0), desktop = true)
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+        shuffleInsideTheWindow()                     // before any Right: nothing cut off at the right edge
+        repeat(14) { press(Key.DirectionRight) }
+        rule.onNodeWithTag(SeasonPickerTags.SHUFFLE, useUnmergedTree = true).assertIsFocused()
+        shuffleInsideTheWindow()
+        press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.RAIL)
     }
 }

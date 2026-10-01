@@ -105,6 +105,29 @@ A handset draws none of this (R298).
 - **Movies / Series browse grid:** Up from any tile in the first row goes to the facet bar (its first chip), never
   past it to the app bar's search or avatar above the right-hand tiles.
 
+### The Mac app (coordinator, 2026-10-02 — the same shared series page, keyboard arrows on a computer)
+
+**FR-R350-10 — An episode card names its episode `S01E05`.** The cards read *E1 · {title}* (and a multi-episode
+card's list *E1 · …*). R346 FR-R346-5 is *one spelling on every viewer screen*, with no exemption for a card inside
+its season, and the desktop design draws `S01E01` under each card. So the card reads *S01E01 · {title}*. The number
+badge on the still stays a bare number (it is a badge, not a code).
+
+**FR-R350-11 — The arrow keys move focus on a computer as the D-pad does on a TV.** On the Mac, Down from a season
+pill did nothing, and Up, Right and Down from an episode's *Mark watched* did nothing (Tab worked).
+**Cause:** Compose Multiplatform's desktop owner turns only Tab, Shift+Tab and Back into focus moves; Android turns
+an unhandled arrow into Compose's 2-D focus search. Every place the app leaves a direction to that search (lazy
+rows, the toggle under a card, the pills' Down) was dead on the desktop.
+**Requirement:** on the desktop, an arrow no focused element consumed asks the same focus search (one modifier at
+the app root). Android unchanged.
+
+**FR-R350-12 — The season pills never hide one behind the window's edge on a computer.** At 1280 px a series with
+seven seasons, Specials and Shuffle had Shuffle cut off at the right edge, and a mouse cannot scroll a row sideways.
+**Requirement:** on the desktop the pill row wraps onto a second line instead of scrolling; Left/Right still walk
+the pills in order, Down goes to the line below and from the last line to the rail. On the TV the row scrolls and a
+focused pill is always brought fully into view (R250's gutter).
+
+**FR-R350-2 also covers the Mac's report** that returning from the player reset the series page's scroll position.
+
 ## Non-goals
 - The sign-in and server-setup screens (another phase is changing them).
 - Redesigning the player's focus model or the TV's transport order.

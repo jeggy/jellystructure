@@ -911,6 +911,7 @@ internal fun SeriesDetailLoaded(
                                             focusRequester = if (group.first().id == returnCardId) returnCardFR else null,   // R350
                                             isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
                                             playstateOverlay = overlay,
+                                            seasonNumber = currentSeason?.index,   // R350 (FR-R350-10)
                                             onSelect = { playCard(group.first().id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay, lang)) },
                                         )
                                     }
@@ -928,6 +929,7 @@ internal fun SeriesDetailLoaded(
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
                                             isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
                                             playstateOverride = overlay[ep.id],
+                                            seasonNumber = currentSeason?.index,   // R350 (FR-R350-10) — S01E05 on the card
                                             onSelect = { playCard(ep.id, buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay, lang)) },
                                         )
                                     }
