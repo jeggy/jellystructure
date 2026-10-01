@@ -38,9 +38,11 @@ object AudiobooksBrowse {
 
     class Result(val total: Int, val facets: List<MusicFacet>, val books: List<AudiobookRow>, val authors: List<AudiobookAuthorRow>, val series: List<AudiobookSeriesRow>)
 
-    fun browse(s: AudiobooksStore.Snapshot, view: String, selected: Map<String, Set<String>>, query: String?, libraryNames: Map<String, String>, finishedBy: (String) -> Int, sort: String? = null): Result {
+    fun browse(s: AudiobooksStore.Snapshot, view: String, selected: Map<String, Set<String>>, query: String?, libraryNames: Map<String, String>, finishedBy: (String) -> Int, sort: String? = null, triage: String? = null): Result {
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        val live = s.books.values.filter { it.missingSince == null }
+        // Phase 293 (FR-293-2) — a Dashboard row's key narrows the books before the facets; an unknown key narrows nothing.
+        val tk = triage?.takeIf { it in dev.jellystructure.music.MusicTriage.AUDIOBOOKS }
+        val live = s.books.values.filter { it.missingSince == null && (tk == null || dev.jellystructure.music.MusicTriage.book(tk, it)) }
         fun values(b: Audiobook): Map<String, Set<String>> {
             val parts = s.partsByBook[b.id].orEmpty()
             return mapOf(

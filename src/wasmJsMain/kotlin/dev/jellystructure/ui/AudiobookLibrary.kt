@@ -25,6 +25,8 @@ import org.w3c.dom.HTMLSelectElement
 private var abView = "audiobooks"
 private var abQuery = ""
 private var abSort: String? = null
+/** Phase 293 (FR-293-2) — a Dashboard row's triage key; the server narrows the books to it. */
+private var abFilter: String? = null
 private val abFacets = LinkedHashMap<String, MutableSet<String>>()
 private var abOpenFacet: String? = null
 private var abDto: AudiobooksBrowseDto? = null
@@ -34,6 +36,7 @@ private var abScope: CoroutineScope? = null
 
 private fun abUrl(): String = buildList {
     add("kind=audiobooks")
+    abFilter?.let { add("filter=${dev.jellystructure.encodeURIComponent(it)}") }
     if (abView != "audiobooks") add("aview=$abView")
     if (abQuery.isNotBlank()) add("q=${dev.jellystructure.encodeURIComponent(abQuery)}")
     abSort?.let { add("sort=$it") }
@@ -59,6 +62,7 @@ fun renderAudiobookLibrary(container: Element, scope: CoroutineScope, query: Map
     abView = query["aview"]?.takeIf { it in setOf("audiobooks", "authors", "series") } ?: "audiobooks"
     abQuery = query["q"].orEmpty()
     abSort = query["sort"]
+    abFilter = query["filter"]?.takeIf { it.isNotBlank() }
     abFacets.clear(); abOpenFacet = null; abDto = null
     query.filterKeys { it.startsWith("f.") }.forEach { (k, v) -> abFacets[k.removePrefix("f.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
 
@@ -100,13 +104,15 @@ private fun abLoad(scope: CoroutineScope) {
     abLoadJob?.cancel()
     abLoadJob = scope.launch {
         historyReplaceState(abUrl())
-        val dto = AudiobooksApi.browse(abView, abQuery, abFacets.mapValues { it.value.toSet() }, abSort)
+        val dto = AudiobooksApi.browse(abView, abQuery, abFacets.mapValues { it.value.toSet() }, abSort, abFilter)
         if (dto == null) {
             (document.getElementById("ab-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the audiobooks from the server.</div>"""
             return@launch
         }
         abDto = dto
         abView = dto.view
+        // Phase 293 (FR-293-4) — an unknown key comes back without one and is dropped.
+        if (abFilter != dto.filter) { abFilter = dto.filter; historyReplaceState(abUrl()) }
         abRender()
     }
 }
@@ -188,10 +194,12 @@ private fun abFacetBar(d: AudiobooksBrowseDto): String = buildString {
 
 private fun abActiveBar(d: AudiobooksBrowseDto): String {
     val act = d.facets.filter { f -> f.values.any { it.on } }
-    if (act.isEmpty()) return ""
-    return act.joinToString(""" <span class="tiny muted">and</span> """) { f ->
+    // Phase 293 (FR-293-4) — the Dashboard row's label, removable like any other filter.
+    val issue = d.filterLabel?.let { """<span class="fxchip">Issue: ${it.esc()} <span class="rm" data-issue-rm style="cursor:pointer">✕</span></span>""" }
+    if (act.isEmpty() && issue == null) return ""
+    return (listOfNotNull(issue) + act.map { f ->
         """<span class="fxchip">${f.label.esc()} is ${f.values.filter { it.on }.joinToString(" or ") { it.label.esc() }} <span class="rm" data-frm="${f.key}" style="cursor:pointer">✕</span></span>"""
-    } + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
+    }).joinToString(""" <span class="tiny muted">and</span> """) + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
 }
 
 private fun abBody(d: AudiobooksBrowseDto): String = when (abView) {
@@ -212,7 +220,7 @@ private fun abBody(d: AudiobooksBrowseDto): String = when (abView) {
 }
 
 private fun abClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineScope) {
-    t.closest("[data-aview]")?.let { v -> abView = v.getAttribute("data-aview") ?: "audiobooks"; abOpenFacet = null; abLoad(scope); return }
+    t.closest("[data-aview]")?.let { v -> abView = v.getAttribute("data-aview") ?: "audiobooks"; abOpenFacet = null; abFilter = null; abLoad(scope); return }
     t.closest("[data-fopen]")?.let { f ->
         ev.stopPropagation()
         val k = f.getAttribute("data-fopen")
@@ -229,7 +237,8 @@ private fun abClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         abLoad(scope); return
     }
     t.closest("[data-frm]")?.let { f -> abFacets.remove(f.getAttribute("data-frm")); abLoad(scope); return }
-    if (t.closest("[data-fclear]") != null) { abFacets.clear(); abLoad(scope); return }
+    if (t.closest("[data-fclear]") != null) { abFacets.clear(); abFilter = null; abLoad(scope); return }
+    if (t.closest("[data-issue-rm]") != null) { abFilter = null; abLoad(scope); return }
     t.closest("[data-act]")?.let { a ->
         if (a.getAttribute("data-act") == "scan") openPipelineRunDialog(scope, "Scan library", full = false) { skip ->
             if (dev.jellystructure.api.MediaApi.startScan(false, skip)) muToast("Scan started — the audiobooks are read after the films") else muToast("The scan didn't start")

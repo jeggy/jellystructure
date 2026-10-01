@@ -186,9 +186,10 @@ object MusicApi {
     // ── Phase 278: the pages ──
 
     /** [facets] maps a facet key to the values ticked. */
-    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null): MusicBrowseDto? = runCatching {
+    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null, filter: String? = null): MusicBrowseDto? = runCatching {
         val qs = buildList {
             add("view=$view")
+            filter?.let { add("filter=${it.encodeURLParameter()}") }   // Phase 293 — a Dashboard row's key
             query?.takeIf { it.isNotBlank() }?.let { add("q=${it.encodeURLParameter()}") }
             sort?.let { add("sort=$it") }
             facets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }

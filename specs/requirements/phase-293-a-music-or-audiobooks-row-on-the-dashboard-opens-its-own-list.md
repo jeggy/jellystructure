@@ -1,7 +1,7 @@
 # Phase 293 — a music or audiobooks row on the Dashboard opens its own list
 
-**Status:** `Planned`. Dev-authored 2026-10-01, found in the dev review of 292 (its item 10). Not built; the owner
-said to fix it later.
+**Status:** `✓ Built` 2026-10-01 (see *Build notes*), not deployed. Dev-authored 2026-10-01, found in the dev review
+of 292 (its item 10).
 **Depends on:** 285 (the Dashboard as one overview, one row grammar), 278 (Library → Music), 280/281 (Library →
 Audiobooks), 283 (the folder flags), 284 (tags in the files).
 
@@ -86,3 +86,36 @@ Mapping each key onto today's facets is not enough. The facets are close but not
    a release, so it may be the right standard behaviour; but it spreads a doubtful id to every other player. Should a
    `DISAGREES` track's recording id be left out of the file until *Match this track…* confirms it? Not part of this
    fix; recorded here because 292's review found it.
+
+## Build notes (2026-10-01)
+
+**Built.**
+- `src/linuxX64Main/kotlin/dev/jellystructure/music/MusicTriage.kt` holds every music and audiobooks key: its unit
+  (album · artist · song · book), the Dashboard row's label, and one predicate (FR-293-1). `musicTriageCounts` and
+  `audiobookTriageCounts` (`TriageRoutes.kt`) now count with it; the Dashboard's `unitForMusic` reads the unit from
+  the same table.
+- `GET /api/music/browse` and `GET /api/audiobooks/browse` read `filter=<key>` (FR-293-2). `MusicBrowse.browse` and
+  `AudiobooksBrowse.browse` take a `triage` key and drop rows that do not have the problem **before** the facets, so a
+  facet narrows inside the key and its counts only count rows inside it. An unknown key narrows nothing and is not
+  echoed back.
+- The key chooses the view (FR-293-3): the music route answers with the key's view whatever `view=` said; the
+  audiobooks route answers with the books view. Choosing another view on the page leaves the key.
+- `MusicBrowseDto` and `AudiobooksBrowseDto` gain `filter` and `filter_label` (additive, admin-only). Both pages keep
+  `filter=` in their own URL and draw *Issue: {label}* with ✕ first in the active-filter bar (FR-293-4); ✕ keeps the
+  facets, *clear all* clears both.
+- FR-293-5: `MusicBrowseDto.write_tags`; the sentence names `album.nfo` / `artist.nfo`, and adds *and into the music
+  files’ tags* when *Write tags into music files* is on.
+- FR-293-6: `src/linuxX64Test/kotlin/dev/jellystructure/music/MusicTriageTest.kt` — for every key, the predicate's
+  count equals the browse list's length; the cases the old facet mapping got wrong (a locked unmatched album, an
+  unmatched album without a cover, a credit-only artist, a container other than WMA that a phone cannot play); facets
+  inside a key; an unknown key.
+
+**Deviation.** The test checks `MusicTriage.Music.count(key)` against the browse rather than calling
+`musicTriageCounts` itself (that needs a running `MusicPipeline` and a `ConfigStore`). `musicTriageCounts` returns
+exactly `count(key)` for each key, so it is the same number.
+
+**Verified.** `compileKotlinLinuxX64`, `compileKotlinWasmJs`, `linuxX64Test` for `dev.jellystructure.music.*` and
+`dev.jellystructure.audiobooks.*` — green. Not deployed; acceptance 1–5 need the admin web UI on a real library.
+Acceptance 6 arrives with 292's row (`music_instrumental_lyrics` is a key of this table).
+
+Open question 1 (a `DISAGREES` track's recording id written into the file) is untouched.

@@ -319,21 +319,24 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
 
         // ── Phase 278: the admin's music pages ──
 
-        /** The Music kind (FR-278-1..4). Facets ride `f.<key>=a,b`; everything is counted here. */
+        /** The Music kind (FR-278-1..4). Facets ride `f.<key>=a,b`; everything is counted here. A Dashboard row's
+         *  triage key rides `filter=<key>` and chooses the view (293 FR-293-2/3). */
         get("/browse") {
             val cfg = configStore.current
             val qp = call.request.queryParameters
-            val view = qp["view"]?.takeIf { it in MusicBrowse.VIEWS } ?: MusicBrowse.ALBUMS
+            val triage = qp["filter"]?.takeIf { it in dev.jellystructure.music.MusicTriage.MUSIC }
+            val view = dev.jellystructure.music.MusicTriage.viewOf(triage) ?: qp["view"]?.takeIf { it in MusicBrowse.VIEWS } ?: MusicBrowse.ALBUMS
             val selected = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["f.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
             val libs = MusicScanner.musicLibraries(cfg)
             val snap = music.store.snapshot()
-            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg))
+            val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage)
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
                 libraries = libs.map { MusicLibraryInfo(it.jellyfinId, it.name, it.jellyfinPath, it.localPath) },
                 view = view, total = r.rowsTotal, facets = r.facets, albums = r.albums, artists = r.artists, songs = r.songs,
                 musicbrainzEnabled = cfg.musicbrainz.enabled,
+                filter = triage, filterLabel = triage?.let { dev.jellystructure.music.MusicTriage.MUSIC[it]?.label }, writeTags = cfg.music.writeTags,
             ))
         }
 

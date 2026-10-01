@@ -38,9 +38,10 @@ object AudiobooksApi {
     suspend fun status(): AudiobooksHealthDto? = runCatching { httpClient.get("/api/audiobooks/status").body<AudiobooksHealthDto>() }.getOrNull()
 
     /** [facets] maps a facet key to the values ticked. */
-    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null): AudiobooksBrowseDto? = runCatching {
+    suspend fun browse(view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null, filter: String? = null): AudiobooksBrowseDto? = runCatching {
         val qs = buildList {
             add("view=$view")
+            filter?.let { add("filter=${it.encodeURLParameter()}") }   // Phase 293 — a Dashboard row's key
             query?.takeIf { it.isNotBlank() }?.let { add("q=${it.encodeURLParameter()}") }
             sort?.let { add("sort=$it") }
             facets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }

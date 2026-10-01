@@ -204,11 +204,9 @@ class DashboardService(
 
     private fun domainOfKey(key: String) = when { key.startsWith("music_") -> "music"; key.startsWith("audiobooks_") -> "books"; else -> "films" }
 
-    private fun unitForMusic(key: String) = when (key) {
-        "music_no_picture" -> "artist"; "music_reencodes", "music_files_no_ids" -> "song"
-        "audiobooks_missing_part", "audiobooks_two_in_one", "audiobooks_no_cover", "audiobooks_no_narrator" -> "book"
-        else -> "album"
-    }
+    /** Phase 293 (FR-293-3) — the unit is the one the key's list shows (one table, [dev.jellystructure.music.MusicTriage]). */
+    private fun unitForMusic(key: String) =
+        (dev.jellystructure.music.MusicTriage.MUSIC[key] ?: dev.jellystructure.music.MusicTriage.AUDIOBOOKS[key])?.unit ?: "album"
 
     private fun mediaRow(key: String, spec: Spec, domain: String, titleUnit: String, instances: Int, titles: Int, pool: List<MediaItem>): DashboardRow {
         val names = titlesFor(key, pool).take(3)

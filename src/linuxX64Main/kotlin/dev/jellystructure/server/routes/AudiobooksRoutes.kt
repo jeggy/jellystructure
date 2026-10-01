@@ -70,17 +70,20 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
             val snap = store.snapshot()
             val hasSeries = snap.books.values.any { it.missingSince == null && !it.series.isNullOrBlank() }
             val views = if (hasSeries) listOf("audiobooks", "authors", "series") else listOf("audiobooks", "authors")
-            val view = qp["view"]?.takeIf { it in views } ?: "audiobooks"
+            // Phase 293 (FR-293-2/3) — a Dashboard row's key opens the books view, narrowed to it.
+            val triage = qp["filter"]?.takeIf { it in dev.jellystructure.music.MusicTriage.AUDIOBOOKS }
+            val view = if (triage != null) "audiobooks" else qp["view"]?.takeIf { it in views } ?: "audiobooks"
             val selected = AudiobooksBrowse.FACETS.mapNotNull { (k, _) -> qp["f.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
             val libs = AudiobooksScanner.audiobookLibraries(cfg)
             val finished = HashMap<String, Int>()
             snap.books.keys.forEach { id -> store.progressOfBook(id).count { it.second.finishedAt != null }.takeIf { it > 0 }?.let { finished[id] = it } }
-            val r = AudiobooksBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, { finished[it] ?: 0 }, qp["sort"])
+            val r = AudiobooksBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, { finished[it] ?: 0 }, qp["sort"], triage)
             call.respond(AudiobooksBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = scanner.lastScanAt != null || snap.books.isNotEmpty(),
                 health = if (libs.isNotEmpty()) audiobooksHealth(store, scanner) else null,
                 libraries = libs.map { MusicLibraryInfo(it.jellyfinId, it.name, it.jellyfinPath, it.localPath) },
                 view = view, views = views, total = r.total, facets = r.facets, books = r.books, authors = r.authors, series = r.series,
+                filter = triage, filterLabel = triage?.let { dev.jellystructure.music.MusicTriage.AUDIOBOOKS[it]?.label },
             ))
         }
 

@@ -92,25 +92,30 @@ object MusicBrowse {
         libraryNames: Map<String, String>,
         sort: String? = null,
         roots: Set<String> = emptySet(),
+        triage: String? = null,
     ): Result {
         val ctx = Ctx(snap, roots)
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         fun hit(vararg s: String?) = q == null || s.any { it != null && q in it.lowercase() }
+        // Phase 293 (FR-293-2) — a Dashboard row's key narrows the rows before the facets, so the facets narrow within
+        // it and their counts stay honest. A key for another view (or an unknown key) narrows nothing.
+        val tk = triage?.takeIf { MusicTriage.viewOf(it) == view }
+        val tp = tk?.let { MusicTriage.Music(snap, roots) }
         return when (view) {
             ARTISTS -> {
-                val all = ctx.artists.filter { hit(it.name, it.sortName) }
+                val all = ctx.artists.filter { hit(it.name, it.sortName) && (tp == null || tp.artist(tk!!, it)) }
                 val (shown, counts, universe) = apply(all, ctx::artistValues, selected)
                 Result(shown.size, facets(counts, universe, selected, libraryNames), emptyList(),
                     shown.sortedBy { (it.sortName ?: it.name).lowercase() }.map { ctx.artistRow(it) }, emptyList())
             }
             SONGS -> {
-                val all = ctx.tracks.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) }
+                val all = ctx.tracks.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) && (tp == null || tp.song(tk!!, t)) }
                 val (shown, counts, universe) = apply(all, ctx::songValues, selected)
                 val sorted = shown.sortedWith(compareBy({ it.albumId?.let { a -> snap.albums[a]?.title?.lowercase() } ?: "" }, { it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() }))
                 Result(shown.size, facets(counts, universe, selected, libraryNames), emptyList(), emptyList(), sorted.map { ctx.songRow(it) })
             }
             else -> {
-                val all = ctx.albums.filter { a -> hit(a.title, a.albumArtists.joinToString(" ") { it.name }) }
+                val all = ctx.albums.filter { a -> hit(a.title, a.albumArtists.joinToString(" ") { it.name }) && (tp == null || tp.album(tk!!, a)) }
                 val (shown, counts, universe) = apply(all, ctx::albumValues, selected)
                 val sorted = when (sort) {
                     "title" -> shown.sortedBy { (it.sortName ?: it.title).lowercase() }

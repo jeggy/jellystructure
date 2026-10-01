@@ -521,24 +521,22 @@ private fun mediaTriageTypes(all: List<MediaItem>, configStore: ConfigStore, seg
 
 internal fun musicTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
     if (music == null || dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty()) return emptyList()
-    val s = music.store.snapshot()
-    val albums = s.albums.values.filter { it.missingSince == null }
-    val needs = albums.count { !it.matchLocked && it.matchState != dev.jellystructure.model.MusicMatch.MATCHED }
-    val noCover = albums.count { it.matchState == dev.jellystructure.model.MusicMatch.MATCHED && it.coverState == dev.jellystructure.model.MusicArt.NONE }
-    val noPicture = s.artists.values.count { it.missingSince == null && it.path != null && it.imageState == dev.jellystructure.model.MusicArt.NONE }
-    val reencodes = s.tracks.values.count { it.missingSince == null && dev.jellystructure.model.MusicFormats.reencodesOnPhone(it.container, it.codec) }
+    // Phase 293 (FR-293-1) — one predicate per key, shared with the Library's `filter=<key>` list.
+    val p = dev.jellystructure.music.MusicTriage.Music(music.store.snapshot(), dev.jellystructure.music.MusicFlags.roots(configStore.current))
+    val needs = p.count("music_needs_match")
+    val noCover = p.count("music_no_cover")
+    val noPicture = p.count("music_no_picture")
+    val reencodes = p.count("music_reencodes")
     // Phase 283 (FR-283-3) — what the folders and the songs disagree on.
-    val flags = dev.jellystructure.music.MusicFlags.of(albums, dev.jellystructure.music.MusicFlags.roots(configStore.current))
-    val shared = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.SHARED } }
-    val folder = flags.count { (_, f) -> f.any { it.kind == dev.jellystructure.music.MusicFlags.FOLDER } }
+    val shared = p.count("music_shared_album")
+    val folder = p.count("music_folder_disagrees")
     // Phase 284 (FR-284-12) — matched songs whose files carry no MusicBrainz ids (Jellyfin reads them from the tags).
-    val matchedIds = albums.filter { it.matchState == dev.jellystructure.model.MusicMatch.MATCHED }.map { it.id }.toSet()
-    val noIdTracks = s.tracks.values.filter { it.missingSince == null && it.albumId in matchedIds && it.jellyfinProviderIds.keys.none { k -> k.startsWith("MusicBrainz") } }
-    val noIdAlbums = noIdTracks.mapNotNull { it.albumId }.distinct().size
+    val noIdSongs = p.count("music_files_no_ids")
+    val noIdAlbums = p.songAlbums("music_files_no_ids")
     return listOf(
         TriageTypeCount("music_files_no_ids", "Songs whose files don’t say what they are",
             "Matched, but the files carry no MusicBrainz ids — every other player still sees the folder’s guess. *Write tags* on the album (or Library → Music → Write tags…) puts the match into the files.",
-            noIdTracks.size, noIdAlbums),
+            noIdSongs, noIdAlbums),
         TriageTypeCount("music_shared_album", "Albums in several folders",
             "Two or more folders say they are the same album — often a band's singles whose files all name one compilation. Open one: if they are one album, put the songs in one folder; if each folder is its own release, give it its own match with Find match….",
             shared, shared),
@@ -589,20 +587,22 @@ private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, con
 internal fun audiobookTriageCounts(music: dev.jellystructure.media.MusicPipeline?, configStore: ConfigStore): List<TriageTypeCount> {
     val scanner = music?.audiobooks ?: return emptyList()
     if (dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isEmpty()) return emptyList()
-    val h = scanner.store.health()
+    // Phase 293 (FR-293-1) — the same predicates the Library's `filter=<key>` list uses.
+    val snap = scanner.store.snapshot()
+    fun n(key: String) = dev.jellystructure.music.MusicTriage.bookCount(key, snap)
     return listOf(
         TriageTypeCount("audiobooks_missing_part", "Audiobooks with a missing part",
             "The folder's files skip a number. Open the book: if the part really is missing, get it; if it is just numbered wrong, say so and the flag goes.",
-            h.missingParts, h.missingParts),
+            n("audiobooks_missing_part"), n("audiobooks_missing_part")),
         TriageTypeCount("audiobooks_two_in_one", "Folder holds two books",
             "The files in one folder name two different books. Split them into two folders, or say it is one book.",
-            h.twoInOne, h.twoInOne),
+            n("audiobooks_two_in_one"), n("audiobooks_two_in_one")),
         TriageTypeCount("audiobooks_no_cover", "Audiobooks without a cover",
             "No cover.jpg in the folder and no picture inside the files. Choose or upload one on the book's Artwork tab.",
-            h.coversMissing, h.coversMissing),
+            n("audiobooks_no_cover"), n("audiobooks_no_cover")),
         TriageTypeCount("audiobooks_no_narrator", "Audiobooks with no narrator",
             "Nothing names who reads it. For information — a book plays the same without one.",
-            h.noNarrator, h.noNarrator),
+            n("audiobooks_no_narrator"), n("audiobooks_no_narrator")),
     )
 }
 

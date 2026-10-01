@@ -24,6 +24,8 @@ import org.w3c.dom.HTMLSelectElement
 private var muView = "artists"   // Phase 287 (FR-287-1) — Artists first
 private var muQuery = ""
 private var muSort: String? = null
+/** Phase 293 (FR-293-2) — a Dashboard row's triage key; the server narrows the list to it and chooses the view. */
+private var muFilter: String? = null
 private val muFacets = LinkedHashMap<String, MutableSet<String>>()
 private val muSelected = LinkedHashSet<String>()
 private var muOpenFacet: String? = null
@@ -35,7 +37,8 @@ private var muScope: CoroutineScope? = null
 
 private fun muUrl(): String = buildList {
     add("kind=music")
-    if (muView != "artists") add("mview=$muView")
+    muFilter?.let { add("filter=${dev.jellystructure.encodeURIComponent(it)}") }
+    if (muView != "artists" && muFilter == null) add("mview=$muView")
     if (muQuery.isNotBlank()) add("q=${dev.jellystructure.encodeURIComponent(muQuery)}")
     muSort?.let { add("sort=$it") }
     muFacets.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("f.$k=${v.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}") }
@@ -45,6 +48,7 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
     muView = query["mview"]?.takeIf { it in setOf("albums", "artists", "songs") } ?: "artists"
     muQuery = query["q"].orEmpty()
     muSort = query["sort"]
+    muFilter = query["filter"]?.takeIf { it.isNotBlank() }
     muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null
     query.filterKeys { it.startsWith("f.") }.forEach { (k, v) -> muFacets[k.removePrefix("f.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
 
@@ -86,11 +90,15 @@ private fun muLoad(scope: CoroutineScope) {
     muLoadJob?.cancel()
     muLoadJob = scope.launch {
         historyReplaceState(muUrl())
-        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort)
+        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter)
         if (dto == null) {
             (document.getElementById("mu-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the music library from the server.</div>"""
             return@launch
         }
+        // Phase 293 (FR-293-3/4) — the key chooses the view; an unknown key comes back without one and is dropped.
+        muFilter = dto.filter
+        muView = dto.view
+        historyReplaceState(muUrl())
         muDto = dto
         muRender(scope)
         if (dto.match.running) muPollMatch(scope)
@@ -109,7 +117,7 @@ private fun muRender(scope: CoroutineScope) {
         append("</span>")
         if (live) append(statusLine(d))
         append("</div>")
-        append("""<p class="page-sub" style="margin-top:0">Albums, artists and songs from Jellyfin’s <b>${d.libraries.joinToString(" · ") { it.name.esc() }.ifEmpty { "music" }}</b> library, matched against <b>MusicBrainz</b> — what this page maintains is written to <span class="mono">album.nfo</span> / <span class="mono">artist.nfo</span>, never into the files. Not the <b>Music videos</b> library: those are films and stay under their own kind.</p>""")
+        append("""<p class="page-sub" style="margin-top:0">Albums, artists and songs from Jellyfin’s <b>${d.libraries.joinToString(" · ") { it.name.esc() }.ifEmpty { "music" }}</b> library, matched against <b>MusicBrainz</b> — what this page maintains is written to <span class="mono">album.nfo</span> / <span class="mono">artist.nfo</span>${if (d.writeTags) ", and into the music files’ tags (<i>Write tags into music files</i> is on)" else ""}. Not the <b>Music videos</b> library: those are films and stay under their own kind.</p>""")
         when {
             !d.mapped -> append("""<div class="mu-empty"><h3>No music library mapped</h3><p>Jellyfin’s music library appears under <b>Settings → Libraries</b> after <i>Refresh from Jellyfin</i>. Map it, and the next scan reads its albums, artists and songs.</p><a class="btn sm" href="#/settings?tab=libraries">Libraries ›</a></div>""")
             !live && !d.scanned -> {
@@ -166,10 +174,12 @@ private fun facetBar(d: MusicBrowseDto): String = buildString {
 
 private fun activeBar(d: MusicBrowseDto): String {
     val act = d.facets.filter { f -> f.values.any { it.on } }
-    if (act.isEmpty()) return ""
-    return act.joinToString(""" <span class="tiny muted">and</span> """) { f ->
+    // Phase 293 (FR-293-4) — the Dashboard row's label, removable like any other filter.
+    val issue = d.filterLabel?.let { """<span class="fxchip">Issue: ${it.esc()} <span class="rm" data-issue-rm style="cursor:pointer">✕</span></span>""" }
+    if (act.isEmpty() && issue == null) return ""
+    return (listOfNotNull(issue) + act.map { f ->
         """<span class="fxchip">${f.label.esc()} is ${f.values.filter { it.on }.joinToString(" or ") { it.label.esc() }} <span class="rm" data-frm="${f.key}" style="cursor:pointer">✕</span></span>"""
-    } + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> ${muView} match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
+    }).joinToString(""" <span class="tiny muted">and</span> """) + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> ${muView} match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
 }
 
 private fun selBar(): String {
@@ -251,7 +261,8 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         muRender(scope); return
     }
     t.closest("[data-mview]")?.let { v ->
-        muView = v.getAttribute("data-mview") ?: "artists"; muSelected.clear(); muOpenFacet = null
+        // Phase 293 — a triage key belongs to one view; choosing another view leaves it.
+        muView = v.getAttribute("data-mview") ?: "artists"; muSelected.clear(); muOpenFacet = null; muFilter = null
         muLoad(scope); return
     }
     t.closest("[data-fopen]")?.let { f ->
@@ -270,7 +281,8 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         muSelected.clear(); muLoad(scope); return
     }
     t.closest("[data-frm]")?.let { f -> muFacets.remove(f.getAttribute("data-frm")); muLoad(scope); return }
-    if (t.closest("[data-fclear]") != null) { muFacets.clear(); muLoad(scope); return }
+    if (t.closest("[data-fclear]") != null) { muFacets.clear(); muFilter = null; muLoad(scope); return }
+    if (t.closest("[data-issue-rm]") != null) { muFilter = null; muSelected.clear(); muLoad(scope); return }
     t.closest("[data-bulk]")?.let { b ->
         when (val k = b.getAttribute("data-bulk")) {
             "all" -> { muDto?.albums?.forEach { muSelected += it.id }; muRender(scope) }

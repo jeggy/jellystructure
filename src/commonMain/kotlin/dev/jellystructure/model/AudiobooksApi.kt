@@ -56,6 +56,9 @@ data class AudiobooksBrowseDto(
     val books: List<AudiobookRow> = emptyList(),
     val authors: List<AudiobookAuthorRow> = emptyList(),
     val series: List<AudiobookSeriesRow> = emptyList(),
+    /** Phase 293 (FR-293-2/4) — the Dashboard row's key this list is narrowed to, and the row's label for the chip. */
+    val filter: String? = null,
+    @SerialName("filter_label") val filterLabel: String? = null,
 )
 
 // ── Phase 281: the Audiobook and Author pages ──

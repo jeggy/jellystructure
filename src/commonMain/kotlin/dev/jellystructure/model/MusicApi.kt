@@ -261,6 +261,12 @@ data class MusicBrowseDto(
     val artists: List<MusicArtistRow> = emptyList(),
     val songs: List<MusicSongRow> = emptyList(),
     @SerialName("musicbrainz_enabled") val musicbrainzEnabled: Boolean = true,
+    /** Phase 293 (FR-293-2/4) — the Dashboard row's key this list is narrowed to, and the row's label for the chip.
+     *  Absent when no key (or an unknown one) was asked for. */
+    val filter: String? = null,
+    @SerialName("filter_label") val filterLabel: String? = null,
+    /** Phase 293 (FR-293-5) — *Write tags into music files* is on, so the page's work also reaches the files' tags. */
+    @SerialName("write_tags") val writeTags: Boolean = false,
 )
 
 /** One row of the Album page's Tracks tab (FR-278-6). */
