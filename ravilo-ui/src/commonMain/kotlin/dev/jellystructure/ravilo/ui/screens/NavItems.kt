@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -18,7 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
@@ -167,10 +170,16 @@ fun DiscoverSegmentBar(
     onSelect: (DiscoverSegment) -> Unit,
     focusActiveOnEntry: Boolean = false,
     onFocusConsumed: () -> Unit = {},
+    // R350 (FR-R350-5) — the selected chip's requester, so the app bar's Down can land on it.
+    activeFocusRequester: FocusRequester? = null,
+    // R350 (FR-R350-5) — Up from any tab: the page's own nav item in the app bar (not whichever bar item sits
+    // nearest above the chip).
+    onUp: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
-    val activeFR = remember { FocusRequester() }
+    val ownActiveFR = remember { FocusRequester() }
+    val activeFR = activeFocusRequester ?: ownActiveFR
     // R268 (FR-R268-4) — the strip scrolls rather than clipping. Five chips do not fit a portrait
     // phone, and on a TV they used to run past the `Search on Seerr` pill that shares the row. The
     // scroll is confined to this bar: it never moves the page or the nav row above it.
@@ -212,6 +221,16 @@ fun DiscoverSegmentBar(
         modifier = modifier
             .background(colors.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
             .onSizeChanged { viewportWidth = it.width }
+            // R350 (FR-R350-5) — coming into the strip from above or below lands on the SELECTED tab: Up from the
+            // wall's first row used to take whichever chip sat nearest above the tile (Studios over Networks).
+            .focusProperties {
+                onEnter = {
+                    if (active != null && (requestedFocusDirection == FocusDirection.Up || requestedFocusDirection == FocusDirection.Down)) {
+                        runCatching { activeFR.requestFocus() }
+                    }
+                }
+            }
+            .focusGroup()
             .horizontalScroll(scrollState)
             .padding(5.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -243,6 +262,7 @@ fun DiscoverSegmentBar(
                             scope.launch { revealChip(seg, animate = true) }
                         },
                         onBlurred = { focused = false },
+                        onUp = onUp,
                         onSelect = { if (!isCur) onSelect(seg) },
                     )
                     .padding(horizontal = 16.dp, vertical = 8.dp),

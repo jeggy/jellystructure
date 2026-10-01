@@ -27,7 +27,8 @@ sealed class TaxonomyState {
  * because the one defect FR-R243-6 exists to surface (a tile whose grid disagrees with it) would be
  * papered over by any client-side normalisation.
  */
-class TaxonomyStore(private val apiClient: TvApiClient) {
+class TaxonomyStore internal constructor(private val fetch: suspend () -> BrowseFacets) {
+    constructor(apiClient: TvApiClient) : this({ apiClient.getFacets(null) })
     /** The tile last opened (`"<segment>:<name>"`), re-focused on Back-return; null on a fresh entry. */
     var lastSelectedKey: String? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -41,7 +42,7 @@ class TaxonomyStore(private val apiClient: TvApiClient) {
         loadJob?.cancel()
         _state.value = TaxonomyState.Loading
         loadJob = scope.launch {
-            _state.value = runCatching { TaxonomyState.Loaded(apiClient.getFacets(null)) }
+            _state.value = runCatching { TaxonomyState.Loaded(fetch()) }
                 .getOrElse { TaxonomyState.Error(it.message ?: "", loadErrorKindOf(it)) }
         }
     }
@@ -51,7 +52,7 @@ class TaxonomyStore(private val apiClient: TvApiClient) {
         if (!silent) { load(); return }
         loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { apiClient.getFacets(null) }.getOrNull()?.let { _state.value = TaxonomyState.Loaded(it) }
+            runCatching { fetch() }.getOrNull()?.let { _state.value = TaxonomyState.Loaded(it) }
         }
     }
 }

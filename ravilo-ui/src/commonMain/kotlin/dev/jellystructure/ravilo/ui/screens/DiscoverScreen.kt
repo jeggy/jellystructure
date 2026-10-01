@@ -86,6 +86,7 @@ fun DiscoverScreen(
     val scope = rememberCoroutineScope()
 
     val navBarFR = remember { FocusRequester() }
+    val segmentFR = remember { FocusRequester() }   // R350 (FR-R350-5) — the selected tab
     val upcomingColumnFR = remember { FocusRequester() }
     val requestColumnFR = remember { FocusRequester() }
     val taxonomyColumnFR = remember { FocusRequester() }
@@ -158,6 +159,8 @@ fun DiscoverScreen(
                         onSelect = onSegment,
                         focusActiveOnEntry = focusSegmentOnEntry && !activeHasPendingRestore,
                         onFocusConsumed = onFocusSegmentConsumed,
+                        activeFocusRequester = segmentFR,
+                        onUp = { runCatching { navBarFR.requestFocus() } },
                     )
                 }
                 // FR-R262-2 — loading/error are content-region states; the frame above never changes.
@@ -238,7 +241,12 @@ fun DiscoverScreen(
                 activeNav = DISCOVER_NAV_INDEX,
                 onNavSelect = onNavSelect,
                 navFR = navBarFR,
-                onDown = { runCatching { activeColumnFR.requestFocus() } },
+                // R350 (FR-R350-5) — top bar → the selected tab → the content, both ways. It went straight to the
+                // content, past the tabs (Up from the content did reach them). No tabs (R310): the content.
+                onDown = {
+                    val toTabs = segments.isNotEmpty() && segment != null && runCatching { segmentFR.requestFocus() }.getOrDefault(false)
+                    if (!toTabs) runCatching { activeColumnFR.requestFocus() }
+                },
                 userInitials = initials,
                 onProfile = onProfile,
                 onSearch = onSearch,
