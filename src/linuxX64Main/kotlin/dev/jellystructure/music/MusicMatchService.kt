@@ -301,10 +301,13 @@ class MusicMatchService(
 
     /** The pressings of one candidate, best-agreeing first (the panel preselects the first). */
     suspend fun releases(albumId: String, rgMbid: String): List<MusicReleaseOption>? {
+        val album = store.album(albumId)
         val tracks = tracksOf(albumId)
         val releases = mb.releasesOf(rgMbid) ?: return null
-        return releases.map { MusicScoring.option(it, MusicScoring.agreement(it, tracks)) }
-            .sortedWith(compareByDescending<MusicReleaseOption> { it.agreeing }.thenBy { it.date ?: "9999" })
+        return MusicScoring.orderReleases(
+            releases.map { MusicScoring.option(it, MusicScoring.agreement(it, tracks)) },
+            current = album?.releaseMbid, named = album?.jellyfinProviderIds?.get("MusicBrainzAlbum"),
+        )
     }
 
     suspend fun identifyBySound(albumId: String): MusicSoundResult {

@@ -15,6 +15,7 @@ import dev.jellystructure.model.MusicSongRow
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.MusicTrackRow
 import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.model.originalYear
 import dev.jellystructure.model.reencodesOnPhone
 
 /**
@@ -113,8 +114,8 @@ object MusicBrowse {
                 val (shown, counts, universe) = apply(all, ctx::albumValues, selected)
                 val sorted = when (sort) {
                     "title" -> shown.sortedBy { (it.sortName ?: it.title).lowercase() }
-                    "year" -> shown.sortedWith(compareByDescending<MusicAlbum> { it.year ?: 0 }.thenBy { it.title.lowercase() })
-                    "artist" -> shown.sortedWith(compareBy({ it.albumArtists.firstOrNull()?.name?.lowercase() ?: "" }, { it.year ?: 0 }))
+                    "year" -> shown.sortedWith(compareByDescending<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
+                    "artist" -> shown.sortedWith(compareBy({ it.albumArtists.firstOrNull()?.name?.lowercase() ?: "" }, { it.originalYear() ?: 0 }))
                     else -> shown.sortedWith(compareByDescending<MusicAlbum> { it.addedAt ?: it.createdAt }.thenBy { it.title.lowercase() })
                 }
                 Result(shown.size, facets(counts, universe, selected, libraryNames), sorted.map { ctx.albumRow(it) }, emptyList(), emptyList())
@@ -164,7 +165,7 @@ object MusicBrowse {
                 "artimg" to setOf(if (artist != null && artist.imageState != MusicArt.NONE) "has" else "missing"),
                 "format" to ts.map { formatName(it) }.toSet(),
                 "genre" to a.effectiveGenres().toSet(),
-                "decade" to setOfNotNull(decade(a.year)),
+                "decade" to setOfNotNull(decade(a.originalYear())),
                 "type" to setOf(albumType(a)),
                 "lyrics" to ts.map { if (hasLyrics(it)) "has" else "missing" }.toSet(),
                 "check" to flags[a.id].orEmpty().map { it.kind }.toSet().ifEmpty { setOf("none") },
@@ -189,7 +190,7 @@ object MusicBrowse {
 
         fun albumRow(a: MusicAlbum) = MusicAlbumRow(
             id = a.id, title = a.title, artist = a.albumArtists.joinToString(" & ") { it.name }, artistId = a.albumArtists.firstOrNull()?.artistId,
-            year = a.year, songs = liveTracks(a).size, match = albumMatch(a), cover = a.coverState != MusicArt.NONE,
+            year = a.originalYear(), songs = liveTracks(a).size, match = albumMatch(a), cover = a.coverState != MusicArt.NONE,
             v = a.updatedAt, type = albumType(a),
             folder = MusicFlags.folders(a.path, roots)?.album, flags = flags[a.id].orEmpty().map { it.kind },
             note = a.matchNote.takeIf { a.matchState != MusicMatch.MATCHED },

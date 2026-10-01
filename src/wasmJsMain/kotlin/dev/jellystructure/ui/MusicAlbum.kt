@@ -115,7 +115,7 @@ private fun alBar(p: MusicAlbumPageDto): String {
     val locked = a.matchLocked
     val matched = alMatched(p)
     return buildString {
-        append("""<h1>${a.title.esc()}${a.year?.let { """ <span class="muted">($it)</span>""" } ?: ""}</h1>""")
+        append("""<h1>${a.title.esc()}${p.year?.let { """ <span class="muted">($it)</span>""" } ?: ""}</h1>""")
         if (p.type != "album") append("""<span class="mu-type">${MU_TYPE_LABEL[p.type] ?: p.type}</span>""")
         append("""<span class="spacer"></span>""")
         append("""<span class="menu-wrap"><span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span><div class="menu">""")
@@ -182,7 +182,7 @@ private fun alHead(p: MusicAlbumPageDto): String {
         append("""<div class="mu-pb">""")
         append(muCoverHtml(a.title, p.coverUrl, extraClass = "al-cover"))
         append("""<div><div class="mu-by">by $by</div><div class="mu-pbm">""")
-        a.year?.let { append("<span>$it</span><span class=\"sep\">·</span>") }
+        p.year?.let { append("<span>$it</span><span class=\"sep\">·</span>") }
         append("<span>${if (total != null) "$have of $total songs" else muPlural(have, "song")}</span><span class=\"sep\">·</span><span>${muTotal(lenMs)}</span>")
         append("""<span class="mu-type">${MU_TYPE_LABEL[p.type] ?: p.type}</span><span class="sep">·</span>""")
         if (re > 0) {
@@ -672,7 +672,7 @@ private fun fmPaint() {
                     append("""<div class="mu-rels"><div class="tiny muted" style="margin-bottom:4px;">Releases · the best-agreeing one is preselected</div>""")
                     val rels = fmReleases
                     if (rels == null) append("""<div class="mu-busy" style="padding:4px 2px"><span class="sp"></span>Reading its pressings…</div>""")
-                    else for ((j, r) in rels.withIndex()) append("""<div class="mu-rel${if (fmRelease == j) " on" else ""}" data-rel="$j"><span class="rd"></span><span class="mono">${(r.country ?: "—").esc()}</span><span class="mono">${(r.date ?: "—").esc()}</span><span class="lb">${(r.label ?: "").esc()}</span><span class="fm">${(r.format ?: "").esc()} · ${r.trackCount} tr</span><span>${if (j == 0) """<span class="best">best · ${r.agreeing}/${c.total}</span>""" else """<span class="tiny muted">${r.agreeing}/${c.total}</span>"""}</span></div>""")
+                    else for ((j, r) in rels.withIndex()) append("""<div class="mu-rel${if (fmRelease == j) " on" else ""}" data-rel="$j"><span class="rd"></span><span class="mono">${(r.country ?: "—").esc()}</span><span class="mono">${(r.date ?: "—").esc()}</span><span class="lb">${(r.label ?: "").esc()}${r.disambiguation?.let { d -> """ <span class="tiny muted">· ${d.esc()}</span>""" } ?: ""}</span><span class="fm">${(r.format ?: "").esc()} · ${r.trackCount} tr</span><span>${if (j == 0) """<span class="best">best · ${r.agreeing}/${c.total}</span>""" else """<span class="tiny muted">${r.agreeing}/${c.total}</span>"""}</span></div>""")
                     append("</div>")
                 }
                 append("</div>")

@@ -1,6 +1,6 @@
 # Phase 290 — an album's year is the year it first came out
 
-**Status:** Planned. Dev-authored 2026-10-01 from an owner request.
+**Status:** Planned → built the same day (see *Build notes*), not deployed. Dev-authored 2026-10-01 from an owner request.
 **Depends on:** 276 (MusicBrainz match, *Find match…*), 277 (`album.nfo`), 284 (tags in the files).
 
 ## 1. What happened
@@ -103,3 +103,22 @@ year); no Ravilo client change — `MusicAlbumCard.year` already exists and now 
    for the album while the songs say 1999. jellystructure and Ravilo are unaffected (FR-290-1 takes the earlier);
    Jellyfin's own apps may show 2015 until 242's finding (clear the library's savers) is acted on. Check on the §1
    album after acceptance 2.
+
+## Build notes (2026-10-01)
+
+- `model/Music.kt`: `MusicAlbum.originalDate()` / `originalYear()` beside `effectiveGenres()`;
+  `MusicReleaseOption.disambiguation`. `MusicAlbumPageDto.year` carries the resolved year to the admin page.
+- Read by: `MusicBrowse` (cards, year and artist sorts, decade facet), `MusicTvService` (album cards, *by year* for
+  albums and songs, the artist page's groups and *More by*), `TriageRoutes`, `MusicNfo` (album and artist NFOs),
+  `MusicAlbum.kt` (title and meta line).
+- `MusicTagWriter.wanted()`: `date` and `originaldate` = `originalDate()`; the Files tab's **Year** column. Two rules
+  found while building: `scripts/tagwrite.py` writes a year alone into ASF's `WM/Year` / `WM/OriginalReleaseYear`,
+  and **never makes a date less precise** — where MusicBrainz knows only `1999` and the file says `1999-09-06`, the
+  file keeps its date, and the Files tab counts them as agreeing. Tried on scratch FLAC, WMA and MP3 files.
+- `MusicScoring.orderReleases()` and the disambiguation in the release row (`MusicAlbum.kt`).
+- `MusicYearTest` (7 tests: the resolver both ways, the precise date, unmatched / cleared / unknown, the NFO, the
+  tag map, the pressing order); the music suites pass.
+- Seen while building, not changed: `MusicBrainzClient.releasesOf` asks for 25 pressings; the §1 album's release
+  group has 26 (all three pressings that matter came back). A release group past 25 can lose pressings from
+  *Find match…*.
+- Not deployed; acceptance 1–3 wait for it, and for *Find match…* → the 2015 *24bit/96kHz* pressing on the §1 album.

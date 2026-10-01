@@ -81,6 +81,7 @@ data class MbRelease(
     val country: String? = null,
     val date: String? = null,
     val status: String? = null,
+    val disambiguation: String? = null,
     @SerialName("label-info") val labelInfo: List<MbLabelInfo> = emptyList(),
     val media: List<MbMedium> = emptyList(),
     @SerialName("artist-credit") val artistCredit: List<MbArtistCredit> = emptyList(),

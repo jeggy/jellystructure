@@ -43,6 +43,7 @@ import dev.jellystructure.model.MusicLibraryInfo
 import dev.jellystructure.model.MusicStreamDto
 import dev.jellystructure.model.MusicVideoRow
 import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.model.originalYear
 import dev.jellystructure.music.MusicBrowse
 import dev.jellystructure.music.MusicScanner
 import dev.jellystructure.music.MusicScoring
@@ -357,6 +358,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 type = MusicBrowse.albumType(a),
                 flags = shown, dismissedFlags = all.map { it.kind }.filter { k -> shown.none { it.kind == k } },
                 writeTags = cfg.music.writeTags && music.tags?.available() == true,   // Phase 284 (FR-284-7)
+                year = a.originalYear(),   // Phase 290 (FR-290-1)
             ))
         }
 

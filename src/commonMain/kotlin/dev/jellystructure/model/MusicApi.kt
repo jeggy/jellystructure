@@ -305,6 +305,8 @@ data class MusicAlbumPageDto(
     @SerialName("dismissed_flags") val dismissedFlags: List<String> = emptyList(),
     /** Phase 284 (FR-284-7) — whether *Write tags into music files* is on (the split Save reads it). */
     @SerialName("write_tags") val writeTags: Boolean = false,
+    /** Phase 290 (FR-290-1) — the year the album first came out: what the page shows. */
+    val year: Int? = null,
 )
 
 /** Phase 283 (FR-283-3) — one flag on an album: the two sides quoted, the other folders, and what Find match… can

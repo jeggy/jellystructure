@@ -43,6 +43,8 @@ data class MusicReleaseOption(
     val agreeing: Int = 0,
     /** The Cover Art Archive has a front for this release. */
     val hasFront: Boolean = false,
+    /** Phase 290 (FR-290-5) — MusicBrainz's own note that tells two pressings apart (*24bit/96kHz*, *reissue*). */
+    val disambiguation: String? = null,
 )
 
 /** Phase 276 (FR-276-4) — one candidate album (a release-group) for Find match… and for *needs you*. */
@@ -214,6 +216,24 @@ object MusicRecording {
 
 /** FR-276-7 — the genres an album shows: the admin's own choice, else MusicBrainz's top votes, else the files' tags. */
 fun MusicAlbum.effectiveGenres(): List<String> = genresOverride ?: MusicGenrePick.pick(mbGenres).ifEmpty { genres }
+
+/**
+ * Phase 290 (FR-290-1) — the date an album first came out: the earlier of MusicBrainz's first release of the matched
+ * release group (a cleared match does not count) and the year the files carry. A year only moves earlier; on the same
+ * year the more precise value wins. `YYYY`, `YYYY-MM` or `YYYY-MM-DD`; null when neither is known.
+ */
+fun MusicAlbum.originalDate(): String? {
+    val mb = firstReleaseDate?.trim()?.takeIf { releaseGroupMbid != null && it.length >= 4 && it.take(4).toIntOrNull() != null }
+    val files = year?.takeIf { it > 0 }
+    return when {
+        mb == null -> files?.toString()
+        files == null || mb.take(4).toInt() <= files -> mb
+        else -> files.toString()
+    }
+}
+
+/** Phase 290 (FR-290-1) — the year an album shows everywhere. */
+fun MusicAlbum.originalYear(): Int? = originalDate()?.take(4)?.toIntOrNull()
 
 object MusicGenrePick {
     /** The top four with at least 3 votes and at least a tenth of the top genre's votes. */

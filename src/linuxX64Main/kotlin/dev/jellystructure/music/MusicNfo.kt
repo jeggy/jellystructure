@@ -5,6 +5,8 @@ import dev.jellystructure.model.MusicAlbum
 import dev.jellystructure.model.MusicArtist
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.model.originalDate
+import dev.jellystructure.model.originalYear
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -39,8 +41,9 @@ object MusicNfo {
         el("  ", "releasetype", album.primaryType?.lowercase())
         if ("Compilation" in album.secondaryTypes) el("  ", "compilation", "true")
         el("  ", "releasedate", album.release?.date)
-        el("  ", "originalreleasedate", album.firstReleaseDate)
-        el("  ", "year", (album.firstReleaseDate?.take(4) ?: album.year?.toString()))
+        // Phase 290 (FR-290-2) — the year the album first came out, the files' year when that is earlier.
+        el("  ", "originalreleasedate", album.originalDate())
+        el("  ", "year", album.originalYear()?.toString())
         el("  ", "label", album.release?.label)
         for (a in album.albumArtists) {
             val mbid = artists[a.artistId]?.mbid ?: album.mbArtists.firstOrNull { MusicScoring.pairCredit(a.name, listOf(it)) != null }?.mbid
@@ -76,10 +79,10 @@ object MusicNfo {
         if (artist.type.equals("Person", ignoreCase = true)) { el("  ", "born", begin); el("  ", "died", end) }
         else { el("  ", "formed", begin); el("  ", "disbanded", end) }
         el("  ", "biography", artist.biographyEdited ?: artist.biographies["en"] ?: artist.biographies.values.firstOrNull())
-        for (a in albums.filter { it.missingSince == null }.sortedBy { it.firstReleaseDate ?: it.year?.toString() ?: "9999" }) {
+        for (a in albums.filter { it.missingSince == null }.sortedBy { it.originalDate() ?: "9999" }) {
             append("  <album>\n")
             el("    ", "title", a.title)
-            el("    ", "year", a.firstReleaseDate?.take(4) ?: a.year?.toString())
+            el("    ", "year", a.originalYear()?.toString())
             el("    ", "musicbrainzreleasegroupid", a.releaseGroupMbid)
             append("  </album>\n")
         }

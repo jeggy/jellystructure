@@ -290,6 +290,8 @@ def set_asf(f, tags, drop_unmanaged, cover):
         if v is None:
             if name in t: del t[name]
         else:
+            # Phase 290 (FR-290-3) — WM/Year and WM/OriginalReleaseYear hold a year, not a date.
+            if key in ("date", "originaldate"): v = v[:4]
             t[name] = [ASFUnicodeAttribute(v)]
     if cover:
         with open(cover, "rb") as fh: data = fh.read()
@@ -332,6 +334,11 @@ def write_one(spec, keep_version, keep_unmanaged):
         drop = bool(spec.get("drop_unmanaged"))
         cover = spec.get("cover") or None
         tags = spec.get("tags") or {}
+        # Phase 290 — a date is never made less precise: writing 1999 over 1999-09-06 keeps 1999-09-06.
+        have = read_one(path).get("tags", {})
+        for k in ("date", "originaldate"):
+            v, h = tags.get(k), have.get(k)
+            if v and h and len(h) > len(v) and h.startswith(v): tags = dict(tags); tags[k] = h
         if fam2 == "id3": set_id3(f, tags, drop, cover, keep_version)
         elif fam2 in ("flac", "vorbis", "opus"): set_vorbis(f, tags, drop, cover)
         elif fam2 == "mp4": set_mp4(f, tags, drop, cover)

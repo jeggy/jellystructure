@@ -10,6 +10,7 @@ import dev.jellystructure.model.MusicArtist
 import dev.jellystructure.model.MusicLyrics
 import dev.jellystructure.model.MusicTrack
 import dev.jellystructure.model.effectiveGenres
+import dev.jellystructure.model.originalYear
 import dev.jellystructure.shared.tv.LyricLine
 import dev.jellystructure.shared.tv.MusicAlbumCard
 import dev.jellystructure.shared.tv.MusicAlbumDetail
@@ -115,7 +116,7 @@ class MusicTvService(
     // ── builders ──
 
     fun albumCard(v: View, a: MusicAlbum) = MusicAlbumCard(
-        id = a.id, title = a.title, artists = a.albumArtists.map { MusicArtistRef(it.artistId, it.name) }, year = a.year,
+        id = a.id, title = a.title, artists = a.albumArtists.map { MusicArtistRef(it.artistId, it.name) }, year = a.originalYear(),
         imageUrl = albumImage(a), type = MusicBrowse.albumType(a), trackCount = v.tracksByAlbum[a.id]?.size ?: 0,
     )
 
@@ -176,7 +177,7 @@ class MusicTvService(
                 val all = v.tracks.values.toList()
                 val sorted = when (sort) {
                     "title" -> all.sortedBy { it.title.lowercase() }
-                    "year" -> all.sortedWith(compareByDescending<MusicTrack> { it.year ?: it.albumId?.let { a -> v.albums[a]?.year } ?: 0 }.thenBy { it.title.lowercase() })
+                    "year" -> all.sortedWith(compareByDescending<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.title.lowercase() })
                     "played" -> all.sortedWith(compareByDescending<MusicTrack> { u?.playCount?.get(it.id) ?: 0 }.thenBy { it.title.lowercase() })
                     else -> all.sortedWith(compareByDescending<MusicTrack> { it.addedAt ?: it.createdAt }.thenBy { it.albumId }.thenBy { it.position ?: 0 })
                 }
@@ -186,7 +187,7 @@ class MusicTvService(
                 val all = v.albums.values.filter { genre == null || genre in it.effectiveGenres() }
                 val sorted = when (sort) {
                     "title" -> all.sortedBy { (it.sortName ?: it.title).lowercase() }
-                    "year" -> all.sortedWith(compareByDescending<MusicAlbum> { it.year ?: 0 }.thenBy { it.title.lowercase() })
+                    "year" -> all.sortedWith(compareByDescending<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() })
                     "played" -> all.sortedByDescending { a -> v.tracksByAlbum[a.id].orEmpty().sumOf { u?.playCount?.get(it.id) ?: 0 } }
                     else -> recentAlbums(v).filter { a -> all.any { it.id == a.id } }
                 }
@@ -234,7 +235,7 @@ class MusicTvService(
         val a = v.albums[id] ?: return null
         val u = userMusic(device)
         val first = a.albumArtists.firstOrNull()?.artistId
-        val more = if (first == null) emptyList() else v.ownAlbums(first).filter { it.id != a.id }.sortedByDescending { it.year ?: 0 }.take(10)
+        val more = if (first == null) emptyList() else v.ownAlbums(first).filter { it.id != a.id }.sortedByDescending { it.originalYear() ?: 0 }.take(10)
         return MusicAlbumDetail(
             album = albumCard(v, a), tracks = v.tracksByAlbum[a.id].orEmpty().map { trackItem(v, it, u) },
             moreFromArtist = more.map { albumCard(v, it) }, favorite = a.id in u.favorites,
@@ -248,7 +249,7 @@ class MusicTvService(
         val u = userMusic(device)
         val own = v.ownAlbums(r.id)
         val groups = GROUP_ORDER.mapNotNull { type ->
-            own.filter { MusicBrowse.albumType(it) == type }.sortedByDescending { it.year ?: 0 }.takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup(type, it.map { a -> albumCard(v, a) }) }
+            own.filter { MusicBrowse.albumType(it) == type }.sortedByDescending { it.originalYear() ?: 0 }.takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup(type, it.map { a -> albumCard(v, a) }) }
         } + listOfNotNull(
             // Credited on someone else's album — a group of its own, after the artist's own.
             v.tracks.values.filter { t -> t.artists.any { it.artistId == r.id } }.mapNotNull { it.albumId?.let { a -> v.albums[a] } }

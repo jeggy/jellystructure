@@ -17,6 +17,7 @@ import dev.jellystructure.media.posterArtworkExists
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.originalYear
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import io.ktor.http.HttpStatusCode
@@ -576,7 +577,7 @@ private fun musicTriageItems(music: dev.jellystructure.media.MusicPipeline?, con
             a.matchState == dev.jellystructure.model.MusicMatch.MATCHED && a.coverState == dev.jellystructure.model.MusicArt.NONE -> "no_cover"
             else -> null
         } ?: continue
-        out += TriageItem(mediaId = a.id, title = a.title, year = a.year, path = a.path.orEmpty(), kind = "album", untaggedTracks = emptyList(), musicIssue = issue)
+        out += TriageItem(mediaId = a.id, title = a.title, year = a.originalYear(), path = a.path.orEmpty(), kind = "album", untaggedTracks = emptyList(), musicIssue = issue)
     }
     for (r in s.artists.values.filter { it.missingSince == null && it.path != null && it.imageState == dev.jellystructure.model.MusicArt.NONE }.sortedBy { it.name.lowercase() })
         out += TriageItem(mediaId = r.id, title = r.name, year = null, path = r.path.orEmpty(), kind = "artist", untaggedTracks = emptyList(), musicIssue = "no_picture")

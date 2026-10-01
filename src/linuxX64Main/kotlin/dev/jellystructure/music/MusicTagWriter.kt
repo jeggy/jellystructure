@@ -16,6 +16,7 @@ import dev.jellystructure.model.MusicFilesDto
 import dev.jellystructure.model.MusicFormats
 import dev.jellystructure.model.MusicMatch
 import dev.jellystructure.model.MusicTrack
+import dev.jellystructure.model.originalDate
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
@@ -119,8 +120,10 @@ class MusicTagWriter(
         m["tracknumber"] = track.position?.toString()
         m["tracktotal"] = onDisc.size.takeIf { it > 0 }?.toString()
         if (discs) { m["discnumber"] = (track.disc ?: 1).toString(); m["disctotal"] = tracks.mapNotNull { it.disc }.maxOrNull()?.toString() }
-        m["date"] = album.year?.toString()
-        m["originaldate"] = album.firstReleaseDate?.takeIf { it.isNotBlank() }
+        // Phase 290 (FR-290-3) — DATE is what Jellyfin reads, so both dates say when the album first came out.
+        val original = album.originalDate()
+        m["date"] = original
+        m["originaldate"] = original
         m["genre"] = album.genres.firstOrNull()?.takeIf { it.isNotBlank() }
         if (matched) {
             m["mb_recording"] = track.recordingMbid
@@ -177,6 +180,11 @@ class MusicTagWriter(
             // ASF holds a track number but no total (WM/TrackNumber is one number), so a WMA file is compared on what it can say.
             val pageTrack = want["tracknumber"]?.let { n -> want["tracktotal"]?.takeIf { f?.format != "asf" }?.let { "$n/$it" } ?: n }
             cell("track", fileTrack, pageTrack)
+            // Phase 290 (FR-290-4) — ASF's WM/Year holds a year, so a WMA file is compared on the year; and a file that
+            // already says more (1999-09-06 where the page knows 1999) agrees — the writer never makes a date less precise.
+            val fileDate = ft["date"]
+            val pageDate = want["date"]?.let { if (f?.format == "asf") it.take(4) else it }
+            cell("date", fileDate, if (pageDate != null && fileDate != null && fileDate.startsWith(pageDate)) fileDate else pageDate)
             cell("rec", ft["mb_recording"], want["mb_recording"], idKey = true); cell("rel", ft["mb_release"], want["mb_release"], idKey = true)
             cell("gain", ft["rg_track_gain"], want["rg_track_gain"])
             cells["cover"] = when {
@@ -254,7 +262,7 @@ class MusicTagWriter(
         val outcome = run(plan, cfg, onFile, cancelled).let { it.copy(seeding = seeding, wma = wma) }
         if (outcome.written > 0) {
             store.putAlbum((store.album(albumId) ?: album).copy(tagsWrittenAt = nowEpochSec(), updatedAt = nowEpochSec()))
-            val fields = listOfNotNull("title", "artist", "album artist", "track numbers", album.year?.let { "year" }, if (album.matchState == MusicMatch.MATCHED) "6 MusicBrainz ids" else null, if (tracks.any { it.trackGainDb != null }) "loudness" else null)
+            val fields = listOfNotNull("title", "artist", "album artist", "track numbers", album.originalDate()?.let { "year" }, if (album.matchState == MusicMatch.MATCHED) "6 MusicBrainz ids" else null, if (tracks.any { it.trackGainDb != null }) "loudness" else null)
             runCatching { history?.record(albumId, "music_tags_written", "Tags written into ${outcome.written} file${if (outcome.written == 1) "" else "s"}: ${fields.joinToString(", ")}" + (if (seeding > 0) " · $seeding seeding, left alone" else "") + (if (outcome.failed.isNotEmpty()) " · ${outcome.failed.size} left as they were" else "")) }
             if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank())
                 runCatching { jellyfin.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, albumId, full = false, recursive = true) }
@@ -342,7 +350,7 @@ class MusicTagWriter(
         const val SCRIPT_IMAGE = "/app/scripts/tagwrite.py"
         const val SCRIPT_DEV = "scripts/tagwrite.py"
         val ALBUM_COLUMNS = listOf(
-            MusicFileColumnGroup("Identity", listOf(MusicFileColumn("title", "Title"), MusicFileColumn("artist", "Artist"), MusicFileColumn("albumartist", "Album artist"), MusicFileColumn("track", "Track"))),
+            MusicFileColumnGroup("Identity", listOf(MusicFileColumn("title", "Title"), MusicFileColumn("artist", "Artist"), MusicFileColumn("albumartist", "Album artist"), MusicFileColumn("track", "Track"), MusicFileColumn("date", "Year"))),
             MusicFileColumnGroup("Ids", listOf(MusicFileColumn("rec", "Recording"), MusicFileColumn("rel", "Release"))),
             MusicFileColumnGroup("Loudness", listOf(MusicFileColumn("gain", "Track gain"))),
             MusicFileColumnGroup("Extras", listOf(MusicFileColumn("cover", "Cover"), MusicFileColumn("lyrics", "Lyrics"), MusicFileColumn("junk", "Other frames"))),

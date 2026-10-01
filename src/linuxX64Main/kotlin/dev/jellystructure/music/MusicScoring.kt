@@ -70,7 +70,20 @@ object MusicScoring {
         trackCount = release.media.sumOf { it.trackCount },
         agreeing = agreement?.agreeing ?: 0,
         hasFront = release.coverArtArchive?.front == true,
+        disambiguation = release.disambiguation?.trim()?.takeIf { it.isNotEmpty() },
     )
+
+    /**
+     * Phase 290 (FR-290-5) — *Find match…*'s pressings: best agreement first; among equals the pressing the album uses
+     * now, then the one the files already name, then oldest first.
+     */
+    fun orderReleases(options: List<MusicReleaseOption>, current: String?, named: String?): List<MusicReleaseOption> =
+        options.sortedWith(
+            compareByDescending<MusicReleaseOption> { it.agreeing }
+                .thenBy { if (current != null && it.mbid == current) 0 else 1 }
+                .thenBy { if (named != null && it.mbid == named) 0 else 1 }
+                .thenBy { it.date ?: "9999" },
+        )
 
     fun candidate(rg: MbReleaseGroup, best: Pair<MbRelease, Agreement>?, total: Int, source: String = "search"): MusicCandidate =
         MusicCandidate(
