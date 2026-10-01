@@ -142,8 +142,11 @@ fun LoginScreen(
     val signInFR = remember { FocusRequester() }
     val changeServerFR = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    // R350 re-test (FR-R350-15) — on a TV each field is focused first (a ring, no keyboard) and edited on OK.
+    val usernameEdit = rememberOkToEdit()
+    val passwordEdit = rememberOkToEdit()
 
-    LaunchedEffect(Unit) { usernameFR.requestFocus() }
+    LaunchedEffect(Unit) { awaitFieldReady(); usernameFR.requestFocus() }   // R350 re-test — see OkToEdit
 
     LaunchedEffect(state) {
         if (state is LoginState.Success) {
@@ -186,10 +189,12 @@ fun LoginScreen(
                         value = username,
                         onValueChange = { username = it },
                         focusRequester = usernameFR,
+                        edit = usernameEdit,
                         tag = LoginTags.USERNAME,
                         enabled = !locked,
                         imeAction = ImeAction.Next,
-                        onImeAction = { passwordFR.requestFocus() },
+                        // The keyboard's Next: the viewer is typing, so the password field takes the typing on.
+                        onImeAction = { passwordEdit.continueTyping(); passwordFR.requestFocus() },
                         onMoveDown = { passwordFR.requestFocus() },
                     )
                     Spacer(Modifier.height(14.dp))
@@ -198,6 +203,7 @@ fun LoginScreen(
                         value = password,
                         onValueChange = { password = it },
                         focusRequester = passwordFR,
+                        edit = passwordEdit,
                         tag = LoginTags.PASSWORD,
                         enabled = !locked,
                         masked = true,
@@ -256,6 +262,7 @@ private fun LoginField(
     value: String,
     onValueChange: (String) -> Unit,
     focusRequester: FocusRequester,
+    edit: OkToEdit,
     tag: String,
     enabled: Boolean,
     imeAction: ImeAction,
@@ -272,6 +279,7 @@ private fun LoginField(
     onMoveDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     // R349 (FR-R349-2) — the label and the box come into view together while the field has focus.
     Column(modifier = Modifier.fillMaxWidth().keepInViewWhileFocused()) {
         Text(label, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.testTag("$tag-label"))
@@ -281,6 +289,8 @@ private fun LoginField(
                 .fillMaxWidth()
                 .height(52.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(12.dp))
+                // R350 re-test (FR-R350-15) — a TV's focused field shows it (a read-only field draws no cursor).
+                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(12.dp)) else Modifier)
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -291,11 +301,14 @@ private fun LoginField(
                 value = value,
                 onValueChange = onValueChange,
                 enabled = enabled,
+                readOnly = edit.readOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
                     .testTag(tag)
                     .reportTextFieldFocus()
+                    // R350 re-test (FR-R350-15) — on a TV, D-pad focus never opens the keyboard; OK does.
+                    .okToEdit(edit, keyboard)
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (ev.key) {

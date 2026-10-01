@@ -48,6 +48,20 @@ class KeyboardFormTest {
     private val keyboardDown = 540.dp
 
     private var height by mutableStateOf(keyboardDown)
+    private lateinit var view: android.view.View
+
+    /** R350 re-test — the system keyboard is up (Robolectric's `InputMethodManager` shadow records show and hide). */
+    private fun keyboardUp(): Boolean = rule.runOnIdle {
+        org.robolectric.Shadows.shadowOf(view.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)).isSoftInputVisible
+    }
+
+    /** R350 re-test — a text field holds an input session (what raises the keyboard). */
+    private fun session(): Boolean = rule.runOnIdle { view.onCheckIsTextEditor() }
+
+    private fun noKeyboard(why: String) {
+        org.junit.Assert.assertFalse("keyboard up: $why", keyboardUp())
+        org.junit.Assert.assertFalse("input session: $why", session())
+    }
 
     private fun client() = TvApiClient(HttpClient(), "https://server.invalid", { null })
 
@@ -55,7 +69,7 @@ class KeyboardFormTest {
         height = start
         // What the app's Application.onCreate does; `isTvPlatform` reads the UI mode through it.
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
-        rule.setContent { Box(Modifier.fillMaxWidth().height(height)) { screen() } }
+        rule.setContent { view = androidx.compose.ui.platform.LocalView.current; Box(Modifier.fillMaxWidth().height(height)) { screen() } }
         rule.waitForIdle()
     }
 
@@ -123,6 +137,55 @@ class KeyboardFormTest {
         press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.REPEAT, label = true)
         press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.NEW, label = true)
         press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.CURRENT, label = true)
+    }
+
+    // ── R350 re-test: D-pad focus on a field never opens the keyboard on a TV; OK does ────────────────────
+
+    @Test fun `sign-in — arrival, Down and Up focus the fields without the keyboard, OK opens it`() {
+        render(keyboardDown) { LoginScreen(store = LoginStore(client()), onSignedIn = {}) }
+        focusedAndShown(LoginTags.USERNAME, label = true)
+        noKeyboard("arriving on the username")
+        press(Key.DirectionDown); focusedAndShown(LoginTags.PASSWORD, label = true)
+        noKeyboard("Down onto the password")
+        press(Key.DirectionDown); focusedAndShown(LoginTags.SIGN_IN)
+        press(Key.DirectionUp); focusedAndShown(LoginTags.PASSWORD, label = true)
+        noKeyboard("Up from Sign in onto the password")
+        press(Key.DirectionCenter)
+        focusedAndShown(LoginTags.PASSWORD)
+        org.junit.Assert.assertTrue("OK on the password opens the keyboard", keyboardUp())
+        press(Key.DirectionUp); focusedAndShown(LoginTags.USERNAME, label = true)
+        noKeyboard("Up onto the username after typing")
+    }
+
+    @Test fun `sign-in — OK, then the keyboard's Next carries the typing on to the password`() {
+        render(keyboardDown) { LoginScreen(store = LoginStore(client()), onSignedIn = {}) }
+        press(Key.DirectionCenter)
+        org.junit.Assert.assertTrue(keyboardUp())
+        rule.onNodeWithTag(LoginTags.USERNAME).performImeAction(); rule.waitForIdle()
+        focusedAndShown(LoginTags.PASSWORD, label = true)
+        org.junit.Assert.assertTrue("Next keeps the keyboard for the password", keyboardUp() && session())
+    }
+
+    @Test fun `change password — Down from Back and between the fields never opens the keyboard, OK does`() {
+        render(keyboardDown) { ChangePasswordScreen(apiClient = client(), onBack = {}, onForceSignOut = {}) }
+        noKeyboard("arriving (focus on Back)")
+        press(Key.DirectionDown); focusedAndShown(ChangePasswordTags.CURRENT, label = true)
+        noKeyboard("Down from Back onto Current password")
+        press(Key.DirectionDown); focusedAndShown(ChangePasswordTags.NEW, label = true)
+        noKeyboard("Down onto New password")
+        press(Key.DirectionDown); focusedAndShown(ChangePasswordTags.REPEAT, label = true)
+        noKeyboard("Down onto Repeat")
+        press(Key.DirectionDown); focusedAndShown(ChangePasswordTags.SAVE)
+        press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.REPEAT, label = true)
+        press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.NEW, label = true)
+        press(Key.DirectionUp); focusedAndShown(ChangePasswordTags.CURRENT, label = true)
+        noKeyboard("walking back up")
+        press(Key.DirectionCenter)
+        focusedAndShown(ChangePasswordTags.CURRENT)
+        org.junit.Assert.assertTrue("OK on Current password opens the keyboard", keyboardUp())
+        rule.onNodeWithTag(ChangePasswordTags.CURRENT).performImeAction(); rule.waitForIdle()
+        focusedAndShown(ChangePasswordTags.NEW, label = true)
+        org.junit.Assert.assertTrue("the keyboard's Next keeps typing in New password", keyboardUp() && session())
     }
 
     // ── server setup ───────────────────────────────────────────────────────────────────────────────

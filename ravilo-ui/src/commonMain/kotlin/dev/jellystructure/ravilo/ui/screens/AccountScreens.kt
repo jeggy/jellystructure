@@ -79,6 +79,7 @@ private fun AccountField(
     value: String,
     onValueChange: (String) -> Unit,
     focusRequester: FocusRequester,
+    edit: OkToEdit,
     tag: String,
     imeAction: ImeAction,
     onImeAction: () -> Unit,
@@ -87,6 +88,7 @@ private fun AccountField(
     onMoveDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     // R349 (FR-R349-2) — the label and the box come into view together while the field has focus.
     Column(modifier = Modifier.fillMaxWidth().keepInViewWhileFocused()) {
         Text(label, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.testTag("$tag-label"))
@@ -96,17 +98,22 @@ private fun AccountField(
                 .fillMaxWidth()
                 .height(52.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(12.dp))
+                // R350 re-test (FR-R350-14) — a TV's focused field shows it (a read-only field draws no cursor).
+                .then(if (edit.focused) Modifier.border(3.dp, colors.focusRing, RoundedCornerShape(12.dp)) else Modifier)
                 .padding(horizontal = 18.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
+                readOnly = edit.readOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester)
                     .testTag(tag)
                     .reportTextFieldFocus()
+                    // R350 re-test (FR-R350-14) — on a TV, D-pad focus never opens the keyboard; OK does.
+                    .okToEdit(edit, keyboard)
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (ev.key) {
@@ -209,6 +216,10 @@ fun ChangePasswordScreen(
     val repFR = remember { FocusRequester() }
     val saveFR = remember { FocusRequester() }
     val backFR = remember { FocusRequester() }
+    // R350 re-test (FR-R350-14) — on a TV each field is focused first (a ring, no keyboard) and edited on OK.
+    val curEdit = rememberOkToEdit()
+    val newEdit = rememberOkToEdit()
+    val repEdit = rememberOkToEdit()
     LaunchedEffect(Unit) { runCatching { curFR.requestFocus() } }
 
     fun submit() {
@@ -262,19 +273,21 @@ fun ChangePasswordScreen(
             val busy = state is PwState.Busy || state is PwState.Done
             AccountField(
                 label = str("account.pw_cur"), value = current, onValueChange = { if (!busy) current = it },
-                focusRequester = curFR, tag = ChangePasswordTags.CURRENT, imeAction = ImeAction.Next, onImeAction = { newFR.requestFocus() },
+                focusRequester = curFR, edit = curEdit, tag = ChangePasswordTags.CURRENT, imeAction = ImeAction.Next,
+                onImeAction = { newEdit.continueTyping(); newFR.requestFocus() },
                 masked = true, onMoveUp = { backFR.requestFocus() }, onMoveDown = { newFR.requestFocus() },
             )
             Spacer(Modifier.height(14.dp))
             AccountField(
                 label = str("account.pw_new"), value = newPw, onValueChange = { if (!busy) newPw = it },
-                focusRequester = newFR, tag = ChangePasswordTags.NEW, imeAction = ImeAction.Next, onImeAction = { repFR.requestFocus() },
+                focusRequester = newFR, edit = newEdit, tag = ChangePasswordTags.NEW, imeAction = ImeAction.Next,
+                onImeAction = { repEdit.continueTyping(); repFR.requestFocus() },
                 masked = true, onMoveUp = { curFR.requestFocus() }, onMoveDown = { repFR.requestFocus() },
             )
             Spacer(Modifier.height(14.dp))
             AccountField(
                 label = str("account.pw_rep"), value = repeatPw, onValueChange = { if (!busy) repeatPw = it },
-                focusRequester = repFR, tag = ChangePasswordTags.REPEAT, imeAction = ImeAction.Done, onImeAction = { submit() },
+                focusRequester = repFR, edit = repEdit, tag = ChangePasswordTags.REPEAT, imeAction = ImeAction.Done, onImeAction = { submit() },
                 masked = true, onMoveUp = { newFR.requestFocus() }, onMoveDown = { saveFR.requestFocus() },
             )
             Spacer(Modifier.height(20.dp))

@@ -7,7 +7,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import dev.jellystructure.shared.tv.TvApiClient
 import io.ktor.client.HttpClient
@@ -27,17 +30,26 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w960dp-h540dp")
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 class PasswordKeyboardTest {
     @get:Rule val rule = createComposeRule()
 
     private lateinit var view: View
 
-    private fun loginStore() = LoginStore(TvApiClient(HttpClient(), "https://server.invalid", { null }))
+    private fun loginStore(): LoginStore = LoginStore(pwClient())
 
-    private fun editorInfoOf(tag: String): EditorInfo {
+    private fun pwClient(): TvApiClient {
+        // `isTvPlatform` reads the UI mode through the app context: this configuration's, not a previous test's.
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        return TvApiClient(HttpClient(), "https://server.invalid", { null })
+    }
+
+    private fun editorInfoOf(tag: String, okFirst: Boolean = false): EditorInfo {
         rule.onNodeWithTag(tag).requestFocus()
         rule.waitForIdle()
         rule.onNodeWithTag(tag).assertIsFocused()
+        // R350 re-test — on a TV the field takes typing (and opens an input connection) only after OK.
+        if (okFirst) { rule.onRoot().performKeyInput { pressKey(androidx.compose.ui.input.key.Key.DirectionCenter) }; rule.waitForIdle() }
         val info = EditorInfo()
         val connection = rule.runOnIdle { view.onCreateInputConnection(info) }
         assertNotNull("the focused field opened no input connection", connection)
@@ -81,12 +93,40 @@ class PasswordKeyboardTest {
     @Test fun `every change-password field is a password to the keyboard`() {
         rule.setContent {
             view = LocalView.current
-            ChangePasswordScreen(apiClient = TvApiClient(HttpClient(), "https://server.invalid", { null }), onBack = {}, onForceSignOut = {})
+            ChangePasswordScreen(apiClient = pwClient(), onBack = {}, onForceSignOut = {})
         }
         for (tag in listOf(ChangePasswordTags.CURRENT, ChangePasswordTags.NEW, ChangePasswordTags.REPEAT)) {
             val info = editorInfoOf(tag)
             assertPassword(info)
             assertTrue("$tag has an IME action", (info.imeOptions and EditorInfo.IME_MASK_ACTION) != EditorInfo.IME_ACTION_UNSPECIFIED)
         }
+    }
+
+    // ── R350 re-test: on a TV the same options reach the keyboard once OK has opened it ──────────────────────
+
+    @Test @Config(qualifiers = "w960dp-h540dp-television")
+    fun `on a TV the sign-in password is a password to the keyboard once OK opens it`() {
+        rule.setContent { view = LocalView.current; LoginScreen(store = loginStore(), onSignedIn = {}) }
+        assertPassword(editorInfoOf(LoginTags.PASSWORD, okFirst = true))
+    }
+
+    @Test @Config(qualifiers = "w960dp-h540dp-television")
+    fun `on a TV every change-password field is a password to the keyboard once OK opens it`() {
+        rule.setContent {
+            view = LocalView.current
+            ChangePasswordScreen(apiClient = pwClient(), onBack = {}, onForceSignOut = {})
+        }
+        for (tag in listOf(ChangePasswordTags.CURRENT, ChangePasswordTags.NEW, ChangePasswordTags.REPEAT)) {
+            assertPassword(editorInfoOf(tag, okFirst = true))
+        }
+    }
+
+    @Test @Config(qualifiers = "w960dp-h540dp-television")
+    fun `on a TV a focused field opens no input connection until OK`() {
+        rule.setContent { view = LocalView.current; LoginScreen(store = loginStore(), onSignedIn = {}) }
+        rule.onNodeWithTag(LoginTags.PASSWORD).requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag(LoginTags.PASSWORD).assertIsFocused()
+        org.junit.Assert.assertNull(rule.runOnIdle { view.onCreateInputConnection(EditorInfo()) })
     }
 }
