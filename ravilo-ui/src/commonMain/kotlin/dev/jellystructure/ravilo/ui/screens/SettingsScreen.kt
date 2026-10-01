@@ -235,7 +235,12 @@ fun SettingsScreen(
     // nothing was focused until SettingsContent's progressFR, once Loaded).
     val backFR = remember { FocusRequester() }
     var backFocused by rememberFocusVisual()
+    // R350 re-test (FR-R350-16) — Settings opens at the top with focus on its first control, ‹ Back, and keeps it once
+    // the settings load (SettingsContent used to move it to the Playback toggle, scrolling the page to the middle with
+    // a setting one stray OK away from flipping). Down from Back enters the first section ([firstFR]).
     LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
+    val firstFR = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     // R229 bug fix: 80dp/side was sized for a TV's 10-foot canvas and never adapted for a phone
     // window — on a ~360-400dp-wide handset it left ~200dp for content, which is what pushed the
@@ -269,6 +274,10 @@ fun SettingsScreen(
                         focusRequester = backFR,
                         onFocused = { backFocused = true }, onBlurred = { backFocused = false },
                         onSelect = onBack,
+                        onDown = {
+                            if (state is SettingsState.Loaded) runCatching { firstFR.requestFocus() }
+                            else focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+                        },
                     )
                     .padding(horizontal = 6.dp, vertical = 4.dp),
             )
@@ -289,6 +298,9 @@ fun SettingsScreen(
                     onThemeChange = onThemeChange,
                     onChangePassword = onChangePassword,
                     onInstallRavilo = { showInstallCard = true },
+                    // Desktop layout draws no Back here (the toolbar has it), so the first section has nothing above it.
+                    topFR = if (deskLayout) null else backFR,
+                    firstFR = firstFR,
                 )
             }
         }
@@ -905,6 +917,10 @@ private fun SettingsContent(
     // R263 (FR-R263-8) — "re-surfaced only from Settings → Install Ravilo"; absent entirely off the
     // web (isWebPlatform), never a greyed/inert row.
     onInstallRavilo: () -> Unit = {},
+    // R350 re-test (FR-R350-16) — Back above the first section (null: nothing drawn above it), and the requester the
+    // first section's first control wears, so Back's Down lands there.
+    topFR: FocusRequester? = null,
+    firstFR: FocusRequester = remember { FocusRequester() },
 ) {
     val colors = RaviloTheme.colors
 
@@ -914,8 +930,13 @@ private fun SettingsContent(
     // leaving Account (identity, Change password, Sign out) and the whole Unpair section unreachable
     // by D-pad. Every section below now names its entry-point FocusRequester up front and links
     // explicitly to its neighbours, the same explicit-chain idiom ProfileMenu already uses.
-    val skinFRs = if (config.allowSkinOverride) remember { Skin.entries.map { FocusRequester() } } else null
-    val langFRs = remember { UI_LANGUAGES.map { FocusRequester() } }
+    val themesFirst = config.allowSkinOverride && config.hasThemes()
+    val skinsFirst = config.allowSkinOverride && !config.hasThemes()
+    val skinFRs = if (config.allowSkinOverride) remember(skinsFirst) { Skin.entries.mapIndexed { i, _ -> if (i == 0 && skinsFirst) firstFR else FocusRequester() } } else null
+    val langFRs = remember(themesFirst, skinsFirst) {
+        UI_LANGUAGES.mapIndexed { i, _ -> if (i == 0 && !themesFirst && !skinsFirst) firstFR else FocusRequester() }
+    }
+    val goTop: (() -> Unit)? = topFR?.let { fr -> { runCatching { fr.requestFocus() }; Unit } }
     val progressFR = remember { FocusRequester() }
     val autoplayFR = remember { FocusRequester() }
     // R328 (FR-R328-8) — the Mac's update line, between the identity and Change password when there is one.
@@ -926,9 +947,9 @@ private fun SettingsContent(
     val signOutFR = remember { FocusRequester() }
 
     // R338 — the theme settings, when the server has them (FR-R338-5); an older server keeps the three skins below.
-    val themeEntryFR = remember { FocusRequester() }
+    val themeEntryFR = if (themesFirst) firstFR else remember { FocusRequester() }
     if (config.allowSkinOverride && config.hasThemes()) {
-        ThemeSection(config, store, entryFR = themeEntryFR, downFR = langFRs[0], onThemeChange = onThemeChange)
+        ThemeSection(config, store, entryFR = themeEntryFR, downFR = langFRs[0], onThemeChange = onThemeChange, upFR = topFR)
         Spacer(Modifier.height(32.dp))
     }
     // Skin section
@@ -959,6 +980,7 @@ private fun SettingsContent(
                             onBlurred = { focused = false },
                             onLeft  = { if (i > 0) skinFRs[i - 1].requestFocus() },
                             onRight = { if (i < Skin.entries.lastIndex) skinFRs[i + 1].requestFocus() },
+                            onUp = goTop,
                             onDown = { langFRs[0].requestFocus() },
                             onSelect = { store.saveSkin(skin); onSkinChange(skin) },
                         )
@@ -999,7 +1021,7 @@ private fun SettingsContent(
                         onLeft  = { if (i > 0) langFRs[i - 1].requestFocus() },
                         onRight = { if (i < UI_LANGUAGES.lastIndex) langFRs[i + 1].requestFocus() },
                         onUp = if (config.allowSkinOverride && config.hasThemes()) ({ themeEntryFR.requestFocus() })
-                            else skinFRs?.let { frs -> { frs[0].requestFocus() } },
+                            else skinFRs?.let { frs -> { frs[0].requestFocus() } } ?: goTop,
                         onDown = { progressFR.requestFocus() },
                         onSelect = { store.saveUiLanguage(code) },
                     )
@@ -1077,8 +1099,8 @@ private fun SettingsContent(
         Spacer(Modifier.height(6.dp))
         Text(str("ab.sleep_fade_sub"), color = colors.textSecondary, fontSize = 13.sp)
     }
-    // Land focus on a stable control on entry; up/down reach skin and sign-out.
-    LaunchedEffect(Unit) { runCatching { progressFR.requestFocus() } }
+    // R350 re-test (FR-R350-16) — no focus grab here any more: this put the Playback toggle under the viewer's OK on
+    // arrival. SettingsScreen keeps focus on ‹ Back, at the top.
 
     Spacer(Modifier.height(32.dp))
 
@@ -1180,6 +1202,7 @@ private fun ThemeSection(
     entryFR: FocusRequester,
     downFR: FocusRequester,
     onThemeChange: (RaviloConfig) -> Unit,
+    upFR: FocusRequester? = null,
 ) {
     val colors = RaviloTheme.colors
     val desk = dev.jellystructure.ravilo.ui.isDesktopPlatform
@@ -1222,6 +1245,7 @@ private fun ThemeSection(
             focusRequester = followFR,
             // Turning it off keeps the theme in use at that moment (R338's T·g), whichever pick that was.
             onToggle = { save(follow = !follow, theme = if (follow) drawn else null) },
+            onUp = upFR?.let { fr -> { runCatching { fr.requestFocus() }; Unit } },
             onDown = { pillFRs.firstOrNull()?.firstOrNull()?.requestFocus() },
         )
         if (!desk) {
@@ -1253,7 +1277,7 @@ private fun ThemeSection(
                     onUp = when {
                         r > 0 -> ({ frOf(r - 1, 0).requestFocus() })
                         !darkOnly -> ({ followFR.requestFocus() })
-                        else -> null
+                        else -> upFR?.let { fr -> { runCatching { fr.requestFocus() }; Unit } }
                     },
                     onDown = { if (r < rows.lastIndex) frOf(r + 1, 0).requestFocus() else downFR.requestFocus() },
                     onSelect = { row.pick(id) },
