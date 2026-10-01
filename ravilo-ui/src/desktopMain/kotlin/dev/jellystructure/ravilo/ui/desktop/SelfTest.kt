@@ -24,7 +24,9 @@ object SelfTest {
             else -> "no library (not a Mac)"
         }
         val ok = dataOk && (lib != null || !DesktopPaths.isMac)
-        println("Ravilo $version · $native · data ${DesktopPaths.dataDir} ${if (dataOk) "writable" else "NOT WRITABLE"} · ${if (ok) "OK" else "FAILED"}")
+        // R342 — the music Dock icon's pictures, said and not required: without them the Dock keeps the films icon.
+        val dock = if (DesktopPaths.isMac) " · ${DesktopDock.packagedPictures()} Dock pictures" else ""
+        println("Ravilo $version · $native$dock · data ${DesktopPaths.dataDir} ${if (dataOk) "writable" else "NOT WRITABLE"} · ${if (ok) "OK" else "FAILED"}")
         return if (ok) 0 else 1
     }
 }

@@ -27,11 +27,24 @@ object DesktopAppearance {
     private val _dark = MutableStateFlow<Boolean?>(null)
     val dark: StateFlow<Boolean?> = _dark.asStateFlow()
 
+    private val _iconStyle = MutableStateFlow<String?>(null)
+
+    /**
+     * R342 (FR-R342-3, FR-R342-7) — the Mac's icon style as the Dock icon will draw it (light/dark already folded in),
+     * read in the same one-second tick as [dark]. Null off the Mac, or with a library that has no such call.
+     */
+    val iconStyle: StateFlow<String?> = _iconStyle.asStateFlow()
+
     init {
         if (DesktopPaths.isMac) {
             _dark.value = macDark()
+            _iconStyle.value = macIconStyle()
             CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-                while (isActive) { delay(1_000); macDark()?.let { _dark.value = it } }
+                while (isActive) {
+                    delay(1_000)
+                    macDark()?.let { _dark.value = it }
+                    macIconStyle()?.let { _iconStyle.value = it }
+                }
             }
         } else {
             // R337/R338 — the Settings portal: read before the first frame, then followed through SettingChanged.
@@ -41,6 +54,8 @@ object DesktopAppearance {
     }
 
     private fun macDark(): Boolean? = runCatching { MacNative.lib?.ravilo_appearance_dark()?.let { it == 1 } }.getOrNull()
+
+    private fun macIconStyle(): String? = runCatching { MacNative.lib?.let { MacNative.take(it.ravilo_dock_style()) } }.getOrNull()
 
 
     /** The window's own appearance on the Mac (traffic lights, menus, the About window's title bar). */

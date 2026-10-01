@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/ravilo/Desktop - Music App Icon.html`. **Dev-reviewed
+`✓ Built` 2026-10-01, not deployed (see *Build notes*). Written 2026-10-01 (design-authored) from `design/ravilo/Desktop - Music App Icon.html`. **Dev-reviewed
 2026-10-01** (§Dev review). **The owner decided the review's open items the same day** (§Owner decisions, at the end
 of the review):
 - no Dock tile plug-in, so the closed Dock always shows the films icon;
@@ -364,3 +364,77 @@ decided the same day (§Owner decisions, below), and the spec above was brought 
    Clear. This is the review's lean (item 6), now FR-R342-7.
 3. **No setting to turn it off** (open question 7, Q8). It is the review's lean and conflicts with nothing.
 4. **FR-R342-6 (Finder, Launchpad, Spotlight) is dropped**, as item 11 found.
+
+## Build notes (2026-10-01)
+
+**Built 2026-10-01, not deployed, not released. Run on the owner's Mac (macOS 27.0.1) as a signed test build; the Dock
+itself was not seen.** As the owner decided: no Dock tile plug-in, no Finder/Launchpad change, no setting.
+
+1. **The pictures (FR-R342-1, FR-R342-2).** `scripts/render-brand-icons.sh dock` writes 14 PNGs into
+   `ravilo-desktop/icons/dock/`, 336 KB in all. It draws the canvas's `app()` number for number (dev review 1), on
+   R341's Mac template: Apple's margin and shadow, the jellyfish at 1.18 with the circle cut out of it, the ring and
+   the ♪.
+   - Whole pictures: `music-default`, `music-dark`, `music-clear-light` and `music-clear-dark`.
+   - Tinted's three one-colour layers: `music-tinted-shadow`, `music-tinted-tile` and `music-tinted-marks`.
+   - Each one at 512 px, plus `-32` with the bigger bubble.
+   - **Deviation:** they come from the script, not from Icon Composer. No `ravilo-music.icon` exists, and nothing ran
+     on Xcode. The canvas is the reference the spec names, and the script renders it exactly. If Icon Composer's look
+     is wanted later, export it over these files with the same names.
+2. **Packaging.** `copyDockPictures` (in `ravilo-desktop/build.gradle.kts`) copies them to
+   `native-resources/macos-arm64/dock/`, beside `libravilo-mac.dylib`. So only the Mac's package carries them, and
+   they end up in `Contents/app/resources/dock/` (checked: 14 files). `--self-test` now says how many Dock pictures it
+   found. Missing pictures are not a failure: the Dock keeps the films icon.
+3. **The Swift side, `native/Dock.swift`.** Three new exports, added without an ABI bump, like R338's call:
+   - **`ravilo_dock_icon(dir)`** sets `NSApp.applicationIconImage` on the main queue. With no folder (films mode) it
+     sets `nil`, which puts the installed icon back. In music mode it builds one `NSImage` with the 512 px picture and
+     the 32 px drawing as two representations of the same size. Tinted is painted at run time: each layer is filled
+     with its colour, then the layers are stacked. Tinted light is the tint on the tile with white marks; Tinted dark
+     is `#0C1322` with the marks in the tint.
+   - **`ravilo_dock_style()`** returns the resolved style as one line (for example
+     `tinted-dark #30D158 (TintedDark)`). Kotlin polls it in `DesktopAppearance`'s one-second tick, beside
+     `AppleInterfaceStyle`.
+   - **`ravilo_dock_snapshot(path)`** is for the test driver's new `dock <png>` command. It returns what was set last,
+     and writes the image the app hands the Dock.
+4. **Kotlin.**
+   - **The seam** `reportListeningMode(music)` in `ui/seams` does nothing on Android and the web. On the desktop it
+     calls `DesktopDock.report`. `RaviloApp` calls it from `LaunchedEffect(inMusic)`: it follows `inMusic`, not
+     `musicMode` (dev review 4).
+   - **`DesktopDock.start()`** runs from `Main.kt`'s first `LaunchedEffect`, beside `MacAppHooks.install`. It does
+     nothing off the Mac or without the library. It combines the mode with the style and re-sets the icon only when
+     that pair changes. Every change is logged as `Dock icon: …` in `ravilo.log`.
+5. **FR-R342-7, with one reading.** The spec says both "when the key is absent, the style is Default" and (rules and
+   acceptance 6) "a missing key … falls back to Default, or to Dark when the system is dark". The build follows
+   acceptance 6: no key gives Dark on a dark system. Ravilo's Default and Dark differ only in the tile (`#000B25` and
+   `#05070E`), so this is nearly invisible. `RegularLight` is also read as Default, in case it appears.
+   - **The tint:** a named colour (Blue, Purple, Graphite and the rest), components as text or numbers, or an archived
+     `NSColor`. **With no tint key at all, the tint is the system accent colour**, as the spec's *Still to see*
+     suggests. A tint key that can't be read falls back to Default or Dark (FR-R342-7).
+   - **macOS 14 and 15** always get Default (`#available(macOS 26, *)`). Not tested: the Mac runs 27.
+   - **Still unknown:** how macOS really stores a custom tint. The owner's Mac has no icon-style keys set. Run
+     `defaults read -g | grep -i Icon` after picking a tint to see it.
+6. **Verified on the Mac**, signed as "Ravilo" (designated requirement `certificate root = H"5b3eac32…"`, and
+   `codesign --verify --deep --strict` passes after running). It ran on its own data folder, and the owner's
+   installed Ravilo was quit first and reopened afterwards: one Ravilo at a time.
+   - **The mode:** opened in the stored music mode, the music icon was set about 3 s after launch. `cmd MODE_VIDEO`
+     handed back the installed icon (`films`), and `cmd MODE_MUSIC` set the music icon again. The window shots
+     matched each mode.
+   - **Every style**, launched once per style with the keys in the app's argument domain only (never the owner's
+     settings):
+     - TintedDark plus Green → `tinted-dark #30D158`;
+     - TintedLight with no tint → the accent colour, `#007AFF`;
+     - ClearLight → `clear-light`; ClearAutomatic on a dark system → `clear-dark`;
+     - RegularAutomatic → `dark`;
+     - an unknown value → `dark`;
+     - an unreadable tint → `dark`;
+     - a tint as `0.9 0.3 0.1` → `#E54C19`.
+
+     The dumped Dock images look right in each style.
+   - **Live:** writing the style to Ravilo's own defaults domain while it ran (TintedAutomatic plus Purple, then
+     ClearLight, then removed) changed the icon within the 3 s I waited each time. The keys were deleted afterwards.
+7. **Not verifiable over SSH, so still owed on the Mac:**
+   - **The Dock and ⌘-Tab themselves** (acceptance 1 and 5). Screenshots over SSH don't capture the Dock. In
+     particular: does the music picture sit at the same size as the films icon? macOS 27 draws the installed `.icns`
+     in its own squircle (R341 build note 5). How the Dock draws a running app's image is unseen.
+   - A real style change through System Settings.
+   - Acceptance 3 and 4 (an unreachable server; music access removed) depend on R345, which is not built.
+

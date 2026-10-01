@@ -67,7 +67,13 @@ val buildMacNative by tasks.registering(Exec::class) {
             macFrameworks.flatMap { listOf("-framework", it) },
     )
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildMacNative) }
+// R342 (FR-R342-2) — the music Dock icon's pictures (scripts/render-brand-icons.sh dock) travel beside the Swift
+// library that sets them, so only the Mac's package carries them; a `gradle run` without them keeps the installed icon.
+val copyDockPictures by tasks.registering(Copy::class) {
+    from("icons/dock") { include("*.png") }
+    into(nativeResources.map { it.dir("macos-arm64/dock") })
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(buildMacNative, copyDockPictures) }
 
 // R331 (FR-R331-1, dev review 4) — jpackage wants N.N.N with a major ≥ 1: the release workflow passes the tag's
 // MAJOR.MINOR as `-Pravilo.macPackageVersion=MAJOR.MINOR.0`; a local build derives it the same way or says 1.0.0.

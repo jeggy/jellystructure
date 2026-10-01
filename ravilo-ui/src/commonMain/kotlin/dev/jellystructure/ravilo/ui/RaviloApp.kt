@@ -974,6 +974,8 @@ fun RaviloApp(
             }
         }
         val inMusic = listeningLayout && musicMode && musicAvailable != false && dev.jellystructure.ravilo.ui.music.MusicEngine.supported
+        // R342 — the Mac's running Dock icon follows what the screen shows (a no-op everywhere else).
+        LaunchedEffect(inMusic) { dev.jellystructure.ravilo.ui.seams.reportListeningMode(inMusic) }
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
         // FR-R321-2 — a mode stored for a viewer who lost the grant falls back to video, silently.
         LaunchedEffect(musicAvailable) {

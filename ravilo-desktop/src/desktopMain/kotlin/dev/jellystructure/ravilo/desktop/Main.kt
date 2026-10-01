@@ -117,6 +117,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onQuit = quit,
             onReopen = { shown = true },
         )
+        // R342 — AWT (and so NSApp) is up: the running Dock icon starts following the mode and the icon style.
+        dev.jellystructure.ravilo.ui.desktop.DesktopDock.start()
     }
 
     Window(

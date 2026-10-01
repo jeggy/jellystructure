@@ -195,6 +195,9 @@ internal object TestDriver {
                     "focused=${window.isFocused} visible=${window.isVisible} at=${window.x},${window.y} idle=${idleSeconds()}"
             }
             "cast" -> "ok " + dev.jellystructure.ravilo.ui.desktop.DesktopWindow.castDebug()
+            // R342 — the image the app hands the Dock (no picture of the window shows it): `dock /tmp/dock.png`.
+            "dock" -> "ok " + dev.jellystructure.ravilo.ui.desktop.DesktopDock.snapshot(parts.getOrElse(1) { "/tmp/ravilo-dock.png" }) +
+                " · style=" + dev.jellystructure.ravilo.ui.desktop.DesktopAppearance.iconStyle.value
             // The Mac's own chrome, which no picture of the canvas shows: where the traffic lights are, who takes a click.
             "chrome" -> "ok " + (dev.jellystructure.ravilo.ui.desktop.DesktopWindow.chromeDebug() ?: "none").trim().replace("\n", " | ")
             else -> "err unknown command '$verb'"

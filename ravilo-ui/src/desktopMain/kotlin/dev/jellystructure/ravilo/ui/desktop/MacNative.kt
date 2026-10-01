@@ -67,6 +67,15 @@ object MacNative {
         fun ravilo_window_drag()
         fun ravilo_window_debug(): Pointer?
 
+        // ── R342 — the running Dock icon (Dock.swift; see DesktopDock). Added without an ABI bump, like R338's call:
+        // a library without them throws, and DesktopDock / DesktopAppearance catch it. ──
+        /** The music icon's style as one line (`tinted-dark #4F8EF0 (TintedAutomatic)`); a change key. Free it. */
+        fun ravilo_dock_style(): Pointer?
+        /** Music mode: the folder of music pictures; films mode: null (the installed icon). 1 when set, 0 when missing. */
+        fun ravilo_dock_icon(dir: String?): Int
+        /** What was handed to the Dock last, and that image written to [path] as a PNG (the test driver's `dock`). */
+        fun ravilo_dock_snapshot(path: String): Pointer?
+
         // ── R330 — Bonjour (Bonjour.swift; see MacBonjour) ──
         fun ravilo_bonjour_start()
         fun ravilo_bonjour_stop()
