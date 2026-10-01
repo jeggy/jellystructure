@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -112,16 +113,31 @@ fun RaviloButton(
                 translationY = liftPx
                 shadowElevation = glowElevation.toPx()
                 shape = buttonShape
-                clip = true
+                // R350 (FR-R350-8) — not clipped, so the focus ring can sit outside the pill; the fills below carry
+                // the shape themselves.
+                clip = false
                 ambientShadowColor = colors.focusGlow
                 spotShadowColor = colors.focusGlow
             }
+            // R350 (FR-R350-8) — the design's `.btn.focused` ring, drawn OUTSIDE the button (a 2 dp ring, 3 dp off
+            // it). The primary button's lit fill alone did not read as focus: there was no unfocused primary on screen
+            // to compare it with, so the series page's Play looked the same before and after the first key.
+            .then(if (focused) Modifier.drawBehind {
+                val gap = 3.dp.toPx(); val w = 2.dp.toPx()
+                drawRoundRect(
+                    color = colors.focusRing,
+                    topLeft = androidx.compose.ui.geometry.Offset(-gap - w / 2, -gap - w / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width + 2 * gap + w, size.height + 2 * gap + w),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx() + gap + w / 2),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = w),
+                )
+            } else Modifier)
             .then(
                 when {
                     focused && style == ButtonStyle.PRIMARY ->
-                        Modifier.background(colors.accent)
+                        Modifier.background(colors.accent, buttonShape)
                     !focused && style == ButtonStyle.PRIMARY ->
-                        Modifier.background(colors.accentDim)
+                        Modifier.background(colors.accentDim, buttonShape)
                     focused ->
                         Modifier.border(2.dp, colors.accent, buttonShape)
                     else ->

@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.border
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -90,10 +94,13 @@ fun TrailerOverlay(trailer: TvTrailer, title: String, onClose: () -> Unit) {
                 )
             }
             Box(Modifier.weight(1f))
+            // R350 (FR-R350-8) — the one focusable thing on the overlay showed no sign of its focus.
+            var closeFocused by rememberFocusVisual()
             Box(
                 modifier = Modifier
-                    .dpadFocusable(focusRequester = closeFR, onSelect = onClose, onBack = onClose)
+                    .dpadFocusable(focusRequester = closeFR, onFocused = { closeFocused = true }, onBlurred = { closeFocused = false }, onSelect = onClose, onBack = onClose)
                     .background(colors.surfaceVariant, RoundedCornerShape(50))
+                    .then(if (closeFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(50)) else Modifier)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 // R315 — the ✕ is drawn, not typed.

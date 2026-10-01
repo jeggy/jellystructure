@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.border
+import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -111,6 +114,9 @@ private fun HeroCarouselContent(
 
     var activeIndex by remember { mutableIntStateOf(0) }
     var resetTick   by remember { mutableIntStateOf(0) }
+    // R350 (FR-R350-8) — the whole hero is the focus target (R53); nothing marked it as focused, so Home opened
+    // with focus on the hero and no sign of it. The design's `.hero-hit.focused` inset ring.
+    var heroFocused by rememberFocusVisual()
 
     if (items.isEmpty()) return
     // The heroes list can change size under us (R33 live config push). Never index past its end —
@@ -180,6 +186,8 @@ private fun HeroCarouselContent(
             // the 1st (confirmed live on soveværelse TV). The caller now bridges explicitly, like onUp.
             .dpadFocusable(
                 focusRequester = focusRequester,
+                onFocused = { heroFocused = true },
+                onBlurred = { heroFocused = false },
                 onLeft  = { activeIndex = (activeIndex - 1 + items.size) % items.size; resetTick++ },
                 onRight = { activeIndex = (activeIndex + 1) % items.size; resetTick++ },
                 onUp    = onUp,
@@ -369,5 +377,10 @@ private fun HeroCarouselContent(
             }
         }
 
+        // R350 (FR-R350-8) — last, so it draws over the backdrop and the scrims: an inset ring while focused.
+        if (heroFocused) Box(Modifier.matchParentSize().border(2.dp, colors.focusRing).testTag(HERO_FOCUS_RING_TAG))
     }
 }
+
+/** R350 (FR-R350-8) — the hero's focus ring, by tag for the focus tests. */
+internal const val HERO_FOCUS_RING_TAG = "hero-focus-ring"
