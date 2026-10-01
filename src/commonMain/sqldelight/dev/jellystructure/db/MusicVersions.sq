@@ -1,0 +1,50 @@
+-- Phase 292 — a song's version. Must stay in sync with 64.sqm.
+-- Only facts and the owner's own choices are stored; the automatic set is computed on read (MusicVersions.of).
+
+-- What MusicBrainz says about one recording (performance attributes, no words, remix/edit/instrumental links).
+CREATE TABLE music_recording_facts (
+    recording_mbid TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+);
+
+-- The owner's ticks: `rec:<mbid>` or `trk:<track id>`, one row per type, state `on` or `removed`. A scan never
+-- writes here.
+CREATE TABLE music_version_choice (
+    recording_key TEXT NOT NULL,
+    type TEXT NOT NULL,
+    state TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (recording_key, type)
+);
+
+-- The owner's colour and meaning for a type; absent = the default.
+CREATE TABLE music_version_type (
+    key TEXT NOT NULL PRIMARY KEY,
+    color TEXT,
+    meaning TEXT
+);
+
+allFacts:
+SELECT json FROM music_recording_facts;
+
+putFacts:
+INSERT OR REPLACE INTO music_recording_facts(recording_mbid, json, fetched_at) VALUES (:recording_mbid, :json, :fetched_at);
+
+allChoices:
+SELECT * FROM music_version_choice;
+
+putChoice:
+INSERT OR REPLACE INTO music_version_choice(recording_key, type, state, set_at) VALUES (:recording_key, :type, :state, :set_at);
+
+deleteChoice:
+DELETE FROM music_version_choice WHERE recording_key = :recording_key AND type = :type;
+
+deleteChoices:
+DELETE FROM music_version_choice WHERE recording_key = :recording_key;
+
+allTypes:
+SELECT * FROM music_version_type;
+
+putType:
+INSERT OR REPLACE INTO music_version_type(key, color, meaning) VALUES (:key, :color, :meaning);

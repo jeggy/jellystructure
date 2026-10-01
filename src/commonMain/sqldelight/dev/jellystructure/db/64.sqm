@@ -1,0 +1,21 @@
+-- Phase 292 — a song's version (Live, Remix, Instrumental …). Must stay in sync with MusicVersions.sq.
+
+CREATE TABLE music_recording_facts (
+    recording_mbid TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+);
+
+CREATE TABLE music_version_choice (
+    recording_key TEXT NOT NULL,
+    type TEXT NOT NULL,
+    state TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (recording_key, type)
+);
+
+CREATE TABLE music_version_type (
+    key TEXT NOT NULL PRIMARY KEY,
+    color TEXT,
+    meaning TEXT
+);

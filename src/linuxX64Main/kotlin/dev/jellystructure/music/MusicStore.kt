@@ -6,7 +6,11 @@ import dev.jellystructure.model.MusicArt
 import dev.jellystructure.model.MusicArtist
 import dev.jellystructure.model.MusicHealth
 import dev.jellystructure.model.MusicMatch
+import dev.jellystructure.model.MusicRecordingFacts
 import dev.jellystructure.model.MusicTrack
+import dev.jellystructure.model.MusicVersionChoice
+import dev.jellystructure.model.MusicVersionTypeInfo
+import dev.jellystructure.model.MusicVersions
 import dev.jellystructure.model.reencodesOnPhone
 import dev.jellystructure.tv.normalizeGuid
 import kotlinx.coroutines.sync.Mutex
@@ -32,7 +36,21 @@ class MusicStore(private val db: JellystructureDb) {
         val artists: Map<String, MusicArtist>,
         val albums: Map<String, MusicAlbum>,
         val tracks: Map<String, MusicTrack>,
+        /** Phase 292 — MusicBrainz's version facts per recording mbid. */
+        val facts: Map<String, MusicRecordingFacts> = emptyMap(),
+        /** Phase 292 — the owner's ticks, per recording key (`rec:` / `trk:`), per type. */
+        val choices: Map<String, Map<String, MusicVersionChoice>> = emptyMap(),
+        /** Phase 292 — the owner's colour and meaning per type (absent = the default). */
+        val typeOverrides: Map<String, MusicVersionTypeOverride> = emptyMap(),
     ) {
+        /** Phase 292 — every song's version answer, computed once per snapshot. */
+        val versions: MusicVersionIndex by lazy { MusicVersionIndex(this) }
+
+        /** Phase 292 (FR-292-13) — the nine types with the owner's colour and meaning. */
+        val versionTypes: List<MusicVersionTypeInfo> by lazy {
+            MusicVersions.TYPES.map { t -> typeOverrides[t.key]?.let { o -> t.copy(color = o.color ?: t.color, meaning = o.meaning ?: t.meaning) } ?: t }
+        }
+
         val tracksByAlbum: Map<String?, List<MusicTrack>> by lazy {
             tracks.values.groupBy { it.albumId }.mapValues { (_, l) -> l.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title })) }
         }
@@ -55,7 +73,12 @@ class MusicStore(private val db: JellystructureDb) {
         val artists = q.allArtists().executeAsList().mapNotNull { runCatching { json.decodeFromString(MusicArtist.serializer(), it) }.getOrNull() }
         val albums = q.allAlbums().executeAsList().mapNotNull { runCatching { json.decodeFromString(MusicAlbum.serializer(), it) }.getOrNull() }
         val tracks = q.allTracks().executeAsList().mapNotNull { runCatching { json.decodeFromString(MusicTrack.serializer(), it) }.getOrNull() }
-        return Snapshot(artists.associateBy { it.id }, albums.associateBy { it.id }, tracks.associateBy { it.id })
+        val v = db.musicVersionsQueries
+        val facts = v.allFacts().executeAsList().mapNotNull { runCatching { json.decodeFromString(MusicRecordingFacts.serializer(), it) }.getOrNull() }
+        val choices = v.allChoices().executeAsList().groupBy { it.recording_key }
+            .mapValues { (_, rows) -> rows.associate { it.type to MusicVersionChoice(it.type, it.state == STATE_ON, it.set_at) } }
+        val types = v.allTypes().executeAsList().associate { it.key to MusicVersionTypeOverride(it.color, it.meaning) }
+        return Snapshot(artists.associateBy { it.id }, albums.associateBy { it.id }, tracks.associateBy { it.id }, facts.associateBy { it.recordingMbid }, choices, types)
     }
 
     fun artist(id: String): MusicArtist? = snapshot().artists[id]
@@ -70,10 +93,10 @@ class MusicStore(private val db: JellystructureDb) {
             rows.tracks.forEach { writeTrack(it) }
         }
         val prev = snapshot()
-        cache.value = Snapshot(
-            prev.artists + rows.artists.associateBy { it.id },
-            prev.albums + rows.albums.associateBy { it.id },
-            prev.tracks + rows.tracks.associateBy { it.id },
+        cache.value = prev.copy(
+            artists = prev.artists + rows.artists.associateBy { it.id },
+            albums = prev.albums + rows.albums.associateBy { it.id },
+            tracks = prev.tracks + rows.tracks.associateBy { it.id },
         )
         versionAtomic.incrementAndGet()
     }
@@ -92,6 +115,73 @@ class MusicStore(private val db: JellystructureDb) {
         if (tracks.isEmpty()) return@withLock
         db.transaction { tracks.forEach { writeTrack(it) } }
         val prev = snapshot(); cache.value = prev.copy(tracks = prev.tracks + tracks.associateBy { it.id }); versionAtomic.incrementAndGet()
+    }
+
+    // ── Phase 292: versions ──
+
+    /** MusicBrainz's facts for some recordings (a match, the catch-up); replaces what was known for each. */
+    suspend fun putFacts(facts: List<MusicRecordingFacts>) = writeLock.withLock {
+        if (facts.isEmpty()) return@withLock
+        db.transaction { facts.forEach { db.musicVersionsQueries.putFacts(it.recordingMbid, json.encodeToString(MusicRecordingFacts.serializer(), it), it.fetchedAt) } }
+        val prev = snapshot(); cache.value = prev.copy(facts = prev.facts + facts.associateBy { it.recordingMbid }); versionAtomic.incrementAndGet()
+    }
+
+    /**
+     * The owner's ticks: for every key in [keys], each type in [changes] becomes on (`true`), removed (`false`) or
+     * goes back to automatic (`null`). One transaction for the whole selection.
+     */
+    suspend fun setChoices(keys: Collection<String>, changes: Map<String, Boolean?>, now: Long) = writeLock.withLock {
+        if (keys.isEmpty() || changes.isEmpty()) return@withLock
+        val q = db.musicVersionsQueries
+        db.transaction {
+            for (k in keys) for ((type, on) in changes) {
+                if (on == null) q.deleteChoice(k, type) else q.putChoice(k, type, if (on) STATE_ON else STATE_REMOVED, now)
+            }
+        }
+        val prev = snapshot()
+        val next = prev.choices.toMutableMap()
+        for (k in keys) {
+            val m = next[k].orEmpty().toMutableMap()
+            for ((type, on) in changes) if (on == null) m.remove(type) else m[type] = MusicVersionChoice(type, on, now)
+            if (m.isEmpty()) next.remove(k) else next[k] = m
+        }
+        cache.value = prev.copy(choices = next); versionAtomic.incrementAndGet()
+    }
+
+    /** *Back to automatic* (FR-292-7): every tick on these keys goes. */
+    suspend fun clearChoices(keys: Collection<String>) = writeLock.withLock {
+        db.transaction { keys.forEach { db.musicVersionsQueries.deleteChoices(it) } }
+        val prev = snapshot(); cache.value = prev.copy(choices = prev.choices - keys.toSet()); versionAtomic.incrementAndGet()
+    }
+
+    /**
+     * Dev review 6 — an unmatched song gained its recording: its `trk:` ticks move to [to]. Where both carry a tick
+     * for one type, the newer wins. [copyOnly] keeps the source (a converted file is a new item, the old one goes).
+     */
+    suspend fun moveChoices(from: String, to: String, copyOnly: Boolean = false) = writeLock.withLock {
+        val prev = snapshot()
+        val src = prev.choices[from].orEmpty()
+        if (src.isEmpty() || from == to) return@withLock
+        val merged = prev.choices[to].orEmpty().toMutableMap()
+        for ((type, c) in src) { val had = merged[type]; if (had == null || c.setAt >= had.setAt) merged[type] = c }
+        val q = db.musicVersionsQueries
+        db.transaction {
+            merged.values.forEach { q.putChoice(to, it.type, if (it.on) STATE_ON else STATE_REMOVED, it.setAt) }
+            if (!copyOnly) q.deleteChoices(from)
+        }
+        val next = prev.choices.toMutableMap()
+        next[to] = merged
+        if (!copyOnly) next.remove(from)
+        cache.value = prev.copy(choices = next); versionAtomic.incrementAndGet()
+    }
+
+    /** FR-292-13 — a type's colour and meaning; null leaves that half as it is. */
+    suspend fun putVersionType(key: String, color: String?, meaning: String?) = writeLock.withLock {
+        val prev = snapshot()
+        val had = prev.typeOverrides[key]
+        val next = MusicVersionTypeOverride(color ?: had?.color, meaning ?: had?.meaning)
+        db.transaction { db.musicVersionsQueries.putType(key, next.color, next.meaning) }
+        cache.value = prev.copy(typeOverrides = prev.typeOverrides + (key to next)); versionAtomic.incrementAndGet()
     }
 
     private fun writeArtist(a: MusicArtist) {
@@ -147,11 +237,17 @@ class MusicStore(private val db: JellystructureDb) {
     }
 
     companion object {
+        const val STATE_ON = "on"
+        const val STATE_REMOVED = "removed"
+
         /** Lower-cased words for the admin's search (FR-275-8). */
         fun searchText(vararg parts: String?): String =
             parts.filterNotNull().joinToString(" ").lowercase().replace(Regex("\\s+"), " ").trim()
     }
 }
+
+/** Phase 292 — the owner's colour and meaning for one type; null = the default. */
+data class MusicVersionTypeOverride(val color: String?, val meaning: String?)
 
 /**
  * FR-275-4 — the films' visibility rule for a music row: a restricted Jellyfin user sees it only when its library

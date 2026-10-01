@@ -198,6 +198,9 @@ data class MusicAlbum(
     /** Phase 283 (FR-283-4) — a flag the admin said *This is right* to, with what it was said for: when that changes
      *  (a folder renamed, a tag rewritten, another folder added) the flag comes back. */
     val flagsDismissed: Map<String, String> = emptyMap(),
+    /** Phase 292 (dev review 5) — when the album's recordings' version facts were last read from MusicBrainz. A matched
+     *  album without it is caught up by the next `match_musicbrainz` run. */
+    val versionFactsAt: Long? = null,
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
@@ -284,6 +287,11 @@ data class MusicTrack(
     /** [MusicLyrics] — what the last lyrics lookup found (or a sidecar already there). Null = never looked. */
     val lyricsState: String? = null,
     val lyricsCheckedAt: Long? = null,
+    /** Phase 292 (dev review 8a) — the sidecar jellystructure wrote: [MusicLyricsSource], LRCLIB's id, and a hash of
+     *  the file as written. *Remove the lyrics* deletes a file only while its hash still matches. */
+    val lyricsSource: String? = null,
+    val lyricsLrclibId: Long? = null,
+    val lyricsHash: String? = null,
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
@@ -299,6 +307,17 @@ object MusicLyrics {
     /** LRCLIB says the track has no words. */
     const val INSTRUMENTAL = "instrumental"
     const val NONE = "none"
+    /** Phase 292 (dev review 8b) — the admin pressed *Remove the lyrics*: the lyrics step never gives this song lyrics
+     *  again, and Ravilo shows none even when Jellyfin still holds an embedded copy. */
+    const val BLOCKED = "blocked"
+}
+
+/** Phase 292 (dev review 8a) — where a song's lyrics sidecar came from. */
+object MusicLyricsSource {
+    /** Written by `fetch_lyrics` from LRCLIB. */
+    const val LRCLIB = "lrclib"
+    /** Found beside the song before jellystructure looked (a sidecar the admin or another tool put there). */
+    const val FOUND = "found"
 }
 
 /**
