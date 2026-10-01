@@ -1113,6 +1113,22 @@ class JellyfinClient {
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markPlayed failed: ${it.exceptionOrNull()?.message}") }
 
+    /**
+     * R343 (FR-R343-4) — set one item's watched flag and resume position in a single write. Needed after a
+     * *Start over* clear: Jellyfin's playback session keeps the user data it read at start (the episode was
+     * watched) and writes it back on the session's progress and stop reports, so the clear's unmark is undone
+     * by the stop. Sent after the stop has landed, this is the last word. Verified live on 12.1 (2026-10-02).
+     */
+    suspend fun setUserData(baseUrl: String, userToken: String, userId: String, jellyfinId: String, played: Boolean, positionTicks: Long): Boolean {
+        val r = httpPost(baseUrl.trimEnd('/') + "/UserItems/$jellyfinId/UserData?userId=$userId") {
+            jellyfinAuth(userToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"Played":$played,"PlaybackPositionTicks":$positionTicks}""")
+        }
+        if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a user-data write")
+        return true
+    }
+
     suspend fun markUnplayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
         httpDelete(baseUrl.trimEnd('/') + "/UserPlayedItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)

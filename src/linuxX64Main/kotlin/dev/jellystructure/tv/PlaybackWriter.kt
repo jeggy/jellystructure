@@ -51,6 +51,9 @@ class PlaybackWriter(
         val jellyfinPlaySessionId: String?,
         val enqueuedAt: Long,
         val seq: Long,
+        /** R343 — this stop ends a *Start over* session that cleared its series: once the stop has landed the
+         *  sink writes the episode back as unwatched at [positionMs] (Jellyfin's stop restores the stale flag). */
+        val startOverUnplayed: Boolean = false,
     ) { var attempts: Int = 0; var nextAttemptAt: Long = enqueuedAt }
 
     class Stats(
@@ -79,10 +82,10 @@ class PlaybackWriter(
     suspend fun enqueueProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) =
         enqueue(Kind.PROGRESS, device, jellyfinId, positionMs, isPaused, null)
 
-    suspend fun enqueueStop(device: DeviceData, jellyfinId: String, positionMs: Long, jellyfinPlaySessionId: String?) =
-        enqueue(Kind.STOP, device, jellyfinId, positionMs, false, jellyfinPlaySessionId)
+    suspend fun enqueueStop(device: DeviceData, jellyfinId: String, positionMs: Long, jellyfinPlaySessionId: String?, startOverUnplayed: Boolean = false) =
+        enqueue(Kind.STOP, device, jellyfinId, positionMs, false, jellyfinPlaySessionId, startOverUnplayed)
 
-    private suspend fun enqueue(kind: Kind, device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean, psid: String?) {
+    private suspend fun enqueue(kind: Kind, device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean, psid: String?, startOverUnplayed: Boolean = false) {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         mutex.withLock {
             val existing = pending[key]
@@ -90,7 +93,8 @@ class PlaybackWriter(
             // key; anything else is last-position-wins, and the write it replaces was never "lost".
             if (existing != null && existing.kind == Kind.STOP && kind == Kind.PROGRESS) return
             if (existing != null) superseded++
-            pending[key] = PendingWrite(kind, device, jellyfinId, positionMs, isPaused, psid ?: existing?.jellyfinPlaySessionId, clock(), ++seq)
+            pending[key] = PendingWrite(kind, device, jellyfinId, positionMs, isPaused, psid ?: existing?.jellyfinPlaySessionId, clock(), ++seq,
+                startOverUnplayed = startOverUnplayed || (existing?.kind == Kind.STOP && existing.startOverUnplayed))
         }
         signal.trySend(Unit)
     }

@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.playbackFinished
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
 import dev.jellystructure.auth.withJellyfinToken
@@ -451,6 +452,7 @@ class PlaybackService(
             // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
             // session that never transcoded or already ended is a success, not an error).
             if (ok && w.jellyfinPlaySessionId != null) releaseEncodes(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
+            if (ok && w.startOverUnplayed) writeStartOverUnplayed(jellyfinBase, token, w.device, w.jellyfinId, w.positionMs)
             // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
             if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device, w.jellyfinId) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
             return ok
@@ -740,12 +742,14 @@ class PlaybackService(
             ?: run { if (clear.isActive) Logger.warn("Start over: clear still running after ${START_OVER_CLEAR_WAIT_MS}ms; stopping item=$jellyfinId anyway", "tv") }
         // R347 / R343 — what the stop reports: the playhead, the end of the file for an item finished at its
         // credits (and a tick through mark), or a shuffled entry's position from before the shuffle.
-        val plan = plansMutex.withLock { plans.remove(key).also { clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.durationMs, creditsStartMs = it.creditsStartMs) }
+        var cleared = false
+        val plan = plansMutex.withLock { plans.remove(key).also { cleared = clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.durationMs, creditsStartMs = it.creditsStartMs) }
         val decision = resolveStop(positionMs, plan)
         val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId)
         Logger.info("playback stop: device=${device.deviceId} item=$jellyfinId at ${positionMs}ms" +
             (if (decision.reportMs != positionMs) " (reported ${decision.reportMs}ms: ${if (decision.markPlayed) "finished at its credits, R347" else "shuffled, R343"})" else ""), "tv")   // R292 — the number the resume record carries
-        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId)
+        // R343 — a cleared Start over episode that did not finish stays unwatched at its position (see the sink).
+        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = cleared && !playbackFinished(decision.reportMs, plan?.durationMs ?: 0L, plan?.creditsStartMs))
         if (decision.markPlayed) runInBackground("R347 tick item=$jellyfinId") { mark(device, jellyfinId, watched = true) }
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
         // heartbeat) and the client reported a real startup duration: record one sample. The watchdog's
@@ -821,6 +825,18 @@ class PlaybackService(
         )
     }
 
+    /**
+     * R343 (FR-R343-4) — after the stop of a *Start over* session that cleared its series: the playing episode
+     * back to unwatched at the stop's position. Jellyfin's session holds the user data it read at start (the
+     * episode was watched) and its stop writes that back over the clear; this write comes after it. A failure
+     * only logs — the episode then shows as watched, which a viewer can untick.
+     */
+    private suspend fun writeStartOverUnplayed(jellyfinBase: String, token: String, device: DeviceData, jellyfinId: String, positionMs: Long) {
+        runCatching { jellyfinClient.setUserData(jellyfinBase, token, device.jellyfinUserId, jellyfinId, played = false, positionTicks = positionMs * TICKS_PER_MS) }
+            .onSuccess { Logger.info("Start over: item=$jellyfinId left unwatched at ${positionMs}ms after its stop (R343)", "tv") }
+            .onFailure { Logger.warn("Start over: unwatched write-back failed for item=$jellyfinId: ${it.message}", "tv") }
+    }
+
     /** Work a stop starts but never waits for (R347's tick): on the service's scope, inline in tests. */
     private suspend fun runInBackground(what: String, work: suspend () -> Unit) {
         val scope = backgroundScope
@@ -855,11 +871,12 @@ class PlaybackService(
         jellyfinId: String,
         positionMs: Long,
         jellyfinPlaySessionId: String?,
+        startOverUnplayed: Boolean = false,
     ) {
         // Phase 219 (FR-219-2) — the stop is the write that must land: queued, retried past the
         // client's disconnect, and the encode released once it has (JellyfinSink.stop).
         val w = writer
-        if (w != null) { w.enqueueStop(device, jellyfinId, positionMs, jellyfinPlaySessionId); return }
+        if (w != null) { w.enqueueStop(device, jellyfinId, positionMs, jellyfinPlaySessionId, startOverUnplayed); return }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)
@@ -870,6 +887,7 @@ class PlaybackService(
         if (jellyfinPlaySessionId != null) {
             releaseEncodes(jellyfinBase, token, identity, jellyfinPlaySessionId)
         }
+        if (startOverUnplayed) writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
     }
 
     /**

@@ -27,6 +27,7 @@ class PlaybackWriterTest {
     private class FakeSink(var failFirst: Int = 0) : PlaybackSink {
         val progressLanded = mutableListOf<Long>()
         val stopsLanded = mutableListOf<Long>()
+        val startOverFlags = mutableListOf<Boolean>()
         var calls = 0
         override suspend fun progress(w: PlaybackWriter.PendingWrite): Boolean {
             calls++
@@ -36,7 +37,7 @@ class PlaybackWriterTest {
         override suspend fun stop(w: PlaybackWriter.PendingWrite): Boolean {
             calls++
             if (failFirst > 0) { failFirst--; return false }
-            stopsLanded += w.positionMs; return true
+            stopsLanded += w.positionMs; startOverFlags += w.startOverUnplayed; return true
         }
     }
 
@@ -94,6 +95,22 @@ class PlaybackWriterTest {
         writer.awaitIdle()
         assertEquals(listOf(50_000L), sink.stopsLanded)
         assertTrue(sink.progressLanded.isEmpty())
+        scope.cancel()
+    }
+
+    @Test
+    fun `a Start over stop keeps its unwatched write-back when a later stop replaces it`() = runBlocking {
+        // R343 — the stop that ends a cleared Start over session carries the flag; a retried or repeated stop for
+        // the same item must not drop it, or Jellyfin's stale "watched" flag would be the last word.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sink = FakeSink(failFirst = 1)
+        val writer = PlaybackWriter(scope, sink, baseBackoffMs = 30, maxBackoffMs = 60)
+        val tv = device()
+        writer.enqueueStop(tv, "ep1", 227_000L, null, startOverUnplayed = true)
+        writer.enqueueStop(tv, "ep1", 228_000L, null)
+        writer.awaitIdle()
+        assertEquals(listOf(228_000L), sink.stopsLanded)
+        assertEquals(listOf(true), sink.startOverFlags)
         scope.cancel()
     }
 }

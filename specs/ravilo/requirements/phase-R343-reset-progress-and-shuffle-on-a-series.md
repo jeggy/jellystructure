@@ -508,3 +508,12 @@ androidx Compose UI that CMP 1.9.3 resolves to on Android) and Robolectric 4.14.
 **Needs a device / deploy:** the server half (the clear, the shuffled stop, the screen queue) needs a deployed
 backend; verify the clear on a **test account** first (dev review 3: from Jellyfin's source, not a live write).
 Acceptance 1–8 on the Pixel 9, a Ravilo TV and a Chromecast; the D-pad walk of acceptance 8 on a TV.
+
+**Found on the Pixel 9 (2026-10-02, the deployed build) and fixed the same night.** The clear worked (19 of 20 episodes
+unwatched), but the playing episode came back **watched with a resume point** (`Played = true`, 3:47), so the page offered
+*Resume · S01E02*. Jellyfin's playback session holds the user data it read at start — the episode was watched — and its
+stop report writes that back over the clear. Fix: the stop that ends a cleared Start over session carries a flag
+(`PlaybackWriter.PendingWrite.startOverUnplayed`, kept when a later stop replaces it); once Jellyfin has the stop, the
+sink sets the episode to unwatched at the stop's position in one write (`JellyfinClient.setUserData` →
+`POST /UserItems/{id}/UserData`, checked live on 12.1). Skipped when the stop is itself finished (R347's rule), so an
+episode watched to the end during a Start over is still ticked. `PlaybackWriterTest` covers the flag.
