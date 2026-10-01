@@ -8,7 +8,9 @@
 
 `✓ Built` — written 2026-10-02 (dev-authored) from the owner's TV session, before any fix; built the same day (see
 *Build notes*). Not deployed, not device-tested. Client-only (`:ravilo-ui`); no wire change, no server change. Number
-given by the coordinator.
+given by the coordinator. **Amended 2026-10-02** after a re-test on the Sony (FR-13 to FR-16: Search arrival without
+the keyboard, Change your password and sign-in fields that open the keyboard only on OK, Settings opening at the top);
+built the same day, see *Re-test on the TV* at the end.
 
 **Supersedes, in part:**
 - **R178 FR-RV-SEL1-1** (hiding the chrome resets the player's focus to Play) — see FR-R350-7. R178's Select guard
@@ -130,7 +132,8 @@ focused pill is always brought fully into view (R250's gutter).
 **FR-R350-2 also covers the Mac's report** that returning from the player reset the series page's scroll position.
 
 ## Non-goals
-- The sign-in and server-setup screens (another phase is changing them).
+- The sign-in and server-setup screens (another phase is changing them). *R349 has since landed; the re-test
+  amendment's FR-15 brings the sign-in fields under the same keyboard rule.*
 - Redesigning the player's focus model or the TV's transport order.
 - Back from a related title or a cast face on the series page (it still lands on Play) — recorded below.
 
@@ -227,3 +230,97 @@ how the new button/hero rings read at 10 feet.
 - The facet bar's `focusRestorer` has FR-1's shape: the app bar's Down asks for the first chip and gets the one last
   focused. Arguably right there (it is the bar's memory), so left.
 
+
+## Re-test on the TV, 2026-10-02
+
+The owner re-tested a release build of `main` `6b0a74ac` on the Sony BRAVIA the same day. Inside Search everything
+from FR-4 held (Up from the results focused the field with no keyboard, OK raised it, Back closed it), but three
+findings remained.
+
+### FR-R350-13 — Arriving at Search on a TV never raises the keyboard
+**Seen:** opening Search from the top bar's search icon (OK) showed the keyboard at once, every time.
+**Cause:** FR-4 relied on `KeyboardOptions(showKeyboardOnFocus = false)`. Only the state-based
+`BasicTextField(TextFieldState)` reads that flag. Ravilo's fields are the `value: String` overload, which is Compose's
+legacy `CoreTextField`: it starts an input session whenever it gains focus while editable, and on Android starting a
+session shows the keyboard (`TextInputServiceAndroid` turns *start input* into *show keyboard*). The flag was silently
+ignored. FR-4's test recorded a stand-in `SoftwareKeyboardController`, which this path never calls, so it passed.
+**Requirement (TV):** arriving at Search (and at the Seerr search) focuses the field with a visible ring and **no input
+session**; OK on the field makes it editable and raises the keyboard; D-pad focus coming back to the field (Up from the
+results, after typing too) never raises it. The phone keeps R277.
+
+### FR-R350-14 — Change your password: D-pad focus on a field never raises the keyboard
+**Seen:** Down from *Back* landed on *Current password* with the keyboard up, so the next OK typed a letter.
+**Requirement (TV):** the same rule as Search and the server-setup address (R349 FR-R349-7): a field the D-pad lands on
+shows a focus ring and no keyboard; OK opens the keyboard. Down/Up move between the fields and to *Save password*
+without the keyboard. The keyboard's *Next* keeps typing in the next field (the viewer is typing already). R348's
+password keyboard options and R349's scroll-above-the-keyboard stay.
+
+### FR-R350-15 — The sign-in form follows the same rule
+The sign-in screen's Username and Password behaved the same (arrival focused Username and raised the keyboard). Same
+requirement as FR-14, including *Next* from Username carrying the typing on to Password. R349's walks keep passing.
+
+### FR-R350-16 — Settings opens at the top, with focus on its first control
+**Seen:** Settings opened scrolled to the middle with focus on the Playback toggle *Show progress on Continue
+Watching*; one stray OK flipped it.
+**Cause:** `SettingsContent` requested focus on that toggle once the settings loaded (a bug-fix-era *land focus on a
+stable control*), overriding the page's own request for *‹ Back*; bringing the toggle into view scrolled the page.
+**Requirement:** Settings opens at the top with focus on its first control, *‹ Back*. A stray OK there leaves Settings
+and changes nothing. (The first setting is not a safe landing: on a TV the first theme pill is usually not the theme in
+use, so OK on it changes the theme.) Down from Back enters the first section (Appearance's first theme, or the skins,
+or Language); Up from that section returns to Back.
+
+### The fix
+
+- **`OkToEdit`** (`screens/OkToEdit.kt`, TV only, inert elsewhere): the field is `readOnly` until OK. A read-only
+  legacy field starts no input session when focused; turning it editable while focused starts one, and the keyboard
+  comes with it. Leaving the field makes it read-only again. OK (or a keyboard's Enter) on a non-editing field starts
+  editing and both halves of that press are eaten; OK on a field already being edited (keyboard closed with Back) shows
+  the keyboard again. `continueTyping()` keeps an IME *Next* in typing. The caller draws a 3 dp focus ring from
+  `focused` (a read-only field draws no cursor).
+- Used by Search, the Seerr search, the sign-in fields and the three Change your password fields. The server-setup
+  address keeps R349's focusable frame (same behaviour, already correct).
+- **One more legacy path:** the field's first-composition effect restarts input if the field already holds focus when
+  it runs, read-only or not. A screen that focuses a field on arrival now waits one frame first (`awaitFieldReady()`),
+  so that effect has run and found nothing focused. On the device the arrival `LaunchedEffect` was already dispatched
+  after it; under the test clock it ran first, which is how the tests found it.
+- **Settings:** the toggle's focus grab is gone; *‹ Back* keeps the arrival focus; `SettingsContent` takes `topFR`
+  (Back) and `firstFR` (worn by the first section's first control) so Back's Down and the first section's Up are
+  explicit.
+- `showKeyboardOnFocus` is no longer passed (it did nothing on these fields).
+
+## Build notes (re-test amendment, 2026-10-02)
+
+**Built, FR-13 to FR-16, client-only.** No wire or server change, no new strings. Built 2026-10-02, not deployed, not
+device-tested.
+
+- **Root cause of FR-13 confirmed in the test harness before the fix:** with the R350 code, Robolectric's
+  `InputMethodManager` shadow reported the keyboard shown and the view held an input session right after Search
+  arrived, although `showKeyboardOnFocus = false` was set. Read from Compose 1.9.4's sources: only
+  `TextFieldDecoratorModifier` (the state-based field) checks the flag; `CoreTextField` calls `startInputSession` on
+  focus, and `TextInputServiceAndroid.processInputCommands` sets *show keyboard* for every *start input*.
+- Why *Up from the results* looked right on the Sony before the fix is not known: the same session start ran there too.
+  It does not matter now — no path starts a session until OK.
+- **Tests** (`:ravilo-ui:testDebugUnitTest`): every keyboard assertion reads the real `InputMethodManager` (Robolectric
+  shadow) and the view's input session (`onCheckIsTextEditor()`), not a stand-in controller.
+  - `SearchFocusTest` (rewritten, 5): arrival (no keyboard, no session; OK raises it); **arrival from a focused
+    top-bar icon by OK**, the press's release landing on the new page; Back from the results; Up from the first row;
+    type → Down → Up comes back without the keyboard, OK opens it again.
+  - `SettingsFocusTest` (new, 3, TV): opens on *‹ Back* with the title on screen and the toggle not focused; a stray OK
+    leaves and sends no `PUT /api/tv/settings`; Back → Aurora → English → Show progress → Autoplay → Change password and
+    back up to Back, with no write.
+  - `KeyboardFormTest` (+3): sign-in arrival / Down / Up with no keyboard, OK opens it, Up after typing closes it;
+    *Next* from Username keeps the keyboard for Password; Change password: Down from Back and through every field to
+    *Save password* and back with no keyboard, OK opens it, *Next* keeps typing in New password. R349's walks unchanged
+    and green.
+  - `PasswordKeyboardTest` (+3): on a TV each password field hands the keyboard R348's options once OK opens it, and a
+    focused field opens no input connection before OK. The phone-configuration tests now initialise the app context
+    themselves (`isTvPlatform` had been reading a previous TV test's context).
+  - Checked: the new Settings, sign-in and Change password tests fail against the previous screens (6 failures), and
+    the Search arrival assertion fails against the previous Search (keyboard shown on arrival).
+- Also green: `:ravilo-android:assembleRelease`, `:ravilo-web:compileKotlinWasmJs`,
+  `-Pravilo.desktopOnly=true :ravilo-desktop:compileKotlinDesktop`, the CI check scripts that run without a device.
+
+**Owed, on the Sony:** Search from the top bar (no keyboard; OK raises it; Back closes it; Back leaves); Settings (opens
+at the top on *‹ Back*; Down walks the sections); Change your password and sign-in (Down/Up through the fields with no
+keyboard, a ring on the focused field, OK opens the keyboard, *Next* carries on). And on the Pixel 9 that a tap on each
+of those fields still opens the keyboard at once (the phone path is untouched by design).
