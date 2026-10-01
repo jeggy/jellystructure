@@ -242,19 +242,20 @@ fun TrackRow(
         if (showCover && isCurrent) { Spacer(Modifier.width(8.dp)); PlayingBars(st.playing, colors.accentSecondary, if (desk) 12.dp else 14.dp) }
         Spacer(Modifier.width(if (desk) 10.dp else 12.dp))
         Column(Modifier.weight(1f)) {
-            // R344 — the version chips after the title (two then +N on a phone, three on the desktop); the title
-            // truncates before them, so a chip is never cut.
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // R344 — the version chips after the title (two then +N on a phone, three on the desktop). R352 (FR-R352-1) —
+            // the title takes its space first and the chips fold to what is left; a chip is still never cut.
+            TitleWithVersions(t.versions, gap = if (desk) 8.dp else 7.dp) {
                 Text(
                     t.title, color = if (isCurrent) colors.accentSecondary else colors.text, fontSize = if (desk) 13.sp else 14.5.sp,
                     fontWeight = if (desk && !isCurrent) FontWeight.Normal else if (desk) FontWeight.SemiBold else FontWeight.Medium,
-                    fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                if (t.versions.isNotEmpty()) VersionChips(t.versions, Modifier.padding(start = if (desk) 8.dp else 7.dp))
             }
             val sub = subtitle ?: artistLine(t)
             if (sub.isNotBlank()) Text(sub, color = if (desk) colors.textDim else colors.textSecondary, fontSize = if (desk) 11.5.sp else 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        // R352 (FR-R352-2) — a gap between the title column (its chips can reach its end) and the lyrics mark or length.
+        Spacer(Modifier.width(8.dp))
         if (t.hasLyrics) { MusicGlyph(MusicIcon.LYRICS, colors.textDim, if (desk) 13.dp else 15.dp); Spacer(Modifier.width(8.dp)) }
         Text(fmtLen(t.durationMs), color = colors.textDim, fontSize = if (desk) 12.sp else 12.5.sp, fontFamily = Sora)
         Box(Modifier.size(if (desk) 34.dp else 40.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, if (desk) 16.dp else 18.dp, description = str("music.more")) }

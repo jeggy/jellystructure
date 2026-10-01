@@ -147,3 +147,54 @@ fun VersionChips(keys: List<String>, modifier: Modifier = Modifier, fold: Int? =
         }
     }
 }
+
+/** R352 (FR-R352-1) — how a line splits between a title and its chips: how many chips are named, and the title's width. */
+data class VersionFit(val shown: Int, val titleWidth: Int)
+
+/** When the title cannot be whole, the chips may take at most this share of the line. */
+const val VERSION_CHIPS_MAX_SHARE = 0.4f
+
+/**
+ * R352 (FR-R352-1) — the title takes its space first. [variants] are the chip groups the fold allows, largest first
+ * (`shown` named chips and their measured width; the last names none and is *+N* alone). The first group that fits
+ * beside the whole title wins. When the whole title does not fit beside even *+N*, the title truncates and the chips
+ * keep the largest group within [VERSION_CHIPS_MAX_SHARE] of the line (*+N* alone if none is).
+ */
+fun fitVersions(titleNatural: Int, gap: Int, variants: List<Pair<Int, Int>>, available: Int): VersionFit {
+    if (variants.isEmpty()) return VersionFit(0, minOf(titleNatural, available))
+    variants.firstOrNull { (_, w) -> titleNatural + gap + w <= available }?.let { (k, _) -> return VersionFit(k, titleNatural) }
+    val budget = (available * VERSION_CHIPS_MAX_SHARE).toInt()
+    val (k, w) = variants.firstOrNull { (_, w) -> gap + w <= budget } ?: variants.last()
+    return VersionFit(k, (available - gap - w).coerceAtLeast(0))
+}
+
+/**
+ * R352 (FR-R352-1) — a song's title followed by its version chips on one line, the title first: it keeps its natural
+ * width when it can and the chips fold (fewer named, the rest in *+N*) to the space left — see [fitVersions]. R344's
+ * own fold (two on a phone, three on a computer, [fold] when given) is the most it names. [title] is one line of text
+ * that ellipsizes when it is given less than its width.
+ */
+@Composable
+fun TitleWithVersions(keys: List<String>, modifier: Modifier = Modifier, gap: androidx.compose.ui.unit.Dp = 8.dp, fold: Int? = null, title: @Composable () -> Unit) {
+    val most = fold ?: if (isDesktopLayout) VERSION_FOLD_DESKTOP else VERSION_FOLD_PHONE
+    val known = foldVersions(keys, Int.MAX_VALUE).all
+    if (known.isEmpty()) { androidx.compose.foundation.layout.Box(modifier) { title() }; return }
+    val top = minOf(most, known.size)
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
+        val gapPx = gap.roundToPx()
+        val loose = androidx.compose.ui.unit.Constraints()
+        val titleM = subcompose("title") { androidx.compose.foundation.layout.Box { title() } }.first()
+        val natural = titleM.maxIntrinsicWidth(constraints.maxHeight.takeIf { constraints.hasBoundedHeight } ?: androidx.compose.ui.unit.Constraints.Infinity)
+        val groups = (top downTo 0).map { k -> k to subcompose("chips-$k") { VersionChips(keys, fold = k) }.first().measure(loose) }
+        val available = if (constraints.hasBoundedWidth) constraints.maxWidth else natural + gapPx + groups.first().second.width
+        val fit = fitVersions(natural, gapPx, groups.map { (k, p) -> k to p.width }, available)
+        val chips = groups.first { it.first == fit.shown }.second
+        val titleP = titleM.measure(androidx.compose.ui.unit.Constraints(maxWidth = fit.titleWidth.coerceAtLeast(0)))
+        val h = maxOf(titleP.height, chips.height)
+        val w = (titleP.width + gapPx + chips.width).coerceIn(constraints.minWidth, available.coerceAtLeast(constraints.minWidth))
+        layout(w, h) {
+            titleP.place(0, (h - titleP.height) / 2)
+            chips.place(titleP.width + gapPx, (h - chips.height) / 2)
+        }
+    }
+}

@@ -118,9 +118,13 @@ fun AppBar(
     val items = navItems ?: listOf(
         str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"),
     )
-    val barGradient = remember {
+    // R352 (FR-R352-3) — the vignette follows the theme: black on a dark one (unchanged), the page's own colour on a
+    // light one. A fixed black drew a grey band across Daylight's top bar.
+    val light = colors.isLight
+    val pageColor = colors.background
+    val barGradient = remember(light, pageColor) {
         Brush.verticalGradient(
-            0f to Color(0x8C000000),
+            0f to (if (light) pageColor.copy(alpha = 0.55f) else Color(0x8C000000)),
             1f to Color.Transparent,
         )
     }

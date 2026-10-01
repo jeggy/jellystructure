@@ -589,12 +589,15 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
             val up = st.upNext
             item(key = "up-h") {
                 Column(Modifier.padding(horizontal = if (panel) 0.dp else hPad)) {
-                    val left = (cur.durationMs ?: 0L) - st.positionMs + up.sumOf { it.durationMs ?: 0L }
+                    // R352 (FR-R352-5) — the line under *Up next* counts the rows under it, and their lengths. It used to
+                    // add the playing song (*4 songs* over three rows). Nothing up next: no heading, no line.
+                    if (up.isEmpty()) return@Column
+                    val left = up.sumOf { it.durationMs ?: 0L }
                     if (panel) PanelHeading(str("music.up_next")) else MusicSectionHeader(str("music.up_next"))
                     Row(Modifier.padding(horizontal = if (panel) 18.dp else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // One song is "1 song", not "1 songs" (the last song of a queue on a speaker, 2026-09-30).
                         val leftText = fmtTotal(left.coerceAtLeast(0L))
-                        Text(if (up.isEmpty()) songsCount(1) + " · " + str("ab.left", mapOf("t" to leftText)) else str("music.queue_left", mapOf("n" to (up.size + 1).toString(), "t" to leftText)), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                        Text(if (up.size == 1) songsCount(1) + " · " + str("ab.left", mapOf("t" to leftText)) else str("music.queue_left", mapOf("n" to up.size.toString(), "t" to leftText)), color = if (panel) colors.textDim else colors.textSecondary, fontSize = if (panel) 11.5.sp else 12.5.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                         if (up.isNotEmpty()) Text(str("music.clear_queue"), color = colors.accentSecondary, fontSize = if (panel) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
                             modifier = Modifier.tap { up.indices.reversed().forEach { MusicPlayback.remove(st.index + 1 + it) } }.padding(vertical = if (panel) 4.dp else 8.dp))
                     }
@@ -665,9 +668,9 @@ private fun QueuePanelRow(t: MusicTrackItem, now: Boolean, onPlay: () -> Unit, o
         MusicCover(t.imageUrl, t.album ?: t.title, Modifier.size(38.dp), corner = 6.dp, requestedWidth = 120, wordmarkSize = 7)
         Column(Modifier.weight(1f)) {
             // R344 — the queue panel is not a TrackRow; its chips are placed here (three then +N, the desktop's fold).
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (t.versions.isNotEmpty()) VersionChips(t.versions, Modifier.padding(start = 8.dp))
+            // R352 (FR-R352-1) — the title first: in a 300 dp panel the chips used to take the line and leave *C…*.
+            TitleWithVersions(t.versions, gap = 8.dp) {
+                Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(listOf(artistLine(t), fmtLen(t.durationMs)).filter { it.isNotBlank() }.joinToString(" · "), color = colors.textDim, fontSize = 11.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

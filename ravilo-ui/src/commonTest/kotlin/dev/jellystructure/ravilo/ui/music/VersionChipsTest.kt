@@ -95,4 +95,32 @@ class VersionChipsTest {
             assertTrue(worst >= 4.5, "worst chip contrast $worst")
         }
     }
+
+    // ── R352 (FR-R352-1) — the title takes its space first ──
+
+    /** Three named + nothing, two + "+1", one + "+2", "+3": widths a desktop row measures. */
+    private val groups = listOf(3 to 150, 2 to 110, 1 to 70, 0 to 24)
+
+    @Test
+    fun a_short_title_keeps_its_width_and_every_chip_that_fits() {
+        assertEquals(VersionFit(3, 80), fitVersions(80, 8, groups, 300))
+        assertEquals(VersionFit(2, 80), fitVersions(80, 8, groups, 200), "three do not fit beside it: two and +1")
+        assertEquals(VersionFit(0, 80), fitVersions(80, 8, groups, 120), "only +3 fits beside the whole title")
+    }
+
+    @Test
+    fun a_long_title_truncates_and_the_chips_keep_at_most_their_share() {
+        // The 300 dp queue panel: about 180 dp for title + chips, the title alone wider than that.
+        val fit = fitVersions(400, 8, groups, 180)
+        assertEquals(0, fit.shown, "40 % of 180 is 72: +3 alone (24 + 8) fits, one chip (70 + 8) does not")
+        assertEquals(180 - 8 - 24, fit.titleWidth)
+        assertEquals(VersionFit(2, 300 - 8 - 110), fitVersions(600, 8, groups, 300), "a wide row keeps two named chips and +1")
+    }
+
+    @Test
+    fun the_title_is_never_left_with_nothing_while_it_fits_beside_plus_n() {
+        // The bug: the chips were measured first and the title got 0 px.
+        val fit = fitVersions(90, 8, groups, 130)
+        assertTrue(fit.titleWidth == 90)
+    }
 }

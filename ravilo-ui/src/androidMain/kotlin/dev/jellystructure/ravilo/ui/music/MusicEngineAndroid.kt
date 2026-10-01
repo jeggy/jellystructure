@@ -406,7 +406,9 @@ actual object MusicEngine {
         q.restore(tracks, index)
         failed = false; ended = false
         parkedPositionMs = positionMs.coerceAtLeast(0L)
-        publish()
+        // R352 (FR-R352-4) — what was loaded is now the last-played record (*Stop casting* brings the speaker's queue
+        // back through here; it used to leave the record at the song from before the cast).
+        publish(); save()
     }
 
     actual fun togglePlay() { if (_state.value.playing) pause() else play() }

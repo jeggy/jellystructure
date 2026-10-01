@@ -75,6 +75,7 @@ object MusicCast {
                 _linked.value = nowLinked
                 holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || !st.loaded || st.ended || st.failed)
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
+                if (nowLinked) follow(st)
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
                 // join with nothing playing here (FR-R324-2's second remote).
                 if (link != CastLinkState.CONNECTED) awaitNewLink = false
@@ -99,6 +100,25 @@ object MusicCast {
     }
 
     private fun remember(tracks: List<MusicTrackItem>) { tracks.forEach { known[it.id] = it } }
+
+    // R352 (FR-R352-4) — the device's last-played record follows what the speaker plays: saved when the song changes,
+    // when it pauses, and at most every 15 s while it plays. Without it a relaunch after a cast (or after quitting while
+    // casting) restored the song from before the hand-over.
+    private var followedItem: String? = null
+    private var followedPlaying = false
+    private var followedAt: kotlin.time.TimeMark? = null
+
+    private fun follow(st: CastRemoteStatus) {
+        val due = st.itemId != followedItem || (followedPlaying && !st.playing) ||
+            (followedAt?.elapsedNow()?.inWholeMilliseconds ?: Long.MAX_VALUE) >= FOLLOW_SAVE_MS
+        if (!due) return
+        val s = state(st)
+        if (s.queue.isEmpty() || s.index < 0) return
+        val uid = dev.jellystructure.ravilo.ui.screens.MultiTokenStore.getActive()?.userId ?: return
+        followedItem = st.itemId; followedPlaying = st.playing; followedAt = kotlin.time.TimeSource.Monotonic.markNow()
+        MusicQueueStore.save(MusicQueueSnapshot(uid, s.queue, s.index, st.positionMs, context))
+    }
+    private const val FOLLOW_SAVE_MS = 15_000L
 
     /** The receiver's snapshot as the screens' [MusicPlayerState]. */
     fun state(st: CastRemoteStatus): MusicPlayerState {
