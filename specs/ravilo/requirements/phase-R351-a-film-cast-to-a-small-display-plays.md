@@ -224,3 +224,47 @@ checked against a live Jellyfin** (no prod access in this build): the `VideoAudi
 `TranscodingMaxAudioChannels` exists as a second guard. **Needs:** a deploy, then a film cast to the Nest Hub — the
 Mac's `ravilo.log` `ticket` line should carry `MaxAudioChannels=2` (or `TranscodingMaxAudioChannels=2`) and Jellyfin's
 session should show 2 audio channels; the stue TV (ch=6) should show 6 for the same file.
+
+## Amendment (2026-10-02, final re-test) — the next-up card is up for two seconds
+
+**Seen in the final Mac + Nest Hub re-test (production `v1.48-62-g23c34ae4`).** A *Shuffle* cast of a series to the
+hub (the episode's E-AC-3 5.1 converted to 720p stereo HLS), seeked to about 50 s before the end. The receiver's first
+`nextup` message (`nextup_secs` 6) arrived about two seconds before `finished END_OF_STREAM`; the end of the stream
+then loaded the next entry after two of the six ticks. The Mac's remote never showed *Play in N*.
+
+**Why.** Not the converted stream. The episode's credits marker sits **1.8 s before the end of the file** (a
+`heuristic` marker: the ffmpeg pass looks for black + silence in the last 180 s and found the final fade to black; the
+season's other episodes have the same shape, 1.3–1.8 s before the end). The receiver puts its card up at the credits
+marker whenever the marker is in the back half of the title, else 20 s before the end — so a marker in the last
+seconds put the card up later than the 20 s fallback would have, with no room for its countdown. A direct-play cast of
+the same episode (the stue TV, the bedroom TV) does exactly the same; the file's own length matched the stream's
+(probed: format, video and audio all 35:28, so the converted stream's duration was not the cause). The sender's pills
+mirror the receiver's `nextup` messages; there were two, so the pills were up for two seconds.
+
+**FR-R351-13 — The receiver's card always has its whole countdown before the end.** The card goes up at the credits
+marker when it is a trusted one (the shared `trustedCreditsStartMs`: positive, inside the duration, in the back half),
+else 20 s before the end — and **never later than the countdown (`skip_secs`) plus 2 s before the end**. A marker with
+room for the countdown is unchanged. The rule is one pure function in `:shared` (`nextUpStartMs`), unit-tested. The
+receiver's log channel says when the card went up (`nextup at <pos>ms of <dur>ms (credits <ms>)`).
+
+**Not changed.** The TV app's own player: its card waits on the last frame until the countdown ends (it does not
+advance on the end of the file while the card is up), so a late marker costs it nothing. The credits heuristic itself
+(a marker on the final fade is the detection's own problem; a later phase can drop a heuristic marker in the last few
+seconds at scan time).
+
+### Build notes (2026-10-02, final re-test amendment)
+
+Built 2026-10-02, not deployed, not device-tested. `shared/.../tv/NextUpTrigger.kt` (`nextUpStartMs`,
+`NEXT_UP_FALLBACK_MS`, `NEXT_UP_END_MARGIN_MS`); `Receiver.onTime` uses it and notes the moment on the log channel.
+
+**Verified:** `NextUpTriggerTest` (6: a marker in the last seconds leaves room for 6 and 8 s countdowns, a marker with
+room is kept, exactly at the cap, no or untrusted marker → 20 s, a countdown longer than the fallback, unknown
+duration, a clip shorter than the countdown); `:shared:desktopTest`; `:ravilo-cast:jsBrowserProductionWebpack`. The
+cause was read from the production database (the episode's `credits` row, source `heuristic`) and an ffprobe of the
+file.
+
+**Re-test (needs the receiver deployed — it is served by the backend):** Mac → a series → cast to the Nest Hub →
+*Shuffle* → seek to about 50 s before the end. The hub's card shows *Starts in 6 s* about 8 s before the end and counts
+6 → 1 before the next entry loads; the Mac's remote shows *Play in 6s … 1s* with *Watch credits* the whole time; the
+Mac's `ravilo.log` carries `cast: Køkken hub · nextup at …ms of …ms (credits …)`. The same on the bedroom TV (direct
+play, `ch6`). An episode whose credits marker is a minute before the end still gets its card at the marker.

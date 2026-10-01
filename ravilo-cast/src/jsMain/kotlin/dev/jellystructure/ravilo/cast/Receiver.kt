@@ -20,6 +20,7 @@ import dev.jellystructure.shared.tv.receiverSelectedAudio
 import dev.jellystructure.shared.tv.receiverSelectedSub
 import dev.jellystructure.shared.tv.receiverSubPick
 import dev.jellystructure.shared.tv.receiverSubtitles
+import dev.jellystructure.shared.tv.nextUpStartMs
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.StreamTicket
@@ -699,9 +700,11 @@ private class Receiver {
             lastProgressAt = now
             GlobalScope.launch { runCatching { api?.reportProgress(data.itemId, positionMs, paused) } }
         }
-        // Next-up card near the end (the receiver owns the countdown; the phone mirrors it).
-        val creditsAt = ep?.creditsStartMs?.takeIf { it > durationMs / 2 } ?: (durationMs - 20_000L)
-        if (nextUpJob == null && durationMs > 0 && positionMs >= creditsAt && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) {
+        // Next-up card near the end (the receiver owns the countdown; the phone mirrors it). R351 (FR-R351-13) — the
+        // credits marker or 20 s before the end, but never so late that the countdown cannot finish before the end.
+        val nextUpAt = nextUpStartMs(durationMs, ep?.creditsStartMs, config?.skipSecs ?: 6)
+        if (nextUpJob == null && nextUpAt != null && positionMs >= nextUpAt && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) {
+            note("nextup at ${positionMs}ms of ${durationMs}ms (credits ${ep?.creditsStartMs ?: "none"})")
             startNextUp()
         }
     }
