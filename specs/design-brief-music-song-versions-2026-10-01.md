@@ -1,7 +1,7 @@
 # Design brief — a song's version: Live, Remix, Instrumental, Edit …
 
 **Date:** 2026-10-01 · **For:** the design project (Cosmos) that owns `design/app/` (`album.html`, `library.html`,
-`metadata.html`, `index.html`) · **Status:** brief; the owner answered §G on 2026-10-01 (one question still open, Q0), round-1 directions wanted on the badge (Q1) · **Source:** the household's
+`metadata.html`, `index.html`) · **Status:** brief; the owner answered §G on 2026-10-01; round-1 directions wanted on the badge (Q1) · **Source:** the household's
 music library on 2026-10-01 (read-only), MusicBrainz, and `research-reports/music-lyrics-that-do-not-belong-2026-10-01.md`.
 
 > Owner, 2026-10-01: *"I would like to have support for adding types of music, like Live, Remix, Instrumental …
@@ -29,9 +29,10 @@ mockup can be drawn at true weight. **No spec is written for this yet** (owner):
 
 1. **Nine version types** (§B). A song has **zero, one or many**: *Live + Acoustic*, *Remix + Edit*, *Demo +
    Instrumental*. **A normal song has no version** and shows nothing.
-2. **Instrumental** — an instrumental version of a sung song. Whether a piece that was never sung (an intro, a
-   prelude) carries the same type is **still open** (§G Q0); the brief draws both under one badge with a detail line
-   that tells them apart (§D1) until the owner decides.
+2. **Instrumental** is an instrumental version of a sung song — nothing else (owner). A piece that was never sung
+   (an intro, a prelude) is a normal song and has **no version**. MusicBrainz agrees: it records the version as a
+   performance marked `instrumental`, and a never-sung piece as an ordinary performance of a work with no words
+   (`zxx`) — 13 such songs here, none marked. Such a piece still never gets lyrics (§D5).
 3. **Found automatically wherever possible** (MusicBrainz first, then the title), **and managed by hand** — the
    owner's own choice always wins and is kept across runs, as genres and JS tags are.
    **A change spreads only along a direct link** (owner): two songs share a version only when MusicBrainz says they
@@ -47,27 +48,27 @@ mockup can be drawn at true weight. **No spec is written for this yet** (owner):
 
 ## B. The nine types
 
-How many songs in the library would get each type automatically today (487 songs; **206 get at least one**):
+How many songs in the library would get each type automatically today (487 songs; **193 get at least one**):
 
 | Type | Means | Found from | Songs |
 |---|---|---|---|
-| **Live** | recorded at a concert | MusicBrainz (`live` on the recording's performance) · title *live* | 114 |
+| **Live** | recorded at a concert (and every Session) | MusicBrainz (`live` on the recording's performance) · title *live* | 116 |
 | **Demo** | an early, unfinished recording | MusicBrainz (`demo`) · title *demo* | 28 |
 | **Remix** | someone re-made the recording (*… remix*, *… mix*, *reinterpretation*) | MusicBrainz (a *remix of* relationship, a remixer) · title | 25 |
-| **Instrumental** | no singing: a version of a sung song, or a piece never sung | MusicBrainz (every performance `instrumental`, or a work with no words) · title *instrumental*, *karaoke* | 25 |
+| **Instrumental** | a sung song without the voice | MusicBrainz (every performance of the recording marked `instrumental`) · title *instrumental*, *karaoke* | 12 |
 | **Cover** | one artist playing another artist's song | MusicBrainz (`cover`) | 20 |
 | **Acoustic** | played unplugged | title *acoustic*, *unplugged* | 10 |
 | **Edit** | the same recording made shorter or longer (*radio edit*, *extended*, *single edit*) | title *edit*, *extended* | 8 |
 | **Alternate version** | a different take or arrangement of the same song | title *alternate*, *alternative version* | 7 |
 | **Session** | recorded live in a studio for radio, TV or a website | title *session*, *Radio 2*-style | 4 |
 
-Common combinations today: *Live* alone 100 · *Remix* 18 · *Demo* 17 · *Instrumental* 14 · *Cover* 11 · *Cover +
-Live* 8 · *Demo + Instrumental* 8 · *Remix + Edit* 6. Stand-ins for the mockup:
+Common combinations today: *Live* alone 100 · *Remix* 18 · *Demo* 17 · *Cover* 11 · *Cover + Live* 8 · *Demo +
+Instrumental* 8 · *Remix + Edit* 6 · *Live + Session* 3. Stand-ins for the mockup:
 
 - *Salt on the Window* (no version) · *Salt on the Window (live at the harbour, 2011)* — Live
 - *Northern Line (Lighthouse Keepers remix) (extended)* — Remix + Edit
 - *Fog Bank* on a box set — Cover + Demo + Instrumental (an instrumental demo of a song another artist wrote)
-- *Prelude* — Instrumental (never sung)
+- *Prelude* — no version (never sung; never given lyrics)
 - *Low Tide (acoustic, radio session)* — Acoustic + Session
 
 ## C. Where it is stored (recommendation)
@@ -91,8 +92,8 @@ and a type you remove stays removed, as an unticked genre does. Writing a copy i
   from (*MusicBrainz* · *the title* · *you*). Unticking an automatic one is kept (*removed by you*), with *Back to
   automatic* on that song. The panel names the other copies — only the same MusicBrainz recording: *the same recording is also on 2 other
   albums — the change applies there too*. Ticking *Session* ticks *Live* with it.
-- **Instrumental's detail line:** *Instrumental version of {song}* (linking to the sung song when it is in the
-  library) or *An instrumental piece*.
+- **Instrumental's detail line:** *Instrumental version of {song}*, linking to the sung song when it is in the
+  library. A never-sung piece shows no chip; its lyrics mark says *No words — MusicBrainz*.
 - **Many songs at once:** select rows → *Set version…* (add / remove a type on all of them).
 - Album header: a quiet summary when the album is mostly one kind (*12 of 14 songs live*) — designer's call.
 
@@ -118,7 +119,8 @@ earns its place; it is the doorway to the filter.
 
 ### D5. Dashboard — one row in 285's grammar
 
-**Lyrics on an instrumental** — *These songs are instrumental, but have lyrics beside them.* Count today: **10**
+**Lyrics on an instrumental** — *These songs have no singing, but have lyrics beside them* (an Instrumental
+version, or a piece MusicBrainz says has no words). Count today: **10**
 (nine instrumental demos on one box set, one B-side titled *(instrumental)*). The action: **Remove the lyrics** — a
 button, pressed by the owner, never run on its own (only sidecars jellystructure wrote; the song is then never given
 lyrics again). A second, quieter action, also only by hand: *Tell LRCLIB it is instrumental*. Opens Library →
@@ -141,14 +143,14 @@ Nothing for the viewer in round 1.
 
 *Version* · *Live* · *Demo* · *Remix* · *Instrumental* · *Cover* · *Acoustic* · *Edit* · *Alternate version* ·
 *Session* · *No version* · *Set version…* · *from MusicBrainz* · *from the title* · *set by you* · *removed by you*
-· *Back to automatic* · *Instrumental version of {song}* · *An instrumental piece* · *also on {n} other albums — the
+· *Back to automatic* · *Instrumental version of {song}* · *No words — MusicBrainz* · *also on {n} other albums — the
 change applies there too* · *Lyrics on an instrumental* · *Remove the lyrics*.
 
 ## G. Questions
 
 | # | Question | Answer |
 |---|---|---|
-| Q0 | A piece that was never sung (an intro, a prelude): the same *Instrumental* type, a type of its own, or no type? | **open** — the owner's |
+| Q0 | A piece that was never sung (an intro, a prelude) | **no version** (owner) — it is not Instrumental; MusicBrainz agrees |
 | Q1 | The badge: a text chip per type, a coloured dot, one combined chip, …? | **the designer's** — directions wanted |
 | Q2 | Where the editor opens | **the song's side panel** (owner) |
 | Q3 | A fixed list, or can the owner add types? | **fixed for now** (owner); colour and meaning editable |
