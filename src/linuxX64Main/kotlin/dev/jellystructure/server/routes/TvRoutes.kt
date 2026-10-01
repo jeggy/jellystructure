@@ -579,7 +579,7 @@ fun Route.tvRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "ids required")); return@get
         }
         val ids = raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        val result: Map<String, CardPlayState> = withContinueEpisodes(detailService.getPlaystate(device, ids), ids, homeFeedService.continueEpisodes(device))
+        val result: Map<String, CardPlayState> = playstateAnswer(device.jellyfinUserId, detailService.getPlaystate(device, ids), ids, homeFeedService.continueEpisodes(device))
         call.respond(result)
     }
 
@@ -1450,6 +1450,26 @@ internal fun themeFieldError(req: ViewerSettingsRequest): String? = when {
     req.themeLight != null && !dev.jellystructure.shared.tv.RaviloThemes.isLight(req.themeLight) -> "theme_light: '${req.themeLight}' is not a light theme"
     req.themeDark != null && !dev.jellystructure.shared.tv.RaviloThemes.isDark(req.themeDark) -> "theme_dark: '${req.themeDark}' is not a dark theme"
     else -> null
+}
+
+/**
+ * The `/tv/playstate` answer: the cached playstate with the series' Continue pointers laid over it. R343 (FR-R343-13) —
+ * a Start over hold (the episode unwatched at its position, the series' Continue pointer on it) wins over both caches
+ * until its write-back has been refreshed.
+ */
+internal fun playstateAnswer(
+    userId: String,
+    playstate: Map<String, CardPlayState>,
+    askedIds: List<String>,
+    continueEpisodes: Map<String, String>,
+    nowMs: Long = dev.jellystructure.tv.StartOverHolds.clockMs(),
+): Map<String, CardPlayState> {
+    val held = dev.jellystructure.tv.StartOverHolds
+    return withContinueEpisodes(
+        held.overlay(userId, playstate, askedIds, nowMs),
+        askedIds,
+        continueEpisodes + held.continueEpisodes(userId, nowMs),
+    )
 }
 
 /**

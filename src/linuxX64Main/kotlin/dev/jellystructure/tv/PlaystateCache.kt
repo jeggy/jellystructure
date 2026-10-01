@@ -169,7 +169,9 @@ object PlaystateCache {
             fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, whole)
         }.orEmpty()
         if (extra.isNotEmpty()) cycleIds += whole.size
-        val got = ps + extra
+        // R343 (FR-R343-13) — a cleared Start over episode reads as the server is about to write it, not as Jellyfin's
+        // own session wrote it back a moment ago (watched); neither the cache nor the push may say otherwise.
+        val got = StartOverHolds.overlay(device.jellyfinUserId, ps + extra)
         // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
         data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + got))
         // Phase 269 — a first (cold) map says nothing about what changed; after that, any id now played

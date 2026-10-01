@@ -457,8 +457,8 @@ class PlaybackService(
             // R343 (FR-R343-11) — a cleared Start over: the write-back, then exactly what the played route refreshes
             // (the clear's own hook), in place of the stop's ordinary refresh below.
             if (ok && w.startOverUnplayed) {
-                writeStartOverUnplayed(jellyfinBase, token, w.device, w.jellyfinId, w.positionMs)
-                afterStartOverWriteBack(w.device, w.jellyfinId)
+                val written = writeStartOverUnplayed(jellyfinBase, token, w.device, w.jellyfinId, w.positionMs)
+                afterStartOverWriteBack(w.device, w.jellyfinId, written)
                 return true
             }
             // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
@@ -724,6 +724,7 @@ class PlaybackService(
         }
         // R343 (FR-R343-4) — a Start over past 5 %: clear the series in the background (never awaited here).
         maybeStartOverClear(device, jellyfinId, positionMs)
+        StartOverHolds.move(device.jellyfinUserId, jellyfinId, positionMs)   // FR-R343-13 — only if a hold stands
         // Phase 219 (FR-219-2) — queued and retried by the writer; the route answers at once.
         val w = writer
         if (w != null) { w.enqueueProgress(device, jellyfinId, positionMs, isPaused); return }
@@ -761,7 +762,13 @@ class PlaybackService(
         val startOverUnplayed = cleared && !playbackFinished(decision.reportMs, plan?.durationMs ?: 0L, plan?.creditsStartMs)
         // R343 (FR-R343-11) — a page read the moment the player closes sees the episode as it is about to be, not the
         // watched flag Jellyfin's own stop is about to write back.
-        if (startOverUnplayed) patchUnwatched(device, jellyfinId, decision.reportMs, plan?.durationMs ?: 0L)
+        if (startOverUnplayed) {
+            patchUnwatched(device, jellyfinId, decision.reportMs, plan?.durationMs ?: 0L)
+            plan?.startOverSeriesId?.let { StartOverHolds.hold(device.jellyfinUserId, it, jellyfinId, decision.reportMs, plan.durationMs) }
+        } else {
+            // FR-R343-13 — a Start over that finished its episode: Jellyfin's own word (watched) stands from now.
+            StartOverHolds.release(device.jellyfinUserId, jellyfinId)
+        }
         releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = startOverUnplayed)
         if (decision.markPlayed) runInBackground("R347 tick item=$jellyfinId") { mark(device, jellyfinId, watched = true) }
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
@@ -803,11 +810,16 @@ class PlaybackService(
         val key = PlaybackKey(device.deviceId, jellyfinId)
         val scope = backgroundScope
         var seriesId = ""
+        var durationMs = 0L
         val work: suspend () -> Unit = {
-            runCatching { setPlayed(device, seriesId, played = false) }
+            val clearedOk = runCatching { setPlayed(device, seriesId, played = false) }
                 .onFailure { Logger.warn("Start over: clear failed for series=$seriesId: ${it.message}", "tv") }
+                .isSuccess
             // The live position, not the trigger's: a heartbeat may have moved on while the fan-out ran.
             val live = playbackTracker.tracked().firstOrNull { it.device.deviceId == device.deviceId && it.jellyfinId == jellyfinId }?.positionMs ?: positionMs
+            // R343 (FR-R343-13) — from here until the stop's write-back has been refreshed, the server says this
+            // episode is unwatched at its position, whatever Jellyfin's own session writes back meanwhile.
+            if (clearedOk) StartOverHolds.hold(device.jellyfinUserId, seriesId, jellyfinId, live, durationMs)
             runCatching { writeProgressNow(device, jellyfinId, live) }
                 .onFailure { Logger.warn("Start over: position write-back failed for item=$jellyfinId: ${it.message}", "tv") }
             runCatching { onSeriesCleared?.invoke(device, seriesId) }
@@ -820,6 +832,7 @@ class PlaybackService(
             if (key in clearLatched || positionMs < startOverThresholdMs(plan.durationMs)) return
             clearLatched.add(key)
             seriesId = sid
+            durationMs = plan.durationMs
             scope?.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) { work() }?.also { clearJobs[key] = it }
         }
         Logger.info("Start over: device=${device.deviceId} item=$jellyfinId at ${positionMs}ms — clearing series=$seriesId for this viewer (R343)", "tv")
@@ -844,22 +857,27 @@ class PlaybackService(
      * episode was watched) and its stop writes that back over the clear; this write comes after it. A failure
      * only logs — the episode then shows as watched, which a viewer can untick.
      */
-    private suspend fun writeStartOverUnplayed(jellyfinBase: String, token: String, device: DeviceData, jellyfinId: String, positionMs: Long) {
+    private suspend fun writeStartOverUnplayed(jellyfinBase: String, token: String, device: DeviceData, jellyfinId: String, positionMs: Long): Boolean =
         runCatching { jellyfinClient.setUserData(jellyfinBase, token, device.jellyfinUserId, jellyfinId, played = false, positionTicks = positionMs * TICKS_PER_MS) }
             .onSuccess { Logger.info("Start over: item=$jellyfinId left unwatched at ${positionMs}ms after its stop (R343)", "tv") }
             .onFailure { Logger.warn("Start over: unwatched write-back failed for item=$jellyfinId: ${it.message}", "tv") }
             .onSuccess { patchUnwatched(device, jellyfinId, positionMs, factsOf(jellyfinId)?.durationMs ?: 0L) }
-    }
+            .isSuccess
 
     /**
      * R343 (FR-R343-11) — after the write-back, the clear's own invalidation (the series re-read, the Continue list
      * rebuilt, `playstate_changed` + `home_changed` pushed): what the played route runs. On a failed write-back it still
      * runs, so the page shows Jellyfin's honest state.
      */
-    private suspend fun afterStartOverWriteBack(device: DeviceData, jellyfinId: String) {
-        val hook = onSeriesCleared ?: onStopLanded ?: return
-        runCatching { hook(device, jellyfinId) }
+    private suspend fun afterStartOverWriteBack(device: DeviceData, jellyfinId: String, written: Boolean = true) {
+        // R343 (FR-R343-13) — the hold ends once Jellyfin says the same (after the refresh, so the rebuilt Continue
+        // list and the pushes already carry it); a failed write-back ends it first, so the refresh shows Jellyfin's
+        // honest state.
+        if (!written) StartOverHolds.release(device.jellyfinUserId, jellyfinId)
+        val hook = onSeriesCleared ?: onStopLanded
+        if (hook != null) runCatching { hook(device, jellyfinId) }
             .onFailure { Logger.warn("Start over: refresh after the write-back failed for item=$jellyfinId: ${it.message}", "tv") }
+        StartOverHolds.release(device.jellyfinUserId, jellyfinId)
     }
 
     /** R343 (FR-R343-11) — the cache entry for an episode left unwatched at [positionMs] (its favourite flag kept). */
@@ -920,8 +938,8 @@ class PlaybackService(
             releaseEncodes(jellyfinBase, token, identity, jellyfinPlaySessionId)
         }
         if (startOverUnplayed) {
-            writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
-            afterStartOverWriteBack(device, jellyfinId)
+            val written = writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
+            afterStartOverWriteBack(device, jellyfinId, written)
         }
     }
 
@@ -970,6 +988,7 @@ class PlaybackService(
 
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
         requireVisible(device, jellyfinId)
+        StartOverHolds.release(device.jellyfinUserId, jellyfinId)   // R343 (FR-R343-13) — the viewer's word wins
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         if (watched) {
@@ -1009,6 +1028,9 @@ class PlaybackService(
             val mi = mediaStore.resolveByJellyfinId(itemId)
             if (mi != null && mi.episodes.isNotEmpty()) mi.episodes.mapNotNull { it.jellyfinId } else listOf(itemId)
         }.filterNot { it.startsWith('/') }.distinct()
+        // R343 (FR-R343-13) — a viewer's own tick or untick ends any Start over hold on these episodes (the clear's
+        // own call comes before its hold is set).
+        targets.forEach { StartOverHolds.release(uid, it) }
 
         coroutineScope {
             targets.map { id ->

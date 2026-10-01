@@ -547,3 +547,38 @@ sink, once the stop has landed and the write-back succeeded, writes it again and
 `SeriesDetailStore` re-reads its playstate on `home_changed` while its page is in the stack (R351). Unit-tested:
 `PlaystateCacheTest` (the patch). Not reproduced here: the 30 s window depends on Jellyfin's timing; acceptance is a
 Start over on the Mac or the Pixel 9 against a deployed backend, stopping after 5 % and checking the page at once.
+
+### Amendment (2026-10-02, second) — the first frame back
+
+**Seen in the Mac re-test (backend `v1.48-54-gfefa9049`, FR-R343-11/12 deployed):** for about 3 s after leaving a Start
+over play, the series page read *Resume · S01E02* with the kicker *S01E02 · …*, then settled on *Resume · S01E01*.
+
+**Why.** The kicker names the episode in the series' Continue pointer (`continue_episode_id`, R306), which comes from
+the server's Continue list. FR-R343-11 patched the episode's own playstate at the stop, but not that pointer: while
+Jellyfin held the stale *watched* flag (its own session writes it back — on the stop, and possibly on progress reports
+too), any Continue rebuild or playstate cycle took Jellyfin's NextUp (S01E02) and its *watched* S01E01, and the
+playstate cycle pushed that to the open page (R352's `playstate_changed` patch). The page then showed it until the
+write-back's refresh replaced it.
+
+**FR-R343-13 — The server holds what it is about to write.** From the moment the clear has run until the stop's
+write-back has been refreshed, the server holds the playing episode as *unwatched at its position* for that viewer
+(`StartOverHolds`): set by the clear, moved by each progress report, set again by the stop at the stop's position,
+released after the write-back's refresh (or before it when the write-back failed, so the refresh shows Jellyfin's
+honest state), at once when the stop was itself a finish, and by the viewer's own tick or untick. A hold lapses on its
+own ten minutes after its last update. While it stands:
+
+- `/tv/playstate` answers the episode unwatched at the held position, and the series' `continue_episode_id` names it;
+- the background playstate cycle never writes or pushes Jellyfin's stale *watched* for it.
+
+This is server state, not a client guess: no client derives anything, and a page reading at any moment (during
+playback, before the stop has arrived, or between Jellyfin's stop and our write-back) gets the right answer on its
+first frame back. The Home Continue row's own card is not held (it is corrected by the refresh, as before).
+
+**Built 2026-10-02 (FR-R343-13), not deployed, not device-tested.** `tv/StartOverHolds.kt`; set in
+`PlaybackService.maybeStartOverClear` (after a successful clear), moved in `reportProgress`, set or released in
+`stopPlayback`, released in `afterStartOverWriteBack`, `mark` and `setPlayed`; applied in `PlaystateCache.refreshOne`
+and in the playstate route (`playstateAnswer` in `TvRoutes.kt`). `StartOverHoldsTest` (5): no hold = the caches; a
+hold answers the episode unwatched and points the series at it, keeping the series' favourite; a held episode missing
+from the cache is answered when asked; progress moves it and a release ends it; it is per viewer and lapses after ten
+minutes. **Re-test:** a finished series → *Start over · S01E01* → play past 5 % (a minute or two) → Back: the first
+frame reads *Resume · S01E01* and the kicker *S01E01 · …*, and stays so.
