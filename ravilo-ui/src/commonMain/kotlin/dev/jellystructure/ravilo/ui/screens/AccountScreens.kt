@@ -87,8 +87,9 @@ private fun AccountField(
     onMoveDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(label, color = colors.textSecondary, fontSize = 12.sp)
+    // R349 (FR-R349-2) — the label and the box come into view together while the field has focus.
+    Column(modifier = Modifier.fillMaxWidth().keepInViewWhileFocused()) {
+        Text(label, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.testTag("$tag-label"))
         Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
@@ -128,9 +129,14 @@ private fun AccountField(
 
 /** Generic "‹ Back" header row, matching SettingsScreen's own. */
 @Composable
-private fun AccountScreenHeader(title: String, onBack: () -> Unit) {
+private fun AccountScreenHeader(
+    title: String,
+    onBack: () -> Unit,
+    backFR: FocusRequester = remember { FocusRequester() },
+    // R349 (FR-R349-3) — where Down from Back goes (null: Compose's own search, as before).
+    onBackDown: (() -> Unit)? = null,
+) {
     val colors = RaviloTheme.colors
-    val backFR = remember { FocusRequester() }
     var backFocused by rememberFocusVisual()
     LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
     Text(
@@ -139,7 +145,7 @@ private fun AccountScreenHeader(title: String, onBack: () -> Unit) {
         fontSize = 13.sp,
         modifier = Modifier
             .then(if (backFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
-            .dpadFocusable(focusRequester = backFR, onFocused = { backFocused = true }, onBlurred = { backFocused = false }, onSelect = onBack)
+            .dpadFocusable(focusRequester = backFR, onFocused = { backFocused = true }, onBlurred = { backFocused = false }, onSelect = onBack, onDown = onBackDown)
             .padding(horizontal = 6.dp, vertical = 4.dp),
     )
     Spacer(Modifier.height(8.dp))
@@ -148,7 +154,7 @@ private fun AccountScreenHeader(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false) {
+private fun AccountActionButton(label: String, focusRequester: FocusRequester, onSelect: () -> Unit, danger: Boolean = false, onUp: (() -> Unit)? = null, tag: String? = null) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
     val textColor = if (danger) DangerRed else colors.text
@@ -157,7 +163,8 @@ private fun AccountActionButton(label: String, focusRequester: FocusRequester, o
             .fillMaxWidth()
             .background(if (focused) colors.surfaceVariant else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
             .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp)) else Modifier)
-            .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
+            .then(if (tag != null) Modifier.testTag(tag) else Modifier)
+            .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect, onUp = onUp)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -201,6 +208,7 @@ fun ChangePasswordScreen(
     val newFR = remember { FocusRequester() }
     val repFR = remember { FocusRequester() }
     val saveFR = remember { FocusRequester() }
+    val backFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { curFR.requestFocus() } }
 
     fun submit() {
@@ -239,14 +247,15 @@ fun ChangePasswordScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // R349 (FR-R349-1) — scrolls inside what the system keyboard leaves; top-aligned as before.
+    KeyboardAwareForm(modifier = Modifier.background(colors.background), centered = false) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = if (compact) 20.dp else 80.dp, vertical = 40.dp)
                 .width(if (compact) androidx.compose.ui.unit.Dp.Unspecified else 420.dp),
         ) {
-            AccountScreenHeader(str("account.pw_title"), onBack)
+            AccountScreenHeader(str("account.pw_title"), onBack, backFR = backFR, onBackDown = { curFR.requestFocus() })
             Text(str("account.pw_sub"), color = colors.textSecondary, fontSize = 14.sp)
             Spacer(Modifier.height(28.dp))
 
@@ -254,7 +263,7 @@ fun ChangePasswordScreen(
             AccountField(
                 label = str("account.pw_cur"), value = current, onValueChange = { if (!busy) current = it },
                 focusRequester = curFR, tag = ChangePasswordTags.CURRENT, imeAction = ImeAction.Next, onImeAction = { newFR.requestFocus() },
-                masked = true, onMoveDown = { newFR.requestFocus() },
+                masked = true, onMoveUp = { backFR.requestFocus() }, onMoveDown = { newFR.requestFocus() },
             )
             Spacer(Modifier.height(14.dp))
             AccountField(
@@ -281,6 +290,8 @@ fun ChangePasswordScreen(
                 label = if (state is PwState.Busy) str("account.pw_busy") else str("account.pw_save"),
                 focusRequester = saveFR,
                 onSelect = { if (!busy) submit() },
+                onUp = { repFR.requestFocus() },
+                tag = ChangePasswordTags.SAVE,
             )
         }
     }

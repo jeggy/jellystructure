@@ -157,10 +157,8 @@ fun LoginScreen(
         store.signIn(username, password)
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize().background(colors.background),
-        contentAlignment = Alignment.Center,
-    ) {
+    // R349 (FR-R349-1) — scrolls inside what the system keyboard leaves; centred as before while it all fits.
+    KeyboardAwareForm(modifier = Modifier.background(colors.background)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(40.dp).width(420.dp)) {
             Text("Ravilo", color = colors.accent, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
             Spacer(Modifier.height(16.dp))
@@ -228,10 +226,17 @@ fun LoginScreen(
                         focusRequester = signInFR,
                         enabled = !locked,
                         onSelect = { submit() },
+                        // R349 (FR-R349-3) — explicit, whatever the height the keyboard leaves.
+                        onUp = { passwordFR.requestFocus() },
+                        onDown = { changeServerFR.requestFocus() },
                     )
 
                     Spacer(Modifier.height(18.dp))
-                    ChangeServerLink(focusRequester = changeServerFR, onSelect = onChangeServer)
+                    ChangeServerLink(
+                        focusRequester = changeServerFR,
+                        onSelect = onChangeServer,
+                        onUp = { if (locked) passwordFR.requestFocus() else signInFR.requestFocus() },
+                    )
                     Spacer(Modifier.height(4.dp))
                     ServerIndicator(store.baseUrl)
 
@@ -267,8 +272,9 @@ private fun LoginField(
     onMoveDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(label, color = colors.textSecondary, fontSize = 12.sp)
+    // R349 (FR-R349-2) — the label and the box come into view together while the field has focus.
+    Column(modifier = Modifier.fillMaxWidth().keepInViewWhileFocused()) {
+        Text(label, color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.testTag("$tag-label"))
         Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
@@ -324,31 +330,41 @@ private fun ServerIndicator(baseUrl: String) {
     Text(host, color = colors.textSecondary, fontSize = 11.sp)
 }
 
+// R349 (FR-R349-5) — focused, the link is a filled pill like Sign in (accent, onAccent text, focus ring); a colour
+// change alone read as unfocused from a sofa. Down from here stays put: it is the last focusable on the screen.
 @Composable
-private fun ChangeServerLink(focusRequester: FocusRequester, onSelect: () -> Unit) {
+private fun ChangeServerLink(focusRequester: FocusRequester, onSelect: () -> Unit, onUp: () -> Unit) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
-            .dpadFocusable(focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = onSelect)
-            .padding(vertical = 6.dp, horizontal = 10.dp),
+            .testTag(LoginTags.CHANGE_SERVER)
+            .then(if (focused) Modifier.background(colors.accent, shape).border(2.dp, colors.focusRing, shape) else Modifier)
+            .dpadFocusable(
+                focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false },
+                onSelect = onSelect, onUp = onUp, onDown = {},
+            )
+            .padding(vertical = 6.dp, horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             str("login.change_server"),
-            color = if (focused) colors.accent else colors.textSecondary,
+            color = if (focused) colors.onAccent else colors.textSecondary,
             fontSize = 12.sp,
+            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }
 
 @Composable
-private fun LoginButton(label: String, focusRequester: FocusRequester, enabled: Boolean, onSelect: () -> Unit) {
+private fun LoginButton(label: String, focusRequester: FocusRequester, enabled: Boolean, onSelect: () -> Unit, onUp: () -> Unit, onDown: () -> Unit) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(LoginTags.SIGN_IN)
             .background(
                 if (!enabled) colors.surfaceVariant else if (focused) colors.accent else colors.surfaceVariant,
                 RoundedCornerShape(10.dp),
@@ -361,6 +377,8 @@ private fun LoginButton(label: String, focusRequester: FocusRequester, enabled: 
                         onFocused = { focused = true },
                         onBlurred = { focused = false },
                         onSelect = onSelect,
+                        onUp = onUp,
+                        onDown = onDown,
                     )
                 } else Modifier
             )

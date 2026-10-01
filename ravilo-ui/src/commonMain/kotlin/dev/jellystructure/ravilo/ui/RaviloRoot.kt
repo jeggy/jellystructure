@@ -103,11 +103,15 @@ fun RaviloRoot() {
     var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }
     // R340 (FR-R340-3) — "Everyone on this TV" lands here, and the setup screen says what just happened.
     var signedOutEveryone by remember { mutableStateOf(false) }
+    // R349 (FR-R349-8) — the address in use before *Wrong server?*, offered back in the setup field (kept in memory
+    // only; *Everyone on this TV* forgets it on purpose, R340).
+    var lastAddress by remember { mutableStateOf("") }
 
     if (baseUrl.isEmpty()) {
         androidx.compose.foundation.layout.Box {
             ServerSetupScreen(
                 notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
+                initialAddress = lastAddress,
                 onUrlSaved = { url ->
                     saveBaseUrl(url)
                     signedOutEveryone = false
@@ -130,10 +134,12 @@ fun RaviloRoot() {
     RaviloApp(
         apiClient = apiClient,
         onChangeServer = {
+            lastAddress = baseUrl
             saveBaseUrl("")
             baseUrl = ""
         },
         onSignedOutEveryone = {
+            lastAddress = ""
             saveBaseUrl("")
             signedOutEveryone = true
             baseUrl = ""
