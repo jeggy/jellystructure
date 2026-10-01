@@ -48,4 +48,14 @@ data class EpisodePlayContext(
     val logoUrl: String? = null,
     val logoInk: String? = null,
     val seriesName: String? = null,
+    /** R343 (FR-R343-2/4) — this play is a finished series' *Start over*: from 0:00, and the server clears
+     *  the series once 5 % of it has played. Only the first episode carries it; auto-advance never does. */
+    val startOver: Boolean = false,
 )
+
+/**
+ * R343 (FR-R343-5) — the next-up card is announcing the next entry of a shuffle, not the next episode in
+ * order: its kicker reads *UP NEXT · SHUFFLED*. Provided by the app around the player (a CompositionLocal,
+ * not a `PlayerScreen` parameter — that composable sits at ART's register ceiling, see PlayerBookkeeping).
+ */
+val LocalShuffledNextUp = androidx.compose.runtime.staticCompositionLocalOf { false }

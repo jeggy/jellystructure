@@ -177,6 +177,8 @@ class TvEventBus(private val scope: CoroutineScope) {
         kicker: String? = null, seriesName: String? = null, logoUrl: String? = null, logoInk: String? = null,
         // R264 (FR-R264-3) — Skip Intro and the next-up card for a player that fetches nothing.
         segments: dev.jellystructure.shared.tv.TvSegmentMarkers? = null, next: dev.jellystructure.media.NextEpisode? = null,
+        // R343 (FR-R343-8) — [next] is a shuffle's next entry; written only when true (additive).
+        shuffled: Boolean = false,
     ) {
         scope.launch {
             val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
@@ -194,6 +196,7 @@ class TvEventBus(private val scope: CoroutineScope) {
                     next.title?.let { append(""","next_title":${it.jsonEsc()}""") }
                     next.kicker?.let { append(""","next_kicker":${it.jsonEsc()}""") }
                 }
+                if (shuffled) append(""","shuffled":true""")
                 append("}")
             }
             runCatching { target.send(Frame.Text(msg)) }

@@ -60,6 +60,21 @@ fun CheckGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, descri
         drawPath(p, tint, style = Stroke(width = px(0.14f), cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 
+/** R343 (FR-R343-5) — two crossing arrows, the series page's Shuffle pill and chip. */
+@Composable
+fun ShuffleGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =
+    GlyphCanvas(glyphSize, description, modifier) {
+        val w = px(0.10f)
+        val stroke = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val a = Path().apply { moveTo(size.width * 0.10f, size.height * 0.30f); lineTo(size.width * 0.36f, size.height * 0.30f); lineTo(size.width * 0.62f, size.height * 0.70f); lineTo(size.width * 0.86f, size.height * 0.70f) }
+        val b = Path().apply { moveTo(size.width * 0.10f, size.height * 0.70f); lineTo(size.width * 0.36f, size.height * 0.70f); lineTo(size.width * 0.62f, size.height * 0.30f); lineTo(size.width * 0.86f, size.height * 0.30f) }
+        drawPath(a, tint, style = stroke)
+        drawPath(b, tint, style = stroke)
+        // arrowheads on both right ends
+        line(tint, at(0.86f, 0.30f), at(0.74f, 0.19f), w); line(tint, at(0.86f, 0.30f), at(0.74f, 0.41f), w)
+        line(tint, at(0.86f, 0.70f), at(0.74f, 0.59f), w); line(tint, at(0.86f, 0.70f), at(0.74f, 0.81f), w)
+    }
+
 /** ✕ */
 @Composable
 fun CloseGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =

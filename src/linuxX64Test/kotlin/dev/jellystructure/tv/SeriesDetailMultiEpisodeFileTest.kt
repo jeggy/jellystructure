@@ -82,6 +82,27 @@ class SeriesDetailMultiEpisodeFileTest {
     }
 
     @Test
+    fun `R346 — Specials are listed after the last season`() = runBlocking {
+        val special = episode(1, "/tv/Show/Specials/S00E01.mkv", "jf-sp").copy(seasonNumber = 0)
+        val s2 = episode(1, "/tv/Show/Season 2/S02E01.mkv", "jf-s2").copy(seasonNumber = 2)
+        mediaStore.addOrUpdate(series(threeInOne + special + s2))
+        assertEquals(listOf(1, 2, 0), service.getSeriesDetail(device, "series-jf")!!.seasons.map { it.index })
+    }
+
+    @Test
+    fun `R343 — Shuffle on 9 counted episodes — rows not files — specials and unplayable rows out`() = runBlocking {
+        // 7 rows (3 + 3 + 1) in season 1: not enough; a special and a row with no Jellyfin item do not count.
+        val special = episode(1, "/tv/Show/Specials/S00E01.mkv", "jf-sp").copy(seasonNumber = 0)
+        val noItem = episode(8, "/tv/Show/Season 1/S01E08.mkv", null)
+        mediaStore.addOrUpdate(series(threeInOne + special + noItem))
+        val few = service.getSeriesDetail(device, "series-jf")!!
+        assertEquals(false, few.shuffle); assertEquals(true, few.startOver)
+        val two = listOf(episode(8, "/tv/Show/Season 1/S01E08.mkv", "jf-d"), episode(9, "/tv/Show/Season 1/S01E09.mkv", "jf-e"))
+        mediaStore.addOrUpdate(series(threeInOne + two))
+        assertEquals(true, service.getSeriesDetail(device, "series-jf")!!.shuffle)
+    }
+
+    @Test
     fun `two files claiming one id still reach the client as one`() = runBlocking {
         // The auto-play-next loop fix's own case: a second FILE carrying episode 7's id.
         val copy = episode(8, "/tv/Show/Season 1/copy/S01E07.mkv", "jf-c")
@@ -95,20 +116,20 @@ class SeriesDetailMultiEpisodeFileTest {
     fun `a resume on a multi-episode file names the whole range`() {
         val span = resolvedEpisodeSpan(series(threeInOne), "jf-a", season = 1, episode = 1)
         assertEquals(EpisodeSpan(1, 1, 3), span)
-        assertEquals("S1E1–3", span.code)
+        assertEquals("S01E01–E03", span.code)
     }
 
     @Test
     fun `R199's fallback numbering carries the range too`() {
         val span = resolvedEpisodeSpan(series(threeInOne), "jf-b", season = null, episode = null)
-        assertEquals("S1E4–6", span.code)
+        assertEquals("S01E04–E06", span.code)
     }
 
     @Test
     fun `a lone episode carries no range end`() {
         val span = resolvedEpisodeSpan(series(threeInOne), "jf-c", season = 1, episode = 7)
         assertNull(span.episodeEnd)
-        assertEquals("S1E7", span.code)
+        assertEquals("S01E07", span.code)
     }
 
     @Test

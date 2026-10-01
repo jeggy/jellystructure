@@ -214,10 +214,10 @@ class TvApiClient(
 
     // ─── Playback ────────────────────────────────────────────────────────────
 
-    suspend fun startPlayback(itemId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null, audioLanguage: String? = null, audioVariant: String? = null): StreamTicket {
+    suspend fun startPlayback(itemId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null, audioLanguage: String? = null, audioVariant: String? = null, shuffle: Boolean = false, startOver: Boolean = false): StreamTicket {
         val r = client.post("$baseUrl/api/tv/playback/start") {
             auth()
-            jsonBody(json.encodeToString(PlaybackStartRequest(itemId, capabilities, startPositionMs, audioLanguage, audioVariant)))
+            jsonBody(json.encodeToString(PlaybackStartRequest(itemId, capabilities, startPositionMs, audioLanguage, audioVariant, startOver = startOver, shuffle = shuffle)))
         }
         r.assertSuccess()
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
@@ -536,10 +536,10 @@ class TvApiClient(
      *  409 with a body = a shared screen already playing for a different user (FR-236-3) — the caller
      *  reads [TvApiError.Http.body] for that user's name via [ScreenStatus], same shape as any other
      *  status the device already reports. */
-    suspend fun remotePlay(deviceId: String, jellyfinItemId: String, startPositionMs: Long = 0) {
+    suspend fun remotePlay(deviceId: String, jellyfinItemId: String, startPositionMs: Long = 0, shuffleQueue: List<String> = emptyList(), startOver: Boolean = false) {
         val r = client.post("$baseUrl/api/remote/play") {
             auth()
-            jsonBody(json.encodeToString(RemotePlayRequest(deviceId, jellyfinItemId, startPositionMs)))
+            jsonBody(json.encodeToString(RemotePlayRequest(deviceId, jellyfinItemId, startPositionMs, shuffleQueue, startOver)))
         }
         r.assertSuccess()
     }

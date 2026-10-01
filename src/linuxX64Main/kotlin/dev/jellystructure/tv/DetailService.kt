@@ -132,7 +132,10 @@ class DetailService(
         // S02 folder). The redundant copies stay in the workbench (see the `duplicate_episode` triage
         // type); the playback API only ever exposes ONE entry per (season, episode).
         val uniqueEpisodes = DuplicateEpisodes.deduped(item.episodes)
-        val seasonNums = uniqueEpisodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
+        // R346 (FR-R346-2) — Specials last: 1, 2, …, then 0. Installed apps open on the first unwatched
+        // season and play the first unwatched episode in list order, so a Specials folder first made them
+        // open on Specials and play a special. `Season.index` still says 0; only the order moves.
+        val seasonNums = uniqueEpisodes.map { it.seasonNumber ?: 0 }.distinct().sortedWith(compareBy({ it == 0 }, { it }))
 
         // Phase 185 (FR-185-5/FR-185-9) — one DB lookup for the whole series (not per episode); the
         // note itself is per FILE, resolved fresh per episode below since each episode may be a
@@ -230,6 +233,10 @@ class DetailService(
             genres            = GenreCatalog.displayNames(item, lang, withTitle = true),  // R221 / Phase 271
             genreIds          = GenreCatalog.displayIds(item),
             about             = aboutOf(item),  // R325
+            // R343 (FR-R343-10) — this server clears a finished series on Start over (PlaybackService), and
+            // offers Shuffle on 9+ counted episodes: rows, not files (R346's episodes that count).
+            startOver         = true,
+            shuffle           = countedEpisodes(uniqueEpisodes) >= SHUFFLE_MIN_EPISODES,
         )
     }
 
@@ -375,6 +382,17 @@ class DetailService(
 
 private const val CAST_LIMIT = 20
 private const val TMDB_PROFILE_W185 = "https://image.tmdb.org/t/p/w185"
+
+/** R343 (FR-R343-5, owner) — Shuffle is offered on a series of this many counted episodes or more. */
+internal const val SHUFFLE_MIN_EPISODES = 9
+
+/**
+ * R346 (FR-R346-1) / R343 — the episodes that count: a season of 1 or more (specials are season 0, and an
+ * episode with no season number is filed there too) with a Jellyfin item (a catalog row without one can
+ * never be played or ticked). Counted per row, so a three-part file is three episodes (R343 dev review 10).
+ */
+internal fun countedEpisodes(episodes: List<Episode>): Int =
+    episodes.count { (it.seasonNumber ?: 0) >= 1 && it.jellyfinId != null }
 
 /**
  * Map jellystructure's own scanned cast + crew (sourced from TMDB at scan time) to the TV [Person]

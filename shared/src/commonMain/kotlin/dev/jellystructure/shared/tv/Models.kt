@@ -745,6 +745,12 @@ data class SeriesDetail(
     @SerialName("genre_ids") val genreIds: List<Int?> = emptyList(),
     /** R325 (FR-R325-1/2) — the About section's facts; absent on an older server. */
     val about: AboutFacts? = null,
+    /** R343 (FR-R343-10) — this server clears a finished series on *Start over* (FR-R343-4). Absent (an
+     *  older server) ⇒ the app labels the button *Play · S01E01* and plays the same episode. */
+    @SerialName("start_over") val startOver: Boolean = false,
+    /** R343 (FR-R343-5/10) — offer Shuffle: the series has 9 or more counted episodes (seasons ≥ 1 with a
+     *  Jellyfin item; specials out) and this server leaves no resume point behind a shuffled play. */
+    val shuffle: Boolean = false,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
@@ -834,6 +840,9 @@ data class PlayItemEnvelope(
     @SerialName("next_id") val nextId: String? = null,
     @SerialName("next_title") val nextTitle: String? = null,
     @SerialName("next_kicker") val nextKicker: String? = null,
+    /** R343 (FR-R343-8) — [nextId] is the next entry of a shuffle, not the next episode in order: the
+     *  next-up card says *UP NEXT · SHUFFLED*. Additive; a receiver older than this shows *UP NEXT*. */
+    val shuffled: Boolean = false,
 )
 
 /** R155 — a remote playstate command (stop/pause/unpause/seek) for whichever item is currently
@@ -1323,6 +1332,14 @@ data class PlaybackStartRequest(
      *  client-local (R181); the request carries the answer, not the store. Absent = Jellyfin's default. */
     @SerialName("audio_language") val audioLanguage: String? = null,
     @SerialName("audio_variant") val audioVariant: String? = null,
+    /** R343 (FR-R343-4) — this start is a finished series' *Start over*: once 5 % of the item has played the
+     *  server marks every episode of its series unwatched for this viewer and writes the live position
+     *  back. Sent only from *Start over* (and a cast of it). Additive; an older server ignores it. */
+    @SerialName("start_over") val startOver: Boolean = false,
+    /** R343 (FR-R343-5, dev review item 9) — this start is one entry of a shuffle: an unfinished stop
+     *  restores the position the episode had before, so a shuffled play leaves no resume point. Not
+     *  music's `shuffle` (286), which reorders a queue. Additive; an older server ignores it. */
+    val shuffle: Boolean = false,
 )
 
 @Serializable
@@ -1604,6 +1621,12 @@ data class RemotePlayRequest(
     @SerialName("device_id") val deviceId: String,
     @SerialName("jellyfin_item_id") val jellyfinItemId: String,
     @SerialName("start_position_ms") val startPositionMs: Long = 0,
+    /** R343 (FR-R343-8, dev review item 11) — a shuffle carried to a screen: the entries to play AFTER this
+     *  one, in play order. The server keeps them for that screen's session and names the head as the push's
+     *  next. Empty = an ordinary play (and, from the screen itself, the next step of a running shuffle). */
+    @SerialName("shuffle_queue") val shuffleQueue: List<String> = emptyList(),
+    /** R343 (FR-R343-8) — this play is a *Start over*; the screen's start for it counts as one. */
+    @SerialName("start_over") val startOver: Boolean = false,
 )
 
 /** Phase 236 (FR-236-3) — every command `POST /api/remote/command` accepts. Only the fields a given

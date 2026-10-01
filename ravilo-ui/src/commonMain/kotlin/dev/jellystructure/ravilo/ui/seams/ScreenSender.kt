@@ -57,9 +57,10 @@ class ScreenSender(private val api: TvApiClient) : CastSender {
 
     /** FR-R265-6 — starts a title on the linked screen. Not part of [CastSender] (that shape is
      *  Chromecast's hand-off-code [load]) — [CastController] calls this for a screen row directly. */
-    fun playItem(itemId: String, startPositionMs: Long = 0) {
+    fun playItem(itemId: String, startPositionMs: Long = 0, shuffleQueue: List<String> = emptyList(), startOver: Boolean = false) {
         val id = deviceId ?: return
-        scope.launch { runCatching { api.remotePlay(id, itemId, startPositionMs) } }
+        // R343 (FR-R343-8) — a shuffle's remaining order and Start over ride the play request; the server keeps them.
+        scope.launch { runCatching { api.remotePlay(id, itemId, startPositionMs, shuffleQueue, startOver) } }
     }
 
     private suspend fun runSocket(id: String) {

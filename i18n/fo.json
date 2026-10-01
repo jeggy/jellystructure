@@ -296,6 +296,7 @@
     "text": "NÆSTI",
     "note": "R279 — was accent-stripped (`NAESTA`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
+  "player.up_next_shuffled": {"text": "NÆSTI · BLANDAÐ", "note": "R343 — draft Faroese."},
   "player.now_playing": "SPÆLIR NÚ",
   "player.watch_credits": "Síggj eftirtekstir",
   "player.play_in": "Spæl um {secs}s",
@@ -548,6 +549,9 @@
     "text": "{watched} av {total} pørtum sæddir",
     "note": "Draft Faroese — review before release."
   },
+  "detail.all_watched": {"text": "Allir {n} partar sæddir", "note": "R343 — draft Faroese; `partar` as in R288's lexicon (the spec's draft had `partarnir`)."},
+  "detail.start_over": "Byrja av nýggjum",
+  "detail.shuffle": "Blanda",
   "imdb.a11y": {
     "text": "IMDb {rating} av 10, {votes} atkvøður",
     "note": "Draft Faroese — review before release."

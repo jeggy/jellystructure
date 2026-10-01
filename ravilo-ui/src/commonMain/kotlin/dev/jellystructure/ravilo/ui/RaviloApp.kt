@@ -312,6 +312,15 @@ private sealed class Dest {
         val logoUrl: String? = null,
         val logoInk: String? = null,
         val seriesName: String? = null,
+        /** R343 (FR-R343-4) — this start is a finished series' Start over (only the first episode carries it). */
+        val startOver: Boolean = false,
+        /** R343 (FR-R343-5, dev review item 14) — the shuffle this entry belongs to, in play order, and its place
+         *  in it. Null = an ordinary play. Not saved: after a low-memory restore the shuffle ends with the entry. */
+        val shufflePlan: List<dev.jellystructure.ravilo.ui.screens.EpisodePlayContext>? = null,
+        val shuffleAt: Int = 0,
+        /** R343 — this entry is a shuffled one (from 0:00, no resume point left behind); true with a plan, and on
+         *  an entry restored from the resume record without one. */
+        val shuffled: Boolean = false,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -601,6 +610,9 @@ fun RaviloApp(
                     displayName = record.displayName.ifBlank { active.displayName },
                     seriesId = record.seriesId, originalLanguage = record.originalLanguage, posterUrl = record.posterUrl,
                     logoUrl = record.logoUrl, logoInk = record.logoInk, seriesName = record.seriesName,
+                    // R343 (dev review items 7 and 14) — the session restarts as it was: Start over still clears
+                    // at 5 %, a shuffled entry still leaves no resume point. The plan itself is not saved.
+                    startOver = record.startOver, shuffled = record.shuffle,
                 ))
             } else {
                 playerResume.clear()   // a record with nowhere to go (signed out, too old) is dropped, not kept
@@ -1221,10 +1233,16 @@ fun RaviloApp(
         // household with no way to move a playing title to the TV).
         CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
+            // R343 (FR-R343-8, dev review item 14) — a shuffled player hands over the REST of its plan (this entry
+            // first), not the season rail; Start over rides along while this session carries it.
+            val rest = d.shufflePlan?.drop(d.shuffleAt)
             castActive.cast(
                 itemId = d.itemId, title = d.title, kicker = d.kicker,
                 artUrl = resolveCastArt(apiClient.baseUrl, castArtFor(null, d.episodes?.getOrNull(d.currentEpIndex)?.stillUrls?.firstOrNull { it != null })),
-                positionMs = pos, episodes = castEpisodes(d.episodes), currentIndex = d.currentEpIndex, lang = lang,
+                positionMs = pos,
+                episodes = if (rest != null) castShuffle(rest) else castEpisodes(d.episodes),
+                currentIndex = if (rest != null) 0 else d.currentEpIndex, lang = lang,
+                episodesShuffled = rest != null, startOver = d.startOver,
             )
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
@@ -1908,25 +1926,24 @@ fun RaviloApp(
                             castActive.cast(
                                 itemId = ctx.episodeId, title = ctx.episodeTitle, kicker = ctx.kicker,
                                 artUrl = resolveCastArt(apiClient.baseUrl, ctx.episodes.getOrNull(ctx.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
-                                positionMs = null, episodes = castEpisodes(ctx.episodes), currentIndex = ctx.currentEpIndex, lang = lang,
+                                // R343 (FR-R343-8) — Start over rides the cast: from 0:00, and the clear happens on the TV's play.
+                                positionMs = if (ctx.startOver) 0L else null, episodes = castEpisodes(ctx.episodes), currentIndex = ctx.currentEpIndex, lang = lang,
+                                startOver = ctx.startOver,
                             )
                             push(Dest.CastRemote(dest.displayName))
-                        } else push(Dest.Player(
-                            itemId        = ctx.episodeId,
-                            title         = ctx.episodeTitle,
-                            kicker        = ctx.kicker,
-                            nextEpId      = ctx.nextEpId,
-                            nextEpLabel   = ctx.nextEpLabel,
-                            nextEpTitle   = ctx.nextEpTitle,
-                            displayName   = dest.displayName,
-                            episodes      = ctx.episodes,
-                            currentEpIndex = ctx.currentEpIndex,
-                            seriesId      = ctx.seriesId,
-                            logoUrl = ctx.logoUrl, logoInk = ctx.logoInk, seriesName = ctx.seriesName,  // R303 — the SERIES' logo, never an episode's
-                            originalLanguage = ctx.originalLanguage,
-                            segments      = ctx.segments,  // Phase 150
-                            posterUrl     = ctx.seriesPosterUrl,  // R194
-                        ))
+                        } else push(playerDestFor(ctx, dest.displayName))
+                    },
+                    // R343 (FR-R343-5/8) — Shuffle: the whole order, here or on the connected TV (which plays the same order).
+                    onShuffle = { plan ->
+                        val first = plan.first()
+                        if (castActive?.connected == true) {
+                            castActive.cast(
+                                itemId = first.episodeId, title = first.episodeTitle, kicker = first.kicker,
+                                artUrl = resolveCastArt(apiClient.baseUrl, first.episodes.getOrNull(first.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),
+                                positionMs = 0L, episodes = castShuffle(plan), currentIndex = 0, lang = lang, episodesShuffled = true,
+                            )
+                            push(Dest.CastRemote(dest.displayName))
+                        } else push(playerDestFor(first, dest.displayName, plan, 0))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
@@ -1953,8 +1970,14 @@ fun RaviloApp(
                 // the CURRENT episode's playhead (N episodes ⇒ N phantom "Now Playing" sessions on the
                 // Jellyfin dashboard, and trashed resume positions ⇒ wrong Continue Watching). Closing it
                 // on dispose cancels that heartbeat and reports a final stop for the episode we left.
-                val store = remember(dest.itemId) { PlayerStore(apiClient) }
+                // R347 — the stop's "finished" rule needs this episode's credits marker; R343 — Start over and a
+                // shuffled entry are this store's start flags (from 0:00; the server clears / restores).
+                val store = remember(dest.itemId) {
+                    PlayerStore(apiClient, creditsStartMs = dest.segments.creditsStartMs, startOver = dest.startOver, shuffle = dest.shuffled)
+                }
                 DisposableEffect(store) { onDispose { store.close() } }
+                // R343 (FR-R343-5) — the next-up card says *UP NEXT · SHUFFLED* while a shuffle has a next entry.
+                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null)) {
                 PlayerScreen(
                     itemId           = dest.itemId,
                     itemTitle        = dest.title,
@@ -1973,7 +1996,16 @@ fun RaviloApp(
                     store            = store,
                     // R292 — leaving the player on purpose drops the record: the next launch must not restore it.
                     onBack           = { playerResume.clear(); pop() },
-                    onNavigateToEpisode = { nextId ->
+                    onNavigateToEpisode = navigate@{ nextId ->
+                        // R343 (dev review item 14) — in a shuffle, the plan's next entry continues it (Next,
+                        // auto-advance, the card's Play). Any other id — a rail pick — leaves the shuffle and plays
+                        // on in that season's order, as below.
+                        val plan = dest.shufflePlan
+                        val planNext = plan?.getOrNull(dest.shuffleAt + 1)
+                        if (plan != null && planNext != null && planNext.episodeId == nextId) {
+                            replaceTop(playerDestFor(planNext, dest.displayName, plan, dest.shuffleAt + 1))
+                            return@navigate
+                        }
                         // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or
                         // `nextId` wasn't in it — the player had no way to know the navigation never
                         // happened, so its credits card re-armed on the next poll tick and re-requested
@@ -2009,6 +2041,7 @@ fun RaviloApp(
                         ))
                     },
                 )
+                } // CompositionLocalProvider (R343)
             }
 
             is Dest.CastRemote -> {
@@ -2518,3 +2551,42 @@ fun RaviloApp(
  *  `/api/tv/image/...` path must be absolute here (RemoteImage does this itself for on-screen art). */
 private fun resolveCastArt(baseUrl: String, url: String?): String? =
     url?.let { if (it.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$it" else it }
+
+/**
+ * The player destination for one series episode — the page's Play, a rail pick, Start over (R343, the context
+ * carries `startOver`) or one entry of a shuffle ([plan] in play order, [at] this entry's place in it).
+ */
+private fun playerDestFor(
+    ctx: dev.jellystructure.ravilo.ui.screens.EpisodePlayContext,
+    displayName: String,
+    plan: List<dev.jellystructure.ravilo.ui.screens.EpisodePlayContext>? = null,
+    at: Int = 0,
+): Dest.Player = Dest.Player(
+    itemId        = ctx.episodeId,
+    title         = ctx.episodeTitle,
+    kicker        = ctx.kicker,
+    nextEpId      = ctx.nextEpId,
+    nextEpLabel   = ctx.nextEpLabel,
+    nextEpTitle   = ctx.nextEpTitle,
+    displayName   = displayName,
+    episodes      = ctx.episodes,
+    currentEpIndex = ctx.currentEpIndex,
+    seriesId      = ctx.seriesId,
+    logoUrl = ctx.logoUrl, logoInk = ctx.logoInk, seriesName = ctx.seriesName,  // R303 — the SERIES' logo, never an episode's
+    originalLanguage = ctx.originalLanguage,
+    segments      = ctx.segments,  // Phase 150
+    posterUrl     = ctx.seriesPosterUrl,  // R194
+    startOver     = ctx.startOver,   // R343
+    shufflePlan   = plan, shuffleAt = at, shuffled = plan != null,   // R343
+)
+
+/** R343 (FR-R343-8) — a shuffle as the Chromecast's episode list, in play order: each entry its own id, title,
+ *  `Shuffle · S02E07` kicker, still and markers. */
+private fun castShuffle(plan: List<dev.jellystructure.ravilo.ui.screens.EpisodePlayContext>): List<dev.jellystructure.shared.tv.CastEpisode> =
+    plan.map { c ->
+        dev.jellystructure.shared.tv.CastEpisode(
+            id = c.episodeId, title = c.episodeTitle, kicker = c.kicker,
+            stillUrl = c.episodes.getOrNull(c.currentEpIndex)?.stillUrls?.firstOrNull { it != null },
+            introStartMs = c.segments.introStartMs, introEndMs = c.segments.introEndMs, creditsStartMs = c.segments.creditsStartMs,
+        )
+    }

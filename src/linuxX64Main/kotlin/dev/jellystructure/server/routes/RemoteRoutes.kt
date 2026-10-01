@@ -150,10 +150,18 @@ fun Route.remoteRoutes(
             // name, the film's or series' logo + ink) so neither the TV nor the receiver-only app fetches.
             val push = playPushResolver?.resolve(req.jellyfinItemId)
             val (kind, title) = push?.let { it.kind to it.title } ?: mediaStore.resolvePlayTarget(req.jellyfinItemId) ?: ("movie" to null)
+            // R343 (FR-R343-8, dev review item 11) — a shuffle carried to this screen: the server keeps the order,
+            // and the push's next is the queue's head (none after the last entry), named as nextEpisodeAfter names
+            // one. The screen's own Next posts the head back here, which advances the order; any other id ends it.
+            val carried = dev.jellystructure.tv.screenShuffles.onPlay(device.deviceId, req.jellyfinItemId, req.shuffleQueue, req.startOver)
+            val next = if (carried?.shuffled == true) carried.rest.firstOrNull()?.let { id ->
+                val n = mediaStore.resolvePlayPush(id)
+                dev.jellystructure.media.NextEpisode(jellyfinId = id, title = n?.title, kicker = n?.kicker)
+            } else push?.next
             tvEventBus.notifyPlayItem(
                 caller.jellyfinUserId, device.deviceId, req.jellyfinItemId, kind, title, req.startPositionMs, sessionUserId = caller.jellyfinUserId,
                 kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
-                segments = push?.segments, next = push?.next,
+                segments = push?.segments, next = next, shuffled = carried?.shuffled == true,
             )
             Logger.info("remote play: user=${caller.jellyfinUserId} device=${device.deviceId} item=${req.jellyfinItemId}", "remote")
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))

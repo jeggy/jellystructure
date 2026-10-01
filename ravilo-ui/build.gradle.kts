@@ -21,7 +21,12 @@ if (!desktopOnly) {
             sourceCompatibility = JavaVersion.VERSION_11
             targetCompatibility = JavaVersion.VERSION_11
         }
+        // R343 (FR-R343-9) — the Compose focus-path test renders the series page under Robolectric.
+        testOptions { unitTests { isIncludeAndroidResources = true } }
     }
+    // R343 — ui-test-manifest registers the empty activity createComposeRule() launches; debug only, never
+    // in a release build (the app ships the release variant of this library).
+    dependencies { add("debugImplementation", libs.androidx.compose.ui.test.manifest) }
 }
 
 kotlin {
@@ -111,6 +116,15 @@ kotlin {
                 implementation(libs.androidx.activity.compose) // BackHandler (PlatformBackHandler bug fix)
                 implementation(libs.play.services.cast.framework) // R245 — the Cast sender (CastContext, RemoteMediaClient, MediaRouteButton)
                 implementation(libs.androidx.mediarouter)         // R245 — MediaRouteButton / MediaTransferReceiver (Output Switcher)
+            }
+        }
+        // R343 (FR-R343-9) — the repo's first Compose UI test (SeriesDetailFocusTest): JVM-only, under
+        // Robolectric, in CI's existing `:ravilo-ui:testDebugUnitTest` step. Test-only: nothing ships.
+        if (!desktopOnly) sourceSets.getByName("androidUnitTest") {
+            dependencies {
+                implementation(libs.androidx.compose.ui.test.junit4)
+                implementation(libs.robolectric)
+                implementation("junit:junit:4.13.2")
             }
         }
         val desktopMain by getting {

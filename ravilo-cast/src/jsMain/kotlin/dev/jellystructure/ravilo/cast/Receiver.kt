@@ -253,6 +253,12 @@ private class Receiver {
         val restream = pendingRestream.also { pendingRestream = null }
         val t = if (restream != null) {
             runCatching { api.restream(data.itemId, restream.first, data.positionMs ?: positionMs, capabilities(), restream.second) }.getOrNull() ?: return null
+        } else if (data.episodesShuffled || data.startOver) {
+            // R343 (FR-R343-8) — a shuffled entry (every start of the list) and a Start over (the sender's first
+            // load only) say so on the start, from 0:00 or the handed-over position. A plain load is unchanged.
+            negotiate(api, data.itemId) {
+                api.startPlayback(data.itemId, capabilities(), startPositionMs = data.positionMs ?: 0L, shuffle = data.episodesShuffled, startOver = data.startOver)
+            } ?: return null
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         sessionOpen = true
@@ -690,7 +696,8 @@ private class Receiver {
     private fun startNextUp() {
         val next = nextEpisode() ?: return
         val secs = config?.skipSecs ?: 6
-        el("nu-k").textContent = ReceiverStrings.t("player.up_next"); el("nu-t").textContent = next.title
+        // R343 (FR-R343-8) — in a shuffle the next entry is not the next in order, and the card says so.
+        el("nu-k").textContent = ReceiverStrings.t(if (current?.episodesShuffled == true) "player.up_next_shuffled" else "player.up_next"); el("nu-t").textContent = next.title
         el("nextup").classList.add("on")
         nextUpJob = GlobalScope.launch {
             var left = secs
@@ -716,7 +723,8 @@ private class Receiver {
         val next = nextEpisode() ?: return
         nextUpJob?.cancel(); nextUpJob = null
         stopSession()
-        val data = d.copy(itemId = next.id, title = next.title, kicker = next.kicker, artUrl = next.stillUrl ?: d.artUrl, positionMs = null, currentIndex = d.currentIndex + 1, code = "")
+        // R343 — Start over belongs to the sender's first load only; the next episode is an ordinary play.
+        val data = d.copy(itemId = next.id, title = next.title, kicker = next.kicker, artUrl = next.stillUrl ?: d.artUrl, positionMs = null, currentIndex = d.currentIndex + 1, code = "", startOver = false)
         val req = js("new cast.framework.messages.LoadRequestData()")
         req.media = js("new cast.framework.messages.MediaInformation()")
         req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), data))

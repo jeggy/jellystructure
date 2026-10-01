@@ -75,7 +75,17 @@ internal class FailureLatch {
 // lost entirely; 60 heartbeat ticks × PROGRESS_INTERVAL_MS = 10 minutes.
 private const val QOE_REPORT_EVERY_N_TICKS = 60
 
-class PlayerStore(private val apiClient: TvApiClient) {
+class PlayerStore(
+    private val apiClient: TvApiClient,
+    /** R347 (FR-R347-1) — this item's credits marker, for the stop's "finished" rule (null = none). */
+    private val creditsStartMs: Long? = null,
+    /** R343 (FR-R343-4) — this start is *Start over*: sent as `start_over` on every start of this store's
+     *  item (a return from the background re-sends it; the server's clear is idempotent), from 0:00. */
+    val startOver: Boolean = false,
+    /** R343 (FR-R343-5, dev review item 9) — this entry is part of a shuffle: always from 0:00, sent as
+     *  `shuffle` so the server leaves no resume point behind an unfinished shuffled play. */
+    val shuffle: Boolean = false,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Bug fix: the stop must outlive the store. `scope` is cancelled by close() the moment the owner
@@ -204,7 +214,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
                         linkMbps = link.mbps,
                     )
                     lastCapabilities = capabilities   // R282 (FR-R282-5)
-                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startPositionMs, audioLanguage = audioLanguage, audioVariant = audioVariant)
+                    // R343 — a Start over or a shuffled entry starts at 0:00 (the client's position wins over
+                    // Jellyfin's on any server, so even an older one never resumes a shuffled episode); a
+                    // return from the background still carries its own position.
+                    val startAt = startPositionMs ?: (if (startOver || shuffle) 0L else null)
+                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startAt, audioLanguage = audioLanguage, audioVariant = audioVariant, shuffle = shuffle, startOver = startOver)
                     qoeLinkKind = link.kind
                     qoeLinkMbps = link.mbps
                     ticket
@@ -319,9 +333,10 @@ class PlayerStore(private val apiClient: TvApiClient) {
                 if (runCatching { apiClient.stopPlayback(itemId, positionMs, startupMs) }.isSuccess) break
                 if (attempt < 2) { delay(delayMs); delayMs *= 2 }
             }
-            // R142: finishing (≥90%) marks the item played so its tiles flip to ✓ and a series episode
-            // advances up-next — no manual toggle. Below threshold it stays in-progress (resume preserved).
-            if (durationMs > 0 && positionMs >= durationMs * 90 / 100) {
+            // R142: finishing marks the item played so its tiles flip to ✓ and a series episode advances
+            // up-next — no manual toggle. Below threshold it stays in-progress (resume preserved). R347
+            // (FR-R347-1) — finished is past 90 % or past the item's trusted credits marker.
+            if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, creditsStartMs)) {
                 runCatching { apiClient.markPlayed(itemId, watched = true) }
                 WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
             }

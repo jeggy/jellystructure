@@ -41,6 +41,10 @@ data class ResumeRecord(
     val nextEpLabel: String? = null,
     val nextEpTitle: String? = null,
     val displayName: String = "",
+    /** R343 (dev review item 7) — the session was a Start over: a return before 5 % still clears. */
+    val startOver: Boolean = false,
+    /** R343 (dev review item 14) — the session was a shuffled entry; the rest of the plan is not saved. */
+    val shuffle: Boolean = false,
 )
 
 /** Open question 2 (owner, 2026-09-24): under 30 minutes away ⇒ playing; longer ⇒ paused at the position. */

@@ -308,6 +308,10 @@
   "player.audio_subs": "Audio & Subs",
   "player.next": "Next",
   "player.up_next": "UP NEXT",
+  "player.up_next_shuffled": {
+    "text": "UP NEXT · SHUFFLED",
+    "note": "R343 — the next-up card's kicker during a series shuffle: the next episode is a random one, not the next in order. Upper case like player.up_next."
+  },
   "player.now_playing": "NOW PLAYING",
   "player.watch_credits": "Watch credits",
   "player.play_in": "Play in {secs}s",
@@ -601,6 +605,18 @@
   "detail.episodes_watched": {
     "text": "{watched} of {total} episodes watched",
     "note": "R279 — under a series' hero. Both numbers are plain integers."
+  },
+  "detail.all_watched": {
+    "text": "All {n} episodes watched",
+    "note": "R343 — a series' hero when every episode is watched, after a drawn ✓. {n} is a plain integer (specials not counted)."
+  },
+  "detail.start_over": {
+    "text": "Start over",
+    "note": "R343 — the primary button on a finished series, followed by ' · S01E01'. Same words as ab.start_over."
+  },
+  "detail.shuffle": {
+    "text": "Shuffle",
+    "note": "R343 — the Shuffle pill/chip on a series page, and the player's kicker 'Shuffle · S02E07'. Same word as music.shuffle."
   },
   "imdb.a11y": {
     "text": "IMDb {rating} out of 10, {votes} votes",

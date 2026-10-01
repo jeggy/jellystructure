@@ -77,6 +77,14 @@ data class CastLoadData(
     /** `off` · `all` · `one` */
     val repeat: String = "off",
     val shuffle: Boolean = false,
+    /** R343 (FR-R343-8) — [episodes] is a series shuffle in play order (not a season in order): every start
+     *  goes up as `shuffle`, and the next-up card says *UP NEXT · SHUFFLED*. Not [shuffle], which is music's
+     *  and reorders [tracks]. A receiver older than this field plays the list as it comes, which is the same
+     *  order. */
+    @SerialName("episodes_shuffled") val episodesShuffled: Boolean = false,
+    /** R343 (FR-R343-8) — the first start of this load is a *Start over* (FR-R343-4); the receiver's own
+     *  next loads drop it. */
+    @SerialName("start_over") val startOver: Boolean = false,
 )
 
 /** A track the receiver reports back so the phone's picker can render it (R180/R195 shape). */

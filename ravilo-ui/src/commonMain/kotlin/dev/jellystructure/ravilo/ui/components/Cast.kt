@@ -136,9 +136,14 @@ class CastController(
         itemId: String, title: String, kicker: String?, artUrl: String?, positionMs: Long?,
         episodes: List<CastEpisode> = emptyList(), currentIndex: Int = -1, lang: String = "en", subSize: Char = 'M',
         onError: (Throwable) -> Unit = {},
+        // R343 (FR-R343-8) — [episodes] is a series shuffle in play order (not a season in order), and/or this
+        // play is a finished series' Start over. A screen gets the entries after [currentIndex] as its queue.
+        episodesShuffled: Boolean = false,
+        startOver: Boolean = false,
     ) {
         if (sender.screen.link.value == CastLinkState.CONNECTED) {
-            sender.screen.playItem(itemId, positionMs ?: 0)
+            val queue = if (episodesShuffled) episodes.drop(currentIndex + 1).map { it.id } else emptyList()
+            sender.screen.playItem(itemId, positionMs ?: 0, shuffleQueue = queue, startOver = startOver)
             return
         }
         scope.launch {
@@ -151,6 +156,7 @@ class CastController(
                 deviceName = sender.deviceName.value,
                 receiverId = sender.status.value?.receiverId,
                 episodes = episodes, currentIndex = currentIndex, lang = lang, subSize = subSize.toString(),
+                episodesShuffled = episodesShuffled, startOver = startOver,   // R343 (FR-R343-8)
             ))
         }
     }

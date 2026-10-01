@@ -164,9 +164,10 @@ private const val ADVANCE_TIMEOUT_MS = 5_000L
 // title. A bogus marker (0, or one that belongs to a different episode inside a multi-episode file)
 // used to satisfy the credits check on the very first poll tick, so the next-episode countdown fired
 // at the START of every episode and the player hopped through a whole series in skipSecs-long steps —
-// reported as "it just gets stuck trying to play the next episode over and over". Below this fraction
-// of the duration the marker is ignored and the NEXTUP_AT_MS end-of-file heuristic is used instead.
-private const val CREDITS_MARKER_MIN_FRACTION = 0.5
+// reported as "it just gets stuck trying to play the next episode over and over". Below half of the
+// duration the marker is ignored and the NEXTUP_AT_MS end-of-file heuristic is used instead.
+// R347 (FR-R347-1) — that trust rule now lives in `:shared` (`trustedCreditsStartMs`), beside the one
+// "finished" rule (`playbackFinished`) the server's stop uses too.
 
 // R218 (FR-R218-2) — "no buffering presentation may appear before ~400ms of continuous waiting, for B,
 // C and D alike... a spinner that flashes for 200ms is itself a defect." Untested on a real TV per the
@@ -634,9 +635,11 @@ fun PlayerScreen(
             nextUpDismissed = true
             return
         }
-        // R142: a genuinely finished episode (≥90%) is marked played as we advance, so up-next stays
-        // correct; a manual skip mid-episode is not (it stays in-progress with its resume sliver).
-        if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
+        // R142: a genuinely finished episode is marked played as we advance, so up-next stays correct; a
+        // manual skip mid-episode is not (it stays in-progress with its resume sliver). R347 (FR-R347-3) —
+        // finished is past 90 % OR past a trusted credits marker: a short episode's card fires at its
+        // credits (often ~86 %), and the bare 90 % test left it unticked with a resume point there.
+        if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, currentSegments.creditsStartMs)) store.markWatched(itemId)
         // Latched BEFORE the call: see advanceRequestedForItemId — exactly one advance attempt per
         // episode, never a retry loop.
         bk.advanceRequestedForItemId = itemId
@@ -667,7 +670,7 @@ fun PlayerScreen(
     // any item with no next episode.
     fun skipCredits() {
         nextUpVisible = false
-        if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
+        if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, currentSegments.creditsStartMs)) store.markWatched(itemId)   // R347
         onBack()
     }
 
@@ -1135,9 +1138,7 @@ fun PlayerScreen(
                 // trusted — positive, inside the known duration, and in its back half (see
                 // CREDITS_MARKER_MIN_FRACTION). Anything else falls back to the end-of-file heuristic
                 // rather than declaring the episode finished seconds after it started.
-                val creditsStart = currentSegments.creditsStartMs?.takeIf {
-                    durationMs > 0 && it > 0 && it < durationMs && it >= (durationMs * CREDITS_MARKER_MIN_FRACTION).toLong()
-                }
+                val creditsStart = dev.jellystructure.shared.tv.trustedCreditsStartMs(currentSegments.creditsStartMs, durationMs)
                 val creditsReached = if (creditsStart != null) positionMs >= creditsStart
                     else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
                 val advanceAlreadyRequested = bk.advanceRequestedForItemId == currentItemId
@@ -1415,6 +1416,7 @@ fun PlayerScreen(
                 posterUrl = posterUrl, logoUrl = logoUrl, logoInk = logoInk, seriesName = seriesName,
                 nextEpId = nextEpisodeId, nextEpLabel = nextEpisodeLabel, nextEpTitle = nextEpisodeTitle,
                 displayName = resume.record?.displayName ?: "",
+                startOver = store.startOver, shuffle = store.shuffle,   // R343
             ))
             store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
         },
@@ -3345,7 +3347,8 @@ private fun NextUpCard(
 ) {
     // R182 (FR-RV-SKIP1-2) — everything below the thumbnail/ring differs by mode; the NEXT_EPISODE case
     // is exactly the pre-R182 card, unchanged. Never more than two buttons in any mode.
-    val kickerText = if (mode == CreditsCardMode.NEXT_EPISODE) str("player.up_next") else str("player.credits_kicker")
+    // R343 (FR-R343-5) — in a shuffle the next entry is not the next in order, and the card says so.
+    val kickerText = if (mode == CreditsCardMode.NEXT_EPISODE) str(if (LocalShuffledNextUp.current) "player.up_next_shuffled" else "player.up_next") else str("player.credits_kicker")
     val subLabel = if (mode == CreditsCardMode.NEXT_EPISODE) nextEpLabel else itemKicker
     val titleText = when (mode) {
         CreditsCardMode.NEXT_EPISODE -> nextEpTitle ?: str("detail.episode")

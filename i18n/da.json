@@ -296,6 +296,7 @@
     "text": "NÆSTE",
     "note": "R279 — was accent-stripped (`NAESTE`); replaced with ReceiverCore.kt's own shipped spelling of the same string."
   },
+  "player.up_next_shuffled": {"text": "NÆSTE · BLANDET", "note": "R343 — draft Danish."},
   "player.now_playing": "SPILLER NU",
   "player.watch_credits": "Se rulletekster",
   "player.play_in": "Afspil om {secs}s",
@@ -548,6 +549,9 @@
     "text": "{watched} af {total} afsnit set",
     "note": "Draft Danish — review before release."
   },
+  "detail.all_watched": {"text": "Alle {n} afsnit set", "note": "R343 — draft Danish."},
+  "detail.start_over": "Start forfra",
+  "detail.shuffle": "Bland",
   "imdb.a11y": {
     "text": "IMDb {rating} ud af 10, {votes} stemmer",
     "note": "Draft Danish — review before release."
