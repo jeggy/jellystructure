@@ -72,6 +72,37 @@ class MusicTvServiceTest {
         assertTrue(svc.home(onlyB).rows.none { it.key == "genre" })
     }
 
+    /** R344 (dev review 12) — `versions` on every song, from 292's shown set; `version_types` on the bootstrap. */
+    @Test
+    fun songs_carry_their_versions_and_home_carries_the_colours() = runBlocking {
+        store.putTracks(listOf(store.track("t-a1")!!.copy(recordingMbid = "r1", recordingState = dev.jellystructure.model.MusicRecording.AGREES)))
+        store.setChoices(listOf("rec:r1"), mapOf("session" to true, "live" to false), 5)
+        store.putVersionType("session", "#123456", null)
+        val tracks = svc.album(onlyA, "a1")!!.tracks
+        assertEquals(listOf("session"), tracks.single().versions, "a Session whose Live the owner removed goes alone")
+        assertEquals(emptyList(), svc.album(onlyA, "a2")!!.tracks.single().versions)
+        val types = svc.home(onlyA).versionTypes
+        assertEquals(9, types.size)
+        assertEquals("#123456", types.single { it.key == "session" }.color)
+        assertEquals("#f0795b", types.single { it.key == "live" }.color)
+    }
+
+    /** R344 (dev review 2) — the app's compiled-in colours are the admin's defaults. */
+    @Test
+    fun ravilos_default_colours_are_the_admins() {
+        assertEquals(dev.jellystructure.model.MusicVersions.TYPES.map { it.key to it.color }, dev.jellystructure.shared.tv.MusicVersionDefaults.TYPES.map { it.key to it.color })
+    }
+
+    /** 292 (dev review 8d) — no lyrics for a song with no singing, even from our own sidecar. */
+    @Test
+    fun an_instrumental_has_no_lyrics_for_the_viewer() = runBlocking {
+        dev.jellystructure.io.FileIo.writeText(kotlinx.io.files.Path(lrc), "[00:01.50]First line\n")
+        store.putTracks(listOf(store.track("t-a1")!!.copy(title = "Song of Album 1 (instrumental)", lyricsState = dev.jellystructure.model.MusicLyrics.SYNCED)))
+        assertNull(svc.lyrics(onlyA, "t-a1"))
+        assertFalse(svc.album(onlyA, "a1")!!.tracks.single().hasLyrics)
+        assertEquals(listOf("instrumental"), svc.album(onlyA, "a1")!!.tracks.single().versions)
+    }
+
     @Test
     fun lyrics_fall_back_to_our_sidecar_and_parse_lrc() = runBlocking {
         dev.jellystructure.io.FileIo.writeText(kotlinx.io.files.Path(lrc), "[ar:Harbour Lights]\n[00:01.50]First line\n[00:12.00][01:02.00]Twice\n")

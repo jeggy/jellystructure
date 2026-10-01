@@ -4,9 +4,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /*
- * Phase 279 — what the phone's music player reads from `/api/tv/music/…`. New paths and new types only: no
- * existing DTO gains a field (R319), and an app without music never asks for any of these. Kinds are plain
- * strings, never enums, so a later value never breaks an installed app. Nothing here names a provider, a codec
+ * Phase 279 — what the phone's music player reads from `/api/tv/music/…`. A field is only ever added, and only as an
+ * optional one (R319's check allows that: an installed app skips what it does not know, and a new app on an old
+ * server sees the default). An app without music never asks for any of these. Kinds are plain strings, never enums,
+ * so a later value never breaks an installed app. Nothing here names a provider, a codec
  * or a delivery (FR-279-10): a viewer never learns that a song is re-encoded.
  *
  * `MusicTrackItem` is the spec's `MusicTrack` — renamed so it cannot be confused with the admin's library row of
@@ -56,7 +57,32 @@ data class MusicTrackItem(
     @SerialName("track_gain_db") val trackGainDb: Double? = null,
     @SerialName("album_gain_db") val albumGainDb: Double? = null,
     val favorite: Boolean = false,
+    /** R344 (FR-R344-1) — the song's version keys (`live`, `remix`, `session`…) in 292's order: the set as the admin
+     *  shows it. Empty = no version, and what an old server sends. Plain strings: a key this app has no name for is
+     *  drawn as nothing. */
+    @SerialName("versions") val versions: List<String> = emptyList(),
 )
+
+/** R344 (FR-R344-1) — one version type's colour in this household (`#f0795b`). Names are the app's own strings. */
+@Serializable
+data class MusicVersionType(val key: String, val color: String)
+
+/** R344 (dev review 2) — the nine types and their default colours, so a chip can be drawn before `MusicHome` answers
+ *  and against an old server that sends none. The server's admin table (292) holds the same nine; a test keeps them
+ *  equal. */
+object MusicVersionDefaults {
+    val TYPES: List<MusicVersionType> = listOf(
+        MusicVersionType("live", "#f0795b"),
+        MusicVersionType("demo", "#a3aec6"),
+        MusicVersionType("remix", "#c67fe3"),
+        MusicVersionType("instrumental", "#3fb6f5"),
+        MusicVersionType("cover", "#2dd49a"),
+        MusicVersionType("acoustic", "#d8ad62"),
+        MusicVersionType("edit", "#9d95f7"),
+        MusicVersionType("alternate", "#e9709f"),
+        MusicVersionType("session", "#f2a65a"),
+    )
+}
 
 /** One row of the Listen tab (FR-279-2). [key] is `recent` · `played` · `artists` · `mix` · `genre`; the phone
  *  titles the fixed rows in its own language, and a genre row by [title] (the genre's name). */
@@ -70,7 +96,12 @@ data class MusicRow(
 )
 
 @Serializable
-data class MusicHome(val rows: List<MusicRow> = emptyList())
+data class MusicHome(
+    val rows: List<MusicRow> = emptyList(),
+    /** R344 (FR-R344-1, dev review 2) — the household's version colours, as the admin set them in Metadata → Versions.
+     *  Empty from an old server: the app uses [MusicVersionDefaults]. */
+    @SerialName("version_types") val versionTypes: List<MusicVersionType> = emptyList(),
+)
 
 /** A page of one browse list (FR-279-3); only the list asked for is filled. */
 @Serializable

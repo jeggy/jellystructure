@@ -26,6 +26,7 @@ import dev.jellystructure.shared.tv.MusicPlaylist
 import dev.jellystructure.shared.tv.MusicRow
 import dev.jellystructure.shared.tv.MusicSearch
 import dev.jellystructure.shared.tv.MusicTrackItem
+import dev.jellystructure.shared.tv.MusicVersionType
 import dev.jellystructure.shared.tv.MusicVideoCard
 import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.tv.tvToken
@@ -79,6 +80,9 @@ class MusicTvService(
     inner class View(device: DeviceData) {
         private val snap = store.snapshot()
         private val allowed = device.allowedLibraries
+        /** Phase 292 — every song's version, over the whole library (one answer per recording, whoever looks). */
+        val versions: MusicVersionIndex get() = snap.versions
+        val versionTypes get() = snap.versionTypes
         val albums: Map<String, MusicAlbum> = snap.albums.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
         val tracks: Map<String, MusicTrack> = snap.tracks.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
         val artists: Map<String, MusicArtist> = snap.artists.filterValues { it.missingSince == null && musicVisible(it.libraryId, allowed) }
@@ -129,9 +133,12 @@ class MusicTvService(
         return MusicTrackItem(
             id = t.id, title = t.title, albumId = t.albumId, album = album?.title,
             artists = t.artists.map { MusicArtistRef(it.artistId, it.name) }, disc = t.disc, position = t.position,
-            durationMs = t.durationMs, hasLyrics = t.hasLyrics || t.lyricsState == MusicLyrics.SYNCED || t.lyricsState == MusicLyrics.PLAIN,
+            // 292 (dev review 8d) — no lyrics button for a song with no singing, or whose lyrics the admin removed.
+            durationMs = t.durationMs, hasLyrics = !v.versions.lyricsHidden(t) && (t.hasLyrics || t.lyricsState == MusicLyrics.SYNCED || t.lyricsState == MusicLyrics.PLAIN),
             imageUrl = album?.let { albumImage(it) }, trackGainDb = t.trackGainDb, albumGainDb = t.albumGainDb ?: album?.albumGainDb,
             favorite = u?.favorites?.contains(t.id) == true,
+            // R344 (FR-R344-1) — 292's shown set: a Session whose Live the owner removed goes as `session` alone.
+            versions = v.versions.of(t).shown,
         )
     }
 
@@ -154,7 +161,8 @@ class MusicTvService(
         for (a in v.albums.values) for (g in a.effectiveGenres()) byGenre.getOrPut(g) { mutableListOf() } += a
         byGenre.filterValues { it.size >= 3 }.entries.sortedWith(compareByDescending<Map.Entry<String, MutableList<MusicAlbum>>> { it.value.size }.thenBy { it.key })
             .take(6).forEach { (g, list) -> rows += MusicRow("genre", g, albums = list.sortedByDescending { it.addedAt ?: it.createdAt }.take(12).map { albumCard(v, it) }) }
-        return MusicHome(rows)
+        // R344 (FR-R344-1, dev review 2) — the household's version colours ride the app's first music fetch.
+        return MusicHome(rows, versionTypes = v.versionTypes.map { MusicVersionType(it.key, it.color) })
     }
 
     // ── FR-279-3 ──
@@ -293,7 +301,10 @@ class MusicTvService(
     // ── FR-279-8 ──
 
     suspend fun lyrics(device: DeviceData, trackId: String): TrackLyrics? {
-        val t = View(device).tracks[trackId] ?: return null
+        val view = View(device)
+        val t = view.tracks[trackId] ?: return null
+        // 292 (dev review 8d) — no singing, or the admin removed them: nothing, even while Jellyfin holds a copy.
+        if (view.versions.lyricsHidden(t)) return null
         val cfg = configStore.current
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
         val dto = if (base.isBlank()) null else jellyfin.getLyrics(base, jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken), trackId)
