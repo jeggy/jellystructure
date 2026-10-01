@@ -8,7 +8,8 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html`. **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end).
+`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html`. **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided the review's
+open items the same day (see *Owner decisions* at the end of the Dev review); the requirements below include them.
 **Numbering:** checked against `main` (tree `f88c706e`) the same day. Ravilo is taken through **R340** (R336 is reserved
 by R335).
 
@@ -24,7 +25,7 @@ The admin's side is Phase 291.
 
 | # | Question | Decision |
 |---|---|---|
-| D1 | Remove the gradient? | **No.** The R62 "lit mark" stays: the gradient `#AA5CC3 → #00A4DC`, the glow, and the `#000B25` navy tile. No colour changes anywhere. |
+| D1 | Remove the gradient? | **No.** The R62 "lit mark" stays: the gradient `#AA5CC3 → #00A4DC`, the glow, and the `#000B25` navy tile. No colour changes anywhere. The one exception is the Mac and Linux icon, which is drawn on an older purple radial ground today. It moves to the same flat `#000B25` (owner, 2026-10-01; dev review item 2). |
 | D2 | One jellyfish size everywhere? | **No, the size depends on the platform** (FR-R341-1). The drawing stays the same; only its size on the tile differs. |
 | D3 | A bare favicon? | **Yes, for Ravilo**: the jellyfish with no tile, in its gradient, redrawn for small sizes (FR-R341-3). The admin keeps its tile (291). |
 | D4 | The logo inside the apps | **Unchanged**: the bare mark in the theme's `--accent → --accent-2` gradient. |
@@ -48,10 +49,18 @@ x 22–78) divided by the side of the visible tile, and the jellyfish is always 
 
 **FR-R341-2 — Re-render only what changes.** The outputs to re-render:
 - `ravilo-desktop/icons/ravilo.icns`
-- the Flatpak's 512 px icon
+- `ravilo-desktop/icons/ravilo.png`, the 512 px icon the Flatpak installs (Mac and Linux share it)
+- `ravilo-desktop/src/desktopMain/resources/ravilo-icon.png`, the window and About icon, byte-identical to
+  `icons/ravilo.png` (dev review item 4)
 - `apple-touch-icon-180.png`
 
-Each is rendered from `design/ravilo/assets/brand/ravilo-mark.svg` at FR-R341-1's placement, with the glow kept.
+Each is rendered from `design/ravilo/assets/brand/ravilo-mark.svg` at FR-R341-1's placement, with R0's glow
+(dev review item 8).
+
+- **The Mac and Linux icon's ground is flat `#000B25`** (owner, 2026-10-01). Today it is a purple radial field. It
+  keeps Apple's template: the 824 px tile inside the 1024 px canvas, its transparent margin and its baked shadow.
+- **The Linux icon keeps the tile** (owner, 2026-10-01). The owner checks Flathub's icon guidelines by hand when they
+  submit.
 
 Nothing on Android, the Play listing or the TVs is touched. The master SVG itself is unchanged: placement is a property
 of each output, not of the drawing.
@@ -62,7 +71,10 @@ of each output, not of the drawing.
 - **The drawing:** a fuller bell and three heavier tentacles. At 16 px the master's four 4.5-unit tentacles merge into
   one smudge (see the loupes in the mockup's §3).
 - **`favicon.ico`** (16 + 32 px) is rendered from the same SVG.
-- **The `icon-192.png` fallback link stays as it is.**
+- **The raster fallback link points at `favicon.ico`** (16 + 32, the bare jellyfish):
+  `<link rel="icon" href="favicon.ico" sizes="32x32">` replaces the `icon-192.png` line in `index.html`, as
+  the admin's `index.html` does. `icon-192.png` itself stays, for the manifest. Decided by the dev review (item 11),
+  because a tiled fallback would put Ravilo's tab back on a tile beside the admin's.
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="14 24 72 72">
@@ -75,15 +87,17 @@ of each output, not of the drawing.
 </svg>
 ```
 
-The small drawing is used **only for 32 px and below**. Anything larger uses the master, which has no tile in this
-case either.
+`favicon.svg` is this small drawing at every tab size. The larger icons are separate files that keep their tiles
+(dev review item 9).
 
-**FR-R341-4 — Contrast on both tab strips.** Without the navy tile, the gradient itself must be readable on a light
-and on a dark tab strip.
-- **Measured on Chrome's strips:** the purple end is about 4 : 1 on both. The blue end is about 3 : 1 on the light
-  strip and better on the dark one.
-- **Required:** 3 : 1 is the minimum for a non-text graphic, so check it against Safari's and Firefox's strips too.
-- **If a strip falls below 3 : 1,** the fix is a darker blue stop **in the favicon only**, never in the app icon.
+**FR-R341-4 — One fixed gradient, and a known contrast risk.** The favicon uses the app icon's own gradient,
+`#AA5CC3 → #00A4DC`, in light and in dark. It has no light/dark pair and no darker blue stop (owner, 2026-10-01:
+*"Let's go with 'One fixed gradient' for now. and I'll come back if it doesn't really work."*).
+- **The known risk:** the dev review's estimate (item 10) puts the blue end below 3 : 1 on light tabs (about 2.9 : 1
+  on white, 2.2–2.5 on light strips) and the purple end below 3 : 1 on dark *selected* tabs (about 2.4–2.9 : 1).
+  3 : 1 is the usual minimum for a non-text graphic.
+- **Not a gate:** the build ships the fixed gradient. The owner judges it in real tabs. If it does not work, the
+  remedy already worked out in item 10 is a favicon-only light/dark pair. It never changes the app icon.
 
 **FR-R341-5 — The logo inside the apps is unchanged.** The bare mark beside the wordmark keeps the theme's
 `--accent → --accent-2` gradient in all five themes (R338). This phase changes nothing in `ravilo-ui`.
@@ -101,13 +115,13 @@ and on a dark tab strip.
 2. **The iPhone home screen** (Add to Home Screen): the jellyfish is the larger size. An installed Android web app is
    unchanged.
 3. **A desktop browser tab**, light and dark: the jellyfish has no navy square, and its bell and three tentacles are
-   distinct at 16 px.
+   distinct at 16 px. Its contrast is FR-R341-4's known risk, judged by the owner, not a pass/fail check.
 4. The web app's `/favicon.ico` answers 200 and shows the same bare drawing.
 5. Every theme's in-app logo looks as before.
 
 ## Open questions (for the dev review)
 
-The code review comes later. These are left for it to answer, against the real code and the real toolchain.
+All five are answered: see the Dev review (items 10, 3, 7, 5 and 12) and its *Owner decisions*.
 
 1. **Contrast:** FR-R341-4's contrast on Safari's and Firefox's light tab strips has only been estimated, not measured. Measure both. If either falls below 3 : 1, darken the favicon's blue stop.
 2. **The macOS canvas:** where is the Mac's visible tile on the `.icns` canvas? The Mac icon template insets the rounded square inside the canvas. Is FR-R341-1's 66 % measured against that square in `ravilo-desktop/icons/`'s build script, or against the full canvas?
@@ -121,8 +135,8 @@ Read against every icon file in the repository (measured, not eyeballed), `ravil
 worker, `ravilo-desktop`'s build and resources, the Flatpak manifest, the e2e suite, R263/R313/R328/R333/R342, and
 the mockup's own drawing code (`rav()`, `MAC = 1.18`, `b4`). The direction holds and the placement maths is right.
 But the Mac icon is not what the spec assumes it is, one output is missing from the list, and the contrast numbers
-are worse than stated. Fourteen items. Three need the owner (items 2, 10 and 11, leans given); one is a look on the
-Mac before rendering (item 6).
+are worse than stated. Fourteen items. Items 2, 5, 10 and 11 were decided on 2026-10-01 (see *Owner decisions* at
+the end). One is a look on the Mac before rendering (item 6).
 
 1. **What exists today. Every raster is committed; nothing is generated at build time; nothing pins the bytes.**
    Bell width is measured as the widest row of the bell, divided by the visible tile:
@@ -143,13 +157,14 @@ Mac before rendering (item 6).
    - No render script exists. 264 and R313 rendered once in headless Chromium and committed. The e2e case
      (`tests/e2e/ravilo-web-headers.spec.ts:96-104`) checks the SVG `<link>` line, status and content type only. No
      `scripts/check-*` reads an icon.
-2. **The Mac icon today is not the R0 the spec describes. Needs the owner.** `icons/ravilo.png` uses Apple's
+2. **The Mac icon today is not the R0 the spec describes. Decided by the owner (see the end of this item).** `icons/ravilo.png` uses Apple's
    template: the tile is 412 of 512 px (824 of 1024), with a baked drop shadow and transparent margins. Its ground is
    a **radial field**, `#35326A` in the centre to `#1B1D37` at the edge, not the flat `#000B25` every other platform
    and the mockup's Dock row use. And its bell is **52 %** of the tile, not 46 %. So D1's "no colour changes
    anywhere" and the mockup's flat-navy Mac icon cannot both hold. **Lean:** render the Mac (and Linux) icon on flat
    `#000B25`, as the mockup the owner judged draws it, as R342's Icon Composer background layer says ("navy"), and
    as every other platform already is. Keep Apple's template margin and shadow.
+   **Decided (owner, 2026-10-01): the lean.** FR-R341-2 and D1 now say so.
 3. **Open question 2 (the Mac canvas): measure against the 824 px square.** At 1024 px the visible tile is the
    824 px rounded square at (100, 100), radius 22.5 % (185 px), so the 100-unit tile maps at `translate(100 100)
    scale(8.24)`. FR-R341-1's mark then has a bell of 544 px. Measured against the full canvas instead, it would be 82 %
@@ -165,7 +180,7 @@ Mac before rendering (item 6).
    installs the Mac file; GNOME shows it with Apple's margin and shadow, as it does today. The Flatpak builds from the
    release tag, so the new icon reaches Linux with the next release and the manifest needs no edit. Flathub's own
    icon guidelines are the owner's to check when they submit, since Flathub is done by hand. An SVG icon stays R333's
-   "later nicety".
+   "later nicety". **Decided (owner, 2026-10-01): keep the tile;** the owner checks Flathub's guidelines by hand.
 6. **Before rendering, look at the Dock on the Mac.** macOS 26 and later can put a classic `.icns` icon whose shape
    does not match the system's onto a grey rounded square, which shrinks it. If the Dock today shows a grey rim round
    Ravilo, part of "too little" is that, and only an Icon Composer `Assets.car` fixes it: R342 FR-R342-2's toolchain,
@@ -188,8 +203,8 @@ Mac before rendering (item 6).
    them, so the three stay distinct. One sentence needs to go: "Anything larger uses the master" has no file to
    apply to. One `favicon.svg` serves every tab size, and the larger icons are separate files that keep their tiles.
    So `favicon.svg` is the small drawing, and `favicon.ico` (16 + 32) is rendered from it. No size media queries.
-10. **Open question 1 (contrast): the blue end already fails on light, and the purple end fails on dark tabs. Needs
-    the owner.** Computed with WCAG's formula against typical tab colours. These are approximate, since each browser
+10. **Open question 1 (contrast): the blue end already fails on light, and the purple end fails on dark tabs.
+    Decided (owner, 2026-10-01): one fixed gradient for now; the lean below is not taken.** Computed with WCAG's formula against typical tab colours. These are approximate, since each browser
     version and OS theme differs:
     - `#00A4DC` is 2.86 : 1 on a white active tab and 2.2–2.5 on light strips. The spec's "about 3 : 1" is high, so
       FR-R341-4's own remedy is triggered now: `#007BAA` reaches 3.2 or more on every light surface checked.
@@ -200,12 +215,13 @@ Mac before rendering (item 6).
     `.ico` takes the light pair. Both are favicon-only, never the app icon. Chrome and Firefox read that media query
     in an SVG tab icon; it follows the OS's scheme, not the browser's theme. The final numbers come from real
     screenshots of each browser's strip (Safari and Chrome on the Mac, Firefox in the Fedora desktop container), not
-    from headless renders, which have no strip.
-11. **The `icon-192.png` fallback shows a tiled Ravilo. Needs the owner.** A browser that takes no SVG tab icon
+    from headless renders, which have no strip. The owner chose to ship the fixed gradient and come back if it does
+    not work, so this lean is kept only as the ready remedy. FR-R341-4 records the risk.
+11. **The `icon-192.png` fallback shows a tiled Ravilo. Decided by this review: the lean below.** A browser that takes no SVG tab icon
     (older Safari among them) uses `index.html:13`'s `icon-192.png`, which has the navy tile. Beside the admin's
     tile, that is exactly what D3 wants to avoid. **Lean:** change that line to
     `<link rel="icon" href="favicon.ico" sizes="32x32">`, as the admin's `index.html:8` does. `icon-192.png` itself
-    stays, for the manifest. The e2e case is unaffected.
+    stays, for the manifest. The e2e case is unaffected. FR-R341-3 now says so.
 12. **Open question 5 (the renderer): yes, one committed script.** Lean: `scripts/render-brand-icons.sh`. It renders
     each output in headless Chromium through `tests/node_modules`' Playwright (Chromium is already in the Playwright
     cache), then packs the `.ico` and `.icns` with Pillow (the same chunk set as today). It holds the placement table
@@ -219,10 +235,22 @@ Mac before rendering (item 6).
     caches icons; an updated `.app` can show the old icon until the Dock refreshes. That is a test note, not code.
 14. **Build order.**
     1. The script (item 12).
-    2. The favicon: `favicon.svg` with item 10's colours, `favicon.ico`, `index.html:13` (item 11).
+    2. The favicon: `favicon.svg` (the spec's drawing, the fixed gradient), `favicon.ico`, `index.html:13` (item 11).
     3. `apple-touch-icon-180.png`.
     4. After item 6's look: the 1024 Mac render, then `ravilo.icns`, `icons/ravilo.png` and `ravilo-icon.png`
-       (item 4), on the ground the owner picks (item 2).
+       (item 4), on flat `#000B25` with Apple's margin and shadow (item 2).
     5. Run `ravilo-web-headers.spec.ts`.
 
     The Flatpak and the `.dmg` pick the icon up with the next release. R342 builds on step 4.
+
+### Owner decisions (2026-10-01)
+
+1. **The Mac and Linux icon's ground is flat navy `#000B25`** (item 2). Apple's margin and shadow stay. Written into
+   D1 and FR-R341-2.
+2. **The favicon is one fixed gradient for now** (item 10). It has no light/dark pair and no darker blue. The owner:
+   *"Let's go with 'One fixed gradient' for now. and I'll come back if it doesn't really work."* The measured
+   contrast concern is recorded as a known risk in FR-R341-4. Item 10's pair is the remedy if it is needed.
+3. **The raster fallback points at `favicon.ico`** (item 11). The link is 16/32, the bare jellyfish, and
+   `icon-192.png` stays for the manifest. This one was decided by the dev review and the owner was not asked. It
+   follows D3. Written into FR-R341-3.
+4. **The Linux icon keeps the tile** (item 5). The owner checks Flathub's icon guidelines by hand when they submit.

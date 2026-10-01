@@ -58,11 +58,13 @@ In total, 193 of 487 songs get at least one type.
 - Ticking Session, by hand or automatically, also ticks Live.
 - *Without Live* hides sessions too.
 - Unticking Live on a Session leaves Session on. That is allowed, and *without Live* then still hides it, because Session implies Live in the filter.
+- **Session ⇒ Live is a rule of the automatic set only (owner, 2026-10-01).** A Session found automatically brings an automatic Live (*with Session*). A Session ticked by hand writes Live on by hand at the same moment. The owner's *removed* Live always wins, so a song can show **Session without Live**. The chips (here and in R344) show that set as it is: *Session*, no *Live*.
+- **Two readings of Live, each in one place.** What a song *shows* (chips, the panel, the album summary, R344's `versions`) is the set as stored. What a filter *matches* treats Session as Live: the Version facet's *Only Live* and *Hide Live*, Live's counts in Metadata and on the artist line, and every link that opens a filtered list. A count that opens a list always uses the filter's reading, so the number and the list agree.
 
 **FR-292-5 — A piece that was never sung has no version (owner, Q0).**
 - MusicBrainz marks such a piece as a work with no words (`zxx`). It is **not** Instrumental and shows no chip.
 - Its lyrics mark says *No words — MusicBrainz*.
-- The lyrics step (277) **never fetches** lyrics for it, and never fetches them for a song whose automatic set includes Instrumental from MusicBrainz.
+- The lyrics step (277) **never fetches** lyrics for it, and never fetches them for a song whose set includes **Instrumental from any source**: MusicBrainz, the title or the owner's tick (owner, 2026-10-01). When the owner removes Instrumental, the song is fetched again on the next run.
 
 ### Album page (`album.html` → Tracks)
 
@@ -174,7 +176,7 @@ and Remix →*.
 2. **Bracketed live dates:** *(live at the harbour, 2011)* is caught by *live*. Should *(Radio 2 session)*-style names be caught by a list of broadcaster words, or only by *session*? The lean is *session* only, since the household has 4.
 3. **LRCLIB's flag:** does LRCLIB's API accept an *instrumental* submission without a token from a published client? If not, the action opens LRCLIB's page for the song instead.
 4. **The *Only* for no-words pieces:** they have no version, so they appear under *No version*. Should the Dashboard row's filter also show them? The lean is yes, with its own sub-line *no words*.
-5. **Counts and Session:** should Live's count in Metadata include songs that are Live only through Session? The lean is yes, matching the filter.
+5. **Counts and Session:** should Live's count in Metadata include songs that are Live only through Session? The lean is yes, matching the filter. **Answered: yes** (Dev review item 7).
 
 ## Dev notes
 
@@ -192,7 +194,8 @@ routes, the lyrics research (`research-reports/music-lyrics-that-do-not-belong-2
 musicbrainz.org the same day. **The direction holds.** MusicBrainz already says everything the spec wants, but today
 the client asks it for none of it, and two things the spec leans on do not exist: a record of which lyrics sidecars
 jellystructure wrote, and a Dashboard row with two actions. One shipped bug was found on the way (item 10). Twenty
-items; two need the owner (items 7 and 8c, leans given). Everything else is the build's.
+items; two needed the owner (items 7 and 8c) and both are now decided (see *Owner decisions* at the end). Everything
+else is the build's.
 
 1. **MusicBrainz is never asked for versions today.** `MbRelation` holds only `type` and `url`
    (`MusicBrainzClient.kt:29`). The release lookup asks for `recordings+media+labels+artist-credits+release-groups`
@@ -274,12 +277,22 @@ items; two need the owner (items 7 and 8c, leans given). Everything else is the 
    - Record every change in the History of each album that holds a copy (`music_versions`), as `setGenres` does
      (`MusicMatchService.kt:359–364`).
 
-7. **Session ⇒ Live: the spec and the mockup disagree — needs the owner.** FR-292-4 says unticking Live on a Session
-   leaves Session on, and the filter still treats it as Live. The mockup cannot reach that state: `list()` adds Live
-   whenever Session is there, `setType` unticks Session when Live is unticked, and the bulk dialog's *Remove Live* sets
-   *Remove Session* too (`versions.js`, the `data-vbp` handler). **Lean: the mockup.** One invariant, Session ⊂ Live,
-   means the chips, the panel and the filter always agree, and R344's `versions` needs no exception (its FR-R344-1
-   today would re-add a Live the owner removed). Open question 5 is then answered by the invariant: yes.
+7. **Session ⇒ Live: the spec and the mockup disagreed — decided (owner, 2026-10-01): Session stays.** FR-292-4 says
+   unticking Live on a Session leaves Session on. The mockup could not reach that state: `list()` adds Live whenever
+   Session is there, `setType` unticks Session when Live is unticked, and the bulk dialog's *Remove Live* sets *Remove
+   Session* too (`versions.js`, the `data-vbp` handler). The owner declined that coupling. What the build does:
+   - `MusicVersions.of` applies Session ⇒ Live **inside the automatic set only**, before the owner's rows. An automatic
+     Live that came only from Session has the source *with Session*. A `removed` Live then removes it like any other.
+   - Ticking Session by hand (the panel, *Set version…*) writes Live `on` in the same write. Unticking Live writes Live
+     `removed` and leaves Session alone. *Remove Live* in the bulk dialog no longer sets *Remove Session*.
+   - The function answers two things: the **shown** set (chips, the panel, the album summary, R344) and a
+     `matches(type)` for filters, where Session counts as Live. The Version facet's *Only Live* and *Hide Live*,
+     Live's facet count, Metadata's Live count, the artist line's *N live* and its *songs without Live and Remix →*
+     all use `matches`. So a Session-without-Live song shows only *Session*, yet *Hide Live* hides it and *Only Live*
+     keeps it.
+   - The album summary counts the shown set, so a Session-without-Live song does not count toward *Live · N songs*.
+   - Open question 5: yes, through `matches`.
+   - The mockup's `versions.js` (`list`, `setType`, the bulk handler) should follow on the next design pass.
 
 8. **Lyrics: four things FR-292-5 and FR-292-15 assume that do not exist.**
    - **(a) No record of which sidecars are ours.** `MusicTrack` keeps only `lyricsState` and `lyricsCheckedAt`
@@ -290,10 +303,12 @@ items; two need the owner (items 7 and 8c, leans given). Everything else is the 
      still matches.
    - **(b) A "never again" mark.** Add `MusicLyrics.BLOCKED` (`Music.kt:294–302`). `fetchLyrics` skips it.
      `lyricsStateOf` reports it.
-   - **(c) Which Instrumental stops the fetch — needs the owner.** FR-292-5 skips only *Instrumental from MusicBrainz*
-     (the brief's §A6). The research's idea A says any source, because wrong words on an instrumental are worse than
-     none. **Lean: any Instrumental in the song's set** (MusicBrainz, the title, or the owner's tick), plus every
-     no-words piece. An Instrumental *removed by you* lets the fetch run again.
+   - **(c) Which Instrumental stops the fetch — decided (owner, 2026-10-01): any.** The spec skipped only
+     *Instrumental from MusicBrainz* (the brief's §A6); FR-292-5 now says any source. `fetchLyrics`
+     (`MusicMediaService.kt:155`) skips a song whose shown set has Instrumental (MusicBrainz, the title, or the owner's
+     tick), and every no-words piece. When the owner removes Instrumental, the next run fetches the song again (its
+     `lyricsCheckedAt` is cleared with the change, so the 30-day wait does not apply). A `BLOCKED` song stays blocked
+     either way: that is the owner's separate *Remove the lyrics*.
    - **(d) Ravilo would keep showing them.** The viewer's lyrics route asks Jellyfin first and falls back to our file
      (`MusicTvService.kt:295–308`). A deleted sidecar keeps showing until Jellyfin refreshes the song, and an embedded
      lyric forever. Rule: for a `BLOCKED` song, a no-words piece or an Instrumental, the route answers 404 and
@@ -312,7 +327,7 @@ items; two need the owner (items 7 and 8c, leans given). Everything else is the 
    beside the other music rows (`DashboardRoutes.kt:71–77`), `fix = "here"`. Say in this spec that it amends
    FR-285-2's one-action rule for this row; the owner already drew the second action (Q9).
 
-10. **Shipped bug: every music and audiobooks row on the Dashboard opens the library unfiltered.** The row links to
+10. **Shipped bug: every music and audiobooks row on the Dashboard opens the library unfiltered** (spec'd as **293**). The row links to
     `/library?kind=music&filter=<key>` (`DashboardRoutes.kt:111`). `renderMusicLibrary` reads only `mview`, `q`, `sort`
     and `f.*` (`MusicLibrary.kt:44–49`); `AudiobookLibrary.kt:63` does the same. So *Albums need a match*, *Songs a
     phone plays only by re-encoding* and the rest all land on the plain Artists view. Fix it first: teach the music
@@ -406,3 +421,16 @@ a small proof of work, and sends the token with the publish. A publish with both
 instrumental. It adds an entry; it does not correct the copied one, and whether LRCLIB's `get` then prefers the new entry
 is unknown. Verify both against the live API before building step (h). If it cannot be done, the action opens the
 song's LRCLIB search page instead, as the spec says.
+
+### Owner decisions (2026-10-01)
+
+1. **Session stays when Live is unticked** (FR-292-4, item 7). The mockup's coupling is declined. Session ⇒ Live is a
+   rule of the automatic set only; a Session ticked by hand writes Live with it; the owner's removed Live always wins.
+   A song can therefore show *Session* without *Live*. Its chips (here and in R344) show only *Session*. Every filter
+   and every count that opens a filtered list treats it as Live: *Hide Live* hides it, *Only Live* keeps it, and
+   Live's counts in the facet, in Metadata and on the artist line include it.
+2. **Any Instrumental blocks the lyrics fetch** (FR-292-5, item 8c): from MusicBrainz, from the title or from the
+   owner's tick, and every no-words piece too. Removing the Instrumental mark lets fetching resume on the next run.
+
+With these, nothing in 292 is left for the owner. Item 10's shipped bug is spec'd separately as **293**.
+

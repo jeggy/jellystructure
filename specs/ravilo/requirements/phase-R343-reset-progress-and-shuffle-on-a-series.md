@@ -3,7 +3,10 @@
 > Owner, 2026-10-01: *"In ravilo when a series has been fully watched once, then a reset progress should be possible.
 > This specifically makes sense for kid shows, as they are watching the same series many times. And let's also
 > investigate a shuffle button on series. I don't want these two new buttons to clutter everything."* Then: *"Let's go
-> with direction B"* and *"Let's change that to 9+ episodes."*
+> with direction B"* and *"Let's change that to 9+ episodes."* After the dev review: *"If the user clicked on the
+> episode S01E01, then it should just follow whatever logic jellyfin has. But if the user clicked 'Start over ·
+> S01E01', start episode S01E01 and then after watching 5% it should in the background mark every episode in the series
+> as unwatched and then we will rely on jellyfin progress tracking again, just as normal."*
 
 ## Status
 
@@ -11,332 +14,378 @@
 Mobile.html` (built there the same day: `ravilo-app.js` `seriesFinished` / `shuffleOrder` / `shuffleCtx`, the
 `data-reset` / `data-shuffle` handlers; `.rs-chip`, `.spill-sh`, `.spill-sep`, `.dnext-ck` in `ravilo.css`; `.mshuf`,
 `.mdone`, `.mreset` in the phone file). Directions canvas: `design/ravilo/Start over & Shuffle - Directions.html`
-(direction **B** picked; A and C are kept on the canvas as declined). **Dev-reviewed 2026-10-01** (§Dev review;
-items 4, 11 and 13 need the owner, leans given). Number verified free on `main`
-(tree `f88c706e`, Ravilo tops at R342 locally; re-checked on `ef52889` the same evening: `main` tops at R340). **Changes** R150-2 (which season a series opens on) and the series
-resume pointer behind Play (`SeriesProgress.resumeEpisodeId`, `plan.md`). **Applies to** the TV family (TV, the web
-app; R337) and the phone. Stand-in: *Lundin og vinir*, a fictional kids' series, 3 × 13 × 11 min, all watched.
+(direction **B** picked; A and C are kept on the canvas as declined). **Dev-reviewed 2026-10-01** (§Dev review). The
+owner answered the review's three questions the same day and changed the reset (§Owner decisions): **Start over** on
+the primary button is the reset, there is no separate *Reset progress* control, no in-order pointer of our own,
+shuffle carries over to a cast, and the Episodes header moves above the season pills with a focus-path test. The FRs
+below are the decided version. Number verified free on `main` (tree `f88c706e`, Ravilo tops at R342 locally;
+re-checked on `ef52889` the same evening: `main` tops at R340). **Changes** R150-2 (which season a series opens on)
+and the label and target of a finished series' primary button. **Applies to** the TV family (TV, the web app; R337)
+and the phone. **Depends on** R346 (*the episodes that count*: specials and unplayable rows left out) and R347 (an
+episode left at its credits is finished), both found in this review. Stand-in: *Lundin og vinir*, a fictional kids'
+series, 3 × 13 × 11 min, all watched.
 
 ## Today
 
 A series every episode of which this viewer has watched is a dead end:
 
-- The resume pointer finds nothing in progress and nothing unwatched and falls back to the **last** episode. Play reads
-  *Play · S03E13*, the hint *Up next · S03E13*, and the page opens on the **last** season (R150-2 picks the first
-  unfinished season, else the last).
-- Getting back to S01E01 means unticking every episode by hand (39 here). The TV has no *Mark all* since the 09-27
-  audit.
+- The mockup's resume pointer falls back to the **last** episode. The app already plays the first episode, but labels
+  the button *Play · E1*, shows no hint, and opens the page on the **last** season (R150-2 picks the first unfinished
+  season, else the last). See Dev review item 1.
+- Getting back to an unwatched series means unticking every episode by hand (39 here). The TV has no *Mark all* since
+  the 09-27 audit.
 - There is no way to play a series in random order.
 
 ## Requirements
 
 **FR-R343-1 — Finished.** A series is *finished* for a viewer when that viewer has watched every episode of it **that
-is in the library**. Specials (season 0) and missing episodes don't count. A new episode arriving ends the finished
-state, and the series behaves as it does today (*Play · S04E01*). Finished is per viewer: another profile's ticks
-never count, and a reset (FR-R343-4) never touches them.
+is in the library**. Specials (season 0) and missing episodes don't count, nor does a row with no Jellyfin item (R346's
+*episodes that count*). A new episode arriving ends the finished state, and the series behaves as it does today
+(*Play · S04E01*). Finished is per viewer: another profile's ticks never count, and Start over's clear (FR-R343-4)
+never touches them.
 
-**FR-R343-2 — A finished series opens on Season 1, and Play follows on.** On a finished series:
+**FR-R343-2 — A finished series opens on Season 1 and offers Start over.** On a finished series:
 
-- The page opens on **Season 1**, not on the last season (R150-2's fallback changes from *last* to *first*; its rule
-  for an unfinished series is unchanged).
-- The hint pill reads **✓ All {n} episodes watched** (`all_watched`) in place of *Up next*. On a finished series it
-  replaces the meta row's *✓ Watched*, so the fact is said once.
-- **Play does not go to the last episode.** The resume pointer on a finished series is, in order:
-  1. an episode with a resume position (started, not finished) ⇒ **Resume · SxxEyy**, as today;
-  2. else the episode **after the one most recently played in order** (FR-R343-6), so a rewatch carries on from where
-     it is. After the series' last episode it wraps to S01E01;
-  3. else **Play · S01E01**.
+- The page opens on **Season 1** (the first season with index ≥ 1), not on the last season. R150-2's fallback changes
+  from *last* to *first*; its rule for an unfinished series is unchanged.
+- The hint reads **✓ All {n} episodes watched** (`detail.all_watched`) in place of *Up next*. It replaces the
+  *{w} of {n} episodes watched* line, so the fact is said once.
+- The primary button reads **Start over · S01E01** (`detail.start_over` and the first counted episode's code; a
+  multi-episode file reads *Start over · S01E01–E03*). It plays that episode from 0:00 and starts FR-R343-4's clear.
+  The episode cards keep their ✓, and the *UP NEXT* ribbon marks that first episode.
+- **Picking an episode by hand follows Jellyfin's normal logic** (owner). A watched episode starts from 0:00 (R306),
+  Jellyfin ticks it and moves its last-played date as usual, and nothing is cleared. The page keeps reading *Start
+  over* while every episode is still watched.
+- On a server that can't do the clear (FR-R343-10), the button reads *Play · S01E01* and plays the same episode.
 
-  The ticks stay (Q1, owner): a rewatch is not a reset. The episode cards keep their ✓, and the *UP NEXT* ribbon
-  marks the pointer's episode.
+**FR-R343-3 — Removed (owner, 2026-10-01).** There is no separate *Reset progress* control (the two-press chip in the
+Episodes header is gone). *Start over* is the reset. The mockup still draws the chip; the spec wins.
 
-**FR-R343-3 — Reset progress (finished series only).** The Episodes section's header gains one control once the
-series is finished, after *{w} of {n} watched* and the bar:
+**FR-R343-4 — What Start over clears, and when.** *Start over* plays the first counted episode with `start_over: true`
+on its playback start. Then:
 
-- **TV:** a chip **↺ Reset progress** (`reset_progress`). It makes the header a focus row between the hero's actions
-  and the season pills. The first OK **arms** it: the chip shows a warn-coloured ring and reads *Press again · all {n}
-  back to unwatched* (`reset_confirm`) for **4 s**, then goes back. A second OK inside the 4 s resets (FR-R343-4).
-  There is no dialog and no toast to reach.
-- **Phone:** under the Episodes header, one row: *✓ All {n} episodes watched* on the left, **↺ Reset progress** on the
-  right (a 44 dp text button). The first tap arms it as on the TV (*Tap again · all {n} back to unwatched*), and the
-  second tap resets.
+- **Once 5 % of that episode has played** (5 % of the file for a multi-episode file), the server marks **every episode
+  of the series unwatched for this viewer**, in the background, while playback goes on. Every season counts, specials
+  included. It uses the existing `PUT /tv/played` path, which also clears each episode's resume position.
+- **The playing episode keeps its live progress.** Right after the clear, the server writes the playing episode's
+  current position back, and the stop that ends the session lands after the clear, never before it. Leaving at 2:00
+  therefore reads *Resume · S01E01* on the page and in Continue watching.
+- **Stopped before 5 %, nothing is cleared.** The ticks stay, the series is still finished, and the page still reads
+  *Start over · S01E01*. (Jellyfin keeps no position under 5 % either.)
+- After the clear, **Jellyfin's normal tracking governs everything**: ticks, resume points, Continue watching and
+  next-up. Auto-advance to S01E02 is an ordinary in-order play.
+- Other open screens update the usual way. The clear ends with the same invalidation `PUT /tv/played` runs (the
+  Continue list is rebuilt, `home_changed` and `playstate_changed` are pushed). The detail page reads playstate again
+  when the viewer comes back to it (R84).
+- Nothing else changes: My List, other viewers, the series' own metadata. There is no toast: the viewer is in the
+  player when it happens.
 
-When the series is not finished, the control is absent, not greyed.
+**FR-R343-5 — Shuffle.** On every series with **9 or more counted episodes** (all seasons together, specials excluded;
+owner), finished or not:
 
-**FR-R343-4 — What a reset does.** For **this viewer only**, every episode of the series (every season, specials
-included) becomes unwatched with no resume position, and the in-order pointer (FR-R343-6) is cleared. Then:
-
-- the page re-renders as a series nobody has started (*Play · S01E01*, Season 1, no ticks), with focus on Play;
-- a toast confirms: *Progress reset · S01E01 is up next* (`reset_done`);
-- every other open screen updates through `WatchedBus` (R147/R176): tiles, Continue watching, the series' own card.
-  The series leaves Continue watching / Next Up until something is played again (R219 already covers the re-entry).
-
-Nothing else changes: My List, other viewers, the series' own metadata.
-
-**FR-R343-5 — Shuffle.** On every series with **9 or more episodes in the library** (all seasons together, specials
-excluded; owner), finished or not:
-
-- **TV:** the season pill row ends with a thin divider and a **Shuffle** pill (shuffle glyph + label, `shuffle`),
-  focusable like a season pill. OK starts playback.
+- **TV:** the season pill row ends with a thin divider and a **Shuffle** pill (shuffle glyph + label,
+  `detail.shuffle`), focusable like a season pill. OK starts playback. A one-season series with 9+ episodes draws the
+  pill row too (one *Season 1* pill and Shuffle), as the mockup does.
 - **Phone:** a **Shuffle** chip at the right of the Episodes header (36 dp tall, the whole header row is the hit
   target's height ≥ 44 dp).
-- **The order:** every episode of the series in random order, each once (Q4: the whole series, not the page's season;
-  Q6: when the last one ends, playback stops as at the end of a series). A **multi-episode file** (R179/R309) is one
-  entry and plays whole. A new order is drawn on every press.
-- **In the player:** the kicker reads **Shuffle · S02E07** (`shuffle`; R303's top-right identity is unchanged). The
-  next-up card's kicker reads **Next · shuffled** (`shuffle_next`) with the next entry's code and title, at the usual
-  20 s / credits point (R111, R182). *Next* and auto-advance follow the shuffled order. The Episodes rail keeps the
-  season in its own order, with the playing episode lit. Choosing an episode from the rail leaves shuffle and plays on
-  in order from there.
-- **No resume point (Q5):** a shuffled episode always starts at 0:00. It is ticked when it finishes (the ≥ 90 % rule).
-  If the viewer stops early, it **writes no resume position**, so *Resume* on the page and in Continue watching still
-  means "where you were in order".
+- **The order:** every counted episode of the series in random order, each once (Q4: the whole series, not the page's
+  season; Q6: when the last one ends, playback stops as at the end of a series). A **multi-episode file** (R179/R309) is
+  one entry and plays whole. A new order is drawn on every press.
+- **In the player:** the kicker reads **Shuffle · S02E07** (R303's top-right identity is unchanged). The next-up card's
+  kicker reads **UP NEXT · SHUFFLED** (`player.up_next_shuffled`, in the case of today's `player.up_next`) with the next
+  entry's code and title, at the usual 20 s / credits point (R111, R182). *Next* and auto-advance follow the shuffled
+  order. The Episodes rail keeps the season in its own order, with the playing episode lit. Choosing an episode from
+  the rail leaves shuffle and plays on in order from there.
+- **No resume point (Q5):** a shuffled episode always starts at 0:00. It is ticked when it finishes (R347's rule). If
+  the viewer stops early, its position is put back to what it was before the shuffle, so a shuffled play leaves no
+  resume point and never wipes one.
 - Shuffle lasts until the player is left. There is no shuffle state to switch off, and it is not remembered.
 
-**FR-R343-6 — Shuffled plays don't move the in-order pointer.** FR-R343-2's step 2 uses the episode most recently
-played **in order**. Jellyfin's `LastPlayedDate` moves on every play, shuffled ones included, so it can't be used on
-its own. The server keeps, per viewer and series, the last episode played in order (set on every non-shuffled play's
-stop/finish, cleared by a reset). A shuffled play is reported with `shuffle: true` and does not update it.
+**FR-R343-6 — Removed (owner, 2026-10-01).** There is no in-order pointer of our own. Jellyfin's tracking decides
+Resume and next-up. Consequence, accepted with that decision: a shuffled episode finished on an *unfinished* series is
+ticked, and Jellyfin's next-up follows the highest-numbered watched episode, so next-up may jump past where the viewer
+was (Dev review item 5).
 
-**FR-R343-7 — Strings** × en · da · fo (da/fo drafts; the shipped table wins). Mockup keys:
+**FR-R343-7 — Strings** × en · da · fo (da/fo drafts; the shipped table wins). Keys follow the shipped table:
 
 | Key | en | da | fo |
 |---|---|---|---|
-| `shuffle` | Shuffle | Bland | Blanda |
-| `shuffle_next` | Next · shuffled | Næste · blandet | Næsti · blandað |
-| `all_watched` | All {n} episodes watched | Alle {n} afsnit set | Allir {n} partarnir sæddir |
-| `reset_progress` | Reset progress | Nulstil | Nullstilla |
-| `reset_confirm` | Press again · all {n} back to unwatched | Tryk igen · alle {n} bliver usete | Trýst aftur · allir {n} verða ósæddir |
-| `reset_confirm_tap` (phone) | Tap again · all {n} back to unwatched | Tryk igen · alle {n} bliver usete | Trýst aftur · allir {n} verða ósæddir |
-| `reset_done` | Progress reset · S01E01 is up next | Nulstillet · S01E01 er næste | Nullstilla · S01E01 er næstur |
+| `detail.start_over` | Start over | Start forfra | Byrja av nýggjum |
+| `detail.shuffle` | Shuffle | Bland | Blanda |
+| `detail.all_watched` | All {n} episodes watched | Alle {n} afsnit set | Allir {n} partarnir sæddir |
+| `player.up_next_shuffled` | UP NEXT · SHUFFLED | NÆSTE · BLANDET | NÆSTI · BLANDAÐ |
 
-`shuffle` may reuse the music table's `music.shuffle` (same three words). The shipped Faroese for *episode* follows
-R288; `partarnir` is the draft's word and is the implementer's to align.
+`detail.start_over` and `detail.shuffle` use the same words as the shipped `ab.start_over` and `music.shuffle`; reusing
+those keys is also fine. The episode code is never written into a string: the button joins the label and the code
+from the same formatter as *Play · …* today. The shipped Faroese for *episode* follows R288; `partarnir` is the draft's
+word and is the implementer's to align. The mockup's `reset_progress`, `reset_confirm`, `reset_confirm_tap`,
+`reset_done` and `shuffle_next` are not used.
+
+**FR-R343-8 — A shuffle carries over to the TV (owner, 2026-10-01).** Casting from the page's Shuffle, or handing a
+shuffled player over to a TV, keeps playing the same shuffled order on the TV, with no resume point (FR-R343-5). Both
+kinds of receiver:
+
+- **Chromecast:** the sender sends the shuffled order as the load's episode list, in play order, with
+  `current_index` on the entry to start, and `episodes_shuffled: true` (new, additive). The receiver walks the list
+  as it already does, sends `shuffle: true` on each playback start, and labels its next-up card *UP NEXT · SHUFFLED*.
+- **Ravilo screen:** the play request carries the entries after this one as `shuffle_queue` (new, additive). The
+  server keeps that order for the screen's session. The screen's next episode is the queue's next entry, and its starts
+  count as shuffled. The screen's own *Next* already asks the server for the next play, so the screen needs no change
+  to follow the order.
+- *Start over* rides the same carriers (`start_over` on the load and on the play request), so FR-R343-4's clear also
+  happens when the episode plays on a TV.
+
+**FR-R343-9 — The Episodes header sits above the season pills, and the page's D-pad focus is guarded (owner,
+2026-10-01).** As drawn: hero, then the Episodes header, then the season pills (with Shuffle last on the TV), then the
+episode rail. The owner: *"let's make sure that we don't keep falling into these D-pad focus issues that we keep on
+having."* So:
+
+- The series page has **no `FocusRequester` attached inside a lazy item that focus is sent to from outside it** (R236
+  FR-R236-5's rule). The season pills become a plain, always-composed row. Play and the selected pill are reached only
+  through one helper that first awaits the scroll that composes them, then requests focus (R232's sequence). The
+  episode rail is entered only through its `focusRestorer()`. No focus move waits on the playstate overlay's timing.
+- **An automated focus-path test** walks the page with D-pad keys and asserts the focused node after every key: hero
+  → season pills → Shuffle → episode rail → back up, on the fixtures that broke before (R138, R201, R232, R296). It
+  runs headless on the JVM in CI's existing unit-test step. See Dev review item 13 for the exact shape.
+
+**FR-R343-10 — Older servers.** `SeriesDetail` gains two additive flags, `start_over` and `shuffle`, set by a server
+that can do FR-R343-4 and FR-R343-5/8 (`shuffle` only when the series has 9+ counted episodes). When a flag is absent
+(an older server), the app shows *Play · S01E01* instead of *Start over*, and no Shuffle. No field is removed, and no
+existing enum gains a value.
 
 ## Invariants
 
 - Films are unchanged: *Play Again* and *Mark Watched* stay as they are.
-- A series that is not finished looks and behaves exactly as today, except for the Shuffle pill/chip (9+ episodes).
-- No new dialog, no new menu, and no new button in the hero's action row (the reason B was picked: the hero stays as
-  it is).
+- A series that is not finished looks and behaves as today, except for the Shuffle pill/chip (9+ episodes) and the
+  header's new place above the season pills.
+- No new dialog, no new menu, and no new button in the hero's action row (the reason B was picked: the hero stays as it
+  is). *Start over* is the existing primary button's label on a finished series.
 - Per-episode watched toggles (R07/R179) are unchanged. No *Mark all* per season comes back.
-- The receiver-only TV app (R264/R269) has no detail page and is untouched. A cast started from a shuffled episode
-  casts that episode only (open question 2).
+- The receiver-only TV app (R264/R269) has no detail page. It only gains the shuffle order through FR-R343-8, with no
+  code change of its own.
 
 ## Acceptance
 
-1. Olivar has watched all 39 episodes of *Lundin og vinir*. The page opens on Season 1, Play reads *Play · S01E01*, the
-   pill reads *All 39 episodes watched*, every card is ticked, and the Episodes header shows *Reset progress*.
-2. Olivar plays S01E01–S01E04 through, leaves, and comes back. Play reads *Play · S01E05*, and the ticks are still
-   there.
-3. Olivar shuffles, watches S02E07 to the end and stops S01E11 halfway. Play still reads *Play · S01E05*. S01E11 has
-   no resume bar, and Continue watching doesn't show it.
-4. OK on *Reset progress* once: it reads *Press again · all 39 back to unwatched*. Waiting 4 s puts it back unchanged.
-   OK twice: every tick is gone for Olivar only (Eyð's ticks on the same series are unchanged), Play reads *Play ·
-   S01E01*, the chip is gone, and the toast says *Progress reset · S01E01 is up next*.
-5. A series with 8 episodes has no Shuffle. One with 3 seasons × 4 episodes (12) has it.
-6. In a shuffle, the next-up card says *Next · shuffled* with a code that is not the next in order, and the last entry
-   ends playback.
+1. Olivar has watched all 39 episodes of *Lundin og vinir*. The page opens on Season 1, the primary button reads
+   *Start over · S01E01*, the hint reads *All 39 episodes watched*, and every card is ticked. There is no *Reset
+   progress* control.
+2. Olivar presses *Start over* and stops at 0:20 (under 5 % of 11 minutes). Back on the page: every tick is there, and
+   the button still reads *Start over · S01E01*.
+3. Olivar presses *Start over* and stops at 2:00. Every tick is gone for Olivar only (Eyð's ticks on the same series
+   are unchanged). The page reads *Resume · S01E01* with S01E01's resume bar, and Continue watching shows S01E01.
+4. On the finished series, Olivar picks S02E04 from the rail. It plays from 0:00, nothing is cleared, and the page
+   still reads *Start over · S01E01* afterwards.
+5. A series with 8 episodes has no Shuffle. One with 3 seasons × 4 episodes (12) has it, and so does one season of 13.
+6. In a shuffle, the next-up card says *UP NEXT · SHUFFLED* with a code that is not the next in order, and the last
+   entry ends playback. Stopping a shuffled episode halfway leaves it with the resume point it had before.
+7. Shuffle with a Chromecast connected: the TV plays the shuffled order and its card says *UP NEXT · SHUFFLED*. Same
+   on a Ravilo screen, which plays the same order.
+8. The series page's focus-path test passes in CI, and on the TV: Down from the hero focuses the selected season pill
+   on the first press, Right reaches Shuffle, Down enters the rail, and Up returns the same way.
 
-## Open questions (leans)
+## Open questions (answered)
 
-1. **The reset's route.** Lean: one server route, `POST /tv/series/{id}/reset-progress`. It loops the episode ids
-   server-side (`DELETE /Users/{u}/PlayedItems/{ep}` plus R185's zeroed position per id), clears FR-R343-6's pointer
-   and returns the new `SeriesProgress`, rather than 39 client calls.
-2. **Casting a shuffle.** Lean: round 1 casts the current episode only, and the TV shows no shuffle. A shuffled queue
-   on the receiver is later, if asked.
-3. **The desktop (R337).** Lean: it follows the phone's shape at Compact and the TV family's at Expanded and above,
-   whichever detail page that width already uses.
-4. **Next Up on Home.** Lean: Home's Next Up / Continue watching use the same in-order pointer (FR-R343-6), so a
-   rewatch shows *S01E05*, not Jellyfin's last-played guess. Dev to confirm what `enableRewatching` returns today.
+1. **The reset's route.** Answered by the review and the owner: no new route. Start over's clear reuses the
+   `PUT /tv/played` fan-out on the server (Dev review item 3).
+2. **Casting a shuffle.** Owner: the shuffle carries over to the TV, on both receivers (FR-R343-8).
+3. **The desktop (R337).** Decided by the code: the series page is one composable that branches on `LocalCompact`, so
+   the desktop gets the phone's shape below 600 dp and the TV family's above (Dev review item 8).
+4. **Next Up on Home.** Owner: Jellyfin's tracking governs. A finished series is not in Continue watching (Jellyfin's
+   next-up has nothing for it). After Start over passes 5 %, S01E01 is an ordinary resume item and appears there
+   (Dev review item 5).
 
 ## Mockup notes
 
-- The mockup's Play on a finished series always shows *Play · S01E01*; FR-R343-2's follow-on pointer is not
-  simulated.
+- The mockup's finished series shows *Play · S01E01* and the *Reset progress* chip. The spec wins: the button reads
+  *Start over · S01E01*, and there is no chip.
 - The phone mockup lists Season 1 only (no season chips), and its player is a stand-in that doesn't advance a shuffle.
 
 ## Dev review (2026-10-01, against `main` `44e26871`)
 
-Read against the backend (`TvRoutes.kt`, `PlaybackService.kt`, `HomeFeedService.kt`, `DetailService.kt`,
-`MediaStore.kt`, `JellyfinClient.kt`, the `.sq` files and migrations), `shared` (`Models.kt`, the wire test),
-`ravilo-ui` (`SeriesDetailScreen.kt`, `DetailStore.kt`, `WatchedBus.kt`, `PlayerScreen.kt`, `PlayerStore.kt`,
-`PlayerResume.kt`, `RaviloApp.kt`, `Cast.kt`), `i18n/*.json` and the design files. The direction holds. Most of it is
-client work on code that already exists, and the reset needs no new route. But the in-order pointer is a bigger thing
-than the spec says. R185 and R306 make every rewatched episode *Played*, so FR-R343-2's step 1 never fires as written.
-And a shuffled finish moves Jellyfin's next-up on an *unfinished* series too. Sixteen items. Three need the owner
-(items 4, 11 and 13, leans given); the rest are the build's. Two shipped bugs were found on the way (items 2 and 12).
+Read against the backend (`TvRoutes.kt`, `RemoteRoutes.kt`, `PlaybackService.kt`, `HomeFeedService.kt`,
+`DetailService.kt`, `MediaStore.kt`, `JellyfinClient.kt`, the `.sq` files and migrations), `shared` (`Models.kt`,
+`CastMessages.kt`, the wire test), `ravilo-ui` (`SeriesDetailScreen.kt`, `SeasonPicker.kt`, `DetailStore.kt`,
+`WatchedBus.kt`, `PlayerScreen.kt`, `PlayerStore.kt`, `PlayerResume.kt`, `RaviloApp.kt`, `Cast.kt`), the receivers
+(`ravilo-cast` `Receiver.kt`, `ravilo-screen` `Screen.kt`), `i18n/*.json` and the design files. The direction holds.
+Most of it is client work on code that already exists, and nothing needs a new route. The review's first draft
+proposed an in-order pointer of our own; the owner replaced it the same day with *Start over* and Jellyfin's own
+tracking (§Owner decisions), and the items below are written to the decided version. Two shipped bugs were found and
+are specced separately as R346 and R347.
 
-1. **"Today" describes the mockup, not the app.** The mockup's `seriesProgressFrom`
+1. **"Today" in the first draft described the mockup, not the app.** The mockup's `seriesProgressFrom`
    (`design/ravilo/ravilo-app.js:592–597`) falls back to `length - 1`. The app already plays the first episode on a
    finished series: `resumeEpId` ends in `?: allEps.firstOrNull()` (`SeriesDetailScreen.kt:325–336`, an earlier bug
    fix). What is true in the app: the page opens on the **last** season (`:295–303`, `?: (detail.seasons.size - 1)`),
    and the label is the literal *Play · E1* (`:627–632`), because `hasResume` is false once every episode is watched
    (`:625`). `SeriesProgress` (`Models.kt:627–632`, `plan.md`) is never filled: `DetailService.kt:220` sends
-   `progress = null`, and nothing reads it. The pointer the page really uses is the client's `resumeEpId`, fed by
-   R306's `continue_episode_id` on the series' own playstate entry (`TvRoutes.kt:576–584`, `:1459–1468`). Leave
-   `SeriesProgress` as it is (a DTO field is never deleted) and don't revive it: it would be a second answer beside
-   `continue_episode_id`.
+   `progress = null`, and nothing reads it. The page's pointer is the client's `resumeEpId`, fed by R306's
+   `continue_episode_id` on the series' own playstate entry (`TvRoutes.kt:576–584`, `:1459–1468`). Leave
+   `SeriesProgress` as it is (a DTO field is never deleted) and don't revive it.
 
-2. **Shipped bug: specials come first.** `DetailService.kt:135` sorts the season numbers ascending and files a missing
-   season number under 0, so a series with specials has Season 0 at `seasons[0]`. Three client paths then walk the
-   specials first:
-   - the opening season: the first season with an unwatched episode (`SeriesDetailScreen.kt:298–302`);
-   - the Play fallback: `allEps.firstOrNull { not played }` (`:330`);
-   - `watchedCount` and the *{w} of {n} episodes watched* line (`:313`, `:470`), which count specials.
+2. **Specials come first — a shipped bug, now R346.** `DetailService.kt:135` puts Season 0 at `seasons[0]`, so the
+   opening season, the Play fallback and the watched counts all walk specials first (R346 has the detail). R343 needs
+   R346's *episodes that count* (season index ≥ 1, an id with a Jellyfin item) for *finished*, the 9+ count, the Start
+   over target and the shuffle set. If R343 is built first, it introduces that helper, and R346 applies it to the
+   remaining paths.
 
-   So a series with an unwatched special opens on Specials, and *Play · E1* plays a special. This is from reading the
-   code, not checked against live data. R343 needs one helper anyway, *the episodes that count*: season index ≥ 1, and
-   an id that is not a fallback path (an id starting with `/`, `DetailService.kt:165`, has no Jellyfin item, so it can
-   never be played or ticked). Use it for *finished*, both counts, the opening season, the Play fallback and the shuffle
-   set. The server has the same rule in `MediaStore.nextEpisodeAfter` (`MediaStore.kt:679–690`: season ≥ 1, has a
-   Jellyfin id, ordered by season, episode, part).
-
-3. **The reset needs no new route (open question 1).** `PUT /tv/played` with the series' own id and `played: false`
-   already does FR-R343-4 (`TvRoutes.kt:815–821` → `PlaybackService.setPlayed`, `:809–866`):
-   - it fans out to every episode of the series (specials included; a multi-episode file's parts share one id and are
-     deduped), bounded by `playedGate`;
-   - it re-reads the result from Jellyfin and returns it for the series and every episode;
-   - it calls `invalidatePlaystate`, which rebuilds the Continue list and pushes `home_changed`.
-
+3. **Start over's clear: on the server, on the progress path, with no new route.** The fan-out exists:
+   `PlaybackService.setPlayed` (`:809–866`, behind `PUT /tv/played`, `TvRoutes.kt:815–821`) unmarks every episode of a
+   series (specials included; a multi-episode file's parts share one id and are deduped), bounded by `playedGate`.
    `markUnplayed` is `DELETE /UserPlayedItems/{id}` (`JellyfinClient.kt:1116–1120`). Per Jellyfin's own source
    (`BaseItem.MarkUnplayed`), that one write sets `Played=false`, `PlaybackPositionTicks=0`, `PlayCount=0` and
-   `LastPlayedDate=null`. So R185's zeroing is not needed, and the series also drops out of R219's *finished* and
-   *touched* sources. This is from reading the source, not a live write: verify it on a test account, never on the
-   household. The one server change: the same call (series id, `played=false`, no `episode_ids`) also deletes the
-   pointer row (item 6). An old server does the reset too; it has no pointer to clear.
-   Client: `SeriesDetailStore.resetProgress()` beside `setEpisodePlayed` (`DetailStore.kt:165–172`). It calls
-   `apiClient.setPlayed(seriesId, false)`, merges the answer into the overlay and passes it to `WatchedBus.publish`.
-   Two cautions:
-   - `markUnplayed` swallows a failure (it only logs). Show the toast only when the returned map has every counted
-     episode unplayed. Otherwise show no toast, and the page shows what came back.
-   - The series' own overlay entry is replaced by one without `continue_episode_id`. That is what we want.
+   `LastPlayedDate=null`, so no separate position zeroing is needed. This is from reading the source, not a live write:
+   verify it on a test account, never on the household. What to build:
+   - `PlaybackStartRequest` (`Models.kt:1311–1326`) gains `start_over: Boolean = false`. It is optional with a
+     default, so `WireCompatTest` passes; an old server ignores it (`ignoreUnknownKeys`, `Server.kt:224`). The client
+     sends it only from the *Start over* button, with `start_position_ms = 0`.
+   - `startPlayback` (`:470`) puts `startOverSeriesId` and `durationMs` on `TrackedPlayback` (`:84–97`), only when the
+     item is an episode of a series. The duration comes from the item details it already reads (`:505`), else the
+     catalog runtime; if both are missing, the threshold is 60 s of playback.
+   - `reportProgress` (`:660`) and `stopPlayback` (`:682`) check it: at the first position ≥ 5 % of the duration, latch
+     it (once per session) and start the clear in the service's own scope. A heartbeat never waits for it, and a
+     failure only logs. The clear runs `setPlayed(device, seriesId, played = false)`, then writes the playing episode's
+     last known position back through the same writer the heartbeats use, then runs the invalidation the `/tv/played`
+     route runs (`invalidatePlaystate`: Continue list rebuilt, `home_changed` pushed).
+   - **Ordering.** The clear also unmarks the playing episode, which is intended: it was watched, and must become an
+     ordinary in-progress episode. Its position is then written back at once, not at the next 10 s heartbeat. A stop
+     for that session waits for a running clear (bounded, e.g. 15 s) before it queues its own write, so the stop's
+     position is always the last write on that episode.
+   - Below 5 % nothing happens. The latch is per session, so a second session (a hand-off to a TV that also carries
+     `start_over`, item 11) may run the clear again. That is harmless: unmarking unwatched episodes changes nothing, and
+     the playing episode's position is written back again.
+   - `markUnplayed` swallows failures (it only logs). The page reads playstate again on return, so a partial clear
+     shows as it really is; nothing on screen claims success.
 
-4. **FR-R343-2 step 1 never fires as written — needs the owner.** On a finished series every episode is *Played*.
-   R185 and R306 treat a position on a Played item as not a resume point:
-   - the page's in-progress test is `!ps.played && ps.resumeMs > 0` (`SeriesDetailScreen.kt:329`);
-   - Continue Watching asks Jellyfin for `IsPlayed=false` (`JellyfinClient.kt:860`) and skips Played items
-     (`HomeFeedService.kt:1031`);
-   - the server starts a Played item at 0 (`PlaybackService.kt:506–510`, `resolveStartPositionTicks` `:1351`).
+4. **Picking an episode by hand on a finished series follows Jellyfin (owner).** Nothing changes in code: a watched
+   episode starts at 0 (R306 FR-R306-2, `resolveStartPositionTicks` `PlaybackService.kt:1351`), Jellyfin keeps its tick
+   and moves its last-played date, and the series stays finished. The first draft's question (resume inside a rewatch
+   with the ticks kept) is gone with the pointer: after Start over passes 5 %, nothing is watched, and R185/R306 no
+   longer get in the way.
 
-   R306 FR-R306-2 accepted exactly this: *a re-watch … left part-way starts again from the top*. So during a rewatch
-   with the ticks kept (Q1), an episode stopped half-way starts from 0 next time. Jellyfin still holds its position
-   (a stop under 90 % leaves *Played* true and saves the position). **Lean: resume it** — only for the pointer's own
-   episode, and only when the pointer row says the viewer stopped there part-way, playing in order (item 6). Then the
-   position is one we know is real, not an R185 leak. The client sends it as `start_position_ms` (which
-   `resolveStartPositionTicks` already lets win), labels Play *Resume · S01E05*, and draws the resume bar on that one
-   card. If the owner says no, drop step 1: Play reads *Play · S01E05* and starts from 0.
+5. **Jellyfin's next-up and Continue watching (answers open question 4).** `getNextUp` sends no `enableRewatching`
+   (`JellyfinClient.kt:1455–1469`), so Jellyfin follows the *highest-numbered* watched episode and returns nothing for
+   a finished series. Resume asks for `IsPlayed=false` (`:860`) and skips watched items (`HomeFeedService.kt:1031`). So
+   a finished series is not in Continue watching, and after Start over passes 5 % S01E01 enters as an ordinary resume
+   item. Both are Jellyfin's normal behaviour, as the owner asked. One consequence, accepted with that decision: a
+   shuffled episode finished on an *unfinished* series is ticked, and next-up then follows the highest-numbered watched
+   episode. A viewer at S01E03 who shuffles and finishes S02E07 sees next-up S02E08, and the page's Play follows it via
+   `continue_episode_id`.
 
-5. **Jellyfin's next-up can't be the pointer (answers open question 4).** `getNextUp` sends no `enableRewatching`
-   (`JellyfinClient.kt:1455–1469`), so Jellyfin's default (off) applies. Next-up then follows the *highest-numbered*
-   played episode and returns nothing for a finished series. So today a finished series is not in Continue Watching
-   at all, rewatched or not. `enableRewatching=true` orders by date played instead, and every shuffled play moves
-   that — exactly what FR-R343-6 rules out. The numbering rule hurts an unfinished series too. Say a viewer has watched
-   S01E01–E03, shuffles, and finishes S02E07: Jellyfin's next-up becomes S02E08. R306 hands that to the page through
-   `continue_episode_id`, so Play jumps to S02E08. The pointer is therefore needed on any series that has been
-   shuffled, not only on finished ones (item 6).
+6. **Removed: the in-order pointer.** The first draft's `series_pointer` table, migration `64.sqm` and the fifth
+   Continue-list source are dropped (owner decision 1). There is no per-viewer playback state of our own in this phase.
 
-6. **The pointer: one table, written on the stop path, read by R219.** Build it like `audiobook_progress`
-   (`Audiobooks.sq`), the precedent for per-viewer state that we keep ourselves.
-   - Migration `64.sqm` (63 is the latest) and `SeriesPointer.sq`: `series_pointer(user_id, series_id, episode_id,
-     finished INTEGER, updated_at, PRIMARY KEY (user_id, series_id))`.
-   - **Written** in `PlaybackService.stopPlayback` (`:682–693`). The client's stop, the watchdog and a superseded
-     session all go through it. Write the row **before** `releaseSession` queues the stop, so the Continue rebuild
-     that follows sees it. Only for an episode of season ≥ 1, and only for a session not started with
-     `shuffle: true`. `finished` = past 90 % of the runtime, or past the episode's credits marker (item 12).
-     `TrackedPlayback` (`:84–97`) gains `seriesId`, `durationMs`, `shuffle` and `priorPositionMs` (item 9). All four
-     are filled in `startPlayback`, which already reads the item's details (`:505`).
-   - **The answer:** if the row is finished, the episode after it (`nextEpisodeAfter`), wrapping to the first counted
-     episode after the last. If not finished, the row's own episode.
-   - **Read** by `buildCanonicalContinueList` (`HomeFeedService.kt:960…`) as a fifth source: a next-up candidate for
-     that series, with `lastActivityAt = updated_at`. On a finished series it always applies. On an unfinished series
-     it applies only while its answer is still unplayed. If the viewer went on in another Jellyfin client, the row is
-     stale, and Jellyfin's next-up is used instead. A wrap back to S01E01 makes no entry, so a series rewatched to the
-     end leaves Continue Watching, as it does today.
-   - The page reads the answer through the existing `continue_episode_id`. **No new wire field.** Home and the page
-     then agree, which is open question 4's lean.
-   - **Deleted** by the reset (item 3). Never written for specials, so playing a special on its own moves nothing.
-
-7. **Finished, the opening season and the hint (FR-R343-1/2) are client work over server-pushed flags.** It is the
-   same derivation the page already does for `watchedCount` (R84), using item 2's helper. *Finished* = every counted
-   episode is `played`. On a finished series:
+7. **Finished, the opening season, the hint and the button (FR-R343-1/2) are client work over server-pushed flags.**
+   It is the same derivation the page already does for `watchedCount` (R84), using item 2's helper. *Finished* = every
+   counted episode is `played`. On a finished series:
    - open on the first season with index ≥ 1, not on `size - 1`;
-   - `resumeEpId` = `continue_episode_id` when present, else the first counted episode;
-   - build the Play label from `resumeEpId` with `episodeCode`, always (no more literal `E1`);
-   - the hero's accent line (`:488–512`) reads `detail.all_watched`, and the *{w} of {n} episodes watched* line above
-     it is hidden, so the fact is said once;
-   - the *UP NEXT* ribbon already follows `resumeEpId` (`EpisodeCard.kt:149`, `MultiEpisodeCard`).
+   - the primary button reads `"${str("detail.start_over")} · $code"`, `$code` from `episodeCode` for the first
+     counted entry, and plays it through `buildEpisodeContext` with `startOver = true` carried on `Dest.Player` to
+     `PlayerStore`'s start (only when `SeriesDetail.start_over`; else *Play · $code*, same target);
+   - the hero's accent line (`:488–512`) reads `detail.all_watched`, and the *{w} of {n} episodes watched* line is
+     hidden, so the fact is said once;
+   - the *UP NEXT* ribbon (`EpisodeCard.kt:149`, `MultiEpisodeCard`) marks the first counted entry, because
+     `resumeEpId` resolves to it on a finished series.
 
-   For an unfinished series, also fix item 2's opening season: the first unfinished season with index ≥ 1, and
-   Specials only when nothing else is left.
+   The label always comes from `episodeCode`, never a literal. R292's `ResumeRecord` (`PlayerResume.kt:20–45`) gains
+   `startOver: Boolean = false`, so a return from the background before 5 % still carries the flag.
 
-8. **Where the controls go in the shipped layout.** The Compose page is not laid out like the mockup. Its season
-   picker (`SeriesDetailScreen.kt:683`) comes **before** the Episodes header (`:706–727`), and the picker is drawn
-   only for 2+ seasons.
-   - **Reset on the TV:** a chip at the end of the existing header row. Focus order becomes hero → season pills →
-     Reset → episode rail, not "between the hero's actions and the season pills". Down from the hero still lands on
-     the season pills (R138/R232's scroll-then-focus, `:608`). On a one-season series the chip sits between the hero
-     and the rail, so R296's Up bridge on each card must pass through it. Moving the header above the pills, as
-     drawn, is item 13.
-   - **Arming:** the first OK arms it for 4 s (`reset_confirm`). Moving focus off it disarms it too, so no armed
-     control is left behind on a TV. When the reset is confirmed, move focus to Play (`playFR`) and scroll to the
-     hero *before* the chip leaves composition. A focused node that disappears strands focus (the R200/R201 class).
-   - **Shuffle on the TV:** a trailing item in `SeasonPicker`'s row (`SeasonPicker.kt:48`), after a divider, with its
-     own key. A one-season series with 9+ episodes needs the row too: draw the picker whenever Shuffle shows (one
-     *Season 1* pill and Shuffle), as the mockup does.
-   - **Phone:** the same header row under `LocalCompact`, with the Shuffle chip at its right, and the
-     *All {n} episodes watched · Reset progress* row under it.
-   - **Desktop (open question 3, decided by the code):** `SeriesDetailScreen` is one composable for every family. It
-     branches on `LocalCompact` only. So the desktop gets the phone's row below 600 dp and the TV's chip above it, with
-     no extra work. With a pointer, "Press again" is wrong: use the `_tap` wording (*Tap again* on touch, a *Click
-     again* variant on a pointer) and keep *Press again* for the D-pad.
-   - **Toast:** the TV has no local toast host. `MusicToastHost` is drawn only when `handset` (`RaviloApp.kt:2451`).
-     Draw it in every family (or reuse R152's `ServerMessageHost`). No new component.
+8. **Where the controls go (FR-R343-5/9).** The app's page today draws the season picker (`SeriesDetailScreen.kt:683`)
+   **before** the Episodes header (`:706–727`), and the picker only for 2+ seasons. Decided: match the mockup.
+   - Put the header and the pill row in **one** lazy item (key `seasons`), header first. The hero stays item 0 and
+     this item stays item 1, so Down from the hero still scrolls to item 1 and focuses the selected pill (`:608`).
+     When there is no pill row (one season, under 9 episodes), the item is the header alone.
+   - **TV:** the header has nothing focusable (title, the count, the bar). Shuffle is the pill row's last item after a
+     divider, with its own key. A one-season series with 9+ episodes draws the row (one *Season 1* pill and Shuffle).
+   - **Phone:** the same header under `LocalCompact`, with the Shuffle chip at its right.
+   - **Desktop (open question 3, decided by the code):** `SeriesDetailScreen` is one composable for every family and
+     branches on `LocalCompact` only, so the desktop gets the phone's shape below 600 dp and the TV's above it with no
+     extra work.
+   - No Reset chip, no arming, and no toast (FR-R343-3 removed; the clear happens in the player).
 
 9. **A shuffled play never leaves a resume point — done on the server.** The client starts every shuffled entry with
-   `start_position_ms = 0`, which overrides a resume point on any server. `PlaybackStartRequest` (`Models.kt:1311–1326`)
-   gains `shuffle: Boolean = false`. It is optional with a default, so `WireCompatTest` passes, and an old server
-   ignores it (`ignoreUnknownKeys`, `Server.kt:224`). A final stop at 0 would not be enough: the progress heartbeats
-   write the shuffled position into Jellyfin as the episode plays, and a 0 would also wipe an in-order resume point on
-   that same episode. So:
-   - at start, the server keeps the episode's position from before the shuffle (`priorPositionMs`, from the user data
-     it already reads at `:505`);
-   - at stop, a shuffle session that is not finished reports `priorPositionMs` instead of the playhead; a finished one
-     reports the real position, and Jellyfin marks it Played.
+   `start_position_ms = 0`, which overrides a resume point on any server. `PlaybackStartRequest` also gains
+   `shuffle: Boolean = false` (optional, default). A final stop at 0 would not be enough: the heartbeats write the
+   shuffled position into Jellyfin as the episode plays, and a 0 would also wipe a resume point the viewer had on that
+   same episode. So:
+   - at start, the server keeps the episode's position from before the shuffle (`priorPositionMs` on
+     `TrackedPlayback`, from the user data it already reads at `:505`);
+   - at stop, a shuffled session that is not finished (R347's rule) reports `priorPositionMs` instead of the playhead;
+     a finished one reports the real position, and Jellyfin ticks it.
 
    This lives in `stopPlayback`, so the watchdog's forced stop (`:762–781`) and the R219 writer get it too.
-   `LastPlayedDate` still moves, but nothing reads it for the pointer any more (item 6).
+   `LastPlayedDate` still moves, which can lift the series in Continue watching; that is Jellyfin's normal tracking.
 
-10. **Old server and new app, and the reverse.** On an old server, the reset works (item 3), and *finished*,
-    *Play · S01E01* and the opening season are client-only, so they work. Shuffle does not: an old server keeps the
-    shuffled position and moves Jellyfin's next-up. So show Shuffle only when the server says so. `SeriesDetail` gains
-    `shuffle: Boolean = false` (an additive response field), set by a new server when the series has 9 or more counted
-    episodes. That also puts the 9+ count on the server (render, don't compute). Count episodes, as the owner said,
-    not files: a series of three 3-part files gets the pill and shuffles three entries. A new server with an old app
-    changes nothing: no field is removed, and no enum gains a value. `WireBaseline` gains the two new fields.
+10. **Old server and new app, and the reverse (FR-R343-10).** On an old server, `start_over` and `shuffle` on the
+    start are ignored: nothing would be cleared, and a shuffled stop would leave a resume point. So the app shows
+    *Start over* and Shuffle only when the server says it can: `SeriesDetail` gains `start_over: Boolean = false` and
+    `shuffle: Boolean = false` (additive response fields). A new server sets `start_over` always and `shuffle` when the
+    series has 9 or more counted episodes, which also puts the 9+ count on the server (render, don't compute). Count
+    episodes, as the owner said, not files: three 3-part files get the pill and shuffle three entries. A new server
+    with an old app changes nothing. `WireBaseline` gains the new fields; no field is removed and no enum gains a value.
 
-11. **Casting a shuffle (open question 2) — needs the owner.** The two kinds of receiver advance differently. A
-    Chromecast gets the sender's episode list and walks it (`RaviloApp.kt:1879–1883`, the in-player hand-off at
-    `:1193–1199`, `castEpisodes`). A Ravilo screen (R264/R265) gets its next episode from the server, in order
-    (`MediaStore.kt:669`, `PlayPush.next`). Neither knows about shuffle, so a cast play leaves a resume point and moves
-    the pointer like any in-order play. *Casts that episode only* would hold for a Chromecast given a one-entry list,
-    but not for a screen. **Lean:** casting leaves shuffle, as picking from the rail does. The TV plays the current
-    episode and goes on in order, on both kinds of receiver (the Chromecast gets the season list, as today), and it
-    counts as an in-order play. That is one rule, no receiver change, and no shuffle on the remote. A shuffled queue
-    on the receiver stays a later phase.
+11. **A shuffle carries over to the TV (open question 2, owner: carry it).** The two receivers advance differently,
+    so each gets its own carrier. Both carriers are additive fields.
+    - **Chromecast.** The receiver walks the sender's list: next = `episodes[current_index + 1]` (`Receiver.kt:687`,
+      `:719`), and every entry is started through `/api/tv/playback/start` (`:353`). The sender
+      (`RaviloApp.kt:1879–1883` from the page, `:1193–1199` for the in-player hand-off, `castEpisodes`) sends the
+      shuffled order as `episodes`, in play order. `CastLoadData` (`CastMessages.kt:60–80`) gains `episodes_shuffled:
+      Boolean = false` and `start_over: Boolean = false`. With `episodes_shuffled`, the receiver sends `shuffle: true`
+      on each start and uses `player.up_next_shuffled` on its card. With `start_over`, it sends `start_over: true` on
+      its first start only. Do **not** reuse the existing `shuffle` field: it is music's (286) and reorders `tracks`.
+      The receiver bundle is served by the backend, so receiver and server always ship together.
+    - **Ravilo screen.** The screen never decides what is next: the server's play push names it (`PlayPush.next`, from
+      `nextEpisodeAfter`, `MediaStore.kt:669`, `:679–690`), and the screen's own `playNext` posts `/remote/play` for that
+      id (`Screen.kt:526–535`). `RemotePlayRequest` (`Models.kt:1603–1607`) gains `shuffle_queue: List<String> =
+      emptyList()` (the entries after this one) and `start_over: Boolean = false`. In `/remote/play`
+      (`RemoteRoutes.kt:126–160`), a non-empty queue sets an in-memory context for that screen device: the series, the
+      current id and the rest. The push's `next` becomes the queue's head (title and kicker resolved as
+      `nextEpisodeAfter` does), and the push gains `shuffled: Boolean = false` for the card's words. When the screen
+      posts `/remote/play` for the head id with no queue, the server advances the context. Any other id clears it (that
+      leaves shuffle, like a rail pick). The context is also cleared after the last entry and when the watchdog reaps
+      the device (`onDeviceReaped`). When that screen calls `/api/tv/playback/start` for the context's current id, the
+      server treats it as `shuffle: true` (item 9), and as `start_over: true` when the play request carried it. The
+      screen app needs no change to follow the order. Its card's *SHUFFLED* wording waits for its next build (Tizen
+      work is paused).
+    - The cast remote shows what the receiver reports; it needs no change.
 
-12. **Shipped bug: a short episode left at its credits is not ticked.** `advanceNext` marks the episode played only
-    at ≥ 90 % (`PlayerScreen.kt:639`; the same test at `:670`). It fires at R182's credits marker or the 20 s card. On
-    an 11-minute kids' episode with a minute and a half of credits, that is about 86 %. So the episode is not ticked,
-    its stop saves an 86 % resume point, and it shows as in progress. From reading the code. R343 depends on
-    *finished* being right (the finished state, the pointer, Q5's tick), so fix it here. Finished = past 90 % **or**
-    past the episode's `credits_start_ms` when it has one. Use the same test in `advanceNext`, `skipCredits` and the
-    server's pointer write (item 6).
+12. **A short episode left at its credits is not ticked — a shipped bug, now R347.** `advanceNext` ticks only at
+    ≥ 90 % (`PlayerScreen.kt:639`, `:670`), and on a short episode the credits can start earlier. R343 depends on it:
+    *finished* (FR-R343-1), the shuffled stop's "finished" (item 9) and Q5's tick all use R347's rule (past 90 % or past
+    the credits marker). Build R347 first, or in the same change.
 
-13. **Should the Episodes header move above the season pills, as drawn? — needs the owner (small).** The mockup
-    draws the Episodes header, then the season pills, then the rail (`ravilo-app.js:824–842`). The app draws the
-    pills, then the header, then the rail (item 8). **Lean: keep the app's order.** Moving the header re-opens focus
-    bridges that four phases settled (R138, R201, R232, R296), and nothing in R343 needs it.
+13. **The focus guard (FR-R343-9, owner).** The owner asked that the header move not re-open the D-pad bugs that R138,
+    R201, R232 and R296 each fixed on this page. Concretely:
+    - **The pill row is not lazy.** `SeasonPicker` (`SeasonPicker.kt:48`) is a `LazyRow` with `firstFocusRequester` on
+      the selected pill. That is a requester on a lazy item, the exact R201 failure, kept alive today by a
+      `scrollToItem` workaround (`:65–71`). A series has few seasons, so make it a `Row` with `horizontalScroll`: every
+      pill and Shuffle are always composed, and the workaround goes.
+    - **One way to focus something inside the page's `LazyColumn`.** Play (hero, item 0) and the selected pill (item 1)
+      are requested only through one helper that awaits the scroll that composes the item and then calls
+      `requestFocusRetrying` (R232's sequence, `:600–612`, `FocusModifiers.kt:55`). No bare `requestFocus()` on them.
+    - **The episode rail stays lazy** (a season can hold 100+ episodes), so it is entered only through its
+      `focusRestorer()` (as today) and never through a per-card requester. R296's per-card Up bridge stays.
+    - **No focus move depends on the overlay's timing.** The auto-season one-shot (`:295–303`) sets the selected season
+      only; it never moves focus.
+    - **The test.** The repo has no Compose UI test yet: every `ravilo-ui` test is a pure function in `commonTest` or
+      `androidUnitTest`, and `desktopTest` is not an option on the dev host (Skiko). Add `SeriesDetailFocusTest` in
+      `ravilo-ui/src/androidUnitTest`, run under **Robolectric** on the plain JVM: no emulator, no device, no Skiko. It
+      runs in CI's existing step `./gradlew :ravilo-ui:testDebugUnitTest` (`.github/workflows/ci.yml:142`). Test-only
+      dependencies: `androidx.compose.ui:ui-test-junit4`, `ui-test-manifest` and `org.robolectric:robolectric`, with
+      `unitTests.isIncludeAndroidResources = true`. Nothing ships, and nothing reaches the Flatpak's offline sources.
+      Make `SeriesDetailLoaded` `internal` so the test can render it with a fixed `SeriesDetail` and overlay, set a TV
+      configuration (`@Config(qualifiers = "w960dp-h540dp")`, `LocalCompact` false), and tag Play, each pill, Shuffle,
+      the first card and its Watched toggle. Each step is `onRoot().performKeyInput { pressKey(Key.DirectionDown) }`
+      (or Up/Left/Right) followed by `assertIsFocused()` on exactly the expected tag. Fixtures and walks:
+      - **R138 / R232:** 3 seasons × 13, overlay delivered one frame *after* the first composition. Play → Down focuses
+        the selected pill on the **first** press → Right to the last pill → Right to Shuffle → Down enters the rail →
+        Up returns to the pill row → Up returns to Play.
+      - **R201:** 11 seasons, active season 11 (all earlier seasons watched). Down from Play focuses pill 11 on the
+        first press.
+      - **R296:** 1 season × 6 (no pill row). Down from Play enters the rail; Up from a card returns to Play; Up from a
+        card's Watched toggle returns to that card.
+      - **This phase:** a finished 3 × 13 series (opens on Season 1, Play reads *Start over*), and a 1 × 13 series (the
+        one-pill row with Shuffle).
+    - The sweep FR-R236-5 asked for (other screens) stays outside this phase.
 
 14. **The player.** `Dest.Player` (`RaviloApp.kt:288`) gains an optional shuffle plan: the order (a season index and
     a group index per entry) and the place in it. A multi-episode file is one entry, played from its first id, as
@@ -346,28 +395,45 @@ And a shuffled finish moves Jellyfin's next-up on an *unfinished* series too. Si
     - In `onNavigateToEpisode` (`:1947–1985`), an id equal to the plan's next entry continues the shuffle. Any other id
       (a rail pick through `chooseEpisode`, `PlayerScreen.kt:687–690`) drops the plan and plays on in that season's
       order, as today.
-    - The kicker is `"${str("detail.shuffle")} · $code"`. The next-up card's kicker is `player.up_next` today
-      (`PlayerScreen.kt:3348`), in capitals; in a shuffle use a new `player.up_next_shuffled`, in the same case.
+    - The kicker is `"${str("detail.shuffle")} · $code"`. The next-up card's kicker today is `player.up_next`
+      (`PlayerScreen.kt:3348`); in a shuffle it is `player.up_next_shuffled`.
     - Auto-advance follows the viewer's *Play next automatically* setting (`bk.autoplayNextEnabled`, `:1171`), as
       in-order play does. The last entry has no next, so the card offers *Skip credits* and playback ends (R182).
-    - R292's `ResumeRecord` (`PlayerResume.kt:20–45`) gains `shuffle: Boolean = false`, so a return from the
-      background restarts the session as a shuffled one. The rest of the plan is not saved (nor is the rail), so after
-      a low-memory restore the shuffle ends with that entry.
+    - The in-player hand-off to a TV (`:1193–1199`) sends the rest of the plan (item 11), not the season rail, and
+      `start_over` while the local session carries it.
+    - `ResumeRecord` (`PlayerResume.kt:20–45`) gains `shuffle: Boolean = false`, so a return from the background
+      restarts the session as a shuffled one. The rest of the plan is not saved (nor is the rail), so after a
+      low-memory restore the shuffle ends with that entry.
     - Unchanged by R343: today's in-order binge stops at the end of a season, because the player's list is one season.
 
-15. **Strings.** The shipped table uses dotted keys and its own words for *episode* (`partur` / `partar` in Faroese,
-    R288's lexicon). Keys: `detail.shuffle` (or reuse `music.shuffle` — *Shuffle · Bland · Blanda*, the same three
-    words), `detail.all_watched`, `detail.reset_progress`, `detail.reset_confirm`, `detail.reset_confirm_tap`,
-    `detail.reset_done` and `player.up_next_shuffled`. `reset_done` must not hard-code *S01E01*: the first counted
-    episode may be a three-part file, or the series may start at Season 2. Write it as *Progress reset · {code} is up
-    next*, filled by the same `episodeCode` as the Play button. `all_watched`'s `{n}` is the counted episodes. A note
-    outside R343: the series page and the player print `S1E5` and `S1 · E5` (`SeriesDetailScreen.kt:168–178`), not
-    the house spelling S01E05. The new strings take whatever the formatter prints, so they always match the button.
+15. **Strings (FR-R343-7).** The shipped table uses dotted keys and its own words for *episode* (`partur` / `partar` in
+    Faroese, R288's lexicon). `detail.start_over` and `detail.shuffle` repeat the shipped `ab.start_over` and
+    `music.shuffle` words. Codes are never in a string: they come from `episodeCode`, so the button and every label
+    agree. The `S1E5` / `S1 · E5` spelling on this page (`SeriesDetailScreen.kt:168–178`) is R346's FR, not this phase's.
 
 16. **Build order.** Each step can ship alone:
-    (a) client: item 2's helper and item 7 (finished, the opening season, the Play label, the hint). This also fixes
-    the specials bug;
-    (b) Reset: item 3, plus item 8's controls and the toast;
-    (c) server: item 12's finished test, then the pointer (item 6) and its R219 source;
-    (d) Shuffle: items 9, 10 and 14, with item 11's cast rule;
-    (e) the strings (item 15), with each step.
+    (a) R347 (finished = past 90 % or past the credits marker) and R346's counting helper;
+    (b) the layout and the focus guard (items 8 and 13), with the test, before anything else on the page moves;
+    (c) finished, the opening season, the hint and *Start over* (items 3 and 7), with the server's clear and the
+    `start_over` flags;
+    (d) Shuffle: items 9, 10 and 14;
+    (e) Shuffle and Start over on the TV (item 11);
+    (f) the strings (item 15), with each step.
+
+### Owner decisions (2026-10-01)
+
+1. **Start over replaces the pointer.** On a finished series the primary button reads *Start over · S01E01*. It plays
+   S01E01, and once 5 % of it has played the server marks every episode of the series unwatched in the background, on
+   the existing `PUT /tv/played` path, keeping S01E01's live progress. After that, Jellyfin's normal tracking governs
+   everything. Stopped before 5 %, nothing is cleared. Picking an episode by hand follows Jellyfin's normal logic. The
+   5 % trigger rides an additive `start_over` flag on the playback start, and the server acts on progress. The
+   `series_pointer` table, migration 64 and the fifth Continue-list source are dropped. → FR-R343-2, FR-R343-4,
+   FR-R343-6 (removed), items 3–7.
+2. **No separate *Reset progress* control.** Start over is the reset. Its FR and strings are removed; the mockup still
+   draws the chip, and the spec wins. → FR-R343-3 (removed), FR-R343-7, item 8.
+3. **Casting a shuffle: the shuffle carries over to the TV**, on a Chromecast (the sender's list, `episodes_shuffled`)
+   and on a Ravilo screen (the server keeps the order per session, `shuffle_queue`). → FR-R343-8, item 11.
+4. **Header order: match the mockup** (the Episodes header above the season pills), and *"make sure that we don't keep
+   falling into these D-pad focus issues"*: no requester on a lazy item, one scroll-then-focus helper, and a Compose UI
+   focus-path test under Robolectric in CI. → FR-R343-9, items 8 and 13.
+5. **The 9+ threshold and everything else stay as reviewed.**

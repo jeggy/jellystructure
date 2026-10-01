@@ -8,15 +8,21 @@
 ## Status
 
 `Planned`. Written 2026-10-01 (design-authored) from `design/ravilo/Desktop - Music App Icon.html`. **Dev-reviewed
-2026-10-01** (§Dev review: FR-R342-6 is dropped, the plug-in needs a spike on the Mac first, and items 6 and 9 need the
-owner).
+2026-10-01** (§Dev review). **The owner decided the review's open items the same day** (§Owner decisions, at the end
+of the review):
+- no Dock tile plug-in, so the closed Dock always shows the films icon;
+- the undocumented icon-style keys are read;
+- no setting;
+- FR-R342-6 is dropped.
+
 **Numbering:** checked against `main` (tree `f88c706e`) the same day, after R341.
 
 **Builds on:**
 - R328: the Mac app and its Swift library
 - R337: the desktop's films ⇄ music switch
-- R338: the macOS appearance, read through `effectiveAppearance`
-- R341 FR-R341-1: the 66 % Mac size
+- R338: the system's light and dark, polled through the Swift library (`DesktopAppearance`)
+- R341: the 66 % Mac size (FR-R341-1) and the installed films icon
+- R345: an unreachable server is not "no music" (FR-R342-4's fallback depends on it)
 
 **macOS only** (Q5).
 
@@ -27,19 +33,20 @@ owner).
 | Q1 | The drawing | **M7b**: the films icon unchanged, plus M7's bubble (a thin gradient ring with a white ♪) in the bottom-right corner. The jellyfish stays centred at full size. M3 and M4 were rejected outright. |
 | Q2 | What it follows | **The mode only**, whether or not anything is playing. Music mode shows ♪ even when nothing plays. Films mode shows the films icon even while music plays on in the bar. |
 | Q3 | Audiobooks | **The same ♪.** There is no audiobooks mode: books are part of music mode. |
-| Q4 | Closed and reopened | **The mode is remembered.** Ravilo opens in the mode it was closed in, and the closed Dock icon shows that mode. |
+| Q4 | Closed and reopened | **The mode is remembered, and the closed Dock shows the films icon.** Ravilo opens in the mode it was closed in. Once it has quit, the Dock shows the installed films icon, styled by macOS. There is no Dock tile plug-in (owner, 2026-10-01): on macOS 26 a plug-in stops the Dock styling the icon at all (§Dev review item 9). |
 | Q5 | Linux / Windows | **Mac only for now.** GNOME can't change a running app's icon. KDE and Windows can come later as their own phases. |
-| Q6 | macOS 26 icon styles | **Draw every style** for both icons, so Ravilo looks right in Default, Dark, Clear and Tinted. |
-| Q7 | Finder, Launchpad, Spotlight | **Nice to have, not required.** Do it only if it is safe for the signature and for updates (FR-R342-6). |
+| Q6 | macOS 26 icon styles | **Every style.** The films icon is the installed one, and macOS styles it. The running music icon is Ravilo's own picture for the style the viewer picked. It is read from macOS's undocumented style keys, and falls back to Default or Dark (FR-R342-7; owner, 2026-10-01). |
+| Q7 | Finder, Launchpad, Spotlight | **Dropped** (owner, 2026-10-01). They keep the films icon: rewriting the app's own icon is not safe for its signature (§Dev review item 11). |
+| Q8 | A setting to turn it off | **None** (owner, 2026-10-01). |
 
 ## Requirements
 
 **FR-R342-1 — The music icon (M7b).** It is drawn on R341's Mac placement, on a 100-unit tile:
 
 - **The jellyfish:** R341 FR-R341-1's Mac transform, centred and unchanged, with a **circle of radius 17 at (78, 78)
-  cut out of it**. That is a real cut, not a navy disc painted on top, so it holds on glass (FR-R342-5).
+  cut out of it**. That is a real cut, not a navy disc painted on top, so it holds in Clear and Tinted (FR-R342-2).
 - **The ring:** a circle at (78, 78) with radius 15, `fill` white at 8 %, and a 2.6-unit stroke in the brand gradient
-  `#AA5CC3 → #00A4DC`.
+  `#AA5CC3 → #00A4DC`. In Clear and Tinted the ring has no fill, only the stroke.
 - **The note:** ♪ in white at `translate(75.48 85.01) scale(.42)`, drawn about its head:
 
 ```svg
@@ -52,45 +59,68 @@ owner).
   of 19, a 4.2-unit stroke, and the note at `translate(75 86.25) scale(.5)`.
 - **The bubble sits bottom right** so it stays clear of the red notification badge, which macOS puts top right.
 
-**FR-R342-2 — Two Icon Composer files and their exports.**
-- `ravilo-films.icon` is R341's icon, and the installed one.
-- `ravilo-music.icon` has four layers: background (navy), jellyfish (with the cut), ring, and note.
-- From each file, export one PNG for each of the **six styles**, at the sizes the Dock and ⌘-Tab use:
-  - **Default**
-  - **Dark** (tile `#05070E`, colours kept)
-  - **Clear light** and **Clear dark** (glass, with every mark in one white tone)
-  - **Tinted light** and **Tinted dark** (every mark in the system tint)
-- The app ships these exports. The design canvas shows each style, but only approximately: Icon Composer's own render
-  is the reference.
+**FR-R342-2 — The music icon's Icon Composer file and its exports.**
+- **The source.** `ravilo-music.icon` has four layers: background (navy), jellyfish (with the cut), ring, and note.
+  The films icon is R341's installed icon. It needs no exports, because films mode shows the installed icon itself
+  (FR-R342-3).
+- **Made by hand.** The exports are rendered on the Mac from the `.icon` with Icon Composer (or its `ictool`) and
+  committed to `ravilo-desktop/icons/dock/`. CI never runs Icon Composer.
+- **What is exported:**
+  - **Default**, **Dark** (tile `#05070E`, colours kept), **Clear light** and **Clear dark** (every mark in one white
+    tone; Clear light's marks keep the canvas's small shadow): one whole picture each.
+  - **Tinted light** and **Tinted dark:** two one-colour masks, the tile and the marks. The tint is the viewer's own
+    colour, so the Swift library paints the masks at run time: Tinted light fills the tile with the tint and draws
+    white marks; Tinted dark fills the tile with `#0C1322` and draws the marks in the tint.
+- **The margin.** Each picture carries macOS's icon-grid margin itself. The Dock draws a running app's picture exactly
+  as given, so a tile drawn edge to edge would sit bigger than its neighbours (R341 open question 2).
+- **Sizes.** Each picture is 512 px, plus FR-R342-1's ≤ 32 px drawing as a second representation of the same image.
+  The Dock tile is at most 128 pt, which is 256 px on Retina, and ⌘-Tab is smaller.
+- **Where they go.** They are packaged with the Swift library in the app's resources (`appResourcesRootDir`,
+  `macos-arm64/`). When they are absent (a `gradle run`), the app sets no icon and nothing else changes.
+- **What is approximate.** Clear is an approximation: a picture has no live blur of the desktop behind it. Icon
+  Composer's own render is the reference for the rest.
 
-**FR-R342-3 — The running icon follows the mode and the style.** The Swift library sets the Dock image
-(`NSApp.applicationIconImage`) to the export matching the current mode and style. It updates:
-- at launch, before the window shows
-- on every switch between films and music (R337), at the same moment, with no animation
-- whenever the appearance changes (R338's KVO on `effectiveAppearance`)
+**FR-R342-3 — The running icon follows the mode and the style.** A new Swift call, `ravilo_dock_icon`, sets
+`NSApp.applicationIconImage` on the main queue:
+- **In music mode:** the music picture for the current style (FR-R342-7).
+- **In films mode:** `nil`. That puts back the installed films icon, which macOS styles itself.
 
-⌘-Tab follows on its own, because it shows the running app's image.
+It follows `inMusic`, what the screen shows, through one seam (`reportListeningMode`). It updates:
+- at launch, from `Main.kt`'s first `LaunchedEffect`, as soon as AWT is up. Until then (about a second or two after the
+  click) the Dock shows the installed films icon, which can't be avoided;
+- on every switch between films and music (R337), at the same moment, with no animation;
+- whenever the system's light/dark or the icon style changes. Both are read in R338's one-second tick
+  (`DesktopAppearance`).
 
-**FR-R342-4 — The mode is remembered on this Mac.**
-- **Where it's stored:** the last mode is a local preference. It isn't synced to the profile, so each device opens in
-  the mode it was left in.
-- **Launch:** Ravilo opens straight into the stored mode. Films must not flash up first.
-- **The fallback:** if music mode isn't available at launch, Ravilo opens in films mode, stores films, and the icon
-  follows. That covers three cases: there is no music library, the viewer has no music access, or no one is signed
+⌘-Tab follows on its own, because it shows the running app's image. On quit there is nothing to undo.
+
+**FR-R342-4 — The mode is remembered on this Mac.** This is already built: `ListeningMode` (R321) lives in
+`ravilo_music.json`.
+- **Where it's stored:** a local preference, not synced to the profile, so each device opens in the mode it was left
   in.
+- **Launch:** Ravilo opens straight into the stored mode. Films must not flash up first.
+- **The fallback:** if the server definitely says music isn't available, Ravilo goes to films mode, **stores films**,
+  and the icon follows. That covers no music library and no music access. Signing out already stores films. An
+  unreachable server is not a no: Ravilo stays in the stored mode (R345).
 - **One viewer per computer** (R337 Q12), so the stored mode belongs to this Mac.
 
-**FR-R342-5 — The closed Dock icon shows the stored mode.**
-- **How:** a Dock tile plug-in (an `NSDockTilePlugIn` in `Contents/PlugIns/`) reads the stored mode and the current
-  style, and draws the matching export. It does this even while Ravilo isn't running, including after a restart
-  before Ravilo has run.
-- **Signing:** the plug-in is signed and notarised with the app (R331).
+**FR-R342-5 — Withdrawn (owner, 2026-10-01).** It asked for the closed Dock to show the stored mode through a Dock tile
+plug-in. A plug-in stops macOS 26 styling the icon, so the closed Dock shows the installed films icon instead (Q4).
 
-**FR-R342-6 — Finder, Launchpad and Spotlight follow the mode only if it's safe (nice to have).**
-- **The only way:** Ravilo rewrites its own icon file (`NSWorkspace.setIcon(_:forFile:)` on the app bundle) at every
-  mode change and after every update.
-- **Do it only if** it keeps the code signature valid and doesn't break updates or Gatekeeper.
-- **If not,** these places keep the films icon. Nothing else depends on this.
+**FR-R342-6 — Withdrawn (owner, 2026-10-01).** It asked for Finder, Launchpad and Spotlight to follow the mode.
+`NSWorkspace.setIcon(_:forFile:)` on the app bundle fails `codesign --verify --strict`, and every update undoes it
+(§Dev review item 11).
+
+**FR-R342-7 — Which style the music icon uses.** The Swift library reads two undocumented global defaults:
+- **`AppleIconAppearanceTheme`:** `RegularDark` and `RegularAutomatic`; `ClearLight`, `ClearDark` and
+  `ClearAutomatic`; `TintedLight`, `TintedDark` and `TintedAutomatic`. When the key is absent, the style is Default.
+- **`AppleIconAppearanceTintColor`:** the tint, for the Tinted styles.
+
+The rules:
+- An `…Automatic` value resolves through the system's light or dark mode.
+- A missing key, an unknown value or an unreadable tint falls back to Default, or to Dark when the system is dark.
+  Nothing else breaks if Apple changes the keys.
+- On macOS 14 and 15 icons have no styles, so it is always Default.
 
 ## Non-goals
 
@@ -98,31 +128,42 @@ owner).
 - A separate audiobooks icon.
 - Any animation of the swap.
 - Changes to the films icon: that is R341.
+- The closed Dock showing the stored mode, and any Dock tile plug-in (FR-R342-5).
+- Finder, Launchpad and Spotlight following the mode (FR-R342-6).
+- A setting to turn the feature off (Q8).
 
 ## Acceptance
 
 1. Switch to music: the Dock and ⌘-Tab icons gain the bubble at that moment. Switch back: it's gone. Neither switch
    depends on whether anything is playing.
-2. Quit in music mode: the Dock keeps the music icon. Reopen: Ravilo opens in music mode, with no films screen first.
-3. Restart the Mac before opening Ravilo: the Dock shows the music icon.
-4. Remove the viewer's music access, then open Ravilo: it opens in films mode and the icon is the films icon.
-5. Cycle through Default, Dark, Clear and Tinted: both icons look like the rest of the Dock in each style. At 32 px the
-   bubble is still visible.
-6. The app still passes Gatekeeper after an update, whether or not FR-R342-6 was built.
+2. Quit in music mode: the Dock shows the films icon, styled by macOS. Reopen: Ravilo opens in music mode, with no
+   films screen first, and the Dock icon gains ♪ as soon as the app is up.
+3. In music mode, open Ravilo with the server unreachable: it stays in music mode and the icon keeps ♪ (R345).
+4. Remove the viewer's music access, then open Ravilo: it opens in films mode, stores films, and the icon is the films
+   icon.
+5. Cycle through Default, Dark, Clear and Tinted (with several tints) while in music mode: the music icon follows each
+   one within about a second, with Clear as an approximation. The films icon is macOS's own in each style. On macOS
+   14 and 15 the music icon is always Default.
+6. With the style keys removed, or set to a value Ravilo doesn't know, the music icon shows Default, or Dark in dark
+   mode.
+7. After an update, `codesign --verify --deep --strict` passes on the installed app, and it opens without a new *Open
+   Anyway*.
 
-## Open questions (for the dev review)
+## Open questions
 
-The code review comes later. These are left for it to answer, most of them on a real Mac.
+Answered by the dev review and the owner (2026-10-01):
+1. **Can an app tell the icon style?** Not through a public API. Ravilo reads the undocumented keys (FR-R342-7).
+2. **The Dock tile plug-in in the bundle:** withdrawn, there is no plug-in (FR-R342-5).
+3. **FR-R342-6:** not safe, so it is dropped.
+4. **Launch before the server answers:** Ravilo opens in the stored mode and steps back only on a definite no. The
+   offline case is a bug of its own, R345.
+5. **Export sizes:** 512 px plus the ≤ 32 px drawing (FR-R342-2).
+6. **Where the stored mode lives:** `ravilo_music.json`, unchanged. With no plug-in, nothing else reads it.
+7. **A setting to turn it off:** none.
 
-1. **Can an app tell which icon style the user picked** (macOS 26's Clear or Tinted)? If not, FR-R342-3 follows light
-   and dark only, and Clear and Tinted show the Default or Dark export. That needs a real Mac.
-2. **Can the Dock tile plug-in go inside the Compose Desktop / jpackage bundle,** and be signed and notarised by R331's
-   pipeline?
-3. **Is FR-R342-6 safe** on a signed, notarised app in `/Applications`? If it isn't, it is dropped.
-4. **Launch before the server answers:** FR-R342-4's fallback needs to know whether music is available. Is that known from the local cache at launch, before the server answers? If not, does Ravilo open in the stored mode and step back to films when the server says no, so the icon flips once? Or does it wait? The lean is to open in the stored mode and step back only on a definite *no*. Being offline is not a no.
-5. **The export sizes:** which pixel sizes does the Dock actually ask for (Retina at the largest Dock magnification, and ⌘-Tab)? Ship only those, from FR-R342-2's files.
-6. **Where the stored mode lives:** the app and the Dock tile plug-in both need it. Is that a shared `UserDefaults` suite, or does the plug-in read the app's own domain? And is the plug-in told when the mode changes while Ravilo is closed, which can't happen?
-7. **Turning the icon off:** should there be a setting? The owner hasn't asked for one, and the lean is no.
+Still to see on the Mac, while building:
+- How a custom tint colour is stored. If it can't be read, the Tinted styles use the system's accent colour.
+- Whether the Dock ever uses the ≤ 32 px representation of a running app's picture. If it doesn't, nothing breaks.
 
 ## Dev review (2026-10-01, against `main` `44e26871`)
 
@@ -134,7 +175,8 @@ apps found (Ghostty's plug-in on macOS 26, a 2026 crash report about another ven
 plug-in host); each says so. Nothing here was run on a Mac. The running half (FR-R342-3) is straightforward. The
 remembered mode (FR-R342-4) is mostly shipped already, apart from one existing bug (item 2). The closed-Dock half
 (FR-R342-5) has a cost the spec does not know about: on macOS 26 a Dock tile plug-in stops the Dock from styling the
-icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 and 9 need the owner, with leans.
+icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 and 9 needed the owner. They were
+decided the same day (§Owner decisions, below), and the spec above was brought in line.
 
 1. **The drawing in FR-R342-1 matches the canvas, number for number.** `app()` in the canvas (lines 116–131) draws
    the jellyfish at `at(1.18, 50, 50, 50, 59.5)` = `translate(-9 -20.21) scale(1.18)` (R341's Mac transform), masks a
@@ -161,13 +203,15 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
    (`:582–583` builds the first stack from `ListeningMode.read()`, so films never flash first) and steps back once,
    only on a definite no. The icon flips at most once.
 
+   *Spec'd on its own as **R345** (owner, 2026-10-01: fix it later).*
+
 3. **FR-R342-4 is already built, except for "stores films".** The mode is `ListeningMode` (`MusicDeviceStore.kt:15–21`).
    On the desktop it is the key `mode` in `ravilo_music.json` (`MusicDeviceStoreDesktop.kt:7`, a `PrefsFile`), in
    `~/Library/Application Support/Ravilo/` (`DesktopPaths.kt:18`). It is per device and never synced, and it is
    written on every switch (`RaviloApp.kt:1071`, `:2068`). Sign-out writes `video` (`MusicDeviceStore.kt:42–47`,
    called from `SettingsScreen.kt:180/198`), which covers "no one is signed in". What is missing is a write on the
-   definite no from item 2: `:952` resets the stack today but leaves `music` stored, so the closed icon (item 8)
-   would show ♪ for a viewer who can't use it.
+   definite no from item 2: `:952` resets the stack today but leaves `music` stored, so the next launch opens in
+   music again and steps back again. That write is part of R345.
 
 4. **The running icon follows `inMusic`, not `musicMode`, through one new seam.** `musicMode` (`:934`) is the stored
    wish. `inMusic` (`:949`) is what the screen shows. They differ only while the server says no, and the icon must
@@ -190,7 +234,8 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
    - **What can't be avoided:** from the click until the JVM is up (about a second or two), the Dock shows the
      bundle's own icon, which is films. FR-R342-3's "before the window shows" is met. "Never films first" in the
      Dock can only come from the plug-in, and only if the Dock keeps the plug-in's tile while the app launches. That
-     has to be checked on the Mac.
+     has to be checked on the Mac. *With no plug-in (owner decision 1), the Dock shows films until the app is up;
+     FR-R342-3 now says so.*
    - **⌘-Tab follows on its own**, as the spec says.
 
 6. **Open question 1: there is no public way to read the icon style. There are two undocumented global defaults —
@@ -226,7 +271,9 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
    - **What the bundle has today.** Only `ravilo.icns` (`build.gradle.kts:101`). It holds ten PNG entries
      (ic07–ic14, icp4, icp5; 16 to 1024 px), with no `.icon`, no `Assets.car` and no `CFBundleIconName`. So on macOS
      26 the installed icon is styled by the system's fallback for old icons, not from layers.
-   - **Making `ravilo-films.icon` the installed icon is R341's work**, and R342 builds on it:
+   - **Making `ravilo-films.icon` the installed icon is R341's work**, and R342 builds on it. *After owner decision 1,
+     films mode sets the image to `nil`, so the installed icon shows with macOS's own styling, and only the music icon
+     needs exports (FR-R342-2, FR-R342-3).* What R341 needs:
      - Xcode 26's `actool` compiles the `.icon` into `Assets.car`.
      - Compose's DSL can't put files into `Contents/Resources`, so copy `Assets.car` into the `.app` after
        `createDistributable` and before CI signs it.
@@ -234,9 +281,9 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
      - Keep the `.icns` for macOS 14 and 15.
      - Check which Xcode the `macos-15` runner has.
    - **The exports are made by hand on the MacBook and committed.** Icon Composer (or the `ictool` inside it) renders
-     each style from the `.icon`; CI never runs Icon Composer. They go in `ravilo-desktop/icons/dock/`, one copy,
-     packaged into the plug-in's `Resources` (item 10). The app reads them from there too, and does nothing when they
-     are absent (a `gradle run`).
+     each style from the `.icon`; CI never runs Icon Composer. They go in `ravilo-desktop/icons/dock/`, one copy.
+     *After owner decision 1 they are packaged with the Swift library in the app's resources (`appResourcesRootDir`,
+     `macos-arm64/`), not in a plug-in.* The app does nothing when they are absent (a `gradle run`).
    - **Sizes.** The Dock tile is at most 128 pt (size plus magnification), which is 256 px on Retina; ⌘-Tab is
      smaller. Ship 512 px for headroom, plus the ≤ 32 px drawing as a second representation of the same `NSImage`. The
      Dock is handed one picture by the running app, so whether it ever uses the small one is a check on the Mac. If it
@@ -244,27 +291,11 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
    - **Per icon:** Default, Dark, Clear · light and Clear · dark as whole pictures, plus the tile and marks masks for
      Tinted (item 6). That is about ten files, under 1 MB in all.
 
-8. **Open question 6: the plug-in reads the app's own defaults domain, mirrored from the JSON store. It can't be an
-   App Group.**
-   - **Where the plug-in runs.** Not in Ravilo, and not in the Dock itself, but in Apple's XPC service
-     `com.apple.dock.external.extra.<arch>`. Reports differ on whether that service is sandboxed, so don't count on
-     it reading `~/Library/Application Support/Ravilo/ravilo_music.json`.
-   - **The proven path is Ghostty's shipping plug-in.** The app writes its own defaults domain and posts a distributed
-     notification. The plug-in reads `UserDefaults(suiteName: "<the app's bundle id>")` and listens for that
-     notification.
-   - **Why not a shared App Group suite:** a group container needs a Team ID, and our self-signed certificate has
-     none (the same reason the README moved tokens out of the Keychain).
-   - **So, on the desktop:** `MusicDeviceStore.put` mirrors the key `mode` into `UserDefaults.standard` as `DockMode`,
-     through the Swift library. The JVM runs inside `Ravilo.app`, so that is the domain `dev.jellystructure.ravilo`
-     (`build.gradle.kts:97`). It then posts `dev.jellystructure.ravilo.dock` on `DistributedNotificationCenter`. The
-     JSON file stays the source of truth. The mirror holds the stored mode (item 3), not `inMusic`.
-   - **The second half of the question.** The mode can't change while Ravilo is closed. But the Dock calls
-     `setDockTile:` only once, at login or when the tile is added to the Dock, not at each quit. So the plug-in must
-     listen for the app's notification while Ravilo runs. It must also follow style changes on its own:
-     `AppleInterfaceThemeChangedNotification`, plus whatever the icon-style switch posts (find out on the Mac). No
-     timers: the plug-in lives for as long as Ravilo's tile is in the Dock.
+8. **Open question 6 (where the plug-in reads the stored mode): withdrawn by owner decision 1.** There is no
+   plug-in, so only the app reads the stored mode, from `ravilo_music.json` as today. The mirror into the app's
+   defaults domain that a plug-in would have needed is not built.
 
-9. **The plug-in takes the styling away from the Dock — needs the owner, after a spike on the Mac.** Ghostty found
+9. *Decided by owner decision 1: (b), with no spike. Kept as the record.* **The plug-in takes the styling away from the Dock — needs the owner, after a spike on the Mac.** Ghostty found
    this on macOS 26. Once `Info.plist` declares `NSDockTilePlugIn`, the Dock routes the tile through the plug-in
    (`dock-extra`), and the tile **stops following Icon & widget style, even for the installed `.icon`**, whether the
    app is running or not. A style change shows only after a relaunch. So:
@@ -288,34 +319,11 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
    style updates it, and that it survives replacing the app with a new build. Take (a) if all four hold, (b)
    otherwise.
 
-10. **Open question 2: yes, it fits in the bundle and in R331's pipeline, signed but never notarised.**
-    - **Correct FR-R342-5's "signed and notarised (R331)".** R331 has no notarisation and never will (owner,
-      2026-09-29); the bundle is signed with the one self-signed certificate (`deploy-macos.yml:6–12`).
-    - **The signature is enough.** The Dock's plug-in service has library validation turned off, so it loads code
-      signed by any identity. Since Catalina it refuses an unsigned plug-in, which ours isn't.
-    - **What to build:**
-      - **The plug-in is built from Swift on a Mac, like the library.** A new `Exec` task, `buildDockPlugin`,
-        beside `buildMacNative` (`build.gradle.kts:55–70`), with the same `onlyIf { isMacHost }`. It compiles a
-        loadable bundle with `@objc(RaviloDockTilePlugIn)` as its class. Every app's plug-in shares one process, and
-        `NSPrincipalClass` is how the Dock tells them apart, so the Objective-C name must be unique and not Swift's
-        mangled one.
-      - **The bundle.** Its own `Info.plist`: `CFBundlePackageType` `BNDL`, `CFBundleIdentifier`
-        `dev.jellystructure.ravilo.dock`, and `NSPrincipalClass`. Item 7's exports go in its `Resources`.
-      - **Into `PlugIns`.** Compose's DSL has no way to fill `Contents/PlugIns` (`appResourcesRootDir`, `:92`, lands
-        in `Contents/app/resources`). So a task that runs after `createDistributable` copies the plug-in to
-        `Ravilo.app/Contents/PlugIns/RaviloDock.docktileplugin`.
-      - **The Info.plist key.** `NSDockTilePlugIn` = `RaviloDock.docktileplugin` goes into `extraKeysRawXml` only
-        when `isMacHost`, so a bundle never names a plug-in it doesn't have.
-    - **CI** (`deploy-macos.yml`):
-      - Fail if the plug-in is missing, as `:176–177` does for the library.
-      - Sign it explicitly before the app. The `find` at `:189` matches only `.dylib`, `.jnilib` and `.so`, and the
-        plug-in's executable has no extension. `--deep` at `:195` would reach `PlugIns`, but the file already signs
-        inside out (the runtime, `:192–194`).
-      - Verify it with `codesign --verify --strict`.
-      - `--self-test` names it (`SelfTest.kt:20–25`).
-    - **Keep the plug-in tiny.** No network and no work beyond reading two defaults and drawing one picture: a
-      crashing plug-in crash-loops the Dock's helper (seen with another vendor's plug-in in 2026). If it is ever
-      removed, remove the key and the bundle in the same release.
+10. **Open question 2 (the plug-in in the bundle and in R331's pipeline): withdrawn by owner decision 1.** No
+    plug-in, no Gradle task for it, no `Contents/PlugIns` copy, no `NSDockTilePlugIn` key and no CI signing step.
+    `build.gradle.kts` and `deploy-macos.yml` are unchanged by this phase, apart from packaging the music exports with
+    the Swift library (FR-R342-2). One correction carries over: R331 signs with the one self-signed certificate and
+    never notarises (`deploy-macos.yml:6–12`). The spec no longer says otherwise.
 
 11. **Open question 3: FR-R342-6 is not safe. Dropped; Finder, Launchpad and Spotlight keep the films icon.**
     - **What `NSWorkspace.setIcon(_:forFile:)` does to an app bundle.** It writes an `Icon\r` file into the bundle's
@@ -333,19 +341,26 @@ icon at all (item 9). FR-R342-6 is not safe and is dropped (item 11). Items 6 an
 
 12. **Open question 7: no setting.** Agreed with the lean; nothing is built for it.
 
-13. **Acceptance, as the code can meet it.**
-    - **1, 4 and 5 stand.** In 5, "Clear" means the approximation from item 6.
-    - **2 and 3 hold only with the plug-in** (item 9), and only while Ravilo is kept in the Dock. 3 also needs one
-      log out and back in after the first release that carries the plug-in.
-    - **6 needs rewording.** The app is not notarised, so "passes Gatekeeper" means: `codesign --verify --deep
-      --strict` passes, and the update opens without a new *Open Anyway*.
-    - **Add one:** in music mode, open Ravilo with the server unreachable. It stays in music mode, and the icon keeps
-      ♪ (item 2).
+13. **Acceptance, as the code can meet it.** *Superseded by the spec's Acceptance, rewritten after the owner's
+    decisions.* What carried over: 6 is reworded (the app is not notarised, so it means `codesign --verify --deep
+    --strict` passes and the update opens without a new *Open Anyway*), and the offline case was added, now R345's.
 
 14. **Wire and versions: none.** This phase is client-only plus packaging: no route, no DTO, no new string. An old
-    server is handled by item 2's 404 rule. Build order, each step shippable:
-    - **(a)** Item 2's fix and the store half of item 3. The phone gains from it too.
-    - **(b)** The running swap in Default and Dark (items 4–5). It needs R341's Mac drawing for the films picture, so
-      R341 comes first.
-    - **(c)** Reading the style and the Tinted and Clear pictures (items 6–7).
-    - **(d)** The plug-in spike, then the owner's pick (item 9), then items 8 and 10.
+    server is handled by R345's 404 rule. Build order, after the owner's decisions, each step shippable:
+    - **(a)** R345, its own phase. The phone gains from it too.
+    - **(b)** R341's installed films icon.
+    - **(c)** The running swap: the seam, `ravilo_dock_icon`, and music in Default and Dark (items 4–5,
+      FR-R342-3).
+    - **(d)** Reading the style (FR-R342-7), and the Clear and Tinted pictures (items 6–7, FR-R342-2).
+
+### Owner decisions (2026-10-01)
+
+1. **No Dock tile plug-in, and no spike.** On macOS 26 a plug-in stops the Dock styling the icon, the installed films
+   icon included (item 9). So the closed Dock always shows the installed films icon, styled by macOS. Ravilo still
+   opens in the remembered mode, and the running icon still follows the mode. FR-R342-5 is withdrawn. Items 8 and 10
+   are withdrawn: no plug-in store, Gradle task, `PlugIns` copy, `Info.plist` key or CI signing step.
+2. **Read the undocumented icon-style keys** (`AppleIconAppearanceTheme`, `AppleIconAppearanceTintColor`). Fall back
+   safely to Default, or Dark, when they are missing or change. The running music icon then matches Dark, Tinted and
+   Clear. This is the review's lean (item 6), now FR-R342-7.
+3. **No setting to turn it off** (open question 7, Q8). It is the review's lean and conflicts with nothing.
+4. **FR-R342-6 (Finder, Launchpad, Spotlight) is dropped**, as item 11 found.

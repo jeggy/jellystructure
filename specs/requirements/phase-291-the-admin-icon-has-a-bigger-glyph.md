@@ -5,7 +5,8 @@
 
 ## Status
 
-`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end).
+`Planned`. Written 2026-10-01 (design-authored) from `design/App Icons - Flat Directions.html` (A0). **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* at the end). The owner decided its one open item the same day (see *Owner decisions* at the end
+of the Dev review).
 **Numbering:** first written as 290; the dev side took 290 the same day (*an album's year is the year it first came
 out*), so this is **291**, checked free against `main` (tree `ef52889`) on 2026-10-01.
 
@@ -25,8 +26,10 @@ Everything else is unchanged:
 **FR-291-2 — Everywhere the tile is drawn.** The mark appears in these places, and they must stay one drawing:
 - `Shell.kt`'s `brand-mark`, in the sidebar and the top bar
 - `Login.kt`
-- `favicon.svg`, `favicon.ico` (16/32/48) and `apple-touch-icon.png` (180, on its `#0b0d14` ground), all from 264
-- the info site's nav mark and favicon (264's item on the deployment directory)
+- `favicon.svg`, `favicon.ico` (16/32/48) and `apple-touch-icon.png` (180, a full-bleed opaque square, as shipped;
+  dev review item 4), all from 264
+- the info site's nav mark and favicon (264's item on the deployment directory). The dev side updates it once the
+  release carrying 291 is live in production (owner, 2026-10-01; dev review item 6).
 
 The design mockups take the same transform: `app/app-shell.js` `BRAND()` and `app/login.html`.
 
@@ -46,7 +49,7 @@ square tile beside Ravilo's round jellyfish is what tells the two tabs apart, so
 
 ## Open questions (for the dev review)
 
-The code review comes later. These are left for it to answer.
+All three are answered: see the Dev review (items 5, 4 and 6) and its *Owner decisions*.
 
 1. **16 px:** at 16 px the glyph's 6-unit outline on the fourth square is under 1 px. Does the outlined square still read in `favicon.ico`'s 16 px frame at the new size, or does that frame need its own heavier stroke?
 2. **The apple-touch icon:** at 13 % inset, does `apple-touch-icon.png`'s tile (inset on `#0b0d14` so iOS's rounding doesn't clip it) need its own inset re-checked?
@@ -56,8 +59,9 @@ The code review comes later. These are left for it to answer.
 
 Read against the admin frontend (`Shell.kt`, `Login.kt`, `src/wasmJsMain/resources/`), the root `build.gradle.kts`,
 the e2e suite, Phase 264's spec and build notes, the design files and the info site's copy in the deployment
-directory. The change is small and holds as written. Eight items. One needs the owner (item 6, only a go-ahead); the
-three open questions are answered by the files themselves (items 4–6).
+directory. The change is small and holds as written. Eight items. The one that needed the owner (item 6, a
+go-ahead) was decided on 2026-10-01 (see *Owner decisions* at the end). The three open questions are answered by
+the files themselves (items 4–6).
 
 1. **The design side is already done; the code still draws the old glyph in three inline copies.**
    `design/app/app-shell.js:52` (`BRAND()`) and `design/app/login.html:24` already carry `translate(13 13) scale(.74)`.
@@ -79,7 +83,8 @@ three open questions are answered by the files themselves (items 4–6).
 4. **Open question 2 (apple-touch): the file has no `#0b0d14` ground, and needs none.** The shipped
    `src/wasmJsMain/resources/apple-touch-icon.png` is a full-bleed, opaque gradient square: its corner pixel is the
    gradient's start colour (`#b05cd0`, alpha 255), and `#0b0d14` appears nowhere in it. So 264's build note 2 and
-   FR-291-2's "(180, on its `#0b0d14` ground)" describe a file that does not exist. The full-bleed square is the right
+   FR-291-2's first wording, "(180, on its `#0b0d14` ground)", described a file that does not exist (FR-291-2 is now
+   corrected). The full-bleed square is the right
    form for iOS: iOS cuts its own rounded corners and has no transparency to fill with black. Re-render it the same
    way, full-bleed. No inset is needed at the new size: the glyph's point nearest a corner sits about 22 units in from
    each edge, and iOS's corner mask reaches about 7 units in along the diagonal.
@@ -92,8 +97,8 @@ three open questions are answered by the files themselves (items 4–6).
    the 16 px frame enlarged. If the gap between squares smears into one grey pixel, nudge only that frame's
    `translate` by up to half a pixel. Acceptance 2's "four squares stay separate" is the same bar as today, not a
    new one.
-6. **Open question 3 (the info site): copy three files, edit three lines, rebuild the site — on the owner's word.
-   Needs the owner.** The site's `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` are byte-identical copies
+6. **Open question 3 (the info site): copy three files, edit three lines, rebuild the site. Decided (owner,
+   2026-10-01): the dev side does it after the release.** The site's `favicon.svg`, `favicon.ico` and `apple-touch-icon.png` are byte-identical copies
    of the repo's files, and each of its three pages draws one inline nav mark at the old `translate(18 18) scale(.64)`.
    Its `Dockerfile` already names the three icon files in its `COPY`, so it needs no edit. The work: copy the three
    new files over, change the three inline transforms, rebuild the site's container. That directory is outside this
@@ -113,5 +118,13 @@ three open questions are answered by the files themselves (items 4–6).
    - Browsers cache icons on their own schedule even with 264's `no-cache` + ETag (FR-264-4). An iPhone's home-screen
      icon is taken when the page is added, so acceptance needs a fresh *Add to Home Screen*.
 8. **Build order.** One commit: the Kotlin helper (item 1), `favicon.svg`, the two re-rendered files, run the
-   e2e `auth.spec.ts` against a dev run. Then the info site (item 6). No backend, route, config or API change. The
+   e2e `auth.spec.ts` against a dev run. Then, once the release carrying 291 is live in production, the info site
+   (item 6). No backend, route, config or API change. The
    exploration file `design/app/Jellystructure Logo.html` keeps its old transforms; it is history, not a target.
+
+### Owner decisions (2026-10-01)
+
+1. **The info site: the dev side does it after the release** (item 6). Once the release carrying 291 is live in
+   production, copy the three new icon files (`favicon.svg`, `favicon.ico`, `apple-touch-icon.png`) into the site,
+   change the three pages' nav-mark transforms to `translate(13 13) scale(.74)`, and rebuild the site's container.
+   The owner allowed this on 2026-10-01.

@@ -17,7 +17,7 @@ Dev-reviewed 2026-10-01. The number was checked free on `main` (tree `ef52889`, 
 ## Requirements
 
 **FR-R344-1 — The server sends each song's version.**
-- Every song object in `/api/tv/music/**` gains `versions`: the song's type keys after 292's rules (automatic ∪ the owner's, minus what the owner removed, Session ⇒ Live), in 292's order. An empty array means no version.
+- Every song object in `/api/tv/music/**` gains `versions`: the song's type keys after 292's rules (the automatic set with Session ⇒ Live applied inside it, ∪ the owner's, minus what the owner removed), in 292's order. A Session whose Live the owner removed is sent as `session` alone (owner, 2026-10-01). An empty array means no version.
 - The household's types come once, on the music bootstrap, as `version_types: [{ key, color }]`. When the owner recolours a type in Metadata → Versions, the next fetch carries the new colour.
 - Names are **not** sent. They are Ravilo's own strings (FR-R344-4).
 
@@ -94,7 +94,7 @@ Read against `shared`'s music DTOs (`shared/tv/Music.kt`, `RaviloWireJson`, `Wir
 `MusicBrowseScreen.kt`, `MusicListenScreen.kt`, `RaviloApp.kt`), the shipped string table (`i18n/*.json`) and the
 mockups (`design/ravilo/mobile/ravilo-versions.js`, the `rv-*` rules). **The direction holds, and the client half is
 small**: every song the server sends passes through one function, and every song list draws one composable. Twelve
-items. One depends on an owner question in 292 (item 3); the rest are the build's. Build after 292's step (b) (its
+items. Item 3 waited on an owner question in 292; it is now decided (see *Owner decisions* at the end). The rest are the build's. Build after 292's step (b) (its
 `MusicVersions.of`).
 
 1. **One server function fills every song.** Every `MusicTrackItem` in `/api/tv/music/**` is made by
@@ -118,10 +118,12 @@ items. One depends on an owner question in 292 (item 3); the rest are the build'
    - `home()` answers an empty `MusicHome` when the viewer has no albums (`MusicTvService.kt:144`). Then there are no
      songs, so no chips.
 
-3. **FR-R344-1's order re-adds a Live the owner removed.** *Automatic ∪ the owner's, minus what the owner removed,
-   Session ⇒ Live* puts Live back on a Session whose Live the owner unticked. Ravilo must not have its own rule: it
-   sends what 292's function answers. Which answer that is depends on 292's item 7 (**needs the owner**; lean: the
-   mockup's invariant, Session always carries Live, which makes the question disappear).
+3. **FR-R344-1's order re-added a Live the owner removed — decided (owner, 2026-10-01): Session stays.** The old
+   wording applied Session ⇒ Live last, so it put Live back on a Session whose Live the owner unticked. Ravilo has no
+   rule of its own: `versions` is 292's **shown** set, where Session ⇒ Live applies only inside the automatic set and
+   the owner's removed Live wins. Such a song is sent as `["session"]` and shows one *Session* chip. FR-R344-1 is
+   reworded to match. 292's filter reading (Session counts as Live) is not sent; when the later *Shuffle without Live
+   and Remix* phase needs it, the server applies it, so the phone never re-derives it.
 
 4. **Where the chips go.** One composable, `VersionChips(keys, fold)`, in `MusicCommon.kt`.
    - **`TrackRow`** (`MusicCommon.kt:213–256`) already draws every song list: Listen's *Recently played*
@@ -176,3 +178,12 @@ items. One depends on an owner question in 292 (item 3); the rest are the build'
     `MusicTvServiceTest`, a matched song with a choice and a song with none (`versions` filled, then empty), and
     `version_types` on `home()`; a `ravilo-ui` common test for the fold (two, three, *+N*) and for an unknown key. No
     baseline change in `WireCompatTest` is needed.
+
+### Owner decisions (2026-10-01)
+
+1. **Session stays when Live is unticked** (292 FR-292-4; item 3 here). `versions` carries the shown set: a Session
+   whose Live the owner removed arrives as `session` alone and shows only the *Session* chip, also on Now playing.
+   Session ⇒ Live belongs to 292's automatic set and to its filters, never to the phone.
+2. **Any Instrumental blocks the lyrics fetch** (292 FR-292-5). Nothing to build here beyond 292's item 8(d): for such
+   a song the lyrics route answers 404 and `has_lyrics` is false, so the phone shows no lyrics button.
+
