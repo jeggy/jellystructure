@@ -10,7 +10,9 @@
 *Build notes*). Not deployed, not device-tested. Client-only (`:ravilo-ui`); no wire change, no server change. Number
 given by the coordinator. **Amended 2026-10-02** after a re-test on the Sony (FR-13 to FR-16: Search arrival without
 the keyboard, Change your password and sign-in fields that open the keyboard only on OK, Settings opening at the top);
-built the same day, see *Re-test on the TV* at the end.
+built the same day, see *Re-test on the TV* at the end. **Amended again 2026-10-02** after the final Mac re-test
+(FR-17: the ring after a keyboard Back; FR-18: the cast remote fits the window), built the same day, see the last
+amendment.
 
 **Supersedes, in part:**
 - **R178 FR-RV-SEL1-1** (hiding the chrome resets the player's focus to Play) — see FR-R350-7. R178's Select guard
@@ -350,3 +352,56 @@ focus. New Robolectric walk in `SeriesDetailFocusTest` (desktop): swipe the page
 — Play is focused at the same y; checked to fail without the fix (it came back at the top). All 17 walks pass.
 **Re-test (Mac):** a series → scroll down until the Episodes header shows with *Start over* (or *Resume*) still on
 screen → click it → Back: the page is where it was, *Start over / Resume* is focused, the same season is open.
+
+## Amendment (2026-10-02, final Mac re-test) — the ring after Back, and the cast remote at a short window
+
+**Seen in the final Mac re-test (production `v1.48-62-g23c34ae4`):**
+1. Tab to *Resume · S01E01* (the ring shows), Enter to play, Esc. Back on the page, focus is on *Resume* (Right moves
+   to *+ My List*, which then draws a ring), but *Resume* draws no ring.
+2. At a 1512 × 859 window the cast remote's last row (*Audio & Subs · Next · Stop casting*) sits below the fold and
+   needs scrolling.
+
+**Why (1).** Focus was restored correctly (FR-2a); the ring was switched off. On a computer the ring follows the
+keyboard (R337): a navigation key turns it on, using the pointer turns it off, and *using the pointer* was any pointer
+Move. Compose Desktop sends a **synthetic Move** at the pointer's last position whenever the layout under a resting
+pointer changes (`SyntheticEventSender.updatePointerPosition`, read in CMP 1.9.3) — so opening the player and coming
+back to the page each read as mouse use, with nobody touching the mouse.
+
+**Why (2).** The remote's art card is 60 % of the window's width at 16:9 on a computer: about 500 dp tall at 1512 px,
+which with the titles, the conversion note, the seek bar, the transport, R351's volume line and the footer is more than
+859 dp. The column scrolled instead.
+
+**FR-R350-17 — A focus the app restores after a keyboard Back draws its ring on a computer.** The pointer turns the
+ring off only when it really moves (more than a pixel from where it was) or presses; a Move at the same position (the
+platform's own, after a layout change) does not. Esc and Enter count as keyboard use, beside Tab and the arrows (as a
+browser's `:focus-visible` does), so a page entered or left by keyboard draws the focus the app puts on it. On a TV
+rings always show (unchanged); a phone never shows them (R298, unchanged).
+
+**FR-R350-18 — The cast remote fits a computer's window.** On a computer every control of the remote is on screen
+without scrolling, at 1512 × 859 and down to the window's minimum height (600 dp), with the next-up card up too: the
+art card takes the height the controls leave (16:9, never larger than before; left out below 72 dp), and below 760 dp
+the spacing halves and the transport tightens (play 64 dp, skips 44 dp). A phone's remote is unchanged (it scrolls).
+
+### Build notes (2026-10-02, final Mac re-test amendment)
+
+Built 2026-10-02, not deployed, not device-tested. Client-only (`:ravilo-ui`); no wire change, no new strings.
+
+- **FR-17** — the keyboard-mode tracking moved out of `RaviloApp` into `focus/KeyboardMode.kt` (`KeyboardMode`, state
+  + rules; `Modifier.keyboardMode(mode)` at the app root on a computer). The pointer rule compares each event's position
+  with the last one seen; the key set is Tab, the arrows, Enter, NumPadEnter and Esc. The desktop `RaviloButton` reports
+  what it draws in its semantics (`FocusRingShown`), so a walk can check the ring and not only the focus.
+- **FR-18** — `CastRemoteScreen` lays out header · art · the rest through `RemoteFitLayout` (a three-slot `Layout`: the
+  header and the controls are measured first, the art gets what is left; `remoteArtSize`) inside the same scroll, so a
+  window smaller than every control still scrolls rather than clipping. The desktop-only parts of the remote (volume,
+  the failure line, fitting) read one `desktop` parameter, defaulting to `isDesktopPlatform`.
+- **Tests** (`:ravilo-ui:testDebugUnitTest`): `SeriesDetailFocusTest` gains the desktop walk *keyboard to Resume,
+  Enter, Esc*: the app root's keyboard mode around the page, a resting pointer that gets a same-position Move after the
+  player's layout and again after the page's; *Resume* is focused **and draws its ring**; a real move hides it, a key
+  brings it back — checked to fail with the old rule (at the restored focus). `KeyboardModeTest` (4, common).
+  `CastRemoteFitTest` (5, Robolectric native graphics for real text metrics): 1512 × 859 with and without the next-up
+  card, 1000 × 600 with it, 400 × 600, and `remoteArtSize`; at 859 the remote ends at 827 dp with the card up.
+
+**Re-test (Mac):** (1) a series → Tab to *Resume* (ring) → Enter → Esc: *Resume* is focused and ringed; move the mouse:
+the ring goes; press an arrow: it comes back. (2) Cast an episode to a device at the default 1512 × 859 window: *Audio &
+Subs · Next · Stop casting* are on screen without scrolling, also while the next-up card is up; drag the window down to
+its minimum height: still all on screen (the art card shrinks, then goes).
