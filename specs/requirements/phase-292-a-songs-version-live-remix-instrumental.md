@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
+`⚠ Partial` 2026-10-01 (see *Build notes*: everything built; *Tell LRCLIB* not tried against the live API) · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
 - `design/app/versions.js` + `versions.css` (`vr-*`), loaded by `album.html`, `library.html`, `metadata.html`, `artist.html` and `index.html`
 - the directions canvas `design/app/Song Versions - Directions.html`, where Q1 = **A · words** is picked and B/C are kept as declined
 
@@ -434,3 +434,103 @@ song's LRCLIB search page instead, as the spec says.
 
 With these, nothing in 292 is left for the owner. Item 10's shipped bug is spec'd separately as **293**.
 
+## Build notes (2026-10-01)
+
+Built in the dev review's order, (a) to (h). Commits: `33e17542` (293, item 10), `f69d3588` (the data layer and
+`MusicVersions.of`), `d6436271` (R344's server half), `3720e8d4` (facts, routes, lyrics), `0cb0ac50` (the admin pages).
+
+**Model and storage (items 1–6).**
+- Migration **64** (`64.sqm` / `MusicVersions.sq`): `music_recording_facts(recording_mbid, json, fetched_at)`,
+  `music_version_choice(recording_key, type, state, set_at)` (only the owner's rows; `on` / `removed`),
+  `music_version_type(key, color, meaning)` (only overrides). Loaded into `MusicStore.Snapshot`; each snapshot builds
+  one `MusicVersionIndex` (answers per key, copies per key).
+- `MusicVersions.of(track, copies, facts, choices)` in commonMain (`model/MusicVersions.kt`) is the one function:
+  MusicBrainz facts (only for a `rec:` key) ∪ every copy's title, the disambiguation read by the title finder as
+  MusicBrainz, no automatic Instrumental on a no-words piece, Session ⇒ Live **inside the automatic set only**
+  (source `session`, *with Session*), then the owner's rows. It answers the **shown** set (chips, panel, album
+  phrase, R344) and `matches(type)` (Session counts as Live; `none` = nothing shown) for every filter and count.
+  `blocksLyrics` = no words, or Instrumental from any source (Owner decision 2).
+- Keys: `rec:<mbid>` for `AGREES` / `MANUAL`, else `trk:<track id>` (item 4).
+- The title finder (`MusicTitleVersions`, same file — a Kotlin object, not a data file, item 15): brackets and what
+  follows a spaced dash; *original mix*, *album / stereo / mono mix*, *album version*, *remaster(ed)*, *edition* are
+  not versions; *akustisk* is Acoustic; *session* only (open question 2).
+- MusicBrainz (item 1): `MbRelation` gained `direction`, `target-type`, `attributes`, `work` (with `language` /
+  `languages`), `recording`, `artist`; `MbRecording` gained `disambiguation` and `relations`. New calls:
+  `releaseWithRels` (`recording-level-rels+work-rels+artist-rels+recording-rels`, one release only, never on
+  `releasesOf`), `recordingRels` (a recording chosen by hand), `recordingCredit` (the artist of an *instrumental
+  version of* target outside the library, item 14). The relationship shapes were checked against musicbrainz.org's
+  live JSON on 2026-10-01 (read-only GETs while building, none from tests): *remix* / *edit* point `forward` from the
+  remix/edit; *instrumental* / *karaoke* point `backward` from the instrumental (the type reads "has instrumental
+  version"). `MusicVersionFacts` applies item 2's rules.
+- When facts are read (item 5): `applyMatch` reads them after every match (one more request, usually a cache hit),
+  and `match_musicbrainz` catches up every matched album without `versionFactsAt` (a locked album too) at the end of
+  an unscoped pass. A `scope = all` pass re-applies every match, so it re-reads them.
+- Moving ticks (item 6): on a match and on *Match this track…* a song's `trk:` rows move to its `rec:` key (newer
+  `set_at` wins). A cleared match leaves them on the recording. *Convert…*: the scan that first sees the new `.m4a`
+  (a new Jellyfin id, same folder and base name as a song that just went missing) copies the old song's `trk:` rows to
+  it — deviation: done in `scan_music`, since the convert job never learns the new id. A file moved or renamed by hand
+  loses an unmatched song's ticks (accepted). Every change is a `music_versions` History line on each album holding a
+  copy.
+
+**Admin pages (items 11–13, 16–17).**
+- Routes: `GET /api/music/track/{id}/versions` (the panel), `PUT …/versions/{type} {on}`, `DELETE …/versions`
+  (*Back to automatic*), `POST /api/music/versions/preview` and `/bulk` (`track_ids`, `add`, `remove`; each recording
+  once, one transaction), `GET` / `PATCH /api/music/version-types` (saved as the owner edits). A tick that only
+  restates the automatic set writes nothing (it deletes the opposite tick), so *By you* counts only real choices.
+- Album → Tracks: chips after the title (A, words, three then a dashed *+N*), *＋ Version* on hover, the number turns
+  into a checkbox → *Set version…* (Leave / Add / Remove × 9, *N of M have it*, the copies note; *Add Session* adds
+  Live, *Remove Live* no longer removes Session), the side panel (sources, *with Session*, *removed by you*, notes,
+  *Instrumental version of*), the header phrase (half the songs, from the shown set), *No words — MusicBrainz* and a
+  warn mark on lyrics beside no singing in the Lyrics column.
+- Library → Music → Songs: chips, the **Version** facet (Songs view only; nine types + *No version*, each with *Only*
+  and *Hide*, counts against the other facets; `f.version=` / `x.version=`, *Hide wins*), `artist=`, the filter in
+  words built by the server, a song selection with *Set version…*. The page also reads the mockup's `vi=` / `vx=`.
+  `lyr=` was not built (dev review 11: `f.lyrics=has` exists; the Dashboard row uses `filter=`).
+- Metadata → **Versions** tab: swatch (cycles the nine-colour palette), the chip, the meaning (saved on change),
+  *Found from*, the household count (filter reading) linking to Songs, *By you*, and the *No version* row.
+- Artist page: *86 songs · 41 live · 6 remixes · songs without Live and Remix →* under the songs line.
+- CSS: `design/app/versions.css` is served as-is (added to both copy lists in `build.gradle.kts` and to
+  `index.html`). **Two edits to the design file** the spec asked for: the chip is 11 px (item 17), and on the light
+  theme its text is 45 % colour (item 16). The next design sync must keep them.
+
+**Lyrics and the Dashboard (items 8–10, FR-292-15).**
+- `MusicTrack` gained `lyricsSource` / `lyricsLrclibId` / `lyricsHash` (JSON, no migration), set when
+  `fetch_lyrics` writes a sidecar; existing sidecars are backfilled on the next run (newer than `lyricsCheckedAt` ⇒
+  LRCLIB, with the file's hash; older ⇒ *found*). `MusicLyrics.BLOCKED`; the lyrics step skips it, and skips any song
+  whose answer `blocksLyrics` (summary: *N not looked up (no singing)*). Removing Instrumental clears the copies'
+  `lyricsCheckedAt`, so the next run asks again.
+- Ravilo (8d): `has_lyrics` is false and the lyrics route answers 404 for a blocked song, a no-words piece and any
+  Instrumental — shipped with R344's server half.
+- The row `music_instrumental_lyrics` (*Lyrics on an instrumental*), counted by 293's `MusicTriage` predicate
+  (lyrics: our sidecar or Jellyfin's flag; no singing; not blocked), opens `filter=music_instrumental_lyrics` (no-words
+  pieces included, open question 4) and marks them *no words* in the Songs list. **It amends FR-285-2's one-action
+  rule for this row**: `DashboardRow` gained `action2` / `action2_id` (admin-only); *Remove the lyrics*
+  (`POST /api/music/lyrics/remove-instrumental`) deletes only sidecars whose hash still matches what jellystructure
+  wrote, keeps embedded lyrics and anyone else's files (hidden from viewers instead), marks every song `BLOCKED` and
+  refreshes the albums in Jellyfin; the count goes to 0 at once.
+- *Tell LRCLIB it is instrumental* (`POST /api/music/lyrics/tell-lrclib`, runs in the background, outcome in each
+  album's History) is built from LRCLIB's documented publish flow: `request-challenge` → proof of work (SHA-256 of
+  `prefix + nonce` ≤ `target`) → `publish` with `X-Publish-Token` and both lyrics fields empty. **Not verified against
+  the live API**: verifying needs a write to a public database, which this build did not send. Every failure is one
+  sentence in History. If LRCLIB answers differently, the fallback the spec names (open the song's LRCLIB page) is
+  not built.
+
+**Tests.** `MusicVersionsTest` (the function, the title finder, the Session rules, the album phrase),
+`MusicVersionFactsTest` (a release answer shaped as musicbrainz.org sends it, renamed to stand-ins; the panel; a tick on
+one copy reaching every copy; *Back to automatic*; *Set version…*; Only / Hide / *No version*; the Dashboard count ==
+its list; the viewer's lyrics hidden; Metadata counts; colour validation), `MusicTriageTest` (293), `MusicTvServiceTest`
+(R344), `MusicMatchTest` (the fake MusicBrainz now answers the new calls). `linuxX64Test` for `music.*` and
+`audiobooks.*` green; `compileKotlinWasmJs` green; `verifyCommonMainJellystructureDbMigration` green.
+
+**Seen in a browser (2026-10-01, headless Chromium, no device):** the debug backend on a scratch database seeded with
+stand-in songs and facts, against the mock Jellyfin — the album's chips and header phrase, the panel (unticking Live on
+a *radio session* song left *Acoustic · Alternate · Session*, Live *removed by you*), *Set version…*, Songs with the
+Version facet and *Songs by Harbour Lights · without Live, Remix*, `filter=music_instrumental_lyrics` (2 songs, chip
+*Issue: Lyrics on an instrumental*), Metadata → Versions, the artist doorway. The Dashboard row came back from
+`/api/dashboard` with both actions; the page itself showed its *Nothing scanned yet* state (no films in that database),
+so the row's two buttons were not seen drawn. *Remove the lyrics* through the route took the count to 0 and the row
+away. The backend and the mock were stopped afterwards.
+
+**Not verified:** a real MusicBrainz run on the household's library (the box-set answer's size, item 1's last line);
+the LRCLIB publish; the pages against a real library. `MusicVersions.TYPES`' meanings are the spec's table; the
+mockup's longer ones were not copied.
