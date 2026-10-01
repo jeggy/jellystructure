@@ -17,11 +17,14 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.pressKey
 import dev.jellystructure.ravilo.ui.components.SeasonPickerTags
 import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
+import dev.jellystructure.ravilo.ui.focus.keyboardMode
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
@@ -409,5 +412,64 @@ class SeriesDetailFocusTest {
         shuffleInsideTheWindow()
         press(Key.DirectionDown)
         focusedInside(SeriesDetailTags.RAIL)
+    }
+
+    // ── R350 (FR-R350-17) — the Mac's ring after Back ─────────────────────────────────────────────────────────
+
+    /** Whether the focused control under [tag] draws its ring (the button says so in its semantics). */
+    private fun ringShown(tag: String): Boolean =
+        rule.onAllNodes(hasAnyAncestor(hasTestTag(tag)) and SemanticsMatcher.keyIsDefined(dev.jellystructure.ravilo.ui.focus.FocusRingShown), useUnmergedTree = true)
+            .fetchSemanticsNodes().any { it.config.getOrNull(dev.jellystructure.ravilo.ui.focus.FocusRingShown) == true }
+
+    /** A pointer event at [at] with the pointer kept where it is: what Compose Desktop sends by itself when the layout
+     *  under a resting pointer changes (`SyntheticEventSender`). */
+    private fun pointerAt(at: androidx.compose.ui.geometry.Offset) {
+        rule.onRoot().performMouseInput { moveTo(at) }
+        rule.waitForIdle()
+    }
+
+    @Test fun `desktop — keyboard to Resume, Enter, Esc — Resume is focused again and draws its ring`() {
+        val d = series(3, 6, shuffle = true)
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        val mode = dev.jellystructure.ravilo.ui.focus.KeyboardMode()
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            // The app root on a computer: the keyboard mode decides whether focus is drawn (R337).
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides dev.jellystructure.ravilo.ui.theme.LayoutFamily.DESKTOP,
+                dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides mode.on,
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.fillMaxSize().keyboardMode(mode).arrowKeysMoveFocus(true),
+                ) {
+                    if (shown) SeriesDetailLoaded(
+                        detail = d, overlay = watched(d, upToSeason = 0), onBack = {}, onPlay = { shown = false }, onMarkEpisode = { _, _ -> },
+                        onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
+                        displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
+                        onShuffle = { shown = false }, returnTarget = SeriesReturnTarget(),
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        val resting = androidx.compose.ui.geometry.Offset(40f, 40f)
+        pointerAt(resting)                                   // the pointer is in the window and stays there
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        kotlin.test.assertFalse(ringShown(SeriesDetailTags.PLAY), "no key yet: no ring")
+        press(Key.DirectionDown); press(Key.DirectionUp)     // the keyboard reaches Play
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        kotlin.test.assertTrue(ringShown(SeriesDetailTags.PLAY), "the keyboard's focus is drawn")
+        press(Key.Enter)                                     // the player
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertDoesNotExist()
+        pointerAt(resting)                                   // the player's layout under the resting pointer
+        shown = true; rule.waitForIdle()                     // Back — the page is rebuilt (the player had the Esc)
+        pointerAt(resting)                                   // the page's layout under the same resting pointer
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        kotlin.test.assertTrue(ringShown(SeriesDetailTags.PLAY), "the restored focus is drawn: the page was entered by keyboard")
+        // A pointer that really moves still hands the window back to the mouse.
+        pointerAt(resting + androidx.compose.ui.geometry.Offset(30f, 0f))
+        kotlin.test.assertFalse(ringShown(SeriesDetailTags.PLAY), "a real move hides the ring")
+        press(Key.Escape)                                    // and a key brings it back
+        kotlin.test.assertTrue(ringShown(SeriesDetailTags.PLAY))
     }
 }

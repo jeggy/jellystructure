@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.focus.arrowKeysMoveFocus
+import dev.jellystructure.ravilo.ui.focus.keyboardMode
 import dev.jellystructure.ravilo.ui.focus.BackToTopRegistry
 import dev.jellystructure.ravilo.ui.focus.LocalBackToTop
 import dev.jellystructure.ravilo.i18n.resolveAndRememberLanguage
@@ -1045,9 +1046,10 @@ fun RaviloApp(
         fun barShows(d: Dest) = (bottomBarShows(d) || (inMusic && musicDetail(d))) && !(d is Dest.MusicPlaying && !portrait)
         var trackSheet by remember { mutableStateOf<dev.jellystructure.ravilo.ui.music.TrackSheetRequest?>(null) }
 
-        // R337 — on a computer the focus ring follows the keyboard: it shows once an arrow or Tab is pressed and goes
-        // when the pointer is used again, as the platforms' own focus rings do. (R298's rule for a phone: never.)
-        var deskKeyboardNav by remember { mutableStateOf(false) }
+        // R337 — on a computer the focus ring follows the keyboard: it shows once Tab, an arrow, Enter or Esc is pressed and goes
+        // when the pointer is used again (FR-R350-17: really moved or pressed), as the platforms' own focus rings do. (R298's rule for a phone: never.)
+        val deskKeyboard = remember { dev.jellystructure.ravilo.ui.focus.KeyboardMode() }
+        val deskKeyboardNav = deskKeyboard.on
         // ─── R337 — the desktop's frame: sidebar or rail, the player bar, the queue panel ────────────────────────
         var queueOpen by remember { mutableStateOf(false) }
         var sidebarHidden by remember { mutableStateOf(runCatching { dev.jellystructure.ravilo.ui.music.MusicDeviceStore.get("desk_sidebar_hidden") }.getOrNull() == "1") }
@@ -1347,19 +1349,8 @@ fun RaviloApp(
                 .fillMaxSize()
                 // R337 — a computer's window is the page's colour edge to edge: the sidebar's glass and the toolbar sit on it.
                 .then(if (isDesktopPlatform) Modifier.background(RaviloTheme.colors.background)
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.type == KeyEventType.KeyDown && (ev.key == Key.Tab || ev.key == Key.DirectionUp || ev.key == Key.DirectionDown ||
-                                ev.key == Key.DirectionLeft || ev.key == Key.DirectionRight)) deskKeyboardNav = true
-                        false
-                    }
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
-                                if (deskKeyboardNav && (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press || e.type == androidx.compose.ui.input.pointer.PointerEventType.Move)) deskKeyboardNav = false
-                            }
-                        }
-                    } else Modifier)
+                    // R350 (FR-R350-17) — keys turn the ring on; a pointer that really moves or presses turns it off.
+                    .keyboardMode(deskKeyboard) else Modifier)
                 // R350 (FR-R350-11) — an arrow no focused element consumed moves focus, as the D-pad does on a TV.
                 .arrowKeysMoveFocus(isDesktopPlatform)
                 .onKeyEvent { ev ->

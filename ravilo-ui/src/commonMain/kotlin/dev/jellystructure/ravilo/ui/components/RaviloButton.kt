@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.focusRingShown
+import androidx.compose.ui.semantics.semantics
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -79,7 +81,9 @@ fun RaviloButton(
         ) {
             Box(
                 Modifier.height(38.dp).clip(buttonShape).background(if (primary) colors.text else colors.fg.copy(alpha = 0.10f))
-                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, buttonShape) else Modifier).padding(horizontal = 18.dp),
+                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, buttonShape) else Modifier).padding(horizontal = 18.dp)
+                    // R350 (FR-R350-17) — what is drawn, for the walk tests.
+                    .semantics { focusRingShown = focused },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(label, color = if (primary) colors.background else colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = sora,
