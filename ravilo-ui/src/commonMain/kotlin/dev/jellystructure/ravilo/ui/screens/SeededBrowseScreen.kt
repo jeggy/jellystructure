@@ -1,5 +1,12 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.foundation.layout.PaddingValues
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
@@ -583,6 +590,7 @@ fun SeededBrowseScreen(
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
                         seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
                         onRequestSelect = onRequestSelect,
+                        onFirstRowUp = if (showFacetBar) ({ runCatching { firstFacetFR.requestFocus() } }) else null,
                     )
                 }
             }
@@ -636,7 +644,7 @@ private fun FacetBar(
     LazyRow(
         // R187 (FR-RV-BROWSE1-10) — the strip comes back scrolled as it was left, like the grid.
         state = store.facetBarState,
-        modifier = Modifier.focusRestorer(),
+        modifier = Modifier.focusRestorer().testTag(SEEDED_FACET_BAR_TAG),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad),
         horizontalArrangement = Arrangement.spacedBy(if (desk) 8.dp else 10.dp),
     ) {
@@ -1005,7 +1013,11 @@ private fun BrowseCardGrid(
     seerrOverflow: List<dev.jellystructure.shared.tv.DiscoverEntry> = emptyList(),
     seerrRowLabel: String = "",
     onRequestSelect: ((dev.jellystructure.shared.tv.DiscoverEntry) -> Unit)? = null,
+    // R350 (FR-R350-9) — Up from a tile in the first row: the facet bar. Null leaves Up to the native search.
+    onFirstRowUp: (() -> Unit)? = null,
 ) {
+    // R350 (FR-R350-9) — which tile holds focus (-1: none), so Up from the first row can be sent to the facet bar.
+    var focusedTile by remember { mutableIntStateOf(-1) }
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
     val restoreFR = remember { FocusRequester() }
@@ -1034,7 +1046,13 @@ private fun BrowseCardGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
-        modifier = Modifier.focusRestorer(),
+        modifier = Modifier.focusRestorer()
+            // R350 (FR-R350-9) — Up from the first row went by the native search, which from the right-hand tiles
+            // passed the facet bar (it ends partway across) and landed on the app bar's search or avatar above them.
+            .onPreviewKeyEvent { ev ->
+                if (onFirstRowUp == null || ev.type != KeyEventType.KeyDown || ev.key != Key.DirectionUp) return@onPreviewKeyEvent false
+                if (focusedTile in 0 until cols) { onFirstRowUp(); true } else false
+            },
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
         verticalArrangement = Arrangement.spacedBy(raviloRowGap),
@@ -1049,6 +1067,8 @@ private fun BrowseCardGrid(
                 upcomingLabel = card.upcomingEpisode,
                 qualityBadge = card.qualityBadge,   // R325
                 focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
+                onFocused = { focusedTile = i },
+                onBlurred = { if (focusedTile == i) focusedTile = -1 },
                 onSelect = { onItemSelect(card) },
             )
         }
@@ -1074,3 +1094,6 @@ private fun BrowseCardGrid(
         }
     }
 }
+
+/** R350 (FR-R350-9) — the browse page's facet bar, by tag for the focus tests. */
+internal const val SEEDED_FACET_BAR_TAG = "browse-facet-bar"
