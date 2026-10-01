@@ -452,7 +452,13 @@ class PlaybackService(
             // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
             // session that never transcoded or already ended is a success, not an error).
             if (ok && w.jellyfinPlaySessionId != null) releaseEncodes(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
-            if (ok && w.startOverUnplayed) writeStartOverUnplayed(jellyfinBase, token, w.device, w.jellyfinId, w.positionMs)
+            // R343 (FR-R343-11) — a cleared Start over: the write-back, then exactly what the played route refreshes
+            // (the clear's own hook), in place of the stop's ordinary refresh below.
+            if (ok && w.startOverUnplayed) {
+                writeStartOverUnplayed(jellyfinBase, token, w.device, w.jellyfinId, w.positionMs)
+                afterStartOverWriteBack(w.device, w.jellyfinId)
+                return true
+            }
             // R248 — Jellyfin has the stop: now (and only now) the Home feed can be rebuilt to show it.
             if (ok) onStopLanded?.let { hook -> runCatching { hook(w.device, w.jellyfinId) }.onFailure { Logger.warn("Home refresh after stop failed for ${w.jellyfinId}: ${it.message}", "tv") } }
             return ok
@@ -749,7 +755,11 @@ class PlaybackService(
         Logger.info("playback stop: device=${device.deviceId} item=$jellyfinId at ${positionMs}ms" +
             (if (decision.reportMs != positionMs) " (reported ${decision.reportMs}ms: ${if (decision.markPlayed) "finished at its credits, R347" else "shuffled, R343"})" else ""), "tv")   // R292 — the number the resume record carries
         // R343 — a cleared Start over episode that did not finish stays unwatched at its position (see the sink).
-        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = cleared && !playbackFinished(decision.reportMs, plan?.durationMs ?: 0L, plan?.creditsStartMs))
+        val startOverUnplayed = cleared && !playbackFinished(decision.reportMs, plan?.durationMs ?: 0L, plan?.creditsStartMs)
+        // R343 (FR-R343-11) — a page read the moment the player closes sees the episode as it is about to be, not the
+        // watched flag Jellyfin's own stop is about to write back.
+        if (startOverUnplayed) patchUnwatched(device, jellyfinId, decision.reportMs, plan?.durationMs ?: 0L)
+        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = startOverUnplayed)
         if (decision.markPlayed) runInBackground("R347 tick item=$jellyfinId") { mark(device, jellyfinId, watched = true) }
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
         // heartbeat) and the client reported a real startup duration: record one sample. The watchdog's
@@ -835,6 +845,25 @@ class PlaybackService(
         runCatching { jellyfinClient.setUserData(jellyfinBase, token, device.jellyfinUserId, jellyfinId, played = false, positionTicks = positionMs * TICKS_PER_MS) }
             .onSuccess { Logger.info("Start over: item=$jellyfinId left unwatched at ${positionMs}ms after its stop (R343)", "tv") }
             .onFailure { Logger.warn("Start over: unwatched write-back failed for item=$jellyfinId: ${it.message}", "tv") }
+            .onSuccess { patchUnwatched(device, jellyfinId, positionMs, factsOf(jellyfinId)?.durationMs ?: 0L) }
+    }
+
+    /**
+     * R343 (FR-R343-11) — after the write-back, the clear's own invalidation (the series re-read, the Continue list
+     * rebuilt, `playstate_changed` + `home_changed` pushed): what the played route runs. On a failed write-back it still
+     * runs, so the page shows Jellyfin's honest state.
+     */
+    private suspend fun afterStartOverWriteBack(device: DeviceData, jellyfinId: String) {
+        val hook = onSeriesCleared ?: onStopLanded ?: return
+        runCatching { hook(device, jellyfinId) }
+            .onFailure { Logger.warn("Start over: refresh after the write-back failed for item=$jellyfinId: ${it.message}", "tv") }
+    }
+
+    /** R343 (FR-R343-11) — the cache entry for an episode left unwatched at [positionMs] (its favourite flag kept). */
+    private fun patchUnwatched(device: DeviceData, jellyfinId: String, positionMs: Long, durationMs: Long) {
+        val old = PlaystateCache.get(device.jellyfinUserId)[jellyfinId]
+        val pct = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+        PlaystateCache.patch(device.jellyfinUserId, mapOf(jellyfinId to (old ?: dev.jellystructure.shared.tv.CardPlayState()).copy(played = false, resumeMs = positionMs, playedPct = pct)))
     }
 
     /** Work a stop starts but never waits for (R347's tick): on the service's scope, inline in tests. */
@@ -887,7 +916,10 @@ class PlaybackService(
         if (jellyfinPlaySessionId != null) {
             releaseEncodes(jellyfinBase, token, identity, jellyfinPlaySessionId)
         }
-        if (startOverUnplayed) writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
+        if (startOverUnplayed) {
+            writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
+            afterStartOverWriteBack(device, jellyfinId)
+        }
     }
 
     /**

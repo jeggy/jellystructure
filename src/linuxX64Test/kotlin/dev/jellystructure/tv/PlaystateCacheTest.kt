@@ -91,4 +91,40 @@ class PlaystateCacheTest {
     fun `a stop on a movie or an unknown id or no id refreshes titles only`() {
         for (id in listOf("m1", "nope", null)) assertEquals(listOf("m1", "jf-a", "jf-b"), PlaystateCache.idsForStop(library, id))
     }
+
+    // ── R352 (FR-R352-8) — a series whose own row changed is read whole, not over five minutes ──
+
+    private fun st(played: Boolean, pct: Float = 0f) = dev.jellystructure.shared.tv.CardPlayState(played = played, playedPct = pct)
+
+    @Test
+    fun `a series whose own row changed has all its episodes read less what this cycle read`() {
+        val previous = mapOf("jf-a" to st(false, 0.1f), "jf-b" to st(false, 0.2f), "m1" to st(false))
+        val fresh = mapOf("jf-a" to st(true, 1f), "jf-b" to st(false, 0.2f), "m1" to st(true))
+        val got = PlaystateCache.episodesOfChangedSeries(library, previous, fresh, alreadyRead = setOf("a-e1", "a-e16"))
+        assertEquals((2..40).map { "a-e$it" } - "a-e16", got, "series a changed; b did not; a film has no episodes")
+    }
+
+    @Test
+    fun `a first sighting or a favourite change is not a change`() {
+        val fresh = mapOf("jf-a" to st(true, 1f), "jf-b" to dev.jellystructure.shared.tv.CardPlayState(playedPct = 0.2f, favorite = true))
+        assertEquals(emptyList(), PlaystateCache.episodesOfChangedSeries(library, emptyMap(), fresh, emptySet()))
+        assertEquals(emptyList(), PlaystateCache.episodesOfChangedSeries(library, mapOf("jf-b" to st(false, 0.2f)), fresh, emptySet()))
+    }
+
+    @Test
+    fun `at most five series are read whole in one cycle`() {
+        val many = (1..8).map { n -> series("s$n", listOf(episode("s$n-e1", 1, 1))) }
+        val previous = many.associate { "jf-${it.id}" to st(false) }
+        val fresh = many.associate { "jf-${it.id}" to st(true, 1f) }
+        assertEquals((1..5).map { "s$it-e1" }, PlaystateCache.episodesOfChangedSeries(many, previous, fresh, emptySet()))
+    }
+
+    @Test
+    fun `a patch merges over what a refresh left`() {
+        PlaystateCache.replaceForTest("u-r343", mapOf("e1" to st(true, 1f), "e2" to st(true, 1f)))
+        PlaystateCache.patch("u-r343", mapOf("e1" to dev.jellystructure.shared.tv.CardPlayState(played = false, resumeMs = 227_000, playedPct = 0.1f)))
+        val now = PlaystateCache.get("u-r343")
+        assertEquals(false, now.getValue("e1").played); assertEquals(227_000, now.getValue("e1").resumeMs)
+        assertEquals(true, now.getValue("e2").played)
+    }
 }

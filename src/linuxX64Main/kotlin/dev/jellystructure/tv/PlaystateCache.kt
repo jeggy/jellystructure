@@ -63,6 +63,13 @@ object PlaystateCache {
      *  this viewer, whichever client played it; set by Main to mark their recommendations stale. */
     var onNewlyPlayed: ((DeviceData) -> Unit)? = null
 
+    /** R343 (FR-R343-11) — a state this server just wrote to Jellyfin itself, put in at once rather than waiting for a
+     *  refresh that may time out. Merged over what is there; a later refresh replaces it with Jellyfin's own word. */
+    fun patch(userId: String, entries: Map<String, CardPlayState>) {
+        if (entries.isEmpty()) return
+        data = data + (userId to (data[userId].orEmpty() + entries))
+    }
+
     /** Test seam: one user's map, as a refresh would have left it. */
     internal fun replaceForTest(userId: String, map: Map<String, CardPlayState>) { data = data + (userId to map) }
 
@@ -154,16 +161,25 @@ object PlaystateCache {
         }
         lastSuccessAt = lastSuccessAt + (device.jellyfinUserId to nowMs())
         val previous = data[device.jellyfinUserId]
+        // R352 (FR-R352-8) — a series whose own row changed since the last cycle (marked in Jellyfin's own UI, say) is
+        // read whole now; the rotation alone took five minutes to reach all its episodes (2 → 8 → 12 → 18 → 20 of 20).
+        val whole = if (scope is RefreshScope.Cycle && previous != null) episodesOfChangedSeries(items, previous, ps, ids.toSet()) else emptyList()
+        val extra = if (whole.isEmpty()) emptyMap() else withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, whole)
+        }.orEmpty()
+        if (extra.isNotEmpty()) cycleIds += whole.size
+        val got = ps + extra
         // Phase 230 (FR-230-1) — MERGE: a cycle now carries a slice, not the whole catalog.
-        data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + ps))
+        data = data + (device.jellyfinUserId to (data[device.jellyfinUserId].orEmpty() + got))
         // Phase 269 — a first (cold) map says nothing about what changed; after that, any id now played
         // that was not before is a finish.
-        if (previous != null && ps.any { (id, st) -> st.played && previous[id]?.played != true }) {
+        if (previous != null && got.any { (id, st) -> st.played && previous[id]?.played != true }) {
             runCatching { onNewlyPlayed?.invoke(device) }
         }
         // R176 — patch any already-open Home/Browse/Search screen on another of this user's devices,
         // same push HomeFeedService's own playstateFor used to fire on a fresh live fetch.
-        if (ps.isNotEmpty()) tvEventBus?.notifyPlaystateChanged(device.jellyfinUserId, json.encodeToString(ps))
+        if (got.isNotEmpty()) tvEventBus?.notifyPlaystateChanged(device.jellyfinUserId, json.encodeToString(got))
         return true
     }
 
@@ -182,6 +198,33 @@ object PlaystateCache {
     }
 
     internal fun topLevelIds(items: List<dev.jellystructure.model.MediaItem>): List<String> = items.mapNotNull { it.jellyfinId }
+
+    /** R352 (FR-R352-8) — at most this many series are read whole in one cycle; the rest wait for the next one. */
+    internal const val WHOLE_SERIES_PER_CYCLE = 5
+
+    /**
+     * R352 (FR-R352-8) — the episodes to read now: those of every series (up to [WHOLE_SERIES_PER_CYCLE]) whose own row
+     * in [fresh] differs from [previous] in *played* or the played share, less the ids [alreadyRead] this cycle. A
+     * series [previous] never held is not a change (a first sighting says nothing about what changed).
+     */
+    internal fun episodesOfChangedSeries(
+        items: List<dev.jellystructure.model.MediaItem>,
+        previous: Map<String, CardPlayState>,
+        fresh: Map<String, CardPlayState>,
+        alreadyRead: Set<String>,
+    ): List<String> = items.asSequence()
+        .filter { it.episodes.isNotEmpty() }
+        .filter { item ->
+            val id = item.jellyfinId ?: return@filter false
+            val was = previous[id] ?: return@filter false
+            val now = fresh[id] ?: return@filter false
+            was.played != now.played || kotlin.math.abs(was.playedPct - now.playedPct) > 0.001f
+        }
+        .take(WHOLE_SERIES_PER_CYCLE)
+        .flatMap { item -> item.episodes.asSequence().mapNotNull { it.jellyfinId } }
+        .filter { it !in alreadyRead }
+        .distinct()
+        .toList()
 
     /** FR-230-1 — every title, plus the episodes whose position falls in [slice] of [EPISODE_SWEEP_CYCLES].
      *  Position-based (not hash-based) so slices are even and every episode is covered exactly once per sweep. */
