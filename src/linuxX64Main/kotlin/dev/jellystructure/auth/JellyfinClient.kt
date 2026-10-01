@@ -63,7 +63,8 @@ internal fun audioDeviceProfile(capabilities: ClientCapabilities): String {
     return """{"MaxStreamingBitrate":140000000,"MusicStreamingTranscodingBitrate":256000,""" +
         """"DirectPlayProfiles":[{"Container":"${containers.joinToString(",")}","Type":"Audio","AudioCodec":"${codecs.joinToString(",")}"}],""" +
         """"TranscodingProfiles":[{"Container":"ts","Type":"Audio","AudioCodec":"aac","Protocol":"hls","Context":"Streaming","MaxAudioChannels":"2","BreakOnNonKeyFrames":true}],""" +
-        """"CodecProfiles":[],"SubtitleProfiles":[]}"""
+        // R351 (FR-R351-10) — a player that takes fewer channels than a file has converts it (a speaker says 2).
+        """"CodecProfiles":[${audioChannelCondition(capabilities, "Audio") ?: ""}],"SubtitleProfiles":[]}"""
 }
 
 internal fun deviceProfile(capabilities: ClientCapabilities): String {
@@ -73,7 +74,9 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
         add("""{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(capabilities).joinToString("|")}","IsRequired":true}]}""")
         add("""{"Type":"Video","Codec":"h264","Conditions":${h264TargetConditions(capabilities)}}""")
         addAll(videoBitrateConditions(capabilities))
-        audioChannelCondition(capabilities)?.let { add(it) }
+        // R351 (FR-R351-10) — a film's audio is a `VideoAudio` profile in Jellyfin; an `Audio` one is read only for a
+        // song. 177 wrote `Audio` here, so no film negotiation ever saw the channel limit.
+        audioChannelCondition(capabilities, "VideoAudio")?.let { add(it) }
     }.joinToString(",")
     // 218/R245 amendment (2026-09-18) — `hls_only` and `containers` were declared by the Chromecast
     // receiver (FR-R245-13) and never read here: this list said "mkv direct-plays" for every client, so
@@ -101,10 +104,13 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
         val allowed = if (declared.isEmpty()) segmentCodecs else segmentCodecs.filter { it in declared }
         return allowed.ifEmpty { listOf("aac") }.joinToString(",")
     }
+    // R351 (FR-R351-10) — the conversion's own channel limit: Jellyfin otherwise keeps the source's six channels when it
+    // converts E-AC-3 5.1 to AAC, and a Nest Hub's renderer refuses six (Shaka 3016, AUDIO_RENDERER_ERROR).
+    val transcodeChannels = channelLimit(capabilities)?.let { ""","MaxAudioChannels":"$it"""" } ?: ""
     val transcodingProfile = if (capabilities.hlsHevc)
-        """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "eac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
+        """{"Container":"mp4","Type":"Video","VideoCodec":"hevc,h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "eac3", "mp3"))}","Protocol":"hls","Context":"Streaming"$transcodeChannels}"""
     else
-        """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "mp3"))}","Protocol":"hls","Context":"Streaming"}"""
+        """{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"${transcodeAudio(listOf("aac", "ac3", "mp3"))}","Protocol":"hls","Context":"Streaming"$transcodeChannels}"""
     // R265 (FR-R265-8) — a client that shows in-manifest HLS subtitles (Safari, whose AirPlay hand-over
     // takes the stream and not the page's <track>s) gets its text subtitles as HLS renditions; everyone
     // else keeps them sideloaded. Image subtitles are unchanged either way.
@@ -136,13 +142,29 @@ private fun videoBitrateConditions(capabilities: ClientCapabilities): List<Strin
     }
 }
 
-/** Phase 177 §FR-177-3 — the second half of honouring [ClientCapabilities.maxAudioChannels] (the first
- *  half is the plain default of 8, already threaded through unconditionally today); only emitted when
- *  the client asked for something narrower, so a client that never set it keeps today's behaviour. */
-private fun audioChannelCondition(capabilities: ClientCapabilities): String? =
-    capabilities.maxAudioChannels.takeIf { it in 1 until 8 }?.let {
-        """{"Type":"Audio","Conditions":[{"Condition":"LessThanEqual","Property":"AudioChannels","Value":"$it","IsRequired":true}]}"""
+/** Phase 177 §FR-177-3 / R351 (FR-R351-10) — the client's channel limit, or null when it takes everything (8, the
+ *  default, or nonsense), so a client that never set it keeps today's negotiation byte for byte. */
+internal fun channelLimit(capabilities: ClientCapabilities): Int? = capabilities.maxAudioChannels.takeIf { it in 1 until 8 }
+
+/** Phase 177 §FR-177-3 — the channel limit as a codec profile. [type] is `VideoAudio` for a film's audio and `Audio`
+ *  for a song: Jellyfin reads an `Audio` profile only for audio items (R351 found 177's film profile said `Audio`). */
+private fun audioChannelCondition(capabilities: ClientCapabilities, type: String): String? =
+    channelLimit(capabilities)?.let {
+        """{"Type":"$type","Conditions":[{"Condition":"LessThanEqual","Property":"AudioChannels","Value":"$it","IsRequired":true}]}"""
     }
+
+/**
+ * R351 (FR-R351-10) — a conversion URL that carries the client's channel limit. Jellyfin writes one into its own
+ * `TranscodingUrl` from the profile; this adds `TranscodingMaxAudioChannels` only when the URL has no channel limit of
+ * its own (a Jellyfin that ignored the profile, the hand-built burn-in fallback). A direct-play (`Static=true`) URL
+ * and a client without a limit are returned unchanged. Nothing else in the URL is touched (FR-239-5).
+ */
+internal fun withChannelLimit(url: String, capabilities: ClientCapabilities?): String {
+    val limit = capabilities?.let { channelLimit(it) } ?: return url
+    if (Regex("[?&]Static=true", RegexOption.IGNORE_CASE).containsMatchIn(url)) return url
+    if (Regex("[?&](Transcoding)?MaxAudioChannels=", RegexOption.IGNORE_CASE).containsMatchIn(url)) return url
+    return url + (if ('?' in url) "&" else "?") + "TranscodingMaxAudioChannels=$limit"
+}
 
 /**
  * Phase 177 §FR-177-4 — `MaxStreamingBitrate` as the minimum of the fixed 120 Mbps ceiling, the device's
@@ -968,7 +990,10 @@ class JellyfinClient {
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
-        val mediaSourceBody = mediaSourceId?.let { ""","MediaSourceId":"$it"""" } ?: ""
+        val mediaSourceBody = (mediaSourceId?.let { ""","MediaSourceId":"$it"""" } ?: "") +
+            // R351 (FR-R351-10) — the request's own channel limit too (PlaybackInfoDto.MaxAudioChannels), which
+            // Jellyfin writes into the stream URL as `MaxAudioChannels`.
+            (channelLimit(capabilities)?.let { ""","MaxAudioChannels":$it""" } ?: "")
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)

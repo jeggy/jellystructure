@@ -5,7 +5,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 (build notes at the end), not deployed. Written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
+`✓ Built` 2026-10-02 (build notes at the end), not deployed. **Amended 2026-10-02** (FR-R351-10–12, the channel limit). Written 2026-10-02 (dev-authored) from the Mac test and the code. Number given by the coordinator.
 **Amends** R245 (FR-R245-13, the receiver's capabilities; FR-R245-4, the page's button while connected; FR-R245-8,
 the remote). Reuses R343 (FR-R343-8, a shuffle carries over). No wire change: every field it sets already exists on
 `ClientCapabilities`. No new string.
@@ -160,3 +160,67 @@ answers.** The first cast with this receiver will say what the hub declares (`ca
 **Verified:** `CastDecodeProbeTest` (8), `:ravilo-cast` production bundle, `:ravilo-ui` unit tests, backend
 `linuxX64Test`, desktop compile, Android release build. **Needs:** a deploy of the receiver (it is served by the
 backend) and a cast to the Nest Hub, the stue TV and the bedroom TV.
+
+## Amendment (2026-10-02) — the hub now fails on audio
+
+**Seen in the Mac + Nest Hub re-test (backend `v1.48-54-gfefa9049`, this phase deployed).** The receiver now reports
+what the hub takes (`cast: Køkken hub · caps h264≤1280x720 L41 ceiling=none ch=2 platform=true`) and the ticket limits
+the picture (`VideoCodec=h264 AudioCodec=aac,mp3 MaxWidth=1280 MaxHeight=720 SegmentContainer=ts h264-level=40`), but
+the stream URL carries **no channel limit**, and Jellyfin's session shows aac/h264/ts 1280 × 581 with **six** audio
+channels (source E-AC-3 5.1, `AudioCodecNotSupported`). The hub's renderer refuses it: Shaka **3016**
+(`PipelineStatus::AUDIO_RENDERER_ERROR`). Music to the same hub plays (its songs use the speaker profile, stereo).
+
+**Why.** Phase 177 (FR-177-3) put the client's channel limit into the device profile as a codec profile of
+`"Type":"Audio"`. Jellyfin reads an `Audio` codec profile only for an audio item (a song); a film's audio stream is
+checked against `VideoAudio` profiles. So no film negotiation has ever seen `max_audio_channels`, for any client. The
+video transcoding profile also had no `MaxAudioChannels`, and the PlaybackInfo request did not send one, so when
+Jellyfin converted E-AC-3 to AAC it kept the source's six channels (its AAC encoder allows six). The burn-in restream
+(a picture subtitle) negotiated with no capabilities at all, so it would have sent the hub 1080p and six channels too.
+
+**FR-R351-10 — The device's channel count reaches every place a film's stream is made.** When a client reports fewer
+than 8 channels (a receiver: 2 or 6; the Samsung screen app: 6):
+
+- the device profile carries a `VideoAudio` codec profile `AudioChannels ≤ N` (required), and the song profile an
+  `Audio` one;
+- the video transcoding profile (TS and fMP4 alike) carries `"MaxAudioChannels":"N"`;
+- the PlaybackInfo request carries `"MaxAudioChannels":N`;
+- a conversion URL that still has no `MaxAudioChannels` / `TranscodingMaxAudioChannels` gets
+  `TranscodingMaxAudioChannels=N` appended (a direct-play `Static=true` URL is never touched; nothing else in
+  Jellyfin's URL changes — FR-239-5).
+
+A stereo device gets stereo AAC; a device that reports 6 keeps 6. A client that reports 8 (the default: the phone, the
+TV app, the desktop, the web) negotiates exactly as before. Every start, the next episode, a shuffled entry and a
+restream go through these, because the receiver sends its capabilities on each of them; a seek on the receiver stays
+inside the HLS stream it has.
+
+**FR-R351-11 — A burn-in restream keeps the device's limits.** The picture-subtitle restream still negotiates as a
+plain SDR h264/TS conversion, but with the client's channel count, H.264 size and level, bitrate ceilings and audio
+codecs; its hand-built fallback URL uses the same size and channel limit.
+
+**FR-R351-12 — The log says it.** The receiver's `ticket` line adds the channel count it declared (`caps …/ch2`) and
+keeps the URL's `MaxAudioChannels`, `TranscodingMaxAudioChannels` and `aac-audiochannels`; the server's
+`PlaybackInfo:` line adds `maxAudioChannels=N` when a limit applies.
+
+**Checked, not changed.** The R216 / 177 bitrate ceilings already reach Jellyfin as required `VideoBitrate`
+conditions and `MaxStreamingBitrate`, so they were not affected. Phase 289 / 286's speaker path uses the song profile,
+whose transcoding profile was already stereo; it now also has the `Audio` channel profile, so a multichannel file to a
+stereo speaker converts rather than direct-plays.
+
+### Build notes (2026-10-02, amendment)
+
+Built 2026-10-02, not deployed, not device-tested. `deviceProfile` / `audioDeviceProfile` / `getPlaybackInfo` in
+`JellyfinClient.kt` (`channelLimit`, `audioChannelCondition(type)`, `withChannelLimit`); `PlaybackService` applies
+`withChannelLimit` in `streamUrlFor` (start and un-burn restream), the song conversion URL and the burn-in path, which
+now negotiates with `burnInLimits(capabilities)`; the receiver's `ticket` line and `CastDecodeProbe.LOGGED_PARAMS`.
+
+**Deviation:** none. One wider effect, deliberate: the Samsung screen app reports 6 channels, so a 7.1 file to it now
+converts its audio to 6 channels instead of direct-playing (Tizen work is paused; nothing else reports fewer than 8).
+
+**Verified:** `AudioChannelLimitTest` (8: ch=2 and ch=6 profiles, the fMP4 profile, the unchanged 8-channel
+profile, the song profile, the URL guard both ways, the burn-in limits), `CastDecodeProbeTest` (the summary keeps the
+channel parameters, never a token), backend `linuxX64Test`, `:shared:desktopTest`, the receiver bundle. **Not
+checked against a live Jellyfin** (no prod access in this build): the `VideoAudio` reading is from Jellyfin's
+`StreamBuilder` (audio conditions for a video item come from `CodecType.VideoAudio`) and is the reason the appended
+`TranscodingMaxAudioChannels` exists as a second guard. **Needs:** a deploy, then a film cast to the Nest Hub — the
+Mac's `ravilo.log` `ticket` line should carry `MaxAudioChannels=2` (or `TranscodingMaxAudioChannels=2`) and Jellyfin's
+session should show 2 audio channels; the stue TV (ch=6) should show 6 for the same file.

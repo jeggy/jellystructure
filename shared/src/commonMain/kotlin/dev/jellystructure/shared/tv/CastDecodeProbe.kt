@@ -88,7 +88,8 @@ object CastDecodeProbe {
      * named parameters are kept (no `ApiKey`, no token).
      */
     val LOGGED_PARAMS: List<String> = listOf(
-        "VideoCodec", "AudioCodec", "MaxWidth", "MaxHeight", "VideoBitrate", "AudioChannels", "SegmentContainer",
+        "VideoCodec", "AudioCodec", "MaxWidth", "MaxHeight", "VideoBitrate", "AudioChannels", "MaxAudioChannels",
+        "TranscodingMaxAudioChannels", "aac-audiochannels", "SegmentContainer",
         "TranscodeReasons", "h264-level", "Static",
     )
 

@@ -58,4 +58,13 @@ class CastDecodeProbeTest {
         assertTrue("MaxWidth=1280" in s); assertTrue("TranscodeReasons=VideoResolutionNotSupported" in s)
         assertFalse("SECRET" in s); assertFalse("DeviceId" in s)
     }
+
+    /** R351 (FR-R351-10) — the ticket line says the channel limit the stream was made with. */
+    @Test fun the_stream_summary_carries_the_channel_limit() {
+        val s = CastDecodeProbe.streamSummary(
+            "/videos/abc/master.m3u8?VideoCodec=h264&AudioCodec=aac&MaxAudioChannels=2&TranscodingMaxAudioChannels=2&aac-audiochannels=2&ApiKey=SECRET",
+        )
+        assertTrue(" MaxAudioChannels=2" in s); assertTrue("TranscodingMaxAudioChannels=2" in s); assertTrue("aac-audiochannels=2" in s)
+        assertFalse("SECRET" in s)
+    }
 }

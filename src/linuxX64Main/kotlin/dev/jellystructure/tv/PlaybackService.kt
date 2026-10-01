@@ -19,6 +19,8 @@ import dev.jellystructure.shared.tv.playbackFinished
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
 import dev.jellystructure.auth.withJellyfinToken
+import dev.jellystructure.auth.withChannelLimit
+import dev.jellystructure.auth.channelLimit
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -577,7 +579,8 @@ class PlaybackService(
         // was unavailable (source == null, plain direct-play-URL fallback) — nothing to ever release.
         val jellyfinPlaySessionId = playbackInfo?.playSessionId
         Logger.info(
-            "PlaybackInfo: item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode",
+            "PlaybackInfo: item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode" +
+                (channelLimit(capabilities)?.let { " maxAudioChannels=$it" } ?: ""),
             "tv",
         )
 
@@ -600,7 +603,7 @@ class PlaybackService(
         // Jellyfin templates `ApiKey=`, the same parameter `withJellyfinToken` emits (matched
         // case-insensitively, no underscore) — so the server is not handing out URLs it will refuse to
         // authenticate. See [streamUrlFor].
-        val streamUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode })
+        val streamUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode }, capabilities)
 
         // R343 / R347 — what the stop and the 5 % trigger need about this item, kept for the session. The
         // position before a shuffle is Jellyfin's as it stood (a Played item has no resume point: 0, R306).
@@ -689,7 +692,7 @@ class PlaybackService(
         // 286 (FR-286-8) — a speaker counts against the cast ceiling only while it converts (a WMA); a direct-played
         // MP3 is a file download and never does.
         if (needsTranscode) castService?.checkCeiling(device, playbackTracker.activeDeviceObjects(), playbackTracker.activeDirectDeviceIds())
-        val url = if (needsTranscode) source?.transcodingUrl!!.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
+        val url = if (needsTranscode) source?.transcodingUrl!!.let { withChannelLimit(if (it.startsWith("http")) it else "$jellyfinBase$it", capabilities) }
             else withJellyfinToken("$jellyfinBase/Audio/$trackId/stream?Static=true&MediaSourceId=$trackId&DeviceId=${identity.deviceId}", token)
         val startResult = playbackTracker.started(device, trackId, startMs, jellyfinPlaySessionId, directPlay = !needsTranscode)
         startResult.superseded?.let { old -> withContext(NonCancellable) { releaseSession(device, trackId, old.positionMs, old.jellyfinPlaySessionId) } }
@@ -1227,9 +1230,13 @@ class PlaybackService(
         // `capabilities` parameter slot — named args here since burn-in restream doesn't have the
         // original session's capabilities on hand; ClientCapabilities()'s conservative SDR-only default
         // is fine since this path already forces a transcode for the subtitle burn-in regardless.
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity, audioStreamIndex = audioStreamIndex)
+        // R351 (FR-R351-11) — the burn-in still negotiates SDR-only as before, but with the client's own limits: the
+        // channel count, the H.264 size and level, the bitrate ceiling and the audio it plays. Without them a Nest Hub
+        // that picked a picture subtitle was sent 1080p and six channels again.
+        val limits = burnInLimits(capabilities)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, audioStreamIndex = audioStreamIndex)
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
-            ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
+            ?.let { withChannelLimit(if (it.startsWith("http")) it else "$jellyfinBase$it", limits) }
         Logger.info("PlaybackInfo(restream, burn-in): item=$jellyfinId sub=$subtitleStreamIndex audio=${audioStreamIndex ?: "default"} negotiated=${negotiated != null}", "tv")
         // FR-239-2/-5 — `negotiated` is Jellyfin's own URL and is passed through untouched (see the
         // note at [startPlayback]'s streamUrl). Only the hand-built FALLBACK, used when PlaybackInfo is
@@ -1238,14 +1245,17 @@ class PlaybackService(
         // Jellyfin-spelled token. `withJellyfinToken` owns the separator too: this concatenation used
         // to start its last fragment with a hand-written `&`.
         val transcodingUrl = negotiated ?: withJellyfinToken(
-            "$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
-                "?DeviceId=${identity.deviceId}" +
-                "&MediaSourceId=$jellyfinId" +
-                "&VideoCodec=h264" +
-                "&AudioCodec=aac" +
-                "&MaxWidth=1920&MaxHeight=1080" +
-                "&SubtitleMethod=Encode" +
-                "&SubtitleStreamIndex=$subtitleStreamIndex",
+            withChannelLimit(
+                "$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
+                    "?DeviceId=${identity.deviceId}" +
+                    "&MediaSourceId=$jellyfinId" +
+                    "&VideoCodec=h264" +
+                    "&AudioCodec=aac" +
+                    "&MaxWidth=${limits.maxH264Width.takeIf { it > 0 } ?: 1920}&MaxHeight=${limits.maxH264Height.takeIf { it > 0 } ?: 1080}" +
+                    "&SubtitleMethod=Encode" +
+                    "&SubtitleStreamIndex=$subtitleStreamIndex",
+                limits,
+            ),
             token,
         )
 
@@ -1340,7 +1350,7 @@ class PlaybackService(
             itemId = jellyfinId,
             container = "mkv",
             directPlay = !needsTranscode,
-            hlsUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode }),
+            hlsUrl = streamUrlFor(jellyfinBase, jellyfinId, token, identity, source?.transcodingUrl?.takeIf { needsTranscode }, capabilities),
             startPositionMs = positionMs,
             subtitles = subtitles,
             audio = buildAudioTracks(itemDetail),
@@ -1356,9 +1366,10 @@ class PlaybackService(
      * here), else our static direct-play URL (FR-239-2 — handed to a player, which cannot attach a
      * header). One spelling, shared by [startPlayback] and [restreamWithoutBurnIn].
      */
-    private fun streamUrlFor(jellyfinBase: String, jellyfinId: String, token: String, identity: JellyfinDeviceIdentity, transcodingUrl: String?): String =
+    private fun streamUrlFor(jellyfinBase: String, jellyfinId: String, token: String, identity: JellyfinDeviceIdentity, transcodingUrl: String?, capabilities: ClientCapabilities? = null): String =
         if (transcodingUrl != null) {
-            if (transcodingUrl.startsWith("http")) transcodingUrl else "$jellyfinBase$transcodingUrl"
+            // R351 (FR-R351-10) — the client's channel limit rides the conversion URL even if Jellyfin left it out.
+            withChannelLimit(if (transcodingUrl.startsWith("http")) transcodingUrl else "$jellyfinBase$transcodingUrl", capabilities)
         } else {
             withJellyfinToken("$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}", token)
         }
@@ -1397,6 +1408,25 @@ class PlaybackService(
  * requested, and equal to the request when one was), else what was [requested], else unknown. What
  * Jellyfin DID outranks what it was asked — a ticket states facts.
  */
+/**
+ * R351 (FR-R351-11) — what a burn-in restream negotiates with: today's conservative default (SDR only, no direct-play
+ * list of its own) plus the client's hard limits, so a converted stream never exceeds what the device said it plays.
+ * Null (an old client that sends no capabilities) keeps the plain default.
+ */
+internal fun burnInLimits(capabilities: ClientCapabilities?): ClientCapabilities =
+    capabilities?.let {
+        ClientCapabilities(
+            audioCodecs = it.audioCodecs,
+            maxAudioChannels = it.maxAudioChannels,
+            hlsOnly = it.hlsOnly,
+            maxH264Width = it.maxH264Width,
+            maxH264Height = it.maxH264Height,
+            maxH264Level = it.maxH264Level,
+            maxVideoBitrate = it.maxVideoBitrate,
+            maxH264Bitrate = it.maxH264Bitrate,
+        )
+    } ?: ClientCapabilities()
+
 internal fun carriedAudioIndex(transcodingUrl: String?, requested: Int?): Int? =
     transcodingUrl?.let { Regex("[?&]AudioStreamIndex=(\\d+)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1)?.toIntOrNull() }
         ?: requested

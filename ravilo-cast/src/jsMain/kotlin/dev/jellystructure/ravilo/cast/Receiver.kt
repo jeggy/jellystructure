@@ -264,7 +264,7 @@ private class Receiver {
         ticket = t
         sessionOpen = true
         // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
-        note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
+        note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel}/ch${decode.maxAudioChannels} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
         val messages = cast.framework.messages
         request.media.contentId = t.hlsUrl
         request.media.contentUrl = t.hlsUrl
