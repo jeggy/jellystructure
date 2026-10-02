@@ -348,14 +348,6 @@ data class LibraryMapping(
     @SerialName("fallback_language") val fallbackLanguage: String? = null,
 )
 
-@Serializable
-data class JellyfinLibrary(
-    @SerialName("ItemId") val id: String,
-    @SerialName("Name") val name: String,
-    @SerialName("CollectionType") val collectionType: String? = null,
-    @SerialName("Locations") val locations: List<String> = emptyList(),
-)
-
 // Phase 212 — mirrors dev.jellystructure.advisor.{AdvisorFinding,LibraryAdvisorSection,AdvisorResponse}.
 @Serializable
 data class AdvisorFinding(
@@ -473,8 +465,9 @@ object ConfigApi {
         httpClient.post("/api/connections/test").body<ConnectionTestResult>()
     }.getOrNull()
 
-    suspend fun getJellyfinLibraries(): List<JellyfinLibrary>? = runCatching {
-        httpClient.get("/api/jellyfin/libraries").body<List<JellyfinLibrary>>()
+    /** Phase 298 (FR-298-4) — the saved library mappings, reconciled with Jellyfin by the backend. */
+    suspend fun getReconciledLibraries(): List<LibraryMapping>? = runCatching {
+        httpClient.get("/api/jellyfin/libraries/reconcile").body<List<LibraryMapping>>()
     }.getOrNull()
 
     // Phase 212 — Settings → Libraries' Jellyfin settings advisor.

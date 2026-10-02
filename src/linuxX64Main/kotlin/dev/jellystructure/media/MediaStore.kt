@@ -276,6 +276,24 @@ class MediaStore(
         }
     }
 
+    /** Phase 298 FR-298-5 — a library's Jellyfin id changed (a rename): every title inside [pathPrefix] that
+     *  still carries [oldId] takes [newId], in one write. The prefix is matched on a folder boundary so
+     *  `/music` never claims `/music_videos`. Unlike [backfillLibraryIds] this DOES bump the feed version:
+     *  `libraryId` decides which viewers may see a title (phase 142), so cached feeds must not keep the old
+     *  answer until the next unrelated write. Returns how many titles moved. */
+    suspend fun restampLibraryId(oldId: String, newId: String, pathPrefix: String): Int {
+        val dir = pathPrefix.trimEnd('/') + "/"
+        val toMove = allItems().filter { it.libraryId == oldId && (it.path + "/").startsWith(dir) }
+        if (toMove.isEmpty()) return 0
+        db.transaction {
+            for (item in toMove) upsertItemDbOnly(item.copy(libraryId = newId), examined = false)  // Phase 196: reads no files
+        }
+        allItemsMutex.withLock { allItemsCache = null }
+        feedVersionAtomic.incrementAndGet()
+        Logger.info("MediaStore: ${toMove.size} title(s) moved from library $oldId to $newId", "media")
+        return toMove.size
+    }
+
     // Phase 108: one-time startup backfill for rows written before createdAt/updatedAt existed.
     // Best-available history: item createdAt <- addedAt (Jellyfin DateCreated) ?: scannedAt; episode
     // createdAt <- the same item-level fallback (no per-episode history exists to do better).

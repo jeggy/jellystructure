@@ -410,6 +410,13 @@ fun main() = runBlocking {
         }
     }
 
+    // Phase 298 (FR-298-3) — the library mappings follow Jellyfin (renames included) once at startup, without
+    // anyone pressing Save; Settings → Libraries runs the same reconcile whenever it opens. No timer (owner).
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        runCatching { dev.jellystructure.config.LibraryReconciler.reconcileNow(jellyfinClient, configStore, mediaStore) }
+            .onFailure { Logger.warn("Library reconcile failed: ${it.message}", "config") }
+    }
+
     // Phase 268 (FR-268-3) — every file's size from `stat` (about a second for the whole library): at boot,
     // which fills titles the freshness cooldown would not re-scan for months, then hourly, which picks up a
     // file changed outside a scan. One batched write when anything changed; nothing when nothing did.

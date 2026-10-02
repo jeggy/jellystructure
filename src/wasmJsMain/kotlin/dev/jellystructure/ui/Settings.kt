@@ -1377,24 +1377,15 @@ private suspend fun fetchAndRenderLibraries() {
     val listEl = document.getElementById("library-mapping-list") as? HTMLElement ?: return
     listEl.innerHTML = """<span class="muted tiny">Loading…</span>"""
 
-    val fetched = ConfigApi.getJellyfinLibraries()
-    if (fetched == null) {
+    // Phase 298 (FR-298-4) — the backend reconciles the saved mappings with Jellyfin (by location first, so a
+    // library renamed in Jellyfin keeps its paths and takes its new name and id) and saves the result. The page
+    // adopts that list rather than merging on its own, so a Save can never write a differently merged list back.
+    val reconciled = ConfigApi.getReconciledLibraries()
+    if (reconciled == null) {
         listEl.innerHTML = """<span class="badge bad">Failed to fetch libraries. Check URL and token.</span>"""
         return
     }
-
-    // Merge: keep existing jellyfinPath/localPath/skip for known IDs, add new entries for unknowns
-    val existing = libraryMappings.associateBy { it.jellyfinId }
-    libraryMappings = fetched.map { lib ->
-        existing[lib.id] ?: LibraryMapping(
-            jellyfinId = lib.id,
-            name = lib.name,
-            collectionType = lib.collectionType ?: "",
-            jellyfinPath = lib.locations.firstOrNull() ?: "",
-            localPath = lib.locations.firstOrNull() ?: "",
-            skip = false,
-        )
-    }.toMutableList()
+    libraryMappings = reconciled.toMutableList()
 
     renderLibraryList()
     renderJellyfinAdvisor()

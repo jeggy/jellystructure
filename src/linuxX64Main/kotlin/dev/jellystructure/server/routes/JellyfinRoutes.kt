@@ -23,7 +23,7 @@ data class JellyfinUserDto(
 @Serializable
 data class MemoryBudgetRequest(@SerialName("budget_gb") val budgetGb: Double)
 
-fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient) {
+fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaStore: dev.jellystructure.media.MediaStore? = null) {
     route("/jellyfin") {
         get("/libraries") {
             val config = configStore.current
@@ -33,6 +33,12 @@ fun Route.jellyfinRoutes(configStore: ConfigStore, jellyfinClient: JellyfinClien
             }
             val libraries = jellyfinClient.getLibraries(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
             call.respond(libraries)
+        }
+
+        // Phase 298 (FR-298-4) — Settings → Libraries' list: the saved mappings reconciled with Jellyfin (renames
+        // included) and saved when they changed, so the page shows — and a Save writes back — the same list.
+        get("/libraries/reconcile") {
+            call.respond(dev.jellystructure.config.LibraryReconciler.reconcileNow(jellyfinClient, configStore, mediaStore))
         }
 
         get("/users") {
