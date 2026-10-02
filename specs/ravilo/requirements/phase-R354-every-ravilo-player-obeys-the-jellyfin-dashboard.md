@@ -315,3 +315,37 @@ playing: the toast shows top right; D-pad Left/Right/Up/Down keep moving the pla
 toast. 12. Phone, a film playing in landscape (immersive): the card shows at the top. 13. Mac/Linux, a film playing:
 the toast shows top right. 14. A Robolectric test: a `server_message` while a focused stand-in player is up renders the
 toast above it, the player keeps focus, a tap dismisses it without reaching the player.
+
+### Build notes (amendment 2, 2026-10-02 night) — not deployed, not device-tested
+
+**Built.** `VideoOverApp.covers` (`:ravilo-ui` commonMain seam `ServerMessageOverVideo.kt`) is set by the web player's
+`setChromeVisible` (true while the `<video>` sits above the canvas, false on `release`). `ServerMessageHost` keeps one
+clock per message (a monotonic mark) and, while the video covers the canvas, hands the list to
+`platformServerMessageOverVideo()` instead of drawing it: on the web a DOM layer (`#rv-msg-layer`, z 10: above the video
+at 2 and R169's transport at 3–4, below the fullscreen button at 100) draws the same card in CSS — accent stripe,
+gradient envelope tile, header bold on its own line, countdown bar, the phone's top card or the top-right toast, the
+theme's colours — and a click dismisses it. A card already shown is never moved in the DOM (moving restarts its
+animation). When a Compose overlay brings the canvas back, the message returns to the Compose toast with its remaining
+time. A timer in the host removes every message at the end of its time wherever it is drawn. Android and the desktop
+return no layer (their picture is under Compose already). The Compose toast is dismissed by `detectTapGestures`
+instead of `clickable`, so it is no longer a D-pad focus target.
+
+**Deviations.** The DOM card uses the system UI font (the app's fonts live inside the wasm bundle, not the page). The
+web's Live TV player never lifts its video over the canvas, so there the Compose toast is what shows (unchanged). No
+change was needed for the phone remoting a cast (a Compose page; the toast is drawn above it) or for Android immersive
+(the toast lives in the same window; its top inset collapses to 0 with the bars hidden).
+
+**Verified.** `ServerMessageOverPlayerTest` (Robolectric, 3): a message over a stand-in player with a focused control
+is displayed, carries no `Focused` semantics, D-pad Up/Left keep focus on the control, a tap on it dismisses it and
+never reaches the player; it leaves on its own after its time; with a video layer covering, the message goes to the
+layer only, comes back to Compose when uncovered, and a click on the layer card removes it. The first test fails with
+the old `clickable` toast. `:ravilo-ui:testDebugUnitTest`, `:ravilo-web:compileKotlinWasmJs`,
+`-Pravilo.desktopOnly=true :ravilo-desktop:compileKotlinDesktop`, `:ravilo-android:assembleDebug assembleRelease`,
+`check-player-dex.sh` (241/250, PlayerScreen untouched) and the other check scripts: green. The DOM layer itself was
+not run in a browser here.
+
+**Device steps.** Web: play an episode full-window (and once in browser full screen, F); send a message with a header
+from the dashboard: a card top right over the video for its time, the video keeps playing, a click dismisses it; open
+the audio/subtitles picker while one shows: it moves to the Compose toast and keeps counting down. Android TV: play a
+film, send a message: the toast top right; D-pad keeps moving the player's controls. Phone: play a film in landscape:
+the card at the top. Mac/Linux: play a film: the toast top right.
