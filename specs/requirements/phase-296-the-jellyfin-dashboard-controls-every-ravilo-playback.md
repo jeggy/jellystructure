@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (admin
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (admin
 specs top at 295). The client and receiver half is **R354**; both ship together.
 
 **Amends** phase 110 (FR C.3's routing, FR C.5's capabilities), phase 218 (its claim that phase 110 "gives dashboard
@@ -138,3 +138,50 @@ sweep then ends it). Sessions of devices we no longer hold are left alone.
    free local port: `/socket`, `/Sessions/Capabilities/Full`, `/Sessions`, token check), the real bridge and
    `TvEventBus`, and five real device sockets (phone, desktop, web, TV, receiver) connected over the loopback. It runs
    in CI's `unit` job (`./gradlew linuxX64Test`) with no new task.
+
+## Build notes (2026-10-02)
+
+**Built 2026-10-02, not deployed, not device-tested.** Commits `e6718448`, `d25ce6ad` (on `main` `3127421c`).
+
+1. **FR-296-1/-2** — `parseRemoteDeclaration` and `capabilitiesBody` (`tv/JellyfinRemote.kt`); `Server.kt` reads
+   `remote=` on `/api/tv/events` and passes it to `JellyfinSessionBridge.connect(device, commands)`; the bridge keeps
+   each device's declaration and the token it registered under, posts `capabilitiesBody(...)` on connect, and
+   re-posts on the open bridge when a reconnect inside the grace declares something different.
+   `JellyfinClient.postCapabilities` takes the body (default: phase 110's bytes, `LEGACY_CAPABILITIES`).
+2. **FR-296-3** — `parseJellyfinMessage` reads every frame into a `BridgeCommand`; `handleIncoming` only delivers it
+   (`notifyServerMessage` / `notifyPlayItem` / `notifyPlaystateCommand` / `notifyPlayerCommand`). Unknown Playstate
+   names are no longer forwarded.
+3. **FR-296-4** — nothing receiver-specific on the server: R354's receiver opens the events socket and gets the same
+   bridge.
+4. **FR-296-5** — the grace is a constructor parameter (`graceMs`, default 90 s); `isBridged(deviceId)` = open or in
+   its grace.
+5. **FR-296-6** — `JellyfinSessionReaper` (`tv/JellyfinSessionReaper.kt`), run every 60 s from `Main.kt` on its own
+   loop: `GET /Sessions` (server token, `JellyfinClient.getSessionsBody`), `parseJellyfinSessions`,
+   `staleRaviloSessions` (Ravilo client, a device row we hold, nothing playing, not `IsActive`, idle ≥ 90 s, not
+   bridged), then `JellyfinSessionBridge.endJellyfinSession(device)`: a socket under the device's identity and **own**
+   token (`tvTokenForClient` — never the server fallback, which would bind another user's session), wait up to 5 s for
+   Jellyfin's first frame, close. Logged per device (`Jellyfin session ended: device=… had no socket and nothing
+   playing`).
+6. **FR-296-7** — `BridgeHealth.commands` (additive) on `/api/health/full`.
+
+**Deviation:** the spec's `PlayableMediaTypes` rule is as written (`Video` only with `Play`); no `Audio` — the
+dashboard's *Play on* for a song is out of scope, and advertising `Audio` would invite a `Play` the apps would treat as
+a film.
+
+**Tests (CI `unit` job, `./gradlew linuxX64Test`, no new task):**
+- `JellyfinRemoteTest` (7): declarations, the legacy capability bytes, app and receiver capabilities, all nine
+  Playstate commands, every volume command (Jellyfin's string arguments), message/play/keepalive/junk, the sweep's
+  rule (playing, active, bridged, foreign and unknown sessions untouched; nothing inside the grace).
+- `JellyfinSessionBridgeIntegrationTest` (1, ~3 s): a fake Jellyfin on a Ktor CIO server on a free loopback port
+  (`/socket` that demands the header credential, `/Sessions/Capabilities/Full`, `/Sessions`, `/Users/{id}`), the real
+  bridge and `TvEventBus`, and six real device sockets — phone, desktop, web, TV, Cast receiver and an app older than
+  R354. It asserts each device's registered capabilities (the old app's are phase 110's bytes), sends all 15 commands
+  on each device's own Jellyfin socket and checks that device received exactly those 15 and no other device's, that
+  the receiver's Jellyfin socket closes after the grace, and that the sweep ends the receiver's idle session (a new
+  open + close under its identity) and never touches the playing one.
+- The whole suite: 846 tests, 0 failures.
+
+**Owed:** the device checks in R354's build notes; the first deploy should show the lingering 2026-09-30 sessions
+(*Chromecast via Ravilo · Stue TV*, *Soveværelse TV*, *Gæsteværelse*, the old *Ravilo Web* / *fedora*) leave
+`/Sessions` within ~2 minutes, each with one `Jellyfin session ended` log line. A session whose device row is gone is
+left alone by design (Jellyfin's restart clears it).
