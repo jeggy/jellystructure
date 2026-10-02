@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 (build notes at the end); **not deployed, not device-tested**. Written 2026-10-02 (dev-authored) against `main` `575cc8d5`. Number checked free (Ravilo specs top at
+`✓ Built` 2026-10-02 (build notes at the end); deployed 2026-10-02 (backend + receiver `v1.48-121-gaf679d64`), **device-tested on the Mac**: a 487-song queue to the Gæsteværelse speaker — 146 songs in the LOAD, the rest in parts, the receiver whole (487) about 1 s later, playing, *next* works, *Stop casting* hands back with the queue (before: the speaker closed the connection 25 ms after the LOAD). Android not device-tested (the Pixel was signed in to the demo server, which has no casting). Written 2026-10-02 (dev-authored) against `main` `575cc8d5`. Number checked free (Ravilo specs top at
 R358). **Amends** 286 (FR-286-4 and its dev review 3: "30 songs ≈ 4 KB, so the whole queue rides one LOAD") and R324.
 Both senders (the Mac/Linux Cast v2 sender, the Android Cast SDK sender) and the Cast receiver (`ravilo-cast`).
 Additive wire change only (a receiver ignores what it does not know); no string; no UI change.
