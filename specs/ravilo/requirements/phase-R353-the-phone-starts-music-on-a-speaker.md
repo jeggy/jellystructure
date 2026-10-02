@@ -9,7 +9,8 @@
 `✓ Built` 2026-10-02 (build notes at the end), not deployed, **device-tested on the Pixel 9 against the Stue
 speaker**. Written 2026-10-02 (dev-authored) from the device test; number given by the coordinator. **Amends** R324
 (FR-R324-1/2's busy row, FR-R324-3's hand-off, FR-R324-5's slider) and R265 FR-R265-3 (how a route is selected).
-Android only. No wire change, no new string, no receiver or backend change.
+Android only. No wire change, no new string, no receiver or backend change. **Amended 2026-10-02 (FR-R353-5, with R354):**
+the hand-back after a cast ends from outside the app — common code, so Android and the Mac.
 
 ## What was seen, and why
 
@@ -54,6 +55,23 @@ starts and then fails is not retried), and a route that has gone or that somethi
 **FR-R353-4 — The slider shows the device's volume.** The Android sender reports the session's volume (`CastSession`
 `volume`, updated by `Cast.Listener.onVolumeChanged`, null while unlinked); the ⋯ slider starts there and follows it
 (the volume keys move it) unless a finger is on it.
+
+**FR-R353-5 — A cast that ends from outside hands back the speaker's song** (amended 2026-10-02 with R354/296). Seen
+on the Pixel 9: a song changed on the speaker by another controller (Google Home's *next*: song A → song B), then
+Google Home's *Stop cast* — the phone came back to song A, the song from before the cast.
+
+*Why:* the phone followed the speaker's song all along (the receiver's `status` carries `queue` and `queueIndex` to
+every sender, and R352's `follow()` saved it), but only into the last-played record, never into the running engine.
+`stop()`, `moveAway()` and *Play on this phone* take the speaker's queue back (`takeBack`); a session that ends any
+other way — Google Home, the Cast notification's *Stop casting*, the device dropping the app, a network loss — only
+cleared `_linked`, and the engine kept what the hand-off had parked: the pre-cast song and position. By the time the
+link change was seen, the last status was already overwritten with `null`, so even `takeBack` had nothing to read.
+
+*Rule:* `MusicCast` keeps the last music status it saw while linked, and when it was seen. When the link drops and the
+app did not end it itself (`playHere`, `stop`, `moveAway` mark their own ends), the speaker's queue, its song and its
+place (the last position, plus the time since if it was playing, capped at the song's length) are loaded into the
+engine **paused**, on the main thread. The decision is `castHandBack` (commonMain), tested. Android and the Mac use
+the same `MusicCast`, so both are fixed.
 
 ## Out of scope
 
