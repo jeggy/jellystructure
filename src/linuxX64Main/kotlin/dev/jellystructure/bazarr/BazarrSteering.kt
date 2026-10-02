@@ -24,6 +24,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import dev.jellystructure.subtitles.FitGroup
 import kotlinx.io.files.Path
 import kotlin.math.abs
 
@@ -80,12 +83,13 @@ class BazarrSteering(
         }
 
         /** Dev review item 8 — what *Fix it* would do with the verdicts as they stand, first action per sidecar, so
-         *  the admin can read the report run before switching. A verdict from the speech track only ever waits. */
+         *  the admin can read the report run before switching. Phase 302 (FR-302-6): a verdict from the speech track
+         *  acts like any other; only a doubt waits. */
         fun preview(rows: List<Subtitle_check>): FixPreview {
             var sync = 0; var replace = 0; var move = 0; var ask = 0
             for (r in rows) {
                 if (!needsAction(r)) continue
-                if (r.reference?.startsWith(RefKind.SPEECH.wire) == true) { ask++; continue }
+                if (r.verdict == Verdict.CANT_TELL.wire) { ask++; continue }
                 when (r.verdict) {
                     Verdict.OFF.wire -> if (abs(r.shift_ms ?: 0) / 1000 < MAX_OFFSETS.last()) sync++ else replace++
                     Verdict.OTHER_EPISODE.wire -> move++
@@ -160,7 +164,12 @@ class BazarrSteering(
         return subs.firstOrNull { it.path?.substringAfterLast('/') == name }?.path ?: (video.substringBeforeLast('/') + "/" + name)
     }
 
-    suspend fun act(itemId: String, videoPath: String) {
+    /** One video or one subtitle at a time, whether the loop or a press on a fix button asked (phase 302). */
+    private val acting = Mutex()
+
+    suspend fun act(itemId: String, videoPath: String): Unit = acting.withLock { actLocked(itemId, videoPath) }
+
+    private suspend fun actLocked(itemId: String, videoPath: String) {
         val cfg = service.config() ?: return
         if (mode().reportOnly) return
         val item = store.resolve(itemId) ?: return
@@ -170,8 +179,8 @@ class BazarrSteering(
         var touched = restored.isNotEmpty()
         for (r in q.checksForVideo(videoPath).executeAsList()) {
             if (r.language in restored) continue
-            val bySpeech = r.reference?.startsWith(RefKind.SPEECH.wire) == true
-            val alone = mode().actsAlone && !bySpeech
+            // Phase 302 (FR-302-6) — a verdict from the speech track acts like any other; the check after it is the net.
+            val alone = mode().actsAlone
             when (r.verdict) {
                 Verdict.OFF.wire -> {
                     // A sync is judged by a check made after it: until then, wait; still off after it, replace.
@@ -196,8 +205,10 @@ class BazarrSteering(
     }
 
     /** One action on one file's content: done now when [alone], else proposed once (FR-273-16). Never twice. */
-    private suspend fun step(item: MediaItem, r: Subtitle_check, action: String, alone: Boolean, run: suspend () -> Boolean): Boolean {
-        if (q.actedOnContent(r.sidecar_path, action, "%hash=${r.content_hash}%").executeAsOne() > 0) return false
+    private suspend fun step(item: MediaItem, r: Subtitle_check, action: String, alone: Boolean, manual: Boolean = false, run: suspend () -> Boolean): Boolean {
+        // Phase 302 — a press on a fix button is not held back by a proposal still waiting, or one dismissed earlier.
+        val acted = if (manual) q.doneOnContent(r.sidecar_path, action, "%hash=${r.content_hash}%") else q.actedOnContent(r.sidecar_path, action, "%hash=${r.content_hash}%")
+        if (acted.executeAsOne() > 0) return false
         if (!alone) {
             record(item, r, action, WAITING, costs = false, detail = proposalText(r, action))
             return false
@@ -272,9 +283,9 @@ class BazarrSteering(
      * (Bazarr deletes it and searches again), else a plain delete through Bazarr. Three rounds a day per language,
      * inside the budget; past that, one of a neighbour's candidates when the series shows a shift (FR-273-14).
      */
-    private suspend fun replace(cfg: BazarrConfig, item: MediaItem, t: Target, r: Subtitle_check, alone: Boolean): Boolean {
+    private suspend fun replace(cfg: BazarrConfig, item: MediaItem, t: Target, r: Subtitle_check, alone: Boolean, manual: Boolean = false): Boolean {
         val action = if (sourceOf(cfg, t, r) != null) BLACKLIST else REMOVE
-        return step(item, r, action, alone) {
+        return step(item, r, action, alone, manual) {
             val rounds = q.roundsSince(BLACKLIST, r.video_path, r.language, now() - 86_400).executeAsOne()
             when {
                 action == BLACKLIST && rounds >= ROUNDS_PER_DAY -> neighbour(cfg, item, t, r) || remove(cfg, item, t, r)
@@ -403,6 +414,74 @@ class BazarrSteering(
             val item = store.resolve(itemId) ?: return@launch
             if (recheck) runCatching { checks.checkVideo(item, videoPath, SubtitleCheckService.Mode.INLINE) }
         }
+    }
+
+    // ── Fix a group by hand (phase 302) ─────────────────────────────────────────────────────────
+
+    /** FR-302-4 — a group being worked through: how many, how far. */
+    data class FitRun(val group: String, val total: Int, val done: Int = 0, val notDone: Int = 0, val finished: Boolean = false)
+
+    private val runs = kotlin.concurrent.AtomicReference<Map<String, FitRun>>(emptyMap())
+
+    fun run(group: String): FitRun? = runs.value[group]?.takeIf { !it.finished }
+
+    private fun putRun(r: FitRun) { while (true) { val b = runs.value; if (runs.compareAndSet(b, b + (r.group to r))) return } }
+
+    /** FR-302-4 — starts working through every subtitle of [group], whatever the mode: the press is the admin's OK.
+     *  Null when a run of it is already going. */
+    fun fixGroup(group: FitGroup): FitRun? {
+        if (run(group.id) != null) return null
+        val rows = q.allChecks().executeAsList().filter { FitGroup.of(it) == group }
+        val start = FitRun(group.id, rows.size)
+        putRun(start)
+        scope.launch {
+            var cur = start
+            for (r in rows) {
+                // FR-302-4 — wait while a TV plays, rather than skipping (a sync reads the whole video).
+                while (dev.jellystructure.tv.isPlaybackActive()) delay(60_000)
+                val fresh = q.checkByPath(r.sidecar_path).executeAsOneOrNull()
+                val ok = fresh != null && FitGroup.of(fresh) == group &&
+                    runCatching { fixRow(fresh) }.onFailure { Logger.warn("subtitle fix failed for ${r.sidecar_path.substringAfterLast('/')}: ${it.message}", "subtitles") }.getOrDefault(false)
+                cur = if (ok) cur.copy(done = cur.done + 1) else cur.copy(notDone = cur.notDone + 1)
+                putRun(cur)
+            }
+            putRun(cur.copy(finished = true))
+            Logger.info("Subtitle fix ${group.id}: ${cur.done} done, ${cur.notDone} not done of ${cur.total}", "subtitles")
+        }
+        return start
+    }
+
+    /**
+     * FR-302-4 — one subtitle of a group, fixed through Bazarr now. A sync group syncs, unless this file was synced
+     * already: then, once the check after it has run and still finds it off, it is replaced. Replace and move keep
+     * 273's limits (once per file content, three rounds a day, the download budget). Returns whether Bazarr was asked.
+     */
+    suspend fun fixRow(r: Subtitle_check): Boolean = acting.withLock {
+        val cfg = service.config() ?: return@withLock false
+        val group = FitGroup.of(r) ?: return@withLock false
+        val item = store.resolve(r.item_id) ?: return@withLock false
+        val target = targetFor(item, r.video_path) ?: return@withLock false
+        val ok = when (group.fix) {
+            FitGroup.Fix.SYNC -> {
+                val syncedAt = q.lastActionAt(r.sidecar_path, SYNC).executeAsOne().at
+                val syncedThis = q.doneOnContent(r.sidecar_path, SYNC, "%hash=${r.content_hash}%").executeAsOne() > 0
+                when {
+                    syncedAt != null && r.checked_at <= syncedAt -> false  // the check after the sync has not run yet
+                    !syncedThis && abs(r.shift_ms ?: 0) / 1000 < MAX_OFFSETS.last() -> step(item, r, SYNC, alone = true, manual = true) { sync(cfg, item, target, r) }
+                    else -> replace(cfg, item, target, r, alone = true, manual = true)
+                }
+            }
+            FitGroup.Fix.REPLACE -> replace(cfg, item, target, r, alone = true, manual = true)
+            FitGroup.Fix.MOVE -> {
+                val moved = step(item, r, MOVE, alone = true, manual = true) { move(cfg, item, target, r) }
+                replace(cfg, item, target, r, alone = true, manual = true) || moved
+            }
+        }
+        if (ok) {
+            q.answerWaitingFor(now(), r.sidecar_path)
+            afterChange(item, r.video_path, target)
+        }
+        ok
     }
 
     // ── Needs your OK ─────────────────────────────────────────────────────────────────────────

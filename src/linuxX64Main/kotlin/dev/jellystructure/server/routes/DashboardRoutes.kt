@@ -144,11 +144,17 @@ class DashboardService(
         // ── Subtitles — 273's fit numbers and the Bazarr advisor ──
         subtitles?.let { w ->
             if (cfg.bazarr?.let { it.enabled && it.url.isNotBlank() } == true) {
-                val counts = runCatching { w.db.subtitleCheckQueries.countByVerdict().executeAsList().associate { it.verdict to it.n.toInt() } }.getOrDefault(emptyMap())
-                val off = (counts["off"] ?: 0) + (counts["off_mid_file"] ?: 0)
-                val wrong = (counts["not_this_video"] ?: 0) + (counts["other_episode"] ?: 0) + (counts["longer_video"] ?: 0)
-                if (off > 0) rows += DashboardRow("subs_off", "subs", WARNING, "Out of step with their video", "Bazarr’s sync could not line them up.", off, "subtitle", "open", href = "/subtitles?fit=out")
-                if (wrong > 0) rows += DashboardRow("subs_wrong", "subs", WARNING, "Made for a different video", "Another cut or release — timings will never fit.", wrong, "subtitle", "open", href = "/subtitles?fit=wrong")
+                // Phase 302 — one row per cause, severity from what a viewer meets today, and the fix on the row.
+                val sc = cfg.subtitleCheck
+                val all = runCatching { w.db.subtitleCheckQueries.allChecks().executeAsList() }.getOrDefault(emptyList())
+                for ((g, dto) in fitGroups(all, w.steering, sc.reportOnly, sc.dailyDownloadBudget)) {
+                    val running = dto.running
+                    val sentence = if (running != null) "${dto.sentence} Fixing now: ${running.done + running.notDone} of ${running.total}." else dto.sentence
+                    rows += DashboardRow("subs_${g.id}", "subs", dto.severity, dto.label, sentence, dto.count, "subtitle",
+                        fix = if (w.steering != null && running == null) "here" else "open",
+                        action = if (running == null) dto.action else "Open", actionId = if (w.steering != null && running == null) "subs_fix:${g.id}" else null,
+                        href = "/subtitles?fit=${g.id}")
+                }
                 val waiting = runCatching { w.db.subtitleCheckQueries.waiting().executeAsList().size }.getOrDefault(0)
                 if (waiting > 0) rows += DashboardRow("subs_waiting", "subs", WARNING, "Subtitle changes waiting for your OK", "Each says what it would do; *Do it* or *Leave it* on the Subtitles page.", waiting, "proposal", "open", href = "/subtitles")
                 val advice = runCatching { w.advisor?.advise() }.getOrNull()

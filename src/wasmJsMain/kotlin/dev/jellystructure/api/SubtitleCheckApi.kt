@@ -99,6 +99,39 @@ data class BazarrAdvice(
 @Serializable
 data class BazarrApplyResult(val applied: Boolean = false, val message: String = "")
 
+/** Phase 302 — one cause and its count (mirrors the backend's `FitGroupDto`). */
+@Serializable
+data class FitGroupInfo(
+    val id: String,
+    val label: String,
+    val sentence: String = "",
+    val action: String = "",
+    val count: Int = 0,
+    val severity: String = "warning",
+    val running: FitRunInfo? = null,
+)
+
+@Serializable
+data class FitRunInfo(val total: Int = 0, val done: Int = 0, @SerialName("not_done") val notDone: Int = 0)
+
+@Serializable
+data class FitRow(
+    @SerialName("sidecar_path") val sidecarPath: String,
+    val name: String,
+    @SerialName("item_id") val itemId: String,
+    val title: String,
+    val episode: String? = null,
+    val language: String? = null,
+    val words: String,
+    val against: String? = null,
+    val offered: Boolean = true,
+    @SerialName("video_ms") val videoMs: Long? = null,
+    @SerialName("runtime_min") val runtimeMin: Int? = null,
+)
+
+@Serializable
+data class SubtitleFit(val groups: List<FitGroupInfo> = emptyList(), val group: String? = null, val rows: List<FitRow> = emptyList(), val total: Int = 0)
+
 /** Phase 273 — the subtitle check's admin routes. */
 object SubtitleCheckApi {
     suspend fun forTitle(itemId: String): TitleSubtitleChecks? = runCatching {
@@ -119,6 +152,17 @@ object SubtitleCheckApi {
 
     suspend fun advice(fresh: Boolean = false): BazarrAdvice? = runCatching {
         httpClient.get("/api/bazarr/advisor") { url { if (fresh) parameters.append("fresh", "true") } }.body<BazarrAdvice>()
+    }.getOrNull()
+
+    /** Phase 302 — the causes, and one cause's subtitles. */
+    suspend fun fit(group: String?): SubtitleFit? = runCatching {
+        httpClient.get("/api/subtitles/fit") { url { if (group != null) parameters.append("group", group) } }.body<SubtitleFit>()
+    }.getOrNull()
+
+    /** Phase 302 — fix a whole group through Bazarr; the number queued, or null (already running, no Bazarr). */
+    suspend fun fixGroup(group: String): Int? = runCatching {
+        val r = httpClient.post("/api/subtitles/fit/$group/fix")
+        if (r.status.isSuccess()) r.body<Map<String, Int>>()["queued"] else null
     }.getOrNull()
 
     suspend fun apply(findingId: String): BazarrApplyResult? = runCatching {

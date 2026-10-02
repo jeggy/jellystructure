@@ -171,6 +171,15 @@ SELECT subs_id FROM subtitle_action WHERE action IN ('neighbour', 'blacklist') A
 actedOnContent:
 SELECT COUNT(*) FROM subtitle_action WHERE sidecar_path = :path AND action = :action AND detail LIKE :hashPattern;
 
+-- Phase 302 (FR-302-4) — a press on a fix button is the admin's OK: only what was actually done (or approved) counts.
+doneOnContent:
+SELECT COUNT(*) FROM subtitle_action WHERE sidecar_path = :path AND action = :action AND detail LIKE :hashPattern
+    AND state IN ('done', 'failed', 'approved');
+
+-- Phase 302 — once a fix was pressed, proposals for the same subtitle are answered.
+answerWaitingFor:
+UPDATE subtitle_action SET state = 'approved', decided_at = :at WHERE sidecar_path = :path AND state = 'waiting';
+
 recentActions:
 SELECT * FROM subtitle_action WHERE state IN ('done', 'failed') ORDER BY created_at DESC, id DESC LIMIT :limit;
 

@@ -470,6 +470,18 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
     t.closest("[data-act]")?.let { b ->
         val act = b.getAttribute("data-act") ?: return
         val out = { msg: String -> (b as? HTMLElement)?.textContent = msg }
+        // Phase 302 (FR-302-4) — a subtitle group is fixed through Bazarr by this press, after saying what it will do.
+        if (act.startsWith("subs_fix:")) {
+            val row = ovDto?.rows?.firstOrNull { it.id == b.getAttribute("data-row") }
+            if (!confirmSubtitleFix(row?.action ?: "Fix them in Bazarr", row?.count ?: 0, row?.sentence.orEmpty())) return
+            scope.launch {
+                out("Starting…")
+                val n = dev.jellystructure.api.SubtitleCheckApi.fixGroup(act.removePrefix("subs_fix:"))
+                out(if (n != null) "Started ✓ · $n queued" else "Couldn’t start")
+                if (n != null) loadOverview(scope)
+            }
+            return
+        }
         // FR-285-10 — the quick actions live on the rows they serve.
         scope.launch {
             when (act) {
@@ -495,3 +507,7 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
         }
     }
 }
+
+/** Phase 302 (FR-302-4) — the confirmation before a subtitle group is fixed: what, how many, and how. */
+internal fun confirmSubtitleFix(action: String, count: Int, sentence: String): Boolean =
+    window.confirm("$action — $count ${if (count == 1) "subtitle" else "subtitles"}?\n\n$sentence\n\nThey are done one at a time, and wait while a TV is playing.")

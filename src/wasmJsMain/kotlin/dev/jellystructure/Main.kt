@@ -108,7 +108,7 @@ object App {
             path.startsWith("/audiobook-author/") -> renderAudiobookAuthor(container, scope, dev.jellystructure.decodeURIComponent(path.removePrefix("/audiobook-author/").substringBefore('/')), query)
             path == "/activity" -> renderActivity(container, scope, query)
             path.startsWith("/suggestions") -> renderSuggestions(container, scope, query)  // Phase 274
-            path == "/subtitles" -> renderSubtitles(container, scope)
+            path == "/subtitles" -> renderSubtitles(container, scope, query)  // Phase 302: ?fit=<group>
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
             path.startsWith("/livetv") -> renderLiveTv(container, scope)

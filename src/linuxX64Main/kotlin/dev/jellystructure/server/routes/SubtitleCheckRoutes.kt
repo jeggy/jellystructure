@@ -11,6 +11,7 @@ import dev.jellystructure.db.Subtitle_action
 import dev.jellystructure.db.Subtitle_check
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.model.fileDurationMs
 import dev.jellystructure.subtitles.SubtitleCheckService
 import dev.jellystructure.subtitles.SubtitleVerdicts
 import io.ktor.http.HttpStatusCode
@@ -93,6 +94,59 @@ data class SubtitleSummaryDto(
 
 @Serializable
 data class FixWouldDto(val sync: Int, val replace: Int, val move: Int, val ask: Int, val hide: Int)
+
+/** Phase 302 (FR-302-1/2/4) — one cause, its count, its severity and how far a fix of it has got. */
+@Serializable
+data class FitGroupDto(
+    val id: String,
+    val label: String,
+    val sentence: String,
+    val action: String,
+    val count: Int,
+    val severity: String,
+    val running: FitRunDto? = null,
+)
+
+@Serializable
+data class FitRunDto(val total: Int, val done: Int, @SerialName("not_done") val notDone: Int)
+
+/** Phase 302 (FR-302-7) — one subtitle in a group's list. */
+@Serializable
+data class FitRowDto(
+    @SerialName("sidecar_path") val sidecarPath: String,
+    val name: String,
+    @SerialName("item_id") val itemId: String,
+    val title: String,
+    val episode: String? = null,
+    val language: String? = null,
+    val words: String,
+    /** What it was measured against, in words. */
+    val against: String? = null,
+    val offered: Boolean,
+    @SerialName("video_ms") val videoMs: Long? = null,
+    @SerialName("runtime_min") val runtimeMin: Int? = null,
+)
+
+@Serializable
+data class SubtitleFitDto(val groups: List<FitGroupDto>, val group: String? = null, val rows: List<FitRowDto> = emptyList(), val total: Int = 0)
+
+/** Phase 302 — every group with its count and severity, from the verdicts as they stand. Shared with the Dashboard. */
+fun fitGroups(rows: List<Subtitle_check>, steering: BazarrSteering?, reportOnly: Boolean, dailyBudget: Int): List<Pair<dev.jellystructure.subtitles.FitGroup, FitGroupDto>> {
+    val by = rows.groupBy { dev.jellystructure.subtitles.FitGroup.of(it) }
+    return dev.jellystructure.subtitles.FitGroup.entries.mapNotNull { g ->
+        val rs = by[g] ?: return@mapNotNull null
+        val run = steering?.run(g.id)
+        g to FitGroupDto(g.id, g.label, dev.jellystructure.subtitles.FitGroup.sentence(g, dailyBudget), g.action, rs.size,
+            dev.jellystructure.subtitles.FitGroup.severity(g, rs, reportOnly), run?.let { FitRunDto(it.total, it.done, it.notDone) })
+    }
+}
+
+private fun againstWords(reference: String?): String? = when (reference?.substringBefore(':')) {
+    "embedded" -> "the subtitle inside the file"
+    "speech" -> "the speech"
+    "sibling" -> "another subtitle beside it"
+    else -> null
+}
 
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 private fun nowSeconds(): Long = platform.posix.time(null)
@@ -186,6 +240,40 @@ fun Route.subtitleCheckRoutes(
         val id = call.parameters["id"]?.toLongOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
         val s = steering ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Bazarr is not connected"))
         call.respond(if (s.dismiss(id)) HttpStatusCode.OK else HttpStatusCode.Conflict, mapOf("ok" to true))
+    }
+
+    // Phase 302 (FR-302-7) — the groups, and one group's subtitles for the Subtitles page.
+    get("/subtitles/fit") {
+        val cfg = configStore.current.subtitleCheck
+        val all = db.subtitleCheckQueries.allChecks().executeAsList()
+        val groups = fitGroups(all, steering, cfg.reportOnly, cfg.dailyDownloadBudget)
+        val g = dev.jellystructure.subtitles.FitGroup.byId(call.request.queryParameters["group"])
+        val inGroup = if (g == null) emptyList() else all.filter { dev.jellystructure.subtitles.FitGroup.of(it) == g }
+        val rows = inGroup.sortedWith(compareBy({ it.item_id }, { it.video_path }, { it.sidecar_path })).take(500).map { r ->
+            val item = mediaStore.resolve(r.item_id)
+            val ep = item?.episodes?.firstOrNull { it.path == r.video_path }
+            val tracks = ep?.tracks ?: item?.tracks.orEmpty()
+            FitRowDto(
+                sidecarPath = r.sidecar_path, name = r.sidecar_path.substringAfterLast('/'), itemId = r.item_id,
+                title = item?.title ?: r.video_path.substringAfterLast('/'),
+                episode = ep?.let { SubtitleCheckService.episodeLabel(it.seasonNumber, it.episodeNumber) },
+                language = r.language, words = checks.verdictWords(r), against = againstWords(r.reference),
+                offered = cfg.reportOnly || !SubtitleVerdicts.isHidden(r),
+                videoMs = tracks.fileDurationMs(),
+                runtimeMin = ep?.runtime ?: item?.runtime,
+            )
+        }
+        call.respond(SubtitleFitDto(groups.map { it.second }, g?.id, rows, inGroup.size))
+    }
+
+    // FR-302-4 — fix a whole group by hand, through Bazarr, whatever the mode.
+    post("/subtitles/fit/{group}/fix") {
+        val g = dev.jellystructure.subtitles.FitGroup.byId(call.parameters["group"]) ?: return@post call.respond(HttpStatusCode.NotFound)
+        val s = steering?.takeIf { it.service.config() != null }
+            ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Bazarr is not connected"))
+        val run = s.fixGroup(g) ?: return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "This group is already being fixed"))
+        Logger.info("Subtitle fix ${g.id} pressed: ${run.total} subtitle(s)", "subtitles")
+        call.respond(HttpStatusCode.Accepted, mapOf("queued" to run.total))
     }
 
     // FR-273-16 — the switch, the budget and where Bazarr reaches this server (the Bazarr card).

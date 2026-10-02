@@ -18,12 +18,14 @@ import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.subtitles.Cue
 import dev.jellystructure.subtitles.CueCodec
+import dev.jellystructure.subtitles.FitGroup
 import dev.jellystructure.subtitles.SubtitleCheckService
 import dev.jellystructure.subtitles.SubtitleReferences
 import dev.jellystructure.subtitles.SubtitleVerdicts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -33,6 +35,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -252,5 +255,60 @@ class BazarrSteeringTest {
         steering.act("show", ep(1))
         assertTrue(fake.calls.any { it == "upload episode 102 da" }, "${fake.calls}")
         assertTrue(fake.calls.any { it == "delete episode 101 Show.S01E01.da.srt" }, "not from Bazarr, so deleted rather than blacklisted: ${fake.calls}")
+    }
+
+    // ── Phase 302 ─────────────────────────────────────────────────────────────────────────────
+
+    private fun rows() = db.subtitleCheckQueries.allChecks().executeAsList()
+
+    @Test
+    fun `each verdict is one cause and severity is what a viewer meets`() = runBlocking {
+        filmWithThree()
+        write("$dir/Film (2020)/Film.sv.srt", srt(episodeCues(1).map { Cue(it.startMs + 1_200, it.endMs + 1_200) }))
+        config.update(config.current.copy(subtitleCheck = config.current.subtitleCheck.copy(action = "report")))
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        val by = rows().associate { it.language to FitGroup.of(it) }
+        assertEquals(mapOf<String?, FitGroup?>("da" to null, "en" to FitGroup.SHIFT, "hr" to FitGroup.WRONG, "sv" to FitGroup.SLIGHT), by)
+        val shift = rows().filter { FitGroup.of(it) == FitGroup.SHIFT }
+        assertEquals("critical", FitGroup.severity(FitGroup.SHIFT, shift, reportOnly = true), "on Only report every one is offered")
+        assertEquals("warning", FitGroup.severity(FitGroup.SHIFT, shift, reportOnly = false), "hidden once the switch says Fix it")
+        assertEquals("info", FitGroup.severity(FitGroup.SLIGHT, rows().filter { FitGroup.of(it) == FitGroup.SLIGHT }, reportOnly = true))
+    }
+
+    private suspend fun waitFor(group: FitGroup) { repeat(200) { if (steering.run(group.id) == null) return; delay(20) } }
+
+    @Test
+    fun `a press fixes the group through Bazarr whatever the mode`() = runBlocking {
+        config.update(config.current.copy(subtitleCheck = config.current.subtitleCheck.copy(action = "report")))
+        filmWithThree()
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        steering.act("film", filmVideo)
+        assertEquals(emptyList(), fake.calls, "Only report does nothing by itself")
+        val run = steering.fixGroup(FitGroup.SHIFT)
+        assertEquals(1, run?.total)
+        waitFor(FitGroup.SHIFT)
+        assertEquals(listOf("sync movie 7 en Film.en.srt ref=s:0 max=120 nofix=false"), fake.calls)
+        // The wrong one is a group of its own, replaced through Bazarr's blacklist.
+        steering.fixGroup(FitGroup.WRONG); waitFor(FitGroup.WRONG)
+        assertTrue(fake.calls.contains("blacklist movie 7 opensubtitlescom 123 Film.hr.srt"), "${fake.calls}")
+    }
+
+    @Test
+    fun `a synced subtitle that is still off is replaced and never synced twice`() = runBlocking {
+        config.update(config.current.copy(subtitleCheck = config.current.subtitleCheck.copy(action = "ask")))
+        filmWithThree()
+        checks.checkVideo(film(), filmVideo, SubtitleCheckService.Mode.INLINE)
+        steering.act("film", filmVideo)
+        assertTrue(steering.waiting().any { it.action == "sync" }, "Ask me first proposes the sync")
+        val late = rows().single { it.language == "en" }
+        assertTrue(steering.fixRow(late), "a press is not held back by the waiting proposal")
+        assertTrue(steering.waiting().none { it.sidecar_path == late.sidecar_path }, "the proposal is answered")
+        // The check after the sync has not run: nothing yet.
+        assertTrue(!steering.fixRow(late))
+        // It ran, and the file is still off: replaced (deleted through Bazarr: it did not come from Bazarr).
+        assertTrue(steering.fixRow(late.copy(checked_at = late.checked_at + 100)))
+        assertEquals(1, fake.calls.count { it.startsWith("sync") }, "${fake.calls}")
+        assertTrue(fake.calls.contains("delete movie 7 Film.en.srt"), "${fake.calls}")
+        assertNull(steering.run(FitGroup.SHIFT.id))
     }
 }
