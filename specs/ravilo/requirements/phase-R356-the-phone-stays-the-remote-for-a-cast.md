@@ -10,7 +10,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `f628c2f2`. Number checked
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, **device-tested on the Pixel 9 against the Gæsteværelse
+speaker** (the phone side; the receiver change needs a backend deploy and was measured against the real bundle in a
+harness). Written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `f628c2f2`. Number checked
 free on `main` (Ravilo specs top at R355). Context: `specs/research-reports/ravilo-playback-sessions-and-casting-2026-10-02.md`
 §1–§2. **Amends** R245 (FR-R245-11: the Cast SDK's own notification is replaced), R322 (FR-R322-1/13: the music
 service also hosts the cast remote), R324 (FR-R324-9: the notification's actions), 286 (dev review 10: the receiver's
@@ -153,3 +155,72 @@ receives on Ravilo's channel per session and every one above 32 KB.
 4. The notification, the lock screen card and the Playing page show the same album cover for every song of a queue
    whose songs come from several albums, changing with each song; Google Home's card (the receiver's metadata) the same.
 5. One Ravilo media card while casting; none of the Cast SDK's.
+
+## Build notes (2026-10-02)
+
+**Built** (commits on the R356 branch): the spec; the receiver's queue revision (`queue_rev`, `queue_size`,
+`get_queue`, the slim media `customData`) with the shared merge and both senders' gap handling; Ravilo's one media card
+(`CastSessionRemote` + `CastRemotePlayer` in `RaviloMusicService`'s session, the Cast SDK's notification and media
+session off); the silent-session watch (`CastSilenceWatch`) with ask and rejoin in `CastSenderAndroid`.
+
+**Root causes, confirmed on the Pixel 9 (debug `1.48-95`, before the fix):** Ravilo had no service while casting
+(`dumpsys activity services`: none) and was frozen ~70 s after leaving the screen (`ActivityManager: freezing <pid>`);
+the production receiver's status was **55 289 B for a 199-song queue**; 15 such statuses into the frozen app gave
+`Binder transaction failure … error: -28 (… Binder buffer full …)` and `CastService: … Disposing ConnectedClient` for
+the app; a media-key *next* (`cmd media_session dispatch next`, the Cast SDK's session) did not reach the speaker;
+unfrozen, the Playing page showed the last song with an extrapolated place while the app's own *next* did nothing.
+
+**Deviations from the spec, and why:**
+- A plain *join* of a playing receiver (the sheet's *Play on {speaker}* with nothing to hand over) also asks for the
+  status at once: the receiver speaks on change only, so the joined phone showed a film-style bar until the next
+  song. Not in the spec's two moments; same mechanism.
+- The card is built from the receiver's report read as the Playing page reads it (`MusicCast.state`), not from
+  `MusicPlayback.state`: the latter follows the report a moment later, and the card dropped to the phone's own player
+  and back on the first report.
+- The card outlives a report with no live song for **5 s** while the session stays connected (a song's end reports
+  idle for a moment before the next one loads). Swapping to the phone's own player and back stopped and restarted the
+  foreground service at every song change, and a start from the background may be refused.
+- *Stop casting* on the card uses the existing `cast.stop` string (no new string).
+- Removing the app from recents while casting stops the service and keeps the phone's queue; the device plays on.
+
+**Verified on the Pixel 9 after the fix** (debug builds of this branch; the Gæsteværelse speaker at 2 %; the phone's
+media volume could not be set from the shell on this Android build — it stayed at 7 of 25 — so nothing was played on
+the phone itself):
+- (a) Casting a 199-song queue from several albums: `RaviloMusicService` is a foreground service of type
+  `mediaPlayback` (`isForeground=true types=0x2`); Ravilo behind another app for 100 s and **locked for 100 s: not
+  frozen** (procState 4, receiver messages keep arriving); a media key *next* moved the speaker on both times
+  (the speaker started the next song, locked too); *pause* and *play* reached it (the session read PAUSED with a still
+  position, then PLAYING from the same place). `dumpsys media_session`: Ravilo's Media3 session is the media-button
+  session, remote volume (max 20), custom action *Stop casting*; the shade shows **one** Ravilo card (Play services'
+  `CastRCN` card is not shown for it; another sender's cast to a TV kept its own card).
+- (b) Forced freeze (`cmd activity freeze --sticky`) + 15 statuses → *Disposing ConnectedClient*; unfrozen and opened:
+  `asking the receiver for its status (the app came on screen)` → 3 s later `rejoining Gæsteværelse` → 1.2 s later
+  `rejoined the running receiver` → status 0.4 s later (**4.5 s** in all, twice). The mini bar and the Playing page
+  showed the right song and place throughout (no loading dots, no 0:00), and the app's *next* reached the speaker
+  afterwards.
+- (d) The cover: four song changes across four albums — the Playing page and the shade's card showed the same album
+  cover each time, and it changed with every song. (The owner's wrong cover — a green one with faint text at the top —
+  matches another album of the same queue: the Cast SDK's card had kept an earlier song's image.)
+- A stop from outside (the receiver app stopped over the Cast protocol): `the cast ended; the media card is the
+  phone's own player again`, the service left the foreground, nothing played on the phone.
+- The lock screen showed Ravilo's card with the right song and cover.
+
+**Measured in a harness** (the real `ravilo-cast.js` with a fake CAF and stubbed API, 1 150 songs — the owner's
+artist queue): the status after the load **333 234 B** (the full queue, revision 1); every play/pause/buffer/song
+change after it **562 B**; a queue edit, `status`, `get_queue` and `SENDER_CONNECTED` each one full status; the media
+`customData` CAF echoes **354–451 B** (was the whole load data). Per-song images unchanged (each song's own album).
+
+**Tests:** `CastStatusMergeTest` (+4: revision kept, gap, old receiver, last known), `CastSilenceWatchTest` (6),
+`CastCardTest` (3); `:ravilo-ui:testDebugUnitTest` (405, 0 failures), `:shared:desktopTest`, `:shared:linuxX64Test`
+(WireCompat), `:ravilo-castv2:jvmTest`, `-Pravilo.desktopOnly=true :ravilo-desktop:compileKotlinDesktop`,
+`:ravilo-web:compileKotlinWasmJs`, `:ravilo-cast:jsBrowserProductionWebpack`, `:ravilo-android:assembleRelease` +
+`assembleDebug`; `check-player-dex` (241 registers), deanonymization, phases, mobile CSS, CSS scoping, strings.
+
+**Needs a deploy / still to see:**
+- The receiver change ships with the backend (`/cast/`). After the deploy: a music cast's `status` messages should
+  read ~0.5 KB (Ravilo's log line `R356: receiver message … B`, logged for the first message and any above 32 KB); a
+  phone on the old app and the Mac should still show the queue.
+- Not tried on a device: a film cast's card (a TV — not in this round's devices), the card's *Stop casting* button
+  (a tap on the lock screen landed under a dream window; the stop path was exercised from outside instead), the volume
+  keys on the lock screen (the phone's rule: no volume up), local music playback after the change (the phone's volume
+  could not be silenced).
