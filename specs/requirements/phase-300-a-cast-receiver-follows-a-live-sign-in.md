@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored), against `main` `f9618d0f`. Number given by the coordinator (admin
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `f9618d0f`. Number given by the coordinator (admin
 specs top at 299). The receiver page (`ravilo-cast`) is served by this backend (`/cast/`), so its half ships here too;
 no installed app changes.
 
@@ -144,3 +144,48 @@ After the deploy, nothing has to be run by hand:
 
 - Quick Connect tokens per receiver (above).
 - Re-enrolment for `ravilo-screen` on each play (Tizen work is paused; FR-300-3/-4 cover its rows).
+
+## Build notes (2026-10-02)
+
+**Built, all FRs:**
+- `tv/ReceiverTokenPolicy.kt` (new, pure): `borrowsToken` (`cast`, `screen`), `tokenOnHandoff` (FR-300-2), `donors`
+  (FR-300-4: same user, own-sign-in kinds, newest first, distinct tokens, dead ones skipped, three at most),
+  `followers` (FR-300-3).
+- `RaviloDeviceService`: `loginDevice` moves the followers in its own transaction when a non-borrowing row's token
+  changes (new `updateUserToken` query in `RaviloDevice.sq`; no schema change, no migration); `storedJellyfinToken`;
+  `adoptJellyfinToken` (refuses a non-borrowing row and a token no own-sign-in row of the same user holds); a
+  `tokenListener` called after every token change. It implements the new `BorrowedTokenStore`.
+- `PlaybackService.kt`: the paired-token check is now `cachedTokenCheck` (unchanged body) plus `pairedToken`, which on a
+  rejection of a borrowing row runs `healBorrowedToken`; `tvToken` and `tvTokenForClient` use the token it returns.
+  `isTokenKnownDead` and `forgetTokenValidity` read and write the caches under their mutex.
+- `CastService.redeem` (now `suspend`) applies `tokenOnHandoff`; its log line says enrolled / re-enrolled / kept.
+- `JellyfinSessionBridge.refresh` (FR-300-6): an open bridge (not in its grace) is cancelled and joined, then started
+  again with the new row, under the bridge lock, so a racing `connect` cannot start a second loop.
+- `Main.kt`: installs the device service as the store, and the listener forgets the old token's validity and refreshes
+  the bridge.
+- `/api/tv/cast/redeem` (FR-300-7): key `cast-redeem:{client}`; `LoginRateLimiter.refund` gives a working code's
+  attempt back.
+- `ravilo-cast` `Receiver.kt` (FR-300-1): `mustEnrol` is "the LOAD carries a code"; `enrol()` redeems, goes on with the
+  held token when the redemption fails and one is held, and drops the cached config when the device token changes (a
+  different user).
+
+**Deviations:** none from the FRs. One addition: the heal remembers the receiver's own Jellyfin identity for the borrowed
+token for that request (phase 224's registry), so the call goes out as the receiver rather than as the donor.
+
+**Verified (CI):** `ReceiverTokenPolicyTest` (5) and `ReceiverTokenRefreshIntegrationTest` (fake Jellyfin over the
+loopback that accepts only live tokens; the real services, paired-token check and bridge): A enrols, A signs in again
+⇒ the receiver follows with no hand-off and its bridge reopens on the new token; B casts ⇒ same row, same device token,
+B's token, bridge follows; A casts ⇒ A's; a dead copy no row holds heals from the Pixel's sign-in and is stored; a
+second user's code ⇒ their own row and device token, the first user's row untouched; a user with no live sign-in stays
+rejected and never gets another user's token; a phone's own dead token is never replaced. Full `linuxX64Test` 874/874,
+`:shared:desktopTest`, `:ravilo-castv2:jvmTest`, `:ravilo-cast:jsBrowserProductionWebpack`,
+`:ravilo-android:assembleRelease`, and the check scripts green. `CastServiceTest` updated for `suspend redeem`.
+
+**Not covered by CI:** the receiver's FR-300-1 (`ravilo-cast` has no JS test setup; it is a two-line rule, built).
+
+**Needs a deploy and devices:** the backend deploy also serves the new receiver page. Verify: (1) the backend log on
+the first request of Stue / Gæsteværelse / Soveværelse TV shows `TV: receiver cast-… (user …) took a live Jellyfin
+sign-in from device …` or, with the new receiver page, `Cast receiver cast-… re-enrolled with the sender's sign-in`;
+(2) a music cast from the Mac to Stue plays; (3) a cast from the Pixel to Stue plays and the log says re-enrolled;
+(4) sign the Mac in again, cast from the Pixel: it plays, and the log has `receiver(s) of user … followed device …`;
+(5) the Jellyfin dashboard still controls the speaker (299) after (4).
