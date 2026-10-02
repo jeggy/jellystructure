@@ -212,3 +212,47 @@ ToggleMute` with `PlayableMediaTypes: []`. `/api/health/full`'s `session_bridges
   sender's slider.
 - **Old sessions:** right after deploy, the 2026-09-30 leftovers leave `/Sessions` within ~2 minutes (one
   `Jellyfin session ended` line each in the backend log).
+
+## Amendment (2026-10-02 evening) — the dashboard's *Send message*
+
+> Owner, 2026-10-02 ~17:50: the Jellyfin dashboard's *Send message* to the phone does nothing (the button is there and
+> the dashboard accepts it).
+
+**What was found.** The path exists end to end: the bridge reads `GeneralCommand DisplayMessage` (299 FR-299-3,
+`parseJellyfinMessage`), the server sends `server_message` on the device's events socket, and the app shows R152's
+toast (`ServerMessageHost`, mounted over every screen). Three gaps:
+1. **Off screen there is no socket** (R293 FR-R293-1). While the phone casts, the phone's own music player is not
+   playing, so FR-R354-5's hold does not apply either: the socket closes when the screen goes off, the Jellyfin
+   session stays listed (the bridge's 90 s grace, then Jellyfin's own list), and the server dropped the message with
+   **no trace** (`notifyServerMessage` returned silently when the device had no live socket).
+2. **On a phone the toast is a TV's**: top right, 100 dp down, 300–460 dp wide, the header glued to the text with a
+   dash.
+3. **The message reached a device only under its own user** (`sessions[user][device]`), while every command uses the
+   device-level fallback (phase 236's `targetFor`).
+4. **A Cast receiver declared no `DisplayMessage`**, so the dashboard offered no *Send message* for a TV, a Nest Hub or a
+   Chromecast playing Ravilo.
+
+**FR-R354-9 — A message is shown where someone is looking.**
+- (a) The app shows a `server_message` **while it is on screen** — whatever plays, music on the phone or on a speaker, a
+  film, nothing. **Off screen it is dropped** (logged, never queued and never a notification: a message is for the
+  person in front of the screen, and nobody is). The socket's own rule already closes it off screen except while music
+  plays here (FR-R354-5); a message arriving then is dropped the same way.
+- (b) **The header is its own line** above the text (bold), when there is one; a blank text shows nothing.
+- (c) **How long:** the command's `TimeoutMs` when it gives one, kept between 3 s and 60 s; otherwise R152's
+  length-based time (3–15 s). One rule in `:shared` (`serverNoticeOf`) for the app and the receiver.
+- (d) **On a phone** (a handset layout) the toast is a card at the **top, under the status bar**, the width of the
+  screen less 16 dp each side (at most 460 dp), above every page, the player and the bars; a tap dismisses it. TV and
+  desktop keep R152's top-right toast, with the header on its own line. Non-blocking: nothing behind it loses focus or
+  taps outside it.
+- (e) **The Cast receiver** (`ravilo-cast`): on a device with a screen (a TV, a Nest Hub, a Chromecast) it declares
+  `DisplayMessage` on its events socket (`REMOTE_DECLARATION_RECEIVER_DISPLAY`) and shows the message over whatever it
+  shows — header and text in the receiver's own card style, for the same time — while something is loaded (its socket
+  is open only then, FR-R354-7). A speaker (headless) declares no `DisplayMessage` (the dashboard offers no button) and
+  ignores one that arrives.
+- (f) No new string: the header and the text are the sender's.
+
+**Acceptance (amendment).** 7. Phone on screen, music playing on the phone or on a speaker, or nothing: the dashboard's
+*Send message* (header + text) shows a card at the top for the given time; a tap dismisses it. 8. Phone locked: nothing
+shows, nothing is queued; the server's log says the message was dropped because the device had no live socket.
+9. A Nest Hub or a TV playing a Ravilo cast: the dashboard offers *Send message* and the message shows on the screen; a
+speaker's session offers none.

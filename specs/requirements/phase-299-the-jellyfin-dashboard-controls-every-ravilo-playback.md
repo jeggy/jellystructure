@@ -191,3 +191,20 @@ left alone by design (Jellyfin's restart clears it).
 `IsActive: true`, and `staleRaviloSessions` skipped every `IsActive` session, i.e. exactly the stale ones. The check is
 gone (a Ravilo device never holds its own Jellyfin socket; the bridged check already protects a live one), and
 `JellyfinRemoteTest` now uses production's shape.
+
+## Amendment (2026-10-02 evening) — *Send message* reaches the device it was sent to, or says why not
+
+With R354's amendment (FR-R354-9; the owner's *Send message* to the phone did nothing).
+
+**FR-299-8 — A message is delivered like a command.** `notifyServerMessage` finds the device's events socket the way
+`notifyPlaystateCommand` does (`targetFor`: the user's own socket for that device, else that device's socket under any
+user), so a message to a shared screen is not lost to whose token opened it.
+
+**FR-299-9 — A message that finds no socket says so.** The server logs, once per message, whether it was sent and to
+which device, or dropped because the device holds no live events socket (the app is off screen: R293) — the byte length
+of the text, never the text itself. Before, a dropped message left no trace, and *does nothing* could not be told apart
+from *never arrived*.
+
+**FR-299-10 — A receiver with a screen takes messages.** The receiver declares `DisplayMessage` on a device with a
+screen (R354 FR-R354-9e); `capabilitiesBody` already registers what is declared, so the dashboard offers *Send message*
+for it. No change for a speaker. Additive: the declaration is a list of existing names.

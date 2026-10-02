@@ -224,3 +224,87 @@ change after it **562 B**; a queue edit, `status`, `get_queue` and `SENDER_CONNE
   (a tap on the lock screen landed under a dream window; the stop path was exercised from outside instead), the volume
   keys on the lock screen (the phone's rule: no volume up), local music playback after the change (the phone's volume
   could not be silenced).
+
+## Amendment (2026-10-02 evening) — the second card, and Stop stops the cast
+
+> Owner, 2026-10-02 ~17:50 (debug build of `8fdce182`, production backend `v1.48-102-gef72608c`, music cast to the
+> Gæsteværelse speaker): two media cards for one cast — Ravilo's, with the cover and the title, and a second one with
+> **no title, artist or cover**, only the right progress. And ■ on the lock-screen card stopped the music, but opening
+> the app and pressing Play **played on the speaker again**. Stop should stop casting (the music comes back to the
+> phone, paused at its place, and Play plays it on the phone); Pause should pause.
+
+### What was found (the Pixel 9's `dumpsys media_session` and logcat, read-only, 17:46–17:56)
+
+1. **The second card is Google Play services' own** — the Cast *remote control* card (`com.google.android.gms/
+   cast_rcn_media_session`, notification tag `CastRCN`, custom actions *Mute* or *Virtual remote*, and *Stop cast*),
+   which Play services posts for Cast sessions it sees on the network. Its text reads `Ravilo, null, null` (the app's
+   name only).
+   It is **not** caused by R356's slimmer receiver status: the receiver's CAF media still carries each song's
+   `MusicTrackMediaMetadata` — title, artist, album, album artist and the song's album cover (`interceptMusic`, 286
+   FR-286-3; R356 removed only the `tracks` from the media's `customData`; the R356 harness read the images back per
+   song). The same blank card is in the dump taken during R356's own device check (old receiver), and the one for a
+   film cast to a TV reads the same. Play services fills this card from something the app does not control. (R356's
+   build note "Play services' `CastRCN` card is not shown for it" was wrong: that check's notification dump lists two
+   `CastRCN` notifications.)
+2. **No documented API stops Play services posting that card for an app's own session.** `CastMediaOptions`
+   (`setNotificationOptions`, `setMediaSessionEnabled`) governs only the Cast SDK's own card, which R356 already turned
+   off; `MediaRouterParams` governs the output switcher. What Media3's own Cast player does with the SDK's session off —
+   the setup the Media3 maintainers recommend for one card (androidx/media#2089) — is **link the app's media session to
+   the cast's MediaRouter2 routing session**: `DeviceInfo.routingControllerId` = the cast's `RoutingController` id,
+   which the platform session's volume provider carries as `volumeControlId`, the field Android 14+ uses to tie a
+   remote media session to its route (output switcher, the card's device chip). Ravilo's card did not
+   (`volumeType=REMOTE(volumeControlId=null)`).
+3. **The ■.** Logcat 17:55:34: Play services' card's session went to `NONE` (the speaker's media stopped) while
+   Ravilo's Cast session **stayed connected**; Ravilo's card held for its five-second grace, then gave way (17:55:39.19);
+   0.6 s later the phone loaded the speaker again at the song's place (queue revision 1, a new load) — Play pressed in
+   the app. A media **STOP from a controller other than Ravilo** (Play services' card's *Stop cast*; Google Home's and a
+   display's own Stop do the same) reaches `ravilo-cast` as a CAF `STOP`: CAF stops the player and
+   `MEDIA_FINISHED(STOPPED)` was read as a **failure** (`failed()`), the receiver showed its idle view, the receiver app
+   kept running and the phone kept its session; `MusicCast.holdsDevice` still held the speaker, so Play sent the song
+   back there (R353 FR-R353-5's resume, meant for the dashboard's Stop).
+   Ravilo's own *Stop casting* — the card's button, the ⋯ menu, the R245 remote, the sheet, the mini bar's toast — ends
+   the session with the receiver stopped (`endCurrentSession(true)`) and was right; but pressed while the phone held no
+   live song (a failed or ended report, inside the card's grace) it set `endedByApp` without taking anything back, so
+   the hand-back from the last live song was skipped as well.
+
+### Requirements
+
+**FR-R356-12 — The card is linked to the cast's route.** While the card mirrors a cast, the remote player's
+`DeviceInfo` carries the cast's routing controller id: on Android 11+ (`MediaRouter2`), the one controller that is not
+the system's (Media3 `RemoteCastPlayer`'s rule; none or more than one ⇒ none, as today). It is read again whenever a
+routing controller is created, changed or released, and when the card starts mirroring. Whether Play services then
+withholds its own card for this session is its decision and is seen on the device. If it still posts it, what remains
+is the phone's own setting (Google settings → Devices & sharing → Cast options → *Media controls for Cast devices* /
+*Show remote control notifications*), which no app can change; the build notes say which.
+
+**FR-R356-13 — The receiver's media keeps the current song's facts** (already true; restated so it stays): title,
+artist, album, album artist and the song's album cover as its one image, rewritten on every song. Only the queue left
+the CAF media (FR-R356-8).
+
+**FR-R356-14 — Stop is stop casting, from anywhere.**
+- (a) **Ravilo's card**: *Stop casting* and the platform's Stop (a headset, a car, a watch: Media3 `COMMAND_STOP`, now
+  offered) end the Cast session with the receiver stopped, exactly as the app's own *Stop casting*; the speaker's song
+  comes back to the phone paused at its place. Pause stays pause. Play, next, previous, seek and the volume are
+  unchanged.
+- (b) **Any other controller's Stop** (a CAF `STOP` request — Play services' card, Google Home, the Assistant, a
+  display's own Stop, a TV remote's Stop key where CAF delivers one) ends the receiver app: the receiver reports the
+  stop to the server, forgets the item (so CAF's `MEDIA_FINISHED` is never read as a failure) and closes
+  (`CastReceiverContext.stop()`). Every sender's session ends; the phone takes the speaker's song back paused at its
+  place (R353 FR-R353-5, a session that ends from outside); Play plays on the phone. A film the same way (the phone's
+  R245 rule for a session that ends from outside: no bar, no error).
+- (c) The Jellyfin dashboard's Stop is **unchanged**: it is a server command, not a CAF `STOP`, and keeps the session
+  (R353 FR-R353-5, second amendment).
+- (d) `MusicCast.stop()` takes the speaker's song back itself only when a song is live; otherwise it leaves the
+  hand-back from the last live report to the session's end.
+
+**FR-R356-15 — Tested.** The card's commands (what the platform's play, pause, stop, next, previous and the custom
+*Stop casting* each do) and the receiver's stop rule are unit tests.
+
+### Acceptance (amendment)
+
+6. Casting music to a speaker, ■ on Ravilo's lock-screen card: the speaker goes quiet and leaves the app, the cast
+   glyph goes dark, the phone's player shows the speaker's song paused at its place; Play plays it **on the phone**.
+7. The same with Play services' card's *Stop cast* (if it is shown) and with Google Home's Stop.
+8. Pause on either card pauses the speaker; Play resumes it there.
+9. `dumpsys media_session`: Ravilo's session reads `volumeType=REMOTE(volumeControlId=<id>)` while casting (Android
+   11+); whether `cast_rcn_media_session` still has a card is recorded in the build notes.
