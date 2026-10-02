@@ -13,6 +13,8 @@
 **Amended by phase 301 (2026-10-02):** the embedded reference is fetched by Jellyfin's own stream number (FR-273-2
 rung 1 and FR-273-6 asked by ffprobe's and often got a sidecar), and `longer_video` is judged on cleaned cue starts
 (FR-273-4). Verdicts made the old way are measured again once.
+**Amended by phase 302 (2026-10-02):** the Dashboard shows one row per cause with its fix (FR-273-21), and a verdict
+from the speech track acts like any other (dev review item 3).
 
 `✓ Built` 2026-09-27, **not deployed** (commits `fd1d09ae` → the build-notes commit; see *Build notes* at the
 end). Acceptance 1, the read-only *Only report* run on production, waits for a deploy the owner approves.
