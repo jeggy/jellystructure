@@ -93,6 +93,10 @@ SELECT * FROM ravilo_device WHERE jellyfin_user_id = :jellyfin_user_id ORDER BY 
 getAllDevices:
 SELECT * FROM ravilo_device ORDER BY jellyfin_user_id, last_seen DESC;
 
+-- Phase 300 (FR-300-3/-4) — a borrowing row (a Cast receiver, a screen) takes a live Jellyfin token of the same user.
+updateUserToken:
+UPDATE ravilo_device SET jellyfin_user_token = :jellyfin_user_token WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
+
 updateLastSeen:
 UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_token;
 

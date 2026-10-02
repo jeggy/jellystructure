@@ -671,7 +671,10 @@ fun Route.tvRoutes(
         val svc = castService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not available"))
         val clientKey = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
             ?: call.request.local.remoteHost
-        if (!loginRateLimiter.tryAcquire(clientKey)) {
+        // Phase 300 (FR-300-7) — every cast redeems now: its own key (not the household's five sign-ins a minute), and
+        // a code that works gives its attempt back below, so only failed codes count.
+        val redeemKey = "cast-redeem:$clientKey"
+        if (!loginRateLimiter.tryAcquire(redeemKey)) {
             call.response.headers.append(HttpHeaders.RetryAfter, "60")
             return@post call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many attempts — try again in a minute"))
         }
@@ -685,6 +688,7 @@ fun Route.tvRoutes(
             platform = call.request.headers[dev.jellystructure.shared.RaviloHeaders.PLATFORM]?.trim()?.take(64)?.ifBlank { null },
         )
             ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "That code is not valid any more — cast again from your phone"))
+        loginRateLimiter.refund(redeemKey)
         val (device, deviceToken) = redeemed
         call.respond(PairResult(
             session = TvSession(

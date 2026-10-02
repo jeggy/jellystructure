@@ -88,7 +88,7 @@ fun policyChanges(row: DeviceData, live: DevicePolicy): List<PolicyChange> {
     }
 }
 
-class RaviloDeviceService(private val db: JellystructureDb) {
+class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
     // Phase 294 (FR-294-1) — a LockedMap of immutable entries. It was a plain HashMap with a mutable field, read and
@@ -97,6 +97,13 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     // changed?"). The lock covers map operations only; every database call stays outside it.
     private data class TokenEntry(val data: DeviceData, val cachedAt: Long, val lastSeenWritten: Long)
     private val tokenCache = dev.jellystructure.ops.LockedMap<String, TokenEntry>()
+
+    /**
+     * Phase 300 (FR-300-5/-6) — called after a row's Jellyfin token changed (a re-sign-in, a receiver following it, a
+     * hand-off, a heal), with the row as it is now and the token it held before. Main.kt forgets the old token's
+     * validity and restarts the device's Jellyfin session bridge. Called outside any transaction; never with a lock.
+     */
+    var tokenListener: ((device: DeviceData, oldToken: String) -> Unit)? = null
 
     /**
      * Phase 141 — direct username/password sign-in (`POST /api/tv/login`): upserts the `(deviceId,
@@ -144,8 +151,16 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         val resolvedKind = kind ?: existing?.kind ?: "tv"
         val seenVersion = appVersion?.trim()?.take(64)?.ifBlank { null }
         val seenPlatform = platform?.trim()?.take(64)?.ifBlank { null }
+        // Phase 300 (FR-300-3) — a device that signs in again with a new Jellyfin token takes the receivers and screens
+        // that borrowed its old one along: Jellyfin replaced that token when this DeviceId signed in.
+        val oldToken = existing?.jellyfin_user_token?.takeIf { it != jellyfinUserToken }
+        var followers = emptyList<DeviceData>()
         // Phase 259 (FR-259-2, dev review item 2) — the row and its history row land together or not at all.
         db.transaction {
+        if (oldToken != null) {
+            followers = ReceiverTokenPolicy.followers(resolvedKind, jellyfinUserId, oldToken, jellyfinUserToken, listByUser(jellyfinUserId))
+            followers.forEach { db.raviloDeviceQueries.updateUserToken(jellyfinUserToken, it.deviceId, it.jellyfinUserId) }
+        }
         db.raviloDeviceQueries.insertDevice(
             device_id = deviceId,
             jellyfin_user_id = jellyfinUserId,
@@ -170,6 +185,10 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
         tokenCache.remove(deviceToken)
+        followers.forEach { tokenCache.remove(it.deviceToken) }
+        if (followers.isNotEmpty()) {
+            println("[INFO] TV: ${followers.size} receiver(s) of user $jellyfinUserId followed device $deviceId's new Jellyfin sign-in: ${followers.joinToString { it.deviceId }}")
+        }
         return Pair(
             DeviceData(
                 deviceId = deviceId,
@@ -191,7 +210,37 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastPublicAddress = existing?.last_public_address,
             ).also { DeviceIdentityRegistry.remember(it) },
             deviceToken,
-        )
+        ).also { (row, _) ->
+            if (oldToken != null) {
+                tokenListener?.invoke(row, oldToken)
+                followers.forEach { tokenListener?.invoke(it.copy(jellyfinUserToken = jellyfinUserToken), oldToken) }
+            }
+        }
+    }
+
+    /** Phase 300 (FR-300-4) — the Jellyfin token stored on ([deviceId], [jellyfinUserId]) now; null when the row is gone. */
+    override fun storedJellyfinToken(deviceId: String, jellyfinUserId: String): String? =
+        db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+            .executeAsOneOrNull()?.jellyfin_user_token
+
+    /**
+     * Phase 300 (FR-300-4) — [device] (a borrowing row whose token was rejected) takes [token], a live token of the same
+     * user held by [fromDeviceId]. One row, its cached `DeviceData` dropped so the next request reads the new token.
+     * Refuses anything but a borrowing row and a token an own-sign-in row of the same user holds.
+     */
+    override fun adoptJellyfinToken(device: DeviceData, token: String, fromDeviceId: String): Boolean {
+        if (!ReceiverTokenPolicy.borrowsToken(device.kind) || token.isBlank()) return false
+        val donorOk = listByUser(device.jellyfinUserId).any {
+            it.deviceId == fromDeviceId && it.jellyfinUserToken == token && !ReceiverTokenPolicy.borrowsToken(it.kind)
+        }
+        if (!donorOk) return false
+        val before = storedJellyfinToken(device.deviceId, device.jellyfinUserId) ?: return false
+        if (before == token) return true
+        db.raviloDeviceQueries.updateUserToken(token, device.deviceId, device.jellyfinUserId)
+        tokenCache.remove(device.deviceToken)
+        println("[INFO] TV: receiver ${device.deviceId} (user ${device.jellyfinUserId}) took a live Jellyfin sign-in from device $fromDeviceId")
+        tokenListener?.invoke(device.copy(jellyfinUserToken = token), before)
+        return true
     }
 
     /**
@@ -447,7 +496,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
 
     /** Phase 111 — every device paired to [jellyfinUserId] (remote-control device list / D.1's admin
      *  Ravilo config editor device list). */
-    fun listByUser(jellyfinUserId: String): List<DeviceData> =
+    override fun listByUser(jellyfinUserId: String): List<DeviceData> =
         db.raviloDeviceQueries.getByUser(jellyfinUserId).executeAsList().map { row ->
             DeviceData(
                 deviceId = row.device_id,

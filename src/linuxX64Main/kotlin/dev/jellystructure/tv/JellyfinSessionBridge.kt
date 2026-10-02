@@ -23,6 +23,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -141,6 +142,23 @@ class JellyfinSessionBridge(
         // Registered after launch so the map never holds a job that failed to start. A second connect()
         // racing this one is covered by the guard above: it returns before reaching here.
         lock.withLock { active[device.deviceId] = job }
+    }
+
+    /**
+     * Phase 300 (FR-300-6) — [device]'s Jellyfin token changed (a receiver followed a new sign-in or healed): an open
+     * bridge is restarted with the new token, so the dashboard's session for it runs under a live sign-in. A bridge in
+     * its grace, or not open, is left alone. The old loop is cancelled and joined before the new one starts, so the
+     * two never hold a Jellyfin socket at once and the permit passes from one to the other.
+     */
+    fun refresh(device: DeviceData) {
+        if (deferred.isPending(device.deviceId)) return
+        val job = lock.withLock {
+            val old = active[device.deviceId] ?: return@withLock null
+            scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) { old.cancelAndJoin(); runLoop(device) }
+                .also { active[device.deviceId] = it }
+        } ?: return
+        job.start()
+        scope.launch { Logger.info("Jellyfin session bridge: device=${device.deviceId} restarted on its new sign-in", "tv") }
     }
 
     /** Phase 256 (FR-256-4) — the events socket closed: keep the bridge for the grace period, then

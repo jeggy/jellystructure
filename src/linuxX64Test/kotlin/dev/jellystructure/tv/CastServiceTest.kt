@@ -63,7 +63,7 @@ class CastServiceTest {
     }
 
     @Test
-    fun `a code enrols the receiver once as the phone user with that users policy`() {
+    fun `a code enrols the receiver once as the phone user with that users policy`() = runBlocking {
         val p = phone()
         val handoff = cast.mint(p)
         assertEquals(6, handoff.code.length)

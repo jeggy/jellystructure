@@ -59,6 +59,12 @@ class LoginRateLimiter(
         true
     }
 
+    /** Phase 300 (FR-300-7) — gives back an attempt that succeeded, so only failures count against [key]. */
+    suspend fun refund(key: String) = mutex.withLock {
+        attempts[key]?.let { if (it.count > 0) it.count-- }
+        Unit
+    }
+
     /** Best-effort client IP: prefer a proxy-set header if present, else the raw TCP peer. See the
      *  class doc — this is meaningful rate limiting only once a reverse proxy is correctly configured
      *  to overwrite (not append to) X-Forwarded-For with the real client address. */

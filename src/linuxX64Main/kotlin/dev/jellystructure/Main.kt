@@ -455,6 +455,15 @@ fun main() = runBlocking {
     // R303 (FR-R303-2) — the play push names what is playing: the same logo URL + ink the detail payloads carry.
     val playPushResolver = dev.jellystructure.tv.PlayPushResolver(mediaStore, artworkDownloader, clearlogoInk, segments = detailService::segmentsFor)
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore, playPushResolver)
+    // Phase 300 — a receiver's borrowed Jellyfin token follows a live sign-in: a rejected one heals from the same
+    // user's devices (FR-300-4), and every token change re-checks the old token and restarts the bridge (FR-300-5/-6).
+    dev.jellystructure.tv.installBorrowedTokenStore(raviloDeviceService)
+    raviloDeviceService.tokenListener = { device, oldToken ->
+        rootScope.launch {
+            dev.jellystructure.tv.forgetTokenValidity(oldToken)
+            sessionBridge.refresh(device)
+        }
+    }
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
     val apiKeyStore = dev.jellystructure.auth.ApiKeyStore(db)
     // Phase 114 — realtime ingest: *arr webhooks + Jellyfin's own LibraryChanged reach Ravilo in

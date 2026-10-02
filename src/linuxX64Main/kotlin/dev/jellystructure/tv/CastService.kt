@@ -104,8 +104,13 @@ class CastService(
      * Redeems [code] for the receiver's own device row + token. Returns null when the code is unknown,
      * expired, already used, or the minting phone's session is gone. [receiverId] reuses an existing
      * receiver row (storage survived between casts); absent ⇒ a fresh `cast-…` device id.
+     *
+     * Phase 300 (FR-300-2) — every sender's LOAD is redeemed now (FR-300-1), and each redemption stores that sender's
+     * current Jellyfin token on the receiver's row for the sender's user, so a receiver is never older than its latest
+     * sender. The one exception: a sender whose token Jellyfin has just rejected does not overwrite a receiver token
+     * that is not known dead. A different user's code writes that user's own row (and device token).
      */
-    fun redeem(code: String, deviceName: String?, receiverId: String?, appVersion: String? = null, platform: String? = null): Pair<DeviceData, String>? {
+    suspend fun redeem(code: String, deviceName: String?, receiverId: String?, appVersion: String? = null, platform: String? = null): Pair<DeviceData, String>? {
         val now = nowMs()
         db.castHandoffQueries.sweep(now)
         val row = db.castHandoffQueries.getByCode(code.trim().uppercase()).executeAsOneOrNull() ?: return null
@@ -114,13 +119,26 @@ class CastService(
         db.castHandoffQueries.markRedeemed(now, row.code)
         val id = receiverId?.trim()?.takeIf { it.startsWith("cast-") && it.length in 10..64 } ?: "cast-${generateSecureToken().take(12)}"
         val name = "$DEVICE_PREFIX · ${deviceName?.trim()?.take(40)?.ifBlank { null } ?: "Chromecast"}"
-        println("[INFO] Cast receiver enrolled as $id for user '${phone.jellyfinUsername}' via phone ${phone.deviceId}")
+        val own = deviceService.storedJellyfinToken(id, phone.jellyfinUserId)
+        val token = ReceiverTokenPolicy.tokenOnHandoff(
+            senderToken = phone.jellyfinUserToken,
+            senderKnownDead = isTokenKnownDead(phone.jellyfinUserToken),
+            receiverToken = own,
+            receiverKnownDead = own != null && isTokenKnownDead(own),
+        )
+        val how = when {
+            own == null -> "enrolled"
+            token != phone.jellyfinUserToken -> "kept its own sign-in (the sender's was rejected)"
+            own == token -> "re-enrolled"
+            else -> "re-enrolled with the sender's sign-in"
+        }
+        println("[INFO] Cast receiver $id $how for user '${phone.jellyfinUsername}' via device ${phone.deviceId}")
         return deviceService.loginDevice(
             deviceId = id,
             deviceName = name,
             jellyfinUserId = phone.jellyfinUserId,
             jellyfinUsername = phone.jellyfinUsername,
-            jellyfinUserToken = phone.jellyfinUserToken,
+            jellyfinUserToken = token,
             isAdmin = phone.isAdmin,
             isKids = phone.isKids,
             allowedLibraries = phone.allowedLibraries,

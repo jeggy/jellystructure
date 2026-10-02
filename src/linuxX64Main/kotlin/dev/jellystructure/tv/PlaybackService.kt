@@ -1476,7 +1476,7 @@ internal fun isTextSubCodec(c: String?): Boolean =
  * credential. See FR-194-2 for what may be cached, and FR-194-3 for why the two callers below
  * diverge on [TokenCheck.UNKNOWN].
  */
-private suspend fun JellyfinClient.pairedTokenCheck(baseUrl: String, device: DeviceData): TokenCheck {
+private suspend fun JellyfinClient.cachedTokenCheck(baseUrl: String, device: DeviceData): TokenCheck {
     // Phase 224 (FR-224-4) — before this device's token goes anywhere (checkToken below, tvToken's
     // callers after it), the registry knows whose it is, so no call can send it under Device="Server".
     dev.jellystructure.auth.DeviceIdentityRegistry.remember(device)
@@ -1539,8 +1539,67 @@ private suspend fun JellyfinClient.pairedTokenCheck(baseUrl: String, device: Dev
     return result.outcome
 }
 
+/**
+ * Phase 300 (FR-300-4) — where a borrowing device's rejected token can be replaced from. [RaviloDeviceService] in
+ * production (installed by Main.kt); a test installs its own. Null ⇒ no healing, the phase-110 behaviour.
+ */
+interface BorrowedTokenStore {
+    /** The token stored on [device]'s row now; null when the row is gone. */
+    fun storedJellyfinToken(deviceId: String, jellyfinUserId: String): String?
+    /** Every row of [jellyfinUserId] (any kind; [ReceiverTokenPolicy.donors] filters). */
+    fun listByUser(jellyfinUserId: String): List<DeviceData>
+    /** Stores [token] (held by [fromDeviceId]) on [device]'s row. */
+    fun adoptJellyfinToken(device: DeviceData, token: String, fromDeviceId: String): Boolean
+}
+
+private val borrowedTokenStoreLock = Mutex()
+private var borrowedTokenStore: BorrowedTokenStore? = null
+
+/** Phase 300 — Main.kt installs the device service; tests install a store and remove it (null) when done. */
+suspend fun installBorrowedTokenStore(store: BorrowedTokenStore?) = borrowedTokenStoreLock.withLock { borrowedTokenStore = store }
+
+/** Phase 300 (FR-300-2) — is [token] negative-cached right now (Jellyfin rejected it twice within ten minutes)? */
+internal suspend fun isTokenKnownDead(token: String): Boolean =
+    token.isNotBlank() && tokenCacheMutex.withLock { (tokenInvalidUntil[token] ?: 0L) > nowMs() }
+
+/** Phase 300 (FR-300-5) — [token] was replaced on its device: check it again before it is trusted. The negative entry stays. */
+suspend fun forgetTokenValidity(token: String) = tokenCacheMutex.withLock { tokenValidUntil.remove(token); Unit }
+
+/**
+ * Phase 300 (FR-300-4) — [device] borrows its token (a Cast receiver, a screen) and Jellyfin rejected it. First the
+ * token now on its row (a hand-off or a re-sign-in may already have replaced the copy this request carried), then the
+ * same user's own sign-ins, most recently seen first. The first one Jellyfin accepts is stored and returned; null when
+ * none is. Only ever the same Jellyfin user's tokens. Never logs a token.
+ */
+private suspend fun JellyfinClient.healBorrowedToken(baseUrl: String, device: DeviceData): String? {
+    val store = borrowedTokenStoreLock.withLock { borrowedTokenStore } ?: return null
+    val stored = store.storedJellyfinToken(device.deviceId, device.jellyfinUserId) ?: return null
+    if (stored.isNotBlank() && stored != device.jellyfinUserToken &&
+        cachedTokenCheck(baseUrl, device.copy(jellyfinUserToken = stored)) == TokenCheck.VALID
+    ) return stored
+    val rows = store.listByUser(device.jellyfinUserId)
+    val dead = rows.map { it.jellyfinUserToken }.filter { isTokenKnownDead(it) }.toSet()
+    val receiver = device.copy(jellyfinUserToken = stored)
+    for (donor in ReceiverTokenPolicy.donors(receiver, rows) { it in dead || it == device.jellyfinUserToken }) {
+        if (cachedTokenCheck(baseUrl, donor) != TokenCheck.VALID) continue
+        if (!store.adoptJellyfinToken(receiver, donor.jellyfinUserToken, donor.deviceId)) continue
+        // The donor's identity was remembered for this token by its own check; this request goes out as the receiver.
+        dev.jellystructure.auth.DeviceIdentityRegistry.remember(device.copy(jellyfinUserToken = donor.jellyfinUserToken))
+        return donor.jellyfinUserToken
+    }
+    return null
+}
+
+/** Phase 300 — the paired-token check plus FR-300-4's heal: the outcome and the token to use with it. */
+private suspend fun JellyfinClient.pairedToken(baseUrl: String, device: DeviceData): Pair<TokenCheck, String> {
+    val check = cachedTokenCheck(baseUrl, device)
+    if (check != TokenCheck.REJECTED || !ReceiverTokenPolicy.borrowsToken(device.kind)) return check to device.jellyfinUserToken
+    val healed = healBorrowedToken(baseUrl, device) ?: return check to device.jellyfinUserToken
+    return TokenCheck.VALID to healed
+}
+
 internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String =
-    if (pairedTokenCheck(baseUrl, device) == TokenCheck.VALID) device.jellyfinUserToken else serverToken
+    pairedToken(baseUrl, device).let { (check, token) -> if (check == TokenCheck.VALID) token else serverToken }
 
 /**
  * Security fix (2026-08-02 review, finding H2) — [tvToken] falls back to the long-lived **server**
@@ -1563,7 +1622,7 @@ internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData,
  * one request later, instead of a ten-minute deterministic outage for every device of that user.
  */
 internal suspend fun JellyfinClient.tvTokenForClient(baseUrl: String, device: DeviceData): String? =
-    if (pairedTokenCheck(baseUrl, device) != TokenCheck.REJECTED) device.jellyfinUserToken else null
+    pairedToken(baseUrl, device).let { (check, token) -> if (check != TokenCheck.REJECTED) token else null }
 
 /** Phase 110 (FR E.2) — is this device's paired token currently known-dead? Surfaced by the device
  *  list / health panel so "re-pair this user" is visible instead of a silent server-token fallback. */
