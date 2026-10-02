@@ -613,7 +613,7 @@ fun main() = runBlocking {
         }
     }
 
-    // Phase 296 (FR-296-6) — end the Jellyfin sessions of Ravilo devices no socket holds (a REST-only session never
+    // Phase 298 (FR-298-6) — end the Jellyfin sessions of Ravilo devices no socket holds (a REST-only session never
     // ends on Jellyfin's side). Off the 30 s watchdog loop: it reads /Sessions, and a slow Jellyfin must not hold that.
     val sessionReaper = dev.jellystructure.tv.JellyfinSessionReaper(configStore, { raviloDeviceService.allDevices() }, sessionBridge)
     rootScope.launch {

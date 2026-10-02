@@ -56,7 +56,7 @@ starts and then fails is not retried), and a route that has gone or that somethi
 `volume`, updated by `Cast.Listener.onVolumeChanged`, null while unlinked); the ⋯ slider starts there and follows it
 (the volume keys move it) unless a finger is on it.
 
-**FR-R353-5 — A cast that ends from outside hands back the speaker's song** (amended 2026-10-02 with R354/296). Seen
+**FR-R353-5 — A cast that ends from outside hands back the speaker's song** (amended 2026-10-02 with R354/298). Seen
 on the Pixel 9: a song changed on the speaker by another controller (Google Home's *next*: song A → song B), then
 Google Home's *Stop cast* — the phone came back to song A, the song from before the cast.
 

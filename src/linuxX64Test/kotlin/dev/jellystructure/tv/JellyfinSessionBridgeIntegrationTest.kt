@@ -43,13 +43,13 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * Phase 296 — the whole chain, in process, over the loopback: a fake Jellyfin (`/socket`, the capabilities route,
+ * Phase 298 — the whole chain, in process, over the loopback: a fake Jellyfin (`/socket`, the capabilities route,
  * `/Sessions`, the token check) on a real Ktor CIO server, the real [JellyfinSessionBridge] and [TvEventBus], and one
  * real events socket per device kind — phone, desktop, web, TV, Cast receiver, and an app older than R354.
  *
- * It asserts what the dashboard depends on: each device registers what it declared (FR-296-1/-2), every Playstate and
- * volume command sent on ONE device's Jellyfin socket reaches that device and no other (FR-296-3/-4), a closed device's
- * bridge ends its Jellyfin socket after the grace (FR-296-5), and the sweep ends a session no socket holds (FR-296-6).
+ * It asserts what the dashboard depends on: each device registers what it declared (FR-298-1/-2), every Playstate and
+ * volume command sent on ONE device's Jellyfin socket reaches that device and no other (FR-298-3/-4), a closed device's
+ * bridge ends its Jellyfin socket after the grace (FR-298-5), and the sweep ends a session no socket holds (FR-298-6).
  */
 class JellyfinSessionBridgeIntegrationTest {
 
@@ -156,13 +156,13 @@ class JellyfinSessionBridgeIntegrationTest {
             }
             for (d in sockets.keys) waitFor("${d.kind} bridge open and registered") { fake.has("open:${jfId(d)}") && fake.has("caps:${jfId(d)}") }
 
-            // FR-296-1/-2 — capabilities as declared; an old app keeps phase 110's bytes.
+            // FR-298-1/-2 — capabilities as declared; an old app keeps phase 110's bytes.
             val caps = fake.lock.withLock { fake.caps.toMap() }
             for (d in listOf(phone, desktop, web, tv)) assertEquals(capabilitiesBody(appCommands), caps[jfId(d)], "${d.kind} capabilities")
             assertEquals("""{"PlayableMediaTypes":[],"SupportedCommands":["PlayState","SetVolume","VolumeUp","VolumeDown","Mute","Unmute","ToggleMute"],"SupportsMediaControl":true}""", caps[jfId(receiver)])
             assertEquals(LEGACY_CAPABILITIES, caps[jfId(oldApp)], "an app older than R354 registers what it always did")
 
-            // FR-296-3/-4 — every command, on each device's own Jellyfin socket, to that device alone.
+            // FR-298-3/-4 — every command, on each device's own Jellyfin socket, to that device alone.
             val frames = listOf(
                 """{"MessageType":"Playstate","Data":{"Command":"Pause","ControllingUserId":"u"}}""" to """{"type":"playstate_command","command":"Pause"}""",
                 """{"MessageType":"Playstate","Data":{"Command":"Unpause","ControllingUserId":"u"}}""" to """{"type":"playstate_command","command":"Unpause"}""",
@@ -193,13 +193,13 @@ class JellyfinSessionBridgeIntegrationTest {
             delay(300)
             for ((d, sock) in sockets) assertEquals(frames.map { it.second }, sock.snapshot(), "${d.kind} got exactly its own commands, nobody else's")
 
-            // FR-296-5 — the receiver's events socket closed: its bridge (and Jellyfin socket) ends after the grace.
+            // FR-298-5 — the receiver's events socket closed: its bridge (and Jellyfin socket) ends after the grace.
             bridge.disconnectAfterGrace(receiver.deviceId)
             assertTrue(bridge.isBridged(receiver.deviceId), "inside the grace it is still bridged")
             waitFor("the receiver's Jellyfin socket closed after the grace", 5_000) { fake.has("close:${jfId(receiver)}") }
             assertTrue(!bridge.isBridged(receiver.deviceId))
 
-            // FR-296-6 — the sweep ends an idle Ravilo session no socket holds, and nothing else.
+            // FR-298-6 — the sweep ends an idle Ravilo session no socket holds, and nothing else.
             fake.lock.withLock {
                 fake.sessionsBody = """[
                   {"Client":"Ravilo","DeviceId":"${jfId(receiver)}","IsActive":false,"LastActivityDate":"2020-01-01T00:00:00.0000000Z"},

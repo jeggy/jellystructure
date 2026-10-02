@@ -36,7 +36,7 @@ data class BridgeHealth(
      * Caught by the e2e suite reading `undefined` where it expected `false`.
      */
     @SerialName("never_attempted") val neverAttempted: Boolean,
-    /** Phase 296 (FR-296-7) — what the device declared it obeys (`remote=`); absent for an app older than R354. */
+    /** Phase 298 (FR-298-7) — what the device declared it obeys (`remote=`); absent for an app older than R354. */
     val commands: List<String>? = null,
 )
 

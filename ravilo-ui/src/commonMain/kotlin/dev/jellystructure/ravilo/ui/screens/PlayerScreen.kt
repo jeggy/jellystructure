@@ -897,7 +897,7 @@ fun PlayerScreen(
         )
     }
 
-    // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 296's bridge, Home Assistant, a phone
+    // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 298's bridge, Home Assistant, a phone
     // remote) drive this player as its own controls do, while it is composed — which is itself R155's "ignore when no
     // player is open" (with none, music takes the command). Set, not toggle, so a stale/duplicate command is idempotent.
     RemoteVideoCommands(

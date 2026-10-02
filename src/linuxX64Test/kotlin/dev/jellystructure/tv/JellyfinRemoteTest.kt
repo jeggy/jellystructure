@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Phase 296 — the pure rules: declarations, capabilities, the reading of every Jellyfin frame, the stale sweep. */
+/** Phase 298 — the pure rules: declarations, capabilities, the reading of every Jellyfin frame, the stale sweep. */
 class JellyfinRemoteTest {
 
     @Test

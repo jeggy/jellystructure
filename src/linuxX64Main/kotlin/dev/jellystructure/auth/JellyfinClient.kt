@@ -1111,7 +1111,7 @@ class JellyfinClient {
      *  message button and cast/remote-control menu appear for its session, and Home Assistant's
      *  Jellyfin integration list it as a controllable media_player. Only takes effect while paired
      *  with an open session WebSocket (SupportsMediaControl + a live socket = an addressable session). */
-    /** Phase 296 (FR-296-2) — [body] is `capabilitiesBody(declared)`: phase 110's registration for a device that
+    /** Phase 298 (FR-298-2) — [body] is `capabilitiesBody(declared)`: phase 110's registration for a device that
      *  declares nothing, its own list otherwise. */
     suspend fun postCapabilities(baseUrl: String, userToken: String, identity: JellyfinDeviceIdentity, body: String = dev.jellystructure.tv.LEGACY_CAPABILITIES) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Capabilities/Full") {
@@ -1121,7 +1121,7 @@ class JellyfinClient {
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin postCapabilities failed: ${it.exceptionOrNull()?.message}") }
 
-    /** Phase 296 (FR-296-6) — `/Sessions`' raw body (the server token sees every session), or null on any failure. */
+    /** Phase 298 (FR-298-6) — `/Sessions`' raw body (the server token sees every session), or null on any failure. */
     suspend fun getSessionsBody(baseUrl: String, token: String): String? = runCatching {
         val r = httpGet(baseUrl.trimEnd('/') + "/Sessions") { jellyfinAuth(token) }
         if (r.status.value in 200..299) r.bodyAsText() else null

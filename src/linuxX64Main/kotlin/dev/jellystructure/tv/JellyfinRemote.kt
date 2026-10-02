@@ -14,16 +14,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 
 /*
- * Phase 296 — the pure half of "the Jellyfin dashboard controls every Ravilo playback": what a device declares it
+ * Phase 298 — the pure half of "the Jellyfin dashboard controls every Ravilo playback": what a device declares it
  * obeys, the capabilities that follows from it, what each Jellyfin `/socket` frame becomes on the device's own events
  * socket, and which leftover Jellyfin sessions the sweep ends. No I/O here, so every rule is a unit test.
  */
 
-/** FR-296-1 — the commands a device may declare, in the order they are registered. Jellyfin `GeneralCommandType` names. */
+/** FR-298-1 — the commands a device may declare, in the order they are registered. Jellyfin `GeneralCommandType` names. */
 val REMOTE_COMMANDS = listOf("DisplayMessage", "Play", "PlayState", "SetVolume", "VolumeUp", "VolumeDown", "Mute", "Unmute", "ToggleMute")
 
 /**
- * FR-296-1 — the `remote=` query parameter of `/api/tv/events`: a comma list, kept to [REMOTE_COMMANDS] (case-insensitive,
+ * FR-298-1 — the `remote=` query parameter of `/api/tv/events`: a comma list, kept to [REMOTE_COMMANDS] (case-insensitive,
  * once each, in that order). `null` when the parameter is absent — an app older than R354, which keeps today's
  * registration. An empty list is a device that obeys nothing.
  */
@@ -33,10 +33,10 @@ fun parseRemoteDeclaration(raw: String?): List<String>? {
     return REMOTE_COMMANDS.filter { it.lowercase() in said }
 }
 
-/** Phase 110's registration, kept byte for byte for a device that declares nothing (FR-296-1). */
+/** Phase 110's registration, kept byte for byte for a device that declares nothing (FR-298-1). */
 internal const val LEGACY_CAPABILITIES = """{"PlayableMediaTypes":["Video"],"SupportedCommands":["DisplayMessage","Play","Playstate"],"SupportsMediaControl":true}"""
 
-/** FR-296-2 — `/Sessions/Capabilities/Full`'s body. `Video` is playable only by a device that takes *Play on*. */
+/** FR-298-2 — `/Sessions/Capabilities/Full`'s body. `Video` is playable only by a device that takes *Play on*. */
 fun capabilitiesBody(declared: List<String>?): String {
     if (declared == null) return LEGACY_CAPABILITIES
     val media = if ("Play" in declared) "[\"Video\"]" else "[]"
@@ -44,7 +44,7 @@ fun capabilitiesBody(declared: List<String>?): String {
     return """{"PlayableMediaTypes":$media,"SupportedCommands":$commands,"SupportsMediaControl":true}"""
 }
 
-/** FR-296-3 — what a Jellyfin `/socket` frame asks of the device. */
+/** FR-298-3 — what a Jellyfin `/socket` frame asks of the device. */
 sealed interface BridgeCommand {
     data class Message(val text: String, val header: String?, val timeoutMs: Long?) : BridgeCommand
     data class PlayItem(val itemId: String, val startMs: Long) : BridgeCommand
@@ -56,7 +56,7 @@ sealed interface BridgeCommand {
 
 private val PLAYSTATE_COMMANDS = setOf("stop", "pause", "unpause", "playpause", "seek", "nexttrack", "previoustrack", "rewind", "fastforward")
 
-/** FR-296-3 — one Jellyfin frame → one command, or null for anything that is not one (keepalives included). */
+/** FR-298-3 — one Jellyfin frame → one command, or null for anything that is not one (keepalives included). */
 fun parseJellyfinMessage(raw: String): BridgeCommand? {
     val json = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return null
     val type = (json["MessageType"] as? JsonPrimitive)?.contentOrNull ?: return null
@@ -99,7 +99,7 @@ private fun generalCommand(data: JsonObject): BridgeCommand? {
     }
 }
 
-/** FR-296-6 — the fields of one `/Sessions` entry the sweep decides on. */
+/** FR-298-6 — the fields of one `/Sessions` entry the sweep decides on. */
 data class JfSessionSummary(
     val client: String?,
     val deviceId: String?,
@@ -108,7 +108,7 @@ data class JfSessionSummary(
     val lastActivityEpochSec: Long?,
 )
 
-/** FR-296-6 — `/Sessions`' body → summaries; null when it is not a JSON array. */
+/** FR-298-6 — `/Sessions`' body → summaries; null when it is not a JSON array. */
 fun parseJellyfinSessions(body: String): List<JfSessionSummary>? {
     val arr = runCatching { Json.parseToJsonElement(body).jsonArray }.getOrNull() ?: return null
     return arr.mapNotNull { el ->
@@ -124,7 +124,7 @@ fun parseJellyfinSessions(body: String): List<JfSessionSummary>? {
 }
 
 /**
- * FR-296-6 — the devices whose Jellyfin session the sweep ends: a Ravilo session of a device we hold, nothing playing,
+ * FR-298-6 — the devices whose Jellyfin session the sweep ends: a Ravilo session of a device we hold, nothing playing,
  * no socket, idle at least [graceSec], and not bridged by us (open or in its grace — that one ends on its own).
  */
 fun staleRaviloSessions(

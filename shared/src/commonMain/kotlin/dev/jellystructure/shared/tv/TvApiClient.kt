@@ -933,7 +933,7 @@ class TvApiClient(
     private fun wsUrl(path: String, token: String, remote: String? = null): String {
         val url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
             (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
-        // R354 (FR-R354-1) — what this player obeys (296 FR-296-1); absent ⇒ today's URL exactly.
+        // R354 (FR-R354-1) — what this player obeys (298 FR-298-1); absent ⇒ today's URL exactly.
         return if (remote == null) url else url + (if (WS_TOKEN_IN_QUERY) "&" else "?") + "remote=" + remote.encodeURLParameter()
     }
 

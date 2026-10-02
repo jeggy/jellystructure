@@ -68,7 +68,7 @@ class JellyfinSessionBridge(
     private val mediaStore: MediaStore,
     // R303 (FR-R303-2) — the dashboard's own *Play on* names what is playing too; null = kind + title only.
     private val playPushResolver: PlayPushResolver? = null,
-    // Phase 296 (FR-296-5) — the grace before a closed device's bridge (and so its Jellyfin session) ends; a test shortens it.
+    // Phase 298 (FR-298-5) — the grace before a closed device's bridge (and so its Jellyfin session) ends; a test shortens it.
     graceMs: Long = BRIDGE_GRACE_MS,
 ) {
     private val http = HttpClient(Curl) { install(WebSockets) }
@@ -93,9 +93,9 @@ class JellyfinSessionBridge(
     // Phase 256 (FR-256-4) — a close schedules the disconnect 90 s out; a reconnect in time cancels it.
     private val deferred = DeferredDisconnects(scope, graceMs) { disconnect(it) }
     private val state = HashMap<String, BridgeState>() // deviceId -> FR-238-2/-3 observability state
-    // Phase 296 (FR-296-1) — what each device declared on its events socket; null = an app older than R354.
+    // Phase 298 (FR-298-1) — what each device declared on its events socket; null = an app older than R354.
     private val declared = HashMap<String, List<String>?>()
-    // The device and token a live bridge registered under, so a changed declaration can be re-posted (FR-296-2).
+    // The device and token a live bridge registered under, so a changed declaration can be re-posted (FR-298-2).
     private val registeredWith = HashMap<String, Pair<DeviceData, String>>()
 
     /** Mutable per-device bridge state. Only ever touched under [lock]. */
@@ -110,7 +110,7 @@ class JellyfinSessionBridge(
     )
 
     /**
-     * Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. Phase 296 (FR-296-1/-2):
+     * Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. Phase 298 (FR-298-1/-2):
      * [commands] is what the device declared on its events socket (`remote=`), null for an app that declares nothing;
      * a reconnect that declares something different re-posts the capabilities on the bridge that is already up.
      */
@@ -163,11 +163,11 @@ class JellyfinSessionBridge(
         job?.cancel()
     }
 
-    /** Phase 296 (FR-296-6) — is a bridge open for [deviceId], or in its grace (and so about to end on its own)? */
+    /** Phase 298 (FR-298-6) — is a bridge open for [deviceId], or in its grace (and so about to end on its own)? */
     fun isBridged(deviceId: String): Boolean = lock.withLock { active.containsKey(deviceId) } || deferred.isPending(deviceId)
 
     /**
-     * Phase 296 (FR-296-6) — ends [device]'s Jellyfin session when no socket ever held it: opens `/socket` under the
+     * Phase 298 (FR-298-6) — ends [device]'s Jellyfin session when no socket ever held it: opens `/socket` under the
      * device's own identity and token, waits for Jellyfin's first frame (the session controller is attached by then),
      * and closes. Jellyfin then finds no live socket on the session and ends it (`CloseIfNeededAsync`), exactly as when
      * a TV's bridge closes. Never a logout: that deletes the token, and a receiver's token is its phone's.
@@ -331,7 +331,7 @@ class JellyfinSessionBridge(
                         Logger.info("Jellyfin session bridge connected: device=${device.deviceId} user=${device.jellyfinUserId}", "tv")
                         backoff = RECONNECT_BASE_MS
                         recordConnected(device.deviceId)
-                        // Phase 296 (FR-296-2) — what the device declared; phase 110's registration when it declared nothing.
+                        // Phase 298 (FR-298-2) — what the device declared; phase 110's registration when it declared nothing.
                         val commands = lock.withLock { registeredWith[device.deviceId] = device to effectiveToken; declared[device.deviceId] }
                         runCatching { jellyfinClient.postCapabilities(base, effectiveToken, identity, capabilitiesBody(commands)) }
 
@@ -374,7 +374,7 @@ class JellyfinSessionBridge(
     }
 
     // FR C.3 — inbound command routing: Jellyfin dashboard/Home Assistant → this device's own
-    // /api/tv/events socket, via TvEventBus's device-addressed events. Phase 296 (FR-296-3): the reading of a frame
+    // /api/tv/events socket, via TvEventBus's device-addressed events. Phase 298 (FR-298-3): the reading of a frame
     // is `parseJellyfinMessage` (pure, tested); this only delivers it.
     private suspend fun handleIncoming(device: DeviceData, raw: String) {
         when (val cmd = parseJellyfinMessage(raw) ?: return) {
