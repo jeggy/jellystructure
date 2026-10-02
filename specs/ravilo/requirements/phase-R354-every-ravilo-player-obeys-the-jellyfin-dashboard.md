@@ -6,7 +6,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (Ravilo specs
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. **Amended the same evening** (FR-R354-9, the dashboard's *Send message*; see the amendment at the end). Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (Ravilo specs
 top at R353). The server half is admin **299**; both ship together. The hand-back bug found with it is fixed as an
 amendment to R353 (FR-R353-5).
 
@@ -256,3 +256,23 @@ toast (`ServerMessageHost`, mounted over every screen). Three gaps:
 shows, nothing is queued; the server's log says the message was dropped because the device had no live socket.
 9. A Nest Hub or a TV playing a Ravilo cast: the dashboard offers *Send message* and the message shows on the screen; a
 speaker's session offers none.
+
+### Build notes (amendment, 2026-10-02 evening) — not deployed, not device-tested
+
+**Built:** `serverNoticeOf` + `serverNoticeLengthMs` (`:shared`, `ServerNotice.kt`) for the app and the receiver; the
+app's `ServerMessageHost` shows the header on its own line and, on a handset, a top card under the status bar (16 dp
+gutters, at most 460 dp, drops in from the top, a tap dismisses); TV and desktop keep R152's top-right toast. The events
+socket's `onServerMessage` goes through `acceptsServerMessage(onScreen)` (off screen: dropped, `println`). The receiver
+declares `receiverRemoteDeclaration(headless)` — `DisplayMessage` first on a screen — and shows the message in a new
+`#msg` card (top right, sized in `vw` for a TV or a hub) for the notice's time; a speaker ignores it. No new string.
+
+**Why "nothing happened" (most likely):** the phone was off screen (locked while casting), so it held no events socket
+and the server dropped the message without a trace; the Jellyfin session stays listed (the bridge's 90 s grace, then
+Jellyfin's own list), so the dashboard still offers the button. With 299's amendment the server now logs the drop. On
+screen, the message did arrive as a TV-sized toast in the top right.
+
+**Verified:** `ServerNoticeTest` (6, `:shared:desktopTest` + `linuxX64Test`), `RemoteControlTest` +1
+(`aDashboardMessageIsShownOnlyOnScreen`). Not tried on a device or in the receiver harness (the message rides the
+receiver's events socket, which the harness does not open).
+
+**Device steps:** in the main session's report.

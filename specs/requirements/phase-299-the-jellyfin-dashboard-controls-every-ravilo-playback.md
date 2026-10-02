@@ -208,3 +208,10 @@ from *never arrived*.
 **FR-299-10 — A receiver with a screen takes messages.** The receiver declares `DisplayMessage` on a device with a
 screen (R354 FR-R354-9e); `capabilitiesBody` already registers what is declared, so the dashboard offers *Send message*
 for it. No change for a speaker. Additive: the declaration is a list of existing names.
+
+### Build notes (amendment, 2026-10-02 evening) — not deployed
+
+`TvEventBus.notifyServerMessage` uses `targetFor` and logs `TV events: message (N chars) sent to device …` or
+`… dropped: no live events socket (off screen)`. The receiver's declaration is R354's (`receiverRemoteDeclaration`);
+`capabilitiesBody` registers it unchanged, so a TV, a hub or a Chromecast playing a Ravilo cast reads `DisplayMessage`
+in its `SupportedCommands`. Backend `linuxX64Test` green. Ships with the next backend deploy (the receiver too).
