@@ -1,6 +1,7 @@
 package dev.jellystructure.subtitles
 
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.JellyfinMediaStream
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.Subtitle_reference
@@ -39,6 +40,33 @@ class SubtitleReferences(
 
         /** ffmpeg's `0:s:N` for a stream — Bazarr's sync reference needs this subtitle-relative index. */
         fun subtitleOrdinal(track: Track): Int? = track.specifier.removePrefix("0:s:").toIntOrNull()?.takeIf { track.specifier.startsWith("0:s:") }
+
+        /**
+         * Phase 301 (FR-301-1/2) — Jellyfin's subtitle streams inside the file, in its own order. Jellyfin 12.1 numbers
+         * a video's external subtitle files first and shifts every stream inside the file up by their count, so its
+         * index is not ffprobe's: they are matched by position among the internal subtitle streams instead.
+         */
+        private fun internalSubtitles(streams: List<JellyfinMediaStream>): List<JellyfinMediaStream> =
+            streams.filter { it.type.equals("Subtitle", ignoreCase = true) && !it.isExternal }.sortedBy { it.index }
+
+        /** FR-301-1 — Jellyfin's stream number for the store's internal subtitle [track]; null when the two do not agree. */
+        fun jellyfinIndexFor(track: Track, tracks: List<Track>, streams: List<JellyfinMediaStream>): Int? {
+            val ordinal = subtitleOrdinal(track) ?: return null
+            val ours = tracks.count { it.kind == TrackKind.SUBTITLE && !it.external && subtitleOrdinal(it) != null }
+            val theirs = internalSubtitles(streams)
+            if (ours != theirs.size) return null
+            val s = theirs.getOrNull(ordinal) ?: return null
+            if (!track.language.isNullOrBlank() && !s.language.isNullOrBlank() && !LanguageResolver.sameLanguage(track.language, s.language)) return null
+            return s.index
+        }
+
+        /** FR-301-2 — the store's track for one of Jellyfin's internal subtitle streams; null when the two do not agree. */
+        fun trackForJellyfinStream(stream: JellyfinMediaStream, tracks: List<Track>, streams: List<JellyfinMediaStream>): Track? {
+            if (stream.isExternal) return null
+            val ordinal = internalSubtitles(streams).indexOfFirst { it.index == stream.index }.takeIf { it >= 0 } ?: return null
+            val track = tracks.firstOrNull { it.kind == TrackKind.SUBTITLE && !it.external && subtitleOrdinal(it) == ordinal } ?: return null
+            return track.takeIf { jellyfinIndexFor(it, tracks, streams) == stream.index }
+        }
     }
 
     /** What is stored for a video: present (with its data), known to be absent, or unknown/stale. */
@@ -97,11 +125,13 @@ class SubtitleReferences(
         if (candidates.isEmpty()) { put(videoPath, EMBEDDED, SOURCE_NONE, ByteArray(0)); return Fetch.NONE }
         val cfg = configStore.current.apiKeys
         if (jellyfinId.isNullOrBlank() || cfg.jellyfinUrl.isBlank() || cfg.jellyfinToken.isBlank()) return Fetch.FAILED
-        for (track in candidates.take(3)) {
-            when (val r = jellyfinClient.fetchSubtitleText(cfg.jellyfinUrl, cfg.jellyfinToken, jellyfinId, track.streamIndex)) {
-                is JellyfinClient.SubtitleText.Text -> if (offerEmbedded(videoPath, track, r.body, durationMs)) return Fetch.STORED
+        // FR-301-1 — Jellyfin's own numbers for these streams; asking by ffprobe's index fetched a sidecar instead.
+        val streams = jellyfinClient.getItemMediaStreams(cfg.jellyfinUrl, cfg.jellyfinToken, jellyfinId)?.mediaStreams ?: return Fetch.FAILED
+        for (track in candidates.mapNotNull { t -> jellyfinIndexFor(t, tracks, streams)?.let { t to it } }.take(3)) {
+            when (val r = jellyfinClient.fetchSubtitleText(cfg.jellyfinUrl, cfg.jellyfinToken, jellyfinId, track.second)) {
+                is JellyfinClient.SubtitleText.Text -> if (offerEmbedded(videoPath, track.first, r.body, durationMs)) return Fetch.STORED
                 JellyfinClient.SubtitleText.TimedOut -> return Fetch.TIMED_OUT
-                is JellyfinClient.SubtitleText.Failed -> Logger.warn("subtitle reference: stream ${track.streamIndex} of $videoPath: ${r.reason}", "subtitles")
+                is JellyfinClient.SubtitleText.Failed -> Logger.warn("subtitle reference: stream ${track.second} of $videoPath: ${r.reason}", "subtitles")
             }
         }
         put(videoPath, EMBEDDED, SOURCE_NONE, ByteArray(0))

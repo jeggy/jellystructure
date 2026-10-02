@@ -1,0 +1,16 @@
+-- Phase 301 — a subtitle is measured against its own video. Must stay in sync with SubtitleCheck.sq.
+
+-- FR-301-4 — lines that start after the video ends, left out of the judgement.
+ALTER TABLE subtitle_check ADD COLUMN cues_past_end INTEGER NOT NULL DEFAULT 0;
+
+-- FR-301-5 — what was measured the old way is measured again, once. An embedded reference may have been a sidecar
+-- (Jellyfin numbers sidecars first); a verdict against it, or against a sibling judged by it, is not trusted; a
+-- `longer_video` may have been one ad line. Settled copies kept on those verdicts' word go too.
+DELETE FROM subtitle_settled WHERE video_path IN (
+    SELECT video_path FROM subtitle_check
+    WHERE reference LIKE 'embedded:%' OR reference LIKE 'sibling:%' OR verdict = 'longer_video'
+);
+DELETE FROM subtitle_check WHERE reference LIKE 'embedded:%' OR reference LIKE 'sibling:%' OR verdict = 'longer_video';
+DELETE FROM subtitle_reference WHERE kind = 'embedded';
+UPDATE subtitle_action SET state = 'dismissed', decided_at = strftime('%s', 'now')
+WHERE state = 'waiting' AND sidecar_path IS NOT NULL AND sidecar_path NOT IN (SELECT sidecar_path FROM subtitle_check);

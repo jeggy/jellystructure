@@ -170,7 +170,8 @@ class SubtitleCheckService(
         val embedded = (embeddedState as? SubtitleReferences.Stored.Present)?.let { CueCodec.decode(it.row.payload) to (it.row.source ?: "") }
         val embeddedUnusable = embeddedState is SubtitleReferences.Stored.Absent && SubtitleReferences.embeddedCandidates(unit.tracks).isNotEmpty()
 
-        val parsed = due.associate { s -> s.path to CueParser.parse(bytes[s.path]!!.decodeToString()) }
+        // Phase 301 (FR-301-3/4) — judged on cleaned cues: none longer than 20 s, a few lines after the end left out.
+        val parsed = due.associate { s -> s.path to VerdictRules.clean(CueParser.parse(bytes[s.path]!!.decodeToString()), durationMs) }
 
         // Rung 2 — a sibling already in sync against rung 1 or 3 (never one judged against another sibling).
         fun siblingFor(s: Sidecar): Pair<Sidecar, List<Cue>>? {
@@ -181,7 +182,7 @@ class SubtitleCheckService(
             } ?: return null
             val side = sidecars.first { it.path == sib.sidecar_path }
             val cues = CueParser.parse(runCatching { FileIo.readBytes(Path(side.path)) }.getOrNull()?.decodeToString() ?: return null)
-            return side to cues
+            return side to VerdictRules.clean(cues, durationMs).cues
         }
 
         // Rung 3 — the speech track, decoded now when a job may and nothing stronger exists.
@@ -201,7 +202,8 @@ class SubtitleCheckService(
         val changed = ArrayList<Subtitle_check>()
         var needsJob = false
         for (s in due) {
-            val cues = parsed[s.path] ?: emptyList()
+            val cleaned = parsed[s.path] ?: VerdictRules.Cleaned(emptyList(), 0)
+            val cues = cleaned.cues
             val prev = existing[s.path]
             val source = sources[s.path] ?: prev?.takeIf { it.content_hash == hashes[s.path] }?.let { Source(it.provider, it.subs_id) }
             val sibling = siblingFor(s)
@@ -219,7 +221,8 @@ class SubtitleCheckService(
                         embeddedUnusable -> CantTell.REFERENCE_UNUSABLE
                         else -> CantTell.NO_REFERENCE
                     }
-                    VerdictRules.judge(null, null, emptyMap(), cues.firstOrNull()?.startMs ?: 0, cues.lastOrNull()?.endMs ?: 0, durationMs, noRefReason = reason)
+                    VerdictRules.judge(null, null, emptyMap(), cues.firstOrNull()?.startMs ?: 0, cues.lastOrNull()?.endMs ?: 0, durationMs, noRefReason = reason,
+                        lastStartMs = cues.lastOrNull()?.startMs ?: 0)
                 }
             }
             val match = j.matchKey?.let { neighbours[it] }
@@ -231,6 +234,7 @@ class SubtitleCheckService(
                 rho = j.fit?.rho, z = j.fit?.z, scale = j.fit?.scale, shiftMs = j.fit?.shiftMs, worstMs = j.worstMs,
                 driftMsPerHour = j.driftMsPerHour, matchVideoPath = j.matchKey, matchLabel = match,
                 cues = cues.size.toLong(), lastCueMs = cues.lastOrNull()?.endMs, contentHash = hashes[s.path] ?: "",
+                cuesPastEnd = cleaned.pastEnd.toLong(),
                 provider = source?.provider, subsId = source?.subsId,
                 detail = j.chunks.joinToString(",") { it.shiftMs?.toString() ?: "-" }, checkedAt = now,
             )
@@ -278,7 +282,7 @@ class SubtitleCheckService(
                 refs.mapValues { (_, rc) -> SubtitleTiming.bestFit(c2, SubtitleTiming.spectrum(SubtitleTiming.cueSignal(rc, p2.n), p2), p2) }
             }
         }
-        return VerdictRules.judge(own, kind, others, cues.first().startMs, cues.last().endMs, durationMs, chunks = chunks)
+        return VerdictRules.judge(own, kind, others, cues.first().startMs, cues.last().endMs, durationMs, chunks = chunks, lastStartMs = cues.last().startMs)
     }
 
     private fun judgeAgainstSpeech(
@@ -294,7 +298,7 @@ class SubtitleCheckService(
         val cand = SubtitleTiming.candidateSpectra(cues, plan)
         val own = SubtitleTiming.bestFit(cand, SubtitleTiming.spectrum(SubtitleTiming.speechSignal(frames, plan.n), plan), plan)
         val others = refs.mapValues { (_, f) -> SubtitleTiming.bestFit(cand, SubtitleTiming.spectrum(SubtitleTiming.speechSignal(f, plan.n), plan), plan) }
-        return VerdictRules.judge(own, RefKind.SPEECH, others, cues.first().startMs, cues.last().endMs, durationMs)
+        return VerdictRules.judge(own, RefKind.SPEECH, others, cues.first().startMs, cues.last().endMs, durationMs, lastStartMs = cues.last().startMs)
     }
 
     /** The History line for a verdict (FR-273-22): which file, what it is, and the numbers. */
@@ -303,8 +307,15 @@ class SubtitleCheckService(
         return "file=$name lang=${row.language ?: "?"} ${verdictWords(row)} · ρ=${row.rho?.let { (it * 100).roundToLong() / 100.0 }} z=${row.z?.let { (it * 10).roundToLong() / 10.0 }}"
     }
 
-    /** A verdict in the admin's words (FR-273-20), without the numbers. */
-    fun verdictWords(row: Subtitle_check): String =
+    /** A verdict in the admin's words (FR-273-20), without the numbers. Phase 301 (FR-301-4) names the lines left
+     *  out after the video's end. */
+    fun verdictWords(row: Subtitle_check): String {
+        val past = row.cues_past_end.toInt()
+        val note = if (past > 0) " · $past ${if (past == 1) "line" else "lines"} after the video ends: an ad or a credit" else ""
+        return verdictCore(row) + note
+    }
+
+    private fun verdictCore(row: Subtitle_check): String =
         when (row.verdict) {
             Verdict.OFF.wire, Verdict.OFF_MID_FILE.wire -> {
                 val shift = row.shift_ms ?: 0

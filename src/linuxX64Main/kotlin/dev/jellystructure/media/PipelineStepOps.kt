@@ -138,7 +138,7 @@ object PipelineStepOps {
         if (base.isBlank() || token.isBlank()) return PrewarmOutcome.Skipped
 
         // Phase 273 (FR-273-6) — each video of this item by its Jellyfin id: where its reference is stored, and the
-        // store's tracks (Jellyfin's stream index is ffprobe's, so a stream maps to its track by index).
+        // store's tracks (matched to Jellyfin's streams by position, phase 301: Jellyfin's index is not ffprobe's).
         val videoById: Map<String, Pair<String, List<dev.jellystructure.model.Track>>> = if (references == null) emptyMap() else
             (item.episodes.mapNotNull { e -> e.jellyfinId?.let { it to (e.path to e.tracks) } } +
                 listOfNotNull(item.jellyfinId?.takeIf { item.kind == MediaKind.MOVIE }?.let { it to (item.path to item.tracks) })).toMap()
@@ -156,7 +156,8 @@ object PipelineStepOps {
             for (s in textSubs) {
                 if (isCancelled()) return StreamWalkResult.Cancelled
                 if (yieldToPlayback()) return StreamWalkResult.Deferred(confirmed)
-                val track = if (needReference && !s.isForced) video!!.second.firstOrNull { it.streamIndex == s.index && it.kind == dev.jellystructure.model.TrackKind.SUBTITLE } else null
+                // Phase 301 (FR-301-2) — by position among the internal subtitle streams: Jellyfin numbers sidecars first.
+                val track = if (needReference && !s.isForced) dev.jellystructure.subtitles.SubtitleReferences.trackForJellyfinStream(s, video!!.second, streams) else null
                 if (track != null) {
                     // The same request as the warm, keeping the body: the text is this video's timing reference.
                     when (val r = jellyfinClient.fetchSubtitleText(base, token, jellyfinId, s.index)) {

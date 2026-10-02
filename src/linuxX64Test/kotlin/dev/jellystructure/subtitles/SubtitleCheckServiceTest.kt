@@ -175,6 +175,85 @@ class SubtitleCheckServiceTest {
         assertTrue(noiseSteps.average() < 5, "noise ${noiseSteps.average()}")
     }
 
+    // ── Phase 301 ─────────────────────────────────────────────────────────────────────────────
+
+    private fun sub(index: Int, spec: String, lang: String?, external: Boolean = false, title: String? = null) =
+        Track(index, spec, TrackKind.SUBTITLE, "subrip", lang, title, false, false, external = external)
+
+    private fun jf(index: Int, type: String, lang: String?, external: Boolean = false) =
+        dev.jellystructure.auth.JellyfinMediaStream(type = type, index = index, codec = "subrip", language = lang, isExternal = external)
+
+    /** One production episode's numbering: ffprobe has the two English tracks at 2 and 3, Jellyfin lists the
+     *  three sidecars first and the English tracks at 5 and 6. */
+    private val tracks301 = listOf(
+        Track(0, "0:v:0", TrackKind.VIDEO, "h264", null, null, true, false),
+        Track(1, "0:a:0", TrackKind.AUDIO, "eac3", "eng", null, true, false),
+        sub(2, "0:s:0", "eng"), sub(3, "0:s:1", "eng", title = "SDH"),
+        sub(4, "ext:s:0", "da", external = true), sub(5, "ext:s:1", "hr", external = true), sub(6, "ext:s:2", "sr", external = true),
+    )
+    private val streams301 = listOf(
+        jf(0, "Subtitle", "dan", true), jf(1, "Subtitle", "hrv", true), jf(2, "Subtitle", "srp", true),
+        jf(3, "Video", null), jf(4, "Audio", "eng"), jf(5, "Subtitle", "eng"), jf(6, "Subtitle", "eng"),
+    )
+
+    @Test
+    fun `an internal subtitle is fetched by Jellyfin's own number and not ffprobe's`() {
+        assertEquals(5, SubtitleReferences.jellyfinIndexFor(tracks301[2], tracks301, streams301))
+        assertEquals(6, SubtitleReferences.jellyfinIndexFor(tracks301[3], tracks301, streams301))
+        // The hand-over maps Jellyfin's stream back to the track it really is.
+        assertEquals(tracks301[2], SubtitleReferences.trackForJellyfinStream(streams301[5], tracks301, streams301))
+        assertEquals(null, SubtitleReferences.trackForJellyfinStream(streams301[2], tracks301, streams301), "a sidecar is never a reference")
+        // The two sides disagree on how many subtitles are inside the file: nothing is trusted.
+        assertEquals(null, SubtitleReferences.jellyfinIndexFor(tracks301[2], tracks301, streams301.dropLast(1)))
+        // …or on the language at that position.
+        val swedish = streams301.map { if (it.index == 5) it.copy(language = "swe") else it }
+        assertEquals(null, SubtitleReferences.jellyfinIndexFor(tracks301[2], tracks301, swedish))
+    }
+
+    private fun film(video: String) = MediaItem(
+        id = "film", title = "Film", year = 2020, kind = MediaKind.MOVIE, path = video, tmdbId = null,
+        originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L,
+        tracks = listOf(Track(0, "0:v:0", TrackKind.VIDEO, "h264", null, null, true, false, durationMs = 22 * 60_000L)),
+    )
+
+    @Test
+    fun `an ad after the end or a line that lasts all night is not a longer video`() = runBlocking {
+        val video = "$dir/Film (2020)/Film.mkv"
+        FileIo.writeText(Path(video), "not really a video")
+        val ref = episode(1)
+        val end = 22 * 60_000L
+        // One ad line two minutes after the video ends.
+        FileIo.writeText(Path("$dir/Film (2020)/Film.da.srt"), srt(ref + Cue(end + 120_000, end + 124_000)))
+        // A last line that starts in the credits and "ends" 22 hours in.
+        FileIo.writeText(Path("$dir/Film (2020)/Film.sr.srt"), srt(ref + Cue(end - 10_000, 22 * 3_600_000L)))
+        // Lines for twice the video: still a longer video.
+        FileIo.writeText(Path("$dir/Film (2020)/Film.hr.srt"), srt(ref + ref.map { Cue(it.startMs + end, it.endMs + end) }))
+        val stamp = FileIntegrityService.stampOf(video)!!
+        db.subtitleCheckQueries.putReference(video, SubtitleReferences.EMBEDDED, stamp.size, stamp.mtime, "s:0", 10, CueCodec.encode(ref), 0)
+
+        val byLang = service.checkVideo(film(video), video, SubtitleCheckService.Mode.INLINE).rows.associateBy { it.language }
+        assertEquals("in_sync", byLang["da"]?.verdict, "${byLang["da"]}")
+        assertEquals(1L, byLang["da"]?.cues_past_end)
+        assertTrue(service.verdictWords(byLang["da"]!!).contains("1 line after the video ends"))
+        assertEquals("in_sync", byLang["sr"]?.verdict, "${byLang["sr"]}")
+        assertTrue((byLang["sr"]?.last_cue_ms ?: 0) < end + 60_000, "the long line counts as 20 s")
+        assertEquals("longer_video", byLang["hr"]?.verdict)
+        assertEquals(0L, byLang["hr"]?.cues_past_end)
+    }
+
+    @Test
+    fun `cue clean-up`() {
+        val cues = listOf(Cue(1_000, 3_000), Cue(5_000, 90_000), Cue(100_000, 102_000))
+        val c = VerdictRules.clean(cues, 60_000)
+        assertEquals(listOf(Cue(1_000, 3_000), Cue(5_000, 25_000)), c.cues)
+        assertEquals(1, c.pastEnd)
+        // Four lines after the end are not an ad: kept, and judged by the longer-video rule.
+        val four = cues + listOf(Cue(110_000, 111_000), Cue(120_000, 121_000), Cue(130_000, 131_000))
+        assertEquals(0, VerdictRules.clean(four, 60_000).pastEnd)
+        assertEquals(6, VerdictRules.clean(four, 60_000).cues.size)
+        assertEquals(0, VerdictRules.clean(cues, null).pastEnd)
+    }
+
     @Test
     fun `cue storage round-trips`() {
         val cues = listOf(Cue(0, 1_500), Cue(60_000, 61_000), Cue(7_200_000, 7_203_000))

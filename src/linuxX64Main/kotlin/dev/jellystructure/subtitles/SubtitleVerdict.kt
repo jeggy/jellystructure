@@ -74,9 +74,26 @@ object VerdictRules {
         return cues.size / (spanMs / 60_000.0) >= MIN_REF_CUES_PER_MIN
     }
 
-    /** FR-273-4 — cues well past the end of the file: a compilation, a longer cut, or junk. */
+    /** FR-273-4 — cues well past the end of the file: a compilation or a longer cut. Phase 301 (FR-301-4): judged on
+     *  where the last cue starts, after [clean] has left out a few lines placed after the end. */
     fun longerVideo(lastCueMs: Long, durationMs: Long?): Boolean =
         durationMs != null && durationMs > 0 && lastCueMs > durationMs * 1.10 + 60_000
+
+    /** Phase 301 (FR-301-3) — no dialogue line lasts longer; an ad that "ends" hours later is not timing. */
+    const val MAX_CUE_MS = 20_000L
+    /** Phase 301 (FR-301-4) — this many lines starting after the video are an ad or a credit, not a longer video. */
+    const val MAX_LINES_PAST_END = 3
+
+    data class Cleaned(val cues: List<Cue>, val pastEnd: Int)
+
+    /** Phase 301 (FR-301-3/4) — the cues a sidecar is judged on: each cut to [MAX_CUE_MS], and up to
+     *  [MAX_LINES_PAST_END] lines that start after the video ends left out (and counted). */
+    fun clean(cues: List<Cue>, durationMs: Long?): Cleaned {
+        val capped = cues.map { if (it.endMs - it.startMs > MAX_CUE_MS) Cue(it.startMs, it.startMs + MAX_CUE_MS) else it }
+        if (durationMs == null || durationMs <= 0) return Cleaned(capped, 0)
+        val past = capped.count { it.startMs >= durationMs }
+        return if (past in 1..MAX_LINES_PAST_END) Cleaned(capped.filter { it.startMs < durationMs }, past) else Cleaned(capped, 0)
+    }
 
     fun judge(
         own: Fit?,
@@ -87,8 +104,9 @@ object VerdictRules {
         durationMs: Long?,
         chunks: List<SubtitleTiming.ChunkShift> = emptyList(),
         noRefReason: String = CantTell.NO_REFERENCE,
+        lastStartMs: Long = lastCueMs,
     ): Judgement {
-        if (longerVideo(lastCueMs, durationMs)) return Judgement(Verdict.LONGER_VIDEO, refKind = refKind, fit = own)
+        if (longerVideo(lastStartMs, durationMs)) return Judgement(Verdict.LONGER_VIDEO, refKind = refKind, fit = own)
         if (own == null || refKind == null) return Judgement(Verdict.CANT_TELL, reason = noRefReason)
 
         if (refKind == RefKind.SPEECH) {

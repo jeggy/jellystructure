@@ -30,7 +30,9 @@ CREATE TABLE subtitle_check (
     provider TEXT,
     subs_id TEXT,
     detail TEXT NOT NULL DEFAULT '',
-    checked_at INTEGER NOT NULL
+    checked_at INTEGER NOT NULL,
+    -- Phase 301 (FR-301-4) — lines that start after the video ends, left out of the judgement (an ad or a credit).
+    cues_past_end INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX subtitle_check_item ON subtitle_check(item_id);
 CREATE INDEX subtitle_check_video ON subtitle_check(video_path);
@@ -87,8 +89,8 @@ CREATE INDEX subtitle_action_item ON subtitle_action(item_id);
 putCheck:
 INSERT OR REPLACE INTO subtitle_check(sidecar_path, video_path, item_id, language, forced, hi, sidecar_size, sidecar_mtime,
     video_size, video_mtime, verdict, reason, reference, rho, z, scale, shift_ms, worst_ms, drift_ms_per_hour,
-    match_video_path, match_label, cues, last_cue_ms, content_hash, provider, subs_id, detail, checked_at)
-VALUES (:sidecarPath, :videoPath, :itemId, :language, :forced, :hi, :sidecarSize, :sidecarMtime, :videoSize, :videoMtime, :verdict, :reason, :reference, :rho, :z, :scale, :shiftMs, :worstMs, :driftMsPerHour, :matchVideoPath, :matchLabel, :cues, :lastCueMs, :contentHash, :provider, :subsId, :detail, :checkedAt);
+    match_video_path, match_label, cues, last_cue_ms, content_hash, provider, subs_id, detail, checked_at, cues_past_end)
+VALUES (:sidecarPath, :videoPath, :itemId, :language, :forced, :hi, :sidecarSize, :sidecarMtime, :videoSize, :videoMtime, :verdict, :reason, :reference, :rho, :z, :scale, :shiftMs, :worstMs, :driftMsPerHour, :matchVideoPath, :matchLabel, :cues, :lastCueMs, :contentHash, :provider, :subsId, :detail, :checkedAt, :cuesPastEnd);
 
 checkByPath:
 SELECT * FROM subtitle_check WHERE sidecar_path = :path;
