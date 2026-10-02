@@ -53,4 +53,13 @@ class CastCardTest {
         assertEquals("f1", c.key); assertEquals("2019", c.subtitle); assertEquals("https://x/art.jpg", c.artUrl)
         assertFalse(c.music); assertFalse(c.playing); assertEquals(61_000, c.positionMs)
     }
+
+    @Test
+    fun `the cast's route is the one controller beside the system's`() {
+        // FR-R356-12 — MediaRouter2 lists the system controller first; a Cast session adds exactly one.
+        assertEquals("cast-session-1", castRouteControllerId(listOf("system", "cast-session-1")))
+        assertNull(castRouteControllerId(listOf("system")), "not casting")
+        assertNull(castRouteControllerId(emptyList()))
+        assertNull(castRouteControllerId(listOf("system", "a", "b")), "two remote sessions: cannot tell which is ours")
+    }
 }

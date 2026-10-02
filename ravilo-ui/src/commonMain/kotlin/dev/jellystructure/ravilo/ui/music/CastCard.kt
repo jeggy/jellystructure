@@ -53,3 +53,10 @@ fun castCard(link: CastLinkState, st: CastRemoteStatus?, volume: Double?, music:
         music = false, hasNext = st.hasNext, volume = volume,
     )
 }
+
+/**
+ * R356 (FR-R356-12) — the cast's MediaRouter2 routing controller among the app's [controllerIds] (in MediaRouter2's
+ * order), as Media3's `RemoteCastPlayer` reads it: the first is always the system's (local playback), and exactly one
+ * other is the Cast session's. None, or more than one, and it cannot be told: null.
+ */
+fun castRouteControllerId(controllerIds: List<String>): String? = controllerIds.takeIf { it.size == 2 }?.get(1)

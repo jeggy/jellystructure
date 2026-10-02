@@ -52,6 +52,8 @@ internal object CastSessionRemote {
         started = true
         raw = sender
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(context)
+        // FR-R356-12 — the card is tied to the cast's MediaRouter2 routing session (Android 11+).
+        if (android.os.Build.VERSION.SDK_INT >= 30) route = CastRouteWatch(context.applicationContext) { applyRoute() }.also { it.start() }
         scope.launch {
             // A song is the receiver's report read the way the Playing page reads it ([MusicCast.state]: the queue's own
             // items, with the album covers the app holds) — straight from the report, so the card does not drop out for
@@ -63,6 +65,13 @@ internal object CastSessionRemote {
     }
 
     private var dropJob: Job? = null
+    private var route: CastRouteWatch? = null
+
+    /** FR-R356-12 — the cast's routing controller id onto the card's player (null: none, or not one we can tell). */
+    private fun applyRoute() {
+        val id = route?.controllerId()
+        player?.let { if (it.routingControllerId != id) { it.routingControllerId = id; android.util.Log.i("RaviloCast", "R356: the media card's route ${id ?: "(none)"}") } }
+    }
 
     private fun show(card: CastCard?, connected: Boolean) {
         if (card == null) {
@@ -76,6 +85,7 @@ internal object CastSessionRemote {
         }
         dropJob?.cancel(); dropJob = null
         val p = player ?: CastRemotePlayer(actions).also { player = it }
+        if (!active) applyRoute()
         p.show(card.copy(artUrl = card.artUrl?.let { MusicEngine.artworkUri(it) }))
         // Also after the service went away (the app removed from recents): the next report gives the mirror a new one.
         if (!active || !MusicEngine.castingRemote) {
@@ -112,9 +122,29 @@ internal object CastSessionRemote {
         override fun setVolume(level: Double) { sender()?.setVolume(level.coerceIn(0.0, 1.0)) }
     }
 
-    /** The card's *Stop casting* (FR-R356-3): a song comes back to the phone paused (R324's *Stop casting*). */
+    /** The card's custom action for *Stop casting* (the ■ beside the transport). */
+    const val STOP_CASTING_ACTION = "ravilo.cast.stop"
+
+    /**
+     * FR-R356-14a — the card's custom actions: true when [action] is one of the cast's (and it was carried out). The
+     * MediaSession callback asks this first; a book's ±30 s are the engine's own.
+     */
+    fun onCardAction(action: String): Boolean {
+        if (action != STOP_CASTING_ACTION) return false
+        stopCasting()
+        return true
+    }
+
+    /**
+     * The card's *Stop casting* (FR-R356-3, FR-R356-14a): the Cast session ends with the receiver
+     * stopped, as the app's own *Stop casting* does; a song comes back to the phone paused at its place (R324's *Stop
+     * casting*, or — no live song — R353's hand-back from the last one when the session ends).
+     */
     fun stopCasting() {
-        if (music()) MusicCast.stop() else (MusicCast.controller?.stopCasting() ?: raw?.stop())
+        android.util.Log.i("RaviloCast", "R356: the media card's Stop: ending the cast (${if (music()) "music" else "no live song"})")
+        // Without a controller the app's screens never bound one (a process the service kept): the raw sender ends it.
+        if (MusicCast.controller != null && (music() || MusicCast.holdsDevice)) MusicCast.stop()
+        else (MusicCast.controller?.stopCasting() ?: raw?.stop())
     }
 }
 
@@ -134,6 +164,10 @@ internal class CastRemotePlayer(private val actions: Actions) : SimpleBasePlayer
         fun seekTo(positionMs: Long)
         fun setVolume(level: Double)
     }
+
+    /** FR-R356-12 — the cast's MediaRouter2 routing controller id, carried on the [DeviceInfo]; null = none known. */
+    var routingControllerId: String? = null
+        set(value) { if (field != value) { field = value; invalidateState() } }
 
     private var card: CastCard? = null
     private var position: PositionSupplier = PositionSupplier.getConstant(0)
@@ -180,7 +214,7 @@ internal class CastRemotePlayer(private val actions: Actions) : SimpleBasePlayer
             .setContentPositionMs(position)
             .setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(30_000L)
-            .setDeviceInfo(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(VOLUME_STEPS).build())
+            .setDeviceInfo(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(VOLUME_STEPS).setRoutingControllerId(routingControllerId).build())
             .setDeviceVolume(volumeStep(c))
             .build()
     }
@@ -218,4 +252,36 @@ internal class CastRemotePlayer(private val actions: Actions) : SimpleBasePlayer
         /** R324's slider step: 5 %. */
         const val VOLUME_STEPS = 20
     }
+}
+
+/**
+ * R356 (FR-R356-12) — which MediaRouter2 routing controller is the cast's, as Media3's own `RemoteCastPlayer` reads it:
+ * the controllers' first is always the system's (local playback); exactly one other is the Cast session's. None, or
+ * several (another app casting too), and it cannot be told — no id. Watches transfers and controller changes so the
+ * card follows a session that starts, moves or ends. Registers with an empty discovery preference: nothing scans (R293).
+ */
+@androidx.annotation.RequiresApi(30)
+internal class CastRouteWatch(context: Context, private val onChange: () -> Unit) {
+    private val router = android.media.MediaRouter2.getInstance(context)
+    private val handler = android.os.Handler(Looper.getMainLooper())
+    private val executor = java.util.concurrent.Executor { handler.post(it) }
+    private val transfer = object : android.media.MediaRouter2.TransferCallback() {
+        override fun onTransfer(oldController: android.media.MediaRouter2.RoutingController, newController: android.media.MediaRouter2.RoutingController) = onChange()
+        override fun onStop(controller: android.media.MediaRouter2.RoutingController) = onChange()
+    }
+    private val controllers = object : android.media.MediaRouter2.ControllerCallback() {
+        override fun onControllerUpdated(controller: android.media.MediaRouter2.RoutingController) = onChange()
+    }
+    /** Needed for the transfer callbacks to arrive at all (Media3 registers the same empty one). */
+    private val routes = object : android.media.MediaRouter2.RouteCallback() {}
+
+    fun start() {
+        runCatching {
+            router.registerTransferCallback(executor, transfer)
+            router.registerControllerCallback(executor, controllers)
+            router.registerRouteCallback(executor, routes, android.media.RouteDiscoveryPreference.Builder(emptyList(), false).build())
+        }.onFailure { android.util.Log.w("RaviloCast", "R356: no MediaRouter2 route watch (${it.message})") }
+    }
+
+    fun controllerId(): String? = runCatching { castRouteControllerId(router.controllers.map { it.id }) }.getOrNull()
 }

@@ -224,17 +224,21 @@ object MusicCast {
      * used to fall back to the song the hand-off left behind (the Mac, 2026-09-30).
      */
     fun stop() {
-        takeBack()
-        endedByApp = true
+        // R356 (FR-R356-14d) — with no live song here (a failed or ended report) nothing is taken back now, so the end
+        // is left to the hand-back from the last live song when the session ends (FR-R353-5). It used to be marked as
+        // the app's own end either way, and the phone kept the song from before the cast.
+        endedByApp = takeBack()
         cast?.stopCasting()
     }
 
-    /** The speaker's queue and position into this device's own player, paused. */
-    private fun takeBack() {
+    /** The speaker's queue and position into this device's own player, paused; false when there was nothing live. */
+    private fun takeBack(): Boolean {
         val st = _status.value
-        if (!_linked.value || st == null) return
+        if (!_linked.value || st == null) return false
         val s = state(st)
-        if (s.queue.isNotEmpty() && s.index >= 0) MusicEngine.loadPaused(s.queue, s.index, MusicPlayback.currentPositionMs(), context)
+        if (s.queue.isEmpty() || s.index < 0) return false
+        MusicEngine.loadPaused(s.queue, s.index, MusicPlayback.currentPositionMs(), context)
+        return true
     }
 
     /**

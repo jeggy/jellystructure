@@ -137,7 +137,7 @@ actual object MusicEngine {
     private var local: QueuePlayer? = null
     /** The cast's mirror ([CastSessionRemote]) while a cast is live; null = the phone's own player. */
     private var remote: Player? = null
-    private const val STOP_CAST = "ravilo.cast.stop"
+    private const val STOP_CAST = CastSessionRemote.STOP_CASTING_ACTION
     private val stopCast = SessionCommand(STOP_CAST, Bundle.EMPTY)
 
     /**
@@ -220,7 +220,7 @@ actual object MusicEngine {
             when (customCommand.customAction) {
                 BACK30 -> skipBy(-30_000L)
                 FWD30 -> skipBy(30_000L)
-                STOP_CAST -> CastSessionRemote.stopCasting()   // R356 (FR-R356-3)
+                STOP_CAST -> CastSessionRemote.onCardAction(customCommand.customAction)   // R356 (FR-R356-3, -14a)
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
