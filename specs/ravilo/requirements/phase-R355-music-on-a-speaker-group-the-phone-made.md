@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-02 (dev-authored) from a device investigation the same afternoon, against `main`
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, **device-tested on the Pixel 9 against the Stue and Gæsteværelse speakers**. Written 2026-10-02 (dev-authored) from a device investigation the same afternoon, against `main`
 `f98f6c52`. Number checked free on `main` and in every worktree (Ravilo specs top at R354). **Amends** R324
 (FR-R324-1/2: the sheet's rows; FR-R324-4: the device name the phone shows) and R353 (FR-R353-5's *Play* after a stop
 on the device). Android only; common decisions in `:ravilo-ui` commonMain. No wire change, no new string, no receiver
@@ -118,3 +118,52 @@ Google-drawn *Caster til {device}* line (the Cast SDK's own).
 3. The panel's ✓ on Stue: the music stays on Gæsteværelse and the names go back to *Gæsteværelse*.
 4. The same starting on Stue and adding Gæsteværelse (*Stue + Gæsteværelse*).
 5. A queue that plays out on the group, then two quick presses of Play: one `re-enrolled` line in the backend log.
+
+## Build notes (2026-10-02)
+
+Built on `main` `f98f6c52` (rebased onto `64a0073b`):
+
+1. **FR-R355-1** — `CastSender.members` (commonMain, default empty; `ActiveCastSender` passes the Chromecast side's).
+   `CastSenderAndroid` registers a MediaRouter callback with `MediaRouteSelector.EMPTY` and
+   `CALLBACK_FLAG_UNFILTERED_EVENTS` (no discovery), and on every route event and `Cast.Listener.onDeviceNameChanged`
+   reads the selected route: when it is a group, its `routesInGroup` whose `getSelectionState` is `SELECTED`. Seen on
+   the device: Play services' dynamic group route lists **every** Cast device as a candidate (the TVs, the hub, the
+   other speaker, even another session's *Stue + 1*), only the playing ones `SELECTED` — without the filter every
+   device in the house was a "member". Logged once per change on tag `RaviloCast` (*R355: session 'X' plays on […]*).
+2. **FR-R355-2** — `castSessionName` (`CastSender.kt`); the Android sender's `deviceName` is that name, so every screen
+   that showed the device (mini bar, Playing page, ⋯ block, remote, sheet) follows without a change of its own.
+3. **FR-R355-3** — `castRouteInSession` (`CastSender.kt`), used by `ScreensSheet`'s `connectedTo`; it also covers the
+   group's own route (*{member} + {n}*, Cast's name), which the sheet lists as a *Speaker group* row.
+4. **FR-R355-4** — `castResumeInFlight` + `CAST_RESUME_WINDOW_MS` (`MusicCast.kt`); `resumeOnDevice` keeps when it
+   sent, cleared by a live report or the link leaving CONNECTED.
+
+**Tests:** `CastGroupTest` (9 cases: one device keeps its name, two named first-speaker-first either order, three
+named and four counted, no member matching, blank/repeated names, every member and the group route are this session,
+another group is not, one hand-off per press) — `:ravilo-ui:testDebugUnitTest` and `:ravilo-ui:desktopTest`.
+`:shared:desktopTest`, `:ravilo-cast:jsBrowserProductionWebpack`, `:ravilo-android:assembleRelease`,
+`:ravilo-web:compileKotlinWasmJs` and the desktop compile pass; the fences pass.
+
+**Device (Pixel 9, debug build from this branch, phone media volume 0, Stue at 6–8 %, Gæsteværelse at 4 %, both read
+over the Cast protocol from the host; the receiver is production `v1.48-88`, unchanged):**
+- *Before* (installed debug `1.48-82`): both directions of ⊕ worked on the speakers (group endpoint, same receiver,
+  next song, phone *next*, the dashboard's pause/unpause, a queue played out and handed back, *Play* again, removing the
+  added speaker); the mini bar and Playing page read only the first speaker; *Play on…* read the added speaker
+  *Busy · Caster: {song}* (and once the leader *Ready*).
+- *After*: Gæsteværelse playing, ⊕ Stue from the panel with the app in the background → the mini bar
+  *{artist} · Gæsteværelse + Stue*, the Playing page *Playing on Gæsteværelse + Stue*, *Play on…* both rows *Speaker ·
+  Playing {song}*; a tap on Stue closed the sheet and nothing reached the server. The panel's ✓ on Stue → back to
+  *Gæsteværelse*, the music on. Stue playing, ⊕ Gæsteværelse with the app on screen → *Stue + Gæsteværelse*, both rows
+  playing, a tap on Gæsteværelse changes nothing. The Jellyfin dashboard's *Stop* → the song handed back paused; two
+  taps on Play 0 ms apart → **one** `re-enrolled` line in the backend log and the song playing on the speaker from its
+  place.
+
+**Seen, not fixed (recorded for follow-ups):**
+- A reinstall (or update) of the app while a group plays ends the phone's Cast session (Play services releases the
+  app's routing session: `onSessionEnded … SUCCESS`) and the group plays on. Afterwards *Play on…* lists the group as
+  *Stue + 1 · Speaker group · Busy · Caster: {song}*; picking a member speaker instead joined a session that showed
+  *Playing on Stue* but never got a status, and a load sent through it reached nothing. Rejoin through the group row.
+- R353's open question 1 is unchanged: a speaker playing Ravilo for another sender reads *Busy · Caster: {song}* (the
+  receiver framework's Danish status text) and asks *Stop Caster: {song} and play here?*.
+- No Google Home speaker group appeared in *Play on…* (Open question 2).
+
+**Nothing to deploy** for this phase beyond the app itself.
