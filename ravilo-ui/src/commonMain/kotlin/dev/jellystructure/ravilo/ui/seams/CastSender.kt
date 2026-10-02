@@ -111,6 +111,19 @@ class CastRoute(
 )
 
 /**
+ * R353 (FR-R353-1) — what a Cast route's status line says is running on the device, or null when it says nothing is.
+ * The route provider puts the running receiver app's status there ("Spotify") — and, when NO app runs, the device's
+ * model name ("Nest Wifi point", "Google Nest Hub"). Read as an app, the model name made every idle device *Busy* and
+ * tapping an idle speaker asked to stop "Nest Wifi point" (Pixel 9, Android 16, 2026-10-02). A line that is only the
+ * model name (or the device's own name) is an idle device.
+ */
+fun castRouteBusyWith(description: String?, modelName: String?, friendlyName: String? = null): String? {
+    val said = description?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    if (listOfNotNull(modelName, friendlyName).any { it.trim().equals(said, ignoreCase = true) }) return null
+    return said
+}
+
+/**
  * R265 (FR-R265-3) — the Chromecasts that answer for [appId], actively scanned for only while
  * [discovering] (the app is on screen — R293), listened for passively otherwise. Empty where there is no Cast SDK (the web)
  * and while [appId] is null (the server has no Chromecast capability: absent, never greyed).
