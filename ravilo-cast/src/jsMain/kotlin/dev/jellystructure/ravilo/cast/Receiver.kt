@@ -354,13 +354,8 @@ private class Receiver {
         el("loading-label").textContent = ReceiverStrings.t("loading")
         el("nextup").classList.remove("on")
         show("loading")
-        // 218 FR-218-9 — enrol once per receiver when storage survived, else per cast.
-        if (mustEnrol(data)) {
-            val enrolled = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }
-            val pr = enrolled.getOrElse { e -> return failLoad(e) }
-            token = pr.deviceToken; receiverId = pr.session.deviceId
-            localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
-        }
+        // 218 FR-218-9 / 300 FR-300-1 — every sender's LOAD enrols: the server stores that sender's live sign-in.
+        enrol(data, api)?.let { e -> return failLoad(e) }
         if (config == null) config = runCatching { api.getConfig() }.getOrNull()
         // …and the receiver's own config only as a fallback. It used to overwrite `lang` outright,
         // which was wrong twice over: `config` is fetched once and cached across casts, so a second
@@ -426,13 +421,34 @@ private class Receiver {
     }
 
     /**
-     * 218 FR-218-9 — enrol once per receiver when storage survived, else per cast. Only a sender's LOAD can enrol: it
+     * 218 FR-218-9, amended by 300 FR-300-1 — every sender's LOAD enrols (it used to be once per receiver when storage
+     * survived, which left a receiver on its first sender's sign-in for good). Only a sender's LOAD can enrol: it
      * carries the code. The receiver's own loads (the next song, the next episode, a restream) repeat the sender's
      * data without one — and a sender that had just come from another device sent that device's id along, so the
      * first *Next* on the TV asked to enrol with an empty code and showed the no-server screen (289 FR-289-7).
      */
-    private fun mustEnrol(data: CastLoadData): Boolean =
-        data.code.isNotEmpty() && (token == null || receiverId == null || (data.receiverId != null && data.receiverId != receiverId))
+    private fun mustEnrol(data: CastLoadData): Boolean = data.code.isNotEmpty()
+
+    /**
+     * Phase 300 (FR-300-1) — redeems a sender's code, every time one comes (it used to be only the first time, so a
+     * receiver kept its first sender's Jellyfin sign-in after that sender signed in again, and a second user's cast
+     * played under the first user's account). The server stores the sender's live sign-in on this receiver's row for
+     * that user and answers with that row's device token. Returns the failure to show, or null to go on: a failed
+     * redemption with a token already held goes on with it (a retried LOAD re-sends a used code).
+     */
+    private suspend fun enrol(data: CastLoadData, api: TvApiClient): Throwable? {
+        if (!mustEnrol(data)) return null
+        val pr = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }.getOrElse { e ->
+            if (token != null && receiverId != null) { note("enrol failed, keeping this receiver's sign-in: ${e::class.simpleName}"); return null }
+            return e
+        }
+        // Another user's device token: their config (language, theme) is fetched afresh. The events socket follows the
+        // token by itself (its key holds it).
+        if (pr.deviceToken != token) config = null
+        token = pr.deviceToken; receiverId = pr.session.deviceId
+        localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
+        return null
+    }
 
     private fun failLoad(e: Throwable): dynamic {
         el("noserver-t").textContent = ReceiverStrings.t("cast.no_server"); el("noserver-s").textContent = ReceiverStrings.t("cast.no_server_sub")
@@ -565,12 +581,7 @@ private class Receiver {
         current = data.copy(itemId = t.id, title = t.title, kicker = t.artist, artUrl = absolute(t.coverUrl), currentIndex = i)
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         if (!isHeadless()) { paintNow(); show("nowplaying", "buffering") }
-        if (mustEnrol(data)) {
-            val enrolled = runCatching { api.castRedeem(data.code, data.deviceName, receiverId) }
-            val pr = enrolled.getOrElse { e -> return failLoad(e) }
-            token = pr.deviceToken; receiverId = pr.session.deviceId
-            localStorage.setItem(TOKEN_KEY, pr.deviceToken); localStorage.setItem(RECEIVER_ID_KEY, pr.session.deviceId)
-        }
+        enrol(data, api)?.let { e -> return failLoad(e) }   // 300 FR-300-1
         if (config == null) config = runCatching { api.getConfig() }.getOrNull()
         ReceiverStrings.adopt(data.lang, config?.uiLanguage)
         val startAt = data.positionMs
