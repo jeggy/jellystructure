@@ -34,6 +34,8 @@ import dev.jellystructure.shared.tv.ReceiverRemoteAction
 import dev.jellystructure.shared.tv.ReceiverRemoteState
 import dev.jellystructure.shared.tv.RemoteCommand
 import dev.jellystructure.shared.tv.RemoteVolume
+import dev.jellystructure.shared.tv.VolumeReport
+import dev.jellystructure.shared.tv.volumeReportOf
 import dev.jellystructure.shared.tv.receiverRemoteAction
 import dev.jellystructure.shared.tv.remoteCommandOf
 import io.ktor.client.HttpClient
@@ -77,6 +79,8 @@ private const val LYRICS_KEY = "ravilo.cast.lyrics"
 private const val TRANSPORT_MS = 5_000L
 /** R356 (FR-R356-14b) — after another controller's STOP, how long before the app closes (CAF tells the senders first). */
 private const val SENDER_STOP_CLOSE_MS = 400L
+/** R357 (FR-R357-4) — how long the device's volume must hold still before it is reported (a dragged slider is one report). */
+private const val VOLUME_SETTLE_MS = 300L
 
 private class Receiver {
     private val cast: dynamic = js("window.cast")
@@ -114,6 +118,9 @@ private class Receiver {
     /** The device's own volume as a remote command moves it; synced from CAF before each command. */
     private val remoteVolume = RemoteVolume()
     private var pausedBeat: Job? = null
+    /** R357 (FR-R357-4) — the volume the last at-once report said, so CAF's own event after a command is not a second one. */
+    private var volumeSent: VolumeReport? = null
+    private var volumeJob: Job? = null
 
     // ── 286 — music: the receiver owns the queue (FR-286-4) ──
     /** Null until the first LOAD asked; true on an audio-only device (FR-286-3), where no screen is ever built. */
@@ -202,6 +209,15 @@ private class Receiver {
         // 289 — registered so that the receiver may speak on it; nothing is ever said to it.
         runCatching { context.addCustomMessageListener(CAST_LOG_NAMESPACE) { _: dynamic -> } }
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
+        // R357 (FR-R357-4) — the device's volume moved (a sender's slider, the TV's own remote, a dashboard command):
+        // one progress report at once. Registered on its own, like every event this framework build may not have.
+        runCatching {
+            val changed: dynamic = cast.framework.system.EventType.SYSTEM_VOLUME_CHANGED
+            if (changed != null) context.addEventListener(changed) { ev: dynamic ->
+                val d: dynamic = ev?.data
+                reportVolumeNow(volumeReportOf(d?.level as? Double, d?.muted as? Boolean) ?: systemVolume())
+            }
+        }.onFailure { console.warn("ravilo-cast: no SYSTEM_VOLUME_CHANGED on this framework (${it.message})") }
         // R356 (FR-R356-8/10) — a sender that connects (a phone that resumes, the Mac, an installed app older than R356)
         // gets the whole queue in the next status; the ones without it are only for senders that hold it already.
         runCatching {
@@ -331,12 +347,40 @@ private class Receiver {
             ReceiverRemoteAction.MusicPrevious -> { showTransport(); musicPrevious() }
             ReceiverRemoteAction.EpisodeNext -> loadNext()
             ReceiverRemoteAction.EpisodePrevious -> loadEpisode(-1)
-            is ReceiverRemoteAction.Volume -> runCatching {
-                context.setSystemVolumeLevel(action.level.toDouble())
-                context.setSystemVolumeMuted(action.muted)
+            is ReceiverRemoteAction.Volume -> {
+                runCatching {
+                    context.setSystemVolumeLevel(action.level.toDouble())
+                    context.setSystemVolumeMuted(action.muted)
+                }
+                reportVolumeNow(remoteVolume.report())   // R357 (FR-R357-4) — what the command set, at once
             }
         }
         sendStatus()
+    }
+
+    /**
+     * R357 (FR-R357-3) — the device's own volume (CAF's system volume: level × 100 and muted), the one its senders'
+     * sliders show and R354's commands move; every progress report says it. Null when CAF does not say (FR-R357-5).
+     */
+    private fun systemVolume(): VolumeReport? = runCatching {
+        val sv: dynamic = context.getSystemVolume()
+        volumeReportOf(sv?.level as? Double, sv?.muted as? Boolean)
+    }.getOrNull()
+
+    /**
+     * R357 (FR-R357-4) — one progress report with [v] once the volume has held still, while an item is loaded; never the
+     * same volume twice in a row.
+     */
+    private fun reportVolumeNow(v: VolumeReport?) {
+        if (current == null || v == null) return
+        volumeJob?.cancel()
+        volumeJob = GlobalScope.launch {
+            delay(VOLUME_SETTLE_MS)
+            val d = current ?: return@launch
+            if (v == volumeSent) return@launch
+            volumeSent = v
+            runCatching { api?.reportProgress(d.itemId, positionMs, paused, v) }
+        }
     }
 
     /**
@@ -377,7 +421,7 @@ private class Receiver {
                 delay(RECEIVER_PAUSED_BEAT_MS)
                 val d = current ?: break
                 if (!paused) break
-                runCatching { api?.reportProgress(d.itemId, positionMs, true) }
+                runCatching { api?.reportProgress(d.itemId, positionMs, true, systemVolume()) }
             }
         }
     }
@@ -891,7 +935,8 @@ private class Receiver {
         val now = nowMs()
         if (now - lastProgressAt >= PROGRESS_EVERY_MS) {
             lastProgressAt = now
-            GlobalScope.launch { runCatching { api?.reportProgress(data.itemId, positionMs, paused) } }
+            val vol = systemVolume()   // R357 (FR-R357-3)
+            GlobalScope.launch { runCatching { api?.reportProgress(data.itemId, positionMs, paused, vol) } }
         }
         // Next-up card near the end (the receiver owns the countdown; the phone mirrors it). R351 (FR-R351-13) — the
         // credits marker or 20 s before the end, but never so late that the countdown cannot finish before the end.
@@ -907,7 +952,7 @@ private class Receiver {
         when (st) {
             "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
             "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (music) { show("nowplaying"); paintTransport() } else show() }
-            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true) } }; beatWhilePaused() }
+            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
             "IDLE" -> {}
         }
         sendStatus()
