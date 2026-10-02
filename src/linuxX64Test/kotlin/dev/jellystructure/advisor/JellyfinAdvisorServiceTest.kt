@@ -94,6 +94,45 @@ class JellyfinAdvisorServiceTest {
         assertTrue(JellyfinAdvisorService.metadataOwnershipFindings(lib).isEmpty())
     }
 
+    // ── Phase 296 — the loudness finding is about music only ────────────────────
+
+    private fun typed(name: String, type: String?, lufs: Boolean?) =
+        JellyfinLibrary(id = name, name = name, collectionType = type, libraryOptions = JellyfinLibraryOptions(enableLufsScan = lufs))
+
+    @Test
+    fun lufsOnIsSilentOnEveryHouseholdLibrary() {
+        // The household's real 2026-10-02 values: on in six libraries, Musik the only `music` one. Jellyfin
+        // shows the checkbox on none of the other five and measures nothing there.
+        val libs = listOf(
+            typed("Film", "movies", true), typed("Musik Videoer", "musicvideos", true),
+            typed("Blandet", "homevideos", true), typed("Bøger", "books", true),
+            typed("Serier", "tvshows", true), typed("Musik", "music", true),
+        )
+        for (lib in libs) {
+            assertNull(JellyfinAdvisorService.lufsFinding(lib, rotational = true, disk = " (sdc)"), lib.name)
+        }
+    }
+
+    @Test
+    fun lufsOffOnAMusicLibraryFiresOnAnyStorage() {
+        for (rotational in listOf(true, false)) {
+            val f = JellyfinAdvisorService.lufsFinding(typed("Musik", "music", false), rotational, " (sdc)")
+            assertEquals("lufs_Musik", f?.id)
+            assertEquals(JellyfinAdvisorService.WARNING, f?.severity)
+            assertEquals("Turn on.", f?.recommendation)
+        }
+    }
+
+    @Test
+    fun lufsOffOutsideMusicIsSilent() {
+        assertNull(JellyfinAdvisorService.lufsFinding(typed("Film", "movies", false), rotational = true, disk = ""))
+    }
+
+    @Test
+    fun lufsAbsentIsUnknownNotOff() {
+        assertNull(JellyfinAdvisorService.lufsFinding(typed("Musik", "music", null), rotational = true, disk = ""))
+    }
+
     // ── Phase 246 FR-246-11 — deriving a local path for an unmanaged library ────
 
     @Test

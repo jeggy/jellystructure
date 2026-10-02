@@ -103,7 +103,9 @@ data class JellyfinLibraryOptions(
     @SerialName("ExtractChapterImagesDuringLibraryScan") val extractChapterImagesDuringLibraryScan: Boolean = false,
     @SerialName("EnableTrickplayImageExtraction") val enableTrickplayImageExtraction: Boolean = false,
     @SerialName("ExtractTrickplayImagesDuringLibraryScan") val extractTrickplayImagesDuringLibraryScan: Boolean = false,
-    @SerialName("EnableLUFSScan") val enableLufsScan: Boolean = false,
+    // Phase 296 FR-296-4 — nullable for 242's reason: the finding fires on an explicit `false`, so a renamed
+    // key must read as unknown, never as off.
+    @SerialName("EnableLUFSScan") val enableLufsScan: Boolean? = null,
 )
 
 // Phase 242 (FR-242-4) — the per-item-type fetcher lists, i.e. whether Jellyfin goes to an external

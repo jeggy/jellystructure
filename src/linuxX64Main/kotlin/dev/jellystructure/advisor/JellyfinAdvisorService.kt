@@ -218,19 +218,7 @@ object JellyfinAdvisorService {
             )
         }
         // (d)
-        if (opts.enableLufsScan && rotational) {
-            out += AdvisorFinding(
-                id = "lufs_${lib.id}",
-                severity = WARNING,
-                summary = "LUFS loudness scan is on, on rotational storage",
-                currentValue = "Enable LUFS scan: On",
-                costHere = "The full audio track of every title in ${lib.name} is read to measure loudness, on a spinning disk$disk.",
-                navigationPath = path,
-                fieldLabel = "\"Enable LUFS scan\" (LabelEnableLUFSScan)",
-                recommendation = "Turn off unless Jellyfin's own clients are relied on for loudness normalisation.",
-                tradeoff = "Jellyfin's own clients lose automatic loudness normalisation for this library. Ravilo reads no loudness value, so nothing changes there.",
-            )
-        }
+        lufsFinding(lib, rotational, disk)?.let { out += it }
         // (e) — consistency check, fires regardless of storage
         if (!opts.enableTrickplayImageExtraction && opts.extractTrickplayImagesDuringLibraryScan) {
             out += AdvisorFinding(
@@ -246,6 +234,31 @@ object JellyfinAdvisorService {
             )
         }
         return out
+    }
+
+    /** Phase 296 — loudness is a music-library question. Jellyfin's library editor shows "Enable LUFS scan"
+     *  only when the collection type is `music`, and its loudness task measures only songs and albums, so on
+     *  any other library the switch is both invisible and inert. On a music library Ravilo's player evens
+     *  out the volume from the result (MusicQueue.kt), so on is right and off is the finding. An absent key
+     *  is unknown and stays silent (FR-296-4). */
+    internal fun lufsFinding(lib: JellyfinLibrary, rotational: Boolean, disk: String): AdvisorFinding? {
+        if (lib.collectionType != "music") return null
+        if (lib.libraryOptions?.enableLufsScan != false) return null
+        return AdvisorFinding(
+            id = "lufs_${lib.id}",
+            severity = WARNING,
+            summary = "Loudness scan is off for a music library",
+            currentValue = "Enable LUFS scan: Off",
+            costHere = "Ravilo's music player evens out the volume between songs from Jellyfin's loudness values. With the scan off the songs in ${lib.name} carry none, so each plays at its own level.",
+            navigationPath = "Dashboard → Libraries → ${lib.name} → Manage library",
+            fieldLabel = "\"Enable LUFS scan\" (LabelEnableLUFSScan)",
+            recommendation = "Turn on.",
+            tradeoff = if (rotational) {
+                "Each song is read once in full to measure it, on a spinning disk$disk. Songs already measured are not read again."
+            } else {
+                "Each song is read once in full to measure it. Songs already measured are not read again."
+            },
+        )
     }
 
     /** FR-246-12 — what the owning scheduled task is doing right now, appended to the finding's current
