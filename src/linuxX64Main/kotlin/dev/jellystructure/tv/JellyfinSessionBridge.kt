@@ -15,7 +15,12 @@ import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.close
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -63,6 +68,8 @@ class JellyfinSessionBridge(
     private val mediaStore: MediaStore,
     // R303 (FR-R303-2) — the dashboard's own *Play on* names what is playing too; null = kind + title only.
     private val playPushResolver: PlayPushResolver? = null,
+    // Phase 296 (FR-296-5) — the grace before a closed device's bridge (and so its Jellyfin session) ends; a test shortens it.
+    graceMs: Long = BRIDGE_GRACE_MS,
 ) {
     private val http = HttpClient(Curl) { install(WebSockets) }
     private val jellyfinClient = JellyfinClient()
@@ -84,8 +91,12 @@ class JellyfinSessionBridge(
     private val lock = SpinLock()
     private val active = HashMap<String, Job>() // deviceId -> connection loop job
     // Phase 256 (FR-256-4) — a close schedules the disconnect 90 s out; a reconnect in time cancels it.
-    private val deferred = DeferredDisconnects(scope, BRIDGE_GRACE_MS) { disconnect(it) }
+    private val deferred = DeferredDisconnects(scope, graceMs) { disconnect(it) }
     private val state = HashMap<String, BridgeState>() // deviceId -> FR-238-2/-3 observability state
+    // Phase 296 (FR-296-1) — what each device declared on its events socket; null = an app older than R354.
+    private val declared = HashMap<String, List<String>?>()
+    // The device and token a live bridge registered under, so a changed declaration can be re-posted (FR-296-2).
+    private val registeredWith = HashMap<String, Pair<DeviceData, String>>()
 
     /** Mutable per-device bridge state. Only ever touched under [lock]. */
     private data class BridgeState(
@@ -98,15 +109,32 @@ class JellyfinSessionBridge(
         var neverAttempted: Boolean = false,
     )
 
-    /** Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. */
-    fun connect(device: DeviceData) {
+    /**
+     * Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. Phase 296 (FR-296-1/-2):
+     * [commands] is what the device declared on its events socket (`remote=`), null for an app that declares nothing;
+     * a reconnect that declares something different re-posts the capabilities on the bridge that is already up.
+     */
+    fun connect(device: DeviceData, commands: List<String>? = null) {
         // Phase 256 (FR-256-4, dev review item 3) — the device came back inside the grace: the pending
         // disconnect goes, and the guard below finds the bridge still active — no new Jellyfin session.
         if (deferred.cancel(device.deviceId)) scope.launch { Logger.info("Jellyfin session bridge kept: device=${device.deviceId} reconnected within the grace", "tv") }
+        var repost: Pair<DeviceData, String>? = null
         val start = lock.withLock {
-            if (active.containsKey(device.deviceId)) return@withLock false
+            val changed = declared.containsKey(device.deviceId) && declared[device.deviceId] != commands
+            declared[device.deviceId] = commands
+            if (active.containsKey(device.deviceId)) {
+                if (changed) repost = registeredWith[device.deviceId]
+                return@withLock false
+            }
             state.getOrPut(device.deviceId) { BridgeState() }
             true
+        }
+        repost?.let { (registered, token) ->
+            scope.launch {
+                val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+                if (base.isNotBlank()) jellyfinClient.postCapabilities(base, token, JellyfinDeviceIdentity.forDevice(registered), capabilitiesBody(commands))
+                Logger.info("Jellyfin session bridge: device=${device.deviceId} re-registered ${commands ?: "legacy"}", "tv")
+            }
         }
         if (!start) return
         val job = scope.launch { runLoop(device) }
@@ -128,9 +156,46 @@ class JellyfinSessionBridge(
         deferred.cancel(deviceId)
         val job = lock.withLock {
             state.remove(deviceId)
+            declared.remove(deviceId)
+            registeredWith.remove(deviceId)
             active.remove(deviceId)
         }
         job?.cancel()
+    }
+
+    /** Phase 296 (FR-296-6) — is a bridge open for [deviceId], or in its grace (and so about to end on its own)? */
+    fun isBridged(deviceId: String): Boolean = lock.withLock { active.containsKey(deviceId) } || deferred.isPending(deviceId)
+
+    /**
+     * Phase 296 (FR-296-6) — ends [device]'s Jellyfin session when no socket ever held it: opens `/socket` under the
+     * device's own identity and token, waits for Jellyfin's first frame (the session controller is attached by then),
+     * and closes. Jellyfin then finds no live socket on the session and ends it (`CloseIfNeededAsync`), exactly as when
+     * a TV's bridge closes. Never a logout: that deletes the token, and a receiver's token is its phone's.
+     * True when the socket opened and closed.
+     */
+    suspend fun endJellyfinSession(device: DeviceData): Boolean {
+        if (isBridged(device.deviceId)) return false
+        val cfg = configStore.current
+        val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+        if (base.isBlank() || device.jellyfinUserToken.isBlank()) return false
+        val identity = JellyfinDeviceIdentity.forDevice(device)
+        val token = jellyfinClient.tvToken(base, device, cfg.apiKeys.jellyfinToken)
+        val wsUrl = base.replaceFirst(Regex("^http"), "ws") + "/socket?deviceId=${identity.deviceId}"
+        return try {
+            withTimeout(10_000L) {
+                http.webSocket(wsUrl, request = { jellyfinAuth(token, identity) }) {
+                    withTimeoutOrNull(5_000L) { incoming.receiveCatching() }
+                    close(CloseReason(CloseReason.Codes.NORMAL, "idle"))
+                }
+            }
+            true
+        } catch (e: TimeoutCancellationException) {
+            false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            false
+        }
     }
 
     /**
@@ -148,6 +213,7 @@ class JellyfinSessionBridge(
                     lastError = st.lastError,
                     lastConnectedMsAgo = st.lastConnectedAtMs?.let { now - it },
                     neverAttempted = st.neverAttempted,
+                    commands = declared[deviceId],
                 )
             }.sortedBy { it.deviceId }
         }
@@ -263,7 +329,9 @@ class JellyfinSessionBridge(
                         Logger.info("Jellyfin session bridge connected: device=${device.deviceId} user=${device.jellyfinUserId}", "tv")
                         backoff = RECONNECT_BASE_MS
                         recordConnected(device.deviceId)
-                        runCatching { jellyfinClient.postCapabilities(base, effectiveToken, identity) }
+                        // Phase 296 (FR-296-2) — what the device declared; phase 110's registration when it declared nothing.
+                        val commands = lock.withLock { registeredWith[device.deviceId] = device to effectiveToken; declared[device.deviceId] }
+                        runCatching { jellyfinClient.postCapabilities(base, effectiveToken, identity, capabilitiesBody(commands)) }
 
                         val keepaliveJob = launch {
                             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
@@ -304,39 +372,25 @@ class JellyfinSessionBridge(
     }
 
     // FR C.3 — inbound command routing: Jellyfin dashboard/Home Assistant → this device's own
-    // /api/tv/events socket, via TvEventBus's device-addressed events.
+    // /api/tv/events socket, via TvEventBus's device-addressed events. Phase 296 (FR-296-3): the reading of a frame
+    // is `parseJellyfinMessage` (pure, tested); this only delivers it.
     private suspend fun handleIncoming(device: DeviceData, raw: String) {
-        val json = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return
-        val messageType = json["MessageType"]?.jsonPrimitive?.contentOrNull ?: return
-        val data = json["Data"] as? JsonObject
-        when (messageType) {
-            "GeneralCommand" -> {
-                val name = data?.get("Name")?.jsonPrimitive?.contentOrNull ?: return
-                if (name != "DisplayMessage") return
-                val args = data["Arguments"] as? JsonObject ?: return
-                val text = args["Text"]?.jsonPrimitive?.contentOrNull ?: return
-                val header = args["Header"]?.jsonPrimitive?.contentOrNull
-                val timeoutMs = args["TimeoutMs"]?.jsonPrimitive?.longOrNull
-                tvEventBus.notifyServerMessage(device.jellyfinUserId, device.deviceId, text, header, timeoutMs)
-            }
-            "Play" -> {
-                val itemId = data?.get("ItemIds")?.jsonArray?.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return
-                val startTicks = data["StartPositionTicks"]?.jsonPrimitive?.longOrNull ?: 0L
-                val push = playPushResolver?.resolve(itemId)
-                val (kind, title) = push?.let { it.kind to it.title } ?: mediaStore.resolvePlayTarget(itemId) ?: ("movie" to null)
+        when (val cmd = parseJellyfinMessage(raw) ?: return) {
+            is BridgeCommand.Message ->
+                tvEventBus.notifyServerMessage(device.jellyfinUserId, device.deviceId, cmd.text, cmd.header, cmd.timeoutMs)
+            is BridgeCommand.PlayItem -> {
+                val push = playPushResolver?.resolve(cmd.itemId)
+                val (kind, title) = push?.let { it.kind to it.title } ?: mediaStore.resolvePlayTarget(cmd.itemId) ?: ("movie" to null)
                 tvEventBus.notifyPlayItem(
-                    device.jellyfinUserId, device.deviceId, itemId, kind, title, startTicks / 10_000L,
+                    device.jellyfinUserId, device.deviceId, cmd.itemId, kind, title, cmd.startMs,
                     kicker = push?.kicker, seriesName = push?.seriesName, logoUrl = push?.logoUrl, logoInk = push?.logoInk,
                     segments = push?.segments, next = push?.next,   // R264
                 )
             }
-            "Playstate" -> {
-                val command = data?.get("Command")?.jsonPrimitive?.contentOrNull ?: return
-                val seekTicks = data["SeekPositionTicks"]?.jsonPrimitive?.longOrNull
-                tvEventBus.notifyPlaystateCommand(device.jellyfinUserId, device.deviceId, command, seekTicks?.let { it / 10_000L })
-            }
-            // ForceKeepAlive and anything else: no action needed — our own keepaliveJob answers pings.
-            else -> Unit
+            is BridgeCommand.Playstate ->
+                tvEventBus.notifyPlaystateCommand(device.jellyfinUserId, device.deviceId, cmd.command, cmd.seekMs)
+            is BridgeCommand.Player ->
+                tvEventBus.notifyPlayerCommand(device.jellyfinUserId, device.deviceId, cmd.command, cmd.argsJson)
         }
     }
 }

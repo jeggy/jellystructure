@@ -763,7 +763,8 @@ fun startServer(
                     // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
                     // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
                     // down the TV's own event socket.
-                    runCatching { sessionBridge.connect(device) }
+                    // Phase 296 (FR-296-1) — `remote=` is what this device obeys; absent = phase 110's registration.
+                    runCatching { sessionBridge.connect(device, dev.jellystructure.tv.parseRemoteDeclaration(call.request.queryParameters["remote"])) }
                     // Phase 236 (FR-236-3, open question 1) — a Ravilo client subscribes to another device's
                     // status on this same authenticated, already-reconnecting socket rather than opening a
                     // second one; scoped to this device's own user, exactly like every other event on it.
