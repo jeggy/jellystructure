@@ -28,11 +28,12 @@ class PlaybackWriterTest {
         val progressLanded = mutableListOf<Long>()
         val stopsLanded = mutableListOf<Long>()
         val startOverFlags = mutableListOf<Boolean>()
+        val volumesLanded = mutableListOf<Pair<Int?, Boolean?>>()
         var calls = 0
         override suspend fun progress(w: PlaybackWriter.PendingWrite): Boolean {
             calls++
             if (failFirst > 0) { failFirst--; throw IllegalStateException("Timed out waiting for 6000 ms") }
-            progressLanded += w.positionMs; return true
+            progressLanded += w.positionMs; volumesLanded += w.volumePercent to w.muted; return true
         }
         override suspend fun stop(w: PlaybackWriter.PendingWrite): Boolean {
             calls++
@@ -111,6 +112,27 @@ class PlaybackWriterTest {
         writer.awaitIdle()
         assertEquals(listOf(228_000L), sink.stopsLanded)
         assertEquals(listOf(true), sink.startOverFlags)
+        scope.cancel()
+    }
+
+    @Test
+    fun `a coalesced tick keeps the latest volume`() = runBlocking {
+        // R357 (FR-R357-2) — the newest report's volume wins; a tick with none (a server-made write) keeps the one
+        // it replaces, so a queued report never loses the player's level.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sink = FakeSink(failFirst = 1)
+        val writer = PlaybackWriter(scope, sink, baseBackoffMs = 30, maxBackoffMs = 60)
+        val tv = device()
+        writer.enqueueProgress(tv, "ep1", 1_000L, false, 80, false)
+        writer.enqueueProgress(tv, "ep1", 2_000L, false, 35, true)
+        writer.enqueueProgress(tv, "ep1", 3_000L, false)
+        writer.awaitIdle()
+        assertEquals(listOf(3_000L), sink.progressLanded)
+        assertEquals(listOf<Pair<Int?, Boolean?>>(35 to true), sink.volumesLanded)
+        // Without any volume the write carries none.
+        writer.enqueueProgress(tv, "ep2", 1_000L, false)
+        writer.awaitIdle()
+        assertEquals(null to null, sink.volumesLanded.last())
         scope.cancel()
     }
 }

@@ -23,6 +23,7 @@ class AudiobooksTvServiceTest {
     private lateinit var svc: AudiobooksTvService
     private val mirrored = mutableListOf<Pair<String, Long>>()
     private val played = mutableListOf<String>()
+    private val volumes = mutableListOf<Pair<Int?, Boolean?>>()
 
     private val open = device(null)
     private val other = device(setOf("libother"))
@@ -38,7 +39,7 @@ class AudiobooksTvServiceTest {
             AudiobookPart(id = "q0", bookId = "F2", number = 1, position = 0, durationMs = 4 * min)
         store.replaceLibrary(AudiobooksRows("lib", listOf(book, short), parts, emptyList(), 0))
         svc = AudiobooksTvService(store,
-            mirror = { _, part, pos, _ -> mirrored += part to pos },
+            mirror = { _, part, pos, _, vol, muted -> mirrored += part to pos; volumes += vol to muted },
             markPlayed = { _, ids -> played += ids })
     }
 
@@ -67,6 +68,14 @@ class AudiobooksTvServiceTest {
         assertEquals(35 * min, cont.leftMs)
         assertEquals(2, cont.part); assertEquals(3, cont.parts)
         assertEquals(2, cont.chapter, "file boundaries: one chapter per part")
+    }
+
+    @Test
+    fun a_heartbeats_volume_reaches_the_mirror() = runBlocking {
+        // R357 (FR-R357-2) — the player's level and mute go to Jellyfin's mirror; a heartbeat without them carries none.
+        svc.progress(open, "F1", 0, 3 * min, paused = false, volumePercent = 35, muted = true)
+        svc.progress(open, "F1", 0, 4 * min, paused = false)
+        assertEquals(listOf<Pair<Int?, Boolean?>>(35 to true, null to null), volumes)
     }
 
     @Test

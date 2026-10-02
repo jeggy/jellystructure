@@ -1007,12 +1007,14 @@ class JellyfinClient {
         mediaSourceId: String,
         identity: JellyfinDeviceIdentity? = null,
         playSessionId: String? = null,
+        /** R357 (FR-R357-2) — the player's level (0–100) and mute, when its report carried them. */
+        volumePercent: Int? = null,
+        muted: Boolean? = null,
     ) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
-            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid}""")
+            setBody(jellyfinProgressBody(jellyfinId, positionTicks, isPaused, mediaSourceId, playSessionId, volumePercent, muted))
         }
     }.let {
         // Phase 219 (FR-219-1) — 210's rule: never swallow the caller's own cancellation as a "failure".
@@ -1025,12 +1027,12 @@ class JellyfinClient {
     suspend fun postPlaybackProgress(
         baseUrl: String, userToken: String, jellyfinId: String, positionTicks: Long, isPaused: Boolean,
         mediaSourceId: String, identity: JellyfinDeviceIdentity? = null, playSessionId: String? = null,
+        volumePercent: Int? = null, muted: Boolean? = null,   // R357 (FR-R357-2) — a queued report keeps them
     ): Boolean {
         val r = httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
-            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid}""")
+            setBody(jellyfinProgressBody(jellyfinId, positionTicks, isPaused, mediaSourceId, playSessionId, volumePercent, muted))
         }
         if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a progress report")
         return true
@@ -1543,6 +1545,21 @@ data class JellyfinDeviceIdentity(
 
 /** What Jellyfin is told when a Ravilo client signs in without saying which build it is. */
 internal const val UNKNOWN_CLIENT_VERSION = "0.0.0"
+
+/**
+ * The body of Jellyfin's `POST /Sessions/Playing/Progress`, for both the inline report and the 219 writer's. R357
+ * (FR-R357-2): a report that carried the player's volume adds `VolumeLevel` (clamped 0–100) and `IsMuted`, which
+ * Jellyfin shows as the session's `PlayState`; without them the body is byte for byte the pre-R357 one.
+ */
+internal fun jellyfinProgressBody(
+    jellyfinId: String, positionTicks: Long, isPaused: Boolean, mediaSourceId: String, playSessionId: String?,
+    volumePercent: Int? = null, muted: Boolean? = null,
+): String {
+    val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+    val volume = (volumePercent?.let { ""","VolumeLevel":${it.coerceIn(0, 100)}""" } ?: "") +
+        (muted?.let { ""","IsMuted":$it""" } ?: "")
+    return """{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid$volume}"""
+}
 
 internal fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", " ").take(64)
 

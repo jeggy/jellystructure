@@ -1347,6 +1347,12 @@ data class PlaybackProgressRequest(
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
     @SerialName("is_paused") val isPaused: Boolean = false,
+    /** R357 (FR-R357-1) — the player's own level, 0–100, the one the dashboard's `SetVolume` moves. Absent when
+     *  the player cannot know it (FR-R357-5) and from an app older than R357; an older server ignores it (its
+     *  ContentNegotiation decodes with unknown keys ignored). */
+    @SerialName("volume_percent") val volumePercent: Int? = null,
+    /** R357 (FR-R357-1) — the player is muted. Absent exactly when [volumePercent] is. */
+    val muted: Boolean? = null,
 )
 
 @Serializable

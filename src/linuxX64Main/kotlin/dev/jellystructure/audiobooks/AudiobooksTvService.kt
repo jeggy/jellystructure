@@ -27,7 +27,8 @@ import io.ktor.http.encodeURLPathPart
 class AudiobooksTvService(
     private val store: AudiobooksStore,
     /** A heartbeat relayed to Jellyfin on the part's own item (the session the part's play started). */
-    private val mirror: suspend (device: DeviceData, partId: String, positionMs: Long, paused: Boolean) -> Unit = { _, _, _, _ -> },
+    /** R357 (FR-R357-2) — with the player's volume (0–100) and mute when the heartbeat carried them. */
+    private val mirror: suspend (device: DeviceData, partId: String, positionMs: Long, paused: Boolean, volumePercent: Int?, muted: Boolean?) -> Unit = { _, _, _, _, _, _ -> },
     /** Parts the listener has moved past, marked played in Jellyfin. */
     private val markPlayed: suspend (device: DeviceData, partIds: List<String>) -> Unit = { _, _ -> },
 ) {
@@ -116,13 +117,14 @@ class AudiobooksTvService(
     }
 
     /** A heartbeat (dev review of 280, item 1): ours first, then the mirror. */
-    suspend fun progress(device: DeviceData, bookId: String, part: Int, positionMs: Long, paused: Boolean): AudiobookPosition? {
+    suspend fun progress(device: DeviceData, bookId: String, part: Int, positionMs: Long, paused: Boolean,
+                         volumePercent: Int? = null, muted: Boolean? = null): AudiobookPosition? {
         visibleBook(device, bookId) ?: return null
         val ps = parts(bookId)
         val here = ps.getOrNull(part) ?: return null
         val before = store.progress(device.jellyfinUserId, bookId)
         val saved = store.saveProgress(device.jellyfinUserId, bookId, part, positionMs.coerceIn(0L, here.durationMs ?: Long.MAX_VALUE))
-        runCatching { mirror(device, here.id, saved.positionMs, paused) }
+        runCatching { mirror(device, here.id, saved.positionMs, paused, volumePercent, muted) }
         val from = before?.partIndex ?: 0
         if (part > from) runCatching { markPlayed(device, ps.subList(from.coerceAtLeast(0), part).map { it.id }) }
         return position(saved)

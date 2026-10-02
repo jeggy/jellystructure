@@ -442,6 +442,7 @@ class PlaybackService(
             return jellyfinClient.postPlaybackProgress(
                 jellyfinBase, token, w.jellyfinId, w.positionMs * TICKS_PER_MS, w.isPaused, w.jellyfinId,
                 JellyfinDeviceIdentity.forDevice(w.device), playSessionIdFor(w.device, w.jellyfinId),
+                volumePercent = w.volumePercent, muted = w.muted,   // R357 (FR-R357-2)
             )
         }
         override suspend fun stop(w: PlaybackWriter.PendingWrite): Boolean {
@@ -712,7 +713,10 @@ class PlaybackService(
         )
     }
 
-    suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
+    /** [volumePercent]/[muted] — R357 (FR-R357-2): the player's volume as its report carried it, forwarded to
+     *  Jellyfin's session (`PlayState.VolumeLevel`/`IsMuted`); null leaves Jellyfin's body as it always was. */
+    suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean,
+                               volumePercent: Int? = null, muted: Boolean? = null) {
         // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
         // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would
         // only strand a phantom "Now Playing" in Jellyfin, the exact bug class the watchdog above
@@ -727,13 +731,15 @@ class PlaybackService(
         StartOverHolds.move(device.jellyfinUserId, jellyfinId, positionMs)   // FR-R343-13 — only if a hold stands
         // Phase 219 (FR-219-2) — queued and retried by the writer; the route answers at once.
         val w = writer
-        if (w != null) { w.enqueueProgress(device, jellyfinId, positionMs, isPaused); return }
+        val volume = volumePercent?.coerceIn(0, 100)   // FR-R357-2 — clamped server-side
+        if (w != null) { w.enqueueProgress(device, jellyfinId, positionMs, isPaused, volume, muted); return }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         jellyfinClient.reportPlaybackProgress(
             jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, isPaused, jellyfinId,
             JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
+            volumePercent = volume, muted = muted,
         )
     }
 

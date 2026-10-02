@@ -659,7 +659,7 @@ fun startServer(
                     // on the part being played (its own session) and the parts left behind marked played.
                     val audiobooksTv = mp.audiobooks?.let { ab ->
                         dev.jellystructure.audiobooks.AudiobooksTvService(ab.store,
-                            mirror = { device, partId, positionMs, paused -> playbackService.reportProgress(device, partId, positionMs, paused) },
+                            mirror = { device, partId, positionMs, paused, volume, muted -> playbackService.reportProgress(device, partId, positionMs, paused, volume, muted) },
                             markPlayed = { device, partIds ->
                                 val cfg = configStore.current
                                 val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')

@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import kotlin.math.roundToInt
 
 /*
  * R354 (FR-R354-2) — one reading of a remote command for every Ravilo player: the app's film player and music player
@@ -95,7 +96,8 @@ class RemoteVolume(percent: Int = 100, muted: Boolean = false) {
         private set
 
     fun sync(level: Float?, muted: Boolean?) {
-        level?.let { percent = (it * 100).toInt().coerceIn(0, 100) }
+        // R357 — rounded, not truncated: a device that stores 0.29 as 0.28999… reads back as 29, the level it was set to.
+        level?.let { if (!it.isNaN()) percent = (it * 100).roundToInt().coerceIn(0, 100) }
         muted?.let { this.muted = it }
     }
 
@@ -111,7 +113,26 @@ class RemoteVolume(percent: Int = 100, muted: Boolean = false) {
     }
 
     val level: Float get() = percent / 100f
+
+    /** R357 (FR-R357-3) — this volume as a progress report carries it. */
+    fun report(): VolumeReport = VolumeReport(percent, muted)
 }
+
+/**
+ * R357 (FR-R357-1/-3) — what a player says about its volume in a progress report: its own level (0–100), the one the
+ * dashboard's commands move, and whether it is muted. Jellyfin shows it as the session's `PlayState.VolumeLevel` and
+ * `IsMuted`.
+ */
+data class VolumeReport(val percent: Int, val muted: Boolean)
+
+/** R357 (FR-R357-3/-5) — a device's own level (0–1, a Cast receiver's system volume) as a report; null when the device
+ *  did not say what it is (never a guessed 100). */
+fun volumeReportOf(level: Double?, muted: Boolean?): VolumeReport? =
+    level?.takeIf { !it.isNaN() }?.let { VolumeReport((it * 100).roundToInt().coerceIn(0, 100), muted ?: false) }
+
+/** R357 (FR-R357-1) — the progress body: with [volume] its two fields, without it exactly the pre-R357 request. */
+fun progressRequest(itemId: String, positionMs: Long, isPaused: Boolean, volume: VolumeReport?): PlaybackProgressRequest =
+    PlaybackProgressRequest(itemId, positionMs, isPaused, volume?.percent?.coerceIn(0, 100), volume?.muted)
 
 /** Drives [player] with this command; volume commands go through [volume] first. */
 fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {

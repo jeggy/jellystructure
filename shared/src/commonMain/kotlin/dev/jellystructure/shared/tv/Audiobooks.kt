@@ -111,7 +111,15 @@ data class AudiobookAuthorDetail(
 
 /** A heartbeat: the part (our order, 0-based) and where in it. [paused] goes to Jellyfin's mirror only. */
 @Serializable
-data class AudiobookProgressRequest(val part: Int, @SerialName("position_ms") val positionMs: Long, val paused: Boolean = false)
+data class AudiobookProgressRequest(
+    val part: Int,
+    @SerialName("position_ms") val positionMs: Long,
+    val paused: Boolean = false,
+    /** R357 (FR-R357-1/-3) — the music player's level (0–100) and mute, for Jellyfin's mirror only; absent from an
+     *  app older than R357 or a player that cannot know them. An older server ignores them. */
+    @SerialName("volume_percent") val volumePercent: Int? = null,
+    val muted: Boolean? = null,
+)
 
 @Serializable
 data class AudiobookSpeedRequest(val speed: Double)

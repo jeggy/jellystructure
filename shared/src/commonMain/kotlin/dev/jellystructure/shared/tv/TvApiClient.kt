@@ -223,10 +223,12 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
-    suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false) {
+    /** [volume] — R357 (FR-R357-3/-5): the player's own level and mute, or null when it cannot know them (then
+     *  the body is exactly the pre-R357 one). */
+    suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false, volume: VolumeReport? = null) {
         client.post("$baseUrl/api/tv/playback/progress") {
             auth()
-            jsonBody(json.encodeToString(PlaybackProgressRequest(itemId, positionMs, isPaused)))
+            jsonBody(json.encodeToString(progressRequest(itemId, positionMs, isPaused, volume)))
         }.assertSuccess()
     }
 
@@ -424,10 +426,11 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    suspend fun audiobookProgress(id: String, part: Int, positionMs: Long, paused: Boolean): AudiobookPosition? {
+    /** [volume] — R357: the music player's level and mute for Jellyfin's mirror of this heartbeat (null = none). */
+    suspend fun audiobookProgress(id: String, part: Int, positionMs: Long, paused: Boolean, volume: VolumeReport? = null): AudiobookPosition? {
         val r = client.put("$baseUrl/api/tv/music/audiobook/${id.encodeURLPathPart()}/progress") {
             auth()
-            jsonBody(json.encodeToString(AudiobookProgressRequest(part, positionMs, paused)))
+            jsonBody(json.encodeToString(AudiobookProgressRequest(part, positionMs, paused, volume?.percent?.coerceIn(0, 100), volume?.muted)))
         }
         if (r.status.value == 404) return null
         r.assertSuccess()

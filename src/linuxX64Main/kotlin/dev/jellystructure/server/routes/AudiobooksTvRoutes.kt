@@ -49,7 +49,8 @@ fun Route.audiobooksTvRoutes(
     }
     put("/tv/music/audiobook/{id}/progress") {
         val req = call.receive<AudiobookProgressRequest>()
-        call.respond(svc.progress(call.attributes[DeviceKey], call.parameters["id"]!!, req.part, req.positionMs, req.paused) ?: return@put call.respond(HttpStatusCode.NotFound))
+        call.respond(svc.progress(call.attributes[DeviceKey], call.parameters["id"]!!, req.part, req.positionMs, req.paused, req.volumePercent, req.muted)   // R357
+            ?: return@put call.respond(HttpStatusCode.NotFound))
     }
     put("/tv/music/audiobook/{id}/speed") {
         val req = call.receive<AudiobookSpeedRequest>()

@@ -54,6 +54,9 @@ class PlaybackWriter(
         /** R343 — this stop ends a *Start over* session that cleared its series: once the stop has landed the
          *  sink writes the episode back as unwatched at [positionMs] (Jellyfin's stop restores the stale flag). */
         val startOverUnplayed: Boolean = false,
+        /** R357 (FR-R357-2) — a progress report's player volume (0–100) and mute; null when the report had none. */
+        val volumePercent: Int? = null,
+        val muted: Boolean? = null,
     ) { var attempts: Int = 0; var nextAttemptAt: Long = enqueuedAt }
 
     class Stats(
@@ -79,13 +82,14 @@ class PlaybackWriter(
     private var lastFailure: String? = null
     private val job: Job = scope.launch(GateClass.INTERACTIVE) { drain() }
 
-    suspend fun enqueueProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) =
-        enqueue(Kind.PROGRESS, device, jellyfinId, positionMs, isPaused, null)
+    suspend fun enqueueProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean, volumePercent: Int? = null, muted: Boolean? = null) =
+        enqueue(Kind.PROGRESS, device, jellyfinId, positionMs, isPaused, null, volumePercent = volumePercent, muted = muted)
 
     suspend fun enqueueStop(device: DeviceData, jellyfinId: String, positionMs: Long, jellyfinPlaySessionId: String?, startOverUnplayed: Boolean = false) =
         enqueue(Kind.STOP, device, jellyfinId, positionMs, false, jellyfinPlaySessionId, startOverUnplayed)
 
-    private suspend fun enqueue(kind: Kind, device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean, psid: String?, startOverUnplayed: Boolean = false) {
+    private suspend fun enqueue(kind: Kind, device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean, psid: String?, startOverUnplayed: Boolean = false,
+                                volumePercent: Int? = null, muted: Boolean? = null) {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         mutex.withLock {
             val existing = pending[key]
@@ -93,8 +97,12 @@ class PlaybackWriter(
             // key; anything else is last-position-wins, and the write it replaces was never "lost".
             if (existing != null && existing.kind == Kind.STOP && kind == Kind.PROGRESS) return
             if (existing != null) superseded++
+            // R357 (FR-R357-2) — a coalesced tick keeps the latest volume: its own, else the one it replaces (a
+            // server-made tick, e.g. R343's write-now, carries none and must not drop the player's).
+            val keep = existing?.takeIf { it.kind == Kind.PROGRESS && kind == Kind.PROGRESS }
             pending[key] = PendingWrite(kind, device, jellyfinId, positionMs, isPaused, psid ?: existing?.jellyfinPlaySessionId, clock(), ++seq,
-                startOverUnplayed = startOverUnplayed || (existing?.kind == Kind.STOP && existing.startOverUnplayed))
+                startOverUnplayed = startOverUnplayed || (existing?.kind == Kind.STOP && existing.startOverUnplayed),
+                volumePercent = volumePercent ?: keep?.volumePercent, muted = muted ?: keep?.muted)
         }
         signal.trySend(Unit)
     }
