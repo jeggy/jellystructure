@@ -5,7 +5,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `91a12ee8`. Number checked
+`✓ Built` 2026-10-02 (build notes at the end); deployed 2026-10-02 (backend + web `v1.48-117-gf0fb5fe0`), **device-tested**: the dashboard's *Set volume 35* / *Mute* / *Unmute* read back in Jellyfin's session within 3 s on the Ravilo web app (a film) and the Mac app (music), and *Set volume 8* / *Mute* / *Unmute* plus a level set on the speaker itself on the Cast receiver (Gæsteværelse); a song's first ~10 s show no level until its first heartbeat (the start report carries none); Android not re-tested. Written 2026-10-02 (dev-authored, owner-approved the same day) against `main` `91a12ee8`. Number checked
 free (Ravilo specs top at R356). **Amends** R354 (players got a volume, but never said what it is) and 299 (the
 progress a device reports is forwarded to Jellyfin unchanged except for these two fields). Shared wire models, the
 backend's progress forwarding, the film player, the music player (phone, desktop, web) and the Cast receiver.

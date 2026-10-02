@@ -7,7 +7,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 — not deployed, not device-tested (see Build notes). Written 2026-10-02 (dev-authored,
+`✓ Built` 2026-10-02 — deployed with the Mac test build `v1.48-117-gf0fb5fe0`, **device-tested on the Mac**: a cast that never played (the 487-song LOAD of R359) held the bar at 1:17 and *Stop casting* gave the song back at 1:17, paused (it came back at 0:00 before); the normal path gave back the speaker's place (1:01). Android not re-tested (see Build notes). Written 2026-10-02 (dev-authored,
 owner-approved the same day) against `main` `91a12ee8`. Number checked
 free (Ravilo specs top at R357). **Amends** R353 FR-R353-5 (the hand-back keeps the speaker's place — but only a
 place the speaker actually reported) and R330 (the Mac's cast sender). Applies to every sender that hands music to a
