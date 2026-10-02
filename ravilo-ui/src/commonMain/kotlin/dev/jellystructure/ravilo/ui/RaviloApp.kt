@@ -1249,6 +1249,9 @@ fun RaviloApp(
         SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId; castController.musicEnabled = castMusic }
         // R324 — the music bridge reads the one controller; the screens read MusicPlayback, which follows the link.
         LaunchedEffect(castController) { dev.jellystructure.ravilo.ui.music.MusicCast.bind(castController) }
+        // R356 (FR-R356-6) — back on screen with a cast connected: the sender asks the receiver where it is, and rejoins
+        // it if nothing answers (a frozen app's Cast connection may have been dropped by Play services).
+        LaunchedEffect(castController, appOnScreen) { if (appOnScreen) castController.sender.onAppForeground() }
         // R265 (FR-R265-1) — present when the user has a TV to send to OR AirPlay is available here.
         val airplayAvailable by (platformAirPlay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
         val castActive = if (castAppId != null || screensEnabled || airplayAvailable) castController else null

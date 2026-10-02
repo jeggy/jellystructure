@@ -71,4 +71,6 @@ class ActiveCastSender(
     override val volume: StateFlow<Double?> get() = chromecast?.volume ?: screen.volume
     /** R355 — only a Cast session is ever grouped; a screen has no members. */
     override val members: StateFlow<List<String>> get() = chromecast?.members ?: screen.members
+    /** R356 — only a Cast session can go silent behind the app's back. */
+    override fun onAppForeground() { chromecast?.onAppForeground() }
 }

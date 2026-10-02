@@ -19,12 +19,9 @@ import com.google.android.gms.cast.framework.OptionsProvider
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.SessionProvider
 import com.google.android.gms.cast.framework.media.CastMediaOptions
-import com.google.android.gms.cast.framework.media.MediaIntentReceiver
-import com.google.android.gms.cast.framework.media.NotificationAction
-import com.google.android.gms.cast.framework.media.NotificationActionsProvider
-import com.google.android.gms.cast.framework.media.NotificationOptions
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.common.images.WebImage
+import dev.jellystructure.ravilo.ui.music.CastSessionRemote
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
@@ -36,29 +33,18 @@ import org.json.JSONObject
 
 /**
  * R245 — the Cast SDK's options: a placeholder receiver id (the real one is applied at runtime from the
- * config snapshot, 218 FR-218-11) and the SDK's own media notification (FR-R245-11) with the four
- * actions the spec names. Registered in ravilo-android's manifest.
+ * config snapshot, 218 FR-218-11). Registered in ravilo-android's manifest.
+ *
+ * R356 (FR-R356-1) — the SDK's own media notification (R245 FR-R245-11, R324 FR-R324-9) and its media session are OFF.
+ * While the phone is the remote for a cast, the card, the lock screen and the media keys are Ravilo's own session
+ * ([CastSessionRemote] in RaviloMusicService), whose foreground service keeps the app from being frozen: the SDK's
+ * notification never did, and Play services dropped a frozen app's Cast connection once its binder buffer filled.
  */
 class RaviloCastOptionsProvider : OptionsProvider {
     override fun getCastOptions(context: Context): CastOptions {
-        val notification = NotificationOptions.Builder()
-            // R324 (FR-R324-9, dev review 7) — the actions depend on what is loaded: a song gets previous · play/pause
-            // · next · stop (music actions, not ±30 s); a film keeps R245's four. Decided per notification.
-            .setNotificationActionsProvider(object : NotificationActionsProvider(context) {
-                private fun music(): Boolean = runCatching {
-                    CastContext.getSharedInstance(context).sessionManager.currentCastSession?.remoteMediaClient?.mediaInfo?.metadata?.mediaType == MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
-                }.getOrDefault(false)
-                override fun getNotificationActions(): List<NotificationAction> {
-                    val actions = if (music()) listOf(MediaIntentReceiver.ACTION_SKIP_PREV, MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK, MediaIntentReceiver.ACTION_SKIP_NEXT, MediaIntentReceiver.ACTION_STOP_CASTING)
-                        else listOf(MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK, MediaIntentReceiver.ACTION_REWIND, MediaIntentReceiver.ACTION_FORWARD, MediaIntentReceiver.ACTION_STOP_CASTING)
-                    return actions.map { NotificationAction.Builder().setAction(it).build() }
-                }
-                override fun getCompactViewActionIndices(): IntArray = if (music()) intArrayOf(1, 2) else intArrayOf(0, 3)
-            })
-            .setSkipStepMs(30_000L)
-            .build()
         val media = CastMediaOptions.Builder()
-            .setNotificationOptions(notification)
+            .setNotificationOptions(null)
+            .setMediaSessionEnabled(false)
             // No expanded controller is set: the remote is Ravilo's own screen.
             .build()
         return CastOptions.Builder()
@@ -174,25 +160,168 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     private var pendingLoad: CastLoadData? = null
 
     private val progressListener = RemoteMediaClient.ProgressListener { position, duration ->
-        _status.value = (_status.value ?: CastRemoteStatus()).copy(positionMs = position.coerceAtLeast(0), durationMs = duration.coerceAtLeast(0))
+        // R356 (FR-R356-7) — the SDK ticks on with 0/0 when it holds no media status (a dropped connection, a rejoin):
+        // that is not the receiver's word, and it put 0:00 / -0:00 on the Playing page while the speaker played on.
+        if (session?.remoteMediaClient?.mediaStatus == null) return@ProgressListener
+        val s = _status.value ?: CastRemoteStatus()
+        _status.value = s.copy(positionMs = position.coerceAtLeast(0), durationMs = duration.takeIf { it > 0 } ?: s.durationMs)
     }
     private val mediaCallback = object : RemoteMediaClient.Callback() {
-        override fun onStatusUpdated() { rebuildStatus() }
-        override fun onMetadataUpdated() { rebuildStatus() }
+        override fun onStatusUpdated() { heard(); rebuildStatus() }
+        override fun onMetadataUpdated() { heard(); rebuildStatus() }
     }
     private val messageCallback = com.google.android.gms.cast.Cast.MessageReceivedCallback { _, _, message ->
+        heard()
+        // R356 (FR-R356-11) — the size of what the receiver sends: the first message of a session, and every big one.
+        if (!sizeLogged || message.length > 32_000) {
+            sizeLogged = true
+            android.util.Log.i("RaviloCast", "R356: receiver message ${message.length} B")
+        }
         runCatching { json.decodeFromString(CastReceiverMessage.serializer(), message) }.getOrNull()?.let { msg ->
+            // R356 (FR-R356-9) — a newer queue revision without the queue: ask for it, once per revision.
+            if (castQueueGap(_status.value, msg) && askedQueueRev != msg.queueRev) {
+                askedQueueRev = msg.queueRev
+                android.util.Log.i("RaviloCast", "R356: queue revision ${msg.queueRev} not held (have ${_status.value?.queueRev}); asking for it")
+                sendRaw(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand("get_queue")))
+            }
             receiverSaid = foldReceiverMessage(receiverSaid, msg)   // R330 — the rule both senders share
             rebuildStatus(msg.type)
         }
     }
+    @Volatile private var sizeLogged = false
+    @Volatile private var askedQueueRev: Int? = null
+
+    // ── R356 (FR-R356-6): connected but silent — ask, then rejoin ──
+    private val silence = CastSilenceWatch()
+    /** Set while the stale session object is being replaced by a new one on the same receiver. */
+    private var rejoin: Rejoin? = null
+    private class Rejoin(val routeId: String?, val deviceId: String?, val name: String?, val at: Long)
+    private var rejoinDiscovery: androidx.mediarouter.media.MediaRouter.Callback? = null
+
+    private fun heard() {
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post { silence.heard() }; return }
+        silence.heard()
+    }
+
+    override fun onAppForeground() = onMain {
+        if (_link.value != CastLinkState.CONNECTED || session == null || rejoin != null) return@onMain
+        if (silence.nudge(android.os.SystemClock.elapsedRealtime(), askNow = true) == CastSilenceAction.ASK) ask("the app came on screen")
+        watchSilence()
+    }
+
+    /** A command was sent: the receiver's answer is due (FR-R356-6). Main thread. */
+    private fun commandSent() {
+        if (_link.value != CastLinkState.CONNECTED || session == null || rejoin != null) return
+        silence.nudge(android.os.SystemClock.elapsedRealtime(), askNow = false)
+        watchSilence()
+    }
+
+    private val silenceTick = object : Runnable {
+        override fun run() {
+            val connected = _link.value == CastLinkState.CONNECTED && session != null && rejoin == null
+            when (silence.tick(android.os.SystemClock.elapsedRealtime(), connected)) {
+                CastSilenceAction.ASK -> ask("no answer to a command")
+                CastSilenceAction.REJOIN -> { startRejoin(); return }
+                CastSilenceAction.NONE -> Unit
+            }
+            if (silence.waiting) main.postDelayed(this, 500L)
+        }
+    }
+    private fun watchSilence() { main.removeCallbacks(silenceTick); if (silence.waiting) main.postDelayed(silenceTick, 500L) }
+
+    /** Both channels: the SDK's media status and Ravilo's own `status` (whose answer also carries the whole queue). */
+    private fun ask(why: String) {
+        android.util.Log.i("RaviloCast", "R356: asking the receiver for its status ($why)")
+        val rmc = session?.remoteMediaClient
+        runCatching { rmc?.requestStatus() }
+        sendRaw(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), dev.jellystructure.shared.tv.CastCommand("status")))
+    }
+
+    /**
+     * Nothing came after asking: Play services has dropped this app's connection (or the receiver is gone). End the stale
+     * session object WITHOUT stopping the receiver and select the same route again — the SDK then joins the receiver app
+     * that is running (no relaunch, no LOAD), as a fresh process's resume does. The link stays connected and the last
+     * known state stays on screen (FR-R356-7); a rejoin that has not connected in [CAST_REJOIN_GIVE_UP_MS] ends it.
+     */
+    private fun startRejoin() {
+        val s = session ?: return
+        val route = router?.selectedRoute?.takeIf { !it.isDefaultOrBluetooth }
+        val rj = Rejoin(route?.id, runCatching { s.castDevice?.deviceId }.getOrNull(), route?.name ?: sessionName, android.os.SystemClock.elapsedRealtime())
+        rejoin = rj
+        android.util.Log.w("RaviloCast", "R356: no word from the receiver after asking; rejoining ${rj.name} (route ${rj.routeId})")
+        silence.reset()
+        // Scan while looking for the route again: after the session ends, the route may drop off an idle list.
+        runCatching {
+            val cb = object : androidx.mediarouter.media.MediaRouter.Callback() {}
+            router?.addCallback(castContext.mergedSelector ?: androidx.mediarouter.media.MediaRouteSelector.EMPTY, cb, androidx.mediarouter.media.MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY)
+            rejoinDiscovery = cb
+        }
+        runCatching { castContext.sessionManager.endCurrentSession(false) }
+        main.postDelayed({ reselect(rj, 0) }, 700L)
+        main.postDelayed({ giveUpRejoin(rj) }, CAST_REJOIN_GIVE_UP_MS)
+    }
+
+    private fun reselect(rj: Rejoin, attempt: Int) {
+        if (rejoin !== rj) return
+        val r = router ?: return
+        if (CastStartWatch.startedAt > rj.at) return   // a session is starting from it already
+        val route = r.routes.firstOrNull { it.id == rj.routeId }
+            ?: r.routes.firstOrNull { rt -> rj.deviceId != null && runCatching { com.google.android.gms.cast.CastDevice.getFromBundle(rt.extras)?.deviceId }.getOrNull() == rj.deviceId }
+        when {
+            route == null -> if (attempt < 20) main.postDelayed({ reselect(rj, attempt + 1) }, 500L)
+            // Still selected: the old session has not let go of it yet. Unselect WITHOUT stopping (DISCONNECTED, never
+            // STOPPED — that would stop the receiver), then select it again.
+            route.isSelected -> {
+                if (attempt == 3) runCatching { r.unselect(androidx.mediarouter.media.MediaRouter.UNSELECT_REASON_DISCONNECTED) }
+                if (attempt < 20) main.postDelayed({ reselect(rj, attempt + 1) }, 500L)
+            }
+            else -> {
+                android.util.Log.i("RaviloCast", "R356: selecting ${route.name} again to rejoin its receiver")
+                selectRoute(r, route.id)
+            }
+        }
+    }
+
+    private fun giveUpRejoin(rj: Rejoin) {
+        if (rejoin !== rj) return
+        android.util.Log.w("RaviloCast", "R356: the rejoin of ${rj.name} did not connect; the session ends")
+        endRejoin()
+        detach()
+        _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null
+    }
+
+    private fun endRejoin() {
+        rejoin = null
+        rejoinDiscovery?.let { cb -> runCatching { router?.removeCallback(cb) } }
+        rejoinDiscovery = null
+    }
 
     private val sessionListener = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarting(s: CastSession) { CastStartWatch.mark(); _link.value = CastLinkState.CONNECTING; _device.value = s.castDevice?.friendlyName }
-        override fun onSessionStarted(s: CastSession, sessionId: String) { attach(s); _link.value = CastLinkState.CONNECTED; pendingLoad?.let { loadOnMain(it) } }
-        override fun onSessionStartFailed(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE }
+        override fun onSessionStarting(s: CastSession) {
+            CastStartWatch.mark()
+            if (rejoin != null) return   // R356 — rejoining: the link stays connected, the last known state on screen
+            _link.value = CastLinkState.CONNECTING; _device.value = s.castDevice?.friendlyName
+        }
+        override fun onSessionStarted(s: CastSession, sessionId: String) {
+            val rejoined = rejoin != null
+            if (rejoined) { endRejoin(); detach() }
+            attach(s); _link.value = CastLinkState.CONNECTED
+            val loading = pendingLoad?.also { loadOnMain(it) } != null
+            if (rejoined) android.util.Log.i("RaviloCast", "R356: rejoined the running receiver on ${s.castDevice?.friendlyName}")
+            // R356 — joined a receiver that is already playing (a rejoin, or a speaker another of the viewer's devices
+            // started): the receiver speaks on change only, so ask where it is rather than wait for its next change.
+            if (!loading) ask(if (rejoined) "rejoined" else "joined")
+        }
+        override fun onSessionStartFailed(s: CastSession, error: Int) {
+            if (rejoin != null) { android.util.Log.w("RaviloCast", "R356: the rejoin failed ($error)"); endRejoin(); _status.value = null; receiverSaid = null }
+            detach(); _link.value = CastLinkState.NONE
+        }
         override fun onSessionEnding(s: CastSession) {}
-        override fun onSessionEnded(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null }
+        override fun onSessionEnded(s: CastSession, error: Int) {
+            // R356 — the stale session object a rejoin ended on purpose: only its callbacks go; the receiver plays on.
+            if (rejoin != null) { if (session === s) detach(); return }
+            detach(); _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null
+        }
         // FR-R245-5 — re-connect on app start: the SDK resumes; then ONE of two things happens (see onSessionResumed).
         override fun onSessionResuming(s: CastSession, sessionId: String) { CastStartWatch.mark(); _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName() }
         override fun onSessionResumed(s: CastSession, wasSuspended: Boolean) {
@@ -218,7 +347,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             else runCatching { rmc.requestStatus().setResultCallback { decide() } }.onFailure { decide() }
         }
         override fun onSessionResumeFailed(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE }
-        override fun onSessionSuspended(s: CastSession, reason: Int) { _link.value = CastLinkState.RECONNECTING }
+        override fun onSessionSuspended(s: CastSession, reason: Int) { if (rejoin == null) _link.value = CastLinkState.RECONNECTING }
     }
 
     init {
@@ -236,6 +365,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
 
     private fun attach(s: CastSession) {
         session = s
+        sizeLogged = false; askedQueueRev = null
+        CastSessionRemote.start(appContext, this)   // R356 (FR-R356-1) — Ravilo's one media card mirrors this cast
         runCatching { s.addCastListener(castListener) }
         _volume.value = runCatching { s.volume }.getOrNull()
         // Right after a resume the session may not carry its device yet; the route the SDK selected
@@ -289,8 +420,9 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
                 }
             },
             idleFinished = ms != null && ms.playerState == MediaStatus.PLAYER_STATE_IDLE && ms.idleReason == MediaStatus.IDLE_REASON_FINISHED,
-            positionMs = rmc?.approximateStreamPosition,
-            durationMs = rmc?.streamDuration,
+            // R356 (FR-R356-7) — with no media status the SDK says 0 for both: no word, not "at 0:00".
+            positionMs = rmc?.approximateStreamPosition?.takeIf { ms != null },
+            durationMs = rmc?.streamDuration?.takeIf { ms != null },
             activeTrackIds = ms?.activeTrackIds?.toSet() ?: emptySet(),
             mediaTrackIds = info?.mediaTracks?.map { it.id }?.toSet(),
             title = meta?.getString(MediaMetadata.KEY_TITLE),
@@ -365,9 +497,10 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     /** R324 (FR-R324-5) — the cast session's volume, in 5 % steps from the ⋯ slider; the keys reach it by themselves. */
     override fun setVolume(level: Double) = onMain { runCatching { session?.volume = level.coerceIn(0.0, 1.0) } }
 
-    override fun play() = onMain { session?.remoteMediaClient?.play() }
-    override fun pause() = onMain { session?.remoteMediaClient?.pause() }
+    override fun play() = onMain { session?.remoteMediaClient?.play(); commandSent() }
+    override fun pause() = onMain { session?.remoteMediaClient?.pause(); commandSent() }
     override fun seekTo(positionMs: Long) = onMain {
+        commandSent()
         session?.remoteMediaClient?.seek(com.google.android.gms.cast.MediaSeekOptions.Builder().setPosition(positionMs.coerceAtLeast(0)).build())
     }
     override fun stop() = onMain { castContext.sessionManager.endCurrentSession(true) }
@@ -398,5 +531,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         val keepText = rmc.mediaStatus?.activeTrackIds?.filter { id -> rmc.mediaInfo?.mediaTracks?.any { it.id == id && it.type == MediaTrack.TYPE_TEXT } == true } ?: emptyList()
         rmc.setActiveMediaTracks((keepText + listOfNotNull(trackId)).toLongArray())
     }
-    override fun send(json: String) = onMain { runCatching { session?.sendMessage(CAST_NAMESPACE, json) } }
+    override fun send(json: String) = onMain { runCatching { session?.sendMessage(CAST_NAMESPACE, json) }; commandSent() }
+    /** R356 — a message that expects no answer of its own (asking for status, for the queue): no nudge. */
+    private fun sendRaw(json: String) = onMain { runCatching { session?.sendMessage(CAST_NAMESPACE, json) } }
 }
