@@ -24,6 +24,8 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import dev.jellystructure.ravilo.ui.RaviloAppContext
+import dev.jellystructure.ravilo.ui.RemoteControl
+import dev.jellystructure.ravilo.ui.RemoteTarget
 import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.ravilo.ui.createTvApiClient
 import dev.jellystructure.ravilo.ui.raviloBaseUrl
@@ -381,6 +383,7 @@ actual object MusicEngine {
 
     /** FR-R322-... progress every 10 s while a song is open, so Jellyfin's Now Playing and play counts are right. */
     private fun startTicks() {
+        watchVolume()
         tickJob?.cancel()
         tickJob = scope.launch {
             while (true) {
@@ -397,10 +400,19 @@ actual object MusicEngine {
         val pos = p.currentPosition
         val paused = !p.playWhenReady
         val c = client()
+        // R357 (FR-R357-3) — the player's output level for this session (what the dashboard's commands set), never the
+        // system stream the phone's keys move; none while the song plays on a speaker.
+        val vol = RemoteControl.musicVolumeReport()
         // R323 (280's dev review 1) — a book's heartbeat is the book's; the server mirrors it to the part's session.
         val b = book
-        if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused) } }; return }
-        scope.launch { runCatching { c?.reportProgress(id, pos, paused) } }
+        if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused, vol) } }; return }
+        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol) } }
+    }
+
+    /** R357 (FR-R357-4) — from the first song on, a volume command reports at once, not at the next 10 s tick. */
+    private var volumeJob: Job? = null
+    private fun watchVolume() {
+        if (volumeJob?.isActive != true) volumeJob = scope.launch { RemoteControl.onVolumeSettled(RemoteTarget.MUSIC) { reportProgress() } }
     }
 
     private fun publish() {

@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.RemoteControl
+import dev.jellystructure.ravilo.ui.RemoteTarget
 import dev.jellystructure.ravilo.ui.seams.PlayerQoeSnapshot
 import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
@@ -462,10 +464,17 @@ class PlayerStore(
     ) {
         progressJob?.cancel()
         progressJob = scope.launch {
+            // R357 (FR-R357-3/-4) — every report says the player's level and mute (the ones the dashboard's commands
+            // move), and a change to them reports once at once rather than at the next tick.
+            launch {
+                RemoteControl.onVolumeSettled(RemoteTarget.VIDEO) {
+                    runCatching { apiClient.reportProgress(itemId, positionProvider(), isPausedProvider(), RemoteControl.videoVolumeReport()) }
+                }
+            }
             while (isActive) {
                 delay(PROGRESS_INTERVAL_MS)
                 runCatching {
-                    apiClient.reportProgress(itemId, positionProvider(), isPausedProvider())
+                    apiClient.reportProgress(itemId, positionProvider(), isPausedProvider(), RemoteControl.videoVolumeReport())
                 }
                 // R216 (FR-R216-4) — "a long-session interval, so an abandoned/crashed session is not
                 // lost" alongside the end-of-session report in stopSession().

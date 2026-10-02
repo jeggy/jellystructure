@@ -228,12 +228,14 @@ object MusicVolume {
         set(value) { field = value; MusicEngine.setUserVolume(if (value) 0f else _level.value) }
     /** The remembered level reaches the engine once, before the first song. */
     fun applyRemembered() { if (!applied) { applied = true; MusicEngine.setUserVolume(if (silenced) 0f else _level.value) } }
-    fun set(v: Float) {
+    /** [byViewer] — the slider or a key (not a remote command, which reports its own change): R357 (FR-R357-4). */
+    fun set(v: Float, byViewer: Boolean = true) {
         val to = v.coerceIn(0f, 1f)
         if (MusicCast.linked.value) { MusicCast.setVolume(to.toDouble()); return }
         _level.value = to
         MusicEngine.setUserVolume(if (silenced) 0f else to)
         runCatching { MusicDeviceStore.put("desk_volume", to.toString()) }
+        if (byViewer) dev.jellystructure.ravilo.ui.RemoteControl.musicLevelSet(to)
     }
     fun nudge(delta: Float) = set((if (MusicCast.linked.value) (MusicCast.deviceVolume?.value?.toFloat() ?: 0.3f) else _level.value) + delta)
 }

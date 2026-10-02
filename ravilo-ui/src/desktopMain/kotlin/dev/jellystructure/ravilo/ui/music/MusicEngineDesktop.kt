@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.RemoteControl
+import dev.jellystructure.ravilo.ui.RemoteTarget
 import dev.jellystructure.ravilo.ui.TeardownWork
 import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.ravilo.ui.createTvApiClient
@@ -190,7 +192,14 @@ actual object MusicEngine {
         publish(); save()
     }
 
+    /** R357 (FR-R357-4) — from the first song on, a volume change (a dashboard command, the bar's slider) reports at once. */
+    private var volumeJob: Job? = null
+    private fun watchVolume() {
+        if (volumeJob?.isActive != true) volumeJob = scope.launch { RemoteControl.onVolumeSettled(RemoteTarget.MUSIC) { reportProgress() } }
+    }
+
     private fun startTicks() {
+        watchVolume()
         tickJob?.cancel()
         tickJob = scope.launch {
             while (true) {
@@ -207,9 +216,10 @@ actual object MusicEngine {
         val pos = s.positionMs
         val paused = !s.wantsPlay
         val c = client()
+        val vol = RemoteControl.musicVolumeReport()   // R357 (FR-R357-3) — the bar's level and R354's mute
         val b = book
-        if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused) } }; return }
-        scope.launch { runCatching { c?.reportProgress(id, pos, paused) } }
+        if (b != null) { scope.launch { runCatching { c?.audiobookProgress(b.id, b.part, pos, paused, vol) } }; return }
+        scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol) } }
     }
 
     /**

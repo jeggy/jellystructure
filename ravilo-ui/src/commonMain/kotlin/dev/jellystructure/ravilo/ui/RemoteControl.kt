@@ -7,7 +7,18 @@ import dev.jellystructure.ravilo.ui.music.MusicVolume
 import dev.jellystructure.shared.tv.RemoteCommand
 import dev.jellystructure.shared.tv.RemotePlayer
 import dev.jellystructure.shared.tv.RemoteVolume
+import dev.jellystructure.shared.tv.VolumeReport
 import dev.jellystructure.shared.tv.applyTo
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
+
+/** R357 (FR-R357-4) — how long a volume must hold still before its player reports it at once. */
+const val VOLUME_SETTLE_MS = 300L
 
 /** R354 (FR-R354-3) — which player a remote command goes to. */
 enum class RemoteTarget { VIDEO, MUSIC, NONE }
@@ -35,6 +46,43 @@ object RemoteControl {
     var musicPlayer: RemotePlayer = MusicRemotePlayer
     var musicActive: () -> Boolean = { MusicPlayback.state.value.active }
     var syncMusicVolume: (RemoteVolume) -> Unit = { v -> if (isDesktopPlatform && !v.muted) v.sync(MusicVolume.level.value, null) }
+    var musicCasting: () -> Boolean = { MusicCast.linked.value }
+
+    private val _volumeChanged = MutableSharedFlow<RemoteTarget>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    /**
+     * R357 (FR-R357-4) — a player's level or mute just changed (a dashboard command, the desktop bar's slider): that
+     * player sends one progress report at once, so the dashboard does not wait for the next heartbeat. The film
+     * player's store and the music engines listen ([onVolumeSettled]); no new heartbeat.
+     */
+    val volumeChanged: SharedFlow<RemoteTarget> = _volumeChanged.asSharedFlow()
+
+    /**
+     * R357 (FR-R357-4) — calls [report] each time [target]'s volume has settled: a burst (a dragged slider, a dashboard
+     * slider sending several levels) is one report, not one per step. Suspends until its caller's scope ends.
+     */
+    suspend fun onVolumeSettled(target: RemoteTarget, report: suspend () -> Unit) {
+        volumeChanged.filter { it == target }.collectLatest { delay(VOLUME_SETTLE_MS); report() }
+    }
+
+    /** R357 (FR-R357-3) — what the film player reports: the level the dashboard's commands move (R354's, kept across films). */
+    fun videoVolumeReport(): VolumeReport = videoVolume.report()
+
+    /**
+     * R357 (FR-R357-3) — what the music player playing on this device reports: on a desktop the bar's level and the mute
+     * R354 applies, on a phone the player's output level for the session (never the system stream its keys move,
+     * FR-R357-5). Null while the music is cast to a speaker: then the progress is the receiver's to report.
+     */
+    fun musicVolumeReport(): VolumeReport? {
+        if (musicCasting()) return null
+        syncMusicVolume(musicVolume)
+        return musicVolume.report()
+    }
+
+    /** R357 (FR-R357-4) — the desktop bar's slider moved: the level is the viewer's and the music is audible again. */
+    fun musicLevelSet(level: Float) {
+        musicVolume.sync(level, false)
+        _volumeChanged.tryEmit(RemoteTarget.MUSIC)
+    }
 
     /** The film player is open; returns its detach. A level set earlier from the dashboard applies at once. */
     fun attachVideo(player: RemotePlayer): () -> Unit {
@@ -51,9 +99,13 @@ object RemoteControl {
             RemoteTarget.MUSIC -> { syncMusicVolume(musicVolume); cmd.applyTo(musicPlayer, musicVolume) }
             RemoteTarget.NONE -> Unit
         }
+        if (target != RemoteTarget.NONE && cmd.movesVolume) _volumeChanged.tryEmit(target)   // R357 (FR-R357-4)
         return target
     }
 }
+
+private val RemoteCommand.movesVolume: Boolean
+    get() = this is RemoteCommand.SetVolume || this is RemoteCommand.VolumeStep || this is RemoteCommand.Mute
 
 /**
  * R354 (FR-R354-4) — the music player as a remote command sees it: [MusicPlayback], the door every music screen uses,
@@ -84,7 +136,7 @@ object MusicRemotePlayer : RemotePlayer {
         val out = if (muted) 0f else level
         when {
             isDesktopPlatform && muted && !MusicCast.linked.value -> MusicEngine.setUserVolume(0f)
-            isDesktopPlatform -> MusicVolume.set(out)
+            isDesktopPlatform -> MusicVolume.set(out, byViewer = false)   // R357 — the dispatch says it changed
             MusicCast.linked.value -> MusicCast.setVolume(out.toDouble())
             else -> MusicEngine.setUserVolume(out)
         }

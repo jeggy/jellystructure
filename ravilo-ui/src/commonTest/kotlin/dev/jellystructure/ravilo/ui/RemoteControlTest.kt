@@ -9,7 +9,11 @@ import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.RemoteCommand
 import dev.jellystructure.shared.tv.RemotePlayer
 import dev.jellystructure.shared.tv.RemoteVolume
+import dev.jellystructure.shared.tv.VolumeReport
 import dev.jellystructure.shared.tv.remoteCommandOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.AfterTest
@@ -17,6 +21,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** R354 (FR-R354-3/-4/-5) — which player a remote command reaches in the app, what it does there, and the socket rule. */
@@ -39,16 +44,27 @@ class RemoteControlTest {
     private val savedPlayer = RemoteControl.musicPlayer
     private val savedActive = RemoteControl.musicActive
     private val savedSync = RemoteControl.syncMusicVolume
+    private val savedCasting = RemoteControl.musicCasting
 
     @BeforeTest fun setUp() {
         RemoteControl.musicPlayer = Recorder("music", log)
         RemoteControl.musicActive = { musicHolds }
         RemoteControl.syncMusicVolume = {}
+        RemoteControl.musicCasting = { false }
     }
     @AfterTest fun tearDown() {
         RemoteControl.musicPlayer = savedPlayer
         RemoteControl.musicActive = savedActive
         RemoteControl.syncMusicVolume = savedSync
+        RemoteControl.musicCasting = savedCasting
+    }
+
+    /** R357 — the volume changes [block] announces, collected synchronously (Unconfined: no test dispatcher needed). */
+    private fun changesDuring(block: () -> Unit): List<RemoteTarget> {
+        val seen = mutableListOf<RemoteTarget>()
+        val job = CoroutineScope(Dispatchers.Unconfined).launch { RemoteControl.volumeChanged.collect { seen += it } }
+        try { block() } finally { job.cancel() }
+        return seen
     }
 
     private fun ps(c: String, seek: Long? = null) = remoteCommandOf(PlaystateCommandEnvelope("playstate_command", c, seek))!!
@@ -144,5 +160,56 @@ class RemoteControlTest {
         val v = RemoteVolume()
         assertEquals(100, v.percent)
         assertFalse(v.muted)
+    }
+
+    @Test
+    fun theFilmReportsTheLevelTheDashboardSet() {
+        // R357 (FR-R357-3/-4) — SetVolume 35 reads back as 35; Mute and ToggleMute flip only the mute; each one is a change
+        // the film player reports at once.
+        val detach = RemoteControl.attachVideo(Recorder("film", log))
+        val changes = changesDuring {
+            RemoteControl.dispatch(RemoteCommand.SetVolume(35))
+            assertEquals(VolumeReport(35, false), RemoteControl.videoVolumeReport())
+            RemoteControl.dispatch(RemoteCommand.Mute(true))
+            assertEquals(VolumeReport(35, true), RemoteControl.videoVolumeReport())
+            RemoteControl.dispatch(RemoteCommand.Mute(null))
+            assertEquals(VolumeReport(35, false), RemoteControl.videoVolumeReport())
+            RemoteControl.dispatch(ps("Pause"))   // not a volume command: no report at once
+        }
+        detach()
+        assertEquals(listOf(RemoteTarget.VIDEO, RemoteTarget.VIDEO, RemoteTarget.VIDEO), changes)
+        RemoteControl.videoVolume.apply(RemoteCommand.SetVolume(100))
+    }
+
+    @Test
+    fun theMusicPlayerReportsItsOwnLevelAndNothingWhileItCasts() {
+        musicHolds = true
+        val changes = changesDuring {
+            RemoteControl.dispatch(RemoteCommand.SetVolume(35))
+            assertEquals(VolumeReport(35, false), RemoteControl.musicVolumeReport())
+            RemoteControl.dispatch(RemoteCommand.Mute(true))
+            assertEquals(VolumeReport(35, true), RemoteControl.musicVolumeReport())
+            RemoteControl.dispatch(RemoteCommand.Mute(null))
+            assertEquals(VolumeReport(35, false), RemoteControl.musicVolumeReport())
+        }
+        assertEquals(listOf(RemoteTarget.MUSIC, RemoteTarget.MUSIC, RemoteTarget.MUSIC), changes)
+        // FR-R357-3 — cast to a speaker, the progress is the receiver's: the phone says nothing about the volume.
+        RemoteControl.musicCasting = { true }
+        assertNull(RemoteControl.musicVolumeReport())
+        musicHolds = false
+        assertEquals(emptyList(), changesDuring { RemoteControl.dispatch(RemoteCommand.SetVolume(50)) }, "nobody holds it: nothing to report")
+        RemoteControl.musicVolume.apply(RemoteCommand.SetVolume(100))
+    }
+
+    @Test
+    fun theDesktopSliderUnmutesAndReportsAtOnce() {
+        // A dashboard mute, then the viewer drags the bar's slider: the music is audible again at the slider's level.
+        musicHolds = true
+        RemoteControl.dispatch(RemoteCommand.SetVolume(35))
+        RemoteControl.dispatch(RemoteCommand.Mute(true))
+        val changes = changesDuring { RemoteControl.musicLevelSet(0.6f) }
+        assertEquals(listOf(RemoteTarget.MUSIC), changes)
+        assertEquals(VolumeReport(60, false), RemoteControl.musicVolumeReport())
+        RemoteControl.musicVolume.apply(RemoteCommand.SetVolume(100))
     }
 }
