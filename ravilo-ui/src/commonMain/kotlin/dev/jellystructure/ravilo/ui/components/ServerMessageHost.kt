@@ -7,8 +7,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
@@ -34,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.drawBehind
@@ -43,9 +47,28 @@ import dev.jellystructure.ravilo.ui.LocalServerMessages
 import dev.jellystructure.ravilo.ui.seams.safeAreaPadding
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.seams.ServerMessageCard
+import dev.jellystructure.ravilo.ui.seams.ServerMessageCardStyle
+import dev.jellystructure.ravilo.ui.seams.ServerMessageOverVideo
+import dev.jellystructure.ravilo.ui.seams.VideoOverApp
+import dev.jellystructure.ravilo.ui.seams.platformServerMessageOverVideo
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlin.time.TimeSource
 
-private data class ToastItem(val id: Long, val header: String?, val text: String, val durationMs: Long)
+private data class ToastItem(
+    val id: Long,
+    val header: String?,
+    val text: String,
+    val durationMs: Long,
+    val shown: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow(),
+) {
+    fun elapsedMs(): Long = shown.elapsedNow().inWholeMilliseconds
+    fun remainingMs(): Long = (durationMs - elapsedMs()).coerceAtLeast(0L)
+}
+
+/** Test tag of each toast card (R354 FR-R354-10's test). */
+const val SERVER_MESSAGE_TOAST_TAG = "server-message-toast"
 
 /**
  * R152 — Jellyfin dashboard "send message" toasts, top-right, stacking. Mounted once at the app root
@@ -53,13 +76,34 @@ private data class ToastItem(val id: Long, val header: String?, val text: String
  * a no-op if that local isn't provided (e.g. a preview/test host).
  *
  * Not part of the D-pad focus order — timeout is the primary dismissal on TV (FR-R152-4); pointer
- * click dismisses immediately where available.
+ * click dismisses immediately where available. R354 (FR-R354-10c) — a tap gesture, not `clickable`: `clickable` is a
+ * focus target, so on a TV the D-pad could leave the player's controls for the toast.
+ *
+ * R354 (FR-R354-10b) — on the web the picture is a `<video>` element lifted ABOVE this canvas ([VideoOverApp]), so
+ * while it covers the canvas the same toasts are handed to [overVideo] (DOM cards above the video) and not drawn here;
+ * when the canvas comes back on top they return here with their remaining time. The time is kept per message (not
+ * per drawing), so a message is never shown twice and never restarts.
  */
 @Composable
-fun ServerMessageHost(modifier: Modifier = Modifier) {
+fun ServerMessageHost(
+    modifier: Modifier = Modifier,
+    overVideo: ServerMessageOverVideo? = remember { platformServerMessageOverVideo() },
+) {
     val messages = LocalServerMessages.current ?: return
     val toasts = remember { mutableStateListOf<ToastItem>() }
     var nextId by remember { mutableStateOf(0L) }
+
+    // Every message leaves at the end of its time (plus the exit), wherever it is drawn: the Compose toast dismisses
+    // itself with its animation, but a DOM card has no composable to do it.
+    LaunchedEffect(Unit) {
+        snapshotFlow { toasts.toList() }.collectLatest { list ->
+            if (list.isEmpty()) return@collectLatest
+            val waits = list.associate { it.id to it.remainingMs() + RaviloMotion.TOAST_TRANSITION_MS }
+            val next = waits.values.min()
+            delay(next)
+            toasts.removeAll { (waits[it.id] ?: Long.MAX_VALUE) <= next }
+        }
+    }
 
     LaunchedEffect(messages) {
         messages.collect { envelope ->
@@ -70,10 +114,35 @@ fun ServerMessageHost(modifier: Modifier = Modifier) {
         }
     }
 
+    val handset = dev.jellystructure.ravilo.ui.theme.LocalHandset.current
+    if (overVideo != null) {
+        val colors = RaviloTheme.colors
+        val style = ServerMessageCardStyle(
+            phone = handset,
+            desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout || dev.jellystructure.ravilo.ui.isDesktopPlatform,
+            accent = colors.accent, accentEnd = colors.accentSecondary, surface = colors.surface,
+            text = colors.text, textSecondary = colors.textSecondary, textDim = colors.textDim,
+        )
+        val covered = VideoOverApp.covers
+        val current = toasts.toList()   // read here, in composition, so a new or gone message recomposes this
+        SideEffect {
+            if (covered && current.isNotEmpty()) {
+                overVideo.show(
+                    current.map { ServerMessageCard(it.id, it.header, it.text, it.durationMs, it.elapsedMs()) },
+                    style,
+                ) { id -> toasts.removeAll { it.id == id } }
+            } else {
+                overVideo.hide()
+            }
+        }
+        DisposableEffect(overVideo) { onDispose { overVideo.hide() } }
+        if (covered) return
+    }
+
     if (toasts.isEmpty()) return
     // R354 (FR-R354-9d) — on a phone the message is a card at the top, under the status bar, the screen's width less
     // 16 dp a side: R152's top-right TV toast sat 100 dp down at a TV's size.
-    if (dev.jellystructure.ravilo.ui.theme.LocalHandset.current) {
+    if (handset) {
         Box(modifier = modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.TopCenter) {
             Column(
                 modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp).widthIn(max = 460.dp),
@@ -119,8 +188,10 @@ private fun ServerMessageToast(toast: ToastItem, phone: Boolean, onDismiss: () -
         delay(RaviloMotion.TOAST_TRANSITION_MS.toLong())
         onDismiss()
     }
+    // R354 (FR-R354-10b) — what is left of the message's time: it may have been shown above the web's video first.
+    val remainingMs = remember(toast.id) { toast.remainingMs() }
     LaunchedEffect(toast.id) {
-        delay(toast.durationMs)
+        delay(remainingMs)
         dismissed = true
     }
 
@@ -140,7 +211,7 @@ private fun ServerMessageToast(toast: ToastItem, phone: Boolean, onDismiss: () -
     // Countdown bar: full while entering, then drains linearly over the toast's own display duration.
     val barProgress by animateFloatAsState(
         targetValue = if (visible && !dismissed) 0f else 1f,
-        animationSpec = if (visible && !dismissed) tween(toast.durationMs.toInt(), easing = LinearEasing) else snap(),
+        animationSpec = if (visible && !dismissed) tween(remainingMs.toInt(), easing = LinearEasing) else snap(),
     )
     val colors = RaviloTheme.colors
     val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout || (dev.jellystructure.ravilo.ui.isDesktopPlatform)
@@ -188,10 +259,9 @@ private fun ServerMessageToast(toast: ToastItem, phone: Boolean, onDismiss: () -
                     alpha = 0.9f,
                 )
             }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { if (!dismissed) dismissed = true },
+            // R354 (FR-R354-10c) — a tap, never a focus target: the D-pad stays with the player.
+            .pointerInput(toast.id) { detectTapGestures { if (!dismissed) dismissed = true } }
+            .testTag(SERVER_MESSAGE_TOAST_TAG),
     ) {
         // Three sizes: a computer's notification, a phone's card, a TV's toast.
         val small = desk || phone
