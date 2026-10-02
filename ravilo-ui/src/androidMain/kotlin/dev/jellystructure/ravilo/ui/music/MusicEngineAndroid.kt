@@ -118,16 +118,62 @@ actual object MusicEngine {
         val p = b.build()
         p.addListener(listener)
         exo = p
-        session = MediaSession.Builder(ctx, QueuePlayer(p))
+        val own = QueuePlayer(p).also { local = it }
+        session = MediaSession.Builder(ctx, remote ?: own)
             .setId("ravilo-music")
             .setCallback(SessionCallback)
             .apply { activityIntent(ctx)?.let { setSessionActivity(it) } }
             .build()
+        remote?.let { showStopCasting() }
         return p
     }
 
     /** The session the service hosts; built on first use. */
     internal fun sessionOrBuild(): MediaSession { player(); return session!! }
+
+    // ── R356 (FR-R356-1): while the phone is the remote for a cast, the session plays the cast's mirror ──
+
+    /** The phone's own player as the session sees it (next/previous from the queue). */
+    private var local: QueuePlayer? = null
+    /** The cast's mirror ([CastSessionRemote]) while a cast is live; null = the phone's own player. */
+    private var remote: Player? = null
+    private const val STOP_CAST = "ravilo.cast.stop"
+    private val stopCast = SessionCommand(STOP_CAST, Bundle.EMPTY)
+
+    /**
+     * R356 — [p] becomes the session's player (the card, the lock screen, the media keys follow the cast), and the
+     * service is started so Media3 can keep it in the foreground while the cast plays; null gives the session back to
+     * the phone's own player. Main thread.
+     */
+    internal fun useRemote(p: Player?) {
+        if (remote === p) return
+        remote = p
+        if (p != null) {
+            val s = sessionOrBuild()
+            s.player = p
+            showStopCasting()
+            ensureService()
+        } else {
+            val s = session ?: return
+            local?.let { s.player = it }
+            runCatching { s.setMediaButtonPreferences(emptyList()) }
+            if (book != null) applyBookPlayer()
+        }
+    }
+
+    /** The card's *Stop casting* (FR-R356-3), beside the transport. */
+    private fun showStopCasting() {
+        runCatching {
+            session?.setMediaButtonPreferences(listOf(
+                CommandButton.Builder(CommandButton.ICON_STOP).setSessionCommand(stopCast)
+                    .setDisplayName(dev.jellystructure.ravilo.ui.i18n.t("cast.stop", dev.jellystructure.ravilo.i18n.LastLanguage.read() ?: "en"))
+                    .setSlots(CommandButton.SLOT_OVERFLOW).build(),
+            ))
+        }
+    }
+
+    /** R356 (FR-R356-4) — a cover as the card loads it: absolute, at the size the phone's own player asks for. */
+    internal fun artworkUri(url: String): String = absolute(url) + (if ('?' in url) "&" else "?") + "w=720"
 
     private fun activityIntent(ctx: Context): PendingIntent? {
         val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return null
@@ -167,13 +213,14 @@ actual object MusicEngine {
     private object SessionCallback : MediaSession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
             MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(back30).add(fwd30).build())
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(back30).add(fwd30).add(stopCast).build())
                 .build()
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
             when (customCommand.customAction) {
                 BACK30 -> skipBy(-30_000L)
                 FWD30 -> skipBy(30_000L)
+                STOP_CAST -> CastSessionRemote.stopCasting()   // R356 (FR-R356-3)
                 else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -532,7 +579,7 @@ actual object MusicEngine {
         book = null; queuedPart = null; prefetching = false; lastChapter = -1
         watchJob?.cancel()
         exo?.let { it.setPlaybackSpeed(1f); it.skipSilenceEnabled = false; it.volume = userVolume }
-        runCatching { session?.setMediaButtonPreferences(emptyList()) }
+        if (remote == null) runCatching { session?.setMediaButtonPreferences(emptyList()) }
     }
 
     /** The music queue is starting while a book is loaded: close the part and drop the book. */
@@ -551,6 +598,7 @@ actual object MusicEngine {
         p.setPlaybackSpeed(b.speed.toFloat())
         p.skipSilenceEnabled = BookPrefs.skipSilence
         p.volume = userVolume
+        if (remote != null) return   // R356 — the card is the cast's while one is live
         runCatching {
             session?.setMediaButtonPreferences(listOf(
                 CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30).setSessionCommand(back30).setDisplayName("-30").setSlots(CommandButton.SLOT_BACK).build(),
@@ -725,8 +773,14 @@ actual object MusicEngine {
 
     /** The service went away (the app was removed from recents, or the system stopped it). */
     internal fun onServiceDestroyed() {
-        clear()
+        // R356 — while casting the phone's queue is what *Play on this phone* and a hand-back come back to: kept.
+        if (remote == null) clear() else { loadJob?.cancel(); closeSong(); exo?.stop() }
         session?.release(); session = null
         exo?.release(); exo = null
+        local = null
+        remote = null   // R356 — a live cast's next report hands the mirror to a new session (and service)
     }
+
+    /** R356 (FR-R356-5) — the session plays a cast's mirror: the phone itself plays nothing. */
+    internal val castingRemote: Boolean get() = remote != null
 }

@@ -22,9 +22,12 @@ class RaviloMusicService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = MusicEngine.sessionOrBuild()
 
-    /** Acceptance 1 — removing the app from recents stops the music. */
+    /**
+     * Acceptance 1 — removing the app from recents stops the music. R356 (FR-R356-5) — while the session mirrors a cast
+     * the phone plays nothing: the service goes, the device plays on (FR-R245-5), and the phone's own queue is kept.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        MusicEngine.clear()
+        if (!MusicEngine.castingRemote) MusicEngine.clear()
         stopSelf()
     }
 
