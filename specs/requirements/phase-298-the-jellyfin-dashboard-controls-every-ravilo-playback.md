@@ -185,3 +185,9 @@ a film.
 (*Chromecast via Ravilo · Stue TV*, *Soveværelse TV*, *Gæsteværelse*, the old *Ravilo Web* / *fedora*) leave
 `/Sessions` within ~2 minutes, each with one `Jellyfin session ended` log line. A session whose device row is gone is
 left alone by design (Jellyfin's restart clears it).
+
+**Found on production right after the deploy (2026-10-02) and fixed:** the sweep ended nothing — all five stale
+*Chromecast via Ravilo* sessions (two days old) stayed. Jellyfin 12.1 reports a session with no socket controller as
+`IsActive: true`, and `staleRaviloSessions` skipped every `IsActive` session, i.e. exactly the stale ones. The check is
+gone (a Ravilo device never holds its own Jellyfin socket; the bridged check already protects a live one), and
+`JellyfinRemoteTest` now uses production's shape.

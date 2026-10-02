@@ -94,7 +94,7 @@ class JellyfinRemoteTest {
         val web = device("web1", kind = "web")
         val sessions = parseJellyfinSessions(
             """[
-              {"Client":"Ravilo","DeviceId":"ravilo-cast-aaaaaaaaaa-u1","IsActive":false,"LastActivityDate":"1970-01-12T13:44:00.0000000Z"},
+              {"Client":"Ravilo","DeviceId":"ravilo-cast-aaaaaaaaaa-u1","IsActive":true,"LastActivityDate":"1970-01-12T13:44:00.0000000Z"},
               {"Client":"Ravilo","DeviceId":"ravilo-phone1-u1","IsActive":false,"LastActivityDate":"1970-01-12T13:44:00.0000000Z","NowPlayingItem":{"Id":"x"}},
               {"Client":"Ravilo","DeviceId":"ravilo-tv1-u1","IsActive":true,"LastActivityDate":"1970-01-12T13:44:00.0000000Z"},
               {"Client":"Ravilo","DeviceId":"ravilo-web1-u1","IsActive":false,"LastActivityDate":"1970-01-12T13:44:00.0000000Z"},
@@ -105,7 +105,9 @@ class JellyfinRemoteTest {
         // 1970-01-12T13:44:00Z is 999 840 s: 160 s before "now", older than the grace — so web is left alone only
         // because it is bridged.
         val stale = staleRaviloSessions(sessions, listOf(receiver, phone, tv, web), bridged = { it == "web1" }, nowEpochSec = now, graceSec = 90)
-        assertEquals(listOf("cast-aaaaaaaaaa"), stale.map { it.deviceId }, "playing, active, bridged, foreign and unknown sessions are left alone")
+        // Jellyfin 12.1 reports a session with no socket as IsActive: true (every stale receiver on production read
+        // so, 2026-10-02), so IsActive never protects a session: the idle receiver and the idle, unbridged TV both end.
+        assertEquals(listOf("cast-aaaaaaaaaa", "tv1"), stale.map { it.deviceId }, "playing, bridged, foreign and unknown sessions are left alone")
 
         val recent = staleRaviloSessions(sessions, listOf(receiver), bridged = { false }, nowEpochSec = 999_840L + 60L, graceSec = 90)
         assertTrue(recent.isEmpty(), "inside the grace nothing is ended")

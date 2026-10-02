@@ -136,7 +136,9 @@ fun staleRaviloSessions(
 ): List<DeviceData> {
     val byIdentity = devices.associateBy { JellyfinDeviceIdentity.forDevice(it).deviceId }
     return sessions.mapNotNull { s ->
-        if (s.client != "Ravilo" || s.nowPlaying || s.isActive) return@mapNotNull null
+        // Not `IsActive`: Jellyfin 12.1 reports a session with no socket controller as active (seen on production
+        // 2026-10-02 — every stale receiver session read IsActive: true), so it says nothing about staleness here.
+        if (s.client != "Ravilo" || s.nowPlaying) return@mapNotNull null
         val device = byIdentity[s.deviceId ?: return@mapNotNull null] ?: return@mapNotNull null
         val last = s.lastActivityEpochSec ?: return@mapNotNull null
         if (nowEpochSec - last < graceSec) return@mapNotNull null
