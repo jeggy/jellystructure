@@ -671,23 +671,20 @@ class JellyfinClient {
             .bodyOrNull<JellyfinNetworkConfig>("getNetworkConfiguration")
     }.getOrElse { Logger.warn("Jellyfin getNetworkConfiguration failed: ${it.message}"); null }
 
-    /** FR-244-1's capability probe: ask Jellyfin how it would classify a caller presenting a public
-     *  address, rather than reading a setting and reasoning about what it implies.
-     *
-     *  The address is **mandatorily** from `203.0.113.0/24` (RFC 5737 TEST-NET-3). A real address such
-     *  as `8.8.8.8` must never be used here, because the probe would then be asserting something about
-     *  a third party's network.
-     *
-     *  Read-only, and deliberately so: the audit that produced phase 244 caused roughly a minute of
-     *  household downtime by probing `POST /System/Restart` expecting a 401, so FR-244-7 puts lifecycle
-     *  routes on a deny-list and this phase reads a classification instead of testing a restart by
-     *  performing one. */
-    suspend fun probeEndpointClassification(baseUrl: String, token: String): JellyfinEndpointInfo? = runCatching {
-        httpGet(baseUrl.trimEnd('/') + "/System/Endpoint") {
-            jellyfinAuth(token)
-            header("X-Forwarded-For", EXPOSURE_PROBE_ADDRESS)
-        }.bodyOrNull<JellyfinEndpointInfo>("probeEndpointClassification")
-    }.getOrElse { Logger.warn("Jellyfin probeEndpointClassification failed: ${it.message}"); null }
+    /** Phase 297 FR-297-6 — the sessions active in the last [activeWithinSeconds], for the address Jellyfin
+     *  attributes to each caller. Replaces 244's `/System/Endpoint` probe: a probe sent from inside the
+     *  network is always in-network, fixed or not, while a session's `RemoteEndPoint` shows whether
+     *  Jellyfin sees callers or only the proxy in front of them. Read-only. */
+    suspend fun getSessions(baseUrl: String, token: String, activeWithinSeconds: Int): List<JellyfinSessionInfo>? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/Sessions?activeWithinSeconds=$activeWithinSeconds") { jellyfinAuth(token) }
+            .bodyOrNull<List<JellyfinSessionInfo>>("getSessions")
+    }.getOrElse { Logger.warn("Jellyfin getSessions failed: ${it.message}"); null }
+
+    /** Phase 297 FR-297-2 — `GET /System/Configuration`, for the trickplay settings. */
+    suspend fun getServerConfiguration(baseUrl: String, token: String): JellyfinServerConfiguration? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/System/Configuration") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinServerConfiguration>("getServerConfiguration")
+    }.getOrElse { Logger.warn("Jellyfin getServerConfiguration failed: ${it.message}"); null }
 
     /** The default repository's plugin catalog (`GET /Packages`) — used to find the Webhook plugin's
      *  latest installable version when it isn't installed yet. */
@@ -1564,10 +1561,6 @@ internal fun jellyfinIdentityHeader(identity: JellyfinDeviceIdentity?, versionRe
  *  an [identity] swaps in a per-device Client/Device/DeviceId instead of the shared server identity.
  *  Phase 224 (FR-224-4): a call site that passes no identity still gets the device's own when the token
  *  is a device's — [DeviceIdentityRegistry] — so a device token never travels under `Device="Server"`. */
-/** Phase 244 FR-244-1 — RFC 5737 TEST-NET-3. Documentation-only by standard, so the probe cannot be
- *  making a claim about anyone's real network. */
-internal const val EXPOSURE_PROBE_ADDRESS = "203.0.113.9"
-
 /**
  * Phase 239 (FR-239-3) — the ONE place a Jellyfin token becomes a query parameter.
  *

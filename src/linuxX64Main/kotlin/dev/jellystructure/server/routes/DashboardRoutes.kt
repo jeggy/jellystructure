@@ -89,7 +89,8 @@ class DashboardService(
     private val dropped = setOf("no_segments")
 
     /** 246's host checks live in the Jellyfin advisor; they are *This server* on the Dashboard (Q5). */
-    private val hostFindingPrefixes = listOf("swappiness", "scheduler_", "readahead_", "max_sectors_", "known_proxies_")
+    // Phase 297 FR-297-6 — Known proxies is a Jellyfin setting (Dashboard → Networking), so its rows stay under Jellyfin.
+    private val hostFindingPrefixes = listOf("swappiness", "scheduler_", "readahead_", "max_sectors_")
 
     suspend fun build(jellyfinUserId: String?): DashboardDto {
         val cfg = configStore.current
@@ -133,8 +134,10 @@ class DashboardService(
             for ((_, group) in perLib) {
                 val (firstLib, f) = group.first()
                 val libs = group.map { it.first }.distinct()
+                // Phase 297 FR-297-8 — a row for several libraries must not send the admin to the first one only.
+                val navPath = if (libs.size > 1) f.navigationPath.replace(" → $firstLib → ", " → (each library listed) → ") else f.navigationPath
                 rows += findingRow("lib_" + f.id, "jf", f.severity, f.summary, libs.joinToString(" · "), libs.size, "library", "Jellyfin",
-                    f.navigationPath, f.fieldLabel, f.currentValue, f.recommendation, f.tradeoff, f.action, f.id, href = "/settings?tab=libraries").also { firstLib.length }
+                    navPath, f.fieldLabel, f.currentValue, f.recommendation, f.tradeoff, f.action, f.id, href = "/settings?tab=libraries")
             }
         }
 

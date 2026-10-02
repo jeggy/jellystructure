@@ -1523,7 +1523,7 @@ internal fun wireAdvisorActions(findings: List<dev.jellystructure.api.AdvisorFin
                 val rechecked = ConfigApi.recheckJellyfinExposure()
                 // FR-244-4 — the operator confirms the fix rather than being told it worked: the finding
                 // disappearing IS the confirmation, and a wrong value leaves it standing.
-                val stillOpen = rechecked?.any { it.id == "known_proxies_empty" || it.id == "known_proxies_unconfirmed" }
+                val stillOpen = rechecked?.any { it.id == "known_proxies_empty" || it.id == "known_proxies_ignored" }
                 out?.textContent = when {
                     rechecked == null -> "Couldn't reach the server."
                     stillOpen == true -> "Still reported open. Jellyfin may need a restart before the change takes effect \u2014 do that when nobody is watching."

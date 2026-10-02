@@ -92,7 +92,8 @@ data class JellyfinLibraryOptions(
     // that makes them distinguishable. Confirmed live against 12.1.0 (GET /Library/VirtualFolders,
     // 2026-09-19), where `MetadataSavers` is genuinely absent on two libraries and `[]` on two others.
     @SerialName("MetadataSavers") val metadataSavers: List<String>? = null,
-    @SerialName("EnableInternetProviders") val enableInternetProviders: Boolean? = null,
+    // Phase 297 FR-297-4 — `EnableInternetProviders` is deliberately not read: 12.1's library editor has no
+    // control for it and saves `true` on every save. The per-type fetcher lists below decide fetching.
     @SerialName("TypeOptions") val typeOptions: List<JellyfinTypeOptions>? = null,
     // Phase 280 (FR-280-6) — *Save artwork into media folders*; nullable for the same reason as above.
     @SerialName("SaveLocalMetadata") val saveLocalMetadata: Boolean? = null,
@@ -455,12 +456,27 @@ data class JellyfinNetworkConfig(
     @SerialName("EnableRemoteAccess") val enableRemoteAccess: Boolean? = null,
 )
 
-// Phase 244 (FR-244-1) — GET /System/Endpoint. The capability probe's answer: how Jellyfin classifies
-// the caller it is currently answering. Confirmed live against 12.1.0, 2026-09-19.
+// Phase 297 FR-297-6 — GET /Sessions. `RemoteEndPoint` is the address Jellyfin attributed to the caller, after
+// applying Known proxies — which is what the Known-proxies finding is about. Confirmed live against 12.1.0,
+// 2026-10-02 (a bare address, no port).
 @Serializable
-data class JellyfinEndpointInfo(
-    @SerialName("IsLocal") val isLocal: Boolean = false,
-    @SerialName("IsInNetwork") val isInNetwork: Boolean = false,
+data class JellyfinSessionInfo(
+    @SerialName("DeviceId") val deviceId: String? = null,
+    @SerialName("Client") val client: String? = null,
+    @SerialName("RemoteEndPoint") val remoteEndPoint: String? = null,
+)
+
+// Phase 297 FR-297-2 — GET /System/Configuration, narrowed to Dashboard → Playback → Trickplay. Nullable for
+// 242's reason: the finding fires on an explicit `false`. Confirmed live against 12.1.0, 2026-10-02.
+@Serializable
+data class JellyfinServerConfiguration(
+    @SerialName("TrickplayOptions") val trickplayOptions: JellyfinTrickplayOptions? = null,
+)
+
+@Serializable
+data class JellyfinTrickplayOptions(
+    @SerialName("EnableHwAcceleration") val enableHwAcceleration: Boolean? = null,
+    @SerialName("EnableKeyFrameOnlyExtraction") val enableKeyFrameOnlyExtraction: Boolean? = null,
 )
 
 // Phase 165 amendment (2026-08-14, FR-165-8) — GET /ScheduledTasks, used to find the Webhook plugin's

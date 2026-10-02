@@ -98,6 +98,7 @@ object JellyfinAdvisorService {
         val plugins = jellyfinClient.getPlugins(base, token)
         val tasks = jellyfinClient.getScheduledTasks(base, token).orEmpty()
         val network = jellyfinClient.getNetworkConfiguration(base, token)
+        val serverConfig = jellyfinClient.getServerConfiguration(base, token)
 
         // FR-212-1 — a Jellyfin that cannot answer renders "Couldn't reach Jellyfin" for the whole
         // surface, never an empty finding list (which would read as "everything is fine").
@@ -139,6 +140,12 @@ object JellyfinAdvisorService {
         // them above every performance finding without needing a second ordering rule.
         serverWide += exposureFindings(jellyfinClient, cfg, base, token, network)
         if (encoding != null) serverWide += serverWideEncodingFindings(encoding, systemInfo)
+        // Phase 297 FR-297-2 — how trickplay work is done is decided on its own page, not per library.
+        trickplaySettingsFinding(
+            libraries.filter { it.libraryOptions?.enableTrickplayImageExtraction == true }.map { it.name },
+            serverConfig?.trickplayOptions,
+            encoding?.hardwareAccelerationType,
+        )?.let { serverWide += it }
 
         // FR-212-6 — host storage, deduped by device: several libraries can share one spindle (Film,
         // Musik and Blandet all sit on sdc here), and the finding is about the DEVICE, not the library.
@@ -165,75 +172,121 @@ object JellyfinAdvisorService {
 
     // ── FR-212-4 / FR-246-12 — per-library findings ─────────────────────────────
 
-    private fun perLibraryFindings(lib: JellyfinLibrary, storage: DeviceInfo?, tasks: List<JellyfinTaskInfo>): List<AdvisorFinding> {
+    internal fun perLibraryFindings(lib: JellyfinLibrary, storage: DeviceInfo?, tasks: List<JellyfinTaskInfo>): List<AdvisorFinding> {
         val opts = lib.libraryOptions ?: return emptyList()
         val path = "Dashboard → Libraries → ${lib.name} → Manage library"
         val out = mutableListOf<AdvisorFinding>()
         val rotational = storage?.rotational == true
         val disk = storage?.device?.let { " ($it)" } ?: ""
 
-        // (a)
+        // (a) — Phase 297 FR-297-1: information. Jellyfin's log shows one frame grab per chapter mark
+        // (`ChapterManager: Extracting chapter image`, about 2 s each on this host), not a read of the file.
         val chapterImagesOnRotational = opts.enableChapterImageExtraction && rotational
         if (chapterImagesOnRotational) {
             out += AdvisorFinding(
                 id = "chapter_images_${lib.id}",
-                severity = WARNING,
+                severity = INFO,
                 summary = "Chapter image extraction is on, on rotational storage",
                 currentValue = "Enable chapter image extraction: On" + taskSuffix(tasks, TASK_CHAPTER_IMAGES),
-                costHere = "Every affected title in ${lib.name} is read in full to cut chapter thumbnails, on a spinning disk$disk.",
+                costHere = "For each new title in ${lib.name}, Jellyfin seeks to every chapter mark and grabs one frame, on a spinning disk$disk. That is a short read per chapter, once per title — not a read of the whole file.",
                 navigationPath = path,
                 fieldLabel = "\"Enable chapter image extraction\" (OptionExtractChapterImage)",
-                recommendation = "Turn off, or accept the cost knowingly.",
+                recommendation = "Nothing needs changing. Leave it on if anyone uses scene selection in Jellyfin's own apps; turn it off if nobody does.",
                 // FR-246-12 — name the real consumer. Ravilo does not render a chapter thumbnail.
-                tradeoff = "Jellyfin's own clients lose chapter-selection thumbnails in the scrub bar for this library. Ravilo shows none either way.",
+                tradeoff = "Turning it off: Jellyfin's own apps lose the chapter thumbnails in scene selection for this library. Ravilo shows none either way.",
             )
         }
-        // (b) — only when (a) also holds
+        // (b) — only when (a) also holds. FR-297-1: a choice, not a fault.
         if (chapterImagesOnRotational && opts.extractChapterImagesDuringLibraryScan) {
             out += AdvisorFinding(
                 id = "chapter_images_during_scan_${lib.id}",
-                severity = WARNING,
+                severity = INFO,
                 summary = "Chapter images extract during the library scan itself",
-                currentValue = "Extract chapter images during the library scan: On",
-                costHere = "The chapter-image work runs inside every library scan instead of the dedicated nightly task — Jellyfin's own help text: \"The process can be slow, resource intensive, and may require several gigabytes of space… It is not recommended to run this task during peak usage hours.\"",
+                currentValue = "Extract chapter images during the library scan: On" + taskSuffix(tasks, TASK_CHAPTER_IMAGES),
+                costHere = "A scan that finds a new title waits while its chapter images are cut, instead of leaving them to the nightly \"Chapter images\" task.",
                 navigationPath = path,
                 fieldLabel = "\"Extract chapter images during the library scan\" (LabelExtractChaptersDuringLibraryScan)",
-                recommendation = "Turn off — it moves the work to the nightly task instead of into every scan.",
-                tradeoff = "New titles won't have chapter thumbnails until the next nightly chapter-image task runs.",
+                recommendation = "Optional: turn it off so the work moves to the nightly task — in Jellyfin's words, \"allowing the regular library scan to complete faster\".",
+                tradeoff = "New titles get their chapter images after the next nightly run instead of straight away.",
             )
         }
-        // (c)
+        // (c) — FR-297-3: information. Whether the work is cheap is decided on the Trickplay page, which the
+        // server-wide trickplay finding (FR-297-2) reads; this row says what the library-level switch costs.
         if (opts.enableTrickplayImageExtraction && rotational) {
             out += AdvisorFinding(
                 id = "trickplay_${lib.id}",
-                severity = WARNING,
+                severity = INFO,
                 summary = "Trickplay image extraction is on, on rotational storage",
                 currentValue = "Enable trickplay image extraction: On" + taskSuffix(tasks, TASK_TRICKPLAY),
-                costHere = "Every title in ${lib.name} is decoded end to end to cut scrub-preview thumbnails, on a spinning disk$disk. The work is a whole-file decode, so it costs CPU as well as reads — and all of it is CPU if Jellyfin has no hardware acceleration selected (see the server-wide findings).",
+                costHere = "Each new title in ${lib.name} is read in full, once, to build its scrub previews, on a spinning disk$disk. The decoding runs on the CPU unless \"Enable hardware decoding\" is on under Dashboard → Playback → Trickplay.",
                 navigationPath = path,
                 fieldLabel = "\"Enable trickplay image extraction\" (OptionExtractTrickplayImage)",
-                recommendation = "Turn off unless Jellyfin's own web client is used for scrubbing in this library.",
-                // FR-246-12 — PlaybackService.kt:530 and :939 both hardcode trickplayUrl = null.
-                tradeoff = "Jellyfin's own clients lose the hover/scrub thumbnail previews for this library. Ravilo never displays one — it sends no trickplay URL at all — so nothing changes there.",
+                recommendation = "Leave it on if anyone scrubs with Jellyfin's own apps or apps built on Jellyfin; turn it off if nobody does.",
+                // FR-246-12 — PlaybackService hardcodes trickplayUrl = null.
+                tradeoff = "Turning it off: Jellyfin's own apps lose the scrub previews for this library. Ravilo never shows one — it sends no trickplay URL at all — so nothing changes there.",
             )
         }
         // (d)
         lufsFinding(lib, rotational, disk)?.let { out += it }
-        // (e) — consistency check, fires regardless of storage
+        // (e) — consistency check, fires regardless of storage. FR-297-5: inert, so information.
         if (!opts.enableTrickplayImageExtraction && opts.extractTrickplayImagesDuringLibraryScan) {
             out += AdvisorFinding(
                 id = "trickplay_contradiction_${lib.id}",
-                severity = WARNING,
+                severity = INFO,
                 summary = "\"During the scan\" is on while trickplay itself is off",
                 currentValue = "Enable trickplay image extraction: Off · Extract trickplay images during the library scan: On",
-                costHere = "The during-scan flag is inert while the feature itself is off — a contradictory pair, not a performance trade.",
+                costHere = "None. The during-scan flag does nothing while trickplay itself is off.",
                 navigationPath = path,
-                fieldLabel = "\"Enable trickplay image extraction\" (OptionExtractTrickplayImage) and \"Extract trickplay images during the library scan\" (its during-scan counterpart)",
-                recommendation = "Turn the during-scan flag off too, or turn trickplay extraction back on if it was meant to be on.",
-                tradeoff = "None — this is a mistake either way, not a trade.",
+                fieldLabel = "\"Extract trickplay images during the library scan\" (LabelExtractTrickplayDuringLibraryScan)",
+                recommendation = "Optional: untick it to tidy the page, or turn trickplay back on if it was meant to be on.",
+                tradeoff = "None.",
             )
         }
         return out
+    }
+
+    /** Phase 297 FR-297-2 — the two switches on Dashboard → Playback → Trickplay that decide what each library's
+     *  trickplay costs. With both off (Jellyfin's defaults) every preview build is a full software decode of the
+     *  file, whatever accelerator transcoding uses. Hardware decoding is only suggested when an accelerator is
+     *  selected: without one the switch does nothing, and 246's `hwaccel_none` finding is the one to act on. */
+    internal fun trickplaySettingsFinding(
+        trickplayLibraries: List<String>,
+        options: dev.jellystructure.auth.JellyfinTrickplayOptions?,
+        hardwareAccelerationType: String?,
+    ): AdvisorFinding? {
+        if (trickplayLibraries.isEmpty() || options == null) return null
+        val accel = hardwareAccelerationType?.trim().orEmpty()
+        val accelSelected = accel.isNotEmpty() && !accel.equals("none", ignoreCase = true)
+        val keyFramesOff = options.enableKeyFrameOnlyExtraction == false
+        val hwDecodeOff = options.enableHwAcceleration == false
+        val suggestHw = hwDecodeOff && accelSelected
+        if (!keyFramesOff && !suggestHw) return null
+
+        fun onOff(b: Boolean?) = when (b) { true -> "On"; false -> "Off"; null -> "unknown" }
+        val ticks = buildList {
+            if (keyFramesOff) add("\"Only generate images from key frames\"")
+            if (suggestHw) add("\"Enable hardware decoding\"")
+        }
+        val decodeNote = when {
+            suggestHw -> " Every frame is decoded on the CPU, although transcoding uses $accel."
+            hwDecodeOff -> " Decoding is on the CPU, and stays there until an accelerator is selected under Dashboard → Playback → Transcoding (see that finding)."
+            else -> ""
+        }
+        return AdvisorFinding(
+            id = "trickplay_settings",
+            severity = WARNING,
+            summary = if (keyFramesOff) "Trickplay previews decode every frame of every file" else "Trickplay previews are decoded on the CPU",
+            currentValue = "Only generate images from key frames: ${onOff(options.enableKeyFrameOnlyExtraction)} · Enable hardware decoding: ${onOff(options.enableHwAcceleration)} · trickplay is on in ${trickplayLibraries.joinToString(", ")}",
+            costHere = (if (keyFramesOff) "Building a title's previews decodes the whole file, frame by frame, to keep one image every few seconds." else "Building a title's previews decodes key frames only.") + decodeNote,
+            navigationPath = "Dashboard → Playback → Trickplay",
+            fieldLabel = ticks.joinToString(" and "),
+            recommendation = "Tick ${ticks.joinToString(" and ")}." +
+                (if (keyFramesOff) " Jellyfin describes key-frame-only extraction as \"significantly faster processing\"." else ""),
+            tradeoff = buildList {
+                if (keyFramesOff) add("A preview shows the nearest key frame, so its timing is less exact.")
+                if (suggestHw) add("Preview decoding shares the GPU with transcodes; Jellyfin falls back to software for a codec the GPU cannot decode.")
+            }.joinToString(" "),
+        )
     }
 
     /** Phase 296 — loudness is a music-library question. Jellyfin's library editor shows "Enable LUFS scan"
@@ -284,7 +337,7 @@ object JellyfinAdvisorService {
      *  watch the finding stay, and conclude the guidance is wrong — which is the failure this phase's own
      *  open question 1 worries about, reached without any Jellyfin restart being involved. Re-running the
      *  whole advisor pass to answer one question would also be slower and noisier, so this runs only the
-     *  probe.
+     *  exposure check.
      *
      *  It invalidates the cached pass on the way out, so the page's own findings agree with the answer
      *  the operator was just given rather than disagreeing for up to five minutes.
@@ -311,25 +364,14 @@ object JellyfinAdvisorService {
 
     /** FR-244-1/2/3/4/5 — the two security findings, shared with `/health/full` per FR-244-8.
      *
-     *  **How FR-244-1's check is built, and why it is not the probe alone.** The dev review's blocking
-     *  item was that jellystructure reaches Jellyfin *through* the same reverse proxy the finding is
-     *  about (`jellyfin_url` is `https://jellyfin.example.net` on this household), and Caddy **appends**
-     *  to `X-Forwarded-For` rather than replacing it — so once `KnownProxies` is set, which entry
-     *  Jellyfin selects from that list decides the probe's answer, and the discriminating case was never
-     *  measured through this path. A probe that cannot observe the capability is worse than no probe.
-     *
-     *  So the check reads two signals and is only definitive where it genuinely is:
-     *
-     *  - **`KnownProxies` empty** is decisive on its own, and needs no inference about proxies: with it
-     *    empty Jellyfin ignores `X-Forwarded-For` outright, so every caller is classified by the address
-     *    it arrived from, which behind any reverse proxy is private. Measured live 2026-09-19 — the
-     *    probe returned `IsInNetwork: true` *identically with and without* the header, which is the
-     *    header being ignored, observed rather than assumed.
-     *  - **`KnownProxies` set** hands the question to the probe. `IsInNetwork: false` clears the
-     *    finding. `IsInNetwork: true` is the case jellystructure cannot tell apart — a wrong proxy
-     *    address and the append-hazard look the same from here — so it says exactly that instead of
-     *    claiming the hole is open or closed. An advisor that guesses in the one state it cannot see is
-     *    how an operator stops believing the rest of the page. */
+     *  - **`KnownProxies` empty** is decisive on its own: with it empty Jellyfin ignores `X-Forwarded-For`
+     *    outright, so every caller is classified by the address it arrived from, which behind any reverse
+     *    proxy is private.
+     *  - **`KnownProxies` set** is judged from `GET /Sessions` (phase 297 FR-297-6, [knownProxiesFinding]).
+     *    244 first used a probe (`/System/Endpoint` with a spoofed `X-Forwarded-For`), but a probe sent from
+     *    inside the network is in-network whether or not the setting is right — it fired on this household's
+     *    correctly configured server (244's open question 1). The address Jellyfin attributes to each session
+     *    shows the difference directly: real callers when the setting works, one proxy hop when it does not. */
     private suspend fun exposureFindings(
         jellyfinClient: JellyfinClient, cfg: AppConfig, base: String, token: String,
         network: dev.jellystructure.auth.JellyfinNetworkConfig?,
@@ -348,6 +390,8 @@ object JellyfinAdvisorService {
         val path = "Dashboard → Networking"
 
         if (proxies.isEmpty()) {
+            // Phase 297 FR-297-6 — when the sessions show one hop, name it; never guess beyond that.
+            val seen = jellyfinClient.getSessions(base, token, KNOWN_PROXIES_WINDOW_SEC)?.let { singleProxyHop(it) }
             out += AdvisorFinding(
                 id = "known_proxies_empty",
                 severity = CRITICAL,
@@ -360,25 +404,15 @@ object JellyfinAdvisorService {
                 fieldLabel = "\"Known proxies\" (KnownProxies)",
                 // FR-244-4 — guide the fix, and do not guess the value. A wrong one silently leaves the
                 // hole open while looking fixed.
-                recommendation = "Set it to the address Jellyfin sees requests arriving *from* — your reverse proxy — not the client's address. jellystructure will not guess it: it cannot see that address, and a wrong value leaves this open while looking fixed. Set it, then use Re-check below. Jellyfin may need a restart before it takes effect — do that when nobody is watching.",
+                recommendation = (if (seen != null) "Set it to your reverse proxy — in the last 24 hours every device reached Jellyfin from $seen, which is the address Jellyfin sees requests arriving from — not a client's address. " else "Set it to the address Jellyfin sees requests arriving *from* — your reverse proxy — not a client's address. ") +
+                    "A wrong value leaves this open while looking fixed. Jellyfin applies it only after a restart — do that when nobody is watching — then use Re-check below. A container's address changes when Docker recreates it, so pin the proxy's address in its compose file, or use its hostname and restart Jellyfin whenever the proxy is recreated.",
                 tradeoff = "None for a proxied installation. It is what makes Jellyfin's own in-network rules mean what they are supposed to mean.",
             )
         } else {
-            val endpoint = jellyfinClient.probeEndpointClassification(base, token)
-            if (endpoint != null && endpoint.isInNetwork) {
-                out += AdvisorFinding(
-                    id = "known_proxies_unconfirmed",
-                    severity = WARNING,
-                    action = "recheck_exposure",
-                    summary = "Known proxies is set, but this server still classifies a public caller as in-network",
-                    currentValue = "Known proxies: ${proxies.joinToString(", ")} · a caller presenting ${dev.jellystructure.auth.EXPOSURE_PROBE_ADDRESS} is still reported IsInNetwork: true",
-                    costHere = "Either the configured address is not the one Jellyfin actually sees requests arriving from, or Jellyfin needs a restart to pick the change up, or the header was rewritten on the way here — jellystructure reaches Jellyfin through the same proxy this setting is about, so it cannot tell those apart from where it stands. What it can say is that the classification has not changed, and unauthenticated restart is reachable while that is true.",
-                    navigationPath = path,
-                    fieldLabel = "\"Known proxies\" (KnownProxies)",
-                    recommendation = "Check the value against what Jellyfin logs as the remote address for an incoming request, and restart Jellyfin if it has not been restarted since the change — when nobody is watching. Then Re-check.",
-                    tradeoff = "n/a — this is a state jellystructure cannot resolve from here, reported rather than guessed at.",
-                )
-            }
+            // Phase 297 FR-297-6 — judged from the addresses Jellyfin attributes to its sessions, not from a probe:
+            // a probe sent from inside the network is in-network whether or not Known proxies is right.
+            val sessions = jellyfinClient.getSessions(base, token, KNOWN_PROXIES_WINDOW_SEC)
+            if (sessions != null) knownProxiesFinding(proxies, sessions)?.let { out += it }
         }
 
         // FR-244-5 — honest, and offers no fix, because there is none. Not softened: naming a problem,
@@ -397,6 +431,67 @@ object JellyfinAdvisorService {
         )
         return out
     }
+
+    /** Phase 297 FR-297-6 — 24 hours: long enough to see several devices, short enough that a proxy re-addressed
+     *  while Jellyfin keeps running (Docker recreating it) shows up as the one address rather than two. */
+    private const val KNOWN_PROXIES_WINDOW_SEC = 86_400
+
+    /** Phase 297 FR-297-6 — Known proxies is set; does Jellyfin see callers, or only one hop? Fires when two or
+     *  more devices were all attributed to one private address. One device, differing addresses or any public
+     *  address is silence: those are what a working setup looks like, or too little to tell. */
+    internal fun knownProxiesFinding(proxies: List<String>, sessions: List<dev.jellystructure.auth.JellyfinSessionInfo>): AdvisorFinding? {
+        val seen = singleProxyHop(sessions) ?: return null
+        val devices = sessions.mapNotNull { it.deviceId?.takeIf { d -> d.isNotBlank() } }.distinct()
+
+        val listed = proxies.any { it.trim() == seen }
+        val hostnames = proxies.filter { !isIpLiteral(it.trim()) }
+        val cost = when {
+            listed -> "$seen is in Known proxies, so Jellyfin trusts it, but it is not passing on the caller's own address (no X-Forwarded-For header). Jellyfin still sees only the proxy."
+            hostnames.isNotEmpty() -> "Known proxies names ${hostnames.joinToString(", ")}. Jellyfin resolves a hostname when it starts, so if the proxy was given a new address since then, Jellyfin still trusts the old one and not $seen."
+            else -> "$seen is not in Known proxies."
+        } + " If $seen is your reverse proxy, Jellyfin ignores the forwarded address and counts every caller, including every request from the internet, as in-network — and Jellyfin lets an in-network caller restart it without a password."
+        return AdvisorFinding(
+            id = "known_proxies_ignored",
+            severity = WARNING,
+            action = "recheck_exposure",
+            summary = "Jellyfin sees every caller as $seen, not as who they are",
+            currentValue = "Known proxies: ${proxies.joinToString(", ")} · in the last 24 hours ${devices.size} devices were all attributed to $seen",
+            costHere = cost,
+            navigationPath = "Dashboard → Networking",
+            fieldLabel = "\"Known proxies\" (KnownProxies)",
+            recommendation = if (listed) {
+                "Make the reverse proxy send X-Forwarded-For, then Re-check."
+            } else {
+                "Set Known proxies to your reverse proxy ($seen is the address Jellyfin sees now) and restart Jellyfin when nobody is watching — Jellyfin applies it only after a restart. The value goes stale because Docker gives a recreated container a new address: pin the proxy's address in its compose file, or use its hostname and restart Jellyfin whenever the proxy is recreated. Then Re-check."
+            },
+            tradeoff = "None for a proxied installation. It is what makes Jellyfin's own in-network rules mean what they are supposed to mean.",
+        )
+    }
+
+    /** The one private address every device was attributed to, when two or more devices were seen and they all
+     *  share it; otherwise null. A session with no device id or no address is ignored. */
+    internal fun singleProxyHop(sessions: List<dev.jellystructure.auth.JellyfinSessionInfo>): String? {
+        val attributed = sessions.mapNotNull { s ->
+            val device = s.deviceId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val addr = s.remoteEndPoint?.trim()?.removePrefix("::ffff:")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            device to addr
+        }
+        if (attributed.map { it.first }.distinct().size < 2) return null
+        val addr = attributed.map { it.second }.distinct().singleOrNull() ?: return null
+        return addr.takeIf { isPrivateAddress(it) }
+    }
+
+    /** RFC 1918, loopback, link-local and IPv6 unique-local / link-local / loopback. */
+    internal fun isPrivateAddress(addr: String): Boolean {
+        val a = addr.lowercase()
+        if (a.contains(':')) return a == "::1" || a.startsWith("fc") || a.startsWith("fd") || a.startsWith("fe80:")
+        val p = a.split('.').mapNotNull { it.toIntOrNull() }
+        if (p.size != 4) return false
+        return p[0] == 10 || p[0] == 127 || (p[0] == 172 && p[1] in 16..31) || (p[0] == 192 && p[1] == 168) || (p[0] == 169 && p[1] == 254)
+    }
+
+    private fun isIpLiteral(s: String): Boolean =
+        s.contains(':') || s.split('.').let { parts -> parts.size == 4 && parts.all { it.toIntOrNull() in 0..255 } }
 
     // ── Phase 242 — metadata ownership ──────────────────────────────────────────
 
@@ -438,20 +533,9 @@ object JellyfinAdvisorService {
             )
         }
 
-        // FR-242-2 — the master switch for Jellyfin fetching metadata itself, read by nothing before 242.
-        if (opts.enableInternetProviders == true) {
-            out += AdvisorFinding(
-                id = "internet_providers_${lib.id}",
-                severity = WARNING,
-                summary = "Jellyfin fetches its own metadata for a library jellystructure manages",
-                currentValue = "Enable internet providers: On",
-                costHere = "Jellyfin goes to external metadata providers for ${lib.name} itself, in parallel with jellystructure doing the same job — two sources of truth for one library, and outbound requests that none of this product's pacing (phase 183) knows about.",
-                navigationPath = path,
-                fieldLabel = "\"Enable internet providers\" (EnableInternetProviders)",
-                recommendation = "Turn off, so metadata for this library comes from one place.",
-                tradeoff = "Jellyfin will show only what jellystructure has written. That is the point, but it does mean a gap in jellystructure's metadata is now visible rather than being papered over by Jellyfin's own fetch.",
-            )
-        }
+        // FR-242-2 was withdrawn by phase 297 (FR-297-4): Jellyfin 12.1's library editor has no control for
+        // EnableInternetProviders and saves `true` on every save, so the finding could not be acted on. The
+        // per-type fetcher lists below are what decides whether Jellyfin fetches.
 
         // FR-242-3 — per-type fetchers, with the local-extractor carve-out.
         for (t in opts.typeOptions.orEmpty()) {
@@ -463,11 +547,11 @@ object JellyfinAdvisorService {
                     severity = WARNING,
                     summary = "Jellyfin has metadata fetchers configured for $type in ${lib.name}",
                     currentValue = "$type → Metadata downloaders: ${metadataFetchers.joinToString(", ")}",
-                    costHere = "Even with the master switch off, a configured fetcher is a second route to an external metadata provider for a library jellystructure already owns.",
+                    costHere = "A configured downloader is a route to an external metadata provider for a library jellystructure already owns — two sources of truth, and outbound requests that none of this product's pacing (phase 183) knows about.",
                     navigationPath = path,
                     fieldLabel = "\"Metadata downloaders\" for $type",
                     recommendation = "Clear them, unless this library is deliberately Jellyfin's to enrich.",
-                    tradeoff = "Same as above: one source of truth, and its gaps become visible.",
+                    tradeoff = "Jellyfin will show only what jellystructure has written: one source of truth, and its gaps become visible rather than papered over by Jellyfin's own fetch.",
                 )
             }
             val external = t.imageFetchers.orEmpty().filter { it.isNotBlank() && it !in LOCAL_ONLY_IMAGE_FETCHERS }
@@ -526,7 +610,7 @@ object JellyfinAdvisorService {
                 severity = CRITICAL,
                 summary = "Hardware encoding is switched on with no accelerator selected",
                 currentValue = "Hardware acceleration: ${if (accel.isEmpty()) "(unset)" else accel} · Hardware encoding: On",
-                costHere = "\"Hardware encoding\" is on and does nothing: with no acceleration type selected every transcode, and every background decode Jellyfin runs for trickplay and chapter images, is done in software on the CPU. A transcode that would be a fraction of one core on a GPU takes whole cores, and 4K material may not reach real time at all.",
+                costHere = "\"Hardware encoding\" is on and does nothing: with no acceleration type selected every transcode is done in software on the CPU, and so is the decoding for trickplay previews and chapter images (trickplay also needs its own \"Enable hardware decoding\" under Dashboard → Playback → Trickplay once an accelerator is selected). A transcode that would be a fraction of one core on a GPU takes whole cores, and 4K material may not reach real time at all.",
                 navigationPath = path,
                 fieldLabel = "\"Hardware acceleration\" (HardwareAccelerationType)",
                 recommendation = "Pick the accelerator this host actually has from Jellyfin's own dropdown, then confirm with one real transcode — jellystructure cannot see from its own container whether a GPU is present and usable, so it will not name one for you. Worth checking after any Jellyfin upgrade: an upgrade rewrites this file.",
@@ -686,8 +770,10 @@ object JellyfinAdvisorService {
 
     // ── FR-212-7 — restart pending ──────────────────────────────────────────────
 
-    private fun restartPendingFinding(systemInfo: dev.jellystructure.auth.JellyfinSystemInfoAuth?, plugins: List<dev.jellystructure.auth.JellyfinPluginInfo>?): AdvisorFinding? {
-        val pendingPlugins = plugins.orEmpty().filter { it.status == "Restart" }.map { it.name }
+    internal fun restartPendingFinding(systemInfo: dev.jellystructure.auth.JellyfinSystemInfoAuth?, plugins: List<dev.jellystructure.auth.JellyfinPluginInfo>?): AdvisorFinding? {
+        // Phase 297 FR-297-7 — `/Plugins` can list one pending version twice; name each once.
+        val pendingPlugins = plugins.orEmpty().filter { it.status == "Restart" }
+            .map { p -> listOfNotNull(p.name, p.version).joinToString(" ") }.distinct()
         val hasPending = (systemInfo?.hasPendingRestart == true) || pendingPlugins.isNotEmpty()
         if (!hasPending) return null
         val pluginNote = if (pendingPlugins.isNotEmpty()) " (${pendingPlugins.joinToString(", ")})" else ""
