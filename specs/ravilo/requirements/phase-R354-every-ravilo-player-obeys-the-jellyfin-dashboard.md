@@ -276,3 +276,42 @@ screen, the message did arrive as a TV-sized toast in the top right.
 receiver's events socket, which the harness does not open).
 
 **Device steps:** in the main session's report.
+
+## Amendment (2026-10-02 night) — FR-R354-10, a message is drawn above the picture
+
+**Observed on production `v1.48-106-gd6506f08`, 2026-10-02 19:22.** In Ravilo web an episode played full-window; the
+dashboard's *Send message* reached the app (the backend logged it as sent), but nothing showed while the video played.
+After a dashboard *Stop* closed the player, the message appeared top right on the series page.
+
+**Root cause.** The message was never queued: `ServerMessageHost` drew it at once, at the top of the app's Compose tree,
+above every page including the player. On the web that tree is one `<canvas>`, and the picture is a separate `<video>`
+element that R157/R169 lift **above** the canvas (`z-index: 2`) whenever no Compose-only overlay is open, because the
+canvas cannot be made transparent. So the toast was drawn, under the video, for its whole time; a *Stop* within that
+time removed the video and uncovered it. Phones, TVs and the desktop app draw the picture inside Compose (Android's
+`SurfaceView` sits under the window; the Mac copies frames into Compose; Linux's mpv window is blended under Compose's
+chrome), so the toast is already above it there. One more defect on a TV: the toast was `clickable`, which makes it a
+focus target for the D-pad.
+
+**FR-R354-10 — The message is drawn above the picture, on every client.**
+- (a) While a film plays (local player, Live TV, the phone's player, the music Playing page, the cast remote) the
+  message is drawn **above the picture**, in the style the app already uses there: the phone's top card, else the
+  top-right toast (FR-R354-9d), header bold on its own line, the same time (FR-R354-9b/c).
+- (b) **On the web,** while the `<video>` covers the app's canvas, the message is drawn as a DOM card above the video
+  and the DOM transport bar (the way R169 draws the transport there), in the theme's colours; when a Compose overlay
+  brings the canvas back on top, the same message moves back to the Compose toast and keeps its remaining time — it is
+  never drawn twice and never restarts. A browser in full screen keeps it: the app goes full screen on the whole
+  document, never on the `<video>`, so every layer comes along.
+- (c) It **never takes focus**: not a D-pad focus target on a TV, and it never moves focus from the player. A tap or a
+  click dismisses it; nothing else under it loses taps.
+- (d) It **never touches playback**: it does not pause, seek, wake or hide the player's chrome, and the chrome's
+  auto-hide does not hide it (it is not part of the chrome).
+- (e) The phone remoting a cast shows it over the remote, like any page, while the app is on screen (FR-R354-9a). A
+  receiver with a screen shows its own (FR-R354-9e).
+- (f) No new string.
+
+**Acceptance (amendment 2).** 10. Ravilo web, a film playing full-window (and in browser full screen): *Send message*
+shows top right above the video for its time; the video keeps playing; a click dismisses it. 11. Android TV, a film
+playing: the toast shows top right; D-pad Left/Right/Up/Down keep moving the player's controls and never land on the
+toast. 12. Phone, a film playing in landscape (immersive): the card shows at the top. 13. Mac/Linux, a film playing:
+the toast shows top right. 14. A Robolectric test: a `server_message` while a focused stand-in player is up renders the
+toast above it, the player keeps focus, a tap dismisses it without reaching the player.
