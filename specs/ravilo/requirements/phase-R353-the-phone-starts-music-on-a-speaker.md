@@ -128,3 +128,22 @@ above, last seen at 09:25 the same morning. `:ravilo-ui:testDebugUnitTest`, `:ra
 
 **Not done:** a cast to the TVs or the hub after this change (not allowed this round; the selection path is the same
 with one extra re-select that only fires when no session started) · open question 1.
+
+## Build notes — FR-R353-5 (2026-10-02, with R354), not deployed, not device-tested
+
+`MusicCast.bind` keeps the last music status seen while connected (`lastMusic`, with when it arrived) and forgets it
+when a film takes the device. On a CONNECTED → not-CONNECTED change it asks `castHandBack(last, elapsed, endedByApp)`
+(commonMain, `MusicCast.kt`) and, when that answers, loads the speaker's queue into the engine **paused** at that song
+and place, on `Dispatchers.Main`. `playHere`, `stop` and `moveAway` set `endedByApp` (they bring the music back
+themselves); every other end — Google Home's *Stop cast*, the Cast notification's *Stop casting*, the device closing
+the app, a lost network — now hands back. A playing song is advanced by the time since the last report, capped at its
+length; a queue that played out comes back at 0:00 of its last song. Common code, so the Mac's Cast v2 sender
+(`CastSenderDesktop` → the same `MusicCast`) is fixed too.
+
+**Tested:** `CastHandBackTest` (5 cases: another controller's *next* then an outside stop resumes the speaker's song
+at its place; paused; capped at the song's end; a played-out queue; nothing when the app ended it, no status, a failed
+item, a film, a bad index) — `:ravilo-ui:testDebugUnitTest` and `:ravilo-ui:desktopTest` in CI.
+
+**Device check (owed):** Pixel 9, music to Stue: Google Home *next* (song A → song B), wait 20 s, Google Home *Stop
+cast* → the phone's mini bar shows song B, paused about 20 s further on than when *next* landed; Play resumes song B
+there. The same from the Mac.

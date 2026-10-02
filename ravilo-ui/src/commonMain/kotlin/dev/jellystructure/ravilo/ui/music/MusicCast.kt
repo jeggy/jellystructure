@@ -86,9 +86,34 @@ object MusicCast {
                     scope.launch(Dispatchers.Main) { handOff(c) }
                 }
                 if (wasLinked && !nowLinked) barHidden.value = false
+                // R353 (FR-R353-5) — what the speaker last said about its queue, kept past the session's end (the
+                // sender clears its status to null as the link drops, so it must be kept before that).
+                if (link == CastLinkState.CONNECTED && st != null && st.music && st.queue.isNotEmpty() && !st.failed) {
+                    lastMusic = st; lastMusicAt = kotlin.time.TimeSource.Monotonic.markNow()
+                } else if (link == CastLinkState.CONNECTED && st != null && !st.music && st.loaded) {
+                    lastMusic = null   // a film took the device: there is no song to come back to
+                }
+                // A session that ends any way but ours (Google Home's *Stop cast*, the notification, the device
+                // dropping the app, the network): the speaker's song and place come back to this device, paused.
+                if (wasConnected && link != CastLinkState.CONNECTED) {
+                    val plan = castHandBack(lastMusic, lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L, endedByApp)
+                    val handed = lastMusic
+                    endedByApp = false; lastMusic = null; lastMusicAt = null
+                    if (plan != null && handed != null) scope.launch(Dispatchers.Main) {
+                        val queue = state(handed).queue
+                        MusicEngine.loadPaused(queue, plan.index, plan.positionMs, context)
+                    }
+                }
+                wasConnected = link == CastLinkState.CONNECTED
             }
         }
     }
+
+    private var wasConnected = false
+    private var lastMusic: CastRemoteStatus? = null
+    private var lastMusicAt: kotlin.time.TimeMark? = null
+    /** Set by [playHere], [stop] and [moveAway]: they bring the music back themselves. */
+    @kotlin.concurrent.Volatile private var endedByApp = false
 
     private fun handOff(c: CastController) {
         val st = MusicEngine.state.value
@@ -142,6 +167,7 @@ object MusicCast {
             MusicEngine.loadPaused(s.queue, s.index, st.positionMs, context)
             MusicEngine.play()
         }
+        endedByApp = true
         c.stopCasting()
     }
 
@@ -152,6 +178,7 @@ object MusicCast {
      */
     fun stop() {
         takeBack()
+        endedByApp = true
         cast?.stopCasting()
     }
 
@@ -171,6 +198,7 @@ object MusicCast {
         if (!_linked.value) return
         takeBack()
         awaitNewLink = true
+        endedByApp = true
         cast?.stopCasting()
     }
     @kotlin.concurrent.Volatile private var awaitNewLink = false
@@ -276,4 +304,21 @@ object MusicPlayback {
     fun setSleep(timer: SleepTimer?) = MusicEngine.setSleep(timer)
     fun setSkipSilence(on: Boolean) = MusicEngine.setSkipSilence(on)
     fun bookPositionMs(): Long = MusicEngine.bookPositionMs()
+}
+
+/** R353 (FR-R353-5) — where the music comes back to after a cast ended from outside the app. */
+data class CastHandBack(val index: Int, val positionMs: Long)
+
+/**
+ * R353 (FR-R353-5) — the speaker's last queue report → the song and place this device resumes from, or null when the app
+ * ended the cast itself (it already brought the music back), nothing musical was playing, or the queue is unusable.
+ * A playing song has moved on by [elapsedMs] since the report; a queue that played out is at 0:00 (FR-R322-5).
+ */
+fun castHandBack(last: CastRemoteStatus?, elapsedMs: Long, endedByApp: Boolean): CastHandBack? {
+    if (endedByApp || last == null || !last.music || last.failed) return null
+    val index = last.queueIndex.takeIf { it in last.queue.indices } ?: return null
+    if (last.ended) return CastHandBack(index, 0L)
+    val moved = if (last.playing) last.positionMs + elapsedMs.coerceAtLeast(0L) else last.positionMs
+    val length = last.durationMs.takeIf { it > 0 } ?: last.queue[index].durationMs?.takeIf { it > 0 }
+    return CastHandBack(index, if (length != null) moved.coerceIn(0L, length) else moved.coerceAtLeast(0L))
 }
