@@ -20,7 +20,7 @@ fun remoteTargetFor(videoOpen: Boolean, musicActive: Boolean): RemoteTarget = wh
 }
 
 /**
- * R354 — where the app's remote commands land (the Jellyfin dashboard through 298's bridge, Home Assistant, a phone
+ * R354 — where the app's remote commands land (the Jellyfin dashboard through 299's bridge, Home Assistant, a phone
  * driving this device). Main thread only: [RaviloApp] collects the events socket's commands on it, because the music
  * engine is main-thread only (R353). The film player registers itself while composed ([attachVideo]); with none,
  * music takes the command. Each player's volume is kept across films and songs, so a level set from the dashboard

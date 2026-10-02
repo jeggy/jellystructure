@@ -7,7 +7,7 @@
 ## Status
 
 `✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (Ravilo specs
-top at R353). The server half is admin **298**; both ship together. The hand-back bug found with it is fixed as an
+top at R353). The server half is admin **299**; both ship together. The hand-back bug found with it is fixed as an
 amendment to R353 (FR-R353-5).
 
 **Amends** R155 (what a remote command does, and to which player), R293 (FR-R293-1/-5: playing media holds the events
@@ -16,7 +16,7 @@ socket off screen), R245/286 (the receiver opens the events socket), and impleme
 
 ## What is missing today (found 2026-10-02)
 
-1. **The Cast receiver never opens `/api/tv/events`**, so the server has no way to reach it (298's root cause).
+1. **The Cast receiver never opens `/api/tv/events`**, so the server has no way to reach it (299's root cause).
 2. **Music ignores every remote command.** Commands reach `PlayerScreen` only (`LocalPlaystateCommands`); with no film
    open they are dropped. `MusicEngine` (Android ExoPlayer service, Mac AVPlayer, Linux mpv) has no route in.
 3. **The film player knows four commands** (`stop`, `pause`, `unpause`, `seek`); `PlayPause`, `NextTrack`,
@@ -30,7 +30,7 @@ socket off screen), R245/286 (the receiver opens the events socket), and impleme
 
 ## Requirements
 
-**FR-R354-1 — Every app says what it obeys.** The app's events socket sends 298's `remote` list: `DisplayMessage,
+**FR-R354-1 — Every app says what it obeys.** The app's events socket sends 299's `remote` list: `DisplayMessage,
 Play, PlayState, SetVolume, VolumeUp, VolumeDown, Mute, Unmute, ToggleMute` (phone, TV, Mac, Linux, web — one
 `RaviloApp`). The receiver sends `PlayState, SetVolume, VolumeUp, VolumeDown, Mute, Unmute, ToggleMute`.
 `TvApiClient.connectEvents` takes it as an optional argument (absent = today's URL).
@@ -40,7 +40,7 @@ play, pause, toggle, stop, seek to, seek by, next, previous, set volume, volume 
 `playstate_command`: `Stop`, `Pause`, `Unpause`, `PlayPause`, `Seek` (`seek_position_ms`), `NextTrack`,
 `PreviousTrack`, `Rewind` (−10 s) and `FastForward` (+30 s) — the same sizes as the players' own skip buttons. From
 `player_command`: phase 236's `seek {position_ms}`, `skip {delta_ms}`, `next`, `previous`, `set_volume {volume}`,
-`mute {muted?}`, and 298's `volume_up`/`volume_down` (±10 points). Anything else is not a playback command and is
+`mute {muted?}`, and 299's `volume_up`/`volume_down` (±10 points). Anything else is not a playback command and is
 ignored (case-insensitive). `RemoteVolume` keeps level and mute together: a step unmutes, unmute restores the level
 before the mute, levels are clamped 0–100. One `applyTo(target)` drives every player through one small interface,
 so the phone, the desktop, the web app and the receiver cannot read a command differently.

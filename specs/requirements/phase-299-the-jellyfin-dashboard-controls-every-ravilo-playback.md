@@ -1,4 +1,4 @@
-# Phase 298 — The Jellyfin dashboard controls every Ravilo playback
+# Phase 299 — The Jellyfin dashboard controls every Ravilo playback
 
 > Owner, 2026-10-02: the Jellyfin dashboard must be able to pause, play, seek, skip, stop and set the volume of
 > anything Ravilo plays — music and films, on the phone, the Mac/Linux app, the web app, a TV, and on a Chromecast,
@@ -6,7 +6,7 @@
 
 ## Status
 
-`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (admin **Renumbered 296 → 298 on 2026-10-02:** another session took 296 (*the loudness finding is about music only*) and 297 the same morning.
+`✓ Built` 2026-10-02 (build notes at the end), not deployed, not device-tested. Written 2026-10-02 (dev-authored), against `main` `3127421c`. Number given by the coordinator (admin **Renumbered 296 → 298 → 299 on 2026-10-02:** another session took 296 (*the loudness finding is about music only*), 297 and 298 (*a library renamed in Jellyfin is picked up*) the same day.
 specs top at 295). The client and receiver half is **R354**; both ship together.
 
 **Amends** phase 110 (FR C.3's routing, FR C.5's capabilities), phase 218 (its claim that phase 110 "gives dashboard
@@ -45,20 +45,20 @@ Jellyfin session, and a sweep ends the ones no socket ever held).
 
 ## Requirements
 
-**FR-298-1 — A device says what it obeys.** The events socket takes one optional query parameter,
+**FR-299-1 — A device says what it obeys.** The events socket takes one optional query parameter,
 `remote=<comma list>`, of Jellyfin `GeneralCommandType` names the device acts on. The server keeps only these
 (case-insensitive, de-duplicated, in this order): `DisplayMessage`, `Play`, `PlayState`, `SetVolume`, `VolumeUp`,
 `VolumeDown`, `Mute`, `Unmute`, `ToggleMute`. A query parameter, not a header, because a browser (the web app, the Cast
 receiver) cannot set a WebSocket handshake header. **Absent ⇒ today's registration byte for byte** (`["Video"]`,
 `["DisplayMessage","Play","Playstate"]`), so an old app keeps exactly what it has.
 
-**FR-298-2 — Capabilities follow the declaration.** The bridge posts `/Sessions/Capabilities/Full` with
+**FR-299-2 — Capabilities follow the declaration.** The bridge posts `/Sessions/Capabilities/Full` with
 `SupportsMediaControl: true`, `SupportedCommands` = the declared list, and `PlayableMediaTypes: ["Video"]` when the
 list holds `Play` (a device that takes the dashboard's *Play on*), else `[]` (a receiver, which only obeys). When a
 device reconnects inside the bridge's grace with a different declaration (an app update), the capabilities are posted
 again on the open bridge.
 
-**FR-298-3 — Every command is routed.**
+**FR-299-3 — Every command is routed.**
 - `Playstate`: all nine commands (`Stop`, `Pause`, `Unpause`, `PlayPause`, `Seek`, `NextTrack`, `PreviousTrack`,
   `Rewind`, `FastForward`) go out as today's `playstate_command`, the command name unchanged, `SeekPositionTicks` as
   `seek_position_ms`. (They always did; old apps ignored the five they did not know, and still do.)
@@ -69,18 +69,18 @@ again on the open bridge.
 - `player_command` is the right carrier: an app older than R354 drops it (`RaviloApp` only logs it), where an unknown
   event `type` would have triggered a config re-pull.
 
-**FR-298-4 — Receivers get the same bridge.** A Cast receiver that opens `/api/tv/events` with its own device token
+**FR-299-4 — Receivers get the same bridge.** A Cast receiver that opens `/api/tv/events` with its own device token
 (R354) gets a bridge under its own identity (`ravilo-cast-…-{user}`, `Chromecast via Ravilo · {name}`), the identity
 its REST reports already use, so the dashboard's session is the receiver's and it becomes controllable. Nothing in the
 bridge is cast-specific. Phase 110's stop watchdog keeps judging a receiver by heartbeat only
 (`needsEventsSocket`), so a receiver closing its socket never stops its playback.
 
-**FR-298-5 — A bridge's end ends the Jellyfin session.** When a device's events socket closes, the bridge stays for
+**FR-299-5 — A bridge's end ends the Jellyfin session.** When a device's events socket closes, the bridge stays for
 phase 256's 90 s grace and then closes its Jellyfin socket, which ends the session on Jellyfin's side
 (`CloseIfNeededAsync`). That was already so for TVs; it is now stated, tested, and true for receivers too. The grace is
 a constructor parameter (default 90 s) so the test can shorten it.
 
-**FR-298-6 — A sweep ends the sessions no socket ever held.** Every 60 s the server reads `/Sessions` (server token)
+**FR-299-6 — A sweep ends the sessions no socket ever held.** Every 60 s the server reads `/Sessions` (server token)
 and ends each one that is all of: `Client "Ravilo"`; its `DeviceId` is the Jellyfin identity of a device row we hold;
 no `NowPlayingItem`; not `IsActive` (no socket); `LastActivityDate` at least 90 s ago; and that device's bridge is
 neither open nor in its grace. It ends it by opening `/socket` under that device's own identity and token, waiting for
@@ -89,7 +89,7 @@ Jellyfin's first frame (the controller is attached), and closing — the same th
 something playing is never touched (Jellyfin's own idle check clears a dead `NowPlayingItem` after 5 minutes; the next
 sweep then ends it). Sessions of devices we no longer hold are left alone.
 
-**FR-298-7 — Health says what each device declared.** Each `session_bridges` entry on `/api/health/full` gains
+**FR-299-7 — Health says what each device declared.** Each `session_bridges` entry on `/api/health/full` gains
 `commands` (the declared list; absent for an old app). Additive; `/api/health` keeps numbers only.
 
 ## Out of scope
@@ -143,26 +143,26 @@ sweep then ends it). Sessions of devices we no longer hold are left alone.
 
 **Built 2026-10-02, not deployed, not device-tested.** Commits `e6718448`, `d25ce6ad` (on `main` `3127421c`).
 
-1. **FR-298-1/-2** — `parseRemoteDeclaration` and `capabilitiesBody` (`tv/JellyfinRemote.kt`); `Server.kt` reads
+1. **FR-299-1/-2** — `parseRemoteDeclaration` and `capabilitiesBody` (`tv/JellyfinRemote.kt`); `Server.kt` reads
    `remote=` on `/api/tv/events` and passes it to `JellyfinSessionBridge.connect(device, commands)`; the bridge keeps
    each device's declaration and the token it registered under, posts `capabilitiesBody(...)` on connect, and
    re-posts on the open bridge when a reconnect inside the grace declares something different.
    `JellyfinClient.postCapabilities` takes the body (default: phase 110's bytes, `LEGACY_CAPABILITIES`).
-2. **FR-298-3** — `parseJellyfinMessage` reads every frame into a `BridgeCommand`; `handleIncoming` only delivers it
+2. **FR-299-3** — `parseJellyfinMessage` reads every frame into a `BridgeCommand`; `handleIncoming` only delivers it
    (`notifyServerMessage` / `notifyPlayItem` / `notifyPlaystateCommand` / `notifyPlayerCommand`). Unknown Playstate
    names are no longer forwarded.
-3. **FR-298-4** — nothing receiver-specific on the server: R354's receiver opens the events socket and gets the same
+3. **FR-299-4** — nothing receiver-specific on the server: R354's receiver opens the events socket and gets the same
    bridge.
-4. **FR-298-5** — the grace is a constructor parameter (`graceMs`, default 90 s); `isBridged(deviceId)` = open or in
+4. **FR-299-5** — the grace is a constructor parameter (`graceMs`, default 90 s); `isBridged(deviceId)` = open or in
    its grace.
-5. **FR-298-6** — `JellyfinSessionReaper` (`tv/JellyfinSessionReaper.kt`), run every 60 s from `Main.kt` on its own
+5. **FR-299-6** — `JellyfinSessionReaper` (`tv/JellyfinSessionReaper.kt`), run every 60 s from `Main.kt` on its own
    loop: `GET /Sessions` (server token, `JellyfinClient.getSessionsBody`), `parseJellyfinSessions`,
    `staleRaviloSessions` (Ravilo client, a device row we hold, nothing playing, not `IsActive`, idle ≥ 90 s, not
    bridged), then `JellyfinSessionBridge.endJellyfinSession(device)`: a socket under the device's identity and **own**
    token (`tvTokenForClient` — never the server fallback, which would bind another user's session), wait up to 5 s for
    Jellyfin's first frame, close. Logged per device (`Jellyfin session ended: device=… had no socket and nothing
    playing`).
-6. **FR-298-7** — `BridgeHealth.commands` (additive) on `/api/health/full`.
+6. **FR-299-7** — `BridgeHealth.commands` (additive) on `/api/health/full`.
 
 **Deviation:** the spec's `PlayableMediaTypes` rule is as written (`Video` only with `Play`); no `Audio` — the
 dashboard's *Play on* for a song is out of scope, and advertising `Audio` would invite a `Play` the apps would treat as

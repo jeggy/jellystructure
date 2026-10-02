@@ -9,7 +9,7 @@ import kotlinx.serialization.json.longOrNull
  * R354 (FR-R354-2) — one reading of a remote command for every Ravilo player: the app's film player and music player
  * (phone, TV, Mac, Linux, web) and the Cast receiver. The server sends a command on one of two carriers —
  * `playstate_command` (Jellyfin's own Playstate names, phase 110/R155) and `player_command` (phase 236's names, plus
- * 298's volume steps) — and every player used to read them its own way, or not at all. Pure, so it is tested once.
+ * 299's volume steps) — and every player used to read them its own way, or not at all. Pure, so it is tested once.
  */
 
 /** What a remote command asks of a player. */
@@ -130,7 +130,7 @@ fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {
 }
 
 /**
- * R354 (FR-R354-1) — the `remote=` list an app declares on its events socket (298 FR-298-1): it takes the dashboard's
+ * R354 (FR-R354-1) — the `remote=` list an app declares on its events socket (299 FR-299-1): it takes the dashboard's
  * *Play on* and messages, and every playback and volume command.
  */
 const val REMOTE_DECLARATION_APP = "DisplayMessage,Play,PlayState,SetVolume,VolumeUp,VolumeDown,Mute,Unmute,ToggleMute"

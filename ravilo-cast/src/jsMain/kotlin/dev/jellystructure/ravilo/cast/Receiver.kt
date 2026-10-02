@@ -104,7 +104,7 @@ private class Receiver {
     private var introSkipped = false
     private var subSize = "M"
 
-    // ── R354 — the Jellyfin dashboard (through 298's bridge) reaches the receiver on its own events socket ──
+    // ── R354 — the Jellyfin dashboard (through 299's bridge) reaches the receiver on its own events socket ──
     /** Which server and token the events socket should be open for; null = closed (nothing loaded, or not enrolled). */
     private val eventsKey = MutableStateFlow<String?>(null)
     /** The device's own volume as a remote command moves it; synced from CAF before each command. */
@@ -234,7 +234,7 @@ private class Receiver {
     }
 
     /**
-     * The receiver's own `/api/tv/events` (298 FR-298-4): while it is open the server bridges a Jellyfin session under
+     * The receiver's own `/api/tv/events` (299 FR-299-4): while it is open the server bridges a Jellyfin session under
      * the receiver's own identity, and the dashboard's commands arrive here. Closed (`1000 idle`) at the idle view or
      * when the token changes; reconnects 2 s → 30 s in between, like ravilo-screen's.
      */
