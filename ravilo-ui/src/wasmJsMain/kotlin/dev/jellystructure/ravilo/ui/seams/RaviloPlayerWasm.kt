@@ -41,6 +41,8 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun setChromeVisible(visible: Boolean) {
         video.style.zIndex = if (visible) "0" else "2"
+        // R354 (FR-R354-10b) — while the video covers the canvas, a dashboard message is drawn in the DOM above it.
+        VideoOverApp.covers = !visible
     }
 
     /** R244 (FR-R244-6) — fit/fill is the <video>'s object-fit on the web. */
@@ -144,6 +146,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
+        VideoOverApp.covers = false
         WebAirPlay.unbind(video)
         runCatching { destroyOverlays(video) } // R17: tear down any hls.js / JASSUB instance
         runCatching { document.body?.removeChild(video) }
