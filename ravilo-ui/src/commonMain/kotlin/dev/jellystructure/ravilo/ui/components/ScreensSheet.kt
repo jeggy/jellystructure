@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import dev.jellystructure.ravilo.ui.seams.rememberCastRoutes
 import dev.jellystructure.ravilo.ui.seams.CastRoute
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
+import dev.jellystructure.ravilo.ui.seams.castRouteInSession
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -111,7 +112,10 @@ fun ScreensSheet(
     // a Cast session selects a group route (`…-groupRoute`) — so the row is matched by the SDK's device
     // name, which is the route's name (seen on the Pixel 9: the connected TV read "Ready").
     val castingTo = deviceName.takeIf { link == CastLinkState.CONNECTED && cast.sender.screen.link.value == CastLinkState.NONE }
-    fun connectedTo(r: CastRoute) = r.selected || (castingTo != null && r.name == castingTo)
+    // R355 (FR-R355-3) — and every speaker the session was grouped onto (Android's output panel ⊕): they play this
+    // session too. They used to read Busy (the follower's "Casting: …" line) and a tap moved the music off the group.
+    val members by cast.sender.members.collectAsState()
+    fun connectedTo(r: CastRoute) = r.selected || (castingTo != null && castRouteInSession(r.name, castingTo, members))
     fun startRoute(r: CastRoute) {
         onClose()
         ScreensSheetPrefs.setLastDevice(r.id)

@@ -69,4 +69,6 @@ class ActiveCastSender(
     override fun setVolume(level: Double) = active.setVolume(level)
     /** A screen driven through the server reports no volume; a Chromecast session does where its platform says. */
     override val volume: StateFlow<Double?> get() = chromecast?.volume ?: screen.volume
+    /** R355 — only a Cast session is ever grouped; a screen has no members. */
+    override val members: StateFlow<List<String>> get() = chromecast?.members ?: screen.members
 }

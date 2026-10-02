@@ -125,6 +125,48 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     override val volume: StateFlow<Double?> = _volume
     private val castListener = object : com.google.android.gms.cast.Cast.Listener() {
         override fun onVolumeChanged() { _volume.value = runCatching { session?.volume }.getOrNull() }
+        // R355 — a speaker added in Android's output panel renames the session ("Gæsteværelse + 1").
+        override fun onDeviceNameChanged() { refreshName() }
+    }
+    /** R355 (FR-R355-1) — the speakers a dynamic group session plays on; empty on one device. */
+    private val _members = MutableStateFlow<List<String>>(emptyList())
+    override val members: StateFlow<List<String>> = _members
+    /** The session's own name as Cast gives it (the device, or "Gæsteværelse + 1" once grouped). */
+    private var sessionName: String? = null
+    private val router: androidx.mediarouter.media.MediaRouter? by lazy { runCatching { androidx.mediarouter.media.MediaRouter.getInstance(appContext) }.getOrNull() }
+    /**
+     * R355 — the group's members are read off MediaRouter's selected route (Play services' dynamic group route), on
+     * every route event. Unfiltered events, NO discovery request: off screen nothing scans (R293).
+     */
+    private val groupCallback = object : androidx.mediarouter.media.MediaRouter.Callback() {
+        override fun onRouteChanged(router: androidx.mediarouter.media.MediaRouter, route: androidx.mediarouter.media.MediaRouter.RouteInfo) = refreshName()
+        override fun onRouteSelected(router: androidx.mediarouter.media.MediaRouter, route: androidx.mediarouter.media.MediaRouter.RouteInfo, reason: Int) = refreshName()
+        override fun onRouteUnselected(router: androidx.mediarouter.media.MediaRouter, route: androidx.mediarouter.media.MediaRouter.RouteInfo, reason: Int) = refreshName()
+        override fun onRouteAdded(router: androidx.mediarouter.media.MediaRouter, route: androidx.mediarouter.media.MediaRouter.RouteInfo) = refreshName()
+        override fun onRouteRemoved(router: androidx.mediarouter.media.MediaRouter, route: androidx.mediarouter.media.MediaRouter.RouteInfo) = refreshName()
+    }
+
+    /** The members of the selected route when it is a group the platform made; empty otherwise. Main thread. */
+    private fun groupMembers(): List<String> = runCatching {
+        val r = router?.selectedRoute ?: return@runCatching emptyList()
+        if (r.isDefaultOrBluetooth || !r.isGroup) return@runCatching emptyList()
+        val g = r.asGroup() ?: return@runCatching emptyList()
+        // Only the speakers that play: a dynamic group route also lists the ones that COULD be added.
+        g.routesInGroup.filter { runCatching { g.getSelectionState(it) == androidx.mediarouter.media.MediaRouteProvider.DynamicGroupRouteController.DynamicRouteDescriptor.SELECTED }.getOrDefault(true) }
+            .map { it.name }.filter { it.isNotBlank() }
+    }.getOrDefault(emptyList())
+
+    /** R355 (FR-R355-2) — the name every screen shows: the session's own, or its speakers when grouped. */
+    private fun refreshName() {
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post { refreshName() }; return }
+        val s = session ?: run { if (_members.value.isNotEmpty()) _members.value = emptyList(); return }
+        sessionName = s.castDevice?.friendlyName ?: sessionName ?: selectedRouteName()
+        val m = groupMembers()
+        if (m != _members.value) {
+            android.util.Log.i("RaviloCast", "R355: session '${sessionName}' plays on ${m.ifEmpty { listOf("one device") }}")
+            _members.value = m
+        }
+        _device.value = castSessionName(sessionName, m)
     }
     private var session: CastSession? = null
     /** The last message the receiver sent about the item/tracks — merged with the SDK's media status. */
@@ -186,8 +228,10 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             // again on entering the foreground) is RECONNECTING, not connected: the sheet's route list
             // scans actively while it is, which is what lets the SDK find the route and finish it.
             if (!s.isConnected) { _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName(); return@let }
-            attach(s); _link.value = CastLinkState.CONNECTED; _device.value = s.castDevice?.friendlyName; rebuildStatus()
+            attach(s); _link.value = CastLinkState.CONNECTED; rebuildStatus()
         }
+        // R355 — route events only (no discovery request, R293); the group's members are read off the selected route.
+        runCatching { router?.addCallback(androidx.mediarouter.media.MediaRouteSelector.EMPTY, groupCallback, androidx.mediarouter.media.MediaRouter.CALLBACK_FLAG_UNFILTERED_EVENTS) }
     }
 
     private fun attach(s: CastSession) {
@@ -195,8 +239,9 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         runCatching { s.addCastListener(castListener) }
         _volume.value = runCatching { s.volume }.getOrNull()
         // Right after a resume the session may not carry its device yet; the route the SDK selected
-        // for it does, and it is the same name the viewer picked it by.
-        _device.value = s.castDevice?.friendlyName ?: selectedRouteName()
+        // for it does, and it is the same name the viewer picked it by. R355 — grouped, it is the group's speakers.
+        sessionName = s.castDevice?.friendlyName ?: selectedRouteName()
+        refreshName()
         runCatching { s.setMessageReceivedCallbacks(CAST_NAMESPACE, messageCallback) }
         s.remoteMediaClient?.let { rmc ->
             rmc.registerCallback(mediaCallback)
@@ -217,6 +262,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         }
         runCatching { session?.removeMessageReceivedCallbacks(CAST_NAMESPACE) }
         session = null
+        sessionName = null
+        _members.value = emptyList()
     }
 
     /** Everything the remote shows is rebuilt from the SDK's media status + the receiver's last message — by the

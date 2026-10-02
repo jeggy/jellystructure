@@ -96,7 +96,7 @@ object MusicCast {
                 } else if (link == CastLinkState.CONNECTED && st != null && !st.music && st.loaded) {
                     lastMusic = null   // a film took the device: there is no song to come back to
                 }
-                if (nowLinked || link != CastLinkState.CONNECTED) { stoppedJob?.cancel(); stoppedJob = null }
+                if (nowLinked || link != CastLinkState.CONNECTED) { stoppedJob?.cancel(); stoppedJob = null; resumeSentAt = null }
                 // FR-R353-5 (amended 2026-10-02) — the music stopped ON the device while the session stays: the
                 // Jellyfin dashboard's Stop, the queue playing out, the TV remote's Stop key. The receiver goes to its
                 // idle view and says `ended`; the phone keeps the session and takes the speaker's song back, paused,
@@ -149,9 +149,16 @@ object MusicCast {
         if (_linked.value || !holdsDevice || c.sender.link.value != CastLinkState.CONNECTED) return false
         val st = MusicEngine.state.value
         if (st.book != null || st.queue.isEmpty() || st.playing) return false
+        // R355 (FR-R355-4) — one hand-off per press: until the device's first live report, a second Play is the same
+        // request (two left the Pixel 9 22 ms apart, 2026-10-02 14:38:31 — two codes, two tickets for one song).
+        val now = kotlin.time.TimeSource.Monotonic.markNow()
+        if (castResumeInFlight(resumeSentAt?.let { (now - it).inWholeMilliseconds })) return true
+        resumeSentAt = now
         scope.launch(Dispatchers.Main) { handOff(c) }
         return true
     }
+    /** R355 — when [resumeOnDevice] last sent the queue; cleared by a live report and by the link dropping. */
+    @kotlin.concurrent.Volatile private var resumeSentAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
     /** Set by [playHere], [stop] and [moveAway]: they bring the music back themselves. */
     @kotlin.concurrent.Volatile private var endedByApp = false
 
@@ -394,3 +401,13 @@ fun castStoppedOnDevice(wasLinked: Boolean, link: CastLinkState, st: CastRemoteS
     if (st.failed) return false
     return !st.loaded || st.ended   // a film loaded in its place is neither: no song to give back
 }
+
+/** R355 (FR-R355-4) — how long a sent hand-off counts as the answer to another Play while the device has not reported. */
+const val CAST_RESUME_WINDOW_MS = 5_000L
+
+/**
+ * R355 (FR-R355-4) — true when [MusicCast.resumeOnDevice] already sent the queue [sinceSentMs] ago and the device has
+ * not reported it live yet: a second Play is the same request, not a second hand-off. Null (nothing sent, or a live
+ * report / the link dropping cleared it) or older than [CAST_RESUME_WINDOW_MS] ⇒ send.
+ */
+fun castResumeInFlight(sinceSentMs: Long?): Boolean = sinceSentMs != null && sinceSentMs in 0 until CAST_RESUME_WINDOW_MS

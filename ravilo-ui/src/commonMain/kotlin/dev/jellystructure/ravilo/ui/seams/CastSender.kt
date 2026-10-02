@@ -83,9 +83,47 @@ interface CastSender {
     fun setVolume(level: Double) {}
     /** R337 — the device's own volume as it last reported it, 0.0–1.0; null where the platform does not say. */
     val volume: StateFlow<Double?> get() = UNKNOWN_VOLUME
+    /**
+     * R355 (FR-R355-1) — the speakers the session plays on when the platform grouped them (Android's output panel ⊕
+     * adds a speaker to a music session: a Cast *dynamic group*). Empty when it plays on one device, on a group made in
+     * Google Home (one route), and on every platform that cannot say.
+     */
+    val members: StateFlow<List<String>> get() = NO_MEMBERS
 }
 
 private val UNKNOWN_VOLUME: StateFlow<Double?> = kotlinx.coroutines.flow.MutableStateFlow(null)
+private val NO_MEMBERS: StateFlow<List<String>> = kotlinx.coroutines.flow.MutableStateFlow(emptyList())
+
+/**
+ * R355 (FR-R355-2) — the name the phone shows for a session that plays on [members] (a group Android's output panel
+ * made). One or no member: [sessionName] as it is. Two or three: the speaker that was playing first, then the others in
+ * the platform's order, joined with ` + ` ("Gæsteværelse + Stue"). Four or more: the first and how many more ("Stue +
+ * 3", Cast's own form). The first speaker is the member [sessionName] is or starts with — Cast renames the session
+ * "Gæsteværelse + 1" once a speaker joins — else the platform's first.
+ */
+fun castSessionName(sessionName: String?, members: List<String>): String? {
+    val names = members.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    if (names.size < 2) return sessionName
+    val said = sessionName?.trim()
+    val first = names.firstOrNull { said != null && (said.equals(it, ignoreCase = true) || said.startsWith("$it + ", ignoreCase = true)) } ?: names.first()
+    val others = names.filter { it != first }
+    return if (names.size <= 3) (listOf(first) + others).joinToString(" + ") else "$first + ${others.size}"
+}
+
+/**
+ * R355 (FR-R355-3) — a route belongs to this session when its name is the session's own ([sessionName], the name the
+ * phone shows) or one of the speakers the session was grouped onto ([members]) — or, while grouped, the group's own
+ * route, which Cast names "{a member} + {n}" ("Gæsteværelse + 1"). Such a row reads as playing this session in
+ * *Play on…* and a tap on it changes nothing.
+ */
+fun castRouteInSession(routeName: String, sessionName: String?, members: List<String>): Boolean {
+    val n = routeName.trim()
+    if (n.isEmpty()) return false
+    if (sessionName != null && sessionName.trim().equals(n, ignoreCase = true)) return true
+    val names = members.map { it.trim() }.filter { it.isNotEmpty() }
+    if (names.any { it.equals(n, ignoreCase = true) }) return true
+    return names.size >= 2 && names.any { m -> n.startsWith("$m + ", ignoreCase = true) && n.substring(m.length + 3).trim() == (names.size - 1).toString() }
+}
 
 /**
  * R265 — never null: every platform has at least [ScreenSender] (commonMain, no platform SDK needed).
