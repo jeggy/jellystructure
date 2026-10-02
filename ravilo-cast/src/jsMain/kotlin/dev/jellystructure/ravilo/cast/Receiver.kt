@@ -27,7 +27,9 @@ import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.RECEIVER_PAUSED_BEAT_MS
-import dev.jellystructure.shared.tv.REMOTE_DECLARATION_RECEIVER
+import dev.jellystructure.shared.tv.ServerNotice
+import dev.jellystructure.shared.tv.receiverRemoteDeclaration
+import dev.jellystructure.shared.tv.serverNoticeOf
 import dev.jellystructure.shared.tv.ReceiverRemoteAction
 import dev.jellystructure.shared.tv.ReceiverRemoteState
 import dev.jellystructure.shared.tv.RemoteCommand
@@ -73,6 +75,8 @@ private const val PROGRESS_EVERY_MS = 10_000L
 private const val LYRICS_KEY = "ravilo.cast.lyrics"
 /** FR-286-5 — how long the transport row stays after a key. */
 private const val TRANSPORT_MS = 5_000L
+/** R356 (FR-R356-14b) — after another controller's STOP, how long before the app closes (CAF tells the senders first). */
+private const val SENDER_STOP_CLOSE_MS = 400L
 
 private class Receiver {
     private val cast: dynamic = js("window.cast")
@@ -233,6 +237,14 @@ private class Receiver {
                 }
             } }.onFailure { console.warn("ravilo-cast: no interceptor for $type on this framework (${it.message})") }
         }
+        // R356 (FR-R356-14b, 2026-10-02) — a STOP from a controller other than Ravilo's own (Play services' Cast card's
+        // *Stop cast*, Google Home, the Assistant, a display's own Stop) ends the cast. It used to stop the player only:
+        // MEDIA_FINISHED(STOPPED) read as a failure, the app kept running and the phone kept its session, so Play on the
+        // phone sent the song back to the speaker. Ravilo's own *Stop casting* stops the app itself and never sends this.
+        runCatching {
+            val stop: dynamic = messages.MessageType.STOP
+            if (stop != null) playerManager.setMessageInterceptor(stop) { request: dynamic -> onSenderStop(); request }
+        }.onFailure { console.warn("ravilo-cast: no interceptor for STOP on this framework (${it.message})") }
         // FR-286-5 — the display's own remote: media keys come as commands (the interceptors above), the D-pad
         // as key events, and a tap on the hub as a click. None of it exists on a speaker (no DOM, no remote).
         document.addEventListener("keydown", { ev -> onKey(ev as KeyboardEvent) })
@@ -271,7 +283,9 @@ private class Receiver {
                     onEvent = {},
                     onPlaystateCommand = { env -> remoteCommandOf(env)?.let { onRemote(it) } },
                     onPlayerCommand = { env -> remoteCommandOf(env)?.let { onRemote(it) } },
-                    remote = REMOTE_DECLARATION_RECEIVER,
+                    // R354 (FR-R354-9e) — a screen takes the dashboard's messages; a speaker declares none and ignores one.
+                    onServerMessage = { env -> if (!isHeadless()) serverNoticeOf(env)?.let { showNotice(it) } },
+                    remote = receiverRemoteDeclaration(isHeadless()),
                 )
             }.getOrElse { "err:" + (it::class.simpleName ?: "Throwable") }
             note("events closed: $how")
@@ -279,6 +293,18 @@ private class Receiver {
             delay(backoff)
             if (!opened) backoff = (backoff * 2).coerceAtMost(30_000L)
         }
+    }
+
+    private var noticeJob: Job? = null
+
+    /** R354 (FR-R354-9e) — a dashboard message over whatever the screen shows, for its time; a newer one replaces it. */
+    private fun showNotice(n: ServerNotice) {
+        el("msg-h").textContent = n.header ?: ""
+        el("msg-t").textContent = n.text
+        el("msg").classList.add("on")
+        note("message (${n.text.length} chars) for ${n.durationMs} ms")
+        noticeJob?.cancel()
+        noticeJob = GlobalScope.launch { delay(n.durationMs); el("msg").classList.remove("on") }
     }
 
     /** One dashboard command, carried out as the receiver's own controls would, then a fresh status for the senders. */
@@ -311,6 +337,24 @@ private class Receiver {
             }
         }
         sendStatus()
+    }
+
+    /**
+     * R356 (FR-R356-14b) — another controller's STOP: the server hears where it stopped, the item is forgotten (so CAF's
+     * MEDIA_FINISHED(STOPPED) that follows is neither a failure nor a next song) and the app closes a moment later, once
+     * CAF has told the senders the media stopped. Every sender's session ends; the phone takes the song back, paused.
+     */
+    private fun onSenderStop() {
+        val d = current
+        note("stop from a sender (${d?.itemId}): the cast ends")
+        nextUpJob?.cancel(); nextUpJob = null
+        stopSession()
+        current = null
+        pausedBeat?.cancel(); pausedBeat = null
+        GlobalScope.launch {
+            delay(SENDER_STOP_CLOSE_MS)
+            runCatching { context.stop() }.onFailure { idle() }
+        }
     }
 
     /** A film stopped from the dashboard: the idle view, and *ended* to the senders — never *failed*. */

@@ -82,6 +82,7 @@ import dev.jellystructure.ravilo.ui.seams.EventsSocketLog
 import dev.jellystructure.ravilo.ui.seams.ReconnectBackoff
 import dev.jellystructure.ravilo.ui.seams.acceptsRemoteCommand
 import dev.jellystructure.ravilo.ui.seams.acceptsPlayerCommand
+import dev.jellystructure.ravilo.ui.seams.acceptsServerMessage
 import dev.jellystructure.ravilo.ui.seams.MediaSocketHold
 import dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen
 import dev.jellystructure.ravilo.ui.seams.rememberDeviceStateProbe
@@ -537,7 +538,8 @@ fun RaviloApp(
                     },
                     onEvent = { liveConfig.emit(it.rev) },
                     onAcquisition = { liveAcquisition.emit(it) },
-                    onServerMessage = { liveServerMessages.emit(it) },
+                    // R354 (FR-R354-9a) — a message is for whoever looks at the screen: off screen it is dropped.
+                    onServerMessage = { if (acceptsServerMessage(onScreenNow)) liveServerMessages.emit(it) else println("R354: dropped server_message while off screen") },
                     // FR-R293-5 — a command that lands in the gap between ON_STOP and the socket's close is
                     // dropped and logged, never applied: nothing may act while nobody is looking.
                     onPlayItem = { if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(it) else println("R293: dropped play_item while off screen") },

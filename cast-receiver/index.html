@@ -47,6 +47,12 @@
     #nextup .k { font-size: 14px; letter-spacing: 2px; color: var(--accent2); font-weight: 700; }
     #nextup .t { font-size: 24px; font-weight: 700; margin: 6px 0 12px; }
     #nextup .c { font-size: 18px; color: var(--ink-soft); }
+    /* R354 (FR-R354-9e) — the Jellyfin dashboard's message, top right over whatever shows; sized to the screen (a TV, a hub). */
+    #msg { position: fixed; right: 3.3vw; top: 3.3vw; min-width: 18vw; max-width: 36vw; padding: 1.1vw 1.4vw 1.2vw; border-radius: .9vw; background: rgba(14,17,25,.95); border: 1px solid rgba(255,255,255,.1); border-left: .3vw solid var(--accent); display: none; text-align: left; z-index: 20; }
+    #msg.on { display: block; }
+    #msg-h { font-size: 1.5vw; font-weight: 700; margin-bottom: .3vw; }
+    #msg-h:empty { display: none; }
+    #msg-t { font-size: 1.5vw; line-height: 1.35; color: var(--ink-soft); }
     .wait { font-size: 20px; color: var(--ink-dim); margin-top: 10px; }
     /* 286 (FR-286-5) — Now playing on a display: cover · title · artist · album · year, a hairline progress with
        times, and one quiet "Next" line. No on-screen controls: the display's own remote works (the transport row
@@ -95,6 +101,7 @@
   <div id="np-tr"><div class="g" id="np-tr-g"><i></i><i></i></div><span id="np-tr-t"></span></div>
   <div id="overlay"><div class="row"><div class="glyph"><i></i><i></i></div><div><div id="ov-kicker" class="kicker"></div><div id="ov-title" class="title" style="font-size:30px"></div></div></div><div class="bar"><i id="ov-fill"></i></div><div id="ov-time" class="time"></div></div>
   <div id="nextup"><div id="nu-k" class="k"></div><div id="nu-t" class="t"></div><div id="nu-c" class="c"></div></div>
+  <div id="msg"><div id="msg-h"></div><div id="msg-t"></div></div>
 
   <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   <script src="ravilo-cast.js"></script>

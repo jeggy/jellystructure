@@ -136,3 +136,8 @@ fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {
 const val REMOTE_DECLARATION_APP = "DisplayMessage,Play,PlayState,SetVolume,VolumeUp,VolumeDown,Mute,Unmute,ToggleMute"
 /** R354 (FR-R354-7) — the Cast receiver obeys; it is never a *Play on* target. */
 const val REMOTE_DECLARATION_RECEIVER = "PlayState,SetVolume,VolumeUp,VolumeDown,Mute,Unmute,ToggleMute"
+/** R354 (FR-R354-9e) — a receiver with a screen (a TV, a Nest Hub, a Chromecast) also shows the dashboard's messages. */
+const val REMOTE_DECLARATION_RECEIVER_DISPLAY = "DisplayMessage,$REMOTE_DECLARATION_RECEIVER"
+
+/** R354 (FR-R354-9e) — what a receiver declares: a speaker (no screen) takes no message, so the dashboard offers none. */
+fun receiverRemoteDeclaration(headless: Boolean): String = if (headless) REMOTE_DECLARATION_RECEIVER else REMOTE_DECLARATION_RECEIVER_DISPLAY

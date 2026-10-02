@@ -140,10 +140,19 @@ class TvEventBus(private val scope: CoroutineScope) {
 
     // ── Phase 110 — device-addressed session-bridge events (Jellyfin dashboard → this ONE TV) ────────
 
-    /** GeneralCommand DisplayMessage from the Jellyfin dashboard (→ R152 toast). */
+    /**
+     * GeneralCommand DisplayMessage from the Jellyfin dashboard (→ R152 toast). Phase 299 (FR-299-8/-9, amended
+     * 2026-10-02): found the way a command is ([targetFor]), and a message that finds no socket — the app is off screen
+     * (R293) — is logged, by its length only, instead of vanishing.
+     */
     fun notifyServerMessage(userId: String, deviceId: String, text: String, header: String?, timeoutMs: Long?) {
         scope.launch {
-            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            val target = mutex.withLock { targetFor(userId, deviceId) }
+            if (target == null) {
+                Logger.info("TV events: message (${text.length} chars) for device $deviceId dropped: no live events socket (off screen)", "tv")
+                return@launch
+            }
+            Logger.info("TV events: message (${text.length} chars) sent to device $deviceId", "tv")
             val msg = buildString {
                 append("""{"type":"server_message","text":${text.jsonEsc()}""")
                 if (header != null) append(""","header":${header.jsonEsc()}""")

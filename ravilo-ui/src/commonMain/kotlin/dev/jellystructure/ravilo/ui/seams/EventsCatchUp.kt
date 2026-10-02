@@ -52,6 +52,10 @@ fun acceptsRemoteCommand(onScreen: Boolean, signedIn: Boolean): Boolean = onScre
  *  `navigate` keep [acceptsRemoteCommand]. */
 fun acceptsPlayerCommand(onScreen: Boolean, mediaHoldsSocket: Boolean): Boolean = onScreen || mediaHoldsSocket
 
+/** R354 (FR-R354-9a) — the Jellyfin dashboard's *Send message* is shown only while the app is on screen: off screen
+ *  (the socket held open by music playing here) it is dropped and logged — never queued, never a notification. */
+fun acceptsServerMessage(onScreen: Boolean): Boolean = onScreen
+
 /**
  * R354 (FR-R354-5, amends R293 FR-R293-1) — playing music holds the events socket open off screen, and for [tailMs]
  * after it pauses, so the Jellyfin dashboard can pause and resume it. Fed every state change and a periodic tick.

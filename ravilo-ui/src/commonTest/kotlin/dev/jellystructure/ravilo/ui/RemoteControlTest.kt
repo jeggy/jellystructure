@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui
 import dev.jellystructure.ravilo.ui.seams.MediaSocketHold
 import dev.jellystructure.ravilo.ui.seams.acceptsPlayerCommand
 import dev.jellystructure.ravilo.ui.seams.acceptsRemoteCommand
+import dev.jellystructure.ravilo.ui.seams.acceptsServerMessage
 import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
 import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.RemoteCommand
@@ -129,6 +130,13 @@ class RemoteControlTest {
         assertFalse(acceptsPlayerCommand(onScreen = false, mediaHoldsSocket = false))
         assertTrue(acceptsPlayerCommand(onScreen = true, mediaHoldsSocket = false))
         assertFalse(acceptsRemoteCommand(onScreen = false, signedIn = true), "play_item and navigate keep R293's rule")
+    }
+
+    @Test
+    fun aDashboardMessageIsShownOnlyOnScreen() {
+        // FR-R354-9a — music playing here keeps the socket open off screen; a message that arrives then is dropped.
+        assertTrue(acceptsServerMessage(onScreen = true))
+        assertFalse(acceptsServerMessage(onScreen = false))
     }
 
     @Test
