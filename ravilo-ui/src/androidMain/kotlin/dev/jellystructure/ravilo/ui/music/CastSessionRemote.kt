@@ -58,7 +58,9 @@ internal object CastSessionRemote {
             // A song is the receiver's report read the way the Playing page reads it ([MusicCast.state]: the queue's own
             // items, with the album covers the app holds) — straight from the report, so the card does not drop out for
             // the moment between the report and the music bridge following it.
-            combine(sender.link, sender.status, sender.volume) { link, st, vol ->
+            // R358 (FR-R358-2) — as the bar shows it: the hand-over's place until the device reports one of its own.
+            combine(sender.link, sender.status, sender.volume) { link, raw, vol ->
+                val st = MusicCast.shown(link, raw)
                 link to castCard(link, st, vol, st?.takeIf { it.music }?.let { MusicCast.state(it) })
             }.collect { (link, card) -> show(card, link == CastLinkState.CONNECTED) }
         }

@@ -67,9 +67,15 @@ object MusicCast {
         cast = c
         bindJob?.cancel()
         bindJob = scope.launch {
-            combine(c.sender.link, c.sender.status, c.sender.deviceName) { l, s, n -> Triple(l, s, n) }.collect { (link, st, name) ->
+            combine(c.sender.link, c.sender.status, c.sender.deviceName) { l, s, n -> Triple(l, s, n) }.collect { (link, raw, name) ->
                 val wasLinked = _linked.value
-                val nowLinked = castMusicLive(link, st)
+                val nowLinked = castMusicLive(link, raw)
+                // R358 (FR-R358-1/2) — until the device's word is a place of its own (it plays, or it names another
+                // song), what this device shows, follows and hands back is the hand-over's song and position. The
+                // sender's own "loading" status and a receiver that never got a stream both say 0:00, and that 0:00
+                // was taken back as the song's place (the Mac, 2026-10-02: a song cast at 0:30 came back at 0:00).
+                if (nowLinked && raw != null && castReportIsAPlace(raw, handOver)) heard = true
+                val st = castShownStatus(raw, handOver, heard)
                 _status.value = st
                 _device.value = name
                 _linked.value = nowLinked
@@ -95,6 +101,7 @@ object MusicCast {
                     lastMusic = st; lastMusicAt = kotlin.time.TimeSource.Monotonic.markNow()
                 } else if (link == CastLinkState.CONNECTED && st != null && !st.music && st.loaded) {
                     lastMusic = null   // a film took the device: there is no song to come back to
+                    handOver = null
                 }
                 if (nowLinked || link != CastLinkState.CONNECTED) { stoppedJob?.cancel(); stoppedJob = null; resumeSentAt = null }
                 // FR-R353-5 (amended 2026-10-02) — the music stopped ON the device while the session stays: the
@@ -110,16 +117,18 @@ object MusicCast {
                         kotlinx.coroutines.delay(STOP_SETTLE_MS)
                         if (_linked.value || c.sender.link.value != CastLinkState.CONNECTED || endedByApp || lastMusic !== last) return@launch
                         lastMusic = null; lastMusicAt = null
-                        handBack(last, elapsed)
+                        handBack(castHandBackFrom(last, handOver), elapsed)
                     }
                 }
                 // A session that ends any way but ours (Google Home's *Stop cast*, the notification, the device
                 // dropping the app, the network): the speaker's song and place come back to this device, paused.
                 if (wasConnected && link != CastLinkState.CONNECTED) {
-                    val handed = lastMusic
+                    // R358 (FR-R358-1) — no live report at all (the device never got a stream): the hand-over's place.
+                    val handed = castHandBackFrom(lastMusic, handOver)
                     val elapsed = lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
                     val byApp = endedByApp
                     endedByApp = false; lastMusic = null; lastMusicAt = null
+                    handOver = null; heard = false
                     if (!byApp) handBack(handed, elapsed)
                 }
                 wasConnected = link == CastLinkState.CONNECTED
@@ -132,6 +141,18 @@ object MusicCast {
     @kotlin.concurrent.Volatile private var lastMusicAt: kotlin.time.TimeMark? = null
     private var stoppedJob: Job? = null
     private const val STOP_SETTLE_MS = 1_500L
+    /** R358 — the song and place this device handed to the device last ([handOff], [playQueue]); null for a plain join. */
+    @kotlin.concurrent.Volatile private var handOver: CastHandOver? = null
+    /** R358 — since [handOver], the device has reported a place of its own ([castReportIsAPlace]). */
+    @kotlin.concurrent.Volatile private var heard = false
+
+    /**
+     * R358 (FR-R358-2) — [st] as this device's screens show it: the hand-over's song and position until the device has
+     * reported a place of its own. For a report that has not reached [status] yet (the Android media card reads the
+     * sender directly), so that report itself counts.
+     */
+    fun shown(link: CastLinkState, st: CastRemoteStatus?): CastRemoteStatus? =
+        castShownStatus(st, handOver, heard || (castMusicLive(link, st) && st != null && castReportIsAPlace(st, handOver)))
 
     /** FR-R353-5 — the speaker's last live song and place ([castHandBack]) into this device's player, paused. */
     private fun handBack(last: CastRemoteStatus?, elapsedMs: Long) {
@@ -170,7 +191,10 @@ object MusicCast {
         // The engine stops and keeps its queue paused where it was (FR-R322-12's stop), so *Play on this phone*
         // and a failed hand-off both have somewhere to come back to.
         MusicEngine.stopForVideo()
-        c.castMusic(st.queue.map { it.toCast() }, st.index, pos.takeIf { it > 0 }, st.repeat.wire(), st.shuffle)
+        val queue = st.queue.map { it.toCast() }
+        // R358 (FR-R358-1) — what comes back if the device never reports a place of its own.
+        handOver = queue.getOrNull(st.index)?.let { CastHandOver(queue, st.index, pos.coerceAtLeast(0L)) }; heard = false
+        c.castMusic(queue, st.index, pos.takeIf { it > 0 }, st.repeat.wire(), st.shuffle)
     }
 
     private fun remember(tracks: List<MusicTrackItem>) { tracks.forEach { known[it.id] = it } }
@@ -260,7 +284,10 @@ object MusicCast {
         remember(tracks); this.context = context
         val order = if (shuffle) listOf(tracks[startIndex]) + tracks.filterIndexed { i, _ -> i != startIndex }.shuffled() else tracks
         val idx = if (shuffle) 0 else startIndex
-        c.castMusic(order.map { it.toCast() }, idx, null, _status.value?.repeat ?: "off", shuffle)
+        val queue = order.map { it.toCast() }
+        // R358 — an album started while casting: until the device plays it, the album's first song at its start.
+        handOver = queue.getOrNull(idx)?.let { CastHandOver(queue, idx, 0L) }; heard = false
+        c.castMusic(queue, idx, null, _status.value?.repeat ?: "off", shuffle)
     }
 
     fun command(type: String, index: Int? = null, to: Int? = null, track: MusicTrackItem? = null, on: Boolean? = null, mode: String? = null) {
@@ -388,6 +415,51 @@ fun castHandBack(last: CastRemoteStatus?, elapsedMs: Long, endedByApp: Boolean):
  */
 fun castMusicLive(link: CastLinkState, st: CastRemoteStatus?): Boolean =
     link == CastLinkState.CONNECTED && st != null && st.music && st.loaded && !st.ended && !st.failed
+
+/**
+ * R358 — the song and place this device had when it handed the music to a device: the place to come back to when the
+ * device never reports one of its own (it never got a stream, or the cast ended before its first report).
+ */
+data class CastHandOver(val queue: List<CastTrackItem>, val index: Int, val positionMs: Long) {
+    val itemId: String get() = queue[index].id
+}
+
+/**
+ * R358 (FR-R358-1) — the device's report is a place of its own: it says the song plays, or it names another song than
+ * the one handed over (the speaker moved on). The sender's own "loading" status, a receiver still loading, and a
+ * receiver that never got a stream all say position 0 of the handed-over song, playing nothing — that is not a place.
+ * With nothing handed over (a plain join) every report is the device's own.
+ */
+fun castReportIsAPlace(st: CastRemoteStatus, handOver: CastHandOver?): Boolean =
+    handOver == null || st.playing || st.queue.getOrNull(st.queueIndex)?.id != handOver.itemId
+
+/**
+ * R358 (FR-R358-2) — the report as this device shows (and keeps, and hands back) it: until [heard] (a report was a place,
+ * [castReportIsAPlace]), the hand-over's song and position, not playing. Everything else the device said stands.
+ */
+fun castShownStatus(st: CastRemoteStatus?, handOver: CastHandOver?, heard: Boolean): CastRemoteStatus? {
+    if (st == null || handOver == null || heard || !st.music) return st
+    val same = st.queue.getOrNull(st.queueIndex)?.id == handOver.itemId
+    val song = handOver.queue[handOver.index]
+    return st.copy(
+        itemId = handOver.itemId,
+        queue = if (same) st.queue else handOver.queue,
+        queueIndex = if (same) st.queueIndex else handOver.index,
+        positionMs = handOver.positionMs,
+        durationMs = st.durationMs.takeIf { it > 0 && same } ?: song.durationMs ?: 0L,
+        playing = false,
+    )
+}
+
+/**
+ * R358 (FR-R358-1) — what a cast's end hands back: the device's last live report as shown ([castShownStatus] — the
+ * hand-over's place until the device reported one), or, with no live report at all, the hand-over itself.
+ */
+fun castHandBackFrom(lastLive: CastRemoteStatus?, handOver: CastHandOver?): CastRemoteStatus? =
+    lastLive ?: handOver?.let { h ->
+        CastRemoteStatus(itemId = h.itemId, music = true, loaded = true, queue = h.queue, queueIndex = h.index,
+            positionMs = h.positionMs, durationMs = h.queue[h.index].durationMs ?: 0L)
+    }
 
 /** How close to a song's end counts as having played it out: the last report before the end is up to ~1 s early. */
 private const val SONG_END_SLACK_MS = 2_000L
