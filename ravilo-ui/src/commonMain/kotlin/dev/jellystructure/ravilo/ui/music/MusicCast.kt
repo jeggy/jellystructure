@@ -69,13 +69,13 @@ object MusicCast {
         bindJob = scope.launch {
             combine(c.sender.link, c.sender.status, c.sender.deviceName) { l, s, n -> Triple(l, s, n) }.collect { (link, st, name) ->
                 val wasLinked = _linked.value
-                val nowLinked = link == CastLinkState.CONNECTED && st != null && st.music && st.loaded && !st.ended && !st.failed
+                val nowLinked = castMusicLive(link, st)
                 _status.value = st
                 _device.value = name
                 _linked.value = nowLinked
                 holdsDevice = link == CastLinkState.CONNECTED && (st == null || st.music || !st.loaded || st.ended || st.failed)
                 if (nowLinked && st?.itemId != lastItemId) { lastItemId = st?.itemId; barHidden.value = false }
-                if (nowLinked) follow(st)
+                if (nowLinked && st != null) follow(st)
                 // FR-R324-3 — the session just connected from the music-mode sheet: hand the phone's queue over, or
                 // join with nothing playing here (FR-R324-2's second remote).
                 if (link != CastLinkState.CONNECTED) awaitNewLink = false
@@ -86,23 +86,41 @@ object MusicCast {
                     scope.launch(Dispatchers.Main) { handOff(c) }
                 }
                 if (wasLinked && !nowLinked) barHidden.value = false
-                // R353 (FR-R353-5) — what the speaker last said about its queue, kept past the session's end (the
-                // sender clears its status to null as the link drops, so it must be kept before that).
-                if (link == CastLinkState.CONNECTED && st != null && st.music && st.queue.isNotEmpty() && !st.failed) {
+                // R353 (FR-R353-5) — what the speaker last said about its queue while a song was live, kept past the
+                // song's end and the session's end (the sender clears its status to null as the link drops, and an
+                // `ended` report carries no useful place, so it must be kept before either).
+                // Only a LIVE report counts: after the receiver's `ended` the next media status is idle (not loaded,
+                // not ended, position 0) and used to replace the song's place (the Pixel 9, 2026-10-02).
+                if (nowLinked && st != null && st.queue.isNotEmpty()) {
                     lastMusic = st; lastMusicAt = kotlin.time.TimeSource.Monotonic.markNow()
                 } else if (link == CastLinkState.CONNECTED && st != null && !st.music && st.loaded) {
                     lastMusic = null   // a film took the device: there is no song to come back to
                 }
+                if (nowLinked || link != CastLinkState.CONNECTED) { stoppedJob?.cancel(); stoppedJob = null }
+                // FR-R353-5 (amended 2026-10-02) — the music stopped ON the device while the session stays: the
+                // Jellyfin dashboard's Stop, the queue playing out, the TV remote's Stop key. The receiver goes to its
+                // idle view and says `ended`; the phone keeps the session and takes the speaker's song back, paused,
+                // so Play starts it on the speaker again. Confirmed after a short settle, because a song finishing
+                // reports IDLE for a moment before the receiver loads the next one.
+                if (castStoppedOnDevice(wasLinked, link, st, endedByApp)) {
+                    val last = lastMusic
+                    val elapsed = lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
+                    stoppedJob?.cancel()
+                    stoppedJob = scope.launch {
+                        kotlinx.coroutines.delay(STOP_SETTLE_MS)
+                        if (_linked.value || c.sender.link.value != CastLinkState.CONNECTED || endedByApp || lastMusic !== last) return@launch
+                        lastMusic = null; lastMusicAt = null
+                        handBack(last, elapsed)
+                    }
+                }
                 // A session that ends any way but ours (Google Home's *Stop cast*, the notification, the device
                 // dropping the app, the network): the speaker's song and place come back to this device, paused.
                 if (wasConnected && link != CastLinkState.CONNECTED) {
-                    val plan = castHandBack(lastMusic, lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L, endedByApp)
                     val handed = lastMusic
+                    val elapsed = lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
+                    val byApp = endedByApp
                     endedByApp = false; lastMusic = null; lastMusicAt = null
-                    if (plan != null && handed != null) scope.launch(Dispatchers.Main) {
-                        val queue = state(handed).queue
-                        MusicEngine.loadPaused(queue, plan.index, plan.positionMs, context)
-                    }
+                    if (!byApp) handBack(handed, elapsed)
                 }
                 wasConnected = link == CastLinkState.CONNECTED
             }
@@ -110,8 +128,30 @@ object MusicCast {
     }
 
     private var wasConnected = false
-    private var lastMusic: CastRemoteStatus? = null
-    private var lastMusicAt: kotlin.time.TimeMark? = null
+    @kotlin.concurrent.Volatile private var lastMusic: CastRemoteStatus? = null
+    @kotlin.concurrent.Volatile private var lastMusicAt: kotlin.time.TimeMark? = null
+    private var stoppedJob: Job? = null
+    private const val STOP_SETTLE_MS = 1_500L
+
+    /** FR-R353-5 — the speaker's last live song and place ([castHandBack]) into this device's player, paused. */
+    private fun handBack(last: CastRemoteStatus?, elapsedMs: Long) {
+        val plan = castHandBack(last, elapsedMs, endedByApp = false) ?: return
+        val handed = last ?: return
+        scope.launch(Dispatchers.Main) { MusicEngine.loadPaused(state(handed).queue, plan.index, plan.positionMs, context) }
+    }
+
+    /**
+     * FR-R353-5 — Play after the device stopped while still connected (the dashboard's Stop): the song this device took
+     * back goes to the device again, from its place. False when there is nothing to send, so the caller plays here.
+     */
+    fun resumeOnDevice(): Boolean {
+        val c = cast ?: return false
+        if (_linked.value || !holdsDevice || c.sender.link.value != CastLinkState.CONNECTED) return false
+        val st = MusicEngine.state.value
+        if (st.book != null || st.queue.isEmpty() || st.playing) return false
+        scope.launch(Dispatchers.Main) { handOff(c) }
+        return true
+    }
     /** Set by [playHere], [stop] and [moveAway]: they bring the music back themselves. */
     @kotlin.concurrent.Volatile private var endedByApp = false
 
@@ -257,8 +297,13 @@ object MusicPlayback {
         if (casting || MusicCast.holdsDevice) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
     }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
-    fun togglePlay() { if (casting) { if (_state.value.playing) pause() else play() } else MusicEngine.togglePlay() }
-    fun play() { if (casting) MusicCast.controller?.sender?.play() else MusicEngine.play() }
+    fun togglePlay() {
+        if (casting) { if (_state.value.playing) pause() else play() }
+        else if (!MusicEngine.state.value.playing && MusicCast.resumeOnDevice()) Unit
+        else MusicEngine.togglePlay()
+    }
+    /** FR-R353-5 — still connected after the device stopped (the dashboard's Stop): Play starts the song there again. */
+    fun play() { if (casting) MusicCast.controller?.sender?.play() else if (!MusicCast.resumeOnDevice()) MusicEngine.play() }
     fun pause() { if (casting) MusicCast.controller?.sender?.pause() else MusicEngine.pause() }
     fun next() { if (casting) MusicCast.command("next") else MusicEngine.next() }
     fun previous() { if (casting) MusicCast.command("prev") else MusicEngine.previous() }
@@ -320,5 +365,32 @@ fun castHandBack(last: CastRemoteStatus?, elapsedMs: Long, endedByApp: Boolean):
     if (last.ended) return CastHandBack(index, 0L)
     val moved = if (last.playing) last.positionMs + elapsedMs.coerceAtLeast(0L) else last.positionMs
     val length = last.durationMs.takeIf { it > 0 } ?: last.queue[index].durationMs?.takeIf { it > 0 }
-    return CastHandBack(index, if (length != null) moved.coerceIn(0L, length) else moved.coerceAtLeast(0L))
+    // A song that reached its end (the queue played out) comes back at its start, as a queue end does here (FR-R322-5).
+    if (length != null && moved >= length - SONG_END_SLACK_MS) return CastHandBack(index, 0L)
+    return CastHandBack(index, moved.coerceAtLeast(0L))
+}
+
+/**
+ * A connected device is playing (or holding paused) a music queue: the phone is its remote ([MusicCast.linked]). Only
+ * such a report is kept as the place to hand back (FR-R353-5) — the idle status that follows the receiver's `ended` is
+ * not (not loaded, not ended, position 0) and used to overwrite the song's place.
+ */
+fun castMusicLive(link: CastLinkState, st: CastRemoteStatus?): Boolean =
+    link == CastLinkState.CONNECTED && st != null && st.music && st.loaded && !st.ended && !st.failed
+
+/** How close to a song's end counts as having played it out: the last report before the end is up to ~1 s early. */
+private const val SONG_END_SLACK_MS = 2_000L
+
+/**
+ * R353 (FR-R353-5, amended 2026-10-02) — the music stopped ON the device while the session stays connected: it was live
+ * a moment ago and the device now reports no live song (the receiver's `ended` after the Jellyfin dashboard's Stop, the
+ * TV remote's Stop key, the queue playing out). The app's own ends ([MusicCast.stop], *Play on this phone*, another
+ * device chosen) bring the music back themselves; a failure is not a stop (R299 offers *Play on this phone* itself);
+ * a film that took the device has no song to give back. A session that ends is the other path (the link drops).
+ */
+fun castStoppedOnDevice(wasLinked: Boolean, link: CastLinkState, st: CastRemoteStatus?, endedByApp: Boolean): Boolean {
+    if (!wasLinked || link != CastLinkState.CONNECTED || endedByApp) return false
+    if (st == null) return true
+    if (st.failed) return false
+    return !st.loaded || st.ended   // a film loaded in its place is neither: no song to give back
 }
