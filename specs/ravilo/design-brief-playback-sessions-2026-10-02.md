@@ -93,6 +93,23 @@ session = join it? Desktop draws the same sheet as a popover from the toolbar's 
 - Desktop note: whether the Mac can build a group is a research question (report §8 Q5); draw it as if it can,
   and mark the frames that depend on it.
 
+### B4a. Volume of a multi-speaker session — required on every non-mobile client (owner, 2026-10-02)
+
+On a phone, the hardware volume keys and Android's own output panel already give per-speaker volume. **The desktop
+(Mac, Linux), the web app and the TV have nothing like that**, so Ravilo itself must let people manage the volume of a
+session that plays on several speakers:
+- a **master volume** for the whole session (all speakers together, keeping their balance);
+- **each speaker's own volume** and **mute**, listed by room name, in the order they joined;
+- adding and removing a speaker from the same place (ties to §B4);
+- the speaker's real level shown on arrival, never a default (we shipped a slider that opened at 50 % — R353);
+- changes made elsewhere (a phone's keys, Google Home, the Jellyfin dashboard) reflected live.
+
+Draw it for: the mac capsule and GNOME docked bar (a volume popover from the bar), the desktop Playing page and the cast
+remote, the web app's player, and the TV remote (D-pad: Up/Down per speaker row, Left/Right to change, focus visible —
+R350). Lean: the bar's volume control is the master; a disclosure (▸ / *Speakers*) opens the per-speaker list. States:
+one speaker (just the master), two or more, a speaker that dropped out of the group, a speaker another person controls,
+volume unknown (offline).
+
 ### B5. The remote for a session (phone and desktop)
 
 Reuse R245's *Now playing* remote and the desktop Playing page; add:
@@ -122,7 +139,8 @@ stops. States: moving (one line, no spinner wall), moved, failed (*couldn't move
 ### B8. Desktop specifics
 
 - Sidebar: *Playing* (count) → §B1 as a page.
-- Capsule (mac) / docked bar (GNOME): session switcher, target chip, *Play on…* popover (§B3), group volume.
+- Capsule (mac) / docked bar (GNOME): session switcher, target chip, *Play on…* popover (§B3), and the master +
+  per-speaker volume of §B4a (the desktop has no system panel to fall back on).
 - A session started on the phone appears on the Mac within a second — the capsule lights up as a remote.
 - Keyboard: media keys and Space control the session shown in the capsule.
 
@@ -161,7 +179,7 @@ restarting (sessions come back).
 ## D. Strings (en · da · fo drafts; the shipped `i18n/*.json` wins where a key exists)
 
 *Playing everywhere* · *Playing on {target}* · *Move to…* · *Play here* · *Stop* · *Join* · *{Person} is listening* ·
-*Make a group…* · *Play on {n} speakers* · *{first} + {n}* · *Couldn't move — still playing on {target}* ·
+*Make a group…* · *Play on {n} speakers* · *Speakers* · *All speakers* (master volume) · *Mute {room}* · *{first} + {n}* · *Couldn't move — still playing on {target}* ·
 *{target} is offline* · *Playing in other rooms* · *Also controlled from {device}* (if Q4) · *Start fresh*.
 
 ## E. Deliverables and order

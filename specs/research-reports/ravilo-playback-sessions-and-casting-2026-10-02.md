@@ -224,7 +224,7 @@ PlaybackSession
 | Ravilo TV app | ✓ | only while on screen (R293) | ✓ | a TV off screen cannot be a target |
 | Chromecast / Nest Hub (CAF receiver) | ✓ via hand-off code, from any client that can reach Cast | ✓ via receiver's events socket | ✓ | receiver must report rich state to the **server**, not just to senders |
 | Speaker | as above, audio only | ✓ | ✓ | |
-| Cast dynamic group | Android: MediaRouter dynamic group; desktop: research (§8) | ✓ through the leader's receiver | ✓ | members run Google's apps |
+| Cast dynamic group | Android: MediaRouter dynamic group; desktop: research (§8) | ✓ through the leader's receiver; master + per-speaker volume from every client, incl. desktop, web and TV (§8 Q5a) | ✓ | members run Google's apps |
 | Google Home static group | appears as a Cast device ("_googlecast" group) | ✓ | ✓ | not listed in Ravilo today (R355 OQ2) |
 
 ---
@@ -242,6 +242,9 @@ PlaybackSession
    unified "Play on…" sheet on desktop.*
 4. **Groups from Ravilo.** Android builds dynamic groups through MediaRouter; desktop through the method §8 settles;
    Google Home groups listed. *Design: picking several speakers, naming, per-speaker volume.*
+   **Volume on non-mobile clients is part of this phase, not an extra (owner, 2026-10-02).** A phone has hardware keys
+   and Android's output panel for per-speaker volume; the desktop, web and TV have nothing, so Ravilo must offer a master
+   volume plus each speaker's own volume and mute for any multi-speaker session (brief §B4a).
 5. **Multiple sessions and moving.** New-vs-replace rules, session switcher, move a session between targets, stream
    transfer in the receiver. *Design: the switcher, move, merge.*
 6. **Admin.** A sessions view in jellystructure (who plays what where, end a session), and household rules.
@@ -294,6 +297,12 @@ Each phase keeps today's behaviour working for old apps (additive wire only; old
 5. Can a desktop (our Cast v2 client) create or extend a dynamic group? Candidate: the multizone namespace
    (`urn:x-cast:com.google.cast.multizone`) against a group leader — undocumented; must be tested on the speakers.
    Fallback: list Google Home static groups and let Android build dynamic ones.
+5a. **Per-speaker volume from a non-mobile client.** A whole Cast device's volume is the receiver namespace's
+   `SET_VOLUME` (our Cast v2 client can already send it, R330). A *group member's* own volume inside a dynamic group is
+   set by Google's multizone apps; from Android, MediaRouter exposes it (`RoutingController`/member route volume). From
+   the desktop it likely needs the multizone namespace (`urn:x-cast:com.google.cast.multizone`, `SET_DEVICE_VOLUME`) —
+   undocumented, to be tested on the speakers — or the server relaying through a phone. The session model should hold
+   a volume per target member so every client shows the same numbers (§4.1 `options`).
 6. Stream transfer: receiver `STREAM_TRANSFER` + `RESUME_SESSION` → a fresh hand-off code minted by the receiver
    (R355 OQ1). Does the moved receiver keep our events socket and Jellyfin session?
 7. Can the server keep a session alive across a backend restart well enough (targets re-attach, positions resume)?
