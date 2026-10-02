@@ -32,9 +32,10 @@ data class CastEpisode(
 )
 
 /**
- * 286 (FR-286-4) / R324 — one song in the queue the receiver owns. Ids and titles only: 30 songs ≈ 4 KB, far under
- * the Cast message ceiling, so the whole queue rides one LOAD (286 dev review 3). [coverUrl] is server-relative, as
- * the app receives it; the receiver makes it absolute against its own server URL.
+ * 286 (FR-286-4) / R324 — one song in the queue the receiver owns. Ids and titles only, ~150–250 B a song. R359: 286
+ * assumed ~30 songs (≈ 4 KB) and sent the whole queue in one LOAD; a long queue is sent as a window plus parts
+ * ([castLoadPlan]). [coverUrl] is server-relative, as the app receives it; the receiver makes it absolute against its
+ * own server URL.
  */
 @Serializable
 data class CastTrackItem(
@@ -85,6 +86,14 @@ data class CastLoadData(
     /** R343 (FR-R343-8) — the first start of this load is a *Start over* (FR-R343-4); the receiver's own
      *  next loads drop it. */
     @SerialName("start_over") val startOver: Boolean = false,
+    // R359 (FR-R359-3) — a music queue too long for one message: [tracks] is a window of it, the run that starts at
+    // [queueStart] of a queue of [queueTotal] songs ([currentIndex] counts within the window). The rest follows as
+    // `queue_part` commands carrying the same [queueId]. [queueTotal] null = [tracks] is the whole queue (as before).
+    // [queueId] names this queue for its parts; the receiver's own next loads keep it. A receiver older than R359
+    // ignores all three and plays the window.
+    @SerialName("queue_id") val queueId: String? = null,
+    @SerialName("queue_total") val queueTotal: Int? = null,
+    @SerialName("queue_start") val queueStart: Int = 0,
 )
 
 /** A track the receiver reports back so the phone's picker can render it (R180/R195 shape). */
@@ -102,7 +111,7 @@ data class CastTrack(
 /** Receiver → phone. One message type, optional fields; the receiver sends it on every state change. */
 @Serializable
 data class CastReceiverMessage(
-    val type: String,                                  // status | busy | noserver | nextup | ended | tracks | failed (R299)
+    val type: String,                                  // status | busy | noserver | nextup | ended | tracks | failed (R299) | queue_part (R359)
     @SerialName("item_id") val itemId: String? = null,
     val title: String? = null,
     val kicker: String? = null,
@@ -140,10 +149,17 @@ data class CastReceiverMessage(
     @SerialName("queue_rev") val queueRev: Int? = null,
     /** R356 — how many songs the queue holds, said also when [queue] is left out. */
     @SerialName("queue_size") val queueSize: Int? = null,
+    /**
+     * R359 (FR-R359-5) — on a `status`: the queue did not fit in it and follows in this many `queue_part` messages (a
+     * sender that knows them does not ask `get_queue` for the revision). On a `queue_part`: unset.
+     */
+    @SerialName("queue_parts") val queueParts: Int? = null,
+    /** R359 — on a `queue_part`: where [queue] (a run of the queue of [queueSize] songs, revision [queueRev]) starts. */
+    @SerialName("queue_offset") val queueOffset: Int? = null,
 )
 
 /** Phone → receiver. 286/R324 add `prev` · `play_at` · `queue_move` · `queue_remove` · `queue_add` · `queue_play_next`
- *  · `repeat` · `shuffle` · `lyrics` — the same shape, extended (additive). */
+ *  · `repeat` · `shuffle` · `lyrics`, R359 `queue_part` — the same shape, extended (additive). */
 @Serializable
 data class CastCommand(
     val type: String,                                  // subtitle | audio | subsize | next | nextup_cancel | nextup_play | status | get_queue (R356)
@@ -157,4 +173,10 @@ data class CastCommand(
     val on: Boolean? = null,
     /** `repeat`: `off` · `all` · `one`. */
     val mode: String? = null,
+    /** R359 (FR-R359-3) — `queue_part`: the LOAD's [CastLoadData.queueId] this part belongs to. */
+    @SerialName("queue_id") val queueId: String? = null,
+    /** R359 — `queue_part`: where [tracks] starts in the whole queue. */
+    val offset: Int? = null,
+    /** R359 — `queue_part`: a run of the queue, in the sender's order. */
+    val tracks: List<CastTrackItem>? = null,
 )

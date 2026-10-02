@@ -163,7 +163,8 @@ class CastController(
 
     /**
      * R324 (FR-R324-3) / 286 (FR-286-4) — hand a music queue to the receiver: one LOAD carrying every song, the one to
-     * start and its position. The receiver negotiates each song itself; the phone becomes a remote.
+     * start and its position. The receiver negotiates each song itself; the phone becomes a remote. R359: the sender
+     * splits a queue too long for one message into a window and parts ([dev.jellystructure.shared.tv.castLoadPlan]).
      */
     fun castMusic(
         tracks: List<CastTrackItem>, currentIndex: Int, positionMs: Long?, repeat: String, shuffle: Boolean, lang: String = "en",

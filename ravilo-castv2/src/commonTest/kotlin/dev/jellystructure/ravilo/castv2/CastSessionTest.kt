@@ -141,6 +141,26 @@ class CastSessionTest {
     }
 
     @Test
+    fun `a load says the size of the frame it sent`() = runTest {
+        // R359 (FR-R359-7) — the sender logs the LOAD's size; it is the frame the device reads, request id and all.
+        val device = FakeDevice { m, body ->
+            if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()
+        }
+        val s = session(device)
+        val joined = async { s.joinIfRunning() }
+        runCurrent()
+        assertTrue(joined.await())
+        val media = obj("contentId" to "ravilo://song", "metadata" to obj("title" to "A song"))
+        val said = s.load(media, 30.0, autoplay = true, customData = obj("item_id" to "song", "tracks" to List(50) { "t$it" }))
+        runCurrent()
+        val load = device.heard.single { parsePayload(it.payloadUtf8)?.let(CastParse::type) == "LOAD" }
+        // The same size give or take the request id's digits (the estimate counts the largest).
+        assertTrue(said >= load.frame().size && said - load.frame().size < 12, "said $said, sent ${load.frame().size}")
+        assertEquals("sess-1", parsePayload(load.payloadUtf8)!!["sessionId"]!!.jsonPrimitive.content)
+        s.close(); advanceUntilIdle()
+    }
+
+    @Test
     fun `joinIfRunning never launches`() = runTest {
         val device = FakeDevice { m, body ->
             if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body))) else emptyList()

@@ -150,13 +150,15 @@ class CastSession(
 
     // ── commands ──
 
-    /** `LOAD` on the media channel; [media] and [customData] are the caller's (FR-R330-3). */
-    fun load(media: JsonObject, currentTimeSec: Double, autoplay: Boolean, customData: JsonObject?) {
-        val a = app ?: return
-        postRequest(CastNamespaces.MEDIA, a.transportId, obj(
-            "type" to "LOAD", "sessionId" to a.sessionId, "media" to media, "autoplay" to autoplay,
-            "currentTime" to currentTimeSec, "customData" to customData,
-        ))
+    /**
+     * `LOAD` on the media channel; [media] and [customData] are the caller's (FR-R330-3). R359 (FR-R359-7): returns the
+     * frame's size in bytes (0 when no app is joined), for the caller's log.
+     */
+    fun load(media: JsonObject, currentTimeSec: Double, autoplay: Boolean, customData: JsonObject?): Int {
+        val a = app ?: return 0
+        val body = castLoadBody(a.sessionId, media, currentTimeSec, autoplay, customData)
+        postRequest(CastNamespaces.MEDIA, a.transportId, body)
+        return castFrameBytes(a.transportId, CastNamespaces.MEDIA, body, senderId)
     }
 
     fun play() = mediaCommand("PLAY")
@@ -265,3 +267,16 @@ class CastSession(
         lock.withLock { pending[id] }?.complete(body)
     }
 }
+
+/** The body of a `LOAD` ([CastSession.load]) as it goes out, but for its request id. */
+fun castLoadBody(sessionId: String, media: JsonObject, currentTimeSec: Double, autoplay: Boolean, customData: JsonObject?): JsonObject = obj(
+    "type" to "LOAD", "sessionId" to sessionId, "media" to media, "autoplay" to autoplay,
+    "currentTime" to currentTimeSec, "customData" to customData,
+)
+
+/**
+ * R359 (FR-R359-1) — the size of the frame [body] goes out in to [destination] on [namespace] (a request id included):
+ * what the device's 64 KB ceiling is measured against.
+ */
+fun castFrameBytes(destination: String, namespace: String, body: JsonObject, senderId: String = DEFAULT_SENDER): Int =
+    CastMessage(senderId, destination, namespace, JsonObject(body + ("requestId" to JsonPrimitive(Int.MAX_VALUE))).toString()).frame().size

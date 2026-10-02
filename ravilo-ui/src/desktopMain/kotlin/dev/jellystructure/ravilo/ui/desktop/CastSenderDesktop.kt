@@ -10,12 +10,17 @@ import dev.jellystructure.ravilo.ui.seams.CastMediaSnapshot
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
 import dev.jellystructure.ravilo.ui.seams.CastSender
 import dev.jellystructure.ravilo.ui.seams.foldReceiverMessage
+import dev.jellystructure.ravilo.ui.seams.castStatusWithQueue
 import dev.jellystructure.ravilo.ui.seams.isCastBurnIn
 import dev.jellystructure.ravilo.ui.seams.mergeCastStatus
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
+import dev.jellystructure.shared.tv.CastQueueAssembly
 import dev.jellystructure.shared.tv.RaviloWireJsonWithDefaults
+import dev.jellystructure.shared.tv.castLoadLog
+import dev.jellystructure.shared.tv.castLoadPlan
+import dev.jellystructure.shared.tv.newCastQueueId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +34,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -70,6 +77,8 @@ internal object CastSenderDesktop : CastSender {
     private var said: CastReceiverMessage? = null
     /** R356 — the queue revision last asked for with `get_queue`. */
     private var askedQueueRev: Int? = null
+    /** R359 — the receiver's queue, while it arrives in parts. */
+    private val queueParts = CastQueueAssembly()
     private var pendingLoad: CastLoadData? = null
     private var watch: Job? = null
     private var reconnectTried = false
@@ -124,6 +133,16 @@ internal object CastSenderDesktop : CastSender {
             launch {
                 s.custom.collect { raw ->
                     val msg = runCatching { json.decodeFromString(CastReceiverMessage.serializer(), raw) }.getOrNull() ?: return@collect
+                    // R359 (FR-R359-5) — a queue too long for one message comes in parts after its status; whole, it is
+                    // held as if the status had carried it. A part is not a state report: nothing else changes.
+                    if (msg.type == "queue_part") {
+                        queueParts.part(msg)?.let { whole ->
+                            println("${DesktopLog.stamp()} cast: the receiver's queue (${whole.size} songs, rev ${msg.queueRev}) came in parts")
+                            _status.value = castStatusWithQueue(_status.value, whole, msg.queueRev, said?.queueIndex)
+                        }
+                        return@collect
+                    }
+                    if (msg.queue != null) queueParts.reset()
                     // R356 (FR-R356-9) — a queue revision this app does not hold, without the queue: ask for it once.
                     if (dev.jellystructure.ravilo.ui.seams.castQueueGap(_status.value, msg) && askedQueueRev != msg.queueRev) {
                         askedQueueRev = msg.queueRev
@@ -235,37 +254,20 @@ internal object CastSenderDesktop : CastSender {
 
     private fun loadNow(data: CastLoadData) {
         val s = session ?: run { pendingLoad = data; return }
-        val song = data.tracks.getOrNull(data.currentIndex)
-        fun abs(url: String?) = url?.let { if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it }
-        val metadata = buildJsonObject {
-            if (song != null) {
-                // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
-                put("metadataType", 3)
-                put("title", song.title)
-                song.artist?.let { put("artist", it) }
-                song.album?.let { put("albumName", it) }
-                abs(song.coverUrl ?: data.artUrl)?.let { url -> putJsonArray("images") { add(buildJsonObject { put("url", url) }) } }
-            } else {
-                put("metadataType", 1)
-                put("title", data.title)
-                data.kicker?.let { put("subtitle", it) }
-                data.artUrl?.let { url -> putJsonArray("images") { add(buildJsonObject { put("url", url) }) } }
-            }
-        }
-        val custom = json.encodeToJsonElement(CastLoadData.serializer(), data).jsonObject
-        // The receiver resolves contentId itself (it enrols and negotiates its own ticket); no media URL leaves the Mac.
-        val media = buildJsonObject {
-            put("contentId", "ravilo://${data.itemId}")
-            put("streamType", "BUFFERED")
-            put("contentType", if (song != null) "audio/mpeg" else "application/x-mpegURL")
-            put("metadata", metadata)
-            put("customData", custom)
-        }
+        // R359 (FR-R359-1/3) — a queue too long for one message goes as a window, the rest at once in parts.
+        val plan = castLoadPlan(data, newCastQueueId(), json)
+        val media = castLoadMedia(plan.load, json)
         said = null
-        println("${DesktopLog.stamp()} cast: load ${if (song != null) "music, ${data.tracks.size} in the queue" else "a film"} on ${device?.name}")
+        queueParts.reset()
+        // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
-        s.load(media, (data.positionMs ?: 0L) / 1000.0, autoplay = true, customData = custom)
+        // FR-R359-2 — CastLoadData rides once, as the media's customData (the one the receiver reads); the request's is left out.
+        val bytes = s.load(media, (data.positionMs ?: 0L) / 1000.0, autoplay = true, customData = null)
+        // The parts go after the LOAD (the receiver also holds a part that overtakes it).
+        if (plan.parts.isNotEmpty()) scope.launch { plan.parts.forEach { s.sendCustom(json.encodeToString(CastCommand.serializer(), it)) } }
+        // FR-R359-7 — the LOAD's size and the number of parts, so a future limit is visible here.
+        println("${DesktopLog.stamp()} cast: load ${if (data.tracks.isNotEmpty()) "music, ${castLoadLog(data.tracks.size, bytes, plan.parts.size)}" else "a film, ${(bytes + 512) / 1024} KB"} on ${device?.name}")
     }
 
     override fun play() { scope.launch { session?.play() } }
@@ -312,6 +314,37 @@ internal object CastSenderDesktop : CastSender {
             val textIds = (said?.subtitleTracks ?: emptyList()).mapNotNull { it.trackId }.toSet()
             s.setActiveTracks(snap.activeTrackIds.filter { it in textIds } + listOfNotNull(trackId))
         }
+    }
+}
+
+/**
+ * The LOAD's media for [data]: the receiver resolves contentId itself (it enrols and negotiates its own ticket), so no
+ * media URL leaves the Mac; `CastLoadData` rides as its customData — once (R359 FR-R359-2).
+ */
+internal fun castLoadMedia(data: CastLoadData, json: Json = RaviloWireJsonWithDefaults): JsonObject {
+    val song = data.tracks.getOrNull(data.currentIndex)
+    fun abs(url: String?) = url?.let { if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it }
+    val metadata = buildJsonObject {
+        if (song != null) {
+            // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
+            put("metadataType", 3)
+            put("title", song.title)
+            song.artist?.let { put("artist", it) }
+            song.album?.let { put("albumName", it) }
+            abs(song.coverUrl ?: data.artUrl)?.let { url -> putJsonArray("images") { add(buildJsonObject { put("url", url) }) } }
+        } else {
+            put("metadataType", 1)
+            put("title", data.title)
+            data.kicker?.let { put("subtitle", it) }
+            data.artUrl?.let { url -> putJsonArray("images") { add(buildJsonObject { put("url", url) }) } }
+        }
+    }
+    return buildJsonObject {
+        put("contentId", "ravilo://${data.itemId}")
+        put("streamType", "BUFFERED")
+        put("contentType", if (song != null) "audio/mpeg" else "application/x-mpegURL")
+        put("metadata", metadata)
+        put("customData", json.encodeToJsonElement(CastLoadData.serializer(), data))
     }
 }
 

@@ -25,11 +25,47 @@ import dev.jellystructure.ravilo.ui.music.CastSessionRemote
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
+import dev.jellystructure.shared.tv.castLoadLog
+import dev.jellystructure.shared.tv.castLoadPlan
+import dev.jellystructure.shared.tv.castWireBytes
+import dev.jellystructure.shared.tv.newCastQueueId
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+
+/**
+ * The LOAD for [data]. contentId is resolved by the receiver (it enrols and negotiates the ticket itself); the phone
+ * never hands it a media URL — that is the whole point of the receiver being its own device. R359 (FR-R359-2):
+ * `CastLoadData` rides once, as the media's customData — the one the receiver reads; the request carries none.
+ */
+internal fun castLoadRequest(data: CastLoadData): MediaLoadRequestData {
+    val song = data.tracks.getOrNull(data.currentIndex)
+    val meta = if (song != null) MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
+        // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
+        putString(MediaMetadata.KEY_TITLE, song.title)
+        song.artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
+        song.album?.let { putString(MediaMetadata.KEY_ALBUM_TITLE, it) }
+        (song.coverUrl ?: data.artUrl)?.let { addImage(WebImage(Uri.parse(if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it))) }
+    } else MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
+        putString(MediaMetadata.KEY_TITLE, data.title)
+        data.kicker?.let { putString(MediaMetadata.KEY_SUBTITLE, it) }
+        // FR-R245-11 — a landscape still/backdrop for the notification, never a poster.
+        data.artUrl?.let { addImage(WebImage(Uri.parse(it))) }
+    }
+    val info = MediaInfo.Builder("ravilo://${data.itemId}")
+        .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+        .setContentType(if (song != null) "audio/mpeg" else "application/x-mpegURL")
+        .setMetadata(meta)
+        .setCustomData(JSONObject(json.encodeToString(CastLoadData.serializer(), data)))
+        .build()
+    return MediaLoadRequestData.Builder()
+        .setMediaInfo(info)
+        .setAutoplay(true)
+        .setCurrentTime(data.positionMs ?: 0L)
+        .build()
+}
 
 /**
  * R245 — the Cast SDK's options: a placeholder receiver id (the real one is applied at runtime from the
@@ -178,6 +214,16 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
             android.util.Log.i("RaviloCast", "R356: receiver message ${message.length} B")
         }
         runCatching { json.decodeFromString(CastReceiverMessage.serializer(), message) }.getOrNull()?.let { msg ->
+            // R359 (FR-R359-5) — a queue too long for one message comes in parts after its status; whole, it is held as
+            // if the status had carried it. A part is not a state report: nothing else changes.
+            if (msg.type == "queue_part") {
+                queueParts.part(msg)?.let { whole ->
+                    android.util.Log.i("RaviloCast", "R359: the receiver's queue (${whole.size} songs, rev ${msg.queueRev}) came in parts")
+                    _status.value = castStatusWithQueue(_status.value, whole, msg.queueRev, receiverSaid?.queueIndex)
+                }
+                return@let
+            }
+            if (msg.queue != null) queueParts.reset()
             // R356 (FR-R356-9) — a newer queue revision without the queue: ask for it, once per revision.
             if (castQueueGap(_status.value, msg) && askedQueueRev != msg.queueRev) {
                 askedQueueRev = msg.queueRev
@@ -190,6 +236,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }
     @Volatile private var sizeLogged = false
     @Volatile private var askedQueueRev: Int? = null
+    /** R359 — the receiver's queue, while it arrives in parts (touched on the main thread only). */
+    private val queueParts = dev.jellystructure.shared.tv.CastQueueAssembly()
 
     // ── R356 (FR-R356-6): connected but silent — ask, then rejoin ──
     private val silence = CastSilenceWatch()
@@ -461,37 +509,19 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         val s = session ?: run { pendingLoad = data; return }
         pendingLoad = null
         val rmc = s.remoteMediaClient ?: return
-        val song = data.tracks.getOrNull(data.currentIndex)
-        val meta = if (song != null) MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
-            // R324 (FR-R324-9) — a song's card: cover · title · artist; the receiver rewrites it per song.
-            putString(MediaMetadata.KEY_TITLE, song.title)
-            song.artist?.let { putString(MediaMetadata.KEY_ARTIST, it) }
-            song.album?.let { putString(MediaMetadata.KEY_ALBUM_TITLE, it) }
-            (song.coverUrl ?: data.artUrl)?.let { addImage(WebImage(Uri.parse(if (it.startsWith("http")) it else data.serverUrl.trimEnd('/') + it))) }
-        } else MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
-            putString(MediaMetadata.KEY_TITLE, data.title)
-            data.kicker?.let { putString(MediaMetadata.KEY_SUBTITLE, it) }
-            // FR-R245-11 — a landscape still/backdrop for the notification, never a poster.
-            data.artUrl?.let { addImage(WebImage(Uri.parse(it))) }
-        }
-        // contentId is resolved by the receiver (it enrols and negotiates the ticket itself); the phone
-        // never hands it a media URL — that is the whole point of the receiver being its own device.
-        val info = MediaInfo.Builder("ravilo://${data.itemId}")
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(if (song != null) "audio/mpeg" else "application/x-mpegURL")
-            .setMetadata(meta)
-            .setCustomData(JSONObject(json.encodeToString(CastLoadData.serializer(), data)))
-            .build()
-        val req = MediaLoadRequestData.Builder()
-            .setMediaInfo(info)
-            .setAutoplay(true)
-            .setCurrentTime(data.positionMs ?: 0L)
-            .setCustomData(JSONObject(json.encodeToString(CastLoadData.serializer(), data)))
-            .build()
+        // R359 (FR-R359-1/3) — a queue too long for one message goes as a window, the rest at once in parts.
+        val plan = castLoadPlan(data, newCastQueueId(), json)
+        val req = castLoadRequest(plan.load)
         receiverSaid = null
+        queueParts.reset()
+        // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
         rmc.load(req)
+        plan.parts.forEach { sendRaw(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), it)) }
+        // FR-R359-7 — the LOAD's size and the number of parts, so a future limit is visible in the log.
+        val bytes = runCatching { castWireBytes(req.toJson().toString()) }.getOrDefault(0)
+        android.util.Log.i("RaviloCast", "R359: load ${if (data.tracks.isNotEmpty()) "music, ${castLoadLog(data.tracks.size, bytes, plan.parts.size)}" else "a film, ${(bytes + 512) / 1024} KB"}")
     }
 
     /** R324 (FR-R324-5) — the cast session's volume, in 5 % steps from the ⋯ slider; the keys reach it by themselves. */

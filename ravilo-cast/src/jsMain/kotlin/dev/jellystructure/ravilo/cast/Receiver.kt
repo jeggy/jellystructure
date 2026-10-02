@@ -13,6 +13,12 @@ import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastReceiverMessage
 import dev.jellystructure.shared.tv.CastTrackItem
+import dev.jellystructure.shared.tv.CastNext
+import dev.jellystructure.shared.tv.castNextIndex
+import dev.jellystructure.shared.tv.castPreviousWaits
+import dev.jellystructure.shared.tv.castQueueAttachAll
+import dev.jellystructure.shared.tv.castQueueIfFits
+import dev.jellystructure.shared.tv.castQueueReply
 import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.ReceiverSubPick
@@ -81,6 +87,12 @@ private const val TRANSPORT_MS = 5_000L
 private const val SENDER_STOP_CLOSE_MS = 400L
 /** R357 (FR-R357-4) — how long the device's volume must hold still before it is reported (a dragged slider is one report). */
 private const val VOLUME_SETTLE_MS = 300L
+/** R359 (FR-R359-4) — how long the rest of a long queue may take before the songs held are taken as the queue. */
+private const val ASSEMBLY_GIVE_UP_MS = 15_000L
+/** R359 — at most this many parts (and held edits) are kept; 5 000 songs are ~30 parts. */
+private const val MAX_WAITING_PARTS = 400
+/** R359 (FR-R359-4) — what waits while a queue is still arriving: everything that names a place in it, or reorders it. */
+private val DEFERRED_WHILE_ARRIVING = setOf("play_at", "queue_move", "queue_remove", "queue_add", "queue_play_next", "shuffle")
 
 private class Receiver {
     private val cast: dynamic = js("window.cast")
@@ -143,6 +155,16 @@ private class Receiver {
     private var fullDue = true
     /** FR-R356-11 — the size of the first status without the queue after a full one is noted once. */
     private var slimNoted = false
+
+    // ── R359 (FR-R359-3/4) — a long queue arrives in parts ──
+    /** `queue_part`s not joined yet: one that came before its LOAD, or one that came before the part next to it. */
+    private val waitingParts = mutableListOf<CastCommand>()
+    /** Queue edits (and shuffle, play-at) sent while the queue was still arriving: their places are the whole queue's. */
+    private val deferred = mutableListOf<String>()
+    /** +1: a next waits for the song after the run; -1: a previous waits for the one before it; 0: nothing waits. */
+    private var waitingStep = 0
+    private var waitingByViewer = true
+    private var assemblyJob: Job? = null
 
     // ── screens ──
     /** FR-286-3 — on a headless device the body is empty, so every element lookup lands on this detached one. */
@@ -436,9 +458,14 @@ private class Receiver {
     }
 
     private suspend fun intercept(request: dynamic): dynamic {
+        // R359 (FR-R359-2) — the media's customData is the one read (and has been since R245); senders from R359 on send
+        // it once, there. The request's is read only when the media carries none.
         val raw = request.media?.customData ?: request.customData
-        val data = runCatching { json.decodeFromString(CastLoadData.serializer(), JSON.stringify(raw) as String) }.getOrNull()
+        val sent = runCatching { json.decodeFromString(CastLoadData.serializer(), JSON.stringify(raw) as String) }.getOrNull()
             ?: return request
+        val data = withQueueNow(sent)
+        // R359 (FR-R359-3) — a sender's LOAD is a new queue: what was waiting for the one before is dropped.
+        if (data.code.isNotEmpty()) startQueue(data)
         // R279 — the hand-off payload's `lang` is the CASTING USER's own configured uiLanguage
         // (the sender reads it off their config before minting the code), so it is the only thing
         // on this device that knows which of a household's viewers pressed play. Adopted first, and
@@ -686,6 +713,7 @@ private class Receiver {
         val t = data.tracks[i]
         if (unshuffled.isEmpty() || unshuffled.map { it.id }.toSet() != data.tracks.map { it.id }.toSet()) unshuffled = data.tracks
         current = data.copy(itemId = t.id, title = t.title, kicker = t.artist, artUrl = absolute(t.coverUrl), currentIndex = i)
+        attachParts()   // R359 — parts that came before the LOAD was taken up
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         if (!isHeadless()) { paintNow(); show("nowplaying", "buffering") }
         enrol(data, api)?.let { e -> return failLoad(e) }   // 300 FR-300-1
@@ -741,36 +769,123 @@ private class Receiver {
         return request
     }
 
-    private fun nextIndex(byViewer: Boolean): Int? {
-        val d = current ?: return null
-        val i = d.currentIndex
-        return when {
-            d.repeat == "one" && !byViewer -> i
-            i < d.tracks.lastIndex -> i + 1
-            d.repeat == "all" || (d.repeat == "one" && byViewer && d.tracks.isNotEmpty()) -> 0
-            else -> null
-        }
+    /** 286's repeat rule; R359 (FR-R359-4) adds [CastNext.Wait] — the next song is in a part still on its way. */
+    private fun nextStep(byViewer: Boolean): CastNext {
+        val d = current ?: return CastNext.End
+        return castNextIndex(d.currentIndex, d.tracks.size, d.queueStart, d.queueTotal, d.repeat, byViewer)
     }
+
+    private fun nextIndex(byViewer: Boolean): Int? = (nextStep(byViewer) as? CastNext.To)?.index
 
     /** The next song by repeat's rule; at the end of the queue the screen IS the idle view (FR-286-5). */
     private fun musicNext(byViewer: Boolean) {
-        val n = nextIndex(byViewer)
-        if (n == null) { musicEnded(); return }
-        loadTrack(n)
+        when (val n = nextStep(byViewer)) {
+            is CastNext.To -> loadTrack(n.index)
+            // R359 (FR-R359-4) — past the window while parts are arriving: the queue has not ended; go on when it comes.
+            CastNext.Wait -> { waitingStep = +1; waitingByViewer = byViewer; note("next waits for the rest of the queue") }
+            CastNext.End -> musicEnded()
+        }
     }
 
     private fun musicPrevious() {
         val d = current ?: return
+        if (positionMs <= 3_000L && castPreviousWaits(d.currentIndex, d.queueStart, d.queueTotal)) { waitingStep = -1; return }   // R359
         if (positionMs > 3_000L || d.currentIndex <= 0) { playerManager.seek(0.0); return }
         loadTrack(d.currentIndex - 1)
+    }
+
+    // ── R359 (FR-R359-3/4) — a long queue arrives as a window, then in parts ──
+
+    /** A queue whose run is still arriving: [CastLoadData.queueTotal] set and more than the run holds. */
+    private val assembling: Boolean get() = current?.let { d -> d.tracks.isNotEmpty() && d.queueTotal != null && d.tracks.size < d.queueTotal!! } == true
+
+    /**
+     * The receiver's own next loads carry the queue as it was when they were asked; parts (or an edit) that came in since
+     * are in `current`. A load of the queue `current` holds takes the queue from there, the song found again by its place
+     * (or, after an edit, by its id). A sender's LOAD (it carries a code) is taken as it comes.
+     */
+    private fun withQueueNow(data: CastLoadData): CastLoadData {
+        val c = current ?: return data
+        if (data.code.isNotEmpty() || data.tracks.isEmpty() || data.queueId == null || data.queueId != c.queueId || c.tracks.isEmpty()) return data
+        val at = data.queueStart + data.currentIndex - c.queueStart
+        val i = at.takeIf { c.tracks.getOrNull(it)?.id == data.itemId } ?: c.tracks.indexOfFirst { it.id == data.itemId }.takeIf { it >= 0 } ?: return data
+        return data.copy(tracks = c.tracks, currentIndex = i, queueStart = c.queueStart, queueTotal = c.queueTotal)
+    }
+
+    /** A sender's LOAD: a new queue (or a film). Parts of any other queue, commands held for one, a waiting next: gone. */
+    private fun startQueue(data: CastLoadData) {
+        waitingParts.removeAll { it.queueId != data.queueId }
+        deferred.clear(); waitingStep = 0
+        assemblyJob?.cancel(); assemblyJob = null
+        if (data.queueTotal != null && data.tracks.size < data.queueTotal!!) {
+            note("queue: ${data.tracks.size} of ${data.queueTotal} songs in the LOAD (from ${data.queueStart}); the rest follows")
+            watchAssembly()
+        }
+    }
+
+    /** A `queue_part`: joined to the run when it is this queue's (now or once it joins), held when it comes before its LOAD. */
+    private fun onQueuePart(cmd: CastCommand) {
+        if (cmd.queueId == null || cmd.offset == null || cmd.tracks.isNullOrEmpty()) return
+        if (cmd.queueId == current?.queueId && !assembling) return   // that queue is whole already (or was given up on)
+        // Only the newest queue's parts are held: a part of another one means the sender moved on.
+        waitingParts.removeAll { it.queueId != cmd.queueId && it.queueId != current?.queueId }
+        if (waitingParts.size < MAX_WAITING_PARTS) waitingParts += cmd
+        if (cmd.queueId == current?.queueId) attachParts()
+    }
+
+    /** Joins every waiting part of `current`'s queue to it; once the queue is whole, says so and catches up. */
+    private fun attachParts() {
+        val d = current ?: return
+        if (!assembling) return
+        val (run, start) = castQueueAttachAll(d.tracks, d.queueStart, d.queueId, waitingParts)
+        if (start == d.queueStart && run.size == d.tracks.size) return
+        val whole = start == 0 && run.size >= (d.queueTotal ?: 0)
+        // Songs put in front move the current one along; its place in the whole queue does not change.
+        current = d.copy(tracks = run, currentIndex = d.currentIndex + (d.queueStart - start), queueStart = start, queueTotal = if (whole) null else d.queueTotal)
+        unshuffled = run   // in the sender's order: shuffle and the queue's edits wait until it is whole
+        if (whole) {
+            assemblyJob?.cancel(); assemblyJob = null
+            note("queue: whole, ${run.size} songs")
+            val held = deferred.toList(); deferred.clear()
+            held.forEach { onCommand(it) }
+        } else watchAssembly()
+        catchUp()
+        paintNow(); sendStatus()
+    }
+
+    /** A next or previous that waited for a part goes on once the song it wanted is here (or the queue stopped coming). */
+    private fun catchUp() {
+        val d = current ?: return
+        when (waitingStep) {
+            +1 -> if (nextStep(waitingByViewer) != CastNext.Wait) { waitingStep = 0; musicNext(waitingByViewer) }
+            -1 -> if (!castPreviousWaits(d.currentIndex, d.queueStart, d.queueTotal)) { waitingStep = 0; if (d.currentIndex > 0) loadTrack(d.currentIndex - 1) else playerManager.seek(0.0) }
+        }
+    }
+
+    /**
+     * Parts follow the LOAD at once; if they stop coming (the sender went away part-way), the run the receiver holds
+     * becomes the queue — reported as such, so every sender takes it — and whatever waited for the rest goes on.
+     */
+    private fun watchAssembly() {
+        assemblyJob?.cancel()
+        assemblyJob = GlobalScope.launch {
+            delay(ASSEMBLY_GIVE_UP_MS)
+            val d = current ?: return@launch
+            if (!assembling) return@launch
+            note("queue: the rest never came; playing the ${d.tracks.size} songs held")
+            current = d.copy(queueTotal = null, queueStart = 0)
+            deferred.clear()   // their places were the whole queue's
+            catchUp(); paintNow(); sendStatus()
+        }
     }
 
     private fun musicEnded() {
         val d = current ?: return
         stopSession()
         runCatching { playerManager.stop() }
-        send(CastReceiverMessage(type = "ended", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl, hasNext = false, receiverId = receiverId,
-            queue = d.tracks, queueIndex = d.currentIndex, repeat = d.repeat, shuffle = d.shuffle, lyricsOn = if (isHeadless()) null else lyricsOn, headless = headless))
+        // R359 (FR-R359-5) — the queue rides along only when it fits; the senders hold it from the statuses.
+        send(castQueueIfFits(CastReceiverMessage(type = "ended", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl, hasNext = false, receiverId = receiverId,
+            queue = d.tracks.takeIf { !assembling }, queueIndex = d.queueStart + d.currentIndex, repeat = d.repeat, shuffle = d.shuffle, lyricsOn = if (isHeadless()) null else lyricsOn, headless = headless), json))
         current = null
         idle()
     }
@@ -793,6 +908,7 @@ private class Receiver {
 
     private fun setShuffle(on: Boolean) {
         val d = current ?: return
+        if (assembling) return   // R359 (FR-R359-4) — the sender's order stands until the whole queue is here (a second at most)
         val cur = d.tracks.getOrNull(d.currentIndex)
         val list = if (on) {
             val rest = d.tracks.filterIndexed { i, _ -> i != d.currentIndex }.shuffled()
@@ -1081,6 +1197,10 @@ private class Receiver {
     // ── phone → receiver ──
     private fun onCommand(raw: String) {
         val cmd = runCatching { json.decodeFromString(CastCommand.serializer(), raw) }.getOrNull() ?: return
+        // R359 (FR-R359-3) — the rest of a long queue; it may come before its LOAD has been taken up.
+        if (cmd.type == "queue_part") { onQueuePart(cmd); return }
+        // R359 (FR-R359-4) — an edit's places are the whole queue's: while it is still arriving, the edit waits for it.
+        if (music && assembling && cmd.type in DEFERRED_WHILE_ARRIVING) { if (deferred.size < MAX_WAITING_PARTS) deferred += raw; return }
         if (music) when (cmd.type) {
             "next" -> { musicNext(byViewer = true); return }
             "prev" -> { musicPrevious(); return }
@@ -1168,25 +1288,34 @@ private class Receiver {
         // R356 (FR-R356-8) — the queue only when it changed since it was last sent, after a sender connected, or when
         // asked. It went out whole on every play, pause, buffer and song change: ~280 B a song, 55 KB for 199 songs,
         // which filled a frozen phone's binder buffer until Play services dropped the app.
-        val fp = d.tracks.hashCode()
-        if (fp != queueFingerprint) { queueFingerprint = fp; queueRev++ }
-        val full = music && (fullDue || sentRev != queueRev)
+        //
+        // R359 (FR-R359-3/5) — while a long queue is still arriving its revision is not raised and the queue is not sent:
+        // the senders hold the whole of it already, and the index said is the song's place in the whole queue. Once it
+        // is whole, it goes out like any changed queue — in parts when it does not fit one message.
+        val arriving = assembling
+        if (!arriving) {
+            val fp = d.tracks.hashCode()
+            if (fp != queueFingerprint) { queueFingerprint = fp; queueRev++ }
+        }
+        val full = music && !arriving && (fullDue || sentRev != queueRev)
         if (full) { sentRev = queueRev; fullDue = false }
         val msg = CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
-            hasNext = if (music) nextIndex(byViewer = true) != null else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
+            hasNext = if (music) nextStep(byViewer = true) != CastNext.End else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.
             selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
             // 286 (dev review 10) — the music snapshot the phone mirrors (R324 FR-R324-4).
-            queue = d.tracks.takeIf { full }, queueIndex = d.currentIndex.takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
+            queue = d.tracks.takeIf { full }, queueIndex = (d.queueStart + d.currentIndex).takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
             lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
-            queueRev = queueRev.takeIf { music }, queueSize = d.tracks.size.takeIf { music },
+            queueRev = queueRev.takeIf { music && !arriving }, queueSize = (d.queueTotal ?: d.tracks.size).takeIf { music },
         )
-        val bytes = send(msg)
+        // FR-R359-5 — a queue too long for one message follows the status in parts.
+        val out = castQueueReply(msg, json)
+        val bytes = out.sumOf { send(it) }
         // FR-R356-11 — the size, once per full send and once for the first status without the queue after it.
-        if (music && full) { slimNoted = false; note("status ${bytes} B with the queue (${d.tracks.size} songs, rev $queueRev)") }
+        if (music && full) { slimNoted = false; note("status ${bytes} B with the queue (${d.tracks.size} songs, rev $queueRev${if (out.size > 1) ", in ${out.size - 1} parts" else ""})") }
         else if (music && !slimNoted) { slimNoted = true; note("status ${bytes} B without the queue (${d.tracks.size} songs, rev $queueRev)") }
     }
 

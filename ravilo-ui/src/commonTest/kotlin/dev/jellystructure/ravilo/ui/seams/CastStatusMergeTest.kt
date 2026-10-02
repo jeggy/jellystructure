@@ -106,6 +106,22 @@ class CastStatusMergeTest {
     }
 
     @Test
+    fun `a queue that follows in parts is not a gap, and whole it is held at the place said`() {
+        // R359 (FR-R359-5) — the sender cast 3 songs; the receiver's status leaves the queue out and says 2 parts follow.
+        val sent = CastRemoteStatus(itemId = "a", loaded = true, music = true, queue = q3, queueIndex = 0)
+        val said = CastReceiverMessage(type = "status", itemId = "b", queueIndex = 1, queueRev = 1, queueSize = 3, queueParts = 2)
+        assertFalse(castQueueGap(sent, said), "no get_queue: the parts are on their way")
+        val st = mergeCastStatus(sent, said, playing, "status", 1)
+        assertEquals(q3, st.queue); assertEquals(1, st.queueIndex); assertNull(st.queueRev)
+        val whole = castStatusWithQueue(st, listOf(q3[0], q3[1], q3[2]), 1, said.queueIndex)
+        assertEquals(1, whole.queueRev); assertEquals(1, whole.queueIndex); assertTrue(whole.music)
+        // The next status of the same revision, without the queue, keeps it and is no gap.
+        val next = CastReceiverMessage(type = "status", itemId = "c", queueIndex = 2, queueRev = 1, queueSize = 3)
+        assertFalse(castQueueGap(whole, next))
+        assertEquals(2, mergeCastStatus(whole, next, playing, "status", 2).queueIndex)
+    }
+
+    @Test
     fun `a receiver older than R356 sends the queue every time and is never a gap`() {
         val old = CastReceiverMessage(type = "status", itemId = "b", queue = q3, queueIndex = 1)
         assertFalse(castQueueGap(null, old))

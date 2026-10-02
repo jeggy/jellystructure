@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.seams
 import dev.jellystructure.ravilo.ui.screens.failedAfter
 import dev.jellystructure.shared.tv.CastReceiverMessage
 import dev.jellystructure.shared.tv.CastTrack
+import dev.jellystructure.shared.tv.CastTrackItem
 
 /*
  * R330 (FR-R330-3, dev review 5) — what the remote shows, rebuilt from the receiver's media status plus the
@@ -45,9 +46,19 @@ fun isCastBurnIn(track: CastTrack?, media: CastMediaSnapshot): Boolean {
 /**
  * R356 (FR-R356-9) — a status that names a queue revision this sender does not hold, without the queue: the sender asks
  * `get_queue` (once for that revision). A receiver older than R356 sends no revision and the queue every time.
+ * R359 (FR-R359-5): not when the status says the queue follows in parts ([CastReceiverMessage.queueParts]).
  */
 fun castQueueGap(prev: CastRemoteStatus?, said: CastReceiverMessage): Boolean =
-    said.type == "status" && said.queue == null && said.queueRev != null && said.queueRev != prev?.queueRev
+    said.type == "status" && said.queue == null && said.queueParts == null && said.queueRev != null && said.queueRev != prev?.queueRev
+
+/**
+ * R359 (FR-R359-5) — the receiver's queue of revision [rev], put back together from its parts: held from now on as if a
+ * status had carried it, at the place the receiver last said ([index]).
+ */
+fun castStatusWithQueue(prev: CastRemoteStatus?, queue: List<CastTrackItem>, rev: Int?, index: Int?): CastRemoteStatus {
+    val p = prev ?: CastRemoteStatus()
+    return p.copy(queue = queue, queueRev = rev, music = queue.isNotEmpty(), queueIndex = index?.takeIf { it in queue.indices } ?: p.queueIndex)
+}
 
 fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: CastMediaSnapshot, event: String?, nowMs: Long): CastRemoteStatus {
     val p = prev ?: CastRemoteStatus()
