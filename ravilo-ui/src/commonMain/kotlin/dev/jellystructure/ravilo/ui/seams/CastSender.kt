@@ -60,6 +60,8 @@ data class CastRemoteStatus(
     val shuffle: Boolean = false,
     /** FR-286-6 — lyrics on the display; null = a speaker (nothing to show them on). */
     val lyricsOn: Boolean? = null,
+    /** R356 (FR-R356-9) — the receiver's revision of [queue]; null from a receiver that predates R356 or before any. */
+    val queueRev: Int? = null,
 )
 
 interface CastSender {
@@ -89,6 +91,11 @@ interface CastSender {
      * Google Home (one route), and on every platform that cannot say.
      */
     val members: StateFlow<List<String>> get() = NO_MEMBERS
+    /**
+     * R356 (FR-R356-6) — the app came on screen: with a session connected, ask the receiver where it is, and rejoin it
+     * when nothing answers. A no-op where the platform's connection cannot go silent behind the app's back.
+     */
+    fun onAppForeground() {}
 }
 
 private val UNKNOWN_VOLUME: StateFlow<Double?> = kotlinx.coroutines.flow.MutableStateFlow(null)

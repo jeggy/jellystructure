@@ -131,13 +131,22 @@ data class CastReceiverMessage(
     @SerialName("lyrics_on") val lyricsOn: Boolean? = null,
     /** FR-286-3 — the receiver runs on an audio-only device. */
     val headless: Boolean? = null,
+    /**
+     * R356 (FR-R356-8) — the queue's revision: the receiver raises it whenever the queue's songs or their order change.
+     * A `status` carries [queue] only when this changed since the receiver last sent it in full, after a sender
+     * connects, and in answer to `status` / `get_queue`; otherwise [queue] is null and the sender keeps its copy.
+     * Null from a receiver older than R356 (which sends the queue every time).
+     */
+    @SerialName("queue_rev") val queueRev: Int? = null,
+    /** R356 — how many songs the queue holds, said also when [queue] is left out. */
+    @SerialName("queue_size") val queueSize: Int? = null,
 )
 
 /** Phone → receiver. 286/R324 add `prev` · `play_at` · `queue_move` · `queue_remove` · `queue_add` · `queue_play_next`
  *  · `repeat` · `shuffle` · `lyrics` — the same shape, extended (additive). */
 @Serializable
 data class CastCommand(
-    val type: String,                                  // subtitle | audio | subsize | next | nextup_cancel | nextup_play | status
+    val type: String,                                  // subtitle | audio | subsize | next | nextup_cancel | nextup_play | status | get_queue (R356)
     val index: Int? = null,
     val size: String? = null,
     /** `queue_move`'s destination. */

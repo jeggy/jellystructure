@@ -42,8 +42,18 @@ fun isCastBurnIn(track: CastTrack?, media: CastMediaSnapshot): Boolean {
     return media.mediaTrackIds?.none { it == id } ?: false
 }
 
+/**
+ * R356 (FR-R356-9) — a status that names a queue revision this sender does not hold, without the queue: the sender asks
+ * `get_queue` (once for that revision). A receiver older than R356 sends no revision and the queue every time.
+ */
+fun castQueueGap(prev: CastRemoteStatus?, said: CastReceiverMessage): Boolean =
+    said.type == "status" && said.queue == null && said.queueRev != null && said.queueRev != prev?.queueRev
+
 fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: CastMediaSnapshot, event: String?, nowMs: Long): CastRemoteStatus {
     val p = prev ?: CastRemoteStatus()
+    // R356 (FR-R356-7) — no media status at all (the SDK has not heard from the receiver yet, or lost it): what was last
+    // known stands. It read as "not playing, at 0:00" — the loading dots and 0:00 / -0:00 while the speaker played on.
+    val unknown = media.playerState == null
     val idle = media.playerState == null || media.playerState == "IDLE"
     val ended = event == "ended" || media.idleFinished
     val subs = said?.subtitleTracks ?: emptyList()
@@ -56,9 +66,19 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
     // A song's length: what the device reports, else what the queue says of the song. A speaker reports none for a
     // FLAC (the guest-room speaker, 2026-09-30: the bar read 2:17 of 0:00 and had no progress), and the last song's
     // length must not stand in for the next one's.
+    // R356 (FR-R356-9) — a status may leave the queue out (unchanged since the receiver last sent it): the copy held stands.
     val queue = said?.queue ?: p.queue
-    val queueIndex = said?.queueIndex ?: p.queueIndex
+    val queueRev = if (said?.queue != null) said.queueRev else p.queueRev
     val itemId = said?.itemId ?: p.itemId
+    // A gap (a newer revision this sender has not got yet): the index belongs to a queue it does not hold, so the song
+    // the receiver names is looked up in the queue held, until `get_queue` answers.
+    val gap = said != null && said.queue == null && said.queueRev != null && said.queueRev != p.queueRev
+    val saidIndex = said?.queueIndex
+    val queueIndex = when {
+        saidIndex == null -> p.queueIndex
+        gap && queue.getOrNull(saidIndex)?.id != itemId -> queue.indexOfFirst { it.id == itemId }.takeIf { it >= 0 } ?: p.queueIndex
+        else -> saidIndex
+    }
     val duration = media.durationMs?.takeIf { it > 0 }
         ?: queue.getOrNull(queueIndex)?.durationMs?.takeIf { it > 0 }
         ?: (if (queue.isNotEmpty() && itemId != p.itemId) 0L else p.durationMs)
@@ -69,9 +89,9 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         artUrl = said?.artUrl ?: media.imageUrl ?: p.artUrl,
         positionMs = media.positionMs?.coerceAtLeast(0) ?: p.positionMs,
         durationMs = duration,
-        playing = media.playerState == "PLAYING",
-        buffering = media.playerState == "BUFFERING" || media.playerState == "LOADING",
-        loaded = !idle || said?.type == "status",
+        playing = if (unknown) p.playing else media.playerState == "PLAYING",
+        buffering = if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
+        loaded = (if (unknown) p.loaded else !idle) || said?.type == "status",
         ended = ended,
         // R299 — set by the receiver's own word, cleared by the next load's status.
         failed = failedAfter(event, p.failed),
@@ -95,5 +115,6 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         repeat = said?.repeat ?: p.repeat,
         shuffle = said?.shuffle ?: p.shuffle,
         lyricsOn = if (said != null) said.lyricsOn else p.lyricsOn,
+        queueRev = queueRev,
     )
 }

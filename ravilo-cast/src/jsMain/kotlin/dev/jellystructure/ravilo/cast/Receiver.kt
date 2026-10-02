@@ -122,6 +122,17 @@ private class Receiver {
     /** The order the phone sent, kept so Shuffle → off restores it. */
     private var unshuffled: List<CastTrackItem> = emptyList()
 
+    // ── R356 (FR-R356-8) — the queue goes to the senders only when it changed ──
+    /** Raised whenever the queue's songs or their order change (seen by [queueFingerprint] at each status). */
+    private var queueRev = 0
+    private var queueFingerprint: Int? = null
+    /** The revision last sent in full; -1 = never. */
+    private var sentRev = -1
+    /** A sender connected, or asked (`status` / `get_queue`): the next status carries the full queue. */
+    private var fullDue = true
+    /** FR-R356-11 — the size of the first status without the queue after a full one is noted once. */
+    private var slimNoted = false
+
     // ── screens ──
     /** FR-286-3 — on a headless device the body is empty, so every element lookup lands on this detached one. */
     private val nowhere: HTMLElement = document.createElement("div") as HTMLElement
@@ -187,6 +198,14 @@ private class Receiver {
         // 289 — registered so that the receiver may speak on it; nothing is ever said to it.
         runCatching { context.addCustomMessageListener(CAST_LOG_NAMESPACE) { _: dynamic -> } }
         context.addEventListener(cast.framework.system.EventType.SHUTDOWN) { _: dynamic -> stopSession() }
+        // R356 (FR-R356-8/10) — a sender that connects (a phone that resumes, the Mac, an installed app older than R356)
+        // gets the whole queue in the next status; the ones without it are only for senders that hold it already.
+        runCatching {
+            context.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED) { _: dynamic ->
+                fullDue = true
+                if (current != null) sendStatus()
+            }
+        }.onFailure { console.warn("ravilo-cast: no SENDER_CONNECTED on this framework (${it.message})") }
         // 286 (dev review 4) — Google's own next/previous (the Home app, the Assistant, a display's remote) arrive
         // as queue messages; on a music LOAD they land on OUR list, never on CAF's (which holds one item).
         //
@@ -613,6 +632,9 @@ private class Receiver {
         t.year?.let { meta.releaseDate = "$it-01-01" }
         absolute(t.coverUrl)?.let { c -> val img = js("({})"); img.url = c; val arr = js("[]"); arr.push(img); meta.images = arr }
         request.media.metadata = meta
+        // R356 (FR-R356-8) — CAF echoes the media's customData in its media status to every sender: without the songs.
+        // The queue lives in `current`; the receiver's own next load copies it from there, never from this.
+        request.media.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), data.copy(tracks = emptyList(), code = "")))
         request.currentTime = ((startAt ?: ticket.startPositionMs) / 1000.0)
         request.autoplay = true
         positionMs = startAt ?: ticket.startPositionMs
@@ -992,7 +1014,9 @@ private class Receiver {
             "repeat" -> { setRepeat(cmd.mode ?: "off"); paintNow(); return }
             "shuffle" -> { setShuffle(cmd.on == true); return }
             "lyrics" -> { setLyrics(cmd.on == true); return }
-            "status" -> { sendStatus(); return }
+            // R356 (FR-R356-8) — asked: the answer carries the whole queue (an installed sender older than R356 asks
+            // `status` on every resume; a newer one asks `get_queue` when it missed a revision).
+            "status", "get_queue" -> { fullDue = true; sendStatus(); return }
             else -> return
         }
         when (cmd.type) {
@@ -1052,7 +1076,14 @@ private class Receiver {
         val subs = subtitleTracksOf(t, trackIdBase = 100)
         val audios = audioTracksOf(t, trackIdBase = 200)   // R285 — a handle for the sender, not a CAF id
         val active: dynamic = runCatching { playerManager.getMediaInformation()?.let { playerManager.getPlayerState(); playerManager.getStats() } }.getOrNull()
-        send(CastReceiverMessage(
+        // R356 (FR-R356-8) — the queue only when it changed since it was last sent, after a sender connected, or when
+        // asked. It went out whole on every play, pause, buffer and song change: ~280 B a song, 55 KB for 199 songs,
+        // which filled a frozen phone's binder buffer until Play services dropped the app.
+        val fp = d.tracks.hashCode()
+        if (fp != queueFingerprint) { queueFingerprint = fp; queueRev++ }
+        val full = music && (fullDue || sentRev != queueRev)
+        if (full) { sentRev = queueRev; fullDue = false }
+        val msg = CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
             hasNext = if (music) nextIndex(byViewer = true) != null else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
@@ -1060,9 +1091,14 @@ private class Receiver {
             selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
             // 286 (dev review 10) — the music snapshot the phone mirrors (R324 FR-R324-4).
-            queue = d.tracks.takeIf { it.isNotEmpty() }, queueIndex = d.currentIndex.takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
+            queue = d.tracks.takeIf { full }, queueIndex = d.currentIndex.takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
             lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
-        ))
+            queueRev = queueRev.takeIf { music }, queueSize = d.tracks.size.takeIf { music },
+        )
+        val bytes = send(msg)
+        // FR-R356-11 — the size, once per full send and once for the first status without the queue after it.
+        if (music && full) { slimNoted = false; note("status ${bytes} B with the queue (${d.tracks.size} songs, rev $queueRev)") }
+        else if (music && !slimNoted) { slimNoted = true; note("status ${bytes} B without the queue (${d.tracks.size} songs, rev $queueRev)") }
     }
 
     /** 289 — one line on the log channel ([CAST_LOG_NAMESPACE]); never anything a sender's state depends on. */
@@ -1070,8 +1106,11 @@ private class Receiver {
         runCatching { val m: dynamic = js("({})"); m.at = nowMs().toDouble(); m.note = text; context.sendCustomMessage(CAST_LOG_NAMESPACE, undefined, m) }
     }
 
-    private fun send(msg: CastReceiverMessage) {
-        runCatching { context.sendCustomMessage(CAST_NAMESPACE, undefined, JSON.parse(json.encodeToString(CastReceiverMessage.serializer(), msg))) }
+    /** Broadcast to every sender; returns the message's size in characters of JSON (R356's log line). */
+    private fun send(msg: CastReceiverMessage): Int {
+        val text = json.encodeToString(CastReceiverMessage.serializer(), msg)
+        runCatching { context.sendCustomMessage(CAST_NAMESPACE, undefined, JSON.parse(text)) }
+        return text.length
     }
 }
 

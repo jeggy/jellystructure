@@ -68,6 +68,8 @@ internal object CastSenderDesktop : CastSender {
     private var session: CastSession? = null
     private var device: CastDevice? = null
     private var said: CastReceiverMessage? = null
+    /** R356 — the queue revision last asked for with `get_queue`. */
+    private var askedQueueRev: Int? = null
     private var pendingLoad: CastLoadData? = null
     private var watch: Job? = null
     private var reconnectTried = false
@@ -122,6 +124,12 @@ internal object CastSenderDesktop : CastSender {
             launch {
                 s.custom.collect { raw ->
                     val msg = runCatching { json.decodeFromString(CastReceiverMessage.serializer(), raw) }.getOrNull() ?: return@collect
+                    // R356 (FR-R356-9) — a queue revision this app does not hold, without the queue: ask for it once.
+                    if (dev.jellystructure.ravilo.ui.seams.castQueueGap(_status.value, msg) && askedQueueRev != msg.queueRev) {
+                        askedQueueRev = msg.queueRev
+                        println("${DesktopLog.stamp()} cast: queue revision ${msg.queueRev} not held; asking for it")
+                        s.sendCustom(json.encodeToString(CastCommand.serializer(), CastCommand("get_queue")))
+                    }
                     said = foldReceiverMessage(said, msg)
                     rebuild(msg.type)
                 }
