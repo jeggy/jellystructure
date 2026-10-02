@@ -179,7 +179,9 @@ class JellyfinSessionBridge(
         val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
         if (base.isBlank() || device.jellyfinUserToken.isBlank()) return false
         val identity = JellyfinDeviceIdentity.forDevice(device)
-        val token = jellyfinClient.tvToken(base, device, cfg.apiKeys.jellyfinToken)
+        // The device's own token only, never the server's fallback: a socket under the server token would be bound to
+        // another user's session (Jellyfin keys a session by client, device id AND user), not the one to end.
+        val token = jellyfinClient.tvTokenForClient(base, device) ?: return false
         val wsUrl = base.replaceFirst(Regex("^http"), "ws") + "/socket?deviceId=${identity.deviceId}"
         return try {
             withTimeout(10_000L) {
