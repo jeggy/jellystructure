@@ -120,6 +120,12 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     override val link: StateFlow<CastLinkState> = _link
     override val deviceName: StateFlow<String?> = _device
     override val status: StateFlow<CastRemoteStatus?> = _status
+    /** R353 (FR-R353-4) — the device's volume as the session reports it (the speaker's own, 0.0–1.0); null while unlinked. */
+    private val _volume = MutableStateFlow<Double?>(null)
+    override val volume: StateFlow<Double?> = _volume
+    private val castListener = object : com.google.android.gms.cast.Cast.Listener() {
+        override fun onVolumeChanged() { _volume.value = runCatching { session?.volume }.getOrNull() }
+    }
     private var session: CastSession? = null
     /** The last message the receiver sent about the item/tracks — merged with the SDK's media status. */
     private var receiverSaid: CastReceiverMessage? = null
@@ -140,13 +146,13 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }
 
     private val sessionListener = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarting(s: CastSession) { _link.value = CastLinkState.CONNECTING; _device.value = s.castDevice?.friendlyName }
+        override fun onSessionStarting(s: CastSession) { CastStartWatch.mark(); _link.value = CastLinkState.CONNECTING; _device.value = s.castDevice?.friendlyName }
         override fun onSessionStarted(s: CastSession, sessionId: String) { attach(s); _link.value = CastLinkState.CONNECTED; pendingLoad?.let { loadOnMain(it) } }
         override fun onSessionStartFailed(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE }
         override fun onSessionEnding(s: CastSession) {}
         override fun onSessionEnded(s: CastSession, error: Int) { detach(); _link.value = CastLinkState.NONE; _status.value = null; receiverSaid = null }
         // FR-R245-5 — re-connect on app start: the SDK resumes; then ONE of two things happens (see onSessionResumed).
-        override fun onSessionResuming(s: CastSession, sessionId: String) { _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName() }
+        override fun onSessionResuming(s: CastSession, sessionId: String) { CastStartWatch.mark(); _link.value = CastLinkState.RECONNECTING; _device.value = s.castDevice?.friendlyName ?: selectedRouteName() }
         override fun onSessionResumed(s: CastSession, wasSuspended: Boolean) {
             attach(s)
             _link.value = CastLinkState.CONNECTED
@@ -186,6 +192,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
 
     private fun attach(s: CastSession) {
         session = s
+        runCatching { s.addCastListener(castListener) }
+        _volume.value = runCatching { s.volume }.getOrNull()
         // Right after a resume the session may not carry its device yet; the route the SDK selected
         // for it does, and it is the same name the viewer picked it by.
         _device.value = s.castDevice?.friendlyName ?: selectedRouteName()
@@ -201,6 +209,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }.getOrNull()
 
     private fun detach() {
+        runCatching { session?.removeCastListener(castListener) }
+        _volume.value = null
         session?.remoteMediaClient?.let { rmc ->
             rmc.unregisterCallback(mediaCallback)
             rmc.removeProgressListener(progressListener)

@@ -349,13 +349,18 @@ private fun CastBlock(t: MusicTrackItem, onDismiss: () -> Unit) {
     val name = device
     if (!linked || name == null) return
     val colors = RaviloTheme.colors
-    var volume by remember { mutableStateOf(0.5f) }
+    // R353 (FR-R353-4) — the slider starts where the device's volume IS and follows it (the volume keys move it too); it
+    // used to start at 50 % whatever the speaker was at, so the first touch could jump a quiet room to half volume.
+    val deviceVolume = MusicCast.deviceVolume?.collectAsState()?.value
+    var volume by remember { mutableStateOf(deviceVolume?.toFloat() ?: 0.5f) }
+    var dragging by remember { mutableStateOf(false) }
+    LaunchedEffect(deviceVolume) { if (deviceVolume != null && !dragging) volume = deviceVolume.toFloat() }
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
         Text(name.uppercase(), color = RaviloTheme.colors.fg.copy(0.5f), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp, modifier = Modifier.padding(vertical = 6.dp))
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(str("cast.volume"), color = RaviloTheme.colors.fg, fontSize = 15.sp, fontFamily = Sora, modifier = Modifier.width(88.dp))
             androidx.compose.material3.Slider(
-                value = volume, onValueChange = { v -> volume = (v * 20).roundToInt() / 20f }, onValueChangeFinished = { MusicCast.setVolume(volume.toDouble()) },
+                value = volume, onValueChange = { v -> dragging = true; volume = (v * 20).roundToInt() / 20f }, onValueChangeFinished = { dragging = false; MusicCast.setVolume(volume.toDouble()) },
                 steps = 19, modifier = Modifier.weight(1f),
                 colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = RaviloTheme.colors.fg, activeTrackColor = colors.accentSecondary, inactiveTrackColor = RaviloTheme.colors.fg.copy(0.2f), activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
             )

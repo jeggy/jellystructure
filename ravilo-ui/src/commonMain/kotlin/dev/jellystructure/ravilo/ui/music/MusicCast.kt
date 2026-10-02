@@ -81,7 +81,9 @@ object MusicCast {
                 if (link != CastLinkState.CONNECTED) awaitNewLink = false
                 if (link == CastLinkState.CONNECTED && c.pendingMusicHandoff && !awaitNewLink) {
                     c.pendingMusicHandoff = false
-                    handOff(c)
+                    // R353 — the engine's player is main-thread only (ExoPlayer throws off it): this collector runs on
+                    // Default, so the hand-off hops to Main. On the Pixel 9 the first song handed to a speaker killed the app.
+                    scope.launch(Dispatchers.Main) { handOff(c) }
                 }
                 if (wasLinked && !nowLinked) barHidden.value = false
             }
