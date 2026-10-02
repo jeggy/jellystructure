@@ -121,6 +121,8 @@ actual class RaviloPlayer actual constructor() {
     actual fun play() { video.play() }
     actual fun pause() { video.pause() }
     actual fun seekTo(positionMs: Long) { video.currentTime = positionMs / 1000.0 }
+    /** R354 (FR-R354-6) — the video element's own volume. */
+    actual fun setVolume(level: Float) { video.volume = level.coerceIn(0f, 1f).toDouble() }
 
     /**
      * R284 (FR-R284-5) — deliberately nothing. A browser session is an HLS transcode carrying ONE

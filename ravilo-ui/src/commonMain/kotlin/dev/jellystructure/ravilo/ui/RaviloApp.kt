@@ -81,6 +81,8 @@ import dev.jellystructure.ravilo.ui.seams.EventsCatchUp
 import dev.jellystructure.ravilo.ui.seams.EventsSocketLog
 import dev.jellystructure.ravilo.ui.seams.ReconnectBackoff
 import dev.jellystructure.ravilo.ui.seams.acceptsRemoteCommand
+import dev.jellystructure.ravilo.ui.seams.acceptsPlayerCommand
+import dev.jellystructure.ravilo.ui.seams.MediaSocketHold
 import dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen
 import dev.jellystructure.ravilo.ui.seams.rememberDeviceStateProbe
 import dev.jellystructure.ravilo.ui.seams.rememberCastSender
@@ -141,7 +143,9 @@ import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.NavigateEnvelope
 import dev.jellystructure.shared.tv.PlayItemEnvelope
-import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
+import dev.jellystructure.shared.tv.REMOTE_DECLARATION_APP
+import dev.jellystructure.shared.tv.RemoteCommand
+import dev.jellystructure.shared.tv.remoteCommandOf
 import dev.jellystructure.shared.tv.ServerMessageEnvelope
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
@@ -197,11 +201,6 @@ val LocalReauthRequired = staticCompositionLocalOf<(() -> Unit)?> { null }
  *  by its own viewport, both numbers are server-pushed, so this stays presentation selection, not
  *  derived state (same class as [LocalTileScale]'s uiDensity). */
 val LocalPortrait = staticCompositionLocalOf { false }
-
-/** R155 — remote playstate commands (stop/pause/unpause/seek) for whatever's playing on this device.
- *  Collected directly by PlayerScreen — a SharedFlow with no active collector just drops the value,
- *  which is exactly "ignore when no player is open" (FR-R155-2) with no extra check needed. */
-val LocalPlaystateCommands = staticCompositionLocalOf<SharedFlow<PlaystateCommandEnvelope>?> { null }
 
 /** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
 val LocalTileScale = staticCompositionLocalOf { 1f }
@@ -462,10 +461,11 @@ fun RaviloApp(
     val liveServerMessages = remember { MutableSharedFlow<ServerMessageEnvelope>(replay = 0, extraBufferCapacity = 8) }
     // R155 — remote-control commands (Phase 111 / Home Assistant + the Jellyfin dashboard cast menu).
     // play_item/navigate need push()/resetTo(), which aren't declared yet at this point in the
-    // composable — collected further down, after those are in scope. playstate_command is exposed via
-    // LocalPlaystateCommands for PlayerScreen to collect directly (naturally a no-op if no player is open).
+    // composable — collected further down, after those are in scope. R354 (FR-R354-2/-3) — playstate_command and
+    // player_command are read once into a RemoteCommand and collected below on the main thread (the music engine is
+    // main-thread only) by RemoteControl, which hands each to the open film player or else the music player.
     val livePlayItem = remember { MutableSharedFlow<PlayItemEnvelope>(replay = 0, extraBufferCapacity = 8) }
-    val livePlaystateCommands = remember { MutableSharedFlow<PlaystateCommandEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    val liveRemote = remember { MutableSharedFlow<RemoteCommand>(replay = 0, extraBufferCapacity = 16) }
     val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
     // R248 (FR-R248-2) — the server folded a stop into this user's Home feed; collected below against
     // the retained Home/channel stores (not the screens), so a push that lands while the player is still
@@ -487,6 +487,19 @@ fun RaviloApp(
     // close frame (`1000 background`), and only a live session can send one.
     val onScreenFlow = remember { MutableStateFlow(true) }
     LaunchedEffect(appOnScreen) { onScreenFlow.value = appOnScreen }
+    // R354 (FR-R354-5, amends R293 FR-R293-1) — the events socket is also wanted off screen while the music player
+    // plays, and for 10 minutes after it pauses, so the Jellyfin dashboard can pause and resume it. Nothing else holds it.
+    val socketWanted = remember { MutableStateFlow(true) }
+    LaunchedEffect(Unit) {
+        val hold = MediaSocketHold()
+        val ticks = kotlinx.coroutines.flow.flow { while (true) { emit(Unit); delay(30_000L) } }
+        kotlinx.coroutines.flow.combine(onScreenFlow, dev.jellystructure.ravilo.ui.music.MusicEngine.state, ticks) { on, st, _ ->
+            val now = Clock.System.now().toEpochMilliseconds()
+            hold.update(active = st.active, playing = st.playing, nowMs = now)
+            on || hold.holds(now)
+        }.collect { socketWanted.value = it }
+    }
+    LaunchedEffect(Unit) { liveRemote.collect { cmd -> RemoteControl.dispatch(cmd) } }
     val deviceStateProbe = rememberDeviceStateProbe()
     val eventsCatchUp = remember { EventsCatchUp() }
     val eventsSocketLog = remember { EventsSocketLog() }
@@ -498,7 +511,7 @@ fun RaviloApp(
         while (true) {
             // FR-R293-1 — off screen there is no socket, no reconnect and no timer: the loop parks here
             // (suspended on the flow, not on a delay) until the app is back.
-            onScreenFlow.first { it }
+            socketWanted.first { it }
             // Bug fix (kept from before R293): a device whose token no longer matches any ravilo_device
             // row still completes the WS *upgrade* — the server rejects the token afterward, inside the
             // handler — so onOpen() fires for a doomed attempt. Only a socket held open a meaningful
@@ -509,7 +522,8 @@ fun RaviloApp(
             try {
                 how = apiClient.connectEvents(
                     previousSockets = eventsSocketLog.headerValue(),
-                    closeWhen = { onScreenFlow.first { !it }; "background" },
+                    closeWhen = { socketWanted.first { !it }; "background" },
+                    remote = REMOTE_DECLARATION_APP,   // R354 (FR-R354-1)
                     onOpen = {
                         openedAt = Clock.System.now()
                         serverOpens.value = serverOpens.value + 1
@@ -527,9 +541,16 @@ fun RaviloApp(
                     // FR-R293-5 — a command that lands in the gap between ON_STOP and the socket's close is
                     // dropped and logged, never applied: nothing may act while nobody is looking.
                     onPlayItem = { if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(it) else println("R293: dropped play_item while off screen") },
-                    onPlaystateCommand = { if (acceptsRemoteCommand(onScreenNow, true)) livePlaystateCommands.emit(it) else println("R293: dropped playstate_command while off screen") },
+                    // R354 (FR-R354-3/-5) — a playback command is accepted while the socket is open for the media too.
+                    onPlaystateCommand = { env ->
+                        val cmd = remoteCommandOf(env)
+                        if (cmd != null && acceptsPlayerCommand(onScreenNow, socketWanted.value)) liveRemote.emit(cmd) else if (cmd != null) println("R293: dropped playstate_command while off screen")
+                    },
                     onNavigate = { if (acceptsRemoteCommand(onScreenNow, true)) liveNavigate.emit(it) else println("R293: dropped navigate while off screen") },
-                    onPlayerCommand = { if (!acceptsRemoteCommand(onScreenNow, true)) println("R293: dropped player_command while off screen") },
+                    onPlayerCommand = { env ->
+                        val cmd = remoteCommandOf(env)
+                        if (cmd != null && acceptsPlayerCommand(onScreenNow, socketWanted.value)) liveRemote.emit(cmd) else if (cmd != null) println("R293: dropped player_command while off screen")
+                    },
                     onHomeChanged = { liveHome.emit(it) },
                     // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
                     // this or another device's own /api/tv/home request lands here; reuse the existing
@@ -552,7 +573,7 @@ fun RaviloApp(
             val heldOpenMs = openedAt?.let { (Clock.System.now() - it).inWholeMilliseconds } ?: 0L
             val wait = backoff.next(heldOpenMs)
             // A close we asked for is not a failure: no delay, the loop parks on the flow above instead.
-            if (onScreenFlow.value) delay(wait)
+            if (socketWanted.value) delay(wait)
         }
     }
     // R141: degrade-to-poll fallback — safety net for when the WS is down or a single event is missed.
@@ -1269,7 +1290,7 @@ fun RaviloApp(
             replaceTop(Dest.CastRemote(d.displayName))
         } else null),
             LocalBackToTop provides backToTop,
-            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
+            LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides (if (isDesktopPlatform) deskKeyboardNav else !handset), LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl,
             LocalReauthRequired provides {
                 configScope.launch {
                     signOutActiveSession(apiClient)

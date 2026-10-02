@@ -309,7 +309,7 @@ actual object MusicEngine {
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = track.id
             val p = player()
-            p.volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume)
+            p.volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume) * userVolume
             p.setMediaItem(mediaItem(track, ticket), startMs)
             p.prepare()
             p.playWhenReady = play
@@ -506,11 +506,22 @@ actual object MusicEngine {
 
     actual fun currentPositionMs(): Long = if (openTrackId != null) exo?.currentPosition ?: parkedPositionMs else parkedPositionMs
 
-    actual fun setUserVolume(level: Float) = Unit   // R337 — the desktop bar's; a phone's volume is its keys
+    /**
+     * R337 — the desktop bar's slider; a phone's own volume is its keys. R354 (FR-R354-6) — a remote command's level
+     * (the Jellyfin dashboard's SetVolume / Mute): the output is scaled by it, on top of *Even out volume*'s gain and
+     * a book's sleep fade, and it stays for the songs and parts after this one.
+     */
+    @Volatile private var userVolume = 1f
+    actual fun setUserVolume(level: Float) {
+        userVolume = level.coerceIn(0f, 1f)
+        val p = exo ?: return
+        val t = q.current
+        p.volume = if (book == null && t != null) musicVolumeScale(t, context, q.shuffled, MusicPrefs.evenVolume) * userVolume else userVolume
+    }
     actual fun setEvenVolume(on: Boolean) {
         MusicPrefs.evenVolume = on
         val t = q.current ?: return
-        exo?.volume = musicVolumeScale(t, context, q.shuffled, on)
+        exo?.volume = musicVolumeScale(t, context, q.shuffled, on) * userVolume
     }
 
     // ── R323: the book ──
@@ -520,7 +531,7 @@ actual object MusicEngine {
         if (book == null) return
         book = null; queuedPart = null; prefetching = false; lastChapter = -1
         watchJob?.cancel()
-        exo?.let { it.setPlaybackSpeed(1f); it.skipSilenceEnabled = false; it.volume = 1f }
+        exo?.let { it.setPlaybackSpeed(1f); it.skipSilenceEnabled = false; it.volume = userVolume }
         runCatching { session?.setMediaButtonPreferences(emptyList()) }
     }
 
@@ -539,7 +550,7 @@ actual object MusicEngine {
         val p = exo ?: return
         p.setPlaybackSpeed(b.speed.toFloat())
         p.skipSilenceEnabled = BookPrefs.skipSilence
-        p.volume = 1f
+        p.volume = userVolume
         runCatching {
             session?.setMediaButtonPreferences(listOf(
                 CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30).setSessionCommand(back30).setDisplayName("-30").setSlots(CommandButton.SLOT_BACK).build(),
@@ -645,11 +656,11 @@ actual object MusicEngine {
                     else -> Long.MAX_VALUE
                 }
                 if (leftMs <= 0) {
-                    p.pause(); p.volume = 1f
+                    p.pause(); p.volume = userVolume
                     book = book?.copy(sleep = null)
                     publish(); reportProgress()
-                } else if (BookPrefs.sleepFade && leftMs < 10_000) p.volume = (leftMs / 10_000f).coerceIn(0f, 1f)
-                else if (p.volume < 1f) p.volume = 1f
+                } else if (BookPrefs.sleepFade && leftMs < 10_000) p.volume = (leftMs / 10_000f).coerceIn(0f, 1f) * userVolume
+                else if (p.volume != userVolume) p.volume = userVolume
             }
         }
     }
@@ -698,7 +709,7 @@ actual object MusicEngine {
         val b = book ?: return
         val t = timer?.let { if (it.endOfChapter) it.copy(chapter = BookMath.chapterAt(b.detail, bookPositionMs())) else it }
         book = b.copy(sleep = t)
-        if (t == null) exo?.volume = 1f
+        if (t == null) exo?.volume = userVolume
         publish()
     }
 

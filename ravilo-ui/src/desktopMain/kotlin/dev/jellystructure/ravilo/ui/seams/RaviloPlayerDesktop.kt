@@ -137,6 +137,8 @@ actual class RaviloPlayer actual constructor() {
     actual fun play() = engine.play()
     actual fun pause() = engine.pause()
     actual fun seekTo(positionMs: Long) = engine.seekTo(positionMs)
+    /** R354 (FR-R354-6) — the engine's own output level (AVPlayer / mpv). */
+    actual fun setVolume(level: Float) = engine.setVolume(level.coerceIn(0f, 1f))
 
     /** FR-R329-4 — [index] is a position in [audioTracks], which are the ticket's; the library finds the rendition. */
     actual fun selectAudioTrack(index: Int) = engine.selectAudio(index)

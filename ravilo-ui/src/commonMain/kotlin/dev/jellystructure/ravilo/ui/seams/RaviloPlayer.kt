@@ -50,6 +50,9 @@ expect class RaviloPlayer() {
     fun pause()
     fun seekTo(positionMs: Long)
 
+    /** R354 (FR-R354-6) — the player's output level, 0–1 (a remote command's volume); kept across an engine rebuild. */
+    fun setVolume(level: Float)
+
     /** Select an audio track by its index in [audioTracks]. */
     fun selectAudioTrack(index: Int)
 

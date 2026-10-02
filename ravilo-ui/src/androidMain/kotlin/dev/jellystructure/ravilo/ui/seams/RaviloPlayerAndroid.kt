@@ -50,9 +50,13 @@ actual class RaviloPlayer actual constructor() {
     // R292 (FR-R292-3) — set by releaseEngine(); the next build counts as a return from the background.
     private var releasedForBackground = false
 
+    // R354 (FR-R354-6) — the remote's output level, re-applied to a rebuilt engine.
+    @Volatile private var outputVolume = 1f
+
     private fun exo(): ExoPlayer = engine ?: buildEngine().also { built ->
         engine = built
         bindEngine(built)
+        built.volume = outputVolume
         if (releasedForBackground) { releasedForBackground = false; qoeBackgroundReturns++ }
     }
 
@@ -384,6 +388,7 @@ actual class RaviloPlayer actual constructor() {
     actual fun play() { engine?.play() }
     actual fun pause() { engine?.pause() }
     actual fun seekTo(positionMs: Long) { engine?.seekTo(positionMs) }
+    actual fun setVolume(level: Float) { outputVolume = level.coerceIn(0f, 1f); engine?.volume = outputVolume }
 
     actual fun selectAudioTrack(index: Int) {
         val exo = engine ?: return

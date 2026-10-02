@@ -4,7 +4,6 @@ import dev.jellystructure.ravilo.ui.focus.LocalFocusVisible
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
 import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
@@ -898,26 +897,19 @@ fun PlayerScreen(
         )
     }
 
-    // R155 — remote playstate commands (Phase 111 Home Assistant / Jellyfin dashboard buttons via the
-    // Phase 110 bridge). Set (not toggle) play state so a stale/duplicate command is idempotent.
-    // Collecting LocalPlaystateCommands only while this screen is composed is itself the "ignore when
-    // no player is open" behaviour (FR-R155-2) — nothing else needs to check that.
-    val remotePlaystate = LocalPlaystateCommands.current
-    LaunchedEffect(remotePlaystate) {
-        remotePlaystate?.collect { cmd ->
-            when (cmd.command.lowercase()) {
-                "stop" -> onBack()
-                "pause" -> if (isPlaying) togglePlay()
-                "unpause" -> if (!isPlaying) togglePlay()
-                "seek" -> cmd.seekPositionMs?.let { ms ->
-                    val clamped = ms.coerceIn(0L, durationMs.coerceAtLeast(0L))
-                    player.seekTo(clamped)
-                    positionMs = clamped
-                    wake()
-                }
-            }
-        }
-    }
+    // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 296's bridge, Home Assistant, a phone
+    // remote) drive this player as its own controls do, while it is composed — which is itself R155's "ignore when no
+    // player is open" (with none, music takes the command). Set, not toggle, so a stale/duplicate command is idempotent.
+    RemoteVideoCommands(
+        player = player,
+        isPlaying = { isPlaying },
+        togglePlay = { togglePlay() },
+        seekTo = { ms -> val clamped = ms.coerceIn(0L, durationMs.coerceAtLeast(0L)); player.seekTo(clamped); positionMs = clamped; wake() },
+        skip = { ms -> skip(ms) },
+        stop = { onBack() },
+        next = { if (resolvedNextEpisodeId != null) advanceNext() },
+        previous = { episodes?.getOrNull(currentEpIndex - 1)?.id?.let { onNavigateToEpisode?.invoke(it) } },
+    )
 
     // ─── Effects ────────────────────────────────────────────────────────────
 

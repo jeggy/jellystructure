@@ -854,6 +854,8 @@ class TvApiClient(
         // R248 (FR-R248-2) — the server folded a stop (or a played/mark write) into this user's Home feed;
         // re-pull Home / the open channel page. A signal only, like config_changed.
         onHomeChanged: suspend (Long) -> Unit = {},
+        // R354 (FR-R354-1) — the `remote=` list (REMOTE_DECLARATION_APP / _RECEIVER); null = declare nothing.
+        remote: String? = null,
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -866,7 +868,7 @@ class TvApiClient(
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
-        wsClient.webSocket(wsUrl("/api/tv/events", token), request = {
+        wsClient.webSocket(wsUrl("/api/tv/events", token, remote), request = {
             identify()
             wsAuth(token)
             previousSockets?.let { headers { append(EVENTS_PREV_HEADER, it) } }
@@ -928,9 +930,12 @@ class TvApiClient(
 
     // R293 (FR-R293-7) — one place composes a socket URL and one place authenticates it: the token is a
     // query parameter only on a browser build (WS_TOKEN_IN_QUERY), a Bearer header everywhere else.
-    private fun wsUrl(path: String, token: String): String =
-        baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
+    private fun wsUrl(path: String, token: String, remote: String? = null): String {
+        val url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
             (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
+        // R354 (FR-R354-1) — what this player obeys (296 FR-296-1); absent ⇒ today's URL exactly.
+        return if (remote == null) url else url + (if (WS_TOKEN_IN_QUERY) "&" else "?") + "remote=" + remote.encodeURLParameter()
+    }
 
     private fun HttpRequestBuilder.wsAuth(token: String) {
         if (!WS_TOKEN_IN_QUERY) headers { append(HttpHeaders.Authorization, "Bearer $token") }

@@ -46,3 +46,28 @@ class EventsCatchUp(private val homeGapMs: Long = 30_000L) {
  *  logged, never queued. A backgrounded app cannot bring itself to the front on Android 10+, so applying
  *  one would start a player nobody sees. */
 fun acceptsRemoteCommand(onScreen: Boolean, signedIn: Boolean): Boolean = onScreen && signedIn
+
+/** R354 (FR-R354-5) — a playback command (pause, seek, next, volume …) is also applied off screen while playing media
+ *  holds the socket open: it acts on what is already playing and never starts a player nobody sees. `play_item` and
+ *  `navigate` keep [acceptsRemoteCommand]. */
+fun acceptsPlayerCommand(onScreen: Boolean, mediaHoldsSocket: Boolean): Boolean = onScreen || mediaHoldsSocket
+
+/**
+ * R354 (FR-R354-5, amends R293 FR-R293-1) — playing music holds the events socket open off screen, and for [tailMs]
+ * after it pauses, so the Jellyfin dashboard can pause and resume it. Fed every state change and a periodic tick.
+ */
+class MediaSocketHold(private val tailMs: Long = 10 * 60_000L) {
+    private var pausedAtMs: Long? = null
+    private var playing = false
+
+    /** A queue loaded paused that never played (the Playing tab's last song) holds nothing; a pause starts the tail. */
+    fun update(active: Boolean, playing: Boolean, nowMs: Long) {
+        when {
+            !active -> { pausedAtMs = null; this.playing = false }
+            playing -> { pausedAtMs = null; this.playing = true }
+            this.playing -> { pausedAtMs = nowMs; this.playing = false }
+        }
+    }
+
+    fun holds(nowMs: Long): Boolean = playing || pausedAtMs?.let { nowMs - it < tailMs } == true
+}
