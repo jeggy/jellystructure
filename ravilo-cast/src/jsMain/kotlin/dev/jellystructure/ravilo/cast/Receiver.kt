@@ -26,8 +26,19 @@ import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.RECEIVER_PAUSED_BEAT_MS
+import dev.jellystructure.shared.tv.REMOTE_DECLARATION_RECEIVER
+import dev.jellystructure.shared.tv.ReceiverRemoteAction
+import dev.jellystructure.shared.tv.ReceiverRemoteState
+import dev.jellystructure.shared.tv.RemoteCommand
+import dev.jellystructure.shared.tv.RemoteVolume
+import dev.jellystructure.shared.tv.receiverRemoteAction
+import dev.jellystructure.shared.tv.remoteCommandOf
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
+import io.ktor.client.plugins.websocket.WebSockets
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
@@ -93,6 +104,13 @@ private class Receiver {
     private var introSkipped = false
     private var subSize = "M"
 
+    // ── R354 — the Jellyfin dashboard (through 296's bridge) reaches the receiver on its own events socket ──
+    /** Which server and token the events socket should be open for; null = closed (nothing loaded, or not enrolled). */
+    private val eventsKey = MutableStateFlow<String?>(null)
+    /** The device's own volume as a remote command moves it; synced from CAF before each command. */
+    private val remoteVolume = RemoteVolume()
+    private var pausedBeat: Job? = null
+
     // ── 286 — music: the receiver owns the queue (FR-286-4) ──
     /** Null until the first LOAD asked; true on an audio-only device (FR-286-3), where no screen is ever built. */
     private var headless: Boolean? = null
@@ -113,6 +131,9 @@ private class Receiver {
         if ("nowplaying" !in on) { el("np-ly").classList.remove("on"); el("np-tr").classList.remove("on") }
     }
     private fun idle() {
+        // R354 (FR-R354-7) — back at the idle view: the events socket closes (`1000 idle`), the paused heartbeat stops.
+        pausedBeat?.cancel(); pausedBeat = null
+        syncEvents()
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         show("idle")
@@ -201,6 +222,101 @@ private class Receiver {
         val opts: dynamic = js("({})")
         opts.disableIdleTimeout = false
         context.start(opts)
+        eventLoop()
+    }
+
+    // ── R354 (FR-R354-7): the Jellyfin dashboard's commands ──
+
+    /** Open while something is loaded and the receiver holds a token; recomputed on every status and on idle. */
+    private fun syncEvents() {
+        val t = token
+        eventsKey.value = if (current != null && t != null && api != null) "$serverUrl|$t" else null
+    }
+
+    /**
+     * The receiver's own `/api/tv/events` (296 FR-296-4): while it is open the server bridges a Jellyfin session under
+     * the receiver's own identity, and the dashboard's commands arrive here. Closed (`1000 idle`) at the idle view or
+     * when the token changes; reconnects 2 s → 30 s in between, like ravilo-screen's.
+     */
+    private fun eventLoop() = GlobalScope.launch {
+        var backoff = 2_000L
+        while (true) {
+            val key = eventsKey.first { it != null }
+            val a = api
+            if (a == null) { delay(1_000L); continue }
+            var opened = false
+            val how = runCatching {
+                a.connectEvents(
+                    closeWhen = { eventsKey.first { it != key }; "idle" },
+                    onOpen = { opened = true; backoff = 2_000L },
+                    onEvent = {},
+                    onPlaystateCommand = { env -> remoteCommandOf(env)?.let { onRemote(it) } },
+                    onPlayerCommand = { env -> remoteCommandOf(env)?.let { onRemote(it) } },
+                    remote = REMOTE_DECLARATION_RECEIVER,
+                )
+            }.getOrElse { "err:" + (it::class.simpleName ?: "Throwable") }
+            note("events closed: $how")
+            if (eventsKey.value != key) continue   // asked to close, or the token changed: no wait
+            delay(backoff)
+            if (!opened) backoff = (backoff * 2).coerceAtMost(30_000L)
+        }
+    }
+
+    /** One dashboard command, carried out as the receiver's own controls would, then a fresh status for the senders. */
+    private fun onRemote(cmd: RemoteCommand) {
+        val d = current
+        val st = ReceiverRemoteState(
+            loaded = d != null, music = music, playing = (playerManager.getPlayerState() as? String) == "PLAYING",
+            positionMs = positionMs, durationMs = durationMs,
+            hasNextEpisode = !music && nextEpisode() != null, hasPreviousEpisode = !music && d != null && d.episodes.getOrNull(d.currentIndex - 1) != null,
+        )
+        runCatching {
+            val sv: dynamic = context.getSystemVolume()
+            remoteVolume.sync((sv?.level as? Double)?.toFloat(), sv?.muted as? Boolean)
+        }
+        val action = receiverRemoteAction(cmd, st, remoteVolume)
+        note("remote $cmd -> $action")
+        when (action) {
+            ReceiverRemoteAction.Nothing -> return
+            ReceiverRemoteAction.Play -> { playerManager.play(); if (music) showTransport() }
+            ReceiverRemoteAction.Pause -> { playerManager.pause(); if (music) showTransport() }
+            ReceiverRemoteAction.Stop -> if (music) musicEnded() else stopFilm()
+            is ReceiverRemoteAction.Seek -> { playerManager.seek(action.positionMs / 1000.0); if (music) showTransport() }
+            ReceiverRemoteAction.MusicNext -> { showTransport(); musicNext(byViewer = true) }
+            ReceiverRemoteAction.MusicPrevious -> { showTransport(); musicPrevious() }
+            ReceiverRemoteAction.EpisodeNext -> loadNext()
+            ReceiverRemoteAction.EpisodePrevious -> loadEpisode(-1)
+            is ReceiverRemoteAction.Volume -> runCatching {
+                context.setSystemVolumeLevel(action.level.toDouble())
+                context.setSystemVolumeMuted(action.muted)
+            }
+        }
+        sendStatus()
+    }
+
+    /** A film stopped from the dashboard: the idle view, and *ended* to the senders — never *failed*. */
+    private fun stopFilm() {
+        val d = current ?: return
+        nextUpJob?.cancel(); nextUpJob = null
+        el("nextup").classList.remove("on")
+        stopSession()
+        current = null   // before the player's stop, so its MEDIA_FINISHED finds nothing to call a failure
+        runCatching { playerManager.stop() }
+        send(CastReceiverMessage(type = "ended", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl, hasNext = false, receiverId = receiverId))
+        idle()
+    }
+
+    /** R354 (FR-R354-7) — a paused receiver says so every 30 s, so the server's 90 s watchdog keeps its session. */
+    private fun beatWhilePaused() {
+        pausedBeat?.cancel()
+        pausedBeat = GlobalScope.launch {
+            while (true) {
+                delay(RECEIVER_PAUSED_BEAT_MS)
+                val d = current ?: break
+                if (!paused) break
+                runCatching { api?.reportProgress(d.itemId, positionMs, true) }
+            }
+        }
     }
 
     private fun apiFor(base: String): TvApiClient {
@@ -209,7 +325,7 @@ private class Receiver {
         serverUrl = base.trimEnd('/')
         // 286 (dev review 1) — an audio-only device says so on every request (`cast-audio`): it is what flips the
         // admin card's speaker line and what Users & devices badges; the row's `kind` stays `cast`.
-        return TvApiClient(client = HttpClient(Js), baseUrl = serverUrl, deviceToken = { token }, platform = if (isHeadless()) "cast-audio" else "cast" /* R252 */).also { api = it }
+        return TvApiClient(client = HttpClient(Js) { install(WebSockets) /* R354 */ }, baseUrl = serverUrl, deviceToken = { token }, platform = if (isHeadless()) "cast-audio" else "cast" /* R252 */).also { api = it }
     }
 
     private suspend fun intercept(request: dynamic): dynamic {
@@ -713,8 +829,8 @@ private class Receiver {
         val st = playerManager.getPlayerState() as String
         when (st) {
             "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
-            "PLAYING" -> { paused = false; if (music) { show("nowplaying"); paintTransport() } else show() }
-            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true) } } }
+            "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (music) { show("nowplaying"); paintTransport() } else show() }
+            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true) } }; beatWhilePaused() }
             "IDLE" -> {}
         }
         sendStatus()
@@ -762,13 +878,16 @@ private class Receiver {
         send(CastReceiverMessage(type = "status", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
     }
 
-    private fun loadNext() {
+    private fun loadNext() = loadEpisode(+1)
+
+    /** The episode [step] places from this one in the list the sender handed over (+1 next, −1 previous, R354). */
+    private fun loadEpisode(step: Int) {
         val d = current ?: return
-        val next = nextEpisode() ?: return
+        val next = d.episodes.getOrNull(d.currentIndex + step) ?: return
         nextUpJob?.cancel(); nextUpJob = null
         stopSession()
         // R343 — Start over belongs to the sender's first load only; the next episode is an ordinary play.
-        val data = d.copy(itemId = next.id, title = next.title, kicker = next.kicker, artUrl = next.stillUrl ?: d.artUrl, positionMs = null, currentIndex = d.currentIndex + 1, code = "", startOver = false)
+        val data = d.copy(itemId = next.id, title = next.title, kicker = next.kicker, artUrl = next.stillUrl ?: d.artUrl, positionMs = null, currentIndex = d.currentIndex + step, code = "", startOver = false)
         val req = js("new cast.framework.messages.LoadRequestData()")
         req.media = js("new cast.framework.messages.MediaInformation()")
         req.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), data))
@@ -916,6 +1035,7 @@ private class Receiver {
 
     // ── receiver → phone ──
     private fun sendStatus() {
+        syncEvents()   // R354 — the events socket follows what is loaded
         val d = current ?: return
         val t = ticket
         val subs = subtitleTracksOf(t, trackIdBase = 100)

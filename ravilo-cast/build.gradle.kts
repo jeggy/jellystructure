@@ -25,6 +25,8 @@ kotlin {
                 implementation(projects.shared)
                 implementation(projects.raviloReceiverCore)
                 implementation(libs.ktor.client.js)
+                // R354 (FR-R354-7) — the receiver holds /api/tv/events while it plays, so the Jellyfin dashboard reaches it.
+                implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
             }
