@@ -73,6 +73,35 @@ place (the last position, plus the time since if it was playing, capped at the s
 engine **paused**, on the main thread. The decision is `castHandBack` (commonMain), tested. Android and the Mac use
 the same `MusicCast`, so both are fixed.
 
+**FR-R353-5, second amendment (2026-10-02 afternoon) — a Stop on the device is a hand-back too.** Seen on the Pixel 9
+against production `v1.48-79`: music cast to Stue, the Jellyfin dashboard's *Next* (song A → song B, the phone
+followed), then the dashboard's *Stop*. The speaker went to its idle view with the Ravilo app still running, the phone
+stayed connected (cast glyph lit), and the phone's player went back to **song A at the hand-over's place**.
+
+*Why:* two gaps. (1) The dashboard's Stop does not end the Cast session: the receiver's `musicEnded()` stops the
+player, says `ended` and shows its idle view (R354 FR-R354-7). The link stays CONNECTED, so the hand-back above — which
+only fired when the link dropped — never ran; `MusicCast.linked` went false and every screen fell back to the engine,
+which still held what the hand-off had parked. (2) Even on a link drop the kept "last music status" was not the last
+*live* one: after `ended` the media goes idle and the next report (music, queue intact, not loaded, not ended,
+position 0) replaced it, so the place handed back would have been 0:00.
+
+*Decision — what a dashboard Stop on a cast means (owner's lean, taken):* the **cast session stays connected**, the
+speaker shows its idle view, and the **phone shows the speaker's last song paused at its last place**, ready to play on
+the speaker again: Play (the Playing page, the mini bar) sends the queue back to the same speaker from that place, with
+no new pick in *Play on…*. The same holds for the TV remote's Stop key on a display and for a queue that plays out
+(that one at 0:00 of its last song, FR-R322-5). A session that **ends** — Google Home's *Stop cast*, the Cast
+notification, the device closing the app, the network — hands back the same way (the speaker's song and place,
+paused), and there is no session left, so Play then plays on the phone. Ravilo's own *Stop casting* and *Play on this
+phone* are unchanged. This supersedes R354's device-check line "*stop* → the speaker goes idle, the phone reads ended".
+
+*Rule:* only a live report (`castMusicLive`: connected, music, loaded, not ended, not failed) is kept as the place to
+hand back. When the session stays connected but the music stopped there and the app did not ask for it
+(`castStoppedOnDevice`: was live, now ended / not loaded / no status; not a failure; not a film in its place), the
+hand-back runs after a 1.5 s settle — a song finishing reports IDLE for a moment before the receiver loads the next one,
+and a new live report cancels it. A song that had reached its end (within 2 s) comes back at its start. While still
+connected after such a stop, `MusicPlayback.play()` / `togglePlay()` hand the phone's (handed-back) queue to the device
+again (`MusicCast.resumeOnDevice`). No wire change, no receiver or backend change, no new string.
+
 ## Out of scope
 
 The Output Switcher path (`MediaTransferReceiver` stays: the TVs' casts and R265's resume were verified with it, and
@@ -147,3 +176,40 @@ item, a film, a bad index) — `:ravilo-ui:testDebugUnitTest` and `:ravilo-ui:de
 **Device check (owed):** Pixel 9, music to Stue: Google Home *next* (song A → song B), wait 20 s, Google Home *Stop
 cast* → the phone's mini bar shows song B, paused about 20 s further on than when *next* landed; Play resumes song B
 there. The same from the Mac.
+
+## Build notes — FR-R353-5 second amendment (2026-10-02), not deployed, device-tested on the Pixel 9 against Stue
+
+**Built** (common code, `MusicCast.kt`): `castMusicLive(link, status)` decides both `linked` and which report is kept
+as the place to hand back; `castStoppedOnDevice(wasLinked, link, status, endedByApp)` decides a stop on the device while
+the session stays; the hand-back itself is one `handBack()` used by both paths (the session's end, and the stop on the
+device after a 1.5 s settle that a new live report or the link dropping cancels). `castHandBack` now brings a song that
+reached its end (within 2 s) back at 0:00 rather than at its length. `MusicPlayback.play()` / `togglePlay()` call
+`MusicCast.resumeOnDevice()` first: still connected, nothing live there, the engine holds a paused music queue ⇒ that
+queue goes to the device from its place (the existing hand-off). Books never cast, as before.
+
+**Deviation:** the lock screen's / notification's Play still reaches the phone's own engine after a dashboard Stop (the
+media session calls `MusicEngine` directly); only the app's own controls send it back to the speaker.
+
+**Tested:** `CastHandBackTest` (8 cases; new: the dashboard's Stop hands back song B at its place; only a live report
+counts; a stop on the device while connected is a hand-back, and the six cases that are not) —
+`:ravilo-ui:testDebugUnitTest` green; `:ravilo-android:assembleRelease` green.
+
+**Device (Pixel 9, debug build, the Stue speaker at 3 %, phone media volume 0):**
+1. Cast *song A* from the phone, dashboard *Next* → song B on the speaker, dashboard *Stop* → the speaker idle (Ravilo
+   app still running), the phone's cast glyph lit, its Playing page shows **song B at 0:23, paused** (the speaker was at
+   ~0:25). Play → song B plays **on Stue** from 0:23 (*Playing on Stue*). Before the fix (production, and a first build of this
+   change that still kept the idle report as the place) the phone showed song A at the hand-over's place.
+2. Dashboard *Next* (→ song C), Google Home's Stue page → *Stop cast* → the speaker's app closed, the glyph unlit, the
+   phone shows **song C at 0:32, paused** (the speaker was at ~0:31).
+3. Cast again, ⋯ → *Stop casting* → the speaker's app closed, the phone shows the song paused at the speaker's place.
+4. Cast again, ⋯ → *Play on this phone* → the speaker's app closed, the song plays on the phone from the speaker's place.
+
+5. The final build (without the debug logging) once more: cast, dashboard *Next* → the last song in the queue, dashboard
+   *Stop* → the phone shows that song at 0:14, paused, glyph lit; *Play on…* → *Stop casting* closes the speaker's app.
+
+**Seen, not changed:** while connected after a dashboard Stop, the Playing page's ⋯ has no *Stop casting* / *Play on
+this phone* block (it follows `linked`); *Play on…* still offers *Stop casting*. Stue in that sheet reads *Ready*, not
+*Playing Ravilo*.
+
+**Not tested:** a queue that plays out on the speaker (the same path as the dashboard's Stop, landing at 0:00 of its last
+song), the Mac's sender (same common code).

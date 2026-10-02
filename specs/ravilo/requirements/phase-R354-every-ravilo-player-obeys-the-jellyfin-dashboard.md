@@ -202,8 +202,9 @@ ToggleMute` with `PlayableMediaTypes: []`. `/api/health/full`'s `session_bridges
   `SupportsRemoteControl: true`. Dashboard *pause* → the speaker pauses and the phone's mini bar shows paused within
   ~1 s; *play*; *next*/*previous* → the speaker changes song and the phone's mini bar and queue follow; seek; volume
   20 → the speaker's volume 20 % and the phone's ⋯ slider shows it; mute/unmute; leave it paused > 2 minutes → the
-  session stays (paused heartbeat); *stop* → the speaker goes idle, the phone reads ended, and within ~90 s + one sweep
-  the session leaves `/Sessions`. Then **R353 FR-R353-5**: cast again, Google Home *next*, Google Home *Stop cast* →
+  session stays (paused heartbeat); *stop* → the speaker goes idle, the phone stays connected and shows the speaker's
+  last song paused at its place (Play sends it back to the speaker — R353 FR-R353-5, second amendment, 2026-10-02),
+  and within ~90 s + one sweep the session leaves `/Sessions`. Then **R353 FR-R353-5**: cast again, Google Home *next*, Google Home *Stop cast* →
   the phone's mini bar shows the speaker's song, paused at its place.
 - **Cast receiver — a film or an episode to a TV Chromecast / the Nest Hub (from the Pixel, then from the Mac):**
   pause/play/seek/±; *next* → the next episode; *previous* → the episode before (nothing on the first); *stop* → the
