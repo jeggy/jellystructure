@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned`. Written 2026-10-03 with the owner, against `main` `ff9746d4`; not dev-reviewed. Number checked free (Ravilo
+`Planned`. Written 2026-10-03 with the owner, against `main` `ff9746d4`; dev-reviewed 2026-10-03 (section at the end — FR-R360-4 replaced by item 2, and two notify calls on the server, item 3). Number checked free (Ravilo
 specs top at R359 on `origin/main`). **Amends** FR-R245-1 (presence), FR-R265-1 (presence) and **removes** FR-R265-5
 (*Add a TV* from the sheet). Client only (`ravilo-ui`): no route, no DTO and no wire change; the backend's
 `/api/remote/pair` stays for API compatibility. Strings: two keys go out of use (FR-R360-5).
@@ -92,3 +92,78 @@ empties → still present at 9 s, absent at 10 s; device back at 5 s → never h
 
 - The design mockups (`design/ravilo/Ravilo Mobile.html`, `Play on a TV - Directions.html`) still draw *Add a TV* and an
   always-present glyph; they should follow once this is built.
+
+## Dev review (2026-10-03, against `main` `2bf7300f`)
+
+Read against `RaviloApp`'s cast wiring, `Cast.kt`, `ScreensSheet.kt`, `AppBar.kt`, the player and music chrome, both
+`rememberCastRoutes` actuals, and the server's `Main.kt`, `RemoteRoutes` and `ScreenPairingService`. The design holds.
+FR-R360-4 changes shape (item 2), and the server needs two lines (item 3). Eleven items; one is for the owner (item 9,
+lean given).
+
+1. **Why the icon is always there today.** `castActive` is non-null when `castAppId != null || screensEnabled ||
+   airplayAvailable`, and the server sends `screens.enabled = true` on **every** installation (`Main.kt`,
+   `screensCapability`, 236 item 9). It does that on purpose, so a household could add its first TV from the sheet. So the
+   glyph shows on every server and every platform, whatever is around. With *Add a TV* gone (D2) `enabled` has no
+   reason left. **The server keeps sending it unchanged**, because installed older apps read it to offer *Add a TV*. The
+   new client stops using it for presence.
+
+2. **FR-R360-4 is replaced: the screens half is already server-pushed.** `RaviloConfig.screens.paired` is computed as
+   `listByUser(user).any { kind == "screen" }`. That is the same `listByUser`, filtered to the same kind, that
+   `GET /api/remote/devices` answers and the sheet keeps (R327: `SCREEN` only; `listedToRemote()` drops only `cast`).
+   Offline TVs are included. So `paired` is exactly "the sheet has a TV row", per viewer, and it arrives with the config
+   the app already fetches. **No new fetch and no polling.** The reconnect fetch (FR-R265-7) stays as it is. The client
+   keeps `screensPaired` beside `screensEnabled` in `refreshConfig()`.
+
+3. **Server: a pairing change must push the config.** Nothing calls `tvEventBus.notifyConfigChanged(userId)` when a
+   screen is paired (`ScreenPairingService`'s claim) or when a screen session is revoked or deleted (the admin's Users
+   & devices, sign-out-everywhere). So `paired` would stay stale until the next unrelated config change. Add the
+   notify call on those paths for `kind = "screen"`, once per affected user. Status: "client only" becomes **client +
+   two notify calls on the server**. No route, DTO or wire change.
+
+4. **Disagreement in the open sheet.** The sheet still fetches the list when it opens (it needs online, busy and
+   now-playing). If that fetch returns no TV while `paired` said there was one (revoked in between), the fetch is
+   newer. It overrides `paired` until the next config refresh. If the sheet then has no rows at all, it **closes
+   itself** rather than showing a bare title: the empty-sheet hint went with *Add a TV*. The icon then goes after the
+   grace.
+
+5. **Chromecast routes move out of the sheet.** `rememberCastRoutes` is called inside `ScreensSheet`, which only
+   `CastSheetHost` composes, which only exists while `castActive != null`. The call moves up into `CastSheetHost`,
+   called once with the same `appId` and on-screen keys (R293 is unchanged). It publishes into a `StateFlow` on
+   `CastController` (`routes`), and the sheet reads it from there. On the desktop `CastDiscovery.acquire()` stays
+   reference-counted, with one acquirer. The mode filter (`visibleRoutes`: displays only in video mode, everything in
+   music mode) becomes one function that both the sheet and the rule call. Today it is inline in `ScreensSheetBody`.
+
+6. **One rule, one composable.** `CastController.hasDevices(music)` returns
+   `screensPaired || routesFor(music).isNotEmpty() || airplayAvailable`. `rememberCastIconShown()` combines that
+   with FR-R360-2 (`sender.link != NONE || airplay.wireless || MusicCast.linked`) and FR-R360-3's grace. Every glyph
+   calls `rememberCastIconShown()`. **`castActive` keeps its meaning** (the capability). The reconnect, the mini bar,
+   the connecting bar and the player hand-off stay keyed on it, because a session can exist while the list is empty.
+
+7. **The entry points, checked.**
+   - The phone app bar (`AppBar.kt` ~202), the wide bar (~298) and the player's `castSlot` (`PlayerScreen` 1922) all
+     render `CastButton()`, which gates itself. Put the rule there.
+   - `DeskCastButton` gates on `LocalCast` only, and `DesktopMusicBar` on `cast != null`. Both switch to the rule.
+   - Now playing's `BottomRow` uses `CastButton`, so it is covered by the gate above.
+   - `DeviceChip` shows only while linked, and `CastRemoteScreen` is reachable only while casting. FR-R360-2 already
+     covers both, so they need no change.
+   - The TV stays out (R286's `isTvPlatform` return comes first).
+
+8. **The grace is testable in common code.** Build the hide delay as a flow transform (`debounce`-like, one
+   direction only: show at once, hide after 10 s). FR-R360-7's cases run in `commonTest` under
+   `kotlinx-coroutines-test`'s virtual time, so no sleeping test.
+
+9. **For the owner — the phone's top bar moves.** FR-R360-6's "arrival moves nothing" is true on the wide bar only. On
+   the phone, R267 FR-R267-2's order is *brand · the page's own control · cast*. Cast is the **rightmost** item, so
+   its arrival slides the page's control (`handsetTopSlot`: Home's, Browse's) about 52 dp left, and in the player it
+   pushes the logo slot (R303). **Lean: accept it.** A paired TV comes with the config, so for that household the glyph
+   is there from the first frame with content. Only a Chromecast or speaker found by discovery arrives later, usually
+   within a second or two of opening, once per opening. Reserving the slot would bring back the empty gap R265 rules out.
+
+10. **Strings and API.** `screens.add`, `screens.code_hint` and `screens.code_failed` are read only by `ScreensSheet`,
+    so they can come out of all three `i18n/*.json`. Nothing else, no test and no script names them. `CastController.pairScreen`
+    goes. `TvApiClient.remotePair` stays, because the route stays and the client mirrors the API.
+
+11. **Consequences noted, not changed.** On the iPhone web app in music mode with no paired TV and no AirPlay target,
+    there is no icon. That means the *speakers need Android* line (R324 FR-R324-10) is never seen there. This is D1 as
+    decided, since explanatory lines do not count. A Ravilo Android TV (`kind = tv`) has never been a sheet row
+    (R327), so it doesn't count either.
