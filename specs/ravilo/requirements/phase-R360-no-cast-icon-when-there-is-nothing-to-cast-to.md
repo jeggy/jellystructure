@@ -97,8 +97,8 @@ empties → still present at 9 s, absent at 10 s; device back at 5 s → never h
 
 Read against `RaviloApp`'s cast wiring, `Cast.kt`, `ScreensSheet.kt`, `AppBar.kt`, the player and music chrome, both
 `rememberCastRoutes` actuals, and the server's `Main.kt`, `RemoteRoutes` and `ScreenPairingService`. The design holds.
-FR-R360-4 changes shape (item 2), and the server needs two lines (item 3). Eleven items; one is for the owner (item 9,
-lean given).
+FR-R360-4 changes shape (item 2), and the server needs two lines (item 3). Eleven items; item 9 was for the owner and is
+answered.
 
 1. **Why the icon is always there today.** `castActive` is non-null when `castAppId != null || screensEnabled ||
    airplayAvailable`, and the server sends `screens.enabled = true` on **every** installation (`Main.kt`,
@@ -158,6 +158,7 @@ lean given).
    pushes the logo slot (R303). **Lean: accept it.** A paired TV comes with the config, so for that household the glyph
    is there from the first frame with content. Only a Chromecast or speaker found by discovery arrives later, usually
    within a second or two of opening, once per opening. Reserving the slot would bring back the empty gap R265 rules out.
+   **Owner, 2026-10-03: accepted.** The shift stays; FR-R360-6's "moves nothing" applies to the wide bar only.
 
 10. **Strings and API.** `screens.add`, `screens.code_hint` and `screens.code_failed` are read only by `ScreensSheet`,
     so they can come out of all three `i18n/*.json`. Nothing else, no test and no script names them. `CastController.pairScreen`
