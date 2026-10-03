@@ -1477,7 +1477,10 @@ fun RaviloApp(
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
                 // max(ime, systemBars + bar), so a keyboard-up page ends at the keys rather than 68 dp
                 // above them, and a keyboard-down page still clears the gesture inset AND the bar.
-                else Modifier.fillMaxSize().safeAreaPadding(plusBottom = navBarInset)
+                // R338 amendment (2026-10-03) — the page colour goes under the system bars too, before the padding
+                // (as CastRemoteScreen does): the window behind them is Aurora's fixed #0A0C13, so a light theme had a
+                // near-black status bar band with the clock drawn in dark ink on it.
+                else Modifier.fillMaxSize().background(RaviloTheme.colors.background).safeAreaPadding(plusBottom = navBarInset)
                     // R337 (FR-R337-2) — the phone layout on a computer: a 32 dp strip at the top for the window's controls.
                     .padding(top = if (handset && isDesktopPlatform) 32.dp else 0.dp),
             ) {
