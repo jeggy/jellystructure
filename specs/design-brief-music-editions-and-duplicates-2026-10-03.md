@@ -42,11 +42,18 @@ come first. Prospective numbers are admin 303 and Ravilo R361; check they are st
 5. **The marker (Q3):** a small **Bonus** chip on an extra song wherever it appears outside its own album's
    extras section. Where it came from (*Japanese edition*, *20th Anniversary*, *super deluxe*) is in the song's
    detail and in the divider's label, not on the chip.
-6. **Duplicates (Q4): show every song once.** A copy is a duplicate when it has **the same name and the same length
-   (±3 s)**, i.e. the exact same edition. Two guards keep apart what MusicBrainz says is a different take (research
-   §4): different **version types** (292), or a different MusicBrainz **disambiguation** (*EP version*, *stand-alone
-   single version*, *with extra opening chord*). **Nothing is deleted.** Every album page keeps its own full
-   tracklist; every list that spans albums shows one copy.
+6. **Duplicates (Q4): show every song once.** A duplicate is *the exact same edition* of a song. The owner first
+   proposed *same name and length ±3 s*. Measured, it both joins different takes and splits one take (research §4),
+   so the owner asked for the proper rule instead (2026-10-03). **A song is its recording:**
+   1. the same **trusted MusicBrainz recording** (276 `agrees`/`manual`) ⇒ one song;
+   2. a copy **without a trusted recording** ⇒ compared by **audio fingerprint** with the artist's other songs; a
+      near-identical match makes it that song;
+   3. two trusted but different recordings that **sound** near-identical ⇒ a **suggestion** to the owner, never
+      joined on its own;
+   4. the owner's *same song* / *not the same song* always wins and is kept across runs.
+
+   Title and length never decide. **Nothing is deleted.** Every album page keeps its own full tracklist; every list
+   that spans albums shows one copy.
 
 ## B. The numbers to draw at
 
@@ -54,17 +61,18 @@ come first. Prospective numbers are admin 303 and Ravilo R361; check they are st
   12 are one Japanese bonus track plus 11 live and demo cuts from an anniversary edition; the 10 are alternate,
   acoustic and remix versions from a super deluxe. One live album has 1 extra.
 - **Where the extras first appeared:** four of the five single-song extras first came out on the **Japanese CD**.
-- **Duplicates:** 487 songs → **394** shown, with 93 copies in 73 groups folded away. The kept copy comes from the
-  album 48 times and from the single 23 times. 57 of the hidden copies are on a box set and a soundtrack set, 36 on
-  singles and EPs. The worst song has 10 copies.
+- **Duplicates:** 487 songs → **385** shown, with 102 copies in 78 groups folded away (98 by recording, 4 by
+  audio). **3 suggestions** wait for the owner, and accepting all three gives 382. The kept copy comes from the album
+  50 times and from the single 26 times. 65 of the hidden copies are on a box set and a soundtrack set, 37 on singles
+  and EPs. The worst song has 10 copies.
 - **Singles under albums:** 43 of 49 singles and EPs find their album. **B-side songs per album** (after
-  duplicates): **24 · 20 · 14 · 9 · 8 · 5 · 2 · 1 · 0**. Single cards per album: 2 to 7. Six releases stay alone
+  duplicates): **25 · 19 · 13 · 9 · 9 · 6 · 2 · 0 · 0**. Single cards per album: 2 to 7. Six releases stay alone
   on the artist page: 2 singles on no album, 1 single from another artist's soundtrack, and 3 EPs.
 
 Stand-ins: *Harbour Lights* — *Kite Weather* (2006): 11 songs + 1 extra (*Lantern Swing*, Japanese edition), held as
 a 24/96 download. *Signal Found* (2003): 14 songs + 12 extras (*Signal Found 20th Anniversary*), one of them also on
 the Japanese CD. Singles from *Kite Weather*: *Northern Line*, *Fog Bank*, *Salt on the Window*, *Low Tide*,
-*Tidewater*, with 14 B-sides between them.
+*Tidewater*, with 13 B-sides between them.
 
 ## C. Where it is stored (recommendation)
 
@@ -77,7 +85,11 @@ exists, our tables where none does and Ravilo gains* (`research-reports/music-ta
 - Per track: *extra*, plus where it first appeared.
 - Per single: its home album, and how that was found (MusicBrainz *single from* · via a remix · by its A-side's
   title · picked by you).
-- Duplicate groups are **computed**, never stored: they follow the files.
+- Per track: an audio fingerprint, only for copies that need the audio check (no trusted recording, plus the
+  artist's songs they are compared with). It is computed once and kept until the file changes.
+- The owner's decisions: *same song* / *not the same song* per pair, and an answered suggestion, so it is never
+  asked again.
+- Duplicate groups themselves are **computed**, never stored: they follow the files and the decisions.
 
 No file is moved, renamed, retagged or deleted for any of this.
 
@@ -97,7 +109,7 @@ Top to bottom:
    Found 20th Anniversary · 12*. No numbers on extra rows (or a quiet *+1, +2*; designer's call).
 5. **Singles & B-sides:** a row of the album's single cards (cover, title, year), then the **B-side songs**
    (songs on those singles that are not already shown above). Each has its single's name as a quiet second line.
-   With 24 B-sides on the oldest album, it likely starts folded (*24 B-sides · Show*).
+   With 25 B-sides on the oldest album, it likely starts folded (*25 B-sides · Show*).
    Version chips (R344) still apply on every row.
 
 **Not on this page:** a single's A-side or any other duplicate of a song already shown (§A6).
@@ -130,6 +142,12 @@ wins.
   1999–2012 (box set) …*, each opening its album.
 - **Admin only:** the Songs view gets a **Show every copy** switch, because the admin manages files, not songs.
   It is off by default.
+- **Admin only:** in a song's side panel, each other copy shows *why* it counts as the same song (*same recording ·
+  MusicBrainz*, *sounds the same*, *you said so*), plus **Not the same song**. A copy that is not joined can be
+  joined with **Same song as…**.
+- **Admin only:** the 3 suggestions, each as two players side by side with *These sound the same: one song?*
+  **Yes** / **No**. Where they live is the designer's call: one Dashboard row in 285's grammar (*Songs that may be
+  the same · 3*, severity info) is the lean.
 - An extra keeps its **Bonus** chip in these lists.
 
 ### D5. The Bonus chip
@@ -149,21 +167,26 @@ is no chip there.
 - An album with no singles: no section.
 - A single the owner moved to *no album*.
 - A song with 10 copies: one row, *also on 9 releases*.
+- A single whose tags name another recording but whose audio is the album's: one row, *sounds the same* in the
+  admin's side panel.
+- A suggestion answered *No*: the two stay separate and are never asked about again.
 
 ## E. Strings (admin + Ravilo, English)
 
 *Play album* · *Play album + extras* · *Extras* · *Extras · {edition}* · *+ {n} extra(s)* · *Bonus* · *Japanese
 edition* · *first on {release}, {year}* · *Singles & B-sides* · *{n} B-sides* · *Official album: {n} songs, as on
 {k} of {m} releases* · *Use as the official album* · *chosen by you* · *Back to automatic* · *also on {n}
-releases* · *Show every copy* · *No album*. Danish and Faroese are drafts for the implementer (the shipped
+releases* · *Show every copy* · *No album* · *same recording · MusicBrainz* · *sounds the same* · *you said so* ·
+*Same song as…* · *Not the same song* · *These sound the same: one song?* · *Songs that may be the same*. Danish and Faroese are drafts for the implementer (the shipped
 `i18n/*.json` wins).
 
 ## F. What is deliberately out
 
 - Fetching missing editions or songs: that is Lidarr's job.
 - Deleting duplicate files; the files stay the record.
-- Spreading a version or any other fact between duplicate copies (292 Q7 still holds: only the same MusicBrainz
-  recording shares facts).
+- Spreading a version or any other fact between copies joined by audio or by hand (292 Q7 still holds: only the
+  same MusicBrainz recording shares facts).
+- Telling MusicBrainz that two recordings should be merged (a later idea, by hand).
 - An official tracklist for singles, EPs or box sets.
 - The TV (no music mode).
 

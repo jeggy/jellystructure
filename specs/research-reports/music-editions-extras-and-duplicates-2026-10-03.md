@@ -61,7 +61,8 @@ Things learned on the way:
   first release date (2006-06-28) *is* its Japanese CD with the bonus track.
 - **Compare recordings, not titles — with a fallback.** Edition titles differ (*(live from …)* added or not, `&` vs
   `and`), so titles alone mismatch. Recording ids worked for every studio and live album. On the soundtrack-plus-live set, one
-  release links a song to a different recording id than the rest, so a title + length (±3 s) fallback is needed.
+  release links a song to a different recording id than the rest, so a fallback is needed
+  (the same audio check as §4).
 - **Singles have no standard tracklist.** A 1999 single has 14 releases of 2 to 6 tracks (CD1, CD2, 7″, the
   Japanese one…), and "the most common" there is the 3-track CD. Releases with the single or EP type should stay a
   plain list.
@@ -101,35 +102,60 @@ nothing; the standard edition would have lost 26 songs across the five albums in
 copies because singles repeat album songs and the box set repeats two whole albums. The worst songs appear 10, 8
 and 8 times; this artist's 444 tracks are only **158 different songs** by base title.
 
-**The owner's rule (2026-10-03):** *a duplicate is the same name and the same length (±3 s) — the exact same
-edition.* Applied literally: **75 groups, 102 copies to hide, 487 → 385 songs.** But some of those copies are
-different editions with the same name and length:
+**Name and length don't work; tried and dropped (owner, 2026-10-03).** The owner first proposed *same name, same
+length ±3 s*. It joins 102 copies, but it gets both directions wrong:
 
-| Same name, same length, but … | Groups | MusicBrainz says |
-|---|---|---|
-| one copy is on a live EP | 1 | the recording is `live` (a 2015 club show) |
-| one copy is on the box set's *instrumental demos* disc | 1 | `demo`, `instrumental` |
-| one copy is on the box set's festival disc | 1 | `live` |
-| one copy is an EP version, a stand-alone single version, or *with extra opening chord* | 6 | a different recording with a disambiguation that says so |
+- **It joins different takes.** The box set has discs named *Demos*, *Instrumental Demos* and *Live at …*, so a
+  name and a length can hide a whole different take. Measured: a live EP's copy beside the studio one, an
+  instrumental demo, a festival recording, and six copies MusicBrainz calls an *EP version*, a *stand-alone single
+  version* or *with extra opening chord*.
+- **It splits one take.** 9 songs are the same MusicBrainz recording but 3–8 s apart: a single's earlier fade, a
+  remaster's longer tail, a few seconds of leading silence. Titles split them too (*… (Piste 8)*, `&` vs `and`).
 
-Three of the box set's discs are named *Demos*, *Instrumental Demos* and *Live at …*, so a name and a length can
-hide a whole different take.
+**What identifies a song: its recording.** In MusicBrainz a *recording* is one performance in one mix and one edit.
+A remaster or a different fade of the same recording is still that recording; a live take, a demo, a remix or a
+radio edit is a different one. That is "the exact same edition" in the owner's sense, and the files already carry it
+(`MUSICBRAINZ_TRACKID`, written by Lidarr; 276 checks it against the release).
 
-**Rule with two guards, which are both MusicBrainz facts already fetched by 292:** same name + length ±3 s, **unless**
-the copies have different version types (292), or MusicBrainz gives them different disambiguations. The result is
-**73 groups, 93 copies hidden, 487 → 394 songs.** Kept as the one copy shown: the album copy 48 times, the single's
-23 times, the compilation's twice. Hidden: 36 copies on singles and EPs, 57 on the box set and the soundtrack set.
+The audio was checked against it. Full-length Chromaprint fingerprints (`fpcalc -raw -length 0`, already in the
+runtime image) were taken of the 387 tracks that share a base title or a recording with another track (7.5 min, 4
+at a time) and compared pairwise: 700 pairs, aligned by the fingerprint, scored by bit errors and by how much of
+both songs lines up.
 
-The rule and the recording link disagree in two directions. Both are measured:
+- **All 122 pairs that 276 trusts as the same recording are the same audio**: at least 94 % of the longer song lines
+  up, and the differences sit only at the very start or end (≤ 6 s of fade or silence). Recording ids are
+  reliable here.
+- **Audio alone cannot replace the id.** A remaster beside the vinyl-era original scores up to 0.25 bit error.
+  A *vocals and keyboard only* mix, or a remix that keeps the backing track, scores 0.24–0.29 over the whole song.
+  The audio is decisive only at the clear end: near-identical (≤ 0.15 bit error, ≥ 95 % lined up, almost no
+  mismatched stretches) means the same take.
+- **13 tracks have no trusted recording**: 8 where 276 found the file's id disagreeing with its release, and 5
+  unmatched. For 4 of them the audio is near-identical to an album song. Three are singles whose tags name a
+  different recording ("with extra opening chord", "stand-alone single version") but whose audio is the album's
+  (0.02–0.12 bit error), and one is a box-set copy. The audio settles exactly the cases where the id is in doubt.
+- **3 pairs are two trusted but different recordings with near-identical audio** (0.01–0.13): a single and its
+  album at the same length, which MusicBrainz never merged. Nothing proves they are one take, so they are a
+  question for the owner, not a rule.
 
-- **12 groups join copies that MusicBrainz keeps as different recordings.** After the guards, the ones left look
-  like MusicBrainz duplicates of the same audio (a single and its album at exactly the same length).
-- **9 songs are the same MusicBrainz recording but 3–8 s apart**, mostly a single's earlier fade or a remaster's
-  longer tail. Under the owner's rule they are *not* duplicates and stay apart.
+**Recommended rule:**
+
+1. Two copies with the same **trusted MusicBrainz recording** are one song (276's `agrees` or `manual`).
+2. A copy **without a trusted recording** is compared by **audio** with the artist's other songs. A near-identical
+   match makes it that song.
+3. Two trusted but different recordings whose audio is near-identical are **suggested** to the owner (*these sound
+   the same: one song?*), never joined on their own.
+4. The owner's *same song* / *not the same song* always wins and is kept across runs.
+
+Title and length are never part of the decision. They are only a cheap way to pick which pairs to fingerprint.
+
+**Result: 78 groups, 102 copies folded, 487 → 385 songs** (98 by recording, 4 by audio). Accepting the 3
+suggestions makes it 382. The copy shown comes from the album 50 times, the single's 26 times and the compilation's
+twice. Hidden: 37 copies on singles and EPs, 65 on the box set and the soundtrack set. Nothing the owner calls a
+different take is folded: every live, demo, instrumental, remix and *EP version* copy stays its own song.
 
 This is a display rule; it is not 292's link. Phase 292 Q7 (owner, 2026-10-01) says a song's *version* spreads only
-along the same MusicBrainz recording, never by title and length. That still holds: hiding a copy from a list is
-not the same as sharing a fact between copies.
+along the same MusicBrainz recording. It still does, and the two now agree, except that a copy joined by audio
+(rule 2) is shown once without inheriting the other copy's versions.
 
 ## 5. Singles belong to albums
 
@@ -144,7 +170,7 @@ EPs:
 | none — stays a stand-alone single or EP | 6 (2 singles on no album, 1 single from another artist's soundtrack, 3 EPs) |
 
 One request per single (`release-group/{id}?inc=release-group-rels`, 1 req/s). **B-side songs per album, after
-taking out songs the album already shows (the rule in §4):** 24, 20, 14, 9, 8, 5, 2, 1 and 0; 83 in all. The two
+taking out songs the album already shows (the rule in §4):** 25, 19, 13, 9, 9, 6, 2, 0 and 0; 83 in all. The two
 oldest albums carry the most, because their singles came on two or three CDs each.
 
 ## 6. Recommendations
@@ -157,5 +183,5 @@ songs matter.
 **For jellystructure** (designs first; see the brief): an official tracklist per album, extras labelled by where
 they came from, an album page in the order *album · divider · extras · its singles and B-sides*, *Play album* with a
 *Play album + extras* choice, a small *Bonus* marker, and one copy per song in every list that spans albums, by §4's
-guarded rule. All of it lives in jellystructure's own tables. No tag standard has a field for "bonus track" or "the
+recording rule. All of it lives in jellystructure's own tables. No tag standard has a field for "bonus track" or "the
 official tracklist", and no file is moved, renamed or deleted.
