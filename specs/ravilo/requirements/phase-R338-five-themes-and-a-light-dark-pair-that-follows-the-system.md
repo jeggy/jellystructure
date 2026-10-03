@@ -338,3 +338,18 @@ pick repaints the TV at once. Two defects of this phase's own, both fixed:
   becoming the active pill re-created the target; no ring anywhere until the next key press. The ring is always a
   border now, clear when there is nothing to draw.
 
+
+## Amendment (2026-10-03) — the web app paints its system bars in the theme
+
+**Bug, seen on the iPhone (installed web app, Daylight).** The status bar and the home-indicator band stayed near-black
+while the page under them was light, and iOS drew the clock, signal and battery in dark ink on that near-black band —
+the time and the notifications could hardly be read. Dark themes were fine only because the band happened to be dark
+too. Cause: the web app's `SystemBarsAppearance` was a no-op ("the browser draws no bars of ours"), and the root only
+paints the theme's background *inside* the safe area, so the bands showed `index.html`'s fixed `#0d0d1a` page
+background (and its fixed `theme-color`).
+
+**Amended requirement.** `SystemBarsAppearance` takes the resolved theme's background as well as light/dark. On the web
+it sets the page's own background (`html`, `body`) and the `theme-color` meta to that colour, live, so whatever the
+browser or the home-screen app shows around the canvas — the status bar band, the home-indicator band, an overscroll —
+is the page's colour on every theme. The video keeps its own black (`background:#000` on the `<video>`), so the player
+is unchanged. Android and the desktop take the colour and keep their behaviour.

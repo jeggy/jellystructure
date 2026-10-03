@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.seams
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.Color
 import dev.jellystructure.ravilo.ui.desktop.DesktopAppearance
 
 /** R338 — the Mac's `AppleInterfaceStyle` or Linux's Settings portal ([DesktopAppearance]); null until known. */
@@ -11,6 +12,6 @@ actual fun systemDarkAppearance(): Boolean? = DesktopAppearance.dark.collectAsSt
 
 /** R338 — on the Mac the window takes the resolved theme's appearance, so its traffic lights and menus match it. */
 @Composable
-actual fun SystemBarsAppearance(light: Boolean) {
+actual fun SystemBarsAppearance(light: Boolean, background: Color) {
     LaunchedEffect(light) { DesktopAppearance.applyToWindow(light) }
 }

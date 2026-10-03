@@ -601,7 +601,7 @@ fun RaviloApp(
         isHandset(isTvPlatform, appearanceWindow.containerSize.width, appearanceWindow.containerSize.height, appearanceDensity.density)
     val systemDark = dev.jellystructure.ravilo.ui.seams.systemDarkAppearance()
     themeState.deviceDark = if (hasAppearance) (systemDark ?: true) else null
-    dev.jellystructure.ravilo.ui.seams.SystemBarsAppearance(light = themeState.theme.isLight)
+    dev.jellystructure.ravilo.ui.seams.SystemBarsAppearance(light = themeState.theme.isLight, background = themeState.colors.background)
 
     RaviloTheme(state = themeState) {
     WithLocale(lang) {
