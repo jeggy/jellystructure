@@ -1,5 +1,15 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.GridFocus
+import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
+import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.SideEffect
 import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
 import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
@@ -64,6 +74,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -190,6 +201,11 @@ class SeededBrowseStore(
     val seerrOverflow: StateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>> = _seerrOverflow.asStateFlow()
     val gridState = LazyGridState()
     val facetBarState = LazyListState()
+    /** R362 (FR-R362-1) — the facet-bar chip last focused (a facet's name, `"reset"` or `"sort"`): Down from the app
+     *  bar and Up from the grid return to it while it is fully on screen. Replaces the bar's `focusRestorer()`. */
+    var lastChipKey: String? = null
+    /** R362 (FR-R362-6) — each chip's left edge in root coordinates (px), so its popover opens under it. */
+    internal val chipX = mutableMapOf<String, Float>()
     var focusItemKey: String? = null
     /** R361 (FR-R361-4/5) — where [focusItemKey] sat in the filtered, sorted list when it was opened. */
     var focusItemIndex: Int = 0
@@ -456,7 +472,14 @@ fun SeededBrowseScreen(
     // the content transition on purpose — so a `LaunchedEffect(Unit)` never re-ran and the new store
     // was never loaded. The page sat on "Loading…" forever. Keying on the store is also just more
     // honest: the effect's job is "load THIS store".
-    LaunchedEffect(store) { store.load() }
+    LaunchedEffect(store) {
+        // R362 (FR-R362-4, amends R187 FR-RV-BROWSE1-10) — every arrival shows the facet bar from its start, so the
+        // applied filter chips are in view; the bar keeps its scroll only while the viewer is in it.
+        // `requestScrollToItem`, not `scrollToItem`: the latter waits for the bar's first layout, which on a first
+        // visit only comes after the load below.
+        store.facetBarState.requestScrollToItem(0)
+        store.load()
+    }
     // R187 (FR-RV-BROWSE1-8a) — leaving the page closes its popovers. Found on the Pixel 9: the open flag
     // lives on the store, so a Genre popover left open came back with the Library tab on every visit.
     DisposableEffect(store) { onDispose { store.closePopovers() } }
@@ -476,7 +499,41 @@ fun SeededBrowseScreen(
     // (a normal "move to the next facet" RIGHT+OK) silently navigated the viewer clean out of the page.
     val facetChipFRs = remember { BrowseFacetKey.entries.associateWith { FocusRequester() } }
     val sortChipFR = remember { FocusRequester() }
+    val resetChipFR = remember { FocusRequester() }
     val firstFacetFR = facetChipFRs.getValue(BrowseFacetKey.GENRE)
+    // R361/R362 — the grid's focus bookkeeping, hoisted so the facet bar's Down can aim at a real tile.
+    val gridFocus = rememberGridFocus(gridState)
+    val focusManager = LocalFocusManager.current
+    // R362 (FR-R362-2/7) — the grid's first fully visible tile, by a key-targeted requester (never one fixed to
+    // item 0, which is not composed once the grid has scrolled); the native move if even that fails.
+    var gridKeys by remember { mutableStateOf<List<Any>>(emptyList()) }
+    val focusGridTop: (FocusDirection) -> Unit = { dir ->
+        scope.launch {
+            val keys = gridKeys
+            val vis = gridState.layoutInfo.visibleItemsInfo.filter { it.index < keys.size }
+            val idx = (vis.firstOrNull { it.offset.y >= 0 } ?: vis.firstOrNull())?.index ?: 0
+            if (keys.isEmpty() || !gridFocus.focusIndex(keys, idx)) focusManager.moveFocus(dir)
+        }
+    }
+    // R362 (FR-R362-1/2) — the facet bar's entry: the chip last focused if it is fully on screen, else the bar back
+    // at its start and Genre; if neither can be focused, the grid's first visible tile. Never a dead key.
+    val focusFacetBar: () -> Unit = {
+        scope.launch {
+            val info = store.facetBarState.layoutInfo
+            val fully = info.visibleItemsInfo
+                .filter { it.offset >= info.viewportStartOffset && it.offset + it.size <= info.viewportEndOffset }
+                .map { it.key.toString() }.toSet()
+            val target = facetEntryTarget(store.lastChipKey, fully)
+            val fr = when (target) {
+                null -> null
+                "sort" -> sortChipFR
+                "reset" -> resetChipFR
+                else -> BrowseFacetKey.entries.firstOrNull { it.name == target }?.let { facetChipFRs.getValue(it) }
+            }
+            if (fr != null && fr.requestFocusAwaiting(maxFrames = 3)) return@launch
+            scrollThenFocus(store.facetBarState, 0, firstFacetFR) { focusGridTop(FocusDirection.Down) }
+        }
+    }
     // R267 (FR-R267-6) — on a handset there is no nav row in the AppBar to focus (the pages moved to
     // the bottom bar), so this request fell through to the first grid cell and drew a D-pad focus ring
     // around a poster on a touch screen. Found on the Pixel 9. Selection on a phone is never carried
@@ -539,9 +596,9 @@ fun SeededBrowseScreen(
                     if (showFacetBar) {
                         FacetBar(
                             store = store, all = s.items, showTypeFacet = showTypeFacet,
-                            facetChipFRs = facetChipFRs, sortChipFR = sortChipFR,
-                            onBarUp = { runCatching { navBarFR.requestFocus() } },
-                            onBarDown = { runCatching { firstCellFR.requestFocus() } },
+                            facetChipFRs = facetChipFRs, sortChipFR = sortChipFR, resetChipFR = resetChipFR,
+                            onBarUp = { requestFocusRetrying(scope, navBarFR) },
+                            onBarDown = { focusGridTop(FocusDirection.Down) },
                         )
                         // R187 fix — small, restrained open/close motion (fade + vertical expand, ~150ms)
                         // instead of the popover just snapping in; matches AppBar's own tween(180) idiom.
@@ -554,10 +611,10 @@ fun SeededBrowseScreen(
                             if (open != null) {
                                 FacetPopover(
                                     store = store, all = s.items, key = open,
-                                    onClose = { store.openFacet = null; runCatching { facetChipFRs.getValue(open).requestFocus() } },
+                                    onClose = { store.openFacet = null; requestFocusRetrying(scope, facetChipFRs.getValue(open)) },
                                 )
                             } else if (store.sortOpen) {
-                                SortPopover(store = store, onClose = { store.sortOpen = false; runCatching { sortChipFR.requestFocus() } })
+                                SortPopover(store = store, onClose = { store.sortOpen = false; requestFocusRetrying(scope, sortChipFR) })
                             }
                         }
                         Spacer(Modifier.height(14.dp))
@@ -581,9 +638,12 @@ fun SeededBrowseScreen(
                         runCatching { gridState.scrollToItem(0) }
                     }
                     val seerrOverflow by store.seerrOverflow.collectAsState()
+                    val gridCards = remember(filtered) { filtered.map { it.card } }
+                    SideEffect { gridKeys = gridCards.map { it.id } }
                     BrowseCardGrid(
-                        items = filtered.map { it.card },
+                        items = gridCards,
                         gridState = gridState,
+                        gridFocus = gridFocus,
                         firstCellFR = firstCellFR,
                         // R267 (FR-R267-6) — never on a handset. R257 hands focus to the first cell so
                         // a D-pad has somewhere to land; a touch screen has no D-pad, and the result
@@ -608,7 +668,7 @@ fun SeededBrowseScreen(
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
                         seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
                         onRequestSelect = onRequestSelect,
-                        onFirstRowUp = if (showFacetBar) ({ runCatching { firstFacetFR.requestFocus() } }) else null,
+                        onFirstRowUp = if (showFacetBar) focusFacetBar else null,
                     )
                 }
             }
@@ -621,7 +681,8 @@ fun SeededBrowseScreen(
             navFR = navBarFR,
             onDown = {
                 movedOffBar = true
-                runCatching { (if (showFacetBar) firstFacetFR else firstCellFR).requestFocus() }
+                // R362 (FR-R362-1) — always into the page: a visible chip, else the grid's first visible tile.
+                if (showFacetBar) focusFacetBar() else focusGridTop(FocusDirection.Down)
             },
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
@@ -639,6 +700,7 @@ private fun FacetBar(
     showTypeFacet: Boolean,
     facetChipFRs: Map<BrowseFacetKey, FocusRequester>,
     sortChipFR: FocusRequester,
+    resetChipFR: FocusRequester,
     onBarUp: () -> Unit,
     onBarDown: () -> Unit,
 ) {
@@ -662,7 +724,9 @@ private fun FacetBar(
     LazyRow(
         // R187 (FR-RV-BROWSE1-10) — the strip comes back scrolled as it was left, like the grid.
         state = store.facetBarState,
-        modifier = Modifier.focusRestorer().testTag(SEEDED_FACET_BAR_TAG),
+        // R362 (review item 6) — no focusRestorer(): the screen's focusFacetBar() keeps the chip explicitly
+        // (store.lastChipKey), and a restorer could redirect its request to a chip that is no longer composed.
+        modifier = Modifier.testTag(SEEDED_FACET_BAR_TAG),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad),
         horizontalArrangement = Arrangement.spacedBy(if (desk) 8.dp else 10.dp),
     ) {
@@ -682,9 +746,10 @@ private fun FacetBar(
                 Modifier
                     .background(chipBg, chipShape)
                     .then(if (focused && !active) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
+                    .onGloballyPositioned { store.chipX[key.name] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = facetChipFRs[key],
-                        onFocused = { focused = true }, onBlurred = { focused = false },
+                        onFocused = { focused = true; store.lastChipKey = key.name }, onBlurred = { focused = false },
                         onSelect = { store.openFacet = if (store.openFacet == key) null else key; store.sortOpen = false },
                         onUp = onBarUp, onDown = { if (store.openFacet == null) onBarDown() },
                         // Bug fix (live-tested on stue TV): this row sits directly under the AppBar, close
@@ -713,7 +778,7 @@ private fun FacetBar(
                     Modifier
                         .background(chipIdle, chipShape)
                         .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
-                        .dpadFocusable(onFocused = { focused = true }, onBlurred = { focused = false }, onSelect = { store.resetFilters() }, onUp = onBarUp)
+                        .dpadFocusable(focusRequester = resetChipFR, onFocused = { focused = true; store.lastChipKey = "reset" }, onBlurred = { focused = false }, onSelect = { store.resetFilters() }, onUp = onBarUp, onDown = onBarDown)
                         .padding(chipPad),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -732,9 +797,11 @@ private fun FacetBar(
                 Modifier
                     .background(chipIdle, chipShape)
                     .then(if (focused) Modifier.border(2.dp, colors.focusRing, chipShape) else Modifier)
+                    .onGloballyPositioned { store.chipX["sort"] = it.positionInRoot().x }
                     .dpadFocusable(
                         focusRequester = sortChipFR,
-                        onFocused = { focused = true }, onBlurred = { focused = false },
+                        onFocused = { focused = true; store.lastChipKey = "sort" }, onBlurred = { focused = false },
+                        onDown = { if (!store.sortOpen) onBarDown() },
                         onSelect = { store.sortOpen = !store.sortOpen; store.openFacet = null },
                         onUp = onBarUp,
                         // Bug fix -- see the matching comment on the facet chips above: this is always the
@@ -829,9 +896,10 @@ private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>
 private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: BrowseFacetKey, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val firstRowFR = remember(key) { FocusRequester() }
-    LaunchedEffect(key) { runCatching { firstRowFR.requestFocus() } }
+    LaunchedEffect(key) { firstRowFR.requestFocusAwaiting() }
+    val popoverWidth = if (key == BrowseFacetKey.MATURITY) 320.dp else facetPopoverWidth(store, remember(all, key) { store.valuesFor(all, key) }, key)
     Box(
-        Modifier.padding(horizontal = raviloHPad)
+        Modifier.underChip(store.chipX[key.name], popoverWidth)
             .dpadFocusable(onBack = onClose)
     ) {
         if (key == BrowseFacetKey.MATURITY) {
@@ -847,7 +915,8 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
             Column(
                 Modifier.width(facetPopoverWidth(store, values, key)).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp),
             ) {
-                LazyColumn(Modifier.height(280.dp)) {
+                // R362 (FR-R362-6) — as tall as its options, up to the old fixed 280 dp.
+                LazyColumn(Modifier.heightIn(max = 280.dp)) {
                     items(values.size, key = { i -> values[i].value }) { i ->
                         val v = values[i]
                         val selected = v.value in store.selectionFor(key)
@@ -962,8 +1031,8 @@ private fun MaturityRangePicker(store: SeededBrowseStore, firstRowFR: FocusReque
 private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val firstFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { firstFR.requestFocus() } }
-    Box(Modifier.padding(horizontal = raviloHPad).dpadFocusable(onBack = onClose)) {
+    LaunchedEffect(Unit) { firstFR.requestFocusAwaiting() }
+    Box(Modifier.underChip(store.chipX["sort"], 260.dp).dpadFocusable(onBack = onClose)) {
         Column(Modifier.width(260.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)).padding(12.dp)) {
             // R318 — the list's own order exists only on a source-ordered page.
             // R317 (FR-R317-4) — Size only once the server sends sizes (an older server sends none).
@@ -1020,6 +1089,7 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
 private fun BrowseCardGrid(
     items: List<MediaCard>,
     gridState: LazyGridState,
+    gridFocus: GridFocus,
     firstCellFR: FocusRequester,
     restoreItemKey: String?,
     onItemSelect: (MediaCard) -> Unit,
@@ -1040,14 +1110,13 @@ private fun BrowseCardGrid(
     // R350 (FR-R350-9) — Up from a tile in the first row: the facet bar. Null leaves Up to the native search.
     onFirstRowUp: (() -> Unit)? = null,
 ) {
-    // R350 (FR-R350-9) — which tile holds focus (-1: none), so Up from the first row can be sent to the facet bar.
-    var focusedTile by remember { mutableIntStateOf(-1) }
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
     // R139 / R361 (FR-R361-4) — the opened tile if it is still in the list, else the tile now at its index
     // (scrolled in first, then focused with the bounded retry); the key is spent either way.
-    val gridFocus = rememberGridFocus(gridState)
     val keys = remember(items) { items.map { it.id } }
+    val gridScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var restoredOnce by remember { mutableStateOf(false) }
     LaunchedEffect(items) {
         if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
@@ -1079,10 +1148,8 @@ private fun BrowseCardGrid(
             .onFocusChanged { gridFocus.gridFocused = it.hasFocus }
             // R350 (FR-R350-9) — Up from the first row went by the native search, which from the right-hand tiles
             // passed the facet bar (it ends partway across) and landed on the app bar's search or avatar above them.
-            .onPreviewKeyEvent { ev ->
-                if (onFirstRowUp == null || ev.type != KeyEventType.KeyDown || ev.key != Key.DirectionUp) return@onPreviewKeyEvent false
-                if (focusedTile in 0 until cols) { onFirstRowUp(); true } else false
-            },
+            // R362 (FR-R362-5) — Down and Up keep the column (index ± cols), not the native 2-D search.
+            .gridColumnKeys(gridFocus, { keys }, cols, gridScope, focusManager, onFirstRowUp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
         verticalArrangement = Arrangement.spacedBy(raviloRowGap),
@@ -1101,8 +1168,6 @@ private fun BrowseCardGrid(
                     // R55 / R257 — the first cell's own requester, always on it (R362 review item 2: it used to
                     // step aside for a restore target and leave Down from the facet bar with nothing to reach).
                     focusRequester = if (i == 0) firstCellFR else null,
-                    onFocused = { focusedTile = i },
-                    onBlurred = { if (focusedTile == i) focusedTile = -1 },
                     onSelect = { onItemSelect(card) },
                 )
             }
@@ -1132,3 +1197,18 @@ private fun BrowseCardGrid(
 
 /** R350 (FR-R350-9) — the browse page's facet bar, by tag for the focus tests. */
 internal const val SEEDED_FACET_BAR_TAG = "browse-facet-bar"
+
+/**
+ * R362 (FR-R362-6) — a popover's horizontal place: its left edge under the chip that opened it ([chipX], root px),
+ * clamped inside the screen's side padding (`popoverOffsetX`). No recorded chip (never laid out) keeps the old
+ * left-edge place.
+ */
+@Composable
+private fun Modifier.underChip(chipX: Float?, width: androidx.compose.ui.unit.Dp): Modifier {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val screenW = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.toFloat()
+    val hPadPx = with(density) { raviloHPad.toPx() }
+    if (chipX == null || screenW <= 0f) return this.padding(horizontal = raviloHPad)
+    val x = popoverOffsetX(chipX, with(density) { width.toPx() }, screenW, hPadPx)
+    return this.offset { androidx.compose.ui.unit.IntOffset(x.toInt(), 0) }
+}

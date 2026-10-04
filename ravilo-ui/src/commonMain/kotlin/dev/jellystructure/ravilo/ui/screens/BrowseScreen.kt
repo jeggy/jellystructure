@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
+import androidx.compose.ui.focus.FocusDirection
+import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
+import androidx.compose.ui.platform.LocalFocusManager
 import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
 import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
@@ -220,6 +225,7 @@ fun BrowseScreen(
     // R55: Back scrolls a scrolled grid to the top before falling through to RaviloApp's pop.
     val gridState = store.gridState   // R137: retained scroll position survives navigate→back
     val scope = rememberCoroutineScope()
+    val screenFocusManager = LocalFocusManager.current
     val firstCellFR = remember { FocusRequester() }
     // R117: the genre-chip row's first ("All") chip — the DOWN target from the AppBar so the chips
     // aren't skipped on the way into the grid.
@@ -253,7 +259,7 @@ fun BrowseScreen(
                 onBackToTop = {
                     scope.launch {
                         runCatching { gridState.animateScrollToItem(0) }
-                        runCatching { firstCellFR.requestFocus() }
+                        firstCellFR.requestFocusAwaiting()
                     }
                 },
             ),
@@ -275,7 +281,9 @@ fun BrowseScreen(
                             onSelect = { store.filterByGenre(it) },
                             firstChipFR = firstChipFR,
                             onChipUp = { runCatching { navBarFR.requestFocus() } },
-                            onChipDown = { runCatching { firstCellFR.requestFocus() } },
+                            // R362 (FR-R362-3) — item 0's requester is not composed once the grid has scrolled: retry,
+                            // then the native move, so the key is never dead.
+                            onChipDown = { requestFocusRetryingOrMoveNative(scope, firstCellFR, screenFocusManager, FocusDirection.Down) },
                         )
                         Spacer(Modifier.height(16.dp))
                     }
@@ -334,7 +342,7 @@ fun BrowseScreen(
             onDown = {
                 val chipsShown = (state as? BrowseState.Loaded)
                     ?.let { kind != BrowseKind.MY_LIST && it.facets.genres.isNotEmpty() } ?: false
-                runCatching { (if (chipsShown) firstChipFR else firstCellFR).requestFocus() }
+                requestFocusRetryingOrMoveNative(scope, if (chipsShown) firstChipFR else firstCellFR, screenFocusManager, FocusDirection.Down)
             },
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
@@ -437,6 +445,8 @@ private fun BrowseGrid(
     // R361 (FR-R361-4) — the cell if it is still there, else the cell now at its index; the key is spent either way.
     val gridFocus = rememberGridFocus(gridState)
     val keys = remember(items) { items.map { it.id } }
+    val gridScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var restoredOnce by remember { mutableStateOf(false) }
     LaunchedEffect(items) {
         if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
@@ -456,7 +466,9 @@ private fun BrowseGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
-        modifier = Modifier.focusRestorer().onFocusChanged { gridFocus.gridFocused = it.hasFocus },
+        modifier = Modifier.focusRestorer().onFocusChanged { gridFocus.gridFocused = it.hasFocus }
+            // R362 (FR-R362-5) — Down and Up keep the column (the same handler as the Movies/Series grid).
+            .gridColumnKeys(gridFocus, { keys }, cols, gridScope, focusManager),
         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
         verticalArrangement = Arrangement.spacedBy(raviloRowGap),

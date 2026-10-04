@@ -20,6 +20,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -101,6 +102,40 @@ class FocusRetryTest {
             assert(!FocusRequester().tryRequestFocus()) { "an unattached requester must report a miss" }
             assert(attached.tryRequestFocus()) { "an attached requester must report focus" }
         }
+    }
+
+    @Test fun `R362 — scrollThenFocus brings an off-screen item in and focuses it`() {
+        val fr = FocusRequester()
+        rule.setContent {
+            val state = rememberLazyListState()
+            LazyRow(state = state, modifier = Modifier.size(300.dp, 60.dp)) {
+                items(30) { i ->
+                    Box(Modifier.size(80.dp).testTag("item$i").then(if (i == 25) Modifier.focusRequester(fr) else Modifier).focusable())
+                }
+            }
+            LaunchedEffect(Unit) { scrollThenFocus(state, 25, fr) {} }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag("item25").assertIsFocused().assertIsDisplayed()
+    }
+
+    @Test fun `R362 — scrollThenFocus on a target that never composes runs the fallback, so the key is never dead`() {
+        val never = FocusRequester()
+        val otherFR = FocusRequester()
+        var fellBack = false
+        rule.setContent {
+            val state = rememberLazyListState()
+            Column {
+                LazyRow(state = state, modifier = Modifier.size(300.dp, 60.dp)) {
+                    items(5) { i -> Box(Modifier.size(80.dp).focusable()) }
+                }
+                Box(Modifier.size(40.dp).testTag("other").focusRequester(otherFR).focusable())
+            }
+            LaunchedEffect(Unit) { scrollThenFocus(state, 3, never) { fellBack = true; otherFR.requestFocus() } }
+        }
+        rule.waitForIdle()
+        assert(fellBack) { "the fallback ran" }
+        rule.onNodeWithTag("other").assertIsFocused()
     }
 
     @Test fun `requestFocusAwaiting reaches an item scrolled in from off screen`() {

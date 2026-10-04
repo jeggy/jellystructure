@@ -15,6 +15,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import dev.jellystructure.ravilo.ui.screens.gridVerticalTarget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * R361 (FR-R361-3/4) — the focus bookkeeping a browse grid (Movies / Series / a seeded page, My List) shares:
@@ -100,6 +110,38 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
 
 @Composable
 fun rememberGridFocus(gridState: LazyGridState): GridFocus = remember(gridState) { GridFocus(gridState) }
+
+/**
+ * R362 (FR-R362-5) — Down and Up in a browse grid keep the column: the grid's own key handler moves to
+ * `gridVerticalTarget`'s tile (scrolled in first, then focused), instead of Compose's 2-D search, which lands on
+ * column 1 whenever the next row is not composed. Up from the first row goes to [onFirstRowUp] when given (R350's
+ * facet-bar bridge); no row in that direction leaves the key to the native search. A target that cannot be focused
+ * falls back to the native move, so the key is never dead (FR-R362-3).
+ */
+fun Modifier.gridColumnKeys(
+    gridFocus: GridFocus,
+    keys: () -> List<Any>,
+    cols: Int,
+    scope: CoroutineScope,
+    focusManager: FocusManager,
+    onFirstRowUp: (() -> Unit)? = null,
+): Modifier = onPreviewKeyEvent { ev ->
+    if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    val down = when (ev.key) {
+        Key.DirectionDown -> true
+        Key.DirectionUp -> false
+        else -> return@onPreviewKeyEvent false
+    }
+    val idx = gridFocus.focusedIndex
+    if (idx < 0) return@onPreviewKeyEvent false
+    if (!down && idx < cols && onFirstRowUp != null) { onFirstRowUp(); return@onPreviewKeyEvent true }
+    val ks = keys()
+    val t = gridVerticalTarget(idx, cols, ks.size, down) ?: return@onPreviewKeyEvent false
+    scope.launch {
+        if (!gridFocus.focusIndex(ks, t)) focusManager.moveFocus(if (down) FocusDirection.Down else FocusDirection.Up)
+    }
+    true
+}
 
 /**
  * R361 — call from the grid composable with its current keys: when a refresh drops the focused tile while the grid

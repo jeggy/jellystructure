@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA, reproduced on the
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA, reproduced on the
 installed `1.47-34` and again on release `1.49-11-g76f351b4` (= `main` for these files). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only
 (`:ravilo-ui`, `SeededBrowseScreen.kt`). The case where the opened title has left the filtered grid is **R361**.
 
@@ -188,3 +188,37 @@ correction to the cause and one more shipped bug of the same kind. Eleven items,
       for the bar to scroll at the test's screen width.
     - Device only: acceptance 2 (a real play and two Backs) and 6 (how the popover looks).
     No conflict with the constitution: this is its "never strand focus" rule.
+
+## Build notes (2026-10-04)
+
+Built on R361's fixed retry helpers. Client only (`SeededBrowseScreen.kt`, `BrowseScreen.kt`, `focus/`).
+- **FR-1/2 (review items 5–7):** one `focusFacetBar()` in `SeededBrowseScreen`: the chip last focused
+  (`SeededBrowseStore.lastChipKey`, set in each chip's `onFocused`; Sort and Reset included) if it is fully inside
+  the bar's visible items, else `facetEntryTarget` says *scroll to the start, Genre* — done through the new
+  `scrollThenFocus(state, index, requester, fallback)` (`FocusModifiers.kt`), whose fallback is the grid's first
+  visible tile, then the native move. The app bar's Down and the grid's first-row Up both call it. The bar's
+  `focusRestorer()` is gone (review item 6). Down from a chip (and from Sort / Reset) goes to the grid's first fully
+  visible tile through `GridFocus.focusIndex` (a key-targeted requester), never `firstCellFR`. Reading the
+  normative rule literally: after *Sort → Up → Down* with Sort still fully on screen, Down lands on Sort (a visible
+  chip, acceptance 1's point); after a return has reset the bar, it lands on Genre at the start.
+- **FR-3:** `scrollThenFocus` is the helper (scroll only if not fully visible, await a frame, bounded retry, then a
+  logged fallback). The facet bar's three `runCatching` sites and `BrowseScreen`'s Down / back-to-top requests use
+  the fixed helpers.
+- **FR-4 (amends R187 FR-RV-BROWSE1-10):** the arrival effect calls `facetBarState.requestScrollToItem(0)` before
+  `store.load()` (`scrollToItem` would wait for a first layout that only follows the load).
+- **FR-5:** pure `gridVerticalTarget(index, cols, count, down)` (`BrowseFocusMath.kt`) and one shared
+  `Modifier.gridColumnKeys(...)` (`focus/GridFocus.kt`) on both `BrowseCardGrid` and `BrowseGrid` (My List): Down/Up
+  go to `index ± cols` (the last tile of a shorter last row), scrolled in first; no row in that direction leaves the
+  key to the native search (R190's Seerr row, R350's facet-bar Up).
+- **FR-6:** each chip records its x (`onGloballyPositioned` → `store.chipX`); facet and Sort popovers are offset
+  under their chip by `popoverOffsetX(chipX, width, screenWidth, hPad)`; the list is `heightIn(max = 280.dp)`.
+- **Review item 2** (the dead Down after opening the first tile): fixed by R361 (the key is spent once resolved,
+  and the first cell's requester no longer steps aside) — walked here.
+- Tests (green): `GridVerticalTargetTest`, `FacetEntryTargetTest`, `PopoverOffsetTest` (commonTest); `FocusRetryTest`
+  gains `scrollThenFocus` (an off-screen item is focused and displayed; a target that never composes runs the
+  fallback); `BrowseFocusTest` (now 60 stand-in cards with channels, quality and people so the bar scrolls at
+  960 dp) gains acceptance 1, FR-1's visible case, FR-1 after a return (Genre), acceptance 3, review item 2,
+  acceptance 4 (*Genre (Drama)* displayed after a return), acceptance 5 (column 4 down six rows and back) and the
+  short-last-row case.
+- Device only: acceptance 2 (a real play and two Backs) and 6 (how the popovers look under *Channel*, *Watched*,
+  *Sort*).

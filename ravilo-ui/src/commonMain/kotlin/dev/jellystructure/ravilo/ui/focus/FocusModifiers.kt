@@ -61,6 +61,28 @@ suspend fun FocusRequester.requestFocusAwaiting(maxFrames: Int = 30): Boolean {
 }
 
 /**
+ * R362 (FR-R362-3) — the one way to focus an item of a lazy list from a key handler: scroll the item into view only if
+ * it is not fully visible, await the layout, then request it with the bounded retry; if it still cannot be focused,
+ * run [fallback] (a native `moveFocus`, typically), so a key that was consumed always lands focus somewhere.
+ */
+suspend fun scrollThenFocus(
+    state: androidx.compose.foundation.lazy.LazyListState,
+    index: Int,
+    requester: FocusRequester,
+    fallback: () -> Unit,
+) {
+    val info = state.layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+    val fullyVisible = item != null && item.offset >= info.viewportStartOffset && item.offset + item.size <= info.viewportEndOffset
+    if (!fullyVisible) runCatching { state.scrollToItem(index) }
+    withFrameNanos {}
+    if (!requester.requestFocusAwaiting()) {
+        println("Ravilo focus: scrollThenFocus gave up on item $index, falling back")
+        fallback()
+    }
+}
+
+/**
  * Bug fix: cross-screen focus bridges (hero↔nav-bar↔first-row jumps in HomeScreen) sat behind a bare
  * `runCatching { fr.requestFocus() }` — if the target was mid-recomposition at the exact moment the
  * key press fired (a lazy-list item just got replaced/rekeyed, or scrolled back into range),
