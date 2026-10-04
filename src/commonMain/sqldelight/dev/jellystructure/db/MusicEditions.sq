@@ -1,0 +1,71 @@
+-- Phase 305 — an album's official tracklist, its singles, one copy of every song. Must stay in sync with 66.sqm.
+-- Only the owner's decisions and the sound measurements are stored; the official lists ride the album's JSON and
+-- the song groups are computed on read (MusicSongIndex).
+
+-- FR-305-4 — *Use as the official album*: the picked pressing, kept across every scan and a re-match to the same group.
+CREATE TABLE music_official_pick (
+    album_id TEXT NOT NULL PRIMARY KEY,
+    release_mbid TEXT NOT NULL,
+    release_group_mbid TEXT,
+    set_at INTEGER NOT NULL
+);
+
+-- FR-305-6 rule 4 — *Move to…*: the album a single or EP lives under; NULL = *No album*.
+CREATE TABLE music_single_home (
+    album_id TEXT NOT NULL PRIMARY KEY,
+    home_album_id TEXT,
+    set_at INTEGER NOT NULL
+);
+
+-- FR-305-8 rule 3 / FR-305-14 — the owner's *same song* / *not the same song*, one row per pair, track_a < track_b.
+CREATE TABLE music_same_song (
+    track_a TEXT NOT NULL,
+    track_b TEXT NOT NULL,
+    state TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (track_a, track_b)
+);
+
+-- FR-305-9 (dev review 6) — what `compare_songs` measured for a candidate pair: bit error, coverage, offset.
+CREATE TABLE music_sound_pair (
+    track_a TEXT NOT NULL,
+    track_b TEXT NOT NULL,
+    ber REAL NOT NULL,
+    coverage REAL NOT NULL,
+    offset_ms INTEGER NOT NULL,
+    measured_at INTEGER NOT NULL,
+    PRIMARY KEY (track_a, track_b)
+);
+
+allPicks:
+SELECT * FROM music_official_pick;
+
+putPick:
+INSERT OR REPLACE INTO music_official_pick(album_id, release_mbid, release_group_mbid, set_at) VALUES (:album_id, :release_mbid, :release_group_mbid, :set_at);
+
+deletePick:
+DELETE FROM music_official_pick WHERE album_id = :album_id;
+
+allHomes:
+SELECT * FROM music_single_home;
+
+putHome:
+INSERT OR REPLACE INTO music_single_home(album_id, home_album_id, set_at) VALUES (:album_id, :home_album_id, :set_at);
+
+deleteHome:
+DELETE FROM music_single_home WHERE album_id = :album_id;
+
+allSameSong:
+SELECT * FROM music_same_song;
+
+putSameSong:
+INSERT OR REPLACE INTO music_same_song(track_a, track_b, state, set_at) VALUES (:track_a, :track_b, :state, :set_at);
+
+deleteSameSong:
+DELETE FROM music_same_song WHERE track_a = :track_a AND track_b = :track_b;
+
+allSoundPairs:
+SELECT * FROM music_sound_pair;
+
+putSoundPair:
+INSERT OR REPLACE INTO music_sound_pair(track_a, track_b, ber, coverage, offset_ms, measured_at) VALUES (:track_a, :track_b, :ber, :coverage, :offset_ms, :measured_at);

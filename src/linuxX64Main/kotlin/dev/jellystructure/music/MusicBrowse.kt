@@ -82,7 +82,9 @@ object MusicBrowse {
 
     private fun decade(y: Int?): String? = y?.let { (it / 10 * 10).toString() }
 
-    class Result(val rowsTotal: Int, val facets: List<MusicFacet>, val albums: List<MusicAlbumRow>, val artists: List<MusicArtistRow>, val songs: List<MusicSongRow>, val sentence: String? = null)
+    class Result(val rowsTotal: Int, val facets: List<MusicFacet>, val albums: List<MusicAlbumRow>, val artists: List<MusicArtistRow>, val songs: List<MusicSongRow>, val sentence: String? = null,
+                 /** Phase 305 — Songs: copies folded behind the rows shown, and whether every copy is listed. */
+                 val folded: Int = 0, val everyCopy: Boolean = false)
 
     /**
      * One view. [selected] maps a facet key to the values ticked (OR within a facet, AND across facets); [query]
@@ -101,6 +103,8 @@ object MusicBrowse {
         excluded: Map<String, Set<String>> = emptyMap(),
         /** Phase 292 — Songs by this artist: credited on the song, or the album's artist. */
         artist: String? = null,
+        /** Phase 305 (FR-305-13) — *Show every copy*. A Dashboard key always lists every file (293's promise). */
+        everyCopy: Boolean = false,
     ): Result {
         val ctx = Ctx(snap, roots)
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
@@ -117,12 +121,26 @@ object MusicBrowse {
                     shown.sortedBy { (it.sortName ?: it.name).lowercase() }.map { ctx.artistRow(it) }, emptyList())
             }
             SONGS -> {
-                val all = ctx.tracks.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) && (tp == null || tp.song(tk!!, t)) &&
+                // Phase 305 (FR-305-13, dev review 9) — one row per song (its shown copy), unless every copy is asked
+                // for; a Dashboard key counts files, so it always opens every copy. Facets test the rows listed.
+                val every = everyCopy || tk != null
+                val songs = snap.songs
+                val pool = if (every) ctx.tracks else ctx.tracks.filter { songs.isShown(it) }
+                val all = pool.filter { t -> hit(t.title, t.artists.joinToString(" ") { it.name }, t.albumId?.let { snap.albums[it]?.title }) && (tp == null || tp.song(tk!!, t)) &&
                     (artist == null || t.artists.any { it.artistId == artist } || t.albumId?.let { snap.albums[it] }?.albumArtists?.any { it.artistId == artist } == true) }
                 val (shown, counts, universe) = apply(all, ctx::songValues, selected, excluded)
-                val sorted = shown.sortedWith(compareBy({ it.albumId?.let { a -> snap.albums[a]?.title?.lowercase() } ?: "" }, { it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() }))
-                Result(shown.size, facets(counts, universe, selected, libraryNames, excluded, songs = true), emptyList(), emptyList(), sorted.map { ctx.songRow(it) },
-                    songsSentence(snap, artist, selected[VERSION].orEmpty(), excluded[VERSION].orEmpty()))
+                val order = compareBy<MusicTrack>({ it.albumId?.let { a -> snap.albums[a]?.title?.lowercase() } ?: "" }, { it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() })
+                val sorted = if (!every) shown.sortedWith(order) else {
+                    // The other copies sit under their song's shown copy, in rank order.
+                    val rank = shown.associateWith { t -> songs.copies(t).indexOfFirst { it.id == t.id } }
+                    shown.sortedWith { x, y ->
+                        val sx = songs.shown(x); val sy = songs.shown(y)
+                        if (sx.id != sy.id) order.compare(sx, sy) else (rank[x] ?: 0) - (rank[y] ?: 0)
+                    }
+                }
+                val folded = if (every) 0 else shown.sumOf { songs.copies(it).size - 1 }
+                Result(shown.size, facets(counts, universe, selected, libraryNames, excluded, songs = true), emptyList(), emptyList(), sorted.map { ctx.songRow(it, every) },
+                    songsSentence(snap, artist, selected[VERSION].orEmpty(), excluded[VERSION].orEmpty()), folded = folded, everyCopy = every)
             }
             else -> {
                 val all = ctx.albums.filter { a -> hit(a.title, a.albumArtists.joinToString(" ") { it.name }) && (tp == null || tp.album(tk!!, a)) }
@@ -224,13 +242,19 @@ object MusicBrowse {
             return out
         }
 
-        fun albumRow(a: MusicAlbum) = MusicAlbumRow(
+        fun albumRow(a: MusicAlbum): MusicAlbumRow {
+            // Phase 305 (dev review 9) — an album row keeps its own tracks: *11 songs + 1 extra*.
+            val live = liveTracks(a)
+            val official = MusicOfficial.effective(a)
+            val extras = if (official == null) 0 else live.count { MusicOfficial.isExtra(official, it) }
+            return MusicAlbumRow(
             id = a.id, title = a.title, artist = a.albumArtists.joinToString(" & ") { it.name }, artistId = a.albumArtists.firstOrNull()?.artistId,
-            year = a.originalYear(), songs = liveTracks(a).size, match = albumMatch(a), cover = a.coverState != MusicArt.NONE,
+            year = a.originalYear(), songs = live.size - extras, extras = extras, match = albumMatch(a), cover = a.coverState != MusicArt.NONE,
             v = a.updatedAt, type = albumType(a),
             folder = MusicFlags.folders(a.path, roots)?.album, flags = flags[a.id].orEmpty().map { it.kind },
             note = a.matchNote.takeIf { a.matchState != MusicMatch.MATCHED },
         )
+        }
 
         fun artistRow(r: MusicArtist): MusicArtistRow {
             val own = albums.count { a -> a.albumArtists.any { it.artistId == r.id } }
@@ -240,13 +264,15 @@ object MusicBrowse {
             )
         }
 
-        /** Songs an artist is credited on, or that sit on an album they are the album artist of. */
-        fun songsBy(artistId: String): Int = tracks.count { t ->
+        /** Songs an artist is credited on, or that sit on an album they are the album artist of — folded (305 dev
+         *  review 9): a song on the album, a single and a best-of counts once. */
+        fun songsBy(artistId: String): Int = tracks.filter { t ->
             t.artists.any { it.artistId == artistId } || (t.albumId?.let { snap.albums[it] }?.albumArtists?.any { it.artistId == artistId } == true)
-        }
+        }.mapTo(HashSet()) { snap.songs.songOf(it) }.size
 
-        fun songRow(t: MusicTrack): MusicSongRow {
+        fun songRow(t: MusicTrack, every: Boolean = false): MusicSongRow {
             val album = t.albumId?.let { snap.albums[it] }
+            val songs = snap.songs
             return MusicSongRow(
                 id = t.id, albumId = t.albumId, album = album?.title, disc = t.disc, position = t.position, title = t.title,
                 artists = t.artists, lengthMs = t.durationMs, format = MusicFormats.label(t.container, t.codec, t.bitrate),
@@ -255,6 +281,12 @@ object MusicBrowse {
                     ?: if (t.hasLyrics) "jellyfin" else null,
                 recording = t.recordingState, albumMatched = album?.matchState == MusicMatch.MATCHED,
                 versions = snap.versions.of(t).shown, noWords = snap.versions.of(t).noWords,
+                // Phase 305 (FR-305-13, owner decision 1) — folded: the song's other copies and *Bonus* when it is official
+                // nowhere; every copy: this copy's own *Bonus*, and which song it sits under, and why.
+                alsoOn = if (every) 0 else songs.copies(t).size - 1,
+                bonus = if (every) snap.editions.isExtra(t) else songs.bonus(t),
+                copyOf = if (every) songs.shown(t).id.takeIf { it != t.id } else null,
+                reason = if (every) MusicSongIndex.reasonText(songs.reason(t)) else null,
             )
         }
     }

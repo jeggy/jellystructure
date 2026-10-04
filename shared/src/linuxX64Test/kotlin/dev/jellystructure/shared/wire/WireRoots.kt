@@ -51,6 +51,7 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("MusicPlaylist", WireDir.RESPONSE, MusicPlaylist.serializer()),
     WireRoot("MusicSearch", WireDir.RESPONSE, MusicSearch.serializer()),
     WireRoot("TrackLyrics", WireDir.RESPONSE, TrackLyrics.serializer()),
+    WireRoot("MusicTrackCopies", WireDir.RESPONSE, MusicTrackCopies.serializer()),
     WireRoot("AudiobookShelf", WireDir.RESPONSE, AudiobookShelf.serializer()),
     WireRoot("AudiobookDetail", WireDir.RESPONSE, AudiobookDetail.serializer()),
     WireRoot("AudiobookAuthorDetail", WireDir.RESPONSE, AudiobookAuthorDetail.serializer()),

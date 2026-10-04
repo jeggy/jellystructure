@@ -201,10 +201,67 @@ data class MusicAlbum(
     /** Phase 292 (dev review 5) — when the album's recordings' version facts were last read from MusicBrainz. A matched
      *  album without it is caught up by the next `match_musicbrainz` run. */
     val versionFactsAt: Long? = null,
+    // ── Phase 305: the official album, its extras, a single's album (dev review 3: on the JSON, no migration) ──
+    /** FR-305-2 — the tracklist most of the release group's official releases share; null = not read yet, or not an
+     *  album (a single, an EP, a compilation). */
+    val official: MusicOfficialList? = null,
+    /** FR-305-4 — the owner's pick (*Use as the official album*): the picked pressing's tracklist. Kept while the
+     *  `music_official_pick` row exists; the row is the decision, this is what it read. */
+    val userOfficial: MusicOfficialList? = null,
+    /** FR-305-3 — recording mbid → the earliest official release that carries it (*the Japanese CD, 2006*). */
+    val extraOrigins: Map<String, MusicExtraOrigin> = emptyMap(),
+    /** FR-305-6 rule 1 — MusicBrainz's *single from*: the release group this single or EP is from. */
+    val singleFrom: String? = null,
+    /** When the release group's relationships (*single from*) were last read; null = never. */
+    val relsReadAt: Long? = null,
     val addedAt: Long? = null,
     val missingSince: Long? = null,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+)
+
+/** Phase 305 (FR-305-2, dev review 3) — one song of an official tracklist: enough for a gap row. */
+@Serializable
+data class MusicOfficialSong(
+    val recordingMbid: String,
+    val title: String = "",
+    val lengthMs: Long? = null,
+    /** The medium on the release it was read from (1-based) and the position on it. */
+    val disc: Int = 1,
+    val position: Int = 0,
+)
+
+/** Phase 305 (FR-305-2) — an album's official tracklist, and where it was read. */
+@Serializable
+data class MusicOfficialList(
+    val songs: List<MusicOfficialSong> = emptyList(),
+    /** The (earliest) release with the winning set: its mbid and title. */
+    val releaseMbid: String? = null,
+    val releaseTitle: String? = null,
+    /** How many official releases share the set ([k]) of how many official releases ([m]). */
+    val k: Int = 0,
+    val m: Int = 0,
+    /** The release group it was voted in; a re-match to another group reads it again. */
+    val groupMbid: String? = null,
+    /** The group's own title, so the edition name can say when a pressing's title differs from it. */
+    val groupTitle: String? = null,
+    /** More than one medium: numbers read *disc · track*. */
+    val media: Int = 1,
+    val readAt: Long = 0,
+) {
+    val recordings: Set<String> get() = songs.mapTo(LinkedHashSet()) { it.recordingMbid }
+}
+
+/** Phase 305 (FR-305-3) — the earliest official release carrying an extra's recording. */
+@Serializable
+data class MusicExtraOrigin(
+    val releaseMbid: String? = null,
+    val title: String = "",
+    val date: String? = null,
+    val country: String? = null,
+    val disambiguation: String? = null,
+    /** The release's own format (*CD*), for *the Japanese CD, 2006*. */
+    val format: String? = null,
 )
 
 /** Where a track stands against its album's chosen release (FR-276-5). */
@@ -265,6 +322,8 @@ data class MusicTrack(
     val bitrate: Int? = null,
     val sampleRate: Int? = null,
     val channels: Int? = null,
+    /** Phase 305 (dev review 2b) — Jellyfin's `BitDepth` (16, 24); null for a lossy file or before the next scan. */
+    val bitDepth: Int? = null,
     val artists: List<MusicCredit> = emptyList(),
     val genres: List<String> = emptyList(),
     /** Jellyfin's `NormalizationGain` / `AlbumNormalizationGain` (dB). The phone evens out volume with them. */

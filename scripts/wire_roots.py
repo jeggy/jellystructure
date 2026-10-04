@@ -13,6 +13,8 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     # Phase 279 — the phone's music
     'MusicAlbumDetail', 'MusicArtistDetail', 'MusicGenreCount', 'MusicHome', 'MusicLastPlayed', 'MusicList',
     'MusicPlaylist', 'MusicSearch', 'TrackLyrics',
+    # R373 — the other copies of a song (Also on)
+    'MusicTrackCopies',
     # Phase 281 — the phone's audiobooks
     'AudiobookShelf', 'AudiobookDetail', 'AudiobookAuthorDetail', 'AudiobookPosition', 'AudiobookBookmarkItem']
 REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',

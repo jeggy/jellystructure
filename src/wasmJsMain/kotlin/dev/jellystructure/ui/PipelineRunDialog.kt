@@ -62,6 +62,8 @@ internal val PIPE_BLOCKS = mapOf(
     "scan_audiobooks" to PipeBlockDef("Scan audiobooks",         "Jellyfin's audiobook files grouped into books, one folder each. Flags a missing part or two books in one folder.", "#9b7bf5", PIPE_SCAN_IC),
     // Phase 276 — one request a second; unmatched albums are retried once a day.
     "match_musicbrainz" to PipeBlockDef("♪ Match on MusicBrainz", "Albums and artists against MusicBrainz — one request a second.", "#ba478f", PIPE_TMDB_IC),
+    // Phase 305 — fpcalc over same-titled songs; the heavy half, so it can be unticked for one run.
+    "compare_songs" to PipeBlockDef("♪ Find songs held twice", "Listens to same-titled songs and folds the copies that sound the same. No network.", "#ba478f", PIPE_SCAN_IC),
     // Phase 277 — the music library's files.
     "fetch_music_artwork" to PipeBlockDef("♪ Covers & artist pictures", "Cover Art Archive covers · fanart.tv or Commons pictures · Wikipedia biographies.", "#b15cd0", PIPE_ART_IC),
     "fetch_lyrics"  to PipeBlockDef("♪ Lyrics",                 "Synced lyrics from LRCLIB as a .lrc beside each song.", "#6fd0c8", PIPE_SUB_IC),
@@ -70,7 +72,7 @@ internal val PIPE_BLOCKS = mapOf(
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
 internal val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
-internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","build_suggestions" to "Suggestions","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
+internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","build_recommendations" to "For you","build_suggestions" to "Suggestions","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","compare_songs" to "♪ Same songs","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
 
 /**
  * Phase 154 (FR-PIPE1-1..5) — pre-run dialog. Lists the steps that will actually run and lets the operator

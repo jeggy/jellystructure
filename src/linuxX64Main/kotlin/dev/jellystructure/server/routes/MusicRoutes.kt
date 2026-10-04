@@ -121,6 +121,10 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             }
             get("/releases") {
                 val id = call.parameters["id"]!!
+                // Phase 305 (FR-305-4) — *Change…*: every pressing with *against the official*, `pickable`, *+ N not in
+                // the library*.
+                if (call.request.queryParameters["official"] == "1")
+                    return@get call.respond(matcher.pressings(id) ?: return@get call.respond(HttpStatusCode.BadGateway, noAnswer))
                 val rg = call.request.queryParameters["rg"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 call.respond(matcher.releases(id, rg) ?: return@get call.respond(HttpStatusCode.BadGateway, noAnswer))
             }
@@ -334,7 +338,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val libs = MusicScanner.musicLibraries(cfg)
             val snap = music.store.snapshot()
             val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage,
-                excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS })
+                excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS }, everyCopy = qp["copies"] == "all")
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
@@ -343,6 +347,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 musicbrainzEnabled = cfg.musicbrainz.enabled,
                 filter = triage, filterLabel = triage?.let { dev.jellystructure.music.MusicTriage.MUSIC[it]?.label }, writeTags = cfg.music.writeTags,
                 sentence = r.sentence, artist = artist.takeIf { view == MusicBrowse.SONGS }, versionTypes = music.versions.chipTypes(snap),
+                folded = r.folded, everyCopy = r.everyCopy,
             ))
         }
 
@@ -352,24 +357,18 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val cfg = configStore.current
             val snap = music.store.snapshot()
             val a = snap.albums[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
-            val tracks = snap.tracksByAlbum[a.id].orEmpty().filter { it.missingSince == null }
             val lib = cfg.libraries.firstOrNull { it.jellyfinId == a.libraryId }
             // Phase 283 (FR-283-3) — the album's flags, and the kinds the admin said *This is right* to.
             val roots = dev.jellystructure.music.MusicFlags.roots(cfg)
             val all = dev.jellystructure.music.MusicFlags.raw(snap.albums.values, roots, withDismissed = true)[a.id].orEmpty()
             val shown = dev.jellystructure.music.MusicFlags.of(snap.albums.values, roots)[a.id].orEmpty()
-            call.respond(MusicAlbumPageDto(
-                album = a, tracks = MusicBrowse.trackRows(tracks, snap.versions) { media.lyricsStateOf(it) },
-                genres = a.effectiveGenres(),
-                coverUrl = if (a.coverState != dev.jellystructure.model.MusicArt.NONE) "/api/music/image/album/${a.id}?v=${a.updatedAt}" else null,
+            // Phase 305 (FR-305-12) — the official rows, gaps, extras, singles and B-sides come from one pure builder.
+            val page = dev.jellystructure.music.MusicAlbumPage.build(snap, a.id) { media.lyricsStateOf(it) } ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respond(page.copy(
                 drift = media.albumDrift(a), lyricsEnabled = cfg.music.fetchLyrics, acoustId = matcher.acoustId.available,
                 jellyfinUrl = jellyfinWebUrl(cfg, a.id), library = lib?.name, jellyfinLocked = a.jellyfinLocked,
-                type = MusicBrowse.albumType(a),
                 flags = shown, dismissedFlags = all.map { it.kind }.filter { k -> shown.none { it.kind == k } },
                 writeTags = cfg.music.writeTags && music.tags?.available() == true,   // Phase 284 (FR-284-7)
-                year = a.originalYear(),   // Phase 290 (FR-290-1)
-                // Phase 292 (FR-292-9) — the header's phrase from the shown sets.
-                versionSummary = dev.jellystructure.model.MusicVersions.albumSummary(tracks.map { snap.versions.of(it) }),
                 versionTypes = music.versions.chipTypes(snap),
             ))
         }
@@ -401,7 +400,9 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val mine = snap.albumsByArtist[r.id].orEmpty().filter { it.missingSince == null }
             val own = mine.filter { a -> a.albumArtists.any { it.artistId == r.id } }.map { it.id }.toSet()
             val credited = mine.map { it.id }.toSet() - own
-            val rows = browse.albums
+            // Phase 305 (FR-305-15, dev review 2e) — a single or EP living under an album leaves whichever group held it.
+            val homed = snap.editions.homes.filterValues { it.albumId != null }.keys
+            val rows = browse.albums.filter { it.id !in homed }
             val genres = r.mbGenres.ifEmpty {
                 mine.filter { it.id in own }.flatMap { it.mbGenres }.groupBy { it.name }
                     .map { (n, v) -> dev.jellystructure.model.MusicGenreVote(n, v.sumOf { it.count }) }.sortedByDescending { it.count }
@@ -416,7 +417,64 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 genres = genres, jellyfinUrl = jellyfinWebUrl(cfg, r.id),
                 biography = r.biographyEdited ?: r.biographies["en"] ?: r.biographies.values.firstOrNull(),
                 versionCounts = music.versions.artistCounts(r.id),   // Phase 292 (FR-292-14)
+                singlesUnder = dev.jellystructure.music.MusicAlbumPage.singlesUnder(snap, own.sortedBy { snap.albums[it]?.originalYear() ?: 0 }),
             ))
+        }
+
+        // ── Phase 305: the official album, singles' homes, one copy of every song ──
+
+        /** *Use as the official album*. */
+        put("/album/{id}/official") {
+            val req = call.receive<dev.jellystructure.model.MusicOfficialRequest>()
+            when (val o = matcher.pickOfficial(call.parameters["id"]!!, req.release)) {
+                is dev.jellystructure.music.MusicPickOutcome.Picked -> call.respond(o.album)
+                dev.jellystructure.music.MusicPickOutcome.NotFound -> call.respond(HttpStatusCode.NotFound)
+                dev.jellystructure.music.MusicPickOutcome.NotAnAlbum -> call.respond(HttpStatusCode.Conflict, mapOf("error" to "Only a matched album has an official tracklist"))
+                dev.jellystructure.music.MusicPickOutcome.NotOfThisAlbum -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "That pressing is not one of this album's"))
+                dev.jellystructure.music.MusicPickOutcome.NoAnswer -> call.respond(HttpStatusCode.BadGateway, noAnswer)
+            }
+        }
+        /** *Back to automatic*. */
+        delete("/album/{id}/official") {
+            call.respond(matcher.unpickOfficial(call.parameters["id"]!!) ?: return@delete call.respond(HttpStatusCode.NotFound))
+        }
+        /** *Move to…* — an album of the same artist, or `album_id: null` for *No album* (FR-305-6 rule 4). */
+        put("/album/{id}/home") {
+            val id = call.parameters["id"]!!
+            val req = call.receive<dev.jellystructure.model.MusicHomeRequest>()
+            val snap = music.store.snapshot()
+            val single = snap.albums[id] ?: return@put call.respond(HttpStatusCode.NotFound)
+            val target = req.albumId?.let { snap.albums[it] ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "No such album")) }
+            if (target != null && (target.id == id || target.albumArtists.none { c -> single.albumArtists.any { it.artistId == c.artistId } }))
+                return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Only an album of the same artist"))
+            music.store.putHome(id, target?.id, dev.jellystructure.nowEpochSec())
+            runCatching { music.matcher.recordHistory(id, "music_home", "Moved by hand to " + (target?.let { "“${it.title}”" } ?: "no album")) }
+            call.respond(mapOf("status" to "ok"))
+        }
+        delete("/album/{id}/home") {
+            val id = call.parameters["id"]!!
+            music.store.album(id) ?: return@delete call.respond(HttpStatusCode.NotFound)
+            music.store.putHome(id, null, dev.jellystructure.nowEpochSec(), clear = true)
+            runCatching { music.matcher.recordHistory(id, "music_home", "Album back to automatic") }
+            call.respond(mapOf("status" to "ok"))
+        }
+        /** The copies panel (FR-305-13). */
+        get("/track/{id}/copies") {
+            call.respond(dev.jellystructure.music.MusicAlbumPage.copies(music.store.snapshot(), call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+        }
+        /** *Same song as…* · *Not the same song* · the Dashboard's *Yes, one song* / *No, two songs* (FR-305-13/14). */
+        put("/same-song") {
+            val req = call.receive<dev.jellystructure.model.MusicSameSongRequest>()
+            if (req.a == req.b) return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "A song is always the same as itself"))
+            if (req.state !in setOf(dev.jellystructure.music.MusicSameSong.SAME, dev.jellystructure.music.MusicSameSong.NOT_SAME)) return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "state is same or not_same"))
+            val snap = music.store.snapshot()
+            if (snap.tracks[req.a] == null || snap.tracks[req.b] == null) return@put call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown song"))
+            music.store.putSameSong(req.a, req.b, req.state, dev.jellystructure.nowEpochSec())
+            call.respond(mapOf("status" to "ok"))
+        }
+        /** *Listen and decide*: the open pairs (FR-305-14). */
+        get("/same-song/suggestions") {
+            call.respond(dev.jellystructure.music.MusicAlbumPage.suggestions(music.store.snapshot()))
         }
 
         // ── Phase 292: a song's version ──

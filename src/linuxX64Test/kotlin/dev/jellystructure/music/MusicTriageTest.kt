@@ -78,6 +78,20 @@ class MusicTriageTest {
         assertEquals(0, format["MP3"] ?: 0)
     }
 
+    /** Phase 305 (test 19) — a WMA copy folded behind a FLAC song still counts: `filter=` lists every copy (293). */
+    @Test
+    fun a_folded_wma_copy_still_counts_for_reencodes() {
+        val rec = dev.jellystructure.model.MusicRecording.AGREES
+        val folded = snap.copy(tracks = snap.tracks +
+            ("t2" to snap.tracks["t2"]!!.copy(bitrate = 900_000, recordingMbid = "r-two", recordingState = rec)) +
+            ("t6" to MusicTrack(id = "t6", albumId = "a5", title = "Two", container = "asf", codec = "wmav2", bitrate = 128_000, artists = listOf(x), recordingMbid = "r-two", recordingState = rec)))
+        assertEquals(listOf("t2"), MusicBrowse.browse(folded, MusicBrowse.SONGS, emptyMap(), "Two", emptyMap()).songs.map { it.id }, "folded behind the FLAC")
+        val p = MusicTriage.Music(folded, emptySet())
+        val r = MusicBrowse.browse(folded, MusicBrowse.SONGS, emptyMap(), null, emptyMap(), triage = "music_reencodes")
+        assertEquals(p.count("music_reencodes"), r.rowsTotal)
+        assertTrue(r.songs.any { it.id == "t6" })
+    }
+
     @Test
     fun an_unknown_key_or_a_key_for_another_view_narrows_nothing() {
         val all = MusicBrowse.browse(snap, MusicBrowse.ALBUMS, emptyMap(), null, emptyMap()).rowsTotal

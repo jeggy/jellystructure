@@ -1473,6 +1473,7 @@ private fun stepLabel(step: String): String = when (step) {
     "scan_music" -> "♪ Music"                      // Phase 275
     "scan_audiobooks" -> "Audiobooks"             // Phase 280
     "match_musicbrainz" -> "♪ MusicBrainz"         // Phase 276
+    "compare_songs" -> "♪ Same songs"              // Phase 305
     "fetch_music_artwork" -> "♪ Art"               // Phase 277
     "fetch_lyrics" -> "♪ Lyrics"
     "write_music_nfo" -> "♪ NFO"

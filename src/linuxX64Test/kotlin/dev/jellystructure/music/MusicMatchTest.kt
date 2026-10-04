@@ -105,12 +105,19 @@ class MusicMatchTest {
     @Test
     fun the_match_step_joins_before_the_trailing_notify() {
         val p = listOf(PipelineStep("scan_files"), PipelineStep("pull_tmdb"), PipelineStep("notify"))
-        assertEquals(listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
+        assertEquals(listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "compare_songs", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
             MusicSteps.seed(p, emptyList()).map { it.step })
         // 275 already seeded scan_music (and the operator later removed it): only the new steps join, in order —
         // 280's scan_audiobooks after scan_files, since there is no music scan left to follow.
-        assertEquals(listOf("scan_files", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
+        assertEquals(listOf("scan_files", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "compare_songs", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
             MusicSteps.seed(p, listOf(MusicSteps.SCAN)).map { it.step })
+        // Phase 305 (dev review 7) — a pipeline that already has every earlier music step gains only compare_songs,
+        // straight after the match.
+        val seeded = listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify").map { PipelineStep(it) }
+        val before = MusicSteps.ALL - MusicSteps.COMPARE
+        assertEquals(listOf("scan_files", "scan_music", "scan_audiobooks", "pull_tmdb", "match_musicbrainz", "compare_songs", "fetch_music_artwork", "fetch_lyrics", "write_music_nfo", "write_tags", "notify"),
+            MusicSteps.seed(seeded, before).map { it.step })
+        assertTrue(MusicSteps.isMusic("compare_songs"))
     }
 
     // ── the ladder against a fake MusicBrainz ──
@@ -144,6 +151,8 @@ class MusicMatchTest {
         override suspend fun releaseWithRels(mbid: String) = release(mbid)
         override suspend fun recordingRels(mbid: String): MbRecording? = null
         override suspend fun recordingCredit(mbid: String): MbRecording? = null
+        // Phase 305 — an extra's first pressing, never asked of MusicBrainz in a test.
+        override suspend fun recording(mbid: String): MbRecording? = null
         override suspend fun artist(mbid: String) = if (down) null else MbArtist(id = mbid, name = "Harbour Lights", type = "Group", country = "NO", lifeSpan = MbLifeSpan("1999"))
     }
 

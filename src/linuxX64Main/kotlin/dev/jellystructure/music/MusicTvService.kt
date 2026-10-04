@@ -25,6 +25,9 @@ import dev.jellystructure.shared.tv.MusicList
 import dev.jellystructure.shared.tv.MusicPlaylist
 import dev.jellystructure.shared.tv.MusicRow
 import dev.jellystructure.shared.tv.MusicSearch
+import dev.jellystructure.shared.tv.MusicSinglesUnder
+import dev.jellystructure.shared.tv.MusicTrackCopies
+import dev.jellystructure.shared.tv.MusicTrackCopy
 import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.MusicVersionType
 import dev.jellystructure.shared.tv.MusicVideoCard
@@ -90,12 +93,27 @@ class MusicTvService(
             .mapValues { (_, l) -> l.sortedWith(compareBy({ it.disc ?: 1 }, { it.position ?: Int.MAX_VALUE }, { it.title.lowercase() })) }
         fun ownAlbums(artistId: String) = albums.values.filter { a -> a.albumArtists.any { it.artistId == artistId } }
         fun songsBy(artistId: String) = tracks.values.filter { t -> t.artists.any { it.artistId == artistId } || t.albumId?.let { albums[it] }?.albumArtists?.any { it.artistId == artistId } == true }
+
+        // ── Phase 305 / R373: one copy of every song, chosen among the copies this viewer may see (dev review 8) ──
+        val songs: MusicSongIndex get() = snap.songs
+        val editions: MusicEditionsIndex get() = snap.editions
+        /** The copies of [t]'s song this viewer may open, the better file first. */
+        fun copies(t: MusicTrack): List<MusicTrack> = snap.songs.copies(t).filter { it.id in tracks }.ifEmpty { listOf(t) }
+        /** FR-305-10 — the copy this viewer is shown and plays. */
+        fun shown(t: MusicTrack): MusicTrack = copies(t).first()
+        fun isShown(t: MusicTrack): Boolean = shown(t).id == t.id
+        /** One copy of every song, the order of each song's first appearance kept. */
+        fun fold(list: List<MusicTrack>): List<MusicTrack> = list.map { shown(it) }.distinctBy { it.id }
+        /** A single or EP living under an album this viewer may open. */
+        fun homedUnder(singleId: String): String? = snap.editions.homes[singleId]?.albumId?.takeIf { it in albums }
     }
 
     // ── the viewer's own numbers (Jellyfin) ──
 
     class UserMusic(val played: List<JellyfinAudioUserItem>, val favorites: Set<String>) {
         val playCount: Map<String, Int> = played.associate { it.id to (it.userData?.playCount ?: 0) }
+        /** 305 dev review 8 — a song's numbers over its copies: the plays summed. */
+        fun songPlays(v: View, t: MusicTrack): Int = v.copies(t).sumOf { playCount[it.id] ?: 0 }
     }
     private val userLock = Mutex()
     private val userCache = HashMap<String, Pair<Long, UserMusic>>()
@@ -125,20 +143,30 @@ class MusicTvService(
     )
 
     fun artistCard(v: View, r: MusicArtist) = MusicArtistCard(
-        id = r.id, name = r.name, imageUrl = artistImage(r), albumCount = v.ownAlbums(r.id).size, trackCount = v.songsBy(r.id).size,
+        id = r.id, name = r.name, imageUrl = artistImage(r), albumCount = v.ownAlbums(r.id).size,
+        // R373 dev review 2 — songs, folded.
+        trackCount = v.songsBy(r.id).mapTo(HashSet()) { v.songs.songOf(it) }.size,
     )
 
-    fun trackItem(v: View, t: MusicTrack, u: UserMusic?): MusicTrackItem {
+    /**
+     * [folded] — a row of a list that spans albums (one copy of every song): *Bonus* only when the song is official
+     * nowhere (305 owner decision 1), and a favourite when any copy is. Otherwise the row is this copy's own.
+     */
+    fun trackItem(v: View, t: MusicTrack, u: UserMusic?, folded: Boolean = false): MusicTrackItem {
         val album = t.albumId?.let { v.albums[it] }
+        val copies = v.copies(t)
         return MusicTrackItem(
             id = t.id, title = t.title, albumId = t.albumId, album = album?.title,
             artists = t.artists.map { MusicArtistRef(it.artistId, it.name) }, disc = t.disc, position = t.position,
             // 292 (dev review 8d) — no lyrics button for a song with no singing, or whose lyrics the admin removed.
             durationMs = t.durationMs, hasLyrics = !v.versions.lyricsHidden(t) && (t.hasLyrics || t.lyricsState == MusicLyrics.SYNCED || t.lyricsState == MusicLyrics.PLAIN),
             imageUrl = album?.let { albumImage(it) }, trackGainDb = t.trackGainDb, albumGainDb = t.albumGainDb ?: album?.albumGainDb,
-            favorite = u?.favorites?.contains(t.id) == true,
+            favorite = if (folded) copies.any { u?.favorites?.contains(it.id) == true } else u?.favorites?.contains(t.id) == true,
             // R344 (FR-R344-1) — 292's shown set: a Session whose Live the owner removed goes as `session` alone.
             versions = v.versions.of(t).shown,
+            // R373 (FR-R373-1/4/5).
+            extra = if (folded) v.songs.bonus(t, copies) else v.editions.isExtra(t),
+            alsoOn = copies.count { it.id != t.id },
         )
     }
 
@@ -152,7 +180,8 @@ class MusicTvService(
         val u = userMusic(device)
         val rows = mutableListOf<MusicRow>()
         recentAlbums(v).take(12).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("recent", "Recently added", albums = it.map { a -> albumCard(v, a) }) }
-        u.played.mapNotNull { v.tracks[it.id] }.take(5).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("played", "Recently played", tracks = it.map { t -> trackItem(v, t, u) }) }
+        // R373 dev review 2 — deduplicated by song, order kept.
+        v.fold(u.played.mapNotNull { v.tracks[it.id] }).take(5).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("played", "Recently played", tracks = it.map { t -> trackItem(v, t, u, folded = true) }) }
         v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() }
             .sortedWith(compareBy<MusicArtist> { if (it.imageState != MusicArt.NONE) 0 else 1 }.thenBy { (it.sortName ?: it.name).lowercase() })
             .take(12).takeIf { it.isNotEmpty() }?.let { rows += MusicRow("artists", "Artists", artists = it.map { r -> artistCard(v, r) }) }
@@ -182,14 +211,15 @@ class MusicTvService(
                 MusicList(artists = slice(sorted).map { artistCard(v, it) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
             }
             "tracks" -> {
-                val all = v.tracks.values.toList()
+                // R373 (FR-R373-3) — one copy of every song: the better file this viewer may open.
+                val all = v.tracks.values.filter { v.isShown(it) }
                 val sorted = when (sort) {
                     "title" -> all.sortedBy { it.title.lowercase() }
                     "year" -> all.sortedWith(compareByDescending<MusicTrack> { it.albumId?.let { a -> v.albums[a]?.originalYear() } ?: it.year ?: 0 }.thenBy { it.title.lowercase() })
-                    "played" -> all.sortedWith(compareByDescending<MusicTrack> { u?.playCount?.get(it.id) ?: 0 }.thenBy { it.title.lowercase() })
+                    "played" -> all.sortedWith(compareByDescending<MusicTrack> { u?.songPlays(v, it) ?: 0 }.thenBy { it.title.lowercase() })
                     else -> all.sortedWith(compareByDescending<MusicTrack> { it.addedAt ?: it.createdAt }.thenBy { it.albumId }.thenBy { it.position ?: 0 })
                 }
-                MusicList(tracks = slice(sorted).map { trackItem(v, it, u) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
+                MusicList(tracks = slice(sorted).map { trackItem(v, it, u, folded = true) }, total = sorted.size, page = page, pageSize = PAGE_SIZE)
             }
             else -> {
                 val all = v.albums.values.filter { genre == null || genre in it.effectiveGenres() }
@@ -243,11 +273,55 @@ class MusicTvService(
         val a = v.albums[id] ?: return null
         val u = userMusic(device)
         val first = a.albumArtists.firstOrNull()?.artistId
-        val more = if (first == null) emptyList() else v.ownAlbums(first).filter { it.id != a.id }.sortedByDescending { it.originalYear() ?: 0 }.take(10)
+        // R373 dev review 7 — *More from* leaves out the singles that live on this album.
+        val more = if (first == null) emptyList() else v.ownAlbums(first).filter { it.id != a.id && v.homedUnder(it.id) != a.id }.sortedByDescending { it.originalYear() ?: 0 }.take(10)
+        val held = v.tracksByAlbum[a.id].orEmpty()
+        // R373 (FR-R373-1) — the official album, its extras, its singles and their B-sides; `tracks` keeps the files'
+        // order so an installed app shows today's page.
+        val layout = MusicOfficial.layout(a, held)
+        val edition = if (layout.official != null) MusicOfficial.editionOf(a, layout.extras) else MusicOfficial.Edition()
+        val singles = v.editions.singlesUnder(a.id).filter { it.id in v.albums }
+        val bsides = v.editions.bsides(a.id).filter { (s, t) -> s.id in v.albums && t.id in v.tracks }
         return MusicAlbumDetail(
-            album = albumCard(v, a), tracks = v.tracksByAlbum[a.id].orEmpty().map { trackItem(v, it, u) },
+            album = albumCard(v, a), tracks = held.map { trackItem(v, it, u) },
             moreFromArtist = more.map { albumCard(v, it) }, favorite = a.id in u.favorites,
+            officialIds = layout.official?.let { layout.rows.map { it.second.id } },
+            extraIds = if (layout.official != null) layout.extras.map { it.id } else emptyList(),
+            editionTitle = edition.title, editionCountry = edition.country,
+            singles = singles.map { albumCard(v, it) },
+            bsideTracks = bsides.map { (_, t) -> trackItem(v, t, u) },
+            singleFrom = v.homedUnder(a.id)?.let { v.albums[it] }?.let { albumCard(v, it) },
         )
+    }
+
+    /** R373 (FR-R373-4) — the other copies of a song this viewer may open, each with its release. Null when the song
+     *  is not this viewer's to see. */
+    suspend fun copies(device: DeviceData, trackId: String): MusicTrackCopies? {
+        val v = View(device)
+        val t = v.tracks[trackId] ?: return null
+        val u = userMusic(device)
+        return MusicTrackCopies(v.copies(t).filter { it.id != t.id }.map { c ->
+            MusicTrackCopy(trackItem(v, c, u), c.albumId?.let { v.albums[it] }?.let { albumCard(v, it) })
+        })
+    }
+
+    /**
+     * 305 dev review 8 — favourite a song or an album. Un-favouriting a song clears **every** favourited copy of it this
+     * viewer may see (the folded row shows a favourite when any copy is one, so leaving one would put it straight back).
+     */
+    suspend fun setFavorite(device: DeviceData, itemId: String, favorite: Boolean) {
+        val cfg = configStore.current
+        val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken)
+        if (favorite) { jellyfin.markFavorite(base, token, device.jellyfinUserId, itemId); forget(device); return }
+        val v = View(device)
+        val t = v.tracks[itemId]
+        val ids = if (t == null) listOf(itemId) else {
+            val u = userMusic(device)
+            (listOf(itemId) + v.copies(t).map { it.id }.filter { it in u.favorites }).distinct()
+        }
+        for (id in ids) jellyfin.unmarkFavorite(base, token, device.jellyfinUserId, id)
+        forget(device)
     }
 
     /** [lang] — the viewer's language for the biography (`en` · `da` · `fo`), else English, else whatever there is. */
@@ -255,7 +329,9 @@ class MusicTvService(
         val v = View(device)
         val r = v.artists[id] ?: return null
         val u = userMusic(device)
-        val own = v.ownAlbums(r.id)
+        // R373 (FR-R373-7, 305 dev review 2e) — a single or EP living under an album leaves whichever group held it.
+        val own = v.ownAlbums(r.id).filter { v.homedUnder(it.id) == null }
+        val under = v.ownAlbums(r.id).mapNotNull { v.homedUnder(it.id) }.groupingBy { it }.eachCount()
         val groups = GROUP_ORDER.mapNotNull { type ->
             own.filter { MusicBrowse.albumType(it) == type }.sortedByDescending { it.originalYear() ?: 0 }.takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup(type, it.map { a -> albumCard(v, a) }) }
         } + listOfNotNull(
@@ -265,7 +341,7 @@ class MusicTvService(
                 .takeIf { it.isNotEmpty() }?.let { MusicAlbumGroup("appears_on", it.map { a -> albumCard(v, a) }) },
         )
         // Every song of theirs, most played first: the phone shows five and plays them all (R321 FR-R321-8).
-        val top = v.songsBy(r.id).sortedWith(compareByDescending<MusicTrack> { u.playCount[it.id] ?: 0 }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
+        val top = v.fold(v.songsBy(r.id)).sortedWith(compareByDescending<MusicTrack> { u.songPlays(v, it) }.thenBy { it.albumId }.thenBy { it.position ?: 0 }).take(200)
         val vids = MusicVideoLinks.forArtist(r, videos(device)).map { m ->
             val vid = m.jellyfinId ?: m.id
             MusicVideoCard(vid, m.title, m.year, m.runtime?.let { it * 60_000L }, dev.jellystructure.tv.RaviloImageUrl.poster(vid))
@@ -273,7 +349,9 @@ class MusicTvService(
         val bio = r.biographyEdited ?: lang?.let { r.biographies[it] } ?: r.biographies["en"] ?: r.biographies.values.firstOrNull()
         return MusicArtistDetail(
             artist = artistCard(v, r), backgroundUrl = backgroundImage(r), type = r.type, span = r.lifeSpan, biography = bio,
-            groups = groups, topTracks = top.map { trackItem(v, it, u) }, videos = vids,
+            groups = groups, topTracks = top.map { trackItem(v, it, u, folded = true) }, videos = vids,
+            singlesUnder = under.entries.mapNotNull { (albumId, n) -> v.albums[albumId]?.let { it to n } }
+                .sortedBy { it.first.originalYear() ?: 0 }.map { (a, n) -> MusicSinglesUnder(albumCard(v, a), n) },
         )
     }
 
@@ -284,16 +362,16 @@ class MusicTvService(
         val q = query?.trim()?.lowercase().orEmpty()
         val u = userMusic(device)
         if (q.isEmpty()) {
-            val recent = u.played.mapNotNull { v.tracks[it.id] }.take(10)
+            val recent = v.fold(u.played.mapNotNull { v.tracks[it.id] }).take(10)
             val artists = v.artists.values.filter { v.ownAlbums(it.id).isNotEmpty() }.sortedBy { (it.sortName ?: it.name).lowercase() }
-            return MusicSearch(songs = recent.map { trackItem(v, it, u) }, artists = artists.take(20).map { artistCard(v, it) }, songsTotal = recent.size, artistsTotal = artists.size)
+            return MusicSearch(songs = recent.map { trackItem(v, it, u, folded = true) }, artists = artists.take(20).map { artistCard(v, it) }, songsTotal = recent.size, artistsTotal = artists.size)
         }
         fun hit(vararg s: String?) = s.any { it != null && q in it.lowercase() }
-        val songs = v.tracks.values.filter { t -> hit(t.title, *t.artists.map { it.name }.toTypedArray()) }.sortedBy { it.title.lowercase() }
+        val songs = v.fold(v.tracks.values.filter { t -> hit(t.title, *t.artists.map { it.name }.toTypedArray()) }).sortedBy { it.title.lowercase() }
         val albums = v.albums.values.filter { a -> hit(a.title, *a.albumArtists.map { it.name }.toTypedArray()) }.sortedBy { it.title.lowercase() }
         val artists = v.artists.values.filter { r -> hit(r.name, r.sortName, *r.aliases.toTypedArray()) }.sortedBy { it.name.lowercase() }
         return MusicSearch(
-            songs = songs.take(50).map { trackItem(v, it, u) }, albums = albums.take(50).map { albumCard(v, it) }, artists = artists.take(50).map { artistCard(v, it) },
+            songs = songs.take(50).map { trackItem(v, it, u, folded = true) }, albums = albums.take(50).map { albumCard(v, it) }, artists = artists.take(50).map { artistCard(v, it) },
             songsTotal = songs.size, albumsTotal = albums.size, artistsTotal = artists.size,
         )
     }

@@ -88,6 +88,8 @@ class MusicPipeline(
     var audiobooksMedia: dev.jellystructure.audiobooks.AudiobooksMediaService? = null
     /** Phase 284 — the one tag writer (set in Main.kt once the seeding guard exists). */
     var tags: dev.jellystructure.music.MusicTagWriter? = null
+    /** Phase 305 — `compare_songs` (set in Main.kt: it needs the data directory and fpcalc). */
+    var compare: dev.jellystructure.music.MusicCompareSongsStep? = null
 }
 
 /**
@@ -170,6 +172,7 @@ private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
             add(PipelineStep(step = dev.jellystructure.config.SuggestionsStep.STEP))  // Phase 274
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
+            add(PipelineStep(step = dev.jellystructure.config.MusicSteps.COMPARE))  // Phase 305
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.ARTWORK))  // Phase 277
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.LYRICS))
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.NFO))
@@ -433,6 +436,21 @@ suspend fun runPipeline(
                             .getOrDefault("failed — see the log")
                     }
                 Logger.info("match_musicbrainz: $summary", "pipeline")
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
+            }
+            dev.jellystructure.config.MusicSteps.COMPARE -> {
+                // Phase 305 (dev review 5/6/7) — fingerprints of same-titled songs, compared; no network, background
+                // process class. A second run only touches new or changed files.
+                val music = deps.music ?: return@withContext
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
+                val cmp = music.compare
+                val summary = when {
+                    dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isEmpty() -> "no music library mapped"
+                    cmp == null -> "fpcalc is not available"
+                    else -> runCatching { cmp.run().sentence() }.onFailure { Logger.warn("compare_songs failed: ${it.message}", "music") }.getOrDefault("failed — see the log")
+                }
+                Logger.info("compare_songs: $summary", "pipeline")
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             dev.jellystructure.config.MusicSteps.TAGS -> {

@@ -521,6 +521,8 @@ data class JellyfinAudioStream(
     @SerialName("BitRate") val bitRate: Int? = null,
     @SerialName("SampleRate") val sampleRate: Int? = null,
     @SerialName("Channels") val channels: Int? = null,
+    /** Phase 305 (dev review 2b) — `BitDepth` (16, 24) on a lossless stream; the copy ranking's second key. */
+    @SerialName("BitDepth") val bitDepth: Int? = null,
 )
 
 @Serializable

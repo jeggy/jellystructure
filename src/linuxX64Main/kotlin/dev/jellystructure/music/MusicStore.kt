@@ -42,7 +42,21 @@ class MusicStore(private val db: JellystructureDb) {
         val choices: Map<String, Map<String, MusicVersionChoice>> = emptyMap(),
         /** Phase 292 — the owner's colour and meaning per type (absent = the default). */
         val typeOverrides: Map<String, MusicVersionTypeOverride> = emptyMap(),
+        /** Phase 305 (FR-305-4) — *Use as the official album*, per album id. */
+        val picks: Map<String, MusicOfficialPick> = emptyMap(),
+        /** Phase 305 (FR-305-6 rule 4) — *Move to…*, per single id (album id null = *No album*). */
+        val homeOverrides: Map<String, MusicSingleHome.Override> = emptyMap(),
+        /** Phase 305 (FR-305-8) — the owner's *same song* / *not the same song*, keyed (a, b) with a < b. */
+        val sameSong: Map<Pair<String, String>, String> = emptyMap(),
+        /** Phase 305 (FR-305-9) — what `compare_songs` measured. */
+        val soundPairs: List<MusicSoundPair> = emptyList(),
     ) {
+        /** Phase 305 — official lists, extras, single homes and B-sides, computed once per snapshot. */
+        val editions: MusicEditionsIndex by lazy { MusicEditionsIndex(this) }
+
+        /** Phase 305 — one copy of every song, computed once per snapshot (the groups are never stored). */
+        val songs: MusicSongIndex by lazy { MusicSongIndex(this) }
+
         /** Phase 292 — every song's version answer, computed once per snapshot. */
         val versions: MusicVersionIndex by lazy { MusicVersionIndex(this) }
 
@@ -78,7 +92,13 @@ class MusicStore(private val db: JellystructureDb) {
         val choices = v.allChoices().executeAsList().groupBy { it.recording_key }
             .mapValues { (_, rows) -> rows.associate { it.type to MusicVersionChoice(it.type, it.state == STATE_ON, it.set_at) } }
         val types = v.allTypes().executeAsList().associate { it.key to MusicVersionTypeOverride(it.color, it.meaning) }
-        return Snapshot(artists.associateBy { it.id }, albums.associateBy { it.id }, tracks.associateBy { it.id }, facts.associateBy { it.recordingMbid }, choices, types)
+        val e = db.musicEditionsQueries
+        val picks = e.allPicks().executeAsList().associate { it.album_id to MusicOfficialPick(it.album_id, it.release_mbid, it.release_group_mbid, it.set_at) }
+        val homes = e.allHomes().executeAsList().associate { it.album_id to MusicSingleHome.Override(it.home_album_id, it.set_at) }
+        val same = e.allSameSong().executeAsList().associate { (it.track_a to it.track_b) to it.state }
+        val sound = e.allSoundPairs().executeAsList().map { MusicSoundPair(it.track_a, it.track_b, it.ber, it.coverage, it.offset_ms, it.measured_at) }
+        return Snapshot(artists.associateBy { it.id }, albums.associateBy { it.id }, tracks.associateBy { it.id }, facts.associateBy { it.recordingMbid }, choices, types,
+            picks, homes, same, sound)
     }
 
     fun artist(id: String): MusicArtist? = snapshot().artists[id]
@@ -187,6 +207,54 @@ class MusicStore(private val db: JellystructureDb) {
         cache.value = prev.copy(typeOverrides = prev.typeOverrides + (key to next)); versionAtomic.incrementAndGet()
     }
 
+    // ── Phase 305: the owner's decisions and the sound measurements ──
+
+    /** FR-305-4 — *Use as the official album*: the row, and the picked tracklist on the album's JSON, in one write. */
+    suspend fun putPick(pick: MusicOfficialPick, album: MusicAlbum) = writeLock.withLock {
+        db.transaction {
+            db.musicEditionsQueries.putPick(pick.albumId, pick.releaseMbid, pick.releaseGroupMbid, pick.setAt)
+            writeAlbum(album)
+        }
+        val prev = snapshot(); cache.value = prev.copy(picks = prev.picks + (pick.albumId to pick), albums = prev.albums + (album.id to album)); versionAtomic.incrementAndGet()
+    }
+
+    /** *Back to automatic*, and a re-match to another group or *Clear match* (dev review 3). */
+    suspend fun deletePick(album: MusicAlbum) = writeLock.withLock {
+        db.transaction {
+            db.musicEditionsQueries.deletePick(album.id)
+            writeAlbum(album)
+        }
+        val prev = snapshot(); cache.value = prev.copy(picks = prev.picks - album.id, albums = prev.albums + (album.id to album)); versionAtomic.incrementAndGet()
+    }
+
+    /** FR-305-6 rule 4 — *Move to…* ([home] null = *No album*); [clear] = *Back to automatic*. */
+    suspend fun putHome(singleId: String, home: String?, now: Long, clear: Boolean = false) = writeLock.withLock {
+        db.transaction { if (clear) db.musicEditionsQueries.deleteHome(singleId) else db.musicEditionsQueries.putHome(singleId, home, now) }
+        val prev = snapshot()
+        cache.value = prev.copy(homeOverrides = if (clear) prev.homeOverrides - singleId else prev.homeOverrides + (singleId to MusicSingleHome.Override(home, now)))
+        versionAtomic.incrementAndGet()
+    }
+
+    /** FR-305-8/14 — the owner's decision on a pair, kept with a < b whatever order it is given; null clears it. */
+    suspend fun putSameSong(x: String, y: String, state: String?, now: Long) = writeLock.withLock {
+        val k = MusicSameSong.key(x, y)
+        db.transaction { if (state == null) db.musicEditionsQueries.deleteSameSong(k.first, k.second) else db.musicEditionsQueries.putSameSong(k.first, k.second, state, now) }
+        val prev = snapshot()
+        cache.value = prev.copy(sameSong = if (state == null) prev.sameSong - k else prev.sameSong + (k to state))
+        versionAtomic.incrementAndGet()
+    }
+
+    /** FR-305-9 — `compare_songs`' measurements; replaces each pair's earlier one. */
+    suspend fun putSoundPairs(pairs: List<MusicSoundPair>) = writeLock.withLock {
+        if (pairs.isEmpty()) return@withLock
+        val norm = pairs.map { p -> if (p.a < p.b) p else p.copy(a = p.b, b = p.a, offsetMs = -p.offsetMs) }
+        db.transaction { norm.forEach { db.musicEditionsQueries.putSoundPair(it.a, it.b, it.ber, it.coverage, it.offsetMs, it.measuredAt) } }
+        val prev = snapshot()
+        val keys = norm.mapTo(HashSet()) { it.a to it.b }
+        cache.value = prev.copy(soundPairs = prev.soundPairs.filter { (it.a to it.b) !in keys } + norm)
+        versionAtomic.incrementAndGet()
+    }
+
     private fun writeArtist(a: MusicArtist) {
         db.musicQueries.putArtist(
             id = a.id, library_id = a.libraryId, json = json.encodeToString(MusicArtist.serializer(), a),
@@ -248,6 +316,9 @@ class MusicStore(private val db: JellystructureDb) {
             parts.filterNotNull().joinToString(" ").lowercase().replace(Regex("\\s+"), " ").trim()
     }
 }
+
+/** Phase 305 (FR-305-4) — the owner's pick of one pressing as an album's official tracklist. */
+data class MusicOfficialPick(val albumId: String, val releaseMbid: String, val releaseGroupMbid: String?, val setAt: Long)
 
 /** Phase 292 — the owner's colour and meaning for one type; null = the default. */
 data class MusicVersionTypeOverride(val color: String?, val meaning: String?)

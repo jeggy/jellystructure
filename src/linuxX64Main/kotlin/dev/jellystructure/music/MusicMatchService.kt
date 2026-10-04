@@ -17,12 +17,23 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicReference
 
-data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0) {
+data class MusicMatchSummary(val tried: Int, val matched: Int, val needsYou: Int, val unmatched: Int, val failed: Int, val artists: Int, val versions: Int = 0, val editions: Int = 0) {
     fun sentence(): String = (if (tried == 0) "nothing to match" else buildString {
         append("$tried albums · $matched matched · $needsYou need you · $unmatched unmatched")
         if (artists > 0) append(" · $artists artists")
         if (failed > 0) append(" · MusicBrainz didn't answer for $failed")
-    }) + if (versions > 0) " · versions read for $versions album${if (versions == 1) "" else "s"}" else ""
+    }) + (if (versions > 0) " · versions read for $versions album${if (versions == 1) "" else "s"}" else "") +
+        if (editions > 0) " · official lists and singles read for $editions release${if (editions == 1) "" else "s"}" else ""
+}
+
+/** Phase 305 (FR-305-4) — what *Use as the official album* answered. */
+sealed class MusicPickOutcome {
+    data class Picked(val album: MusicAlbum) : MusicPickOutcome()
+    data object NotFound : MusicPickOutcome()
+    /** The album is not matched, or not an album (a single has no official tracklist). */
+    data object NotAnAlbum : MusicPickOutcome()
+    data object NotOfThisAlbum : MusicPickOutcome()
+    data object NoAnswer : MusicPickOutcome()
 }
 
 /**
@@ -44,6 +55,9 @@ class MusicMatchService(
     private fun note(id: String, action: String, detail: String) {
         runCatching { history?.record(id, action, detail) }
     }
+
+    /** Phase 305 — a line in the album's History from a route (*Move to…*). */
+    fun recordHistory(id: String, action: String, detail: String) = note(id, action, detail)
 
     private val passLock = Mutex()
     private val statusRef = AtomicReference(MusicMatchStatus())
@@ -157,7 +171,7 @@ class MusicMatchService(
             }
         }.sortedBy { it.sortName ?: it.title }
         statusRef.value = MusicMatchStatus(running = true, done = 0, total = albums.size, startedAt = now)
-        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0
+        var matched = 0; var needs = 0; var unmatched = 0; var failed = 0; var artists = 0; var versions = 0; var editions = 0
         try {
             albums.forEachIndexed { i, a ->
                 statusRef.value = statusRef.value.copy(done = i, currentAlbum = a.title)
@@ -206,11 +220,125 @@ class MusicMatchService(
             // Phase 292 (dev review 5) — a matched album whose recordings were never read for versions is caught up
             // here: once per album, at MusicBrainz's one request a second. A run over every album leaves out none.
             if (ids == null) versions = catchUpVersionFacts()
+            // Phase 305 (dev review 4) — official tracklists, extras' first pressings and singles' *single from*, read
+            // here so a locked album is caught up too: once per release group, again on an `all` run.
+            if (ids == null) editions = catchUpEditions(scopeAll, now)
         } finally {
-            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions)
+            val summary = MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions)
             statusRef.value = MusicMatchStatus(running = false, done = albums.size, total = albums.size, lastSummary = summary.sentence())
         }
-        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions)
+        MusicMatchSummary(albums.size, matched, needs, unmatched, failed, artists, versions, editions)
+    }
+
+    // ── Phase 305: official tracklists, extras, singles ──
+
+    /** Matched albums (locked ones too) and singles/EPs whose editions were never read, or read for another group;
+     *  every one on an `all` run (except those this run already read). */
+    private suspend fun catchUpEditions(scopeAll: Boolean, runStart: Long): Int {
+        var n = 0
+        val due = store.snapshot().albums.values.filter { a ->
+            a.missingSince == null && a.matchState == MusicMatch.MATCHED && a.releaseGroupMbid != null && when {
+                // An `all` run re-reads the locked ones here; the unlocked ones were just re-read by their match.
+                MusicOfficial.isAlbum(a) -> a.official?.groupMbid != a.releaseGroupMbid || (scopeAll && a.matchLocked && (a.relsReadAt ?: 0) <= runStart)
+                MusicOfficial.isSingleOrEp(a) -> a.relsReadAt == null || (scopeAll && a.matchLocked)
+                else -> false
+            }
+        }
+        for (a in due.sortedBy { it.sortName ?: it.title }) if (runCatching { readEditions(a.id) }.getOrDefault(false)) n++
+        return n
+    }
+
+    /** MusicBrainz's *single from* on a single's or EP's release group (forward: the single is the first entity). */
+    private fun singleFromOf(rg: MbReleaseGroup): String? = rg.relations.firstOrNull { r ->
+        r.type.equals("single from", ignoreCase = true) && (r.direction ?: "forward") == "forward" && !r.releaseGroup?.id.isNullOrBlank()
+    }?.releaseGroup?.id
+
+    /**
+     * Phase 305 (FR-305-2/3/6, dev review 4) — read [albumId]'s editions: for an album, the vote over every official
+     * pressing and the extras' first pressings (one or two requests; an extra on no pressing of the group costs one
+     * recording lookup); for a single or EP, its *single from*. False when MusicBrainz did not answer: nothing is
+     * written, and what was known stays.
+     */
+    suspend fun readEditions(albumId: String): Boolean {
+        val a = store.album(albumId) ?: return false
+        val rgId = a.releaseGroupMbid ?: return false
+        val now = nowEpochSec()
+        val rg = mb.releaseGroup(rgId) ?: return false
+        if (MusicOfficial.isAlbum(rg.primaryType, rg.secondaryTypes)) {
+            val releases = mb.releasesOf(rgId) ?: return false
+            val official = MusicOfficial.vote(rg, releases, now) ?: a.official
+            val effective = a.userOfficial ?: official
+            val extras = tracksOf(albumId).filter { MusicOfficial.isExtra(effective, it) }.mapNotNull { it.recordingMbid }.toSet()
+            val origins = MusicOfficial.firstReleases(releases, extras).toMutableMap()
+            for (rec in extras - origins.keys) {
+                val r = mb.recording(rec) ?: continue
+                r.releases.filter { MusicOfficial.isOfficialStatus(it.status) }.minByOrNull { it.date?.takeIf { d -> d.length >= 4 } ?: "9999" }
+                    ?.let { origins[rec] = MusicOfficial.origin(it) }
+            }
+            val cur = store.album(albumId) ?: return false
+            store.putAlbum(cur.copy(official = official, extraOrigins = origins, singleFrom = singleFromOf(rg), relsReadAt = now))
+        } else {
+            val cur = store.album(albumId) ?: return false
+            store.putAlbum(cur.copy(official = null, singleFrom = singleFromOf(rg), relsReadAt = now))
+        }
+        return true
+    }
+
+    /** FR-305-4 — *Change…*'s list: every pressing, what it has against the official list, and whether it can be
+     *  picked (its extra songs are held; open question 3: else *+ N not in the library*). Null = no answer. */
+    suspend fun pressings(albumId: String): List<dev.jellystructure.model.MusicPressingDto>? {
+        val a = store.album(albumId) ?: return emptyList()
+        val rg = a.releaseGroupMbid ?: return emptyList()
+        val releases = mb.releasesOf(rg) ?: return null
+        val tracks = tracksOf(albumId)
+        val held = tracks.mapNotNull { it.recordingMbid }.toSet()
+        val auto = a.official
+        val pick = store.snapshot().picks[albumId]
+        return releases.filter { MusicOfficial.isOfficialStatus(it.status) }.map { r ->
+            val songs = MusicOfficial.songsOf(r)
+            val extra = songs.map { it.recordingMbid }.filter { auto == null || it !in auto.recordings }
+            val missing = extra.count { it !in held }
+            dev.jellystructure.model.MusicPressingDto(
+                option = MusicScoring.option(r, MusicScoring.agreement(r, tracks)), against = MusicOfficial.against(auto, songs),
+                pickable = missing == 0, notInLibrary = missing, chosen = pick?.releaseMbid == r.id,
+                automatic = pick == null && auto?.releaseMbid == r.id,
+            )
+        }.sortedWith(compareBy({ it.option.date ?: "9999" }, { it.option.country ?: "" }))
+    }
+
+    /** FR-305-4 — *Use as the official album*: kept across every scan and a re-match to the same group. */
+    suspend fun pickOfficial(albumId: String, releaseMbid: String): MusicPickOutcome {
+        val a = store.album(albumId) ?: return MusicPickOutcome.NotFound
+        val rg = a.releaseGroupMbid ?: return MusicPickOutcome.NotAnAlbum
+        if (a.matchState != MusicMatch.MATCHED || !MusicOfficial.isAlbum(a)) return MusicPickOutcome.NotAnAlbum
+        val r = mb.release(releaseMbid) ?: return MusicPickOutcome.NoAnswer
+        if (r.releaseGroup?.id != rg) return MusicPickOutcome.NotOfThisAlbum
+        val now = nowEpochSec()
+        val list = MusicOfficial.fromRelease(r, rg, a.official?.groupTitle ?: r.releaseGroup?.title?.ifBlank { null }, now)
+        store.putPick(MusicOfficialPick(albumId, releaseMbid, rg, now), a.copy(userOfficial = list))
+        note(albumId, "music_official", "Official album chosen by hand: “${r.title}”" + listOfNotNull(r.country, r.date?.take(4)).joinToString(" ", prefix = " (", postfix = ")").takeIf { r.country != null || r.date != null }.orEmpty() + " · ${list.songs.size} songs")
+        runCatching { readEditions(albumId) }
+        return MusicPickOutcome.Picked(store.album(albumId) ?: a)
+    }
+
+    /** *Back to automatic* (FR-305-4). */
+    suspend fun unpickOfficial(albumId: String): MusicAlbum? {
+        val a = store.album(albumId) ?: return null
+        if (store.snapshot().picks[albumId] == null && a.userOfficial == null) return a
+        store.deletePick(a.copy(userOfficial = null))
+        note(albumId, "music_official", "Official album back to automatic")
+        runCatching { readEditions(albumId) }
+        return store.album(albumId)
+    }
+
+    /** Dev review 3 — a re-match to another group, or *Clear match*, drops the pick: its pressing is no longer one of
+     *  the album's. */
+    private suspend fun dropPickIfOtherGroup(albumId: String, newGroup: String?) {
+        val pick = store.snapshot().picks[albumId] ?: return
+        if (newGroup != null && pick.releaseGroupMbid == newGroup) return
+        val a = store.album(albumId) ?: return
+        store.deletePick(a.copy(userOfficial = null))
+        note(albumId, "music_official", "Official album choice dropped — " + if (newGroup == null) "the match was cleared" else "the album was matched to another release group")
     }
 
     // ── Phase 292: version facts ──
@@ -270,7 +398,13 @@ class MusicMatchService(
         } else MusicScoring.bestRelease(mb.releasesOf(rgMbid) ?: return null, tracks) ?: return null
         val now = nowEpochSec()
         val mbArtists = MusicScoring.credits(rg.artistCredit.ifEmpty { release.artistCredit })
-        store.putAlbum(album.copy(
+        // Phase 305 (dev review 3) — another group: the owner's pick and the old group's lists go.
+        if (album.releaseGroupMbid != rg.id) dropPickIfOtherGroup(albumId, rg.id)
+        val base = store.album(albumId) ?: album
+        val sameGroup = base.releaseGroupMbid == rg.id
+        store.putAlbum(base.copy(
+            official = if (sameGroup) base.official else null, extraOrigins = if (sameGroup) base.extraOrigins else emptyMap(),
+            singleFrom = singleFromOf(rg), relsReadAt = if (sameGroup) base.relsReadAt else null,
             releaseGroupMbid = rg.id, releaseMbid = release.id, matchState = MusicMatch.MATCHED,
             matchLocked = lock || album.matchLocked, matchSource = source, matchedAt = now, matchAttemptedAt = now,
             matchNote = null, candidates = emptyList(), release = MusicScoring.option(release, agreement),
@@ -300,6 +434,7 @@ class MusicMatchService(
         // Phase 292 (dev review 6) — a song that gained its recording takes its own version ticks along.
         moveVersionChoices(tracks, updated)
         runCatching { readVersionFacts(albumId) }.onFailure { Logger.warn("versions: $albumId: ${it.message}", "music") }
+        runCatching { readEditions(albumId) }.onFailure { Logger.warn("editions: $albumId: ${it.message}", "music") }
         return matchArtists(album.albumArtists.map { it.artistId to it.name }, mbArtists) +
             tracks.sumOf { t -> matchArtists(t.artists.map { it.artistId to it.name }, store.track(t.id)?.mbArtists.orEmpty()) }
     }
@@ -391,8 +526,10 @@ class MusicMatchService(
     /** FR-276-6 — forget the ids and the tracks' recordings; the fields the match filled stay. The album is **locked**
      *  as well (174's rule for *Clear TMDB match*): otherwise the next run would find the same wrong album again. */
     suspend fun clear(albumId: String): MusicAlbum? {
+        dropPickIfOtherGroup(albumId, null)
         val a = store.album(albumId) ?: return null
         val cleared = a.copy(
+            official = null, userOfficial = null, extraOrigins = emptyMap(), singleFrom = null, relsReadAt = null,
             releaseGroupMbid = null, releaseMbid = null, matchState = MusicMatch.UNMATCHED, matchLocked = true,
             matchSource = null, matchedAt = null, candidates = emptyList(), release = null,
             matchNote = "Cleared by hand — won't be matched again until you unlock it or choose a match",

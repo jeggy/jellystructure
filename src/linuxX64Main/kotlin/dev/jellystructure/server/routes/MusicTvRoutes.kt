@@ -79,6 +79,11 @@ fun Route.musicTvRoutes(
         svc.forget(device)   // Recently played moved.
     }
 
+    // R373 (FR-R373-4) — *Also on*: the other copies of a song this viewer may open.
+    get("/tv/music/track/{id}/copies") {
+        call.respond(svc.copies(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
+    }
+
     get("/tv/music/track/{id}/lyrics") {
         call.respond(svc.lyrics(call.attributes[DeviceKey], call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound))
     }
@@ -92,12 +97,8 @@ fun Route.musicTvRoutes(
         val device = call.attributes[DeviceKey]
         val req = call.receive<MusicFavoriteRequest>()
         if (!svc.visible(device, req.itemId)) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
-        val cfg = configStore.current
-        val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfin.tvToken(base, device, cfg.apiKeys.jellyfinToken)
-        if (req.favorite) jellyfin.markFavorite(base, token, device.jellyfinUserId, req.itemId)
-        else jellyfin.unmarkFavorite(base, token, device.jellyfinUserId, req.itemId)
-        svc.forget(device)
+        // 305 dev review 8 — un-favouriting a song clears every favourited copy of it.
+        svc.setFavorite(device, req.itemId, req.favorite)
         call.respond(mapOf("favorite" to req.favorite))
     }
 

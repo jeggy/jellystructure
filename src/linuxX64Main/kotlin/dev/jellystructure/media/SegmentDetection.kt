@@ -142,7 +142,7 @@ object SegmentDetection {
     // against a SECOND file of a different codec/sample-rate producing byte-for-byte identical frame
     // counts for the same -length window — these are pure libchromaprint algorithm constants, not
     // source-dependent. `elapsed_seconds_at_frame[i] ≈ FRAME_OFFSET_SEC + i * FRAME_SEC`.
-    private const val FRAME_SEC = 0.1238114
+    internal const val FRAME_SEC = 0.1238114
     private const val FRAME_OFFSET_SEC = 2.641479
 
     // Sliding-offset Hamming-distance correlation + longest-matching-run-with-gap-tolerance is the same
@@ -172,7 +172,7 @@ object SegmentDetection {
     private const val MAX_INTRO_DURATION_SEC = 360.0
     private const val MAX_INTRO_START_SEC = 1200.0
 
-    private fun popcount(x: Int): Int {
+    internal fun popcount(x: Int): Int {
         var v = x
         var count = 0
         while (v != 0) { v = v and (v - 1); count++ }

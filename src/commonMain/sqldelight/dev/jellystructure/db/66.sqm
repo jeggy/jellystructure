@@ -1,0 +1,32 @@
+-- Phase 305 — an album's official tracklist, its singles, one copy of every song. Must stay in sync with MusicEditions.sq.
+
+CREATE TABLE music_official_pick (
+    album_id TEXT NOT NULL PRIMARY KEY,
+    release_mbid TEXT NOT NULL,
+    release_group_mbid TEXT,
+    set_at INTEGER NOT NULL
+);
+
+CREATE TABLE music_single_home (
+    album_id TEXT NOT NULL PRIMARY KEY,
+    home_album_id TEXT,
+    set_at INTEGER NOT NULL
+);
+
+CREATE TABLE music_same_song (
+    track_a TEXT NOT NULL,
+    track_b TEXT NOT NULL,
+    state TEXT NOT NULL,
+    set_at INTEGER NOT NULL,
+    PRIMARY KEY (track_a, track_b)
+);
+
+CREATE TABLE music_sound_pair (
+    track_a TEXT NOT NULL,
+    track_b TEXT NOT NULL,
+    ber REAL NOT NULL,
+    coverage REAL NOT NULL,
+    offset_ms INTEGER NOT NULL,
+    measured_at INTEGER NOT NULL,
+    PRIMARY KEY (track_a, track_b)
+);

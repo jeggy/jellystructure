@@ -37,6 +37,8 @@ import kotlinx.serialization.json.Json
     val work: MbWork? = null,
     val recording: MbRecordingRef? = null,
     val artist: MbArtistRef? = null,
+    /** Phase 305 (dev review 4) — a release-group relationship's target (*single from*). */
+    @SerialName("release_group") val releaseGroup: MbReleaseGroup? = null,
 )
 /** A work as a relationship carries it; `language` is ISO 639-3 (`zxx` = no words), `languages` when several. */
 @Serializable data class MbWork(val id: String = "", val title: String = "", val language: String? = null, val languages: List<String> = emptyList())
@@ -63,6 +65,8 @@ data class MbRecording(
     /** Phase 292 — MusicBrainz's note (*instrumental demo*) and the recording's relationships, when asked for. */
     val disambiguation: String? = null,
     val relations: List<MbRelation> = emptyList(),
+    /** Phase 305 (dev review 4) — a music video, never an official song. */
+    val video: Boolean = false,
 )
 
 @Serializable
@@ -126,7 +130,12 @@ data class MbArtist(
 )
 
 @Serializable private data class MbReleaseGroupSearch(@SerialName("release-groups") val releaseGroups: List<MbReleaseGroup> = emptyList())
-@Serializable private data class MbReleaseBrowse(val releases: List<MbRelease> = emptyList())
+@Serializable private data class MbReleaseBrowse(
+    val releases: List<MbRelease> = emptyList(),
+    /** Phase 305 (dev review 4) — the whole browse's size and this page's offset. */
+    @SerialName("release-count") val releaseCount: Int? = null,
+    @SerialName("release-offset") val releaseOffset: Int? = null,
+)
 @Serializable private data class MbRecordingSearch(val recordings: List<MbRecording> = emptyList())
 
 /**
@@ -207,12 +216,36 @@ open class MusicBrainzClient(
     open suspend fun searchReleaseGroupsFree(query: String, limit: Int = 8): List<MbReleaseGroup>? =
         get("/release-group?limit=$limit&query=${query.encodeURLParameter()}", MbReleaseGroupSearch.serializer())?.releaseGroups
 
+    /** Phase 305 (dev review 4) — with `release-group-rels`, so a single says which album it is *single from*. */
     open suspend fun releaseGroup(mbid: String): MbReleaseGroup? =
-        get("/release-group/$mbid?inc=genres+artist-credits+url-rels", MbReleaseGroup.serializer())
+        get("/release-group/$mbid?inc=genres+artist-credits+url-rels+release-group-rels", MbReleaseGroup.serializer())
 
-    /** Up to 25 pressings of a release-group, each with its track list — one request. */
-    open suspend fun releasesOf(releaseGroupMbid: String): List<MbRelease>? =
-        get("/release?release-group=$releaseGroupMbid&inc=recordings+media+labels+artist-credits&limit=25", MbReleaseBrowse.serializer())?.releases
+    /**
+     * Phase 305 (dev review 2d/4) — **every** official pressing of a release-group, each with its track list, paged
+     * until `release-count` (the shipped one-page browse stopped at 25: Find match… and the vote lost the rest).
+     * MusicBrainz may answer fewer than the limit when recordings are included, so the offset advances by what came
+     * back. An empty page stops; a failed later page answers null (a partial set would vote wrong). A group with no
+     * official pressing at all (a bootleg-only group) falls back to one unfiltered page, as before.
+     */
+    open suspend fun releasesOf(releaseGroupMbid: String): List<MbRelease>? {
+        val out = ArrayList<MbRelease>()
+        var offset = 0
+        var pages = 0
+        while (pages < 40) {
+            val page = get("/release?release-group=$releaseGroupMbid&status=official&inc=recordings+media+labels+artist-credits&limit=100&offset=$offset", MbReleaseBrowse.serializer())
+                ?: return null
+            pages++
+            if (page.releases.isEmpty()) break
+            out += page.releases
+            offset += page.releases.size
+            val count = page.releaseCount ?: break
+            if (offset >= count) break
+        }
+        if (out.isEmpty()) {
+            return get("/release?release-group=$releaseGroupMbid&inc=recordings+media+labels+artist-credits&limit=25", MbReleaseBrowse.serializer())?.releases
+        }
+        return out
+    }
 
     open suspend fun release(mbid: String): MbRelease? =
         get("/release/$mbid?inc=recordings+media+labels+artist-credits+release-groups", MbRelease.serializer())

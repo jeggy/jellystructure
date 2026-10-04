@@ -314,6 +314,10 @@ fun main() = runBlocking {
         audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db)),
         versions = dev.jellystructure.music.MusicVersionService(musicStore, mediaHistory),
     )
+    // Phase 305 (dev review 6) — `compare_songs`: whole-song fingerprints cached under the data directory.
+    musicPipeline.compare = dev.jellystructure.music.MusicCompareSongsStep(
+        musicStore, dev.jellystructure.music.MusicFingerprintCache(dataDir, { path -> dev.jellystructure.media.FfmpegRunner.musicFingerprint(path) }),
+    )
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()

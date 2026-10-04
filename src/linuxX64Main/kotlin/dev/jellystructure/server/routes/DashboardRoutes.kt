@@ -120,6 +120,9 @@ class DashboardService(
             }
         }
 
+        // Phase 305 (FR-305-14) — songs that may be the same: a modal on the page, not a list.
+        music?.let { m -> runCatching { dev.jellystructure.music.MusicAlbumPage.sameSongsRow(m.store.snapshot()) }.getOrNull()?.let { rows += it } }
+
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
         val jellyfinReachable = advisor?.reachable != false

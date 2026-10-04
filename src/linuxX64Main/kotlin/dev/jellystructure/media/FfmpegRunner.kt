@@ -549,6 +549,15 @@ object FfmpegRunner {
         return fp to duration
     }
 
+    /** Phase 305 (dev review 6) — a whole song's raw fingerprint (`-length 0`), through [ProcessGate] (a background
+     *  run takes its background class), not the segment lane. */
+    suspend fun musicFingerprint(filePath: String): List<Int>? {
+        val escaped = filePath.replace("'", "'\\''")
+        val output = captureCommand("nice -n 19 ionice -c3 fpcalc -raw -length 0 '$escaped' 2>&1") ?: return null
+        val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
+        return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
+    }
+
     suspend fun computeFingerprint(filePath: String, windowSec: Int = FINGERPRINT_WINDOW_SEC): List<Int>? {
         val escaped = filePath.replace("'", "'\\''")
         // Same nice/ionice treatment as detectCreditsStart — fpcalc shells out to libavcodec for audio

@@ -136,4 +136,20 @@ class MusicIngestTest {
         assertFalse(musicVisible("lib1", setOf("lib2")))
         assertFalse(musicVisible(null, setOf("lib1")))
     }
+
+    /** Phase 305 (dev review 2b, test 12) — `BitDepth` is Jellyfin's; the official list and *single from* are ours. */
+    @Test
+    fun a_rescan_keeps_official_and_single_from_and_takes_bit_depth_from_jellyfin() {
+        val first = MusicIngest.build(lib, jf(track("t1", 1)), emptyMap(), emptyMap(), emptyMap(), 1000, { false })
+        val official = dev.jellystructure.model.MusicOfficialList(listOf(dev.jellystructure.model.MusicOfficialSong("r1", "Song 1")), "rel", "Salt", 3, 4, "rg-1", "Salt")
+        val ours = first.albums.single().copy(official = official, singleFrom = "rg-x", relsReadAt = 5,
+            extraOrigins = mapOf("r9" to dev.jellystructure.model.MusicExtraOrigin(title = "Salt", country = "JP")))
+        val flac = track("t1", 1, "flac", "flac").let { it.copy(mediaStreams = listOf(JellyfinAudioStream("Audio", "flac", 900_000, 96_000, 2, bitDepth = 24))) }
+        val again = MusicIngest.build(lib, jf(flac), first.artists.associateBy { it.id }, mapOf(ours.id to ours), first.tracks.associateBy { it.id }, 2000, { false })
+        val album = again.albums.single()
+        assertEquals(official, album.official)
+        assertEquals("rg-x", album.singleFrom)
+        assertEquals("JP", album.extraOrigins["r9"]?.country)
+        assertEquals(24, again.tracks.single().bitDepth)
+    }
 }

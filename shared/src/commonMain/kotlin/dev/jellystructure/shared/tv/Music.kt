@@ -61,6 +61,25 @@ data class MusicTrackItem(
      *  shows it. Empty = no version, and what an old server sends. Plain strings: a key this app has no name for is
      *  drawn as nothing. */
     @SerialName("versions") val versions: List<String> = emptyList(),
+    /** R373 (FR-R373-1/5, 305 owner decision 1) — *Bonus*: on an album's own tracks, this copy is an extra; on a row of
+     *  a list that spans albums (one copy of every song), no copy of the song is on an official tracklist. */
+    val extra: Boolean = false,
+    /** R373 (FR-R373-4) — how many other releases this viewer may open hold the same song (*Also on 3 releases*);
+     *  the rows themselves come from `GET /tv/music/track/{id}/copies` on a tap. */
+    @SerialName("also_on") val alsoOn: Int = 0,
+)
+
+/** R373 (FR-R373-4) — one other copy of a song: the track and the release it sits on. */
+@Serializable
+data class MusicTrackCopy(
+    val track: MusicTrackItem,
+    val album: MusicAlbumCard? = null,
+)
+
+/** R373 — `GET /tv/music/track/{id}/copies`: the other copies this viewer may open, best first. */
+@Serializable
+data class MusicTrackCopies(
+    val copies: List<MusicTrackCopy> = emptyList(),
 )
 
 /** R344 (FR-R344-1) — one version type's colour in this household (`#f0795b`). Names are the app's own strings. */
@@ -129,9 +148,31 @@ data class MusicPlaylist(
 @Serializable
 data class MusicAlbumDetail(
     val album: MusicAlbumCard,
+    /** The album's held files, in the files' order — what an installed app shows (R373 dev review 1). */
     val tracks: List<MusicTrackItem> = emptyList(),
     @SerialName("more_from_artist") val moreFromArtist: List<MusicAlbumCard> = emptyList(),
     val favorite: Boolean = false,
+    /** R373 (FR-R373-1, dev review 1) — the official album's track ids in order; null = unmatched, today's page. */
+    @SerialName("official_ids") val officialIds: List<String>? = null,
+    /** The extras, in the held edition's order (unnumbered, below the divider). */
+    @SerialName("extra_ids") val extraIds: List<String> = emptyList(),
+    /** 305 owner decision 3 — the extras section's name: MusicBrainz's title or disambiguation as it is, else a
+     *  country code the app names in the viewer's language, else neither (*Extras*). */
+    @SerialName("edition_title") val editionTitle: String? = null,
+    @SerialName("edition_country") val editionCountry: String? = null,
+    /** The singles and EPs that live under this album, held and visible, in year order. */
+    val singles: List<MusicAlbumCard> = emptyList(),
+    /** Their B-sides as full items, in single order; [MusicTrackItem.album]/[MusicTrackItem.albumId] name the single. */
+    @SerialName("bside_tracks") val bsideTracks: List<MusicTrackItem> = emptyList(),
+    /** On a single's own page: the album it lives under (*Single from …*). */
+    @SerialName("single_from") val singleFrom: MusicAlbumCard? = null,
+)
+
+/** R373 (FR-R373-7) — an album some of the artist's singles live under, and how many. */
+@Serializable
+data class MusicSinglesUnder(
+    val album: MusicAlbumCard,
+    val count: Int = 0,
 )
 
 @Serializable
@@ -165,6 +206,8 @@ data class MusicArtistDetail(
     /** Songs by this viewer's play count, most played first. */
     @SerialName("top_tracks") val topTracks: List<MusicTrackItem> = emptyList(),
     val videos: List<MusicVideoCard> = emptyList(),
+    /** R373 (FR-R373-7) — singles and EPs that left [groups] because they live under an album. */
+    @SerialName("singles_under") val singlesUnder: List<MusicSinglesUnder> = emptyList(),
 )
 
 /** FR-279-5 — three groups, each with its own total; an empty query answers recently played songs and artists. */

@@ -181,6 +181,9 @@ object MusicSteps {
     const val AUDIOBOOKS = "scan_audiobooks"
     /** Phase 276 — the MusicBrainz ladder. */
     const val MATCH = "match_musicbrainz"
+    /** Phase 305 (dev review 7) — fingerprints and comparisons of same-titled songs (no network); its own step so
+     *  154's pre-run dialog can untick the heavy half. */
+    const val COMPARE = "compare_songs"
     /** Phase 277 — covers, artist pictures and biographies; lyrics (only while *Fetch lyrics* is on); the NFOs last,
      *  so Jellyfin's one refresh per album picks up all three. */
     const val ARTWORK = "fetch_music_artwork"
@@ -188,7 +191,7 @@ object MusicSteps {
     const val NFO = "write_music_nfo"
     /** Phase 284 (FR-284-11) — moment A's automatic half: tags into the files of albums matched since their last write. */
     const val TAGS = "write_tags"
-    val ALL: List<String> = listOf(SCAN, AUDIOBOOKS, MATCH, ARTWORK, LYRICS, NFO, TAGS)
+    val ALL: List<String> = listOf(SCAN, AUDIOBOOKS, MATCH, COMPARE, ARTWORK, LYRICS, NFO, TAGS)
 
     fun isMusic(step: String): Boolean = step in ALL
 
@@ -200,10 +203,14 @@ object MusicSteps {
         var out = pipeline
         for (step in ALL) {
             if (step in alreadySeeded || out.any { it.step == step }) continue
+            val match = out.indexOfFirst { it.step == MATCH }
             val at = if (step == SCAN || step == AUDIOBOOKS) {
                 // The audiobooks scan sits straight after the music scan when there is one, else after scan_files.
                 val after = if (step == AUDIOBOOKS) out.indexOfFirst { it.step == SCAN }.takeIf { it >= 0 } else null
                 (after ?: out.indexOfFirst { it.step == "scan_files" }).let { if (it >= 0) it + 1 else 0 }
+            } else if (step == COMPARE && match >= 0) {
+                // Phase 305 — straight after the MusicBrainz match it reads the recordings from.
+                match + 1
             } else {
                 var i = out.size
                 while (i > 1 && out[i - 1].step in setOf("wait", "notify")) i--

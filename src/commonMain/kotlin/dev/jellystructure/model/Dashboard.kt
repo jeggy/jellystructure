@@ -66,6 +66,9 @@ data class DashboardRow(
     /** Phase 292 (FR-292-15, dev review 9) — a second, quieter action, also pressed by hand only. Admin-only DTO. */
     val action2: String? = null,
     @SerialName("action2_id") val action2Id: String? = null,
+    /** Phase 305 (FR-305-14, dev review 9) — the row's action opens something on the page (`same_songs`: *Listen and
+     *  decide*) instead of posting [actionId]. */
+    val opens: String? = null,
 )
 
 @Serializable

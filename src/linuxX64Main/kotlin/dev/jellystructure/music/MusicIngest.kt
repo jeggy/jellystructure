@@ -82,6 +82,7 @@ object MusicIngest {
                 codec = stream?.codec?.lowercase(),
                 bitrate = stream?.bitRate,
                 sampleRate = stream?.sampleRate,
+                bitDepth = stream?.bitDepth,
                 channels = stream?.channels,
                 artists = credits(t.artistItems).ifEmpty { credits(t.albumArtists) },
                 genres = t.genres.filter { it.isNotBlank() }.distinct(),
@@ -175,7 +176,7 @@ object MusicIngest {
             albumId = fresh.albumId, libraryId = fresh.libraryId, title = fresh.title, sortName = fresh.sortName,
             disc = fresh.disc, position = fresh.position, durationMs = fresh.durationMs, year = fresh.year,
             path = fresh.path, container = fresh.container, codec = fresh.codec, bitrate = fresh.bitrate,
-            sampleRate = fresh.sampleRate, channels = fresh.channels, artists = fresh.artists, genres = fresh.genres,
+            sampleRate = fresh.sampleRate, bitDepth = fresh.bitDepth, channels = fresh.channels, artists = fresh.artists, genres = fresh.genres,
             trackGainDb = fresh.trackGainDb, albumGainDb = fresh.albumGainDb, hasLyrics = fresh.hasLyrics,
             jellyfinProviderIds = fresh.jellyfinProviderIds, addedAt = fresh.addedAt, missingSince = null,
         )
