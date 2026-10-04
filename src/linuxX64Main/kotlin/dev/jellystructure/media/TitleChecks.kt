@@ -65,11 +65,7 @@ class TitleChecks(
         val nowMs = store.nowMs()
         val currentYear = yearFromEpochMs(nowMs)
         val configured = config.scan.pipeline.ifEmpty { effectivePipeline(config) }
-        // OQ2 — the card lists what is done TO this title; `wait`, `notify` and the whole-library
-        // `build_recommendations` (Phase 269) are not.
-        val steps = (listOf(configured.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")) +
-            configured.filter { it.step != "scan_files" && it.step !in setOf("wait", "notify", dev.jellystructure.config.RecommendationsStep.STEP, dev.jellystructure.config.SuggestionsStep.STEP) })
-            .distinctBy { it.step }
+        val steps = cardSteps(configured)
         val scanStep = steps.first()
         val runs = stepRuns?.forItem(item.id) ?: emptyMap()
         val active = db.mediaJobQueries.activeFileChecksForItem(item.id, FileCheckSchedule.JOB_TYPES).executeAsList()
@@ -261,6 +257,18 @@ class TitleChecks(
     }
 
     companion object {
+        /** Phase 303 (FR-303-1/2) — the steps a title's Checks card lists: `scan_files` first, then every step done TO a
+         *  title, in pipeline order. Whole-library steps ([dev.jellystructure.config.WholeLibrarySteps]: the music steps,
+         *  recommendations, suggestions) and the control steps `wait`/`notify` are never listed, on or off. */
+        fun cardSteps(pipeline: List<PipelineStep>): List<PipelineStep> =
+            (listOf(pipeline.firstOrNull { it.step == "scan_files" } ?: PipelineStep(step = "scan_files")) +
+                pipeline.filter { isTitleStep(it.step) })
+                .distinctBy { it.step }
+
+        /** Done to individual films, series or music videos (and not `scan_files`, which [cardSteps] puts first). */
+        fun isTitleStep(step: String): Boolean =
+            step != "scan_files" && step != "wait" && step != "notify" && !dev.jellystructure.config.WholeLibrarySteps.contains(step)
+
         val STEP_LABELS = mapOf(
             "scan_files" to "Scan files", "pull_tmdb" to "TMDB metadata", "fetch_artwork" to "Artwork",
             "detect_segments" to "Intro & credits", "write_nfo" to "NFO files", "sync_jellyfin" to "Jellyfin sync",

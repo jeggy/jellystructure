@@ -379,9 +379,9 @@ suspend fun runPipeline(
         // A per-webhook 5-minute wait, or a notify firing on every single realtime ingest, would be
         // actively wrong — not just unimplemented — so these are explicitly excluded for SingleItem.
         if (target is RunTarget.SingleItem && (step.step == "wait" || step.step == "notify")) continue
-        // Phase 269 — a whole-library step; one new download is no reason to rebuild every viewer.
-        if (target is RunTarget.SingleItem && step.step == dev.jellystructure.config.RecommendationsStep.STEP) continue
-        if (target is RunTarget.SingleItem && step.step == dev.jellystructure.config.SuggestionsStep.STEP) continue  // Phase 274
+        // Phase 269/274, one list since 303 — a whole-library step; one new download is no reason to rebuild every
+        // viewer (the music steps are already skipped above for anything but a Library run with music deps).
+        if (target is RunTarget.SingleItem && dev.jellystructure.config.WholeLibrarySteps.contains(step.step)) continue
         // Phase 214 (FR-214-2) — a per-step stop requested for a PREVIOUS step must never leak into this
         // one: reset right before each step starts, not once at the run's own start.
         scanTracker.resetStepStop()

@@ -215,6 +215,14 @@ object MusicSteps {
     }
 }
 
+/** Phase 303 (dev review 3) — the steps that run over a whole library, never for one film, series or music video:
+ *  every music step, 269's recommendations and 274's suggestions. One list, read by the engine (no SingleItem run)
+ *  and by a title's Checks card (not listed). A new whole-library step joins here, and both follow it. */
+object WholeLibrarySteps {
+    fun contains(step: String): Boolean =
+        MusicSteps.isMusic(step) || step == RecommendationsStep.STEP || step == SuggestionsStep.STEP
+}
+
 /** Phase 269 (FR-269-8) — the whole-library step that rebuilds every viewer's Recommended list. */
 object RecommendationsStep {
     const val STEP = "build_recommendations"

@@ -124,3 +124,17 @@ Read against `TitleChecks`, `PipelineEngine.runPipeline`'s step loop, `MusicStep
 8. **Design files.** No mockup draws a title's Checks card (`design/app/media.html` and `series.html` have none). So
    there is nothing to update on the design side.
 
+
+## Build notes (2026-10-04)
+
+- **Built (dev review items 3–4):** `object WholeLibrarySteps { fun contains(step) }` in `config/AppConfig.kt` beside
+  `MusicSteps` (every `MusicSteps.ALL` step, `build_recommendations`, `build_suggestions`). `PipelineEngine`'s two
+  `SingleItem` skips for recommendations and suggestions are now one `WholeLibrarySteps.contains` skip (the music
+  steps were already skipped above it for anything but a Library run with music deps; unchanged). `TitleChecks` gained
+  pure companion functions `cardSteps(pipeline)` (`scan_files` first, then every per-title step in pipeline order,
+  `distinctBy` step) and `isTitleStep(step)` (not `scan_files`, `wait`, `notify` or whole-library); `forItem` calls
+  `cardSteps`. No copies of step names remain in `TitleChecks`.
+- **Tests:** `TitleChecksTextTest` — the music/whole-library/control steps (on and off) are gone and `scan_files`,
+  `pull_tmdb`, `fetch_artwork` and the three file checks stay in order; an empty list gives `scan_files` alone;
+  `scan_files` comes first with its own settings; every `MusicSteps.ALL` step is whole-library. `PipelinePlanTest`
+  still green. No device check needed beyond opening a film's page (no music rows on its Checks card).
