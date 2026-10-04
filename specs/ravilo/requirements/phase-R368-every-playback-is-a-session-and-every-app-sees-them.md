@@ -163,13 +163,19 @@ viewer never sees the word *session*, and never the name of a product or protoco
 ## Acceptance
 
 1. Eyð casts *Cannery Lights* from the Pixel 9 to Stue. Within a second the MacBook's capsule shows it with *Stue* in
-   accent, and the toolbar glyph reads **1**.
+   accent, and the toolbar glyph reads **1**. (Tests: `PlaybackSessionsTest`, `playback-sessions.spec.ts`,
+   `MusicMiniBarElsewhereTest`; the timing only on devices.)
 2. Eyð plays *Vinterfærgen* on the Pixel too, and Olivar watches *Lundin og vinir* on the Køkken hub. The Pixel's sheet
    lists her book first (highlighted), *Cannery Lights* · Stue, and Olivar's row with his name and no buttons. The glyph
-   reads **2**.
+   reads **2**. (Tests: `PlaybackSessionRulesTest`, `PlaybackSessionsTest` (the lanes), `PlayingEverywhereSheetTest`,
+   `CastGlyphCountTest`.)
 3. The backend restarts while *Cannery Lights* plays. Each app's row reads *Reconnecting…* until Stue's next report,
-   then carries on at the right position.
-4. An older phone build sees no sessions and plays exactly as before.
+   then carries on at the right position. (Tests: `PlaybackSessionsRestartTest`; on a live server.)
+4. An older phone build sees no sessions and plays exactly as before. (Tests: `TvEventBusSessionsIntegrationTest`,
+   `WireCompatTest`, `SessionWireTest`, `playback-sessions.spec.ts`.)
+5. If Olivar's profile may not see what Eyð plays, his sheet shows *Eyð is watching · Stue* with no title, no artwork
+   and no progress line. A member whose device is on another network sees none of these sessions. (Tests:
+   `PlaybackSessionRulesTest`, `PlayingEverywhereSheetTest`.)
 
 ## Taken as leans
 
@@ -184,6 +190,201 @@ viewer never sees the word *session*, and never the name of a product or protoco
 - Other people's sessions: visible with their name, no controls; 304's household switch can allow control.
 - After a restart **every** session comes back (FR-R368-4). The dev review may only narrow this if re-attaching
   proves unreliable, and must say so.
+
+## Tests
+
+These follow the reviewed and decided design below. Where the FR text and the *Dev review* / *Owner decisions*
+differ, the tests follow the review: `/api/tv/playback/sessions`, `features=sessions`, one live session per (target,
+lane), the 15 s hold, `queue_index`, `reconnecting` as a flag, the household as phase 236's `nearby` rule, and a hidden
+title showing person, place and state. The rules are pure functions in `tv/PlaybackSessions.kt` (server) and
+`ui/sessions/PlaybackSessions.kt` (client) so they can be tested without a socket. Then come the service on a temporary
+database with a fake clock, the wire, the routes end to end, and Robolectric for the sheet and the bar. Test names are
+Kotlin backtick names. Functions named here that don't exist yet are the ones the build adds.
+
+**Server, pure rules.** `src/linuxX64Test/kotlin/dev/jellystructure/tv/PlaybackSessionRulesTest.kt` (`linuxX64Test`):
+
+- FR-R368-2, review item 5: `sessionLane(kind)` and `startDecision(live, ownerUserId)` (`Create` · `Join` ·
+  `Replace`). Tests: `a film and a song on one device are two lanes`, `the same owner joins the live session`,
+  `another owner on the same receiver replaces the first`.
+- Review item 9: `isSessionChange(stored, report, nowMs)`.
+  - `a heartbeat is not a change`: within 3 s of `position_ms` plus the time elapsed while `playing`.
+  - `a jump of more than three seconds is a seek`.
+  - `a pause an item and an option are changes`.
+- Review item 15: `targetIcon(platform, kind, smallScreen)`. One table test, `every platform maps to its icon`: phone →
+  phone, mac/linux/web → computer, tv → tv, cast-audio → speaker, and cast → tv (display when R351 reported a small
+  screen).
+- FR-R368-6, review items 10 and 11, owner decisions 1 and 2:
+  `sessionViewFor(viewer, viewerAddress, session, targetAddress, canSee, castMintedBy)`, the per-socket projection.
+  - `a viewers own session is listed in full and is mine`.
+  - `another member on the same network is listed by first name and is not controllable`.
+  - `another member on another network is not listed`. This goes through `isNearby`; `ScreenNetworkTest` already
+    covers the address rule itself.
+  - `a title the viewer may not see shows person place and state only`: `title`, `subtitle`, `artwork`,
+    `position_ms` and `duration_ms` are null; `owner`, `target` and `state` are set.
+  - `here is true only on the target device`.
+  - `controllable is here or the live cast this device minted`: the phone whose `CastService.mint` code the receiver
+    redeemed gets true while that cast lives. The same user's other phone gets false, and so does that phone once the
+    cast ends.
+
+  Reading taken: owner decision 2 filters *other people's* sessions. A viewer's own session on another network is still
+  listed ("their own", FR-R368-6). Flip this test if the owner reads it otherwise.
+- Review item 12 (a): `shouldForceStop(device, heartbeatStale, socketOpen, reconnecting)`, taken out of the watchdog's
+  socket test (`PlaybackService.kt:980`). Test: `a reconnecting session is judged by heartbeat alone`. A fresh
+  heartbeat with no socket while reconnecting keeps the session. A stale heartbeat stops it. Outside reconnecting, a
+  socket-holding kind with its socket gone stops as today.
+- Review item 2: `parseEventFeatures(raw)`, next to `parseRemoteDeclaration` (`JellyfinRemote.kt`). Test:
+  `only the sessions feature is recognised`. A missing, blank or unknown value gives the empty set.
+
+**Server, the service on a database.** `tv/PlaybackSessionsTest.kt` (`linuxX64Test`) uses a real `PlaybackSessions`,
+`RaviloDeviceService` and `CastService` on a temporary DB with a fake clock and a recording notifier (the `CastServiceTest`
+setup).
+
+- FR-R368-1/2: `the first start creates one row with owner target lane and kind`. Check `queue_index = 0`,
+  `started_by_device_id`, `target_name` = the device's `display_name`, and the current item's
+  `jellyfin_play_session_id`. A music start with a `bookId` gives `kind = audiobook`.
+- Review item 6:
+  - `a song boundary inside fifteen seconds keeps the session`: stop, +14 s, start → same id, one revision bump, no
+    `session_list`.
+  - `a book's next part stays one session`.
+  - `an episode auto-advance stays one session`.
+  - `a stop with no start for fifteen seconds ends it` (`end_reason = stopped`, one `session_list`).
+  - `the last song paused at zero stays paused while it heartbeats`.
+- Review item 5: `another owner on the same receiver ends the first as replaced`.
+- FR-R368-3, review item 8: `a missing or unknown session id matches by device and item`.
+- Review item 9: `heartbeats store the position and push nothing`. Ten reports update `position_ms` and push nothing; a
+  pause pushes one `session_state` carrying `server_now_ms`.
+- FR-R368-2: `the watchdog reap ends the session`.
+- Review item 13: `an ended session stays listed for sixty seconds as ended`. It is in the list at +59 s; at +61 s a list
+  without it goes out.
+- Owner decision 2: `an address change re-sends the list`. When the viewer device's `last_public_address` moves to
+  another network, the next list has no other-household rows.
+
+**Server, restart.** `tv/PlaybackSessionsRestartTest.kt` (`linuxX64Test`) covers FR-R368-4, review item 12 and owner
+decision 3. Building a new service on the same DB file is the restart.
+
+- `every live session comes back reconnecting in its last state`: playing and paused both come back; ended ones don't.
+- `the tracker is rebuilt with its play session id`: `PlaybackTracker` gets the stored `jellyfin_play_session_id`, so
+  phase 180 can release the transcode (shipped bug 2).
+- `shuffle and start over survive in options`: `SessionPlan` is restored from `options_json` (R343).
+- `a report clears reconnecting and pushes one state`.
+- `two minutes of silence ends it at the stored position`: still reconnecting at +119 s; at +121 s it is `ended`
+  (`end_reason = no_return_after_restart`) with its position unchanged. When R372 ships, this test changes to R372's
+  *paused, offline* rule.
+
+**Server, migration.** `db/PlaybackSessionMigrationTest.kt` (`linuxX64Test`) covers review item 4. It is the suite's
+first migration test.
+
+- `a fresh database has playback_session with queue_index and lane`: also checks `started_by_device_id`, `end_reason`
+  and `jellyfin_play_session_id`, and that there is no `index` column.
+- `an existing database upgrades and keeps its rows`:
+  1. Create a DB and insert a `ravilo_device` row.
+  2. Drop `playback_session` and set `PRAGMA user_version` back to the version before this phase's `.sqm`.
+  3. Reopen it with `createDatabase`.
+  4. The table is back, the device row is intact, and nothing was dropped.
+
+  `playback_session_controller` isn't here; it comes with R369 (item 11).
+
+**Server, fan-out (backwards compatibility).** `tv/TvEventBusSessionsIntegrationTest.kt` (`linuxX64Test`) covers review
+items 2 and 9. It runs an in-process CIO server over loopback with `WebSockets` and a real `TvEventBus`, like
+`ReceiverTokenRefreshIntegrationTest`.
+
+- `only a socket that asked for sessions receives them`. Three sockets connect: A with `features=sessions`, B without
+  it (today's app), and C as the TV. A gets `session_list` and then `session_state`. B and C get no frame at all, so an
+  installed app never reaches its `else → refreshConfig()`.
+- `an opted-in socket gets the whole list on connect`.
+- `the list is built per socket`: two viewers get different `mine`, `here` and `controllable`.
+
+**Wire.**
+
+- Backwards compatibility: add `SessionList`, `SessionView`, `SessionListEnvelope` and `SessionStateEnvelope` to
+  `scripts/wire_roots.py`'s RESPONSES. `WireCompatTest.todaysModelsKeepEveryAppInUseWorking`
+  (`shared/src/linuxX64Test/…/wire/`) must stay green. `StreamTicket.session_id` and the `session_id` on
+  `PlaybackProgressRequest`, `PlaybackStopRequest` and `AudiobookProgressRequest` are optional, and no field is removed.
+- `shared/src/commonTest/kotlin/dev/jellystructure/shared/tv/SessionWireTest.kt` (`commonTest`):
+  - `a stream ticket from an older server decodes without a session id`.
+  - `a request with a session id decodes where unknown keys are ignored` (the `VolumeReportTest` pattern).
+  - `session events round-trip with server_now_ms and reconnecting`.
+  - Take `dispatchTvEvent(text, handlers)` out of `connectEvents` (`TvApiClient.kt:893`). Test:
+    `session events reach their handlers and never onEvent`. A garbled frame is dropped.
+  - With `wsUrl` made internal: `the events url is unchanged without features`. With no features the URL is
+    byte-identical to today's (with and without `remote`, header and query-token builds); with them it ends in
+    `features=sessions`.
+
+**Routes, end to end.** `tests/e2e/playback-sessions.spec.ts` (Playwright on the e2e stack: mock Jellyfin and the scan
+fixture, with both parts played by hand as in `screens.spec.ts`):
+
+- `a started playback is listed`. A phone opens `/api/tv/events?…&features=sessions` and starts an item through
+  `/api/tv/playback/start`. `GET /api/tv/playback/sessions` and the socket both show it with `here = true`. After a stop,
+  it ends 15 s later.
+- `an old socket gets no session frames`: a second login's socket without `features` receives nothing.
+- `the profile routes are untouched` (item 1): `GET /api/tv/sessions` still lists profiles, and
+  `DELETE /api/tv/sessions/{userId}` still signs one out.
+
+**Client, pure.** `ravilo-ui/src/commonTest/kotlin/dev/jellystructure/ravilo/ui/sessions/PlaybackSessionsTest.kt`
+(`commonTest`):
+
+- Invariant 2, the `PlaybackSessions` store:
+  - `the store holds exactly the last list`.
+  - `a state replaces its row only with a higher revision`.
+  - `a state for an id not in the list is ignored`.
+- FR-R368-7:
+  - `orderSessionRows`: `this device first then mine by latest change then others`.
+  - `sessionsElsewhereCount`: `the count leaves out this device and is absent at zero`.
+  - `castIconShown(hasDevices, rows)` (R360's rule, amended): `the glyph shows for a device or a row and not for neither`.
+- FR-R368-8, `pickBarSession(sessions, touchedId, filmsMode)`:
+  - `the bar keeps the session this app touched last`, even when it is paused or another one starts.
+  - `before any touch it shows the latest playing one`.
+  - `when the touched one ends it falls back`.
+  - `films mode shows only music and audiobooks from elsewhere`.
+  - The `+N` count.
+- Review item 9, `drawnPositionMs(view, serverNowMs, receivedAtMs, nowMs)`:
+  - `a playing row advances on the server clock`.
+  - `a paused row is frozen`.
+  - `a device clock ten minutes off still draws the right time`.
+  - The result is clamped to `duration_ms`.
+- FR-R368-10, review item 2: `eventsFeaturesFor(platform)`. Test: `phone desktop and web ask for sessions and the TV
+  does not`.
+- `SessionStringsTest` (next to `LoadErrorStringsTest`) covers FR-R368-11 and review item 14:
+  - The four `session.*` keys exist in en, da and fo and aren't the English fallback.
+  - Faroese `session.reconnecting` is *Sambindur aftur…*.
+  - `session.playing_on` doesn't exist; `cast.playing_on` is reused.
+  - No value contains *session*, *Cast*, *Chromecast* or *Jellyfin*.
+
+  `scripts/check-ravilo-strings.sh` and `check-i18n-spelling.sh` stay green.
+
+**Client, Robolectric.** These go in `ravilo-ui/src/androidUnitTest/…` (`@RunWith(RobolectricTestRunner::class)`,
+`sdk = [34]`, phone qualifiers) and use a fixed `SessionList`, plus `fakeTvApiClient` where a client is needed.
+
+- `components/PlayingEverywhereSheetTest.kt` (FR-R368-7, owner decision 1):
+  - `the section is absent when nothing plays`.
+  - `rows are ordered and this device is highlighted`.
+  - `another persons row says who is watching and has no buttons`.
+  - `a hidden title shows person place and state with no artwork or progress`.
+  - `play pause exists only on a controllable row`: `assertDoesNotExist`, not disabled.
+  - `a row is 70 dp with 46 dp targets`.
+  - `reconnecting shows over the paused or playing state`.
+- `music/MusicMiniBarElsewhereTest.kt` (FR-R368-8):
+  - With nothing local playing, the bar shows the picked session with the place in its second line.
+  - `+N` opens the sheet.
+  - In films mode, an episode playing elsewhere stays off the bar.
+  - A local playback always wins.
+- `components/CastGlyphCountTest.kt` (FR-R368-7, review item 13):
+  - With `LocalCast` null and a session elsewhere, the glyph shows with its count.
+  - With no devices and no rows, it is absent.
+
+**Only a device or a live server can confirm:**
+
+- **Acceptance 1's "within a second":** cast from the Pixel to a receiver the owner has cleared for testing, and time
+  the MacBook's capsule.
+- **Acceptance 3, with the owner's go for a dev-backend restart:** restart during a cast and during a direct-played
+  film. Each row should read *Reconnecting…* until the next report. A film on R291's composed master may end `failed`
+  instead (item 12); record which.
+- **The household rule behind the real proxy:** put one phone on mobile data. The other member's row should leave its
+  sheet, then come back on Wi-Fi. Only the live proxy gives real forwarded addresses.
+- **Acceptance 4 on an installed older build:** while sessions start and change, the backend log should show no rise in
+  `/api/tv/config` requests from that build.
+- **The desktop popover** (new chrome, item 13): check it on the Mac and on the Linux build. `desktopTest` has no Compose
+  UI harness.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

@@ -58,11 +58,11 @@ have one" warning.
 ## Acceptance
 
 1. With nothing playing, Eyð's Pixel *Play on…* lists This phone · Stue · Gæsteværelse · Kontor · Soveværelse TV, and
-   nothing that plays on several places at once.
+   nothing that plays on several places at once. *(Tests: `PlaybackTargetsTest`, `PlayOnListTest`, `PlayOnSheetTest`.)*
 2. *Cannery Lights* plays on Stue, and she picks Stue for another album. The row asks *Play … here instead / Cancel*
-   — no *Add*. She does it again a minute later and is asked again.
-3. She starts *Sommeren ’92* on Soveværelse TV from the MacBook. Stue keeps playing, and the capsule shows **+1**.
-4. Kontor is switched off. It shows *Not reachable* at the bottom and can't be picked.
+   — no *Add*. She does it again a minute later and is asked again. *(Tests: `BusyChoiceTest`, `PlayOnSheetTest`. Exception, owner decision 2: no question while this app holds that session's Cast link.)*
+3. She starts *Sommeren ’92* on Soveværelse TV from the MacBook. Stue keeps playing, and the capsule shows **+1**. *(Test: `PlaybackStartIntegrationTest`.)*
+4. Kontor is switched off. It shows *Not reachable* at the bottom and can't be picked. *(Tests: `PlaybackTargetsTest`, `PlayOnListTest`, `PlayOnSheetTest`.)*
 
 ## Taken as leans
 
@@ -72,6 +72,116 @@ have one" warning.
 
 - **No cast-everywhere button.** *Play on…* lists single places only; you pick one, then add another (R371).
 - **2026-10-04: a busy place always asks, never offers *Add*** (FR-R370-4).
+
+## Tests
+
+Written against the reviewed design and the owner's decisions: the family lives under `/api/tv/playback/…`; the server
+never assumes it is on the speakers' network, so a speaker is launched by **relay** (`cast_relay_load` to a connected
+Android or desktop app that reports seeing it); no question while this app holds the busy session's Cast link;
+*Not reachable* lists only TVs, displays and speakers seen in 24 h; books never list a Cast place.
+
+Paths as in R369: **B** backend `linuxX64Test` (`…/dev/jellystructure/tv/`), **S** `:shared` `commonTest`, **U**
+`ravilo-ui` `commonTest`, **R** `ravilo-ui` `androidUnitTest` (Robolectric), **D** `ravilo-ui` `desktopTest`.
+
+**1. Pure decisions**
+
+- `PlaybackTargetsTest` (**B**, new) — on `buildTargets(devices, sockets, castReach, sessions, viewer, nowMs)` in a new
+  `tv/PlaybackTargets.kt` (FR-R370-1/-2, review items 6, 7, 12; owner decisions 1 and 3):
+  - `` `a Ravilo app is a place only while it holds its socket` ``.
+  - `` `an app holding its socket only for music is not a video place` ``.
+  - `` `plays= decides what an app plays and the web app is not a music place` ``.
+  - `` `a cast receiver plays video and audio and a cast-audio one plays audio` `` (from `platform`).
+  - `` `a Cast device seen by a relay app on the same public address is a free place` `` (`isNearby`, R368 owner
+    decision 2).
+  - `` `a Cast device no online relay app sees is Not reachable with its reason` ``.
+  - `` `Not reachable is screens and Cast devices seen in the last 24 h and never a Ravilo app` ``.
+  - `` `a place seen 25 h ago is not listed` ``.
+  - `` `busy carries the session and is keyed on cast_device_id` `` (review item 3).
+  - `` `no group, whole-house or everywhere place is ever built` `` — acceptance 1.
+- `RelayChoiceTest` (**B**, new) — on `chooseRelayApp(candidates, castDeviceId, callerAddress, nowMs)` (owner decision 1):
+  - `` `only an Android or desktop app that reports the device is a candidate` ``.
+  - `` `an app on another public address is never chosen` ``.
+  - `` `the app in the foreground wins, then the most recently active` ``.
+  - `` `a web, iPhone or TV app is never a relay` ``.
+  - `` `no candidate means no relay` ``.
+- `CastReachTest` (**B**, new) — the *who can reach what* register fed by the apps' `cast_devices_seen` socket message:
+  - `` `a report replaces that app's list` ``.
+  - `` `a closed socket drops what that app could reach` ``.
+  - `` `two apps reporting one device are both candidates` ``.
+- `PlayOnListTest` (**U**, `seams/`, new) — on `playOnTiers(serverTargets, localRoutes, kind, thisDevice)` and
+  `mergeTargets` (FR-R370-2, review items 2, 4, 5, 6):
+  - `` `four tiers in order: this device, playing now, free, not reachable` ``.
+  - `` `free lists TVs and displays first, then speakers, each by name` ``.
+  - `` `a film or episode lists only video places and the rest are absent, not greyed` ``.
+  - `` `a book lists only Ravilo apps that declare book and never a Cast place` `` (owner decision 4).
+  - `` `a server row and a local route with one cast_device_id are one row` ``.
+  - `` `a TV app and a Cast route with the same name are one row, the app while its socket is open` ``.
+  - `` `different names stay two rows` ``.
+  - `` `a group route and another session's dynamic group are never rows` ``.
+  - `` `a not-reachable row cannot be picked` `` — acceptance 4.
+  - `` `with the server unreachable the local discovery list stands alone` ``.
+- `BusyChoiceTest` (**U**, `seams/`, new) — on `busyChoice(row, session, holdsCastLink, householdControl)` and
+  `sameKindElsewhere(sessions, kind)` (FR-R370-4, owner decision 2):
+  - `` `a busy place started from another app asks play here instead or cancel and never add` ``.
+  - `` `the choice is asked again the next time and nothing is remembered` `` — acceptance 2.
+  - `` `no question while this app holds the busy session's Cast link` ``.
+  - `` `someone else's session asks to stop them only with the switch on and is not offered without it` ``.
+  - `` `a place busy outside Ravilo keeps the take-over question` `` (R324).
+  - `` `the same kind playing for you elsewhere asks play there instead or play here` ``.
+  - `` `a free place while something plays elsewhere just starts a second session` `` — FR-R370-5.
+- `CastRelayTest` (**U**, `music/`, new) — the relaying app's side:
+  - `` `a relay load launches with the session's CastLoadData and session_id` ``.
+  - `` `once the receiver joins, the relay drops its link without becoming a controller` ``.
+  - `` `dropping a relayed link hands nothing back` `` (`castHandBack(…, endedByApp = true)` is null, R353).
+- `CastHandBackTest` (**U**, extend) — review item 9: `leavingACastThatKeepsPlayingForANewCastHandsNothingBack`.
+- `CastMessagesWireTest` (**S**, from R369, extend) — review item 3: `castLoadDataCarriesSessionIdAndAnOlderReaderIgnoresIt`,
+  `aHandoffWithNoBodyIsTodaysHandoff`, `aHandoffWithCastDeviceIdAndSessionIdDecodes`.
+- `CastDiscoveryTest` (**D**, extend) — `` `the mDNS id becomes the cast_device_id the app reports` ``.
+
+**2. Route and socket integration**
+
+`PlaybackStartIntegrationTest` (**B**, new; the loopback harness of R369's `SessionCommandIntegrationTest`, a fake clock
+for the timeout):
+
+- `` `GET playback/targets lists the four tiers for this viewer` `` — acceptance 1.
+- `` `a start on an app target sends session_load and the session is starting` `` (`play_item` envelope + `session_id`,
+  the music queue for music).
+- `` `a film session_load is not sent to an app off screen` `` (R293's gate, review item 7).
+- `` `a load with no report within 10 s ends failed` `` (review item 8).
+- `` `a start on a speaker from the web app relays cast_relay_load to the foreground Android app` `` (owner decision 1).
+- `` `with no relay app online the speaker start is refused as not reachable` ``.
+- `` `the receiver's first report with session_id joins the starting row` ``.
+- `` `replace ends the busy session with end_reason replaced and keeps its resume point` ``.
+- `` `replace across users is 403 with the switch off and allowed with it on` `` (review item 10).
+- `` `a second start on a free place leaves the first playing and the list shows two` `` — acceptance 3.
+- `` `targets_changed reaches sockets with features=sessions and no other` `` (review item 11).
+- `` `an older app's castHandoff with no body still mints a code` `` (backwards compatibility).
+
+`WireCompatTest` (existing) stays green: `Target`, `cast_device_id`, `session_load`, `cast_relay_load`, `targets_changed`,
+`plays=` and the handoff body are additive.
+
+**3. UI (Robolectric)**
+
+`PlayOnSheetTest` (**R**, `components/`, new; `ScreensSheet` over `fakeTvApiClient`):
+
+- `` `the sheet shows the four tier headings in order and no group row` `` — acceptance 1.
+- `` `tapping a busy row opens the inline choice with no add, twice in a row` `` — acceptance 2.
+- `` `a not-reachable row is dimmed and a tap does nothing` `` — acceptance 4.
+- `` `a book's sheet lists no speaker` ``.
+
+Strings: `RaviloStringsTest` `the_target_keys_resolve_in_every_language` (`target.playing_now`, `target.free`,
+`target.unreachable`, `target.replace`).
+
+**Only real devices can confirm** (the speaker is Gæsteværelse; no other room)
+
+- *Relay launch.* With the Pixel on the home network and Ravilo open, start an album on Gæsteværelse from the web app.
+  It plays, and the Pixel shows no remote and no hand-back. Then close Ravilo on the Pixel and reopen the web sheet:
+  Gæsteværelse is under *Not reachable* with the reason.
+- *The shared key.* The `cast_device_id` the Pixel (MediaRouter) and the desktop (mDNS) report for Gæsteværelse is the
+  same string.
+- *Android's one Cast session* (needs a second Cast device, which the owner names at the time). Cast an album to
+  Gæsteværelse from the Pixel, then cast something to the second device from the same Pixel. Gæsteværelse keeps
+  playing, nothing comes back to the phone, and the Pixel still pauses Gæsteværelse (now through the server).
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

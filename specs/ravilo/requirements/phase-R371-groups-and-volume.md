@@ -54,11 +54,11 @@ and shows what they report back.
 ## Acceptance
 
 1. Eyð plays *Cannery Lights* on Stue. In the remote's Speakers sheet she taps *Add a speaker…* → Gæsteværelse.
-   It joins in sync, and the place line reads *Stue + Gæsteværelse*.
-2. On the MacBook capsule she drags *Volume* from 60 % to 30 %. Stue goes 70 → 35 and Gæsteværelse 50 → 25.
+   It joins in sync, and the place line reads *Stue + Gæsteværelse*. *(Tests: `SpeakersSheetTest`, `SessionRoomsIntegrationTest`; the join itself is a manual check.)*
+2. On the MacBook capsule she drags *Volume* from 60 % to 30 %. Stue goes 70 → 35 and Gæsteværelse 50 → 25. *(Test: `SessionRoomsIntegrationTest` for the route; the exact levels are Cast's own scaling, a manual check.)*
 3. She adds Kontor the same way, and the line reads *Stue + 2*. Kontor is unplugged, and the line reads *Kontor left*
-   for 5 s, then *Stue + Gæsteværelse*.
-4. No *Play on…* list, sheet or menu in any Ravilo app offers several places at once.
+   for 5 s, then *Stue + Gæsteværelse*. *(Tests: `PlaceLineTest`, `SessionRoomsTest`; unplugging is a manual check.)*
+4. No *Play on…* list, sheet or menu in any Ravilo app offers several places at once. *(Tests: `PlayOnListTest`, `PlayOnSheetTest`.)*
 
 ## Decided by the owner (2026-10-03)
 
@@ -69,6 +69,115 @@ and shows what they report back.
 
 - *Volume* scales the rooms by the same ratio and keeps their balance.
 - A phone, computer or TV app is never one of the rooms.
+
+## Tests
+
+Written against the reviewed design and the owner's decisions: *Add a speaker…* and each room's slider are on **every**
+app. Android (`MediaRouter2` routing controller, API 30+) and the desktop (once the speaker test passes) act directly;
+every other app sends `add_room` / `remove_room` / a room `set_volume` to the server. The server relays it to the app
+holding the session's Cast link, or else to a relay app on that network, which then holds the link. The master always
+goes to the receiver. Music only.
+
+Paths as in R369: **B** backend `linuxX64Test`, **S** `:shared` `commonTest`, **U** `ravilo-ui` `commonTest`, **R**
+`ravilo-ui` `androidUnitTest` (Robolectric), **C** `ravilo-castv2/src/commonTest/kotlin/dev/jellystructure/ravilo/castv2/`.
+
+**1. Pure decisions**
+
+- `RoomOpRouteTest` (**B**, new) — on `roomOpRoute(op, session, linkHolder, relayApps)` in `tv/SessionCommands.kt`
+  (FR-R371-5, review item 8, owner decisions 1 and 2):
+  - `` `the master set_volume and set_mute go to the receiver's socket` ``.
+  - `` `a room op goes as session_command to the app holding the Cast link` ``.
+  - `` `with no link holder a room op goes to a relay app on that network, which then holds the link` ``.
+  - `` `with neither it is 409 unreachable` ``.
+  - `` `add_room and remove_room take the same road as a room's volume` ``.
+- `SessionRoomsTest` (**B**, new, on R368's `PlaybackSessions` with a fake clock) — review items 5–7:
+  - `` `a members report replaces the server's room list and makes the target a cast_group` ``.
+  - `` `the master never writes a room's level; only reports do` ``.
+  - `` `a room's mute sets 0 and the server keeps the level before it; unmute restores that level` ``.
+  - `` `a room missing from the next members report left, and the session keeps its other rooms` ``.
+- `PlaceLineTest` (**U**, `seams/`, new) — on `placeLine(rooms, left, nowMs)` (FR-R371-3); extends what `CastGroupTest`
+  does for R355's names:
+  - `` `one room, two rooms, then the first plus a count` ``.
+  - `` `a room that left is named for 5 s, then the line drops it` `` — acceptance 3.
+  - `` `rooms are named in the order they joined` ``.
+- `AddSpeakerTest` (**U**, `seams/`, new) — on `addSpeakerRows(targets, session)` and
+  `addSpeakerRoad(app, sdkInt, linkHolder, relayOnline)` (FR-R371-1/-2, review items 2–4):
+  - `` `only free speakers and displays are offered, each with its level` ``.
+  - `` `a busy room is listed and cannot be tapped` ``.
+  - `` `a Ravilo app is never a room` ``.
+  - `` `the row is present only on a music session` `` (Cast groups carry audio only; books never cast).
+  - `` `Android 30 and up adds directly; below 30, and on web, iPhone, TV and admin, it goes by relay` ``.
+  - `` `the desktop adds directly only once the proven flag is set` ``.
+  - `` `no link holder and no relay app shows the row disabled with its reason` `` (owner decision 1).
+- `RoomRemovalTest` (**U**, `seams/`, new) — on `removeRoomPlan(rooms, room)` (FR-R371-2, review item 10):
+  - `` `removing a room that isn't the first deselects it` ``.
+  - `` `removing the first room is a move to the remaining one` `` (R372's *Move to*).
+  - `` `removing the second-last leaves a one-place session` ``.
+  - `` `removing the last stops it` ``.
+- `VolumeRowsTest` (**U**, `seams/`, new) — on `volumeRows(session)` and `volumeKeysTarget(linked, onScreen)`
+  (FR-R371-4, review items 9 and 11; owner decision 2):
+  - `` `one place has one slider` ``.
+  - `` `several rooms have the master labelled with cast.volume, then one slider each with its own mute` ``.
+  - `` `a room with no reported level shows a dash, is disabled, and says why` ``.
+  - `` `room sliders are live on every app while a link holder or relay app is online` ``.
+  - `` `the phone's keys drive the linked cast, a server session only on screen, and the phone's own volume off screen` ``.
+- `GroupControllerTest` (**U**, `seams/`, new) — on the `GroupController` seam (the Android actual wraps
+  `MediaRouter2.RoutingController`), with a fake:
+  - `` `add a speaker selects that route and leaves the sheet open` ``.
+  - `` `the selectable routes are the add list` ``.
+  - `` `a member route's level change reports members to the server` ``.
+  - `` `members are reported on change only` ``.
+- `RemoteCommandTest` (**S**, extend) — `volumeCommandsCarryAnOptionalCastDeviceIdAndAPercent` (master vs room, 0–100);
+  `theOldPlayerCommandSetVolumeStillReads` (236's form, older apps).
+- `CastMessageTest` (**C**, extend) — `` `SET_VOLUME to a member speaker carries a level or muted on the receiver namespace` ``
+  (review item 7, the desktop's road).
+
+**2. Route and socket integration**
+
+`SessionRoomsIntegrationTest` (**B**, new; R369's loopback harness, with a fake receiver and a fake Android socket that
+declares it holds the Cast link):
+
+- `` `a master set_volume from the web app reaches the receiver and the reported level reaches every controller` `` —
+  acceptance 2 (the server's side of it).
+- `` `add_room from the web app reaches the link holder, and its members report updates every controller` `` —
+  acceptance 1.
+- `` `a room set_volume from the TV app reaches the link holder` ``.
+- `` `with the link holder gone the add goes to the relay app` ``.
+- `` `with no app able to reach the speakers the room op is 409 and the master still works` ``.
+- `` `an older app's player_command set_volume still sets the master` `` (backwards compatibility).
+
+`WireCompatTest` (existing) stays green: `members`, the room fields on `set_volume`/`set_mute`, `add_room` and
+`remove_room` are additive.
+
+**3. UI (Robolectric)**
+
+`SpeakersSheetTest` (**R**, `music/`, new; the phone's Speakers sheet over `fakeTvApiClient` and a fake `GroupController`):
+
+- `` `Add a speaker is the last row and one tap adds a room with no confirm and the sheet stays open` `` — acceptance 1.
+- `` `a busy room's row does nothing` ``.
+- `` `swiping a room left removes it` ``.
+- `` `the master reads Volume and each room has its slider and mute` ``.
+- `` `with no app able to reach the speakers, Add a speaker is disabled with its reason` ``.
+
+`PlayOnSheetTest` (**R**, from R370) `` `no Play on list, sheet or menu offers several places` `` — acceptance 4.
+
+Strings: `RaviloStringsTest` `the_group_keys_resolve_in_every_language` (`group.add_speaker`, `group.left`,
+`volume.no_report`; the master reuses `cast.volume`).
+
+**Only real speakers can confirm** (Gæsteværelse plus a second Cast speaker the owner names at the time; no other room
+is named here)
+
+- *Building the group from Ravilo* (`MediaRouter2`, Android 30+). From the Pixel playing on Gæsteværelse, *Add a
+  speaker…* → the second speaker. It joins in sync with no new LOAD, and the line names both. Remove it: Gæsteværelse
+  carries on alone.
+- *The relay.* Do the same from the web app with the Pixel online and holding the link, then with only a relay app
+  online.
+- *Cast's group volume.* Set the rooms to 70 % and 50 % and drag the master from 60 % to 30 %. Record what Cast does to
+  each room; acceptance 2 follows Cast's own scaling if it isn't exactly proportional.
+- *Removing the first room.* Remove Gæsteværelse while it leads the group. Note the gap the move makes.
+- *A room unplugged.* Unplug the second speaker: *{room} left* shows for 5 s on the Pixel and on the computer.
+- *The desktop* (gates the desktop's direct road). From the Mac, try to grow a group through `ravilo-castv2`, and send
+  `SET_VOLUME` to a member speaker that is in a group. Until both work, the desktop uses the relay.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

@@ -87,6 +87,138 @@ the shipped `i18n/*.json` wins). The desktop mockup is English like the rest of 
 - *Northern Line*'s ⋯ sheet: *Also on 3 releases*.
 - Harbour Lights' *Singles & EPs* no longer shows the five *Kite Weather* singles.
 
+In CI, on stand-in data (see **Tests**):
+- line 1 → `MusicAlbumEditionsTest.kite_weather_on_a_phone` and `.the_same_page_on_the_desktop`. With 305's owner
+  decision 3 the divider reads MusicBrainz's title or disambiguation, else *Extras · Japan*.
+- line 2 → `AlbumPlayOrderTest.play_album_plus_extras_is_official_then_extras_then_b_sides` and
+  `MusicAlbumEditionsTest.the_menu_picks_relabels_and_starts_playback`.
+- line 3 → `MusicTvEditionsTest.lists_fold_per_viewer` and `TrackRowChipsTest`.
+- line 4 → `SongSheetAlsoOnTest.northern_line_is_also_on_3_releases`.
+- line 5 → `MusicArtistEditionsTest.homed_singles_leave_singles_and_eps`.
+
+## Tests
+
+The stand-ins are Harbour Lights, *Kite Weather* (11 + *Lantern Swing*), its five singles (*Northern Line*, *Fog
+Bank*, *Salt on the Window*, *Low Tide* and *Tidewater*) and 13 B-sides, *Signal Found*, and a *Lighthouse Keepers*
+soundtrack single. No real library names appear. The server's rules (the vote, the copy ranking, the fold, the bonus
+predicate, the edition name, the pair selection) are tested once, in 305's **Tests**. Here we test only what crosses
+the wire and what the app does with it.
+
+**The wire (shared, `shared/src/commonTest/kotlin/dev/jellystructure/shared/tv/`)**
+
+1. `MusicEditionsWireTest`, after `RaviloWireJsonTest` (FR-R373-1, review item 1):
+   - `todays_album_payload_decodes_as_an_unmatched_page`: a `MusicAlbumDetail` without the new fields decodes with
+     `official_ids = null`, empty `extra_ids`, `singles` and `bside_tracks`, and `single_from = null`. A
+     `MusicTrackItem` decodes with `extra = false` and `also_on = 0`.
+   - `a_matched_album_decodes_and_tracks_keep_file_order`.
+   - `unknown_fields_from_a_newer_server_are_skipped`.
+   - `the_copies_answer_round_trips`: a list of `{track, album card}`.
+2. `WireCompatTest` (`shared/src/linuxX64Test/.../wire/`) stays green against every recorded release baseline. It is
+   the proof that installed apps keep today's album page: fields are only added, and only as optional ones. The copies
+   response joins `WireRoots.kt` (through `scripts/wire_roots.py`), so the next `record-wire-baseline.sh` records it.
+
+**The server's answers (`src/linuxX64Test/kotlin/dev/jellystructure/music/`)**
+
+3. `MusicTvEditionsTest`: a real `MusicTvService` on a temp store, with 305's tables filled in directly. Viewers are
+   built with `DeviceData(…, allowedLibraries = …)` as in `MusicTvServiceTest`.
+   - `album_detail_carries_official_extras_singles_and_b_sides_in_order`:
+     - 11 `official_ids`;
+     - `extra_ids = [Lantern Swing]`;
+     - `edition_country = "JP"`, `edition_title = null`;
+     - 5 held single cards, in year order;
+     - 13 full `bside_tracks` whose `album` / `album_id` name their single.
+   - `tracks_keep_file_order_so_an_installed_app_shows_todays_page`.
+   - `an_unmatched_album_has_no_official_ids`.
+   - `a_singles_page_carries_single_from` (FR-R373-2 point 2).
+   - `more_from_artist_leaves_out_the_singles_homed_here` (review item 7).
+   - `artist_detail_moves_homed_singles_to_singles_under_whichever_group_held_them`: a live single leaves *Live*
+     (FR-R373-7).
+   - `lists_fold_per_viewer` (FR-R373-3, review item 2). Browse → Songs, search's songs, an artist's top songs, Listen's
+     *Recently played* (deduplicated, order kept), the empty search's recent songs and `artistCard.track_count` fold.
+     An album's tracks, a playlist and `last-played` do not.
+   - `the_shown_copy_is_the_highest_bitrate_this_viewer_may_see`. A 192 kbps WMA beats a 160 kbps MP3, because
+     re-encoding does not demote a copy (305 owner decision 2). A FLAC in a library this viewer cannot open is neither
+     shown nor counted.
+   - `extra_on_a_folded_row_only_when_the_song_is_official_nowhere` (owner decision; FR-R373-5); on an album's own
+     `tracks` it is per copy.
+   - `also_on_counts_the_other_visible_copies`.
+   - `copies_lists_the_other_visible_copies_and_a_hidden_track_is_not_found` (`GET /tv/music/track/{id}/copies` goes
+     through `visible()`).
+   - There is no *Shuffle all* route (review item 1). Nothing to test.
+
+**The app, pure (`ravilo-ui/src/commonTest/kotlin/dev/jellystructure/ravilo/ui/music/`)**
+
+4. `AlbumPlayOrderTest` tests `albumQueue(detail, pick)` and `queueForTap(detail, pick, trackId)`, which resolve the
+   wire's ids against `tracks` and `bside_tracks` (FR-R373-2, review item 3):
+   - `play_album_is_the_official_order` (11).
+   - `play_album_plus_extras_is_official_then_extras_then_b_sides`: 11 + 1 + 13 = 25, in that order.
+   - `a_tap_inside_the_pick_plays_from_that_row`.
+   - `a_tap_on_an_extra_or_b_side_under_the_plain_pick_plays_the_extended_order_and_keeps_the_pick`.
+   - `an_unmatched_album_plays_tracks_in_file_order_whatever_was_stored`.
+   - `the_header_length_sums_the_official_ids`.
+   - `an_id_missing_from_the_payload_is_skipped`: this pins the build's choice; the app never crashes on a short list.
+5. `EditionLabelTest` tests `editionLabel(title, country, lang)` (305 owner decision 3, review item 8):
+   - `musicbrainz_title_or_disambiguation_as_it_is`: *20th Anniversary*, *super deluxe*.
+   - `else_the_country_in_the_viewers_language`: `JP` gives *Extras · Japan*; `DE` gives *Germany* / *Tyskland* /
+     *Týskland*. The country names are a new table; none exists in `i18n/*.json` today.
+   - `an_unknown_code_or_nothing_is_extras_alone`.
+6. Extend `VersionChipsTest`:
+   - `bonus_is_never_folded_into_more`: four version keys plus `extra` on a phone give two chips, *+2* and Bonus.
+   - `bonus_has_no_hue_and_meets_contrast_in_every_theme`, using the file's `worstContrast` helper.
+
+**The app, Robolectric (`ravilo-ui/src/androidUnitTest/kotlin/dev/jellystructure/ravilo/ui/music/`)**
+
+The screen tests use `createComposeRule()` with `@Config(sdk = [34])`. The phone runs on the default qualifiers; the
+desktop branch runs under `LocalLayoutFamily provides DESKTOP`, as `SeriesDetailFocusTest`'s `Platform` helper does.
+Data comes from a fixed `MusicLoader { … }`, or from `fakeTvApiClient` for routes. Playback is caught through a new
+`onPlayQueue` parameter on `MusicAlbumScreen` that defaults to `MusicPlayback::playQueue`, so no engine runs.
+
+7. `AlbumPickStoreTest` (review item 4) runs against the real Android `MusicDeviceStore`:
+   - `the_pick_is_per_album_and_per_device`.
+   - `forget_listening_clears_it`.
+   - `a_garbled_value_reads_as_the_plain_album`.
+8. `MusicAlbumEditionsTest` (FR-R373-2):
+   - `kite_weather_on_a_phone`:
+     - the header reads *11 songs · 48 min* + *1 extra*;
+     - the rows are numbered 1–11;
+     - the divider reads *Extras · Japan*;
+     - *Lantern Swing* has no number and no Bonus chip;
+     - there are 5 single cards;
+     - *13 B-sides · Show* opens 13 rows with *from Northern Line (single)*, and *Hide* closes them.
+   - `the_same_page_on_the_desktop`.
+   - `the_menu_picks_relabels_and_starts_playback`. The ▾ menu lists both items with their sub-lines. Picking *Play
+     album + extras* sends the 25-track list (and Shuffle the same list with `shuffle = true`) and relabels the button.
+     A fresh composition reads the remembered pick.
+   - `an_unmatched_album_is_todays_page`: there is no ▾, no divider and no *Singles & B-sides*; Play gets `tracks` in
+     file order.
+   - `a_singles_page_says_single_from_and_opens_the_album`.
+9. `TrackRowChipsTest` (FR-R373-5, FR-R373-6):
+   - `chips_sit_between_the_title_and_the_length`: checked on the nodes' bounds.
+   - `at_phone_width_the_title_ellipsises_the_versions_fold_and_bonus_stays`.
+   - `the_queue_panel_shows_bonus`.
+   - `the_mini_bar_shows_no_bonus`.
+   - `now_playing_keeps_its_chips_before_artist_and_album`.
+10. `SongSheetAlsoOnTest` (FR-R373-4), with `fakeTvApiClient` answering `/api/tv/music/track/{id}/copies` and counting
+    the calls:
+    - `northern_line_is_also_on_3_releases`: the sheet ends with *Also on 3 releases* and three rows (cover · title ·
+      *Single · 2006*); a tap opens that release.
+    - `one_copy_reads_also_on_1_release`.
+    - `also_on_0_draws_no_section_and_asks_nothing`.
+    - `a_failed_copies_call_leaves_the_rest_of_the_sheet`.
+11. `MusicArtistEditionsTest`:
+    - `homed_singles_leave_singles_and_eps` (FR-R373-7): the line *5 singles live under their album — Kite Weather*
+      opens the album.
+    - `the_songs_list_renders_what_the_server_sent`: two same-titled rows both render. The app folds nothing.
+12. The new `ed.*` keys are in en, da and fo. `scripts/check-ravilo-strings.sh` and `scripts/check-i18n-spelling.sh`
+    stay green, and the Faroese follows R288's lexicon.
+
+**Only real devices on the dev stack can confirm** these, once 305a–c have run on the real library and with the owner's
+go-ahead for devices and deploys:
+- the Pixel and the Mac app show the household's folded counts (*385 songs*) and the real albums' extras and B-sides;
+- the previous release's installed app shows today's album page against the new server;
+- *Play album + extras* cast to a test speaker the owner allows queues the expanded order and splits per R359;
+- the chips line up on the Mac's Songs table at Large and Medium window sizes.
+
 ## Dev review (2026-10-04, against `main` `5210045a`)
 
 Read against `shared/…/tv/Music.kt`, `MusicTvService`, `MusicTvRoutes`, `MusicDetailScreens` (album and artist pages),

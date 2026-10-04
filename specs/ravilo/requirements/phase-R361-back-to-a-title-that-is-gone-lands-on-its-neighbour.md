@@ -91,13 +91,64 @@ it is a page with one obvious home). One helper in common code, not one per scre
    less; the next Back-return with a surviving title restores as before.
 5. Focus a tile scrolled far right in a row, then cause a refresh that removes it: focus lands on its neighbour, which
    is on screen.
-6. Robolectric walks for 1–5 on the TV path (`isTvPlatform`), with a fake feed that drops the title between select
-   and return, and one that drops it while focused.
+6. 1–5 are walked key by key in Robolectric and their decisions are unit-tested; the retry helpers retry. See
+   *Tests*.
 
 ## Out of scope
 
 - Whether a watched title leaves Recommended at all (phase 269's amendment, 2026-10-04: only at the weekly build).
 - The phone (no focus is drawn on a handset; R267/R298).
+
+## Tests
+
+Conventions as in `BrowseFocusTest`: Robolectric `@Config(sdk = [34], qualifiers = "w960dp-h540dp")`, plus
+`-television` on a new class whose path reads `isTvPlatform` (as `SearchFocusTest` does), `fakeTvApiClient`, keys
+through `rule.onRoot().performKeyInput { pressKey(…) }`, the focused node asserted with `isFocused()` + its text or
+tag.
+"Leave and return" is the test toggling the screen out of and back into composition over the **same** kept store
+(`SeriesDetailFocusTest.renderLeavingForThePlayer`'s shape). Stand-in titles only.
+
+**Prerequisite — the retry helpers retry (review item 3; also R362, R365 FR-6).**
+- `FocusRetryTest` (new, Robolectric, `androidUnitTest/…/ui/focus/`), `rule.mainClock.autoAdvance = false`:
+  - `requestFocusRetrying` on a requester whose box composes only after 3 frames → after `advanceTimeByFrame()` ×3
+    the box is focused. **Red on today's code** (`isSuccess` stops after the first, failed try).
+  - `requestFocusRetryingOrMoveNative` on a requester that never attaches, from a focused box above a box "below"
+    → after 30 frames "below" is focused (the native `moveFocus(Down)` fallback runs).
+  - A requester already attached → focused on the call, with no frame advanced.
+- Source check (checklist): `grep -rn -A1 'requestFocus() }' ravilo-ui/src | grep -E '\.(isSuccess|isFailure|onFailure)'`
+  finds nothing (7 hits on `5210045a`: the two helpers, the `repeat(10)` loops in `SeededBrowseScreen` and
+  `TaxonomyScreen`, and `ChannelScreen`'s two-line `.onFailure`, R365 FR-6).
+
+**Decisions (`commonTest`, `FocusReturnTest`, new, `…/ui/focus/`).**
+- `fallbackIndex`: `(3, 10) → 3`; the end of a shorter list `(9, 9) → 8`; `(5, 2) → 1`; `(0, 0) → null`.
+- `resolveReturn`: the title survives (also at a new index) → the same row and title; gone → the same row's tile at
+  the same index; gone from the end → the new last; the row gone → the row now at `rowIndex` (the one below that
+  slid up), column clamped to its length; the row gone and it was the last row → the row above; a row present but
+  empty counts as gone; every row empty → `null`.
+
+**Robolectric walks.**
+- `HomeFocusTest` (new, `…/screens/`; the fake answers `/api/tv/home` with six stand-in rows, a second fetch drops one
+  title; a `home_changed` refresh is the store reloading):
+  - FR-1/2/5, acceptance 1: Down ×5 → row 5, Right ×3 → tile 4, OK; feed drops tile 4; return → the focused node is
+    the tile now 4th; the hero is not displayed; Down → a tile in row 6.
+  - Acceptance 2: the row's last tile, same walk → the new last tile.
+  - Acceptance 3: a one-title row, the feed drops it → focus on the row now in its place, same column clamped; then
+    OK on another tile, return with an unchanged feed → that tile (the keys were cleared: `focusRowKey == null`
+    after the first resolve).
+  - FR-3, acceptance 5: Right ×12 in a long row, refresh without that tile while it is focused → the tile now at that
+    index is focused **and** `assertIsDisplayed()`.
+  - Review item 2's late timing: return on the old feed (restore succeeds), then the refresh drops the title → as 5.
+- `BrowseFocusTest` gains (FR-4, acceptance 4): Right ×2 → "Stand-in 3", OK, the fake drops it, return → "Stand-in
+  4" focused, the count reads one less, `store.focusItemKey == null`; OK on it, return unchanged → "Stand-in 4"
+  again. The fake answers an **empty** grid on return → focus on the facet bar's last-used chip (inside
+  `SEEDED_FACET_BAR_TAG`), never the app bar.
+- My List's grid twin (FR-3 for grids) is walked in R364's `MyListFocusTest`; Search's `fallbackIndex` in
+  `SearchReturnTargetTest` (a result gone → its neighbour); the Discover wall's in `DiscoverFocusTest` (a tile gone
+  → its neighbour).
+
+**TV only (manual, D-pad on the TV).** Home, 5th row, 4th tile → *Mark Watched* → Back: the row stays at its height
+on screen and the next Down goes to row 6. Then the same with Back pressed at once and with Back after 5 s (the order
+of `home_changed` against Back on a real network). Continue Watching: finish an episode's last minutes → Back.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

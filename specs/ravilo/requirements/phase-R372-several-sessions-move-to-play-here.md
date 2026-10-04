@@ -59,12 +59,12 @@ the word *session*.
 
 ## Acceptance
 
-1. *Cannery Lights* on Stue. Eyð picks *Move to… → Kontor*. Kontor starts at the same second, Stue stops, and the
-   MacBook's capsule follows without a blink.
+1. *Cannery Lights* on Stue. Eyð picks *Move to… → Kontor*. Kontor starts 2 s back, Stue stops once Kontor plays, and the
+   MacBook's capsule follows without a blink. *(Tests: `MovePlanTest`, `SessionMoveIntegrationTest`; manual check.)*
 2. *Sommeren ’92* paused on Soveværelse TV is gone from *Playing everywhere* after 24 h. Jellyfin's resume point is
-   48:10.
+   48:10. *(Test: `SessionEndingTest`.)*
 3. Soveværelse TV is unplugged mid-film. The Pixel shows *Soveværelse TV is offline · paused at 48:10* with *Play
-   here*. Play here resumes on the phone at 48:08.
+   here*. Play here resumes on the phone at 48:08. *(Tests: `MovePlanTest`, `SessionMoveIntegrationTest`, `MoveToSheetTest`; manual check.)*
 
 ## Decided by the owner (2026-10-04)
 
@@ -74,6 +74,109 @@ the word *session*.
 ## Taken as leans
 
 - Moving speech, books and episodes rewinds 2 s.
+
+## Tests
+
+Written against the reviewed design and the owner's decisions: *Move to…* is Ravilo's own load-then-stop, keeping the
+session's `id`; **every** move rewinds 2 s, music included; a silent place, whether after a restart or not, leaves its
+session *paused, offline* for 24 h (the watchdog no longer ends it); a move onto a speaker from the web app, iPhone or
+TV uses R370's relay; the TV's group *Speakers* panel is built in this phase. All server tests run on a fake clock
+(R368's `PlaybackSessions`, as in `PlaybackTrackerTest`).
+
+Paths as in R369: **B** backend `linuxX64Test` (`…/dev/jellystructure/tv/`), **U** `ravilo-ui` `commonTest`, **R**
+`ravilo-ui` `androidUnitTest` (Robolectric), **E** `tests/e2e/`.
+
+**1. Pure decisions**
+
+- `MovePlanTest` (**B**, new) — on `movePlan(session, target, movingApp, relayApps)` and `moveStartMs(positionMs)` in
+  `tv/SessionMoves.kt` (FR-R372-2/-3, review item 2, owner decisions 2 and 4):
+  - `` `a move onto a Ravilo app is a server session_load` ``.
+  - `` `a move onto a Cast place from Android or the desktop is that app's own LOAD` ``.
+  - `` `a move onto a Cast place from the web app, iPhone or TV is a relay load` ``.
+  - `` `with no relay app a Cast place is not reachable` ``.
+  - `` `a film or episode moves only to a video place` ``.
+  - `` `every kind starts 2 s back, music too, never below 0` `` — acceptance 3 (48:10 → 48:08).
+- `SessionEndingTest` (**B**, new) — on `PlaybackSessions` and the 110 watchdog (FR-R372-4, review items 5, 6 and 8,
+  owner decision 1; amends FR-R368-2/-4):
+  - `` `a paused session ends 24 h after its last change` `` — acceptance 2.
+  - `` `a stopped session ends at once and leaves the list 60 s later` ``.
+  - `` `a played-out queue reads finished for 60 s` ``.
+  - `` `a watchdog reap stops Jellyfin's playback but leaves the session paused and offline` ``.
+  - `` `the 24 h sweep ends a paused, offline session` ``.
+  - `` `a place silent after a restart is paused and offline for 24 h, not ended at 2 min` ``.
+  - `` `a report from an offline place clears offline` ``.
+  - `` `a music session keeps its queue, index and position while it lives` ``.
+- `SessionStateLineTest` (**U**, `seams/`, new) — on `sessionStateLine(view, move, nowMs)` (FR-R372-5, review item 10):
+  - `` `each of the 16 states maps to its key` `` (starting `loading` · paused `cast.paused_on` · finished `ab.finished` ·
+    moving `session.moving` · move failed `session.move_failed` · offline `session.place_offline` · stopped by someone
+    `session.stopped_by` · …).
+  - `` `ended and adding a place have no words` ``.
+  - `` `an older receiver is today's cast remote unchanged` ``.
+  - `` `no state's words in en, da or fo contain the word session` ``.
+- `PlayHereTest` (**U**, `music/`, new) — on `playHere(session, device)` (FR-R372-3, review item 3):
+  - `` `music on the phone uses the hand-back at the session's place, 2 s back` ``.
+  - `` `a film opens the player 2 s before the session's position` ``.
+  - `` `the label is cast.play_here, cast.play_here_mac or cast.play_here_desk by platform` ``.
+- `OfflineCastPlayTest` (**U**, `seams/`, new) — review item 7, owner decision 4: on a paused, offline cast session:
+  - `` `the linked phone's Play is a new LOAD` ``.
+  - `` `the web app's Play is a relay load while a relay app is online` ``.
+  - `` `with no relay app Play is absent and Play here is offered` ``.
+- `SessionControlPathTest` (**U**, `seams/`, new) — review item 1: `` `the newest cast holds the link and an older one is
+  controlled through the server` `` · `` `the bar's touched-last pick ignores which one holds the link` ``.
+- `TvSpeakersPanelModelTest` (**U**, `screens/`, new) — on `tvSpeakersPanel(session)` (FR-R372-6, owner decision 3):
+  - `` `the panel exists for a group session sent to the TV` ``.
+  - `` `the master goes to the receiver and a room to R371's road` ``.
+  - `` `a room with no road is disabled with its reason` ``.
+
+**2. Route and socket integration**
+
+`SessionMoveIntegrationTest` (**B**, new; R369's loopback harness, fake clock):
+
+- `` `move keeps the session id, stops the old place after the new one reports playing, and every controller follows` ``
+  — acceptance 1.
+- `` `the place line reads moving until the new place plays` ``.
+- `` `a move with no playing report in 10 s fails and the old place carries on` ``.
+- `` `the session keeps its id while its Jellyfin play session changes, inside the 15 s hold` ``.
+- `` `a move from the web app onto a speaker relays cast_relay_load` `` (owner decision 4).
+- `` `a stale move revision answers 409` ``.
+- `` `an unplugged place's session turns paused and offline with Play here offered` `` — acceptance 3.
+- `` `a play_item reaching a TV at sign-in is dropped and the load fails at 10 s` `` (R155 kept, review item 9).
+- `` `a TV with Ravilo closed is not an app place` ``.
+
+`playback-sessions.spec.ts` (**E**, from R369, extend) — `"a receiver whose socket closes leaves the session paused and
+offline"`: close the fake receiver's page mid-song; the backend's session list shows it paused and offline at its last
+position.
+
+`WireCompatTest` (existing) stays green: the move route, `offline`, `end_reason` values and the new state keys are
+additive.
+
+**3. UI (Robolectric)**
+
+- `MoveToSheetTest` (**R**, `components/`, new):
+  - `` `the current place is ticked and a film lists only video places` ``.
+  - `` `picking another place shows Moving to, then the new place` ``.
+  - `` `a failed move shows Couldn't move to and the old place stays` ``.
+  - `` `an offline session offers Play here and Move to` `` — acceptance 3.
+- `TvSpeakersPanelTest` (**R**, `screens/`, new; the TV player on D-pad key events):
+  - `` `up from the transport opens the Speakers panel on a group session` ``.
+  - `` `left and right move the focused slider and send set_volume through the server` ``.
+  - `` `the TV remote's volume keys are not consumed` ``.
+  - `` `no panel on a session that isn't a group` ``.
+
+Strings: `RaviloStringsTest` `the_move_keys_resolve_in_every_language` (`session.move_to`, `session.moving`,
+`session.move_failed`, `session.place_offline`, `session.stopped_by`). `session.finished` is not added; `ab.finished` is
+used.
+
+**Only the real speaker can confirm** (Gæsteværelse; no other room)
+
+- *CAF's paused timeout.* Pause a song on Gæsteværelse and time how long until the receiver closes and the session turns
+  *offline*. Record it in the build notes.
+- *Move and back.* Move a song from the Pixel to Gæsteværelse and back. Each move starts 2 s back, and the old place
+  stops only once the new one plays.
+- *Unplugged.* Unplug Gæsteværelse mid-song. Within 90 s the Pixel shows *Gæsteværelse is offline · paused at …* with
+  *Play here*, and Play here resumes 2 s back.
+- *Relay move.* From the web app, move a session that plays on the computer onto Gæsteværelse, with the Pixel online as
+  the relay.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

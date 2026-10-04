@@ -63,16 +63,143 @@ least every 5 s while playing, and right away after any command.
 ## Acceptance
 
 1. *Cannery Lights* plays on Stue from Eyð's Pixel. On her MacBook she presses pause in the capsule. Stue pauses
-   within a second, and the Pixel's Now playing shows *Paused*.
-2. The Pixel is switched off. The MacBook still pauses, skips and seeks Stue (the backend reaches the receiver itself).
+   within a second, and the Pixel's Now playing shows *Paused*. *(Tests: `SessionCommandIntegrationTest`; on the speaker, the manual check.)*
+2. The Pixel is switched off. The MacBook still pauses, skips and seeks Stue (the backend reaches the receiver itself). *(Tests: `SessionCommandIntegrationTest`, `playback-sessions.spec.ts`; manual check.)*
 3. The Pixel and the MacBook press next at the same moment. Stue skips once, not twice (the second command is stale for
-   `next`, so it gets a 409 and is dropped).
-4. Olivar's session shows no ⏯ on Eyð's phone while 304's switch is off.
+   `next`, so it gets a 409 and is dropped; at the target, a mismatched `expect_index` is dropped). *(Tests: `SessionCommandRuleTest`, `ReceiverRemoteTest`, `SessionCommandIntegrationTest`, `playback-sessions.spec.ts`.)*
+4. Olivar's session shows no ⏯ on Eyð's phone while 304's switch is off. *(Tests: `SessionControlRuleTest`, `SessionRemoteTest`.)*
 
 ## Taken as leans
 
 - A stale `next` is dropped (409) rather than applied twice.
 - Stopping someone else's session asks once.
+
+## Tests
+
+Written against the reviewed design (dev review + owner decisions), not the first draft: routes under
+`/api/tv/playback/sessions`, `session_command` only to sockets that declared `session_control`, the revision check at
+the target (`expect_index` / `queue_rev`), stopping someone else's playback asks **every** time, and a speaker whose
+receiver isn't running is reached through R370's relay. R368's `PlaybackSessions` (service + store, fake clock as in
+`PlaybackTrackerTest`) is the base every server test builds on.
+
+Paths: **B** = `src/linuxX64Test/kotlin/dev/jellystructure/tv/` (backend, `linuxX64Test`) · **S** =
+`shared/src/commonTest/kotlin/dev/jellystructure/shared/tv/` (`:shared` `commonTest`, also covers the receiver's logic,
+which lives in `ReceiverRemote.kt`) · **U** = `ravilo-ui/src/commonTest/kotlin/dev/jellystructure/ravilo/ui/` · **R** =
+`ravilo-ui/src/androidUnitTest/kotlin/dev/jellystructure/ravilo/ui/` (Robolectric) · **E** = `tests/e2e/` (Playwright,
+real backend + mock Jellyfin + the real `ravilo-cast.js` on the fake CAF in `helpers/cast-receiver.ts`).
+
+**1. Pure decisions (extract these; every later test leans on them)**
+
+- `SessionCommandRuleTest` (**B**, new) — on `revisionChecked(op)` and `sessionCommandVerdict(op, revision, session)`
+  in a new `tv/SessionCommands.kt` (FR-R369-1, review item 4a/4b):
+  - `` `next, previous, jump, seek and every queue edit are checked` `` and `` `play, pause, stop, volume and mute never are` ``.
+  - `` `a stale seek is 409 with the session the server holds` `` · `` `a stale next is 409, not a second skip` ``.
+  - `` `play, pause and stop on an old revision are applied` ``.
+  - `` `an index-moving command carries expect_index and a queue edit carries queue_rev` `` (the forwarded body).
+- `SessionCommandRouteTest` (**B**, new) — on `commandRoute(target, socket, attachedSender, relayApps, op)` (FR-R369-2,
+  review items 1, 2, 11; R369 owner decision 2). Outcomes `SessionCommand` · `LegacyPlaystate` · `LegacyPlayerCommand` ·
+  `ViaSender` · `RelayLoad` · `Unreachable`:
+  - `` `a target that declared session_control gets session_command` ``.
+  - `` `a target without it gets today's playstate_command or player_command for play, pause, seek, next, previous, stop and volume` ``.
+  - `` `without session_control jump, shuffle, repeat, tracks and queue edits are not offered` `` (they are absent from
+    `SessionDetail.ops`).
+  - `` `a receiver in its reconnect gap goes through the attached sender phone` ``.
+  - `` `play on a cast session whose receiver closed is a relay load at the stored position` `` (owner decision 2).
+  - `` `no socket, no sender and no relay app is unreachable` ``.
+- `SessionControlRuleTest` (**B**, new) — on `controllableBy(viewer, session, householdControl)` (FR-R369-3, review
+  item 8): `` `your own session is controllable` `` · `` `another member's is not while 304's switch is off` `` ·
+  `` `another member's is with the switch on` `` · `` `the admin controls every session whatever the switch says` `` ·
+  `` `a session the viewer may not see is never controllable` `` (R368 owner decision 1).
+- `SessionRevisionTest` (**B**, new, on R368's `PlaybackSessions` with a fake clock) — review item 4b:
+  `` `a position heartbeat does not bump the revision` `` · `` `a seek beyond 3 s, a skip, a pause and a queue change do` ``.
+- `RemoteCommandTest` (**S**, extend) — FR-R369-1, review item 3:
+  - `sessionCommandsReadAsThePlayersOwnControls`: every `op` → `RemoteCommand`, incl. `Jump`, `SetShuffle`,
+    `SetRepeat`, `SelectAudio(index)`, `SelectSubtitle(index)`, `QueueAdd/PlayNext/Move/Remove`.
+  - `eachSessionCommandDrivesThePlayerOnce`: `applyTo` on a fake `RemotePlayer`.
+  - `anUnknownOpReadsAsNothing`: a newer server's op is dropped, not a crash.
+- `ReceiverRemoteTest` (**S**, extend) — the receiver's reading (`receiverRemoteAction`, review items 3 and 4c):
+  - `aSessionCommandMapsOntoTheSendersCastCommandHandlers`: `jump` → `play_at`, `set_shuffle`, `set_repeat`,
+    `set_audio {index}`, `set_subtitle {index}`, `queue_*`.
+  - `aMismatchedExpectIndexIsDroppedAndReported` (a new `ReceiverRemoteAction.Stale`, followed by an immediate status).
+  - `aMismatchedQueueRevIsDropped`.
+  - `noExpectIndexBehavesAsToday`.
+- `CastMessagesWireTest` (**S**, new) — review item 4c, backwards compatibility:
+  - `castCommandWithoutExpectIndexDecodesAsToday`.
+  - `castCommandWithExpectIndexStillDecodesOnAnOlderReader` (`ignoreUnknownKeys`).
+- `SessionRemoteStateTest` (**U**, `seams/`, new) — the client half:
+  - `` `sessionDetail maps to the remote's CastRemoteStatus` `` (`sessionRemoteStatus`, review item 9; the remote isn't
+    redrawn).
+  - `` `the position moves from position_ms plus server time while playing and freezes otherwise` ``
+    (`sessionPositionMs(view, nowMs, serverNowMs)`, FR-R369-7).
+  - `` `a press dims for 400 ms, a spinner shows after 1 s, and can't reach after 3 s with no reflecting report` ``
+    (`commandFeedback(sentAtMs, nowMs, reflected)`, FR-R369-6, review item 11).
+  - `` `stopping someone else's playback asks every time and your own never` `` (`stopNeedsConfirm`, owner decision 1).
+  - `` `pause, next and volume never ask` ``.
+  - `` `the bar's play-pause and next are present only when controllable` `` (FR-R369-5).
+- `RemoteControlTest` (**U**, extend) — FR-R369-2, review item 3:
+  - `aSessionCommandIsGatedLikeAPlayerCommand` (`acceptsPlayerCommand`).
+  - `aSessionCommandWithAStaleExpectIndexDoesNothingAndReports` (the app target obeys the same rule as the receiver).
+  - `queueEditsReachTheMusicQueue`.
+- `EventsCatchUpTest` (**U**, extend) — review item 13: `` `an open with features=sessions refetches the playback sessions` ``.
+- `CastHandBackTest` (**U**, extend) — review item 12: `aServerStopOnAMusicCastHandsBackPausedAndStartsNoSession`.
+
+**2. Route and socket integration (fake sockets on the loopback)**
+
+`SessionCommandIntegrationTest` (**B**, new), built like `JellyfinSessionBridgeIntegrationTest`: an embedded CIO server
+on `127.0.0.1:0` with the real `TvEventBus`, R368's `PlaybackSessions` on a temp database, the new
+`playbackSessionRoutes(…)`, and one `DeviceSocket` per fake device: a phone (`features=sessions,session_control`), a
+computer (`features=sessions`), a receiver (`session_control`), a receiver and a phone that declare nothing (older
+builds), and a relay-capable phone. The fake receiver answers commands with the real `receiverRemoteAction`.
+
+- `` `a pause from the computer reaches the receiver as session_command and both apps see the paused report` `` —
+  acceptance 1.
+- `` `with the sender phone's socket closed the receiver still pauses, skips and seeks` `` — acceptance 2.
+- `` `two nexts on one revision, one direct and one through the server, skip once` `` — acceptance 3 (the direct one is
+  sent as the phone's `CastCommand` straight to the fake receiver).
+- `` `a stale seek answers 409 with the session` ``.
+- `` `an older receiver gets playstate_command and player_command and its detail lists only those ops` `` (backwards
+  compatibility).
+- `` `a socket that did not declare sessions gets no session event at all` `` (R368 item 2, an older phone).
+- `` `a socket with sessions but not session_control is never sent session_command` ``.
+- `` `in the receiver's reconnect gap the command reaches the sender phone, and with no phone it is 409 unreachable` ``.
+- `` `play on a session whose receiver closed sends cast_relay_load to the relay app` `` (owner decision 2).
+- `` `another member's session is 403 with the switch off, and flipping it pushes a fresh session_list` `` — acceptance 4,
+  304b.
+- `` `the admin's command is accepted with the switch off` ``.
+- `` `attach_session adds a controller row, closing the socket removes it, and boot clears the table` `` (review item 7).
+- `` `session_detail goes only to controllers, and the queue rides it only when queue_rev changes, windowed` `` (review
+  item 5; a 487-song queue on the R359 window).
+- `` `the target reports at once after a command and the 10 s heartbeat stays` `` (review item 10).
+- `` `a stop on a music cast ends the session with end_reason stopped and the stopper's name` `` (review item 12).
+
+`WireCompatTest` (`shared/src/linuxX64Test/…/shared/wire/`, existing) stays green: `SessionDetail`, the command body,
+the new `CastCommand.expect_index` and every new event are additive.
+
+`playback-sessions.spec.ts` (**E**, new) — `"the receiver obeys a server pause and drops a stale next sent on both paths"`:
+the real receiver on the fake CAF enrols and loads a three-song queue, a second device's `POST
+…/playback/sessions/{id}/command` pauses it, and a `next` sent through `__castCommand` plus one through the server with
+the same `expect_index` moves the queue by one.
+
+**3. UI (Robolectric)**
+
+`SessionRemoteTest` (**R**, `screens/`, new; `fakeTvApiClient` answers `GET …/playback/sessions/{id}`):
+
+- `` `the place line names the place and opens Move to` `` (FR-R369-6).
+- `` `ops the target doesn't support are absent, not greyed` ``.
+- `` `Stop on someone else's playback asks inline every time` `` · `` `Stop on your own doesn't ask` ``.
+- `` `the bar shows play-pause and next for a controllable session and none for someone else's with the switch off` `` —
+  acceptance 4.
+
+`CastRemoteFitTest` (**R**, existing) stays green with a `SessionSender` behind the remote.
+
+Strings: `RaviloStringsTest` (`ravilo-i18n/src/commonTest/…`, extend) `the_session_control_keys_resolve_in_every_language`
+for `session.cant_reach`, `session.stop_everywhere`, `session.stop_person`; `scripts/check-ravilo-strings.sh` green.
+
+**Only the real speaker can confirm** (Gæsteværelse; no other room)
+
+- *The receiver's socket path with the phone gone.* Cast a song from the Pixel to Gæsteværelse, put the Pixel in
+  airplane mode, then pause, skip and seek from the computer. Each happens within a second.
+- *Two paths at once.* Press next on the Pixel and the computer together. Gæsteværelse skips exactly once.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

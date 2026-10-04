@@ -29,18 +29,89 @@ The Discover nav button's step while on Discover (R170, `nextDiscoverSegment`) w
 TV, phone and desktop take the order from the same list (no per-platform order). The design mockup's
 `SEG_ORDER` in `design/ravilo/ravilo-app.js` (and the phone's in `Ravilo Mobile.html`) changes to match.
 
+## Acceptance
+
+1. With Sonarr/Radarr configured: Discover opens on Coming Soon, the strip reads *Coming Soon · Networks · Studios ·
+   Genres · Request* (Request only with Seerr). (With something on the calendar, or before the calendar has ever
+   answered; see 5.) CI: `theDeclaredOrderIsComingSoonThenTheLibraryThenRequest`,
+   `theFirstChipIsComingSoonWhenAvailableElseNetworks`, `anUnknownOrNonEmptyCalendarOpensOnComingSoon`.
+2. Without Sonarr/Radarr: the strip starts at Networks and Discover opens there. CI: `gatingFiltersAndNeverReorders`,
+   `theFirstChipIsComingSoonWhenAvailableElseNetworks`.
+3. On the TV, Down from the app bar's Discover tab lands on the selected chip (R350 FR-5), Left from Coming Soon
+   does nothing, Right walks the strip in the new order. Device only (manual check below); the order Right walks is
+   `steppingWrapsThroughTheRenderedOrderOnly`'s.
+4. `DiscoverSegmentOrderTest` green, and `UpcomingEmptyTest` green (see *Tests*).
+5. (Owner decision, 2026-10-04.) With Sonarr/Radarr configured and nothing on the calendar: Discover opens on
+   Networks (or the first chip after Coming Soon), and the strip still starts with Coming Soon. CI:
+   `anEmptyCalendarOpensOnTheNextChip`, `anEmptyCalendarNeverMovesTheChip`.
+
+## Tests
+
 ### FR-R366-4 — Tests
 `DiscoverSegmentOrderTest`: the pinned order becomes the one above; `theFirstChipIsNetworksOnEveryHousehold`
 becomes *Coming Soon when available, else Networks*; the subsequence and always-rendered-default tests stay.
 
-## Acceptance
+*Consolidated 2026-10-04 with the dev review's item 3 (five tests pin the old order, not two) and the owner decision
+(an empty calendar skips Coming Soon for the entry chip only). Everything below is pure and runs in CI on
+`:ravilo-ui:testDebugUnitTest` and `:ravilo-ui:desktopTest`.*
 
-1. With Sonarr/Radarr configured: Discover opens on Coming Soon, the strip reads *Coming Soon · Networks · Studios ·
-   Genres · Request* (Request only with Seerr).
-2. Without Sonarr/Radarr: the strip starts at Networks and Discover opens there.
-3. On the TV, Down from the app bar's Discover tab lands on the selected chip (R350 FR-5), Left from Coming Soon
-   does nothing, Right walks the strip in the new order.
-4. `DiscoverSegmentOrderTest` green.
+**`DiscoverSegmentOrderTest`** (`ravilo-ui` `commonTest`, `dev.jellystructure.ravilo.ui.screens`): the five R268
+tests that pin the old order, updated.
+
+| Today's test | After R366 |
+|---|---|
+| `theDeclaredOrderIsLibraryFirst` | renamed `theDeclaredOrderIsComingSoonThenTheLibraryThenRequest`; `both` is `[COMING_SOON, NETWORKS, STUDIOS, GENRES, REQUEST]`. |
+| `gatingFiltersAndNeverReorders` | `arrOnly` is `[COMING_SOON, NETWORKS, STUDIOS, GENRES]`; `seerrOnly` (`[NETWORKS, STUDIOS, GENRES, REQUEST]`) and `neither` (`[NETWORKS, STUDIOS, GENRES]`) and the subsequence loop are unchanged. |
+| `theFirstChipIsNetworksOnEveryHouseholdThatHasNetworks` | renamed `theFirstChipIsComingSoonWhenAvailableElseNetworks`: `defaultDiscoverSegment(true, d)` is `COMING_SOON` and `defaultDiscoverSegment(false, d)` is `NETWORKS`, for `d` in both values. |
+| `steppingWrapsThroughTheRenderedOrderOnly` | the two `neither` assertions are unchanged; `next(both, COMING_SOON)` is `NETWORKS` (was `REQUEST`); `next(both, REQUEST)` is `COMING_SOON` (was `NETWORKS`). |
+| `aWallGatedOffAloneOrInPairsKeepsTheOrderAndLandsOnTheFirstLeft` | same case table; the list is `[COMING_SOON] + expected + [REQUEST]` and the default for `(true, true, walls)` is `COMING_SOON`. Add the `upcomingAvailable = false` variant: the list is `expected + [REQUEST]` and the default is `expected.first()`, so "lands on the first wall left" stays covered. |
+
+Unchanged: `theEnumsOwnOrderIsTheShippedOrder`, `theDefaultIsAlwaysARenderedChip` (it calls without `upcomingEmpty`,
+which defaults to `null`), `noAnswerFromTheServerShowsEveryWall`, `allThreeOffLandsOnTheIntegrationsOrOnNothing`,
+`steppingNeverReachesAHiddenWall`, `taxonomySegmentsAreAGatingSetNotAnOrder`.
+
+New, for the owner decision (`defaultDiscoverSegment(upcomingAvailable, discoverAvailable, walls, upcomingEmpty:
+Boolean? = null)`):
+
+- `anEmptyCalendarOpensOnTheNextChip`: `upcomingEmpty = true` gives `NETWORKS` for `(true, true)` and `(true, false)`,
+  `STUDIOS` for `(true, true, walls = {STUDIOS})`, and `REQUEST` for `(true, true, walls = ∅)`.
+- `anUnknownOrNonEmptyCalendarOpensOnComingSoon`: `upcomingEmpty = null` (never fetched) and `false` both give
+  `COMING_SOON` for `(true, true)` and `(true, false)`. The owner's two cases are this test and the one above.
+- `anEmptyCalendarNeverMovesTheChip`: `discoverSegments(...)` takes no calendar argument, so for every gating the strip
+  still starts with `COMING_SOON` when `upcomingAvailable`; and `nextDiscoverSegment(both, REQUEST)` is still
+  `COMING_SOON`, so the Discover button's step reaches it on an empty calendar.
+- `anEmptyCalendarIsIgnoredWithoutComingSoon`: with `upcomingAvailable = false`, `upcomingEmpty = true` gives the same
+  default as `null` for every `discoverAvailable` and `walls`.
+- `theEntryChipIsAlwaysRenderedWhateverTheCalendarSays`: over every `upcomingAvailable × discoverAvailable × walls`
+  (`null`, `∅`, each single wall, each pair, all three) × `upcomingEmpty` (`null`, `false`, `true`), the default is in
+  `discoverSegments(...)`, and it is `null` only when that list is empty. One case follows from this and is pinned
+  by name: with Coming Soon as the **only** chip (`(true, false, walls = ∅)`) an empty calendar still opens on
+  `COMING_SOON`, since skipping it would land on nothing.
+
+**`UpcomingEmptyTest`** (`ravilo-ui` `commonTest`, same package). It tests the pure step that turns the upcoming
+store's last answer into `upcomingEmpty`, e.g. `fun upcomingEmptyAfter(previous: Boolean?, state: UpcomingState):
+Boolean?` (the name is the build's choice; the rule is not):
+- `Loaded` with at least one `items` entry ⇒ `false`; `Loaded` with no `items` ⇒ `true`;
+- `Loaded` with no `items` but some `missing` ⇒ `true`. *Nothing on the calendar* is what makes the page read
+  *Nothing scheduled* (`UpcomingContent`'s `filtered.isEmpty()` under the *All* filter), and `missing` alone does not
+  change that sentence;
+- `Loading` and `Error` ⇒ `previous`, so a failed refresh never forgets the last answer, and a first launch stays
+  `null`.
+
+**Not covered by CI:** the persisted value (kept across launches like `HomeSnapshotCache`, whose platform actuals
+have no harness in this module), the wiring in `RaviloApp.kt` that passes it to every `Dest.Discover` push, and
+acceptance 3's focus moves. `DiscoverFocusTest` (R350) passes its own `segments` list and needs no change.
+
+**Device only — manual check (a TV and the phone, about two minutes):**
+1. Sonarr/Radarr configured, something on the calendar: press Discover. The strip reads *Coming Soon · Networks ·
+   Studios · Genres* (*· Request* with Seerr) and Coming Soon is selected. Down from the app bar lands on the Coming
+   Soon chip; Left does nothing; Right walks Networks → Studios → Genres → Request. Press the Discover button
+   repeatedly: it steps through every chip and wraps back to Coming Soon.
+2. On a household (or test server) with nothing on the calendar: open Discover once and leave it, so the empty answer
+   is stored. Then force-stop the app, launch it again and press Discover. It opens on Networks, and Coming Soon is
+   still the first chip; one Left from Networks reaches it and it reads *Nothing scheduled*.
+3. Repeat 2 on a fresh install (the calendar never fetched): Discover opens on Coming Soon.
+4. Without Sonarr/Radarr: the strip starts at Networks and opens there.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

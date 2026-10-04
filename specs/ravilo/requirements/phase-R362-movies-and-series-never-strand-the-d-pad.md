@@ -77,7 +77,45 @@ is as tall as its options up to the current 280 dp cap. Sort's popover likewise 
 4. Apply *Genre: Horror*, scroll the bar right, open a title, Back: *Genre (Horror)* is on screen.
 5. Grid column 4, Down ×6: every focused tile is in column 4.
 6. *Channel*'s popover opens under *Channel*; *Watched*'s is three rows tall.
-7. Robolectric key-by-key walks for 1–5 on the TV path (the existing `BrowseFocusTest` gains them).
+7. 1, 3, 4 and 5 are walked key by key in `BrowseFocusTest`; the grid and popover arithmetic is unit-tested. See
+   *Tests*.
+
+## Tests
+
+Prerequisite: R361's fixed retry helpers and its `FocusRetryTest` (review item 5). Conventions as in R361's *Tests*.
+
+**FR-3's helper.** `FocusRetryTest` gains `scrollThenFocus`: a 30-item `LazyRow`, item 25 off screen → after the
+call it is focused and `assertIsDisplayed()`; a target that never composes → the native fallback moves focus (the
+key is never dead). The source check in R361's *Tests* covers the facet bar's three `runCatching` sites.
+
+**Decisions (`commonTest`).**
+- `GridVerticalTargetTest` (new, `…/screens/`), `gridVerticalTarget(index, cols, count, down)` with 6 columns:
+  `(3, 6, 18, down) → 9`; `(9, 6, 18, up) → 3`; the first row `(3, 6, 18, up) → null`; the last row
+  `(15, 6, 18, down) → null`; a short last row `(9, 6, 16, down) → 15` and `(11, 6, 16, down) → 15`;
+  `(14, 6, 16, up) → 8`; one row `(2, 6, 6, down) → null`.
+- `FacetEntryTargetTest` (new) for `focusFacetBar()`'s choice, extracted as
+  `facetEntryTarget(lastChipKey, fullyVisibleKeys)`: the last chip fully visible → that chip; partly visible, off
+  screen or never set → *scroll to start, Genre*.
+- `PopoverOffsetTest` (new) for FR-6's clamp, extracted as `popoverOffsetX(chipX, popoverWidth, screenWidth, hPad)`:
+  under the chip; clamped at the right edge; clamped at `hPad` on the left.
+
+**Robolectric walks — `BrowseFocusTest` gains** (its fake gets enough facet values, and enough cards — 60, ten rows —
+for the bar to scroll at 960 dp and for the grid to scroll):
+- Acceptance 1 (FR-1): Up → Right ×10 (`focusedWith("Sort")`) → Up (focus off the facet bar) → Down → `inFacetBar()`,
+  `focusedWith("Genre")`, `assertIsDisplayed()`.
+- FR-1, the visible case: Up → Right → Up → Down → the same second chip again.
+- Acceptance 3 (FR-2): Up → Right ×10 → Down into the grid → Right ×3 → Up → a chip that `assertIsDisplayed()`.
+- Review item 2 (the dead Down): OK on the first tile, leave and return (it is restored), Up, Down → a grid tile is
+  focused, not nothing.
+- Acceptance 4 (FR-4): apply *Genre: Drama* through its popover, Right ×10, Down, OK on a tile, leave and return → the
+  node *Genre (Drama)* `assertIsDisplayed()`.
+- Acceptance 5 (FR-5): Right ×3 (column 4), Down ×6 → after each press the focused tile is "Stand-in 4 + 6k"; Up ×6
+  back the same way. A 16-card fake: column 4 of row 2, Down → "Stand-in 16".
+- `BrowseScreen`'s `BrowseGrid` shares the key handler: R364's `MyListFocusTest` covers one Down in column 4.
+
+**TV only (manual, D-pad on the TV).** Acceptance 2 (Movies → Sort → Up → Down, open a title, play 20 s, Back, Back →
+Up → Down: a visible chip). Acceptance 6 (*Channel*'s popover under *Channel*, *Watched*'s three rows tall, *Sort*'s
+under *Sort*).
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

@@ -49,7 +49,39 @@ List was opened from), not on Home.
 2. On My List, open the title → − My List → Back: it is gone and focus is on its neighbour (R361).
 3. Add from a phone while the TV's My List was visited earlier: the next arrival on the TV shows it.
 4. Empty My List shows the hint; focus is on the avatar; OK reopens the profile menu, not Home.
-5. Store tests: a kept store reloads on arrival; an add/remove event patches it.
+5. Store tests: a kept store refreshes on every arrival without a *Loading…* flash; 1, 2 and 4 are walked key by
+   key. See *Tests*.
+
+## Tests
+
+`fakeTvApiClient` is JVM (OkHttp) and lives in `androidUnitTest`, so the store tests go there too (plain JUnit, no
+Robolectric), not in `commonTest` as the review wrote. Robolectric conventions as in R361's *Tests*.
+
+**Store (`BrowseStoreRefreshTest`, new, `androidUnitTest/…/screens/`).** The fake counts calls to
+`/api/tv/browse?kind=mylist` and answers 0 titles, then 1. `BrowseStore` gets an injectable dispatcher (or the test
+polls `state` with a timeout, review item 9).
+- FR-1: `refresh(MY_LIST)` twice on one store → two fetches, the second state holds the title, and the recorded
+  states after the first `Loaded` contain no `Loading`.
+- Review item 2: a first `refresh(ALL)` on a fresh store reaches `Loaded` (today it stays on `Loading`).
+- A kind change passes through `Loading` once; a refresh resets paging to page 1.
+- FR-2: no test while the review's drop stands (constitution invariant 4); acceptance 1–3 rest on FR-1.
+
+**Robolectric walks (`MyListFocusTest`, new, `…/screens/`, `w960dp-h540dp-television`, `BrowseScreen(MY_LIST)` on a
+kept store).**
+- Acceptance 1: the fake answers empty → *0 titles*; leave; the fake now answers one stand-in; return → the title is
+  shown, on the same store.
+- Acceptance 2 (R361's grid rule, review item 4): two titles, OK on the first, the fake drops it, return → the other
+  title is focused, not the app bar.
+- Acceptance 4 (FR-3): empty → the `browse.mylist_empty_hint` text is shown, the focused node is the avatar (a new
+  `APP_BAR_AVATAR_TAG`), OK → the test's `onProfile` runs, `onNavSelect` does not.
+- R362 FR-5 on `BrowseGrid`: 12 titles, Right ×3, Down → the 10th.
+
+**Strings.** `ProfileStringsTest`'s key list gains `browse.mylist_empty_hint` (resolves in every language, names no
+Jellyfin); the hint takes the button's label from the detail button's own key, so no separate check.
+
+**TV only (manual, D-pad on the TV).** Acceptance 1 against the real server (Jellyfin favourites); acceptance 3 (add
+from a phone, then open My List on the TV); FR-4 by eye: *My List*, *Settings*, *Movies* and *Search* headings in the
+same face and size.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

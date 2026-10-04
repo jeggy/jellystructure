@@ -175,6 +175,214 @@ that may be the same* · *Listen and decide* · *These sound the same: one song?
 - The Dashboard row reads *3 pairs*; answering all three removes it.
 - Harbour Lights' *Singles & EPs* shows 6.
 
+Each line above is also a CI test on stand-in data (see **Tests**): line 1 → `MusicAlbumPageTest.kite_weather_reads_official_then_extras_then_singles`
+(with owner decision 3 the divider reads MusicBrainz's title or disambiguation, else *Extras · Japan · 1*); line 2 →
+`MusicOfficialPickTest.picking_the_japanese_cd_and_back_to_automatic`; line 3 →
+`MusicSongFoldTest.songs_fold_and_show_every_copy_lists_every_file` (scaled down; the household's 385/487 is a real-scan
+check); line 4 → `MusicSongIndexTest.not_the_same_song_splits_the_compilations_copy_off`; line 5 →
+`MusicSameSongDashboardTest.three_pairs_then_none`; line 6 → `MusicSingleHomeStoreTest.the_artist_page_keeps_six_singles_and_eps`.
+
+## Tests
+
+All backend tests live in `src/linuxX64Test/kotlin/dev/jellystructure/music/`, use the music tests' style
+(`snake_case` names, a temp SQLite store from `createDatabase("/tmp/jellystructure-test-<name>-${getpid()}.db")`,
+`MusicStore.replaceLibrary`), and only the design's stand-ins (Harbour Lights, *Kite Weather*, *Signal Found*,
+*Tide Tables 1999–2012*, *Northern Line*, *Fog Bank*, *Salt on the Window*, *Low Tide*, *Tidewater*, *Lantern Swing*;
+another artist = *Lighthouse Keepers*). **No test calls MusicBrainz, AcoustID or `fpcalc`**: MusicBrainz is either a
+`FakeMb` subclass of `MusicBrainzClient` (as `MusicMatchTest` does) or a loopback fake server; fingerprints are
+synthetic `List<Int>`s. By build (item 10): **305a** = 1–3, 9–12, 15–17 (official/pick parts); **305b** = 6, 21; **305c** = 4, 5, 7, 8, 13,
+14, 18–20, 22.
+
+**Pure functions first**
+
+1. `MusicOfficialTest` — the vote, `MusicOfficial.vote(group, releases)` (FR-305-2, item 4). Releases are built in code
+   like `MusicMatchTest.release()`:
+   - `the_most_shared_recording_set_wins_and_says_k_of_m`: 9 *Kite Weather* pressings, 7 with the same 11 recordings,
+     the Japanese CD with 12 → 11 songs, `k = 7`, `m = 9`.
+   - `order_discs_and_titles_come_from_the_earliest_release_with_that_set`: the same set in two orders → the earliest one's.
+   - `a_tie_goes_to_the_smaller_set_then_the_earliest`: *Signal Found*'s 26-song anniversary pressing is the
+     earliest and ties 14-song pressings 2–2 → the 14-song set; two equal small sets → the earlier one.
+   - `videos_and_dvd_media_are_dropped_before_the_vote`: a CD+DVD deluxe majority does not add its video recordings
+     or a `DVD-Video`/`Blu-ray` medium as gap rows.
+   - `only_official_releases_vote`: Bootleg and Promotion pressings in the input change nothing.
+   - `only_an_album_without_compilation_gets_one`: tested on `primaryType` (item 2e). Album, Album + Live and Album +
+     Soundtrack get one. Single, EP, Album + Compilation and a box set get `null`. A Single + Live is still not an album.
+   - `one_medium_numbers_1_to_n_more_media_number_disc_and_track`.
+2. `MusicExtrasTest` — `MusicOfficial.extras(album, tracks)` and gaps (FR-305-3, FR-305-5, item 2a, item 3):
+   - `a_held_recording_off_the_official_list_is_an_extra_and_moves_down`: track 12 of 26 sorts into the extras.
+   - `a_disagreeing_tracks_recording_still_decides_extra`: `disagrees` counts for the extra test but not for rule 1.
+   - `no_recording_id_on_a_matched_album_is_an_extra`.
+   - `an_official_song_the_files_lack_is_a_gap_row_above_the_divider`.
+   - `an_unmatched_album_has_no_official_list_no_extras_no_gaps`: files' order, exactly today.
+3. `MusicEditionNameTest` — `MusicOfficial.edition(group, firstExtraRelease)` (owner decision 3):
+   - `the_releases_own_title_when_it_differs_from_the_groups` → *Signal Found 20th Anniversary*.
+   - `else_its_disambiguation_as_it_is` → *super deluxe*.
+   - `else_the_country_code` → `JP`; the admin renders *Extras · Japan*.
+   - `else_nothing_and_the_divider_reads_extras`.
+   - `the_first_release_is_the_earliest_dated_pressing_that_carries_the_recording` (*the Japanese CD, 2006*).
+4. `MusicCopyRankTest` — `MusicCopyRank.compare` (FR-305-10, owner decision 2, item 8):
+   - `bitrate_decides_first`: a 320 kbps MP3 beats a 256 kbps AAC.
+   - `a_copy_a_phone_re_encodes_is_not_ranked_lower`: a 192 kbps WMA beats a 160 kbps MP3. This is the declined lean
+     Q-B, pinned.
+   - `equal_bitrate_goes_to_the_higher_bit_depth`.
+   - `a_full_tie_goes_official_extra_single_compilation_live_then_earliest_added`.
+   - `an_unknown_bitrate_sorts_below_every_known_one`: pins the build's choice.
+   - `lossless_codecs_are_the_listed_six`: `flac alac wav pcm_* ape wavpack tta`. Shown on the copies panel only; the
+     list is not a rank key.
+5. `MusicSongIndexTest` — the fold, `MusicSongIndex(snapshot)` (FR-305-8, FR-305-11, items 1 and 3). This is the lazy
+   index on the snapshot, over 292's `MusicVersions.keyOf` / `MusicVersionIndex.copies`:
+   - `rule_one_is_keyof`: `agrees`/`manual` on the same recording is one song; `disagrees` stays `trk:`.
+   - `a_sound_pair_joins_only_when_one_side_is_untrusted`.
+   - `two_trusted_different_recordings_that_sound_alike_are_a_suggestion_not_a_join`.
+   - `the_owners_same_joins_anything`.
+   - `not_the_same_song_splits_the_compilations_copy_off`: *Northern Line*'s 4 copies. A `not_same` on the
+     compilation's copy takes it out of the 3-clique entirely, leaving 3 + 1. Only an explicit `same` brings it back.
+   - `title_and_length_never_decide`: two same-titled, same-length tracks with no recording, no pair and no decision
+     stay two songs.
+   - `versions_and_lyrics_still_follow_the_recording`: a copy joined by sound keeps its own 292 answer.
+   - `groups_are_recomputed_after_any_store_write`: nothing stored.
+   - `bonus_on_a_folded_row_only_when_the_song_is_official_nowhere` (owner decision 1). A live cut that is an extra on
+     the anniversary edition and official on the live album is not bonus, even when the extra copy is the one shown.
+     An extra on every copy is bonus.
+6. `MusicSingleHomeTest` — `MusicSingleHome.resolve(single, albums, facts, overrides)` (FR-305-6, FR-305-7, item 4):
+   - `musicbrainz_single_from_wins_first` (`mb_single_from`): it wins even when rule 3 would pick another album.
+   - `a_remix_of_an_album_recording_is_via_remix`.
+   - `a_remix_of_the_singles_own_recording_follows_the_hop`: target recording → the held single → its `singleFrom`.
+   - `same_base_title_same_artist_within_two_years_is_by_title`; at three years it is not homed.
+   - `an_ep_is_never_homed_by_title`.
+   - `another_artists_single_is_never_homed`: a soundtrack single credited to *Lighthouse Keepers*.
+   - `the_owners_move_and_no_album_win_and_back_to_automatic_clears`.
+   - `b_sides_are_the_singles_songs_that_are_not_already_the_albums`: *Kite Weather*'s 5 singles give 13 B-sides, in
+     single (year) order. The A-sides are never repeated, nor is a B-side that folds into an extra.
+7. `MusicSoundMatchTest` — `MusicSoundMatch.score(a, b)` and `joins(score)` (FR-305-9, item 6). Fingerprints are
+   seeded-random 32-bit frames, so the cases are exact. `SegmentDetection`'s popcount becomes `internal` and is shared;
+   `SegmentPositionDetectionTest` must stay green:
+   - `identical_is_bit_error_0_coverage_1_offset_0`.
+   - `a_3_second_lead_in_is_found_as_the_offset_in_ms` (frames × `FRAME_SEC`).
+   - `ten_percent_bit_flips_join_twenty_do_not` (≤ 0.15).
+   - `a_remix_that_keeps_only_the_first_40_percent_does_not_join` (coverage < 95 % of the longer song).
+   - `an_offset_beyond_10_seconds_is_not_searched`.
+8. `MusicPairCandidatesTest` — `MusicCompareSongs.candidates(snapshot, decided)` (item 5):
+   - `same_artist_same_base_title_not_already_one_song`. The artist is the MBID, else the Jellyfin artist id. The base
+     title uses 292's title-finder (`MusicVersions.segments`), so *Northern Line (radio edit)* pairs with *Northern
+     Line*.
+   - `untrusted_side_is_rule_2_both_trusted_and_different_is_a_suggestion`.
+   - `a_decided_pair_is_never_offered_again`.
+   - `pairs_are_ordered_a_less_than_b`.
+   - `title_only_picks_never_joins`: a candidate whose score fails stays two songs.
+
+**MusicBrainz (no network)**
+
+9. `MusicBrainzEditionsClientTest` — a loopback fake MusicBrainz (`embeddedServer(CIO, port = 0, host = "127.0.0.1")`,
+   as `ReceiverTokenRefreshIntegrationTest`) behind a real `MusicBrainzClient(config, base = "http://127.0.0.1:$port/ws/2")`.
+   It answers from **`MbEditionsFixtures.kt`** (same folder): inline JSON in exactly the shape musicbrainz.org sends,
+   renamed to stand-ins, like `MusicVersionFactsTest.release`. The fixtures:
+   - *Signal Found*'s 30 pressings as `release-count: 30` pages of 25 + 5;
+   - *Kite Weather*'s 9, the Japanese CD with *Lantern Swing*;
+   - a CD+DVD deluxe with `"video": true` recordings and a `DVD-Video` medium;
+   - *Northern Line*'s release group with `release-group-rels` (`single from`, `direction: forward`, a `release_group`
+     target);
+   - a *Lighthouse Keepers* soundtrack single;
+   - an EP.
+
+   Tests:
+   - `releases_of_pages_past_25_until_release_count` (item 2d/4): the query has `status=official`,
+     `inc=recordings+media+labels`, `limit=100`, `offset=0` then `offset=25`; 30 releases; it stops at `release-count`.
+   - `an_empty_page_stops_paging`: no endless loop on a server that under-counts.
+   - `a_failed_later_page_answers_null_not_a_short_list`: a partial set would vote wrong. Null keeps what was known.
+   - `find_match_lists_the_26th_pressing`: `MusicMatchService.releases` on the paged call. This is the shipped
+     25-cap bug, item 12.
+   - `release_group_asks_for_release_group_rels_and_reads_single_from_forward`: `MbRelation.releaseGroup` is decoded.
+   - `a_recording_reads_video`: `MbRecording.video`.
+10. `MusicEditionsCatchUpTest` — `match_musicbrainz`'s catch-up pass on a store with a counting `FakeMb` (items 3 and 4):
+    - `a_matched_album_gets_official_extras_and_origins_in_one_or_two_requests`.
+    - `a_locked_album_is_caught_up_too`.
+    - `a_second_run_asks_nothing_unless_scope_all_or_the_group_changed`.
+    - `an_extra_on_no_release_of_the_group_costs_one_recording_call`.
+    - `singles_and_eps_without_relationships_are_caught_up_once`.
+    - `an_unreachable_musicbrainz_leaves_the_official_list_as_it_was`.
+
+**Store, migration, ingest**
+
+11. `MusicEditionsStoreTest` — the owner's rows and the JSON fields (FR-305-1 as replaced by item 3):
+    - `a_database_one_version_old_upgrades_and_keeps_its_music`. Create the DB, drop `music_official_pick`,
+      `music_single_home`, `music_same_song` and `music_sound_pair`, and set `PRAGMA user_version` back by one.
+      Reopening with `createDatabase` creates all four, and the existing albums, tracks and 292's
+      `music_version_choice` rows are untouched.
+    - `same_song_is_stored_with_a_less_than_b_whatever_order_it_is_given`.
+    - `an_album_json_written_before_305_decodes_with_no_official_list`.
+    - `the_owners_pick_survives_a_rescan_and_a_rematch_to_the_same_group`.
+    - `a_rematch_to_another_group_or_clear_match_drops_the_pick_with_a_history_line`.
+12. Extend `MusicIngestTest` with `a_rescan_keeps_official_and_single_from_and_takes_bit_depth_from_jellyfin`.
+    `BitDepth` is read on `JellyfinAudioStream` and is a Jellyfin-owned field in `MusicIngest.carry`; the 305 fields
+    are not (item 2b).
+13. `MusicFingerprintCacheTest` — `fingerprints/music/<track id>-<size>-<mtime>.json` under a temp dir, with a counting
+    fake `computeFingerprint`. Tests: `an_unchanged_file_is_never_fingerprinted_twice`;
+    `a_changed_size_or_mtime_misses_by_name`.
+14. `MusicCompareSongsTest` — the step on a store, with a fake fingerprinter (item 7):
+    - `compare_songs_writes_ber_coverage_and_offset_per_candidate_pair`.
+    - `a_second_run_only_touches_new_or_changed_files`.
+    - `it_asks_for_the_background_process_class`: a recording fake `ProcessGate`.
+    - Extend `MusicMatchTest.the_match_step_joins_before_the_trailing_notify`: `compare_songs` follows
+      `match_musicbrainz` in `MusicSteps.seed` and in the default pipeline, and a pipeline that already has the
+      music steps gains only `compare_songs`. `MusicSteps.isMusic("compare_songs")`, and, once 303 has landed, it is
+      kept off a title's Checks card.
+
+**The admin's answers (routes and DTOs)**
+
+15. `MusicAlbumPageTest`: the album page DTO is built by a pure `MusicAlbumPage.build(snapshot, albumId)`, lifted out
+    of `MusicRoutes` (FR-305-12, item 9).
+    - `kite_weather_reads_official_then_extras_then_singles`: 11 numbered rows; one extra row with `number = null`,
+      `extra = true` and `first_on` set; *k of m*; 5 singles with their `how`; 13 B-sides.
+    - `the_header_length_is_the_official_albums`.
+    - `a_gap_row_carries_disc_position_title_length`.
+    - `a_singles_own_page_says_single_from`.
+    - `an_unmatched_album_is_todays_page`: no official line, singles or gaps.
+16. `MusicOfficialPickTest` (FR-305-4). Tests: `picking_the_japanese_cd_and_back_to_automatic` (*Lantern Swing* becomes song 12,
+    no divider; `DELETE` restores it); `a_pressing_whose_extras_are_not_held_is_listed_not_pickable` (*+ 13 not in the
+    library*, open question 3).
+17. `MusicEditionsRoutesTest` (`testApplication`, as `GzipCompressionIntegrationTest`): the admin routes' contracts.
+    - `releases_official_lists_every_pressing_with_against_the_official`.
+    - `put_official_rejects_a_release_not_of_this_album`.
+    - `put_home_takes_an_album_of_the_same_artist_or_no_album`.
+    - `same_song_rejects_a_equal_b_and_unknown_tracks`.
+    - `copies_lists_every_copy_with_its_reason_and_shown_in_lists`.
+18. `MusicSongFoldTest` — `MusicBrowse.browse` SONGS, folded vs `copies=all` (FR-305-13, item 9):
+    - `songs_fold_and_show_every_copy_lists_every_file`: 9 files → 6 songs, header *6 songs · 3 copies folded*.
+      `copies=all` gives 9, the other copies under their song with *same recording · MusicBrainz* / *sounds the same*
+      / *you said so*.
+    - `facets_test_the_copy_shown_when_folded_and_each_file_with_every_copy`.
+    - `artist_songs_fold_album_rows_keep_their_own_tracks_and_health_counts_files`.
+    - `bonus_after_the_version_chips_per_copy_with_every_copy`.
+19. Extend `MusicTriageTest.every_music_key_count_equals_its_list`: the library gains a WMA copy folded behind a FLAC
+    song, and the `music_reencodes` count still equals its list, because `filter=` forces `copies=all` (293's promise).
+20. `MusicSameSongDashboardTest` (FR-305-14):
+    - `three_pairs_then_none`: the `music_same_songs` row is info, unit *pair* and fix here, with an *opens* action,
+      not a post. Each Yes or No lowers the count; at zero the row is absent.
+    - `no_never_returns_the_pair`.
+    - `a_pair_carries_the_offset_so_both_players_start_together`.
+    - `a_file_a_browser_cannot_play_has_its_player_disabled_with_the_reason`.
+21. `MusicSingleHomeStoreTest` (FR-305-15). Tests: `the_artist_page_keeps_six_singles_and_eps` (two on no album, the
+    soundtrack single, three EPs); `singles_under_names_the_album_and_count`; `a_homed_live_single_leaves_the_live_group`.
+22. `MusicTvSongCopyTest`: the viewer side of FR-305-10 / item 8, which R373's tests build on.
+    - `the_copy_shown_is_the_best_this_viewer_may_see`: the FLAC is in a library the viewer cannot open, so the
+      viewer gets the MP3, and the count leaves out the hidden copy.
+    - `play_count_sums_last_played_is_latest_favourite_is_any`.
+    - `unfavouriting_a_folded_row_clears_every_favourited_copy`: a loopback fake Jellyfin records one `DELETE` per
+      copy, as `JellyfinSessionBridgeIntegrationTest`'s fake does.
+
+**Only a real library scan can confirm** these. Run them once on the dev stack, with the owner's go-ahead for that
+deploy. That run is the only time MusicBrainz is called, through the client's 1 request/s. Read the results from the
+admin pages and the `/api/music` answers, and keep the album names out of commits and reports:
+- the household's numbers: 487 → 385 songs, 102 copies in 78 groups (98 by recording, 4 by audio), and 3 suggestions;
+- the extras 1 · 1 · 12 · 1 · 10, and the live album's 1;
+- 43 of 49 singles homed, with B-sides 25 · 19 · 13 · 9 · 9 · 6 · 2 · 0 · 0;
+- the three albums with 26, 27 and 30 pressings fully listed in Find match…;
+- that the measured threshold makes exactly the 4 audio joins and the 3 suggestions, with no false join. Spot-check
+  by ear, in the Dashboard modal;
+- that the first `compare_songs` run takes minutes, not hours (the research measured 7.5 min for 387 tracks), and a
+  second run with no changes is near-instant.
+
 ## Dev review (2026-10-04, against `main` `5210045a`)
 
 Read against `MusicBrainzClient`, `MusicMatchService` (the ladder, `applyMatch`, `catchUpVersionFacts`), `MusicScoring`,

@@ -48,19 +48,112 @@ The focused row's heading sits just under the tab strip (64 dp inset, as today),
 row's heading peeking below when there is room. When there is not room for the peek, the peek is dropped — never the
 heading, never the tiles' captions.
 
+## Acceptance
+
+1. Discover → Request → Down to the second, third and last row: the page settles within one scroll animation; ten
+   reads of the heading's position with no key pressed are identical. CI: `DiscoverRowsSettleTest`'s Request cases;
+   the ten reads are the device check below.
+2. Same on Coming Soon and on each wall (Networks, Studios, Genres). CI: `DiscoverRowsSettleTest`'s Coming Soon and
+   wall cases.
+3. Home and a collection page frame rows as before (heading under the app bar, next row peeking). CI:
+   `identicalToTodayWhereTodayHadARestingPoint`; a look on the TV confirms it.
+4. The convergence test (FR-R367-3, `EdgeBandScrollDistanceTest.everyCallerRestsAfterOneStep`) fails on today's code
+   and passes after the fix. Checked once at build time (see *Tests*), not kept as a test of the old body.
+
+## Tests
+
 ### FR-R367-3 — One rule, tested for convergence
 `calculateScrollDistance` is pure; a unit test applies it repeatedly (scroll by the result, recompute) for both
 requests (row rect, tile rect) at Home's and Discover's list heights (960 × 540 dp TV, plus a 600 dp-tall desktop
 window) and asserts it reaches **0** within two steps for every row index. The same test covers every screen that
 calls `rememberEdgeBringIntoViewSpec`.
 
-## Acceptance
+*Consolidated 2026-10-04 with the dev review (items 5, 6 and 9) and the owner decision (no peek on the TV; fix the
+bounce only). The rule under test is `edgeBandScrollDistance(offset, size, containerSize, topPx, centerPx, peekPx)`,
+lifted out of `rememberEdgeBringIntoViewSpec` next to R250's `gutterBringIntoViewDistance`. The dev review tightens
+"within two steps" to **one step per request**; a row and its tile asked for in turn rest within two.*
 
-1. Discover → Request → Down to the second, third and last row: the page settles within one scroll animation; ten
-   reads of the heading's position with no key pressed are identical.
-2. Same on Coming Soon and on each wall (Networks, Studios, Genres).
-3. Home and a collection page frame rows as before (heading under the app bar, next row peeking).
-4. The convergence test (FR-R367-3) fails on today's code and passes after the fix.
+**Every caller, by construction.** Today six call sites pass their own numbers:
+
+| Caller | Site | Top inset · band · peek (dp) |
+|---|---|---|
+| Home | `HomeScreen.kt:279` | 124 · 0.3 · 150 |
+| A channel / collection page | `ChannelScreen.kt:211` | 124 · 0.3 · 150 |
+| Discover → Request | `RequestScreen.kt:102` | 0 · 0.3 · 150 (was 64, Fix 2) |
+| Discover → the walls | `TaxonomyScreen.kt:154` | 0 · 0.3 · 120 (was 64, Fix 2) |
+| Movie detail | `MovieDetailScreen.kt:181` | 84 · 0 · 60 |
+| Series detail | `SeriesDetailScreen.kt:506` | 84 · 0 · 60 |
+
+Name these as values next to the function (e.g. `EdgeBand.HOME`, `CHANNEL`, `DISCOVER_REQUEST`, `DISCOVER_WALLS`,
+`DETAIL`, collected in `EDGE_BANDS`), and have each caller pass its value instead of literals. The test iterates
+`EDGE_BANDS`, so a new caller is covered once it adds its band there (say so in the KDoc). Coming Soon is **not** a
+caller: `UpcomingContent` takes the platform default (dev review item 4), which the layout test below covers instead.
+
+**`EdgeBandScrollDistanceTest`** (`ravilo-ui` `commonTest`, `dev.jellystructure.ravilo.ui.focus`, beside
+`FocusDetailPanelClampTest`, which pins R250's gutter function). Pure, no Compose. Runs in CI on
+`:ravilo-ui:testDebugUnitTest` and `:ravilo-ui:desktopTest`.
+- `everyCallerRestsAfterOneStep`: this is FR-R367-3. For every band in `EDGE_BANDS`, list heights 540 (the TV),
+  338 (Discover's list on the TV, dev review item 3), 600 (a 600 dp-tall desktop window) and 398 (Discover's list
+  in that window, if the header is the same ≈ 202 dp), densities 1 and 2 (the TV is 960 × 540 dp at 1920 × 1080 px),
+  target sizes from 40 dp to 1.5 × the container in 1 dp steps, and 50 integer starting offsets spread over
+  −1.5 × to +1.5 × the container: `next = offset − f(offset)`, then `|f(next)| ≤ 0.01 px`. The tolerance is float
+  noise; anything larger is a move.
+- `aTargetThatFitsRestsInTheBandWithItsBottomOnScreen`: band on and `size ≤ container − top`. At rest
+  `top ≤ offset ≤ max(top, min(center, container − size))`, and `offset + size ≤ container`.
+- `aTargetTooTallRestsAtTheInsetWithNoPeek`: band on and `size > container − top`. The resting offset is exactly
+  `top` from every start (FR-R367-2: the peek goes, never the heading). This includes Request's 357-dp row in a
+  338-dp list.
+- `aBandOffRevealNeverPushesTheTopAboveTheInset`: band off (detail), every size and start. The resting offset is
+  `≥ top`, so the latent detail-page flaw (dev review item 5) is closed too.
+- `aDiscoverRowAndItsTileAgreeOnOnePosition`: Discover's numbers (list 338, band `DISCOVER_REQUEST`, row 357, tile
+  283 with its top 54 below the row's). Resolving the row then the tile, and the tile then the row, from every
+  start ends at the same list position, and both `f` are 0 there (at 338 the row's top is at 0). Repeat with list
+  398, where the row fits and rests in the band. This is Fix 2's "the two requests agree" as arithmetic.
+- `identicalToTodayWhereTodayHadARestingPoint`: acceptance 3 by construction. A frozen private copy of today's body
+  sits in the test. With the band on, for sizes `≤ container − center`, and with the band off, for sizes
+  `≤ container − top − peek`, the new and old `f` are equal at **every** offset. Run it for Home, channel and detail
+  at 540 and 600.
+
+Acceptance 4 is a one-time build check, not a kept test. Run `everyCallerRestsAfterOneStep` against the unchanged
+body first, with Request's old 64 dp inset. It must fail at size 357 in 338: the sign alternates from one step to
+the next. Record that in the build notes, then make the fix.
+
+**`DiscoverRowsSettleTest`** (`ravilo-ui` `androidUnitTest`, Robolectric, `@Config(sdk = [34], qualifiers =
+"w960dp-h540dp")`, built like `DiscoverFocusTest`). Give `DiscoverStore` and `UpcomingStore` an `internal`
+fetch-lambda constructor, as R350 did for `TaxonomyStore`. Feed fictional data: Request with three rows of ten
+entries, Coming Soon with three days of six items, walls of 30 values each. For each case: walk Down from the app bar
+(tab → row 1 → the target row) with `performKeyInput`. Set `mainClock.autoAdvance = false` before the last key, and
+**do not** call `waitForIdle` after it: on today's code the animation never ends, and the wait times out. Then advance
+2 000 ms, read the bounds, advance 2 000 ms more and read again. Assert:
+- the row heading's top is the same in both readings, and so is the focused tile's;
+- the heading's top is at or below the list's top, and the focused tile's year line (its last caption) ends at or
+  above the list's bottom.
+
+Cases:
+- `a Request row below the first settles with its captions on screen` (row 2);
+- `the last Request row settles` (row 3);
+- `Up into a Request row brings its heading in` (row 3, then Up to row 2; this is the row request that
+  `bringRowHeaderIntoView = true` keeps);
+- `each wall settles on a line below the first` (Networks, Studios, Genres; Down to the second line of tiles);
+- `Coming Soon settles on its second day`, run twice: with Robolectric's `PackageManager.FEATURE_LEANBACK` on (the
+  TV's default spec, which is how Compose picks it on Android) and off (the phone's and the desktop's);
+- `a Request row settles in a 600 dp-tall window` (method-level `@Config(qualifiers = "w1000dp-h600dp")`): the list
+  height the desktop's window gives. The desktop's own renderer is not run.
+
+Each case also prints the measured row height and list height, so dev review item 3's estimates (357 and 338)
+are replaced by real numbers in the build notes. On today's code the first two cases fail on the two readings.
+
+**Not covered by CI:** real font metrics on the TV (they decide whether the year line clears the bottom edge), and
+Compose's request queue on the device's own build.
+
+**Device only — manual check (a 960 × 540 dp Android TV, about three minutes):**
+1. Discover → Request → Down into the second row and put the remote down. Read the row heading's top ten times over
+   ten seconds (`uiautomator dump`, as in *What was seen*). All ten are identical, and the posters, titles and year
+   lines are fully visible; nothing of the next row shows (owner decision).
+2. Same on the third and the last row, then Up back into the second: the heading comes back in under the tabs.
+3. Same on Coming Soon and on Networks, Studios and Genres (a line below the first).
+4. Home and one collection page: Down through a few rows. The heading sits under the app bar with the next row
+   peeking, as before. Open a movie and a series detail and walk down to the bottom: nothing jumps.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

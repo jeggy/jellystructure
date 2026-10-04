@@ -40,10 +40,16 @@ information row under Services (*Stue hasn't reported since the restart*), with 
 ## Acceptance
 
 1. With *Cannery Lights* on Stue and *Lundin og vinir* on the Køkken hub, the Sessions tab lists both, with Eyð and
-   Olivar, places, positions and controllers.
+   Olivar, places, positions and controllers. (304a; per the review it is a *Playing now* section, and the row shows
+   *started from {app}* until R369 adds controllers. Tests: `AdminSessionListTest`, `ravilo-users-sessions.spec.ts`.)
 2. The admin pauses Olivar's session, skips to the next episode, then stops it. The hub follows each, and the timeline
-   reads *Paused from the admin · Next from the admin · Stopped from the admin*.
-3. Turning the household switch on gives Eyð's Pixel ⏯ on Olivar's row within a second.
+   reads *Paused from the admin · Next from the admin · Stopped from the admin*. (304b. Tests: `AdminSessionCommandTest`,
+   `PlaybackSessionEventsTest`, `ravilo-users-sessions.spec.ts`; the hub itself only on the device.)
+3. Turning the household switch on gives Eyð's Pixel ⏯ on Olivar's row within a second. (304b. Tests:
+   `HouseholdControlConfigTest`, `PlaybackSessionRulesTest`, `TvEventBusSessionsIntegrationTest`,
+   `ravilo-users-sessions.spec.ts`.)
+4. A session from another network, or one hidden from a kids profile, is listed in full for the admin. (304a. Test:
+   `AdminSessionListTest`.)
 
 ## Decided by the owner (2026-10-04)
 
@@ -54,6 +60,94 @@ information row under Services (*Stue hasn't reported since the restart*), with 
 
 - The household switch is off by default.
 - Timelines are kept for 7 days.
+
+## Tests
+
+These follow the reviewed and decided design below:
+
+- a *Playing now* section above *People*, not a tab;
+- the admin's own routes and `/ws`, with no visibility or network filter (owner decision 2);
+- the split into **304a** (list and timeline) and **304b** (remote and switch);
+- *End*, not *Stop*;
+- FR-304-5 dropped (owner decision 1), so there is nothing to test for it.
+
+R368's tests carry the session itself. Test names are Kotlin backtick names. Functions named here that don't exist yet
+are the ones the build adds. The admin frontend (wasmJs) has no unit-test harness, so the page is checked in
+Playwright.
+
+**304a: the list and the timeline (ships after R368)**
+
+- `src/linuxX64Test/kotlin/dev/jellystructure/tv/PlaybackSessionEventsTest.kt` (`linuxX64Test`). Covers FR-304-3 and
+  review item 5. It uses `PlaybackSessions` on a temporary DB with a fake clock (the `CastServiceTest` setup).
+  - `a start writes started with the starting device`: `source` is `started_by_device_id`.
+  - `heartbeats write nothing and a pause writes one`: paused and resumed are written only when `is_paused` changes.
+  - `a restart writes reconnected and the watchdog writes went offline`.
+  - `an end writes ended with its reason`: stopped, replaced, and no return after a restart.
+  - `the hourly tick drops events and ended sessions older than seven days`: 6 d 23 h is kept, 7 d + 1 ms is gone, and
+    live sessions are never touched.
+  - Pure function `endedTodaySince(nowMs, zone)`. Test: `ended today starts at local midnight`. A session that ended at
+    23:59 yesterday is out, 00:01 today is in, and a daylight-saving change day is handled.
+- `tv/AdminSessionListTest.kt` (`linuxX64Test`). Covers FR-304-1, review items 1, 2 and 9, and owner decision 2. Tests
+  `adminSessionList(nowMs)`:
+  - `the admin sees every owner on every network`: a session on another public address and a title hidden from a kids
+    profile both appear in full.
+  - `ended today is listed and nothing older`.
+  - `a row says started from its app until controllers exist`: the device's `display_name` comes from
+    `started_by_device_id`.
+  - `now watching names a song by its title`: the per-user line reads the session table, which fixes R368's shipped
+    bug 1 (a raw Jellyfin id).
+- `jobs/JobEventSessionsTest.kt` (`linuxX64Test`). Test: `the sessions event round-trips with its type and the whole
+  list`. `JobEvent.PlaybackSessions` keeps the shape the admin page decodes.
+- Migration (review item 5).
+  - If 304a ships with R368, R368's `PlaybackSessionMigrationTest` also asserts `playback_session_event`.
+  - Otherwise, add `the event table migrates and drops nothing` to that class for 304a's own `.sqm`.
+- `tests/e2e/ravilo-users-sessions.spec.ts` (Playwright on the e2e stack, with devices played by hand as in
+  `screens.spec.ts`):
+  - `the admin list is cookie gated`: `GET /api/tv/admin/playback/sessions` answers 401 without the admin cookie, 401 to
+    a device bearer token, and 200 with the cookie.
+  - `a playback started by a device shows on the page and on the socket`:
+    - a phone starts an item;
+    - *Playing now* sits above *People* and shows the person, the place, the state and *started from {app}*;
+    - a `PlaybackSessions` frame arrives on `/ws`;
+    - after a reload the page seeds from the GET.
+  - `nothing playing reads one sentence`: *Nothing is playing anywhere.*
+  - `no remote before R369`: the row has no ⏯, no seek and no *End*. They are absent, not greyed out.
+
+**304b: the remote and the switch (with or after R369)**
+
+- `config/HouseholdControlConfigTest.kt` (`linuxX64Test`, the `ThemeConfigTest`/`PublicUrlTest` pattern). Covers
+  FR-304-4 and review item 6.
+  - `a config without the key reads household control off`.
+  - `writing it through ConfigStore round-trips and keeps every other field`.
+- Extend R368's `PlaybackSessionRulesTest`:
+  - `with household control on another nearby members session is controllable`. With the switch off, it is not.
+  - `the switch never widens the household`: a member on another network is still not listed.
+- Extend R368's `TvEventBusSessionsIntegrationTest` with `flipping the switch re-sends the list to every opted-in
+  socket`. `controllable` flips in the next `session_list`, and a socket without `features=sessions` still gets nothing.
+- `tv/AdminSessionCommandTest.kt` (`linuxX64Test`). Covers FR-304-2 and review items 4 and 8, on R369's command
+  service.
+  - `an admin pause is recorded from the admin`: the timeline entry has `source = admin`.
+  - `the admin is never a controller row`.
+  - `a stale revision from the admin gets a conflict` (409).
+  - `the household switch never limits the admin`.
+  - `end goes through stopPlayback and keeps the resume point`.
+- Extend `ravilo-users-sessions.spec.ts`:
+  - `the admin command route is cookie gated`.
+  - Acceptance 2, with a hand-played device on its events socket:
+    - pause, next and *End* each reach the device;
+    - the timeline has the three entries, each *from the admin*.
+  - Acceptance 3:
+    - the switch is written through its route;
+    - a member's opted-in socket gets `controllable = true` within a second;
+    - there is no global Save.
+  - Controls whose phase hasn't shipped are absent: R371's volume and *Add a speaker…*, and R372's *Move to…*.
+
+**Only a live server or a device can confirm**
+
+- The page against real sessions across a real backend restart (with the owner's go). The timeline should read
+  *reconnected after restart*, or *ended* with the reason that it didn't come back. *Ended today* should reset at the
+  server's midnight.
+- Acceptance 2 on a real display, cleared by the owner for testing: the display follows each admin command (304b).
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

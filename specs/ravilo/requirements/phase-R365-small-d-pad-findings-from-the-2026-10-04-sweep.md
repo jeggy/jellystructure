@@ -80,12 +80,53 @@ from there (R58's timer restarts).
 ## Acceptance
 
 One D-pad walk per item on the TV path, each in a Robolectric test where the screen already has one (Search,
-series page, Discover, browse), and a re-check on the Sony.
+series page, Discover, browse), and a re-check on the Sony. The tests per item are listed in *Tests*.
 
 ## Noted, not ours
 
 - At 01:43 the TV's own *BootModeAppToForeground* timeout (Sony) returned the TV to its home screen while Ravilo sat
   idle on Search; Ravilo was not at fault (logcat: `Background timeout reached, starting home intent`).
+
+## Tests
+
+Conventions as in R361's *Tests* (Robolectric `w960dp-h540dp`, `-television` where `isTvPlatform` is read;
+`performKeyInput`; the focused node by `isFocused()` + text or tag; stand-in titles). One line per FR; each can be
+built and ticked alone.
+
+1. **FR-1 · `SearchFocusTest`** (already `-television`): type a query, Down to the results and Up (the field, keyboard down, as its existing test does) → Right →
+   *Clear* focused; OK →
+   the field focused, query empty, `keyboardUp()` false, suggestions shown. Right → *Clear* → Left → the field; again
+   with Down; Up on *Clear* → still *Clear*. Empty query: Right on the field → the field stays focused, no *Clear*
+   node.
+2. **FR-2 · `SeriesDetailFocusTest`**: Down to the synopsis, Right → the synopsis still focused, Left → the same; Up
+   and Down as before. The film page shares `DetailSynopsis`: TV check only.
+3. **FR-3 · `SeriesDetailFocusTest`**: 3 seasons, Season 2 with E01–E02 watched: Down to the pills, Right to *Season
+   2*, OK, Down → the S02E03 card (`railOpeningIndex`'s card). Right to a pill without OK, Down → native, unchanged.
+4. **FR-4 · `DiscoverFocusTest`** (Coming Soon segment, a fake `upcomingStore`): the tab → Down → *All*; select
+   *Series*, Up to the tab, Down → *Series*. Up from the date rail → the selected chip.
+5. **FR-5 · `SettingsFocusTest`** pattern on `DiscoverScreen`: arriving with the return-to-avatar flag → the avatar
+   (`APP_BAR_AVATAR_TAG`, shared with R364) is focused and the flag's consume callback ran once; without it → the
+   active tab. `RaviloApp`'s flag wiring (Settings, My List, Your profile pushes): TV check.
+6. **FR-6 · the shipped `.onFailure` bug.** R361's `FocusRetryTest` (the fixed helpers), plus one case for the
+   Back-to-top choice extracted as `focusHeroElseBar(scope, heroFR, barFR)`: hero requester never attached → the bar
+   is focused (**red on today's `runCatching { … }.onFailure`**, which never fires); hero attached after 2 frames →
+   the hero. R361's source check keeps `.onFailure`/`.isSuccess` on `requestFocus()` out of the tree. TV check: a
+   two-row collection without a hero, focus in row 2, Back → the bar's tab focused at the top; Back → leaves.
+7. **FR-7 (owner decision 1) · source check + TV check.** `grep -rn 'browse.from_row' ravilo-ui/src/commonMain` finds
+   nothing; on the TV, a row's *See all*, a cast face, a genre chip and a Discover wall each show the count only.
+8. **FR-8 · TV check** (release build): Up to the seek bar, Right ×120 → the handle moves with the time, a faint
+   marker stays at the real position; OK commits, Back cancels. `SeekBar` lives in `PlayerScreen.kt`, so
+   `scripts/check-player-dex.sh` on the release APK stays green.
+9. **FR-9 · `SeriesEpisodesTest`** (`commonTest`): `returnFocusFor(seasons, episodeId)` → the season holding it and
+   its card; an id inside a multi-episode file → that file's card; an unknown id → `null` (R350 FR-2's target stays).
+   The write rule as a pure `moveOnReturnFocus(current, nextEpisodeId, shuffleActive, seriesPageBelow)`: no series
+   page below → no write; a shuffle still running → `Shuffle` kept (**owner decision 2**); after a rail pick (shuffle
+   left, R343) → `EpisodeId`. `SeriesDetailFocusTest` gains: a stored `EpisodeId` for S02E05, return → the S02E05
+   card on Season 2; and its existing "Shuffle, the player, Back lands on Shuffle again" stays green.
+10. **FR-10 · `commonTest` + R361's `HomeFocusTest`**: `heroStartIndex(heroIds, savedId)` → the saved hero's index;
+    gone after a `home_changed` → 0; none → 0. `HomeFocusTest` gains: Right ×4 on the hero, OK, leave and return →
+    the 5th slide's title is displayed and the hero focused. TV check: auto-advance resumes from that slide; a
+    channel's hero the same.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

@@ -80,21 +80,117 @@ Read against every Seerr call this codebase makes (`SeerrClient.kt`: `/status`, 
 ## Acceptance
 
 1. Unit: `removeRequest` against a `mediaInfo` with requests at status 1, 2, 3 and 5 sends one decline (for
-   the status-1 request) and four deletes, then one media delete, in that order.
+   the status-1 request) and four deletes, then one media delete, in that order. CI:
+   `SeerrRemovalCallsTest.onlyAPendingRequestIsDeclined` (the plan is `seerrRemovalCalls`, dev review item 5).
 2. Unit: `declineRequest` maps 200/204 → declined, 409 → refused with the body's `message`, 500/timeout →
-   failed; `removeRequest` logs the refusal and still deletes.
-3. Unit: the probe reports the hide-requested sentence when `/settings/main` answers `{"hideRequested":true}`,
-   plain *Connected · v…* when it answers `{}`, `{"hideRequested":false}`, 403 or a timeout.
-4. Against Seerr 3.5.0 with *Hide requested media* on: *Test connection* shows the sentence; with it off, the
-   line reads as today. Against 3.4.1: as today.
-5. Removing a request (the phase 186 cascade) for a title whose Seerr request is approved leaves no
-   `Request not found` or 409 in the log at warn or above, and the title's request and media rows are gone.
+   failed; `removeRequest` logs the refusal and still deletes. CI: `SeerrDeclineOutcomeTest` (the mapping is
+   `declineOutcome`, dev review item 6) and `SeerrRemovalRunTest.aRefusalIsLoggedAtInfoAndTheDeleteStillRuns`.
+3. ~~Unit: the probe reports the hide-requested sentence when `/settings/main` answers `{"hideRequested":true}`,
+   plain *Connected · v…* when it answers `{}`, `{"hideRequested":false}`, 403 or a timeout.~~
+   **Owner decision (2026-10-04):** the Seerr card carries the one-line hint under the version, always. CI:
+   `tests/e2e/seerr-card-hint.spec.ts`.
+4. ~~Against Seerr 3.5.0 with *Hide requested media* on: *Test connection* shows the sentence; with it off, the
+   line reads as today. Against 3.4.1: as today.~~
+   **Owner decision (2026-10-04):** nothing else changes: `SeerrClient.ping`, `/config/test-seerr`, `ArrTestResult`
+   and Ravilo are untouched, and the card makes no Seerr call for the hint. CI: the same e2e spec asserts the
+   no-call part.
+5. ~~Removing a request (the phase 186 cascade) for a title whose Seerr request is approved leaves no
+   `Request not found` or 409 in the log at warn or above, and the title's request and media rows are gone.~~
+   **Dev review item 7:** a failed `deleteRequest` or `deleteMedia` is logged at **warn** with the request or media
+   id, and the cascade still runs to the end. Removing an approved request with every call succeeding logs nothing
+   at warn or above. CI: `SeerrRemovalRunTest`. Live: the manual check below.
 
 ## Open questions
 
 1. Whether `GET /settings/main` should be read with the household key alone or also with `X-API-User` (156): the
    key is the admin's, so the plain read is right, but confirm the route needs no permission a service key
    lacks. Lean: plain read; a 403 counts as `false` per FR-282-3 either way.
+
+## Tests
+
+*Written 2026-10-04 from the dev review (items 5–7) and the owner decision (keep a hint). FR-282-3 and FR-282-4 are
+reworked by that decision: there is no probe change to test, only one static line on the card. Every Seerr
+response below is a fixture or a stub. No test calls a Seerr.*
+
+**Backend unit tests** (`src/linuxX64Test/kotlin/dev/jellystructure/seerr/`, a new package directory. No Seerr test
+exists today, and there is no `MockEngine` in `linuxX64Test`, so the rules are lifted into pure functions). CI:
+`./gradlew linuxX64Test`.
+
+- **`SeerrRemovalCallsTest`**: `seerrRemovalCalls(requests: List<SeerrRequestRef>, mediaId: Int): List<SeerrCall>`
+  (FR-282-1).
+  - `onlyAPendingRequestIsDeclined` (acceptance 1): requests `(11, 1)`, `(12, 2)`, `(13, 3)`, `(15, 5)` and media
+    `40` give exactly `[Decline(11), DeleteRequest(11), DeleteRequest(12), DeleteRequest(13), DeleteRequest(15),
+    DeleteMedia(40)]`.
+  - `failedAndStatuslessRequestsAreOnlyDeleted`: status `4`, and a request with no `status` (decodes to `0`), each
+    give one `DeleteRequest` and no `Decline`.
+  - `requestsKeepSeerrsOrder`: the plan follows the input order (e.g. statuses 5, 1, 2), never sorted. Each pending
+    request's decline sits directly before its own delete.
+  - `noMediaRowMeansNoMediaDelete`: `mediaId = 0` gives no `DeleteMedia`.
+  - `aMediaRowWithNoRequestsIsStillDeleted`: no requests and media `40` give `[DeleteMedia(40)]`.
+- **`SeerrDeclineOutcomeTest`**: `declineOutcome(status: Int, body: String?): SeerrDecline` (FR-282-2, acceptance
+  2).
+  - `okAndNoContentAreDeclined`: 200 and 204 give `Declined`.
+  - `aConflictIsARefusalWithSeerrsMessage`: 409 with `{"message":"Only pending requests can be approved or
+    declined."}` (Seerr 3.5.0's own text, PR #3385) gives `Refused` with that message.
+  - `aConflictWithoutAMessageKeepsTheRawBody`: 409 with a non-JSON body, or JSON without `message`, gives `Refused`
+    with the raw body. 409 with no body gives `Refused("")`.
+  - `anythingElseFailed`: 400, 403, 404 and 500 give `Failed`, and the detail names the status code.
+- **`SeerrRemovalRunTest`**: the cascade's logging. `Logger` has no test sink, so lift the loop into a runner that
+  takes the call executor as a lambda and returns the lines it logs (e.g. `runSeerrRemoval(calls, exec): List<
+  SeerrRemovalLog>`, each with a level and a message). `removeRequest` emits them. The names are the build's choice;
+  the seam is not.
+  - `aRefusalIsLoggedAtInfoAndTheDeleteStillRuns`: the executor refuses `Decline(11)` with Seerr's message. There
+    is one info line naming request 11 and that message, and `DeleteRequest(11)` and every later call still run.
+  - `aFailedRequestDeleteIsLoggedAtWarnAndTheCascadeGoesOn`: `DeleteRequest(12)` fails. There is one warn line naming
+    request 12, and `DeleteRequest(13)`, `DeleteRequest(15)` and `DeleteMedia(40)` still run (FR-186-6's "defensive"
+    rule).
+  - `aFailedMediaDeleteIsLoggedAtWarn`: `DeleteMedia(40)` fails. There is one warn line naming media 40.
+  - `aThrownCallCountsAsFailed`: the executor throws (a timeout) on a delete. It is logged like a failure, and the
+    rest of the plan runs.
+  - `aFailedDeclineIsLoggedAndTheDeleteStillRuns`: `Decline(11)` fails (500). The delete that follows is what removes
+    the request, so it runs. The line is at **info** (a lean, not an owner decision), never warn.
+  - `aCleanRemovalLogsNothingAtWarn` (acceptance 5's replacement): every call succeeds, so no line is at warn or
+    above.
+  - Every message carries ids and Seerr's text only, never a title.
+- **`SeerrMediaInfoDecodeTest`**: a fixture check of the 3.5.0 response shape. Use a hand-written, trimmed
+  `/movie/{id}` body inline (fictional ids, no title). It has `mediaInfo.id`, `mediaInfo.hasActiveRequest: true`
+  (new in 3.5.0, PR #1855), and six requests: one at each status 1–5 and one without `status`. Decode it with the
+  exact `Json { ignoreUnknownKeys = true }` that `OutboundHttp.client` installs (lift it to an `internal val` so
+  the test shares the instance rather than a copy).
+  - `aSeerr35MovieDecodesAndPlansTheRemoval`: the decode succeeds, despite the unknown `hasActiveRequest`. The refs
+    carry the right `id`/`status`, and the status-less one reads `0`. `seerrRemovalCalls` on them gives one decline
+    (status 1), six request deletes and one media delete. This is dev review item 3's "ignored, not a failure" as a
+    test.
+
+**Admin e2e** (`tests/e2e/seerr-card-hint.spec.ts`, Playwright in CI's `e2e` job, built like
+`bazarr-dashboard.spec.ts`: one shared login, `/#/settings?tab=downloads`). FR-282-3/4 as reworked by the owner.
+- `the Seerr card always carries the hide-requested hint`: with Seerr's toggle on, before *Test connection* is
+  pressed, `#sect-seerr` shows the exact sentence *Seerr's "Hide requested media" only hides titles in Seerr's own
+  pages; Ravilo's Request rows and suggestions still show them.* It sits under the connection result (`#chk-seerr`,
+  where the version appears), e.g. as `#seerr-hide-hint`.
+- `the hint makes no Seerr call`: with the page's requests recorded from the tab's load, none went to
+  `/api/config/test-seerr`.
+- `the hint does not depend on the test result`: press *Test connection* with a URL nothing answers (the e2e stack
+  has no Seerr). `#chk-seerr` shows the failure, and the hint is still there, unchanged.
+- Leave the toggle as it was found. Do not save.
+
+**Not covered by CI:** that a real Seerr 3.5.0 answers our calls the way the fixtures say (409 on a non-pending
+decline, a plain 200/204 on `DELETE /request/{id}` for an approved or completed request), and the wiring of
+`removeRequest`'s two callers (`POST /acquisition/request/remove` and the dead-request sweep) to the runner.
+
+**Live only — manual check (the household's Seerr, after its upgrade to 3.5.0; about five minutes):**
+1. Settings → Download tools → Seerr: the hint line is under the connection line, before and after *Test
+   connection*; the result still reads *Connected · v3.5.0*.
+2. Request a title from Ravilo and let Seerr approve it. Then remove it from the admin (phase 186's removal). Seerr's
+   Requests page no longer lists it, its media entry is gone, and the backend log has no refusal line and nothing at
+   warn for that removal.
+3. A pending request removed the same way is declined, then deleted: Seerr shows it gone, and the log has no
+   refusal.
+
+The warn on a failed delete is left to `SeerrRemovalRunTest`. By hand it needs Seerr to fail *between* the details
+read and the delete, and stopping Seerr does not do that: `removeRequest` reads `/movie/{id}` or `/tv/{id}` first,
+and when that read fails the Seerr steps are skipped with no call and no log line. That is today's behaviour and
+this phase does not change it.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 

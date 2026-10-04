@@ -38,9 +38,7 @@ set to `box-shadow: none`), so the mockup and the app agree. That is a design-si
 design export.
 
 ### FR-R374-4 — Tests
-`HeroFocusRingTest` turns around: the focused hero draws **no** ring (assert there is no border node, for example
-by removing the tag and asserting nothing with the old tag exists), and Down still moves focus to the row below.
-Rename it `HeroNoFocusRingTest` or keep the file and change the test name; either is fine.
+See *Tests* below.
 
 ## Acceptance
 
@@ -48,4 +46,15 @@ Rename it `HeroNoFocusRingTest` or keep the file and change the test name; eithe
    goes to the first row, Up goes to the app bar, as before.
 2. A channel's hero shows no border either.
 3. A focused button on a detail page, the synopsis and the trailer's Close still show their rings.
-4. The hero test is green with the reversed assertion.
+4. `HeroNoFocusRingTest` is green (see *Tests*).
+
+## Tests
+
+- **`HeroNoFocusRingTest`** (`HeroFocusRingTest` renamed, `androidUnitTest/…/components/`, same
+  `@Config(sdk = [34], qualifiers = "w960dp-h540dp")` and setup): the hero takes focus on arrival (a focused node
+  holds the stand-in's title) and no node tagged `"hero-focus-ring"` exists (the literal, since the constant goes);
+  Down → `"below"` focused; with two heroes, Right moves to slide 2 and the hero keeps focus, still with no ring.
+- **Unchanged and still green:** `SeriesDetailFocusTest`'s "desktop — keyboard to Resume, Enter, Esc — Resume is
+  focused again and draws its ring" (a `RaviloButton`'s ring, FR-2).
+- **TV only (manual, D-pad on the TV):** acceptance 1–3, including a channel's hero, the synopsis and the trailer's
+  Close. FR-3's mockup by eye.

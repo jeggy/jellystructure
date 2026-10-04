@@ -78,7 +78,46 @@ found there is fixed the same way, in this phase.
 5. Paused after the intro, focus on −10 s, OK until inside the intro: focus stays on −10 s.
 6. Prompt mode draws no ring; Auto mode draws it and skips at zero.
 7. Outside the intro, OK on a hidden screen still pauses.
-8. Robolectric key walks for 1–7 (`PlayerScreen` focus model; `dpadRevealsOnly` gains the intro case).
+8. The decisions behind 1–7 are unit-tested and the walks are done on the TV (no Robolectric `PlayerScreen`
+   harness); the release player passes `check-player-dex.sh`. See *Tests*.
+9. Skip or scrub into the credits: the card starts on *Watch credits*; reached by playing, it starts on *Play next*.
+
+## Tests
+
+`PlayerScreen` sits at ART's 256-register limit in the release build (review item 9), so every decision is a top-level
+pure function in its own file, new state lives in `PlayerBookkeeping`, and the tests target the functions. No
+Robolectric `PlayerScreen` test (it would need a fake `RaviloPlayer`; review item 12).
+
+**Decisions (`commonTest`, `…/screens/`).** `PlayerDpadRevealTest` gains the hidden-OK case; the rest go in a new
+`SkipIntroFocusTest`. Names follow review item 9; rename with the code.
+- FR-1, acceptance 3–4: `skipIntroUpTarget(focus, pillVisible)`: `SEEK_BAR`, `TRACKS`, `NEXT_EP` with the pill
+  visible → `SKIP_INTRO`; `SKIP_BACK`, `PLAY`, `SKIP_FWD` → `SEEK_BAR`; pill hidden → today's target. Down from the pill
+  → the remembered return target, `PLAY` when the pill took focus itself. Left/Right on `SKIP_INTRO` → no move
+  (review item 3), and `transportOrder` never contains `SKIP_INTRO`.
+- FR-2, acceptance 5: `skipIntroGrabsFocus(armingEdge, chromeVisible)` is `true` only for `(true, false)`; a rewind
+  into the intro (always with `wake()`, so chrome visible) → `false`.
+- FR-3, acceptance 1: `skipIntroWakeFocus(key, introArmed, pillHadFocusWhenHidden, touchedOther)`: Up or OK, armed,
+  and (the flag set or nothing else touched) → `SKIP_INTRO`; Up with another control touched and no flag → the
+  remembered control; Left/Right → the remembered control (they scrub); Down → reveal only.
+- FR-4, acceptance 2 and 7 (owner decision 1): `hiddenSelect(introArmed, …)`: armed → `REVEAL_TO_PILL`; outside the
+  intro, mode `OFF`, picker, next-up card or episode rail open → as today (`PLAY_PAUSE` / `NONE`). The existing "OK
+  with the chrome hidden never fires the remembered control" still holds with `introArmed = false`.
+- FR-5, acceptance 6: `skipIntroShowsRing(mode)`: `AUTO` → `true`, `PROMPT` → `false`.
+- FR-6, acceptance 9 (owner decision 2): `nextUpStartsOn(broughtByViewer)`: a skip or scrub commit into the credits
+  → *Watch credits*; normal playback → *Play next*.
+
+**Robolectric, outside the player body.** `SkipIntroPillTest` (new, `…/components/`, `w960dp-h540dp`) renders only
+`SkipIntroPill` (`private` today; make it `internal`, which costs `PlayerScreen` no registers): `showRing = false` → no node tagged `SKIP_INTRO_RING_TAG` (a new tag on `CountdownRing`) and the
+*OK* key cap present; `showRing = true` → the ring node exists.
+
+**Checklist.** `./gradlew :ravilo-android:assembleRelease`, then `scripts/check-player-dex.sh`: `PlayerScreenKt`'s
+widest method stays ≤ 250 registers. No new `var … by remember` or `LaunchedEffect` in `PlayerScreen`'s body (the
+pill's focus-grab `LaunchedEffect` is removed, not moved).
+
+**TV only (manual, D-pad on the TV, an episode with a known intro, the release build).** Prompt mode, then Auto:
+acceptance 1–7 in order, each from a fresh start of the episode. Play/Pause on the remote during the intro toggles.
++30 s into the credits → the card on *Watch credits*, OK does not start the next episode; let another episode play
+into its credits → *Play next*.
 
 ## Dev review (2026-10-04, against `main` `5210045a`)
 
