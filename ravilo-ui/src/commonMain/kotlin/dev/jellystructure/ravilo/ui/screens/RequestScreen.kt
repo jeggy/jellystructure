@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -99,7 +100,9 @@ fun RequestContent(
 
     Box(Modifier.fillMaxSize()) {
     // R140: match Home — bigger peek (next-row title peeks below), top inset clears the bar on UP.
-    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 150.dp, topInsetDp = 64.dp, centerLineFraction = 0.3f)
+    // R367 (Fix 2) — inset 0: the 64 dp was Home's (it clears Home's overlay app bar); Discover's list starts below the
+    // tab strip and nothing overlays it, so with 64 the row and its tile had no common resting place and the rows bounced.
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.DISCOVER_REQUEST)
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
         LazyColumn(

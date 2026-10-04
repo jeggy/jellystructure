@@ -73,6 +73,12 @@ class HomeFocusTest {
                 onItemSelect = { opened = it; shown = false })
         }
         rule.waitUntil(5_000) { rule.onAllNodes(hasText("Row1 Tile1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        waitForArrivalFocus()
+    }
+
+    /** Home's arrival focus (the hero) lands within a few frames of the feed. */
+    private fun waitForArrivalFocus() {
+        rule.waitUntil(5_000) { rule.onAllNodes(isFocused(), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         rule.waitForIdle()
     }
 
@@ -174,7 +180,7 @@ class HomeFocusTest {
             if (shown) HomeScreen(store = store, apiClient = api, displayName = "Olivar", onItemSelect = { opened = it; shown = false })
         }
         rule.waitUntil(5_000) { rule.onAllNodes(hasText("Stand-in Slide 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        rule.waitForIdle()
+        waitForArrivalFocus()
         repeat(4) { press(Key.DirectionRight) }
         rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Slide 5")), useUnmergedTree = true).assertExists()
         press(Key.Enter)

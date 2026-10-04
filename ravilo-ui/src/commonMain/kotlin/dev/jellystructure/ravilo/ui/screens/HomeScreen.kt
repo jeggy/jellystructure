@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.components.GridGlyph
 import dev.jellystructure.shared.tv.offersSeeAll
@@ -95,6 +96,7 @@ import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.ravilo.ui.focus.ReturnTarget
 import dev.jellystructure.ravilo.ui.focus.resolveReturn
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.runtime.withFrameNanos
 
 @Composable
@@ -310,7 +312,8 @@ private fun HomeLoaded(
         store.focusItemKey = null
         pendingRestore?.let { bringRowIn(it); return@LaunchedEffect }
         val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        if (!wasScrolled && hasHero) heroFR.tryRequestFocus() else navBarFR.tryRequestFocus()
+        // R361 — awaited (bounded retry): the hero (lazy item 0) may attach a frame after this effect starts.
+        (if (!wasScrolled && hasHero) heroFR else navBarFR).requestFocusAwaiting()
     }
 
     // R55: Back scrolls a scrolled feed to the top (refocusing the hero / app bar so bring-into-view
@@ -340,9 +343,8 @@ private fun HomeLoaded(
     //    slid under the bar when navigating UP). Now the focused row's title is always clearly visible.
     //  - centerLineDp (DOWN) is a focus band: the focused row's top snaps to ~1/3 down, so the row you're
     //    looking at sits toward the middle (not the bottom), with the next row peeking below.
-    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
-        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, centerLineFraction = 0.3f,
-    )
+    // R367 — Home's numbers live with the rule (EdgeBand.HOME: 124 · 0.3 · 150), where the convergence test sees them.
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.HOME)
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
     LazyColumn(

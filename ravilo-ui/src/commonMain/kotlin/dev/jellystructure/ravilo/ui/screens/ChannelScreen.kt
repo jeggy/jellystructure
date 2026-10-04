@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import dev.jellystructure.ravilo.ui.focus.resolveReturn
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
@@ -248,9 +249,7 @@ fun ChannelScreen(
                     }
 
                     @Suppress("OPT_IN_USAGE")
-                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
-                        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, centerLineFraction = 0.3f, // R140
-                    )
+                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.CHANNEL)   // R140 / R367
                     @OptIn(ExperimentalFoundationApi::class)
                     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
                         LazyColumn(

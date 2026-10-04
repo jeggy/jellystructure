@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
@@ -521,7 +522,7 @@ internal fun SeriesDetailLoaded(
     }
 
     // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
-    val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
+    val detailBivSpec = rememberEdgeBringIntoViewSpec(EdgeBand.DETAIL)   // R367 — 84 · no band · 60
     // R109: boolean derivedStateOf (notifies only on threshold cross) — no per-scroll-frame recompose.
     val appBarScrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }

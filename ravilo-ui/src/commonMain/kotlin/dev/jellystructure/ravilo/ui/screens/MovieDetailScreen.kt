@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
@@ -178,7 +179,7 @@ private fun MovieDetailLoaded(
     }
 
     // R79: appBarHeight + 24dp top inset so cast/related rows aren't hidden under the overlay bar.
-    val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
+    val detailBivSpec = rememberEdgeBringIntoViewSpec(EdgeBand.DETAIL)   // R367 — 84 · no band · 60
     // R109: boolean derivedStateOf (notifies only on threshold cross) — avoids recomposing on every
     // scroll frame, unlike the prior `scrollState.value > 0` read at composition scope.
     val appBarScrolled by remember {

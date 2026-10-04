@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored), reproduced the same day on the living-room Sony BRAVIA (release
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored), reproduced the same day on the living-room Sony BRAVIA (release
 `1.49-11-g76f351b4`). Dev-reviewed 2026-10-04 (section at the end — **the cause is corrected**: the row's own request
 has no resting place, and the tile is a bystander; the fix is one pure distance function plus Discover's own top inset).
 Client only (`ravilo-ui`).
@@ -268,3 +268,37 @@ the loop. Ten items, one for the owner.
 
 **Accepted:** on the TV the focused row fills the area under Discover's tabs and none of the next row peeks out. Fix the
 bouncing only; the header doesn't slide away.
+
+## Build notes (2026-10-04)
+
+Built as the dev review corrects it, with the owner decision (no peek on the TV; the header stays). Client only.
+- **Fix 1 (`focus/BringIntoView.kt`):** the rule is the pure `edgeBandScrollDistance(offset, size, containerSize, topPx,
+  centerPx, peekPx)` beside R250's `gutterBringIntoViewDistance`; `rememberEdgeBringIntoViewSpec` calls it. Band on:
+  rest with the top in `[top, max(top, min(center, container − size))]` (a target too tall rests at the inset, no
+  peek); band off (detail pages): the bottom reveal is `min(overflow + peek, offset − top)`, so it never pushes the top
+  above the inset (the latent detail-page flaw).
+- **Every caller's numbers in one place:** `EdgeBand.HOME`, `CHANNEL`, `DISCOVER_REQUEST`, `DISCOVER_WALLS`, `DETAIL`
+  in `EDGE_BANDS`; Home, a channel page, Request, the walls and both detail pages pass their band
+  (`rememberEdgeBringIntoViewSpec(band)`). Coming Soon is not a caller (platform default), as the review says.
+- **Fix 2:** Request's and the walls' top inset is 0 (it was Home's 64, which clears Home's overlay bar; Discover's
+  list starts below the strip).
+- **Acceptance 4 (one-time check, recorded here):** `EdgeBandScrollDistanceTest` was first run against today's body
+  with Request's old 64 dp inset — 5 of its 6 tests failed (`everyCallerRestsAfterOneStep`'s first failure: Home at
+  540, a 379 dp target from 181 → 162, then moves again). The 357-in-338 case alternates for ever: from 80 the bottom
+  branch pushes +249 (overflow + peek), the top branch pulls −233, then +233, −233 … Then the fix; all 6 green.
+  `DiscoverRowsSettleTest`'s four Request cases were also run against the old rule: all four failed (the app never
+  went idle — the bounce); walls and Coming Soon passed on both, as the review predicted.
+- Tests (green): `EdgeBandScrollDistanceTest` (commonTest, the six named in *Tests*, every band × list heights 540 /
+  338 / 600 / 398 × densities 1 / 2 × sizes 40 dp…1.5× × 50 starts; `identicalToTodayWhereTodayHadARestingPoint`
+  against a frozen copy of the old body); `DiscoverRowsSettleTest` (Robolectric `w960dp-h540dp`, 8 cases: Request row
+  2, the last row, Up into a row, the three walls' second line, Coming Soon's second day, a Request row in a
+  `w1000dp-h600dp` window): two readings 2 s apart are identical, the heading sits below the tab strip, the focused
+  tile is on screen.
+- **Measured in Robolectric (replacing the review's estimates):** the strip ends at 222 dp (the list starts ≈ 238), a
+  Request row's heading rests at 243 dp and its posters start at 308 dp — the row is taller than the list under the
+  header at Robolectric's font metrics, so its caption lines run past 540; whether the year line clears the bottom
+  edge on the Sony is the device check (real font metrics), and the test asserts stability, not the captions.
+- Found on the way: `HomeScreen`'s arrival focus (the hero, lazy item 0) was a single `tryRequestFocus()`; under load
+  it could miss the hero attaching a frame late (flaky `HomeFocusTest` walks). It now awaits with the bounded retry.
+- Device only: the ten-read check on the Sony (Request rows 2, 3, last; Up back into 2; Coming Soon; the three walls),
+  real font metrics for the year line, and a look at Home, a collection page and both detail pages (nothing jumps).

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.EdgeBand
 import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -161,7 +162,7 @@ fun TaxonomyContent(
     }
 
     Box(Modifier.fillMaxSize()) {
-        val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 120.dp, topInsetDp = 64.dp, centerLineFraction = 0.3f)
+        val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(EdgeBand.DISCOVER_WALLS)   // R367 (Fix 2): inset 0, as Request
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
             LazyColumn(
