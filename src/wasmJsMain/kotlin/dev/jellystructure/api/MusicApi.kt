@@ -196,9 +196,12 @@ object MusicApi {
     suspend fun browse(
         view: String, query: String?, facets: Map<String, Set<String>>, sort: String? = null, filter: String? = null,
         hidden: Map<String, Set<String>> = emptyMap(), artist: String? = null,
+        /** Phase 305 (FR-305-13) — *Show every copy*. */
+        everyCopy: Boolean = false,
     ): MusicBrowseDto? = runCatching {
         val qs = buildList {
             add("view=$view")
+            if (everyCopy) add("copies=all")
             filter?.let { add("filter=${it.encodeURLParameter()}") }   // Phase 293 — a Dashboard row's key
             // Phase 292 (FR-292-11) — *Hide* beside *Only*, and Songs by one artist.
             hidden.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("x.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }
@@ -293,6 +296,43 @@ object MusicApi {
     suspend fun streamUrl(trackId: String): String? = runCatching {
         val r = httpClient.get("/api/music/track/${trackId.encodeURLParameter()}/stream")
         if (r.status.isSuccess()) r.body<MusicStreamDto>().url else null
+    }.getOrNull()
+
+    // ── Phase 305: the official album, singles' homes, one copy of every song ──
+
+    /** *Change…*'s pressings. */
+    suspend fun pressings(albumId: String): List<dev.jellystructure.model.MusicPressingDto>? = runCatching {
+        val r = httpClient.get("/api/music/album/${albumId.encodeURLParameter()}/releases?official=1")
+        if (r.status.isSuccess()) r.body<List<dev.jellystructure.model.MusicPressingDto>>() else null
+    }.getOrNull()
+
+    /** *Use as the official album*; null release = *Back to automatic*. True when it was saved. */
+    suspend fun setOfficial(albumId: String, release: String?): Boolean = runCatching {
+        val path = "/api/music/album/${albumId.encodeURLParameter()}/official"
+        val r = if (release == null) httpClient.delete(path) else httpClient.put(path) { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.MusicOfficialRequest(release)) }
+        r.status.isSuccess()
+    }.getOrDefault(false)
+
+    /** *Move to…*: an album id, or null for *No album*; [automatic] = *Back to automatic*. */
+    suspend fun setHome(singleId: String, albumId: String?, automatic: Boolean = false): Boolean = runCatching {
+        val path = "/api/music/album/${singleId.encodeURLParameter()}/home"
+        val r = if (automatic) httpClient.delete(path) else httpClient.put(path) { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.MusicHomeRequest(albumId)) }
+        r.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun copies(trackId: String): dev.jellystructure.model.MusicCopiesDto? = runCatching {
+        val r = httpClient.get("/api/music/track/${trackId.encodeURLParameter()}/copies")
+        if (r.status.isSuccess()) r.body<dev.jellystructure.model.MusicCopiesDto>() else null
+    }.getOrNull()
+
+    /** *Same song as…* / *Not the same song* / *Yes, one song* / *No, two songs*. */
+    suspend fun sameSong(a: String, b: String, same: Boolean): Boolean = runCatching {
+        httpClient.put("/api/music/same-song") { contentType(ContentType.Application.Json); setBody(dev.jellystructure.model.MusicSameSongRequest(a, b, if (same) "same" else "not_same")) }.status.isSuccess()
+    }.getOrDefault(false)
+
+    suspend fun sameSongSuggestions(): List<dev.jellystructure.model.MusicSamePairDto>? = runCatching {
+        val r = httpClient.get("/api/music/same-song/suggestions")
+        if (r.status.isSuccess()) r.body<List<dev.jellystructure.model.MusicSamePairDto>>() else null
     }.getOrNull()
 }
 

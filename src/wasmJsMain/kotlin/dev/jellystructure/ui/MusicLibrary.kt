@@ -102,7 +102,8 @@ private fun muLoad(scope: CoroutineScope) {
     muLoadJob?.cancel()
     muLoadJob = scope.launch {
         historyReplaceState(muUrl())
-        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter, muHidden.mapValues { it.value.toSet() }, muArtist)
+        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter, muHidden.mapValues { it.value.toSet() }, muArtist,
+            everyCopy = muView == "songs" && edEveryCopy)   // Phase 305 (FR-305-13) — *Show every copy*
         if (dto == null) {
             (document.getElementById("mu-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the music library from the server.</div>"""
             return@launch
@@ -183,6 +184,12 @@ private fun facetBar(d: MusicBrowseDto): String = buildString {
             append("""<option value="$v"${if ((muSort ?: "") == v) " selected" else ""}>$l</option>""")
         append("</select>")
     } else append("""<span class="tiny muted">sorted by ${if (muView == "songs") "album, then position" else "name"}</span>""")
+    // Phase 305 (FR-305-13) — one row per song; the switch lists every file (a Dashboard key always does).
+    if (muView == "songs") {
+        val every = d.everyCopy
+        val words = if (every) muPlural(d.total, "file") else "${muPlural(d.total, "song")} · ${muPlural(d.folded, "copy", "copies")} folded"
+        append("""<span class="ed-sw${if (every) " on" else ""}" data-edevery title="${if (d.filter != null) "A Dashboard list always shows every file" else "Lists show every song once; the admin manages files"}"><i></i>Show every copy <span class="c">· $words</span></span>""")
+    }
     append("</div>")
 }
 
@@ -243,7 +250,12 @@ private fun body(d: MusicBrowseDto): String {
                 val artists = t.artists.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }
                 // Phase 292 (FR-292-10/12) — chips after the title; the number turns into a checkbox on hover.
                 val on = t.id in muSongSel
-                append("""<tr${if (on) " class=\"vr-on\"" else ""}><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}${vrBadges(t.id, t.versions)}${if (t.noWords) """<span class="tiny muted" style="margin-left:8px">no words</span>""" else ""}</td>""")
+                // Phase 305 (FR-305-13) — *Bonus* after the version chips; folded: *also on N releases*; every copy: the
+                // other copies sit indented under their song with the reason.
+                val cls = listOfNotNull(if (on) "vr-on" else null, if (t.copyOf != null) "ed-cp" else null).joinToString(" ")
+                val also = if (t.alsoOn > 0) """<div><span class="ed-also" data-edcopies="${t.id}">also on ${muPlural(t.alsoOn, "release")}</span></div>""" else ""
+                val why = t.reason?.let { r -> """<div class="ed-cpw">↳ ${r.esc()} · <span class="ed-also" data-edcopies="${t.id}">why</span></div>""" } ?: ""
+                append("""<tr${if (cls.isNotEmpty()) " class=\"$cls\"" else ""}><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}${vrBadges(t.id, t.versions)}${edBonus(t.bonus)}${if (t.noWords) """<span class="tiny muted" style="margin-left:8px">no words</span>""" else ""}$also$why</td>""")
                 append("""<td class="dim">$artists</td><td class="dim">${t.albumId?.let { """<a class="dim" href="#/album/$it">${t.album.orEmpty().esc()}</a>""" } ?: ""}</td>""")
                 append("""<td class="num">${muLen(t.lengthMs)}</td><td><span class="mu-fmt${if (t.reencodes) " w" else ""}">${t.format.esc()}${if (t.reencodes) """<span class="re">re-encodes on a phone</span>""" else ""}</span></td>""")
                 append("<td>${lyricsCell(t.lyrics)}</td><td>${recordingCell(t.recording, t.albumMatched)}</td></tr>")
@@ -257,7 +269,7 @@ private fun body(d: MusicBrowseDto): String {
                 val url = if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null
                 append("""<a class="mu-cell${if (a.id in muSelected) " on" else ""}" href="#/album/${a.id}" data-id="${a.id}"><span class="mu-sel" data-sel="${a.id}">✓</span>""")
                 append(muCoverHtml(a.title, url, chip = muAlbumChip(a)))
-                append("""<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div><div class="sub">${a.artist.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>""")
+                append("""<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div><div class="sub">${a.artist.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}${if (a.extras > 0) " + " + muPlural(a.extras, "extra") else ""}</div></a>""")
             }
             append("</div>")
         }
@@ -291,6 +303,9 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         if (!muSelected.remove(id)) muSelected += id
         muRender(scope); return
     }
+    // Phase 305 (FR-305-13) — the copies panel and *Show every copy*.
+    t.closest("[data-edcopies]")?.let { c -> ev.preventDefault(); ev.stopPropagation(); edOpenCopies(scope, c.getAttribute("data-edcopies")!!) { muLoad(scope) }; return }
+    if (t.closest("[data-edevery]") != null) { if (muDto?.filter == null) { edEveryCopy = !edEveryCopy; muLoad(scope) }; return }
     // Phase 292 — the chips open the version panel; a song's checkbox builds a selection for *Set version…*.
     t.closest("[data-ver]")?.let { v -> ev.preventDefault(); ev.stopPropagation(); vrOpenPanel(scope, v.getAttribute("data-ver")!!) { muLoad(scope) }; return }
     t.closest("[data-vsel]")?.let { s -> ev.preventDefault(); val id = s.getAttribute("data-vsel")!!; if (!muSongSel.remove(id)) muSongSel += id; muRender(scope); return }

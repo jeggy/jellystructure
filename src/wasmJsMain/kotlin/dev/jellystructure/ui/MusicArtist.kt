@@ -188,7 +188,10 @@ private fun arOverview(p: MusicArtistPageDto): String {
             if (own.isEmpty()) continue
             any = true
             append("""<div class="mu-sec">$label <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${own.size}</span></div><div class="mu-grid">${own.joinToString("") { albumCell(it, repeated) }}</div>""")
+            // Phase 305 (FR-305-15) — the singles that left this section live under their albums.
+            if (label == "Singles & EPs") append(arSinglesUnder(p))
         }
+        if (p.albums.none { it.type == "single" }) append(arSinglesUnder(p))
         if (p.creditedOn.isNotEmpty()) {
             append("""<div class="mu-sec">Credited on <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">${p.creditedOn.size}</span></div><div class="mu-grid">${p.creditedOn.joinToString("") { albumCell(it, repeated) }}</div>""")
         } else if (!any) append("""<div class="mu-sec">Albums</div><div class="tiny muted">No albums in the library.</div>""")
@@ -305,4 +308,12 @@ private fun arClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
             arReload(scope)
         }
     }
+}
+
+/** Phase 305 (FR-305-15) — *{n} singles live under their albums — {album}'s {k} · … in Singles & B-sides*. */
+private fun arSinglesUnder(p: MusicArtistPageDto): String {
+    val u = p.singlesUnder
+    if (u.isEmpty()) return ""
+    val n = u.sumOf { it.count }
+    return """<div class="tiny muted" style="margin-top:8px;line-height:1.6">${muPlural(n, "single")} live under their albums — ${u.joinToString(" · ") { """<a href="#/album/${it.albumId}">${it.title.esc()}</a>’s ${it.count}""" }} · in <i>Singles &amp; B-sides</i></div>"""
 }

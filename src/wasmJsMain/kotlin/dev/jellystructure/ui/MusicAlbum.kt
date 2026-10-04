@@ -47,10 +47,12 @@ private var alFiles: dev.jellystructure.model.MusicFilesDto? = null
 /** Phase 292 (FR-292-8) — the songs ticked in Tracks, for *Set version…*. */
 private val alSel = LinkedHashSet<String>()
 private val alFilesState = MusicFilesState()
+/** Phase 305 — the B-sides fold under *Singles & B-sides*. */
+private var alOpenB = false
 
 fun renderMusicAlbum(container: Element, scope: CoroutineScope, id: String, query: Map<String, String>) {
     alAudio?.pause(); alAudio = null
-    alId = id; alPage = null; alPlaying = null; alRecOpen = null; alSel.clear()
+    alId = id; alPage = null; alPlaying = null; alRecOpen = null; alSel.clear(); alOpenB = false
     alTab = query["tab"]?.takeIf { t -> TABS.any { it.first == t } } ?: "tracks"
     container.innerHTML = """
         <div id="al-root">
@@ -101,7 +103,7 @@ private fun alRender(scope: CoroutineScope) {
     document.title = "Jellystructure — ${a.title}"
     (document.getElementById("al-crumb") as? HTMLElement)?.innerHTML = """<a href="#/library?kind=music">Music</a> / <a href="#/library?kind=music">Albums</a> / ${a.title.esc()}"""
     (document.getElementById("al-bar") as? HTMLElement)?.innerHTML = alBar(p)
-    (document.getElementById("al-head") as? HTMLElement)?.innerHTML = alHead(p)
+    (document.getElementById("al-head") as? HTMLElement)?.let { it.innerHTML = alHead(p); muWireMenus(it) }
     (document.getElementById("al-banners") as? HTMLElement)?.innerHTML = alBanners(p)
     document.getElementById("al-bar")?.let { muWireMenus(it) }
     alPanel(scope)
@@ -171,8 +173,10 @@ private fun alMatchChip(p: MusicAlbumPageDto): String {
 private fun alHead(p: MusicAlbumPageDto): String {
     val a = p.album
     val have = p.tracks.size
-    val total = a.release?.trackCount?.takeIf { it > have }
-    val lenMs = p.tracks.sumOf { it.lengthMs ?: 0L }
+    // Phase 305 (FR-305-12) — with an official tracklist the count is *11 songs + 1 extra* and the length is the
+    // official album's; the gap rows say what the held edition lacks.
+    val total = a.release?.trackCount?.takeIf { it > have && p.official == null }
+    val lenMs = p.official?.lengthMs ?: p.tracks.sumOf { it.lengthMs ?: 0L }
     val formats = p.tracks.map { it.format }.distinct()
     val re = p.tracks.count { it.reencodes }
     val primary = when {
@@ -186,7 +190,7 @@ private fun alHead(p: MusicAlbumPageDto): String {
         append(muCoverHtml(a.title, p.coverUrl, extraClass = "al-cover"))
         append("""<div><div class="mu-by">by $by</div><div class="mu-pbm">""")
         p.year?.let { append("<span>$it</span><span class=\"sep\">·</span>") }
-        append("<span>${if (total != null) "$have of $total songs" else muPlural(have, "song")}</span><span class=\"sep\">·</span><span>${muTotal(lenMs)}</span>")
+        append("<span>${edCount(p) ?: if (total != null) "$have of $total songs" else muPlural(have, "song")}</span><span class=\"sep\">·</span><span>${muTotal(lenMs)}</span>")
         append("""<span class="mu-type">${MU_TYPE_LABEL[p.type] ?: p.type}</span><span class="sep">·</span>""")
         // Phase 292 (FR-292-9) — one quiet phrase when at least half the songs share a type.
         p.versionSummary?.let { append("""<span class="vr-sum">${it.esc()}</span><span class="sep">·</span>""") }
@@ -197,6 +201,9 @@ private fun alHead(p: MusicAlbumPageDto): String {
         append("""<div class="mu-acts">${alMatchChip(p)}$primary""")
         if (alMatched(p)) append("""<span class="chip" style="cursor:pointer" data-a="lock">${if (a.matchLocked) "$MU_LOCK Locked" else "Lock"}</span>""")
         append("</div>")
+        // Phase 305 (FR-305-12) — the official album's line under the release line; a single says where it lives.
+        append(edOfficialLine(p))
+        append(edSingleLine(p))
         if (total != null) append("""<div class="tiny muted" style="margin-top:10px;">Partial album — the release has $total tracks, the library holds $have. Tracks shows the gaps.</div>""")
         p.library?.let { append("""<div class="tiny muted" style="margin-top:6px;">${it.esc()}${a.path?.let { path -> " · <span class=\"mono\">${path.esc()}</span>" } ?: ""}</div>""") }
         append("</div></div>")
@@ -309,6 +316,7 @@ private fun alPanel(scope: CoroutineScope) {
         "files" -> { el.innerHTML = """<span class="muted tiny">Reading the files…</span>"""; scope.launch { alFiles = MusicApi.files(p.album.id); alPaintFiles(scope) } }
         else -> {
             el.innerHTML = alTracks(p)
+            muWireMenus(el)   // Phase 305 — *Move to…* under Singles & B-sides
             // FR-284-9 — the glyphs land once the files have been read (once per page).
             scope.launch { if (alFiles == null) alFiles = MusicApi.files(p.album.id); alFillGlyphs() }
         }
@@ -323,7 +331,10 @@ private fun alTrackRow(p: MusicAlbumPageDto, t: MusicTrackRow, cols: Int): Strin
     val others = t.artists.filter { c -> a.albumArtists.none { it.artistId == c.artistId } }
     // Phase 292 (FR-292-6/8) — the number turns into a checkbox on hover; the chips (or *＋ Version*) follow the title.
     val on = t.id in alSel
-    append("""<tr class="${listOfNotNull(if (matched && t.recording == "disagrees") "off" else null, if (on) "vr-on" else null).joinToString(" ")}"><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.title.esc()}${vrBadges(t.id, t.versions)}""")
+    // Phase 305 (FR-305-12, Q4) — the official number in the official order; an extra is unnumbered.
+    val num = if (p.official != null) t.number ?: "" else "${t.position ?: ""}"
+    append("""<tr class="${listOfNotNull(if (matched && t.recording == "disagrees") "off" else null, if (on) "vr-on" else null, if (t.extra) "ed-ex" else null).joinToString(" ")}"><td class="n"><span class="vr-num">$num</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.title.esc()}${vrBadges(t.id, t.versions)}""")
+    t.firstOn?.let { append("""<div class="ed-first">first on ${it.esc()}</div>""") }
     if (others.isNotEmpty()) append("""<div class="tiny dim">${others.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }}</div>""")
     if (matched && t.mbTitle != null && !t.mbTitle.equals(t.title, ignoreCase = true)) append("""<div class="tiny dim">MusicBrainz: ${t.mbTitle.esc()}</div>""")
     append("</td>")
@@ -367,7 +378,16 @@ private fun alTracks(p: MusicAlbumPageDto): String {
     val oneDisc = p.tracks.all { (it.disc ?: 1) == 1 }
     val total = a.release?.trackCount ?: 0
     val rows = StringBuilder()
-    if (oneDisc && total > 0 && alMatched(p)) {
+    val official = p.official
+    if (official != null) {
+        // Phase 305 (FR-305-12) — the official songs in the official order with gap rows between, a thin divider,
+        // then the extras unnumbered (no Bonus chip here: the divider says it).
+        val items = p.tracks.filter { !it.extra }.map { (it.slot ?: 0) to alTrackRow(p, it, cols) } +
+            p.gaps.map { g -> g.slot to """<tr class="gap"><td class="n">${g.number.esc()}</td><td colspan="${cols - 1}">not in library · ${g.title.esc()}${g.lengthMs?.let { " · " + muLen(it) } ?: ""}</td></tr>""" }
+        items.sortedBy { it.first }.forEach { rows.append(it.second) }
+        official.divider?.let { rows.append("""<tr class="ed-div"><td colspan="$cols"><span class="l">${it.esc()}</span></td></tr>""") }
+        p.tracks.filter { it.extra }.forEach { rows.append(alTrackRow(p, it, cols)) }
+    } else if (oneDisc && total > 0 && alMatched(p)) {
         val byPos = p.tracks.filter { it.position != null }.associateBy { it.position!! }
         val max = maxOf(total, byPos.keys.maxOrNull() ?: 0)
         var gapFrom: Int? = null
@@ -401,7 +421,9 @@ private fun alTracks(p: MusicAlbumPageDto): String {
         // Phase 292 (FR-292-8) — the selection bar.
         if (alSel.isNotEmpty()) append("""<div class="mu-selbar on"><b>${alSel.size}</b> song${if (alSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vall>select all</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vnone>✕ clear</span></div>""")
         append("""<div class="mu-scroll${if (alSel.isNotEmpty()) " vr-selecting" else ""}"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th></th></tr></thead><tbody>$rows</tbody></table></div>""")
-        if (oneDisc) append("""<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>""")
+        if (oneDisc && official == null) append("""<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>""")
+        // Phase 305 (FR-305-12) — the singles that live under this album, and their B-sides.
+        append(edSinglesHtml(p, alOpenB))
     }
 }
 
@@ -513,6 +535,8 @@ private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         alPanel(scope); return
     }
     if (t.closest(".al-cover") != null) { alLightbox(p); return }
+    // Phase 305 — *Change…*, *Back to automatic*, *Move to…*, the B-sides fold.
+    if (edAlbumClick(t, scope, p, toggleBsides = { alOpenB = !alOpenB; alPanel(scope) }, reload = { alReload(scope) })) { ev.preventDefault(); return }
     // Phase 292 — the version chips open the side panel; the number's checkbox builds a selection for *Set version…*.
     t.closest("[data-ver]")?.let { v -> ev.preventDefault(); vrOpenPanel(scope, v.getAttribute("data-ver")!!) { alReload(scope) }; return }
     t.closest("[data-vsel]")?.let { s -> ev.preventDefault(); val tid = s.getAttribute("data-vsel")!!; if (!alSel.remove(tid)) alSel += tid; alPanel(scope); return }

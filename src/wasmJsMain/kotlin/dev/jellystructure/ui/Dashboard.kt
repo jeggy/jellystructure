@@ -445,6 +445,8 @@ private fun ovRowHtml(r: dev.jellystructure.model.DashboardRow, domains: List<de
     }
     val fix = when (r.fix) {
         "here" -> """<span class="ov-fix k-here">One click here</span>""" + (r.actionId?.let { """<span class="btn sm" data-act="$it" data-row="${r.id.esc()}">${(r.action ?: "Fix").esc()}</span>""" }
+            // Phase 305 (FR-305-14) — an action that opens something on this page (*Listen and decide*) rather than posting.
+            ?: r.opens?.let { """<span class="btn sm" data-opens="${it.esc()}" data-row="${r.id.esc()}">${(r.action ?: "Open").esc()}</span>""" }
             ?: r.findingId?.takeIf { r.actionKind != null }?.let { """<button class="btn sm" id="advisor-action-${it.esc()}">${(r.action ?: "Apply").esc()}</button><span id="advisor-action-out-${it.esc()}" class="tiny" style="margin-left:6px"></span>""" } ?: "") +
             // Phase 292 (FR-292-15) — the quieter second action, by hand only.
             (r.action2Id?.let { """<span class="btn sm ghost" data-act="$it" data-row="${r.id.esc()}">${(r.action2 ?: "More").esc()}</span>""" } ?: "") +
@@ -467,6 +469,10 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
     t.closest("[data-more]")?.let { ovOpen += it.getAttribute("data-more")!!; renderOverview(scope); return }
     t.closest("[data-less]")?.let { ovOpen -= it.getAttribute("data-less")!!; renderOverview(scope); return }
     t.closest("[data-chip]")?.let { ovChip = it.getAttribute("data-chip")!!; runCatching { window.localStorage.setItem(DASH_CHIP_KEY, ovChip) }; renderOverview(scope); return }
+    t.closest("[data-opens]")?.let { b ->
+        if (b.getAttribute("data-opens") == "same_songs") edOpenSameSongs(scope) { scope.launch { loadOverview(scope) } }
+        return
+    }
     t.closest("[data-act]")?.let { b ->
         val act = b.getAttribute("data-act") ?: return
         val out = { msg: String -> (b as? HTMLElement)?.textContent = msg }
