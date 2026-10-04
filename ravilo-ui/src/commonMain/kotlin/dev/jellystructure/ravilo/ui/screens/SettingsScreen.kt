@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
@@ -282,8 +283,7 @@ fun SettingsScreen(
                     .padding(horizontal = 6.dp, vertical = 4.dp),
             )
             Spacer(Modifier.height(8.dp))
-            Text(str("nav.settings"), color = colors.text, fontSize = if (deskLayout) 30.sp else 32.sp, fontWeight = FontWeight.Bold,
-                fontFamily = if (deskLayout) dev.jellystructure.ravilo.ui.theme.SpaceGrotesk else null, letterSpacing = if (deskLayout) (-0.6).sp else 0.sp)
+            PageTitle(str("nav.settings"))   // R364 (FR-R364-4) — the TV's heading was the platform's default font
             Spacer(Modifier.height(if (deskLayout) 22.dp else 40.dp))
 
             when (val s = state) {

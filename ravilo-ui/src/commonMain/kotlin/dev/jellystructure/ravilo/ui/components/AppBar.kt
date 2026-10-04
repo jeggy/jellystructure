@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -101,6 +102,9 @@ fun AppBar(
     /** R321 (FR-R321-4, J3) — a mark beside the brand on a handset: music mode's note, the one always-visible sign of
      *  which mode the phone is in. Null everywhere else. */
     brandBadge: (@Composable () -> Unit)? = null,
+    /** R364 (FR-R364-3) / R365 (FR-R365-5) — the avatar's requester, so a page can put focus on the control it was
+     *  opened from (My List and Settings come from the profile menu) instead of the active tab. Null = the bar's own. */
+    avatarFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     // R337 (FR-R337-5, dev review 5) — on the desktop the page's top bar is the platform's toolbar: the sidebar or rail
@@ -112,7 +116,8 @@ fun AppBar(
     val colors = RaviloTheme.colors
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
-    val avatarFR = remember { FocusRequester() }
+    val ownAvatarFR = remember { FocusRequester() }
+    val avatarFR = avatarFocusRequester ?: ownAvatarFR
     val searchFR = remember { FocusRequester() }
     // R52: Search is no longer a nav tab — it lives as the magnifier icon in the right cluster.
     val items = navItems ?: listOf(
@@ -464,7 +469,8 @@ private fun ProfileAvatar(
                 onLeft = onLeft,
                 onDown = onDown,
                 onSelect = onSelect,
-            ),
+            )
+            .testTag(APP_BAR_AVATAR_TAG),
         contentAlignment = Alignment.Center,
     ) {
         if (avatarUrl != null) {
@@ -558,3 +564,6 @@ private fun ClockDisplay() {
         textAlign = TextAlign.End,
     )
 }
+
+/** R364 / R365 — the app bar's avatar, by tag for the focus tests. */
+const val APP_BAR_AVATAR_TAG = "app-bar-avatar"

@@ -16,6 +16,7 @@ class ProfileStringsTest {
         "profile.signout_title", "profile.signout_body", "profile.signout_confirm", "profile.signout_cancel",
         "profile.signed_in_to", "profile.lang_changed", "profile.admin", "profile.sign_out",
         "nav.my_list", "browse.see_all_short", "account.pw_change", "nav.settings",
+        "browse.mylist_empty_hint",   // R364 (FR-R364-3)
     )
 
     @Test

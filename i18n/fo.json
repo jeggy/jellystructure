@@ -215,6 +215,7 @@
   "browse.all": "Alt",
   "browse.titles": "{count} heitir",
   "browse.title_one": "1 heiti",
+  "browse.mylist_empty_hint": "Legg eitt heiti afturat við {button} á síðu tess.",
   "browse.empty_channel": "Einki í hesum savninum enn.",
   "browse.facet.genre": "Sjangra",
   "browse.facet.type": "Slag",

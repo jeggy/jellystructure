@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.focus.GridFocus
 import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
 import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
@@ -574,7 +575,7 @@ fun SeededBrowseScreen(
                 if (breadcrumb != null) {
                     Text(breadcrumb, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
                 }
-                Text(title, color = colors.text, fontSize = 28.sp, fontFamily = Sora, fontWeight = FontWeight.Bold)
+                PageTitle(title)   // R364 (FR-R364-4) — the app's display face, like every page title
                 if (personRoleLine != null) {
                     Text(personRoleLine, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora)
                 }

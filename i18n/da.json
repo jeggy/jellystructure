@@ -215,6 +215,7 @@
   "browse.all": "Alle",
   "browse.titles": "{count} titler",
   "browse.title_one": "1 titel",
+  "browse.mylist_empty_hint": "Tilføj en titel med {button} på dens side.",
   "browse.empty_channel": "Intet i denne samling endnu.",
   "browse.facet.genre": "Genre",
   "browse.facet.type": "Type",

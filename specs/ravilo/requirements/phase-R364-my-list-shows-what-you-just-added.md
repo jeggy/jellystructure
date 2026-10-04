@@ -2,7 +2,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release
 `1.49-11-g76f351b4`). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only (`BrowseScreen.kt` / `BrowseStore`).
 
 ## What was seen
@@ -148,3 +148,30 @@ constitution and should go; FR-R364-4 needs one heading style named. Nine items,
    - Robolectric: acceptance 1 (the fake answers empty, then with the title) and 4 (focus on the avatar), in a small
      `MyListFocusTest` beside `BrowseFocusTest`.
    - Device only: acceptance 3 (an add from the phone).
+
+## Build notes (2026-10-04)
+
+Built as the dev review shapes it. Client only (`BrowseScreen.kt`, `AppBar.kt`, new `components/PageTitle.kt`,
+`SeededBrowseScreen.kt`, `SettingsScreen.kt`, `i18n/*.json`).
+- **FR-1:** `BrowseScreen` refreshes on every arrival (`LaunchedEffect(store, kind) { store.refresh(kind) }`). The new
+  `BrowseStore.refresh(kind)` keeps a `Loaded` list on screen until page 1 lands (a failed refresh leaves it), goes
+  through `Loading` only from nothing or on a kind change, and restarts paging at page 1. Load-more is held while the
+  refresh is in flight (found by the test: a load-more against the old list appended a page the refresh then
+  replaced — duplicate keys). This also fixes review item 2 (a first `ALL` arrival never loaded). R139's restore
+  then runs, and R361's grid rule (`GridFocus.followRefresh`) handles a title the refresh removed while focused.
+- **FR-2: not built** — the dev review drops it (inserting a card on the client is derived catalog state,
+  constitution invariant 4; `setFavorite` returns no card); FR-1's arrival refresh covers acceptance 1–3.
+- **FR-3:** an empty My List shows `browse.mylist_empty_hint` (*Add a title with {button} on its page.*, en/da/fo —
+  da/fo drafts), where `{button}` is the detail button's own label (`"+ " + nav.my_list`). On a TV arrival focus goes
+  to the avatar: `AppBar` gains `avatarFocusRequester` (shared with R365 FR-5) and the avatar carries the new
+  `APP_BAR_AVATAR_TAG`. An empty list after a return or a refresh also lands on the avatar.
+- **FR-4:** one `PageTitle` (Space Grotesk bold 28, 30 on a computer) for *My List*, *Settings* and every seeded
+  browse page (*Movies*, *Series*, *See all*, a person, a genre, a Discover wall — moving them from Sora to Space
+  Grotesk, as the design sets headings). Discover's own 22 stays: its header sits over the segment strip.
+- Tests (green): `BrowseStoreRefreshTest` (androidUnitTest, plain JUnit on the fake: two arrivals → two fetches, the
+  second shows the added title, no `Loading` after the first `Loaded`; a first `ALL` arrival loads; a kind change
+  passes through `Loading` once), `MyListFocusTest` (Robolectric `-television`: acceptance 1, acceptance 2 — the
+  opened title removed → its neighbour, acceptance 4 — the hint, the avatar focused, OK → `onProfile`, not
+  `onNavSelect` — and R362 FR-5 on `BrowseGrid`), `ProfileStringsTest` gains `browse.mylist_empty_hint`.
+- Device only: acceptance 1 against the real server (Jellyfin favourites), acceptance 3 (an add from the phone, then
+  My List on the TV), and FR-4 by eye (*My List*, *Settings*, *Movies*, *Search* in the same face and size).

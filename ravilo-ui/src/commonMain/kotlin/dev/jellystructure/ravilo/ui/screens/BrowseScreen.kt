@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.PageTitle
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.ui.focus.FocusDirection
@@ -150,6 +152,34 @@ class BrowseStore(private val apiClient: TvApiClient) {
         }
     }
 
+    /**
+     * R364 (FR-R364-1) — what every arrival does: a silent re-fetch of page 1. A `Loaded` list stays on screen until
+     * the new one lands (no *Loading…* flash, R212's rule) and a failed refresh leaves it as it is; `Loading` is shown
+     * only from nothing (a first visit — which also covers `ALL`, whose first visit used to never load at all, review
+     * item 2) or on a kind change. Paging starts again at page 1.
+     */
+    fun refresh(kind: BrowseKind = activeKind) {
+        if (kind != activeKind || _state.value !is BrowseState.Loaded) { load(kind); return }
+        loadJob?.cancel(); loadMoreJob?.cancel()
+        // Paging is held while page 1 is re-fetched: a load-more against the old list would append to it a page the
+        // refresh is about to replace (duplicate keys in the grid).
+        loadingMore = true
+        val genre = activeGenre
+        loadJob = scope.launch {
+            try {
+                val next = runCatching {
+                    val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1, pageSize = BROWSE_PAGE_SIZE)
+                    BrowseState.Loaded(results, apiClient.getFacets(kind = kind.apiKey))
+                }.getOrNull() ?: return@launch
+                currentPage = 1
+                endReached = next.results.items.size < BROWSE_PAGE_SIZE
+                _state.value = next
+            } finally {
+                loadingMore = false
+            }
+        }
+    }
+
     /** Filter by genre in place — keeps the facets/genre chips mounted (no Loading flicker),
      *  refetches only the results grid so focus never escapes to "Home" (R67). */
     fun filterByGenre(genre: String?) {
@@ -218,7 +248,10 @@ fun BrowseScreen(
 ) {
     val colors = RaviloTheme.colors
 
-    LaunchedEffect(kind) { if (store.activeKind != kind) store.load(kind) }
+    // R364 (FR-R364-1) — every arrival refreshes (the kept store used to load only when its kind changed, so My List
+    // never showed a title added since the app started). FR-R364-2's client-side patch is not built (the dev review
+    // drops it: inserting a card is derived catalog state, constitution invariant 4); this arrival refresh covers it.
+    LaunchedEffect(store, kind) { store.refresh(kind) }
 
     val state by store.state.collectAsState()
 
@@ -235,7 +268,11 @@ fun BrowseScreen(
     val navBarFR = remember { FocusRequester() }
     // R139: on a Back-return from a grid cell, the grid re-focuses that cell; skip the default nav-bar focus.
     val returning = remember { store.focusItemKey != null }
-    LaunchedEffect(Unit) { if (!returning) navBarFR.tryRequestFocus() }
+    // R364 (FR-R364-3) — My List is opened from the profile menu: arrival focus goes back to the avatar, not to Home
+    // (one stray OK used to leave the page).
+    val avatarFR = remember { FocusRequester() }
+    val arrivalFR = if (kind == BrowseKind.MY_LIST && isTvPlatform) avatarFR else navBarFR
+    LaunchedEffect(Unit) { if (!returning) requestFocusRetrying(scope, arrivalFR) }
 
     val navItems = raviloNavItems()
     // R170 — My List moved out of the section-tab row into the avatar's ProfileMenu, so it no longer
@@ -292,13 +329,8 @@ fun BrowseScreen(
                     // has no nav-bar tab at all since R170 moved it into the avatar's ProfileMenu, so
                     // it needs its own heading here or the page says nothing about what it is.
                     if (kind == BrowseKind.MY_LIST) {
-                        Text(
-                            str("nav.my_list"),
-                            color = colors.text,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = raviloHPad),
-                        )
+                        // R364 (FR-R364-4) — in the app's display face, like every other page title.
+                        PageTitle(str("nav.my_list"), modifier = Modifier.padding(horizontal = raviloHPad))
                         Spacer(Modifier.height(8.dp))
                     }
                     // Count + grid
@@ -312,6 +344,15 @@ fun BrowseScreen(
                         fontSize = 16.sp,
                         modifier = Modifier.padding(horizontal = raviloHPad),
                     )
+                    // R364 (FR-R364-3) — an empty My List says how a title gets there, naming the button by its own label.
+                    if (kind == BrowseKind.MY_LIST && s.results.total == 0) {
+                        Text(
+                            str("browse.mylist_empty_hint", mapOf("button" to "+ ${str("nav.my_list")}")),
+                            color = colors.textSecondary,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = raviloHPad, vertical = 4.dp),
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     BrowseGrid(
                         items = s.results.items,
@@ -320,7 +361,7 @@ fun BrowseScreen(
                         restoreItemKey = store.focusItemKey,   // R139
                         restoreItemIndex = store.focusItemIndex,   // R361 (FR-R361-4)
                         onRestoreResolved = { store.focusItemKey = null },
-                        onEmpty = { requestFocusRetrying(scope, navBarFR) },
+                        onEmpty = { requestFocusRetrying(scope, arrivalFR) },
                         onItemSelect = { card ->   // R139: save on select
                             store.focusItemKey = card.id
                             store.focusItemIndex = s.results.items.indexOfFirst { it.id == card.id }.coerceAtLeast(0)
@@ -347,6 +388,7 @@ fun BrowseScreen(
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
+            avatarFocusRequester = avatarFR,
         )
     }
 }

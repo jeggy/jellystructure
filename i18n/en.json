@@ -227,6 +227,7 @@
   "browse.all": "All",
   "browse.titles": "{count} titles",
   "browse.title_one": "1 title",
+  "browse.mylist_empty_hint": "Add a title with {button} on its page.",
   "browse.empty_channel": "Nothing in this collection yet.",
   "browse.facet.genre": {
     "text": "Genre",
