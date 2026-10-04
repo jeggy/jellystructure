@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
+import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
@@ -66,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,6 +84,7 @@ import dev.jellystructure.ravilo.ui.components.LANG_CC
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
 import dev.jellystructure.ravilo.ui.seams.languageName
@@ -186,6 +191,8 @@ class SeededBrowseStore(
     val gridState = LazyGridState()
     val facetBarState = LazyListState()
     var focusItemKey: String? = null
+    /** R361 (FR-R361-4/5) — where [focusItemKey] sat in the filtered, sorted list when it was opened. */
+    var focusItemIndex: Int = 0
     /** R187 (FR-RV-BROWSE1-10) — the sort the grid was last laid out in. The screen scrolls to the top
      *  only when the viewer's choice differs from it, never merely because the page composed again. */
     internal var laidOutSort: Pair<SortField, SortDir> = initialSort
@@ -475,15 +482,17 @@ fun SeededBrowseScreen(
     // around a poster on a touch screen. Found on the Pixel 9. Selection on a phone is never carried
     // by focus; the bar's own pill carries it.
     val handsetLayout = LocalHandset.current
+    // R361 — whether this arrival is a Back-return to an opened tile (read once: the grid spends the key).
+    val returning = remember { store.focusItemKey != null }
     LaunchedEffect(Unit) {
-        if (!handsetLayout && store.focusItemKey == null) runCatching { navBarFR.requestFocus() }
+        if (!handsetLayout && !returning) navBarFR.tryRequestFocus()
     }
     // R257 (FR-R257-1) — a seeded page is pushed from a tile / See all / a cast face: the viewer's
     // attention is on the content, not the app bar (whose first item, with activeNav = -1, is *Home* —
     // one stray OK left the page). The bar only HOLDS focus until the first results compose (R60:
     // something must, or Back bypasses Compose); then the first cell takes it — unless the viewer has
     // already moved off the bar themselves.
-    val freshEntry = remember { store.focusItemKey == null }
+    val freshEntry = !returning
     var movedOffBar by remember { mutableStateOf(false) }
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
@@ -586,7 +595,16 @@ fun SeededBrowseScreen(
                         // focuses nothing: focus brings the tile fully into view, so a poster tapped
                         // at the screen's edge would move the grid the viewer came back to.
                         restoreItemKey = if (handsetLayout) null else store.focusItemKey,
-                        onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },
+                        // R361 (FR-R361-4) — a title that left the filtered list: the tile now at its index.
+                        restoreItemIndex = store.focusItemIndex,
+                        onRestoreResolved = { store.focusItemKey = null },
+                        // An empty grid on return: the facet bar (the grid's own empty state shows), else the bar.
+                        onEmpty = { requestFocusRetrying(scope, if (showFacetBar) firstFacetFR else navBarFR) },
+                        onItemSelect = { card ->
+                            store.focusItemKey = card.id
+                            store.focusItemIndex = filtered.indexOfFirst { it.card.id == card.id }.coerceAtLeast(0)
+                            onItemSelect(card)
+                        },
                         seerrOverflow = if (onRequestSelect != null) seerrOverflow else emptyList(),
                         seerrRowLabel = str("browse.seerr_more", mapOf("name" to title)),
                         onRequestSelect = onRequestSelect,
@@ -1005,6 +1023,12 @@ private fun BrowseCardGrid(
     firstCellFR: FocusRequester,
     restoreItemKey: String?,
     onItemSelect: (MediaCard) -> Unit,
+    /** R361 (FR-R361-4) — where [restoreItemKey] sat when opened; the tile now there if it is gone. */
+    restoreItemIndex: Int = 0,
+    /** R361 — the restore resolved (found or not): the caller clears its key. */
+    onRestoreResolved: () -> Unit = {},
+    /** R361 — a return or a refresh left nothing to focus in the grid. */
+    onEmpty: () -> Unit = {},
     // R257 (FR-R257-1) — hand focus to the first cell once, when the first non-empty result composes.
     focusFirstOnLoad: Boolean = false,
     // R190 §C — a person-scoped Seerr row, appended after every grid item as one full-width span (not
@@ -1020,20 +1044,25 @@ private fun BrowseCardGrid(
     var focusedTile by remember { mutableIntStateOf(-1) }
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
-    val restoreFR = remember { FocusRequester() }
+    // R139 / R361 (FR-R361-4) — the opened tile if it is still in the list, else the tile now at its index
+    // (scrolled in first, then focused with the bounded retry); the key is spent either way.
+    val gridFocus = rememberGridFocus(gridState)
+    val keys = remember(items) { items.map { it.id } }
     var restoredOnce by remember { mutableStateOf(false) }
     LaunchedEffect(items) {
-        if (!restoredOnce && restoreItemKey != null && items.any { it.id == restoreItemKey }) {
-            runCatching { restoreFR.requestFocus() }
-            restoredOnce = true
-        }
+        if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
+        restoredOnce = true
+        onRestoreResolved()
+        if (!gridFocus.restore(keys, restoreItemKey, restoreItemIndex) && seerrOverflow.isEmpty()) onEmpty()
     }
+    // R361 (FR-R361-3 for grids) — a refresh that drops the focused tile: the tile now at its position.
+    FollowGridRefresh(gridFocus, keys, onEmpty = onEmpty)
     var firstFocusDone by remember { mutableStateOf(false) }
     LaunchedEffect(items.isNotEmpty()) {
         if (focusFirstOnLoad && !firstFocusDone && items.isNotEmpty()) {
             firstFocusDone = true
             // The cell's requester attaches on the grid's first layout pass, one frame after this effect.
-            repeat(10) { if (runCatching { firstCellFR.requestFocus() }.isSuccess) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
+            repeat(10) { if (firstCellFR.tryRequestFocus()) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
         }
     }
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
@@ -1047,6 +1076,7 @@ private fun BrowseCardGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
         modifier = Modifier.focusRestorer()
+            .onFocusChanged { gridFocus.gridFocused = it.hasFocus }
             // R350 (FR-R350-9) — Up from the first row went by the native search, which from the right-hand tiles
             // passed the facet bar (it ends partway across) and landed on the app bar's search or avatar above them.
             .onPreviewKeyEvent { ev ->
@@ -1059,18 +1089,23 @@ private fun BrowseCardGrid(
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]
-            Tile(
-                title = card.title,
-                posterUrl = card.posterUrl,
-                progressPct = card.progressPct ?: 0f,
-                watched = card.watched,
-                upcomingLabel = card.upcomingEpisode,
-                qualityBadge = card.qualityBadge,   // R325
-                focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
-                onFocused = { focusedTile = i },
-                onBlurred = { if (focusedTile == i) focusedTile = -1 },
-                onSelect = { onItemSelect(card) },
-            )
+            // R361 — the wrapper carries the restore/refresh target's requester and tracks focus; it adds no size.
+            Box(gridFocus.itemModifier(card.id, i)) {
+                Tile(
+                    title = card.title,
+                    posterUrl = card.posterUrl,
+                    progressPct = card.progressPct ?: 0f,
+                    watched = card.watched,
+                    upcomingLabel = card.upcomingEpisode,
+                    qualityBadge = card.qualityBadge,   // R325
+                    // R55 / R257 — the first cell's own requester, always on it (R362 review item 2: it used to
+                    // step aside for a restore target and leave Down from the facet bar with nothing to reach).
+                    focusRequester = if (i == 0) firstCellFR else null,
+                    onFocused = { focusedTile = i },
+                    onBlurred = { if (focusedTile == i) focusedTile = -1 },
+                    onSelect = { onItemSelect(card) },
+                )
+            }
         }
         if (seerrOverflow.isNotEmpty() && onRequestSelect != null) {
             item(key = "seerr-overflow", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {

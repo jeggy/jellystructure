@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
@@ -98,10 +99,20 @@ sealed class SearchState {
 
 /** R295 (FR-R295-1) — which result was opened on which visit of Search; read once, on the way back. */
 internal class SearchReturnTarget {
-    private var target: Pair<Long, String>? = null
-    fun remember(visit: Long, itemId: String) { target = visit to itemId }
+    private var target: Triple<Long, String, Int>? = null
+    /** R361 — [index] is where the result sat in the list when it was opened. */
+    fun remember(visit: Long, itemId: String, index: Int = 0) { target = Triple(visit, itemId, index) }
     /** The id to land on when [visit] is the visit it was opened from, else null. Forgets either way. */
     fun take(visit: Long): String? = target?.takeIf { it.first == visit }?.second.also { target = null }
+    /** R361 (FR-R361-6) — the index to land on: the opened result if it is still in [ids], else the result now at
+     *  its index (`fallbackIndex`), else null (no results, or another visit). Forgets either way. */
+    fun takeIndex(visit: Long, ids: List<String>): Int? {
+        val t = target?.takeIf { it.first == visit }
+        target = null
+        if (t == null) return null
+        val found = ids.indexOf(t.second)
+        return if (found >= 0) found else fallbackIndex(t.third, ids.size)
+    }
 }
 
 class SearchStore internal constructor(private val search: suspend (String) -> SearchResults) {
@@ -192,9 +203,7 @@ fun SearchScreen(
 
     // R295 (FR-R295-1) — Back from a result: the index of the tile that was opened, if it is still in
     // the list. Resolved once, when the page is composed again.
-    val returnIndex = remember {
-        store.returnTarget.take(visit)?.let { id -> items.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
-    }
+    val returnIndex = remember { store.returnTarget.takeIndex(visit, items.map { it.id }) }
     var inGrid by remember { mutableStateOf(returnIndex != null) }
 
     val gridFR = remember { FocusRequester() }
@@ -439,7 +448,7 @@ fun SearchScreen(
                         qualityBadge = card.qualityBadge,   // R325
                         focusRequester = if (i == returnIndex) returnFR else null,
                         onFocused = { focusedGridIdx = i; inGrid = true },
-                        onSelect = { store.returnTarget.remember(visit, card.id); onItemSelect(card) },
+                        onSelect = { store.returnTarget.remember(visit, card.id, i); onItemSelect(card) },
                     )
                 }
             }

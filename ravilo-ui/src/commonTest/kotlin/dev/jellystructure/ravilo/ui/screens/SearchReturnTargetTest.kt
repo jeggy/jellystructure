@@ -30,4 +30,23 @@ class SearchReturnTargetTest {
         t.remember(visit = 5, itemId = "second")
         assertEquals("second", t.take(visit = 5))
     }
+
+    // R361 (FR-R361-6) — a result that is no longer in the list lands on its neighbour.
+    @Test fun aResultStillThereIsFoundWhereverItMoved() {
+        val t = SearchReturnTarget()
+        t.remember(visit = 2, itemId = "c", index = 2)
+        assertEquals(0, t.takeIndex(visit = 2, ids = listOf("c", "a", "b")))
+    }
+
+    @Test fun aGoneResultLandsOnTheOneNowAtItsIndexElseTheLast() {
+        val t = SearchReturnTarget()
+        t.remember(visit = 2, itemId = "c", index = 2)
+        assertEquals(2, t.takeIndex(visit = 2, ids = listOf("a", "b", "d", "e")))
+        t.remember(visit = 2, itemId = "e", index = 4)
+        assertEquals(2, t.takeIndex(visit = 2, ids = listOf("a", "b", "d")))
+        t.remember(visit = 2, itemId = "e", index = 4)
+        assertNull(t.takeIndex(visit = 2, ids = emptyList()))
+        t.remember(visit = 2, itemId = "e", index = 4)
+        assertNull(t.takeIndex(visit = 3, ids = listOf("a")), "another visit: nothing")
+    }
 }

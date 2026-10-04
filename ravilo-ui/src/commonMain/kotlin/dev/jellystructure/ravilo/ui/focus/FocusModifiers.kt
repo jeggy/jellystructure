@@ -38,6 +38,29 @@ import kotlinx.coroutines.launch
 enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT, PREVIOUS }
 
 /**
+ * R361 (dev review item 3) — whether focus actually moved. In Compose 1.9 `FocusRequester.requestFocus()` on a
+ * requester with no attached node does **not** throw: it logs `FocusRelatedWarning` and returns `false` (the
+ * `Unit` overload is hidden, so Kotlin calls the `Boolean` one). `runCatching { … }.isSuccess` is therefore `true`
+ * whether focus moved or not, which made the retry loops below stop after their first, failed try. Read the
+ * `Boolean`; a throw (older runtimes, a detached node mid-recomposition) still counts as a miss.
+ */
+fun FocusRequester.tryRequestFocus(): Boolean = runCatching { requestFocus() }.getOrDefault(false)
+
+/**
+ * R361 (FR-R361-1) — the suspending form of [requestFocusRetrying], for code already inside a coroutine (a
+ * `LaunchedEffect` that has just scrolled its target into view): tries now, then once per frame for up to
+ * [maxFrames] frames, and says whether focus moved.
+ */
+suspend fun FocusRequester.requestFocusAwaiting(maxFrames: Int = 30): Boolean {
+    if (tryRequestFocus()) return true
+    repeat(maxFrames) {
+        withFrameNanos {}
+        if (tryRequestFocus()) return true
+    }
+    return false
+}
+
+/**
  * Bug fix: cross-screen focus bridges (hero↔nav-bar↔first-row jumps in HomeScreen) sat behind a bare
  * `runCatching { fr.requestFocus() }` — if the target was mid-recomposition at the exact moment the
  * key press fired (a lazy-list item just got replaced/rekeyed, or scrolled back into range),
@@ -53,11 +76,11 @@ enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT,
  * succeeds).
  */
 fun requestFocusRetrying(scope: CoroutineScope, focusRequester: FocusRequester, maxFrames: Int = 30) {
-    if (runCatching { focusRequester.requestFocus() }.isSuccess) return
+    if (focusRequester.tryRequestFocus()) return
     scope.launch {
         repeat(maxFrames) {
             withFrameNanos {}
-            if (runCatching { focusRequester.requestFocus() }.isSuccess) return@launch
+            if (focusRequester.tryRequestFocus()) return@launch
         }
     }
 }
@@ -78,11 +101,11 @@ fun requestFocusRetryingOrMoveNative(
     direction: FocusDirection,
     maxFrames: Int = 30,
 ) {
-    if (runCatching { focusRequester.requestFocus() }.isSuccess) return
+    if (focusRequester.tryRequestFocus()) return
     scope.launch {
         repeat(maxFrames) {
             withFrameNanos {}
-            if (runCatching { focusRequester.requestFocus() }.isSuccess) return@launch
+            if (focusRequester.tryRequestFocus()) return@launch
         }
         focusManager.moveFocus(direction)
     }

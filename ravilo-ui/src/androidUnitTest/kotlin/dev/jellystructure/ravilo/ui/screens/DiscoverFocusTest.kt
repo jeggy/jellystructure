@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasAnyDescendant
@@ -71,5 +74,36 @@ class DiscoverFocusTest {
         focusedWithText("Networks")                  // the selected tab, whichever chip sits above the tile
         press(Key.DirectionUp)
         focusedWithText("Discover")
+    }
+
+    @Test fun `R361 — Back to a wall value that is gone lands on the value now in its place`() {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        var served = facets
+        val taxonomy = TaxonomyStore { served }
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            if (shown) DiscoverScreen(
+                segment = DiscoverSegment.NETWORKS,
+                segments = listOf(DiscoverSegment.NETWORKS, DiscoverSegment.STUDIOS, DiscoverSegment.GENRES),
+                onSegment = {}, focusSegmentOnEntry = false, onFocusSegmentConsumed = {},
+                displayName = "Olivar", onNavSelect = {}, onProfile = {}, onSearch = {},
+                upcomingStore = null, onUpcomingItemSelect = {}, requestStore = null, onEntrySelect = { _, _ -> },
+                onSearchSeerr = {}, taxonomyStore = taxonomy, onTileSelect = { _, _, _ -> shown = false },
+            )
+        }
+        rule.waitUntil(5_000) { rule.onAllNodes(hasText("Network 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+        press(Key.DirectionDown); press(Key.DirectionDown)
+        press(Key.DirectionRight); press(Key.DirectionRight)
+        focusedWithText("Network 3")
+        press(Key.Enter)
+        served = facets.copy(networks = facets.networks.filter { it.name != "Network 3" })
+        taxonomy.refresh(silent = true)
+        rule.waitUntil(5_000) { (taxonomy.state.value as? TaxonomyState.Loaded)?.facets?.networks?.size == 13 }
+        shown = true
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
+        focusedWithText("Network 4")
     }
 }

@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release build
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release build
 `1.49-11-g76f351b4`, the same code as `main` for these screens; first seen on `1.47-34`). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client
 only (`:ravilo-ui`). The Recommended row's own rule (a watched title stays until the weekly build) is the server's,
 written as a 2026-10-04 amendment to **phase 269**; this phase is what the client does whenever a title it returns
@@ -240,3 +240,46 @@ design holds. Eleven items, none for the owner.
     With phase 269's 2026-10-04 amendment, Recommended no longer drops a watched title. This phase still covers
     Continue Watching, filtered grids and My List. ⚠ That amendment is not in `5210045a`: the design export in that
     commit deleted it from the phase-269 file. It needs restoring from `9d1dd502`.
+
+## Build notes (2026-10-04)
+
+Built as specified and as the dev review lays it out. Client only (`:ravilo-ui` commonMain).
+- **The retry helpers retry (review item 3, first).** `FocusModifiers.kt`: new `FocusRequester.tryRequestFocus()`
+  reads the `Boolean` (`runCatching { requestFocus() }.getOrDefault(false)`); `requestFocusRetrying` and
+  `requestFocusRetryingOrMoveNative` use it, so the 30-frame retry (R200) and the native fallback (R236) run for the
+  first time. The two `repeat(10)` loops (`SeededBrowseScreen`, `TaxonomyScreen`) use it too. New suspend
+  `requestFocusAwaiting()` for code already in a coroutine. `ChannelScreen`'s `.onFailure` is R365 FR-6's.
+- **One resolver** (`focus/FocusReturn.kt`): `fallbackIndex(oldIndex, newSize)` and `resolveReturn(rows, rowKey,
+  itemKey, rowIndex, itemIndex)` (same title → same row's `fallbackIndex` → the row now in its place, below else
+  above, column clamped; an empty row counts as gone).
+- **Home** (`HomeScreen.kt`, `HomeStore.kt`): `HomeStore.rememberReturn(rowKey, itemKey, rowIndex, itemIndex)` keeps
+  the indexes (FR-5). `HomeLoaded` resolves once on entry against the ordered rows (channels, content rows, On Now at
+  its place), spends the store's keys at once (no more leak through a vanished row), and hands the resolved tile to
+  its row only (`RowReturn`); a resolved row the column has not composed is scrolled in first, and a restore that
+  never fires is dropped after 1 s rather than left armed. A row that vanishes (or empties) while it holds focus
+  resolves to the row now in its place.
+- **`StaticContentRow`** (`ContentRow.kt`): the R139 restore is keyed on the key, scrolls the row only when the tile
+  is not visible (and now counts On Now's leading guide tile), then awaits the focus with the bounded retry
+  (review item 6); `restoreItemIndex` falls back by index. The R248 in-row refresh targets
+  `fallbackIndex(prevIdx, size)` through a requester on that item, scrolled in first; the lazy item-0 `firstFR` is
+  gone (review item 7); an emptied row calls `onEmptiedWhileFocused`.
+- **Collections** (`ChannelScreen.kt`): the same resolve-once on entry (`ChannelStore.rememberReturn`).
+- **Grids** (`focus/GridFocus.kt`, used by `SeededBrowseScreen.BrowseCardGrid` and `BrowseScreen.BrowseGrid`): a
+  restore lands on the opened tile, else the tile now at its index in the filtered, sorted list; the key is cleared
+  once resolved, found or not (FR-4); a refresh that drops the focused tile lands on its neighbour (FR-3 for grids,
+  R364 review item 4); an empty grid goes to the facet bar (Movies/Series/seeded) or the app bar (My List until
+  R364 moves it to the avatar). The first cell's requester is now always on tile 0 (R362 review item 2).
+- **Search** (`SearchReturnTarget.takeIndex`) and **the Discover walls** (`TaxonomyStore.lastSelectedIndex`) use
+  `fallbackIndex`. The series rail stays on R350 FR-2.
+- Tests (green): `FocusRetryTest` (Robolectric: a box composing after 3 frames is focused; the native fallback moves
+  focus after 30 frames; an attached requester focuses at once; `tryRequestFocus`'s two answers; a scrolled-in
+  item), `FocusReturnTest` (commonTest: `fallbackIndex` and every `resolveReturn` case in *Tests*), `HomeFocusTest`
+  (new, Robolectric, six stand-in rows + a hero: acceptance 1, 2, 3 incl. the keys not leaking, 5, and review item
+  2's late timing — all five were checked **red on the old `HomeScreen`/`ContentRow`** before the fix),
+  `BrowseFocusTest` (a gone tile → the tile now 3rd, count one less, key spent, a later return restores; an empty
+  grid → the facet bar), `DiscoverFocusTest` (a gone wall value → its neighbour), `SearchReturnTargetTest` (a gone
+  result → its neighbour). My List's grid twin is walked in R364's `MyListFocusTest`.
+- Source check: `grep -rn -A1 'requestFocus() }' ravilo-ui/src | grep -E '\.(isSuccess|isFailure|onFailure)'` now
+  finds only `ChannelScreen`'s `.onFailure`, which R365 FR-6 removes.
+- Device only: the page not moving on the TV, and the order of `home_changed` against Back on a slow network
+  (Back at once / after 5 s), Continue Watching after finishing an episode.

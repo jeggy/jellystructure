@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.fallbackIndex
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelAvailableWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailPanelClampedWidthPx
 import dev.jellystructure.ravilo.ui.focus.focusDetailRowOpenTargetScrollDelta
@@ -89,8 +91,13 @@ fun <T> StaticContentRow(
      * janks fast up/down navigation. Screens without a top-inset spec (Discover/Channel) keep it true.
      */
     bringRowHeaderIntoView: Boolean = true,
-    /** R139: on a Back-return, scroll this row to the item with this key and focus it (the originating tile). */
+    /** R139: on a Back-return, scroll this row to the item with this key and focus it (the originating tile).
+     *  R361: the caller passes the key already resolved (`resolveReturn`); the restore fires whenever it changes
+     *  to a non-null key, so a caller can also aim it at a row that is already composed. */
     restoreItemKey: Any? = null,
+    /** R361 (FR-R361-1) — where [restoreItemKey] sat when it was selected; used only if the key is no longer in
+     *  [items] by the time the restore runs ([fallbackIndex]'s tile instead). */
+    restoreItemIndex: Int? = null,
     /** Bug fix: called once the [restoreItemKey] restore actually fires, so the caller can consume it
      *  (null out whatever store field produced it) — without this, a row that's scrolled out of the
      *  LazyColumn's composition window and back in gets a BRAND NEW `restoredOnce` (it's plain local
@@ -114,6 +121,11 @@ fun <T> StaticContentRow(
      *  aren't (they're mutually exclusive with this: a row has an action link OR an info caption,
      *  never a visual double-up). e.g. Home On Now's "5 channels". */
     trailingInfo: String? = null,
+    /** R361 (FR-R361-3) — the focused tile left this row in a refresh and nothing is left to focus here (the row
+     *  is now empty): the caller resolves "the row now in its place". */
+    onEmptiedWhileFocused: () -> Unit = {},
+    /** R361 — told the index of the tile that takes focus (the caller keeps it, for "the row now in its place"). */
+    onItemFocused: (index: Int) -> Unit = {},
     /**
      * R236 — an optional cross-screen bridge target (e.g. Home's hero-down / app-bar-down jump into
      * "whichever row is first"), attached to the LazyRow ITSELF via [focusRequester] + [focusRestorer],
@@ -173,15 +185,21 @@ fun <T> StaticContentRow(
 
     // R248 (FR-R248-3) — focus follows the item, not the index. A silent refresh may reorder this row
     // (Continue Watching after a stop) or drop the focused title from it. Keyed items already keep the
-    // focused tile focused when it merely moves; this scrolls it back into view if the move took it out,
-    // and sends focus to the row's first tile when the title is gone (else the D-pad has nowhere to be).
+    // focused tile focused when it merely moves; this scrolls it back into view if the move took it out.
     // `rowFocused` is read *during* the composition that applied the new items — before the removed
     // tile's detach clears focus — so the effect knows whether this row owned focus at the swap.
+    //
+    // R361 (FR-R361-3, amends FR-R248-3) — when the title is gone, focus goes to the tile now at its
+    // position (`fallbackIndex`), not to index 0, through a requester on THAT item (never a fixed lazy-item-0
+    // requester, which is not composed when the row is scrolled right — the R200/R236 pattern), scrolled into
+    // view first, then requested with the bounded retry. An emptied row hands off to the caller.
     var rowFocused by remember { mutableStateOf(false) }
     var focusedKey by remember { mutableStateOf<Any?>(null) }
-    val firstFR = remember { FocusRequester() }
+    val targetFR = remember { FocusRequester() }
+    var targetKey by remember { mutableStateOf<Any?>(null) }
     val prevItems = remember { mutableStateOf(items) }
     val hadFocusAtSwap = rowFocused
+    val lead = if (leadingItem != null) 1 else 0
     LaunchedEffect(items) {
         val prev = prevItems.value
         prevItems.value = items
@@ -190,35 +208,50 @@ fun <T> StaticContentRow(
         val idx = items.indexOfFirst { itemKey(it) == key }
         if (idx < 0) {
             focusedKey = null
-            if (items.isNotEmpty()) runCatching { firstFR.requestFocus() }
+            val prevIdx = prev.indexOfFirst { itemKey(it) == key }
+            val to = fallbackIndex(prevIdx.coerceAtLeast(0), items.size)
+            if (to == null) { onEmptiedWhileFocused(); return@LaunchedEffect }
+            val toKey = itemKey(items[to])
+            targetKey = toKey
+            withFrameNanos { }
+            if (listState.layoutInfo.visibleItemsInfo.none { it.key == toKey }) {
+                runCatching { listState.scrollToItem(to + lead) }
+            }
+            targetFR.requestFocusAwaiting()
+            targetKey = null
             return@LaunchedEffect
         }
         withFrameNanos { }
         if (listState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
-            runCatching { listState.scrollToItem(idx + if (leadingItem != null) 1 else 0) }
+            runCatching { listState.scrollToItem(idx + lead) }
         }
     }
 
     // R139: a Back-return into a screen that retained its scroll re-composes this row; if it's the row the
-    // user navigated from, scroll it to the originating tile and request focus there (once per entry). The
-    // matching item's content receives `restoreFR` below.
+    // user navigated from, scroll it to the originating tile and request focus there. The matching item's
+    // content receives `restoreFR` below.
+    // R361 (dev review item 6) — keyed on the key (the caller clears it through [onRestored] once it fired, so a
+    // row scrolled out of the column and back in does not fire it again); the row scrolls only if the tile is
+    // not already on screen (FR-R361-2: the row moves only as far as needed), and the request awaits the layout
+    // with the bounded retry rather than racing the scroll.
     val restoreFR = remember { FocusRequester() }
-    var restoredOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!restoredOnce && restoreItemKey != null && itemKey != null) {
-            val idx = items.indexOfFirst { itemKey(it) == restoreItemKey }
-            if (idx >= 0) {
-                runCatching { listState.scrollToItem(idx) }
-                runCatching { restoreFR.requestFocus() }
+    var restoreKeyNow by remember { mutableStateOf<Any?>(null) }
+    LaunchedEffect(restoreItemKey) {
+        if (restoreItemKey == null || itemKey == null) return@LaunchedEffect
+        var idx = items.indexOfFirst { itemKey(it) == restoreItemKey }
+        if (idx < 0 && restoreItemIndex != null) idx = fallbackIndex(restoreItemIndex, items.size) ?: -1
+        if (idx >= 0) {
+            val key = itemKey(items[idx])
+            restoreKeyNow = key
+            withFrameNanos { }
+            if (listState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
+                runCatching { listState.scrollToItem(idx + lead) }
             }
-            // R200 — onRestored() must fire whether or not the target was found: it's the only thing
-            // that clears the caller's focusRowKey/focusItemKey, and a not-found item (this row's own
-            // composable freshly recreated after scrolling out of the LazyColumn's window and back in,
-            // most likely) used to leave that pointer dangling forever, permanently re-arming this row's
-            // restoreItemKey on every future recomposition with nothing to resolve it.
-            onRestored()
-            restoredOnce = true
+            restoreFR.requestFocusAwaiting()
         }
+        // R200 — onRestored() must fire whether or not the target was found: it's what clears the caller's
+        // pending restore, and a not-found item used to leave that pointer dangling forever.
+        onRestored()
     }
 
     if (urlResolver != null) {
@@ -400,12 +433,13 @@ fun <T> StaticContentRow(
                 for (i in items.indices) {
                     val key = itemKey?.invoke(items[i])
                     item(key = key) {
-                        val fr = if (restoreItemKey != null && itemKey != null && key == restoreItemKey) restoreFR else null
+                        val fr = if (itemKey != null && key != null && key == (restoreKeyNow ?: restoreItemKey)) restoreFR else null
                         // R248 (FR-R248-3) — see `focusedKey` above; the wrapper adds no size of its own.
+                        // R361 (FR-R361-3) — the refresh's target carries its own requester, keyed to its item.
                         Box(
                             modifier = Modifier
-                                .onFocusChanged { if (it.hasFocus) focusedKey = key }
-                                .then(if (i == 0) Modifier.focusRequester(firstFR) else Modifier),
+                                .onFocusChanged { if (it.hasFocus) { focusedKey = key; onItemFocused(i) } }
+                                .then(if (key != null && key == targetKey) Modifier.focusRequester(targetFR) else Modifier),
                         ) { itemContent(i, items[i], fr) }
                     }
                     if (openPanel != null && key != null && key == openAfterKey) {

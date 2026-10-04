@@ -48,6 +48,18 @@ class HomeStore(
     // R139: identity of the tile the user last navigated from, so Back re-focuses that exact tile.
     var focusRowKey: String? = null
     var focusItemKey: String? = null
+    // R361 (FR-R361-5) — where they were at select time (the row's place on the page, the tile's in its row), so a
+    // return to a row that is gone can land on the row now in its place.
+    var focusRowIndex: Int = 0
+    var focusItemIndex: Int = 0
+
+    /** R139 / R361 — a tile was opened: remember it, and where it was, for the Back-return. */
+    fun rememberReturn(rowKey: String, itemKey: String, rowIndex: Int, itemIndex: Int) {
+        focusRowKey = rowKey
+        focusItemKey = itemKey
+        focusRowIndex = rowIndex.coerceAtLeast(0)
+        focusItemIndex = itemIndex.coerceAtLeast(0)
+    }
     // R49/Phase 136 — server-decided Request-segment gating (now: is Seerr connected/enabled).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()

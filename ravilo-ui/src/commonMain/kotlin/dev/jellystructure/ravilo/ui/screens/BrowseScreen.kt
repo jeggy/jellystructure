@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
+import dev.jellystructure.ravilo.ui.focus.FollowGridRefresh
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
@@ -37,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -100,6 +105,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
     val state: StateFlow<BrowseState> = _state.asStateFlow()
     val gridState = LazyGridState()   // R137: retained grid scroll survives navigate→back
     var focusItemKey: String? = null  // R139: the grid cell the user last navigated from
+    var focusItemIndex: Int = 0       // R361 (FR-R361-4/5): where it sat in the list when opened
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
 
@@ -222,7 +228,8 @@ fun BrowseScreen(
     // R60: NavBar focus — ensures Back fires through Compose (not Android finish()) and AppBar is visible
     val navBarFR = remember { FocusRequester() }
     // R139: on a Back-return from a grid cell, the grid re-focuses that cell; skip the default nav-bar focus.
-    LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
+    val returning = remember { store.focusItemKey != null }
+    LaunchedEffect(Unit) { if (!returning) navBarFR.tryRequestFocus() }
 
     val navItems = raviloNavItems()
     // R170 — My List moved out of the section-tab row into the avatar's ProfileMenu, so it no longer
@@ -303,7 +310,14 @@ fun BrowseScreen(
                         gridState = gridState,
                         firstCellFR = firstCellFR,
                         restoreItemKey = store.focusItemKey,   // R139
-                        onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },  // R139: save on select
+                        restoreItemIndex = store.focusItemIndex,   // R361 (FR-R361-4)
+                        onRestoreResolved = { store.focusItemKey = null },
+                        onEmpty = { requestFocusRetrying(scope, navBarFR) },
+                        onItemSelect = { card ->   // R139: save on select
+                            store.focusItemKey = card.id
+                            store.focusItemIndex = s.results.items.indexOfFirst { it.id == card.id }.coerceAtLeast(0)
+                            onItemSelect(card)
+                        },
                         onLoadMore = { store.loadMore() },
                     )
                 }
@@ -397,6 +411,9 @@ private fun BrowseGrid(
     firstCellFR: FocusRequester,
     restoreItemKey: String?,   // R139: the cell to re-focus on Back (its scroll is already retained)
     onItemSelect: (MediaCard) -> Unit,
+    restoreItemIndex: Int = 0,          // R361: the cell now at this index when the opened one is gone
+    onRestoreResolved: () -> Unit = {}, // R361: the caller clears its key once the restore resolved
+    onEmpty: () -> Unit = {},           // R361: nothing left to focus in the grid
     onLoadMore: () -> Unit,   // R118 follow-up: fetch the next page once scrolled near the loaded end
 ) {
     // R88: warm the next 4 poster images ahead of the scroll position.
@@ -417,14 +434,18 @@ private fun BrowseGrid(
 
     // R139: on a Back-return, re-focus the cell the user navigated from. The grid's scroll is retained
     // (R137) so the cell is already in view → request focus directly (no scroll disturbance).
-    val restoreFR = remember { FocusRequester() }
+    // R361 (FR-R361-4) — the cell if it is still there, else the cell now at its index; the key is spent either way.
+    val gridFocus = rememberGridFocus(gridState)
+    val keys = remember(items) { items.map { it.id } }
     var restoredOnce by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!restoredOnce && restoreItemKey != null && items.any { it.id == restoreItemKey }) {
-            runCatching { restoreFR.requestFocus() }
-            restoredOnce = true
-        }
+    LaunchedEffect(items) {
+        if (restoredOnce || restoreItemKey == null) return@LaunchedEffect
+        restoredOnce = true
+        onRestoreResolved()
+        if (!gridFocus.restore(keys, restoreItemKey, restoreItemIndex)) onEmpty()
     }
+    // R361 (FR-R361-3 for grids, R364 review item 4) — a refresh that drops the focused cell: the cell now there.
+    FollowGridRefresh(gridFocus, keys, onEmpty = onEmpty)
 
     // Native 2-D focus traversal across the grid: the framework composes off-screen rows in the
     // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
@@ -435,24 +456,27 @@ private fun BrowseGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(cols),
         state = gridState,
-        modifier = Modifier.focusRestorer(),
+        modifier = Modifier.focusRestorer().onFocusChanged { gridFocus.gridFocused = it.hasFocus },
         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
         verticalArrangement = Arrangement.spacedBy(raviloRowGap),
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]
-            Tile(
-                title = card.title,
-                posterUrl = card.posterUrl,
-                progressPct = card.progressPct ?: 0f,
-                watched = card.watched,
-                upcomingLabel = card.upcomingEpisode,
-                qualityBadge = card.qualityBadge,   // R325
-                // R139 restore target takes precedence; R55: first cell is the back-to-top landing target.
-                focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
-                onSelect = { onItemSelect(card) },
-            )
+            // R361 — the wrapper carries the restore/refresh target's requester and tracks focus; it adds no size.
+            Box(gridFocus.itemModifier(card.id, i)) {
+                Tile(
+                    title = card.title,
+                    posterUrl = card.posterUrl,
+                    progressPct = card.progressPct ?: 0f,
+                    watched = card.watched,
+                    upcomingLabel = card.upcomingEpisode,
+                    qualityBadge = card.qualityBadge,   // R325
+                    // R55: the first cell is the back-to-top landing target (always: R362 review item 2).
+                    focusRequester = if (i == 0) firstCellFR else null,
+                    onSelect = { onItemSelect(card) },
+                )
+            }
         }
     }
 }

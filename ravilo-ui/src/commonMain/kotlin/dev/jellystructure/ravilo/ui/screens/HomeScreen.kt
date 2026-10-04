@@ -92,6 +92,10 @@ import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.ravilo.ui.focus.ReturnTarget
+import dev.jellystructure.ravilo.ui.focus.resolveReturn
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
+import androidx.compose.runtime.withFrameNanos
 
 @Composable
 fun HomeScreen(
@@ -234,19 +238,79 @@ private fun HomeLoaded(
         store.focusDetail.reapply(effectiveFocusDetail, feed.focusDetailDelayMs)
     }
 
+    // R361 — the page's rows in order (channels, the content rows with On Now at its place), as the return
+    // resolver sees them, and the LazyColumn's own item keys in the same order (plus the hero).
+    val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
+    val rowOrder: List<Pair<String, List<String>>> = buildList {
+        if (hasChannels) add("channels" to feed.channels.map { it.id })
+        feed.rows.take(clampedOnNowIndex).forEach { add(it.id to it.items.map { c -> c.id }) }
+        if (liveTvChannels.isNotEmpty()) add("on_now" to liveTvChannels.map { it.channelId })
+        feed.rows.drop(clampedOnNowIndex).forEach { add(it.id to it.items.map { c -> c.id }) }
+    }
+    val rowIndexOf: (String) -> Int = { key -> rowOrder.indexOfFirst { it.first == key } }
+
+    // R361 (FR-R361-1/5, dev review item 4) — a Back-return is resolved ONCE, against the rows about to be laid
+    // out, before they compose: the same tile if it survives, else its neighbour, else the row now in its place.
+    // The store's keys are cleared at once (so a row that vanished can no longer leak them, R200's door), and the
+    // resolved tile is handed to its row only, whose own R139 effect scrolls and focuses it; the row clears this
+    // through onRestored once it fired.
+    var pendingRestore by remember {
+        val rk = store.focusRowKey
+        val ik = store.focusItemKey
+        mutableStateOf(if (rk == null || ik == null) null else resolveReturn(rowOrder, rk, ik, store.focusRowIndex, store.focusItemIndex))
+    }
+    val onRowRestored: () -> Unit = { pendingRestore = null }
+    // The row the viewer was last focused in (key, tile index) — for a row that vanishes while it holds focus.
+    var lastFocus by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    var contentFocused by remember { mutableStateOf(false) }
+    val rowsHadFocusAtSwap = contentFocused
+
+    // R361 — a resolved row that the LazyColumn has not composed (rare: the row below usually slid up into view)
+    // is scrolled in first, so its restore can run; a restore that never fires is dropped rather than left armed.
+    suspend fun bringRowIn(target: ReturnTarget) {
+        withFrameNanos { }
+        val info = listState.layoutInfo
+        if (info.visibleItemsInfo.none { it.key == target.rowKey }) {
+            val lazyIndex = (if (hasHero) 1 else 0) + rowIndexOf(target.rowKey)
+            if (lazyIndex >= 0) runCatching { listState.scrollToItem(lazyIndex) }
+        }
+        kotlinx.coroutines.delay(1_000)
+        if (pendingRestore == target) pendingRestore = null
+    }
+
+    // R361 (FR-R361-3) — the row that held focus left the feed (its last title went) or emptied: focus goes to
+    // the row now in its place, same column clamped, never to Compose's recovery (the app bar's first tab).
+    val prevOrder = remember { mutableStateOf(rowOrder) }
+    fun rowGoneWhileFocused(goneKey: String, prev: List<Pair<String, List<String>>>) {
+        val lf = lastFocus ?: return
+        if (lf.first != goneKey) return
+        val prevIdx = prev.indexOfFirst { it.first == goneKey }.coerceAtLeast(0)
+        val t = resolveReturn(rowOrder.filter { it.first != goneKey }, goneKey, "", prevIdx, lf.second) ?: return
+        pendingRestore = t
+        scope.launch { bringRowIn(t) }
+    }
+    LaunchedEffect(rowOrder) {
+        val prev = prevOrder.value
+        prevOrder.value = rowOrder
+        val lf = lastFocus ?: return@LaunchedEffect
+        if (!rowsHadFocusAtSwap || prev == rowOrder) return@LaunchedEffect
+        if (rowOrder.any { it.first == lf.first && it.second.isNotEmpty() }) return@LaunchedEffect  // its own row handles it (R248)
+        rowGoneWhileFocused(lf.first, prev)
+    }
+
     // Land focus somewhere sensible on entry. With a hero, focus it; otherwise focus the app bar
     // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
     // then enters the content. Requesting focus on the LazyColumn container itself is unreliable.
     LaunchedEffect(Unit) {
-        // R139: on a Back-return from a tile/channel (a key was saved on select), the originating row's own
-        // effect scrolls to + focuses that exact tile — skip the default entry focus so we don't fight it.
+        // R139/R361: on a Back-return from a tile/channel, the resolved row's own effect scrolls to + focuses
+        // the resolved tile — skip the default entry focus so we don't fight it. The keys are spent here.
         // R137: otherwise the retained scroll is preserved; focus the hero on a fresh/at-top entry, else the
         // app bar (a fixed overlay — focusing it doesn't disturb the scroll).
-        if (store.focusItemKey != null) return@LaunchedEffect
+        store.focusRowKey = null
+        store.focusItemKey = null
+        pendingRestore?.let { bringRowIn(it); return@LaunchedEffect }
         val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        runCatching {
-            if (!wasScrolled && hasHero) heroFR.requestFocus() else navBarFR.requestFocus()
-        }
+        if (!wasScrolled && hasHero) heroFR.tryRequestFocus() else navBarFR.tryRequestFocus()
     }
 
     // R55: Back scrolls a scrolled feed to the top (refocusing the hero / app bar so bring-into-view
@@ -290,7 +354,7 @@ private fun HomeLoaded(
         // clear it. Kept for as long as L is CONFIGURED, not merely while something is focused, or the
         // page would shift the moment the very first tile ever takes focus.
         contentPadding = PaddingValues(bottom = 240.dp + (if (lineActive) FOCUS_DETAIL_LINE_HEIGHT else 0.dp)),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().onFocusChanged { contentFocused = it.hasFocus },
     ) {
         // Hero carousel
         if (hasHero) {
@@ -302,7 +366,7 @@ private fun HomeLoaded(
                     modifier = Modifier.onFocusChanged {
                         // Phase R240 — the hero is outside Home content rows (spec non-goal list); it
                         // must say nothing on the status line/row-open panel.
-                        if (it.hasFocus) { scope.launch { listState.scrollToItem(0) }; store.focusDetail.clear() }
+                        if (it.hasFocus) { scope.launch { listState.scrollToItem(0) }; store.focusDetail.clear(); lastFocus = null }
                     }
                 ) {
                     HeroCarousel(
@@ -337,21 +401,23 @@ private fun HomeLoaded(
                     itemKey = { ch -> ch.id },
                     urlResolver = { ch -> ch.logoUrl },
                     bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
-                    restoreItemKey = if (store.focusRowKey == "channels") store.focusItemKey else null,  // R139
+                    restoreItemKey = pendingRestore?.takeIf { it.rowKey == "channels" }?.itemKey,  // R139 / R361
                     // Bug fix: consume the restore once it fires — else scrolling this row out of the
                     // LazyColumn's composed window and back in re-triggers it and yanks focus back here.
-                    onRestored = { store.focusRowKey = null; store.focusItemKey = null },
+                    onRestored = onRowRestored,
+                    onItemFocused = { i -> lastFocus = "channels" to i },
+                    onEmptiedWhileFocused = { rowGoneWhileFocused("channels", rowOrder) },
                     // R236 — channels is always the first row whenever it exists; the bridge targets the
                     // row itself now, never a specific tile (see StaticContentRow's rowFocusRequester doc).
                     rowFocusRequester = firstRowFR,
-                ) { _, ch, fr ->
+                ) { chIdx, ch, fr ->
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
                         logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
                         focusRequester = fr,  // R139 restore target only
-                        onSelect = { store.focusRowKey = "channels"; store.focusItemKey = ch.id; onChannelSelect(ch) },  // R139
+                        onSelect = { store.rememberReturn("channels", ch.id, rowIndexOf("channels"), chIdx); onChannelSelect(ch) },  // R139 / R361
                     )
                 }
                 }
@@ -360,10 +426,12 @@ private fun HomeLoaded(
 
         // Content rows, with the Phase R177 "On now" row interleaved at feed.liveTvHome's configured
         // position (never a top-nav tab — it only ever lives among the Home rows).
-        val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
+            val row = feed.rows[ri]
             HeadingClearOfAppBar(listState) {
-                ContentRowItem(feed.rows[ri], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null)
+                ContentRowItem(row, feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (!hasChannels && ri == 0) firstRowFR else null,
+                    returnTo = RowReturn(rowIndexOf(row.id), pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey, onRowRestored,
+                        onItemFocused = { i -> lastFocus = row.id to i }, onEmptied = { rowGoneWhileFocused(row.id, rowOrder) }))
             }
         }
         if (liveTvChannels.isNotEmpty()) {
@@ -372,15 +440,20 @@ private fun HomeLoaded(
                 // Phase R240 — On Now isn't a Home content row either (spec non-goal list).
                 HeadingClearOfAppBar(listState) {
                 Box(modifier = Modifier.onFocusChanged { if (it.hasFocus) store.focusDetail.clear() }) {
-                    OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null)
+                    OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, rowFocusRequester = if (onNowIsFirstRow) firstRowFR else null,
+                        returnTo = RowReturn(rowIndexOf("on_now"), pendingRestore?.takeIf { it.rowKey == "on_now" }?.itemKey, onRowRestored,
+                            onItemFocused = { i -> lastFocus = "on_now" to i }, onEmptied = { rowGoneWhileFocused("on_now", rowOrder) }))
                 }
                 }
             }
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
             val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
+            val row = feed.rows[clampedOnNowIndex + i]
             HeadingClearOfAppBar(listState) {
-                ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null)
+                ContentRowItem(row, feed, store, listState, onItemSelect, onSeeAll, reduceMotion, rowFocusRequester = if (isVeryFirstRow) firstRowFR else null,
+                    returnTo = RowReturn(rowIndexOf(row.id), pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey, onRowRestored,
+                        onItemFocused = { idx -> lastFocus = row.id to idx }, onEmptied = { rowGoneWhileFocused(row.id, rowOrder) }))
             }
         }
     }
@@ -437,6 +510,16 @@ private fun HomeLoaded(
     }
 }
 
+/** R361 — what a Home row needs to take part in the return rule: its place on the page, the tile resolved for
+ *  it (if any), and the callbacks that keep HomeLoaded's resolver informed. */
+private class RowReturn(
+    val rowIndex: Int = -1,
+    val restoreItemKey: String? = null,
+    val onRestored: () -> Unit = {},
+    val onItemFocused: (Int) -> Unit = {},
+    val onEmptied: () -> Unit = {},
+)
+
 @Composable
 private fun StaleContentBanner(modifier: Modifier = Modifier) {
     val colors = RaviloTheme.colors
@@ -462,6 +545,7 @@ private fun ContentRowItem(
     onSeeAll: (Row) -> Unit = {},
     reduceMotion: Boolean = false,
     rowFocusRequester: FocusRequester? = null,
+    returnTo: RowReturn = RowReturn(),
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
@@ -581,10 +665,12 @@ private fun ContentRowItem(
             u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
         },
         bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
-        restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+        restoreItemKey = returnTo.restoreItemKey,  // R139 / R361 — resolved by HomeLoaded
         // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
         // composed window and back in re-triggers it and yanks focus back here.
-        onRestored = { store.focusRowKey = null; store.focusItemKey = null },
+        onRestored = returnTo.onRestored,
+        onItemFocused = returnTo.onItemFocused,
+        onEmptiedWhileFocused = returnTo.onEmptied,
         rowFocusRequester = rowFocusRequester,  // R236
         // Phase R240 (FR-R240-3) — J's panel, spliced in right after [panelKey]'s tile. Deliberately
         // NOT given a FocusRequester anywhere inside it (FR-R240-5) — see FocusDetailPanel's own doc.
@@ -600,7 +686,7 @@ private fun ContentRowItem(
         closingPanel = if (closingKey != null) ({
             closingUi?.let { FocusDetailPanel(ui = it, visible = false, width = panelWidth) }
         }) else null,
-    ) { _, card, fr ->
+    ) { cardIdx, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
         val isContinue = row.kind == RowKind.CONTINUE
@@ -622,7 +708,7 @@ private fun ContentRowItem(
             // other tile in every other row is untouched.
             open = rowHasOpen && fd?.itemKey == card.id,
             onFocused = { store.focusDetail.onFocus(row.id, card.id, card, effectiveFocusDetail, feed.focusDetailDelayMs) },
-            onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
+            onSelect = { store.rememberReturn(row.id, card.id, returnTo.rowIndex, cardIdx); onItemSelect(card) },  // R139 / R361
         )
     }
 }
@@ -675,6 +761,7 @@ private fun OnNowRow(
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
     onOpenLiveTvGuide: () -> Unit,
     rowFocusRequester: FocusRequester? = null,
+    returnTo: RowReturn = RowReturn(),
 ) {
     StaticContentRow(
         title = str("livetv.on_now"),
@@ -682,10 +769,12 @@ private fun OnNowRow(
         itemKey = { it.channelId },
         urlResolver = { it.logoUrl },
         bringRowHeaderIntoView = false,
-        restoreItemKey = if (store.focusRowKey == "on_now") store.focusItemKey else null,
+        restoreItemKey = returnTo.restoreItemKey,  // R139 / R361 — resolved by HomeLoaded
         // Bug fix: consume the restore once it fires — else scrolling this row out of the LazyColumn's
         // composed window and back in re-triggers it and yanks focus back here.
-        onRestored = { store.focusRowKey = null; store.focusItemKey = null },
+        onRestored = returnTo.onRestored,
+        onItemFocused = returnTo.onItemFocused,
+        onEmptiedWhileFocused = returnTo.onEmptied,
         rowFocusRequester = rowFocusRequester,  // R236 — lands on the leading guide tile by default (first in composition order) via focusRestorer
         // The guide tile is the row's first item, reached via the row-level bridge above.
         leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide) },
@@ -697,7 +786,7 @@ private fun OnNowRow(
         // app surfaces), so this drops the design mockup's own "· From Jellyfin" suffix.
         titleAccessory = { LiveDot() },
         trailingInfo = str("livetv.channels_from_jellyfin", mapOf("count" to channels.size.toString())),
-    ) { _, ch, fr ->
+    ) { chIdx, ch, fr ->
         val program = ch.currentProgram
         val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
         val progress = if (program != null && program.endMs > program.startMs)
@@ -719,7 +808,7 @@ private fun OnNowRow(
             contentScale = ContentScale.Fit,
             progressPct = progress,
             focusRequester = fr,
-            onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
+            onSelect = { store.rememberReturn("on_now", ch.channelId, returnTo.rowIndex, chIdx); onLiveTvChannelSelect(ch) },
         )
     }
 }

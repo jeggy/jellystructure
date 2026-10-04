@@ -31,6 +31,8 @@ class TaxonomyStore internal constructor(private val fetch: suspend () -> Browse
     constructor(apiClient: TvApiClient) : this({ apiClient.getFacets(null) })
     /** The tile last opened (`"<segment>:<name>"`), re-focused on Back-return; null on a fresh entry. */
     var lastSelectedKey: String? = null
+    /** R361 (FR-R361-6) — where that tile sat in its wall, so a return to a value that is gone lands on its neighbour. */
+    var lastSelectedIndex: Int = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<TaxonomyState>(TaxonomyState.Loading)
     val state: StateFlow<TaxonomyState> = _state.asStateFlow()

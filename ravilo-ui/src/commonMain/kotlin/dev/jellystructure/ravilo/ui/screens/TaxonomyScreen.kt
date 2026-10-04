@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveConfig
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -127,7 +129,15 @@ fun TaxonomyContent(
     val restoreFR = remember { FocusRequester() }
     // remember{}: the key is consumed (cleared) by the restore below; a recomposition must not drop the
     // tile's requester before the restore has run.
-    val restoreKey = remember { store.lastSelectedKey }
+    // R361 (FR-R361-6) — the opened value if it is still on this wall, else the one now at its place.
+    val restoreKey = remember {
+        val k = store.lastSelectedKey
+        when {
+            k == null || !k.startsWith("$kind:") -> k
+            list.any { "$kind:${it.name}" == k } -> k
+            else -> fallbackIndex(store.lastSelectedIndex, list.size)?.let { "$kind:${list[it].name}" } ?: k
+        }
+    }
     val willRestore = remember { restoreKey != null && list.any { "$kind:${it.name}" == restoreKey } }
 
     // Fresh entry ⇒ focus the AppBar (the same rule every tab screen follows); a segment switch keeps
@@ -143,7 +153,7 @@ fun TaxonomyContent(
                 store.lastSelectedKey = null
                 val ri = rows.indexOfFirst { row -> row.any { "$kind:${it.name}" == restoreKey } }
                 if (ri >= 0) listState.scrollToItem(ri + 1)  // +1: meta item (the title/segment bar are the frame's now)
-                repeat(10) { if (runCatching { restoreFR.requestFocus() }.isSuccess) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
+                repeat(10) { if (restoreFR.tryRequestFocus()) return@LaunchedEffect; kotlinx.coroutines.delay(16) }
             }
             focusSegmentOnEntry -> Unit
             else -> runCatching { navBarFR.requestFocus() }
@@ -191,6 +201,7 @@ fun TaxonomyContent(
                                     focusRequester = if (key == restoreKey) restoreFR else null,
                                     onSelect = {
                                         store.lastSelectedKey = key
+                                        store.lastSelectedIndex = list.indexOf(item).coerceAtLeast(0)
                                         onTileSelect(segment, item, crumb)
                                     },
                                 )

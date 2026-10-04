@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.resolveReturn
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.shared.tv.offersSeeAll
 import androidx.compose.foundation.layout.padding
@@ -70,6 +75,17 @@ class ChannelStore(private val apiClient: TvApiClient) {
     // R139: identity of the tile the user last navigated from, so Back re-focuses that exact tile.
     var focusRowKey: String? = null
     var focusItemKey: String? = null
+    // R361 (FR-R361-5) — where they were at select time, for a return to a title (or a row) that is gone.
+    var focusRowIndex: Int = 0
+    var focusItemIndex: Int = 0
+
+    /** R139 / R361 — a tile was opened: remember it, and where it was, for the Back-return. */
+    fun rememberReturn(rowKey: String, itemKey: String, rowIndex: Int, itemIndex: Int) {
+        focusRowKey = rowKey
+        focusItemKey = itemKey
+        focusRowIndex = rowIndex.coerceAtLeast(0)
+        focusItemIndex = itemIndex.coerceAtLeast(0)
+    }
     private var loadJob: Job? = null
     private var currentId: String? = null
 
@@ -198,13 +214,33 @@ fun ChannelScreen(
                     // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
                     val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
 
+                    // R361 (FR-R361-1/5/6) — the Back-return is resolved once against the rows about to be laid out
+                    // (the same tile, else its neighbour, else the row now in its place), and the store's keys are
+                    // spent at once; the resolved row's own R139 effect scrolls and focuses the tile.
+                    val rowOrder = nonEmpty.map { r -> r.id to r.items.map { it.id } }
+                    var pendingRestore by remember {
+                        val rk = store.focusRowKey
+                        val ik = store.focusItemKey
+                        mutableStateOf(if (rk == null || ik == null) null else resolveReturn(rowOrder, rk, ik, store.focusRowIndex, store.focusItemIndex))
+                    }
                     LaunchedEffect(hasHero) {
-                        // R139: Back-return from a tile → its row restores focus to the exact tile; skip default.
-                        // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
-                        if (store.focusItemKey == null) {
-                            val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-                            runCatching { if (hasHero && !wasScrolled) heroFR.requestFocus() else channelBarFR.requestFocus() }
+                        store.focusRowKey = null
+                        store.focusItemKey = null
+                        val target = pendingRestore
+                        if (target != null) {
+                            // A resolved row the column has not composed is scrolled in first, so its restore can run.
+                            withFrameNanos { }
+                            if (listState.layoutInfo.visibleItemsInfo.none { it.key == target.rowKey }) {
+                                val lazyIndex = (if (hasHero) 1 else 0) + rowOrder.indexOfFirst { it.first == target.rowKey }
+                                runCatching { listState.scrollToItem(lazyIndex) }
+                            }
+                            kotlinx.coroutines.delay(1_000)
+                            if (pendingRestore == target) pendingRestore = null
+                            return@LaunchedEffect
                         }
+                        // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
+                        val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                        if (hasHero && !wasScrolled) heroFR.tryRequestFocus() else channelBarFR.tryRequestFocus()
                     }
 
                     @Suppress("OPT_IN_USAGE")
@@ -259,11 +295,11 @@ fun ChannelScreen(
                                         SeeAllTile(count = row.seedTotalCount ?: row.items.size, variant = rowVariant, onSelect = { onSeeAll(row) })
                                     }) else null,
                                     itemKey = { card -> card.id },
-                                    restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+                                    restoreItemKey = pendingRestore?.takeIf { it.rowKey == row.id }?.itemKey,  // R139 / R361
                                     // Bug fix: consume the restore once it fires — else scrolling this row
                                     // out of the LazyColumn's composed window and back in re-triggers it
                                     // and yanks focus back here.
-                                    onRestored = { store.focusRowKey = null; store.focusItemKey = null },
+                                    onRestored = { pendingRestore = null },
                                 ) { idx, card, fr ->
                                     val variant = rowVariant
                                     Tile(
@@ -276,7 +312,7 @@ fun ChannelScreen(
                                         upcomingLabel = card.upcomingEpisode,
                                         qualityBadge = card.qualityBadge,   // R325
                                         focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
-                                        onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
+                                        onSelect = { store.rememberReturn(row.id, card.id, ri, idx); onItemSelect(card) },  // R139 / R361
                                     )
                                 }
                             }

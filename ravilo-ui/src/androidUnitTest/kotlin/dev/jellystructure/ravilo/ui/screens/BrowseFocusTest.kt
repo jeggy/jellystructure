@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasAnyDescendant
@@ -19,6 +22,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * R350 (FR-R350-9) — the Movies / Series browse page, key by key: Up from ANY tile of the first row lands on the
@@ -38,24 +43,41 @@ class BrowseFocusTest {
         )
     }
 
-    private fun render() {
+    @Volatile private var served: List<BrowseCard> = cards
+    private var shown by mutableStateOf(true)
+    private var opened: MediaCard? = null
+    private lateinit var store: SeededBrowseStore
+
+    private fun render(initial: List<BrowseCard> = cards) {
         dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
-        val body = RaviloWireJson.encodeToString(SeededBrowseResponse.serializer(), SeededBrowseResponse(items = cards, total = cards.size))
+        served = initial
         val api = fakeTvApiClient { path ->
             when (path) {
-                "/api/tv/browse/seeded" -> body
+                "/api/tv/browse/seeded" -> RaviloWireJson.encodeToString(SeededBrowseResponse.serializer(), SeededBrowseResponse(items = served, total = served.size))
                 "/api/tv/channels" -> "[]"
                 else -> null
             }
         }
-        val store = SeededBrowseStore(api, seedQuery = null, seedMediaKind = "MOVIE", continueWatching = false)
+        store = SeededBrowseStore(api, seedQuery = null, seedMediaKind = "MOVIE", continueWatching = false)
         rule.setContent {
-            SeededBrowseScreen(
+            if (shown) SeededBrowseScreen(
                 store = store, title = "Movies", breadcrumb = null, subtitle = null, showTypeFacet = false,
-                showFacetBar = true, displayName = "Olivar", activeNav = 1, onBack = {}, onItemSelect = {},
+                showFacetBar = true, displayName = "Olivar", activeNav = 1, onBack = {}, onItemSelect = { opened = it; shown = false },
             )
         }
         rule.waitUntil(5_000) { rule.onAllNodes(hasText("Stand-in 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+    }
+
+    /** Leave for a title page and come back over the same kept store; the page re-fetches on arrival (R187). */
+    private fun back(expectTitles: Int) {
+        shown = true
+        rule.waitUntil(5_000) {
+            rule.onAllNodes(hasText(if (expectTitles == 1) "1 title" else "$expectTitles titles", substring = true), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
         rule.waitForIdle()
     }
 
@@ -86,5 +108,36 @@ class BrowseFocusTest {
         focusedWith("Genre")
         press(Key.DirectionDown)
         focusedWith("Stand-in")
+    }
+
+    // ── R361 (FR-R361-4) — Back to a grid whose opened title has left the filtered list ──
+
+    @Test fun `a title gone from the grid lands on the tile now at its index, and the key is spent`() {
+        render()
+        press(Key.DirectionRight); press(Key.DirectionRight)
+        focusedWith("Stand-in 3")
+        press(Key.Enter)
+        assertEquals("m3", opened?.id)
+        served = cards.filter { it.card.id != "m3" }
+        back(expectTitles = 17)
+        focusedWith("Stand-in 4")
+        assertNull(store.focusItemKey, "the restore spent the key")
+        // an ordinary return afterwards still restores
+        press(Key.Enter)
+        assertEquals("m4", opened?.id)
+        back(expectTitles = 17)
+        focusedWith("Stand-in 4")
+    }
+
+    @Test fun `an empty grid on return lands on the facet bar, never the app bar`() {
+        render()
+        press(Key.Enter)
+        served = emptyList()
+        shown = true
+        rule.waitUntil(5_000) { rule.onAllNodes(hasText("0 titles", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
+        inFacetBar()
     }
 }
