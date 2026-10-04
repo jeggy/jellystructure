@@ -814,6 +814,34 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
    chip (.usr-av/.has-photo/.av-img) both land here at once, not because they're related, but because
    both were caught missing from the same page in the same pass. */
 .usr-cap { display: block; font-size: .68rem; color: var(--ink-soft); margin-top: 3px; }
+/* 304 (R368) — Users & devices → *Playing now*: every playback session, from the mockup (ravilo-users.html). */
+.ses-tbl td { vertical-align: middle; }
+.ses-tbl tr.ses-r { cursor: pointer; }
+.ses-tbl tr.ses-r:hover td { background: rgba(127,127,127,.06); }
+.ses-tbl tr.usr-hd td { font-size: .62rem; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; color: var(--ink-dim); padding-top: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.ses-tbl .ses-art { width: 36px; height: 36px; border-radius: 7px; flex: none; display: inline-block; vertical-align: middle; }
+.ses-tbl .ses-art.w { width: 52px; height: 30px; border-radius: 5px; }
+.ses-what { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ses-what b { display: block; white-space: nowrap; }
+.ses-what .tiny { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.ses-pr { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.ses-pg { width: 110px; height: 4px; border-radius: 2px; background: var(--line-2); overflow: hidden; display: inline-block; vertical-align: middle; }
+.ses-pg i { display: block; height: 100%; background: var(--hi); }
+.ses-acts { display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+.ses-x td { padding: 12px 14px 16px !important; background: rgba(127,127,127,.05); }
+.ses-h { font-size: .62rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim); margin: 12px 0 5px; }
+.ses-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ses-ctl input[type=range] { flex: 1; min-width: 180px; }
+.ses-v { display: grid; grid-template-columns: 110px minmax(0,1fr) 44px; align-items: center; gap: 8px; font-size: .8rem; margin: 3px 0; }
+.ses-q { display: flex; flex-direction: column; gap: 2px; }
+.ses-q span { padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: .8rem; }
+.ses-q span:hover { background: rgba(127,127,127,.1); }
+.ses-q span.on { font-weight: 700; background: rgba(127,127,127,.12); }
+.ses-tl { border-left: 2px solid var(--line-2); margin-left: 6px; padding-left: 14px; font-size: .78rem; }
+.ses-tl div { position: relative; padding: 3px 0; }
+.ses-tl div::before { content: ''; position: absolute; left: -19px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+.ses-tl .w { color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-right: 8px; }
+.ses-sel { font: inherit; font-size: .78rem; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line-2); background: transparent; color: inherit; }
 .usr-cap b { color: var(--ink-soft); font-weight: 600; }
 /* Phase 259 — per-device version history on Users & devices. The mockup (design/app/ravilo-users.html)
    draws the timeline as a table row; the served page renders a block under the device's caption lines,

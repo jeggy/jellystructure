@@ -249,6 +249,27 @@ class CastController(
         sender.screen.link(device)
     }
 
+    /**
+     * R368 (FR-R368-9) — ⏯ on a *Playing everywhere* row, where control already works today: this device's own
+     * playback, or the cast this app sent (its direct link). R369 sends every other press through the server.
+     */
+    var sessionPlayPause: (dev.jellystructure.shared.tv.SessionView) -> Unit = { v ->
+        when {
+            v.here -> dev.jellystructure.ravilo.ui.RemoteControl.dispatch(dev.jellystructure.shared.tv.RemoteCommand.Toggle)
+            dev.jellystructure.ravilo.ui.music.MusicCast.linked.value -> dev.jellystructure.ravilo.ui.music.MusicPlayback.togglePlay()
+            v.state == "playing" -> sender.pause()
+            else -> sender.play()
+        }
+    }
+
+    /** R368 (FR-R368-9) — next on the bar, where control already works today (the cast this app sent). */
+    var sessionNext: ((dev.jellystructure.shared.tv.SessionView) -> Unit)? = { _ ->
+        if (dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) dev.jellystructure.ravilo.ui.music.MusicPlayback.next() else command("next")
+    }
+
+    /** R368 — a *Playing everywhere* row opened (R369 sets this to open the session's remote). */
+    var openSession: (dev.jellystructure.shared.tv.SessionView) -> Unit = {}
+
     fun command(type: String, index: Int? = null, size: String? = null) {
         sender.send(json.encodeToString(CastCommand.serializer(), CastCommand(type, index, size)))
     }
@@ -303,10 +324,24 @@ fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = 
     // the picture is on an AirPlay TV the glyph takes its connected form (WebKit names no TV to show).
     val airplaying by (platformAirPlay?.wireless ?: remember { MutableStateFlow(false) }).collectAsState()
     Box(
-        modifier.size(40.dp).clip(CircleShape)
+        modifier.size(40.dp)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { cast.openSheet(playContext, music = musicMode) },
         contentAlignment = Alignment.Center,
-    ) { CastMarkGlyph(tint = RaviloTheme.colors.text, link = if (airplaying) CastLinkState.CONNECTED else link) }
+    ) {
+        CastMarkGlyph(tint = RaviloTheme.colors.text, link = if (airplaying) CastLinkState.CONNECTED else link)
+        SessionCountBadge(Modifier.align(Alignment.TopEnd))   // R368 — outside any clip, so it overhangs the corner
+    }
+}
+
+/** R368 (FR-R368-7) — the glyph's count of sessions playing NOT on this device; absent at 0. */
+@Composable
+internal fun SessionCountBadge(modifier: Modifier = Modifier) {
+    val n = dev.jellystructure.ravilo.ui.sessions.sessionsElsewhereCount(rememberSessionsState().sessions) ?: return
+    val colors = RaviloTheme.colors
+    Box(
+        modifier.padding(top = 1.dp, end = 0.dp).height(17.dp).background(colors.accent, RoundedCornerShape(9.dp)).padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(n.toString(), color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora) }
 }
 
 /** R265 — the root-level host for [CastController.sheet]; RaviloApp draws it once, above every screen. */
@@ -323,6 +358,8 @@ fun CastSheetHost(cast: CastController) {
         cast = cast, open = request != null, onClose = cast::closeSheet, playContext = request?.playContext, music = request?.music == true,
         // R265 (FR-R265-4) / R270 (FR-R270-1) — the footnote row, only where WebKit reported a target.
         airplayAvailable = airplayAvailable, onAirplay = { airplay?.showPicker() },
+        onOpenSession = { v -> cast.openSession(v) },
+        onSessionPlayPause = { v -> cast.sessionPlayPause(v) },
     )
 }
 

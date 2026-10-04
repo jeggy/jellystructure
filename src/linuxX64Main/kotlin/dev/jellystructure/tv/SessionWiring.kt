@@ -1,0 +1,96 @@
+package dev.jellystructure.tv
+
+import dev.jellystructure.auth.DeviceData
+import dev.jellystructure.db.JellystructureDb
+import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.jobs.WsBroadcaster
+import dev.jellystructure.log.Logger
+import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.MusicPipeline
+import dev.jellystructure.media.visibleTo
+import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.fileDurationMs
+import dev.jellystructure.music.MusicTvService
+import dev.jellystructure.music.musicVisible
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
+
+/** R368 — how often the session clock runs (holds, reconnect deadlines, the 60 s linger, the hourly sweep). */
+private const val SESSION_TICK_MS = 5_000L
+
+/** "S01E05" (feedback: episode codes are always this shape). */
+internal fun episodeCode(season: Int?, episode: Int?): String? =
+    if (season != null && episode != null) "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}" else null
+
+/**
+ * R368 + 304a — builds the sessions, their publisher and the clock, and connects them to the rest of the server:
+ * what an item is (the library, the music store, the audiobooks store), who may see it (the same rules as playback),
+ * the cast hand-off's minter, an address change, the boot restore and the admin's `/ws`.
+ */
+suspend fun wirePlaybackSessions(
+    db: JellystructureDb,
+    scope: CoroutineScope,
+    mediaStore: MediaStore,
+    musicPipeline: MusicPipeline?,
+    devices: RaviloDeviceService,
+    bus: TvEventBus,
+    playback: PlaybackService,
+    castService: CastService,
+    broadcaster: WsBroadcaster,
+): SessionPublisher {
+    val sessions = PlaybackSessions(db)
+    sessions.describe = describe@{ itemId, bookId ->
+        val books = musicPipeline?.audiobooks?.store
+        if (bookId != null && books != null) {
+            val b = books.book(bookId) ?: return@describe SessionKind.AUDIOBOOK to SessionItem(itemId)
+            return@describe SessionKind.AUDIOBOOK to SessionItem(itemId, b.title, b.authors.joinToString(", ").ifBlank { null },
+                dev.jellystructure.audiobooks.AudiobooksTvService.coverUrl(b), b.durationMs.takeIf { it > 0 })
+        }
+        musicPipeline?.store?.track(itemId)?.let { t ->
+            val album = t.albumId?.let { musicPipeline.store.album(it) }
+            val sub = listOfNotNull(t.artists.joinToString(", ") { it.name }.ifBlank { null }, album?.title).joinToString(" · ").ifBlank { null }
+            return@describe SessionKind.MUSIC to SessionItem(itemId, t.title, sub, album?.let { MusicTvService.albumImage(it) }, t.durationMs)
+        }
+        mediaStore.resolveByJellyfinId(itemId)?.takeIf { it.episodes.isEmpty() }?.let { film ->
+            return@describe SessionKind.FILM to SessionItem(itemId, film.title, null, RaviloImageUrl.backdrop(film.id), film.tracks.fileDurationMs())
+        }
+        for (series in mediaStore.allItems()) {
+            if (series.kind != MediaKind.TV_SHOW) continue
+            val ep = series.episodes.firstOrNull { it.jellyfinId == itemId } ?: continue
+            val code = episodeCode(ep.seasonNumber, ep.episodeNumber)
+            return@describe SessionKind.EPISODE to SessionItem(itemId, series.title, code,
+                RaviloImageUrl.still(series.id, ep.filename, ep.episodeNumber), ep.tracks.fileDurationMs())
+        }
+        null
+    }
+    val canSee: suspend (DeviceData, String, String, String?) -> Boolean = { viewer, kind, itemId, bookId ->
+        when (kind) {
+            SessionKind.AUDIOBOOK -> bookId?.let { musicPipeline?.audiobooks?.store?.book(it) }?.let { musicVisible(it.libraryId, viewer.allowedLibraries) } == true
+            SessionKind.MUSIC -> musicPipeline?.store?.track(itemId)?.let { musicVisible(it.libraryId, viewer.allowedLibraries) } == true
+            else -> (mediaStore.resolveByJellyfinId(itemId)
+                ?: mediaStore.allItems().firstOrNull { s -> s.episodes.any { it.jellyfinId == itemId } })?.visibleTo(viewer) == true
+        }
+    }
+    val publisher = SessionPublisher(sessions, devices, bus, canSee, scope)
+    publisher.zoneOffsetMs = { ms -> runCatching { TimeZone.currentSystemDefault().offsetAt(kotlin.time.Instant.fromEpochMilliseconds(ms)).totalSeconds * 1000L }.getOrDefault(0L) }
+    publisher.adminBroadcast = { list -> broadcaster.broadcast(JobEvent.PlaybackSessions(list)) }
+    sessions.notify = { change -> publisher.publish(change) }
+    PlaybackSessions.current = sessions
+    castService.onRedeemed = { receiverId, minterDeviceId -> sessions.recordCastRedeemed(receiverId, minterDeviceId) }
+    devices.onAddressChanged = { publisher.addressChanged() }
+    playback.sessions = sessions
+    runCatching {
+        playback.restoreSessions { deviceId, userId -> devices.listSessions(deviceId).firstOrNull { it.jellyfinUserId == userId } }
+    }.onFailure { Logger.warn("Playback sessions: restore failed: ${it.message}", "tv") }
+    scope.launch {
+        while (true) {
+            delay(SESSION_TICK_MS)
+            runCatching { sessions.tick() }.onFailure { Logger.warn("Playback sessions: tick failed: ${it.message}", "tv") }
+        }
+    }
+    return publisher
+}
+

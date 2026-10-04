@@ -82,6 +82,20 @@ enum class DeskIcon(internal val d: String, internal val filled: Boolean = false
     PAUSE("M7 5h4v14H7zM13 5h4v14h-4z", filled = true),
     NEXT("M6 5l9 7-9 7zM16 5h2.5v14H16z", filled = true),
     PREVIOUS("M18 5l-9 7 9 7zM5.5 5H8v14H5.5z", filled = true),
+    // R368 — a session's place (`target.icon`): phone · computer · tv/display · speaker · group (`desktop-kit.js`).
+    PHONE(rect(7f, 3f, 10f, 18f, 2f) + "M11 18h2"),
+    LAPTOP(rect(4f, 5f, 16f, 11f, 1.5f) + "M2 19h20"),
+    SPEAKER(rect(6f, 3f, 12f, 18f, 2f) + circle(12f, 14f, 3.2f) + circle(12f, 7.5f, 1f)),
+    SPEAKERS(rect(10f, 3f, 10f, 15f, 2f) + circle(15f, 12f, 2.5f) + "M6 7v12a2 2 0 0 0 2 2h7"),
+}
+
+/** R368 (review item 15) — the icon a session's place is drawn with. */
+fun placeIcon(icon: String): DeskIcon = when (icon) {
+    "phone" -> DeskIcon.PHONE
+    "computer" -> DeskIcon.LAPTOP
+    "speaker" -> DeskIcon.SPEAKER
+    "group" -> DeskIcon.SPEAKERS
+    else -> DeskIcon.TV
 }
 
 @Composable

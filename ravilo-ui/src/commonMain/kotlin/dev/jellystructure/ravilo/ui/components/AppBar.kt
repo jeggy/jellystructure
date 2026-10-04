@@ -433,7 +433,10 @@ private fun DeskCastButton() {
         (if (mac) Modifier.size(width = 46.dp, height = 32.dp).deskGlass(shape) else Modifier.size(34.dp).clip(shape))
             .handCursor().clickable { cast.openSheet(null, music = musicMode) }.semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
-    ) { DeskIcon(DeskIcon.CAST, tint, if (mac) 16.dp else 18.dp) }
+    ) {
+        DeskIcon(DeskIcon.CAST, tint, if (mac) 16.dp else 18.dp)
+        SessionCountBadge(Modifier.align(Alignment.TopEnd))   // R368 (FR-R368-7) — sessions elsewhere
+    }
 }
 
 @Composable

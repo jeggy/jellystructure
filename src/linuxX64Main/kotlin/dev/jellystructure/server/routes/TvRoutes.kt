@@ -772,14 +772,14 @@ fun Route.tvRoutes(
     post("/tv/playback/progress") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackProgressRequest>()
-        playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused, req.volumePercent, req.muted)   // R357
+        playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused, req.volumePercent, req.muted, req.sessionId)   // R357 / R368
         call.respond(mapOf("status" to "ok"))
     }
 
     post("/tv/playback/stop") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackStopRequest>()
-        playbackService.stopPlayback(device, req.itemId, req.positionMs, req.startupMs)
+        playbackService.stopPlayback(device, req.itemId, req.positionMs, req.startupMs, sessionId = req.sessionId)   // R368
         call.respond(mapOf("status" to "ok"))
         // Bug fix: the stop used to be forwarded to Jellyfin and nothing else — the cached home feed
         // (5 min) kept serving the pre-stop Continue row, so a correct stop could stay invisible on
@@ -957,7 +957,7 @@ fun Route.tvRoutes(
                 connected = tvEventBus?.isConnected(d.deviceId) ?: false,
                 lastSeen = d.lastSeen,
                 // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
-                nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
+                nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> dev.jellystructure.tv.PlaybackSessions.current?.titleOn(d.deviceId) ?: mediaStore?.titleForJellyfinId(id) ?: id },   // R368 shipped bug 1: a song by its title
             )
         }
         call.respond(devices)
@@ -1039,7 +1039,7 @@ fun Route.tvRoutes(
                         createdAt = d.createdAt,
                         lastSeen = d.lastSeen,
                         // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
-                        nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
+                        nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> dev.jellystructure.tv.PlaybackSessions.current?.titleOn(d.deviceId) ?: mediaStore?.titleForJellyfinId(id) ?: id },   // R368 shipped bug 1: a song by its title
                         recentQuality = playbackQoeStore.recentForDevice(d.deviceId, limit = 1).firstOrNull(),
                         decodeMaxBitrateHevc = decode?.hevcMaxBitrate,
                         decodeMaxBitrateH264 = decode?.h264MaxBitrate,

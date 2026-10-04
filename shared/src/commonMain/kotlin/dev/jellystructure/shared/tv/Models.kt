@@ -277,6 +277,9 @@ data class StreamTicket(
      * only for a client that declared [ClientCapabilities.hlsAudioRenditions]; false everywhere else.
      */
     @SerialName("audio_renditions") val audioRenditions: Boolean = false,
+    /** R368 (dev review item 8) — the server's playback session this start belongs to; the client echoes it on its
+     *  progress and stop reports. Absent from an older server (and then nothing is echoed). */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 @Serializable
@@ -1353,6 +1356,9 @@ data class PlaybackProgressRequest(
     @SerialName("volume_percent") val volumePercent: Int? = null,
     /** R357 (FR-R357-1) — the player is muted. Absent exactly when [volumePercent] is. */
     val muted: Boolean? = null,
+    /** R368 (FR-R368-3, dev review item 8) — the server's playback session this report belongs to ([StreamTicket.sessionId]).
+     *  Absent (an older app) or unknown ⇒ matched by (device, item) as before. An older server ignores it. */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 @Serializable
@@ -1364,6 +1370,8 @@ data class PlaybackStopRequest(
      *  abandoned/failed start), or the session ended some other way the client didn't instrument. Never
      *  guessed or backfilled server-side — an absent value here simply means no sample is recorded. */
     @SerialName("startup_ms") val startupMs: Long? = null,
+    /** R368 (dev review item 8) — see [PlaybackProgressRequest.sessionId]. */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 /** R56 — Re-request a stream ticket with a subtitle burned in (encode / PGS path). */

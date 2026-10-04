@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -289,5 +290,66 @@ fun DesktopQueuePanel(overlay: Boolean, onTrackMore: (dev.jellystructure.shared.
     ) {
         if (!sheet) Box(Modifier.width(1.dp).fillMaxHeight().background(colors.fg.copy(alpha = 0.09f)))   // `.qp { border-left }`
         MusicQueueScreen(onTrackMore = onTrackMore, onProfile = {}, showAppBar = false)
+    }
+}
+
+/**
+ * R368 (FR-R368-8, canvas §B2 on the Mac / GNOME) — the desktop's bar when nothing plays on this computer: a session
+ * elsewhere, its place in accent on the second line, **+N** for the others (opens the popover), ⏯ and next only where
+ * the server says this computer controls it. Same frame as [DesktopMusicBar] (capsule on the Mac, docked on GNOME).
+ */
+@Composable
+fun DesktopSessionBar(
+    session: dev.jellystructure.shared.tv.SessionView,
+    more: Int,
+    onOpen: (dev.jellystructure.shared.tv.SessionView) -> Unit,
+    onMore: () -> Unit,
+    onPlayPause: ((dev.jellystructure.shared.tv.SessionView) -> Unit)? = null,
+    onNext: ((dev.jellystructure.shared.tv.SessionView) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val colors = RaviloTheme.colors
+    val mac = isMacPlatform
+    val capsule = RoundedCornerShape(31.dp)
+    val state = dev.jellystructure.ravilo.ui.components.rememberSessionsState()
+    val now = dev.jellystructure.ravilo.ui.components.rememberSessionClock()
+    val pos = dev.jellystructure.ravilo.ui.sessions.drawnPositionMs(session, state.serverNowMs, state.receivedAtMs, now)
+    val frame = if (mac) {
+        modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).fillMaxWidth().height(62.dp).shadow(20.dp, capsule).clip(capsule)
+            .background(if (colors.isLight) androidx.compose.ui.graphics.Color(0xF5FAFAFC) else colors.surface.copy(alpha = 0.95f))
+            .border(1.dp, colors.fg.copy(alpha = if (colors.isLight) 0.08f else 0.13f), capsule)
+    } else modifier.fillMaxWidth().height(72.dp).background(colors.card)
+    Box(frame.testTag("desk-session-bar")) {
+        if (!mac) {
+            val d = session.durationMs
+            val frac = if (pos != null && d != null && d > 0) (pos.toFloat() / d).coerceIn(0f, 1f) else 0f
+            Box(Modifier.fillMaxWidth().height(3.dp).background(colors.fg.copy(alpha = 0.08f))) {
+                Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(colors.accentSecondary))
+            }
+        }
+        Row(Modifier.fillMaxSize().padding(start = if (mac) 8.dp else 12.dp, end = if (mac) 18.dp else 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
+            Row(Modifier.weight(1f).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(session.id); onOpen(session) },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (mac) 14.dp else 16.dp)) {
+                MusicCover(session.artwork, session.title ?: session.owner.name, Modifier.size(if (mac) 46.dp else 50.dp), corner = if (mac) 23.dp else 6.dp, requestedWidth = 120, wordmarkSize = 8)
+                Column(Modifier.weight(1f)) {
+                    Text(dev.jellystructure.ravilo.ui.sessions.sessionRowTitle(session) ?: session.owner.name, color = colors.text, fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        DeskIcon(dev.jellystructure.ravilo.ui.components.placeIcon(session.target.icon), colors.accentSecondary, 13.dp)
+                        Spacer(Modifier.width(4.dp))
+                        Text(session.target.name, color = colors.accentSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFamily = SystemUiFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            if (more > 0) Box(Modifier.height(26.dp).clip(RoundedCornerShape(13.dp)).background(colors.fg.copy(alpha = 0.10f)).tap(onMore).padding(horizontal = 9.dp),
+                contentAlignment = Alignment.Center) { Text("+$more", color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = SystemUiFont) }
+            if (session.controllable && onPlayPause != null) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(colors.text).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touch(session.id); onPlayPause(session) },
+                    contentAlignment = Alignment.Center) { DeskIcon(if (session.state == "playing") DeskIcon.PAUSE else DeskIcon.PLAY, colors.background, 16.dp) }
+                if (onNext != null && session.kind != "film") BarButton(DeskIcon.NEXT, colors.text, str("desk.key_next")) { onNext(session) }
+            }
+        }
     }
 }

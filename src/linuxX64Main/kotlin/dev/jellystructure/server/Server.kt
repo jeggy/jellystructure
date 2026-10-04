@@ -16,6 +16,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
+import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
 import dev.jellystructure.server.routes.musicRoutes
@@ -193,6 +194,8 @@ fun startServer(
     subtitleCheckWiring: SubtitleCheckWiring? = null,
     // Phase 275 — the music library (its store, its scan) and the routes that read it.
     musicPipeline: dev.jellystructure.media.MusicPipeline? = null,
+    // R368 — the playback sessions' per-viewer lists and fan-out; null in contexts that build none.
+    sessionPublisher: dev.jellystructure.tv.SessionPublisher? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -652,6 +655,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
+                sessionPublisher?.let { playbackSessionRoutes(it) }   // R368 + 304a
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
@@ -733,7 +737,10 @@ fun startServer(
                     }
                     // Phase 134 (FR-OPS2 §D) — defensive hard cap; a reconnect of an already-registered
                     // device always succeeds, only a genuinely new device can be refused.
-                    if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this)) {
+                    // R368 (dev review item 2) — what this socket opted into: session events go only to a socket that
+                    // asked (`features=sessions`); an installed app reads any unknown event as a config change.
+                    val features = dev.jellystructure.tv.parseEventFeatures(call.request.queryParameters["features"])
+                    if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this, features)) {
                         close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
                         return@webSocket
                     }
@@ -751,6 +758,13 @@ fun startServer(
                     val eventsAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
                         ?: call.request.local.remoteHost
                     deviceService.recordAddress(device.deviceId, device.jellyfinUserId, eventsAddress)
+                    // R368 (FR-R368-5) — an opted-in socket gets the whole list on connect.
+                    if (sessionPublisher != null && dev.jellystructure.shared.tv.EVENTS_FEATURE_SESSIONS in features) {
+                        runCatching {
+                            val fresh = deviceService.listSessions(device.deviceId).firstOrNull { it.jellyfinUserId == device.jellyfinUserId } ?: device
+                            send(Frame.Text(sessionPublisher.listFrameFor(fresh)))
+                        }.onFailure { Logger.warn("TV events: session list on connect failed: ${it.message}", "tv") }
+                    }
                     // Phase 258 (FR-258-2, dev review items 1 and 5) — a device that just woke up gets today's
                     // policy before its first Home fetch: one `/Users` call when this user's last pass is older
                     // than 60 s, and the rewrite evicts the token cache the `device` above was just served from.

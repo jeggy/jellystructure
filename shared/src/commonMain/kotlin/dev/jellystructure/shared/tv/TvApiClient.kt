@@ -868,6 +868,18 @@ class TvApiClient(
         onHomeChanged: suspend (Long) -> Unit = {},
         // R354 (FR-R354-1) — the `remote=` list (REMOTE_DECLARATION_APP / _RECEIVER); null = declare nothing.
         remote: String? = null,
+        // R368 (dev review item 2) — the `features=` list ([eventsFeaturesQuery]); null = today's URL exactly, and no
+        // session event ever arrives (an installed app would read one as a config change).
+        features: String? = null,
+        // R368 (FR-R368-5) — the whole list (on connect, and when a session starts or ends) and one changed session.
+        // Handled explicitly, never through [onEvent].
+        onSessionList: suspend (SessionListEnvelope) -> Unit = {},
+        onSessionState: suspend (SessionStateEnvelope) -> Unit = {},
+        // R369 (FR-R369-2) — a command for this device as a session's target (only with `session_control`).
+        onSessionCommand: suspend (String) -> Unit = {},
+        // R369/R370 — any other session directive (`session_detail`, `session_load`, `cast_relay_load`,
+        // `targets_changed`), as raw text with its type; never through [onEvent].
+        onSessionDirective: suspend (type: String, text: String) -> Unit = { _, _ -> },
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -880,7 +892,7 @@ class TvApiClient(
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
-        wsClient.webSocket(wsUrl("/api/tv/events", token, remote), request = {
+        wsClient.webSocket(wsUrl("/api/tv/events", token, remote, features), request = {
             identify()
             wsAuth(token)
             previousSockets?.let { headers { append(EVENTS_PREV_HEADER, it) } }
@@ -925,6 +937,11 @@ class TvApiClient(
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
                     "home_changed" -> onHomeChanged(ev.rev)
+                    // R368 — never `else`: an unknown type would be read as "the config changed".
+                    "session_list" -> runCatching { json.decodeFromString<SessionListEnvelope>(text) }.getOrNull()?.let { onSessionList(it) }
+                    "session_state" -> runCatching { json.decodeFromString<SessionStateEnvelope>(text) }.getOrNull()?.let { onSessionState(it) }
+                    "session_command" -> onSessionCommand(text)
+                    in SESSION_DIRECTIVES -> onSessionDirective(ev.type, text)
                     else -> onEvent(ev)
                 }
             }
@@ -942,11 +959,23 @@ class TvApiClient(
 
     // R293 (FR-R293-7) — one place composes a socket URL and one place authenticates it: the token is a
     // query parameter only on a browser build (WS_TOKEN_IN_QUERY), a Bearer header everywhere else.
-    private fun wsUrl(path: String, token: String, remote: String? = null): String {
-        val url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
+    internal fun wsUrl(path: String, token: String, remote: String? = null, features: String? = null): String {
+        var url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
             (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
         // R354 (FR-R354-1) — what this player obeys (299 FR-299-1); absent ⇒ today's URL exactly.
-        return if (remote == null) url else url + (if (WS_TOKEN_IN_QUERY) "&" else "?") + "remote=" + remote.encodeURLParameter()
+        if (remote != null) url += (if ('?' in url) "&" else "?") + "remote=" + remote.encodeURLParameter()
+        // R368 (dev review item 2) — the opt-in for session events; absent ⇒ today's URL exactly.
+        if (features != null) url += (if ('?' in url) "&" else "?") + "features=" + features.encodeURLParameter()
+        return url
+    }
+
+    // ─── R368 — playback sessions ─────────────────────────────────────────────
+
+    /** R368 (FR-R368-5, dev review item 1) — every session this viewer may see, built for this device. */
+    suspend fun playbackSessions(): SessionList {
+        val r = client.get("$baseUrl/api/tv/playback/sessions") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
     }
 
     private fun HttpRequestBuilder.wsAuth(token: String) {

@@ -85,6 +85,10 @@ class CastService(
 
     fun maxSessions(): Int = configStore.current.chromecast?.effectiveMaxSessions() ?: 2
 
+    /** R368 (FR-R368-9, dev review item 11) — (receiver device id, the device that minted the code it redeemed): the
+     *  minting phone controls that cast while it lives. Main wires it to the playback sessions. */
+    var onRedeemed: ((receiverDeviceId: String, minterDeviceId: String) -> Unit)? = null
+
     // ── FR-218-9: hand-off ────────────────────────────────────────────────────
 
     fun mint(phone: DeviceData): CastHandoffResponse {
@@ -133,6 +137,7 @@ class CastService(
             else -> "re-enrolled with the sender's sign-in"
         }
         println("[INFO] Cast receiver $id $how for user '${phone.jellyfinUsername}' via device ${phone.deviceId}")
+        runCatching { onRedeemed?.invoke(id, phone.deviceId) }
         return deviceService.loginDevice(
             deviceId = id,
             deviceName = name,

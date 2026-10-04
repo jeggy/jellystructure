@@ -1,0 +1,70 @@
+-- R368 (FR-R368-1, dev review item 4) — one row per playback, on the server, so every Ravilo app sees what plays where
+-- and a restart brings it back. `queue_index` (not `index`: a reserved word in SQLite), `lane` (`video` · `audio`: one
+-- live session per target and lane, item 5), `started_by_device_id` (304's *started from*), `end_reason`, and the
+-- current item's `jellyfin_play_session_id` (phase 180's encode release survives a restart, item 12 b).
+-- R372 — `offline`: the place went silent; the session is paused there and kept 24 h.
+-- Must stay byte-for-byte in sync with 66.sqm's CREATE TABLEs.
+CREATE TABLE playback_session (
+    id TEXT NOT NULL PRIMARY KEY,
+    owner_user_id TEXT NOT NULL,
+    owner_name TEXT NOT NULL DEFAULT '',
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_name TEXT NOT NULL DEFAULT '',
+    lane TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL DEFAULT '',
+    book_id TEXT,
+    queue_json TEXT NOT NULL DEFAULT '[]',
+    queue_index INTEGER NOT NULL DEFAULT 0,
+    position_ms INTEGER NOT NULL DEFAULT 0,
+    position_at INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    options_json TEXT NOT NULL DEFAULT '{}',
+    revision INTEGER NOT NULL DEFAULT 1,
+    started_by_device_id TEXT,
+    jellyfin_play_session_id TEXT,
+    offline INTEGER NOT NULL DEFAULT 0,
+    end_reason TEXT,
+    ended_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    ended_at INTEGER
+);
+
+CREATE INDEX playback_session_ended ON playback_session(ended_at);
+
+-- 304 (FR-304-3, dev review item 5) — each session's timeline: started · paused · resumed · reconnected · offline ·
+-- moved · room added/removed · ended. `source` is a device id, `admin`, or null (the server itself). Kept 7 days.
+CREATE TABLE playback_session_event (
+    id INTEGER NOT NULL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    what TEXT NOT NULL,
+    source TEXT,
+    detail TEXT
+);
+
+CREATE INDEX playback_session_event_session ON playback_session_event(session_id, at);
+
+upsert:
+INSERT OR REPLACE INTO playback_session(id, owner_user_id, owner_name, target_kind, target_id, target_name, lane, kind,
+    item_id, book_id, queue_json, queue_index, position_ms, position_at, state, options_json, revision,
+    started_by_device_id, jellyfin_play_session_id, offline, end_reason, ended_by, created_at, updated_at, ended_at)
+VALUES ?;
+
+-- Live rows plus the ones that ended at or after :since (the 60 s fade and the admin's *Ended today*).
+liveOrEndedSince:
+SELECT * FROM playback_session WHERE ended_at IS NULL OR ended_at >= :since ORDER BY created_at;
+
+deleteEndedBefore:
+DELETE FROM playback_session WHERE ended_at IS NOT NULL AND ended_at < :before;
+
+insertEvent:
+INSERT INTO playback_session_event(session_id, at, what, source, detail) VALUES (?, ?, ?, ?, ?);
+
+eventsFor:
+SELECT * FROM playback_session_event WHERE session_id = :session_id ORDER BY at, id;
+
+deleteEventsBefore:
+DELETE FROM playback_session_event WHERE at < :before;

@@ -226,3 +226,15 @@ items; one is for the owner.
    fire; the session's timeline already says what happened, and the Dashboard shows nothing when nothing is wrong
    (285).
 2. The admin sees **every** session, across networks (R368's household rule is for viewers only).
+
+## Build notes (2026-10-04)
+
+**304a built** with R368: *Playing now* above People on Users & devices (`src/wasmJsMain/…/ui/PlayingNow.kt`, styles in
+`design/app/wf.css`): person, artwork + title, place with its icon, state (incl. *Reconnecting after a restart*),
+position + progress, how long it has run and *started from {app}*; a click opens the session's timeline; *Ended today*
+under the live rows; *Nothing is playing anywhere.* when empty. Seeded from `GET /api/tv/admin/playback/sessions`
+(cookie-gated, every owner and network, no visibility filter) and following `JobEvent.PlaybackSessions` on `/ws`.
+The timeline is `playback_session_event` (66.sqm): started · paused/resumed (on a change of `is_paused` only) ·
+reconnected · offline · ended + reason; the hourly sweep drops events and ended rows older than 7 days. FR-304-5 dropped
+(owner). The per-user *Now watching* line reads the session table (R368 shipped bug 1). Tests: `AdminSessionListTest`,
+`PlaybackSessionsTest` (timeline + sweep). 304b: see below once built.

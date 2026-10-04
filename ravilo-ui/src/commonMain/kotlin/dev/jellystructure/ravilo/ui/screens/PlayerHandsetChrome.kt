@@ -10,6 +10,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -760,10 +762,15 @@ internal object SheetDrag {
  *  sheet makes; when that keeps the sheet up (a picker going back a level) it springs back. [dismissible] false is
  *  a sheet that must be answered: tap-away and drag both leave it where it is. */
 @Composable
-internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: Boolean = true, content: @Composable () -> Unit) {
+internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: Boolean = true,
+                          /** R368 (dev review item 13) — on a computer, a popover under the toolbar instead of a dialog. */
+                          popover: Boolean = false, content: @Composable () -> Unit) {
     // R337 — a computer's window shows the same content as a dialog in its middle: a sheet rising from the foot of a
     // 1200 dp window, across the sidebar, is a phone's gesture. (The phone layout in a narrow window keeps the sheet.)
-    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) { DeskDialog(visible, onDismiss, dismissible, content); return }
+    if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) {
+        if (popover) DeskPopover(visible, onDismiss, content) else DeskDialog(visible, onDismiss, dismissible, content)
+        return
+    }
     val density = LocalDensity.current
     val flingPx = with(density) { SheetDrag.FLING_DP_PER_SEC.dp.toPx() }
     val overPx = with(density) { SheetDrag.MAX_OVER_DP.dp.toPx() }
@@ -870,6 +877,30 @@ internal fun HandsetSheet(visible: Boolean, onDismiss: () -> Unit, dismissible: 
                 Spacer(Modifier.height(8.dp))
                 content()
             }
+        }
+    }
+}
+
+/**
+ * R368 (FR-R368-7, canvas §B8, dev review item 13) — the desktop's *Play on…* popover: under the toolbar's glyph at the
+ * window's top right, 380 dp wide, no dimming; a click anywhere else closes it.
+ */
+@Composable
+private fun DeskPopover(visible: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    if (visible) Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss))
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+        val maxH = maxHeight * 0.8f
+        AnimatedVisibility(visible = visible, enter = fadeIn(tween(120)) + androidx.compose.animation.scaleIn(tween(120), initialScale = 0.97f), exit = fadeOut(tween(100))) {
+            val shape = RoundedCornerShape(12.dp)
+            Column(
+                Modifier.padding(top = 52.dp, end = 14.dp).width(380.dp).heightIn(max = maxH)
+                    .shadow(24.dp, shape).clip(shape)
+                    .background(if (RaviloTheme.colors.isLight) RaviloTheme.colors.surface else CARD)
+                    .border(1.dp, RaviloTheme.colors.fg.copy(alpha = 0.10f), shape)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 6.dp, bottom = 6.dp),
+            ) { content() }
         }
     }
 }

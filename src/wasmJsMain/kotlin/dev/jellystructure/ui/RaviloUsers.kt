@@ -47,10 +47,12 @@ fun renderRaviloUsers(container: Element, scope: CoroutineScope) {
           <button id="users-refresh-btn" class="btn sm ghost">Refresh</button>
         </div>
         <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. A device's <b>version history</b> is dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
+        ${playingNowHtml()}
         <div id="users-list"><span class="muted tiny">Loading…</span></div>
     """.trimIndent()
 
     scope.launch { loadUsersCard(scope) }
+    loadPlayingNow(scope)   // 304a — every playback session, above People
 }
 
 private suspend fun loadUsersCard(scope: CoroutineScope) {

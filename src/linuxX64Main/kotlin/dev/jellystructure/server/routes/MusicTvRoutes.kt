@@ -68,7 +68,7 @@ fun Route.musicTvRoutes(
         if (audiobookId != null) {
             val partId = audiobooks?.partId(device, audiobookId, req.part ?: 0)
                 ?: return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
-            return@post call.respond(playback.startMusicPlayback(device, partId, req.capabilities, req.startPositionMs))
+            return@post call.respond(playback.startMusicPlayback(device, partId, req.capabilities, req.startPositionMs, bookId = audiobookId))   // R368: kind = audiobook
         }
         val trackId = req.trackId ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "track_id or audiobook_id"))
         val track = store.track(trackId)

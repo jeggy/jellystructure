@@ -55,6 +55,11 @@ sealed class JobEvent {
 
     @Serializable @SerialName("pipeline_resumed")
     data class Resumed(val jobId: String) : JobEvent()
+
+    /** 304 (dev review item 2) — every playback session, for the admin's *Playing now* (the whole list each time:
+     *  it is a few rows). Pushed whenever R368 pushes to the apps; the page seeds from the GET and follows these. */
+    @Serializable @SerialName("playback_sessions")
+    data class PlaybackSessions(val list: dev.jellystructure.model.AdminSessionList) : JobEvent()
 }
 
 /** Phase 109 — everything the Activity ▸ Jobs page needs to render one row, in one shape shared by the

@@ -74,7 +74,12 @@ fun ScreensSheet(
     onAirplay: () -> Unit = {},
     /** R324 (FR-R324-1) — the music-mode sheet: *Play on…*, the audio routes first; video mode lists no speaker. */
     music: Boolean = false,
+    /** R368 (FR-R368-7) — a *Playing everywhere* row tapped (R369: its remote). */
+    onOpenSession: (dev.jellystructure.shared.tv.SessionView) -> Unit = {},
+    /** R368 (FR-R368-9) — ⏯ on a row the server says this device controls. */
+    onSessionPlayPause: ((dev.jellystructure.shared.tv.SessionView) -> Unit)? = null,
 ) {
+    val sessionsState = rememberSessionsState()
     var devices by remember { mutableStateOf<List<RemoteDevice>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var tier2Open by remember { mutableStateOf(ScreensSheetPrefs.tier2Open()) }
@@ -98,7 +103,8 @@ fun ScreensSheet(
     }
     // R360 (dev review item 4) — the sheet can no longer open empty (*Add a TV* and its hint are gone): with no row at
     // all and nothing to stop, it closes itself rather than showing a bare title.
-    val hasRows = devices.any { it.kind == DeviceKind.SCREEN } || visibleCastRoutes(routes, music).isNotEmpty() || airplayAvailable
+    val hasRows = devices.any { it.kind == DeviceKind.SCREEN } || visibleCastRoutes(routes, music).isNotEmpty() || airplayAvailable ||
+        sessionsState.sessions.isNotEmpty()   // R368 — a *Playing everywhere* row is part of the list
     LaunchedEffect(open, loaded, hasRows, link) {
         if (open && loaded && !hasRows && link == CastLinkState.NONE) onClose()
     }
@@ -127,12 +133,14 @@ fun ScreensSheet(
         if (music && r.busyWith != null && !connectedTo(r) && !r.busyWith.equals("Ravilo", ignoreCase = true)) { takeOver = r; return }
         startRoute(r)
     }
-    HandsetSheet(visible = open, onDismiss = onClose) {
+    HandsetSheet(visible = open, onDismiss = onClose, popover = true) {   // R368 — a popover on a computer
         val pending = takeOver
         if (pending != null) {
             TakeOverSheetBody(route = pending, onBack = { takeOver = null }, onConfirm = { takeOver = null; startRoute(pending) })
         } else {
             ScreensSheetBody(
+                // R368 (FR-R368-7) — *Playing everywhere* on top, under the title; absent when nothing plays anywhere.
+                top = { PlayingEverywhereSection(sessionsState, onOpen = { onClose(); onOpenSession(it) }, onPlayPause = onSessionPlayPause) },
                 devices = devices, routes = routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,
                 playingTitle = status?.takeIf { it.loaded }?.title, music = music,
                 tier2Open = tier2Open,
@@ -149,6 +157,7 @@ fun ScreensSheet(
 
 @Composable
 private fun ScreensSheetBody(
+    top: @Composable () -> Unit = {},
     devices: List<RemoteDevice>, routes: List<CastRoute>, loaded: Boolean, lastDevice: String?, myUserId: String?,
     playingTitle: String?, music: Boolean, tier2Open: Boolean, onToggleTier2: () -> Unit,
     onTapDevice: (RemoteDevice) -> Unit, onTapRoute: (CastRoute) -> Unit, isConnected: (CastRoute) -> Boolean,
@@ -171,6 +180,7 @@ private fun ScreensSheetBody(
     val tier2Count = rest.size + castRows.size
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         SheetHeader(str(if (music) "cast.sheet_music" else "screens.title"), onClose)
+        top()
         if (!loaded) {
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.5.dp, modifier = Modifier.height(28.dp).width(28.dp))

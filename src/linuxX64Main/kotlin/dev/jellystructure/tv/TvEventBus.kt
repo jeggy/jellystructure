@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import dev.jellystructure.shared.tv.EVENTS_FEATURE_SESSIONS
 
 private fun String.jsonEsc(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -40,7 +41,7 @@ class TvEventBus(private val scope: CoroutineScope) {
      * device always succeeds (it just overwrites its own entry) so existing TVs are never punished by
      * the cap.
      */
-    suspend fun tryRegister(userId: String, deviceId: String, session: DefaultWebSocketServerSession): Boolean = mutex.withLock {
+    suspend fun tryRegister(userId: String, deviceId: String, session: DefaultWebSocketServerSession, features: Set<String> = emptySet()): Boolean = mutex.withLock {
         val totalDevices = sessions.values.sumOf { it.size }
         val isNewDevice = sessions[userId]?.containsKey(deviceId) != true
         if (isNewDevice && totalDevices >= MAX_TV_EVENT_SESSIONS) {
@@ -48,6 +49,7 @@ class TvEventBus(private val scope: CoroutineScope) {
             return@withLock false
         }
         sessions.getOrPut(userId) { mutableMapOf() }[deviceId] = session
+        socketFeatures[session] = features   // R368 (dev review item 2) — what this socket opted into
         flaps.connected(deviceId)
         Logger.info("TV events: device $deviceId connected for user $userId (${sessions[userId]?.size} live)", "tv")
         true
@@ -65,6 +67,7 @@ class TvEventBus(private val scope: CoroutineScope) {
             if (map[deviceId] === session) map.remove(deviceId) else if (map.containsKey(deviceId)) replaced = true
             if (map.isEmpty()) sessions.remove(userId)
         }
+        socketFeatures.remove(session)
         flaps.closed(deviceId, openMs)
         replaced
     }
@@ -79,6 +82,49 @@ class TvEventBus(private val scope: CoroutineScope) {
     /** Phase 110 — is this device's `/api/tv/events` socket currently open? Used by the stop watchdog
      *  to force-stop playback the moment a TV disconnects, not just after the heartbeat timeout. */
     suspend fun isConnected(deviceId: String): Boolean = mutex.withLock { sessions.values.any { deviceId in it } }
+
+    // ── R368 — playback sessions, only to sockets that asked (`features=sessions`, dev review item 2) ─────────────
+
+    /** socket → the `features=` it opened with. An installed app opens without, so it never receives a session event
+     *  (it would read one as "the config changed" and re-fetch its config on every pause in the house). */
+    private val socketFeatures = HashMap<DefaultWebSocketServerSession, Set<String>>()
+
+    /** Does [deviceId]'s live socket carry [feature]? (R369: who obeys `session_command`.) */
+    suspend fun hasFeature(deviceId: String, feature: String): Boolean = mutex.withLock {
+        sessions.values.firstNotNullOfOrNull { it[deviceId] }?.let { feature in (socketFeatures[it] ?: emptySet()) } == true
+    }
+
+    /** Every live (userId, deviceId) whose socket opted into [feature] — R370's targets, R369's routing. */
+    suspend fun socketsWith(feature: String): List<Pair<String, String>> = mutex.withLock {
+        sessions.flatMap { (u, m) -> m.filter { (_, s) -> feature in (socketFeatures[s] ?: emptySet()) }.map { (d, _) -> u to d } }
+    }
+
+    /**
+     * R368 (dev review item 9) — one payload per opted-in socket, built by [build] for that viewer (`mine`, `here`,
+     * `controllable` and what they may see differ per viewer); null skips the socket. Non-blocking.
+     */
+    fun notifySessions(build: suspend (userId: String, deviceId: String) -> String?) {
+        scope.launch {
+            val targets = mutex.withLock {
+                sessions.flatMap { (u, m) -> m.filter { (_, s) -> EVENTS_FEATURE_SESSIONS in (socketFeatures[s] ?: emptySet()) }.map { (d, s) -> Triple(u, d, s) } }
+            }
+            for ((u, d, s) in targets) {
+                val msg = runCatching { build(u, d) }.getOrNull() ?: continue
+                runCatching { s.send(Frame.Text(msg)) }
+            }
+        }
+    }
+
+    /** R369 (dev review item 3) — `session_command` to the session's target, found the way [notifyPlayerCommand] finds it. */
+    fun notifySessionCommand(userId: String, deviceId: String, json: String) {
+        scope.launch {
+            val target = mutex.withLock { targetFor(userId, deviceId) } ?: return@launch
+            runCatching { target.send(Frame.Text(json)) }
+        }
+    }
+
+    /** R370 — one directive to one device's socket (`session_load`, `cast_relay_load`, `targets_changed`). */
+    fun notifyDevice(userId: String, deviceId: String, json: String) = notifySessionCommand(userId, deviceId, json)
 
     /** R141: monotonic rev — exposed so the degrade-to-poll `/api/tv/config/rev` endpoint can serve it. */
     suspend fun currentRev(): Long = mutex.withLock { rev }

@@ -16,7 +16,9 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     # R373 — the other copies of a song (Also on)
     'MusicTrackCopies',
     # Phase 281 — the phone's audiobooks
-    'AudiobookShelf', 'AudiobookDetail', 'AudiobookAuthorDetail', 'AudiobookPosition', 'AudiobookBookmarkItem']
+    'AudiobookShelf', 'AudiobookDetail', 'AudiobookAuthorDetail', 'AudiobookPosition', 'AudiobookBookmarkItem',
+    # R368 — playback sessions
+    'SessionList', 'SessionView', 'SessionListEnvelope', 'SessionStateEnvelope']
 REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',
     'PlaybackProgressRequest', 'PlaybackQoeReport', 'PlaybackRestreamRequest', 'PlaybackStartRequest',
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',

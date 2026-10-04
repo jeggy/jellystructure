@@ -15,7 +15,7 @@ ROOT=ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui
 # file (under $ROOT)                            allowed
 ALLOWED="
   components/AppBar.kt                          1
-  components/Cast.kt                            8
+  components/Cast.kt                            9
   components/CertBadge.kt                       4
   components/ChannelCard.kt                     2
   components/DesktopNav.kt                      4

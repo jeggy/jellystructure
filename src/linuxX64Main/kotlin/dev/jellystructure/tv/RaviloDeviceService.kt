@@ -342,8 +342,14 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
      *  clear — a proxy that occasionally fails to set the header must not un-group an already-placed TV. */
     fun recordAddress(deviceId: String, jellyfinUserId: String, address: String?) {
         val a = address?.trim()?.ifBlank { null } ?: return
+        val before = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId).executeAsOneOrNull()?.last_public_address
         db.raviloDeviceQueries.updatePublicAddress(last_public_address = a, device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+        if (before != a) runCatching { onAddressChanged?.invoke(deviceId) }   // R368 owner decision 2
     }
+
+    /** R368 (owner decision 2) — a device's public address moved: the household it belongs to may have changed, so
+     *  every opted-in socket gets a fresh session list. */
+    var onAddressChanged: ((deviceId: String) -> Unit)? = null
 
     fun unpair(deviceToken: String) {
         tokenCache.remove(deviceToken)?.let { DeviceIdentityRegistry.forget(it.data.jellyfinUserToken) }

@@ -119,6 +119,8 @@ data class AudiobookProgressRequest(
      *  app older than R357 or a player that cannot know them. An older server ignores them. */
     @SerialName("volume_percent") val volumePercent: Int? = null,
     val muted: Boolean? = null,
+    /** R368 (dev review item 8) — the server's playback session (from the part's [StreamTicket.sessionId]); optional. */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 @Serializable

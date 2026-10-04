@@ -534,6 +534,11 @@ fun RaviloApp(
                     previousSockets = eventsSocketLog.headerValue(),
                     closeWhen = { socketWanted.first { !it }; "background" },
                     remote = REMOTE_DECLARATION_APP,   // R354 (FR-R354-1)
+                    // R368 (dev review item 2) — the phone, the computer and the web app opt into session events; the TV
+                    // does not (FR-R368-10), and an installed app without this never receives one.
+                    features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform)),
+                    onSessionList = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onList(it) },
+                    onSessionState = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onState(it) },
                     onOpen = {
                         openedAt = Clock.System.now()
                         serverOpens.value = serverOpens.value + 1
@@ -1077,6 +1082,15 @@ fun RaviloApp(
         fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
             d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker &&
             (!isDesktopPlatform || inMusic || musicState.playing || deskBarKeptOn == d)
+        // R368 (FR-R368-8) — with nothing playing on this device, the bar shows a session elsewhere: the one this app
+        // touched last, else the latest playing one; in films mode only music and books.
+        val sessionsNow by dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.collectAsState()
+        val touchedSession by dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touched.collectAsState()
+        val barSession = dev.jellystructure.ravilo.ui.sessions.pickBarSession(sessionsNow.sessions, touchedSession, filmsMode = !inMusic)
+        fun sessionBarOver(d: Dest) = handset && !musicState.active && barSession != null && d !is Dest.MusicPlaying && d !is Dest.Player &&
+            d !is Dest.LiveTv && d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
+        /** The bottom slot the music bar or the session bar takes (the two never show together). */
+        fun anyMusicBarOver(d: Dest) = musicMiniOver(d) || sessionBarOver(d)
         // FR-R324-7 — opening Playing brings a hidden bar back.
         LaunchedEffect(stack.lastOrNull()) { if (stack.lastOrNull() is Dest.MusicPlaying) dev.jellystructure.ravilo.ui.music.MusicCast.barHidden.value = false }
         // FR-R322-6 — landscape Playing is full-screen, not a tab.
@@ -1187,6 +1201,8 @@ fun RaviloApp(
         // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing
         // playing there is no bar, and a queue beside a film's page would be a panel about nothing on screen.
         fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && (deskBarShows(d) || d is Dest.MusicPlaying)
+        // R368 (FR-R368-8) — the desktop's bar for a session elsewhere, when nothing plays on this computer.
+        fun deskSessionBarShows(d: Dest) = deskFramed(d) && !musicState.active && barSession != null && d !is Dest.MusicPlaying
         // FR-R322-3 — nothing playing: the last queue this device kept (where it was), else the viewer's last-played song,
         // loaded paused and not started. The phone does it on the Playing tab; the desktop on entering music mode, where
         // the player bar is always there (FR-R337-6).
@@ -1267,6 +1283,14 @@ fun RaviloApp(
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
         SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId; castController.musicEnabled = castMusic }
         LaunchedEffect(castController, screensPaired, configRefreshes) { castController.screensPaired = screensPaired }
+        // R368 (amends FR-R360-1) — a *Playing everywhere* row counts toward the glyph like a device.
+        LaunchedEffect(castController) {
+            dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.collect { s ->
+                castController.sessionRowCount.value = s.sessions.count { it.state != "ended" }
+            }
+        }
+        // Another profile: nothing of the last viewer's household stays on screen until the new socket's list arrives.
+        LaunchedEffect(activeUserId) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.clear() }
         // R324 — the music bridge reads the one controller; the screens read MusicPlayback, which follows the link.
         LaunchedEffect(castController) { dev.jellystructure.ravilo.ui.music.MusicCast.bind(castController) }
         // R356 (FR-R356-6) — back on screen with a cast connected: the sender asks the receiver where it is, and rejoins
@@ -1486,12 +1510,12 @@ fun RaviloApp(
             // so the four pages do not each have to remember it.
             val navBarInset = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                 // R337 (FR-R337-6) — and by the desktop's player bar while it shows.
-                (if (deskBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
+                (if (deskBarShows(dest) || deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.desktopMusicBarInset() else 0.dp) +
                 // FR-R267-8 — "the content's bottom padding is the sum of the two": while the cast mini
                 // bar floats over this page, the page pads by it as well, or its last row sits under it.
                 (if (miniBarOver(dest)) RaviloDimens.castMiniBarHeight else 0.dp) +
-                // R322 (dev review 10) — and by the music mini bar too, when it shows.
-                (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)
+                // R322 (dev review 10) — and by the music mini bar too, when it shows (R368: or the session bar).
+                (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)
             Box(
                 modifier = if (playingFullscreen) Modifier.fillMaxSize()
                 // R274 (FR-R274-3) — the bar's height goes INTO the seam, not after it: the result is
@@ -2381,6 +2405,16 @@ fun RaviloApp(
             modifier = Modifier.align(Alignment.BottomCenter),
             queueOverlay = queueOpen && !deskLarge && deskQueueShows(dest),
         )
+        val deskSession = barSession
+        if (deskSession != null && deskSessionBarShows(dest)) dev.jellystructure.ravilo.ui.music.DesktopSessionBar(
+            session = deskSession,
+            more = dev.jellystructure.ravilo.ui.sessions.barMoreCount(sessionsNow.sessions, deskSession),
+            onOpen = { s -> castController.openSession(s) },
+            onMore = { castController.openSheet(music = inMusic) },
+            onPlayPause = { s -> castController.sessionPlayPause(s) },
+            onNext = castController.sessionNext,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
         // R337 (FR-R337-8) — 600–1199 dp: the queue over the content, from the right.
         if (desktop && queueOpen && !deskLarge && deskQueueShows(dest)) {
             // A click beside the panel closes it (the capsule's queue button and Esc do too).
@@ -2583,7 +2617,7 @@ fun RaviloApp(
                         // R278 (FR-R278-4) — the same "is there a bar" answer the content pads by.
                         .padding(bottom = (if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) +
                             // R322 (FR-R322-10) — with a film casting too the bars stack: the cast bar on top, music under it.
-                            (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)),
+                            (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp)),
                 ) { CastMiniBar(onOpen = { push(Dest.CastRemote(currentDisplayNameForCast)) }) }
             }
         }
@@ -2598,10 +2632,26 @@ fun RaviloApp(
                 }
             }
         }
+        // R368 (FR-R368-8) — the same slot, for a session elsewhere when nothing plays here.
+        val shownSession = barSession
+        if (shownSession != null && sessionBarOver(dest)) {
+            Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false), contentAlignment = Alignment.BottomCenter) {
+                Box(Modifier.padding(bottom = if (handset && barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp)) {
+                    dev.jellystructure.ravilo.ui.components.SessionMiniBar(
+                        session = shownSession,
+                        more = dev.jellystructure.ravilo.ui.sessions.barMoreCount(sessionsNow.sessions, shownSession),
+                        onOpen = { s -> castController.openSession(s) },
+                        onMore = { castController.openSheet(music = inMusic) },
+                        onPlayPause = { s -> castController.sessionPlayPause(s) },
+                        onNext = castController.sessionNext,
+                    )
+                }
+            }
+        }
         if (handset) {
             Box(Modifier.fillMaxSize().safeAreaPadding(includeIme = false)) {
                 dev.jellystructure.ravilo.ui.music.MusicToastHost(
-                    (if (barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) + (if (musicMiniOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp),
+                    (if (barShows(dest)) RaviloDimens.bottomNavHeight else 0.dp) + (if (anyMusicBarOver(dest)) RaviloDimens.musicMiniBarHeight else 0.dp),
                 )
             }
             // FR-R322-11 — ⋯ on a song, over every music page.

@@ -443,6 +443,25 @@ class PlaybackService(
     /** R248 (FR-R248-2) — called with the device once a queued STOP has landed in Jellyfin (Main wires
      *  it to `HomeFeedService.invalidatePlaystate`, which ends with the `home_changed` push). Never
      *  called for a stop that was abandoned; a throw here never turns the landed stop into a retry. */
+    /** R368 — the playback sessions above the tracker (null in tests that never look at sessions). */
+    var sessions: PlaybackSessions? = null
+
+    /**
+     * R368 (FR-R368-4, dev review item 12 b/c) — after a restart: every session that wasn't ended comes back
+     * *reconnecting*, and the tracker entry and R343's plan of its current item are rebuilt from the row — with
+     * Jellyfin's own play-session id, so phase 180 can still release a transcode started before the restart, and a
+     * shuffle or a Start over still reports the right resume point at its stop.
+     */
+    suspend fun restoreSessions(deviceOf: (deviceId: String, userId: String) -> DeviceData?) {
+        val restored = sessions?.restore() ?: return
+        for (s in restored) {
+            val device = deviceOf(s.targetId, s.ownerUserId) ?: continue
+            if (s.itemId.isBlank()) continue
+            playbackTracker.started(device, s.itemId, s.positionMs, s.jellyfinPlaySessionId, directPlay = s.options.directPlay)
+            s.options.plan()?.let { plan -> plansMutex.withLock { plans[PlaybackKey(device.deviceId, s.itemId)] = plan } }
+        }
+    }
+
     var onStopLanded: (suspend (DeviceData, String) -> Unit)? = null  // Phase 230 — (device, stopped Jellyfin id)
 
     /** Phase 219 — what one queued write does: the same token + identity + ids the inline path used. */
@@ -651,6 +670,11 @@ class PlaybackService(
             }
         }
 
+        // R368 (FR-R368-2) — the session: joins the one on this (device, lane) or starts one; its id rides the ticket.
+        val sessionId = if (startResult.stopAlreadyArrived) null else runCatching {
+            sessions?.onStart(device, jellyfinId, startPositionMs, jellyfinPlaySessionId, plan = plan, directPlay = !needsTranscode)
+        }.onFailure { Logger.warn("Playback sessions: start failed: ${it.message}", "tv") }.getOrNull()
+
         if (startResult.stopAlreadyArrived) {
             // Phase 180 (FR-180-3) — a stop for this exact key already arrived while we were still
             // negotiating (R218's abandon-during-negotiation case): the viewer already left. Tear down
@@ -684,6 +708,7 @@ class PlaybackService(
             expiresAt = nowMs() + TICKET_TTL_MS,
             // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
+            sessionId = sessionId,   // R368 (dev review item 8)
         ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived)
     }
 
@@ -695,7 +720,9 @@ class PlaybackService(
      * construction (dev review 3). A song always starts at 0 unless the phone says where (Jellyfin keeps no music
      * position; a resumed queue carries its own).
      */
-    suspend fun startMusicPlayback(device: DeviceData, trackId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null): StreamTicket {
+    suspend fun startMusicPlayback(device: DeviceData, trackId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null,
+                                   /** R368 (dev review item 4) — the book this part belongs to: the session's kind is `audiobook`. */
+                                   bookId: String? = null): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — sign in again to continue listening.")
@@ -719,6 +746,11 @@ class PlaybackService(
             playbackTracker.stopped(device, trackId)
             releaseSession(device, trackId, startMs, jellyfinPlaySessionId)
         }
+        // R368 (FR-R368-2) — one session per queue: a song boundary joins the session the last song left held.
+        val sessionId = if (startResult.stopAlreadyArrived) null else runCatching {
+            sessions?.onStart(device, trackId, startMs, jellyfinPlaySessionId, bookId = bookId, directPlay = !needsTranscode,
+                kindHint = if (bookId != null) SessionKind.AUDIOBOOK else SessionKind.MUSIC)
+        }.onFailure { Logger.warn("Playback sessions: start failed: ${it.message}", "tv") }.getOrNull()
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
             accessToken = "",   // R271 — present and empty, never the token
@@ -728,13 +760,16 @@ class PlaybackService(
             hlsUrl = url,
             startPositionMs = startMs,
             expiresAt = nowMs() + TICKET_TTL_MS,
+            sessionId = sessionId,
         )
     }
 
     /** [volumePercent]/[muted] — R357 (FR-R357-2): the player's volume as its report carried it, forwarded to
      *  Jellyfin's session (`PlayState.VolumeLevel`/`IsMuted`); null leaves Jellyfin's body as it always was. */
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean,
-                               volumePercent: Int? = null, muted: Boolean? = null) {
+                               volumePercent: Int? = null, muted: Boolean? = null,
+                               /** R368 (dev review item 8) — the ticket's session; absent ⇒ matched by (device, item). */
+                               sessionId: String? = null) {
         // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
         // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would
         // only strand a phantom "Now Playing" in Jellyfin, the exact bug class the watchdog above
@@ -744,6 +779,9 @@ class PlaybackService(
             Logger.info("Ignoring progress for already-stopped playback item=$jellyfinId device=${device.deviceId}", "tv")
             return
         }
+        // R368 (FR-R368-3) — the session stores the position; only a change is pushed (review item 9).
+        runCatching { sessions?.onProgress(device, jellyfinId, positionMs, isPaused, sessionId) }
+            .onFailure { Logger.warn("Playback sessions: progress failed: ${it.message}", "tv") }
         // R343 (FR-R343-4) — a Start over past 5 %: clear the series in the background (never awaited here).
         maybeStartOverClear(device, jellyfinId, positionMs)
         StartOverHolds.move(device.jellyfinUserId, jellyfinId, positionMs)   // FR-R343-13 — only if a hold stands
@@ -761,7 +799,9 @@ class PlaybackService(
         )
     }
 
-    suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long, startupMs: Long? = null) {
+    suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long, startupMs: Long? = null,
+                             /** R368 (dev review item 8) — the ticket's session; absent ⇒ matched by (device, item). */
+                             sessionId: String? = null) {
         // No requireVisible() here deliberately — same reasoning as reportProgress above: this is
         // cleanup for a session startPlayback already gated, and it's also called from the stop
         // watchdog for stale/disconnected devices. Blocking it would risk leaving a phantom "Now
@@ -780,6 +820,9 @@ class PlaybackService(
         val plan = plansMutex.withLock { plans.remove(key).also { cleared = clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.durationMs, creditsStartMs = it.creditsStartMs) }
         val decision = resolveStop(positionMs, plan)
         val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId)
+        // R368 (review item 6) — the session is held 15 s for the next song, part or episode.
+        runCatching { sessions?.onStop(device, jellyfinId, positionMs, sessionId) }
+            .onFailure { Logger.warn("Playback sessions: stop failed: ${it.message}", "tv") }
         Logger.info("playback stop: device=${device.deviceId} item=$jellyfinId at ${positionMs}ms" +
             (if (decision.reportMs != positionMs) " (reported ${decision.reportMs}ms: ${if (decision.markPlayed) "finished at its credits, R347" else "shuffled, R343"})" else ""), "tv")   // R292 — the number the resume record carries
         // R343 — a cleared Start over episode that did not finish stays unwatched at its position (see the sink).
@@ -1008,13 +1051,20 @@ class PlaybackService(
         // a plain `.filter { }` lambda is not inline and can't call a suspend function.
         val stale = buildList {
             for (p in tracked) {
-                if (playbackTracker.isHeartbeatStale(p) || (PlaybackTracker.needsEventsSocket(p.device) && !isDeviceConnected(p.device.deviceId))) add(p)
+                // R368 (review item 12 a) — a session still reconnecting after a restart is judged by heartbeat alone:
+                // its progress may arrive before its events socket comes back.
+                val reconnecting = sessions?.isReconnecting(p.device.deviceId) == true
+                val stale = playbackTracker.isHeartbeatStale(p)
+                val needsSocket = PlaybackTracker.needsEventsSocket(p.device)
+                if (shouldForceStop(stale, needsSocket, !needsSocket || isDeviceConnected(p.device.deviceId), reconnecting)) add(p)
             }
         }
         for (p in stale) {
             Logger.info("Stop watchdog: force-stopping stale playback item=${p.jellyfinId} device=${p.device.deviceId}", "tv")
             runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs) }
                 .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
+            // FR-R368-2 — the watchdog's reap ends the session (R372 turns this into paused and offline).
+            runCatching { sessions?.onReaped(p.device, p.jellyfinId) }
             // Phase 236 (FR-236-8) — a screen's status is display state, not tied to the Jellyfin stop
             // call's own success; clear it regardless of whether the stop above landed.
             runCatching { onDeviceReaped?.invoke(p.device.deviceId) }

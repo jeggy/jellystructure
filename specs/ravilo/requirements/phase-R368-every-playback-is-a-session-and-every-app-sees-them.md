@@ -591,3 +591,52 @@ owner. Seventeen items.
    becomes *paused, offline* and is kept 24 h like any other silent place (R372-4 wins).
 4. **A viewer's own sessions are always listed**, on any network (owner, 2026-10-04): the household rule filters
    only other people's sessions. The *Tests* section's "own session on another network is listed" case stands.
+
+## Build notes (2026-10-04)
+
+Built as the dev review and the owner decisions shape it (routes under `/api/tv/playback/…`, `features=sessions`,
+one live session per (target, lane), the 15 s hold, `queue_index`, `reconnecting` as a flag, the household as 236's
+`nearby` rule, a hidden title = person + place + state, a viewer's own sessions always listed).
+
+**Server.**
+- Migration **`66.sqm`** + `PlaybackSession.sq`: `playback_session` (with `lane`, `queue_index`, `started_by_device_id`,
+  `end_reason`, `ended_by`, `jellyfin_play_session_id`, `offline`) and 304's `playback_session_event`. Drops nothing.
+  ⚠ Number taken at HEAD `1b123212`; parallel branches may take 66 too — renumber at integration if so.
+- `tv/PlaybackSessions.kt` — the pure rules (`sessionLane`, `startDecision`, `isSessionChange`, `targetIcon`,
+  `sessionViewFor`, `shouldForceStop`, `parseEventFeatures`, `endedTodaySince`, `placeName`) and the service (in memory
+  + the table, fake-clock injectable). Hooks in `PlaybackService`: `startPlayback`, `startMusicPlayback` (new `bookId`
+  from `MusicTvRoutes` ⇒ `audiobook`), `reportProgress`, `stopPlayback` (all take an optional `session_id`), the
+  watchdog (`shouldForceStop`: a reconnecting session is judged by heartbeat alone, item 12 a) and its reap.
+  `PlaybackTracker` is untouched (306's `withProgress` kept).
+- Restart (FR-R368-4, item 12 b/c): `restoreSessions` reloads every live row *reconnecting*, rebuilds the tracker entry
+  with `jellyfin_play_session_id` + `directPlay`, and R343/R375's whole `SessionPlan` from `options_json` — shipped
+  bug 2 fixed. Silent for 2 min ⇒ `ended` (`no_return_after_restart`); R372 changes this.
+- `tv/SessionPublisher.kt` builds each socket's list (`mine`/`here`/`controllable`/visibility via the playback rules:
+  `visibleTo`, `musicVisible`) and fans out: the list on start/end, `session_state` on a change; heartbeats push nothing.
+  `TvEventBus` keeps each socket's `features`; `notifySessions` sends only to opted-in sockets. An opted-in socket gets
+  the list on connect (`Server.kt`). An address change re-sends the list (owner decision 2). `CastService.onRedeemed`
+  records which phone minted a receiver's code (FR-R368-9's `controllable`).
+- `GET /api/tv/playback/sessions` (`PlaybackSessionRoutes.kt`); `StreamTicket.session_id`, and an optional `session_id`
+  on `PlaybackProgressRequest`/`PlaybackStopRequest`/`AudiobookProgressRequest` (all additive; the apps do not echo it
+  yet — the (device, item) fallback carries them).
+- Shipped bug 1: the admin's *▶ playing* line reads the live session's title (`PlaybackSessions.titleOn`).
+
+**Client.** `shared/…/tv/Sessions.kt` (wire types), `TvApiClient.connectEvents(features=, onSessionList, onSessionState, …)`
+— session events handled explicitly, never `else`; the URL is byte-identical without features. `ravilo-ui/…/sessions/
+PlaybackSessions.kt` — the store (last list + higher-revision states) and the pure rules (`orderSessionRows`,
+`sessionsElsewhereCount`, `castIconShown`, `pickBarSession`, `barMoreCount`, `drawnPositionMs`, `eventsFeaturesFor`).
+*Playing everywhere* (`components/PlayingEverywhere.kt`) heads the *Play on…* sheet; the glyph carries the count
+(`SessionCountBadge`) and a row counts toward R360's rule (`CastController.sessionRowCount`). The phone's bar
+(`SessionMiniBar`) and the desktop's (`DesktopSessionBar`, capsule / GNOME) show a session elsewhere when nothing plays
+here (touched-last rule, +N). The desktop's sheet is now a **popover** under the toolbar (`HandsetSheet(popover = true)`).
+The TV does not opt in. Strings `session.everywhere/person_listening/person_watching/reconnecting/paused/pause`.
+
+**Tests.** `PlaybackSessionRulesTest` (20), `PlaybackSessionsTest` (19, incl. the restart cases),
+`TvEventBusSessionsIntegrationTest` (loopback sockets: an un-opted app and the TV get no frame), `AdminSessionListTest`
+(2), `WireCompatTest` green (four new roots); `ravilo-ui` `PlaybackSessionsTest` (18) and Robolectric
+`PlayingEverywhereSheetTest` (7). Not written: the migration-upgrade test (no raw-SQL hook on the DB handle) and the
+Playwright spec.
+
+**Only a device / live server can confirm:** acceptance 1's "within a second"; a dev-backend restart during a cast and
+during a film (rows read *Reconnecting…*); the household rule behind the real proxy; an installed older build showing no
+rise in `/api/tv/config`; the desktop popover on the Mac and Linux.

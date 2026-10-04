@@ -534,6 +534,8 @@ fun main() = runBlocking {
                 .onFailure { Logger.warn("Policy refresh (interval) failed: ${it.message}", "auth") }
         }
     }
+    // R368 + 304a — every playback is a session; restored after a restart, published to the apps and the admin.
+    val sessionPublisher = dev.jellystructure.tv.wirePlaybackSessions(db, rootScope, mediaStore, musicPipeline, raviloDeviceService, tvEventBus, playbackService, castService, broadcaster)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
@@ -546,6 +548,7 @@ fun main() = runBlocking {
         playPushResolver = playPushResolver,
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
         musicPipeline = musicPipeline,
+        sessionPublisher = sessionPublisher,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
