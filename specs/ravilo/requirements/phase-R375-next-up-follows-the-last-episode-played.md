@@ -139,23 +139,35 @@ function if needed), so the cast and Ravilo-screen next-up (R264) and Continue W
   the series is not cleared, and Jellyfin's normal tracking continues. The *✓ All {n} episodes watched* line stays.
 - **Finished, and the server names nothing:** unchanged — *Start over · S01E01* (R343 FR-R343-2).
 
-**FR-R375-6 — A shuffle does not move the position** (keeps R343's intent that a shuffled play leaves no trace on
+**FR-R375-6 — A shuffle, or a replay that doesn't finish, does not move the position** (keeps R343's intent that a shuffled play leaves no trace on
 the in-order state; see open question 1). Jellyfin moves an episode's `LastPlayedDate` when any play starts, so a
 shuffled play would otherwise become *the last one played*. The server already keeps a per-session plan for a
 shuffled entry (`SessionPlan`, `tv/SeriesReplay.kt`) and already puts its position back at an unfinished stop. It now
 also keeps the episode's `LastPlayedDate` from before the play (read from the item detail `startPlayback` already
 fetches) and, **after the stop has landed** (like FR-R343-4's write-back, so Jellyfin's own stop cannot overwrite it):
 
-- if there was a date, writes it back (`POST /UserItems/{id}/UserData`, the existing `setUserData`, gaining an
-  optional `LastPlayedDate`), keeping the tick a finished shuffled play earns (R343, R347);
-- if there was none and the play **finished**, writes a date one second before the series' last finished episode
-  (FR-R375-1, read at the shuffle's start), so the shuffled episode is never the newest; with no finished episode at
-  all, Jellyfin's date is left (there is no position to keep);
+- if the play **did not finish** and there was a date, writes it back (`POST /UserItems/{id}/UserData`, the
+  existing `setUserData`, gaining an optional `LastPlayedDate`);
+- if the play **finished**, writes `min(prior date, anchor − 1 s)` — or `anchor − 1 s` with no prior date — where
+  the anchor is the series' last finished episode (FR-R375-1, as the last Continue build saw it), keeping the tick a
+  finished shuffled play earns (R343, R347). So the shuffled episode is never the newest finish, even if it was
+  briefly opened after the anchor. With no finished episode at all, Jellyfin's date is left: the shuffled episode
+  then becomes the anchor. That is accepted (owner, 2026-10-04): shuffle is for finished series, which always have
+  one;
 - if there was none and the play did **not** finish, nothing more: the episode stays unwatched with no position, so
   it can never be the last finished episode.
 
-Then the stop's usual refresh rebuilds the Continue list. A rail pick that leaves the shuffle (R343 FR-R343-5) is an
-ordinary play and does move the position.
+**The same write for a replay that doesn't finish** (owner, 2026-10-04, dev review item 3): when any Ravilo play
+of an episode that was **watched** at its start stops without finishing, its prior `LastPlayedDate` is written back
+the same way. Below 5 % Jellyfin keeps `Played` and zeroes the position, so without this a mis-started watched
+episode would read as the newest finish. Plays from other apps still move it.
+
+The write runs in the Jellyfin sink after the stop lands and **before** the stop's refresh (`onStopLanded`), so
+the rebuilt Continue list never shows the moved position. A rail pick that leaves the shuffle (R343 FR-R343-5) is an
+ordinary play: if it finishes, it moves the position.
+
+Side effects, accepted: R219 §4 orders the series by the restored date, the touched window (§2(c)) doesn't see the
+play, and Users & devices' *Recently watched* and Jellyfin's own history don't list it. `PlayCount` still counts it.
 
 **FR-R375-7 — Backwards compatible.** No DTO field is added or removed; `SeriesProgress` stays unfilled (R343 dev
 review item 1). An installed app gets FR-R375-3 with the server alone (the tile and, on an unfinished series, the
@@ -178,6 +190,7 @@ On a **test account** (never the household's own progress):
    page reads *Start over · S01E01*.
 7. Re-open a watched episode and stop at 40 %: the offer stays on the episode after the last finished one.
 8. Shuffle a series and finish two entries: the offer is what it was before the shuffle.
+8a. Start a watched episode and stop after 20 s (under 5 %): the offer does not move.
 9. A series with nothing finished but touched (stopped under 5 % of S01E01): unchanged from today.
 
 ## Tests
@@ -227,6 +240,108 @@ within one refresh after a stop.
 2. **Old series coming back: accepted.** A fully watched series whose last finished episode isn't its last rejoins
    Continue Watching however long ago that was. Before building, count on the prod DB copy how many series that adds;
    only if it is many, ask the owner about a time window.
+
+## Dev review (2026-10-04, against `main` `4ae4f169`)
+
+Read against `HomeFeedService.buildCanonicalContinueList`, `MediaStore.nextEpisodeAfter`, `EpisodeSpan.kt`,
+`PlaybackService` (start, stop, the Jellyfin sink), `SeriesReplay.kt`, `JellyfinClient` (`getNextUp`,
+`getRecentlyPlayedAll`, `setUserData`, `markPlayed`), `SeriesEpisodes.kt` and `SeriesDetailScreen.kt`, and against
+Jellyfin's own source at tag `v12.1` (`SessionManager`, `UserDataManager`, `BaseItem.MarkPlayed`,
+`TvShowsController`). The design holds. Ten items, two for the owner.
+
+1. **The Jellyfin facts hold, and FR-R375-6's write works.** `OnPlaybackStart` sets `LastPlayedDate = now` and
+   touches `Played` only for items that can't resume; `UpdatePlayState` is as described. `SaveUserData(…,
+   UpdateUserItemDataDto, …)` applies `LastPlayedDate` when it is sent, so `setUserData` only needs an optional
+   field (absent ⇒ today's body, byte for byte). `BaseItem.MarkPlayed` with no date (our `markPlayed` sends none)
+   keeps the existing `LastPlayedDate`, so R347's tick never moves a restored date, whether it lands before or after
+   the restore.
+
+2. **Owner decision 2's count is nearly moot.** `getNextUp` sends no `nextUpDateCutoff`, and Jellyfin then uses
+   `DateTime.MinValue`, so today's Continue Watching already has no time window: an abandoned series from years ago
+   is already there. The only series R375 *adds* are ones Jellyfin's Next Up has nothing for (the furthest watched
+   episode is the last one), but whose newest finish is an earlier episode, i.e. a finished series with one older
+   episode watched again later. Keep the quick count before building, but expect a handful.
+
+3. **For the owner: a watched episode re-opened for a few seconds counts as a finish.** Below 5 % (`MinResumePct`)
+   Jellyfin zeroes the position and leaves `Played` as it was. So a watched S06E06, started by mistake and left
+   after 20 s, reads *watched, no position, last played now*, and FR-R375-1 takes it as the last finished episode.
+   Continue Watching then jumps to S06E07, which is the very jump this phase removes. Acceptance 7 (stop at 40 %)
+   doesn't catch it, because 40 % keeps a position. **Lean: widen FR-R375-6 to every Ravilo play of an
+   already-watched episode that doesn't finish:** after the stop lands, put its `LastPlayedDate` back. It's the same
+   write as the shuffle's and the same place. Plays from other apps (Jellyfin web) still move it.
+
+4. **For the owner: a shuffle on a series with nothing finished.** FR-R375-6's last case leaves Jellyfin's date on
+   a finished shuffled episode when no counted episode was finished before. That episode is then the *only*
+   finished one, so it becomes the anchor: shuffle a never-watched series, finish S02E05, and Continue Watching
+   offers S02E06. No date can stop this, because any finished episode is an anchor whatever its date. Only a record
+   of our own could, and the spec rules out a table. **Lean: accept and say so in FR-R375-6.** Shuffle is for
+   finished series (R343), and those always have an anchor.
+
+5. **Ties and precision.** `isoToEpochSeconds` drops the fractions, and marking a season or series watched
+   (`MarkPlayed`, no date given) stamps every never-played episode with the same second. The anchor then depends on
+   list order. Compare the full timestamp, and break a tie by episode order, latest wins, so marking a season watched
+   offers the next season's first episode. Pick the anchor with a max over the series' items, not "first one seen":
+   R198 says never to trust Jellyfin's sort, and today's `lastFinishedByKey` (`HomeFeedService.kt:1012`) still
+   trusts it. Fix both in the same change.
+
+6. **Where the resolver lands (FR-R375-4).** The pure `ContinueTarget.kt` takes the series `MediaItem`, that
+   series' watched items from `finishedItems`, and **`resumeItems` indexed by episode id**. FR-R375-3's "next is in
+   progress ⇒ progress bar" needs the next episode's own resume, and `resumeByKey` keeps only the newest per series,
+   which is often a different episode (S06E07). Two more changes in the build:
+   - Membership (`candidateKeys`, `:1063`) must also admit a key with a next-in-order episode, or a finished series
+     never gets in (FR-R375-3's §2 note).
+   - The card's label comes from the catalog (`Episode.title`, as `nextEpisodeAfter` does), because Jellyfin's
+     `play.name` isn't available for an episode Next Up didn't return. Season and episode come from
+     `resolvedEpisodeSpan(series, next.jellyfinId, null, null)`.
+
+   Move `nextEpisodeAfter` to a top-level pure function in `EpisodeSpan.kt`. Its private `fileEnd` repeats what
+   `resolvedEpisodeSpan` already computes, so it can reuse that.
+
+7. **FR-R375-6 has to be sequenced in the sink, and needs the anchor at start.**
+   - The restore goes in the Jellyfin sink's `stop` after `postPlaybackStopped` succeeds and **before**
+     `onStopLanded` (`PlaybackService.kt:452–466`, as `startOverUnplayed` already does). Otherwise
+     `invalidatePlaystate` rebuilds Continue Watching with the shuffled episode as the anchor, and it flips back one
+     refresh later.
+   - Carry the date on `PendingWrite` beside `startOverUnplayed`, and keep it through `enqueue`'s STOP merge.
+   - The prior date is in the `saved` user data `startPlayback` already reads.
+   - "One second before the anchor" needs the anchor's date at start, which only the Continue build computes. Have
+     the build keep an in-memory `anchorDateBySeries` per user next to the cached list, and read that. It can be one
+     refresh stale, which doesn't matter here.
+   - Make the finished case one rule: write `min(prior, anchor − 1 s)`, or `anchor − 1 s` with no prior. An
+     unwatched episode briefly opened *after* the last finish has a prior date newer than the anchor; restored with
+     its tick, it would otherwise become the anchor.
+   - A backend restart mid-play forgets `SessionPlan` (the shipped bug from the R368 review), so that play moves the
+     anchor. That's a known gap; nothing new to do here.
+
+8. **What rewriting dates also changes.** These are all acceptable, but FR-R375-6 should say them:
+   - R219 §4 orders by the restored date, so a series you just shuffled doesn't rise to the front of Continue
+     Watching.
+   - The touched window (§2(c)) doesn't see the play.
+   - Users & devices' *Recently watched* (phase 143) and Jellyfin's own history don't list it.
+   - `PlayCount` (phase 269) still counts it, since we never send `PlayCount`.
+
+9. **Client: one pure helper, not a second `finished` flag.** Add `rewatchEpisodeId(detail, overlay)` to
+   `SeriesEpisodes.kt`: the server's `continueEpisodeId` when the series is finished and the id is a counted
+   episode, otherwise null. `primaryEpisodeId` returns it first in the finished case. In `SeriesDetailScreen`, the
+   kicker (`:616`), `hasResume` and `startOverNow` (`:756–760`) read `finished && rewatch == null`. The *All {n}
+   episodes watched* line, Reset progress and the Shuffle pill keep plain `finished`. The *UP NEXT* ribbon
+   (`isResumeEpisode = ep.id == resumeEpId`, `:943`) and R350's opening season both follow the primary id, so they
+   need nothing. Start over stays one step away (Reset progress, or S01E01 on the rail).
+
+10. **Tests to add** to the spec's list:
+    - Resolver: same-second ties resolve to the later episode in order; the next episode's own progress comes from
+      the per-episode resume map, not the series' newest.
+    - Resolver: a finished series with an anchor mid-way enters the list (the membership change).
+    - Sink: the restore lands before `onStopLanded` fires, and an R347 tick plus a restore leave the restored date.
+    - `min(prior, anchor − 1 s)` for the finished-shuffle case.
+    - Item 3's under-5 % re-open, if the owner takes the lean.
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **Item 3 — a replay that doesn't finish puts the date back.** Any Ravilo play of an already-watched episode that
+   stops before the end restores its prior `LastPlayedDate` (FR-R375-6, acceptance 8a).
+2. **Item 4 — a shuffle on a series with nothing finished: accepted.** The finished shuffled episode becomes the
+   anchor; no table of our own.
 
 ## Dev notes — where it lands
 
