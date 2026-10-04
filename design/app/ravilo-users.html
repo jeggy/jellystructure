@@ -7,191 +7,361 @@
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
 <style>
-  /* Users & devices (Phase 143) */
-  .usr-av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
-    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .8rem; color: #fff; }
-  .usr-table td { vertical-align: middle; }
-  .usr-table tr.usr-hd td { font-size: .62rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim);
-    padding-top: 12px; padding-bottom: 3px; border-bottom: none; }
-  .usr-table tr.usr-hd:first-child td { padding-top: 2px; }
-  .usr-revoke.confirm, .usr-signout-all.confirm { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
-  .usr-empty { color: var(--ink-dim); font-size: .8rem; padding: 10px 0 2px; }
-  .usr-access { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 10px 0 -1px; }
-  .usr-access > .muted:first-child { font-size: .6rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim); }
-  .usr-access .chip { font-size: .72rem; cursor: default; }
-  .usr-tagdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; margin-right: 6px; }
-  .usr-tagdot.ok { background: var(--ok); } .usr-tagdot.bad { background: var(--bad); } .usr-tagdot.warn { background: var(--warn); }
-  .usr-more-row { display: none; }
-  .usr-table.hist-open .usr-more-row { display: table-row; }
-  .usr-showmore td { padding-top: 9px; border-bottom: none; }
-  /* now watching / recently watched (Jellyfin sessions + playback history, read-only) */
-  .usr-now { display: flex; align-items: center; gap: 12px; background: var(--hi-soft); border: 1px solid rgba(123,110,240,.28); border-radius: 10px; padding: 10px 13px; margin-top: 11px; }
-  .usr-now-ic { width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--hi); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .68rem; padding-left: 2px; }
-  .usr-now-main { flex: 1; min-width: 0; }
-  .usr-now-t { font-size: .85rem; font-weight: 700; }
-  .usr-now-sub { font-size: .72rem; color: var(--ink-soft); margin-top: 1px; }
-  .usr-now-bar { width: 130px; flex: none; }
-  .usr-now-bar .bar { height: 5px; }
-  .usr-now-pct { font-size: .7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
-  /* Phase 185 — the persisted decode ceiling, in plain words. A second line in the device's own
-     cell rather than a sixth column: this table is shared with the Admin web sessions and
-     Recently watched sections, which have nothing to put in such a column. Numbers are fine
-     here — this is the admin, not Ravilo. */
-  .usr-cap { display: block; font-size: .68rem; color: var(--ink-soft); margin-top: 3px; }
-  .usr-cap b { color: var(--ink-soft); font-weight: 600; }
-  .usr-cap.unknown b { font-weight: 500; font-style: italic; }
-  /* Read-only user photos (R234). The photo is set in Ravilo on a phone or in the browser;
-     the admin only ever renders it, and falls back to initials when there is none — same
-     stored fact the Ravilo mockups read, so the two can't disagree. */
-  /* Version history per device. One line per build this server has seen the device on, dated when a
-     request first carried it (the X-Ravilo-Version header, phase 224) — never the install time. */
-  .usr-vh-btn { margin-left: 8px; color: var(--hi); font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .usr-vh-btn:hover { text-decoration: underline; }
-  .usr-vh-row { display: none; }
-  .usr-vh-row.open { display: table-row; }
-  .usr-vh-row td { padding-top: 0; }
-  .usr-vh { border-left: 2px solid var(--line-2); margin: 0 0 4px 7px; padding: 0 0 2px 16px; max-width: 760px; }
-  .vh-r { position: relative; display: grid; grid-template-columns: minmax(150px, max-content) minmax(0, 1fr) auto; gap: 2px 16px; align-items: baseline; padding: 5px 0; font-size: .74rem; }
-  .vh-r::before { content: ''; position: absolute; left: -21px; top: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--fill-3); border: 1px solid var(--line-2); }
-  .vh-r.now::before { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
-  .vh-r.back::before { background: var(--warn); border-color: var(--warn); }
-  .vh-v { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
-  .vh-when { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
-  .vh-note { font-size: .7rem; color: var(--ink-dim); text-align: right; }
-  .vh-note.warn { color: var(--warn); font-weight: 600; }
-  .vh-foot { font-size: .68rem; color: var(--ink-dim); margin-top: 3px; line-height: 1.5; }
-  .usr-cap.unstable, .usr-cap.unstable b { color: var(--warn); }
-  .usr-cap.behind, .usr-cap.behind b { color: var(--warn); }
-  @media (max-width: 640px) { .vh-r { grid-template-columns: minmax(0, 1fr); } .vh-note { text-align: left; } }
-  .usr-av.has-photo { color: transparent; overflow: hidden; }
-  .usr-av .av-img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
+/* Users & devices (Phase 143) — cleaned up 2026-10-04 (owner: "a bit cluttered"): one line of intro + a collapsed
+   glossary, stat tiles, one card per person with Devices / Web sessions on the left and Recently watched on the right,
+   one-line device rows that open for details (created, decode ceiling, version history). Same facts as before. */
+.ud-top{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap}
+.ud-top h1{margin:0}
+.ud-sub{font-size:.88rem;color:var(--ink-soft);margin:6px 0 0;max-width:720px;line-height:1.55}
+.ud-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;align-items:stretch}
+.ud-stat{display:flex;flex-direction:column;gap:3px;min-width:118px;padding:10px 14px;border-radius:12px;background:var(--fill-2);border:1px solid var(--line)}
+.ud-stat b{font-family:'Space Grotesk',sans-serif;font-size:1.35rem;font-weight:700;color:var(--ink);line-height:1.1}
+.ud-stat span{font-size:.74rem;color:var(--ink-soft)}
+.ud-stat.ok b{color:var(--ok)}
+.ud-stat .mono{font-size:.95em}
+.ud-help{margin-top:14px;font-size:.8rem;color:var(--ink-soft)}
+.ud-help summary{cursor:pointer;color:var(--acc-ink);font-weight:600;width:max-content;list-style:none}
+.ud-help summary::-webkit-details-marker{display:none}
+.ud-help summary::after{content:' ▾'}.ud-help[open] summary::after{content:' ▴'}
+.ud-help dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:7px 18px;margin:12px 0 0;max-width:860px;line-height:1.5}
+.ud-help dt{font-weight:600;color:var(--ink)}.ud-help dd{margin:0}
+.ud-sec{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:32px 0 12px}
+.ud-sec h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:1.15rem}
+.ud-sec .n{font-size:.8rem;color:var(--ink-dim)}
+.ud-sec .r{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:.8rem;color:var(--ink-soft)}
+.ud-note{font-size:.78rem;color:var(--ink-dim);margin:-4px 0 12px;max-width:760px;line-height:1.5}
+/* a person */
+.ud-user{padding:18px 20px}
+.ud-user+.ud-user{margin-top:12px}
+.ud-uh{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.usr-av{width:40px;height:40px;border-radius:50%;flex:none;display:inline-flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:.86rem;color:#fff}
+.usr-av.has-photo{color:transparent;overflow:hidden}
+.usr-av .av-img{width:100%;height:100%;border-radius:inherit;object-fit:cover;display:block}
+.ud-name{display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-size:1.05rem;font-weight:700}
+.ud-id{font-size:.72rem;color:var(--ink-dim);margin-top:2px}
+.ud-acc{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.ud-acc .chip{font-size:.72rem;font-weight:500;cursor:default}
+.ud-acc .chip b{font-weight:700}
+.ud-acc .chip.dim{color:var(--ink-soft)}
+.usr-tagdot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block}
+.usr-tagdot.ok{background:var(--ok)}.usr-tagdot.bad{background:var(--bad)}.usr-tagdot.warn{background:var(--warn)}
+.usr-signout-all.confirm,.usr-revoke.confirm{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.usr-now{display:flex;align-items:center;gap:12px;background:var(--hi-soft);border:1px solid rgba(123,110,240,.28);border-radius:12px;padding:10px 14px;margin-top:14px}
+.usr-now-ic{width:28px;height:28px;flex:none;border-radius:50%;background:var(--hi);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;padding-left:2px}
+.usr-now-main{flex:1;min-width:0}
+.usr-now-t{font-size:.86rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.usr-now-sub{font-size:.72rem;color:var(--ink-soft);margin-top:1px}
+.usr-now-bar{width:140px;flex:none}.usr-now-bar .bar{height:5px}
+.usr-now-pct{font-size:.72rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;flex:none}
+@media (max-width:640px){.usr-now-bar{display:none}}
+.ud-cols{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:32px;margin-top:18px}
+@media (max-width:1100px){.ud-cols{grid-template-columns:minmax(0,1fr);gap:20px}}
+.ud-lh{display:flex;align-items:baseline;gap:8px;font-size:.64rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 4px}
+.ud-lh .c{letter-spacing:0;font-weight:600;color:var(--ink-dim)}
+.ud-list+.ud-lh{margin-top:18px}
+/* a device / web-session row */
+.ud-dev{border-top:1px solid var(--line)}
+.ud-dev:first-child{border-top:0}
+.ud-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto 14px;gap:12px;align-items:center;padding:9px 8px;margin:0 -8px;border-radius:10px;cursor:pointer;outline:none}
+.ud-row.static{grid-template-columns:34px minmax(0,1fr) auto auto;cursor:default}
+.ud-row:not(.static):hover,.ud-row:focus-visible{background:var(--fill-3)}
+.ud-ic{width:34px;height:34px;border-radius:9px;background:var(--fill-3);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+.ud-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ud-nm{display:flex;align-items:center;gap:8px;min-width:0;font-size:.9rem}
+.ud-nm b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ud-nm .m{font-size:.76rem;color:var(--ink-dim);white-space:nowrap}
+.ud-nm .badge{font-size:.62rem;padding:1px 7px}
+.ud-meta{font-size:.74rem;color:var(--ink-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ud-st{font-size:.74rem;color:var(--ink-dim);white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
+.ud-st.on{color:var(--ok);font-weight:600}
+.ud-st.on i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.ud-chev{color:var(--ink-dim);transition:transform .15s;font-size:1rem;line-height:1}
+.ud-dev.open .ud-chev{transform:rotate(90deg)}
+.ud-row .usr-revoke{opacity:0;transition:opacity .12s}
+.ud-row:hover .usr-revoke,.ud-row:focus-within .usr-revoke,.ud-row .usr-revoke.confirm{opacity:1}
+@media (hover:none){.ud-row .usr-revoke{opacity:1}}
+.ud-warns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.ud-w{font-size:.7rem;font-weight:600;color:var(--warn);background:var(--warn-soft);border-radius:6px;padding:2px 7px}
+.ud-more{display:none;padding:2px 0 14px 46px}
+.ud-dev.open .ud-more{display:block}
+.ud-kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;font-size:.76rem;color:var(--ink-soft);margin:2px 0 10px}
+.ud-kv b{font-weight:600;color:var(--ink)}
+.ud-kv i{font-style:normal;color:var(--ink-dim)}
+.ud-kv .warn{color:var(--warn)}
+.ud-vl{font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin:6px 0 6px}
+/* version history (phase 224) — one line per build this server has seen the device on */
+.usr-vh{border-left:2px solid var(--line-2);margin:0 0 4px 6px;padding:0 0 2px 16px;max-width:680px}
+.vh-r{position:relative;display:grid;grid-template-columns:minmax(150px,max-content) minmax(0,1fr) auto;gap:2px 16px;align-items:baseline;padding:4px 0;font-size:.74rem}
+.vh-r::before{content:'';position:absolute;left:-21px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--fill-3);border:1px solid var(--line-2)}
+.vh-r.now::before{background:var(--ok);border-color:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.vh-r.back::before{background:var(--warn);border-color:var(--warn)}
+.vh-v{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.vh-when{color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.vh-note{font-size:.7rem;color:var(--ink-dim);text-align:right}
+.vh-note.warn{color:var(--warn);font-weight:600}
+.vh-foot{font-size:.7rem;color:var(--ink-dim);margin-top:4px;line-height:1.5}
+@media (max-width:640px){.vh-r{grid-template-columns:minmax(0,1fr)}.vh-note{text-align:left}.ud-more{padding-left:0}}
+/* a person with 10+ devices: the recent ones, then a fold; the unused ones grouped with one bulk revoke */
+.ud-lh .k{letter-spacing:0;text-transform:none;font-weight:500;color:var(--ink-dim)}
+.ud-list .usr-more-dev,.ud-list .ud-dsub{display:none}
+.ud-list.dev-open .usr-more-dev{display:block}
+.ud-list.dev-open .ud-dsub{display:flex}
+.ud-dsub{align-items:center;gap:10px;font-size:.62rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);margin:14px 0 2px}
+.ud-dsub:after{content:"";flex:1;height:1px;background:var(--line)}
+.ud-dev.stale .ud-row>:not(.usr-revoke){opacity:.6}
+.ud-dfold{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--line);font-size:.72rem;color:var(--ink-dim)}
+.ud-dfold .sp{flex:1}
+/* recently watched */
+.ud-h{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.ud-lh+.ud-hist .ud-h:first-child{border-top:0}
+.ud-h .t{font-size:.84rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ud-h .t span{color:var(--ink-dim);font-size:.76rem;margin-left:4px}
+.ud-h .w{grid-column:1;font-size:.72rem;color:var(--ink-dim)}
+.ud-h .r{grid-row:1/3;grid-column:2;font-size:.74rem;color:var(--ink-soft);white-space:nowrap;text-align:right}
+.ud-h .r.ok{color:var(--ok)}
+.ud-hist .usr-more-row{display:none}
+.ud-hist.hist-open .usr-more-row{display:grid}
+.ud-hfoot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:.72rem;color:var(--ink-dim)}
+.ud-empty{font-size:.8rem;color:var(--ink-dim);padding:8px 0}
+/* shared table furniture (Playing now, Screens) */
+.usr-table td{vertical-align:middle}
+.usr-table tr.usr-hd td{font-size:.62rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-dim);padding-top:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+/* 304 — every playback session, with the admin as a full remote (owner 10-04) */
+.ses-tbl td{vertical-align:middle}.ses-tbl tr.ses-r{cursor:pointer}.ses-tbl tr.ses-r:hover td{background:rgba(127,127,127,.06)}
+.ses-art{width:36px;height:36px;border-radius:7px;flex:none;display:inline-block;vertical-align:middle}.ses-art.w{width:52px;height:30px;border-radius:5px}
+.ses-what{display:flex;align-items:center;gap:12px;min-width:0}.ses-what b{display:block;white-space:nowrap}.ses-what>span:last-child{min-width:0}.ses-what .tiny{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.ses-pr{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.ses-pg{width:110px;height:4px;border-radius:2px;background:var(--line-2);overflow:hidden;display:inline-block;vertical-align:middle}.ses-pg i{display:block;height:100%;background:var(--hi)}
+.ses-acts{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+.ses-x td{padding:12px 14px 16px!important;background:rgba(127,127,127,.05)}
+.ses-x .grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:22px}
+@media (max-width:900px){.ses-x .grid2{grid-template-columns:minmax(0,1fr)}}
+.ses-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ses-ctl input[type=range]{flex:1;min-width:180px}
+.ses-h{font-size:.62rem;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-dim);margin:12px 0 5px}
+.ses-q{display:flex;flex-direction:column;gap:2px}.ses-q span{padding:4px 8px;border-radius:6px;cursor:pointer;font-size:.8rem}.ses-q span:hover{background:rgba(127,127,127,.1)}.ses-q span.on{font-weight:700;background:rgba(127,127,127,.12)}
+.ses-v{display:grid;grid-template-columns:110px minmax(0,1fr) 44px;align-items:center;gap:8px;font-size:.8rem;margin:3px 0}.ses-v.rm{padding-left:14px}
+.ses-tl{border-left:2px solid var(--line-2);margin-left:6px;padding-left:14px;font-size:.78rem}.ses-tl div{position:relative;padding:3px 0}.ses-tl div::before{content:'';position:absolute;left:-19px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+.ses-tl .w{color:var(--ink-soft);font-variant-numeric:tabular-nums;margin-right:8px}
+.ses-sel{font:inherit;font-size:.78rem;padding:4px 8px;border-radius:6px;border:1px solid var(--line-2);background:var(--bg-2,transparent);color:inherit}
+/* 236 — screens */
+.scr-chips{display:flex;gap:6px;flex-wrap:wrap}.scr-u{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border-radius:999px;border:1px solid var(--line-2);font-size:.76rem}.scr-x{border:0;background:none;color:var(--ink-dim);cursor:pointer;width:20px;height:20px;border-radius:50%;font-size:.66rem}.scr-x:hover{background:var(--fill-3);color:var(--bad)}.scr-x.confirm{width:auto;padding:0 6px;border-radius:10px;color:var(--bad);font-weight:700}
 </style>
 </head>
 <body class="wf-body app-body">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.2"></rect><path d="M11 17.5h2"></path></symbol>
+<symbol id="i-web" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"></rect><path d="M3 9h18"></path></symbol>
+<symbol id="i-lap" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="10" rx="1.5"></rect><path d="M3 19h18"></path></symbol>
+<symbol id="i-spk" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="3"></rect><circle cx="12" cy="14" r="3"></circle><path d="M12 7h.01"></path></symbol>
+</svg>
 
 <main class="app-main2 wide" data-page="ravilo-users" data-no-dock data-screen-label="Users & devices">
-  <div class="pagebar">
-    <h1>Users &amp; devices</h1><span class="badge info" style="margin-left:2px;">Ravilo · from Jellyfin</span>
-    <span class="spacer"></span>
-    <span class="chip" style="font-size:.72rem;">4 users</span>
-    <span class="chip" style="font-size:.72rem;">7 devices</span>
-    <span class="chip ok" style="font-size:.72rem;background:var(--ok-soft);"><span class="dot ok"></span> 3 connected now</span>
-    <span class="chip" style="font-size:.72rem;" title="Latest GitHub Release">latest Ravilo <b class="mono">1.38</b> <span class="muted">· 1 device behind</span></span>
+  <div class="ud-top">
+    <div style="flex:1;min-width:280px">
+      <div class="row center" style="gap:10px;flex-wrap:wrap"><h1>Users &amp; devices</h1><span class="badge info">Ravilo · from Jellyfin</span></div>
+      <p class="ud-sub">Every Jellyfin user, what they're playing, and the Ravilo devices and admin sessions they're signed in on. Accounts and policies are edited in Jellyfin.</p>
+    </div>
     <span class="btn sm ghost" id="users-refresh">↻ Refresh</span>
   </div>
-  <p class="page-sub">Every Jellyfin user with their <b>Ravilo devices</b> and <b>admin web sessions</b> — created, last used, and whether it's connected now. <b>Revoke</b> signs one device/browser out; <b>Sign out everywhere</b> clears all of a user's devices <i>and</i> web sessions. The <b>access</b> line mirrors each user's Jellyfin policy — Ravilo serves only what it permits. <b>Now watching</b> / <b>recently watched</b> come from Jellyfin. <b>Ravilo</b> is the build each device last reported, and <b>versions</b> lists every build this server has seen it on — dated when a request first carried it, not when it was installed. <b>What this device can take</b> is the bitrate each device's own decoder reports it can handle — recorded the last time that device started something in Ravilo, and the reason a heavy file re-encodes for one TV and plays untouched on another. Read-only against Jellyfin — edit accounts &amp; policies there.</p>
+  <div class="ud-stats">
+    <div class="ud-stat"><b>4</b><span>users</span></div>
+    <div class="ud-stat"><b>16</b><span>Ravilo devices</span></div>
+    <div class="ud-stat ok"><b>3</b><span>connected now</span></div>
+    <div class="ud-stat" title="Latest GitHub Release"><b class="mono">1.38</b><span>latest Ravilo · 1 device behind</span></div>
+  </div>
+  <details class="ud-help"><summary>What the rows mean</summary><dl>
+    <dt>Revoke</dt><dd>Signs one device or browser out. <b>Sign out everywhere</b> clears all of a user's devices and web sessions.</dd>
+    <dt>Access</dt><dd>Mirrors the user's Jellyfin policy — Ravilo serves only what it permits. Shown only for users who are limited.</dd>
+    <dt>Now watching · Recently watched</dt><dd>From Jellyfin. The full history lives there.</dd>
+    <dt>Ravilo version</dt><dd>The build each device last reported. Open a device to see every build this server has seen it on, dated when a request first carried it — not when it was installed.</dd>
+    <dt>Can take</dt><dd>The bitrate the device's own decoder reports it can handle, recorded the last time it started something in Ravilo — the reason a heavy file re-encodes for one TV and plays untouched on another.</dd>
+  </dl></details>
 
-  <div class="col fill">
-    <!-- Jógvan (admin) -->
-        <div class="box flat usr-group" style="padding:14px 15px;margin-top:14px;">
-          <div class="row center" style="gap:11px;">
-            <span class="usr-av" data-uid="jogvan" style="background:linear-gradient(120deg,#7b6ef0,#3fb6f5);">JJ</span>
-            <div><b>Jógvan</b> <span class="badge info" style="margin-left:5px;">admin</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 8c41…e2</div></div>
-            <span class="spacer"></span>
-            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
-          </div>
-          <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Hraðar Ljós (2024)</div><div class="usr-now-sub">now watching · Living room TV · 1080p direct play</div></div><div class="usr-now-bar"><div class="bar"><i style="width:61%"></i></div></div><span class="usr-now-pct">1:12:08 / 1:58:24</span></div>
-          <table class="wf-table usr-table" style="margin-top:11px;">
-            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Living room TV</b> <span class="tiny muted">· Shield TV</span><div class="usr-cap">what this device can take <b>up to 120 Mbps</b> <span class="muted">· measured 31 Aug</span></div><div class="usr-cap">Ravilo <b>1.38</b> <span class="muted">· TV · since today 08:14</span><span class="usr-vh-btn" data-vh="vh-lr">5 versions ▴</span></div></td><td class="tiny muted">2 May 2026</td><td class="tiny muted">2 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row open" id="vh-lr"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38</span><span class="vh-when">today 08:14 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.36</span><span class="vh-when">23 Sep 07:50 → today 08:14 <span class="muted">· 2 days</span></span><span class="vh-note">skipped 1.37</span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">21 Sep 19:02 → 23 Sep 07:50 <span class="muted">· 1 day</span></span><span class="vh-note">skipped 1.34 – 1.35</span></div><div class="vh-r"><span class="vh-v">1.29</span><span class="vh-when">19 Sep 08:31 → 21 Sep 19:02 <span class="muted">· 2 days</span></span><span class="vh-note">skipped 1.30 – 1.32</span></div><div class="vh-r"><span class="vh-v">1.18</span><span class="vh-when">→ 19 Sep 08:31</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes.</div></div></td></tr>
-            <tr><td><b>Pixel 8</b> <span class="tiny muted">· phone</span><div class="usr-cap">what this device can take <b>up to 40 Mbps</b> <span class="muted">· measured 29 Aug</span></div><div class="usr-cap">Ravilo <b>1.38-2-g6d4499e-dirty</b> <span class="muted">· Phone · dev build · since today 11:30</span><span class="usr-vh-btn" data-vh="vh-px">5 versions ▾</span></div></td><td class="tiny muted">11 Jun 2026</td><td class="tiny muted">today 11:42</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row" id="vh-px"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38-2-g6d4499e-dirty</span><span class="vh-when">today 11:30 → now</span><span class="vh-note">dev build · current</span></div><div class="vh-r"><span class="vh-v">1.38</span><span class="vh-when">today 09:02 → 11:30 <span class="muted">· 2 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.37-4-gab12cd3</span><span class="vh-when">24 Sep 16:10 → today 09:02 <span class="muted">· 17 hours</span></span><span class="vh-note">dev build</span></div><div class="vh-r"><span class="vh-v">1.36</span><span class="vh-when">23 Sep 08:05 → 24 Sep 16:10 <span class="muted">· 1 day</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.31</span><span class="vh-when">→ 23 Sep 08:05</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">A version with a <span class="mono">-g…</span> suffix is a development build — never counted as behind.</div></div></td></tr>
-            <tr class="usr-hd"><td>Admin web sessions</td><td>created</td><td>last used</td><td></td><td></td></tr>
-            <tr><td><b>Chrome · macOS</b> <span class="badge" style="margin-left:5px;font-size:.62rem;">this session</span></td><td class="tiny muted">today 09:12</td><td class="tiny muted">just now</td><td><span class="tiny muted">expires in 13 days</span></td><td class="num"><span class="btn sm ghost usr-revoke" data-self="1">Revoke</span></td></tr>
-            <tr><td><b>Firefox · Windows</b></td><td class="tiny muted">1 Jul 2026</td><td class="tiny muted">3 days ago</td><td><span class="tiny muted">expires in 6 days</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
-            <tr><td><b>Nordvest</b> <span class="tiny muted">· S02E04</span></td><td class="tiny muted">yesterday 22:41</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr><td><b>Cosmos Laundromat</b> <span class="tiny muted">· 2015</span></td><td class="tiny muted">Mon 20:04</td><td class="tiny muted">Pixel 8</td><td><span class="badge">stopped at 37%</span></td><td></td></tr>
-            <tr><td><b>Hraðar Ljós</b> <span class="tiny muted">· 2024</span></td><td class="tiny muted">Sun 21:18</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr><td><b>Glass Half</b> <span class="tiny muted">· 2015</span></td><td class="tiny muted">Sat 20:30</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Agent 327</b> <span class="tiny muted">· 2017</span></td><td class="tiny muted">Fri 22:02</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Sintel</b> <span class="tiny muted">· 2010</span></td><td class="tiny muted">Fri 21:15</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Spring</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">3 Jul 20:44</td><td class="tiny muted">Pixel 8</td><td><span class="badge">stopped at 81%</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Charge</b> <span class="tiny muted">· 2022</span></td><td class="tiny muted">2 Jul 21:37</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr class="usr-showmore"><td colspan="5"><span class="btn sm ghost usr-more-btn" data-more="14">Show 14 more ▾</span> <span class="tiny muted" style="margin-left:8px;">22 plays in the last month · full history lives in Jellyfin</span></td></tr>
-          </table>
-        </div>
+  <!-- 304 — Playing now: every live playback session (Ravilo R368). The admin is a full remote for any of them (owner 10-04). -->
+  <div class="ud-sec"><h2>Playing now</h2><span class="n" id="ses-count"></span><span class="r">Members can control each other's<span class="toggle" id="ses-ctl" title="Off: each person controls only their own; everyone still sees the others' with their name. The switch never limits you."></span></span></div>
+  <div class="ud-note">Click a row for the full remote and its history. What you do here shows in the viewer's apps straight away, marked <i>from the admin</i>; <b>End</b> stops it and keeps the resume point.</div>
+  <div class="card" id="sessions" style="padding:8px 16px 10px">
+    <div style="overflow-x:auto;"><table class="wf-table usr-table ses-tbl" style="min-width:760px;" id="ses-list"></table></div>
+  </div>
 
-        <!-- Eyð -->
-        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
-          <div class="row center" style="gap:11px;">
-            <span class="usr-av" data-uid="eyd" style="background:linear-gradient(120deg,#e0792f,#f5b542);">ER</span>
-            <div><b>Eyð Restorff</b><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 4fa7…91</div></div>
-            <span class="spacer"></span>
-            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
-          </div>
-          <table class="wf-table usr-table" style="margin-top:11px;">
-            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Bedroom TV</b> <span class="tiny muted">· Chromecast HD</span><div class="usr-cap">what this device can take <b>up to 60 Mbps</b> <span class="muted">· measured yesterday</span></div><div class="usr-cap">Ravilo <b>1.35</b> <span class="muted">· TV · since 21 Sep 13:52</span><span class="usr-vh-btn" data-vh="vh-bd">3 versions ▾</span></div><div class="usr-cap unstable"><b>Unstable connection:</b> 38 reconnects in the last hour</div><div class="usr-cap behind"><b>Ravilo 1.35 — 3 releases behind</b> since 21 Sep 13:52. If this device installs from Google Play, check that its account is a tester on the track releases go to.</div></td><td class="tiny muted">18 Mar 2026</td><td class="tiny muted">41 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row" id="vh-bd"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38</span><span class="vh-when">today 07:40 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.35</span><span class="vh-when">22 Sep 21:15 → today 07:40 <span class="muted">· 3 days</span></span><span class="vh-note">skipped 1.36 – 1.37</span></div><div class="vh-r"><span class="vh-v">1.24</span><span class="vh-when">→ 22 Sep 21:15</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes.</div></div></td></tr>
-            <!-- prospective 286 §6.4 — a speaker enrols as kind = cast with an audio-only mark; it counts against the session ceiling only while it transcodes (§8 Q4) -->
-            <tr><td><b>Stue</b> <span class="tiny muted">· Nest Wifi point</span> <span class="badge" style="font-size:.6rem;margin-left:4px;">audio only</span><div class="usr-cap">what this device can take <b>audio only</b> <span class="muted">· MP3 · AAC · FLAC · Opus direct; WMA converted on the server</span></div><div class="usr-cap">Receiver <b>1.38</b> <span class="muted">· cast · since yesterday 18:02 · counts as a session only while converting</span></div></td><td class="tiny muted">yesterday</td><td class="tiny muted">now</td><td><span class="badge ok"><span class="dot ok"></span> playing · Northbound</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr><td><b>Ravilo Web</b> <span class="tiny muted">· browser</span><div class="usr-cap unknown">what this device can take <b>not measured</b> <span class="muted">· the browser never tells us</span></div><div class="usr-cap">Ravilo <b>1.38</b> <span class="muted">· Web · since 24 Sep 22:58</span><span class="usr-vh-btn" data-vh="vh-web">4 versions ▾</span></div></td><td class="tiny muted">29 Jun 2026</td><td class="tiny muted">yesterday 23:10</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row" id="vh-web"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38</span><span class="vh-when">24 Sep 22:58 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.37</span><span class="vh-when">24 Sep 17:20 → 22:58 <span class="muted">· 6 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">21 Sep 20:41 → 24 Sep 17:20 <span class="muted">· 3 days</span></span><span class="vh-note">skipped 1.34 – 1.36</span></div><div class="vh-r"><span class="vh-v">1.29</span><span class="vh-when">→ 21 Sep 20:41</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">The web app is whatever this server serves, so it moves when the server is deployed — dated at the first request after the browser reloaded.</div></div></td></tr>
-            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
-            <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S02E01</span></td><td class="tiny muted">today 21:12</td><td class="tiny muted">Bedroom TV</td><td><span class="badge">stopped at 64%</span></td><td></td></tr>
-            <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S01 · E01–E08</span></td><td class="tiny muted">29 Jun – 6 Jul</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ 8 episodes</span></td><td></td></tr>
-            <tr><td><b>Big Buck Bunny</b> <span class="tiny muted">· 2008</span></td><td class="tiny muted">4 Jul 21:02</td><td class="tiny muted">Ravilo Web</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr><td><b>Nordvest</b> <span class="tiny muted">· S01 · E01–E06</span></td><td class="tiny muted">20 – 27 Jun</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ 6 episodes</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Dansk Krimi</b> <span class="tiny muted">· S03 · E01–E10</span></td><td class="tiny muted">8 – 19 Jun</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ season finished</span></td><td></td></tr>
-            <tr class="usr-more-row"><td><b>Sommeren ’92</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">6 Jun 20:58</td><td class="tiny muted">Ravilo Web</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr class="usr-showmore"><td colspan="5"><span class="btn sm ghost usr-more-btn" data-more="29">Show 29 more ▾</span> <span class="tiny muted" style="margin-left:8px;">consecutive episodes group into one row · 43 plays in the last month</span></td></tr>
-          </table>
-        </div>
+  <div class="ud-sec"><h2>People</h2><span class="n">4 users · most recently active first · devices too</span></div>
 
-        <!-- Charlotte (restricted) -->
-        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
-          <div class="row center" style="gap:11px;">
-            <span class="usr-av" data-uid="charlotte" style="background:linear-gradient(120deg,#19d6c6,#2a8cf0);">CH</span>
-            <div><b>Charlotte</b> <span class="badge warn" style="margin-left:5px;" title="Jellyfin user policy — Ravilo serves only what it permits (Phase 142)">restricted</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · b2c9…0d</div></div>
-            <span class="spacer"></span>
-            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
-          </div>
-          <div class="usr-access tiny"><span class="muted">access</span><span class="chip">3 of 5 libraries <span class="muted">· Movies · Series · Dansk TV</span></span><span class="chip"><span class="usr-tagdot bad"></span>blocked tags <b>horror</b> · <b>true-crime</b></span></div>
-          <table class="wf-table usr-table" style="margin-top:11px;">
-            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Kitchen TV</b> <span class="tiny muted">· Fire TV Stick</span><div class="usr-cap unknown">what this device can take <b>not measured yet</b> <span class="muted">· no Ravilo session since the update</span></div><div class="usr-cap">Ravilo <b>1.24</b> <span class="muted">· TV · since before 17 Sep</span><span class="usr-vh-btn" data-vh="vh-kt">no update seen ▾</span></div></td><td class="tiny muted">7 Apr 2026</td><td class="tiny muted">yesterday 19:40</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row" id="vh-kt"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.24</span><span class="vh-when">→ now <span class="muted">· 38 requests since, none newer</span></span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Seen almost every day on the same build — this TV is on, just not receiving updates.</div></div></td></tr>
-            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
-            <tr><td><b>Sommeren ’92</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">24 Jun 20:12</td><td class="tiny muted">Kitchen TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-          </table>
-        </div>
-
-        <!-- Kids -->
-        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
-          <div class="row center" style="gap:11px;">
-            <span class="usr-av" style="background:linear-gradient(120deg,#2dd49a,#3fb6f5);">BA</span>
-            <div><b>Barnið</b> <span class="badge" style="margin-left:5px;">kids</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 77d1…3c</div></div>
-            <span class="spacer"></span>
-            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
-          </div>
-          <div class="usr-access tiny"><span class="muted">access</span><span class="chip"><span class="usr-tagdot ok"></span>allowed tag <b>kids-safe</b> only</span><span class="chip">max rating <b>7</b></span><span class="chip">2 of 5 libraries <span class="muted">· Movies · Series</span></span><span class="chip" title="Phase 258 — the chips read Jellyfin's live policy; one of this user's devices still enforces the copy it signed in with, until the next refresh"><span class="usr-tagdot warn"></span>a device is still on an older policy</span></div>
-          <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Caminandes 3: Llamigos</div><div class="usr-now-sub">now watching · Playroom TV</div></div><div class="usr-now-bar"><div class="bar"><i style="width:68%"></i></div></div><span class="usr-now-pct">08:12 / 12:00</span></div>
-          <table class="wf-table usr-table" style="margin-top:11px;">
-            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
-            <tr><td><b>Playroom TV</b> <span class="tiny muted">· Android TV</span><div class="usr-cap">what this device can take <b>up to 100 Mbps</b> <span class="muted">· measured 30 Aug</span></div><div class="usr-cap">Ravilo <b>1.36</b> <span class="muted">· TV · since today 10:05</span><span class="usr-vh-btn" data-vh="vh-pr">3 versions ▾</span></div></td><td class="tiny muted">2 Jun 2026</td><td class="tiny muted">12 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
-            <tr class="usr-vh-row" id="vh-pr"><td colspan="5"><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.36</span><span class="vh-when">today 10:05 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.38</span><span class="vh-when">today 06:58 → 10:05 <span class="muted">· 3 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">→ today 06:58</span><span class="vh-note">already on it when history began · 17 Sep</span></div></div></td></tr>
-            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
-            <tr><td><b>Big Buck Bunny</b> <span class="tiny muted">· 2008</span></td><td class="tiny muted">today 08:44</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-            <tr><td><b>Wing It!</b> <span class="tiny muted">· 2023</span></td><td class="tiny muted">yesterday 17:20</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
-          </table>
-        </div>
-    <!-- 236 FR-236-10 (built 2026-09-18, drawn 2026-09-28): the screens the backend drives for a phone. One row per screen, one chip per paired user; revoke is per user, never per screen. -->
-    <div class="card" id="screens" style="margin-top:18px;">
-      <div class="row center" style="gap:10px;flex-wrap:wrap;"><h3 style="margin:0;font-size:1rem;">Screens</h3><span class="tiny muted">TVs that play what a phone sends them</span><span class="spacer" style="flex:1"></span><span class="tiny muted">4 screens</span></div>
-      <div class="tiny muted" style="margin:6px 0 12px;line-height:1.6;max-width:760px;">A phone lists a screen under <i>On this network</i> when both reach jellystructure from the same internet address. Revoking a user signs that user out of that screen only; the screen keeps its other users.</div>
-      <div style="overflow-x:auto;"><table class="usr-table scr-table" style="min-width:760px;">
-        <tr class="usr-hd"><td>Screen</td><td>Kind</td><td>Paired users</td><td>Now playing</td><td>Last seen</td></tr>
-        <tr><td><b>Living room TV</b><div class="tiny muted">Samsung · Tizen 6.5 · Ravilo 1.38</div></td><td><span class="badge">Ravilo app</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Living room TV" aria-label="Revoke Eyð">✕</button></span><span class="scr-u">Olivar <button class="scr-x" title="Revoke Olivar on Living room TV" aria-label="Revoke Olivar">✕</button></span></div></td><td><span class="badge ok"><span class="dot ok"></span> Eyð · Sommeren ’92 S01E04</span></td><td class="tiny muted">now</td></tr>
-        <tr><td><b>Bedroom TV</b><div class="tiny muted">Chromecast with Google TV · receiver</div></td><td><span class="badge">Cast receiver</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Bedroom TV" aria-label="Revoke Eyð">✕</button></span></div></td><td class="tiny muted">—</td><td class="tiny muted">yesterday 22:10</td></tr>
-        <tr><td><b>Kitchen TV</b><div class="tiny muted">Android TV · Ravilo 1.37</div></td><td><span class="badge">Ravilo app</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Kitchen TV" aria-label="Revoke Eyð">✕</button></span><span class="scr-u">Ása <button class="scr-x" title="Revoke Ása on Kitchen TV" aria-label="Revoke Ása">✕</button></span></div></td><td class="tiny muted">—</td><td class="tiny muted">Tuesday</td></tr>
-        <tr><td><b>Playroom TV</b><div class="tiny muted">Samsung · Tizen 6.5 · Ravilo 1.38</div></td><td><span class="badge">Ravilo app</span></td><td><span class="tiny muted">no one yet · waiting for a code</span></td><td class="tiny muted">—</td><td class="tiny muted">today 08:44</td></tr>
-      </table></div>
+  <!-- Jógvan (admin) -->
+  <section class="card ud-user usr-group">
+    <div class="ud-uh">
+      <span class="usr-av" data-uid="jogvan" style="background:linear-gradient(120deg,#7b6ef0,#3fb6f5);">JJ</span>
+      <div><div class="ud-name">Jógvan <span class="badge info">admin</span></div><div class="ud-id"><span class="mono">jellyfin · 8c41…e2</span> · full access</div></div>
+      <span class="spacer"></span>
+      <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
     </div>
+    <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Hraðar Ljós (2024)</div><div class="usr-now-sub">Living room TV · 1080p direct play</div></div><div class="usr-now-bar"><div class="bar"><i style="width:61%"></i></div></div><span class="usr-now-pct">1:12:08 / 1:58:24</span></div>
+    <div class="ud-cols">
+      <div class="ud-left">
+        <div class="ud-lh">Ravilo devices <span class="c">2</span></div>
+        <div class="ud-list">
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Living room TV</b><span class="m">Shield TV</span></div><div class="ud-meta">Ravilo 1.38 · up to 120 Mbps</div></div><span class="ud-st on"><i></i>Connected</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>2 May 2026</b><span>Last seen</span><b>2 min ago</b><span>Can take</span><b>up to 120 Mbps <i>· measured 31 Aug</i></b></div>
+              <div class="ud-vl">Versions · 5</div><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38</span><span class="vh-when">today 08:14 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.36</span><span class="vh-when">23 Sep 07:50 → today 08:14 <span class="muted">· 2 days</span></span><span class="vh-note">skipped 1.37</span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">21 Sep 19:02 → 23 Sep 07:50 <span class="muted">· 1 day</span></span><span class="vh-note">skipped 1.34 – 1.35</span></div><div class="vh-r"><span class="vh-v">1.29</span><span class="vh-when">19 Sep 08:31 → 21 Sep 19:02 <span class="muted">· 2 days</span></span><span class="vh-note">skipped 1.30 – 1.32</span></div><div class="vh-r"><span class="vh-v">1.18</span><span class="vh-when">→ 19 Sep 08:31</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes.</div></div></div>
+          </div>
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-phone"></use></svg></span><div><div class="ud-nm"><b>Pixel 8</b><span class="m">Phone</span></div><div class="ud-meta"><span class="mono">1.38-2-g6d4499e-dirty</span> · dev build · up to 40 Mbps</div></div><span class="ud-st">today 11:42</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>11 Jun 2026</b><span>Last seen</span><b>today 11:42</b><span>Can take</span><b>up to 40 Mbps <i>· measured 29 Aug</i></b></div>
+              <div class="ud-vl">Versions · 5</div><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38-2-g6d4499e-dirty</span><span class="vh-when">today 11:30 → now</span><span class="vh-note">dev build · current</span></div><div class="vh-r"><span class="vh-v">1.38</span><span class="vh-when">today 09:02 → 11:30 <span class="muted">· 2 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.37-4-gab12cd3</span><span class="vh-when">24 Sep 16:10 → today 09:02 <span class="muted">· 17 hours</span></span><span class="vh-note">dev build</span></div><div class="vh-r"><span class="vh-v">1.36</span><span class="vh-when">23 Sep 08:05 → 24 Sep 16:10 <span class="muted">· 1 day</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.31</span><span class="vh-when">→ 23 Sep 08:05</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">A version with a <span class="mono">-g…</span> suffix is a development build — never counted as behind.</div></div></div>
+          </div>
+        </div>
+        <div class="ud-lh">Admin web sessions <span class="c">2</span></div>
+        <div class="ud-list">
+          <div class="ud-dev"><div class="ud-row static"><span class="ud-ic"><svg><use href="#i-web"></use></svg></span><div><div class="ud-nm"><b>Chrome · macOS</b><span class="badge">this session</span></div><div class="ud-meta">Signed in today 09:12 · expires in 13 days</div></div><span class="ud-st">just now</span><span class="btn sm ghost usr-revoke" data-self="1">Revoke</span></div></div>
+          <div class="ud-dev"><div class="ud-row static"><span class="ud-ic"><svg><use href="#i-web"></use></svg></span><div><div class="ud-nm"><b>Firefox · Windows</b></div><div class="ud-meta">Signed in 1 Jul 2026 · expires in 6 days</div></div><span class="ud-st">3 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="ud-lh">Recently watched</div>
+        <div class="ud-hist">
+          <div class="ud-h"><div class="t"><b>Nordvest</b><span>S02E04</span></div><div class="w">yesterday 22:41 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h"><div class="t"><b>Cosmos Laundromat</b><span>2015</span></div><div class="w">Mon 20:04 · Pixel 8</div><div class="r">Stopped at 37%</div></div>
+          <div class="ud-h"><div class="t"><b>Hraðar Ljós</b><span>2024</span></div><div class="w">Sun 21:18 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h"><div class="t"><b>Glass Half</b><span>2015</span></div><div class="w">Sat 20:30 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Agent 327</b><span>2017</span></div><div class="w">Fri 22:02 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Sintel</b><span>2010</span></div><div class="w">Fri 21:15 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Spring</b><span>2019</span></div><div class="w">3 Jul 20:44 · Pixel 8</div><div class="r">Stopped at 81%</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Charge</b><span>2022</span></div><div class="w">2 Jul 21:37 · Living room TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-hfoot"><span class="btn sm ghost usr-more-btn" data-more="14">Show 14 more ▾</span><span>22 plays in the last month</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Eyð -->
+  <section class="card ud-user usr-group">
+    <div class="ud-uh">
+      <span class="usr-av" data-uid="eyd" style="background:linear-gradient(120deg,#e0792f,#f5b542);">ER</span>
+      <div><div class="ud-name">Eyð Restorff</div><div class="ud-id"><span class="mono">jellyfin · 4fa7…91</span> · full access</div></div>
+      <span class="spacer"></span>
+      <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+    </div>
+    <div class="ud-cols">
+      <div class="ud-left">
+        <div class="ud-lh">Ravilo devices <span class="c">12</span><span class="k">· 4 TVs and screens · 3 speakers · 2 phones · 3 computers</span></div>
+        <div class="ud-list">
+          <!-- prospective 286 §6.4 — a speaker enrols as kind = cast with an audio-only mark; it counts against the session ceiling only while it transcodes (§8 Q4) -->
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-spk"></use></svg></span><div><div class="ud-nm"><b>Stue</b><span class="m">Nest Wifi point</span><span class="badge">audio only</span></div><div class="ud-meta">Receiver 1.38 · MP3 · AAC · FLAC · Opus direct</div></div><span class="ud-st on"><i></i>Playing · Northbound</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>yesterday</b><span>Last seen</span><b>now</b><span>Can take</span><b>audio only <i>· MP3 · AAC · FLAC · Opus direct; WMA converted on the server</i></b><span>Receiver</span><b>1.38 <i>· cast · since yesterday 18:02</i></b><span>Sessions</span><span>Counts toward the session limit only while converting.</span></div></div>
+          </div>
+                    <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Bedroom TV</b><span class="m">Chromecast HD</span></div><div class="ud-meta">Ravilo 1.35 · up to 60 Mbps</div><div class="ud-warns"><span class="ud-w">3 releases behind</span><span class="ud-w">38 reconnects in the last hour</span></div></div><span class="ud-st on"><i></i>Connected</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>18 Mar 2026</b><span>Last seen</span><b>41 min ago</b><span>Can take</span><b>up to 60 Mbps <i>· measured yesterday</i></b><span>Behind</span><span class="warn">On 1.35 since 21 Sep 13:52. If it installs from Google Play, check that its account is a tester on the track releases go to.</span><span>Connection</span><span class="warn">Unstable — 38 reconnects in the last hour.</span></div>
+              <div class="ud-vl">Versions · 2</div><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.35</span><span class="vh-when">21 Sep 13:52 → now</span><span class="vh-note warn">3 releases behind</span></div><div class="vh-r"><span class="vh-v">1.24</span><span class="vh-when">→ 21 Sep 13:52</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Dated when this server first saw the version in a request — a TV that stays off updates on its first request after it wakes.</div></div></div>
+          </div>
+          <div class="ud-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-phone"></use></svg></span><div><div class="ud-nm"><b>Pixel 9</b><span class="m">Phone</span></div><div class="ud-meta">Ravilo 1.38 · up to 50 Mbps</div></div><span class="ud-st">today 08:10</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>3 Sep 2026</b><span>Last seen</span><b>today 08:10</b><span>Can take</span><b>up to 50 Mbps <i>· measured 3 Sep</i></b></div></div></div>
+          <div class="ud-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-lap"></use></svg></span><div><div class="ud-nm"><b>MacBook Air</b><span class="m">Ravilo for Mac</span></div><div class="ud-meta">Ravilo 1.38 · up to 80 Mbps</div></div><span class="ud-st">today 07:55</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>29 Sep 2026</b><span>Last seen</span><b>today 07:55</b><span>Can take</span><b>up to 80 Mbps <i>· measured 30 Sep</i></b></div></div></div>
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-web"></use></svg></span><div><div class="ud-nm"><b>Ravilo Web</b><span class="m">Browser</span></div><div class="ud-meta">Ravilo 1.38 · not measured</div></div><span class="ud-st">yesterday 23:10</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>29 Jun 2026</b><span>Last seen</span><b>yesterday 23:10</b><span>Can take</span><b>not measured <i>· the browser never tells us</i></b></div>
+              <div class="ud-vl">Versions · 4</div><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.38</span><span class="vh-when">24 Sep 22:58 → now</span><span class="vh-note">current</span></div><div class="vh-r"><span class="vh-v">1.37</span><span class="vh-when">24 Sep 17:20 → 22:58 <span class="muted">· 6 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">21 Sep 20:41 → 24 Sep 17:20 <span class="muted">· 3 days</span></span><span class="vh-note">skipped 1.34 – 1.36</span></div><div class="vh-r"><span class="vh-v">1.29</span><span class="vh-when">→ 21 Sep 20:41</span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">The web app is whatever this server serves, so it moves when the server is deployed — dated at the first request after the browser reloaded.</div></div></div>
+          </div>
+          <div class="ud-dev usr-more-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-spk"></use></svg></span><div><div class="ud-nm"><b>Kontor</b><span class="m">Nest Audio</span></div><div class="ud-meta">Receiver 1.38 · audio only</div></div><span class="ud-st">2 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>yesterday</b><span>Last seen</span><b>2 days ago</b><span>Can take</span><b>audio only <i>· WMA converted on the server</i></b></div></div></div>
+          <div class="ud-dev usr-more-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-spk"></use></svg></span><div><div class="ud-nm"><b>Badeværelse</b><span class="m">Nest Mini</span></div><div class="ud-meta">Receiver 1.38 · audio only</div></div><span class="ud-st">3 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>1 Oct 2026</b><span>Last seen</span><b>3 days ago</b><span>Can take</span><b>audio only <i>· WMA converted on the server</i></b></div></div></div>
+          <div class="ud-dev usr-more-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-web"></use></svg></span><div><div class="ud-nm"><b>iPad</b><span class="m">Safari</span></div><div class="ud-meta">Ravilo 1.38 · not measured</div></div><span class="ud-st">6 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>12 Aug 2026</b><span>Last seen</span><b>6 days ago</b><span>Can take</span><b>not measured <i>· the browser never tells us</i></b></div></div></div>
+          <div class="ud-dev usr-more-dev"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Summerhouse TV</b><span class="m">Android TV</span></div><div class="ud-meta">Ravilo 1.31 · up to 100 Mbps</div></div><span class="ud-st">23 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>14 Jul 2026</b><span>Last seen</span><b>23 days ago</b><span>Can take</span><b>up to 100 Mbps <i>· measured 11 Sep</i></b></div></div></div>
+          <div class="ud-dsub">Not seen in 30+ days · 3</div>
+          <div class="ud-dev usr-more-dev stale"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-phone"></use></svg></span><div><div class="ud-nm"><b>Galaxy S21</b><span class="m">Phone</span></div><div class="ud-meta">Ravilo 1.12 · up to 40 Mbps</div></div><span class="ud-st">64 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>2 Feb 2026</b><span>Last seen</span><b>1 Aug 2026</b><span>Can take</span><b>up to 40 Mbps <i>· measured 30 Jul</i></b></div></div></div>
+          <div class="ud-dev usr-more-dev stale"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Hotel TV</b><span class="m">Chromecast HD</span></div><div class="ud-meta">Ravilo 1.20 · up to 60 Mbps</div></div><span class="ud-st">82 days ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>10 Jul 2026</b><span>Last seen</span><b>14 Jul 2026</b><span>Can take</span><b>up to 60 Mbps <i>· measured 10 Jul</i></b></div></div></div>
+          <div class="ud-dev usr-more-dev stale"><div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-web"></use></svg></span><div><div class="ud-nm"><b>Ravilo Web</b><span class="m">Chrome · Windows</span></div><div class="ud-meta">Ravilo 1.09 · not measured</div></div><span class="ud-st">4 months ago</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div><div class="ud-more"><div class="ud-kv"><span>Added</span><b>3 Mar 2026</b><span>Last seen</span><b>6 Jun 2026</b><span>Can take</span><b>not measured <i>· the browser never tells us</i></b></div></div></div>
+        </div>
+        <div class="ud-dfold"><span class="btn sm ghost ud-devmore" data-more="7">Show 7 more ▾</span><span>4 seen this month · 3 not seen in 30+ days</span><span class="sp"></span><span class="btn sm ghost ud-stale">Revoke 3 unused</span></div>
+      </div>
+      <div>
+        <div class="ud-lh">Recently watched</div>
+        <div class="ud-hist">
+          <div class="ud-h"><div class="t"><b>Havets Hjarta</b><span>S02E01</span></div><div class="w">today 21:12 · Bedroom TV</div><div class="r">Stopped at 64%</div></div>
+          <div class="ud-h"><div class="t"><b>Havets Hjarta</b><span>S01 · E01–E08</span></div><div class="w">29 Jun – 6 Jul · Bedroom TV</div><div class="r ok">✓ 8 episodes</div></div>
+          <div class="ud-h"><div class="t"><b>Big Buck Bunny</b><span>2008</span></div><div class="w">4 Jul 21:02 · Ravilo Web</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h"><div class="t"><b>Nordvest</b><span>S01 · E01–E06</span></div><div class="w">20 – 27 Jun · Bedroom TV</div><div class="r ok">✓ 6 episodes</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Dansk Krimi</b><span>S03 · E01–E10</span></div><div class="w">8 – 19 Jun · Bedroom TV</div><div class="r ok">✓ Season finished</div></div>
+          <div class="ud-h usr-more-row"><div class="t"><b>Sommeren ’92</b><span>2019</span></div><div class="w">6 Jun 20:58 · Ravilo Web</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-hfoot"><span class="btn sm ghost usr-more-btn" data-more="29">Show 29 more ▾</span><span>43 plays in the last month · episodes in a row are grouped</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kids -->
+  <section class="card ud-user usr-group">
+    <div class="ud-uh">
+      <span class="usr-av" style="background:linear-gradient(120deg,#2dd49a,#3fb6f5);">BA</span>
+      <div><div class="ud-name">Barnið <span class="badge">kids</span></div><div class="ud-id"><span class="mono">jellyfin · 77d1…3c</span></div></div>
+      <span class="spacer"></span>
+      <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+    </div>
+    <div class="ud-acc"><span class="chip"><b>2 of 5</b> libraries <span class="muted">· Movies · Series</span></span><span class="chip"><span class="usr-tagdot ok"></span>only <b>kids-safe</b></span><span class="chip">max rating <b>7</b></span><span class="chip dim" title="No switch on this user's phone — the Musik library is not in their Jellyfin access">No music</span><span class="chip" title="Phase 258 — the chips read Jellyfin's live policy; one of this user's devices still enforces the copy it signed in with, until the next refresh"><span class="usr-tagdot warn"></span>a device is on an older policy</span></div>
+    <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Caminandes 3: Llamigos</div><div class="usr-now-sub">Playroom TV</div></div><div class="usr-now-bar"><div class="bar"><i style="width:68%"></i></div></div><span class="usr-now-pct">08:12 / 12:00</span></div>
+    <div class="ud-cols">
+      <div class="ud-left">
+        <div class="ud-lh">Ravilo devices <span class="c">1</span></div>
+        <div class="ud-list">
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Playroom TV</b><span class="m">Android TV</span></div><div class="ud-meta">Ravilo 1.36 · up to 100 Mbps</div></div><span class="ud-st on"><i></i>Connected</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>2 Jun 2026</b><span>Last seen</span><b>12 min ago</b><span>Can take</span><b>up to 100 Mbps <i>· measured 30 Aug</i></b></div>
+              <div class="ud-vl">Versions · 3</div><div class="usr-vh"><div class="vh-r now back"><span class="vh-v">1.36</span><span class="vh-when">today 10:05 → now</span><span class="vh-note warn">went back from 1.38</span></div><div class="vh-r"><span class="vh-v">1.38</span><span class="vh-when">today 06:58 → 10:05 <span class="muted">· 3 hours</span></span><span class="vh-note"></span></div><div class="vh-r"><span class="vh-v">1.33</span><span class="vh-when">→ today 06:58</span><span class="vh-note">already on it when history began · 17 Sep</span></div></div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ud-lh">Recently watched</div>
+        <div class="ud-hist">
+          <div class="ud-h"><div class="t"><b>Big Buck Bunny</b><span>2008</span></div><div class="w">today 08:44 · Playroom TV</div><div class="r ok">✓ Finished</div></div>
+          <div class="ud-h"><div class="t"><b>Wing It!</b><span>2023</span></div><div class="w">yesterday 17:20 · Playroom TV</div><div class="r ok">✓ Finished</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charlotte (restricted) -->
+  <section class="card ud-user usr-group">
+    <div class="ud-uh">
+      <span class="usr-av" data-uid="charlotte" style="background:linear-gradient(120deg,#19d6c6,#2a8cf0);">CH</span>
+      <div><div class="ud-name">Charlotte <span class="badge warn" title="Jellyfin user policy — Ravilo serves only what it permits (Phase 142)">restricted</span></div><div class="ud-id"><span class="mono">jellyfin · b2c9…0d</span></div></div>
+      <span class="spacer"></span>
+      <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+    </div>
+    <div class="ud-acc"><span class="chip"><b>3 of 5</b> libraries <span class="muted">· Movies · Series · Dansk TV</span></span><span class="chip"><span class="usr-tagdot bad"></span>blocks <b>horror</b> · <b>true-crime</b></span><span class="chip" title="Ravilo on this user's phone offers Switch to music">Music ✓</span></div>
+    <div class="ud-cols">
+      <div class="ud-left">
+        <div class="ud-lh">Ravilo devices <span class="c">1</span></div>
+        <div class="ud-list">
+          <div class="ud-dev">
+            <div class="ud-row" tabindex="0" role="button" aria-expanded="false"><span class="ud-ic"><svg><use href="#i-tv"></use></svg></span><div><div class="ud-nm"><b>Kitchen TV</b><span class="m">Fire TV Stick</span></div><div class="ud-meta">Ravilo 1.24 · not measured yet</div></div><span class="ud-st">yesterday 19:40</span><span class="btn sm ghost usr-revoke">Revoke</span><span class="ud-chev">›</span></div>
+            <div class="ud-more"><div class="ud-kv"><span>Added</span><b>7 Apr 2026</b><span>Last seen</span><b>yesterday 19:40</b><span>Can take</span><b>not measured yet <i>· no Ravilo session since the update</i></b></div>
+              <div class="ud-vl">Versions · no update seen</div><div class="usr-vh"><div class="vh-r now"><span class="vh-v">1.24</span><span class="vh-when">→ now <span class="muted">· 38 requests since, none newer</span></span><span class="vh-note">already on it when history began · 17 Sep</span></div><div class="vh-foot">Seen almost every day on the same build — this TV is on, just not receiving updates.</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ud-lh">Recently watched</div>
+        <div class="ud-hist">
+          <div class="ud-h"><div class="t"><b>Sommeren ’92</b><span>2019</span></div><div class="w">24 Jun 20:12 · Kitchen TV</div><div class="r ok">✓ Finished</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 236 FR-236-10 (built 2026-09-18, drawn 2026-09-28): the screens the backend drives for a phone. One row per screen, one chip per paired user; revoke is per user, never per screen. -->
+  <div class="ud-sec"><h2>Screens</h2><span class="n">4 TVs that play what a phone sends them</span></div>
+  <div class="ud-note">A phone lists a screen under <i>On this network</i> when both reach jellystructure from the same internet address. Revoking a user here signs only that user out of that screen.</div>
+  <div class="card" id="screens" style="padding:8px 16px 10px">
+    <div style="overflow-x:auto;"><table class="wf-table usr-table scr-table" style="min-width:720px;">
+      <tr class="usr-hd"><td>Screen</td><td>Kind</td><td>Paired users</td><td>Now playing</td><td>Last seen</td></tr>
+      <tr><td><b>Living room TV</b><div class="tiny muted">Samsung · Tizen 6.5 · Ravilo 1.38</div></td><td><span class="badge">Ravilo app</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Living room TV" aria-label="Revoke Eyð">✕</button></span><span class="scr-u">Olivar <button class="scr-x" title="Revoke Olivar on Living room TV" aria-label="Revoke Olivar">✕</button></span></div></td><td><span class="badge ok"><span class="dot ok"></span> Eyð · Sommeren ’92 S01E04</span></td><td class="tiny muted">now</td></tr>
+      <tr><td><b>Bedroom TV</b><div class="tiny muted">Chromecast with Google TV · receiver</div></td><td><span class="badge">Cast receiver</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Bedroom TV" aria-label="Revoke Eyð">✕</button></span></div></td><td class="tiny muted">—</td><td class="tiny muted">yesterday 22:10</td></tr>
+      <tr><td><b>Kitchen TV</b><div class="tiny muted">Android TV · Ravilo 1.37</div></td><td><span class="badge">Ravilo app</span></td><td><div class="scr-chips"><span class="scr-u">Eyð <button class="scr-x" title="Revoke Eyð on Kitchen TV" aria-label="Revoke Eyð">✕</button></span><span class="scr-u">Ása <button class="scr-x" title="Revoke Ása on Kitchen TV" aria-label="Revoke Ása">✕</button></span></div></td><td class="tiny muted">—</td><td class="tiny muted">Tuesday</td></tr>
+      <tr><td><b>Playroom TV</b><div class="tiny muted">Samsung · Tizen 6.5 · Ravilo 1.38</div></td><td><span class="badge">Ravilo app</span></td><td><span class="tiny muted">no one yet · waiting for a code</span></td><td class="tiny muted">—</td><td class="tiny muted">today 08:44</td></tr>
+    </table></div>
   </div>
 </main>
-<style>.scr-chips{display:flex;gap:6px;flex-wrap:wrap}.scr-u{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border-radius:999px;border:1px solid var(--line-2);font-size:.76rem}.scr-x{border:0;background:none;color:var(--ink-dim);cursor:pointer;width:20px;height:20px;border-radius:50%;font-size:.66rem}.scr-x:hover{background:var(--fill-3);color:var(--bad)}.scr-x.confirm{width:auto;padding:0 6px;border-radius:10px;color:var(--bad);font-weight:700}</style>
 <script>
 document.querySelectorAll('.scr-x').forEach(b => b.addEventListener('click', () => {
   if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.textContent = 'Revoke?'; setTimeout(() => { if (b.isConnected) { b.classList.remove('confirm'); b.textContent = '✕'; } }, 3500); return; }
@@ -201,51 +371,126 @@ document.querySelectorAll('.scr-x').forEach(b => b.addEventListener('click', () 
 </script>
 
 <script src="app-shell.js"></script>
+<script src="../ravilo/sessions-live.js"></script>
+<script>
+/* 304 — the Sessions card, on the shared stand-in store (window.RavSess). FROM = the admin. */
+(function () {
+  const RS = window.RavSess; if (!RS) return;
+  const $ = id => document.getElementById(id), FROM = 'the admin';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const open = new Set(); let endArm = null;
+  const vid = s => s.kind === 'film' || s.kind === 'episode';
+  const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
+  const clock = t => new Date(t).toTimeString().slice(0, 5);
+  const pill = s => s.ended ? '<span class="badge">ended</span>' : s.state === 'playing' ? '<span class="badge ok"><span class="dot ok"></span> playing</span>' : '<span class="badge warn">paused</span>';
+  function row(s) {
+    const pct = (s.posNow / s.dur * 100).toFixed(1);
+    return '<tr class="ses-r" data-id="' + s.id + '">'
+      + '<td><div class="ses-what"><span class="ses-art' + (vid(s) ? ' w' : '') + '" style="background:' + s.art + '"></span><span><b>' + esc(s.title) + '</b><span class="tiny muted">' + esc(s.subtitle) + '</span></span></div></td>'
+      + '<td><b>' + esc(s.owner) + '</b><div class="tiny muted">' + esc(s.line) + (s.rooms.length > 1 ? ' · ' + s.rooms.length + ' rooms' : '') + '</div></td>'
+      + '<td><div class="ses-pr">' + pill(s) + '<span class="ses-pg"><i data-pg="' + s.id + '" style="width:' + pct + '%"></i></span><span class="tiny"><span class="mono" data-tm="' + s.id + '">' + RS.fmt(s.posNow) + '</span><span class="muted"> / ' + RS.fmt(s.dur) + '</span></span></div>'
+      + '<div class="tiny muted" style="margin-top:4px">' + (s.ended ? 'ended ' + clock(s.endedAt) : 'for ' + ago(s.created)) + ' · from ' + esc(s.touchedBy.length ? s.touchedBy.join(' · ') : s.from) + '</div></td>'
+      + '<td>' + (s.ended ? '' : '<div class="ses-acts"><span class="btn sm ghost" data-a="pp" title="' + (s.state === 'playing' ? 'Pause' : 'Play') + '">' + (s.state === 'playing' ? '❚❚' : '▶') + '</span><span class="btn sm ghost" data-a="next" title="Next">⏭</span><span class="btn sm ghost' + (endArm === s.id ? ' usr-revoke confirm' : '') + '" data-a="end">' + (endArm === s.id ? 'End — sure?' : 'End') + '</span></div>') + '</td></tr>'
+      + (open.has(s.id) ? '<tr class="ses-x"><td colspan="4">' + remote(s) + '</td></tr>' : '');
+  }
+  function remote(s) {
+    const dis = s.ended ? ' style="pointer-events:none;opacity:.5"' : '';
+    const free = RS.PLACES.filter(p => !p.app && (!vid(s) || p.video) && s.rooms.indexOf(p.id) < 0 && !RS.busy(p.id));
+    const q = s.queue.length > 1 ? '<div class="ses-h">' + (vid(s) ? 'Episodes' : 'Queue') + ' · ' + (s.index + 1) + ' of ' + s.queue.length + '</div><div class="ses-q">' + s.queue.map((x, i) => '<span data-a="jump" data-i="' + i + '" class="' + (i === s.index ? 'on' : '') + '">' + (i + 1) + '. ' + esc(s.subs ? s.subs[i] : x[1]) + ' <span class="muted">· ' + RS.fmt(x[2]) + '</span></span>').join('') + '</div>' : '';
+    const vol = '<div class="ses-h">Volume</div><div class="ses-v"><b>Volume</b><input type="range" min="0" max="100" step="5" value="' + RS.master(s.id) + '" data-v=""><span class="mono" data-vv="">' + RS.master(s.id) + '%</span></div>'
+      + (s.rooms.length > 1 ? s.rooms.map(r => '<div class="ses-v rm"><span>' + esc(RS.place(r).name) + ' <span class="muted" data-a="rmroom" data-p="' + r + '" style="cursor:pointer" title="Remove this room">×</span></span><input type="range" min="0" max="100" step="5" value="' + s.vols[r] + '" data-v="' + r + '"><span class="mono" data-vv="' + r + '">' + s.vols[r] + '%</span></div>').join('') : '');
+    const places = '<div class="ses-ctl" style="margin-top:10px"><select class="ses-sel" data-sel="move"><option value="">Move to…</option>' + RS.PLACES.filter(p => !p.app && (!vid(s) || p.video) && s.rooms.indexOf(p.id) < 0).map(p => { const b = RS.busy(p.id); const ox = RS.outside(p.id); return '<option value="' + p.id + '"' + (b || ox ? ' disabled' : '') + '>' + esc(p.name) + (b ? ' — ' + esc(b.owner) + ' · ' + esc(b.title) : ox ? ' — busy · ' + esc(ox) : '') + '</option>'; }).join('') + '</select>'
+      + (vid(s) ? '<select class="ses-sel" data-sel="audio"><option>Audio · ' + esc(s.tracks.audio) + '</option><option value="Dansk 5.1">Dansk 5.1</option><option value="English 2.0">English 2.0</option><option value="Føroyskt">Føroyskt</option></select><select class="ses-sel" data-sel="subs"><option>Subtitles · ' + esc(s.tracks.subs) + '</option><option value="Off">Off</option><option value="Dansk">Dansk</option><option value="Føroyskt">Føroyskt</option></select>'
+        : '<select class="ses-sel" data-sel="add"><option value="">Add a speaker…</option>' + free.map(p => RS.outside(p.id) ? '<option value="' + p.id + '" disabled>' + esc(p.name) + ' — busy · ' + esc(RS.outside(p.id)) + '</option>' : '<option value="' + p.id + '">' + esc(p.name) + ' · ' + p.vol + '%</option>').join('') + '</select>') + '</div>';
+    const tl = '<div class="ses-h">What happened · kept 7 days</div><div class="ses-tl">' + s.events.slice().reverse().map(e => '<div><span class="w">' + clock(e[0]) + '</span>' + esc(e[1]) + (e[2] ? ' <span class="muted">· from ' + esc(e[2]) + '</span>' : '') + '</div>').join('') + '</div>';
+    return '<div class="grid2"><div' + dis + '><div class="ses-ctl"><span class="btn sm ghost" data-a="prev">⏮</span><span class="btn sm" data-a="pp">' + (s.state === 'playing' ? '❚❚ Pause' : '▶ Play') + '</span><span class="btn sm ghost" data-a="next">⏭</span><span class="mono tiny" data-tm2="' + s.id + '">' + RS.fmt(s.posNow) + '</span><input type="range" min="0" max="' + s.dur + '" value="' + Math.floor(s.posNow) + '" data-seek><span class="mono tiny">' + RS.fmt(s.dur) + '</span></div>'
+      + places + q + vol + '</div><div>' + tl + '</div></div>';
+  }
+  function paint() {
+    if (document.activeElement && document.activeElement.type === 'range' && document.activeElement.closest('#ses-list')) return;
+    const L = RS.all(), E = RS.endedToday();
+    $('ses-count').textContent = L.length ? L.length + ' playing or paused · ' + new Set(L.map(s => s.owner)).size + ' people' : '';
+    $('ses-ctl').classList.toggle('on', RS.ctlOthers);
+    $('ses-list').innerHTML = '<tr class="usr-hd"><td>Playing</td><td>Who · where</td><td>Progress</td><td></td></tr>'
+      + (L.length ? L.map(row).join('') : '<tr><td colspan="4" class="tiny muted" style="padding:14px 0">Nothing is playing anywhere.</td></tr>')
+      + (E.length ? '<tr class="usr-hd"><td colspan="4" style="padding-top:18px">Ended today</td></tr>' + E.map(row).join('') : '');
+  }
+  $('ses-list').addEventListener('click', e => {
+    const a = e.target.closest('[data-a]'), r = e.target.closest('tr.ses-r') || (e.target.closest('tr.ses-x') && e.target.closest('tr.ses-x').previousElementSibling); if (!r) return; const id = r.dataset.id;
+    if (!a) { if (e.target.closest('tr.ses-x')) return; open.has(id) ? open.delete(id) : open.add(id); paint(); return; }
+    e.stopPropagation(); const k = a.dataset.a;
+    if (k === 'end') { if (endArm !== id) { endArm = id; paint(); setTimeout(() => { if (endArm === id) { endArm = null; paint(); } }, 4000); return; } endArm = null; RS.cmd(id, 'stop', null, FROM); return; }
+    if (k === 'jump') return RS.cmd(id, 'jump', +a.dataset.i, FROM);
+    if (k === 'rmroom') return RS.cmd(id, 'remove', a.dataset.p, FROM);
+    RS.cmd(id, k, null, FROM);
+  });
+  $('ses-list').addEventListener('input', e => { const r = e.target.closest('tr.ses-x'); if (!r) return; const id = r.previousElementSibling.dataset.id;
+    if (e.target.dataset.v != null) { RS.cmd(id, 'vol', { room: e.target.dataset.v, v: +e.target.value }, FROM); const s = RS.get(id); r.querySelectorAll('[data-vv]').forEach(o => { const k = o.dataset.vv, v = k ? s.vols[k] : RS.master(id); o.textContent = v + '%'; const i = o.parentNode.querySelector('input'); if (i !== e.target) i.value = v; }); } });
+  $('ses-list').addEventListener('change', e => { const r = e.target.closest('tr.ses-x'); if (!r) return; const id = r.previousElementSibling.dataset.id, t = e.target;
+    if (t.dataset.v != null) { RS.cmd(id, 'volDone', { room: t.dataset.v }, FROM); t.blur(); paint(); }
+    else if (t.hasAttribute('data-seek')) { RS.cmd(id, 'seek', +t.value, FROM); t.blur(); }
+    else if (t.dataset.sel === 'move' && t.value) RS.cmd(id, 'move', t.value, FROM);
+    else if (t.dataset.sel === 'add' && t.value) RS.cmd(id, 'add', t.value, FROM);
+    else if (t.dataset.sel === 'audio' && t.value) RS.cmd(id, 'track', { audio: t.value }, FROM);
+    else if (t.dataset.sel === 'subs' && t.value) RS.cmd(id, 'track', { subs: t.value }, FROM); });
+  $('ses-ctl').addEventListener('click', () => { RS.ctlOthers = !RS.ctlOthers; });
+  RS.on(paint); paint();
+  setInterval(() => RS.all().forEach(s => { const p = document.querySelector('[data-pg="' + s.id + '"]'), t = document.querySelector('[data-tm="' + s.id + '"]'), t2 = document.querySelector('[data-tm2="' + s.id + '"]');
+    if (p) p.style.width = (s.posNow / s.dur * 100).toFixed(1) + '%'; if (t) t.textContent = RS.fmt(s.posNow); if (t2) t2.textContent = RS.fmt(s.posNow); }), 1000);
+})();
+</script>
 <script>
 (function () {
   function toast(m){ const t=document.createElement('div'); t.className='toast'; t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),1800); }
   const ref = document.getElementById('users-refresh');
-  if (ref) ref.addEventListener('click', () => toast('Refreshed from Jellyfin · 4 users · 7 devices'));
-
-  // ---- Users & devices (Phase 143): revoke + sign-out-everywhere, confirm before firing ----
+  if (ref) ref.addEventListener('click', () => toast('Refreshed from Jellyfin · 4 users · 16 devices'));
   function armConfirm(btn, label, fire) {
     if (btn.classList.contains('confirm')) { fire(); return; }
     const orig = btn.textContent;
     btn.classList.add('confirm'); btn.textContent = label;
     setTimeout(() => { if (document.body.contains(btn)) { btn.classList.remove('confirm'); btn.textContent = orig; } }, 3500);
   }
-  document.querySelectorAll('.usr-vh-btn').forEach(b => {
-    const lbl = b.textContent.replace(/ [▾▴]$/, '');
-    b.addEventListener('click', () => {
-      const row = document.getElementById(b.dataset.vh);
-      const open = row.classList.toggle('open');
-      b.textContent = lbl + (open ? ' ▴' : ' ▾');
-    });
+  // a device row opens to its details (added, last seen, what it can take, versions)
+  function toggle(r) { const d = r.closest('.ud-dev'), o = d.classList.toggle('open'); r.setAttribute('aria-expanded', o); }
+  document.querySelectorAll('.ud-row:not(.static)').forEach(r => {
+    r.addEventListener('click', e => { if (!e.target.closest('.usr-revoke')) toggle(r); });
+    r.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); toggle(r); } });
   });
   document.querySelectorAll('.usr-more-btn').forEach(b => b.addEventListener('click', () => {
-    const tbl = b.closest('.usr-table');
-    const open = tbl.classList.toggle('hist-open');
+    const h = b.closest('.ud-hist'), open = h.classList.toggle('hist-open');
     b.textContent = open ? 'Show less ▴' : 'Show ' + b.dataset.more + ' more ▾';
   }));
-  document.querySelectorAll('.usr-revoke').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.usr-revoke').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
     armConfirm(b, b.dataset.self ? 'Revoke — signs YOU out?' : 'Revoke — sure?', () => {
-      const tr = b.closest('tr');
-      tr.style.transition = 'opacity .3s'; tr.style.opacity = '0';
-      setTimeout(() => tr.remove(), 320);
+      const d = b.closest('.ud-dev'), list = d.parentNode, lh = list.previousElementSibling;
+      d.style.transition = 'opacity .3s'; d.style.opacity = '0';
+      setTimeout(() => { d.remove(); recount(list); }, 320);
     });
+  }));
+  function recount(list) {
+    const lh = list.previousElementSibling, n = list.querySelectorAll('.ud-dev').length, c = lh && lh.querySelector('.c'); if (c) c.textContent = n;
+    const k = lh && lh.querySelector('.k'); if (k) k.remove();
+    const f = list.nextElementSibling; if (f && f.classList.contains('ud-dfold')) { const m = list.querySelectorAll('.usr-more-dev').length, st = list.querySelectorAll('.ud-dev.stale').length, b = f.querySelector('.ud-devmore');
+      if (!m) f.remove(); else { b.dataset.more = m; if (!list.classList.contains('dev-open')) b.textContent = 'Show ' + m + ' more ▾'; f.children[1].textContent = (m - st) + ' seen this month' + (st ? ' · ' + st + ' not seen in 30+ days' : ''); if (!st) { const x = f.querySelector('.ud-stale'); if (x) x.remove(); const s = list.querySelector('.ud-dsub'); if (s) s.remove(); } } }
+    if (!n) list.innerHTML = '<div class="ud-empty">None.</div>';
+  }
+  document.querySelectorAll('.ud-devmore').forEach(b => b.addEventListener('click', () => {
+    const list = b.closest('.ud-dfold').previousElementSibling, o = list.classList.toggle('dev-open');
+    b.textContent = o ? 'Show less ▴' : 'Show ' + b.dataset.more + ' more ▾';
+  }));
+  document.querySelectorAll('.ud-stale').forEach(b => b.addEventListener('click', () => {
+    const list = b.closest('.ud-dfold').previousElementSibling, st = list.querySelectorAll('.ud-dev.stale');
+    armConfirm(b, 'Revoke ' + st.length + ' — sure?', () => { st.forEach(d => d.remove()); toast(st.length + ' unused devices signed out'); recount(list); });
   }));
   document.querySelectorAll('.usr-signout-all').forEach(b => b.addEventListener('click', () => {
     armConfirm(b, 'Sign out all — sure?', () => {
-      const g = b.closest('.usr-group');
-      const tbl = g.querySelector('.usr-table');
-      tbl.style.transition = 'opacity .3s'; tbl.style.opacity = '0';
-      setTimeout(() => {
-        tbl.outerHTML = '<div class="usr-empty">No active devices or sessions — everything signed out. This user\u2019s next Ravilo or web login starts fresh.</div>';
-      }, 320);
+      const left = b.closest('.usr-group').querySelector('.ud-left');
+      left.style.transition = 'opacity .3s'; left.style.opacity = '0';
+      setTimeout(() => { left.innerHTML = '<div class="ud-lh">Devices &amp; sessions</div><div class="ud-empty">Everything signed out. This user\u2019s next Ravilo or web login starts fresh.</div>'; left.style.opacity = '1'; }, 320);
       b.classList.remove('confirm'); b.textContent = '⏻ Sign out everywhere';
     });
   }));
-
   // R234: paint whatever photo the user set in Ravilo (phone/web); initials otherwise.
   document.querySelectorAll('.usr-av[data-uid]').forEach(av => {
     let ph = null; try { ph = localStorage.getItem('js-ravilo-photo:' + av.dataset.uid); } catch (e) {}
@@ -254,13 +499,6 @@ document.querySelectorAll('.scr-x').forEach(b => b.addEventListener('click', () 
     av.innerHTML = '<img class="av-img" src="' + ph + '" alt="">';
   });
 })();
-</script>
-<script>
-  // music brief §E3 — one sentence per user: whether their Jellyfin policy grants the music library,
-  // so the admin can see why a phone shows no music mode.
-  document.querySelectorAll('.usr-access').forEach((el, i) => el.insertAdjacentHTML('beforeend', i === 0
-    ? '<span class="chip" title="Ravilo on this user\'s phone offers Switch to music">Music: yes</span>'
-    : '<span class="chip" style="opacity:.7" title="No switch on this user\'s phone — the Musik library is not in their Jellyfin access">Music: no library access</span>'));
 </script>
 </body>
 </html>

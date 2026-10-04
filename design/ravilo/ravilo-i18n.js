@@ -215,6 +215,17 @@
   Object.assign(STR.fo, { shuffle: 'Blanda', shuffle_next: 'Næsti · blandað', all_watched: 'Allir {n} partarnir sæddir',
     reset_progress: 'Nullstilla', reset_confirm: 'Trýst aftur · allir {n} verða ósæddir', reset_done: 'Nullstilla · S01E01 er næstur' });
 
+  // ---- music editions (owner 2026-10-04). da/fo are drafts. ----
+  Object.assign(STR.en, { 'ed.play_album': 'Play album', 'ed.play_extras': 'Play album + extras', 'ed.extras': 'Extras · {e}', 'ed.n_extra': '+ {n} extra', 'ed.n_extras': '+ {n} extras', 'ed.bonus': 'Bonus',
+    'ed.singles': 'Singles & B-sides', 'ed.n_bsides': '{n} B-sides', 'ed.one_bside': '1 B-side', 'ed.show': 'Show', 'ed.hide': 'Hide', 'ed.from_single': 'from {s} (single)', 'ed.single_from': 'Single from {a}',
+    'ed.also_on': 'Also on {n} releases', 'ed.also_on_one': 'Also on 1 release', 'ed.sub_album': '{n} songs · the official order', 'ed.sub_extras': '{n} songs · extras, then the B-sides', 'ed.under': '{n} singles live under their album', 'ed.album': 'Album', 'ed.more_play': 'More ways to play' });
+  Object.assign(STR.da, { 'ed.play_album': 'Afspil album', 'ed.play_extras': 'Afspil album + ekstra', 'ed.extras': 'Ekstra · {e}', 'ed.n_extra': '+ {n} ekstra', 'ed.n_extras': '+ {n} ekstra', 'ed.bonus': 'Bonus',
+    'ed.singles': 'Singler og B-sider', 'ed.n_bsides': '{n} B-sider', 'ed.one_bside': '1 B-side', 'ed.show': 'Vis', 'ed.hide': 'Skjul', 'ed.from_single': 'fra {s} (single)', 'ed.single_from': 'Single fra {a}',
+    'ed.also_on': 'Også på {n} udgivelser', 'ed.also_on_one': 'Også på 1 udgivelse', 'ed.sub_album': '{n} sange · den officielle rækkefølge', 'ed.sub_extras': '{n} sange · ekstra, så B-siderne', 'ed.under': '{n} singler ligger under deres album', 'ed.album': 'Album', 'ed.more_play': 'Flere måder at afspille' });
+  Object.assign(STR.fo, { 'ed.play_album': 'Spæl fløgu', 'ed.play_extras': 'Spæl fløgu + eyka', 'ed.extras': 'Eyka · {e}', 'ed.n_extra': '+ {n} eyka', 'ed.n_extras': '+ {n} eyka', 'ed.bonus': 'Bonus',
+    'ed.singles': 'Singlar og B-síður', 'ed.n_bsides': '{n} B-síður', 'ed.one_bside': '1 B-síða', 'ed.show': 'Vís', 'ed.hide': 'Fjal', 'ed.from_single': 'úr {s} (single)', 'ed.single_from': 'Single úr {a}',
+    'ed.also_on': 'Eisini á {n} útgávum', 'ed.also_on_one': 'Eisini á 1 útgávu', 'ed.sub_album': '{n} løg · tann almenna raðfylgjan', 'ed.sub_extras': '{n} løg · eyka, síðan B-síðurnar', 'ed.under': '{n} singlar liggja undir fløgu síni', 'ed.album': 'Fløga', 'ed.more_play': 'Fleiri hættir at spæla' });
+
   // ---- song versions (owner 2026-10-01: A · words, in jellystructure and Ravilo). The chip shows the short name. da/fo are drafts. ----
   Object.assign(STR.en, { 'ver.aria': 'Version:', 'ver.live': 'Live', 'ver.demo': 'Demo', 'ver.remix': 'Remix', 'ver.instrumental': 'Instrumental', 'ver.cover': 'Cover',
     'ver.acoustic': 'Acoustic', 'ver.edit': 'Edit', 'ver.alternate': 'Alternate', 'ver.session': 'Session' });

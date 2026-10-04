@@ -1,0 +1,47 @@
+/* Music editions & duplicates (brief 2026-10-03, owner picks 2026-10-04) — ed-* only. Admin tokens. */
+.ed-bonus{display:inline-flex;align-items:center;font-size:11px;font-weight:700;letter-spacing:.02em;line-height:1;padding:3px 6px;border-radius:5px;white-space:nowrap;color:var(--ink-soft);background:var(--fill-2);border:1px solid var(--line-2);margin-left:6px;vertical-align:1px}
+.ed-off{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:.8rem;color:var(--ink-soft);margin-top:10px}
+.ed-off b{color:var(--ink);font-weight:600}
+.ed-how{font-size:.7rem;font-weight:600;padding:2px 7px;border-radius:5px;border:1px solid var(--line-2);color:var(--ink-soft);white-space:nowrap}
+.ed-how.you{color:var(--acc-ink);border-color:var(--hi)}
+.mu-tbl tr.ed-div td{padding:18px 8px 6px;border-top:0;background:none;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--ink-soft)}
+.mu-tbl tr.ed-div td .l{display:flex;align-items:center;gap:10px}
+.mu-tbl tr.ed-div td .l:after{content:"";flex:1;height:1px;background:var(--line-2)}
+.mu-tbl tr.ed-ex td.n .vr-num{visibility:hidden}
+.ed-first{font-size:.72rem;color:var(--ink-dim);margin-top:2px}
+.ed-also{display:inline-block;font-size:.72rem;color:var(--ink-soft);margin-top:2px;cursor:pointer;border-bottom:1px dotted var(--line-2)}
+.ed-also:hover{color:var(--acc-ink)}
+.mu-tbl tr.ed-cp td{background:var(--fill-2)}
+.mu-tbl tr.ed-cp td:nth-child(2){padding-left:26px}
+.ed-cpw{font-size:.72rem;color:var(--ink-dim);margin-top:2px}
+.ed-sw{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;color:var(--ink-soft);cursor:pointer;user-select:none;white-space:nowrap}
+.ed-sw i{width:30px;height:17px;border-radius:9px;background:var(--fill-3);border:1px solid var(--line-2);position:relative;flex:none}
+.ed-sw i:after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--ink-soft);transition:left .15s}
+.ed-sw.on i{background:var(--hi);border-color:var(--hi)}.ed-sw.on i:after{left:15px;background:#fff}
+.ed-sw .c{color:var(--ink-dim)}
+.ed-sth{width:30px;height:30px;border-radius:5px;flex:none}
+.ed-sn{display:inline-flex;align-items:center;gap:10px}
+.ed-bfold{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:.8rem;color:var(--ink-soft)}
+.ed-bfold b{color:var(--ink)}
+.ed-copy{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.ed-copy .c{width:40px;height:40px;border-radius:6px}
+.ed-copy .t{font-size:.86rem;color:var(--ink)}.ed-copy .t a{color:var(--ink)}
+.ed-copy .s{font-size:.72rem;color:var(--ink-dim);margin-top:2px}
+.ed-copy .a{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.ed-why{font-size:.7rem;font-weight:600;color:var(--ink-soft);padding:2px 7px;border-radius:5px;background:var(--fill-2);border:1px solid var(--line);white-space:nowrap}
+.ed-kept{font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ok);margin-left:8px}
+.ed-pick{margin-top:10px;border:1px solid var(--line-2);border-radius:10px;padding:10px}
+.ed-pick input{width:100%;box-sizing:border-box}
+.ed-pick .r{display:flex;align-items:center;gap:10px;padding:7px 6px;border-radius:7px;cursor:pointer;font-size:.82rem}
+.ed-pick .r:hover{background:var(--fill-2)}
+.ed-pick .r span{color:var(--ink-dim);font-size:.72rem;margin-left:auto}
+.ed-cmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:12px}
+.ed-pl{border:1px solid var(--line-2);border-radius:12px;padding:12px}
+.ed-pl .h{display:flex;align-items:center;gap:10px}
+.ed-pl .t{font-size:.86rem;font-weight:600;color:var(--ink)}.ed-pl .s{font-size:.72rem;color:var(--ink-dim);margin-top:3px}
+.ed-wave{height:34px;margin-top:10px;border-radius:6px;background:repeating-linear-gradient(90deg,var(--line-2) 0 2px,transparent 2px 5px)}
+.ed-pl.on .ed-wave{background:linear-gradient(90deg,var(--hi-soft) 0 38%,transparent 38%),repeating-linear-gradient(90deg,var(--line-2) 0 2px,transparent 2px 5px)}
+.ed-acts{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.ed-modal .card{max-width:780px!important}
+.ed-ptbl td,.ed-ptbl th{white-space:nowrap}
+@media (max-width:720px){.ed-cmp{grid-template-columns:minmax(0,1fr)}.ed-copy{grid-template-columns:40px minmax(0,1fr)}.ed-copy .a{grid-column:1/-1;justify-content:flex-start}}

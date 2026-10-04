@@ -345,7 +345,7 @@
       const s = ctx && ctx.segments;
       if (!s || !(s.introEnd > s.introStart)) return;
       const inside = pos >= s.introStart && pos < s.introEnd;
-      if (inside && !introEntered) { introEntered = true; skipPromptOn = true; startSkipCountdown(s.skipSecs || 6); }
+      if (inside && !introEntered) { introEntered = true; skipPromptOn = true; siSticky = true; startSkipCountdown(s.skipSecs || 6); }
       if (!inside && introEntered) { introEntered = false; skipPromptOn = false; }
       refreshSkipIntro();
     }
@@ -570,6 +570,7 @@
       const s = ctx && ctx.segments;
       return !!(s && s.introEnd > s.introStart && pos >= s.introStart && pos < s.introEnd);
     }
+    let siSticky = false;   // R363 FR-3: the pill had focus when the controls last hid, or nothing else was used since the intro began
     function startSkipCountdown(secs) {
       clearTimeout(skipTimer);
       const f = els.siFill;
@@ -583,8 +584,9 @@
         && !pickerOpen() && !root.classList.contains('nextup') && !root.classList.contains('eprail');
       const was = root.classList.contains('skipintro');
       root.classList.toggle('skipintro', show);
-      if (show && !was) { focus = 'skipintro'; paintFocus(); }
-      if (!show && was && focus === 'skipintro') { focus = 'play'; paintFocus(); }
+      // FR-R363-2: the pill takes focus only when it appears on its own (controls hidden); otherwise focus stays put
+      if (show && !was && skipPromptOn && !root.classList.contains('chrome')) { focus = 'skipintro'; paintFocus(); }
+      if (!show && was && focus === 'skipintro') { siSticky = true; focus = 'play'; paintFocus(); }
     }
     function skipIntro() {
       const s = ctx && ctx.segments; if (!s) return;
@@ -704,7 +706,13 @@
       const k = e.key;
       if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter',' ','Backspace','Escape'].includes(k)) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      // R363 (main, 2026-10-04): waking hidden controls inside the intro offers the skip first
+      const wasHidden = !root.classList.contains('chrome');
+      const inIntro = introEntered && introActiveNow() && !pickerOpen() && !root.classList.contains('nextup') && !root.classList.contains('eprail') && !root.classList.contains('failed');
       wake();
+      if (wasHidden && inIntro && root.classList.contains('skipintro') && k !== 'Backspace' && k !== 'Escape') {
+        if (k === 'Enter' || k === ' ' || siSticky) { focus = 'skipintro'; paintFocus(); return; }   // FR-R363-3 / -4: OK reveals, never pauses
+      }
 
       // FAILED START owns input (R237) — Back always leaves, as it does in every other state
       if (root.classList.contains('failed')) {
@@ -753,9 +761,10 @@
 
       if (k === 'ArrowLeft') { if (focus === 'bar') scrub(-1); else moveFocus(-1); }
       else if (k === 'ArrowRight') { if (focus === 'bar') scrub(1); else moveFocus(1); }
-      else if (k === 'ArrowUp') { focus = 'bar'; paintFocus(); }
-      else if (k === 'ArrowDown') { if (focus === 'bar') { focus = 'play'; paintFocus(); } else if (focus === 'skipintro') { focus = 'play'; paintFocus(); } else if (ctx.episodes) openEpRail(); }
-      else if (k === 'Enter' || k === ' ') activate();
+      // FR-R363-1: Up from the seek bar, Audio & Subs or Next reaches the pill above them; −10 s · Play · +30 s go to the bar
+      else if (k === 'ArrowUp') { focus = root.classList.contains('skipintro') && (focus === 'bar' || focus === 'tracks' || focus === 'nextbtn') ? 'skipintro' : focus === 'skipintro' ? 'skipintro' : 'bar'; paintFocus(); }
+      else if (k === 'ArrowDown') { if (focus === 'bar') { focus = 'play'; paintFocus(); } else if (focus === 'skipintro') { focus = 'bar'; paintFocus(); } else if (ctx.episodes) openEpRail(); }
+      else if (k === 'Enter' || k === ' ') { if (focus !== 'skipintro') siSticky = false; activate(); }
       else if (k === 'Backspace' || k === 'Escape') exit();
     }
 

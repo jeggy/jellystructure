@@ -19,7 +19,7 @@ window.DASH = {
     { id: 'host', label: 'This server', size: '2 disks · 32 GB', lib: 'settings.html#host' },
     { id: 'svc', label: 'Services', size: 'Seerr · Radarr · Sonarr · qBittorrent · Chromecast', lib: 'settings.html#connections' },
   ],
-  UNITS: { film: ['film', 'films'], series: ['series', 'series'], album: ['album', 'albums'], artist: ['artist', 'artists'], song: ['song', 'songs'], book: ['book', 'books'], subtitle: ['subtitle', 'subtitles'], library: ['library', 'libraries'], setting: ['setting', 'settings'], episode: ['episode', 'episodes'], title: ['title', 'titles'], disk: ['disk', 'disks'], speaker: ['speaker', 'speakers'] },
+  UNITS: { pair: ['pair', 'pairs'], film: ['film', 'films'], series: ['series', 'series'], album: ['album', 'albums'], artist: ['artist', 'artists'], song: ['song', 'songs'], book: ['book', 'books'], subtitle: ['subtitle', 'subtitles'], library: ['library', 'libraries'], setting: ['setting', 'settings'], episode: ['episode', 'episodes'], title: ['title', 'titles'], disk: ['disk', 'disks'], speaker: ['speaker', 'speakers'] },
   ROWS: [
     // ---- Films
     { id: 'f-damage', g: 'films', sev: 'critical', label: 'Damaged video files', s: 'Parts that can’t be read, in {titles}. qBittorrent still seeds a clean copy of each.', n: 4, u: 'film', inst: 9, iu: 'files', fix: 'here', act: 'Replace from the clean copy', href: 'library.html?filter=file_damage&kind=films' },
@@ -57,6 +57,8 @@ window.DASH = {
     { id: 'm-cover', g: 'music', sev: 'warning', label: 'Albums without a cover', s: 'Matched, but no cover on disk.', n: 0, u: 'album', fix: 'open', zero: true, href: 'library.html?kind=music' },
     // song-versions brief 2026-10-01 §D5 — only the owner's button removes them; the second action is also by hand only
     { id: 'm-instlyr', g: 'music', sev: 'warning', label: 'Lyrics on an instrumental', s: 'These songs have no singing, but have lyrics beside them — nine instrumental demos on Tide Tables 1999–2012 and one B-side, Kite Weather (instrumental).', n: 10, u: 'song', fix: 'here', act: 'Remove the lyrics', act2: 'Tell LRCLIB it is instrumental', done: 'Lyrics removed from 10 songs — only the sidecars jellystructure wrote; they are never fetched again', done2: 'Told LRCLIB: 10 songs are instrumental', href: 'library.html?kind=music&mview=songs&vi=instrumental&lyr=has' },
+    // music-editions brief 2026-10-03 §D4 — two MusicBrainz recordings that sound alike; never joined until the owner says so (editions.js opens Listen and decide)
+    { id: 'm-same', g: 'music', sev: 'info', label: 'Songs that may be the same', s: 'Two MusicBrainz recordings that sound alike — Fog Bank on Kite Weather and on its single, and two more. Never joined until you say so.', n: 3, u: 'pair', fix: 'here', act: 'Listen and decide' },
     // ---- Audiobooks
     { id: 'a-part', g: 'books', sev: 'warning', label: 'A part is missing', s: 'The folder’s files skip a number — the book will jump.', n: 1, u: 'book', fix: 'open', href: 'audiobook.html?b=vinterfaergen&tab=parts', fixable: true },
     { id: 'a-cover', g: 'books', sev: 'warning', label: 'No cover', s: 'No cover.jpg, no embedded art, no provider had one.', n: 1, u: 'book', fix: 'open', act: 'Upload', href: 'audiobook.html?b=vinterfaergen&tab=artwork', fixable: true },

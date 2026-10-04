@@ -56,8 +56,7 @@
   addTrack('tide-tables', 35, 'Northbound (acoustic, alternate take, radio session)', '4:05');
   addAlbum('nordic-nights-2', 'Nordic Nights Vol. 2', 'various', 2012, 'compilation', 20, 'MP3', 256, [['indie folk', 3]]);
   addTrack('nordic-nights-2', 14, 'Salt on the Window (live at the harbour, 2011)', '4:31', { by: ['harbour-lights'] });
-  addTrack('signal-found', 4, 'Northern Line (Lighthouse Keepers remix) (extended)', '7:12', { feat: ['lighthouse'] });
-  addTrack('kite-weather', 11, 'Kite Weather (instrumental)', '3:34', { ly: 'synced' });
+  // the remix and the instrumental now live on singles (sf-shortwave-2, kw-tidewater-5), made by editions.js (2026-10-04)
   addTrack('kvold', 5, 'Kvøldsól (live)', '4:02');
 
   // what each finder says. rec = the MusicBrainz recording (one answer for every copy, §C); of = the sung song.
@@ -73,8 +72,12 @@
     'tide-tables-33': { mb: ['demo', 'instrumental'], ti: ['demo', 'instrumental'], of: 'salt-on-the-window-6' },
     'tide-tables-34': { mb: ['demo'], ti: ['demo'] },
     'tide-tables-35': { mb: ['live'], ti: ['acoustic', 'alternate', 'session'] },
-    'signal-found-4': { mb: ['remix'], ti: ['remix', 'edit'] },
-    'kite-weather-11': { mb: ['instrumental'], ti: ['instrumental'], of: 'kite-weather-1' },
+    'sf-shortwave-2': { mb: ['remix'], ti: ['remix', 'edit'] },
+    'kw-tidewater-5': { mb: ['instrumental'], ti: ['instrumental'], of: 'kite-weather-1' },
+    // editions.js's extras and B-sides (brief 2026-10-03)
+    'signal-found-16': { mb: ['live'], ti: ['live'] }, 'signal-found-17': { mb: ['live'], ti: ['live'] }, 'signal-found-18': { mb: ['live'], ti: ['live'] }, 'signal-found-19': { mb: ['live'], ti: ['live'] }, 'signal-found-20': { mb: ['live'], ti: ['live'] }, 'signal-found-21': { mb: ['live'], ti: ['live'] },
+    'signal-found-22': { mb: ['demo'], ti: ['demo'] }, 'signal-found-23': { mb: ['demo'], ti: ['demo'] }, 'signal-found-24': { mb: ['demo'], ti: ['demo'] }, 'signal-found-25': { mb: ['demo'], ti: ['demo'] }, 'signal-found-26': { mb: ['demo'], ti: ['demo'] },
+    'kw-northern-line-3': { mb: ['acoustic'], ti: ['acoustic'] }, 'kw-fog-bank-3': { mb: ['demo'], ti: ['demo'] }, 'kw-salt-4': { mb: ['live'], ti: ['live'] }, 'kw-low-tide-3': { ti: ['session'] }, 'kw-tidewater-3': { mb: ['remix'], ti: ['remix'] },
     'kvold-5': { ti: ['live'] },
     'early-recordings-7': { mb: ['demo'], ti: ['demo'] },
     'live-at-torshavn-4': { mb: ['live'], ti: ['live'] },

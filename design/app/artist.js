@@ -38,15 +38,19 @@
       + '</div></div>';
     $('ar-crumb').innerHTML = '<a href="library.html?kind=music">Music</a> / <a href="library.html?kind=music&mview=artists">Artists</a> / ' + esc(R.name);
   }
-  const GROUPS = [['Albums', a => a.type === 'album' || a.type === 'soundtrack'], ['Singles & EPs', a => a.type === 'single' || a.type === 'ep'], ['Compilations', a => a.type === 'compilation'], ['Live', a => a.type === 'live']];
+  const GROUPS = [['Albums', a => a.type === 'album' || a.type === 'soundtrack'], ['Singles & EPs', a => (a.type === 'single' || a.type === 'ep') && !(window.Editions && Editions.home(a.id))], ['Compilations', a => a.type === 'compilation'], ['Live', a => a.type === 'live']];
   function cell(a) {
-    return '<a class="mu-cell" href="album.html?a=' + a.id + '"><div class="mu-cov" style="' + (a.cover ? M.coverStyle(a) : M.wordmarkStyle(a.title)) + '">' + (a.cover ? '' : '<span class="mu-wm">' + esc(a.title) + '</span><i class="mu-nocov"></i>') + (a.match === 'needs' || a.match === 'unmatched' ? '<span class="mu-mchip w">' + (a.match === 'needs' ? 'needs you' : 'unmatched') + '</span>' : a.match === 'locked' ? '<span class="mu-mchip">' + LOCK + '</span>' : '') + '</div><div class="ttl">' + esc(a.title) + '</div><div class="yr">' + a.year + ' · ' + a.trackIds.length + (a.trackIds.length === 1 ? ' song' : ' songs') + '</div></a>';
+    return '<a class="mu-cell" href="album.html?a=' + a.id + '"><div class="mu-cov" style="' + (a.cover ? M.coverStyle(a) : M.wordmarkStyle(a.title)) + '">' + (a.cover ? '' : '<span class="mu-wm">' + esc(a.title) + '</span><i class="mu-nocov"></i>') + (a.match === 'needs' || a.match === 'unmatched' ? '<span class="mu-mchip w">' + (a.match === 'needs' ? 'needs you' : 'unmatched') + '</span>' : a.match === 'locked' ? '<span class="mu-mchip">' + LOCK + '</span>' : '') + '</div><div class="ttl">' + esc(a.title) + '</div><div class="yr">' + a.year + ' · ' + ((window.Editions && Editions.cellCount(a)) || a.trackIds.length + (a.trackIds.length === 1 ? ' song' : ' songs')) + '</div></a>';
   }
   function ghost(d) { return '<div class="mu-cell mu-ghost" title="On MusicBrainz, not in the library"><div class="mu-cov"><span class="mu-wm">' + esc(d[0]) + '</span></div><div class="ttl">' + esc(d[0]) + '</div><div class="yr">' + d[1] + ' · not in library</div></div>'; }
   function overview() {
     const disco = Q('disco') === 'greyed' && isM() ? (M.DISCO[R.id] || []) : [];
-    const albums = GROUPS.map(g => { const own2 = own.filter(g[1]), gh = disco.filter(d => g[1]({ type: d[2] })); if (!own2.length && !gh.length) return '';
-      return '<div class="mu-sec">' + g[0] + ' <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">' + own2.length + (gh.length ? ' · ' + gh.length + ' more on MusicBrainz' : '') + '</span></div><div class="mu-grid">' + own2.map(cell).join('') + gh.map(ghost).join('') + '</div>'; }).join('');
+    // music editions (owner 2026-10-04, Q1): a single that found its album lives under it, not in Singles & EPs
+    const under = window.Editions ? Editions.underOf(R.id) : [];
+    const byHome = {}; under.forEach(s => { const h = Editions.home(s.id); (byHome[h] = byHome[h] || []).push(s); });
+    const underNote = under.length ? '<div class="tiny muted" style="margin-top:10px">' + under.length + (under.length === 1 ? ' single lives' : ' singles live') + ' under ' + (Object.keys(byHome).length === 1 ? 'its album' : 'their albums') + ' — ' + Object.keys(byHome).map(h => '<a href="album.html?a=' + h + '">' + esc(M.album(h).title) + '</a>’s ' + byHome[h].length).join(' · ') + ' in Singles &amp; B-sides. Move one back from its album page.</div>' : '';
+    const albums = GROUPS.map(g => { const own2 = own.filter(g[1]), gh = disco.filter(d => g[1]({ type: d[2] })), sg = g[0] === 'Singles & EPs'; if (!own2.length && !gh.length && !(sg && under.length)) return '';
+      return '<div class="mu-sec">' + g[0] + ' <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:500">' + own2.length + (gh.length ? ' · ' + gh.length + ' more on MusicBrainz' : '') + '</span></div>' + (own2.length || gh.length ? '<div class="mu-grid">' + own2.map(cell).join('') + gh.map(ghost).join('') + '</div>' : '') + (sg ? underNote : ''); }).join('');
     const bioH = editing ? '<textarea id="ar-bio">' + esc(bio) + '</textarea><div class="row" style="gap:8px;margin-top:8px;"><span class="btn sm primary" data-a="biosave">Save → artist.nfo</span><span class="btn sm ghost" data-a="biocancel">Cancel</span></div>'
       : bio ? '<div class="mu-bio">' + esc(bio) + '</div><div class="tiny muted" style="margin-top:6px;">Source: ' + (R.bioSrc || 'written here') + ' · via MusicBrainz’s URL relationships · <a href="#" data-a="bioedit">Edit</a></div>'
       : '<div class="tiny muted">No biography found — MusicBrainz links this artist to no Wikipedia or Wikidata page. <a href="#" data-a="bioedit">Write one</a>; it is saved into <span class="mono">artist.nfo</span> as you save.</div>';
@@ -89,6 +93,7 @@
     $('ar-panel').innerHTML = tab === 'artwork' ? artwork() : tab === 'genres' ? genres() : tab === 'nfo' ? nfo() : tab === 'history' ? hist() : overview();
   }
   function repaint() { bar(); head(); panel(); }
+  if (window.Editions) Editions.on(panel);
   document.addEventListener('click', e => {
     const mw = e.target.closest('.menu-wrap .menu-btn, .split .menu-btn');
     document.querySelectorAll('.menu-wrap.open, .split.open').forEach(o => { if (!mw || o !== mw.parentNode) o.classList.remove('open'); });

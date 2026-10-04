@@ -934,9 +934,10 @@
        Left to right the strip runs from what the household owns to what it does not. Gating
        FILTERS this list and never re-orders it (R243 FR-R243-1): Coming Soon needs Sonarr/Radarr
        and Request needs Seerr, so either may be absent — the three taxonomy tabs index the library
-       itself and are always present, which is why the first chip is Networks on every household. */
+       itself and are always present. R366 (owner, 2026-10-04): Coming Soon moves first, so Discover
+       opens on it wherever Sonarr/Radarr is set up, and on Networks where it is not. */
     const TAXO_TABS = ['networks', 'studios', 'genres'];
-    const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
+    const SEG_ORDER = ['coming', 'networks', 'studios', 'genres', 'request'];
     const SEG_LABEL = { coming: 'seg_coming', request: 'seg_request', studios: 'seg_studios', networks: 'seg_networks', genres: 'seg_genres' };
     // R310: a library wall with no values FOR THIS VIEWER has no chip (the server's facets summary says so;
     // here, the profile-scoped R.taxonomy). Mockup-only: ?emptywalls=networks,studios,genres empties walls.
@@ -1621,8 +1622,8 @@
         else if (f.dataset.nav === 'movies') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
-        // R268 FR-R268-2 + R310 FR-R310-2: Discover opens on the first chip that is LEFT — Networks when it
-        // has values, else Studios, Genres, Coming Soon, Request; with none at all, no chips and one sentence.
+        // R268 FR-R268-2 + R310 FR-R310-2 + R366: Discover opens on the first chip that is LEFT — Coming Soon when
+        // Sonarr/Radarr is set up, else Networks, Studios, Genres, Request; with none at all, no chips and one sentence.
         else if (f.dataset.nav === 'discover') go(discDest(discTabs()[0]));
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });

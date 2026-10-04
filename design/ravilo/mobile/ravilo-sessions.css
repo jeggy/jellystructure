@@ -1,0 +1,53 @@
+/* Playback sessions on the phone (R368–R372) — ses-* only. Tokens from the host's theme. */
+#castBtn{position:relative}
+/* R360: absent (never greyed) when there is nothing to cast to and nothing plays elsewhere — PREVIEW "Nothing to cast to" */
+.phone.nocast #castBtn,.phone.nocast #mpCast,.phone.nocast [data-np="cast"]{display:none!important}
+.ses-badge{position:absolute;top:-3px;right:-4px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;box-shadow:0 0 0 2px var(--bg)}
+.ses-ev .sc-sec:first-child{margin-top:2px}
+.mp-row.ses-row{position:relative;min-height:70px;gap:13px;padding-top:9px;padding-bottom:11px}
+.mp-row.ses-row .tx{display:flex;flex-direction:column;min-width:0;flex:1;text-align:left}
+.mp-row.ses-row .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-row.ses-row .sub{display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-row.ses-row .ses-pl{color:var(--accent-2);font-weight:600}
+.ses-pl svg,.ses-place svg,.ses-mini .spk-on svg{width:13px;height:13px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mp-row.ses-row.here{background:rgba(var(--fg),.06)}
+.mp-row.ses-row.end{opacity:.45}
+.ses-art{width:48px;height:48px;margin:0 8px;border-radius:9px;flex:none;position:relative;display:flex;align-items:flex-end;justify-content:flex-end;background-size:cover}
+.ses-art.w{width:64px;height:40px;border-radius:7px;margin:0}
+.ses-art.sm{margin:0}
+.ses-art b{width:20px;height:20px;border-radius:50%;margin:-5px -5px 0 0;position:absolute;right:0;bottom:-5px;background:var(--card-2);border:2px solid var(--bg);color:var(--ink);font-size:10px;display:flex;align-items:center;justify-content:center}
+.ses-art.sm{width:44px;height:44px;border-radius:8px}
+.ses-pg{position:absolute;left:78px;right:20px;bottom:5px;height:3px;border-radius:2px;background:rgba(var(--fg),.1);overflow:hidden}
+.ses-pg i{display:block;height:100%;background:var(--grad)}
+.ses-eq{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px;margin-right:2px}
+.ses-eq i{width:2.5px;background:var(--accent-2);border-radius:1px}.ses-eq i:nth-child(1){height:6px}.ses-eq i:nth-child(2){height:10px}.ses-eq i:nth-child(3){height:4px}
+.ses-ask{margin:-2px 16px 10px;padding:12px 14px;border-radius:12px;background:rgba(var(--fg),.06);border:1px solid var(--line-2)}
+.ses-ask p{margin:0 0 10px;font-size:13.5px;line-height:1.45;color:var(--ink)}
+.ses-ask .bs{display:flex;flex-wrap:wrap;gap:8px}
+.ses-ask button{min-height:40px;padding:0 14px;border-radius:20px;border:1px solid var(--line-2);background:none;color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.ses-ask button.go{background:var(--grad);border-color:transparent;color:#fff}
+[data-skin="noir"] .ses-ask button.go{background:var(--ink);color:var(--bg)}
+/* the remote */
+.ses-rm{padding:4px 20px 14px;display:flex;flex-direction:column;gap:12px}
+.ses-big{width:150px;height:150px;border-radius:14px;align-self:center;margin-top:4px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.ses-big.w{width:100%;height:auto;aspect-ratio:16/9}
+.ses-tt{display:flex;flex-direction:column;gap:3px;text-align:center}
+.ses-tt b{font-size:19px;font-family:'Space Grotesk',sans-serif}.ses-tt span{font-size:13.5px;color:var(--ink-soft)}
+.ses-place{align-self:center;white-space:nowrap;max-width:100%;display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line-2);background:rgba(var(--fg),.05);color:var(--accent-2);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.ses-place:disabled{cursor:default;color:var(--ink-soft)}
+.ses-seek{display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft)}
+.ses-seek input{flex:1;accent-color:var(--ink);height:28px}
+.ses-tr{display:flex;justify-content:center;align-items:center;gap:22px}
+.ses-tr button{width:48px;height:48px;border-radius:50%;border:0;background:none;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ses-tr button:disabled{opacity:.3}
+.ses-tr button svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ses-tr .pp{width:62px;height:62px;background:var(--ink);color:var(--bg)}.ses-tr .pp svg{width:28px;height:28px}
+.ses-ro{font-size:13.5px;line-height:1.5;color:var(--ink-soft);text-align:center;padding:4px 10px}
+.ses-vb{display:flex;flex-direction:column;gap:2px;margin:0 -20px}
+.ses-rm>.mp-row{margin:0 -20px}
+/* the bar */
+.mu-mini.ses-mini .d .spk-on{display:inline-flex;align-items:center;gap:5px;color:var(--accent-2);font-weight:600}
+.mu-mini .ses-n{width:auto;min-width:38px;height:30px;padding:0 10px;border-radius:15px;background:rgba(var(--fg),.1);font-size:12.5px;font-weight:700;font-family:'Space Grotesk',sans-serif;color:var(--ink)}
+.mu-mini.ses-mini button svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mu-mini.ses-mini button[data-sb="pp"] svg path{fill:currentColor;stroke:none}
+.phone.mu-on .ses-mini{z-index:87}

@@ -518,6 +518,8 @@
 </style>
 <!-- design brief 2026-09-27 — music mode (switch · bar · pages · player). Every class is mu-. -->
 <link rel="stylesheet" href="mobile/ravilo-music.css">
+<!-- R368–R372 playback sessions: Playing everywhere, the bar, the remote (ses-*) -->
+<link rel="stylesheet" href="mobile/ravilo-sessions.css">
 </head>
 <body>
 <div id="fit">
@@ -727,6 +729,7 @@
       <button data-pv="stale">Saved content · R212</button>
       <button data-pv="err" title="Cycles REAUTH · FORBIDDEN · GONE · UNREACHABLE">Load error · R280</button>
       <button data-pv="appearance" title="Stands in for the phone's own light/dark switch">Phone goes light ⇄ dark</button>
+      <button data-pv="nocast" title="No Chromecast, no paired TV, no speaker, nothing playing elsewhere: the cast icon is absent everywhere (R360 + R368)">Nothing to cast to · R360</button>
     </div>
   </div>
 </div>
@@ -750,9 +753,10 @@
   const TAXO_SUB = { studios: 'Films by studio', networks: 'Series by network', genres: 'Everything by genre' };
   /* R268 — one declared order, library first, gating FILTERS it and never re-orders it. Coming Soon
      needs Sonarr/Radarr and Request needs Seerr (R243 FR-R243-1), so either may be absent; the three
-     taxonomy tabs index the library itself, which is why Networks is the first chip on every
-     household. The strip scrolls — five chips do not fit a portrait phone. */
-  const SEG_ORDER = ['networks', 'studios', 'genres', 'coming', 'request'];
+     taxonomy tabs index the library itself and are always present. R366 (owner, 2026-10-04): Coming
+     Soon is first, so Discover opens on it wherever Sonarr/Radarr is set up, else on Networks.
+     The strip scrolls — five chips do not fit a portrait phone. */
+  const SEG_ORDER = ['coming', 'networks', 'studios', 'genres', 'request'];
   const SEG_LABEL = { networks:'Networks', studios:'Studios', genres:'Genres', coming:'Coming Soon', request:'Request' };
   // R310: a library wall with no values for this viewer has no chip; Discover lands on the first chip left.
   // Mockup-only: ?emptywalls=networks,studios empties those walls.
@@ -1941,7 +1945,7 @@
         + '<span class="sc-ic"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M5 17a9 9 0 0 1 14 0"/><path d="M8.5 20.5 12 16l3.5 4.5z"/></svg></span>'
         + '<span class="nm">AirPlay (phone must stay on)</span></button>';
     }
-    h += '<button class="mp-row sc-add" data-mp="addtv"><span class="sc-ic"><svg viewBox="0 0 24 24" style="width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round"><path d="M12 5v14M5 12h14"/></svg></span><span class="nm">Add a TV</span></button>';
+    // R360 (main, 2026-10-03): "Add a TV" is gone from the sheet — pairing by code was the Tizen receiver's, and Tizen is paused
     if(extra.after) h += extra.after;
     if(CAST) h += '<button class="mp-row" data-mp="stopcast"><span class="nm" style="color:#ff9b8a">Stop casting</span></button>';
     return h;
@@ -2008,7 +2012,6 @@
     if(act === 'closesheet'){ csSheetClose(); return; }
     if(act === 'screens'){ openScreensSheet(); return; }
     if(act === 'tier2'){ TIER2 = !TIER2; openScreensSheet(); return; }
-    if(act === 'addtv'){ openCodeSheet(false); return; }
     if(act === 'airplay'){ startAirplay(); return; }
     if(act === 'stopcast'){ csSheetClose(); stopCast(); return; }
     if(b.dataset.dev !== undefined){
@@ -2139,6 +2142,11 @@
   let portraitLocked = false;
   document.getElementById('prevPick').addEventListener('click', e => {
     const b = e.target.closest('button[data-pv]'); if(!b) return;
+    if(b.dataset.pv === 'nocast'){
+      const ph = document.querySelector('.phone');
+      if(!ph.classList.contains('nocast') && (CAST || (window.RaviloSpeakers && document.querySelector('.mu-ndev')))){ phToast('A cast is on — the icon stays until it ends (FR-R360-2)'); return; }
+      b.classList.toggle('on', ph.classList.toggle('nocast')); return;
+    }
     if(b.dataset.pv === 'appearance'){ const T = RaviloTheme; T.sim = T.osDark() ? 'light' : 'dark'; T.apply(); b.classList.toggle('on', T.sim === 'light'); return; }
     if(b.dataset.pv === 'fail'){
       if(!mp.classList.contains('on')) openPlayer(S.title || 'Big Buck Bunny');
@@ -2173,12 +2181,16 @@
 </script>
 <script src="../app/music-data.js"></script>
 <script src="../app/versions.js"></script>
+<script src="../app/editions.js"></script>
 <script src="mobile/ravilo-versions.js"></script>
+<script src="mobile/ravilo-editions.js"></script>
 <script src="mobile/ravilo-music.js"></script>
 <script src="mobile/ravilo-music-player.js"></script>
 <script src="../app/audiobook-data.js"></script>
 <script src="mobile/ravilo-books.js"></script>
+<script src="sessions-live.js"></script>
 <script src="mobile/ravilo-speakers.js"></script>
+<script src="mobile/ravilo-sessions.js"></script>
 <script src="mobile/ravilo-web-states.js"></script>
 </body>
 </html>

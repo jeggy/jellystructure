@@ -94,7 +94,7 @@
       + '<span class="mu-sel" data-sel="' + a.id + '">✓</span>'
       + '<div class="mu-cov" style="' + (has ? M.coverStyle(a) : M.wordmarkStyle(a.title)) + '">' + (has ? '' : '<span class="mu-wm">' + esc(a.title) + '</span><i class="mu-nocov" title="No cover on disk — a task on this side"></i>') + chip(matchOf(a)) + '</div>'
       + '<div class="ttl">' + esc(a.title) + '</div><div class="sub">' + esc(M.artist(a.artistId).name) + '</div>'
-      + '<div class="yr">' + a.year + ' · ' + (ts.length === 1 ? '1 song' : ts.length + ' songs') + '</div></a>';
+      + '<div class="yr">' + a.year + ' · ' + ((window.Editions && Editions.cellCount(a)) || (ts.length === 1 ? '1 song' : ts.length + ' songs')) + '</div></a>';
   }
   function artistCell(r) {
     const has = artImg(r), nAl = M.albumsOf(r.id).length, nS = M.tracksBy(r.id).length;
@@ -111,9 +111,12 @@
     const r = recOf(t);
     return r === 'ok' ? '<span class="mu-mt ok">✓</span>' : r === 'other' ? '<span class="mu-mt w">different release</span>' : '<span class="mu-mt w">unmatched</span>';
   }
+  // music editions (owner 2026-10-04, Q7): one row per song, folded; Show every copy lists the copies under it
+  const ED = window.Editions;
   function songsTable(list) {
+    const rows = ED ? ED.fold(list, ED.every) : list.map(t => ({ t }));
     return '<div class="mu-scroll"><table class="mu-tbl' + (V && list.some(t => Versions.sel.has(t.id)) ? ' vr-selecting' : '') + '"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody>'
-      + list.map(t => { const a = M.album(t.albumId); return '<tr class="' + (V && Versions.sel.has(t.id) ? 'vr-on' : '') + '"><td class="n">' + (V ? Versions.selCell(t) : t.n) + '</td><td><a href="album.html?a=' + a.id + '">' + esc(t.title) + '</a>' + (V ? Versions.badges(t) : '') + (t.feat.length ? ' <span class="dim tiny">feat. ' + esc(M.artistNames(t.feat)) + '</span>' : '') + (V ? Versions.detail(t) : '') + '</td>'
+      + rows.map(r => { const t = r.t, a = M.album(t.albumId); return '<tr class="' + (V && Versions.sel.has(t.id) ? 'vr-on' : '') + (r.copy ? ' ed-cp' : '') + '"><td class="n">' + (V ? Versions.selCell(t) : t.n) + '</td><td><a href="album.html?a=' + a.id + '">' + esc(t.title) + '</a>' + (V ? Versions.badges(t) : '') + (ED ? ED.bonus(t) : '') + (t.feat.length ? ' <span class="dim tiny">feat. ' + esc(M.artistNames(t.feat)) + '</span>' : '') + (V ? Versions.detail(t) : '') + (ED ? (r.copy ? ED.copyWhy(r.why) : ED.alsoHTML(t, r.n)) : '') + '</td>'
         + '<td class="dim">' + t.artistIds.map(id => '<a class="dim" href="artist.html?ar=' + id + '">' + esc(M.artist(id).name) + '</a>').join(' & ') + '</td><td class="dim"><a class="dim" href="album.html?a=' + a.id + '">' + esc(a.title) + '</a></td>'
         + '<td class="num">' + M.fmtLen(t.len) + '</td><td>' + fmtCell(t) + '</td><td>' + lyrCell(t) + '</td><td>' + recCell(t) + '</td></tr>'; }).join('')
       + '</tbody></table></div>';
@@ -134,7 +137,7 @@
         + '<div class="mu-fpop">' + f.vals().map(v => { const c = countFor(f.k, v[0]);
           return '<div class="mu-fv' + (on(f.k, v[0]) ? ' on' : '') + (c ? '' : ' zero') + '" data-fk="' + f.k + '" data-fv="' + esc(v[0]) + '"><span class="bx">' + (on(f.k, v[0]) ? '✓' : '') + '</span><span>' + esc(v[1]) + (v[2] ? '<span class="nt">' + v[2] + '</span>' : '') + '</span><span class="ct">' + c + '</span></div>'; }).join('')
         + '</div></span>';
-    }).join('') + '<span class="spacer" style="flex:1"></span><span class="select" style="width:auto;min-width:150px;"><span>sort: ' + (view === 'songs' ? 'album, position' : view === 'artists' ? 'name' : 'recently added') + '</span></span></div>';
+    }).join('') + '<span class="spacer" style="flex:1"></span>' + (ED && view === 'songs' ? ED.switchHTML() : '') + '<span class="select" style="width:auto;min-width:150px;"><span>sort: ' + (view === 'songs' ? 'album, position' : view === 'artists' ? 'name' : 'recently added') + '</span></span></div>';
   }
   function activeBar(n) {
     const act = FACETS.filter(f => any(f.k));
@@ -219,6 +222,7 @@
   });
   document.addEventListener('click', e => { if (openF && !e.target.closest('.mu-fc')) { openF = null; if (!root.hidden) render(); } });
   if (V) Versions.on(() => { if (!root.hidden) render(); });
+  if (window.Editions) Editions.on(() => { if (!root.hidden) render(); });
 
   window.MusicLib = {
     show(on) { root.hidden = !on; const qp = document.getElementById('mu-qs-lib'); if (qp) qp.hidden = !on; if (on) render(); },

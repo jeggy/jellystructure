@@ -19,6 +19,6 @@
   const set = (id, o) => { if (M.byTrack[id]) Object.assign(M.byTrack[id], o); };
   const hl = M.tracksBy ? M.tracksBy('harbour-lights') : [], top = hl.reduce((m, x) => Math.max(m, x.plays || 0), 0);
   set('live-at-the-harbour-1', { plays: Math.max(1, top - 1), last: -2 });
-  set('signal-found-4', { last: -1 });
+  set('sf-shortwave-2', { last: -1 });
   window.RaviloVersions = { chips, title, names: x => V.list(x).map(nm) };
 })();

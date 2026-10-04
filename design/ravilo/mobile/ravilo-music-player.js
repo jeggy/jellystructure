@@ -23,7 +23,7 @@
   const P = { queue: [], qi: 0, pos: 0, playing: false, buffering: false, repeat: 'off', shuffle: false, ctx: '', open: false, lyrics: q.j4 === 'lyrics', cast: null, fail: false, stickyBuf: false };
   const cur = () => P.queue[P.qi] || null;
   const trk = () => M.track(cur());
-  const ctxName = c => !c ? '' : c.indexOf('al:') === 0 ? M.album(c.slice(3)).title : c.indexOf('ar:') === 0 ? M.artist(c.slice(3)).name : c.indexOf('pl:') === 0 ? (MS.playlists.find(p => p.id === c.slice(3)) || {}).name : c === 'recent' ? t('mhome.recent_played') : c === 'mix' ? t('mhome.mix') : c === 'songs' ? t('mlib.songs') : c === 'srch' ? t('mnav.search') : '';
+  const ctxName = c => !c ? '' : c.indexOf('alx:') === 0 ? M.album(c.slice(4)).title : c.indexOf('al:') === 0 ? M.album(c.slice(3)).title : c.indexOf('ar:') === 0 ? M.artist(c.slice(3)).name : c.indexOf('pl:') === 0 ? (MS.playlists.find(p => p.id === c.slice(3)) || {}).name : c === 'recent' ? t('mhome.recent_played') : c === 'mix' ? t('mhome.mix') : c === 'songs' ? t('mlib.songs') : c === 'srch' ? t('mnav.search') : '';
   const hasLyrics = x => !!(x && (M.LYRICS[x.id] || M.PLAIN[x.id]));
 
   /* ---- playback model (a stand-in clock; the product's is Media3's) ---- */
@@ -76,7 +76,7 @@
   function metaHTML(x, a) {
     const long = x.title.length > 24;
     return '<div class="mu-nmeta"><div class="b"><div class="mu-mq' + (long ? ' long' : '') + '"><span>' + esc(x.title) + '</span></div>'
-      + '<div class="mu-nsub">' + (window.RaviloVersions ? RaviloVersions.chips(x, 9) : '') + '<a data-np="artist">' + esc(M.artistNames(x.artistIds)) + '</a> · <a data-np="album">' + esc(a.title) + '</a></div>'
+      + '<div class="mu-nsub">' + (window.RaviloVersions ? (RaviloVersions.chipsB || RaviloVersions.chips)(x, 9) : '') + '<a data-np="artist">' + esc(M.artistNames(x.artistIds)) + '</a> · <a data-np="album">' + esc(a.title) + '</a></div>'
       + (P.cast ? '<div class="mu-ndev"><span class="rc-ic"><span class="bx"></span><span class="fl"></span></span>' + esc(t('music.playing_on', { d: P.cast })) + '</div>' : '') + '</div>'
       + '<button class="mu-ib" data-np="fav" style="color:' + (MS.favs.has(x.id) ? 'var(--accent)' : 'var(--ink-soft)') + '" aria-label="My List">' + (MS.favs.has(x.id) ? IC.heart.replace('fill="none"', 'fill="currentColor"') : IC.heart) + '</button></div>';
   }
@@ -199,8 +199,14 @@
       + rowB('playnext', S.next, t('music.play_next')) + rowB('addq', S.q, t('music.add_queue'))
       + (q.j7 === 'flow' ? rowB('addpl', S.pl, t('music.add_playlist')) : '<div class="mu-row-ph">' + rowB('addpl', S.pl, t('music.add_playlist'), 'phase 2') + '</div>')
       + rowB('goal', S.al, t('music.go_album')) + (a.artistId !== 'various' || x.artistIds.length ? rowB('goar', S.ar, t('music.go_artist')) : '')
-      + rowB('fav', fav ? S.heart.replace('fill="none"', 'fill="currentColor"') : S.heart, (fav ? '✓ ' : '♡ ') + (window.t ? (t('pm.my_list') !== 'pm.my_list' ? t('pm.my_list') : 'My List') : 'My List')));
+      + rowB('fav', fav ? S.heart.replace('fill="none"', 'fill="currentColor"') : S.heart, (fav ? '✓ ' : '♡ ') + (window.t ? (t('pm.my_list') !== 'pm.my_list' ? t('pm.my_list') : 'My List') : 'My List'))
+      + alsoHTML(x));
     if (window.RaviloSpeakers) RaviloSpeakers.afterMenu(id);
+  }
+  // music editions: the other copies of this song, each opening its release
+  function alsoHTML(x) {
+    const RE = window.RaviloEditions, o = RE ? RE.also(x) : []; if (!o.length) return '';
+    return '<div class="re-also">' + esc(o.length === 1 ? t('ed.also_on_one') : t('ed.also_on', { n: o.length })) + '</div>' + o.map(y => { const b = M.album(y.albumId); return '<button class="mp-row re-arow" data-ms="ed-al" data-id="' + b.id + '">' + U.cover(b, 'sm') + '<span><span class="nm">' + esc(b.title) + '</span><span class="sub">' + esc(RE.kindLabel(b)) + ' · ' + b.year + '</span></span></button>'; }).join('');
   }
   function queueRow(id, i, isNow) {
     const x = M.track(id), a = M.album(x.albumId);
@@ -271,6 +277,7 @@
     else if (k === 'addq') { P.queue.push(menuId); if (P.queue.length === 1) start(); closeSheet(); H.phToast(t('music.add_queue')); paintMini(); }
     else if (k === 'addpl') { if (q.j7 === 'flow') addToPlaylist(menuId); else { closeSheet(); H.phToast(t('music.add_playlist') + ' · phase 2'); } }
     else if (k === 'goal') { closeSheet(); closeNow(); RM.openDet('album', x.albumId); }
+    else if (k === 'ed-al') { closeSheet(); closeNow(); RM.openDet('album', b.dataset.id); }
     else if (k === 'goar') { closeSheet(); closeNow(); RM.openDet('artist', x.artistIds[0] === 'various' ? M.album(x.albumId).artistId : x.artistIds[0]); }
     else if (k === 'fav') { MS.favs.has(menuId) ? MS.favs.delete(menuId) : MS.favs.add(menuId); closeSheet(); H.phToast(MS.favs.has(menuId) ? '✓ My List' : 'Removed from My List'); paintNow(); }
     else if (k === 'clearq') { P.queue = P.queue.slice(0, P.qi + 1); refreshQueue(); paintMini(); }

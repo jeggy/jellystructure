@@ -21,6 +21,8 @@
     tracks: ts.map(t => ({ id: t.id, n: t.n, title: t.title, artist: M.artistNames(t.artistIds), codec: t.codec, rec: isMatched() ? M.mbid('rec' + t.id).slice(0, 8) + '…' : '', gain: t.gain.toFixed(2) + ' dB', lyrics: lyr[t.id] })) });
   const TQ = () => !!window.FilesTab;
   const V = !!window.Versions;   // the song-versions brief (2026-10-01), round 1
+  const E = !!(window.Editions && (A.id === 'kite-weather' || A.id === 'signal-found'));   // music editions (brief 2026-10-03, owner 2026-10-04)
+  const ED = () => E && isMatched() && Editions.of(A.id);
   document.title = 'Jellystructure — ' + A.title;
 
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
@@ -28,8 +30,9 @@
   const coverHTML = (cls, st) => '<div class="' + cls + '" style="' + (hasCover ? M.coverStyle(A) : M.wordmarkStyle(A.title)) + (st || '') + '">' + (hasCover ? '' : '<span class="mu-wm">' + esc(A.title) + '</span><i class="mu-nocov"></i>') + '</div>';
 
   function fence() {
-    const S = [['glass-birds', 'Matched · partial · WMA'], ['salt-on-the-window', 'Full album · MP3 · drift'], ['low-tide-radio', 'Needs you'], ['summer-hits-2004', 'Compilation needs you'], ['kvold', 'Unmatched'], ['myrkrid-og-ljosid', 'Locked'], ['foghorn-lullabies', 'No cover after a match'], ['live-at-the-harbour', 'Versions · live album'], ['tide-tables', 'Versions · box set']];
+    const S = [['glass-birds', 'Matched · partial · WMA'], ['salt-on-the-window', 'Full album · MP3 · drift'], ['low-tide-radio', 'Needs you'], ['summer-hits-2004', 'Compilation needs you'], ['kvold', 'Unmatched'], ['myrkrid-og-ljosid', 'Locked'], ['foghorn-lullabies', 'No cover after a match'], ['live-at-the-harbour', 'Versions · live album'], ['tide-tables', 'Versions · box set'], ['kite-weather', 'Editions · Japanese edition'], ['signal-found', 'Editions · 12 extras'], ['kw-northern-line', 'A single under its album']];
     $('al-fence').innerHTML = '<div class="mu-fence"><span class="fl">Preview · mockup only</span><span class="seg">' + S.map(s => '<a href="album.html?a=' + s[0] + '" class="' + (A.id === s[0] ? 'on' : '') + '" style="color:inherit;text-decoration:none;">' + s[1] + '</a>').join('') + '</span>'
+      + (E ? '<span class="tiny muted">held edition</span><span class="seg" id="al-gap"><span data-gap="0" class="' + (Editions.gapOf(A.id) ? '' : 'on') + '">complete</span><span data-gap="1" class="' + (Editions.gapOf(A.id) ? 'on' : '') + '">lacks an official song</span></span>' : '')
       + '<span class="tiny muted">AcoustID key</span><span class="seg" id="al-ak"><span data-ak="1" class="' + (acoust ? 'on' : '') + '">set</span><span data-ak="0" class="' + (acoust ? '' : 'on') + '">not set</span></span></div>';
   }
   function bar() {
@@ -57,7 +60,7 @@
     return '<span class="mu-match' + (locked ? ' lk' : '') + '"><span class="l1">' + (locked ? LOCK + ' Locked · won’t be re-matched' : '<span class="dot"></span>MusicBrainz · release-group') + ' <a class="mono tiny" href="#" style="font-weight:500">' + A.mbid.slice(0, 8) + ' ▸</a></span><span class="l2">release: ' + esc(r.country) + ' ' + esc(String(r.date).slice(0, 4)) + ' · ' + esc(r.label) + '</span></span>';
   }
   function head() {
-    const have = ts.length, len = ts.reduce((s, t) => s + t.len, 0);
+    const have = ts.length, len = (ED() ? Editions.official(A.id).off : ts).reduce((s, t) => s + t.len, 0);
     const codecs = [...new Set(ts.map(t => t.codec + ' ' + t.kbps))];
     const codecHTML = wma.length
       ? '<span class="mu-fmt w">' + codecs.join(' + ') + '</span><span class="tiny" style="color:var(--warn)">' + (wma.length === have ? 're-encodes on a phone' : wma.length + ' of ' + have + ' re-encode on a phone') + '</span>' + (Q('wma') === 'convert' ? '<span class="btn sm" data-a="convert">Convert…</span>' : '')
@@ -65,9 +68,10 @@
     const primary = match === 'unmatched' ? '<span class="btn primary" data-a="find">Find match…</span>' : match === 'needs' ? '<span class="btn primary" data-a="find">Choose…</span>' : '<span class="btn sm ghost" data-a="find">Change match…</span>';
     $('al-head').innerHTML = '<div class="mu-pb">' + coverHTML('mu-cov', '') + '<div>'
       + '<div class="mu-by">by ' + artistLinks([A.artistId]) + '</div>'
-      + '<div class="mu-pbm"><span>' + A.year + '</span><span class="sep">·</span><span>' + (A.total && A.total > have ? have + ' of ' + A.total + ' songs' : have + (have === 1 ? ' song' : ' songs')) + '</span><span class="sep">·</span><span>' + M.fmtTotal(len) + '</span><span class="mu-type">' + M.TYPE_LABEL[A.type] + '</span><span class="sep">·</span>' + codecHTML + (V ? Versions.albumSummary(ts) : '') + '</div>'
+      + '<div class="mu-pbm"><span>' + A.year + '</span><span class="sep">·</span><span>' + (ED() ? Editions.count(A.id) : A.total && A.total > have ? have + ' of ' + A.total + ' songs' : have + (have === 1 ? ' song' : ' songs')) + '</span><span class="sep">·</span><span>' + M.fmtTotal(len) + '</span><span class="mu-type">' + M.TYPE_LABEL[A.type] + '</span><span class="sep">·</span>' + codecHTML + (V ? Versions.albumSummary(ts) : '') + '</div>'
       + '<div class="mu-acts">' + matchChip() + primary + (isMatched() ? '<span class="chip" style="cursor:pointer" data-a="lock">' + (locked ? LOCK.replace('<svg', '<svg width="10" height="11"') + ' Locked' : 'Lock') + '</span>' : '') + '</div>'
-      + (A.total && A.total > have ? '<div class="tiny muted" style="margin-top:10px;">Partial album — the release has ' + A.total + ' tracks, the library holds ' + have + '. Tracks shows the gaps.</div>' : '')
+      + (ED() ? Editions.lineHTML(A.id) : '') + (window.Editions ? Editions.singleLine(A.id) : '')
+      + (!ED() && A.total && A.total > have ? '<div class="tiny muted" style="margin-top:10px;">Partial album — the release has ' + A.total + ' tracks, the library holds ' + have + '. Tracks shows the gaps.</div>' : '')
       + '</div></div>';
     $('al-crumb').innerHTML = '<a href="library.html?kind=music">Music</a> / <a href="library.html?kind=music&mview=albums">Albums</a> / ' + esc(A.title);
   }
@@ -94,9 +98,9 @@
     if (t.rec === 'other') return '<span class="mu-mt w">from a different release</span> <span class="btn sm ghost" data-rec="' + t.id + '" style="margin-left:4px;">Match this track…</span>';
     return '<span class="mu-mt ok">✓ recording</span>';
   }
-  function trackRow(t) {
+  function trackRow(t, ex) {
     const canPlay = !M.reencodes(t);
-    return '<tr class="' + (t.rec === 'other' && isMatched() ? 'off' : '') + (V && Versions.sel.has(t.id) ? ' vr-on' : '') + '"><td class="n">' + (V ? Versions.selCell(t) : t.n) + '</td><td>' + esc(t.title) + (V ? Versions.badges(t) : '') + (t.feat.length ? ' <span class="dim tiny">feat. ' + artistLinks(t.feat) + '</span>' : '') + (t.artistIds[0] !== A.artistId ? '<div class="tiny dim">' + artistLinks(t.artistIds) + '</div>' : '') + (V ? Versions.detail(t) : '') + '</td>'
+    return '<tr class="' + (t.rec === 'other' && isMatched() ? 'off' : '') + (V && Versions.sel.has(t.id) ? ' vr-on' : '') + (ex ? ' ed-ex' : '') + '"><td class="n">' + (V ? Versions.selCell(t) : ex ? '' : t.n) + '</td><td>' + esc(t.title) + (V ? Versions.badges(t) : '') + (t.feat.length ? ' <span class="dim tiny">feat. ' + artistLinks(t.feat) + '</span>' : '') + (t.artistIds[0] !== A.artistId ? '<div class="tiny dim">' + artistLinks(t.artistIds) + '</div>' : '') + (V ? Versions.detail(t) : '') + (ex ? Editions.firstHTML(t) : '') + '</td>'
       + '<td class="num">' + M.fmtLen(t.len) + '</td><td><span class="mu-fmt' + (canPlay ? '' : ' w') + '">' + t.codec + ' · ' + t.kbps + ' · ' + t.khz + ' kHz</span></td><td>' + recCell(t) + '</td><td>' + lyrCell(t) + '</td><td class="num mu-mono" style="font-size:.74rem">' + t.gain.toFixed(1) + ' dB</td>'
       + '<td>' + FilesTab.glyph(tagSpec(), t, ts.indexOf(t)) + '</td><td>' + (canPlay ? '<span class="mu-play' + (playing === t.id ? ' on' : '') + '" data-play="' + t.id + '" title="Play in this browser — your own Jellyfin session, direct play">' + (playing === t.id ? '❚❚' : '▶') + '</span>' : '<span class="tiny muted mu-tip" style="cursor:help">no direct play<span class="tp">A browser can’t direct-play WMA, and this page never asks Jellyfin to convert — direct play or nothing, the segment editor’s rule.</span></span>') + '</td></tr>'
       + (recOpen === t.id ? '<tr><td></td><td colspan="8"><div class="mu-cand on" style="cursor:default;margin:2px 0 6px;"><b class="tiny">Recordings of “' + esc(t.title) + '” by ' + esc(artist.name) + '</b>'
@@ -108,7 +112,14 @@
     const max = A.total || Math.max(...ts.map(t => t.n));
     const rows = []; let gapFrom = null;
     const flush = to => { if (gapFrom == null) return; rows.push('<tr class="gap"><td class="n">' + (gapFrom === to ? gapFrom : gapFrom + '–' + to) + '</td><td colspan="8">not in library' + (to > gapFrom ? ' · ' + (to - gapFrom + 1) + ' tracks' : '') + '</td></tr>'); gapFrom = null; };
-    if (A.total) { for (let n = 1; n <= max; n++) { if (byN[n]) { flush(n - 1); rows.push(trackRow(byN[n])); } else if (gapFrom == null) gapFrom = n; } flush(max); }
+    if (ED()) {
+      // the official album (numbered), a thin divider, the extras (no numbers, Q4) — then Singles & B-sides below the table
+      const o = Editions.official(A.id);
+      o.off.forEach(t => rows.push(o.gap === t.n ? '<tr class="gap"><td class="n">' + t.n + '</td><td colspan="8">not in library · ' + esc(t.title) + ' ' + M.fmtLen(t.len) + '</td></tr>' : trackRow(t)));
+      rows.push(Editions.divHTML(A.id, 9)); o.ex.forEach(t => rows.push(trackRow(t, true)));
+    }
+    else if (E) ts.forEach(t => rows.push(trackRow(t)));   // unmatched: a plain list, no divider, no singles
+    else if (A.total) { for (let n = 1; n <= max; n++) { if (byN[n]) { flush(n - 1); rows.push(trackRow(byN[n])); } else if (gapFrom == null) gapFrom = n; } flush(max); }
     else ts.forEach(t => rows.push(trackRow(t)));
     const missingLy = ts.filter(t => !lyr[t.id]).length;
     return '<div class="row center" style="gap:10px;flex-wrap:wrap;margin-bottom:10px;"><span class="tiny muted">Album gain <b class="mono" style="color:var(--ink)">' + A.gain.toFixed(1) + ' dB</b> · from Jellyfin’s loudness scan · the phone applies album gain on an album, track gain on a mix</span><span class="spacer"></span>'
@@ -116,7 +127,8 @@
       + (!A.total ? '<div class="note blue" style="margin-bottom:12px;">Positions come from the files’ tags. A match tells us how many tracks the release has — then the gaps show here.</div>' : '')
       + (V ? Versions.selBar(ts.map(t => t.id)) : '')
       + '<div class="mu-scroll"><table class="mu-tbl' + (V && ts.some(t => Versions.sel.has(t.id)) ? ' vr-selecting' : '') + '"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th title="What the file says, against this page — opens the Files tab">File</th><th></th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
-      + '<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>';
+      + '<div class="tiny muted" style="margin-top:10px;">' + (ED() ? 'Numbers are the official album’s order. The held files’ own positions are on the Files tab.' : 'No disc numbers in these files — every track is disc 1. Positions are the files’ own.') + '</div>'
+      + (ED() ? Editions.singlesHTML(A.id) : '');
   }
   function artworkTab() {
     const inUse = hasCover ? '<div class="mu-aw use"><div class="im chk"><div style="position:absolute;inset:0;' + M.coverStyle(A) + '"></div></div><div class="cap"><b>cover.jpg</b><span class="d">1000 × 1000 · on disk</span><span class="spacer" style="flex:1"></span><span class="chip" style="font-size:.66rem;cursor:pointer" data-a="coverlock">🔒 lock</span><span class="chip" style="font-size:.66rem;cursor:pointer" data-a="coverclear">Clear</span></div></div>'
@@ -234,6 +246,7 @@
     if (e.target.closest('#fm-panel')) return;
     const t = e.target.closest('#tabbar [data-tab]'); if (t) { tab = t.dataset.tab; const u = new URL(location.href); u.searchParams.set('tab', tab); history.replaceState(null, '', u); panel(); return; }
     const ak = e.target.closest('[data-ak]'); if (ak) { acoust = ak.dataset.ak === '1'; fence(); return; }
+    const gp = e.target.closest('[data-gap]'); if (gp) { Editions.setGap(A.id, gp.dataset.gap === '1' ? (A.id === 'signal-found' ? 9 : 7) : null); fence(); return; }
     const cov = e.target.closest('.mu-pb .mu-cov'); if (cov) { $('al-lb-im').setAttribute('style', hasCover ? M.coverStyle(A) : M.wordmarkStyle(A.title)); $('al-lb-cap').textContent = hasCover ? 'cover.jpg · 1000 × 1000' : 'no cover.jpg on disk'; $('al-lb').classList.add('on'); return; }
     if (e.target.closest('#al-lb')) { $('al-lb').classList.remove('on'); return; }
     const fr = e.target.closest('[data-ftrow]'); if (fr) { e.preventDefault(); tab = 'files'; panel(); FilesTab.highlight(fr.dataset.ftrow); return; }
@@ -267,6 +280,7 @@
   TagsQ.mount($('al-tq')); TagsQ.on(() => { bar(); if (tab === 'tracks') panel(); });
   if (window.MusicQ) { MusicQ.mount($('al-qs'), 'album'); MusicQ.on(() => { repaint(); if ($('fm-panel').classList.contains('on')) paintFM(); }); }
   if (V) { Versions.mountQ($('al-vq')); Versions.on(() => { head(); if (tab === 'tracks') panel(); }); }
+  if (window.Editions) Editions.on(() => { head(); if (tab === 'tracks') panel(); });
   fence(); repaint();
   if (P.get('find') === '1') openFM();
   if (V && P.get('ver')) Versions.openPanel(P.get('ver'));

@@ -1,9 +1,41 @@
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
-tree: main @ `ef52889885fc` (2026-10-01T18:36Z pull — head of `main`; resolved tree hash, not a commit)
+tree: main @ `fdbc1263d533` (2026-10-04T09:15Z pull — head of `main`; resolved tree hash, not a commit)
 
-## Last sync (2026-10-01T18:36Z — pull: 42 commits; our admin-icon spec renumbered 290 → 291)
+## Last sync (2026-10-04T09:15Z — pull: R361–R367 taken by the dev team's D-pad sweep; our sessions specs renumbered to R368–R372)
+date: 2026-10-04T09:15:08Z
+direction: pull (repo → this project), then design. Diffed by blob hash against tree `fdbc126`. **Next free: 305 / R373.**
+- **Pulled (9):** `STATUS.md`; new dev-authored `phase-R361-back-to-a-title-that-is-gone-lands-on-its-neighbour.md`, `R362-movies-and-series-never-strand-the-d-pad`, `R363-skip-intro-you-can-reach`, `R364-my-list-shows-what-you-just-added`, `R365-small-d-pad-findings-from-the-2026-10-04-sweep`, `R366-discover-opens-on-coming-soon`, `R367-discover-rows-stop-bouncing`; `research-reports/tv-dpad-sweep-2026-10-04.md`.
+- **Design mirror:** the TV mockup files (`ravilo-app/browse/data/focus/player/livetv/states`) and admin shell/dashboard match `main` — no dev edits.
+- ⚠ **Numbering collision (second today):** our playback-sessions specs → **R368–R372 + 304** (`phase-R368-every-playback-is-a-session-…` … `phase-R372-several-sessions-move-to-play-here.md`). Stale copies left by the first renumber (`R361-any-…`, `R362-one-play-on-…`, `R363-groups-…`) deleted. The editions specs will take **305 / R373**.
+### Updated in this project
+- R366 Discover order in `ravilo/ravilo-app.js` + `ravilo/Ravilo Mobile.html`.
+- R363 Skip Intro focus model + no Prompt-mode fill in `ravilo/ravilo-player.js/.css`.
+- Sessions specs + mockup comments renumbered R368–R372.
+- Pending export: R368–R372 · 304 · **305 · R373** (all not dev-reviewed), the editions admin build, the editions Ravilo build (`ravilo/mobile/ravilo-editions.js`, phone + desktop; chips moved to just left of the length on Ravilo rows), R360/R363/R366 mockup edits. Never export `STATUS.md`. **Next free: 306 / R374.**
+
+## Previous sync (2026-10-03T22:52Z — pull: 303 + R360 taken on `main`, our sessions specs renumbered; music-editions brief drawn as round 1)
+date: 2026-10-03T22:52:06Z
+direction: pull (repo → this project), then design. `github_compare c4258560...main` truncated (163 commits), so every mirrored spec from R320/270 up, the root/ravilo docs, the research reports and 56 `design/` mockups were diffed by git blob hash. **Next free: 305 / R366.**
+- **Pulled (8):** `STATUS.md`; `specs/research-reports/README.md`; R338, 273 (edited); **new** `phase-303-a-titles-checks-card-lists-only-steps-done-to-it.md` (dev), `phase-R360-no-cast-icon-when-there-is-nothing-to-cast-to.md` (dev + owner, dev-reviewed), `design-brief-music-editions-and-duplicates-2026-10-03.md` (round 1 wanted on §G), `research-reports/music-editions-extras-and-duplicates-2026-10-03.md`.
+- **Design mirror:** no dev-side edits since 10-02 — the only differing files are ours from the 10-04 sessions build (`Ravilo Mobile.html`, `Ravilo Desktop.html`, `desktop/ravilo-desktop.*`, `mobile/ravilo-music.css`, `mobile/ravilo-speakers.js`). Specs below R320 / 270 were not re-hashed this time.
+- ⚠ **Numbering collision:** `main` took **303** and **R360**, which our unexported playback-sessions specs held. Ours are now **R361–R365 + 304** (`phase-R361-every-playback-is-a-session-…` … `phase-R365-several-sessions-move-to-play-here.md`, `phase-304-the-admin-sees-every-playback-session.md`; FR ids and mockup comments moved with them). The editions brief's own prospective 303 / R361 are stale too.
+### Updated in this project
+- Renumbered sessions specs; R361 records the relation to R360 (a *Playing everywhere* row counts toward the glyph — amends FR-R360-1).
+- R360 drawn in `ravilo/Ravilo Mobile.html` (*Add a TV* removed; PREVIEW *Nothing to cast to*) + `mobile/ravilo-sessions.css`.
+- New canvas `app/Music Editions - Directions.html` (+ `editions-directions.js`), round 1 of the editions brief.
+- Pending export: R361 · R362 · R363 · R364 · R365 · 304 (not dev-reviewed) + the mockups above. Do not export `STATUS.md`.
+
+## Previous sync (2026-10-02T20:29Z — pull: our 291 · 292 · R341–R344 came back built; 293–302 · R345–R359 new; playback-sessions brief waiting)
+date: 2026-10-02T20:29:38Z
+direction: pull (repo → this project). `github_compare c4258560...main`: 152 commits. Our export landed (291 · 292 · R341–R344 on `main`, all ✓ Built / 292 ⚠ Partial). **Next free: 303 / R360** (the brief says 303 / R356, but R356–R359 are taken — check again before numbering).
+- **Pulled (54 spec files + `STATUS.md`):** new **293–302** (dashboard music rows open lists, TV sign-in map, subtitle pre-warm, loudness = music only, true Jellyfin suggestions, renamed library, Jellyfin dashboard controls Ravilo, receiver follows sign-in, subtitles measured against their own video, **302 subtitle problems grouped by cause**) and **R345–R359** (unreachable ≠ no music, Specials first, credits = watched, password keyboard, field above keyboard, **R350 D-pad first-class**, small-display cast, Mac music fixes, phone starts music on a speaker, every player obeys the Jellyfin dashboard, speaker groups, **R356 the phone stays the remote for a cast**, volume reporting, failed cast keeps place, long queue); dev-reviewed 291 · 292 · R341–R344; edited R273 · R324 · R328 · R330 · R331 · R334 · R337 · R338 · R340 · 290; both constitutions + plans, READMEs; **new brief `specs/ravilo/design-brief-playback-sessions-2026-10-02.md`** + report `ravilo-playback-sessions-and-casting-2026-10-02.md` (round 1 wanted: sessions on the server, *Playing everywhere*, Move to…, many sessions).
+- **Dev-side mockup edits adopted:** `app/dashboard-data.js` (302: four subtitle rows by cause — wrong speed · early/late ≥ 2 s · made for another video · slightly off), `app/versions.css` (292 dev review: chips 11 px, 45 % colour on light).
+### Updated in this project
+- Specs mirror + `STATUS.md` refreshed; two mockup files taken from `main`. Nothing pending export.
+
+## Previous sync (2026-10-01T18:36Z — pull: 42 commits; our admin-icon spec renumbered 290 → 291)
 date: 2026-10-01T18:36:31Z
 direction: pull (repo → this project). `github_compare c4258560...main`: 170 files, 42 commits — 19 under `specs/` + `STATUS.md` pulled; the rest is code (desktop window chrome, themes, music year/FLAC, cast) and no `design/` file changed, so no mockup edits to adopt.
 - **Pulled:** `STATUS.md`; **new** `design-brief-music-song-versions-2026-10-01.md` (version types Live · Remix · Instrumental …, owner answered §G, **round-1 directions wanted on the badge, Q1**), 288 (FLAC without a seek table), 289 (a replacing load is not a failure), **290 (an album's year is the year it first came out — dev-authored)**, `research-reports/music-lyrics-that-do-not-belong-2026-10-01.md`; edited R273, R324, R328, R330, R331, R334, R337, R338, R339, R340, 286, research README, the Flatpak report.
@@ -143,7 +175,8 @@ plus a byte-size comparison of every mockup against `design/` on `main`.
   mostly built, 4 research reports (Jellyfin 12.1 audit, unauthenticated-media upstream report, FOSS cast sender,
   tracks-at-end MKV), the root + Ravilo constitutions/plans, and a fresh `STATUS.md`. **Next free: 259 / R303.**
 - **Repo-side mockup edits adopted (11 files):** the dev team replaced every real show title with a fictional one
-  (the map itself is deliberately written down nowhere in the tree — `scripts/check-deanonymization.sh` holds hashes only) and removed `ravilo-player.js`'s delivery pill
+  (Severance → *Offboarding*, Bluey → *Ruffy*, Klovn → *Fjollerne*, Silicon Valley → *Server Farm*, Red Notice →
+  *Blue Warrant*, KPop Demon Hunters → *JRock Ghost Chasers*…) and removed `ravilo-player.js`'s delivery pill
   (R180). The sweep had missed 13 of our files; the same map was applied to them.
 - **Built to match what shipped:** `Ravilo Mobile.html` — R274's 74 dp bar (36 dp pill, 28 dp glyphs), R278's bar on
   pushed pages (account screens stop above it, any item leaves them), R277's Search (no keyboard on arrival, re-tap
@@ -722,7 +755,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
   because R216/R183 force an AVC transcode target, so a single column would silently record the wrong
   codec's ceiling for an HEVC file. **Open question 1 answered on-device 2026-09-02**: R216 has been live on
   the stue TV since 2026-08-30 (105 `playback_qoe` rows carrying its fields, `direct_play=0` on heavy
-  sessions, `dropped_frames=0` throughout) — the *Till Daybreak* stutter was a Wholphin session, architecturally
+  sessions, `dropped_frames=0` throughout) — the *Until Dawn* stutter was a Wholphin session, architecturally
   unreachable by any of this. Through Ravilo the file re-encodes and starts slowly; it does not stutter.
   `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are the right copy, unblocked for translation.
   `basis: "measured"` is reachable in practice now (timer built) but unreached on any real device yet —
@@ -762,7 +795,7 @@ direction: pull (repo → this project) — 31 commits since the 2026-09-02 sync
 date: 2026-09-02T07:25:03Z
 direction: pull (repo → this project) — one research report, then a design pass
 - **Pulled `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`** (new repo-side,
-  19 KB). Triggered by *Till Daybreak (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
+  19 KB). Triggered by *Until Dawn (2025)* — a 82 Mbps 4K DV/HDR10+ REMUX — stuttering on stue TV and
   being abandoned mid-watch, the third stutter on that TV in three weeks. Owner's proposal: record what
   bitrate each device can take and warn on the Ravilo detail page before Play.
 - **What the report establishes:** the *measuring* half already exists (Phase 177 + R216, 2026-08-28 —
@@ -837,7 +870,7 @@ direction: pull (repo → this project)
     presentation with no new copy or visual language. Build note admits that signal is **not wired**
     (open question 7) — so a viewer can still see several seconds of frozen black frame with no chrome.
   - **181 — converge on Jellyfin's library, don't predict it** (partially implemented; FR-181-2 built).
-    Fjollerne S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
+    Klovn S11E07 missing for 15h: premiere-year freshness bucketing filed a currently-airing 2005 show as
     monthly-archive (9 of 16 provably-airing series were starved), nothing ever compared our item set to
     Jellyfin's, and the Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165
     (the WS listener subscribes to nothing and `LibraryChanged` is never sent — dead code reporting
@@ -1064,6 +1097,10 @@ direction: pull (repo → this project)
 <!-- 2026-09-28 additions: app/index.html ← specs/design-brief-dashboard-one-overview-2026-09-28.md · app/suggestions.html ← specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md §8 · app/album.html, app/audiobook.html (Files tab) ← specs/research-reports/music-tags-in-the-files-2026-09-28.md §7 · ravilo/Speakers - Directions.html + ravilo/mobile/ravilo-speakers.js ← specs/research-reports/music-cast-to-speakers-2026-09-28.md §7 · ravilo/mobile/ravilo-web-states.js, ravilo/ravilo-states.js ← R263/R212/R280/R309/R317/R318/R300 -->
 | Design file(s) | Repo spec(s) |
 |---|---|
+| app/Music Editions - Directions.html, app/editions-directions.js, app/editions.js, app/editions.css (album · library · artist · index) | `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` (decided 2026-10-04) → **305** + **R373** (ours, pending export) |
+| ravilo/Ravilo Mobile.html (cast sheet, PREVIEW), ravilo/mobile/ravilo-sessions.css | **R360** (main) · **R368–R372** + **304** (ours, pending export) |
+| ravilo/ravilo-app.js + ravilo/Ravilo Mobile.html (`SEG_ORDER`) | **R366** (main) |
+| ravilo/ravilo-player.js, ravilo/ravilo-player.css (skip-intro pill) | **R363** (main) |
 | ravilo/Ravilo TV.html, ravilo/ravilo-app.js, ravilo/ravilo-browse.js, ravilo/ravilo.css, ravilo/ravilo-i18n.js | R187 (browse page — shipped), R190 (filter by person + Seerr overflow — shipped) |
 | app/ravilo-builders.js, app/library.html, app/ravilo-config.html | phase-140 (workbench query blocks), R190 §D (Cast-or-crew workbench facet — shipped) |
 | app/metadata.html, app/metadata.css | phase-155 (age-rating normalization — shipped) |

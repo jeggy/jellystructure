@@ -51,10 +51,11 @@ a{color:var(--acc-ink)}a:hover{color:var(--ink)}
 <div id="shared"></div>
 <script src="music-data.js"></script>
 <script src="versions.js"></script>
+<script src="editions.js"></script>
 <script>
 (function () {
   const M = window.MUSIC, V = window.Versions, esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const SIX = ['live-at-the-harbour-1', 'live-at-the-harbour-6', 'signal-found-4', 'tide-tables-31', 'tide-tables-1', 'tide-tables-35'].map(M.track);
+  const SIX = ['live-at-the-harbour-1', 'live-at-the-harbour-6', 'sf-shortwave-2', 'tide-tables-31', 'tide-tables-1', 'tide-tables-35'].map(M.track);
   const D = [
     ['a', 'A · Words', true, ['Reads without a legend — the owner learns the nine by seeing them.', 'Colour carries the type at a glance; the word carries it for anyone who can’t tell coral from amber.', '<b>Cost:</b> the widest. Three chips on a long title wrap to a second line in Library → Songs at 1280 px.']],
     ['b', 'B · Marks', false, ['Four marks fit where one word does; rows stay one line at any width.', 'Scans like a column — every L lines up.', '<b>Cost:</b> a legend to learn. <i>Ac</i> and <i>Alt</i>, <i>S</i> and <i>L</i> need hover until they’re known; colour alone does the rest, which is weak for colour-blind readers.']],

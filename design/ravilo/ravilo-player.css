@@ -334,6 +334,8 @@
 .pl-skipintro .si-kbd { font-family: var(--mono); font-size: 15px; font-weight: 700; padding: 4px 10px; border-radius: 8px;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.3); }
 .pl-skipintro .si-fill { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--grad); }
+/* R363 FR-5 (main, 2026-10-04): the countdown is drawn only in Auto mode; the mockup's pill is Prompt mode, so no fill — "Skip Intro" + OK only */
+.pl-skipintro:not(.auto) .si-fill { display: none; }
 .pl-skipintro.focused { background: #fff; color: #0a0c13; border-color: transparent; box-shadow: 0 0 0 4px var(--ring), 0 16px 44px rgba(0,0,0,.55); }
 .pl-skipintro.focused .si-kbd { background: rgba(10,12,19,.12); border-color: rgba(10,12,19,.25); color: #0a0c13; }
 .pl-skipintro.focused .si-fill { background: rgba(10,12,19,.4); }

@@ -71,6 +71,8 @@
   function acard(a) { return '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + esc(artistOf(a).name) + '</div></div>'; }
   function arc(r, sub) { return '<div class="mu-arc" data-mu="artist" data-id="' + r.id + '"><div class="c" style="' + artImg(r) + '">' + (r.image ? '' : esc(M.initials(r.name))) + '</div><div class="t">' + esc(r.name) + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>'; }
   // owner 2026-10-01: a song's version as words (direction A) — ravilo-versions.js; absent ⇒ the title alone
+  // music editions: one copy of every song in lists (the better file, Q5)
+  const fold = l => (window.RaviloEditions ? RaviloEditions.fold(l) : l);
   const vtitle = x => window.RaviloVersions ? RaviloVersions.title(x, esc) : esc(x.title);
   function songRow(x, ctx, i) {
     const a = M.album(x.albumId), cur = MS.P && MS.P.cur() === x.id;
@@ -126,7 +128,7 @@
   }
   function albumsGrid() { const l = sorted(M.albums, 'albums'); return '<div class="mu-meta">' + albumsN(l.length) + '</div><div class="mu-g2">' + l.map(a => '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + esc(artistOf(a).name) + ' · ' + a.year + '</div></div>').join('') + '</div>'; }
   function artistsGrid() { const l = sorted(albumArtists(), 'artists'); return '<div class="mu-meta">' + l.length + ' ' + t('mlib.artists').toLowerCase() + '</div><div class="mu-g3">' + l.map(r => arc(r, albumsN(M.albumsOf(r.id).length))).join('') + '</div>'; }
-  function songsList() { const l = sorted(M.tracks, 'songs'); CTX.songs = l.map(x => x.id); return '<div class="mu-meta">' + songsN(l.length) + '</div><div class="mu-list">' + l.map((x, i) => songRow(x, 'songs', i)).join('') + '</div>'; }
+  function songsList() { const l = fold(sorted(M.tracks, 'songs')); CTX.songs = l.map(x => x.id); return '<div class="mu-meta">' + songsN(l.length) + '</div><div class="mu-list">' + l.map((x, i) => songRow(x, 'songs', i)).join('') + '</div>'; }
   function genresList() {
     if (MS.genre) { const al = M.albums.filter(a => a.genres.some(x => x.name === MS.genre));
       return '<div class="mu-back" data-mu="genre-back">‹ ' + t('mlib.genres') + '</div><div class="row" style="margin-top:0"><h3>' + esc(MS.genre) + '<span class="more" style="cursor:default">' + albumsN(al.length) + '</span></h3></div><div class="mu-g2">' + al.map(acard).join('') + '</div>'; }
@@ -157,7 +159,7 @@
     if (!s) { const rp = recentPlayed(); CTX.recent = rp.map(x => x.id);
       res.innerHTML = empty() ? '' : row(t('mhome.recent_played'), '<div class="mu-list">' + rp.map((x, i) => songRow(x, 'recent', i)).join('') + '</div>') + row(t('mhome.artists'), '<div class="mu-track">' + albumArtists().slice(0, 10).map(r => arc(r)).join('') + '</div>'); return; }
     const hit = v => String(v).toLowerCase().indexOf(s) >= 0;
-    const songs = M.tracks.filter(x => hit(x.title) || hit(M.artistNames(x.artistIds))), albums = M.albums.filter(a => hit(a.title) || hit(artistOf(a).name)), artists = M.artists.filter(r => hit(r.name));
+    const songs = fold(M.tracks.filter(x => hit(x.title) || hit(M.artistNames(x.artistIds)))), albums = M.albums.filter(a => hit(a.title) || hit(artistOf(a).name)), artists = M.artists.filter(r => hit(r.name));
     if (!songs.length && !albums.length && !artists.length) { res.innerHTML = '<div class="srchmeta">' + esc(t('music.no_results', { q: MS.srch.trim() })) + '</div>'; return; }
     CTX.srch = songs.map(x => x.id);
     const cap = (k, l) => MS.srchAll === k ? l : l.slice(0, 3), more = (k, l) => l.length > 3 && MS.srchAll !== k ? 'srch-all-' + k : null;
@@ -197,25 +199,51 @@
   /* ---- detail: album · artist · playlist (one title's detail — the bar is hidden, the mini bar stays) ---- */
   const det = document.createElement('div'); det.className = 'mu-det'; det.id = 'muDet'; det.innerHTML = '<div class="mu-dsc" id="muDsc"></div>';
   document.querySelector('.screen').appendChild(det);
+  // music editions (owner 2026-10-04): official album · divider · extras (no numbers) · Singles & B-sides (D1 A)
+  const DD = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function trRow(x, n, ctx, i, al, sub) {
+    const cur = MS.P && MS.P.cur(), pl = MS.P && MS.P.playing();
+    const inner = '<span class="rv-tt">' + esc(x.title) + (x.feat.length ? ' <small>feat. ' + esc(M.artistNames(x.feat)) + '</small>' : '') + (x.artistIds[0] !== al.artistId ? ' <small>' + esc(M.artistNames(x.artistIds)) + '</small>' : '') + '</span>' + (window.RaviloVersions ? RaviloVersions.chips(x) : '');
+    return '<div class="mu-tr' + (cur === x.id ? ' on' : '') + '" data-mu="song" data-id="' + x.id + '" data-ctx="' + ctx + '" data-i="' + i + '"><span class="n">' + (cur === x.id ? '<span class="mu-bars' + (pl ? '' : ' paused') + '"><i></i><i></i><i></i></span>' : n) + '</span>'
+      + (sub ? '<span class="t re-t2"><span class="re-tl">' + inner + '</span><small class="re-from">' + sub + '</small></span>' : '<span class="t">' + inner + '</span>')
+      + '<span class="ln">' + (x.lyrics ? '<span class="ly" title="' + t('music.lyrics') + '">' + G.lyr + '</span>' : '') + M.fmtLen(x.len) + '</span><button class="mu-more" data-mu="menu" data-id="' + x.id + '">' + G.more + '</button></div>';
+  }
   function albumHTML(a) {
-    const ts = M.tracksOf(a.id), len = ts.reduce((s, x) => s + x.len, 0), r = artistOf(a), cur = MS.P && MS.P.cur(), pl = MS.P && MS.P.playing();
+    const RE = window.RaviloEditions, ED = RE && RE.of(a.id);
+    const ts = ED ? ED.off : M.tracksOf(a.id), len = ts.reduce((s, x) => s + x.len, 0), r = artistOf(a);
     CTX['al:' + a.id] = ts.map(x => x.id);
-    const more = M.albumsOf(r.id).filter(x => x.id !== a.id);
+    const more = M.albumsOf(r.id).filter(x => x.id !== a.id && !(RE && RE.home(x.id) === a.id));
     const tint = 'background:linear-gradient(180deg,hsl(' + a.hue + ' 42% 20%) 0,var(--bg) 560px)';
+    const pk = ED ? RE.getPick(a.id) : 'al', pc = pk + ':' + a.id, nEx = ED ? ED.ex.length : 0;
+    if (ED) CTX['alx:' + a.id] = RE.ids(a.id, true);
+    let acts = '<div class="mu-dacts"><button class="pri" data-mu="playctx" data-ctx="al:' + a.id + '">' + G.play + t('music.play') + '</button><button data-mu="shufctx" data-ctx="al:' + a.id + '">' + G.shuffle + t('music.shuffle') + '</button></div>';
+    if (ED) {
+      const mk = MS.edMenu && MS.edMenu.id === a.id ? MS.edMenu.k : null, all = CTX['alx:' + a.id].length;
+      const opt = (v, k) => '<button class="' + (pk === v ? 'on' : '') + '" data-mu="ed-pick" data-id="' + a.id + '|' + v + '|' + k + '"><span><b>' + t(v === 'alx' ? 'ed.play_extras' : 'ed.play_album') + '</b><small>' + t(v === 'alx' ? 'ed.sub_extras' : 'ed.sub_album', { n: v === 'alx' ? all : ts.length }) + '</small></span>' + (pk === v ? '<i>✓</i>' : '') + '</button>';
+      acts = '<div class="re-actw"><div class="mu-dacts re-acts"><div class="re-split"><button class="pri" data-mu="playctx" data-ctx="' + pc + '">' + G.play + '<span class="re-lb">' + t(pk === 'alx' ? 'ed.play_extras' : 'ed.play_album') + '</span></button><button class="pri re-dd" data-mu="ed-menu" data-id="' + a.id + '|play" aria-label="' + esc(t('ed.more_play')) + '">' + DD + '</button></div>'
+        + '<div class="re-split re-sh"><button data-mu="shufctx" data-ctx="' + pc + '">' + G.shuffle + t('music.shuffle') + '</button><button class="re-dd" data-mu="ed-menu" data-id="' + a.id + '|shuf" aria-label="' + esc(t('ed.more_play')) + '">' + DD + '</button></div></div>'
+        + (mk ? '<div class="re-menu ' + mk + '">' + opt('al', mk) + opt('alx', mk) + '</div>' : '') + '</div>';
+    }
+    const rc = (ED && pk === 'alx' ? 'alx:' : 'al:') + a.id;
+    let body = '<div class="mu-trs">' + ts.map((x, i) => trRow(x, i + 1, rc, i, a)).join('') + '</div>';
+    if (nEx) body += '<div class="re-div">' + esc(t('ed.extras', { e: ED.edition })) + '</div><div class="mu-trs re-ex">' + ED.ex.map((x, j) => trRow(x, '', 'alx:' + a.id, ts.length + j, a)).join('') + '</div>';
+    if (ED && ED.singles.length) {
+      const open = MS.edB === a.id, nb = ED.bs.length, base = ts.length + nEx;
+      body += '<div class="mu-sec">' + t('ed.singles') + '</div><div class="mu-track">' + ED.singles.map(s => '<div class="mu-acard" data-mu="album" data-id="' + s.id + '">' + cover(s) + '<div class="t">' + esc(s.title) + '</div><div class="s">' + s.year + ' · ' + t('music.type.' + s.type) + '</div></div>').join('') + '</div>'
+        + (nb ? '<button class="re-fold" data-mu="ed-bs" data-id="' + a.id + '"><b>' + (nb === 1 ? t('ed.one_bside') : t('ed.n_bsides', { n: nb })) + '</b><span>' + t(open ? 'ed.hide' : 'ed.show') + (open ? '' : ' ›') + '</span></button>'
+          + (open ? '<div class="mu-trs re-ex">' + ED.bs.map((b, j) => trRow(b.t, '', 'alx:' + a.id, base + j, a, esc(t('ed.from_single', { s: b.s.title })))).join('') + '</div>' : '') : '');
+    }
     return '<div style="' + tint + ';min-height:100%" class="mu-tint"><div class="mu-dtop"><button class="mu-dback" data-mu="back" aria-label="Back">‹</button>' + cover(a) + '</div>'
       + '<div class="mu-dbody"><div class="mu-dt">' + esc(a.title) + '</div>'
       + '<div class="mu-dby">' + (r.id === 'various' ? esc(r.name) : '<a data-mu="artist" data-id="' + r.id + '">' + esc(r.name) + '</a>') + '</div>'
-      + '<div class="mu-dm"><span>' + a.year + '</span><span>·</span><span>' + songsN(ts.length) + '</span><span>·</span><span>' + M.fmtTotal(len) + '</span>' + (a.type !== 'album' ? '<span class="mu-badge">' + t('music.type.' + a.type) + '</span>' : '') + '</div>'
-      + '<div class="mu-dacts"><button class="pri" data-mu="playctx" data-ctx="al:' + a.id + '">' + G.play + t('music.play') + '</button><button data-mu="shufctx" data-ctx="al:' + a.id + '">' + G.shuffle + t('music.shuffle') + '</button></div>'
-      + '<div class="mu-trs">' + ts.map((x, i) => '<div class="mu-tr' + (cur === x.id ? ' on' : '') + '" data-mu="song" data-id="' + x.id + '" data-ctx="al:' + a.id + '" data-i="' + i + '"><span class="n">' + (cur === x.id ? '<span class="mu-bars' + (pl ? '' : ' paused') + '"><i></i><i></i><i></i></span>' : (i + 1)) + '</span>'
-        + '<span class="t"><span class="rv-tt">' + esc(x.title) + (x.feat.length ? ' <small>feat. ' + esc(M.artistNames(x.feat)) + '</small>' : '') + (x.artistIds[0] !== a.artistId ? ' <small>' + esc(M.artistNames(x.artistIds)) + '</small>' : '') + '</span>' + (window.RaviloVersions ? RaviloVersions.chips(x) : '') + '</span>'
-        + '<span class="ln">' + (x.lyrics ? '<span class="ly" title="' + t('music.lyrics') + '">' + G.lyr + '</span>' : '') + M.fmtLen(x.len) + '</span><button class="mu-more" data-mu="menu" data-id="' + x.id + '">' + G.more + '</button></div>').join('') + '</div>'
+      + '<div class="mu-dm"><span>' + a.year + '</span><span>·</span><span>' + songsN(ts.length) + '</span><span>·</span><span>' + M.fmtTotal(len) + '</span>' + (nEx ? '<span class="re-q">' + t(nEx === 1 ? 'ed.n_extra' : 'ed.n_extras', { n: nEx }) + '</span>' : '') + (a.type !== 'album' ? '<span class="mu-badge">' + t('music.type.' + a.type) + '</span>' : '') + '</div>'
+      + (RE ? RE.singleLine(a.id) : '') + acts + body
       + (more.length ? '<div class="mu-sec">' + esc(t('music.more_from', { artist: r.name })) + '</div><div class="mu-track">' + more.map(acard).join('') + '</div>' : '')
       + '</div></div>';
   }
-  const GROUPS = [['music.albums', a => a.type === 'album' || a.type === 'soundtrack'], ['music.singles', a => a.type === 'single' || a.type === 'ep'], ['music.compilations', a => a.type === 'compilation'], ['music.type.live', a => a.type === 'live']];
+  const GROUPS = [['music.albums', a => a.type === 'album' || a.type === 'soundtrack'], ['music.singles', a => (a.type === 'single' || a.type === 'ep') && !(window.RaviloEditions && RaviloEditions.home(a.id))], ['music.compilations', a => a.type === 'compilation'], ['music.type.live', a => a.type === 'live']];
   function artistHTML(r) {
-    const own = M.albumsOf(r.id), songs = M.tracksBy(r.id).slice().sort((a, b) => b.plays - a.plays), top = songs.slice(0, 5);
+    const own = M.albumsOf(r.id), songs = fold(M.tracksBy(r.id)).slice().sort((a, b) => b.plays - a.plays), top = songs.slice(0, 5);
     CTX['ar:' + r.id] = songs.map(x => x.id);
     const facts = [r.type === 'Group' ? 'Group' : r.type === 'Person' ? '' : '', r.span].filter(Boolean).join(' · ');
     const vids = M.VIDEOS[r.id] || [];
@@ -224,6 +252,7 @@
       + '<div class="mu-dbody">' + (r.bio ? '<div class="mu-bio">' + esc(r.bio) + '</div><span class="mu-biomore" data-mu="bio" data-id="' + r.id + '">' + t('music.more') + '</span>' : '')
       + '<div class="mu-dacts"><button class="pri" data-mu="playctx" data-ctx="ar:' + r.id + '">' + G.play + t('music.play_all') + '</button><button data-mu="shufctx" data-ctx="ar:' + r.id + '">' + G.shuffle + t('music.shuffle') + '</button></div>'
       + GROUPS.map(g => { const l = own.filter(g[1]); return l.length ? '<div class="mu-sec">' + t(g[0]) + '</div><div class="mu-g2" style="padding:0">' + l.map(a => '<div class="mu-acard" data-mu="album" data-id="' + a.id + '">' + cover(a) + '<div class="t">' + esc(a.title) + '</div><div class="s">' + a.year + '</div></div>').join('') + '</div>' : ''; }).join('')
+      + (window.RaviloEditions ? RaviloEditions.underNote(r.id) : '')
       + (top.length ? '<div class="mu-sec">' + t('music.top_songs') + (songs.length > 5 ? '<span class="more" data-mu="ar-all" data-id="' + r.id + '">' + t('music.see_all') + ' ›</span>' : '') + '</div><div class="mu-list" style="margin:0 -10px">' + (MS.arAll === r.id ? songs : top).map((x, i) => songRow(x, 'ar:' + r.id, i)).join('') + '</div>' : '')
       + (vids.length ? '<div class="mu-sec">' + t('music.videos') + '<span class="mu-ph2">phase 2</span></div><div class="mu-track">' + vids.map(v => '<div class="mu-vt" data-mu="video" data-id="' + esc(v.title) + '"><div class="im" style="' + M.coverStyle({ id: v.title, hue: (r.hue + 90) % 360 }) + '">' + esc(v.title) + '<span class="d">' + v.len + '</span></div><div class="s">' + esc(v.kind) + ' · ' + v.year + '</div></div>').join('') + '</div>' : '')
       + '</div>';
@@ -355,6 +384,7 @@
     }
     else if (k === 'ar-all') { MS.arAll = id; paintDet(); }
     else if (k === 'video') H.openPlayer(id);
+    else if (window.RaviloEditions && RaviloEditions.onClick(k, el)) {}
     else if (window.RaviloBooks && RaviloBooks.onClick(k, el, e)) {}
   }
   H.app.addEventListener('click', onClick);

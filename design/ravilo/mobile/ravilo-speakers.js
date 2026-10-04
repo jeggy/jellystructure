@@ -28,14 +28,17 @@
   // the household as measured 2026-09-28 (research §0): two speakers, a group made in the Home app, the hub, a TV
   const ROUTES = [
     { name: 'Stue', kind: 'speaker', state: 'ready', vol: 25 },
+    { name: 'Kontor', kind: 'speaker', state: 'ready', vol: 30 },
     { name: 'Gæsteværelse', kind: 'speaker', state: 'busy', app: 'Spotify', vol: 10 },
-    { name: 'Hele huset', kind: 'group', state: 'ready', vol: 30 },
+    { name: 'Badeværelse', kind: 'speaker', state: 'ready', vol: 30 },
     { name: 'Køkken hub', kind: 'hub', state: 'ready', vol: 40, display: true },
   ];
   const route = n => ROUTES.find(r => r.name === n);
   const glyph = r => G[r.kind] || G.tv;
   const dispLyr = {}; // per display, off at first
-  P.castHidden = false;
+  P.castHidden = false; P.rooms = []; // R371: rooms added one at a time after the first (owner 10-03 — no group to pick)
+  const roomsLine = () => { const n = [P.cast].concat(P.rooms); return n.length <= 1 ? n[0] : n.length === 2 ? n[0] + ' + ' + n[1] : n[0] + ' + ' + (n.length - 1); };
+  const sessBusy = n => window.RavSess && RavSess.busy((RavSess.PLACES.find(p => p.name === n) || {}).id);
 
   function stateLine(r) {
     if (P.cast === r.name) return '<span class="sub sc-play">' + tr('music.playing_on', { d: r.name }, 'Playing on ' + r.name).replace(/^.*$/, 'Playing · ' + esc((M.track(PL.cur()) || {}).title || '')) + '</span>';
@@ -81,14 +84,14 @@
     const r = route(name) || { name, state: 'ready' }; PL.closeSheet(); if (H.closeScreensSheet) H.closeScreensSheet();
     if (!PL.cur()) { H.phToast('Pick a song first'); return; }
     if (r.state === 'busy') { r.state = 'ready'; r.app = null; }
-    P.cast = name; P.castHidden = false;
+    P.cast = name; P.castHidden = false; P.rooms = [];
     // hand-off keeps the song and its position (R245 FR-R245-4 for music, §6.9)
     H.phToast('Sending to ' + name + '…');
     setTimeout(() => { if (P.cast === name) H.phToast('Playing on ' + name); }, 1100);
     PL.paintNow(); PL.paintMini();
   }
   function stopCast(pull) {
-    const was = P.cast; PL.closeSheet(); if (H.closeScreensSheet) H.closeScreensSheet(); P.cast = null; P.castHidden = false;
+    const was = P.cast; PL.closeSheet(); if (H.closeScreensSheet) H.closeScreensSheet(); P.cast = null; P.castHidden = false; P.rooms = [];
     if (pull) { H.phToast('Playing on this phone'); }
     else { P.playing = false; H.phToast('Stopped on ' + was); }
     PL.paintNow(); PL.paintMini();
@@ -98,23 +101,45 @@
     if (!P.cast || !PL.sheet) return;
     const r = route(P.cast), x = M.track(id), synced = !!(M.LYRICS && M.LYRICS[x.id]);
     const blk = document.createElement('div'); blk.className = 'spk-mblk';
-    blk.innerHTML = '<div class="spk-mh">' + glyph(r) + '<b>' + esc(r.name) + '</b></div>'
-      + '<div class="spk-vol">' + G.vol + '<input type="range" min="0" max="100" step="5" value="' + r.vol + '" data-spk-vol aria-label="Volume on ' + esc(r.name) + '"><span data-spk-volv>' + r.vol + ' %</span></div>'
+    blk.innerHTML = '<div class="spk-mh">' + (P.rooms.length ? G.group : glyph(r)) + '<b>' + esc(roomsLine()) + '</b></div>' + volHTML()
+      + '<button class="mp-row" data-spk-act="addroom"><span class="sc-ic spk-ic"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="tx"><span class="nm">' + esc(tr('group.add_speaker', null, 'Add a speaker…')) + '</span></span></button>'
       + (r.display ? '<button class="mp-row" data-spk-act="lyr"' + (synced ? '' : ' disabled style="opacity:.45"') + '><span class="sc-ic spk-ic">' + G.lyr + '</span><span class="tx"><span class="nm">' + esc(tr('cast_lyrics_on', { device: r.name }, 'Lyrics on ' + r.name)) + '</span>'
         + '<span class="sub">' + (synced ? (dispLyr[r.name] ? 'On · synced' : 'Off') : 'This song has no timed lyrics') + '</span></span><span class="toggle' + (dispLyr[r.name] ? ' on' : '') + '" style="margin-left:auto"></span></button>' : '')
       + '<button class="mp-row" data-spk-act="phone"><span class="sc-ic spk-ic">' + G.phone + '</span><span class="tx"><span class="nm">' + esc(tr('cast_play_here', null, 'Play on this phone')) + '</span></span></button>'
       + '<button class="mp-row" data-spk-act="stop"><span class="sc-ic spk-ic" style="color:#ff9b8a">' + G.stop + '</span><span class="tx"><span class="nm" style="color:#ff9b8a">Stop casting</span></span></button>';
     const head = PL.sheet.querySelector('.mp-sh'); if (head) head.after(blk);
   }
+  // one Volume slider for one place; with more rooms, Volume on top (never "All speakers") and one per room (R371 FR-R371-4)
+  function volHTML() {
+    const rooms = [P.cast].concat(P.rooms).map(route), mx = Math.max.apply(null, rooms.map(x => x.vol));
+    const one = (lbl, v, k) => '<div class="spk-vol' + (k ? ' rm' : '') + '">' + (k ? '<span class="spk-rn">' + esc(lbl) + '</span>' : G.vol) + '<input type="range" min="0" max="100" step="5" value="' + v + '" data-spk-vol="' + esc(k || '') + '" aria-label="' + esc(lbl) + '"><span data-spk-volv="' + esc(k || '') + '">' + v + ' %</span></div>';
+    return one(tr('volume.master', null, 'Volume'), mx, '') + (rooms.length > 1 ? rooms.map(x => one(x.name, x.vol, x.name)).join('') : '');
+  }
+  // Add a speaker… — one tap adds one room, nothing to confirm, the sheet stays open (owner 10-04)
+  function openAdd() {
+    const taken = [P.cast].concat(P.rooms);
+    const rows = ROUTES.filter(x => taken.indexOf(x.name) < 0 && x.kind !== 'group').map(x => { const sb = sessBusy(x.name), busy = x.state === 'busy' || sb;
+      return '<button class="mp-row sc-row' + (busy ? ' spk-dis' : '') + '"' + (busy ? ' disabled' : ' data-spk-addroom="' + esc(x.name) + '"') + '><span class="sc-ic spk-ic">' + glyph(x) + '</span><span class="tx"><span class="nm">' + esc(x.name) + '</span><span class="sub">' + esc(sb ? (sb.ownerId === 'eyd' ? 'Playing · ' + sb.title : sb.owner + ' is listening') : x.state === 'busy' ? 'Busy · ' + x.app : 'Ready · ' + x.vol + ' %') + '</span></span><span class="rt"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></button>'; }).join('');
+    PL.openSheet('spkadd', '<div class="mp-sh"><h4>Add a speaker</h4></div><div class="mp-note" style="padding:0 20px 8px;font-size:13.5px;line-height:1.5;color:var(--ink-soft)">Tap a room to add it. It joins at the volume it has now. Playing on <b>' + esc(roomsLine()) + '</b>.</div>' + rows
+      + '<button class="mp-row" data-spk-act="back2"><span class="tx"><span class="nm" style="color:var(--ink-soft)">Done</span></span></button>');
+  }
   PL.sheet.addEventListener('click', e => {
+    const ad = e.target.closest('[data-spk-addroom]'); if (ad) { e.stopPropagation(); P.rooms.push(ad.dataset.spkAddroom); H.phToast(ad.dataset.spkAddroom + ' joined · ' + roomsLine()); openAdd(); PL.paintMini(); PL.paintNow(); return; }
     const rw = e.target.closest('[data-spk]'); if (rw) { e.stopPropagation(); const r = route(rw.dataset.spk); if (P.cast === r.name) { PL.closeSheet(); return; } if (r.state === 'busy') confirmBusy(r); else castTo(r.name); return; }
     const go = e.target.closest('[data-spk-go]'); if (go) { e.stopPropagation(); castTo(go.dataset.spkGo); return; }
     const a = e.target.closest('[data-spk-act]'); if (!a) return; e.stopPropagation();
     const k = a.dataset.spkAct;
     if (k === 'stop') stopCast(false); else if (k === 'phone') stopCast(true); else if (k === 'back') openRoutes();
+    else if (k === 'addroom') openAdd();
+    else if (k === 'back2') PL.closeSheet();
     else if (k === 'lyr' && !a.disabled) { dispLyr[P.cast] = !dispLyr[P.cast]; a.querySelector('.toggle').classList.toggle('on', dispLyr[P.cast]); a.querySelector('.sub').textContent = dispLyr[P.cast] ? 'On · synced' : 'Off'; H.phToast(dispLyr[P.cast] ? 'Lyrics on ' + P.cast : 'Lyrics off on ' + P.cast); }
   }, true);
-  PL.sheet.addEventListener('input', e => { const v = e.target.closest('[data-spk-vol]'); if (!v || !P.cast) return; route(P.cast).vol = +v.value; const o = PL.sheet.querySelector('[data-spk-volv]'); if (o) o.textContent = v.value + ' %'; });
+  PL.sheet.addEventListener('input', e => {
+    const v = e.target.closest('[data-spk-vol]'); if (!v || !P.cast) return; const k = v.dataset.spkVol, rooms = [P.cast].concat(P.rooms).map(route);
+    if (k) route(k).vol = +v.value; else { const mx = Math.max.apply(null, rooms.map(x => x.vol)) || 1; rooms.forEach(x => { x.vol = Math.round(Math.min(100, x.vol * (+v.value) / mx)); }); }
+    const mx2 = Math.max.apply(null, rooms.map(x => x.vol));
+    PL.sheet.querySelectorAll('[data-spk-volv]').forEach(o => { const n = o.dataset.spkVolv, val = n ? route(n).vol : mx2; o.textContent = val + ' %'; const inp = o.parentNode.querySelector('input'); if (inp !== v) inp.value = val; });
+  });
   // the cast button and the device chip open the routes sheet (capture: before the player's stand-in toggle)
   PL.now.addEventListener('click', e => { const b = e.target.closest('[data-np="cast"],.mu-ndev'); if (!b) return; e.stopPropagation(); e.preventDefault(); openRoutes(); }, true);
   // the top bar's cast button in music mode opens this sheet (video mode keeps the TV sheet, which never lists a speaker)
@@ -125,8 +150,8 @@
   document.addEventListener('keydown', e => {
     if (!P.cast || !/^(\+|=|-|_|ArrowUp|ArrowDown)$/.test(e.key) || e.target.closest('input,textarea')) return;
     if (/Arrow/.test(e.key) && !e.altKey) return;
-    const r = route(P.cast), up = e.key === '+' || e.key === '=' || e.key === 'ArrowUp';
-    r.vol = Math.max(0, Math.min(100, r.vol + (up ? 5 : -5)));
+    const up = e.key === '+' || e.key === '=' || e.key === 'ArrowUp', rooms = [P.cast].concat(P.rooms).map(route);
+    rooms.forEach(x => { x.vol = Math.max(0, Math.min(100, x.vol + (up ? 5 : -5))); }); const r = { name: roomsLine(), vol: Math.max.apply(null, rooms.map(x => x.vol)) };
     const scr = document.querySelector('.phone .screen') || document.querySelector('.phone');
     if (!hud) { hud = document.createElement('div'); hud.className = 'spk-hud'; scr.appendChild(hud); }
     hud.innerHTML = '<small>' + esc(r.name) + '</small><div class="tr"><i style="height:' + r.vol + '%"></i></div>' + G.vol;
@@ -135,7 +160,7 @@
   // mini bar: the speaker's name with its glyph; swipe-down only hides the bar while casting (Q2)
   function afterMini(mini) {
     if (P.cast && P.castHidden) { mini.classList.remove('on'); return; }
-    if (P.cast) { const d = mini.querySelector('.d'); if (d && !d.querySelector('.spk-on')) d.innerHTML = '<span class="spk-ar">' + d.innerHTML + '</span><span class="spk-on">· ' + glyph(route(P.cast) || ROUTES[0]) + esc(P.cast) + '</span>'; }
+    if (P.cast) { const d = mini.querySelector('.d'); if (d && !d.querySelector('.spk-on')) d.innerHTML = '<span class="spk-ar">' + d.innerHTML + '</span><span class="spk-on">· ' + (P.rooms.length ? G.group : glyph(route(P.cast) || ROUTES[0])) + esc(roomsLine()) + '</span>'; }
   }
   const mini = document.getElementById('muMini');
   if (mini) {
@@ -163,6 +188,6 @@
   const baseStart = PL.playCtx;
   PL.playCtx = function () { P.castHidden = false; return baseStart.apply(this, arguments); };
   MS.P.playCtx = PL.playCtx;
-  window.RaviloSpeakers = { ROUTES, openRoutes, castTo, stopCast, afterMini, afterMenu };
+  window.RaviloSpeakers = { ROUTES, openRoutes, castTo, stopCast, afterMini, afterMenu, roomsLine, G };
   PL.paintMini(); PL.paintNow();
 })();
