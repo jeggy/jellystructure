@@ -85,3 +85,15 @@ beside its fields, so a new field is added in one place. Don't turn it into a da
 `equals` for the maps and the `superseded` handling. At `:204`:
 `active[key] = active[key]?.withProgress(positionMs, clock()) ?: TrackedPlayback(device, jellyfinId, positionMs, clock())`.
 The `existingPlaySessionId` local goes. Note that the ceiling check with ceiling 1 makes the live check easy.
+
+## Build notes (2026-10-04)
+
+- **Built:** `TrackedPlayback.withProgress(positionMs, heartbeatMs)` in `tv/PlaybackService.kt` (a plain class still,
+  not a data class), and `PlaybackTracker.heartbeat` now writes `active[key]?.withProgress(...) ?: TrackedPlayback(...)`.
+  The old `existingPlaySessionId` local is gone. No other change (FR-306-3).
+- **Tests:** `PlaybackTrackerTest` — `heartbeatKeepsDirectPlayFromTheStart`, `heartbeatKeepsTheJellyfinPlaySessionIdThroughWithProgress`,
+  `heartbeatUpdatesOnlyPositionAndTime`, `heartbeatWithoutAStartCountsAsConverting`,
+  `aDeviceWithOneDirectAndOneConvertingPlaybackIsNotDirect`; `CastServiceTest` — `direct plays still leave the ceiling
+  free after their progress reports` (and two converting ones still fill it). All green on `linuxX64Test`.
+- **Only a device confirms:** the optional live check (ceiling 1, an MP3 album on the Gæsteværelse speaker, then a
+  film to another receiver after 30 s).

@@ -102,4 +102,27 @@ class CastServiceTest {
         assertEquals(30, e.retryAfterSeconds)
         cast.checkCeiling(p, listOf(r1, r2))   // a phone/TV is never gated
     }
+    /** Phase 306 — two speakers direct-playing, each past its first progress report, leave room for a third. */
+    @Test
+    fun `direct plays still leave the ceiling free after their progress reports`() = runBlocking<Unit> {
+        configStore.update(configStore.current.copy(chromecast = ChromecastConfig(enabled = true, appId = "A1B2C3D4", maxSessions = 2)))
+        val p = phone()
+        val (r1, _) = assertNotNull(cast.redeem(cast.mint(p).code, "One", null))
+        val (r2, _) = assertNotNull(cast.redeem(cast.mint(p).code, "Two", null))
+        val (r3, _) = assertNotNull(cast.redeem(cast.mint(p).code, "Three", null))
+        var now = 1_000_000L
+        val tracker = PlaybackTracker { now }
+        tracker.started(r1, "song-a", 0L, directPlay = true)
+        tracker.started(r2, "song-b", 0L, directPlay = true)
+        now += 10_000
+        tracker.heartbeat(r1, "song-a", 10_000L)
+        tracker.heartbeat(r2, "song-b", 10_000L)
+        cast.checkCeiling(r3, tracker.activeDeviceObjects(), tracker.activeDirectDeviceIds())  // no 503
+        // A converting one still counts.
+        tracker.started(r2, "film", 0L, directPlay = false)
+        tracker.started(r1, "film2", 0L, directPlay = false)
+        assertFailsWith<CastCeilingException> {
+            cast.checkCeiling(r3, tracker.activeDeviceObjects(), tracker.activeDirectDeviceIds())
+        }
+    }
 }

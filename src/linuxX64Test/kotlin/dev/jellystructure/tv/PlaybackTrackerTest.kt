@@ -221,5 +221,63 @@ class PlaybackTrackerTest {
         assertTrue(PlaybackTracker.needsEventsSocket(device("tv1").copy(kind = "tv")))
         assertTrue(PlaybackTracker.needsEventsSocket(device("old").copy(kind = "tv", platform = null)))
     }
-}
+    // ── Phase 306 — a progress report keeps what the start recorded ──
 
+    @Test
+    fun heartbeatKeepsDirectPlayFromTheStart() = runBlocking {
+        val t = tracker()
+        val spk = device("cast-1").copy(kind = "cast")
+        t.started(spk, "song", 0L, jellyfinPlaySessionId = null, directPlay = true)
+        repeat(3) { now += 10_000; assertTrue(t.heartbeat(spk, "song", now)) }
+        assertTrue(t.tracked().single().directPlay)
+        assertEquals(setOf("cast-1"), t.activeDirectDeviceIds())
+    }
+
+    @Test
+    fun heartbeatKeepsTheJellyfinPlaySessionIdThroughWithProgress() = runBlocking {
+        val t = tracker()
+        val tv = device()
+        t.started(tv, "movie", 0L, jellyfinPlaySessionId = "jf-1", directPlay = false)
+        now += 10_000
+        t.heartbeat(tv, "movie", 10_000L)
+        assertEquals("jf-1", t.tracked().single().jellyfinPlaySessionId)
+    }
+
+    @Test
+    fun heartbeatUpdatesOnlyPositionAndTime() = runBlocking {
+        val t = tracker()
+        val tv = device()
+        t.started(tv, "movie", 5_000L, jellyfinPlaySessionId = "jf-1", directPlay = true)
+        val before = t.tracked().single()
+        now += 10_000
+        t.heartbeat(tv, "movie", 15_000L)
+        val after = t.tracked().single()
+        assertEquals(before.device, after.device)
+        assertEquals(before.jellyfinId, after.jellyfinId)
+        assertEquals(before.jellyfinPlaySessionId, after.jellyfinPlaySessionId)
+        assertEquals(before.directPlay, after.directPlay)
+        assertEquals(15_000L, after.positionMs)
+        assertEquals(now, after.heartbeatMs)
+    }
+
+    @Test
+    fun heartbeatWithoutAStartCountsAsConverting() = runBlocking {
+        val t = tracker()
+        val spk = device("cast-1").copy(kind = "cast")
+        assertTrue(t.heartbeat(spk, "song", 30_000L))
+        assertFalse(t.tracked().single().directPlay)
+        assertTrue("cast-1" !in t.activeDirectDeviceIds())
+    }
+
+    @Test
+    fun aDeviceWithOneDirectAndOneConvertingPlaybackIsNotDirect() = runBlocking {
+        val t = tracker()
+        val spk = device("cast-1").copy(kind = "cast")
+        t.started(spk, "song", 0L, directPlay = true)
+        t.started(spk, "film", 0L, directPlay = false)
+        now += 10_000
+        t.heartbeat(spk, "song", 10_000L)
+        t.heartbeat(spk, "film", 10_000L)
+        assertTrue("cast-1" !in t.activeDirectDeviceIds())
+    }
+}

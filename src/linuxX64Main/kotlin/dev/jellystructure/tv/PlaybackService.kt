@@ -98,7 +98,12 @@ internal class TrackedPlayback(
     val jellyfinPlaySessionId: String? = null,
     /** 286 (FR-286-8) — the ticket was a direct play: for a cast receiver, not a session against the ceiling. */
     val directPlay: Boolean = false,
-)
+) {
+    /** 306 (FR-306-1) — a progress report moves the position and the heartbeat time and nothing else, so every
+     *  field the start recorded (and any field added later — add it here too) survives the first report. */
+    fun withProgress(positionMs: Long, heartbeatMs: Long) =
+        TrackedPlayback(device, jellyfinId, positionMs, heartbeatMs, jellyfinPlaySessionId, directPlay)
+}
 
 private const val STOP_WATCHDOG_MS = 90_000L
 
@@ -200,8 +205,10 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
             if ((stoppedUntilMs[key] ?: 0L) > clock()) {
                 false
             } else {
-                val existingPlaySessionId = active[key]?.jellyfinPlaySessionId
-                active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), existingPlaySessionId)
+                // 306 — keep what the start recorded (directPlay, the play-session id); no entry (restart, or a
+                // report ahead of its start) stays conservative: directPlay = false counts against the ceiling.
+                active[key] = active[key]?.withProgress(positionMs, clock())
+                    ?: TrackedPlayback(device, jellyfinId, positionMs, clock())
                 lastSeen[key] = device to clock()
                 publish()
                 true
