@@ -80,7 +80,7 @@ fun drawnPositionMs(view: SessionView, serverNowMs: Long, receivedAtMs: Long, no
 /** FR-R368-10, review item 2 — the phone, the computer and the web app ask for sessions; the TV does not (yet). R369
  *  adds `session_control` where the app obeys `session_command`. */
 fun eventsFeaturesFor(isTv: Boolean, obeysSessionCommands: Boolean = false): Set<String> = when {
-    isTv -> emptySet()
+    isTv -> if (obeysSessionCommands) setOf(EVENTS_FEATURE_SESSION_CONTROL) else emptySet()   // a place, never a list
     obeysSessionCommands -> setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL)
     else -> setOf(EVENTS_FEATURE_SESSIONS)
 }

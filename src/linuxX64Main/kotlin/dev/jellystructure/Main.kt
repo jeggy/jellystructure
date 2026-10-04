@@ -535,7 +535,7 @@ fun main() = runBlocking {
         }
     }
     // R368 + 304a — every playback is a session; restored after a restart, published to the apps and the admin.
-    val sessionPublisher = dev.jellystructure.tv.wirePlaybackSessions(db, rootScope, mediaStore, musicPipeline, raviloDeviceService, tvEventBus, playbackService, castService, broadcaster)
+    val sessionPublisher = dev.jellystructure.tv.wirePlaybackSessions(db, rootScope, mediaStore, musicPipeline, raviloDeviceService, tvEventBus, playbackService, castService, broadcaster, configStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,

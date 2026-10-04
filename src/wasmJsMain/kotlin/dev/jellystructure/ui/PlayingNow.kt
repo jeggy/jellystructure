@@ -6,6 +6,11 @@ import dev.jellystructure.model.AdminSessionList
 import dev.jellystructure.model.AdminSessionRow
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.isSuccess
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -23,10 +28,15 @@ private val pnJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = tru
 private var pnSocket: WebSocket? = null
 private var pnList: AdminSessionList? = null
 private val pnOpen = mutableSetOf<String>()
+// 304b — each open row's remote detail (the queue, the ops), and the row whose *End* is waiting for its confirm.
+private val pnDetails = mutableMapOf<String, dev.jellystructure.shared.tv.SessionDetail>()
+private var pnEndArmed: String? = null
+private var pnFeedback: Pair<String, String>? = null   // (session id, message) — a refused command, said on its row
 
 /** The section's frame; [loadPlayingNow] fills it. */
 internal fun playingNowHtml(): String = """
-    <div class="row center" style="gap:10px;margin:6px 0 6px"><h2 style="margin:0;font-size:1rem">Playing now</h2><span class="tiny muted" id="ses-count"></span><span class="spacer"></span><span id="ses-ctl-slot"></span></div>
+    <div class="row center" style="gap:10px;margin:6px 0 6px"><h2 style="margin:0;font-size:1rem">Playing now</h2><span class="tiny muted" id="ses-count"></span><span class="spacer"></span><label class="tiny" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Off: each person controls only their own; everyone still sees the others' with their name. The switch never limits you."><input type="checkbox" id="ses-ctl"> Household members can control each other's playing</label></div>
+    <div class="tiny muted" style="margin:-2px 0 8px">Click a row for the remote and its history. What you do here shows in the viewer's apps straight away, marked <i>from the admin</i>; <b>End</b> stops it and keeps the resume point.</div>
     <div class="card" id="sessions" style="padding:8px 16px 10px;margin-bottom:18px">
       <div style="overflow-x:auto;"><table class="wf-table usr-table ses-tbl" style="min-width:760px;" id="ses-list"><tr><td class="muted tiny">Loading…</td></tr></table></div>
     </div>
@@ -47,9 +57,64 @@ internal fun loadPlayingNow(scope: CoroutineScope) {
         if (document.getElementById("ses-list") == null) { ws.close(); if (pnSocket == ws) pnSocket = null }
         else runCatching {
             val e = pnJson.decodeFromString<JobEvent>(ev.data.toString())
-            if (e is JobEvent.PlaybackSessions) { pnList = e.list; paintPlayingNow(scope) }
+            if (e is JobEvent.PlaybackSessions) {
+                pnList = e.list
+                // A changed row's detail (its queue, its ops) is read again while it is open.
+                e.list.sessions.filter { it.id in pnOpen }.forEach { r -> if (pnDetails[r.id]?.session?.revision != r.revision) loadDetail(scope, r.id) }
+                paintPlayingNow(scope)
+            }
         }
     }
+}
+
+private fun loadDetail(scope: CoroutineScope, id: String) {
+    scope.launch {
+        runCatching { httpClient.get("/api/tv/admin/playback/sessions/$id").body<dev.jellystructure.shared.tv.SessionDetail>() }.getOrNull()
+            ?.let { pnDetails[id] = it; paintPlayingNow(scope) }
+    }
+}
+
+/** 304b (FR-304-2, review item 4) — one command from the admin: the same service as the apps', `source = admin`. */
+private fun pnCommand(scope: CoroutineScope, r: AdminSessionRow, body: String) {
+    scope.launch {
+        val resp = runCatching {
+            httpClient.post("/api/tv/admin/playback/sessions/${r.id}/command") { setBody(io.ktor.http.content.TextContent(body, ContentType.Application.Json)) }
+        }.getOrNull()
+        pnFeedback = when {
+            resp == null -> r.id to "Couldn't reach the server."
+            resp.status.value == 409 -> r.id to (if ("stale" in runCatching { resp.body<String>() }.getOrDefault("")) "That changed meanwhile — redrawn." else "Can't reach ${r.targetName}.")
+            !resp.status.isSuccess() -> r.id to "Refused (${resp.status.value})."
+            else -> null
+        }
+        loadDetail(scope, r.id)
+        paintPlayingNow(scope)
+    }
+}
+
+private fun pnBody(op: String, rev: Long, extra: String = ""): String = "{\"op\":\"$op\",\"revision\":$rev$extra}"
+
+/** 304b — the remote inside an open row: only the ops the target obeys (absent, never greyed). */
+private fun pnRemote(r: AdminSessionRow): String {
+    if (r.endedAt != null) return ""
+    val d = pnDetails[r.id]
+    val ops = d?.ops ?: r.ops
+    fun btn(op: String, label: String, extra: String = "") = if (op in ops) "<button class=\"btn sm ghost\" data-cmd=\"${r.id.esc()}\" data-op=\"$op\" data-extra='${extra.esc()}'>$label</button>" else ""
+    val play = if (r.state == "playing") btn("pause", "⏸ Pause") else btn("play", "▶ Play")
+    val dur = r.durationMs
+    val seek = if ("seek" in ops && dur != null && dur > 0) "<input type=\"range\" min=\"0\" max=\"$dur\" value=\"${r.positionMs}\" data-seek=\"${r.id.esc()}\">" else ""
+    val end = if ("stop" in ops) {
+        if (pnEndArmed == r.id) "<button class=\"btn sm\" style=\"color:var(--bad)\" data-cmd=\"${r.id.esc()}\" data-op=\"stop\">End — sure?</button>"
+        else "<button class=\"btn sm ghost\" data-arm=\"${r.id.esc()}\">End</button>"
+    } else ""
+    val queue = d?.queue?.takeIf { it.size > 1 }?.let { q ->
+        "<div class=\"ses-h\">Queue</div><div class=\"ses-q\">" + q.mapIndexed { i, e ->
+            val idx = d.queueOffset + i
+            val on = idx == d.queueIndex
+            "<span class=\"${if (on) "on" else ""}\"${if ("jump" in ops && !on) " data-cmd=\"${r.id.esc()}\" data-op=\"jump\" data-extra=',\"index\":$idx'" else ""}>${(e.title ?: "—").esc()}${e.subtitle?.let { " <span class=\"muted\">· ${it.esc()}</span>" } ?: ""}</span>"
+        }.joinToString("") + "</div>"
+    } ?: ""
+    val note = pnFeedback?.takeIf { it.first == r.id }?.let { "<div class=\"tiny\" style=\"color:var(--bad);margin-top:6px\">${it.second.esc()}</div>" } ?: ""
+    return "<div class=\"ses-h\">Remote</div><div class=\"ses-ctl\">${btn("previous", "⏮")}$play${btn("next", "⏭")}$seek$end</div>$note$queue"
 }
 
 private fun pnNowMs(): Double = js("Date.now()")
@@ -122,7 +187,7 @@ private fun pnRow(r: AdminSessionRow, nowMs: Long, serverNowMs: Long): String {
         <td style="white-space:nowrap">${pnStateWord(r).esc()}</td>
         <td><span class="ses-pr">${pnClock(pos)}$progress</span></td>
         <td class="tiny muted" style="white-space:nowrap">${pnRan(r.createdAt, nowMs)}${if (who.isNotEmpty()) " · $who" else ""}</td>
-      </tr>""" + if (open) """<tr class="ses-x"><td colspan="6"><div class="ses-h">History</div><div class="ses-tl">$timeline</div></td></tr>""" else ""
+      </tr>""" + if (open) """<tr class="ses-x"><td colspan="6"><div class="grid2"><div>${pnRemote(r)}</div><div><div class="ses-h">History</div><div class="ses-tl">$timeline</div></div></div></td></tr>""" else ""
 }
 
 private fun paintPlayingNow(scope: CoroutineScope) {
@@ -146,9 +211,49 @@ private fun paintPlayingNow(scope: CoroutineScope) {
             val row = rows.item(i) as? HTMLElement ?: continue
             row.addEventListener("click", { _ ->
                 val id = row.getAttribute("data-ses") ?: return@addEventListener
-                if (!pnOpen.add(id)) pnOpen.remove(id)
+                if (!pnOpen.add(id)) pnOpen.remove(id) else loadDetail(scope, id)
                 paintPlayingNow(scope)
             })
+        }
+    }
+    // 304b — the remote's buttons, the seek line and *End*'s inline confirm.
+    fun rowOf(id: String) = list.sessions.firstOrNull { it.id == id }
+    el.querySelectorAll("[data-cmd]").let { bs ->
+        for (i in 0 until bs.length) {
+            val b = bs.item(i) as? HTMLElement ?: continue
+            b.addEventListener("click", { ev ->
+                ev.stopPropagation()
+                val r = rowOf(b.getAttribute("data-cmd") ?: return@addEventListener) ?: return@addEventListener
+                val op = b.getAttribute("data-op") ?: return@addEventListener
+                pnEndArmed = null
+                pnCommand(scope, r, pnBody(op, pnDetails[r.id]?.session?.revision ?: r.revision, b.getAttribute("data-extra").orEmpty()))
+            })
+        }
+    }
+    el.querySelectorAll("[data-arm]").let { bs ->
+        for (i in 0 until bs.length) {
+            val b = bs.item(i) as? HTMLElement ?: continue
+            b.addEventListener("click", { ev -> ev.stopPropagation(); pnEndArmed = b.getAttribute("data-arm"); paintPlayingNow(scope) })
+        }
+    }
+    el.querySelectorAll("[data-seek]").let { ss ->
+        for (i in 0 until ss.length) {
+            val s = ss.item(i) as? org.w3c.dom.HTMLInputElement ?: continue
+            s.addEventListener("click", { ev -> ev.stopPropagation() })
+            s.addEventListener("change", { _ ->
+                val r = rowOf(s.getAttribute("data-seek") ?: return@addEventListener) ?: return@addEventListener
+                pnCommand(scope, r, pnBody("seek", pnDetails[r.id]?.session?.revision ?: r.revision, ",\"position_ms\":${s.value}"))
+            })
+        }
+    }
+    // FR-304-4 — the household switch, written at once (no global Save).
+    (document.getElementById("ses-ctl") as? org.w3c.dom.HTMLInputElement)?.let { box ->
+        box.checked = list.householdControl == true
+        box.onchange = { _ ->
+            val on = box.checked
+            scope.launch {
+                runCatching { httpClient.put("/api/tv/admin/playback/household-control") { setBody(io.ktor.http.content.TextContent("{\"on\":$on}", ContentType.Application.Json)) } }
+            }
         }
     }
 }

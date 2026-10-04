@@ -7,6 +7,9 @@ import dev.jellystructure.model.AdminSessionRow
 import dev.jellystructure.shared.tv.SessionList
 import dev.jellystructure.shared.tv.SessionListEnvelope
 import dev.jellystructure.shared.tv.SessionStateEnvelope
+import dev.jellystructure.shared.tv.SessionDetail
+import dev.jellystructure.shared.tv.SessionDetailEnvelope
+import dev.jellystructure.shared.tv.SessionQueueEntry
 import dev.jellystructure.shared.tv.SessionView
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -19,7 +22,7 @@ import kotlinx.coroutines.launch
  * every network) goes out on `/ws` beside it.
  */
 class SessionPublisher(
-    private val sessions: PlaybackSessions,
+    internal val sessions: PlaybackSessions,
     private val devices: RaviloDeviceService,
     private val bus: TvEventBus?,
     /** Owner decision 1 — may [viewer] see what [itemId] is (the library / music / book rules of playback)? */
@@ -82,16 +85,109 @@ class SessionPublisher(
         val b = bus
         if (b != null) when (change) {
             is SessionChange.List -> b.notifySessions { u, d -> viewerOf(u, d)?.let { listFrameFor(it) } }
-            is SessionChange.State -> b.notifySessions { u, d ->
-                val viewer = viewerOf(u, d) ?: return@notifySessions null
-                val s = sessions.get(change.sessionId) ?: return@notifySessions null
-                viewOf(viewer, s, deviceIndex())?.let { v ->
-                    json.encodeToString(SessionStateEnvelope.serializer(), SessionStateEnvelope(session = v, serverNowMs = clock()))
+            is SessionChange.State -> {
+                b.notifySessions { u, d ->
+                    val viewer = viewerOf(u, d) ?: return@notifySessions null
+                    val s = sessions.get(change.sessionId) ?: return@notifySessions null
+                    viewOf(viewer, s, deviceIndex())?.let { v ->
+                        json.encodeToString(SessionStateEnvelope.serializer(), SessionStateEnvelope(session = v, serverNowMs = clock()))
+                    }
                 }
+                pushDetail(change.sessionId)
             }
+            is SessionChange.Detail -> pushDetail(change.sessionId)
         }
         val send = adminBroadcast
         if (send != null && scope != null) scope.launch { runCatching { send(adminList()) } }
+    }
+
+    /** R369 (dev review items 5 and 7) — `session_detail` goes only to the session's attached controllers. */
+    private fun pushDetail(sessionId: String) {
+        val b = bus ?: return
+        val c = control ?: return
+        val sc = scope ?: return
+        sc.launch {
+            val s = sessions.get(sessionId) ?: return@launch
+            for (deviceId in c.controllerDevices(sessionId)) {
+                val viewer = devices.listSessions(deviceId).maxByOrNull { it.lastSeen } ?: continue
+                val d = runCatching { detailFor(viewer, s) }.getOrNull() ?: continue
+                b.notifyDevice(viewer.jellyfinUserId, deviceId, json.encodeToString(SessionDetailEnvelope.serializer(), SessionDetailEnvelope(detail = d, serverNowMs = clock())))
+            }
+        }
+    }
+
+    /** R369 — a 409's `session`: the row as [viewer] sees it (the admin, null, sees it whole). */
+    internal suspend fun viewFor(viewer: DeviceData?, s: SessionRec): SessionView? {
+        val index = deviceIndex()
+        return if (viewer == null) toView(s, mine = false, here = false, controllable = s.live, visible = true,
+            targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind)
+        else viewOf(viewer, s, index)
+    }
+
+    /** R369 — the command service; attached controllers, ops and the household switch come from it. */
+    var control: SessionControl? = null
+
+    /** 304b — writes the household switch (Main: through ConfigStore) and re-sends every list (`controllable` flips). */
+    var setHouseholdControl: (suspend (Boolean) -> Unit)? = null
+
+    /**
+     * R369 (dev review item 7) — `attach_session {id}` / `detach_session {id}` on the events socket. Only a session
+     * this viewer is listed is attachable.
+     */
+    suspend fun onSocketMessage(text: String, device: DeviceData) {
+        val c = control ?: return
+        val obj = runCatching { Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull() ?: return
+        val type = (obj["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return
+        val id = (obj["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return
+        when (type) {
+            "attach_session" -> {
+                val s = sessions.get(id) ?: return
+                if (viewFor(device, s) == null) return
+                c.attach(id, device)
+                pushDetail(id)
+                adminRefresh()
+            }
+            "detach_session" -> { c.detach(id, device.deviceId); adminRefresh() }
+        }
+    }
+
+    /** The socket closed: everything it held is detached. */
+    suspend fun onSocketClosed(deviceId: String) { control?.detachDevice(deviceId); adminRefresh() }
+
+    private fun adminRefresh() {
+        val send = adminBroadcast
+        if (send != null && scope != null) scope.launch { runCatching { send(adminList()) } }
+    }
+
+    /** How many queue entries ride a detail around the current one (R359's window). */
+    private val queueWindow = 60
+
+    /**
+     * R369 (dev review item 5) — `GET /api/tv/playback/sessions/{id}`: the row plus the queue (a window around the
+     * current entry, titles resolved here), the modes, a film's tracks, the volume and the ops the target obeys. Null
+     * when [viewer] may not see this session at all; a session whose title they may not see carries no queue.
+     */
+    internal suspend fun detailFor(viewer: DeviceData?, s: SessionRec, admin: Boolean = false): SessionDetail? {
+        val index = deviceIndex()
+        val view = if (admin || viewer == null) toView(s, mine = false, here = false, controllable = s.live, visible = true,
+            targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind)
+        else viewOf(viewer, s, index) ?: return null
+        val visible = view.title != null || s.current?.title == null
+        val ids = s.options.queueIds.ifEmpty { listOf(s.itemId) }
+        val at = if (s.options.queueKnown) s.queueIndex.coerceIn(0, (ids.size - 1).coerceAtLeast(0)) else 0
+        val from = (at - queueWindow / 2).coerceAtLeast(0)
+        val window = if (!visible) emptyList() else ids.drop(from).take(queueWindow).map { id ->
+            val item = if (id == s.itemId) s.current else runCatching { sessions.describe(id, s.bookId)?.second }.getOrNull()
+            SessionQueueEntry(id, item?.title, item?.subtitle)
+        }
+        return SessionDetail(
+            session = view, queue = window, queueOffset = from, queueSize = ids.size, queueRev = s.options.queueRev, queueIndex = at,
+            shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off",
+            audioTracks = s.options.audioTracks, subtitleTracks = s.options.subtitleTracks,
+            audioIndex = s.options.audioIndex, subtitleIndex = s.options.subtitleIndex,
+            volume = s.options.volume, muted = s.options.muted == true,
+            ops = if (s.live) (control?.opsOf(s) ?: opsOf(s)) else emptyList(),
+        )
     }
 
     /** Owner decision 2 — an address change re-sends the list (another member's rows may come or go). */

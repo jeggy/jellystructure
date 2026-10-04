@@ -599,9 +599,9 @@ one live session per (target, lane), the 15 s hold, `queue_index`, `reconnecting
 `nearby` rule, a hidden title = person + place + state, a viewer's own sessions always listed).
 
 **Server.**
-- Migration **`66.sqm`** + `PlaybackSession.sq`: `playback_session` (with `lane`, `queue_index`, `started_by_device_id`,
+- Migration **`67.sqm`** (renumbered from 66: the editions branch took 66) + `PlaybackSession.sq`: `playback_session` (with `lane`, `queue_index`, `started_by_device_id`,
   `end_reason`, `ended_by`, `jellyfin_play_session_id`, `offline`) and 304's `playback_session_event`. Drops nothing.
-  ⚠ Number taken at HEAD `1b123212`; parallel branches may take 66 too — renumber at integration if so.
+  ⚠ Renumber again at integration if `main` has taken 67.
 - `tv/PlaybackSessions.kt` — the pure rules (`sessionLane`, `startDecision`, `isSessionChange`, `targetIcon`,
   `sessionViewFor`, `shouldForceStop`, `parseEventFeatures`, `endedTodaySince`, `placeName`) and the service (in memory
   + the table, fake-clock injectable). Hooks in `PlaybackService`: `startPlayback`, `startMusicPlayback` (new `bookId`

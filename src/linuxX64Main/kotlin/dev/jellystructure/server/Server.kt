@@ -655,7 +655,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
-                sessionPublisher?.let { playbackSessionRoutes(it) }   // R368 + 304a
+                sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl) }   // R368 + 304 + R369
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
@@ -788,7 +788,10 @@ fun startServer(
                         for (frame in incoming) {
                             if (frame is Frame.Close) break
                             if (frame is Frame.Text) {
-                                dev.jellystructure.server.routes.handleSubscribeMessage(frame.readText(), subscriber, deviceService, tvEventBus, this)
+                                val text = frame.readText()
+                                dev.jellystructure.server.routes.handleSubscribeMessage(text, subscriber, deviceService, tvEventBus, this)
+                                // R369 (dev review item 7) — attach_session / detach_session.
+                                sessionPublisher?.let { p -> runCatching { p.onSocketMessage(text, device) } }
                             }
                         }
                     } catch (e: CancellationException) {
@@ -808,6 +811,8 @@ fun startServer(
                         val cause = dev.jellystructure.tv.EventsCloseCause.classify(closeReason, closeError, replaced)
                         Logger.info("TV events: device ${device.deviceId} closed user=${device.jellyfinUserId} open=${openMs / 1000}s cause=$cause", "tv")
                         tvEventBus.unsubscribeAllDeviceStatus(this)
+                        // R369 (review item 7) — a closed socket detaches every session it held (a replaced one owns nothing).
+                        if (!replaced) sessionPublisher?.let { p -> runCatching { p.onSocketClosed(device.deviceId) } }
                         // Phase 256 (FR-256-4) — not a new Jellyfin session on the next reconnect: the bridge is
                         // kept for the grace period. A replaced socket owns nothing — the newer one does.
                         if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }

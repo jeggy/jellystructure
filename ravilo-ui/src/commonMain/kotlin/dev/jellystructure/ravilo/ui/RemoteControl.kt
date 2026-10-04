@@ -127,6 +127,15 @@ object MusicRemotePlayer : RemotePlayer {
     /** R322's rules: previous restarts the song after 3 s; a book's next/previous are its ±30 s. */
     override fun next() = MusicPlayback.next()
     override fun previous() = MusicPlayback.previous()
+    // R369 (dev review item 3) — a session's own commands: the same doors the music screens press.
+    override fun jump(index: Int) { if (index in MusicPlayback.state.value.queue.indices) MusicPlayback.playAt(index) }
+    override fun setShuffle(on: Boolean) { if (MusicPlayback.state.value.shuffle != on) MusicPlayback.toggleShuffle() }
+    override fun setRepeat(mode: String) {
+        val want = when (mode) { "all" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ALL; "one" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ONE; else -> dev.jellystructure.ravilo.ui.music.RepeatMode.OFF }
+        repeat(3) { if (MusicPlayback.state.value.repeat != want) MusicPlayback.cycleRepeat() }
+    }
+    override fun queueMove(index: Int, to: Int) = MusicPlayback.move(index, to)
+    override fun queueRemove(index: Int) = MusicPlayback.remove(index)
     /**
      * The desktop's level is the bar's own (its slider follows; a mute silences the player and leaves the slider and
      * the remembered level alone); a phone's is the player's output for this session (a phone's own volume is its

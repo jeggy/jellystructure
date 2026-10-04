@@ -880,6 +880,8 @@ class TvApiClient(
         // R369/R370 — any other session directive (`session_detail`, `session_load`, `cast_relay_load`,
         // `targets_changed`), as raw text with its type; never through [onEvent].
         onSessionDirective: suspend (type: String, text: String) -> Unit = { _, _ -> },
+        // R369 (dev review item 7) — frames this app sends on the socket (`attach_session` / `detach_session`).
+        outgoing: kotlinx.coroutines.flow.Flow<String>? = null,
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -902,6 +904,7 @@ class TvApiClient(
             }
         }) {
             onOpen()
+            val sender = outgoing?.let { flow -> launch { flow.collect { runCatching { send(Frame.Text(it)) } } } }
             val closer = closeWhen?.let { signal ->
                 launch {
                     val reason = signal()
@@ -947,6 +950,7 @@ class TvApiClient(
             }
             } finally {
                 closer?.cancel()
+                sender?.cancel()
             }
             // R293 (FR-R293-6, dev review item 5) — how it ended, now that the loop is over: the server's
             // close frame (code + reason) for a clean close, "eof" when the peer simply vanished. An
@@ -972,6 +976,35 @@ class TvApiClient(
     // ─── R368 — playback sessions ─────────────────────────────────────────────
 
     /** R368 (FR-R368-5, dev review item 1) — every session this viewer may see, built for this device. */
+    /** R369 (dev review item 5) — a session's remote: the row, the queue window, the modes, tracks, volume, ops. */
+    suspend fun playbackSessionDetail(id: String): SessionDetail {
+        val r = client.get("$baseUrl/api/tv/playback/sessions/${id.encodeURLPathPart()}") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /**
+     * FR-R369-1 — one command through the server. Null = sent (202); otherwise the refusal (`stale` with the session as
+     * the server holds it, `unreachable`, `not_offered`). A 403/404 throws as any other failure.
+     */
+    suspend fun playbackSessionCommand(id: String, command: SessionCommandRequest): SessionCommandRefusal? {
+        val r = client.post("$baseUrl/api/tv/playback/sessions/${id.encodeURLPathPart()}/command") {
+            auth()
+            jsonBody(json.encodeToString(SessionCommandRequest.serializer(), command))
+        }
+        if (r.status.value == 409) return runCatching { json.decodeFromString<SessionCommandRefusal>(r.bodyAsText()) }.getOrElse { SessionCommandRefusal("unreachable") }
+        r.assertSuccess()
+        return null
+    }
+
+    /** R369 (dev review item 5) — this player's queue, on change only. */
+    suspend fun reportSessionQueue(report: SessionQueueReport) {
+        client.post("$baseUrl/api/tv/playback/sessions/queue") {
+            auth()
+            jsonBody(json.encodeToString(SessionQueueReport.serializer(), report))
+        }.assertSuccess()
+    }
+
     suspend fun playbackSessions(): SessionList {
         val r = client.get("$baseUrl/api/tv/playback/sessions") { auth() }
         r.assertSuccess()

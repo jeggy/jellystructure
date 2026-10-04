@@ -3,7 +3,7 @@
 -- live session per target and lane, item 5), `started_by_device_id` (304's *started from*), `end_reason`, and the
 -- current item's `jellyfin_play_session_id` (phase 180's encode release survives a restart, item 12 b).
 -- R372 — `offline`: the place went silent; the session is paused there and kept 24 h.
--- Must stay byte-for-byte in sync with 66.sqm's CREATE TABLEs.
+-- Must stay byte-for-byte in sync with 67.sqm's CREATE TABLEs (and 68.sqm's controller table).
 CREATE TABLE playback_session (
     id TEXT NOT NULL PRIMARY KEY,
     owner_user_id TEXT NOT NULL,
@@ -47,6 +47,17 @@ CREATE TABLE playback_session_event (
 
 CREATE INDEX playback_session_event_session ON playback_session_event(session_id, at);
 
+-- R369 (dev review item 7) — the apps showing a session's remote (attach_session / detach_session on the events
+-- socket; a closed socket detaches everything it held). Live state, so it is cleared on boot. 304 reads it for the
+-- admin's row. The admin is not a device and is never a row here.
+CREATE TABLE playback_session_controller (
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    controller_kind TEXT NOT NULL DEFAULT 'device',
+    attached_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, device_id)
+);
+
 upsert:
 INSERT OR REPLACE INTO playback_session(id, owner_user_id, owner_name, target_kind, target_id, target_name, lane, kind,
     item_id, book_id, queue_json, queue_index, position_ms, position_at, state, options_json, revision,
@@ -68,3 +79,18 @@ SELECT * FROM playback_session_event WHERE session_id = :session_id ORDER BY at,
 
 deleteEventsBefore:
 DELETE FROM playback_session_event WHERE at < :before;
+
+attachController:
+INSERT OR REPLACE INTO playback_session_controller(session_id, device_id, controller_kind, attached_at) VALUES (?, ?, ?, ?);
+
+detachController:
+DELETE FROM playback_session_controller WHERE session_id = ? AND device_id = ?;
+
+detachDevice:
+DELETE FROM playback_session_controller WHERE device_id = ?;
+
+clearControllers:
+DELETE FROM playback_session_controller;
+
+controllersOf:
+SELECT device_id FROM playback_session_controller WHERE session_id = ? ORDER BY attached_at;

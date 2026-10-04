@@ -40,6 +40,7 @@ suspend fun wirePlaybackSessions(
     playback: PlaybackService,
     castService: CastService,
     broadcaster: WsBroadcaster,
+    configStore: dev.jellystructure.config.ConfigStore,
 ): SessionPublisher {
     val sessions = PlaybackSessions(db)
     sessions.describe = describe@{ itemId, bookId ->
@@ -77,6 +78,22 @@ suspend fun wirePlaybackSessions(
     val publisher = SessionPublisher(sessions, devices, bus, canSee, scope)
     publisher.zoneOffsetMs = { ms -> runCatching { TimeZone.currentSystemDefault().offsetAt(kotlin.time.Instant.fromEpochMilliseconds(ms)).totalSeconds * 1000L }.getOrDefault(0L) }
     publisher.adminBroadcast = { list -> broadcaster.broadcast(JobEvent.PlaybackSessions(list)) }
+    // R369 + 304b — commands through the server, attached controllers, the household switch.
+    val control = SessionControl(db, sessions, devices, bus)
+    control.clearOnBoot()
+    control.householdControl = { configStore.current.ravilo.householdControl }
+    control.canSee = { viewer, s -> s.ownerUserId == viewer.jellyfinUserId || canSee(viewer, s.kind, s.itemId, s.bookId) }
+    publisher.control = control
+    publisher.controlWidened = { true }
+    publisher.householdControl = { configStore.current.ravilo.householdControl }
+    publisher.controllersOf = { id ->
+        control.controllerDevices(id).map { d -> devices.listSessions(d).maxByOrNull { it.lastSeen }?.let { sessions.placeNameOf(it) } ?: d }
+    }
+    publisher.opsOf = { s -> control.opsOf(s) }
+    publisher.setHouseholdControl = { on ->
+        configStore.update(configStore.current.copy(ravilo = configStore.current.ravilo.copy(householdControl = on)))
+        publisher.publish(SessionChange.List)   // review item 6 — `controllable` flips on every opted-in socket at once
+    }
     sessions.notify = { change -> publisher.publish(change) }
     PlaybackSessions.current = sessions
     castService.onRedeemed = { receiverId, minterDeviceId -> sessions.recordCastRedeemed(receiverId, minterDeviceId) }

@@ -46,6 +46,14 @@ data class AppConfig(
     val music: MusicConfig = MusicConfig(),
     // Phase 281 (dev review 2) — the audiobook suggestion providers' pickers and the tag-writing switch.
     val audiobooks: AudiobooksConfig = AudiobooksConfig(),
+    // 304b (FR-304-4, dev review item 6) — Ravilo's household settings that live on the server, not in a viewer's layout.
+    val ravilo: RaviloHouseholdConfig = RaviloHouseholdConfig(),
+)
+
+/** 304b (FR-304-4) — *Household members can control each other's playing*: off by default; the admin is never limited. */
+@Serializable
+data class RaviloHouseholdConfig(
+    @SerialName("household_control") val householdControl: Boolean = false,
 )
 
 /** Phase 281 (FR-281-4/8) — iTunes' store, Audnexus' region, and *Write tags into audiobook files* (M6·1: off). */

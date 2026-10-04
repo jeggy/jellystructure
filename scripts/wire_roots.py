@@ -18,13 +18,16 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     # Phase 281 — the phone's audiobooks
     'AudiobookShelf', 'AudiobookDetail', 'AudiobookAuthorDetail', 'AudiobookPosition', 'AudiobookBookmarkItem',
     # R368 — playback sessions
-    'SessionList', 'SessionView', 'SessionListEnvelope', 'SessionStateEnvelope']
+    'SessionList', 'SessionView', 'SessionListEnvelope', 'SessionStateEnvelope',
+    # R369 — commands, the remote's detail
+    'SessionDetail', 'SessionDetailEnvelope', 'SessionCommandEnvelope', 'SessionCommandRefusal']
 REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',
     'PlaybackProgressRequest', 'PlaybackQoeReport', 'PlaybackRestreamRequest', 'PlaybackStartRequest',
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',
     'ViewerSettingsRequest', 'MusicPlayRequest', 'MusicFavoriteRequest',
-    'AudiobookProgressRequest', 'AudiobookSpeedRequest', 'AudiobookFinishedRequest', 'AudiobookBookmarkRequest']
+    'AudiobookProgressRequest', 'AudiobookSpeedRequest', 'AudiobookFinishedRequest', 'AudiobookBookmarkRequest',
+    'SessionCommandRequest', 'SessionQueueReport']
 
 src = ''.join(open(f).read() for f in glob.glob(sys.argv[1] + '/shared/src/commonMain/kotlin/**/*.kt', recursive=True))
 def has(n):   # a @Serializable class in package dev.jellystructure.shared.tv

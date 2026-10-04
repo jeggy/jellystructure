@@ -1,0 +1,10 @@
+-- R369 (dev review item 7) — the apps attached to a session as controllers. Live state: cleared on boot.
+-- Must stay in sync with PlaybackSession.sq. Drops nothing.
+
+CREATE TABLE playback_session_controller (
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    controller_kind TEXT NOT NULL DEFAULT 'device',
+    attached_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, device_id)
+);

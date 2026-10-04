@@ -28,6 +28,19 @@ sealed interface RemoteCommand {
     data class VolumeStep(val deltaPercent: Int) : RemoteCommand
     /** null = toggle. */
     data class Mute(val muted: Boolean?) : RemoteCommand
+    // ── R369 (dev review item 3) — a session's commands beyond the dashboard's (only `session_command` carries them) ──
+    /** Play the queue's [index]. */
+    data class Jump(val index: Int) : RemoteCommand
+    data class SetShuffle(val on: Boolean) : RemoteCommand
+    /** `off` · `all` · `one`. */
+    data class SetRepeat(val mode: String) : RemoteCommand
+    /** The target-neutral track index (`CastTrack.index`); -1 = subtitles off. */
+    data class SelectAudio(val index: Int) : RemoteCommand
+    data class SelectSubtitle(val index: Int) : RemoteCommand
+    data class QueueAdd(val trackId: String) : RemoteCommand
+    data class QueuePlayNext(val trackId: String) : RemoteCommand
+    data class QueueMove(val index: Int, val to: Int) : RemoteCommand
+    data class QueueRemove(val index: Int) : RemoteCommand
 }
 
 /** Rewind and FastForward move as far as the players' own skip buttons do (−10 s / +30 s). */
@@ -83,6 +96,17 @@ interface RemotePlayer {
     fun previous()
     /** [level] 0–1. */
     fun setVolume(level: Float, muted: Boolean)
+    // R369 — a session's own commands. A player that has no such control ignores them (the server lists only the
+    // ops a target obeys in `SessionDetail.ops`, so the remote never offers one that would do nothing).
+    fun jump(index: Int) {}
+    fun setShuffle(on: Boolean) {}
+    fun setRepeat(mode: String) {}
+    fun selectAudio(index: Int) {}
+    fun selectSubtitle(index: Int) {}
+    fun queueAdd(trackId: String) {}
+    fun queuePlayNext(trackId: String) {}
+    fun queueMove(index: Int, to: Int) {}
+    fun queueRemove(index: Int) {}
 }
 
 /**
@@ -147,6 +171,15 @@ fun RemoteCommand.applyTo(player: RemotePlayer, volume: RemoteVolume) {
         is RemoteCommand.SeekBy -> player.seekBy(deltaMs)
         is RemoteCommand.SetVolume, is RemoteCommand.VolumeStep, is RemoteCommand.Mute ->
             if (volume.apply(this)) player.setVolume(volume.level, volume.muted)
+        is RemoteCommand.Jump -> player.jump(index)
+        is RemoteCommand.SetShuffle -> player.setShuffle(on)
+        is RemoteCommand.SetRepeat -> player.setRepeat(mode)
+        is RemoteCommand.SelectAudio -> player.selectAudio(index)
+        is RemoteCommand.SelectSubtitle -> player.selectSubtitle(index)
+        is RemoteCommand.QueueAdd -> player.queueAdd(trackId)
+        is RemoteCommand.QueuePlayNext -> player.queuePlayNext(trackId)
+        is RemoteCommand.QueueMove -> player.queueMove(index, to)
+        is RemoteCommand.QueueRemove -> player.queueRemove(index)
     }
 }
 

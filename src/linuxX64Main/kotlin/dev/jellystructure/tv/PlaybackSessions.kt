@@ -134,6 +134,15 @@ internal data class SessionOptions(
     @SerialName("direct_play") val directPlay: Boolean = false,
     val volume: Int? = null,
     val muted: Boolean? = null,
+    /** R369 (dev review item 5) — the queue as the target reported it, ids only, and its revision. */
+    @SerialName("queue_ids") val queueIds: List<String> = emptyList(),
+    @SerialName("queue_rev") val queueRev: Int = 0,
+    @SerialName("audio_tracks") val audioTracks: List<dev.jellystructure.shared.tv.CastTrack> = emptyList(),
+    @SerialName("subtitle_tracks") val subtitleTracks: List<dev.jellystructure.shared.tv.CastTrack> = emptyList(),
+    @SerialName("audio_index") val audioIndex: Int? = null,
+    @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** Did the target report its queue (so `expect_index` / `queue_rev` mean something)? */
+    @SerialName("queue_known") val queueKnown: Boolean = false,
     val rooms: List<SessionRoom> = emptyList(),
     @SerialName("room_levels_before_mute") val roomLevelsBeforeMute: Map<String, Int> = emptyMap(),
 ) {
@@ -253,6 +262,8 @@ internal fun placeName(s: SessionRec): String {
 internal sealed interface SessionChange {
     data object List : SessionChange
     data class State(val sessionId: String) : SessionChange
+    /** R369 — only the remote's detail changed (a queue, the tracks, a level): pushed to the controllers only. */
+    data class Detail(val sessionId: String) : SessionChange
 }
 
 /** The hold a stop keeps a session for (review item 6). */
@@ -470,17 +481,25 @@ class PlaybackSessions(
      * (state, item, a seek past 3 s, reconnecting ending) bumps the revision and pushes `session_state`. A report with
      * no session (one that started before this server knew sessions, or a receiver's first report) creates one.
      */
-    suspend fun onProgress(device: DeviceData, itemId: String, positionMs: Long, paused: Boolean, sessionId: String? = null) {
+    suspend fun onProgress(device: DeviceData, itemId: String, positionMs: Long, paused: Boolean, sessionId: String? = null,
+                           volumePercent: Int? = null, muted: Boolean? = null) {
         var created = false
         var change: SessionChange? = null
         mutex.withLock {
             val t = now()
             val cur = findLocked(device, itemId, sessionId)
-            if (cur == null) { created = true; return@withLock }
+            if (cur == null) {
+                // A report racing a stop that already ended this session (a server-side *Stop*, R369 item 12) must not
+                // start a new one: only a report with no recent end on this place and item does.
+                created = sessions.values.none { !it.live && it.targetId == device.deviceId && it.itemId == itemId }
+                return@withLock
+            }
             val changed = isSessionChange(cur, itemId, positionMs, paused, t) || cur.reconnecting || cur.offline || cur.stopHoldUntil != null
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
+            val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
             val next = cur.copy(
                 itemId = itemId, positionMs = positionMs, positionAt = t, state = state,
+                options = if (volumePercent != null) cur.options.copy(volume = volumePercent, muted = muted) else cur.options,
                 revision = if (changed) cur.revision + 1 else cur.revision,
                 reconnecting = false, reconnectDeadline = null, offline = false, stopHoldUntil = null,
                 updatedAt = if (changed) t else cur.updatedAt,
@@ -492,6 +511,7 @@ class PlaybackSessions(
             val wasPaused = cur.state == SessionState.PAUSED
             if (cur.state != SessionState.STARTING && wasPaused != paused) event(next.id, if (paused) "paused" else "resumed", device.deviceId)
             if (changed) change = SessionChange.State(next.id)
+            else if (volumeChanged) change = SessionChange.Detail(next.id)   // R371 — a level is not a revision
         }
         if (created) {
             onStart(device, itemId, positionMs, kindHint = null)
@@ -564,6 +584,32 @@ class PlaybackSessions(
         }
         notify(if (list) SessionChange.List else SessionChange.State(id))
         return next
+    }
+
+    /**
+     * R369 (dev review item 5) — a target's queue report, on change only: ids, the revision, the place in it, the
+     * modes and a film's tracks. A changed place or mode bumps the revision (it is a change); the queue alone goes to
+     * the controllers as `session_detail`.
+     */
+    suspend fun onQueueReport(device: DeviceData, r: dev.jellystructure.shared.tv.SessionQueueReport) {
+        var change: SessionChange? = null
+        mutex.withLock {
+            val cur = findLocked(device, r.itemId, r.sessionId) ?: return@withLock
+            val placeMoved = cur.queueIndex != r.queueIndex || cur.options.shuffle != (r.shuffle ?: cur.options.shuffle) ||
+                cur.options.repeat != (r.repeat ?: cur.options.repeat) || cur.options.audioIndex != r.audioIndex || cur.options.subtitleIndex != r.subtitleIndex
+            val o = cur.options.copy(
+                queueIds = r.queue.ifEmpty { cur.options.queueIds }, queueRev = r.queueRev, queueKnown = true,
+                shuffle = r.shuffle ?: cur.options.shuffle, repeat = r.repeat ?: cur.options.repeat,
+                audioTracks = r.audioTracks, subtitleTracks = r.subtitleTracks, audioIndex = r.audioIndex, subtitleIndex = r.subtitleIndex,
+                rooms = r.members ?: cur.options.rooms,
+            )
+            val next = cur.copy(queueIndex = r.queueIndex, options = o,
+                revision = if (placeMoved) cur.revision + 1 else cur.revision, updatedAt = if (placeMoved) now() else cur.updatedAt)
+            sessions[next.id] = next
+            next.persist()
+            change = if (placeMoved) SessionChange.State(next.id) else SessionChange.Detail(next.id)
+        }
+        change?.let { notify(it) }
     }
 
     /** 304 / R369–R372 — a timeline entry from outside the service (a command from the admin, a move). */

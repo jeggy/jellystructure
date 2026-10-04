@@ -356,3 +356,48 @@ socket". That was true until R354. The filter itself is still right.
    and volume never ask.
 2. Commands from any app reach a speaker that isn't running the receiver yet through **R370's relay** (owner: the
    server is a server; being on the speakers' network is an accident of this household).
+
+## Build notes (2026-10-04)
+
+Built against the dev review and the owner decisions: routes under `/api/tv/playback/sessions`, `session_command` only
+to sockets that declared `session_control`, legacy `playstate_command`/`player_command` for older targets, the check
+at the target, stopping someone else's playback asks every time.
+
+**Server** (`tv/SessionCommands.kt`): pure `revisionChecked`, `sessionCommandVerdict` (next/previous/jump/seek/queue
+edits checked; play/pause/stop/volume never), `commandRoute` (SessionCommand · LegacyPlaystate · LegacyPlayerCommand ·
+ViaSender · RelayLoad · NotOffered · Unreachable), `opsFor`, `controllableBy`; `SessionControl` (authorises against the
+session, 409 stale / unreachable / not_offered, 403, timeline *command … from the admin*, a `stop` ends the session at
+once with the stopper's name). Routes: `GET /api/tv/playback/sessions/{id}` → `SessionDetail` (queue window of 60 around
+the current entry, titles resolved server-side, modes, tracks, volume, `ops`), `POST …/{id}/command`,
+`POST /api/tv/playback/sessions/queue` (a target's queue report, on change only, ids). `attach_session`/`detach_session`
+on the events socket; a closed socket detaches all; the controller table (**68.sqm**) is cleared on boot.
+`session_detail` goes to attached controllers only. `controllable` widened: own sessions anywhere; another member's with
+304's switch on (and nearby + may see). `TvEventBus` keeps per-socket features (`hasFeature`, `notifySessionCommand`).
+
+**Deviation (recorded):** besides `expect_index` (sent when the target has reported its queue) the envelope carries
+`expect_item` — the item the server last knew was playing — so the stale check works before any queue report and on
+a film. `CastCommand` gains optional `expect_index`/`expect_item` (additive); the receiver checks both on
+`next`/`prev`/`play_at`. The phone's own direct Cast commands do not set them yet.
+
+**Receiver** (`ravilo-cast`): opens its socket with `features=session_control`; `session_command` → stale check →
+`castCommandForSession` (the senders' own `CastCommand` handlers) or `sessionRemoteCommand` → `onRemote`; reports its
+queue (ids, `queue_rev`, index, modes) to the server when it or the index changes.
+
+**Apps:** `features=sessions,session_control` (the TV: `session_control` only); `RemoteCommand` gains Jump · SetShuffle ·
+SetRepeat · SelectAudio · SelectSubtitle · Queue* (RemotePlayer gets default no-op methods; `MusicRemotePlayer`
+implements the music ones); `session_command` is read by `sessionCommandAction` (local · over this app's Cast link ·
+stale · ignore). The phone/desktop music engine reports its queue on change. `SessionRemote` (attach/detach frames on
+the socket, detail, commands with the dim/spinner/*Can't reach* rule, re-attach on socket open — item 13) and
+`SessionRemoteScreen` (Dest `SessionRemote`): place line, transport, seek, shuffle/repeat, a film's tracks, the queue
+(tap to jump), *Stop* with the inline confirm on someone else's. The bar's and the sheet's ⏯/next go through the server
+unless the session plays here. **Deviation:** the remote is its own screen rather than Now playing / the Playing page
+re-pointed (review item 9's third `MusicPlayback` backend and `SessionSender`); it draws the same parts.
+Strings `session.cant_reach`, `session.stop_everywhere`, `session.stop_person` (+ `session.audio`/`subtitles`/
+`subtitles_off` for the remote's track rows).
+
+**Tests:** `SessionCommandRuleTest` (17 incl. the command service on a DB and the household config round-trip),
+`SessionWireTest` (`:shared`, 12), `SessionRemoteStateTest` (9), `WireCompatTest` green (new roots).
+Not written: the loopback `SessionCommandIntegrationTest` and the Playwright receiver spec.
+
+**Only a speaker can confirm:** the receiver's socket path with the phone in airplane mode (pause/skip/seek from the
+computer); two `next`s pressed together skip once.

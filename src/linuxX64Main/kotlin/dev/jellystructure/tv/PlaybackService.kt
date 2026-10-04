@@ -780,7 +780,7 @@ class PlaybackService(
             return
         }
         // R368 (FR-R368-3) — the session stores the position; only a change is pushed (review item 9).
-        runCatching { sessions?.onProgress(device, jellyfinId, positionMs, isPaused, sessionId) }
+        runCatching { sessions?.onProgress(device, jellyfinId, positionMs, isPaused, sessionId, volumePercent?.coerceIn(0, 100), muted) }
             .onFailure { Logger.warn("Playback sessions: progress failed: ${it.message}", "tv") }
         // R343 (FR-R343-4) — a Start over past 5 %: clear the series in the background (never awaited here).
         maybeStartOverClear(device, jellyfinId, positionMs)

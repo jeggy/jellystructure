@@ -61,6 +61,10 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("SessionView", WireDir.RESPONSE, SessionView.serializer()),
     WireRoot("SessionListEnvelope", WireDir.RESPONSE, SessionListEnvelope.serializer()),
     WireRoot("SessionStateEnvelope", WireDir.RESPONSE, SessionStateEnvelope.serializer()),
+    WireRoot("SessionDetail", WireDir.RESPONSE, SessionDetail.serializer()),
+    WireRoot("SessionDetailEnvelope", WireDir.RESPONSE, SessionDetailEnvelope.serializer()),
+    WireRoot("SessionCommandEnvelope", WireDir.RESPONSE, SessionCommandEnvelope.serializer()),
+    WireRoot("SessionCommandRefusal", WireDir.RESPONSE, SessionCommandRefusal.serializer()),
     WireRoot("CastRedeemRequest", WireDir.REQUEST, CastRedeemRequest.serializer()),
     WireRoot("FavoriteRequest", WireDir.REQUEST, FavoriteRequest.serializer()),
     WireRoot("LiveTvStopRequest", WireDir.REQUEST, LiveTvStopRequest.serializer()),
@@ -87,4 +91,6 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("AudiobookSpeedRequest", WireDir.REQUEST, AudiobookSpeedRequest.serializer()),
     WireRoot("AudiobookFinishedRequest", WireDir.REQUEST, AudiobookFinishedRequest.serializer()),
     WireRoot("AudiobookBookmarkRequest", WireDir.REQUEST, AudiobookBookmarkRequest.serializer()),
+    WireRoot("SessionCommandRequest", WireDir.REQUEST, SessionCommandRequest.serializer()),
+    WireRoot("SessionQueueReport", WireDir.REQUEST, SessionQueueReport.serializer()),
 )

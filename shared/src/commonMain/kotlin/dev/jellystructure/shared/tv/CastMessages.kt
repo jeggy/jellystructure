@@ -179,4 +179,9 @@ data class CastCommand(
     val offset: Int? = null,
     /** R359 — `queue_part`: a run of the queue, in the sender's order. */
     val tracks: List<CastTrackItem>? = null,
+    /** R369 (dev review item 4c) — `next` · `prev` · `play_at`: the song the sender believes plays now. A receiver
+     *  that has already moved on drops it (two `next`s on two paths skip once). Absent ⇒ today's behaviour; an older
+     *  receiver ignores it. */
+    @SerialName("expect_index") val expectIndex: Int? = null,
+    @SerialName("expect_item") val expectItem: String? = null,
 )

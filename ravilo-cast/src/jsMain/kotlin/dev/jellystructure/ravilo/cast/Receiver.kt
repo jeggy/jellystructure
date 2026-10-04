@@ -148,6 +148,7 @@ private class Receiver {
     // ── R356 (FR-R356-8) — the queue goes to the senders only when it changed ──
     /** Raised whenever the queue's songs or their order change (seen by [queueFingerprint] at each status). */
     private var queueRev = 0
+    private var lastReportedIndex = -1
     private var queueFingerprint: Int? = null
     /** The revision last sent in full; -1 = never. */
     private var sentRev = -1
@@ -324,6 +325,9 @@ private class Receiver {
                     // R354 (FR-R354-9e) — a screen takes the dashboard's messages; a speaker declares none and ignores one.
                     onServerMessage = { env -> if (!isHeadless()) serverNoticeOf(env)?.let { showNotice(it) } },
                     remote = receiverRemoteDeclaration(isHeadless()),
+                    // R369 (dev review item 2) — this receiver obeys `session_command`; it never asks for the lists.
+                    features = dev.jellystructure.shared.tv.EVENTS_FEATURE_SESSION_CONTROL,
+                    onSessionCommand = { text -> onSessionCommand(text) },
                 )
             }.getOrElse { "err:" + (it::class.simpleName ?: "Throwable") }
             note("events closed: $how")
@@ -343,6 +347,38 @@ private class Receiver {
         note("message (${n.text.length} chars) for ${n.durationMs} ms")
         noticeJob?.cancel()
         noticeJob = GlobalScope.launch { delay(n.durationMs); el("msg").classList.remove("on") }
+    }
+
+    /**
+     * R369 (dev review items 3 and 4c) — a command for this receiver's session, from any app through the server. One
+     * meant for a queue that has moved on is dropped and the receiver reports where it is; the rest go through the
+     * very handlers the senders' own commands use ([onCommand]) or the dashboard's ([onRemote]).
+     */
+    private fun onSessionCommand(text: String) {
+        val env = runCatching { json.decodeFromString(dev.jellystructure.shared.tv.SessionCommandEnvelope.serializer(), text) }.getOrNull() ?: return
+        val d = current
+        val index = d?.let { it.queueStart + it.currentIndex }
+        if (dev.jellystructure.shared.tv.sessionCommandIsStale(env, d?.itemId, index?.takeIf { music }, queueRev.takeIf { music })) {
+            note("session ${env.command.op} dropped: stale"); sendStatus(); reportQueueNow(); return
+        }
+        val cast = dev.jellystructure.shared.tv.castCommandForSession(env.command, music)
+        if (cast != null) { onCommand(json.encodeToString(CastCommand.serializer(), cast)); return }
+        dev.jellystructure.shared.tv.sessionRemoteCommand(env.command)?.let { onRemote(it) }
+    }
+
+    private var reportedQueueRev = -1
+
+    /** R369 (dev review item 5) — the queue to the server on change only (ids), so every remote can show it. */
+    private fun reportQueueNow() {
+        val d = current ?: return
+        val a = api ?: return
+        if (!music || assembling) return
+        reportedQueueRev = queueRev
+        val report = dev.jellystructure.shared.tv.SessionQueueReport(
+            itemId = d.itemId, queue = d.tracks.map { it.id }, queueRev = queueRev, queueIndex = d.queueStart + d.currentIndex,
+            shuffle = d.shuffle, repeat = d.repeat,
+        )
+        GlobalScope.launch { runCatching { a.reportSessionQueue(report) } }
     }
 
     /** One dashboard command, carried out as the receiver's own controls would, then a fresh status for the senders. */
@@ -1201,6 +1237,14 @@ private class Receiver {
         if (cmd.type == "queue_part") { onQueuePart(cmd); return }
         // R359 (FR-R359-4) — an edit's places are the whole queue's: while it is still arriving, the edit waits for it.
         if (music && assembling && cmd.type in DEFERRED_WHILE_ARRIVING) { if (deferred.size < MAX_WAITING_PARTS) deferred += raw; return }
+        // R369 (dev review item 4c) — a sender's next/prev/play_at for a song that is no longer playing is dropped (two
+        // nexts on two paths skip once); the status that follows says where the queue is.
+        if (music && cmd.type in setOf("next", "prev", "play_at")) {
+            val d = current
+            val stale = (cmd.expectItem != null && d != null && cmd.expectItem != d.itemId) ||
+                (cmd.expectIndex != null && d != null && cmd.expectIndex != d.queueStart + d.currentIndex)
+            if (stale) { note("${cmd.type} dropped: stale"); sendStatus(); return }
+        }
         if (music) when (cmd.type) {
             "next" -> { musicNext(byViewer = true); return }
             "prev" -> { musicPrevious(); return }
@@ -1311,6 +1355,11 @@ private class Receiver {
             lyricsOn = if (music && !isHeadless()) lyricsOn else null, headless = headless,
             queueRev = queueRev.takeIf { music && !arriving }, queueSize = (d.queueTotal ?: d.tracks.size).takeIf { music },
         )
+        // R369 — the server hears the queue when it changed (a song change moves the index: that is reported too).
+        if (music && !arriving && (reportedQueueRev != queueRev || lastReportedIndex != d.queueStart + d.currentIndex)) {
+            lastReportedIndex = d.queueStart + d.currentIndex
+            reportQueueNow()
+        }
         // FR-R359-5 — a queue too long for one message follows the status in parts.
         val out = castQueueReply(msg, json)
         val bytes = out.sumOf { send(it) }

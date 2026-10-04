@@ -234,7 +234,16 @@ items; one is for the owner.
 position + progress, how long it has run and *started from {app}*; a click opens the session's timeline; *Ended today*
 under the live rows; *Nothing is playing anywhere.* when empty. Seeded from `GET /api/tv/admin/playback/sessions`
 (cookie-gated, every owner and network, no visibility filter) and following `JobEvent.PlaybackSessions` on `/ws`.
-The timeline is `playback_session_event` (66.sqm): started · paused/resumed (on a change of `is_paused` only) ·
+The timeline is `playback_session_event` (67.sqm): started · paused/resumed (on a change of `is_paused` only) ·
 reconnected · offline · ended + reason; the hourly sweep drops events and ended rows older than 7 days. FR-304-5 dropped
 (owner). The per-user *Now watching* line reads the session table (R368 shipped bug 1). Tests: `AdminSessionListTest`,
 `PlaybackSessionsTest` (timeline + sweep). 304b: see below once built.
+
+**304b built with R369 (2026-10-04):** the open row carries the remote — ⏮ ⏯ ⏭, a seek line, *End* with its inline
+*End — sure?*, and the queue (click to jump) — only the ops the target obeys (absent otherwise). Commands go to
+`POST /api/tv/admin/playback/sessions/{id}/command` (cookie; `source = admin`, never a controller row; the revision
+rule applies, a 409 redraws). The household switch sits in the section's header (`PUT
+/api/tv/admin/playback/household-control`, written at once through `ConfigStore` as `[ravilo] household_control`, off
+by default); a change re-sends every opted-in socket's list so `controllable` flips. The row shows the controlling apps
+from R369's controller table. R371's volume and R372's *Move to…* are added by those phases. Tests:
+`SessionCommandRuleTest` (admin allowed with the switch off, the config round-trip). Not written: the Playwright spec.

@@ -117,3 +117,169 @@ val SESSION_DIRECTIVES: Set<String> = setOf("session_detail", "session_load", "c
 /** R368 (dev review item 2) — the `features=` list for an events socket; null = today's URL exactly. */
 fun eventsFeaturesQuery(features: Set<String>): String? =
     features.filter { it.isNotBlank() }.sorted().takeIf { it.isNotEmpty() }?.joinToString(",")
+
+// ── R369 — any Ravilo app controls a session ─────────────────────────────────────────────────────────────────────────
+
+/** Ops every target obeys, through today's `playstate_command` / `player_command` when it did not declare
+ *  `session_control` (dev review item 2). */
+val SESSION_OPS_LEGACY: List<String> = listOf("play", "pause", "seek", "next", "previous", "stop", "set_volume", "set_mute")
+
+/** Ops only a `session_control` target obeys; absent from `SessionDetail.ops` otherwise (never shown broken). */
+val SESSION_OPS_CONTROL: List<String> = listOf("jump", "set_shuffle", "set_repeat", "set_audio", "set_subtitle",
+    "queue_add", "queue_play_next", "queue_move", "queue_remove")
+
+/** `POST /api/tv/playback/sessions/{id}/command` (and the admin's own route). [revision] is the session's as the app
+ *  last saw it; an index-moving op or a seek on an old one is refused with 409 (dev review item 4a). */
+@Serializable
+data class SessionCommandRequest(
+    val revision: Long? = null,
+    val op: String,
+    @SerialName("position_ms") val positionMs: Long? = null,
+    val index: Int? = null,
+    val to: Int? = null,
+    val on: Boolean? = null,
+    val mode: String? = null,
+    /** 0–100. */
+    val level: Int? = null,
+    val muted: Boolean? = null,
+    @SerialName("track_id") val trackId: String? = null,
+    /** R371 — one room of a group (`set_volume` / `set_mute` / `remove_room`), or the speaker to add (`add_room`). */
+    @SerialName("cast_device_id") val castDeviceId: String? = null,
+)
+
+/**
+ * `{"type":"session_command", …}` to the session's target (only a socket that declared `session_control`). The target
+ * checks [expectItem] (the item the server last knew was playing) / [expectIndex] / [queueRev] and drops a command
+ * meant for a queue that has moved on — the second of two `next`s sent on two paths skips nothing (dev review item 4c).
+ */
+@Serializable
+data class SessionCommandEnvelope(
+    val type: String = "session_command",
+    @SerialName("session_id") val sessionId: String,
+    val command: SessionCommandRequest,
+    @SerialName("expect_item") val expectItem: String? = null,
+    @SerialName("expect_index") val expectIndex: Int? = null,
+    @SerialName("queue_rev") val queueRev: Int? = null,
+    /** `admin` or the sending device's id. */
+    val source: String? = null,
+)
+
+/** What a session command asks of a player, as the dashboard's own commands are read ([RemoteCommand]); null for an
+ *  op no player acts on (a newer server's op is dropped, never a crash). */
+fun sessionRemoteCommand(c: SessionCommandRequest): RemoteCommand? = when (c.op) {
+    "play" -> RemoteCommand.Play
+    "pause" -> RemoteCommand.Pause
+    "toggle" -> RemoteCommand.Toggle
+    "stop" -> RemoteCommand.Stop
+    "next" -> RemoteCommand.Next
+    "previous" -> RemoteCommand.Previous
+    "seek" -> c.positionMs?.let { RemoteCommand.SeekTo(it.coerceAtLeast(0L)) }
+    "jump" -> c.index?.let { RemoteCommand.Jump(it) }
+    "set_shuffle" -> c.on?.let { RemoteCommand.SetShuffle(it) }
+    "set_repeat" -> c.mode?.let { RemoteCommand.SetRepeat(it) }
+    "set_audio" -> c.index?.let { RemoteCommand.SelectAudio(it) }
+    "set_subtitle" -> c.index?.let { RemoteCommand.SelectSubtitle(it) }
+    "set_volume" -> if (c.castDeviceId == null) c.level?.let { RemoteCommand.SetVolume(it.coerceIn(0, 100)) } else null
+    "set_mute" -> if (c.castDeviceId == null) RemoteCommand.Mute(c.muted) else null
+    "queue_add" -> c.trackId?.let { RemoteCommand.QueueAdd(it) }
+    "queue_play_next" -> c.trackId?.let { RemoteCommand.QueuePlayNext(it) }
+    "queue_move" -> if (c.index != null && c.to != null) RemoteCommand.QueueMove(c.index, c.to) else null
+    "queue_remove" -> c.index?.let { RemoteCommand.QueueRemove(it) }
+    else -> null
+}
+
+/** Ops that move the queue's place: checked against the session's revision and, at the target, its current item. */
+val SESSION_OPS_INDEX_MOVING: Set<String> = setOf("next", "previous", "jump")
+
+/**
+ * Dev review item 4c — at the target: is this command meant for a queue that has already moved on? An index-moving op
+ * whose [SessionCommandEnvelope.expectItem] / [SessionCommandEnvelope.expectIndex] is not what plays now, or a queue
+ * edit on another [SessionCommandEnvelope.queueRev], is dropped (the target then reports where it is).
+ */
+fun sessionCommandIsStale(env: SessionCommandEnvelope, currentItemId: String?, currentIndex: Int?, queueRev: Int?): Boolean {
+    val op = env.command.op
+    if (op in SESSION_OPS_INDEX_MOVING) {
+        if (env.expectItem != null && currentItemId != null && env.expectItem != currentItemId) return true
+        if (env.expectIndex != null && currentIndex != null && env.expectIndex != currentIndex) return true
+    }
+    if (op.startsWith("queue_") && env.queueRev != null && queueRev != null && env.queueRev != queueRev) return true
+    return false
+}
+
+/**
+ * R369 (dev review item 3) — a session command as the receiver's own sender command ([CastCommand]): one handler
+ * serves both paths, so a command can't mean two things. Null for the ops the receiver reads as a [RemoteCommand]
+ * (play, pause, seek, stop, volume) or does not know.
+ */
+fun castCommandForSession(c: SessionCommandRequest, music: Boolean): CastCommand? = when (c.op) {
+    "next" -> CastCommand("next")
+    "previous" -> if (music) CastCommand("prev") else null
+    "jump" -> c.index?.let { CastCommand("play_at", index = it) }
+    "set_shuffle" -> CastCommand("shuffle", on = c.on == true)
+    "set_repeat" -> CastCommand("repeat", mode = c.mode ?: "off")
+    "set_audio" -> c.index?.let { CastCommand("audio", index = it) }
+    "set_subtitle" -> CastCommand("subtitle", index = c.index ?: -1)
+    "queue_move" -> if (c.index != null && c.to != null) CastCommand("queue_move", index = c.index, to = c.to) else null
+    "queue_remove" -> c.index?.let { CastCommand("queue_remove", index = it) }
+    else -> null
+}
+
+/** One entry of a session's queue as the remote lists it. */
+@Serializable
+data class SessionQueueEntry(val id: String, val title: String? = null, val subtitle: String? = null)
+
+/**
+ * R369 (dev review item 5) — an app or a receiver reports its queue to the server **on change only** (never every
+ * tick), ids only: `POST /api/tv/playback/sessions/queue`. Tracks and the picks ride it for a film.
+ */
+@Serializable
+data class SessionQueueReport(
+    @SerialName("session_id") val sessionId: String? = null,
+    @SerialName("item_id") val itemId: String,
+    val queue: List<String> = emptyList(),
+    @SerialName("queue_rev") val queueRev: Int = 0,
+    @SerialName("queue_index") val queueIndex: Int = 0,
+    val shuffle: Boolean? = null,
+    val repeat: String? = null,
+    @SerialName("audio_tracks") val audioTracks: List<CastTrack> = emptyList(),
+    @SerialName("subtitle_tracks") val subtitleTracks: List<CastTrack> = emptyList(),
+    @SerialName("audio_index") val audioIndex: Int? = null,
+    @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** R371 — the rooms of a Cast group, as the app holding the link sees them. */
+    val members: List<SessionRoom>? = null,
+)
+
+/** `GET /api/tv/playback/sessions/{id}` — what a remote needs beyond the row (dev review item 5). The queue is a window
+ *  around [queueIndex] ([queueOffset] is where it starts, [queueSize] the whole length), as R359 windows a LOAD. */
+@Serializable
+data class SessionDetail(
+    val session: SessionView,
+    val queue: List<SessionQueueEntry> = emptyList(),
+    @SerialName("queue_offset") val queueOffset: Int = 0,
+    @SerialName("queue_size") val queueSize: Int = 0,
+    @SerialName("queue_rev") val queueRev: Int = 0,
+    @SerialName("queue_index") val queueIndex: Int = 0,
+    val shuffle: Boolean = false,
+    val repeat: String = "off",
+    @SerialName("audio_tracks") val audioTracks: List<CastTrack> = emptyList(),
+    @SerialName("subtitle_tracks") val subtitleTracks: List<CastTrack> = emptyList(),
+    @SerialName("audio_index") val audioIndex: Int? = null,
+    @SerialName("subtitle_index") val subtitleIndex: Int? = null,
+    /** 0–100; null = the place does not report its volume. */
+    val volume: Int? = null,
+    val muted: Boolean = false,
+    /** The ops the target obeys — a control for any other op is absent, not greyed. */
+    val ops: List<String> = emptyList(),
+)
+
+/** `{"type":"session_detail", …}` — only to the session's attached controllers (dev review item 5). */
+@Serializable
+data class SessionDetailEnvelope(
+    val type: String = "session_detail",
+    val detail: SessionDetail,
+    @SerialName("server_now_ms") val serverNowMs: Long = 0L,
+)
+
+/** A command refused: `409 { reason, session }` — `stale` (an old revision) or `unreachable` (FR-R369-2). */
+@Serializable
+data class SessionCommandRefusal(val reason: String, val session: SessionView? = null)
