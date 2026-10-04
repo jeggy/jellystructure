@@ -36,7 +36,9 @@ class MusicEditionsStoreTest {
             extendedConfig = DatabaseConfiguration.Extended(basePath = file.substringBeforeLast('/')),
         ))
         for (t in listOf("music_official_pick", "music_single_home", "music_same_song", "music_sound_pair")) raw.execute(null, "DROP TABLE $t", 0)
-        raw.execute(null, "PRAGMA user_version = ${v - 1}", 0)
+        // The migrations after 305's (66.sqm) run again too: their tables go with it (R368/R369's 67 and 68).
+        for (t in listOf("playback_session", "playback_session_event", "playback_session_controller")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 
         val again = MusicStore(createDatabase(file))
@@ -105,3 +107,6 @@ class MusicEditionsStoreTest {
         assertNotNull(history.forItem("kw").firstOrNull { it.detail.contains("Official album choice dropped") })
     }
 }
+
+/** 305's migration is 66.sqm: a database at user_version 66 runs it (and every later one) again. */
+private const val MIGRATION_305 = 66

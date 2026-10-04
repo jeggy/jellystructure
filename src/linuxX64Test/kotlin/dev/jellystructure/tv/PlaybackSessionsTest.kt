@@ -34,6 +34,7 @@ class PlaybackSessionsTest {
     }
 
     @AfterTest fun tearDown() {
+        dev.jellystructure.db.closeLastDatabaseForTests()
         for (suffix in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$suffix") }
     }
 

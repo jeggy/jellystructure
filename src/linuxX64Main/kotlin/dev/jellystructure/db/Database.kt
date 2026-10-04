@@ -107,6 +107,13 @@ fun createDatabase(dbFile: String): JellystructureDb {
 }
 
 /**
+ * Tests only — closes the driver the last [createDatabase] opened. Each one holds a writer and up to four reader
+ * connections (three file descriptors apiece with WAL), and the Kotlin/Native test process shares one FD_SETSIZE-bound
+ * table with the loopback servers the integration tests run: a suite that leaks dozens of them starves those.
+ */
+internal fun closeLastDatabaseForTests() { runCatching { rawDriver.close() } }
+
+/**
  * Live bug found in production logs (2026-08-25) — this has been broken since it was introduced (Phase
  * 90, commit `5bdd4277`), unrelated to any recent change. `PRAGMA wal_checkpoint(TRUNCATE)` returns a
  * result row (busy/log/checkpointed), but the generated `MediaQueries.walCheckpoint()` (from a plain,

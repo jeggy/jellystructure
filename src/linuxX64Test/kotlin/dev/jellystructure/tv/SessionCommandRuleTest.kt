@@ -88,7 +88,7 @@ class SessionCommandRuleTest {
         assertFalse(controllableBy("u-ben", false, rec(), householdControl = true, nearby = true, canSee = false))
 
     private val dbPath = "/tmp/jellystructure-test-sescmd-${getpid()}.db"
-    @AfterTest fun tearDown() { for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$s") } }
+    @AfterTest fun tearDown() { dev.jellystructure.db.closeLastDatabaseForTests(); for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$s") } }
 
     @Test fun `the command service authorises checks the revision and records from the admin`() = runBlocking {
         val db = createDatabase(dbPath)

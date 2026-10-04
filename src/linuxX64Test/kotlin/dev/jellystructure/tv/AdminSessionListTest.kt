@@ -16,7 +16,7 @@ class AdminSessionListTest {
     private val dbPath = "/tmp/jellystructure-test-adminses-${getpid()}.db"
     private var now = 1_000_000_000L
 
-    @AfterTest fun tearDown() { for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$s") } }
+    @AfterTest fun tearDown() { dev.jellystructure.db.closeLastDatabaseForTests(); for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$s") } }
 
     @Test fun `the admin sees every owner on every network in full`() = runBlocking {
         val db = createDatabase(dbPath)
