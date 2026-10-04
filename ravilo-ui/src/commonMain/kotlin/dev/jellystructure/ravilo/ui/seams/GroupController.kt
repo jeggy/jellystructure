@@ -25,6 +25,22 @@ interface GroupController {
 /** This platform's controller, or null (see [GroupController]). */
 expect fun platformGroupController(): GroupController?
 
+/** R371 (review items 7 and 8) — what an app does with a room op the server sent it. */
+enum class RoomJoin {
+    /** It holds the link to the session's Cast device: act now. */
+    ACT,
+    /** It holds no link and sees the device: join it (as a relay), then act. */
+    JOIN,
+    /** Linked elsewhere, or it does not see the device: log and drop (the server retries nothing). */
+    CANNOT,
+}
+
+fun roomOpJoinPlan(link: CastLinkState, connectedKey: String?, placeCastDeviceId: String?, seesPlace: Boolean): RoomJoin = when {
+    link == CastLinkState.CONNECTED && (placeCastDeviceId == null || connectedKey == null || connectedKey == placeCastDeviceId) -> RoomJoin.ACT
+    link == CastLinkState.NONE && placeCastDeviceId != null && seesPlace -> RoomJoin.JOIN
+    else -> RoomJoin.CANNOT
+}
+
 /** R371 (FR-R371-2, review item 10) — what removing a room does. */
 sealed interface RoomRemoval {
     /** Deselect it: the group goes on without it. */

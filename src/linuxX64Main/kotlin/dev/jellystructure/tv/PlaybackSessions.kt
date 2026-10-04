@@ -91,7 +91,7 @@ internal fun shouldForceStop(heartbeatStale: Boolean, needsSocket: Boolean, sock
 internal fun parseEventFeatures(raw: String?): Set<String> =
     raw.orEmpty().split(',').map { it.trim().lowercase() }.filter { it in KNOWN_FEATURES }.toSet()
 
-private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL)
+private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)   // R371 — group_control
 
 /** R370 (review item 6) — what an app declares it plays (`plays=video,music,book`), kept beside its features. */
 internal fun parsePlays(raw: String?): Set<String> =
@@ -245,6 +245,7 @@ internal fun toView(
             kind = targetKind, id = s.targetId,
             name = placeName(s),
             icon = if (targetKind == "cast_group") "group" else targetIcon(targetPlatform, targetDeviceKind ?: s.targetKind),
+            castDeviceId = s.castDeviceId,
         ),
         state = s.state,
         positionMs = s.positionMs.takeIf { visible },
@@ -576,6 +577,7 @@ class PlaybackSessions(
                         revision = 1, startedByDeviceId = (if (device.kind == "cast") castMinter[device.deviceId] else null) ?: starter.deviceId,
                         jellyfinPlaySessionId = jellyfinPlaySessionId, offline = false, endReason = null, endedBy = null,
                         createdAt = t, updatedAt = t, endedAt = null,
+                        castDeviceId = receiverCastDevice[device.deviceId],   // R370 — a receiver's Cast device, when a hand-off named it
                     )
                     sessions[rec.id] = rec
                     rec.persist()

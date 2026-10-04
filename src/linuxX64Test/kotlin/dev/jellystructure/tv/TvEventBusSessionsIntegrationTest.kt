@@ -13,6 +13,13 @@ import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pointed
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +53,7 @@ class TvEventBusSessionsIntegrationTest {
         // process already holds hundreds that earlier tests leaked; then this test says so and stands down rather than
         // failing on the platform's limit (run it on its own: `--tests '*TvEventBusSessions*'`).
         val open = openDescriptors()
-        if (open > 700) { println("TvEventBusSessionsIntegrationTest: $open descriptors already open — skipped in this run"); return@runBlocking }
+        if (open > 700) { println("TvEventBusSessionsIntegrationTest: $open descriptors already open (${fdCensus()}) — skipped in this run"); return@runBlocking }
         val run = getpid().toString()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val dbPath = "/tmp/jellystructure-test-busses-$run.db"
@@ -127,6 +134,30 @@ class TvEventBusSessionsIntegrationTest {
             for (suffix in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dbPath$suffix") }
         }
     }
+}
+
+/** What the open descriptors are: kinds, and the files held most often (to find the test that leaks them). */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+internal fun fdCensus(): String {
+    val dir = platform.posix.opendir("/proc/self/fd") ?: return "?"
+    val kinds = mutableMapOf<String, Int>()
+    val files = mutableMapOf<String, Int>()
+    try {
+        while (true) {
+            val e = platform.posix.readdir(dir) ?: break
+            val name = e.pointed.d_name.toKString()
+            if (name == "." || name == "..") continue
+            val target = memScoped {
+                val buf = allocArray<ByteVar>(512)
+                val n = platform.posix.readlink("/proc/self/fd/$name", buf, 511.convert())
+                if (n <= 0) null else buf.readBytes(n.toInt()).decodeToString()
+            } ?: continue
+            val kind = if (target.startsWith("/")) "file" else target.substringBefore(':')
+            kinds[kind] = (kinds[kind] ?: 0) + 1
+            if (kind == "file") { val k = target.substringBeforeLast('/'); files[k] = (files[k] ?: 0) + 1 }
+        }
+    } finally { platform.posix.closedir(dir) }
+    return kinds.entries.joinToString { "${it.key}=${it.value}" } + " · " + files.entries.sortedByDescending { it.value }.take(6).joinToString { "${it.key}=${it.value}" }
 }
 
 /** How many file descriptors this process holds (/proc/self/fd). */

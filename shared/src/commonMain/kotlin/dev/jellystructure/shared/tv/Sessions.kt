@@ -13,6 +13,13 @@ const val EVENTS_FEATURE_SESSIONS = "sessions"
 /** R369 (dev review item 2) — a target that obeys `session_command` declares this beside [EVENTS_FEATURE_SESSIONS]. */
 const val EVENTS_FEATURE_SESSION_CONTROL = "session_control"
 
+/**
+ * R371 (review items 7 and 8) — an app whose platform can grow a Cast session room by room (Android 11+'s routing
+ * controller) declares this; the server sends a room op only to such an app — the one holding the session's Cast link,
+ * else a relay app on that network, which joins the session's Cast device first.
+ */
+const val EVENTS_FEATURE_GROUP_CONTROL = "group_control"
+
 /** Whose playback a row is. [name] is the first name the household knows them by. */
 @Serializable
 data class SessionOwner(val id: String, val name: String)
@@ -27,6 +34,8 @@ data class SessionTarget(
     val id: String,
     val name: String,
     val icon: String,
+    /** R370 (review item 3) — a Cast place's own device id (the key the apps' discovery shares), when known. */
+    @SerialName("cast_device_id") val castDeviceId: String? = null,
 )
 
 /** R371 — one room of a session that plays on several speakers, as the linked app reported it. */
@@ -165,6 +174,8 @@ data class SessionCommandEnvelope(
     @SerialName("queue_rev") val queueRev: Int? = null,
     /** `admin` or the sending device's id. */
     val source: String? = null,
+    /** R371 — a room op's session's Cast device (its leader), so a relay app that holds no link can join it first. */
+    @SerialName("place_cast_device_id") val placeCastDeviceId: String? = null,
 )
 
 /** What a session command asks of a player, as the dashboard's own commands are read ([RemoteCommand]); null for an

@@ -247,3 +247,7 @@ rule applies, a 409 redraws). The household switch sits in the section's header 
 by default); a change re-sends every opted-in socket's list so `controllable` flips. The row shows the controlling apps
 from R369's controller table. R371's volume and R372's *Move to…* are added by those phases. Tests:
 `SessionCommandRuleTest` (admin allowed with the switch off, the config round-trip). Not written: the Playwright spec.
+
+**2026-10-05:** R372's *Move to…* in the admin remote (a select of the owner's places that can play it + *Move*; a
+refused move is said on the row); the loopback `SessionCommandIntegrationTest` covers *an admin pause is recorded from
+the admin* and *the admin is never a controller row*, and `SessionMoveIntegrationTest` the admin's targets and move.

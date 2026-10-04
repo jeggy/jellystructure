@@ -58,6 +58,6 @@ class SessionRemoteStateTest {
         assertEquals("{\"type\":\"detach_session\",\"id\":\"ps-1\"}", detachFrame("ps-1"))
     }
 
-    @Test fun `the TV declares session control only and never asks for the lists`() =
-        assertEquals(setOf("session_control"), eventsFeaturesFor(isTv = true, obeysSessionCommands = true))
+    @Test fun `the TV obeys session commands and since R372 reads the list for its Speakers panel`() =
+        assertEquals(setOf("sessions", "session_control"), eventsFeaturesFor(isTv = true, obeysSessionCommands = true))
 }

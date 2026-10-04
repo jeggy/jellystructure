@@ -292,6 +292,21 @@ class CastController(
         }
     }
 
+    /**
+     * R370 (FR-R370-4) — a new title onto a Cast device this app sees (the server answered `load_here`): the hand-off names
+     * the session, then the route is selected and the LOAD goes out on connection, as a move's does.
+     */
+    fun startLoad(castDeviceId: String, sessionId: String, itemId: String, title: String, kicker: String?, artUrl: String?, positionMs: Long?, lang: String = "en") {
+        val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return
+        scope.launch {
+            val code = runCatching { api.castHandoff(castDeviceId, sessionId) }.getOrNull() ?: return@launch
+            pendingMoveLoad = CastLoadData(serverUrl = serverUrl, code = code.code, itemId = itemId, title = title, kicker = kicker, artUrl = artUrl,
+                positionMs = positionMs, deviceName = sender.deviceName.value, lang = lang, sessionId = sessionId)
+            if (sender.link.value != CastLinkState.NONE) sender.leave()
+            r.select()
+        }
+    }
+
     /** R372 — the move's LOAD, once the route connected. */
     fun moveLoaded(): CastLoadData? = pendingMoveLoad.also { pendingMoveLoad = null }
 
@@ -309,6 +324,29 @@ class CastController(
         r.select()
         return true
     }
+
+    /** R371 — a room op waiting for this app to join the session's Cast device. */
+    private var pendingRoomOp: (() -> Unit)? = null
+
+    /** The Cast device this app's link is on (the selected route's), or null. */
+    fun connectedDeviceKey(): String? = if (sender.link.value == CastLinkState.CONNECTED) routes.value.firstOrNull { it.selected }?.deviceKey else null
+
+    /**
+     * R371 (review items 7 and 8) — the server sent a room op to this app as the relay: join the session's Cast device
+     * (the receiver keeps playing; the app mirrors nothing — [dev.jellystructure.ravilo.ui.music.MusicCast.relaying]),
+     * then act once the link is up.
+     */
+    fun joinForRooms(castDeviceId: String, act: () -> Unit): Boolean {
+        if (sender.link.value != CastLinkState.NONE) return false
+        val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return false
+        pendingRoomOp = act
+        pendingMusicHandoff = false
+        dev.jellystructure.ravilo.ui.music.MusicCast.relaying = true
+        r.select()
+        return true
+    }
+
+    fun roomOpReady(): (() -> Unit)? = pendingRoomOp.also { pendingRoomOp = null }
 
     /** The relay's LOAD is out: nothing more is pending. */
     fun relayLoaded(): CastLoadData? = pendingRelay.also { pendingRelay = null }

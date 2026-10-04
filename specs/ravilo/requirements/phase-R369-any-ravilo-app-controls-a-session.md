@@ -397,7 +397,10 @@ Strings `session.cant_reach`, `session.stop_everywhere`, `session.stop_person` (
 
 **Tests:** `SessionCommandRuleTest` (17 incl. the command service on a DB and the household config round-trip),
 `SessionWireTest` (`:shared`, 12), `SessionRemoteStateTest` (9), `WireCompatTest` green (new roots).
-Not written: the loopback `SessionCommandIntegrationTest` and the Playwright receiver spec.
+Not written: the Playwright receiver spec. **2026-10-05:** the loopback `SessionCommandIntegrationTest` (5; harness
+`tv/SessionLoopback.kt`) is written — and found a shipped bug: the command service encoded `session_command` with
+`encodeDefaults = false`, so the envelope's `type` (a default) was never sent and an app read the frame as an unknown
+event, i.e. a config change. Fixed (`encodeDefaults = true`).
 
 **Only a speaker can confirm:** the receiver's socket path with the phone in airplane mode (pause/skip/seek from the
 computer); two `next`s pressed together skip once.

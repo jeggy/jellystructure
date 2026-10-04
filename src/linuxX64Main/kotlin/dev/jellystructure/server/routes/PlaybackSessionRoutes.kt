@@ -71,6 +71,33 @@ internal fun Route.playbackSessionRoutes(
                 is dev.jellystructure.tv.StartResult2.Stale -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("stale", publisher.viewFor(device, r.session)))
             }
         }
+        // 304b / R372 — the admin's *Move to…*: the owner's places, and the move made on the owner's behalf.
+        get("/tv/admin/playback/sessions/{id}/targets") {
+            runCatching { call.attributes[SessionKey] }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+            val s = sessions.get(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val owner = starter.ownerDeviceOf(s)
+                ?: return@get call.respond(dev.jellystructure.shared.tv.TargetList(emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds()))
+            val targets = starter.targetsFor(owner) { r -> publisher.viewFor(null, r) }
+            call.respond(dev.jellystructure.shared.tv.TargetList(targets, kotlin.time.Clock.System.now().toEpochMilliseconds()))
+        }
+        post("/tv/admin/playback/sessions/{id}/move") {
+            runCatching { call.attributes[SessionKey] }.getOrNull()
+                ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+            val req = call.receive<dev.jellystructure.shared.tv.SessionMoveRequest>()
+            if (req.targetId == "here") return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "the admin is not a place"))
+            val s = sessions.get(call.parameters["id"]!!) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val owner = starter.ownerDeviceOf(s) ?: return@post call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
+            when (val r = starter.move(owner, s.id, req, admin = true)) {
+                is dev.jellystructure.tv.StartResult2.Started -> call.respond(dev.jellystructure.shared.tv.SessionStartResponse(
+                    publisher.viewFor(null, r.session), r.loadHere, r.castDeviceId))
+                is dev.jellystructure.tv.StartResult2.Stale -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("stale", publisher.viewFor(null, r.session)))
+                dev.jellystructure.tv.StartResult2.Busy -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("busy"))
+                dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
+                dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to move"))
+                dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot move there"))
+            }
+        }
         // R372 (FR-R372-2/-3) — *Move to…* and *Play here* (`target_id = here`).
         post("/tv/playback/sessions/{id}/move") {
             val device = call.attributes[DeviceKey]

@@ -142,7 +142,9 @@ class SessionControl(
 ) {
     private val mutex = Mutex()
     private val controllers = HashMap<String, MutableSet<String>>()   // sessionId → device ids
-    private val json = Json { encodeDefaults = false; explicitNulls = false }
+    // encodeDefaults: the envelope's `type` is a default, and an app routes the frame by it (without it a `session_command`
+    // read as an unknown event, i.e. a config change — found by the loopback test).
+    private val json = Json { encodeDefaults = true; explicitNulls = false }
 
     /** 304b (FR-304-4) — the household switch. */
     var householdControl: () -> Boolean = { false }
@@ -189,7 +191,7 @@ class SessionControl(
     /** The ops [s]'s target obeys now. */
     internal suspend fun opsOf(s: SessionRec): List<String> {
         val minter = sessions.castMinterOf(s.targetId)
-        val reach = (minter != null && bus.hasFeature(minter, EVENTS_FEATURE_SESSION_CONTROL)) || relayAppFor(s) != null
+        val reach = (minter != null && holdsGroupControl(minter)) || relayAppFor(s) != null
         return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
     }
 
@@ -215,18 +217,24 @@ class SessionControl(
             }
         }
         val minter = sessions.castMinterOf(s.targetId)
-        val holderControl = minter != null && bus.hasFeature(minter, EVENTS_FEATURE_SESSION_CONTROL)
+        val holderControl = minter != null && holdsGroupControl(minter)
         val relay = if (holderControl) null else relayAppFor(s)
         val to = when (roomOpRoute(holderControl, relay != null)) {
             RoomRoute.LinkHolder -> devices.listSessions(minter!!).maxByOrNull { it.lastSeen } ?: return CommandResult.Unreachable
             RoomRoute.Relay -> relay!!
             RoomRoute.Unreachable -> return CommandResult.Unreachable
         }
-        val env = SessionCommandEnvelope(sessionId = s.id, command = c, source = source)
+        // A relay joins the session's Cast device before it acts (it holds no link yet), so the envelope names it.
+        val env = SessionCommandEnvelope(sessionId = s.id, command = c, source = source,
+            placeCastDeviceId = s.castDeviceId ?: sessions.castDeviceOfReceiver(s.targetId))
         bus.notifySessionCommand(to.jellyfinUserId, to.deviceId, json.encodeToString(SessionCommandEnvelope.serializer(), env))
         sessions.record(s.id, "command", source, c.op)
         return CommandResult.Accepted
     }
+
+    /** R371 — an app that obeys session commands and can act on a Cast group (it declared `group_control`). */
+    private suspend fun holdsGroupControl(deviceId: String): Boolean =
+        bus.hasFeature(deviceId, EVENTS_FEATURE_SESSION_CONTROL) && bus.hasFeature(deviceId, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)
 
     /** FR-R369-1/-2 — one command. [source] is `admin` or the caller's device id (the timeline's *from*). */
     internal suspend fun command(sessionId: String, c: SessionCommandRequest, caller: DeviceData?, admin: Boolean): CommandResult {

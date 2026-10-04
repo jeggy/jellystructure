@@ -380,10 +380,17 @@ route as one row); a busy row asks inline every time (*Play {title} here instead
 *Stop {person}'s {title} and play here?*). A Cast row this app sees still starts through today's SDK path; any other
 place starts through the server. The glyph counts the server's places too. Paired screens keep their own rows.
 
-**Not built:** the *same kind already playing elsewhere* ask on a detail page's Play (`sameKindElsewhere` exists, no UI).
+**Built 2026-10-05 (the gap above closed):** the *same kind already playing elsewhere* ask (FR-R370-4) on a film's
+and an episode's Play on the phone, the desktop and the web app (never the TV; not while this app holds a Cast link,
+which casts as before): *Already playing on {place}* with the other title, *Play on {place} instead* (a start with
+`replace` on that place — a Cast place by its own device id, now on `SessionTarget.cast_device_id` — then the remote;
+a Cast device this app sees is its own LOAD, `CastController.startLoad`) or *Play here* (the other keeps playing).
+Strings `target.already_playing`, `target.play_there`. Music and audiobooks keep their own Play (no ask).
 
-**Tests:** `PlaybackTargetsTest` (13), `PlayOnListTest` (15), `WireCompatTest` (new roots). Not written: the loopback
-`PlaybackStartIntegrationTest`, Robolectric `PlayOnSheetTest`.
+**Tests:** `PlaybackTargetsTest` (13), `PlayOnListTest` (15), `SameKindAskTest` (3), `WireCompatTest` (new roots), the
+loopback `PlaybackStartIntegrationTest` (6: the targets list, `session_load` to an app and its first report joining the
+row, a speaker start relayed from the web app, refused with no relay, `replace` ending the busy session with its resume
+point, across users 403 → allowed with the switch). Not written: Robolectric `PlayOnSheetTest`.
 
 **Only devices can confirm:** a relay launch from the web app with the Pixel online (and *Not reachable* once Ravilo is
 closed on it); that the Pixel's `CastDevice.deviceId` and the desktop's mDNS id for the same speaker are equal.

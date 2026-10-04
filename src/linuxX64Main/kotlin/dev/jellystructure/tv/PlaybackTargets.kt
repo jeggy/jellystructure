@@ -218,9 +218,17 @@ class SessionStarter(
      * sees is the caller's own LOAD (`load_here`); any other Cast device is a relay launch. A film or an episode moves
      * only to a video place.
      */
-    internal suspend fun move(caller: DeviceData, sessionId: String, req: dev.jellystructure.shared.tv.SessionMoveRequest): StartResult2 {
+    /**
+     * 304b / R372 (FR-R372-2) — the admin's *Move to…*: the same move, made as the session's owner device (whose places
+     * the list shows), never asked to load the Cast LOAD itself (the admin page has no Cast): a Cast place goes by relay.
+     */
+    internal suspend fun ownerDeviceOf(s: SessionRec): DeviceData? =
+        (s.startedByDeviceId?.let { devices.listSessions(it) }.orEmpty() + devices.listSessions(s.targetId))
+            .firstOrNull { it.jellyfinUserId == s.ownerUserId }
+
+    internal suspend fun move(caller: DeviceData, sessionId: String, req: dev.jellystructure.shared.tv.SessionMoveRequest, admin: Boolean = false): StartResult2 {
         val s = sessions.get(sessionId)?.takeIf { it.live } ?: return StartResult2.BadRequest
-        if (!control.mayControl(caller, false, s)) return StartResult2.Forbidden
+        if (!admin && !control.mayControl(caller, false, s)) return StartResult2.Forbidden
         if (req.revision != null && req.revision != s.revision) return StartResult2.Stale(s)
         val targetId = if (req.targetId == "here") caller.deviceId else req.targetId
         if (targetId == s.targetId) return StartResult2.Started(s, loadHere = false, castDeviceId = null)
@@ -247,7 +255,7 @@ class SessionStarter(
         val seen = reach.entries().filter { it.device.castDeviceId == castId }
         if (video && seen.any { it.device.kind == "speaker" }) return StartResult2.BadRequest
         val name = seen.firstOrNull()?.device?.name ?: castId
-        val callerSees = seen.any { it.app.deviceId == caller.deviceId } && caller.platform in RELAY_PLATFORMS
+        val callerSees = !admin && seen.any { it.app.deviceId == caller.deviceId } && caller.platform in RELAY_PLATFORMS
         val moving = sessions.beginMove(s.id, targetId, name) ?: return StartResult2.BadRequest
         if (callerSees) return StartResult2.Started(moving, loadHere = true, castDeviceId = castId)
         val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, bus.liveSockets().map { it.second }.toSet())
@@ -272,10 +280,12 @@ class SessionStarter(
                 shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off"))
     }
 
+    /** R371 — the relay for a room op: an app on that network that sees the device and declared `group_control`. */
     internal suspend fun relayAppFor(s: SessionRec): DeviceData? {
         val castId = s.castDeviceId ?: sessions.castDeviceOfReceiver(s.targetId) ?: return null
         val owner = devices.listSessions(s.startedByDeviceId ?: return null).firstOrNull() ?: return null
-        return chooseRelayApp(reach.entries(), castId, owner.lastPublicAddress, bus.liveSockets().map { it.second }.toSet())
+        val grouping = bus.liveSockets().filter { dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL in it.third && dev.jellystructure.shared.tv.EVENTS_FEATURE_SESSION_CONTROL in it.third }
+        return chooseRelayApp(reach.entries(), castId, owner.lastPublicAddress, grouping.map { it.second }.toSet())
     }
 
     internal suspend fun relayAvailable(s: SessionRec): Boolean {

@@ -326,13 +326,26 @@ reconnecting, offline (*{place} is offline · paused at …*), moving / move fai
 (`ab.finished`), someone else's. Strings `session.move_to`, `session.moving`, `session.move_failed`,
 `session.place_offline`, `session.stopped_by` (`session.finished` not added).
 
-**⚠ Partial:** the TV's group *Speakers* panel (owner decision 3) is not built — the TV opts into no session lists
-(FR-R368-10) and a session sent to a TV app is never a Cast group, so there is nothing for the panel to show yet; the
-admin row has no *Move to…*. Not written: `SessionMoveIntegrationTest`, `MoveToSheetTest`, `TvSpeakersPanelTest`, the
-Playwright case.
+**Completed 2026-10-05:** **the TV's *Speakers* panel** (owner decision 3). The TV app now asks for the session list
+too (`features=sessions,session_control`; an installed TV without this build asks for neither and is unaffected). While
+one of the viewer's own music sessions plays on a group of speakers (live, steerable, not here), the TV player's
+transport row ends with a **Speakers** button (`PlFocus.SPEAKERS`, read from `TvSpeakers` snapshot state so the
+player composable gains no locals — R258's register limit); Select opens the panel over the player: the title, the
+rooms, *Volume* (the receiver's master) and one row per room (its level or *Muted*, *—* when it doesn't report, disabled
+with its reason when no app can reach the rooms), then *Add a speaker…* (opens the free speakers; OK adds one). ▲▼ move
+between rows, ◀▶ change the level by 5 through the server (`set_volume`, master or `cast_device_id`), OK mutes, Back
+closes and the player takes focus back; the TV remote's own volume keys are never consumed. The focused row is lit and
+ringed (R350). Strings `tv.speakers`, `tv.speakers_muted`, `tv.speakers_keys`. **The admin's *Move to…*:** the open
+row lists the owner's places that can play it (`GET /api/tv/admin/playback/sessions/{id}/targets`, the owner device's
+view) and moves it (`POST /api/tv/admin/playback/sessions/{id}/move`, made as the owner's device; a Cast place always
+by relay, since the admin page has no Cast; `here` refused). The remote's *Move to…* now ticks a receiver's place by
+its Cast device id. Not written: `MoveToSheetTest`, the Robolectric D-pad `TvSpeakersPanelTest` (the rules are covered
+by the model test), the Playwright case.
 
 **Tests:** `PlaybackSessionsTest` (+ reap → paused offline, the 24 h sweep, a move keeping its id and stopping the old
-place, a failed move, the restart → offline), `MoveToTest` (2).
+place, a failed move, the restart → offline), `MoveToTest` (3), `TvSpeakersPanelModelTest` (8), the loopback
+`SessionMoveIntegrationTest` (4: the id kept, `session_load` 2 s back, *moving to*, the old place stopped once the new
+one plays; a stale revision 409; a speaker move from the web app relayed; the admin's targets and move).
 
 **Only devices can confirm:** CAF's paused timeout on a speaker; a move Pixel → speaker → Pixel (each 2 s back); an
 unplugged speaker turning *offline · paused* within 90 s with *Play here*; a relay move from the web app.

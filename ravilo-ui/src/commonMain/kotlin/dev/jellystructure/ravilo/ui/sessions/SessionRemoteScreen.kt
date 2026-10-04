@@ -256,7 +256,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
  */
 fun moveTargets(targets: List<dev.jellystructure.shared.tv.PlaybackTarget>, v: SessionView): List<Pair<dev.jellystructure.shared.tv.PlaybackTarget, Boolean>> =
     targets.filter { it.reachable && canPlay(it.capabilities, v.kind, it.kind == "cast") }
-        .map { it to (it.id == v.target.id || (it.castDeviceId != null && it.id == v.target.id)) }
+        .map { it to (it.id == v.target.id || (it.castDeviceId != null && it.castDeviceId == v.target.castDeviceId)) }
 
 /** FR-R372-5 — the state line under the place, where the state has words of its own. */
 @Composable

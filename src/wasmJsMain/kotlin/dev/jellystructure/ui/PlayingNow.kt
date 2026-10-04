@@ -32,6 +32,8 @@ private val pnOpen = mutableSetOf<String>()
 private val pnDetails = mutableMapOf<String, dev.jellystructure.shared.tv.SessionDetail>()
 private var pnEndArmed: String? = null
 private var pnFeedback: Pair<String, String>? = null   // (session id, message) — a refused command, said on its row
+// R372 (FR-R372-2) — the owner's places, for the admin's *Move to…*.
+private val pnTargets = mutableMapOf<String, List<dev.jellystructure.shared.tv.PlaybackTarget>>()
 
 /** The section's frame; [loadPlayingNow] fills it. */
 internal fun playingNowHtml(): String = """
@@ -71,6 +73,8 @@ private fun loadDetail(scope: CoroutineScope, id: String) {
     scope.launch {
         runCatching { httpClient.get("/api/tv/admin/playback/sessions/$id").body<dev.jellystructure.shared.tv.SessionDetail>() }.getOrNull()
             ?.let { pnDetails[id] = it; paintPlayingNow(scope) }
+        runCatching { httpClient.get("/api/tv/admin/playback/sessions/$id/targets").body<dev.jellystructure.shared.tv.TargetList>() }.getOrNull()
+            ?.let { pnTargets[id] = it.targets; paintPlayingNow(scope) }
     }
 }
 
@@ -92,6 +96,34 @@ private fun pnCommand(scope: CoroutineScope, r: AdminSessionRow, body: String) {
 }
 
 private fun pnBody(op: String, rev: Long, extra: String = ""): String = "{\"op\":\"$op\",\"revision\":$rev$extra}"
+
+/** R372 (FR-R372-2) — *Move to…* from the admin: the same move as the apps', made for the owner. */
+private fun pnMove(scope: CoroutineScope, r: AdminSessionRow, targetId: String) {
+    scope.launch {
+        val body = "{\"target_id\":\"${targetId.replace("\"", "")}\",\"revision\":${pnDetails[r.id]?.session?.revision ?: r.revision}}"
+        val resp = runCatching {
+            httpClient.post("/api/tv/admin/playback/sessions/${r.id}/move") { setBody(io.ktor.http.content.TextContent(body, ContentType.Application.Json)) }
+        }.getOrNull()
+        pnFeedback = when {
+            resp == null -> r.id to "Couldn't reach the server."
+            resp.status.value == 409 -> r.id to (if ("stale" in runCatching { resp.body<String>() }.getOrDefault("")) "That changed meanwhile — redrawn." else "Can't reach that place.")
+            !resp.status.isSuccess() -> r.id to "Can't move it there (${resp.status.value})."
+            else -> null
+        }
+        loadDetail(scope, r.id)
+        paintPlayingNow(scope)
+    }
+}
+
+/** The places a session may move to from the admin: reachable, able to play its kind, not where it is (a book never casts). */
+internal fun pnMoveTargets(kind: String, currentTargetId: String, currentCastDeviceId: String?, targets: List<dev.jellystructure.shared.tv.PlaybackTarget>): List<dev.jellystructure.shared.tv.PlaybackTarget> =
+    targets.filter { t ->
+        t.reachable && t.id != currentTargetId && (currentCastDeviceId == null || t.castDeviceId != currentCastDeviceId) && when (kind) {
+            "film", "episode" -> t.capabilities.video
+            "audiobook" -> t.kind != "cast" && t.capabilities.book
+            else -> t.capabilities.audio
+        }
+    }
 
 /** 304b — the remote inside an open row: only the ops the target obeys (absent, never greyed). */
 private fun pnRemote(r: AdminSessionRow): String {
@@ -124,7 +156,13 @@ private fun pnRemote(r: AdminSessionRow): String {
             }
     } else ""
     val note = pnFeedback?.takeIf { it.first == r.id }?.let { "<div class=\"tiny\" style=\"color:var(--bad);margin-top:6px\">${it.second.esc()}</div>" } ?: ""
-    return "<div class=\"ses-h\">Remote</div><div class=\"ses-ctl\">${btn("previous", "⏮")}$play${btn("next", "⏭")}$seek$end</div>$note$vol$queue"
+    // R372 (FR-R372-2) — *Move to…*: the owner's places that can play it; a busy one says who is on it.
+    val moveTo = pnMoveTargets(r.kind, r.targetId, pnDetails[r.id]?.session?.target?.castDeviceId, pnTargets[r.id].orEmpty()).takeIf { it.isNotEmpty() && pnDetails[r.id]?.session?.movingTo == null }?.let { ts ->
+        "<div class=\"ses-h\">Move to…</div><div class=\"ses-ctl\"><select data-move-sel=\"${r.id.esc()}\">" +
+            ts.joinToString("") { t -> "<option value=\"${t.id.esc()}\">${t.name.esc()}${t.busy?.let { b -> " · busy (${b.owner.name.esc()})" } ?: ""}</option>" } +
+            "</select><button class=\"btn sm ghost\" data-move=\"${r.id.esc()}\">Move</button></div>"
+    } ?: pnDetails[r.id]?.session?.movingTo?.let { "<div class=\"tiny muted\" style=\"margin-top:6px\">Moving to ${it.esc()}…</div>" } ?: ""
+    return "<div class=\"ses-h\">Remote</div><div class=\"ses-ctl\">${btn("previous", "⏮")}$play${btn("next", "⏭")}$seek$end</div>$note$vol$moveTo$queue"
 }
 
 private fun pnNowMs(): Double = js("Date.now()")
@@ -237,6 +275,21 @@ private fun paintPlayingNow(scope: CoroutineScope) {
                 val op = b.getAttribute("data-op") ?: return@addEventListener
                 pnEndArmed = null
                 pnCommand(scope, r, pnBody(op, pnDetails[r.id]?.session?.revision ?: r.revision, b.getAttribute("data-extra").orEmpty()))
+            })
+        }
+    }
+    el.querySelectorAll("[data-move-sel]").let { ss ->
+        for (i in 0 until ss.length) (ss.item(i) as? HTMLElement)?.addEventListener("click", { ev -> ev.stopPropagation() })
+    }
+    el.querySelectorAll("[data-move]").let { bs ->
+        for (i in 0 until bs.length) {
+            val b = bs.item(i) as? HTMLElement ?: continue
+            b.addEventListener("click", { ev ->
+                ev.stopPropagation()
+                val id = b.getAttribute("data-move") ?: return@addEventListener
+                val r = rowOf(id) ?: return@addEventListener
+                val sel = el.querySelector("[data-move-sel=\"$id\"]") as? org.w3c.dom.HTMLSelectElement ?: return@addEventListener
+                pnMove(scope, r, sel.value)
             })
         }
     }

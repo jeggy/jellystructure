@@ -26,6 +26,7 @@ private object SilentSqliteLogger : co.touchlab.sqliter.interop.Logger {
 private lateinit var rawDriver: SqlDriver
 
 fun createDatabase(dbFile: String): JellystructureDb {
+    closeOrphanedDatabases()
     val parentDir = dbFile.substringBeforeLast('/', missingDelimiterValue = "")
     val filename = dbFile.substringAfterLast('/')
     if (parentDir.isNotEmpty()) {
@@ -94,6 +95,7 @@ fun createDatabase(dbFile: String): JellystructureDb {
     )
     val driver = NativeSqliteDriver(config, maxReaderConnections = 4)
     rawDriver = driver
+    openDrivers += dbFile to driver
     val db = JellystructureDb(driver)
     // Security fix (2026-08-02 review, finding M7) — jellystructure.db holds every live admin session
     // token IN PLAINTEXT (directly replayable as a cookie — unlike API keys, which are hashed) and
@@ -112,6 +114,24 @@ fun createDatabase(dbFile: String): JellystructureDb {
  * table with the loopback servers the integration tests run: a suite that leaks dozens of them starves those.
  */
 internal fun closeLastDatabaseForTests() { runCatching { rawDriver.close() } }
+
+/** Every database this process opened, by path (one in production; one per test in the test binary). */
+private val openDrivers = mutableListOf<Pair<String, NativeSqliteDriver>>()
+
+/**
+ * A database whose file is gone (a test deleted it in its teardown) can never be used again: close its driver before
+ * opening another. Without this the test binary held ~1 000 descriptors to unlinked files by the end of the suite, and
+ * the loopback integration tests' sockets ran into Kotlin/Native's FD_SETSIZE (1024) `select()` limit. In production the
+ * one database file is never deleted, so this closes nothing.
+ */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun closeOrphanedDatabases() {
+    val gone = openDrivers.filter { (path, _) -> platform.posix.access(path, platform.posix.F_OK) != 0 }
+    for ((path, d) in gone) {
+        runCatching { d.close() }
+        openDrivers.removeAll { it.first == path && it.second === d }
+    }
+}
 
 /**
  * Live bug found in production logs (2026-08-25) — this has been broken since it was introduced (Phase

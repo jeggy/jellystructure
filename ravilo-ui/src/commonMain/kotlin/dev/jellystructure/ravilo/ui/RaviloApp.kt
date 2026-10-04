@@ -547,7 +547,8 @@ fun RaviloApp(
                     // R368 (dev review item 2) — the phone, the computer and the web app opt into session events; the TV
                     // does not (FR-R368-10), and an installed app without this never receives one.
                     // R369 — every app obeys `session_command` (`session_control`); the TV declares only that (a place).
-                    features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true)),
+                    features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true,
+                        groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null)),
                     onSessionList = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onList(it) },
                     onSessionState = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onState(it) },
                     onSessionCommand = { text ->
@@ -1328,13 +1329,23 @@ fun RaviloApp(
                     val g = dev.jellystructure.ravilo.ui.seams.platformGroupController()
                     val room = c.castDeviceId
                     if (g == null || room == null) { println("R371: no routing controller for ${c.op}"); return@collect }
-                    when (c.op) {
-                        "add_room" -> g.add(room)
-                        "remove_room" -> g.remove(room)
-                        "set_volume" -> g.setRoomVolume(room, c.level ?: return@collect)
+                    val apply = {
+                        when (c.op) {
+                            "add_room" -> g.add(room)
+                            "remove_room" -> g.remove(room)
+                            "set_volume" -> c.level?.let { g.setRoomVolume(room, it) }
+                        }
+                        val item = dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId ?: castController.sender.status.value?.itemId
+                        item?.let { dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(it, g.members())) }
+                        Unit
                     }
-                    dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId?.let { item ->
-                        dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, g.members()))
+                    // A relay that holds no link joins the session's Cast device first (relaying: it mirrors nothing),
+                    // then acts — and keeps the link, so the next room op is immediate.
+                    when (dev.jellystructure.ravilo.ui.seams.roomOpJoinPlan(castController.sender.link.value, castController.connectedDeviceKey(), env.placeCastDeviceId,
+                        env.placeCastDeviceId != null && castController.routes.value.any { it.deviceKey == env.placeCastDeviceId })) {
+                        dev.jellystructure.ravilo.ui.seams.RoomJoin.ACT -> apply()
+                        dev.jellystructure.ravilo.ui.seams.RoomJoin.JOIN -> castController.joinForRooms(env.placeCastDeviceId!!, apply)
+                        dev.jellystructure.ravilo.ui.seams.RoomJoin.CANNOT -> println("R371: cannot reach ${env.placeCastDeviceId} for ${c.op}")
                     }
                     return@collect
                 }
@@ -1403,6 +1414,8 @@ fun RaviloApp(
             castController.sender.link.collect { link ->
                 // R372 — a move's own LOAD: this app keeps the link (it is the mover).
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.moveLoaded()?.let { castController.sender.load(it) }
+                // R371 — a relay joined for a room op: act now that the link is up.
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.roomOpReady()?.invoke()
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.relayLoaded()?.let { load ->
                     castController.sender.load(load)
                     launch {
@@ -1450,9 +1463,34 @@ fun RaviloApp(
                 ))
             }
         }
+        // R370 (FR-R370-4) — Play pressed while the same kind plays for this viewer elsewhere asks first, every time.
+        var sameKindAsk by remember { mutableStateOf<dev.jellystructure.ravilo.ui.sessions.SameKindAsk?>(null) }
+        fun playOrAsk(kind: String, itemId: String, title: String, here: () -> Unit) {
+            val other = dev.jellystructure.ravilo.ui.sessions.sameKindAskFor(dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions, kind, isTvPlatform)
+            if (other == null || castController.connected) here()
+            else sameKindAsk = dev.jellystructure.ravilo.ui.sessions.SameKindAsk(other, kind, itemId, title, here)
+        }
+        fun playThere(a: dev.jellystructure.ravilo.ui.sessions.SameKindAsk) {
+            sameKindAsk = null
+            dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(dev.jellystructure.ravilo.ui.sessions.sameKindStartRequest(a), onStarted = { r ->
+                val castId = r.castDeviceId
+                val sid = r.session?.id
+                if (r.loadHere && castId != null && sid != null) castController.startLoad(castId, sid, a.itemId, a.title, null, null, null, lang)
+                r.session?.let { s -> push(Dest.SessionRemote(s.id, destDisplayName(stack.lastOrNull()))) }
+            }, onRefused = { reason -> println("R370: play there refused: $reason"); a.playHere() })
+        }
+
         /** R369 — the remote's extra parts; R371 (volume) and R372 (Move to…, Play here) fill them. */
         @Composable fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras(
-            volume = { d -> dev.jellystructure.ravilo.ui.sessions.SessionVolumePanel(d) },   // R371
+            // R371 — and removing the group's first room moves the session to the next one (a Cast device this app sees is
+            // its own LOAD, as *Move to…*).
+            volume = { d ->
+                dev.jellystructure.ravilo.ui.sessions.SessionVolumePanel(d) { castId ->
+                    dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(d.session.id, "cast:$castId") { cid, startMs ->
+                        castController.moveLoad(cid, d.session.id, dev.jellystructure.ravilo.ui.sessions.SessionRemote.detail.value, startMs, lang)
+                    }
+                }
+            },
             // R372 (FR-R372-2) — *Move to…*: through the server; a Cast device this app sees is its own LOAD.
             onMoveTo = { s, t ->
                 dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(s.id, if (t.here) "here" else t.id) { castId, startMs ->
@@ -2174,7 +2212,7 @@ fun RaviloApp(
                     itemId = dest.itemId,
                     store = store,
                     onBack = { pop() },
-                    onPlay = { detail ->
+                    onPlay = { detail -> playOrAsk("film", detail.card.id, detail.card.title) {
                         // R245 (FR-R245-4) — while a cast session is connected, Play casts; the server
                         // resolves the resume position exactly as it does for a TV.
                         if (castActive?.connected == true) {
@@ -2194,7 +2232,7 @@ fun RaviloApp(
                             posterUrl = detail.card.posterUrl,  // R192
                             logoUrl = detail.logoUrl, logoInk = detail.logoInk,  // R303 — a film shows its own logo, no name fallback
                         ))
-                    },
+                    } },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     onCastSelect = { person, sourceTitle -> openPersonBrowse(person, sourceTitle, dest.displayName) },
                     onGenreSelect = { genres, sourceTitle -> openGenreBrowse(genres, sourceTitle, dest.displayName) },
@@ -2218,7 +2256,7 @@ fun RaviloApp(
                     itemId = dest.itemId,
                     store = store,
                     onBack = { pop() },
-                    onPlay = { ctx ->
+                    onPlay = { ctx -> playOrAsk("episode", ctx.episodeId, ctx.episodeTitle) {
                         if (castActive?.connected == true) {
                             // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself.
                             castActive.cast(
@@ -2230,7 +2268,7 @@ fun RaviloApp(
                             )
                             push(Dest.CastRemote(dest.displayName))
                         } else push(playerDestFor(ctx, dest.displayName))
-                    },
+                    } },
                     // R343 (FR-R343-5/8) — Shuffle: the whole order, here or on the connected TV (which plays the same order).
                     onShuffle = { plan ->
                         val first = plan.first()
@@ -2871,6 +2909,28 @@ fun RaviloApp(
         // bar AND the cast mini bar (drawn before it here, the mini bar sat on top of the open sheet — seen
         // on the Pixel 9). Every cast glyph only asks for it (CastController.openSheet).
         castActive?.let { CastSheetHost(it) }
+        // R372 (FR-R372-6, owner decision 3) — the TV's Speakers panel: the player's button follows the viewer's group
+        // session (the TV reads the session list since R372), and the panel closes with the player.
+        if (isTvPlatform) {
+            LaunchedEffect(Unit) {
+                dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.collect { s ->
+                    val t = dev.jellystructure.ravilo.ui.screens.tvSpeakersSession(s.sessions)
+                    dev.jellystructure.ravilo.ui.screens.TvSpeakers.sessionId = t?.id
+                    dev.jellystructure.ravilo.ui.screens.TvSpeakers.available = t != null
+                    if (t == null) dev.jellystructure.ravilo.ui.screens.TvSpeakers.open = false
+                }
+            }
+            LaunchedEffect(stack.lastOrNull()) { if (stack.lastOrNull() !is Dest.Player) dev.jellystructure.ravilo.ui.screens.TvSpeakers.open = false }
+            dev.jellystructure.ravilo.ui.screens.TvSpeakersPanelHost()
+        }
+        // R370 (FR-R370-4) — the same-kind ask, over every screen.
+        sameKindAsk.let { a ->
+            dev.jellystructure.ravilo.ui.screens.HandsetSheet(visible = a != null, onDismiss = { sameKindAsk = null }) {
+                if (a != null) dev.jellystructure.ravilo.ui.sessions.SameKindAskBody(a,
+                    playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
+                    onThere = { playThere(a) }, onHere = { sameKindAsk = null; a.playHere() })
+            }
+        }
         // R270 (FR-R270-2) — the AirPlay caveat, once, when the picture moves to the TV (web only).
         AirPlayNoticeBar()
         // R261 — see the profile-menu comment above; the overlay itself has no inset awareness of its

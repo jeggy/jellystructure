@@ -180,7 +180,7 @@ private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
-internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
+internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK, SPEAKERS }   // R372 — SPEAKERS
 
 /** R251 — the five D-pad keys the chrome-hidden rule applies to (media keys are not among them, R44). */
 internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
@@ -247,11 +247,12 @@ private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 // the top-left Back button, which read as "Right does Up" instead of a no-op at the row's end. BACK
 // stays reachable via mouse/touch hover (onControlHover sets `focus` directly, independent of this
 // list) and via the hardware Back key (root onBack), which is the primary D-pad way to leave anyway.
-internal fun transportOrder(hasNextEp: Boolean): List<PlFocus> =
+internal fun transportOrder(hasNextEp: Boolean, hasSpeakers: Boolean = false): List<PlFocus> =
     buildList {
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
+        if (hasSpeakers) add(PlFocus.SPEAKERS)   // R372 (owner decision 3) — the TV's Speakers panel, last in the row
     }
 
 // R157 (FR-R157-2.2) — hoverable()/HoverInteraction is cross-platform commonMain, unlike the
@@ -1529,7 +1530,8 @@ fun PlayerScreen(
     // ─── Key handling ────────────────────────────────────────────────────────
 
     val playerFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { playerFR.requestFocus() }
+    // R372 — and again when the TV's Speakers panel closes over it.
+    LaunchedEffect(Unit) { androidx.compose.runtime.snapshotFlow { TvSpeakers.open }.collect { if (!it) runCatching { playerFR.requestFocus() } } }
 
     // R260 (FR-R260-1) — hoisted so the TV remote/keyboard entrance (dpadFocusable's onBack below) and
     // the phone's gesture/button entrance (playerBackGesture — Android's system back never arrives as
@@ -1586,7 +1588,7 @@ fun PlayerScreen(
                         // R363 (review item 3) — Left/Right on the pill do nothing (it is not in the order).
                         focus == PlFocus.SKIP_INTRO -> {}
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null)
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available)
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -1607,7 +1609,7 @@ fun PlayerScreen(
                         }
                         focus == PlFocus.SKIP_INTRO -> {}   // R363 (review item 3)
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null)
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available)
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -1708,6 +1710,7 @@ fun PlayerScreen(
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
+                        focus == PlFocus.SPEAKERS  -> TvSpeakers.open = true
                         focus == PlFocus.BACK      -> onBack()
                         else -> {}
                     }
@@ -2000,6 +2003,7 @@ fun PlayerScreen(
                 isPlaying       = isPlaying,
                 focus           = focus,
                 hasNextEp       = resolvedNextEpisodeId != null,
+                hasSpeakers     = TvSpeakers.available,   // R372 — snapshot state, no new locals here (R258's register limit)
                 isSeries        = episodes != null,
                 epRailOpen      = epRailOpen,
                 pickerOpen      = pickerOpen,
@@ -2024,6 +2028,7 @@ fun PlayerScreen(
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         PlFocus.NEXT_EP   -> advanceNext()
+                        PlFocus.SPEAKERS  -> TvSpeakers.open = true
                         else -> {}
                     }
                 },
@@ -2235,6 +2240,7 @@ private fun PlayerChrome(
     isPlaying: Boolean,
     focus: PlFocus,
     hasNextEp: Boolean,
+    hasSpeakers: Boolean = false,
     isSeries: Boolean,
     epRailOpen: Boolean,
     pickerOpen: Boolean,
@@ -2379,6 +2385,11 @@ private fun PlayerChrome(
                     label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP,
                     onClick = { onControlClick(PlFocus.NEXT_EP) },
                     onHover = { onControlHover(PlFocus.NEXT_EP) },
+                )
+                if (hasSpeakers) TrackButton(
+                    label = str("tv.speakers"), focused = focus == PlFocus.SPEAKERS,
+                    onClick = { onControlClick(PlFocus.SPEAKERS) },
+                    onHover = { onControlHover(PlFocus.SPEAKERS) },
                 )
             }
 

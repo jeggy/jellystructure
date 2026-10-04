@@ -21,6 +21,12 @@ class MoveToTest {
         assertEquals(listOf("tv"), moveTargets(listOf(tv, speaker), v("film", "pixel")).map { it.first.id })
     }
 
+    @Test fun `a receiver's session ticks its Cast device by the device's own id`() {
+        val onReceiver = SessionView("s", 1, SessionOwner("u", "Anna"), mine = true, kind = "music",
+            target = SessionTarget("cast", "rx-1", "Office", "speaker", castDeviceId = "a"), state = "playing")
+        assertEquals(listOf("tv" to false, "cast:a" to true), moveTargets(listOf(tv, speaker), onReceiver).map { it.first.id to it.second })
+    }
+
     @Test fun `every move rewinds 2 s and never below 0`() {
         assertEquals(2_888_000, moveStartMs(2_890_000))
         assertEquals(0, moveStartMs(900))

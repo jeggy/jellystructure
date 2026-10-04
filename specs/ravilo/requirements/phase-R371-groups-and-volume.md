@@ -327,13 +327,25 @@ volume*, *Add a speaker…* (one tap, no confirm, stays open; disabled with *No 
 speakers*). The admin row gets the same sliders. Strings `group.add_speaker`, `group.left`, `volume.no_report`,
 `group.no_reach` (`volume.master` reuses `cast.volume`).
 
-**⚠ Partial:** (1) a relay app that does not already hold the session's link does not join it to act on a room (owner
-decision 1's "which then holds the link"); (2) the desktop's direct road waits on the speaker test; (3) removing the
-first room is planned as a move (`removeRoomPlan`) but the remote's × sends `remove_room` as is; (4) the phone's own
-Now playing ⋯ Speakers sheet is unchanged — *Add a speaker…* is in the session remote. MediaRouter2's route ids are
-matched to Cast device ids by the id's tail or the name; only a device session confirms it.
+**Completed 2026-10-05:** (1) **the relay joins the link.** An app whose platform can group declares
+`group_control` on its events socket (Android 11+, where `platformGroupController()` exists); the server sends a room
+op only to such an app — the link holder if it declared it, else a relay app on that network that sees the device —
+and names the session's Cast device in the envelope (`place_cast_device_id`). A relay with no link selects that route
+(joining the running receiver, `MusicCast.relaying` so it mirrors nothing), acts once connected, and keeps the link so
+the next room op is immediate (`roomOpJoinPlan`: act · join · cannot; `CastController.joinForRooms`). (2) **The
+desktop goes through the relay** — its Cast stack is a plain CASTV2 sender, which cannot form a multi-room group (that
+is the Cast SDK's routing controller on Android, and Google's own apps); it declares no `group_control`, so a room op on
+a session the Mac or Linux app cast goes to an Android app on that network, and with none the rooms are disabled with
+*No phone or computer nearby can reach the speakers* while the master still works. (3) **Removing the first room is a
+move** to the next room (`removeRoomPlan` in the remote's ×: R372's *Move to*, the session keeps its id; the last room's
+× stops the session; any other room is deselected). (4) unchanged: the phone's own Now playing ⋯ Speakers sheet;
+*Add a speaker…* lives in the session remote. MediaRouter2's route ids are matched to Cast device ids by the id's tail
+or the name; only a device session confirms it.
 
-**Tests:** `SessionCommandRuleTest` (room routing, room ops, `roomsDiff`, `roomOps`), `GroupRulesTest` (11).
+**Tests:** `SessionCommandRuleTest` (room routing, room ops, `roomsDiff`, `roomOps`), `GroupRulesTest` (11),
+`RoomJoinPlanTest` (5), the loopback `SessionRoomsIntegrationTest` (4: the master to the receiver; `add_room` to a
+`group_control` link holder and its members report reaching the controllers; a link holder that cannot group hands the
+op to the relay with `place_cast_device_id`; nobody ⇒ 409 and no room ops offered, the master still works).
 
 **Only real speakers can confirm:** building the group from the Pixel; Cast's group volume scaling; a room unplugged;
 the desktop road.

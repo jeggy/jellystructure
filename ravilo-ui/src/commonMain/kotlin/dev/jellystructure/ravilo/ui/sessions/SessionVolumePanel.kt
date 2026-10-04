@@ -47,7 +47,7 @@ import dev.jellystructure.shared.tv.SessionDetail
  * server: the master to the receiver, a room to the app holding the session's Cast link or a relay app.
  */
 @Composable
-fun SessionVolumePanel(d: SessionDetail) {
+fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -> Unit)? = null) {
     val colors = RaviloTheme.colors
     val v = d.session
     val roomsReachable = "room_volume" in d.ops
@@ -74,7 +74,15 @@ fun SessionVolumePanel(d: SessionDetail) {
                         SessionRemote.command(v.id, SessionCommandRequest(op = "set_mute", muted = !row.muted, castDeviceId = row.castDeviceId))
                     }, contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.VOLUME, if (row.muted) colors.textDim else colors.text, 18.dp) }
                     if ("remove_room" in d.ops) Box(Modifier.size(40.dp).clip(CircleShape).clickable {
-                        SessionRemote.command(v.id, SessionCommandRequest(op = "remove_room", castDeviceId = row.castDeviceId))
+                        // R371 (review item 10) — the first room leads the group: dropping it is a *Move to* the next room
+                        // (R372); the last room stops the session; any other room is deselected.
+                        when (val p = dev.jellystructure.ravilo.ui.seams.removeRoomPlan(v.rooms, row.castDeviceId ?: return@clickable)) {
+                            is dev.jellystructure.ravilo.ui.seams.RoomRemoval.Deselect ->
+                                SessionRemote.command(v.id, SessionCommandRequest(op = "remove_room", castDeviceId = p.castDeviceId))
+                            is dev.jellystructure.ravilo.ui.seams.RoomRemoval.MoveTo ->
+                                onMoveToRoom?.invoke(p.castDeviceId) ?: SessionRemote.move(v.id, "cast:${p.castDeviceId}")
+                            dev.jellystructure.ravilo.ui.seams.RoomRemoval.Stop -> SessionRemote.command(v.id, SessionCommandRequest(op = "stop"))
+                        }
                     }.testTag("session-room-remove-${row.castDeviceId}"), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.CLOSE, colors.textDim, 16.dp) }
                 }
             }
