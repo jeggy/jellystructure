@@ -7,7 +7,7 @@
 
 ## Status
 
-`Planned` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · not built · pending export. Written
+`✓ Built 2026-10-05` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · built (see Build notes) · pending export. Written
 2026-10-04 (design-authored) from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` (owner decided §A on 10-03 and §G on 10-04) and the
 mockups built from it:
@@ -572,3 +572,68 @@ items; item 11 is for the owner.
    must re-encode it does **not** rank it lower. (The dev review's lean is declined.)
 3. **The edition's name:** MusicBrainz's own title or disambiguation as it is (*super deluxe*, *20th Anniversary*);
    else the country in the viewer's language (*Extras · Japan*); else *Extras*.
+
+
+## Build notes
+
+**Built 2026-10-05** as one build covering 305a, 305b and 305c (they share the song index and the album page, so they
+landed together). Not deployed; no real-library run yet.
+
+**305a — official tracklists.** `MusicBrainzClient.releasesOf` now pages `status=official` browses (`limit=100`,
+offset by what came back, until `release-count`; an empty page stops; a failed later page answers null), which also
+fixes Find match…'s 25-pressing cap (item 12). A group with no official pressing falls back to the old single
+unfiltered page, so a bootleg-only match still works. `MbRelease`/`MbRecording.video`/`MbRelation.releaseGroup`/
+`release-count` decoded; `releaseGroup()` asks for `release-group-rels`. Pure `MusicOfficial` (`music/MusicOfficial.kt`):
+the vote on the recording-id **set** (video media and video recordings dropped, ties → smaller set → earliest), extras,
+gaps, numbering (`n` or `disc·track`), the edition name (owner decision 3: title ≠ group's → disambiguation → country
+code → nothing), first pressings, *against the official*. The lists ride the album JSON (`official`, `userOfficial`,
+`extraOrigins`, `singleFrom`, `relsReadAt`); read in `match_musicbrainz`'s catch-up (`readEditions`, also for locked
+albums; an `all` run re-reads locked ones, unlocked ones are re-read by their match) and after every `applyMatch`.
+The owner's pick: `GET /album/{id}/releases?official=1` (every pressing, `pickable`, *+ N not in the library*),
+`PUT|DELETE /album/{id}/official`; a re-match to another group or *Clear match* drops it with a History line.
+`BitDepth` is read from Jellyfin and carried as a Jellyfin-owned field (next scan fills it). The album page DTO is
+built by the pure `MusicAlbumPage.build`.
+
+**305b — single homes.** `MusicSingleHome.resolve`: *single from* → a remix (with the hop through the held single the
+remix points at) → by title (singles only, ≤ 2 years, same artist by MBID else Jellyfin id) → the owner's *Move to…*
+(`PUT|DELETE /album/{id}/home`, `null` = *No album*). B-sides exclude any track folding into one of the album's songs
+and the A-side when its base title is an album song's. The artist page drops homed singles from whichever group held
+them and gains `singles_under`.
+
+**305c — one copy of every song.** `compare_songs` (`MusicCompareSongsStep`, `music/MusicCompareStep.kt`): whole-song fingerprints (`fpcalc -raw -length 0` through
+`ProcessGate`, the step runs under the background class) cached at `fingerprints/music/<track>-<size>-<mtime>.json`;
+candidate pairs = same artist + same base title, not already one recording, not decided; scored by
+`MusicSoundMatch` (±10 s, BER ≤ 0.15, coverage ≥ 0.95 — the dev review's measured rule; the threshold is a constant
+to re-check on the household's 4 joins and 3 suggestions). `compare_songs` is seeded straight after
+`match_musicbrainz` and is in the built-in pipeline; the wasm pipeline dialog and Activity name it. `MusicSongIndex`
+(lazy on the snapshot): keyOf groups ∪ sound joins (one side untrusted) ∪ the owner's *same*, minus *not the same*
+(the lower-ranked copy of the pair leaves every automatic group — what the panel's button names); trusted-and-different
+pairs that sound alike are suggestions. `MusicCopyRank`: bitrate, bit depth, sample rate, then album · extra · single ·
+compilation/box · live, then earliest added (owner decision 2; re-encoding does not demote). Bonus on a folded row =
+some copy is an extra and no copy is official (owner decision 1). Library → Songs folds (`copies=all` lists every file;
+a Dashboard key always does, so 293's counts hold); `GET /track/{id}/copies`, `PUT /same-song`,
+`GET /same-song/suggestions`; Dashboard row `music_same_songs` (info, unit *pair*, fix here, `opens = same_songs`).
+
+**Migration 66** (`66.sqm` + `MusicEditions.sq`): `music_official_pick`, `music_single_home`, `music_same_song`,
+`music_sound_pair`. ⚠ Another branch may also take 66 — renumber on merge if so.
+
+**Admin (wasm):** `ui/MusicEditionsUi.kt` + edits to `MusicAlbum.kt`, `MusicLibrary.kt`, `MusicArtist.kt`,
+`Dashboard.kt`, `api/MusicApi.kt`; `design/app/editions.css` is now served (`build.gradle.kts`, `index.html`).
+*Show every copy* is remembered in `js-music-copies`.
+
+**Tests** (`src/linuxX64Test/kotlin/dev/jellystructure/music/`, all green): `MusicOfficialTest`, `MusicExtrasTest`,
+`MusicEditionNameTest`, `MusicCopyRankTest`, `MusicSongIndexTest`, `MusicSingleHomeTest`, `MusicSoundMatchTest`,
+`MusicPairCandidatesTest`, `MusicBrainzEditionsClientTest` (loopback MusicBrainz, `MbEditionsFixtures.kt`),
+`MusicEditionsCatchUpTest`, `MusicEditionsStoreTest` (incl. the one-version-old upgrade), `MusicIngestTest` (bit depth),
+`MusicFingerprintCacheTest`, `MusicCompareSongsTest` (background class asserted), `MusicAlbumPageTest`,
+`MusicOfficialPickTest`, `MusicEditionsRoutesTest` (`testApplication`), `MusicSongFoldTest`, `MusicTriageTest`
+(folded WMA still counted), `MusicSameSongDashboardTest`, `MusicSingleHomeStoreTest`, `MusicTvSongCopyTest` (loopback
+Jellyfin: one `DELETE` per favourited copy), plus the existing music tests (`MusicMatchTest`'s seed test now includes
+`compare_songs`). Stand-in data in `EditionsFixture.kt`. Leans taken: Chromaprint rule as the dev review measured;
+an unknown bitrate ranks below every known one; a pressing whose extras aren't held is listed, not pickable.
+
+**Only the real library can confirm** (needs the owner's go-ahead for a dev-stack run): the household's numbers
+(487 → 385 songs, 102 copies, 3 suggestions; extras 1·1·12·1·10; 43 of 49 singles homed; B-sides), that the three
+26/27/30-pressing albums list fully, that the threshold makes exactly the 4 audio joins and 3 suggestions, and that the
+first `compare_songs` run takes minutes and the second is near-instant. The *Listen and decide* players start at the
+same second only as far as Jellyfin's direct stream allows a `currentTime` seek.

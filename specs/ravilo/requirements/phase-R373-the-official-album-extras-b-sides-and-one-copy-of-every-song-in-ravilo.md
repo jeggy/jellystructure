@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · not built · pending export. Written
+`✓ Built 2026-10-05` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · built (see Build notes) · pending export. Written
 2026-10-04 (design-authored) beside **admin 305**, from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` and the mockups:
 - `design/ravilo/mobile/ravilo-editions.js` (`window.RaviloEditions`), used by `Ravilo Mobile.html` (`re-*` in
@@ -292,3 +292,47 @@ The owner questions are 305's Q-A and Q-C (they decide what this page says), plu
 Follows 305's decisions: *Bonus* only when the song is official nowhere; the copy shown is the highest bitrate
 (re-encoding doesn't lower it); the extras section is named from MusicBrainz, else the country in the viewer's
 language, else *Extras*. The ▾ pick stays per device.
+
+
+## Build notes
+
+**Built 2026-10-05**, on 305's server side (same branch). Not deployed; no device run.
+
+**The wire (FR-R373-1 as the dev review reshaped it).** Optional fields only: `MusicAlbumDetail.official_ids`
+(null = unmatched, today's page) · `extra_ids` · `edition_title` / `edition_country` · `singles` (held album cards,
+year order) · `bside_tracks` (full items; `album`/`album_id` name the single) · `single_from`; `MusicTrackItem.extra`
+and `also_on`; `MusicArtistDetail.singles_under`; new `MusicTrackCopies` answered by `GET /tv/music/track/{id}/copies`
+(checked with the viewer's libraries) and added to `WireRoots` via `scripts/wire_roots.py` — the next
+`record-wire-baseline.sh` records it. `tracks` keeps the files' order, so an installed app shows today's page.
+`MusicTvService` folds Browse → Songs, search's songs, an artist's top songs, Listen's *Recently played* and the
+empty search's recent songs per viewer (the best copy this viewer may open; the hidden library's copy is neither shown
+nor counted), sums play counts, and treats a song as a favourite when any copy is; un-favouriting fans out to every
+favourited copy (`MusicTvService.setFavorite`, used by `/tv/music/favorite`). An album's tracks, a playlist and
+`last-played` never fold. *More from* leaves out the singles homed on the album.
+
+**The app.** `music/AlbumEditions.kt` (pure: `albumQueue`, `queueForTap`, `headerLengthMs`, `effectivePick`,
+`editionLabel`); `AlbumPickStore` in `MusicDeviceStore` (key `album_pick`, per device, cleared by
+`forgetListening()`); `MusicAlbumScreen` (phone and desktop branches) with the split *Play album ▾* / *Shuffle ▾*
+(the menu picks, remembers, relabels and starts playback; Shuffle follows the pick), the header's *+ N extra(s)*, the
+*Extras · {edition}* divider, unnumbered extras without Bonus, *Singles & B-sides* cards and the *{n} B-sides · Show*
+fold, *Single from …* on a single's page; a new `onPlayQueue` parameter (defaults to `MusicPlayback.playQueue`).
+FR-R373-6 (amends R344 FR-R344-3 and R352 FR-R352-1): `TitleThenChips` puts the version chips and Bonus at the
+row's right on a phone (chips fold first, then the title ellipsizes; Bonus is never cut); the desktop's `TrackRow` has a
+fixed 188 dp chip column before the length; the desktop queue panel uses `TitleThenChips`; Now playing shows Bonus
+after its chips. `BonusChip` has no hue (the theme's secondary text on a neutral fill). *Also on* ends the song's ⋯
+sheet (phone sheet and the desktop's dialog — the same component) through `TvApiClient.getMusicCopies`; nothing is
+asked when `also_on` is 0. The artist page draws the *{n} singles live under their album — …* line, each album
+tappable. Strings `ed.*` and a new `country.*` table (19 codes) × en/da/fo in `i18n/*.json` (da/fo drafts;
+`check-ravilo-strings.sh` and `check-i18n-spelling.sh` green).
+
+**Tests.** Shared: `MusicEditionsWireTest`, `WireCompatTest` green. Server: `MusicTvEditionsTest` (11) and
+`MusicTvSongCopyTest` (3). App, pure: `AlbumPlayOrderTest`, `EditionLabelTest`, `VersionChipsTest` (+2). App,
+Robolectric: `AlbumPickStoreTest`, `MusicAlbumEditionsTest` (phone and desktop), `TrackRowChipsTest`,
+`SongSheetAlsoOnTest`, `MusicArtistEditionsTest`. Not written: the mini bar / Now playing chip tests (both draw from
+private composables; the mini bar draws no chips, dev review 10). `SongSheetAlsoOnTest` opens a release through the
+row's click semantics — an injected touch on a row inside the Robolectric sheet did not land; a device should confirm
+the tap.
+
+**Only devices can confirm:** the Pixel and the Mac showing the folded counts and the real albums' extras and
+B-sides; an installed older app showing today's album page against the new server; *Play album + extras* cast to a
+speaker the owner allows (R359's long-queue split); the chips lining up on the Mac's Songs table at Large and Medium.
