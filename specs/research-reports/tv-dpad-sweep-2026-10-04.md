@@ -39,6 +39,26 @@ installed sideload) and AOT-compiled. Every finding below was re-checked on 1.49
 - Settings: every row reachable top to bottom.
 - Back from a title to a Movies grid whose title survives restores the tile.
 
+## Open question for the owner: what comes next after an episode you finish
+
+**Seen (2026-10-04, 10:52):** a series was in progress at S03E14 (Continue Watching showed it). Finishing S03E14
+(play to the end) made Continue Watching and the series page's primary button jump to **S06E07 — an episode half
+watched in August** — instead of **S03E15**, the episode after the one just finished. Jellyfin's own
+`/Shows/NextUp` answers S06E07 too.
+
+**Why:** since R343 FR-R343-6 (owner, 2026-10-01) *"there is no in-order pointer of our own — Jellyfin's tracking
+decides"*. Jellyfin's Next Up follows the **furthest** episode ever watched (by season/episode number), not the one
+watched **last**; S06E06 was watched in August, so S06E07 wins, and its old resume point makes it an "in progress"
+pick as well. Anyone re-watching an earlier season, or watching out of order (kids do), is pulled forward to wherever
+they once got to.
+
+**Options to talk about:** (a) keep Jellyfin's rule (today); (b) after a finish, the next episode **in order after
+the last one played** wins over Jellyfin's Next Up — the pointer R343 dropped, or computed from `LastPlayedDate`
+with no table of our own; (c) Jellyfin's *Enable rewatching in Next Up* (`enableRewatching`) where it helps. No spec
+until decided.
+
+(The S03E14 finish was this test's; its progress was put back afterwards — unwatched at 6:05, play count 3. A later credits-card test replayed the already-watched S03E08, whose new *last played* date again made Next Up win over Resume (`HomeFeedService`: a finish newer than the resume point picks Next Up); its date was set back to mid-September and Continue Watching shows S03E14 again.)
+
 ## Side effects left on the household account
 
 Each change was put back: three films marked watched then un-marked, one film un-marked then marked again, a

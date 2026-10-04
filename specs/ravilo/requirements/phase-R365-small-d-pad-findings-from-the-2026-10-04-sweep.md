@@ -57,6 +57,26 @@ leaves from where the viewer can see.
 Networks" · 4 titles*.
 **Requirement:** when a breadcrumb is shown, the subtitle carries only the count (*4 titles*).
 
+### FR-R365-8 — Scrubbing moves the handle, not only a hairline
+**Seen:** in the player, Up to the seek bar, Right ×120: the time reads *20:21* but the big round handle stays at
+*0:01*; the place the video will jump to is a 4 dp white line (`SeekBar`'s "scrub ghost") near the end, with no time
+beside it. Watching the handle, it looks as if nothing is happening.
+**Requirement:** while scrubbing, the **handle** is drawn at the scrub position (with the focus ring), and the
+played fill stays at the real position with a faint marker there, so the viewer sees both where they are and where
+they are going. OK commits, Back cancels (unchanged).
+
+### FR-R365-9 — Back after an automatic next episode returns to the episode that was playing
+**Seen:** started S03E08 from the series page, the credits card advanced to S03E09, Back: focus on the **S03E08**
+card (R350 FR-2: *the control that started playback*).
+**Requirement:** when the player has moved on to another episode (next-up card, *Next*, the episode rail), Back
+returns to the series page on **that** episode's season with its card focused. R350 FR-2 otherwise unchanged.
+
+### FR-R365-10 — Back to Home's hero returns to the slide that was opened
+**Seen:** Home's hero on its 5th slide (a series), OK → the series page → Back: the hero shows its **1st** slide
+(focus on the hero), so the title just looked at is gone from view.
+**Requirement:** Back to Home with the hero focused shows the slide that was opened, then auto-advance resumes
+from there (R58's timer restarts).
+
 ## Acceptance
 
 One D-pad walk per item on the TV path, each in a Robolectric test where the screen already has one (Search,
