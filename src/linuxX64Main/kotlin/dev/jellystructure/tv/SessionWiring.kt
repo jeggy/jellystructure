@@ -106,6 +106,10 @@ suspend fun wirePlaybackSessions(
         }
     }
     publisher.starter = starter
+    // R372 — the old place stops once the new one plays (its stop report then goes through stopPlayback as ever).
+    sessions.stopPlace = { s, from ->
+        if (bus.isConnected(from)) bus.notifyPlaystateCommand(s.ownerUserId, from, "Stop", null)
+    }
     control.relayAvailable = { s -> starter.relayAvailable(s) }
     control.relayLoad = { s -> starter.relayResume(s) }
     // R371 (owner decisions 1–2) — a room op with no link holder goes to a relay app on that network.

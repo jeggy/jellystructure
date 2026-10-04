@@ -101,4 +101,5 @@ val WIRE_ROOTS: List<WireRoot> = listOf(
     WireRoot("SessionStartRequest", WireDir.REQUEST, SessionStartRequest.serializer()),
     WireRoot("SessionMembersReport", WireDir.REQUEST, SessionMembersReport.serializer()),
     WireRoot("CastHandoffRequest", WireDir.REQUEST, CastHandoffRequest.serializer()),
+    WireRoot("SessionMoveRequest", WireDir.REQUEST, SessionMoveRequest.serializer()),
 )

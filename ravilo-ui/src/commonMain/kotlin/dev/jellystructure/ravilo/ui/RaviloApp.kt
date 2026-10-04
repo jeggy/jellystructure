@@ -1401,6 +1401,8 @@ fun RaviloApp(
         // this app leaves (the receiver joined the server with its own hand-off) and takes nothing back.
         LaunchedEffect(castController) {
             castController.sender.link.collect { link ->
+                // R372 — a move's own LOAD: this app keeps the link (it is the mover).
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.moveLoaded()?.let { castController.sender.load(it) }
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.relayLoaded()?.let { load ->
                     castController.sender.load(load)
                     launch {
@@ -1449,8 +1451,23 @@ fun RaviloApp(
             }
         }
         /** R369 — the remote's extra parts; R371 (volume) and R372 (Move to…, Play here) fill them. */
-        fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras(
+        @Composable fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras(
             volume = { d -> dev.jellystructure.ravilo.ui.sessions.SessionVolumePanel(d) },   // R371
+            // R372 (FR-R372-2) — *Move to…*: through the server; a Cast device this app sees is its own LOAD.
+            onMoveTo = { s, t ->
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(s.id, if (t.here) "here" else t.id) { castId, startMs ->
+                    castController.moveLoad(castId, s.id, dev.jellystructure.ravilo.ui.sessions.SessionRemote.detail.value, startMs, lang)
+                }
+            },
+            // R372 (FR-R372-3, review item 3) — *Play here*: music this app casts comes back by R353's hand-back; anything
+            // else is a move to this device.
+            onPlayHere = { s ->
+                if (s.kind == "music" && dev.jellystructure.ravilo.ui.music.MusicCast.linked.value && s.target.name == dev.jellystructure.ravilo.ui.music.MusicCast.deviceName.value)
+                    dev.jellystructure.ravilo.ui.music.MusicCast.playHere()
+                else dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(s.id, "here")
+                pop()
+            },
+            playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; dev.jellystructure.ravilo.ui.isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
         )
         // R369 — a *Playing everywhere* row or the bar opens the session's remote; ⏯ and next go through the server
         // unless the session plays here.

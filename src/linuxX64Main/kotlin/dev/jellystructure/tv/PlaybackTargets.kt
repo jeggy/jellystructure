@@ -122,6 +122,8 @@ internal sealed interface StartResult2 {
     data object Forbidden : StartResult2
     data object Unreachable : StartResult2
     data object BadRequest : StartResult2
+    /** R372 — a move on an old revision. */
+    data class Stale(val session: SessionRec) : StartResult2
 }
 
 /**
@@ -208,6 +210,53 @@ class SessionStarter(
         bus.notifyDevice(relay.jellyfinUserId, relay.deviceId, json.encodeToString(CastRelayLoadEnvelope.serializer(), env))
         sessions.record(rec.id, "relayed", relay.deviceId, castId)
         return true
+    }
+
+    /**
+     * R372 (FR-R372-2/-3, review item 2, owner decisions 2 and 4) — move a session to another single place: a Ravilo app
+     * gets `session_load` (the queue, the place 2 s back, the same session id); a Cast device the caller's own discovery
+     * sees is the caller's own LOAD (`load_here`); any other Cast device is a relay launch. A film or an episode moves
+     * only to a video place.
+     */
+    internal suspend fun move(caller: DeviceData, sessionId: String, req: dev.jellystructure.shared.tv.SessionMoveRequest): StartResult2 {
+        val s = sessions.get(sessionId)?.takeIf { it.live } ?: return StartResult2.BadRequest
+        if (!control.mayControl(caller, false, s)) return StartResult2.Forbidden
+        if (req.revision != null && req.revision != s.revision) return StartResult2.Stale(s)
+        val targetId = if (req.targetId == "here") caller.deviceId else req.targetId
+        if (targetId == s.targetId) return StartResult2.Started(s, loadHere = false, castDeviceId = null)
+        val now = clock()
+        val pos = s.positionMs + if (s.state == SessionState.PLAYING) (now - s.positionAt).coerceAtLeast(0L) else 0L
+        val startMs = moveStartMs(pos)
+        val ids = s.options.queueIds.ifEmpty { listOf(s.itemId) }
+        val index = if (s.options.queueKnown) s.queueIndex.coerceIn(0, ids.lastIndex) else ids.indexOf(s.itemId).coerceAtLeast(0)
+        val video = s.kind == SessionKind.FILM || s.kind == SessionKind.EPISODE
+        if (!targetId.startsWith("cast:")) {
+            val app = liveApps().firstOrNull { it.device.deviceId == targetId } ?: return StartResult2.Unreachable
+            val caps = appCapabilities(app.features, app.device.platform)
+            if (video && !caps.video || !video && !caps.audio && !caps.book) return StartResult2.BadRequest
+            val moving = sessions.beginMove(s.id, targetId, sessions.placeNameOf(app.device)) ?: return StartResult2.BadRequest
+            val tracks = if (s.kind == SessionKind.MUSIC) ids.mapNotNull { trackItem(it) } else emptyList()
+            val env = SessionLoadEnvelope(sessionId = s.id, kind = s.kind, items = ids, index = index, startMs = startMs,
+                shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off", title = s.current?.title, tracks = tracks)
+            bus.notifyDevice(app.device.jellyfinUserId, app.device.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
+            sessions.record(s.id, "moving", caller.deviceId, app.device.displayName)
+            return StartResult2.Started(moving, loadHere = false, castDeviceId = null)
+        }
+        if (s.kind == SessionKind.AUDIOBOOK) return StartResult2.BadRequest   // owner decision 4 (R370) — books never cast
+        val castId = targetId.removePrefix("cast:")
+        val seen = reach.entries().filter { it.device.castDeviceId == castId }
+        if (video && seen.any { it.device.kind == "speaker" }) return StartResult2.BadRequest
+        val name = seen.firstOrNull()?.device?.name ?: castId
+        val callerSees = seen.any { it.app.deviceId == caller.deviceId } && caller.platform in RELAY_PLATFORMS
+        val moving = sessions.beginMove(s.id, targetId, name) ?: return StartResult2.BadRequest
+        if (callerSees) return StartResult2.Started(moving, loadHere = true, castDeviceId = castId)
+        val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, bus.liveSockets().map { it.second }.toSet())
+            ?: return StartResult2.Unreachable
+        val owner = devices.listSessions(s.startedByDeviceId ?: caller.deviceId).firstOrNull { it.jellyfinUserId == s.ownerUserId } ?: caller
+        val items = ids.map { id -> if (id == s.itemId) s.current ?: SessionItem(id) else sessions.describe(id, s.bookId)?.second ?: SessionItem(id) }
+        if (!relayLaunch(owner, relay, moving, castId, items, SessionStartRequest(targetId = targetId, kind = s.kind, items = ids, index = index,
+                startMs = startMs, shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off"))) return StartResult2.Unreachable
+        return StartResult2.Started(moving, loadHere = false, castDeviceId = castId)
     }
 
     /** R369/R372 — `play` on a paused, offline cast session from an app without Cast: the relay launches it again. */

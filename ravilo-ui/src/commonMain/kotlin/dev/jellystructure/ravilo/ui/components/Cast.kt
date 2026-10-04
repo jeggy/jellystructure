@@ -265,6 +265,35 @@ class CastController(
     /** R370 (owner decision 1) — a relay launch waiting for its route to connect. */
     var pendingRelay: CastLoadData? = null
         private set
+    /** R372 — a move onto a Cast device this app LOADs itself; it keeps the link afterwards (it is the mover). */
+    private var pendingMoveLoad: CastLoadData? = null
+
+    /**
+     * R372 (FR-R372-2) — move a session onto [castDeviceId] from this app: mint the hand-off naming the session (the
+     * receiver then joins it), select the route, and LOAD the session's queue from its place on connection.
+     */
+    fun moveLoad(castDeviceId: String, sessionId: String, d: dev.jellystructure.shared.tv.SessionDetail?, startMs: Long, lang: String = "en") {
+        val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return
+        val v = d?.session ?: return
+        scope.launch {
+            val code = runCatching { api.castHandoff(castDeviceId, sessionId) }.getOrNull() ?: return@launch
+            val music = v.kind == "music"
+            val tracks = if (music) d.queue.map { CastTrackItem(id = it.id, title = it.title ?: "", artist = it.subtitle) } else emptyList()
+            val current = d.queue.getOrNull(d.queueIndex - d.queueOffset)
+            pendingMoveLoad = CastLoadData(
+                serverUrl = serverUrl, code = code.code, itemId = current?.id ?: d.queue.firstOrNull()?.id ?: return@launch,
+                title = v.title ?: "", kicker = v.subtitle, artUrl = v.artwork?.let { if (it.startsWith("http")) it else serverUrl.trimEnd('/') + it },
+                positionMs = startMs, deviceName = sender.deviceName.value, tracks = tracks,
+                currentIndex = if (music) (d.queueIndex - d.queueOffset).coerceAtLeast(0) else -1, lang = lang,
+                shuffle = d.shuffle, repeat = d.repeat, sessionId = sessionId,
+            )
+            if (sender.link.value != CastLinkState.NONE) sender.leave()
+            r.select()
+        }
+    }
+
+    /** R372 — the move's LOAD, once the route connected. */
+    fun moveLoaded(): CastLoadData? = pendingMoveLoad.also { pendingMoveLoad = null }
 
     /**
      * R370 (owner decision 1) — the server asks this app to launch the receiver on [castDeviceId] for someone else's

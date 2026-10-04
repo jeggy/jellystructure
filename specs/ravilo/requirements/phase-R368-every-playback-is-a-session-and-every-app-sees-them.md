@@ -610,7 +610,7 @@ one live session per (target, lane), the 15 s hold, `queue_index`, `reconnecting
   `PlaybackTracker` is untouched (306's `withProgress` kept).
 - Restart (FR-R368-4, item 12 b/c): `restoreSessions` reloads every live row *reconnecting*, rebuilds the tracker entry
   with `jellyfin_play_session_id` + `directPlay`, and R343/R375's whole `SessionPlan` from `options_json` — shipped
-  bug 2 fixed. Silent for 2 min ⇒ `ended` (`no_return_after_restart`); R372 changes this.
+  bug 2 fixed. Silent for 2 min ⇒ paused + `offline`, kept 24 h (R372 owner decision 3; the watchdog's reap does the same).
 - `tv/SessionPublisher.kt` builds each socket's list (`mine`/`here`/`controllable`/visibility via the playback rules:
   `visibleTo`, `musicVisible`) and fans out: the list on start/end, `session_state` on a change; heartbeats push nothing.
   `TvEventBus` keeps each socket's `features`; `notifySessions` sends only to opted-in sockets. An opted-in socket gets

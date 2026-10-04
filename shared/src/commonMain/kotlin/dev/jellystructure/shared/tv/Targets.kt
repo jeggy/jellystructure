@@ -116,6 +116,17 @@ data class CastRelayLoadEnvelope(
     val load: CastLoadData,
 )
 
+/**
+ * R372 (FR-R372-2/-3) — `POST /api/tv/playback/sessions/{id}/move`: the session moves to [targetId] (a place from the
+ * list, or `here` — *Play here*: the calling device). It keeps its id; the new place starts 2 s back; the old one stops
+ * once the new one plays. The answer is a [SessionStartResponse] (`load_here` when the caller must do the Cast LOAD).
+ */
+@Serializable
+data class SessionMoveRequest(
+    @SerialName("target_id") val targetId: String,
+    val revision: Long? = null,
+)
+
 /** One Cast device an app's own discovery sees, as it reports it (`cast_devices_seen` on the events socket). */
 @Serializable
 data class CastSeenDevice(

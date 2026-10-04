@@ -301,3 +301,38 @@ watchdog path, so build on its fixes.)
    transport), with master + one slider per room, driven through the server (R371's relay for rooms, the
    receiver path for the master). The TV remote's own volume keys stay the TV's.
 4. Moving onto a speaker from the web app, iPhone or TV uses R370's relay.
+
+## Build notes (2026-10-05)
+
+Built against the review and the owner decisions (every move rewinds 2 s, music too; a place silent after a restart is
+*paused, offline* for 24 h; moving onto a speaker from the web app, iPhone or TV uses R370's relay).
+
+**Server** (`PlaybackSessions`, `PlaybackTargets.kt`): `POST /api/tv/playback/sessions/{id}/move {target_id, revision}`
+(`target_id = here` is *Play here*: the calling device). `move()` checks control and the revision (409 stale), a film or
+an episode only to a video place, a book never to a Cast place; an app place gets `session_load` with the same session
+id from `moveStartMs` (2 s back); a Cast device the caller sees answers `load_here`; any other Cast device is a relay
+launch. `beginMove` sets *Moving to {place}…*; the new place's first start joins the session (its id kept; the
+Jellyfin play session changes underneath, covered by the 15 s hold), the old place gets `Stop` once the new one reports,
+and a late report from the old place starts nothing; no report in 10 s ⇒ `move_failed` and the old place carries on.
+**FR-R368-2 amended:** the watchdog's reap leaves the session *paused* and `offline` (a report from the place clears
+it); paused or offline sessions end 24 h after their last change (`idle` / `offline`); **FR-R368-4 amended:** a
+restored session silent for 2 min becomes paused + offline, not ended.
+
+**Apps:** the remote's place line opens *Move to…* (the server's places for the kind, the current one ticked);
+*Play here* (⋯) hands music this app casts back through R353's path, and otherwise moves to this device
+(`cast.play_here` / `_mac` / `_desk`). A move onto a Cast device this app sees is its own LOAD (`CastController.moveLoad`:
+a hand-off naming the session, then LOAD on connection; the app keeps the link). The state line covers starting,
+reconnecting, offline (*{place} is offline · paused at …*), moving / move failed, stopped by someone, finished
+(`ab.finished`), someone else's. Strings `session.move_to`, `session.moving`, `session.move_failed`,
+`session.place_offline`, `session.stopped_by` (`session.finished` not added).
+
+**⚠ Partial:** the TV's group *Speakers* panel (owner decision 3) is not built — the TV opts into no session lists
+(FR-R368-10) and a session sent to a TV app is never a Cast group, so there is nothing for the panel to show yet; the
+admin row has no *Move to…*. Not written: `SessionMoveIntegrationTest`, `MoveToSheetTest`, `TvSpeakersPanelTest`, the
+Playwright case.
+
+**Tests:** `PlaybackSessionsTest` (+ reap → paused offline, the 24 h sweep, a move keeping its id and stopping the old
+place, a failed move, the restart → offline), `MoveToTest` (2).
+
+**Only devices can confirm:** CAF's paused timeout on a speaker; a move Pixel → speaker → Pixel (each 2 s back); an
+unplugged speaker turning *offline · paused* within 90 s with *Play here*; a relay move from the web app.

@@ -181,13 +181,71 @@ class PlaybackSessionsTest {
         assertEquals(listOf("started", "paused"), s.timeline(id).map { it.second })
     }
 
-    @Test fun `the watchdog reap ends the session`() = runBlocking {
+    @Test fun `a watchdog reap leaves the session paused and offline`() = runBlocking {
         val s = service()
         val phone = device("pixel")
         val id = s.onStart(phone, "film-1", 0)
         s.onStop(phone, "film-1", 30_000)
         s.onReaped(phone, "film-1")
-        assertFalse(s.get(id)!!.live)
+        val r = s.get(id)!!
+        assertTrue(r.live)
+        assertTrue(r.offline)
+        assertEquals(SessionState.PAUSED, r.state)
+        assertEquals(30_000, r.positionMs)
+        // A report from the place clears offline.
+        s.onProgress(phone, "film-1", 30_000, paused = true)
+        assertFalse(s.get(id)!!.offline)
+    }
+
+    @Test fun `the 24 h sweep ends a paused offline session and a paused one`() = runBlocking {
+        val s = service()
+        val phone = device("pixel"); val tv = device("living-tv", kind = "tv")
+        val off = s.onStart(phone, "film-1", 0)
+        s.onReaped(phone, "film-1")
+        val paused = s.onStart(tv, "song-1", 0)
+        s.onProgress(tv, "song-1", 1_000, paused = true)
+        now += SESSION_PAUSED_KEEP_MS - 1_000; s.tick()
+        assertTrue(s.get(off)!!.live && s.get(paused)!!.live)
+        now += 2_000; s.tick()
+        assertEquals("offline", s.get(off)!!.endReason)
+        assertEquals("idle", s.get(paused)!!.endReason)
+    }
+
+    @Test fun `a move keeps the session id stops the old place and starts the new one`() = runBlocking {
+        val s = service()
+        val stopped = mutableListOf<String>()
+        s.stopPlace = { _, from -> stopped += from }
+        val pixel = device("pixel"); val mac = device("mac")
+        val id = s.onStart(pixel, "song-1", 0)
+        s.onProgress(pixel, "song-1", 50_000, paused = false)
+        val moving = s.beginMove(id, "mac", "Mac")!!
+        assertEquals("Mac", moving.movingTo)
+        assertEquals(id, s.onStart(mac, "song-1", moveStartMs(50_000)))
+        val r = s.get(id)!!
+        assertEquals("mac", r.targetId)
+        assertEquals(48_000, r.positionMs)
+        assertEquals(null, r.movingTo)
+        assertEquals(listOf("pixel"), stopped)
+        // The old place's late report starts nothing.
+        s.onProgress(pixel, "song-1", 52_000, paused = false)
+        assertEquals(1, s.all().count { it.live })
+    }
+
+    @Test fun `a move with no report in 10 s fails and the old place carries on`() = runBlocking {
+        val s = service()
+        val pixel = device("pixel")
+        val id = s.onStart(pixel, "song-1", 0)
+        s.beginMove(id, "mac", "Mac")
+        now += 10_001; s.tick()
+        val r = s.get(id)!!
+        assertEquals("Mac", r.moveFailed)
+        assertEquals("pixel", r.targetId)
+        assertTrue(r.live)
+    }
+
+    @Test fun `every move starts 2 s back and never below 0`() {
+        assertEquals(2_888_000, moveStartMs(2_890_000))
+        assertEquals(0, moveStartMs(1_500))
     }
 
     @Test fun `an ended session stays listed for sixty seconds as ended`() = runBlocking {
@@ -249,7 +307,7 @@ class PlaybackSessionsTest {
         assertTrue(restarted.timeline(id).any { it.second == "reconnected" })
     }
 
-    @Test fun `two minutes of silence ends it at the stored position`() = runBlocking {
+    @Test fun `a place silent after a restart is paused and offline for 24 h not ended at 2 min`() = runBlocking {
         val s = service()
         val tv = device("living-tv", kind = "tv")
         val id = s.onStart(tv, "film-1", 0)
@@ -261,7 +319,9 @@ class PlaybackSessionsTest {
         now += 2_000; restarted.tick()
         val r = restarted.get(id)!!
         assertEquals(50_000, r.positionMs)
-        assertEquals("no_return_after_restart", r.endReason)
+        assertTrue(r.live)
+        assertTrue(r.offline)
+        assertEquals(SessionState.PAUSED, r.state)
     }
 
     @Test fun `the hourly tick drops events and ended sessions older than seven days`() = runBlocking {

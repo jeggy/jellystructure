@@ -117,6 +117,27 @@ object SessionRemote {
         }
     }
 
+    /**
+     * R372 (FR-R372-2/-3) — move the session to [targetId] (`here` for *Play here*). [onLoadHere] gets the Cast device
+     * this app must LOAD itself (its own discovery sees it), with the place to start (2 s back).
+     */
+    fun move(id: String, targetId: String, onLoadHere: (castDeviceId: String, startMs: Long) -> Unit = { _, _ -> }) {
+        val a = api ?: return
+        val rev = _detail.value?.session?.takeIf { it.id == id }?.revision
+        _pending.value = now() to (rev ?: 0L)
+        scope.launch {
+            val r = runCatching { a.movePlaybackSession(id, dev.jellystructure.shared.tv.SessionMoveRequest(targetId, rev)) }
+            r.onSuccess { resp ->
+                val castId = resp.castDeviceId
+                if (resp.loadHere && castId != null) {
+                    val v = resp.session
+                    val pos = v?.let { drawnPositionMs(it, PlaybackSessions.state.value.serverNowMs, PlaybackSessions.state.value.receivedAtMs, now()) } ?: 0L
+                    kotlinx.coroutines.withContext(Dispatchers.Main) { onLoadHere(castId, moveStartMs(pos)) }
+                }
+            }.onFailure { _pending.value = null; _refusals.tryEmit("unreachable"); refresh() }
+        }
+    }
+
     /** R371 (review item 5) — this app's group rooms, on change only. */
     fun reportMembers(report: dev.jellystructure.shared.tv.SessionMembersReport) {
         val a = api ?: return
@@ -132,6 +153,9 @@ object SessionRemote {
 
 /** R369 — what changed in a player's queue that the server must hear (review item 5: on change, never every tick). */
 data class QueueKey(val ids: List<String>, val index: Int, val shuffle: Boolean, val repeat: String)
+
+/** R372 (owner decision 2) — every move starts 2 s back, music included, never below 0. */
+fun moveStartMs(positionMs: Long): Long = (positionMs - 2_000L).coerceAtLeast(0L)
 
 /** The revision a queue report carries: changes with the ids, so a queue edit can be checked at the target. */
 fun queueRevOf(ids: List<String>): Int = ids.hashCode()

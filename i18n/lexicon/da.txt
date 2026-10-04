@@ -59,7 +59,9 @@ at
 aug
 august
 aurora
+australien
 automatisk
+b
 baggrunden
 bedste
 bedømmelse
@@ -81,6 +83,8 @@ bogen
 bogmærke
 bogmærker
 bogmærket
+bonus
+brasilien
 brug
 bruge
 bruger
@@ -88,6 +92,7 @@ brugernavn
 brugt
 bøger
 børn
+canada
 caster
 casting
 computer
@@ -95,6 +100,7 @@ computere
 cover
 dag
 dage
+danmark
 daylight
 de
 dec
@@ -106,6 +112,7 @@ den
 denne
 dens
 der
+deres
 det
 dette
 dig
@@ -119,6 +126,7 @@ du
 dubbet
 edit
 efter
+ekstra
 eller
 en
 endnu
@@ -133,7 +141,6 @@ episoden
 episoder
 er
 et
-ets
 feat
 feb
 februar
@@ -145,8 +152,13 @@ filmen
 filtre
 finde
 findes
+finland
 fjern
 fjernet
+flere
+flyt
+flytte
+flytter
 for
 forbind
 forbindelse
@@ -159,6 +171,7 @@ forfattere
 forfra
 forkert
 forkortes
+forlod
 forrige
 forskellige
 forslag
@@ -166,6 +179,7 @@ fortsæt
 fortsætte
 fortæller
 fra
+frankrig
 fre
 fredag
 frem
@@ -177,6 +191,7 @@ fysisk
 få
 får
 færdig
+færøerne
 føj
 føjes
 føjet
@@ -201,6 +216,7 @@ gik
 giv
 glemmer
 graphite
+gruppen
 guide
 gå
 gået
@@ -216,6 +232,7 @@ herind
 hjem
 hjemmeskærm
 hold
+holland
 huskes
 hvad
 hvem
@@ -226,6 +243,8 @@ højt
 højttaler
 højttalere
 højttalergruppe
+højttalerne
+hører
 i
 igen
 ikke
@@ -249,9 +268,12 @@ instruktør
 instrumental
 intet
 intro
+island
+italien
 ja
 jan
 januar
+japan
 jellystructure
 jeres
 jul
@@ -269,8 +291,6 @@ kapitlets
 kategori
 klar
 knapper
-kode
-koden
 kodeord
 kommentar
 kommer
@@ -291,6 +311,7 @@ land
 lange
 langsom
 laveste
+ledige
 lige
 lille
 liste
@@ -314,6 +335,7 @@ lyse
 lyt
 lytning
 lytte
+lytter
 lås
 låse
 låst
@@ -355,6 +377,7 @@ morgen
 musik
 musikvideo
 må
+måder
 måske
 mørk
 mørke
@@ -363,6 +386,7 @@ navn
 netværk
 noget
 noir
+norge
 note
 nov
 november
@@ -374,7 +398,10 @@ nye
 nyeste
 nå
 når
+nås
+nærheden
 næste
+officielle
 offline
 og
 også
@@ -388,12 +415,14 @@ onsdag
 op
 opdag
 opdateret
+oplyser
 opsamling
 opsamlinger
 optaget
 originalen
 originalsprog
 over
+overalt
 par
 pause
 pauser
@@ -420,6 +449,7 @@ rul
 rulletekster
 rulleteksterne
 ryd
+rækkefølge
 samling
 samlinger
 samme
@@ -427,6 +457,7 @@ sang
 sange
 sangen
 sangtekst
+sat
 scene
 scenen
 se
@@ -451,13 +482,17 @@ serveradresse
 serveren
 session
 set
+side
 siden
 sidepanel
+sider
+siderne
 sidst
 sidste
 sikkerhed
 single
 singler
+sit
 skabt
 skal
 sker
@@ -483,6 +518,7 @@ sonarr
 sortér
 soundtrack
 soundtracks
+spanien
 spil
 spille
 spiller
@@ -498,18 +534,23 @@ starter
 station
 stationer
 sted
+stedet
 stemmer
 stereo
 stille
 stop
+stoppede
 stopper
 stor
+storbritannien
 studie
 studier
 stå
 størrelse
 største
 surround
+sverige
+sydkorea
 synkroniseret
 synstolkning
 systemets
@@ -562,11 +603,13 @@ trykker
 træk
 tv
 type
+tyskland
 tæller
 tændt
 ud
 udfyld
 udgivelse
+udgivelser
 udgivelsesdato
 udgivelsestype
 udgivelsesår
@@ -578,6 +621,7 @@ udseende
 unavngivet
 under
 undertekster
+usa
 valgfri
 ved
 vej
@@ -590,7 +634,6 @@ videoer
 videre
 vil
 vindue
-virkede
 vis
 viser
 vises

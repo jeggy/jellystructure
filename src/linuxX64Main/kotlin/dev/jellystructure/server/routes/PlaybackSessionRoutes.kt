@@ -68,6 +68,21 @@ internal fun Route.playbackSessionRoutes(
                 dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
                 dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to replace"))
                 dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "nothing to start there"))
+                is dev.jellystructure.tv.StartResult2.Stale -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("stale", publisher.viewFor(device, r.session)))
+            }
+        }
+        // R372 (FR-R372-2/-3) — *Move to…* and *Play here* (`target_id = here`).
+        post("/tv/playback/sessions/{id}/move") {
+            val device = call.attributes[DeviceKey]
+            val req = call.receive<dev.jellystructure.shared.tv.SessionMoveRequest>()
+            when (val r = starter.move(device, call.parameters["id"]!!, req)) {
+                is dev.jellystructure.tv.StartResult2.Started -> call.respond(dev.jellystructure.shared.tv.SessionStartResponse(
+                    publisher.viewFor(device, r.session), r.loadHere, r.castDeviceId))
+                is dev.jellystructure.tv.StartResult2.Stale -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("stale", publisher.viewFor(device, r.session)))
+                dev.jellystructure.tv.StartResult2.Busy -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("busy"))
+                dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
+                dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to move"))
+                dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot move there"))
             }
         }
     }

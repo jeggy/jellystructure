@@ -1041,6 +1041,16 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    /** R372 (FR-R372-2/-3) — *Move to…* / *Play here* (`target_id = here`); a refusal is a 409 [TvApiError.Http]. */
+    suspend fun movePlaybackSession(id: String, req: SessionMoveRequest): SessionStartResponse {
+        val r = client.post("$baseUrl/api/tv/playback/sessions/${id.encodeURLPathPart()}/move") {
+            auth()
+            jsonBody(json.encodeToString(SessionMoveRequest.serializer(), req))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     suspend fun playbackSessions(): SessionList {
         val r = client.get("$baseUrl/api/tv/playback/sessions") { auth() }
         r.assertSuccess()

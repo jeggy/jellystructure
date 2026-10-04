@@ -29,7 +29,7 @@ REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvT
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',
     'ViewerSettingsRequest', 'MusicPlayRequest', 'MusicFavoriteRequest',
     'AudiobookProgressRequest', 'AudiobookSpeedRequest', 'AudiobookFinishedRequest', 'AudiobookBookmarkRequest',
-    'SessionCommandRequest', 'SessionQueueReport', 'SessionStartRequest', 'SessionMembersReport', 'CastHandoffRequest']
+    'SessionCommandRequest', 'SessionQueueReport', 'SessionStartRequest', 'SessionMembersReport', 'CastHandoffRequest', 'SessionMoveRequest']
 
 src = ''.join(open(f).read() for f in glob.glob(sys.argv[1] + '/shared/src/commonMain/kotlin/**/*.kt', recursive=True))
 def has(n):   # a @Serializable class in package dev.jellystructure.shared.tv

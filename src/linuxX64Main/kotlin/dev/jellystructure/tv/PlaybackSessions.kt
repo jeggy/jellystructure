@@ -280,6 +280,17 @@ internal sealed interface SessionChange {
 
 /** The hold a stop keeps a session for (review item 6). */
 internal const val SESSION_STOP_HOLD_MS = 15_000L
+/** R372 (FR-R372-4, owner decision 1) — a paused (or offline) session ends this long after its last change. */
+internal const val SESSION_PAUSED_KEEP_MS = 24L * 60 * 60_000
+/** R372 (FR-R372-2, owner decision 2) — every move starts this far back, music included. */
+internal const val MOVE_REWIND_MS = 2_000L
+
+/** R372 — where a move's new place starts: 2 s back, never below 0. */
+internal fun moveStartMs(positionMs: Long): Long = (positionMs - MOVE_REWIND_MS).coerceAtLeast(0L)
+
+/** R372 — a move in flight: the place it goes to (a device id, or `cast:<id>` until the receiver redeems). */
+internal data class PendingMove(val sessionId: String, val targetKey: String, val targetName: String, val deadline: Long, val fromTargetId: String)
+
 /** R370 (review item 8) — a load with no `starting` / `playing` report by then fails. */
 internal const val SESSION_LOAD_TIMEOUT_MS = 10_000L
 /** How long an ended row stays listed (review item 13: the 60 s fade comes from the server). */
@@ -338,6 +349,14 @@ class PlaybackSessions(
     /** Main: a device's display name for [SessionRec.targetName]; the receiver's name drops the *Chromecast via* prefix. */
     internal var placeNameOf: (DeviceData) -> String = { it.displayName.removePrefix("${CastService.DEVICE_PREFIX} · ").ifBlank { it.deviceId } }
 
+    /** R372 — moves in flight, by session id. */
+    private val pendingMoves = HashMap<String, PendingMove>()
+    /** R372 — (device id) → until when a report from the place a session just left is ignored (it must not start one). */
+    private val movedFrom = HashMap<String, Long>()
+
+    /** Main: stop what plays on a place a session moved away from (the old place stops once the new one plays). */
+    internal var stopPlace: suspend (SessionRec, String) -> Unit = { _, _ -> }
+
     /** FR-R368-9 / review item 11 — receiver device id → the device that minted its hand-off code, while its cast lives. */
     private val castMinter = HashMap<String, String>()
 
@@ -357,6 +376,9 @@ class PlaybackSessions(
         castMinter[receiver.deviceId] = minterDeviceId
         if (castDeviceId != null) receiverCastDevice[receiver.deviceId] = castDeviceId
         if (sessionId == null) return
+        // R372 — a move onto this Cast device: the receiver is the move's new place from now on (its start joins).
+        val isMove = mutex.withLock { pendingMoves[sessionId]?.let { m -> pendingMoves[sessionId] = m.copy(targetKey = receiver.deviceId); true } ?: false }
+        if (isMove) return
         val moved = mutex.withLock {
             val cur = sessions[sessionId]?.takeIf { it.live && it.targetKind == "cast" } ?: return@withLock false
             val next = cur.copy(targetId = receiver.deviceId, targetName = placeNameOf(receiver), castDeviceId = castDeviceId ?: cur.castDeviceId,
@@ -495,8 +517,30 @@ class PlaybackSessions(
         val item = described?.second ?: SessionItem(itemId)
         val lane = sessionLane(kind)
         val changes = mutableListOf<SessionChange>()
+        val stopOld = mutableListOf<Pair<SessionRec, String>>()
         val id = mutex.withLock {
             val t = now()
+            // R372 (FR-R372-2) — the new place of a move reported: the session moves there (its id stays), the old
+            // place is stopped once the new one plays.
+            pendingMoves.values.firstOrNull { it.targetKey == device.deviceId }?.let { m ->
+                val cur = sessions[m.sessionId]?.takeIf { it.live }
+                pendingMoves.remove(m.sessionId)
+                if (cur != null) {
+                    val next = cur.copy(
+                        targetId = device.deviceId, targetName = placeNameOf(device), targetKind = if (device.kind == "cast") "cast" else "app",
+                        itemId = itemId, positionMs = positionMs, positionAt = t, state = SessionState.STARTING, movingTo = null, moveFailed = null,
+                        offline = false, reconnecting = false, stopHoldUntil = null, loadDeadline = null, jellyfinPlaySessionId = jellyfinPlaySessionId,
+                        options = cur.options.withPlan(plan).copy(directPlay = directPlay), revision = cur.revision + 1, updatedAt = t,
+                    )
+                    sessions[next.id] = next
+                    next.persist()
+                    event(next.id, "moved", device.deviceId, next.targetName)
+                    movedFrom[m.fromTargetId] = t + SESSION_ENDED_LINGER_MS
+                    stopOld += cur to m.fromTargetId
+                    changes += SessionChange.State(next.id)
+                    return@withLock next.id
+                }
+            }
             val live = liveOn(device.deviceId, lane)
             when (val d = startDecision(live, device.jellyfinUserId)) {
                 is StartDecision.Join -> {
@@ -542,7 +586,26 @@ class PlaybackSessions(
             }
         }
         changes.distinct().forEach { notify(it) }
+        stopOld.forEach { (s, from) -> runCatching { stopPlace(s, from) } }
         return id
+    }
+
+    /**
+     * R372 (FR-R372-2) — a move begins: the place line reads *Moving to {place}…* until the new place reports (it then
+     * joins this session in [onStart]); with no report in 10 s the line says *Couldn't move to {place}* and the old place
+     * carries on.
+     */
+    internal suspend fun beginMove(sessionId: String, targetKey: String, targetName: String): SessionRec? {
+        val next = mutex.withLock {
+            val cur = sessions[sessionId]?.takeIf { it.live } ?: return null
+            pendingMoves[sessionId] = PendingMove(sessionId, targetKey, targetName, now() + SESSION_LOAD_TIMEOUT_MS, cur.targetId)
+            val n = cur.copy(movingTo = targetName, moveFailed = null, revision = cur.revision + 1, updatedAt = now())
+            sessions[sessionId] = n
+            n.persist()
+            n
+        }
+        notify(SessionChange.State(sessionId))
+        return next
     }
 
     /**
@@ -559,8 +622,10 @@ class PlaybackSessions(
             val cur = findLocked(device, itemId, sessionId)
             if (cur == null) {
                 // A report racing a stop that already ended this session (a server-side *Stop*, R369 item 12) must not
-                // start a new one: only a report with no recent end on this place and item does.
-                created = sessions.values.none { !it.live && it.targetId == device.deviceId && it.itemId == itemId }
+                // start a new one: only a report with no recent end on this place and item does — nor one from the place
+                // a session just moved away from (R372).
+                created = sessions.values.none { !it.live && it.targetId == device.deviceId && it.itemId == itemId } &&
+                    (movedFrom[device.deviceId] ?: 0L) < t
                 return@withLock
             }
             val changed = isSessionChange(cur, itemId, positionMs, paused, t) || cur.reconnecting || cur.offline || cur.stopHoldUntil != null
@@ -610,14 +675,23 @@ class PlaybackSessions(
         }
     }
 
-    /** FR-R368-2 — the 110 watchdog force-stopped [device]'s playback of [itemId]: the session ends now. */
+    /**
+     * R372 (FR-R372-4, review item 5; amends FR-R368-2) — the 110 watchdog stopped Jellyfin's playback on a silent place:
+     * the session is paused where it was and marked offline (*{place} is offline · paused at …*), kept 24 h, with
+     * *Play here* and *Move to…* offered.
+     */
     suspend fun onReaped(device: DeviceData, itemId: String) {
-        val ended = mutex.withLock {
-            val cur = sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && (it.itemId == itemId || it.stopHoldUntil != null) } ?: return@withLock false
+        val id = mutex.withLock {
+            val cur = sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && (it.itemId == itemId || it.stopHoldUntil != null) } ?: return@withLock null
             event(cur.id, "offline", null, cur.targetName)
-            endLocked(cur.id, "watchdog") != null
+            val t = now()
+            val next = cur.copy(state = SessionState.PAUSED, offline = true, stopHoldUntil = null, reconnecting = false, reconnectDeadline = null,
+                revision = cur.revision + 1, updatedAt = t)
+            sessions[next.id] = next
+            next.persist()
+            next.id
         }
-        if (ended) notify(SessionChange.List)
+        if (id != null) notify(SessionChange.State(id))
     }
 
     /** Ends [id] (must hold [mutex]). Returns the ended row, or null when it was not live. */
@@ -735,7 +809,18 @@ class PlaybackSessions(
         mutex.withLock {
             val t = now()
             for (s in sessions.values.toList()) {
-                if (s.live && s.state == SessionState.STARTING && s.loadDeadline != null && t >= s.loadDeadline) {
+                val move = pendingMoves[s.id]
+                if (s.live && move != null && t >= move.deadline) {
+                    // R372 — no report from the new place in 10 s: the old one carries on.
+                    pendingMoves.remove(s.id)
+                    val n = s.copy(movingTo = null, moveFailed = move.targetName, revision = s.revision + 1, updatedAt = t)
+                    sessions[s.id] = n
+                    n.persist()
+                    changes += SessionChange.State(s.id)
+                } else if (s.live && (s.state == SessionState.PAUSED || s.offline) && s.stopHoldUntil == null && t - s.updatedAt >= SESSION_PAUSED_KEEP_MS) {
+                    // R372 (FR-R372-4) — paused (or offline) for 24 h since the last change: it ends.
+                    endLocked(s.id, if (s.offline) "offline" else "idle")?.let { changes += SessionChange.List }
+                } else if (s.live && s.state == SessionState.STARTING && s.loadDeadline != null && t >= s.loadDeadline) {
                     // R370 (review item 8) — a load that brought no report within 10 s failed.
                     endLocked(s.id, "failed")?.let { changes += SessionChange.List }
                 } else if (s.live && s.stopHoldUntil != null && t >= s.stopHoldUntil) {
@@ -758,9 +843,17 @@ class PlaybackSessions(
         changes.distinct().forEach { notify(it) }
     }
 
-    /** FR-R368-4 — a restored session whose target never came back ends at its stored position. */
-    private fun onSilentAfterRestart(s: SessionRec, t: Long): SessionChange? =
-        endLocked(s.id, "no_return_after_restart")?.let { SessionChange.List }
+    /**
+     * FR-R368-4 as amended by R372 (owner decision 3): a restored session whose place never came back is *paused,
+     * offline* at its stored position and kept 24 h like any silent place (it used to end after 2 minutes).
+     */
+    private fun onSilentAfterRestart(s: SessionRec, t: Long): SessionChange? {
+        event(s.id, "offline", null, s.targetName)
+        val n = s.copy(state = SessionState.PAUSED, offline = true, reconnecting = false, reconnectDeadline = null, revision = s.revision + 1, updatedAt = t)
+        sessions[s.id] = n
+        n.persist()
+        return SessionChange.State(s.id)
+    }
 }
 
 /** R371 — what changed between two members reports (by Cast device id, in the order they joined). */

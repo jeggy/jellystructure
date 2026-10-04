@@ -61,8 +61,8 @@ import kotlin.time.Clock
 
 /** R371 / R372 — the remote's extra parts, supplied by the app (absent ⇒ not drawn). */
 class SessionRemoteExtras(
-    /** R372 (FR-R372-2) — the place line and ⋯ open *Move to…*. */
-    val onMoveTo: ((SessionView) -> Unit)? = null,
+    /** R372 (FR-R372-2) — the place line opens *Move to…*; a place picked there goes here. */
+    val onMoveTo: ((SessionView, dev.jellystructure.shared.tv.PlaybackTarget) -> Unit)? = null,
     /** R372 (FR-R372-3) — *Play here*: a move to this device. */
     val onPlayHere: ((SessionView) -> Unit)? = null,
     /** R372's label for *Play here* on this platform (`cast.play_here` · `_mac` · `_desk`). */
@@ -91,6 +91,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
     val pending by SessionRemote.pending.collectAsState()
     val now = rememberSessionClock()
     val feedback = commandFeedback(pending?.first, Clock.System.now().toEpochMilliseconds().coerceAtLeast(now), reflected = false)
+    var moveOpen by remember(sessionId) { mutableStateOf(false) }
     LaunchedEffect(row?.revision) { if (row != null) SessionRemote.onState(row.revision, row.id) }
     Column(
         Modifier.fillMaxSize().background(colors.background).safeAreaPadding(includeIme = false)
@@ -130,13 +131,28 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
             else -> str("cast.playing_on", mapOf("device" to v.target.name))
         }
         Row(
-            Modifier.padding(top = 6.dp).heightIn(min = 46.dp).then(if (extras.onMoveTo != null && v.controllable) Modifier.clickable { extras.onMoveTo.invoke(v) } else Modifier)
+            Modifier.padding(top = 6.dp).heightIn(min = 46.dp).then(if (extras.onMoveTo != null && v.controllable) Modifier.clickable { moveOpen = !moveOpen; if (moveOpen) PlayOnStore.changed() } else Modifier)
                 .testTag("session-place-line"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             DeskIcon(placeIcon(v.target.icon), colors.accentSecondary, 16.dp)
             Spacer(Modifier.width(6.dp))
             Text(placeLine, color = colors.accentSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+        }
+        // R372 (FR-R372-2, canvas §B7) — *Move to…*: the single places, the current one ticked; a film only to a video place.
+        if (moveOpen && extras.onMoveTo != null) {
+            val targets by PlayOnStore.targets.collectAsState()
+            Text(str("session.move_to"), color = colors.textDim, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
+            moveTargets(targets.orEmpty(), v).forEach { (t, current) ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).then(if (!current) Modifier.clickable { moveOpen = false; extras.onMoveTo.invoke(v, t) } else Modifier)
+                    .testTag("session-move-${t.id}"), verticalAlignment = Alignment.CenterVertically) {
+                    DeskIcon(placeIcon(t.icon), colors.text, 16.dp)
+                    Spacer(Modifier.width(10.dp))
+                    val thisDevice = if (dev.jellystructure.ravilo.ui.isDesktopPlatform) str("mode.label_desk") else str("mode.label")
+                    Text(if (t.here) thisDevice else t.name, color = colors.text, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                    if (current) Text("✓", color = colors.accentSecondary, fontSize = 15.sp)
+                }
+            }
         }
         val stateLine = sessionStateLineText(v)
         if (stateLine != null) Text(stateLine, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
@@ -233,6 +249,14 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
         Spacer(Modifier.height(24.dp))
     }
 }
+
+/**
+ * R372 (FR-R372-2) — the places a session may move to: every reachable single place that can play its kind (a film or an
+ * episode only a video place; a book never a Cast place), the current one ticked.
+ */
+fun moveTargets(targets: List<dev.jellystructure.shared.tv.PlaybackTarget>, v: SessionView): List<Pair<dev.jellystructure.shared.tv.PlaybackTarget, Boolean>> =
+    targets.filter { it.reachable && canPlay(it.capabilities, v.kind, it.kind == "cast") }
+        .map { it to (it.id == v.target.id || (it.castDeviceId != null && it.id == v.target.id)) }
 
 /** FR-R372-5 — the state line under the place, where the state has words of its own. */
 @Composable

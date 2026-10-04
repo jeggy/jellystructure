@@ -22,6 +22,7 @@ akustiskt
 aldri
 aldursmark
 allar
+allastaðni
 allir
 alment
 alt
@@ -49,7 +50,9 @@ aug
 august
 aurora
 av
+avstralia
 aðrar
+b
 bakgrundini
 bara
 beinanvegin
@@ -61,6 +64,9 @@ bið
 biðja
 blanda
 blandað
+bonus
+brasil
+bretland
 broyt
 brúk
 brúka
@@ -79,6 +85,7 @@ bókamerki
 bókamerkið
 bókina
 bókini
+bólkinum
 bøkur
 børn
 cast
@@ -88,6 +95,7 @@ dag
 dagar
 dagførd
 dagført
+danmark
 daylight
 deil
 demo
@@ -130,6 +138,7 @@ er
 ert
 eru
 eygnabragð
+eyka
 far
 feat
 feb
@@ -146,13 +155,21 @@ filmur
 filtrunum
 filtur
 finna
+finnland
 fjal
+fleiri
 flokki
+flutt
+flyt
+flytur
 fløga
 fløgu
 fløgum
+fløguna
+fløguni
 fløgur
 forbókstavar
+frakland
 fram
 framgongd
 framleiðsla
@@ -172,9 +189,13 @@ fyll
 fyri
 fyrst
 fysisk
+fái
+fær
 fæst
 fíla
 fíluna
+fór
+føroyar
 gekk
 gera
 gev
@@ -224,8 +245,10 @@ hvør
 hygg
 hyggja
 hyggur
+hátalara
 hátalarabólkur
 hátalarar
+hátalararnar
 hátalari
 háttinum
 hægst
@@ -245,10 +268,12 @@ innritaði
 innset
 instrumentalt
 intro
+italia
 ið
 ja
 jan
 januar
+japan
 javna
 jellystructure
 jul
@@ -256,6 +281,7 @@ juli
 jun
 juni
 kaga
+kanada
 kann
 kanna
 kanska
@@ -273,7 +299,6 @@ kom
 komið
 kommentarur
 konta
-kotan
 krevja
 kundi
 kunning
@@ -292,6 +317,9 @@ letur
 ley
 leygardag
 leyp
+leys
+liggja
+liggur
 lisin
 lista
 listi
@@ -309,6 +337,7 @@ ljóðbøkur
 ljóðlýsing
 ljóðstyrki
 ljóðstyrkin
+ljóðstyrkina
 lokala
 long
 longd
@@ -319,6 +348,7 @@ loyniorði
 loyniorðini
 loyniorðið
 lurta
+lurtar
 lurting
 lágari
 lægst
@@ -367,6 +397,7 @@ mál
 málunum
 mán
 mánadag
+mátar
 mín
 mínum
 nakað
@@ -374,10 +405,13 @@ navn
 navni
 netið
 netverki
+niðurlond
 noir
+noreg
 nov
 november
 ná
+nándini
 næst
 næsta
 næsti
@@ -413,9 +447,9 @@ privacy
 pørtum
 ravilo
 raða
+raðfylgjan
 reinsa
 remix
-riggaði
 rita
 ritar
 ritað
@@ -476,6 +510,7 @@ sesong
 session
 sett
 settings
+sigur
 singlar
 single
 sjangra
@@ -486,7 +521,6 @@ sjálvgivið
 sjálvvirkandi
 sjónbond
 sjónlýsing
-sjónvarp
 sjónvarpi
 sjónvarpinum
 sjónvarpið
@@ -518,6 +552,7 @@ sløkkir
 so
 somu
 sonarr
+spania
 spæl
 spæla
 spælaranum
@@ -528,12 +563,14 @@ spælilisti
 spæling
 spælir
 spælt
+staðin
 staðið
 stereo
 steðg
 steðga
 steðgar
 steðgað
+steðgaði
 stig
 stillingar
 stongt
@@ -547,6 +584,8 @@ sum
 sun
 sunnudag
 surround
+suðurkorea
+svøríki
 svøvnur
 system
 sæddir
@@ -555,7 +594,11 @@ sæð
 sí
 síggj
 síggja
+síða
 síðan
+síðu
+síður
+síðurnar
 síðuteigin
 sýnist
 t
@@ -565,16 +608,19 @@ tann
 tað
 teg
 teimum
+tekstir
 tekstur
 teldan
 teldu
 teldur
+telefon
 telefonin
 telefonina
 telefonini
 telefonir
 teljir
 tema
+tess
 tey
 tikin
 tikið
@@ -610,6 +656,7 @@ tøm
 tú
 týs
 týsdag
+týskland
 um
 umbiðið
 umbroytir
@@ -624,6 +671,7 @@ undirtekstum
 upp
 uppdaga
 upplýsing
+upprunaliga
 upprunamál
 upprunanum
 uppsetingini
@@ -631,6 +679,7 @@ uppskot
 upptikin
 upptikið
 upptøku
+usa
 uttan
 valfrí
 valmynd
@@ -666,6 +715,7 @@ ymsum
 áratíggju
 ætlan
 í
+ísland
 ótengt
 øll
 øllum
@@ -678,6 +728,7 @@ ymsum
 útgávan
 útgávu
 útgávudagur
+útgávum
 útgávur
 útgávuslag
 útgávuár

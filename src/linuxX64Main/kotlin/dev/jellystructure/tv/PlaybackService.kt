@@ -1063,7 +1063,7 @@ class PlaybackService(
             Logger.info("Stop watchdog: force-stopping stale playback item=${p.jellyfinId} device=${p.device.deviceId}", "tv")
             runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs) }
                 .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
-            // FR-R368-2 — the watchdog's reap ends the session (R372 turns this into paused and offline).
+            // R372 (FR-R372-4, amends FR-R368-2) — the session is left paused and offline for 24 h, not ended.
             runCatching { sessions?.onReaped(p.device, p.jellyfinId) }
             // Phase 236 (FR-236-8) — a screen's status is display state, not tied to the Jellyfin stop
             // call's own success; clear it regardless of whether the stop above landed.
