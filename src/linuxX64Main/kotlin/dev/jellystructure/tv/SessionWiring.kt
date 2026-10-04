@@ -94,9 +94,26 @@ suspend fun wirePlaybackSessions(
         configStore.update(configStore.current.copy(ravilo = configStore.current.ravilo.copy(householdControl = on)))
         publisher.publish(SessionChange.List)   // review item 6 — `controllable` flips on every opted-in socket at once
     }
-    sessions.notify = { change -> publisher.publish(change) }
+    // R370 — the places list, starts and the relay (owner decision 1).
+    val starter = SessionStarter(sessions, control, devices, bus, castService, CastReach(), serverUrl = {
+        dev.jellystructure.model.PublicUrl.effective(configStore.current.publicUrl) ?: ""
+    })
+    starter.trackItem = { id ->
+        musicPipeline?.store?.track(id)?.let { t ->
+            val album = t.albumId?.let { musicPipeline.store.album(it) }
+            dev.jellystructure.shared.tv.CastTrackItem(id = t.id, title = t.title, artist = t.artists.joinToString(", ") { it.name }.ifBlank { null },
+                album = album?.title, coverUrl = album?.let { MusicTvService.albumImage(it) }, durationMs = t.durationMs)
+        }
+    }
+    publisher.starter = starter
+    control.relayAvailable = { s -> starter.relayAvailable(s) }
+    control.relayLoad = { s -> starter.relayResume(s) }
+    // R371 (owner decisions 1–2) — a room op with no link holder goes to a relay app on that network.
+    control.relayAppFor = { s -> starter.relayAppFor(s) }
+    control.rememberRoomLevel = { id, room, level -> sessions.rememberRoomLevel(id, room, level) }
+    sessions.notify = { change -> publisher.publish(change); if (change is SessionChange.List) starter.targetsChanged() }
     PlaybackSessions.current = sessions
-    castService.onRedeemed = { receiverId, minterDeviceId -> sessions.recordCastRedeemed(receiverId, minterDeviceId) }
+    castService.onRedeemed = { receiver, minterDeviceId, castDeviceId, sessionId -> sessions.onReceiverRedeemed(receiver, minterDeviceId, castDeviceId, sessionId) }
     devices.onAddressChanged = { publisher.addressChanged() }
     playback.sessions = sessions
     runCatching {

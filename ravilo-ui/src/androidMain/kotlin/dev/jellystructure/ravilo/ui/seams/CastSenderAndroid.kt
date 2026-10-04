@@ -534,6 +534,8 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         session?.remoteMediaClient?.seek(com.google.android.gms.cast.MediaSeekOptions.Builder().setPosition(positionMs.coerceAtLeast(0)).build())
     }
     override fun stop() = onMain { castContext.sessionManager.endCurrentSession(true) }
+    /** R370 — leave the receiver playing (setStopReceiverApplicationWhenEndingSession(false) above). */
+    override fun leave() = onMain { castContext.sessionManager.endCurrentSession(false) }
     /** R285 — a listed subtitle with no CAF Track behind it is a burn-in (PGS) candidate. */
     private fun isBurnIn(track: dev.jellystructure.shared.tv.CastTrack?): Boolean = isCastBurnIn(track, mediaSnapshot())
 

@@ -351,3 +351,39 @@ None.
 3. ***Not reachable* lists only TVs, displays and speakers** (screens and Cast devices seen in the last 24 h). A
    Ravilo app with no connection is left out.
 4. **Audiobooks list only Ravilo apps in this round**; casting books to a speaker is its own phase.
+
+## Build notes (2026-10-05)
+
+Built against the review and the owner decisions (single places; the relay; no question while this app holds the
+busy session's Cast link; *Not reachable* = Cast places seen in 24 h; books never cast).
+
+**Server** (`tv/PlaybackTargets.kt`): `buildTargets` (Ravilo apps holding their socket — own anywhere, other members'
+when nearby; Cast devices a relay-capable app on the viewer's network reports; receivers seen in 24 h that no relay sees
+⇒ *Not reachable* with `reason = no_relay`; never a group), `appCapabilities` (from `plays=`; nothing declared ⇒
+video), `chooseRelayApp` (Android phone / Mac / Linux, same public address, socket open, newest report), `CastReach`
+(*who can reach what*: the apps' `cast_devices_seen` socket message; a closed socket drops it), `SessionStarter`
+(`POST /api/tv/playback/sessions`: `starting` row; app place ⇒ `session_load` (+ the music tracks); a Cast device the
+caller's own discovery sees ⇒ `load_here`; otherwise the relay: a hand-off minted for the requester and
+`cast_relay_load` to the relay app; `replace` ends the busy session across users only when 304's switch allows; 409
+`busy` / `unreachable`; a load with no report in 10 s ends `failed`). `GET /api/tv/playback/targets`;
+`targets_changed` to `features=sessions` sockets. `POST /api/tv/cast/handoff` takes an optional
+`{cast_device_id, session_id}`; the redeem joins the receiver to the `starting` row (the receiver needs no change).
+`plays=` on the events socket; `CastLoadData.session_id`.
+
+**Apps:** `plays=` (the web app and the TV: video only); Android and desktop report the Cast devices they see
+(`CastRoute.deviceKey` = Android's `CastDevice.deviceId` / the desktop's mDNS id); `session_load` opens the player
+(film/episode, on screen only) or plays the queue (music); `cast_relay_load` selects the route, LOADs, then leaves
+(`CastSender.leave()` — Android `endCurrentSession(false)`, desktop closes quietly) with `MusicCast.relaying` so
+nothing is mirrored or handed back. *Play on…* (`PlayOnStore`, `mergeTargets`, `playOnTiers`, `busyChoice`) shows the
+four tiers when the server can say, merged with this app's discovery by device id (and a TV app with its same-named
+route as one row); a busy row asks inline every time (*Play {title} here instead* · *Cancel*; someone else's:
+*Stop {person}'s {title} and play here?*). A Cast row this app sees still starts through today's SDK path; any other
+place starts through the server. The glyph counts the server's places too. Paired screens keep their own rows.
+
+**Not built:** the *same kind already playing elsewhere* ask on a detail page's Play (`sameKindElsewhere` exists, no UI).
+
+**Tests:** `PlaybackTargetsTest` (13), `PlayOnListTest` (15), `WireCompatTest` (new roots). Not written: the loopback
+`PlaybackStartIntegrationTest`, Robolectric `PlayOnSheetTest`.
+
+**Only devices can confirm:** a relay launch from the web app with the Pixel online (and *Not reachable* once Ravilo is
+closed on it); that the Pixel's `CastDevice.deviceId` and the desktop's mDNS id for the same speaker are equal.

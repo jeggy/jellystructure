@@ -483,8 +483,12 @@ class TvApiClient(
 
     /** The phone mints a short-lived, single-use code under its own session (FR-218-9). 404 when the
      *  server has no cast capability — the client never reaches this without one. */
-    suspend fun castHandoff(): CastHandoffResponse {
-        val r = client.post("$baseUrl/api/tv/cast/handoff") { auth() }
+    suspend fun castHandoff(castDeviceId: String? = null, sessionId: String? = null): CastHandoffResponse {
+        val r = client.post("$baseUrl/api/tv/cast/handoff") {
+            auth()
+            // R370 (review item 3) — the body only when there is something to say: no body is today's hand-off.
+            if (castDeviceId != null || sessionId != null) jsonBody(json.encodeToString(CastHandoffRequest.serializer(), CastHandoffRequest(castDeviceId, sessionId)))
+        }
         r.assertSuccess()
         return json.decodeFromString<CastHandoffResponse>(r.bodyAsText())
     }
@@ -882,6 +886,8 @@ class TvApiClient(
         onSessionDirective: suspend (type: String, text: String) -> Unit = { _, _ -> },
         // R369 (dev review item 7) — frames this app sends on the socket (`attach_session` / `detach_session`).
         outgoing: kotlinx.coroutines.flow.Flow<String>? = null,
+        // R370 (review item 6) — what this app plays (`video,music,book`); null = not said (today's URL).
+        plays: String? = null,
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -894,7 +900,7 @@ class TvApiClient(
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
-        wsClient.webSocket(wsUrl("/api/tv/events", token, remote, features), request = {
+        wsClient.webSocket(wsUrl("/api/tv/events", token, remote, features, plays), request = {
             identify()
             wsAuth(token)
             previousSockets?.let { headers { append(EVENTS_PREV_HEADER, it) } }
@@ -963,13 +969,14 @@ class TvApiClient(
 
     // R293 (FR-R293-7) — one place composes a socket URL and one place authenticates it: the token is a
     // query parameter only on a browser build (WS_TOKEN_IN_QUERY), a Bearer header everywhere else.
-    internal fun wsUrl(path: String, token: String, remote: String? = null, features: String? = null): String {
+    internal fun wsUrl(path: String, token: String, remote: String? = null, features: String? = null, plays: String? = null): String {
         var url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
             (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
         // R354 (FR-R354-1) — what this player obeys (299 FR-299-1); absent ⇒ today's URL exactly.
         if (remote != null) url += (if ('?' in url) "&" else "?") + "remote=" + remote.encodeURLParameter()
         // R368 (dev review item 2) — the opt-in for session events; absent ⇒ today's URL exactly.
         if (features != null) url += (if ('?' in url) "&" else "?") + "features=" + features.encodeURLParameter()
+        if (plays != null) url += (if ('?' in url) "&" else "?") + "plays=" + plays.encodeURLParameter()
         return url
     }
 
@@ -997,12 +1004,41 @@ class TvApiClient(
         return null
     }
 
+    /** R371 (review item 5) — the rooms of a Cast group this app holds the link to, on change only. */
+    suspend fun reportSessionMembers(report: SessionMembersReport) {
+        client.post("$baseUrl/api/tv/playback/sessions/members") {
+            auth()
+            jsonBody(json.encodeToString(SessionMembersReport.serializer(), report))
+        }.assertSuccess()
+    }
+
     /** R369 (dev review item 5) — this player's queue, on change only. */
     suspend fun reportSessionQueue(report: SessionQueueReport) {
         client.post("$baseUrl/api/tv/playback/sessions/queue") {
             auth()
             jsonBody(json.encodeToString(SessionQueueReport.serializer(), report))
         }.assertSuccess()
+    }
+
+    /** R370 (FR-R370-1) — the places this viewer may start on; null from a server older than R370 (404). */
+    suspend fun playbackTargets(): TargetList? {
+        val r = client.get("$baseUrl/api/tv/playback/targets") { auth() }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /**
+     * R370 (FR-R370-3) — start on a place. A refusal (`busy`, `unreachable`) comes back as a 409 [TvApiError.Http]
+     * whose body is a [SessionCommandRefusal].
+     */
+    suspend fun startPlaybackSession(req: SessionStartRequest): SessionStartResponse {
+        val r = client.post("$baseUrl/api/tv/playback/sessions") {
+            auth()
+            jsonBody(json.encodeToString(SessionStartRequest.serializer(), req))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
     }
 
     suspend fun playbackSessions(): SessionList {

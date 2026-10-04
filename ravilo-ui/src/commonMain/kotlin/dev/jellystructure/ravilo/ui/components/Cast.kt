@@ -262,6 +262,28 @@ class CastController(
         }
     }
 
+    /** R370 (owner decision 1) — a relay launch waiting for its route to connect. */
+    var pendingRelay: CastLoadData? = null
+        private set
+
+    /**
+     * R370 (owner decision 1) — the server asks this app to launch the receiver on [castDeviceId] for someone else's
+     * session. Only when this app holds no link of its own (Android keeps one Cast session per app) and its discovery
+     * sees the device. The app's root LOADs it on connection, then leaves ([dev.jellystructure.ravilo.ui.music.MusicCast.leaveRelay]).
+     */
+    fun relayLoad(castDeviceId: String, load: CastLoadData): Boolean {
+        if (sender.link.value != CastLinkState.NONE) return false
+        val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return false
+        pendingRelay = load
+        pendingMusicHandoff = false
+        dev.jellystructure.ravilo.ui.music.MusicCast.relaying = true
+        r.select()
+        return true
+    }
+
+    /** The relay's LOAD is out: nothing more is pending. */
+    fun relayLoaded(): CastLoadData? = pendingRelay.also { pendingRelay = null }
+
     /** R368 (FR-R368-9) — next on the bar, where control already works today (the cast this app sent). */
     var sessionNext: ((dev.jellystructure.shared.tv.SessionView) -> Unit)? = { _ ->
         if (dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) dev.jellystructure.ravilo.ui.music.MusicPlayback.next() else command("next")

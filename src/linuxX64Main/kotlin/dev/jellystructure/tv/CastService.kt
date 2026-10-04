@@ -87,11 +87,14 @@ class CastService(
 
     /** R368 (FR-R368-9, dev review item 11) — (receiver device id, the device that minted the code it redeemed): the
      *  minting phone controls that cast while it lives. Main wires it to the playback sessions. */
-    var onRedeemed: ((receiverDeviceId: String, minterDeviceId: String) -> Unit)? = null
+    var onRedeemed: (suspend (receiver: DeviceData, minterDeviceId: String, castDeviceId: String?, sessionId: String?) -> Unit)? = null
+
+    /** R370 (review item 3) — a hand-off's optional body: the Cast device it is for and the `starting` session. */
+    private val handoffExtras = HashMap<String, Pair<String?, String?>>()
 
     // ── FR-218-9: hand-off ────────────────────────────────────────────────────
 
-    fun mint(phone: DeviceData): CastHandoffResponse {
+    fun mint(phone: DeviceData, castDeviceId: String? = null, sessionId: String? = null): CastHandoffResponse {
         val now = nowMs()
         db.castHandoffQueries.sweep(now)
         var code: String
@@ -101,6 +104,8 @@ class CastService(
         } while (db.castHandoffQueries.getByCode(code).executeAsOneOrNull() != null)
         val expires = now + HANDOFF_TTL_MS
         db.castHandoffQueries.insert(code, phone.deviceId, phone.jellyfinUserId, now, expires)
+        if (castDeviceId != null || sessionId != null) handoffExtras[code] = castDeviceId to sessionId
+        if (handoffExtras.size > 64) handoffExtras.keys.take(handoffExtras.size - 64).forEach { handoffExtras.remove(it) }
         return CastHandoffResponse(code = code, expiresAt = expires, ttlSeconds = (HANDOFF_TTL_MS / 1000).toInt())
     }
 
@@ -137,7 +142,7 @@ class CastService(
             else -> "re-enrolled with the sender's sign-in"
         }
         println("[INFO] Cast receiver $id $how for user '${phone.jellyfinUsername}' via device ${phone.deviceId}")
-        runCatching { onRedeemed?.invoke(id, phone.deviceId) }
+        val extras = handoffExtras.remove(row.code)
         return deviceService.loginDevice(
             deviceId = id,
             deviceName = name,
@@ -152,7 +157,7 @@ class CastService(
             platform = platform,
             blockedTags = phone.blockedTags,
             kind = "cast",
-        )
+        ).also { (receiver, _) -> runCatching { onRedeemed?.invoke(receiver, phone.deviceId, extras?.first, extras?.second) } }
     }
 
     // ── FR-218-8: the ceiling ─────────────────────────────────────────────────

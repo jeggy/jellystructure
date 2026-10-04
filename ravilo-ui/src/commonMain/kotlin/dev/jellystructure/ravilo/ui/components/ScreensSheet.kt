@@ -29,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -104,7 +106,8 @@ fun ScreensSheet(
     // R360 (dev review item 4) — the sheet can no longer open empty (*Add a TV* and its hint are gone): with no row at
     // all and nothing to stop, it closes itself rather than showing a bare title.
     val hasRows = devices.any { it.kind == DeviceKind.SCREEN } || visibleCastRoutes(routes, music).isNotEmpty() || airplayAvailable ||
-        sessionsState.sessions.isNotEmpty()   // R368 — a *Playing everywhere* row is part of the list
+        sessionsState.sessions.isNotEmpty() ||   // R368 — a *Playing everywhere* row is part of the list
+        dev.jellystructure.ravilo.ui.sessions.PlayOnStore.targets.value.orEmpty().any { !it.here && it.reachable }   // R370 — a server place
     LaunchedEffect(open, loaded, hasRows, link) {
         if (open && loaded && !hasRows && link == CastLinkState.NONE) onClose()
     }
@@ -133,6 +136,48 @@ fun ScreensSheet(
         if (music && r.busyWith != null && !connectedTo(r) && !r.busyWith.equals("Ravilo", ignoreCase = true)) { takeOver = r; return }
         startRoute(r)
     }
+    // R370 (FR-R370-1, review item 11) — the server's places while the sheet is open; null = today's list stands alone.
+    val serverTargets by dev.jellystructure.ravilo.ui.sessions.PlayOnStore.targets.collectAsState()
+    LaunchedEffect(open) { if (open) dev.jellystructure.ravilo.ui.sessions.PlayOnStore.opened() else dev.jellystructure.ravilo.ui.sessions.PlayOnStore.closed() }
+    var asking by remember { mutableStateOf<dev.jellystructure.ravilo.ui.sessions.PlayOnRow?>(null) }
+    LaunchedEffect(open) { if (!open) asking = null }
+    val musicNow by dev.jellystructure.ravilo.ui.music.MusicPlayback.state.collectAsState()
+    /** What to start on a place: this page's title, or the music queue that plays here; null = nothing to start. */
+    fun startRequestFor(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, replace: dev.jellystructure.shared.tv.SessionView?): dev.jellystructure.shared.tv.SessionStartRequest? {
+        val r = replace?.let { dev.jellystructure.shared.tv.SessionReplace(it.id, it.revision) }
+        if (music) {
+            val st = musicNow
+            if (st.queue.isEmpty() || st.book != null) return null
+            return dev.jellystructure.shared.tv.SessionStartRequest(targetId = row.id, kind = "music", items = st.queue.map { it.id }, index = st.index.coerceAtLeast(0),
+                startMs = dev.jellystructure.ravilo.ui.music.MusicPlayback.currentPositionMs(), shuffle = st.shuffle, repeat = st.repeat.name.lowercase(), replace = r)
+        }
+        val ctx = playContext ?: return null
+        return dev.jellystructure.shared.tv.SessionStartRequest(targetId = row.id, kind = "film", items = listOf(ctx.itemId), startMs = ctx.startPositionMs, replace = r)
+    }
+    fun startOn(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, replace: dev.jellystructure.shared.tv.SessionView?) {
+        asking = null
+        // A Cast device this app's own discovery sees: today's path (the SDK starts it; the receiver's first report
+        // makes the session). Anything else goes through the server (a Ravilo app, or the relay — owner decision 1).
+        row.route?.let { startRoute(it); return }
+        val req = startRequestFor(row, replace) ?: return
+        onClose()
+        dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(req, onStarted = { r -> r.session?.let { onOpenSession(it) } },
+            onRefused = { reason -> println("R370: start on ${row.name} refused: $reason") })
+    }
+    fun tapRow(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow) {
+        if (row.here) {
+            onClose()
+            if (music && dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) dev.jellystructure.ravilo.ui.music.MusicCast.playHere()
+            return
+        }
+        val holds = row.route?.let { connectedTo(it) } == true
+        when (dev.jellystructure.ravilo.ui.sessions.busyChoice(row, holds)) {
+            dev.jellystructure.ravilo.ui.sessions.BusyChoice.Start -> startOn(row, null)
+            dev.jellystructure.ravilo.ui.sessions.BusyChoice.AskReplace, dev.jellystructure.ravilo.ui.sessions.BusyChoice.AskReplacePerson -> asking = row
+            else -> Unit
+        }
+    }
+    val tierRows = serverTargets?.let { st -> dev.jellystructure.ravilo.ui.sessions.mergeTargets(st, visibleCastRoutes(routes, music)) }
     HandsetSheet(visible = open, onDismiss = onClose, popover = true) {   // R368 — a popover on a computer
         val pending = takeOver
         if (pending != null) {
@@ -140,8 +185,16 @@ fun ScreensSheet(
         } else {
             ScreensSheetBody(
                 // R368 (FR-R368-7) — *Playing everywhere* on top, under the title; absent when nothing plays anywhere.
-                top = { PlayingEverywhereSection(sessionsState, onOpen = { onClose(); onOpenSession(it) }, onPlayPause = onSessionPlayPause) },
-                devices = devices, routes = routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,
+                top = {
+                    PlayingEverywhereSection(sessionsState, onOpen = { onClose(); onOpenSession(it) }, onPlayPause = onSessionPlayPause)
+                    // R370 (FR-R370-2) — the four tiers, when the server can say (otherwise today's list below).
+                    if (tierRows != null) PlayOnTiersSection(
+                        tiers = dev.jellystructure.ravilo.ui.sessions.playOnTiers(tierRows, if (music) "music" else "film"),
+                        asking = asking, title = musicNow.current?.title ?: status?.title.orEmpty(),
+                        onTap = ::tapRow, onReplace = { row -> startOn(row, row.busy) }, onCancel = { asking = null },
+                    )
+                },
+                devices = devices, routes = if (tierRows != null) emptyList() else routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,
                 playingTitle = status?.takeIf { it.loaded }?.title, music = music,
                 tier2Open = tier2Open,
                 onToggleTier2 = { tier2Open = !tier2Open; ScreensSheetPrefs.setTier2Open(tier2Open) },
@@ -222,6 +275,64 @@ private fun ScreensSheetBody(
         // FR-R245-10 — ending a session is only ever explicit, and this is where the sheet says so.
         // The design's own warning ink for this row (`#ff9b8a`); the palette has no token for it.
         if (onStop != null) SimpleRow(icon = {}, label = str("cast.stop"), onClick = onStop, labelColor = Color(0xFFFF9B8A))
+    }
+}
+
+/**
+ * R370 (FR-R370-2/-4) — *Play on…* in four tiers: this device · playing now (what plays there) · free (TVs and displays
+ * first, then speakers) · not reachable (dimmed, a tap does nothing). A busy row asks inline, every time: *Play {title}
+ * here instead* / *Cancel* — never *Add*; someone else's reads *Stop {person}'s {title} and play here?*.
+ */
+@Composable
+private fun PlayOnTiersSection(
+    tiers: dev.jellystructure.ravilo.ui.sessions.PlayOnTiers, asking: dev.jellystructure.ravilo.ui.sessions.PlayOnRow?, title: String,
+    onTap: (dev.jellystructure.ravilo.ui.sessions.PlayOnRow) -> Unit, onReplace: (dev.jellystructure.ravilo.ui.sessions.PlayOnRow) -> Unit, onCancel: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    @Composable fun row(r: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, line: String?) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 54.dp).alpha(if (r.reachable) 1f else 0.45f)
+                .clickable(enabled = r.reachable, interactionSource = remember { MutableInteractionSource() }, indication = null) { onTap(r) }
+                .padding(horizontal = 14.dp, vertical = 8.dp).testTag("playon-${r.id}"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.height(36.dp).width(36.dp).background(colors.surfaceVariant, CircleShape), contentAlignment = Alignment.Center) {
+                DeskIcon(placeIcon(r.icon), colors.text, 18.dp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(r.name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (line != null) Text(line, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (asking?.id == r.id) {
+            val busy = r.busy
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().background(colors.fg.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(12.dp)) {
+                if (busy != null && !busy.mine) Text(str("target.replace_person", mapOf("person" to busy.owner.name, "title" to (busy.title ?: r.name))), color = colors.text, fontSize = 13.5.sp, fontFamily = Sora)
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.heightIn(min = 40.dp).background(colors.accent, RoundedCornerShape(20.dp)).clickable { onReplace(r) }.padding(horizontal = 14.dp).testTag("playon-replace"),
+                        contentAlignment = Alignment.Center) { Text(str("target.replace", mapOf("title" to title)), color = colors.fg, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1) }
+                    Box(Modifier.heightIn(min = 40.dp).background(colors.fg.copy(alpha = 0.08f), RoundedCornerShape(20.dp)).clickable { onCancel() }.padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center) { Text(str("action.cancel"), color = colors.text, fontSize = 13.5.sp, fontFamily = Sora) }
+                }
+            }
+        }
+    }
+    tiers.thisDevice?.let { row(it.copy(name = str(if (dev.jellystructure.ravilo.ui.isDesktopPlatform) "mode.label_desk" else "mode.label")), null) }
+    if (tiers.playingNow.isNotEmpty()) {
+        SectionLabel(str("target.playing_now"))
+        tiers.playingNow.forEach { r ->
+            val b = r.busy
+            row(r, b?.let { if (it.mine) (it.title ?: "") else str(if (it.kind == "music" || it.kind == "audiobook") "session.person_listening" else "session.person_watching", mapOf("person" to it.owner.name)) })
+        }
+    }
+    if (tiers.free.isNotEmpty()) {
+        SectionLabel(str("target.free"))
+        tiers.free.forEach { r -> row(r, null) }
+    }
+    if (tiers.unreachable.isNotEmpty()) {
+        SectionLabel(str("target.unreachable"))
+        tiers.unreachable.forEach { r -> row(r, str("target.unreachable")) }
     }
 }
 

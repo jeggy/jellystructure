@@ -94,6 +94,11 @@ class TvEventBus(private val scope: CoroutineScope) {
         sessions.values.firstNotNullOfOrNull { it[deviceId] }?.let { feature in (socketFeatures[it] ?: emptySet()) } == true
     }
 
+    /** R370 — every live socket with what it opted into and what it plays (`plays:video` …), for the places list. */
+    suspend fun liveSockets(): List<Triple<String, String, Set<String>>> = mutex.withLock {
+        sessions.flatMap { (u, m) -> m.map { (d, s) -> Triple(u, d, socketFeatures[s] ?: emptySet()) } }
+    }
+
     /** Every live (userId, deviceId) whose socket opted into [feature] — R370's targets, R369's routing. */
     suspend fun socketsWith(feature: String): List<Pair<String, String>> = mutex.withLock {
         sessions.flatMap { (u, m) -> m.filter { (_, s) -> feature in (socketFeatures[s] ?: emptySet()) }.map { (d, _) -> u to d } }

@@ -76,6 +76,11 @@ interface CastSender {
     fun seekTo(positionMs: Long)
     /** Ends the session (stops the receiver). Only ever explicit (FR-R245-10). */
     fun stop()
+    /**
+     * R370 (owner decision 1) — drops this app's link and leaves the receiver playing (a relay launch, or a move that
+     * hands the session to another place). A no-op where the platform cannot leave without stopping.
+     */
+    fun leave() {}
     /** Selects a subtitle by the receiver's track id; null = off. */
     fun selectSubtitle(trackId: Long?)
     fun selectAudio(trackId: Long?)
@@ -153,6 +158,11 @@ class CastRoute(
     val kind: String = "display",
     /** The receiver app another sender left running on it, as the route provider reports it; null = nothing known. */
     val busyWith: String? = null,
+    /**
+     * R370 (review item 3) — the Cast device's own id (Android's `CastDevice.deviceId`, the desktop's mDNS `id`): the one
+     * key the apps and the server share for this device. Falls back to the route's id.
+     */
+    val deviceKey: String = id,
 )
 
 /**

@@ -663,7 +663,9 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val svc = castService ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not available"))
         if (svc.capability() == null) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "casting is not enabled"))
-        call.respond(svc.mint(device))
+        // R370 (review item 3) — an optional body names the Cast device and the `starting` session; none = today's hand-off.
+        val body = runCatching { call.receive<dev.jellystructure.shared.tv.CastHandoffRequest>() }.getOrNull()
+        call.respond(svc.mint(device, body?.castDeviceId, body?.sessionId))
     }
     // Pre-auth (AuthPlugin OPEN_API_PATHS) — same rate limiter as /tv/login, since a code is guessable
     // in principle and this is the only unauthenticated path that mints a device token.

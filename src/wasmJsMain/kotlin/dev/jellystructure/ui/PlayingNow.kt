@@ -113,8 +113,18 @@ private fun pnRemote(r: AdminSessionRow): String {
             "<span class=\"${if (on) "on" else ""}\"${if ("jump" in ops && !on) " data-cmd=\"${r.id.esc()}\" data-op=\"jump\" data-extra=',\"index\":$idx'" else ""}>${(e.title ?: "—").esc()}${e.subtitle?.let { " <span class=\"muted\">· ${it.esc()}</span>" } ?: ""}</span>"
         }.joinToString("") + "</div>"
     } ?: ""
+    // R371 — Volume (the receiver's own) and, for a group, each room's (through the app holding the Cast link).
+    val vol = if ("set_volume" in ops && d?.volume != null) {
+        val rooms = d.session.rooms.takeIf { it.size > 1 }.orEmpty()
+        "<div class=\"ses-h\">Volume</div><div class=\"ses-v\"><span>${if (rooms.isEmpty()) r.targetName.esc() else "Volume"}</span><input type=\"range\" min=\"0\" max=\"100\" value=\"${d.volume}\" data-vol=\"${r.id.esc()}\" data-room=\"\"><span>${d.volume}</span></div>" +
+            rooms.joinToString("") { room ->
+                val lv = room.volume
+                if (lv == null || "room_volume" !in ops) "<div class=\"ses-v rm\"><span>${room.name.esc()}</span><span class=\"muted tiny\">${room.name.esc()} doesn't report its volume</span><span>—</span></div>"
+                else "<div class=\"ses-v rm\"><span>${room.name.esc()}</span><input type=\"range\" min=\"0\" max=\"100\" value=\"$lv\" data-vol=\"${r.id.esc()}\" data-room=\"${room.castDeviceId.esc()}\"><span>$lv</span></div>"
+            }
+    } else ""
     val note = pnFeedback?.takeIf { it.first == r.id }?.let { "<div class=\"tiny\" style=\"color:var(--bad);margin-top:6px\">${it.second.esc()}</div>" } ?: ""
-    return "<div class=\"ses-h\">Remote</div><div class=\"ses-ctl\">${btn("previous", "⏮")}$play${btn("next", "⏭")}$seek$end</div>$note$queue"
+    return "<div class=\"ses-h\">Remote</div><div class=\"ses-ctl\">${btn("previous", "⏮")}$play${btn("next", "⏭")}$seek$end</div>$note$vol$queue"
 }
 
 private fun pnNowMs(): Double = js("Date.now()")
@@ -243,6 +253,18 @@ private fun paintPlayingNow(scope: CoroutineScope) {
             s.addEventListener("change", { _ ->
                 val r = rowOf(s.getAttribute("data-seek") ?: return@addEventListener) ?: return@addEventListener
                 pnCommand(scope, r, pnBody("seek", pnDetails[r.id]?.session?.revision ?: r.revision, ",\"position_ms\":${s.value}"))
+            })
+        }
+    }
+    el.querySelectorAll("[data-vol]").let { ss ->
+        for (i in 0 until ss.length) {
+            val s = ss.item(i) as? org.w3c.dom.HTMLInputElement ?: continue
+            s.addEventListener("click", { ev -> ev.stopPropagation() })
+            s.addEventListener("change", { _ ->
+                val r = rowOf(s.getAttribute("data-vol") ?: return@addEventListener) ?: return@addEventListener
+                val room = s.getAttribute("data-room").orEmpty()
+                pnCommand(scope, r, pnBody("set_volume", pnDetails[r.id]?.session?.revision ?: r.revision,
+                    ",\"level\":${s.value}" + if (room.isNotEmpty()) ",\"cast_device_id\":\"$room\"" else ""))
             })
         }
     }

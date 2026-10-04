@@ -78,8 +78,31 @@ internal fun commandRoute(
     else -> CommandRoute.Unreachable
 }
 
+/** R371 — where a room op goes (review item 8, owner decisions 1–2). */
+internal sealed interface RoomRoute {
+    /** The Android / desktop app holding the session's Cast link applies it. */
+    data object LinkHolder : RoomRoute
+    /** No link holder: a relay app on that network, which then holds the link. */
+    data object Relay : RoomRoute
+    /** Neither: `409 unreachable`; the room's slider is disabled with its reason (the master still works). */
+    data object Unreachable : RoomRoute
+}
+
+/** A room's own op: adding or removing one, or one room's level or mute (`cast_device_id` set). */
+internal fun isRoomOp(c: SessionCommandRequest): Boolean =
+    c.op in dev.jellystructure.shared.tv.SESSION_OPS_ROOM || ((c.op == "set_volume" || c.op == "set_mute") && c.castDeviceId != null)
+
+internal fun roomOpRoute(linkHolderControl: Boolean, relayControl: Boolean): RoomRoute = when {
+    linkHolderControl -> RoomRoute.LinkHolder
+    relayControl -> RoomRoute.Relay
+    else -> RoomRoute.Unreachable
+}
+
 /** The ops a target obeys — the remote shows a control for these only (absent, never greyed). */
 internal fun opsFor(targetControl: Boolean): List<String> = if (targetControl) SESSION_OPS_LEGACY + SESSION_OPS_CONTROL else SESSION_OPS_LEGACY
+
+/** R371 — a music session's room ops, offered while an app can reach the speakers (the link holder or a relay). */
+internal fun roomOps(music: Boolean, reachable: Boolean): List<String> = if (music && reachable) listOf("add_room", "remove_room", "room_volume") else emptyList()
 
 /**
  * FR-R369-3, review item 8, 304b — who may control a session: its owner, anyone in the household (same network,
@@ -164,7 +187,46 @@ class SessionControl(
     }
 
     /** The ops [s]'s target obeys now. */
-    internal suspend fun opsOf(s: SessionRec): List<String> = opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL))
+    internal suspend fun opsOf(s: SessionRec): List<String> {
+        val minter = sessions.castMinterOf(s.targetId)
+        val reach = (minter != null && bus.hasFeature(minter, EVENTS_FEATURE_SESSION_CONTROL)) || relayAppFor(s) != null
+        return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
+    }
+
+    /** R371 — the app that can act on a room: the one holding the Cast link, else a relay app on that network. */
+    internal var relayAppFor: suspend (SessionRec) -> DeviceData? = { null }
+    /** R371 — the session service's room-level memory (for a room's mute). */
+    internal var rememberRoomLevel: suspend (String, String, Int?) -> Unit = { _, _, _ -> }
+
+    /** R371 (FR-R371-5, review items 7 and 8) — a room op goes to the link holder, else to a relay app. */
+    private suspend fun roomCommand(s: SessionRec, c0: SessionCommandRequest, source: String?): CommandResult {
+        if (s.kind != SessionKind.MUSIC) return CommandResult.NotOffered   // review item 4 — Cast groups carry audio only
+        var c = c0
+        // Review item 7 — a room's mute is a level of 0, with the level before it kept on the server.
+        if (c.op == "set_mute" && c.castDeviceId != null) {
+            val room = s.options.rooms.firstOrNull { it.castDeviceId == c.castDeviceId }
+            c = if (c.muted == true) {
+                rememberRoomLevel(s.id, c.castDeviceId!!, room?.volume)
+                SessionCommandRequest(op = "set_volume", castDeviceId = c.castDeviceId, level = 0)
+            } else {
+                val back = s.options.roomLevelsBeforeMute[c.castDeviceId] ?: room?.volume ?: 50
+                rememberRoomLevel(s.id, c.castDeviceId!!, null)
+                SessionCommandRequest(op = "set_volume", castDeviceId = c.castDeviceId, level = back)
+            }
+        }
+        val minter = sessions.castMinterOf(s.targetId)
+        val holderControl = minter != null && bus.hasFeature(minter, EVENTS_FEATURE_SESSION_CONTROL)
+        val relay = if (holderControl) null else relayAppFor(s)
+        val to = when (roomOpRoute(holderControl, relay != null)) {
+            RoomRoute.LinkHolder -> devices.listSessions(minter!!).maxByOrNull { it.lastSeen } ?: return CommandResult.Unreachable
+            RoomRoute.Relay -> relay!!
+            RoomRoute.Unreachable -> return CommandResult.Unreachable
+        }
+        val env = SessionCommandEnvelope(sessionId = s.id, command = c, source = source)
+        bus.notifySessionCommand(to.jellyfinUserId, to.deviceId, json.encodeToString(SessionCommandEnvelope.serializer(), env))
+        sessions.record(s.id, "command", source, c.op)
+        return CommandResult.Accepted
+    }
 
     /** FR-R369-1/-2 — one command. [source] is `admin` or the caller's device id (the timeline's *from*). */
     internal suspend fun command(sessionId: String, c: SessionCommandRequest, caller: DeviceData?, admin: Boolean): CommandResult {
@@ -172,6 +234,7 @@ class SessionControl(
         if (!mayControl(caller, admin, s)) return CommandResult.Forbidden
         if (sessionCommandVerdict(c.op, c.revision, s) == CommandVerdict.Stale) return CommandResult.Stale(s)
         val source = if (admin) "admin" else caller?.deviceId
+        if (isRoomOp(c)) return roomCommand(s, c, source)
         val targetSocket = bus.isConnected(s.targetId)
         val targetControl = targetSocket && bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL)
         val minter = sessions.castMinterOf(s.targetId)

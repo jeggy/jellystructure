@@ -69,7 +69,8 @@ object MusicCast {
         bindJob = scope.launch {
             combine(c.sender.link, c.sender.status, c.sender.deviceName) { l, s, n -> Triple(l, s, n) }.collect { (link, raw, name) ->
                 val wasLinked = _linked.value
-                val nowLinked = castMusicLive(link, raw)
+                // R370 — a relay launch (this app only starts the receiver for someone else) never links the music here.
+                val nowLinked = castMusicLive(link, raw) && !relaying
                 // R358 (FR-R358-1/2) — until the device's word is a place of its own (it plays, or it names another
                 // song), what this device shows, follows and hands back is the hand-over's song and position. The
                 // sender's own "loading" status and a receiver that never got a stream both say 0:00, and that 0:00
@@ -182,6 +183,17 @@ object MusicCast {
     @kotlin.concurrent.Volatile private var resumeSentAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
     /** Set by [playHere], [stop] and [moveAway]: they bring the music back themselves. */
     @kotlin.concurrent.Volatile private var endedByApp = false
+
+    /** R370 (owner decision 1) — this app is relaying a launch: it must not mirror, follow or hand back that music. */
+    @kotlin.concurrent.Volatile var relaying = false
+
+    /** R370 — the relay is done (the receiver joined the server): drop the link, leave it playing, take nothing back. */
+    fun leaveRelay() {
+        val c = cast ?: return
+        endedByApp = true
+        lastMusic = null; lastMusicAt = null; handOver = null
+        c.sender.leave()
+    }
 
     private fun handOff(c: CastController) {
         val st = MusicEngine.state.value
@@ -300,11 +312,11 @@ object MusicCast {
     val deviceVolume: kotlinx.coroutines.flow.StateFlow<Double?>? get() = cast?.sender?.volume
     fun setLyrics(on: Boolean) = command("lyrics", on = on)
 
-    private fun MusicTrackItem.toCast() = CastTrackItem(
+    internal fun MusicTrackItem.toCast() = CastTrackItem(
         id = id, title = title, artist = artists.joinToString(", ") { it.name }.ifBlank { null }, album = album,
         albumArtist = artists.firstOrNull()?.name, coverUrl = imageUrl, durationMs = durationMs, hasLyrics = hasLyrics,
     )
-    private fun CastTrackItem.toItem() = MusicTrackItem(
+    internal fun CastTrackItem.toItem() = MusicTrackItem(
         id = id, title = title, album = album, artists = artist?.let { listOf(MusicArtistRef(id = "", name = it)) } ?: emptyList(),
         durationMs = durationMs, hasLyrics = hasLyrics, imageUrl = coverUrl,
     )

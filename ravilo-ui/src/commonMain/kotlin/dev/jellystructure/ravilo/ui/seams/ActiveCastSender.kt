@@ -63,6 +63,7 @@ class ActiveCastSender(
     override fun pause() = active.pause()
     override fun seekTo(positionMs: Long) = active.seekTo(positionMs)
     override fun stop() = active.stop()
+    override fun leave() { chromecast?.leave() }
     override fun selectSubtitle(trackId: Long?) = active.selectSubtitle(trackId)
     override fun selectAudio(trackId: Long?) = active.selectAudio(trackId)
     override fun send(json: String) = active.send(json)

@@ -35,6 +35,7 @@ internal fun Route.playbackSessionRoutes(
     sessions: PlaybackSessions? = null,
     control: SessionControl? = null,
     setHouseholdControl: (suspend (Boolean) -> Unit)? = null,
+    starter: dev.jellystructure.tv.SessionStarter? = null,
 ) {
     get("/tv/playback/sessions") {
         val device = call.attributes[DeviceKey]
@@ -49,6 +50,28 @@ internal fun Route.playbackSessionRoutes(
 
     if (sessions == null || control == null) return
 
+    if (starter != null) {
+        // R370 (FR-R370-1/-2) — the places this viewer may start on.
+        get("/tv/playback/targets") {
+            val device = call.attributes[DeviceKey]
+            val targets = starter.targetsFor(device) { s -> publisher.viewFor(device, s) }
+            call.respond(dev.jellystructure.shared.tv.TargetList(targets, kotlin.time.Clock.System.now().toEpochMilliseconds()))
+        }
+        // R370 (FR-R370-3/-4/-5) — start on a place; `replace` ends a busy one first (review item 10).
+        post("/tv/playback/sessions") {
+            val device = call.attributes[DeviceKey]
+            val req = call.receive<dev.jellystructure.shared.tv.SessionStartRequest>()
+            when (val r = starter.start(device, req)) {
+                is dev.jellystructure.tv.StartResult2.Started -> call.respond(dev.jellystructure.shared.tv.SessionStartResponse(
+                    publisher.viewFor(device, r.session), r.loadHere, r.castDeviceId))
+                dev.jellystructure.tv.StartResult2.Busy -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("busy"))
+                dev.jellystructure.tv.StartResult2.Unreachable -> call.respond(HttpStatusCode.Conflict, SessionCommandRefusal("unreachable"))
+                dev.jellystructure.tv.StartResult2.Forbidden -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not yours to replace"))
+                dev.jellystructure.tv.StartResult2.BadRequest -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to "nothing to start there"))
+            }
+        }
+    }
+
     // R369 (dev review item 5) — what a remote needs beyond the row.
     get("/tv/playback/sessions/{id}") {
         val device = call.attributes[DeviceKey]
@@ -62,6 +85,13 @@ internal fun Route.playbackSessionRoutes(
         val device = call.attributes[DeviceKey]
         val r = call.receive<SessionQueueReport>()
         sessions.onQueueReport(device, r)
+        call.respond(mapOf("status" to "ok"))
+    }
+
+    // R371 (review item 5) — a group's rooms, from the app holding the session's Cast link, on change.
+    post("/tv/playback/sessions/members") {
+        val device = call.attributes[DeviceKey]
+        sessions.onMembersReport(device, call.receive<dev.jellystructure.shared.tv.SessionMembersReport>())
         call.respond(mapOf("status" to "ok"))
     }
 

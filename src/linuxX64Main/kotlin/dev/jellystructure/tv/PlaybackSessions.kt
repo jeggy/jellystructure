@@ -93,6 +93,10 @@ internal fun parseEventFeatures(raw: String?): Set<String> =
 
 private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL)
 
+/** R370 (review item 6) — what an app declares it plays (`plays=video,music,book`), kept beside its features. */
+internal fun parsePlays(raw: String?): Set<String> =
+    raw.orEmpty().split(',').map { it.trim().lowercase() }.filter { it in setOf("video", "music", "book") }.map { "plays:$it" }.toSet()
+
 /** One item of a session's queue: facts the apps word, never a sentence. */
 @Serializable
 internal data class SessionItem(
@@ -186,6 +190,13 @@ internal data class SessionRec(
     /** R372 — a move in flight / failed. */
     val movingTo: String? = null,
     val moveFailed: String? = null,
+    /** R370 (review item 8) — a load that brings no report by this time ends `failed`. */
+    val loadDeadline: Long? = null,
+    /** R370 — a Cast place's stable key (the app's discovery id), when known. */
+    val castDeviceId: String? = null,
+    /** R371 (FR-R371-3) — a room that left on its own, and when. */
+    val leftRoom: String? = null,
+    val leftAt: Long? = null,
 ) {
     val live: Boolean get() = endedAt == null
     val current: SessionItem? get() = queue.getOrNull(queueIndex)
@@ -245,6 +256,7 @@ internal fun toView(
         createdAt = s.createdAt, updatedAt = s.updatedAt,
         rooms = s.options.rooms,
         movingTo = s.movingTo, moveFailed = s.moveFailed,
+        leftRoom = s.leftRoom, leftAt = s.leftAt,
     )
 }
 
@@ -268,6 +280,8 @@ internal sealed interface SessionChange {
 
 /** The hold a stop keeps a session for (review item 6). */
 internal const val SESSION_STOP_HOLD_MS = 15_000L
+/** R370 (review item 8) — a load with no `starting` / `playing` report by then fails. */
+internal const val SESSION_LOAD_TIMEOUT_MS = 10_000L
 /** How long an ended row stays listed (review item 13: the 60 s fade comes from the server). */
 internal const val SESSION_ENDED_LINGER_MS = 60_000L
 /** FR-R368-4 — a restored session's target must report within this. */
@@ -329,6 +343,60 @@ class PlaybackSessions(
 
     fun recordCastRedeemed(receiverDeviceId: String, minterDeviceId: String) { castMinter[receiverDeviceId] = minterDeviceId }
     internal fun castMinterOf(receiverDeviceId: String): String? = castMinter[receiverDeviceId]
+
+    /** R370 (review item 3) — receiver device id → the Cast device it runs on (from the hand-off's body). */
+    private val receiverCastDevice = HashMap<String, String>()
+    internal fun castDeviceOfReceiver(receiverDeviceId: String): String? = receiverCastDevice[receiverDeviceId]
+    internal fun receiversByCastDevice(): Map<String, String> = receiverCastDevice.entries.associate { (r, c) -> c to r }
+
+    /**
+     * R370 (FR-R370-3, review item 1) — a redeemed hand-off that named its Cast device and the `starting` session it was
+     * minted for: the receiver is that session's place from now on, so its first start joins the row.
+     */
+    suspend fun onReceiverRedeemed(receiver: DeviceData, minterDeviceId: String, castDeviceId: String?, sessionId: String?) {
+        castMinter[receiver.deviceId] = minterDeviceId
+        if (castDeviceId != null) receiverCastDevice[receiver.deviceId] = castDeviceId
+        if (sessionId == null) return
+        val moved = mutex.withLock {
+            val cur = sessions[sessionId]?.takeIf { it.live && it.targetKind == "cast" } ?: return@withLock false
+            val next = cur.copy(targetId = receiver.deviceId, targetName = placeNameOf(receiver), castDeviceId = castDeviceId ?: cur.castDeviceId,
+                ownerUserId = receiver.jellyfinUserId, revision = cur.revision + 1, updatedAt = now())
+            sessions[sessionId] = next
+            next.persist()
+            true
+        }
+        if (moved) notify(SessionChange.State(sessionId))
+    }
+
+    /**
+     * R370 (FR-R370-3) — a session created by *Play on…* before its place reports: `starting`, with a 10 s load
+     * deadline (review item 8). A Cast place's row is keyed on its device until the receiver redeems
+     * ([onReceiverRedeemed]); an app place's is its device id.
+     */
+    internal suspend fun createStarting(
+        owner: DeviceData, targetKind: String, targetId: String, targetName: String, kind: String,
+        items: List<SessionItem>, index: Int, startMs: Long, options: SessionOptions, startedBy: DeviceData,
+        castDeviceId: String? = null, bookId: String? = null,
+    ): SessionRec {
+        val rec = mutex.withLock {
+            val t = now()
+            val cur = items.getOrNull(index) ?: items.firstOrNull() ?: SessionItem("")
+            val r = SessionRec(
+                id = newId(), ownerUserId = owner.jellyfinUserId, ownerName = firstName(owner.jellyfinUsername), targetKind = targetKind,
+                targetId = targetId, targetName = targetName, lane = sessionLane(kind), kind = kind, itemId = cur.id, bookId = bookId,
+                queue = listOf(cur), queueIndex = index, positionMs = startMs, positionAt = t, state = SessionState.STARTING,
+                options = options.copy(queueIds = items.map { it.id }, queueKnown = items.size > 1), revision = 1,
+                startedByDeviceId = startedBy.deviceId, jellyfinPlaySessionId = null, offline = false, endReason = null, endedBy = null,
+                createdAt = t, updatedAt = t, endedAt = null, loadDeadline = t + SESSION_LOAD_TIMEOUT_MS, castDeviceId = castDeviceId,
+            )
+            sessions[r.id] = r
+            r.persist()
+            event(r.id, "started", startedBy.deviceId, targetName)
+            r
+        }
+        notify(SessionChange.List)
+        return rec
+    }
 
     private fun now() = clock()
     private fun newId(): String = "ps-" + generateSecureToken().take(16)
@@ -436,7 +504,8 @@ class PlaybackSessions(
                     val sameItem = cur.itemId == itemId
                     val queue = if (sameItem) cur.queue.ifEmpty { listOf(item) } else listOf(item)
                     val next = cur.copy(
-                        kind = kind, itemId = itemId, bookId = bookId ?: cur.bookId, queue = queue, queueIndex = 0,
+                        kind = kind, itemId = itemId, bookId = bookId ?: cur.bookId, queue = queue, queueIndex = if (cur.options.queueKnown) cur.queueIndex else 0,
+                        loadDeadline = null,
                         positionMs = positionMs, positionAt = t, state = SessionState.STARTING,
                         options = cur.options.withPlan(plan).copy(directPlay = directPlay),
                         revision = cur.revision + 1, jellyfinPlaySessionId = jellyfinPlaySessionId,
@@ -498,7 +567,7 @@ class PlaybackSessions(
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
             val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
             val next = cur.copy(
-                itemId = itemId, positionMs = positionMs, positionAt = t, state = state,
+                itemId = itemId, positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
                 options = if (volumePercent != null) cur.options.copy(volume = volumePercent, muted = muted) else cur.options,
                 revision = if (changed) cur.revision + 1 else cur.revision,
                 reconnecting = false, reconnectDeadline = null, offline = false, stopHoldUntil = null,
@@ -612,6 +681,47 @@ class PlaybackSessions(
         change?.let { notify(it) }
     }
 
+    /**
+     * R371 (review item 5) — the rooms of a group as the app holding the session's Cast link reports them (on change).
+     * The report replaces the server's room list; a room missing from it left (the place line says so for 5 s); the
+     * session keeps its other rooms.
+     */
+    suspend fun onMembersReport(device: DeviceData, r: dev.jellystructure.shared.tv.SessionMembersReport) {
+        var change: SessionChange? = null
+        mutex.withLock {
+            val cur = sessions.values.lastOrNull { it.live && it.itemId == r.itemId && (castMinter[it.targetId] == device.deviceId || it.targetId == device.deviceId) }
+                ?: sessions.values.lastOrNull { it.live && it.itemId == r.itemId && it.ownerUserId == device.jellyfinUserId }
+                ?: return@withLock
+            val before = cur.options.rooms
+            val diff = roomsDiff(before, r.members)
+            val t = now()
+            diff.added.forEach { event(cur.id, "room_added", device.deviceId, it.name) }
+            diff.left.forEach { event(cur.id, "room_removed", device.deviceId, it.name) }
+            val next = cur.copy(
+                options = cur.options.copy(rooms = r.members),
+                leftRoom = diff.left.lastOrNull()?.name ?: cur.leftRoom, leftAt = if (diff.left.isNotEmpty()) t else cur.leftAt,
+                revision = if (diff.added.isNotEmpty() || diff.left.isNotEmpty()) cur.revision + 1 else cur.revision,
+                updatedAt = if (diff.added.isNotEmpty() || diff.left.isNotEmpty()) t else cur.updatedAt,
+            )
+            sessions[next.id] = next
+            next.persist()
+            change = if (next.revision != cur.revision) SessionChange.State(next.id) else SessionChange.Detail(next.id)
+        }
+        change?.let { notify(it) }
+    }
+
+    /** R371 (review item 7) — a room muted: the level before it is kept on the server, so every app shows the same. */
+    internal suspend fun rememberRoomLevel(sessionId: String, castDeviceId: String, level: Int?) {
+        mutex.withLock {
+            val cur = sessions[sessionId] ?: return@withLock
+            val m = cur.options.roomLevelsBeforeMute.toMutableMap()
+            if (level == null) m.remove(castDeviceId) else m[castDeviceId] = level
+            val next = cur.copy(options = cur.options.copy(roomLevelsBeforeMute = m))
+            sessions[sessionId] = next
+            next.persist()
+        }
+    }
+
     /** 304 / R369–R372 — a timeline entry from outside the service (a command from the admin, a move). */
     internal fun record(sessionId: String, what: String, source: String?, detail: String? = null) = event(sessionId, what, source, detail)
 
@@ -625,7 +735,10 @@ class PlaybackSessions(
         mutex.withLock {
             val t = now()
             for (s in sessions.values.toList()) {
-                if (s.live && s.stopHoldUntil != null && t >= s.stopHoldUntil) {
+                if (s.live && s.state == SessionState.STARTING && s.loadDeadline != null && t >= s.loadDeadline) {
+                    // R370 (review item 8) — a load that brought no report within 10 s failed.
+                    endLocked(s.id, "failed")?.let { changes += SessionChange.List }
+                } else if (s.live && s.stopHoldUntil != null && t >= s.stopHoldUntil) {
                     endLocked(s.id, "stopped")?.let { changes += SessionChange.List }
                 } else if (s.live && s.reconnecting && s.reconnectDeadline != null && t >= s.reconnectDeadline) {
                     onSilentAfterRestart(s, t)?.let { changes += it }
@@ -649,6 +762,14 @@ class PlaybackSessions(
     private fun onSilentAfterRestart(s: SessionRec, t: Long): SessionChange? =
         endLocked(s.id, "no_return_after_restart")?.let { SessionChange.List }
 }
+
+/** R371 — what changed between two members reports (by Cast device id, in the order they joined). */
+internal data class RoomsDiff(val added: List<SessionRoom>, val left: List<SessionRoom>)
+
+internal fun roomsDiff(before: List<SessionRoom>, after: List<SessionRoom>): RoomsDiff = RoomsDiff(
+    added = after.filter { a -> before.none { it.castDeviceId == a.castDeviceId } },
+    left = before.filter { b -> after.none { it.castDeviceId == b.castDeviceId } },
+)
 
 /** The first name a household knows someone by (FR-R368-6) — a Jellyfin user name's first word. */
 internal fun firstName(username: String): String = username.trim().split(' ', '.', '_').firstOrNull { it.isNotBlank() }

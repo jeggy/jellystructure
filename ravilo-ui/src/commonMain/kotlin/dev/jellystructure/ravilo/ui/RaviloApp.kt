@@ -482,7 +482,10 @@ fun RaviloApp(
     // R369 — commands for a session this device plays (or relays), and the session directives (detail, load, relay).
     val liveSessionCommands = remember { MutableSharedFlow<dev.jellystructure.shared.tv.SessionCommandEnvelope>(replay = 0, extraBufferCapacity = 16) }
     val liveSessionDirectives = remember { MutableSharedFlow<Pair<String, String>>(replay = 0, extraBufferCapacity = 16) }
-    LaunchedEffect(apiClient) { dev.jellystructure.ravilo.ui.sessions.SessionRemote.api = apiClient }
+    LaunchedEffect(apiClient) {
+        dev.jellystructure.ravilo.ui.sessions.SessionRemote.api = apiClient
+        dev.jellystructure.ravilo.ui.sessions.PlayOnStore.api = apiClient   // R370
+    }
     val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
     // R248 (FR-R248-2) — the server folded a stop into this user's Home feed; collected below against
     // the retained Home/channel stores (not the screens), so a push that lands while the player is still
@@ -553,6 +556,10 @@ fun RaviloApp(
                     },
                     onSessionDirective = { type, text -> liveSessionDirectives.emit(type to text) },
                     outgoing = dev.jellystructure.ravilo.ui.sessions.SessionRemote.outgoing,
+                    // R370 (review item 6) — what this app plays: the web app has no music engine, the TV no music mode.
+                    plays = dev.jellystructure.shared.tv.playsQuery(video = true,
+                        music = !isTvPlatform && dev.jellystructure.ravilo.ui.music.MusicEngine.supported,
+                        book = !isTvPlatform && dev.jellystructure.ravilo.ui.music.MusicEngine.supported),
                     onOpen = {
                         openedAt = Clock.System.now()
                         serverOpens.value = serverOpens.value + 1
@@ -561,6 +568,7 @@ fun RaviloApp(
                         // away longer than the server's push stream can be assumed to have covered.
                         // R369 (dev review item 13) — back on a socket: the open remote re-attaches and re-reads.
                         dev.jellystructure.ravilo.ui.sessions.SessionRemote.onSocketOpen()
+                        if (!isTvPlatform) dev.jellystructure.ravilo.ui.sessions.PlayOnStore.changed()   // R370 — the places, again
                         val rev = runCatching { apiClient.getConfigRev() }.getOrNull()
                         val d = eventsCatchUp.onOpen(rev, Clock.System.now().toEpochMilliseconds())
                         if (d.refreshConfig) liveConfig.emit(rev ?: 0L)
@@ -1302,9 +1310,10 @@ fun RaviloApp(
         LaunchedEffect(castController, screensPaired, configRefreshes) { castController.screensPaired = screensPaired }
         // R368 (amends FR-R360-1) — a *Playing everywhere* row counts toward the glyph like a device.
         LaunchedEffect(castController) {
-            dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.collect { s ->
-                castController.sessionRowCount.value = s.sessions.count { it.state != "ended" }
-            }
+            // R370 (review item 2) — and a place the server lists (a Ravilo app, a speaker a relay app sees) counts too.
+            kotlinx.coroutines.flow.combine(dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state, dev.jellystructure.ravilo.ui.sessions.PlayOnStore.targets) { s, t ->
+                s.sessions.count { it.state != "ended" } + t.orEmpty().count { !it.here && it.reachable }
+            }.collect { castController.sessionRowCount.value = it }
         }
         // Another profile: nothing of the last viewer's household stays on screen until the new socket's list arrives.
         LaunchedEffect(activeUserId) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.clear() }
@@ -1312,6 +1321,23 @@ fun RaviloApp(
         // review item 4c), else this app's Cast link when it sent a cast that is in its reconnect gap (item 1).
         LaunchedEffect(castController) {
             liveSessionCommands.collect { env ->
+                // R371 (review items 7 and 8) — a room op: this app holds the session's Cast link (or relays), and acts
+                // through its routing controller; then says which rooms there are.
+                val c = env.command
+                if (c.op == "add_room" || c.op == "remove_room" || ((c.op == "set_volume" || c.op == "set_mute") && c.castDeviceId != null)) {
+                    val g = dev.jellystructure.ravilo.ui.seams.platformGroupController()
+                    val room = c.castDeviceId
+                    if (g == null || room == null) { println("R371: no routing controller for ${c.op}"); return@collect }
+                    when (c.op) {
+                        "add_room" -> g.add(room)
+                        "remove_room" -> g.remove(room)
+                        "set_volume" -> g.setRoomVolume(room, c.level ?: return@collect)
+                    }
+                    dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId?.let { item ->
+                        dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, g.members()))
+                    }
+                    return@collect
+                }
                 val row = dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions.firstOrNull { it.id == env.sessionId }
                 val st = dev.jellystructure.ravilo.ui.music.MusicPlayback.state.value
                 val musicLinked = dev.jellystructure.ravilo.ui.music.MusicCast.linked.value
@@ -1347,6 +1373,63 @@ fun RaviloApp(
                 if (type == "session_detail") runCatching {
                     dev.jellystructure.shared.tv.RaviloWireJson.decodeFromString(dev.jellystructure.shared.tv.SessionDetailEnvelope.serializer(), text)
                 }.getOrNull()?.let { dev.jellystructure.ravilo.ui.sessions.SessionRemote.onDetail(it) }
+                // R370 (review item 8) — a session started on this device from another app: a film or an episode opens the
+                // player as a `play_item` does (and only on screen, R293's gate); music plays its queue.
+                if (type == "session_load") runCatching {
+                    dev.jellystructure.shared.tv.RaviloWireJson.decodeFromString(dev.jellystructure.shared.tv.SessionLoadEnvelope.serializer(), text)
+                }.getOrNull()?.let { env ->
+                    val id = env.items.getOrNull(env.index) ?: env.items.firstOrNull() ?: return@let
+                    when (env.kind) {
+                        "music" -> if (env.tracks.isNotEmpty() && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) with(dev.jellystructure.ravilo.ui.music.MusicCast) {
+                            dev.jellystructure.ravilo.ui.music.MusicPlayback.loadPaused(env.tracks.map { it.toItem() }, env.index.coerceIn(0, env.tracks.lastIndex), env.startMs, null)
+                            dev.jellystructure.ravilo.ui.music.MusicPlayback.play()
+                        }
+                        "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(PlayItemEnvelope(
+                            type = "play_item", jellyfinId = id, kind = if (env.kind == "episode") "episode" else "movie", title = env.title, startPositionMs = env.startMs,
+                        )) else println("R370: dropped session_load while off screen")
+                    }
+                }
+                // R370 (owner decision 1) — launch the receiver for someone else's session, then leave it playing.
+                if (type == "cast_relay_load") runCatching {
+                    dev.jellystructure.shared.tv.RaviloWireJson.decodeFromString(dev.jellystructure.shared.tv.CastRelayLoadEnvelope.serializer(), text)
+                }.getOrNull()?.let { env -> if (!castController.relayLoad(env.castDeviceId, env.load)) println("R370: cannot relay to ${env.castDeviceId}") }
+                // R370 (review item 11) — an open *Play on…* list reads its places again.
+                if (type == "targets_changed") dev.jellystructure.ravilo.ui.sessions.PlayOnStore.changed()
+            }
+        }
+        // R370 (owner decision 1) — the relay: once the route connects, the LOAD goes out; once the receiver has it,
+        // this app leaves (the receiver joined the server with its own hand-off) and takes nothing back.
+        LaunchedEffect(castController) {
+            castController.sender.link.collect { link ->
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.relayLoaded()?.let { load ->
+                    castController.sender.load(load)
+                    launch {
+                        kotlinx.coroutines.withTimeoutOrNull(15_000) { castController.sender.status.first { it?.loaded == true || it?.failed == true } }
+                        dev.jellystructure.ravilo.ui.music.MusicCast.leaveRelay()
+                    }
+                }
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) dev.jellystructure.ravilo.ui.music.MusicCast.relaying = false
+            }
+        }
+        // R370 (owner decision 1) — an Android or desktop app says which Cast devices it sees, so the server can relay.
+        LaunchedEffect(castController) {
+            if (dev.jellystructure.ravilo.ui.hasCastSdk) castController.routes.collect { routes ->
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportCastDevices(dev.jellystructure.ravilo.ui.sessions.castSeenOf(routes))
+            }
+        }
+        // R371 (review item 5) — while this app holds a music cast, the group's rooms and their levels, on change (polled:
+        // MediaRouter2 says nothing when a member's level moves on the speaker itself).
+        LaunchedEffect(Unit) {
+            val g = dev.jellystructure.ravilo.ui.seams.platformGroupController() ?: return@LaunchedEffect
+            var last: List<dev.jellystructure.shared.tv.SessionRoom>? = null
+            while (true) {
+                kotlinx.coroutines.delay(3_000)
+                if (!dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) { last = null; continue }
+                val item = dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId ?: continue
+                val members = runCatching { g.members() }.getOrDefault(emptyList())
+                if (members == last) continue
+                last = members
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, members))
             }
         }
         // R369 (dev review item 5) — this phone or computer's music queue, to the server on change only (ids).
@@ -1366,7 +1449,9 @@ fun RaviloApp(
             }
         }
         /** R369 — the remote's extra parts; R371 (volume) and R372 (Move to…, Play here) fill them. */
-        fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras()
+        fun sessionRemoteExtras(): dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras = dev.jellystructure.ravilo.ui.sessions.SessionRemoteExtras(
+            volume = { d -> dev.jellystructure.ravilo.ui.sessions.SessionVolumePanel(d) },   // R371
+        )
         // R369 — a *Playing everywhere* row or the bar opens the session's remote; ⏯ and next go through the server
         // unless the session plays here.
         SideEffect {

@@ -121,4 +121,32 @@ class SessionCommandRuleTest {
         runCatching { platform.posix.remove(path) }
         Unit
     }
+
+    @Test fun `a room op goes to the link holder else a relay app else nowhere`() {
+        assertEquals(RoomRoute.LinkHolder, roomOpRoute(linkHolderControl = true, relayControl = true))
+        assertEquals(RoomRoute.Relay, roomOpRoute(linkHolderControl = false, relayControl = true))
+        assertEquals(RoomRoute.Unreachable, roomOpRoute(linkHolderControl = false, relayControl = false))
+    }
+
+    @Test fun `add_room remove_room and a rooms volume are room ops and the master is not`() {
+        assertTrue(isRoomOp(SessionCommandRequest(op = "add_room", castDeviceId = "a")))
+        assertTrue(isRoomOp(SessionCommandRequest(op = "remove_room", castDeviceId = "a")))
+        assertTrue(isRoomOp(SessionCommandRequest(op = "set_volume", level = 30, castDeviceId = "a")))
+        assertFalse(isRoomOp(SessionCommandRequest(op = "set_volume", level = 30)))
+    }
+
+    @Test fun `a members report replaces the room list and a missing room left`() {
+        val a = dev.jellystructure.shared.tv.SessionRoom("a", "Office", 70)
+        val b = dev.jellystructure.shared.tv.SessionRoom("b", "Kitchen", 50)
+        val d = roomsDiff(listOf(a, b), listOf(a))
+        assertEquals(listOf("b"), d.left.map { it.castDeviceId })
+        assertTrue(d.added.isEmpty())
+        assertEquals(listOf("b"), roomsDiff(listOf(a), listOf(a, b)).added.map { it.castDeviceId })
+    }
+
+    @Test fun `room ops are offered on a music cast only while an app can reach the speakers`() {
+        assertTrue("add_room" in roomOps(music = true, reachable = true))
+        assertTrue(roomOps(music = true, reachable = false).isEmpty())
+        assertTrue(roomOps(music = false, reachable = true).isEmpty())
+    }
 }

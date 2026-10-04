@@ -94,6 +94,9 @@ data class CastLoadData(
     @SerialName("queue_id") val queueId: String? = null,
     @SerialName("queue_total") val queueTotal: Int? = null,
     @SerialName("queue_start") val queueStart: Int = 0,
+    /** R370 (review item 1) — the server's `starting` session this LOAD fulfils; the hand-off already joined the receiver
+     *  to it, so this is for the log. An older receiver ignores it. */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 /** A track the receiver reports back so the phone's picker can render it (R180/R195 shape). */

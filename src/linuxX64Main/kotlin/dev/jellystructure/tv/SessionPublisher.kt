@@ -138,6 +138,7 @@ class SessionPublisher(
         val c = control ?: return
         val obj = runCatching { Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull() ?: return
         val type = (obj["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return
+        if (type == "cast_devices_seen") { starter?.onCastDevicesSeen(device, text); return }
         val id = (obj["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return
         when (type) {
             "attach_session" -> {
@@ -151,8 +152,15 @@ class SessionPublisher(
         }
     }
 
-    /** The socket closed: everything it held is detached. */
-    suspend fun onSocketClosed(deviceId: String) { control?.detachDevice(deviceId); adminRefresh() }
+    /** The socket closed: everything it held is detached, and what it could reach is forgotten (R370). */
+    suspend fun onSocketClosed(deviceId: String) {
+        control?.detachDevice(deviceId)
+        starter?.let { it.reach.drop(deviceId); it.targetsChanged() }
+        adminRefresh()
+    }
+
+    /** R370 — the start service (targets, starts, the relay). */
+    var starter: SessionStarter? = null
 
     private fun adminRefresh() {
         val send = adminBroadcast

@@ -655,7 +655,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
-                sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl) }   // R368 + 304 + R369
+                sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).
                 musicPipeline?.let { mp ->
@@ -739,7 +739,8 @@ fun startServer(
                     // device always succeeds, only a genuinely new device can be refused.
                     // R368 (dev review item 2) — what this socket opted into: session events go only to a socket that
                     // asked (`features=sessions`); an installed app reads any unknown event as a config change.
-                    val features = dev.jellystructure.tv.parseEventFeatures(call.request.queryParameters["features"])
+                    val features = dev.jellystructure.tv.parseEventFeatures(call.request.queryParameters["features"]) +
+                        dev.jellystructure.tv.parsePlays(call.request.queryParameters["plays"])   // R370 (review item 6)
                     if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this, features)) {
                         close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
                         return@webSocket

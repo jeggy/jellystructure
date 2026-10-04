@@ -308,3 +308,32 @@ None.
    are disabled with *{place} doesn't report its volume*; the master still works (receiver path).
 3. **Android below 11 (no `MediaRouter2` routing controller) adds a speaker through the relay**, like the web app
    (owner, 2026-10-04); the item is not hidden.
+
+## Build notes (2026-10-05)
+
+**Server:** room ops (`add_room`, `remove_room`, a room's `set_volume` / `set_mute` with `cast_device_id`) go to the
+app holding the session's Cast link (`roomOpRoute`: link holder · relay app · 409 unreachable); music only. A room's
+mute is a level of 0 with the level before it kept in `options_json`. The master `set_volume` goes to the receiver
+(R369's routing, legacy `player_command` for an older one). `POST /api/tv/playback/sessions/members` takes the rooms
+from the link holder (`SessionMembersReport`); `roomsDiff` writes *room added / removed* to the timeline and sets
+`left_room` / `left_at` (FR-R371-3); `target.kind` becomes `cast_group` and the place line *A + B* / *A + 2*.
+`SessionDetail.ops` carries `add_room` / `remove_room` / `room_volume` only while an app can reach the speakers.
+
+**Apps:** `GroupController` seam; the Android actual (11+) wraps `MediaRouter2.RoutingController`
+(`selectRoute` / `deselectRoute`, `setRouteVolume`); null on the web, the desktop and Android < 11 (they go through the
+server). While a music cast is linked the Android app reports the rooms every 3 s on change. The remote's
+`SessionVolumePanel`: one slider, or *Volume* + one per room with mute and ×, *—* with *{place} doesn't report its
+volume*, *Add a speaker…* (one tap, no confirm, stays open; disabled with *No phone or computer nearby can reach the
+speakers*). The admin row gets the same sliders. Strings `group.add_speaker`, `group.left`, `volume.no_report`,
+`group.no_reach` (`volume.master` reuses `cast.volume`).
+
+**⚠ Partial:** (1) a relay app that does not already hold the session's link does not join it to act on a room (owner
+decision 1's "which then holds the link"); (2) the desktop's direct road waits on the speaker test; (3) removing the
+first room is planned as a move (`removeRoomPlan`) but the remote's × sends `remove_room` as is; (4) the phone's own
+Now playing ⋯ Speakers sheet is unchanged — *Add a speaker…* is in the session remote. MediaRouter2's route ids are
+matched to Cast device ids by the id's tail or the name; only a device session confirms it.
+
+**Tests:** `SessionCommandRuleTest` (room routing, room ops, `roomsDiff`, `roomOps`), `GroupRulesTest` (11).
+
+**Only real speakers can confirm:** building the group from the Pixel; Cast's group volume scaling; a room unplugged;
+the desktop road.

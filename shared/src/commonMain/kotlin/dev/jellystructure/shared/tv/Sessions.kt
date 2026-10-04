@@ -84,6 +84,9 @@ data class SessionView(
     /** R372 — a move in flight: the place it goes to, or the place it could not go to (`move_failed`). */
     @SerialName("moving_to") val movingTo: String? = null,
     @SerialName("move_failed") val moveFailed: String? = null,
+    /** R371 (FR-R371-3) — a room that left on its own, and when: the place line says *{room} left* for 5 s. */
+    @SerialName("left_room") val leftRoom: String? = null,
+    @SerialName("left_at") val leftAt: Long? = null,
 )
 
 /** `GET /api/tv/playback/sessions` — the whole list for this viewer. */
@@ -223,6 +226,19 @@ fun castCommandForSession(c: SessionCommandRequest, music: Boolean): CastCommand
     "queue_remove" -> c.index?.let { CastCommand("queue_remove", index = it) }
     else -> null
 }
+
+/**
+ * R371 (review item 5) — the rooms of a Cast group as the app holding the session's link sees them, on change only:
+ * `POST /api/tv/playback/sessions/members`.
+ */
+@Serializable
+data class SessionMembersReport(
+    @SerialName("item_id") val itemId: String,
+    val members: List<SessionRoom> = emptyList(),
+)
+
+/** R371 — the ops on one room of a group (they go to the app holding the session's Cast link, or a relay app). */
+val SESSION_OPS_ROOM: Set<String> = setOf("add_room", "remove_room")
 
 /** One entry of a session's queue as the remote lists it. */
 @Serializable

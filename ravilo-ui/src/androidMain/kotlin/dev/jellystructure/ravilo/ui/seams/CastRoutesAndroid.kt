@@ -53,7 +53,8 @@ actual fun rememberCastRoutes(appId: String?, discovering: Boolean): List<CastRo
                         else -> "display"
                     }
                     val busy = castRouteBusyWith(r.description?.toString(), dev?.modelName, dev?.friendlyName)
-                    CastRoute(id = r.id, name = r.name, selected = r.isSelected, select = { selectRoute(router, r.id) }, kind = kind, busyWith = busy)
+                    CastRoute(id = r.id, name = r.name, selected = r.isSelected, select = { selectRoute(router, r.id) }, kind = kind, busyWith = busy,
+                        deviceKey = dev?.deviceId?.takeIf { it.isNotBlank() } ?: r.id)   // R370 — the key the desktop's mDNS id also is
                 }
         }
         val callback = object : MediaRouter.Callback() {

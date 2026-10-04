@@ -64,8 +64,22 @@ object SessionRemote {
         _pending.value = null
     }
 
-    /** The socket opened again: re-attach and re-fetch (review item 13 — a controller off screen had no socket). */
-    fun onSocketOpen() { _openId.value?.let { _outgoing.tryEmit(attachFrame(it)); refresh() } }
+    /** The socket opened again: re-attach and re-fetch (review item 13 — a controller off screen had no socket), and
+     *  say again which Cast devices this app sees (R370). */
+    fun onSocketOpen() {
+        _openId.value?.let { _outgoing.tryEmit(attachFrame(it)); refresh() }
+        lastSeenFrame?.let { _outgoing.tryEmit(it) }
+    }
+
+    private var lastSeenFrame: String? = null
+
+    /** R370 (owner decision 1) — the Cast devices this app's own discovery sees, to the server on change (a relay app). */
+    fun reportCastDevices(devices: List<dev.jellystructure.shared.tv.CastSeenDevice>) {
+        val frame = castDevicesSeenFrame(devices)
+        if (frame == lastSeenFrame) return
+        lastSeenFrame = frame
+        _outgoing.tryEmit(frame)
+    }
 
     fun refresh() {
         val id = _openId.value ?: return
@@ -101,6 +115,12 @@ object SessionRemote {
                 else -> { _pending.value = null; _refusals.tryEmit(refusal.reason) }
             }
         }
+    }
+
+    /** R371 (review item 5) — this app's group rooms, on change only. */
+    fun reportMembers(report: dev.jellystructure.shared.tv.SessionMembersReport) {
+        val a = api ?: return
+        scope.launch { runCatching { a.reportSessionMembers(report) } }
     }
 
     /** R369 (dev review item 5) — this player's queue, on change only. */

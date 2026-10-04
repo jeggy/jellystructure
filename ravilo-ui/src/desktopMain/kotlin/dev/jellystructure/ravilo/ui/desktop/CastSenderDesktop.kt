@@ -285,6 +285,15 @@ internal object CastSenderDesktop : CastSender {
 
     override fun send(json: String) { scope.launch { session?.sendCustom(json) } }
 
+    /** R370 — drop the connection and leave the receiver playing; nothing is rejoined next time. */
+    override fun leave() {
+        scope.launch {
+            DesktopApp.prefs.put(LAST_DEVICE, null)
+            closeQuietly()
+            endQuietly()
+        }
+    }
+
     override fun setVolume(level: Double) { scope.launch { _volume.value = level.coerceIn(0.0, 1.0); session?.setVolume(level) } }
 
     private fun command(type: String, index: Int) =

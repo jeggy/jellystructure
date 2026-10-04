@@ -61,6 +61,17 @@ fun commandFeedback(sentAtMs: Long?, nowMs: Long, reflected: Boolean): CommandFe
 /** FR-R369-5 — the bar's ⏯ and next exist only for a session the server says this app controls. */
 fun barControlsShown(view: SessionView): Boolean = view.controllable && view.state != "ended"
 
+/** R370 (owner decision 1) — the `cast_devices_seen` frame; a group is never reported (FR-R370-1). */
+fun castDevicesSeenFrame(devices: List<dev.jellystructure.shared.tv.CastSeenDevice>): String {
+    val list = devices.filter { it.kind != "group" }.sortedBy { it.castDeviceId }
+    return "{\"type\":\"cast_devices_seen\",\"devices\":" +
+        kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(dev.jellystructure.shared.tv.CastSeenDevice.serializer()), list) + "}"
+}
+
+/** R370 — this app's Cast routes as it reports them (the route's id is the device's stable key, review item 3). */
+fun castSeenOf(routes: List<dev.jellystructure.ravilo.ui.seams.CastRoute>): List<dev.jellystructure.shared.tv.CastSeenDevice> =
+    routes.filter { it.kind != "group" }.map { dev.jellystructure.shared.tv.CastSeenDevice(it.deviceKey, it.name, if (it.kind == "speaker") "speaker" else "display") }
+
 /** R369 — the `attach_session` / `detach_session` frames (dev review item 7). */
 fun attachFrame(id: String): String = "{\"type\":\"attach_session\",\"id\":${JsonPrimitive(id)}}"
 fun detachFrame(id: String): String = "{\"type\":\"detach_session\",\"id\":${JsonPrimitive(id)}}"

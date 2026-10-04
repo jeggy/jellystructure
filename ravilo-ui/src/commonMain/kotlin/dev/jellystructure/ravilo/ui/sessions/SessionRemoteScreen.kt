@@ -122,6 +122,10 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
         val placeLine = when {
             v.movingTo != null -> str("session.moving", mapOf("place" to v.movingTo.orEmpty()))
             v.moveFailed != null -> str("session.move_failed", mapOf("place" to v.moveFailed.orEmpty()))
+            // R371 (FR-R371-3) — a room that left on its own is named for 5 s.
+            v.leftRoom != null && listState.serverNowMs > 0 &&
+                (listState.serverNowMs + (now - listState.receivedAtMs) - (v.leftAt ?: 0L)) < dev.jellystructure.ravilo.ui.seams.ROOM_LEFT_SHOWN_MS ->
+                str("group.left", mapOf("room" to v.leftRoom.orEmpty()))
             v.state == "paused" -> str("cast.paused_on", mapOf("device" to v.target.name))
             else -> str("cast.playing_on", mapOf("device" to v.target.name))
         }
