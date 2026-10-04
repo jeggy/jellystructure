@@ -10,6 +10,8 @@ build/
 node_modules/
 **/build/
 **/node_modules/
+# Claude Code agent worktrees (full repo copies, gigabytes) — never part of an image.
+.claude/
 
 # Android-only modules — no Android SDK in the build container, and the Dockerfile's builder stage
 # never COPYs these.
