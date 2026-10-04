@@ -399,3 +399,39 @@ title gets its turn. With the hourly schedule that is the whole library within a
 Phase 183's TMDB limiter absorbs (about 200 requests an hour). Only `pull_tmdb` sees these titles: the
 run's other steps keep the working set they had. The log line says how many were added and how many
 remain, as Phase 183's rule for capped passes requires.
+
+## Amendment (2026-10-04): a title you watch stays in the row until the weekly build
+
+> Owner, 2026-10-04: *"When in the recommended content row and opening a movie and marking it as watched and then
+> going back, the movie gets removed from the list. It shouldn't be removed from the list, it just shouldn't be
+> included next time a recommended is being calculated."* Asked which calculation: **"Only the weekly build."**
+
+**Bug confirmed on the living-room Sony BRAVIA (release build `1.49-11-g76f351b4`), 2026-10-04.** Home → the
+Recommended row (5th row down) → the 4th tile → *Mark Watched* → Back: the tile was gone from the row, and focus
+landed on the app bar's Home tab with the page still scrolled (the client half of that is **R361**). Cause:
+`RecommendationService.servedFor` drops at request time every title that is `played` or has a resume point
+(FR-269-7's *request-time skip*), and `PUT /tv/played` → `invalidatePlaystate` → `home_changed` rebuilds the row
+before the viewer presses Back. Separately, `PlaystateCache.onNewlyPlayed` → `markStale` → a rebuild of that viewer
+two quiet minutes later (FR-269-8 (2)) would take it out again even without the request-time skip.
+
+**FR-269-7 (amended) — served as stored.** The row and *See all* serve the stored list in its stored order, minus
+only titles **no longer visible** to the viewer (deleted, or outside their libraries/tags). A title finished, marked
+watched or started since the build **stays where it is**, carrying its ✓ or progress bar like any other tile
+(R147's patch already draws it). Never re-ordered, never padded: the row changes only when the list is rebuilt.
+
+**FR-269-8 (amended) — when it is built.**
+1. The weekly pipeline step `build_recommendations` (unchanged) — this is "the next calculation" that leaves out
+   what was watched since.
+2. ~~When a viewer finishes something~~ — **removed**. `PlaystateCache.onNewlyPlayed` no longer marks the viewer
+   stale; finishing, marking watched or starting a title never rebuilds a list.
+3. A viewer with no list yet gets the starter list at once and a build is queued (unchanged).
+4. The admin's *Rebuild now* (FR-269-9) still rebuilds that viewer at once (unchanged).
+
+**Consequences, accepted:** over a busy week the row fills with ticked titles; the weekly build clears them. Phase
+270's AI order is untouched (it is applied to what a build produces). `versionFor(userId)` still bumps only on a
+real rebuild, so Home's cache check (`rowStamp`) is unchanged; a played change no longer changes the Recommended
+row's content, only its tiles' ticks.
+
+**Tests.** Replace *the FR-269-7 request-time skip* (FR-269-11) with: a played or started title is still served, in
+place, after `invalidatePlaystate`; a title made invisible is not; a played-state change does not mark the viewer
+stale.
