@@ -685,7 +685,7 @@ class MediaStore(
             val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.episodeNumber?.let { "Episode $it" } ?: series.title
             return PlayPush(kind = "episode", title = title, kicker = kicker, seriesName = series.title, logoItem = series,
                 segmentItemId = series.id, episodeKey = ep.filename, episodeNumber = ep.episodeNumber ?: 0,
-                legacyStinger = ep.segments.stinger, next = nextEpisodeAfter(series, ep))
+                legacyStinger = ep.segments.stinger, next = dev.jellystructure.tv.nextEpisodeAfter(series, ep))
         }
         return null
     }
@@ -695,23 +695,6 @@ class MediaStore(
     private fun fileEnd(series: MediaItem, ep: dev.jellystructure.model.Episode): Int? =
         series.episodes.filter { it.jellyfinId != null && it.jellyfinId == ep.jellyfinId && it.path == ep.path }
             .mapNotNull { it.episodeNumber }.maxOrNull()?.takeIf { end -> end > (ep.episodeNumber ?: end) }
-
-    /**
-     * R264 (FR-R264-3) — the episode after [ep] in [series]: season then episode order, specials (season 0)
-     * never, only one Jellyfin can play, and never [ep]'s own file again (a multi-episode file, phase 149,
-     * is several catalog rows on one id). Null after the last — and for a special, which has no "next".
-     */
-    internal fun nextEpisodeAfter(series: MediaItem, ep: dev.jellystructure.model.Episode): NextEpisode? {
-        if ((ep.seasonNumber ?: 0) < 1) return null
-        val ordered = series.episodes
-            .filter { it.jellyfinId != null && (it.seasonNumber ?: 0) >= 1 }
-            .sortedWith(compareBy({ it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }, { it.partIndex }))
-        val at = ordered.indexOfFirst { it.jellyfinId == ep.jellyfinId }
-        if (at < 0) return null
-        val next = ordered.drop(at + 1).firstOrNull { it.jellyfinId != ep.jellyfinId } ?: return null
-        val kicker = if (next.seasonNumber != null && next.episodeNumber != null) dev.jellystructure.shared.tv.episodeCode(next.seasonNumber!!, next.episodeNumber!!, fileEnd(series, next)) else null   // R346
-        return NextEpisode(jellyfinId = next.jellyfinId!!, title = next.title?.takeIf { it.isNotBlank() }, kicker = kicker)
-    }
 
     /**
      * Bug fix: the Users & Devices "now playing" line was showing the raw Jellyfin item id (a hex

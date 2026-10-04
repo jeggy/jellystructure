@@ -2,6 +2,8 @@ package dev.jellystructure.tv
 
 import dev.jellystructure.shared.tv.FINISHED_PERCENT
 import dev.jellystructure.shared.tv.playbackFinished
+import dev.jellystructure.util.epochTicksToIso
+import dev.jellystructure.util.isoToEpochTicks
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -20,7 +22,34 @@ internal data class SessionPlan(
     val creditsStartMs: Long? = null,
     val shuffle: Boolean = false,
     val priorPositionMs: Long = 0L,
+    /** R375 (FR-R375-6) — an episode's `LastPlayedDate` before this play (null for a film, or never played). */
+    val priorLastPlayed: String? = null,
+    /** R375 — the episode was watched when this play started (a replay). */
+    val watchedAtStart: Boolean = false,
+    /** R375 — a shuffle's series anchor date (its last finished episode's `LastPlayedDate`) as the last Continue
+     *  build saw it; null when the series had nothing finished or the start was not a shuffle. */
+    val anchorLastPlayed: String? = null,
 )
+
+/**
+ * R375 (FR-R375-6, owner decisions 2026-10-04) — the `LastPlayedDate` to write back once a stop has landed, or null
+ * for none, so a shuffle or a replay that did not finish never becomes *the last episode played*:
+ *
+ * - **not finished**, a shuffled play or a replay of a watched episode: the prior date (none ⇒ nothing; the
+ *   episode then stays unwatched with no position, so it can never be the anchor);
+ * - **finished** and shuffled: `min(prior, anchor − 1 s)`, or `anchor − 1 s` with no prior, so it is never the
+ *   newest finish; with no anchor, Jellyfin's date is left (accepted: it becomes the anchor);
+ * - anything else (an ordinary play, a finished replay, a film): nothing — it moves the position, as it should.
+ */
+internal fun lastPlayedRestore(plan: SessionPlan?, finished: Boolean): String? {
+    plan ?: return null
+    if (!finished) return if (plan.shuffle || plan.watchedAtStart) plan.priorLastPlayed else null
+    if (!plan.shuffle) return null
+    val anchor = plan.anchorLastPlayed?.let { isoToEpochTicks(it) } ?: return null
+    val cap = anchor - 10_000_000L
+    val prior = plan.priorLastPlayed?.let { isoToEpochTicks(it) }
+    return if (prior != null && prior <= cap) plan.priorLastPlayed else epochTicksToIso(cap)
+}
 
 /** FR-R343-4 — Start over clears the series once this much of the episode has played: 5 % of the file, or 60 s
  *  of playback when no duration is known (dev review item 3). */

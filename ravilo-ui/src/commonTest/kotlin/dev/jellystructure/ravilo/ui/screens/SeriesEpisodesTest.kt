@@ -92,4 +92,28 @@ class SeriesEpisodesTest {
         assertEquals(1, openingSeasonIndex(detail.seasons, played(*season1, "s2e1"), null))
         assertEquals(1, openingSeasonIndex(detail.seasons, played(*season1, "s2e1"), "gone"))
     }
+
+    // ── R375 (FR-R375-5) ───────────────────────────────────────────────────────────────────────────
+
+    @Test fun `R375 — a finished series the server names an episode for resumes it and opens on its season`() {
+        val overlay = played(*season1, *season2) + ("series" to CardPlayState(continueEpisodeId = "s2e3"))
+        assertEquals("s2e3", rewatchEpisodeId(detail, overlay))
+        assertEquals("s2e3", primaryEpisodeId(detail, overlay))
+        assertEquals(1, openingSeasonIndex(detail.seasons, overlay, primaryEpisodeId(detail, overlay)))
+    }
+
+    @Test fun `R375 — a finished series with nothing named — or a special named — starts over`() {
+        val nothing = played(*season1, *season2)
+        assertNull(rewatchEpisodeId(detail, nothing))
+        assertEquals("s1e1", primaryEpisodeId(detail, nothing))
+        val special = played(*season1, *season2) + ("series" to CardPlayState(continueEpisodeId = "s0e1"))
+        assertNull(rewatchEpisodeId(detail, special), "a special is not a counted episode")
+        assertEquals("s1e1", primaryEpisodeId(detail, special))
+    }
+
+    @Test fun `R375 — an unfinished series is unchanged and has no rewatch episode`() {
+        val overlay = played(*season1) + ("series" to CardPlayState(continueEpisodeId = "s2e3"))
+        assertNull(rewatchEpisodeId(detail, overlay))
+        assertEquals("s2e3", primaryEpisodeId(detail, overlay))
+    }
 }

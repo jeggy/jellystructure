@@ -66,4 +66,43 @@ class SeriesReplayTest {
         assertTrue(so.startOver); assertFalse(so.shuffled)
         s.clear("tv"); assertNull(s.forStart("tv", "s1e1"))
     }
+
+    // ── R375 (FR-R375-6) — which LastPlayedDate a stop puts back ──
+
+    private val prior = "2026-08-12T20:00:00.0000000Z"
+    private val anchor = "2026-10-01T18:30:00.2500000Z"
+
+    @Test fun `a shuffled play that did not finish puts its prior date back`() {
+        assertEquals(prior, lastPlayedRestore(SessionPlan(shuffle = true, priorLastPlayed = prior, anchorLastPlayed = anchor), finished = false))
+    }
+
+    @Test fun `a never-played episode left unfinished writes no date`() {
+        assertNull(lastPlayedRestore(SessionPlan(shuffle = true, priorLastPlayed = null, anchorLastPlayed = anchor), finished = false))
+    }
+
+    @Test fun `a finished shuffle with no prior date lands one second before the anchor`() {
+        assertEquals("2026-10-01T18:29:59.2500000Z", lastPlayedRestore(SessionPlan(shuffle = true, anchorLastPlayed = anchor), finished = true))
+    }
+
+    @Test fun `a finished shuffle keeps an older prior date — and caps a newer one at anchor minus one second`() {
+        assertEquals(prior, lastPlayedRestore(SessionPlan(shuffle = true, priorLastPlayed = prior, anchorLastPlayed = anchor), finished = true))
+        val newer = "2026-10-03T09:00:00.0000000Z"   // briefly opened after the last finish
+        assertEquals("2026-10-01T18:29:59.2500000Z", lastPlayedRestore(SessionPlan(shuffle = true, priorLastPlayed = newer, anchorLastPlayed = anchor), finished = true))
+    }
+
+    @Test fun `a finished shuffle with nothing finished before leaves Jellyfins date`() {
+        assertNull(lastPlayedRestore(SessionPlan(shuffle = true, priorLastPlayed = prior), finished = true))
+    }
+
+    @Test fun `a replay of a watched episode stopped early puts its date back — finished it moves the position`() {
+        val plan = SessionPlan(watchedAtStart = true, priorLastPlayed = prior)
+        assertEquals(prior, lastPlayedRestore(plan, finished = false), "under 5 percent Jellyfin keeps Played: without this it reads as the newest finish")
+        assertNull(lastPlayedRestore(plan, finished = true))
+    }
+
+    @Test fun `an ordinary first play or a film writes nothing`() {
+        assertNull(lastPlayedRestore(SessionPlan(priorLastPlayed = prior), finished = false))
+        assertNull(lastPlayedRestore(SessionPlan(), finished = true))
+        assertNull(lastPlayedRestore(null, finished = false))
+    }
 }

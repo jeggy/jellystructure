@@ -1149,11 +1149,13 @@ class JellyfinClient {
      * watched) and writes it back on the session's progress and stop reports, so the clear's unmark is undone
      * by the stop. Sent after the stop has landed, this is the last word. Verified live on 12.1 (2026-10-02).
      */
-    suspend fun setUserData(baseUrl: String, userToken: String, userId: String, jellyfinId: String, played: Boolean, positionTicks: Long): Boolean {
+    // R375 (FR-R375-6) — [lastPlayedDate] too, optional: Jellyfin's SaveUserData applies only the fields a request
+    // carries, so a date-only write (played and position null) moves nothing else. Absent ⇒ today's body, byte for byte.
+    suspend fun setUserData(baseUrl: String, userToken: String, userId: String, jellyfinId: String, played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null): Boolean {
         val r = httpPost(baseUrl.trimEnd('/') + "/UserItems/$jellyfinId/UserData?userId=$userId") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
-            setBody("""{"Played":$played,"PlaybackPositionTicks":$positionTicks}""")
+            setBody(userDataBody(played, positionTicks, lastPlayedDate))
         }
         if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a user-data write")
         return true
@@ -1675,3 +1677,12 @@ private suspend fun <T> Result<T>.warnOnFailureOrDefault(context: String, defaul
 
 private fun String.jsonEscape(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+/** R343 / R375 — the `POST /UserItems/{id}/UserData` body: only the fields given, in this order. Two non-null values
+ *  and no date give exactly R343's `{"Played":…,"PlaybackPositionTicks":…}`. */
+internal fun userDataBody(played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null): String =
+    listOfNotNull(
+        played?.let { "\"Played\":$it" },
+        positionTicks?.let { "\"PlaybackPositionTicks\":$it" },
+        lastPlayedDate?.let { "\"LastPlayedDate\":" + it.jsonEscape() },
+    ).joinToString(",", "{", "}")

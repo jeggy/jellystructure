@@ -45,16 +45,28 @@ internal fun openingSeasonIndex(seasons: List<Season>, overlay: Map<String, Card
 }
 
 /**
- * R346 (FR-R346-3) / R306 (FR-R306-5) / R343 (FR-R343-2) — the episode the primary button plays.
+ * R375 (FR-R375-5, dev review item 9) — on a finished series that the viewer is re-watching, the episode the server's
+ * Continue Watching names (the next one in order after the last finished, `continue_episode_id`) when it is a counted
+ * episode; null otherwise (not finished, nothing named, or a special / unplayable row). Null ⇒ *Start over*.
+ */
+internal fun rewatchEpisodeId(detail: SeriesDetail, overlay: Map<String, CardPlayState>): String? {
+    val counted = countedEpisodes(detail.seasons)
+    if (!seriesFinished(counted, overlay)) return null
+    return overlay[detail.card.id]?.continueEpisodeId?.takeIf { cid -> counted.any { it.id == cid } }
+}
+
+/**
+ * R346 (FR-R346-3) / R306 (FR-R306-5) / R343 (FR-R343-2) / R375 (FR-R375-5) — the episode the primary button plays.
  *
- * On a finished series: the first counted episode (*Start over*). Otherwise, in this order: the episode this
- * series' Continue Watching tile names; an episode in progress (a started special keeps its place here); the
- * first unwatched counted episode; the first counted episode; any episode at all.
+ * On a finished series: the episode the server names for a re-watch ([rewatchEpisodeId]), else the first counted
+ * episode (*Start over*). Otherwise, in this order: the episode this series' Continue Watching tile names; an
+ * episode in progress (a started special keeps its place here); the first unwatched counted episode; the first
+ * counted episode; any episode at all.
  */
 internal fun primaryEpisodeId(detail: SeriesDetail, overlay: Map<String, CardPlayState>): String? {
     val all = detail.seasons.flatMap { it.episodes }
     val counted = countedEpisodes(detail.seasons)
-    if (seriesFinished(counted, overlay)) return counted.first().id
+    if (seriesFinished(counted, overlay)) return rewatchEpisodeId(detail, overlay) ?: counted.first().id
     return overlay[detail.card.id]?.continueEpisodeId?.takeIf { cid -> all.any { it.id == cid } }
         ?: all.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
         ?: counted.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id

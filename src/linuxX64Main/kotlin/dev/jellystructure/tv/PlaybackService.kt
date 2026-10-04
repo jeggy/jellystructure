@@ -377,6 +377,10 @@ class PlaybackService(
      *  list rebuilt, `home_changed` and `playstate_changed` pushed). Main wires it to `invalidatePlaystate`. */
     var onSeriesCleared: (suspend (DeviceData, String) -> Unit)? = null
 
+    /** R375 (FR-R375-6) — (user, series Jellyfin id) → that series' last finished episode's date as the last Continue
+     *  build saw it. Main wires it to `HomeFeedService.anchorDate`; null in tests (no anchor ⇒ Jellyfin's date stays). */
+    var anchorDateFor: ((String, String) -> String?)? = null
+
     // R343 / R347 — per-session plans (see SessionPlan), the Start over latch, and a running clear per session.
     private val plansMutex = Mutex()
     private val plans = HashMap<PlaybackKey, SessionPlan>()
@@ -462,6 +466,9 @@ class PlaybackService(
             // Phase 180 — release the encode once the stop has landed (idempotent; a release for a
             // session that never transcoded or already ended is a success, not an error).
             if (ok && w.jellyfinPlaySessionId != null) releaseEncodes(jellyfinBase, token, identity, w.jellyfinPlaySessionId)
+            // R375 (FR-R375-6) — after the stop has landed (so Jellyfin's own stop can't overwrite it) and before the
+            // refresh below, so the rebuilt Continue list never shows the moved position.
+            if (ok && w.restoreLastPlayed != null) writeLastPlayedBack(jellyfinBase, token, w.device, w.jellyfinId, w.restoreLastPlayed)
             // R343 (FR-R343-11) — a cleared Start over: the write-back, then exactly what the played route refreshes
             // (the clear's own hook), in place of the stop's ordinary refresh below.
             if (ok && w.startOverUnplayed) {
@@ -622,6 +629,10 @@ class PlaybackService(
             creditsStartMs = facts?.creditsStartMs,
             shuffle = asShuffle,
             priorPositionMs = if (saved?.played == true) 0L else (saved?.playbackPositionTicks ?: 0L) / TICKS_PER_MS,
+            // R375 (FR-R375-6) — an episode's date and watched flag before this play, and a shuffle's series anchor.
+            priorLastPlayed = saved?.lastPlayedDate?.takeIf { facts?.seriesJellyfinId != null },
+            watchedAtStart = saved?.played == true && facts?.seriesJellyfinId != null,
+            anchorLastPlayed = facts?.seriesJellyfinId?.takeIf { asShuffle }?.let { sid -> anchorDateFor?.invoke(device.jellyfinUserId, sid) },
         )
         val key = PlaybackKey(device.deviceId, jellyfinId)
         plansMutex.withLock { plans[key] = plan; clearLatched.remove(key); clearJobs.remove(key) }
@@ -782,7 +793,10 @@ class PlaybackService(
             // FR-R343-13 — a Start over that finished its episode: Jellyfin's own word (watched) stands from now.
             StartOverHolds.release(device.jellyfinUserId, jellyfinId)
         }
-        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = startOverUnplayed)
+        // R375 (FR-R375-6) — a shuffled play, or a replay that did not finish, puts the episode's date back.
+        val restoreLastPlayed = if (startOverUnplayed) null
+            else lastPlayedRestore(plan, playbackFinished(positionMs, plan?.durationMs ?: 0L, plan?.creditsStartMs))
+        releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = startOverUnplayed, restoreLastPlayed = restoreLastPlayed)
         if (decision.markPlayed) runInBackground("R347 tick item=$jellyfinId") { mark(device, jellyfinId, watched = true) }
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session
         // heartbeat) and the client reported a real startup duration: record one sample. The watchdog's
@@ -877,6 +891,14 @@ class PlaybackService(
             .onSuccess { patchUnwatched(device, jellyfinId, positionMs, factsOf(jellyfinId)?.durationMs ?: 0L) }
             .isSuccess
 
+    /** R375 (FR-R375-6) — the episode's `LastPlayedDate` alone (nothing else moves), after its stop has landed. A
+     *  failure only logs: the episode then reads as the last one played until the next play. */
+    private suspend fun writeLastPlayedBack(jellyfinBase: String, token: String, device: DeviceData, jellyfinId: String, lastPlayed: String) {
+        runCatching { jellyfinClient.setUserData(jellyfinBase, token, device.jellyfinUserId, jellyfinId, played = null, positionTicks = null, lastPlayedDate = lastPlayed) }
+            .onSuccess { Logger.info("playback stop: item=$jellyfinId last played put back to $lastPlayed (R375)", "tv") }
+            .onFailure { Logger.warn("playback stop: last-played write-back failed for item=$jellyfinId: ${it.message}", "tv") }
+    }
+
     /**
      * R343 (FR-R343-11) — after the write-back, the clear's own invalidation (the series re-read, the Continue list
      * rebuilt, `playstate_changed` + `home_changed` pushed): what the played route runs. On a failed write-back it still
@@ -935,11 +957,12 @@ class PlaybackService(
         positionMs: Long,
         jellyfinPlaySessionId: String?,
         startOverUnplayed: Boolean = false,
+        restoreLastPlayed: String? = null,
     ) {
         // Phase 219 (FR-219-2) — the stop is the write that must land: queued, retried past the
         // client's disconnect, and the encode released once it has (JellyfinSink.stop).
         val w = writer
-        if (w != null) { w.enqueueStop(device, jellyfinId, positionMs, jellyfinPlaySessionId, startOverUnplayed); return }
+        if (w != null) { w.enqueueStop(device, jellyfinId, positionMs, jellyfinPlaySessionId, startOverUnplayed, restoreLastPlayed); return }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)
@@ -950,6 +973,7 @@ class PlaybackService(
         if (jellyfinPlaySessionId != null) {
             releaseEncodes(jellyfinBase, token, identity, jellyfinPlaySessionId)
         }
+        if (restoreLastPlayed != null) writeLastPlayedBack(jellyfinBase, token, device, jellyfinId, restoreLastPlayed)
         if (startOverUnplayed) {
             val written = writeStartOverUnplayed(jellyfinBase, token, device, jellyfinId, positionMs)
             afterStartOverWriteBack(device, jellyfinId, written)

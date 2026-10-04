@@ -356,3 +356,52 @@ Jellyfin's own source at tag `v12.1` (`SessionManager`, `UserDataManager`, `Base
 - **Client:** `SeriesEpisodes.kt:54` `primaryEpisodeId` and `SeriesDetailScreen.kt` (`:616` the kicker's `!finished`
   gate, `:756–760` `hasResume` / `startOverNow`). Phone, desktop and TV share this composable.
 - **Not touched:** the player's next-up card and auto-advance (already in order within a season); the mockups.
+
+## Build notes (2026-10-04)
+
+**Server**
+- **`tv/ContinueTarget.kt` (new, pure):** `planContinue(library, resume, nextUp, finished, touched)` holds R219 §2–§4 and
+  FR-R375-1–3 in one place, and `buildCanonicalContinueList` now only fetches, calls it and makes the cards (FR-R375-4).
+  `lastFinishedEpisode(series, watched)` is the anchor: watched, position 0, counted (season 1+, a Jellyfin item, in the
+  catalog), the newest `LastPlayedDate` at full precision (`isoToEpochTicks`, 100 ns), a tie to the later episode in
+  order, a max over the items (dev review item 5). With an anchor, Jellyfin's Next Up is not consulted: resume newer
+  than the anchor → resume card; else the next in order (label `S03E15 · {catalog title}`, or a resume-style card with
+  its own progress when that episode is in progress and unwatched, from a per-episode resume map — item 6); no next →
+  the older resume, else no entry. Without an anchor, R219's rule with Next Up is unchanged (and tested). Membership
+  admits a key with a next in order. `lastFinishedByKey` / `lastTouchedByKey` are maxes now, not "first seen" (R198).
+- **`nextEpisodeAfter`** moved to a top-level pure function in `tv/EpisodeSpan.kt` (with `countedEpisodesInOrder`), its
+  kicker from `resolvedEpisodeSpan`; `MediaStore.playPushFor` calls it.
+- **FR-R375-6 + owner decision 1:** `SessionPlan` gained `priorLastPlayed`, `watchedAtStart` (episodes only) and
+  `anchorLastPlayed` (a shuffle's series anchor, read at start from `HomeFeedService.anchorDate`, the in-memory
+  `anchorDateBySeries` per user that each trusted Continue build writes; wired in `Main.kt` as
+  `playbackService.anchorDateFor`). Pure `lastPlayedRestore(plan, finished)` (`SeriesReplay.kt`): not finished and
+  (shuffled or watched at start) → the prior date (none ⇒ nothing); finished and shuffled → `min(prior, anchor − 1 s)`
+  or `anchor − 1 s`; no anchor ⇒ Jellyfin's date stays (owner decision 2); a Start over stop that cleared ⇒ none. The
+  date rides `PendingWrite.restoreLastPlayed` (kept through `enqueue`'s STOP merge) and the Jellyfin sink writes it
+  after `postPlaybackStopped` succeeds and before `onStopLanded` (the inline no-writer path writes it after its stop
+  too). `JellyfinClient.setUserData` takes nullable `played`/`positionTicks` and an optional `lastPlayedDate`; the body
+  (`userDataBody`) carries only the fields given, so R343's body is byte-identical and the restore is a date-only write.
+- **Owner decision 2 (count first):** not counted. The prod DB holds our catalog, but every viewer's played/last-played
+  data lives in Jellyfin, so a count needs Jellyfin API calls, which this pass doesn't make. Per dev review item 2 the
+  addition is small: `getNextUp` sends no `nextUpDateCutoff`, so Continue Watching already has no time window; R375
+  adds only finished series whose newest finish is an earlier episode.
+
+**Client** (`ravilo-ui`): `rewatchEpisodeId(detail, overlay)` in `SeriesEpisodes.kt` (finished + the server's
+`continueEpisodeId` naming a counted episode); `primaryEpisodeId` returns it first on a finished series. In
+`SeriesDetailScreen`, the kicker gate, `hasResume` and `startOverNow` read `startOverMode = finished && rewatch == null`;
+*All {n} episodes watched*, Reset progress and Shuffle keep plain `finished`. The opening season, the rail and *UP
+NEXT* follow the primary id. No DTO change (FR-R375-7).
+
+**Tests:** `ContinueTargetTest` (the spec's ten plus ties, fractions, an untrusted sort, the date helpers and the
+user-data body), `SeriesReplayTest` (`lastPlayedRestore`: seven cases incl. `min(prior, anchor − 1 s)` and the under-5 %
+replay), `PlaybackWriterTest` (the date survives a STOP merge and a straggling tick); `SeriesEpisodesTest` (three R375
+cases) and `SeriesDetailFocusTest` (a finished 3 × 13 series naming S03E10 opens on Season 3, reads *Resume · S03E10*,
+keeps *All 39 episodes watched*, plays S03E10 without `start_over`; the existing *Start over* walk still passes).
+**Not unit-tested:** the sink's order (restore before `onStopLanded`) and Jellyfin keeping a restored date through
+R347's tick — `JellyfinSink` needs a live `JellyfinClient` (no `MockEngine` in `linuxX64Test`); the order is one
+`if` above the hook in `PlaybackService.JellyfinSink.stop`.
+
+**Only a device confirms** (Pixel 9 or the Mac, test account, deployed backend): acceptance 1–8a end to end, that
+Jellyfin 12.1 applies the date-only `UserData` write and its own stop doesn't overwrite it, and that a TV's Continue
+row follows within one refresh. A backend restart mid-play forgets `SessionPlan`, so that play moves the anchor (known
+gap, dev review item 7).

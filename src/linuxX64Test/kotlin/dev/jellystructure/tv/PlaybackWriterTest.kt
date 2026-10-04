@@ -28,6 +28,7 @@ class PlaybackWriterTest {
         val progressLanded = mutableListOf<Long>()
         val stopsLanded = mutableListOf<Long>()
         val startOverFlags = mutableListOf<Boolean>()
+        val restoresLanded = mutableListOf<String?>()
         val volumesLanded = mutableListOf<Pair<Int?, Boolean?>>()
         var calls = 0
         override suspend fun progress(w: PlaybackWriter.PendingWrite): Boolean {
@@ -38,7 +39,7 @@ class PlaybackWriterTest {
         override suspend fun stop(w: PlaybackWriter.PendingWrite): Boolean {
             calls++
             if (failFirst > 0) { failFirst--; return false }
-            stopsLanded += w.positionMs; startOverFlags += w.startOverUnplayed; return true
+            stopsLanded += w.positionMs; startOverFlags += w.startOverUnplayed; restoresLanded += w.restoreLastPlayed; return true
         }
     }
 
@@ -112,6 +113,26 @@ class PlaybackWriterTest {
         writer.awaitIdle()
         assertEquals(listOf(228_000L), sink.stopsLanded)
         assertEquals(listOf(true), sink.startOverFlags)
+        scope.cancel()
+    }
+
+    @Test
+    fun `a stop keeps its last-played write-back when a later stop replaces it`() = runBlocking {
+        // R375 (FR-R375-6) — the date a shuffled or unfinished replay puts back rides the STOP through a merge.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val sink = FakeSink(failFirst = 1)
+        val writer = PlaybackWriter(scope, sink, baseBackoffMs = 30, maxBackoffMs = 60)
+        val tv = device()
+        writer.enqueueStop(tv, "ep1", 10_000L, null, restoreLastPlayed = "2026-08-12T20:00:00.0000000Z")
+        writer.enqueueProgress(tv, "ep1", 11_000L, false)   // a straggler never replaces the stop
+        writer.enqueueStop(tv, "ep1", 12_000L, null)
+        writer.awaitIdle()
+        assertEquals(listOf(12_000L), sink.stopsLanded)
+        assertEquals(listOf<String?>("2026-08-12T20:00:00.0000000Z"), sink.restoresLanded)
+        // An ordinary stop carries none.
+        writer.enqueueStop(tv, "ep2", 1_000L, null)
+        writer.awaitIdle()
+        assertEquals(null, sink.restoresLanded.last())
         scope.cancel()
     }
 

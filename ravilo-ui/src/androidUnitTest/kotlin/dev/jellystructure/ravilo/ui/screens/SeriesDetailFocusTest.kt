@@ -197,6 +197,32 @@ class SeriesDetailFocusTest {
         rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
     }
 
+    /** R375 (FR-R375-5) — a finished series being re-watched: the server names S03E10, so the page resumes it. */
+    @Test fun `R375 — a finished series with a named episode opens on Season 3 and Resume plays it without start_over`() {
+        val d = series(3, 13, shuffle = true)
+        val overlay = watched(d, upToSeason = 3) + ("series" to CardPlayState(continueEpisodeId = "s3e10"))
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        var played: EpisodePlayContext? = null
+        rule.setContent {
+            SeriesDetailLoaded(
+                detail = d, overlay = overlay, onBack = {}, onPlay = { played = it }, onMarkEpisode = { _, _ -> },
+                onMarkFavorite = {}, onRelatedSelect = {}, onCastSelect = null, onGenreSelect = null,
+                displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null,
+            )
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("Resume · S03E10").assertExists()
+        rule.onNodeWithText("All 39 episodes watched").assertExists()   // the finished line stays
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeasonPickerTags.pill(3), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionUp)
+        press(Key.Enter)
+        val ctx = played ?: error("OK did not play")
+        org.junit.Assert.assertEquals("s3e10", ctx.episodeId)
+        org.junit.Assert.assertFalse("no start_over: the series is not cleared", ctx.startOver)
+    }
+
     @Test fun `an older server that cannot clear reads Play on a finished series`() {
         val d = series(3, 13, shuffle = false, startOver = false)
         render(d, watched(d, upToSeason = 3))

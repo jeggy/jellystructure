@@ -998,93 +998,27 @@ class HomeFeedService(
         }
         val (resumeItems, nextUpItems, finishedItems, touchedItems) = fetched
 
-        val byJellyfinId = libraryAll.asSequence().mapNotNull { mi -> mi.jellyfinId?.let { it to mi } }.toMap()
-
-        // R198 — never trust an upstream SortBy as a guarantee (confirmed live: two adjacent Resume
-        // items came back out of order while the surrounding ~90 were fine). Own the ordering here.
-        val resumeSorted = resumeItems.sortedByDescending { play ->
-            play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
+        // R219 §2–§4 and R375 (FR-R375-1–3) as pure rules (tv/ContinueTarget.kt): membership, the conflict rule with
+        // the next episode in order after the last finished one, and the order. The one place a next episode is chosen.
+        val plan = planContinue(libraryAll, resumeItems, nextUpItems, finishedItems, touchedItems)
+        // R375 (FR-R375-6, dev review item 7) — each series' anchor date, for a shuffle's `anchor − 1 s`; reached only
+        // on a trusted build, so it is at most one refresh stale.
+        anchorDateBySeries[device.jellyfinUserId] = plan.anchorDates
+        plan.picks.map { p ->
+            ContinueEntry(
+                p.mediaItem,
+                p.mediaItem.toMediaCard(progressPct = p.progressPct, nextUpLabel = p.nextUpLabel, seasonNumber = p.seasonNumber, episodeNumber = p.episodeNumber, episodeNumberEnd = p.episodeNumberEnd),
+                p.lastActivityAt,
+                p.episodeId,
+            )
         }
-
-        // §3/§4 need "when did I last finish an episode of THIS title" and "when was THIS title last
-        // touched at all" — both sources are already DatePlayed-descending from the client, so the
-        // first hit per key is the most recent.
-        val lastFinishedByKey = HashMap<String, Long>()
-        for (p in finishedItems) {
-            val key = p.seriesId ?: p.id
-            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
-            if (key !in lastFinishedByKey) lastFinishedByKey[key] = ts
-        }
-        val lastTouchedByKey = HashMap<String, Long>()
-        for (p in touchedItems) {
-            val key = p.seriesId ?: p.id
-            val ts = p.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: continue
-            if (key !in lastTouchedByKey) lastTouchedByKey[key] = ts
-        }
-
-        // §2(a) / resume candidate — one per title, the MOST RECENT in-progress episode if several
-        // (FR-R219-4: e.g. Tellytots shows S1E5/88%, never a stale S1E3).
-        data class ResumeCandidate(val mediaItem: MediaItem, val card: MediaCard, val ts: Long, val episodeId: String? = null)
-        val resumeByKey = LinkedHashMap<String, ResumeCandidate>()
-        for (play in resumeSorted) {
-            // R185 — an item flagged Played is never resurrected as in-progress, whatever a leaked
-            // position says. getResumeItemsAll's own IsPlayed=false already excludes this server-side;
-            // this is the defensive backstop for when the two can disagree.
-            if (play.userData?.played == true) continue
-            val key = play.seriesId ?: play.id
-            if (key in resumeByKey) continue  // already holding this key's newest episode (list is sorted)
-            val mediaItem = byJellyfinId[key] ?: continue
-            val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
-            // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
-            // R199: fall back to jellystructure's own scanned episode number (Phase 152) whenever
-            // Jellyfin's own IndexNumber/ParentIndexNumber parse fails on the file's name.
-            // R309 (FR-R309-7): a multi-episode file carries its range end (S1:E1–3).
-            val span = resolvedEpisodeSpan(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
-            val ts = play.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
-            resumeByKey[key] = ResumeCandidate(mediaItem, mediaItem.toMediaCard(progressPct = pct, seasonNumber = span.season, episodeNumber = span.episode, episodeNumberEnd = span.episodeEnd), ts, play.id.takeIf { play.seriesId != null })
-        }
-
-        // "Something left to watch" half of §2 — next-up candidate per title.
-        data class NextUpCandidate(val mediaItem: MediaItem, val card: MediaCard, val episodeId: String? = null)
-        val nextUpByKey = LinkedHashMap<String, NextUpCandidate>()
-        for (play in nextUpItems) {
-            val key = play.seriesId ?: play.id
-            if (key in nextUpByKey) continue
-            val mediaItem = byJellyfinId[key] ?: continue
-            val span = resolvedEpisodeSpan(mediaItem, play.id, play.seasonNumber, play.episodeNumber)
-            val label = span.code?.let { "$it · ${play.name}" } ?: play.name  // R309: S1E4–6 · … for a multi-episode file
-            nextUpByKey[key] = NextUpCandidate(mediaItem, mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = span.season, episodeNumber = span.episode, episodeNumberEnd = span.episodeEnd), play.id.takeIf { play.seriesId != null })
-        }
-
-        // §2 membership: "genuinely started" (a: resume, b: finished, c: touched within the window) AND
-        // "something left to watch" (resume or next-up). The union of (a)/(b)/(c) is the started set;
-        // intersecting it with (resume ∪ next-up) is the actual membership test.
-        val startedKeys = resumeByKey.keys + lastFinishedByKey.keys + lastTouchedByKey.keys
-        val candidateKeys = startedKeys.filter { it in resumeByKey || it in nextUpByKey }
-
-        // §3 — the conflict rule: most recent activity wins. Resume is newer, or there's no next-up →
-        // resume card. The finish is newer and a next-up exists → next-up card. A next-up-only title
-        // (§2(c): no resume, no finish, genuinely just "touched") falls to its own touched timestamp —
-        // this branch can never lack a timestamp, because membership above required it to be in
-        // startedKeys, and the only way in without a resume/finish is via lastTouchedByKey.
-        val entries = candidateKeys.mapNotNull { key ->
-            val resume = resumeByKey[key]
-            val nextUp = nextUpByKey[key]
-            val finishedTs = lastFinishedByKey[key]
-            when {
-                resume != null && nextUp != null && finishedTs != null && finishedTs > resume.ts ->
-                    ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs, nextUp.episodeId)
-                resume != null -> ContinueEntry(resume.mediaItem, resume.card, resume.ts, resume.episodeId)
-                nextUp != null -> ContinueEntry(nextUp.mediaItem, nextUp.card, finishedTs ?: lastTouchedByKey[key] ?: 0L, nextUp.episodeId)
-                else -> null  // unreachable — candidateKeys already required resume or nextUp present
-            }
-        }
-
-        // §4 — one chronological order across the whole merged list. sortedByDescending is stable, so
-        // ties keep the order they were built in. R198: unparseable/missing (the ts = 0L sentinels
-        // above) sorts last, never first.
-        entries.sortedByDescending { it.lastActivityAt }
     }
+
+    /** R375 (FR-R375-6) — per user, each series' last finished episode's `LastPlayedDate` as the last Continue build saw
+     *  it (series Jellyfin id → ISO). In memory only; read by [PlaybackService] at a shuffle's start. */
+    private val anchorDateBySeries = dev.jellystructure.ops.LockedMap<String, Map<String, String>>()
+
+    fun anchorDate(userId: String, seriesJellyfinId: String): String? = anchorDateBySeries[userId]?.get(seriesJellyfinId)
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 

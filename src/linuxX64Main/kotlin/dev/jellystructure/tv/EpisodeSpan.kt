@@ -1,5 +1,7 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.media.NextEpisode
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 
 /**
@@ -39,3 +41,27 @@ internal fun resolvedEpisodeSpan(mediaItem: MediaItem, jellyfinItemId: String, s
     }
     return EpisodeSpan(s, e, end?.takeIf { e != null && it > e })
 }
+
+/**
+ * R264 (FR-R264-3), a top-level pure function since R375 (FR-R375-4) — the episode after [ep] in [series]: season
+ * then episode order, specials (season 0) never, only one Jellyfin can play, and never [ep]'s own file again (a
+ * multi-episode file, phase 149, is several catalog rows on one id). Null after the last — and for a special, which
+ * has no "next". The cast / Ravilo-screen next-up and Continue Watching's next-in-order card use this one order.
+ */
+internal fun nextEpisodeAfter(series: MediaItem, ep: Episode): NextEpisode? {
+    if ((ep.seasonNumber ?: 0) < 1) return null
+    val ordered = countedEpisodesInOrder(series)
+    val at = ordered.indexOfFirst { it.jellyfinId == ep.jellyfinId }
+    if (at < 0) return null
+    val next = ordered.drop(at + 1).firstOrNull { it.jellyfinId != ep.jellyfinId } ?: return null
+    // R346 — S01E04, or S01E04–E06 for a multi-episode file: the span helper the Continue cards use.
+    val kicker = resolvedEpisodeSpan(series, next.jellyfinId!!, next.seasonNumber, next.episodeNumber).code
+    return NextEpisode(jellyfinId = next.jellyfinId!!, title = next.title?.takeIf { it.isNotBlank() }, kicker = kicker)
+}
+
+/** The series' playable, counted episodes (R346: season 1 or later, with a Jellyfin item) in season, episode, part
+ *  order — the order [nextEpisodeAfter] walks and R375's anchor breaks a tie by. */
+internal fun countedEpisodesInOrder(series: MediaItem): List<Episode> =
+    series.episodes
+        .filter { it.jellyfinId != null && (it.seasonNumber ?: 0) >= 1 }
+        .sortedWith(compareBy({ it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }, { it.partIndex }))

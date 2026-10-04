@@ -385,6 +385,10 @@ internal fun SeriesDetailLoaded(
     // first unwatched counted episode; on a finished series the first counted episode (Start over). Bug fix
     // kept: a fully-watched series never falls through to the LAST episode.
     val resumeEpId: String? = remember(allEps, overlay) { primaryEpisodeId(detail, overlay) }
+    // R375 (FR-R375-5) — a finished series being re-watched: the server names the next episode in order, and the
+    // page resumes it (Resume, the kicker, no `start_over`); *Start over* only when it names nothing. The *All {n}
+    // episodes watched* line, Reset progress and Shuffle keep plain `finished`.
+    val startOverMode = remember(finished, overlay) { finished && rewatchEpisodeId(detail, overlay) == null }
     // R343 (FR-R343-10) — Start over and Shuffle only when this server says it can do them.
     val canStartOver = detail.startOver
     val canShuffle = detail.shuffle
@@ -613,7 +617,7 @@ internal fun SeriesDetailLoaded(
                         }
                         // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
                         // R306 (FR-R306-5) — the same episode the Resume button plays when Continue Watching names one.
-                        val resumeEpEntry = if (overlayLoaded && !finished) (
+                        val resumeEpEntry = if (overlayLoaded && !startOverMode) (
                             overlay[detail.card.id]?.continueEpisodeId?.let { cid -> allEps.firstOrNull { it.id == cid } }
                                 ?: allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
                         ) else null
@@ -754,10 +758,10 @@ internal fun SeriesDetailLoaded(
                         // R346 — Resume once the viewer has begun the series (or the target is in progress);
                         // else Play. Both name the episode by its code (was the literal "Play · E1").
                         val targetInProgress = resumeEpId?.let { overlay[it] }?.let { !it.played && it.resumeMs > 0 } == true
-                        val hasResume = overlayLoaded && resumeEpId != null && !finished && (targetInProgress || seriesStarted(counted, overlay))
+                        val hasResume = overlayLoaded && resumeEpId != null && !startOverMode && (targetInProgress || seriesStarted(counted, overlay))
                         // R343 (FR-R343-2/10) — a finished series: *Start over · S01E01* (the server clears it
                         // once 5 % has played), or *Play · S01E01* on a server that can't clear.
-                        val startOverNow = finished && canStartOver
+                        val startOverNow = startOverMode && canStartOver
                         val castDevice = castConnectedDeviceName()   // R245 (FR-R245-4)
                         val playLabel = when {
                             // R351 (FR-R351-8) — connected, it still names the episode it will play (R346).
