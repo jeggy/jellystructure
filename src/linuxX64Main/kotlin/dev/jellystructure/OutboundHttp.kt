@@ -185,9 +185,12 @@ object OutboundHttp {
      * caller and stays on its own dedicated client. (Phase 181 removed the other one,
      * `JellyfinLibraryListener` — it never delivered a usable event on this Jellyfin version.)
      */
+    /** 282 — the exact decoder [client] installs, shared so a fixture test decodes the way production does. */
+    internal val clientJson: Json = Json { ignoreUnknownKeys = true }
+
     val client: HttpClient by lazy {
         HttpClient(Curl) {
-            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            install(ContentNegotiation) { json(clientJson) }
             install(HttpTimeout) {
                 connectTimeoutMillis = 10_000
                 socketTimeoutMillis = 120_000

@@ -570,6 +570,8 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                   <button id="seerr-test-btn" class="btn sm ghost">Test connection</button>
                   <span id="chk-seerr" class="tiny muted"></span>
                 </div>
+                <!-- Phase 282 (owner decision 2026-10-04) — a standing hint, shown always; no Seerr call detects the setting. -->
+                <div id="seerr-hide-hint" class="hint" style="margin-top:6px">Seerr's "Hide requested media" only hides titles in Seerr's own pages; Ravilo's Request rows and suggestions still show them.</div>
               </div>
             </div>
 

@@ -189,11 +189,28 @@ class RequestLifecycleService(
             val mediaInfo = if (mediaKind == MediaKind.SERIES) seerrClient.tvDetails(seerr.url, seerr.apiKey, tmdbId)?.mediaInfo
                              else seerrClient.movieDetails(seerr.url, seerr.apiKey, tmdbId)?.mediaInfo
             if (mediaInfo != null) {
-                for (req in mediaInfo.requests) {
-                    if (req.status != 3) seerrClient.declineRequest(seerr.url, seerr.apiKey, req.id)
-                    seerrClient.deleteRequest(seerr.url, seerr.apiKey, req.id)
+                // 282 — decline only a pending request (Seerr 3.5.0 refuses the rest with 409), log a refusal at info
+                // and a failed delete at warn, and always run the whole plan.
+                val calls = seerrRemovalCalls(mediaInfo.requests, mediaInfo.id)
+                val lines = runSeerrRemoval(calls) { call ->
+                    when (call) {
+                        is SeerrCall.Decline -> when (val d = seerrClient.declineRequest(seerr.url, seerr.apiKey, call.requestId)) {
+                            SeerrDecline.Declined -> SeerrCallResult.Ok
+                            is SeerrDecline.Refused -> SeerrCallResult.Refused(d.message)
+                            is SeerrDecline.Failed -> SeerrCallResult.Failed(d.detail)
+                        }
+                        is SeerrCall.DeleteRequest ->
+                            if (seerrClient.deleteRequest(seerr.url, seerr.apiKey, call.requestId)) SeerrCallResult.Ok
+                            else SeerrCallResult.Failed("delete refused or unreachable")
+                        is SeerrCall.DeleteMedia ->
+                            if (seerrClient.deleteMedia(seerr.url, seerr.apiKey, call.mediaId)) SeerrCallResult.Ok
+                            else SeerrCallResult.Failed("delete refused or unreachable")
+                    }
                 }
-                if (mediaInfo.id != 0) seerrClient.deleteMedia(seerr.url, seerr.apiKey, mediaInfo.id)
+                for (line in lines) when (line.level) {
+                    SeerrLogLevel.INFO -> Logger.info(line.message, "acquisition")
+                    SeerrLogLevel.WARN -> Logger.warn(line.message, "acquisition")
+                }
             }
         }
         val handle = acquisitionStore.handle("tmdb:$tmdbId")

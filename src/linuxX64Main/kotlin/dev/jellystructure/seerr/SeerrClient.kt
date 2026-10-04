@@ -10,6 +10,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -459,10 +460,13 @@ class SeerrClient {
      * method + path are real. `DELETE /media/{id}` is idempotent-ish — even a nonexistent id answered
      * `204` — so its success here means "the call went through", not "a row was necessarily removed".
      */
-    suspend fun declineRequest(url: String, apiKey: String, requestId: Int): Boolean = runCatching {
+    /** 282 (FR-282-2) — Seerr 3.5.0 answers 409 for a request that is not pending; that is a [SeerrDecline.Refused],
+     *  told apart from a [SeerrDecline.Failed] call. A thrown call or timeout is a failure. */
+    suspend fun declineRequest(url: String, apiKey: String, requestId: Int): SeerrDecline = runCatching {
         val resp = httpPost(base(url) + "/request/$requestId/decline", apiKey)
-        resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent
-    }.getOrElse { false }
+        val body = if (resp.status.value == 409) runCatching { resp.bodyAsText() }.getOrNull() else null
+        declineOutcome(resp.status.value, body)
+    }.getOrElse { SeerrDecline.Failed(it.message ?: it::class.simpleName ?: "error") }
 
     suspend fun deleteRequest(url: String, apiKey: String, requestId: Int): Boolean = runCatching {
         val resp = OutboundHttp.withPermit { http.delete(base(url) + "/request/$requestId") { header("X-Api-Key", apiKey) } }

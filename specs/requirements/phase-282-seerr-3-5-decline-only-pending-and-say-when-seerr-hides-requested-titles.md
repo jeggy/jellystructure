@@ -286,3 +286,22 @@ replacement after the upgrade.
 *Seerr's "Hide requested media" only hides titles in Seerr's own pages; Ravilo's Request rows and suggestions still show
 them.* Shown always (no Seerr call to detect the setting); no Ravilo change. Acceptance 3–4 become: the line is on the
 card; nothing else changes.
+
+## Build notes (2026-10-04)
+
+- **FR-282-1/2 (dev review items 5–7):** new `seerr/SeerrRemoval.kt` — `seerrRemovalCalls(requests, mediaId)` (decline
+  then delete for status 1, delete only for every other status incl. a missing one, then `DeleteMedia` when
+  `mediaId != 0`, in Seerr's order), `declineOutcome(status, body)` → `SeerrDecline.Declined / Refused(message) /
+  Failed(detail)`, and `runSeerrRemoval(calls, exec)` returning the log lines (refused or failed decline at info, failed
+  request/media delete at warn, a thrown call counts as failed, never stops early; ids and Seerr's text only).
+  `SeerrClient.declineRequest` now returns `SeerrDecline` (409 body read for the message). `RequestLifecycleService.removeRequest`
+  runs the plan and logs the lines under `acquisition`, so the admin removal and the dead-request sweep both follow it.
+  `OutboundHttp.clientJson` is the client's own decoder, lifted so the fixture test shares it.
+- **FR-282-3/4 (owner decision):** one static line on the admin Seerr card, `#seerr-hide-hint`, under the
+  Test-connection row inside `#seerr-on` (`ui/Settings.kt`). No Seerr call, no probe change, `/config/test-seerr` and
+  `ArrTestResult` untouched, nothing in Ravilo.
+- **Tests:** `linuxX64Test` — `SeerrRemovalCallsTest` (5), `SeerrDeclineOutcomeTest` (4), `SeerrRemovalRunTest` (6),
+  `SeerrMediaInfoDecodeTest` (1), all green. Admin wasm compiles. `tests/e2e/seerr-card-hint.spec.ts` written (the hint's
+  text and place, no `/api/config/test-seerr` call on load, unchanged after a failed test; the toggle is put back, nothing
+  saved) — it runs in CI's e2e job, not here (no Docker in this pass).
+- **Only the live house confirms:** the manual check above, after Seerr's upgrade to 3.5.0.
