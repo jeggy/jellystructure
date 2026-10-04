@@ -215,3 +215,29 @@ Fourteen items; four are for the owner.
 **Shipped bugs found (not fixed)**
 
 None.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **The server never assumes it is on the speakers' network** (owner: *"imagine this is a server … if the server can
+   control our Chromecast devices in some other way, like through our connected devices, then let's do it, or through
+   the internet"*). Roads, in order:
+   - **A receiver already running Ravilo:** the server commands it directly over the receiver's own events socket
+     (R354) — works today, from anywhere.
+   - **A speaker not yet running Ravilo (launching the receiver):** the server **relays** the LOAD to a connected
+     Android or desktop Ravilo app on the speaker's network (same public address, R368's household rule) that sees
+     the speaker in its own Cast discovery. New: those apps report the Cast devices they see (`cast_device_id`,
+     name, kind) on the events socket; the server keeps *who can reach what*; a `cast_relay_load` event asks one
+     of them (prefer an app in the foreground, then the most recently active) to launch the receiver with the
+     session's `CastLoadData` + `session_id`; the receiver then joins the server and the relaying app drops its
+     Cast link (it must not become the session's controller or trigger R353's hand-back). No relay app online ⇒ the
+     place is listed under *Not reachable* with the reason.
+   - **Over the internet:** Google offers no public cloud API to launch a Cast receiver; the relay is the internet
+     road. Revisit if Google publishes one.
+   So the web app, the iPhone and the TV app **can** start on a speaker whenever a relay app is online on that
+   network.
+2. **No question while this app already holds the busy session's Cast link** — Play plays on the speaker as today
+   (R324). A busy place asks only when its session was started from another app.
+3. ***Not reachable* lists only TVs, displays and speakers** (screens and Cast devices seen in the last 24 h). A
+   Ravilo app with no connection is left out.
+4. **Audiobooks list only Ravilo apps in this round**; casting books to a speaker is its own phase.

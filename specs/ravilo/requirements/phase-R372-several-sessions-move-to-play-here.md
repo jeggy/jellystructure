@@ -187,3 +187,14 @@ and 6). The TV bullets need fixing (item 9). Eleven items; three are for the own
 
 None. (R368's review lists the watchdog-versus-restart race and the lost `directPlay` flag. Both touch item 5's
 watchdog path, so build on its fixes.)
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **Restart:** once this phase ships, a place silent after a restart is *paused, offline* for 24 h (replaces R368-4's
+   2-minute end, as the dev review proposed).
+2. **Every move rewinds 2 s, music included.**
+3. **The TV's volume panel is built in this phase** — the group *Speakers* panel the mockup draws (▲ from the
+   transport), with master + one slider per room, driven through the server (R371's relay for rooms, the
+   receiver path for the master). The TV remote's own volume keys stay the TV's.
+4. Moving onto a speaker from the web app, iPhone or TV uses R370's relay.

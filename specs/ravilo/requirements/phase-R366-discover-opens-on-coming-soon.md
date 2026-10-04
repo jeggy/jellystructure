@@ -102,3 +102,12 @@ Read against `NavItems.kt`, `RaviloApp.kt`'s Discover wiring, `DiscoverScreen.kt
 
 **Tests:** the updated `DiscoverSegmentOrderTest` (common, pure). Only the device confirms acceptance 1–3 on the TV,
 which is a quick look.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+**With nothing on the calendar, Discover opens on the next chip (Networks)**, not on Coming Soon's *Nothing scheduled*.
+Coming Soon's chip stays in first place in the strip. Build: `defaultDiscoverSegment` gains `upcomingEmpty: Boolean?`
+from the upcoming store's last answer (kept across launches like the other client caches); `true` ⇒ skip Coming Soon
+for the entry chip only; `null` (never fetched) ⇒ open on Coming Soon as the rule says. The Discover nav button's
+step still walks every rendered chip. Add a test for both cases.

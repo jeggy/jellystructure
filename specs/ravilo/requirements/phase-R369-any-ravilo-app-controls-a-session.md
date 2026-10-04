@@ -221,3 +221,11 @@ the remote needs a detail payload R368 doesn't carry (item 5). Fifteen items; on
 
 None new. One stale comment: `listedToRemote()` (end of `RemoteRoutes.kt`) says a receiver "never opens the events
 socket". That was true until R354. The filter itself is still right.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **Stopping someone else's playback asks every time** — one inline confirm, no "don't ask again". Pausing, skipping
+   and volume never ask.
+2. Commands from any app reach a speaker that isn't running the receiver yet through **R370's relay** (owner: the
+   server is a server; being on the speakers' network is an accident of this household).

@@ -190,3 +190,9 @@ two for the owner.
   Shuffle (where you started) or on the episode that was playing?* Lean: Shuffle. It is what you pressed, and the
   shuffled episode may sit in any season. A pick from the episode rail leaves the shuffle (R343), so after that Back
   lands on the episode.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **The *From "…"* line under a browse page's title is dropped on every seeded browse page**; the count stays.
+2. **Back from a shuffle lands on Shuffle**, not on the episode that was playing.

@@ -182,3 +182,11 @@ FR-282-3/4 should be dropped. Nine items, one for the owner.
 **API:** no route, DTO or wire change (`ArrTestResult` is untouched once FR-282-3 goes). **Tests:**
 `seerrRemovalCalls` and `declineOutcome` in `linuxX64Test`, both pure. Only the live house can confirm acceptance 5's
 replacement after the upgrade.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+**Keep a hint (FR-282-3/4 reworked, not dropped).** The admin's Seerr card carries one line under the version:
+*Seerr's "Hide requested media" only hides titles in Seerr's own pages; Ravilo's Request rows and suggestions still show
+them.* Shown always (no Seerr call to detect the setting); no Ravilo change. Acceptance 3–4 become: the line is on the
+card; nothing else changes.

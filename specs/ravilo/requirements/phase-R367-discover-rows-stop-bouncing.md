@@ -169,3 +169,9 @@ the loop. Ten items, one for the owner.
 10. **Nothing else is involved.** Discover has no focus detail: `RequestContent` passes no `openPanel`, and
     R240/R242/R254 are Home rows. It does no polling: `DiscoverStore` refreshes only on live-config and acquisition
     pushes. The app bar is an overlay, so `appBarScrolled` changes no layout. No string, DTO or config change.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+**Accepted:** on the TV the focused row fills the area under Discover's tabs and none of the next row peeks out. Fix the
+bouncing only; the header doesn't slide away.

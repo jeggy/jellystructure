@@ -184,3 +184,16 @@ Twelve items; two are for the owner.
 **Shipped bugs found (not fixed)**
 
 None.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. ***Add a speaker…* is on every app, through the relay** (R370 decision 1): Android and desktop build the group
+   directly (Android via `MediaRouter2` routing controllers; desktop after the speaker test proves our Cast client
+   can), and the web app, iPhone, TV and admin send `add_room`/`remove_room` to the server, which relays it to the
+   Android/desktop app holding the session's Cast link — or, if none, to a relay app on that network, which then
+   holds the link. No such app online ⇒ the item is shown disabled with *No phone or computer nearby can reach the
+   speakers*.
+2. **Each room's own slider on every app, through the same relay.** The linked Android/desktop app reports each
+   room's level and applies room changes; the server fans them out. With no linked or relay app, the room sliders
+   are disabled with *{place} doesn't report its volume*; the master still works (receiver path).

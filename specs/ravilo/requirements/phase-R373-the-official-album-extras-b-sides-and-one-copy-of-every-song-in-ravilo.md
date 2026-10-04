@@ -153,3 +153,10 @@ The owner questions are 305's Q-A and Q-C (they decide what this page says), plu
 
 10. **Out of reach, as intended.** The TV never calls these routes (no music mode). The mini bar, the lock screen and
     MPRIS draw no chips today, so FR-R373-5's "not there" needs no code.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+Follows 305's decisions: *Bonus* only when the song is official nowhere; the copy shown is the highest bitrate
+(re-encoding doesn't lower it); the extras section is named from MusicBrainz, else the country in the viewer's
+language, else *Extras*. The ▾ pick stays per device.

@@ -177,3 +177,11 @@ release-build register limit to respect. Twelve items; two for the owner.
 - **B.** *When you skip or scrub into the end credits yourself, the credits card appears with "Play next" selected,
   so your next OK (meant as another skip) starts the next episode. Should the card then start on "Watch credits"
   instead?* Lean: yes, when you brought it up yourself. It still starts on "Play next" when it appears on its own.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **During an intro with the controls hidden, OK shows the controls with Skip Intro selected**; a second OK skips. To
+   pause during an intro: Play/Pause, or OK with Play selected.
+2. **The credits card starts on *Watch credits* when the viewer brought it up by skipping or scrubbing** into the
+   credits; reached by normal playback it starts on *Play next* as today.

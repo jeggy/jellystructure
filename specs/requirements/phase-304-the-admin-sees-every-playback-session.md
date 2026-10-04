@@ -124,3 +124,11 @@ items; one is for the owner.
    an information row, *N playbacks didn't come back after the restart*, shown until midnight.
 
 **Shipped bugs found:** none new here. R368's review lists four. Bug 1 (a raw id on this page) is fixed by item 1.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **FR-304-5 (the Dashboard row about playbacks stuck after a restart) is dropped.** Under R368/R372's rules it can't
+   fire; the session's timeline already says what happened, and the Dashboard shows nothing when nothing is wrong
+   (285).
+2. The admin sees **every** session, across networks (R368's household rule is for viewers only).

@@ -354,3 +354,13 @@ items; item 11 is for the owner.
 
 12. **Shipped issues found, not fixed.** Only the 25-pressing cap (item 2d), which was already known from 290. It hides
     pressings from Find match… today, before any of this is built.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **Bonus on a folded row only when no copy of the song is on any official tracklist.** *Show every copy* and the album
+   page stay per copy.
+2. **The shown/played copy is chosen by bitrate first** (then bit depth, then the existing tie-breaks); whether a phone
+   must re-encode it does **not** rank it lower. (The dev review's lean is declined.)
+3. **The edition's name:** MusicBrainz's own title or disambiguation as it is (*super deluxe*, *20th Anniversary*);
+   else the country in the viewer's language (*Extras · Japan*); else *Extras*.

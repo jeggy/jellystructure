@@ -374,3 +374,17 @@ owner. Seventeen items.
    events socket reconnects can be force-stopped by the next watchdog tick (≤ 30 s, socket test at
    `PlaybackService.kt:980`). Jellyfin is then told it stopped while it plays, and its heartbeats are ignored for 60 s
    (`STOP_GRACE_MS`). Item 12 (a) covers this for sessions; the tracker has the same gap today.
+
+
+## Owner decisions (2026-10-04, after the dev review)
+
+1. **A session the viewer may not see** (kids profile, library limits): the row shows the person, the place and the
+   state only (*Eyð is watching · Stue*) — no title, no artwork, no progress line. It still counts on the glyph.
+2. **The household is the users on the same internet network**, not every account on the server. A session is
+   listed to a viewer only when the playing device and the viewer's device share a public address — the same
+   `nearby` rule phase 236 already applies to screens (`ScreenStatus`), computed server-side from the requests'
+   source addresses (behind Caddy: the forwarded address). A friend with an account at their own house never sees
+   this household's playback and is never seen. Per-session, re-evaluated when a device's address changes; no
+   setting. The admin (304) still sees every session.
+3. **Restart rule:** until R372 ships, R368-4's 2-minute end stands; once R372 ships, a place silent after a restart
+   becomes *paused, offline* and is kept 24 h like any other silent place (R372-4 wins).
