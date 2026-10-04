@@ -6,7 +6,8 @@
 
 ## Status
 
-`Planned` · **not dev-reviewed** · pending export. Written 2026-10-04 (design-authored) beside **admin 305**, from
+`Planned` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · not built · pending export. Written
+2026-10-04 (design-authored) beside **admin 305**, from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` and the mockups:
 - `design/ravilo/mobile/ravilo-editions.js` (`window.RaviloEditions`), used by `Ravilo Mobile.html` (`re-*` in
   `mobile/ravilo-music.css`) and `Ravilo Desktop.html` (`dx-ed*` in `desktop/ravilo-desktop.css`); both load
@@ -85,3 +86,70 @@ the shipped `i18n/*.json` wins). The desktop mockup is English like the rest of 
 - Songs lists each song once; *Lantern Swing* carries *Bonus* there and in the queue, not on the mini bar.
 - *Northern Line*'s ⋯ sheet: *Also on 3 releases*.
 - Harbour Lights' *Singles & EPs* no longer shows the five *Kite Weather* singles.
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `shared/…/tv/Music.kt`, `MusicTvService`, `MusicTvRoutes`, `MusicDetailScreens` (album and artist pages),
+`MusicCommon.TrackRow`, `MusicPlayerScreens.QueuePanelRow`, `MusicCast.playQueue`, `MusicDeviceStore` and the
+`i18n/*.json` tables, and alongside 305's review. The design holds. FR-R373-1's wire changes shape (item 1). Ten items.
+The owner questions are 305's Q-A and Q-C (they decide what this page says), plus open question 1 here.
+
+1. **FR-R373-1 changes shape. The app cannot use release-group ids or bare track ids.** The phone opens an album by its
+   Jellyfin id, and the B-sides are tracks of *other* albums, which are not in `MusicAlbumDetail.tracks`. Every addition
+   is optional with a default, per the file's own rule (`shared/…/tv/Music.kt:6-15`). No field is removed or changes
+   meaning.
+   - **`MusicAlbumDetail`** gains `official_ids: List<String>?` (null means unmatched: today's page), `extra_ids`,
+     `edition_title`/`edition_country` (305 Q-C), `singles: List<MusicAlbumCard>` (the **held** singles, year order),
+     `bside_tracks: List<MusicTrackItem>` (full items, single order; the existing `album`/`album_id` give *from
+     {single}*), and `single_from: MusicAlbumCard?` (a single's own page, FR-R373-2 point 2). `tracks` keeps today's
+     file order, so an installed app shows today's page.
+   - **`MusicTrackItem`** gains `extra: Boolean = false` (305 Q-A decides what it means on a folded row) and
+     `also_on: Int = 0`.
+   - **Not `copies` on every track.** Up to ten ids on each of 60 rows per page is weight the sheet only needs on a tap.
+     Add **`GET /tv/music/track/{id}/copies`** instead, answering the other visible copies as `{track, album card}`
+     (cover, title, kind, year). It is checked with `visible()` like the other routes.
+   - **`MusicArtistDetail`** gains `singles_under: [{album: MusicAlbumCard, count}]` (FR-R373-7). Homed singles leave
+     `groups`, whichever group holds them (305 item 2e: a live single sits under *Live*).
+   - **There is no *Shuffle all*.** `MusicTvRoutes.kt:41-91` has no such route, and the app has none. Drop it from the
+     list.
+
+2. **What folds, where** (`MusicTvService`). Browse → Songs (`:184`), search's songs (`:292`), an artist's top songs
+   (`:268`), Listen's *Recently played* (`:155`, deduplicated by song, order kept) and the empty search's recent songs
+   (`:287`). `artistCard`'s `track_count` (`:127`) folds. Never folded: an album's own tracks, a playlist (the viewer's
+   own list), and `last-played` (it is the copy that was played). The copy shown is chosen among the copies **this
+   viewer** may see (305 item 8). Installed apps get the folded lists, and fewer singles on an artist page without the
+   new line. That changes content, not fields, so it is acceptable.
+
+3. **The queue.** *Play album + extras* is `official_ids` → `extra_ids` → `bside_tracks`, in that order. The order is the
+   wire's contract, so no rule lives in the app. Both buttons pass that list to `MusicPlayback.playQueue` (Shuffle with
+   `shuffle = true`), as today (`MusicDetailScreens.kt:130-131`, `:153-154`). **A tap on a row outside the current pick**
+   (an extra or a B-side while the pick is *Play album*) plays the extended order from that row and leaves the
+   remembered pick alone. FR-R373-2's "inside the current pick's order" cannot reach those rows otherwise.
+
+4. **The pick (open question 1).** Kept in `MusicDeviceStore` under one key (`album_pick` → a map of album id →
+   `extras`), per device, as leaned. `forgetListening()` (`MusicDeviceStore.kt:42`) clears it with the mode and the
+   queue, so the next viewer on the phone starts with the plain album. An unmatched album ignores the stored pick.
+
+5. **Casting (open question 2, answered).** The phone builds the queue and `MusicCast.playQueue`
+   (`MusicCast.kt:282-291`) sends it. R359 splits a long queue. Nothing to add.
+
+6. **FR-R373-6 amends R344 FR-R344-3 and R352 FR-R352-1.** Say so in the requirement. The chips move from after the
+   title to just before the length, in `TrackRow` (`MusicCommon.kt:216`) and `QueuePanelRow`
+   (`MusicPlayerScreens.kt:662`). R352's fold rule stays. **Bonus is a fixed chip outside the fold**: the version chips
+   fold first (down to *+N*), then the title truncates, and Bonus is never cut. On the desktop's Songs table the chip
+   column has a fixed width. Now playing keeps them before the artist · album line (R344 unchanged there).
+
+7. **The album page** is one composable with two branches (`MusicAlbumScreen`, `deskWide` and phone,
+   `MusicDetailScreens.kt:109-158`). Both get the split buttons. The header's length is the sum over `official_ids`, as
+   today's header sums `tracks` (`:115`). *More from* (`moreFromArtist`, `MusicTvService.kt:246`) leaves out the
+   singles homed on this album on the server.
+
+8. **Strings.** `ed.*` is a new namespace in `i18n/*.json`; none exist yet. Reuse `music.songs_n` / `music.songs_one`
+   for *{n} songs*. `music.singles` (*Singles & EPs*) is a different phrase from `ed.singles` (*Singles & B-sides*), so
+   both stay. The Faroese follows R288's lexicon (`i18n/lexicon`). `ed.edition` replaces any built *Japanese edition*
+   text (305 Q-C).
+
+9. **Desktop context menu (open question 3, answered).** The same rows as the phone's sheet, from the same route.
+
+10. **Out of reach, as intended.** The TV never calls these routes (no music mode). The mini bar, the lock screen and
+    MPRIS draw no chips today, so FR-R373-5's "not there" needs no code.

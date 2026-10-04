@@ -7,7 +7,8 @@
 
 ## Status
 
-`Planned` · **not dev-reviewed** · pending export. Written 2026-10-04 (design-authored) from
+`Planned` · **dev-reviewed 2026-10-04** (against `main` `5210045a`; see the end) · not built · pending export. Written
+2026-10-04 (design-authored) from
 `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` (owner decided §A on 10-03 and §G on 10-04) and the
 mockups built from it:
 - `design/app/editions.js` + `editions.css` (`ed-*`, `window.Editions`), loaded by `album.html`, `library.html`,
@@ -173,3 +174,183 @@ that may be the same* · *Listen and decide* · *These sound the same: one song?
 - *Northern Line*'s panel lists 4 copies with their reasons; *Not the same song* on the compilation's splits it off.
 - The Dashboard row reads *3 pairs*; answering all three removes it.
 - Harbour Lights' *Singles & EPs* shows 6.
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `MusicBrainzClient`, `MusicMatchService` (the ladder, `applyMatch`, `catchUpVersionFacts`), `MusicScoring`,
+`MusicIngest.carry`, `MusicStore.Snapshot`, `MusicVersions.keyOf` and `MusicVersionIndex`, `MusicBrowse`, `MusicTriage`,
+`DashboardRoutes`, `MusicRoutes`, `MusicTvService`, the Jellyfin music fetch, `FfmpegRunner.computeFingerprint`,
+`FingerprintService` and `SegmentDetection`. The design holds, and much of it reuses what 276 and 292 built. Twelve
+items; item 11 is for the owner.
+
+1. **Rule 1 is already built.** FR-305-8 rule 1 is exactly `MusicVersions.keyOf` (`model/MusicVersions.kt:105-108`:
+   `rec:<mbid>` when the track `agrees` or is `manual`, else `trk:<id>`), and `MusicVersionIndex.copies(t)`
+   (`music/MusicVersionIndex.kt:14-27`) already groups the live tracks by it. So a song is: keyOf groups, joined by
+   sound (rule 2) and by the owner's `same`, minus the owner's `not_same`. FR-305-11 then holds by itself, because 292's
+   versions keep riding keyOf.
+
+2. **Corrections about the current code.**
+   - **a. A track's recording is the release's, not the file's tag.** `applyMatch` (`MusicMatchService.kt:286-297`)
+     writes the recording that the matched release has at the same disc and position. The track `agrees` when its
+     length is within ±3 s (`MusicScoring.kt:34-50`). A `disagrees` track still carries that release's recording id.
+     Rule 1 must trust only `agrees` and `manual`, as written. The extra test (item 3) can use the id whatever its
+     state, because it is that release's own track.
+   - **b. There is no bit depth.** `JellyfinAudioStream` (`auth/Models.kt:518-524`) reads codec, bitrate, sample rate
+     and channels, and `MusicTrack` (`model/Music.kt:263-267`) keeps the same four. FR-305-10's second key needs
+     `BitDepth` on the stream, a `bitDepth` field on `MusicTrack`, and the field added to `MusicIngest.carry`'s list of
+     Jellyfin-owned fields (`MusicIngest.kt:174-181`). The next scan fills it. No migration is needed (JSON blob).
+   - **c. There are no ratings.** Neither jellystructure nor Ravilo has a song rating. FR-305-10's numbers are play
+     count, last played and favourite: Jellyfin's, per viewer (`MusicTvService.UserMusic`, `:97-116`). Nothing is
+     "written back". Ravilo already reports a play on the track id it played, so Jellyfin records it on that copy.
+   - **d. Pressings are capped at 25.** `releasesOf` (`MusicBrainzClient.kt:214-215`) is one browse page, `limit=25`,
+     no offset, and `MbReleaseBrowse` (`:129`) reads no `release-count`. Find match…'s pressing list
+     (`MusicMatchService.releases`, `:350-357`) and `bestRelease` already lose pressings beyond 25 (290's build notes;
+     three household albums have 26, 27 and 30). FR-305-2's vote needs every official release, so paging comes first
+     (item 4).
+   - **e. A live single is typed `live`.** `MusicBrowse.albumType` (`MusicBrowse.kt:63-72`) checks the secondary types
+     before the primary one, so a single with *Live* is `live` and a box set is `compilation`. FR-305-2 and FR-305-6
+     must test `primaryType`, not `albumType`: Album without *Compilation* gets an official tracklist; Single or EP gets
+     homed. FR-305-15's "leaves *Singles & EPs*" must also cover a homed live single, which today sits under *Live*.
+   - **f. "Computed, never stored" holds for the groups, not for the sound.** Comparing fingerprints takes minutes on a
+     first run, and the snapshot is replaced on every write (`MusicStore.kt:84-120`). The comparison results must be
+     stored (item 3), and the groups computed from them on read.
+
+3. **Where it is kept.** This replaces FR-305-1's five tables:
+   - **On `MusicAlbum`'s JSON** (no migration; `MusicIngest.carry` lists only Jellyfin's fields, so a scan keeps
+     anything a phase adds, `MusicIngest.kt:168-171`): `official` (ordered recording ids, each with title, length and
+     disc/position for gap rows; the release it was read from; *k*; *m*; when it was read), `extraOrigins` (recording
+     id → first release's title, date, country, disambiguation), `singleFrom` (the release group the single is *single
+     from*) and when the relationships were read.
+   - **Extras are computed on read.** A held track is an extra when its recording id is not in `official`. A track
+     with no recording id on a matched album is an extra too (it is not shown to be on the official album).
+   - **One migration** (`66.sqm` at HEAD; take the next free number at build time) for the owner's rows only, 292's
+     precedent (`music_version_choice`, which no scan writes): `music_official_pick(album_id PK, release_mbid,
+     release_group_mbid, set_at)`, `music_single_home(album_id PK, home_album_id NULL = No album, set_at)`,
+     `music_same_song(track_a, track_b, state same|not_same, set_at, PK(track_a, track_b), a < b)`. Answered
+     suggestions are the same rows. Add one measurement table: `music_sound_pair(track_a, track_b, ber, coverage,
+     offset_ms, measured_at)`.
+   - **Fingerprints go on disk, not in SQLite**, like `FingerprintService` (`media/FingerprintService.kt:12-20`: a raw
+     fingerprint is tens of KB). Use `fingerprints/music/<track id>-<size>-<mtime>.json`. A changed file misses the
+     cache by its name.
+   - **A song index on the snapshot**, lazy like `versions` (`MusicStore.kt:47`).
+   - **What *not the same* does.** Rule-1 groups are cliques, so removing one pair would leave the copy joined through a
+     third. A `not_same` takes the named copy out of every automatic group it is in. Only an explicit `same` brings it
+     back. That is what "splits it off" in the acceptance needs. Versions still follow the recording (292 Q7).
+   - **The owner's pick** survives scans and re-matches to the **same** release group. A re-match to another group, or
+     *Clear match* (`MusicMatchService.clear`, `:393-404`), drops it with a History line, because its pressing is no
+     longer one of the album's.
+   - Owner rows are keyed by Jellyfin track and album ids, like 292's `trk:` keys. A file that Jellyfin re-creates
+     under a new id loses its decision. 292 has the same limit.
+
+4. **MusicBrainz: feasible and cheap.**
+   - **Paging.** `releasesOf` becomes `/release?release-group=X&status=official&inc=recordings+media+labels&limit=100&offset=N`,
+     advancing by what came back until `release-count` (add `release-count`/`release-offset` to `MbReleaseBrowse`;
+     MusicBrainz may return fewer releases than the limit when recordings are included). `status=official` is a browse
+     filter, so bootlegs and promos cost nothing. Find match… uses the same paged call, which fixes item 2d.
+   - **Cost.** One or two requests per album: about 15–30 for the household's albums, once. Read it in a catch-up pass
+     at the end of `match_musicbrainz`, like `catchUpVersionFacts` (`:219-225`), because that pass also covers locked
+     albums (`matchAlbums` skips them, `:152`). Read again on an `all`-scope run and when the group changes.
+   - **The vote.** Flatten every medium. Drop video recordings and DVD/Blu-ray media first (add `video` to
+     `MbRecording`; `format` is already on `MbMedium`). Otherwise a CD+DVD deluxe majority would put videos in the
+     official list as gap rows. Vote on the **set** of recording ids (the research's measured method). Take the order,
+     discs and titles from the earliest release with the winning set. **Ties go to the smaller set, then the
+     earliest**, because the bonus pressing is the bigger one and is often the earliest (research §2). FR-305-2's "ties
+     go to the earliest release" should say so.
+   - **Numbering.** One medium: 1…n. More than one: disc · track, as on the official release.
+   - **`first_release`** comes from the same pages: the earliest dated release that carries the recording. An extra on
+     no release of the group costs one `recording(mbid)` (`:243`, already `inc=releases`). That is rare.
+   - **The edition's name** (admin, English): the earliest such release's title when it differs from the group's, else
+     its disambiguation (*super deluxe*), else its country (*Japanese edition*).
+   - **Singles.** Add `release-group-rels` to `releaseGroup()`'s `inc` (`:210-211`). `applyMatch` already calls it on every
+     match and refresh, so there is no new call path: one extra request per group, once (the URL changes), then free.
+     `MbRelation` needs a `release_group` target (`@SerialName("release_group")`). Check the direction of *single from*
+     on a live answer, as 292 did; the single should be the first entity (`forward`). Matched singles and EPs without
+     the relationships are caught up in the same pass: about 49 requests, once.
+   - **Rule 2 (`via_remix`)** reads 292's `MusicRecordingFacts.remixOf`, already fetched for every matched album, so it
+     costs no request. The research's two cases went *remix of → the original single → single from*. When the remix
+     points at the single's own recording rather than the album's, rule 2 as written misses. Follow that hop too (target
+     recording → the held single it is on → that single's `singleFrom`). It costs nothing and matches the research.
+   - **Rule 3** compares base titles (292's title-finder normalisation) and applies to **singles only**. Research §5
+     never applies it to EPs, and the acceptance's *Singles & EPs shows 6* (two singles on no album, one soundtrack
+     single, three EPs) depends on that. FR-305-6's last sentence should read "EPs follow rules 1, 2 and 4".
+   - **Another artist's single** is detected by comparing the release groups' artist-credit MBIDs (`mbArtists`).
+
+5. **Which pairs get fingerprinted.** As written, FR-305-9 fingerprints only untrusted tracks and their partners, so
+   FR-305-14's suggestions (two trusted, different recordings) could never be found. Use the research's selection:
+   candidate pairs are the same artist (MBID, else Jellyfin artist id) with the same base title, not already one song
+   by rule 1. If either side is untrusted, the pair is rule 2. If both are trusted with different recordings, it is a
+   suggestion. Title only picks the pairs and never decides (FR-305-8 holds).
+
+6. **The audio check (answers open question 1).** Chromaprint has no "similarity" score, and a 30 s window can sit
+   entirely in a backing track that a remix kept. Use the research's measured rule over **full-length** raw fingerprints
+   (`FfmpegRunner.computeFingerprint(path, windowSec = 0)` runs `fpcalc -raw -length 0`): best alignment within ±10 s,
+   bit error ≤ 0.15 over the overlap, and ≥ 95 % of the longer song lined up. Reuse `SegmentDetection`'s popcount (private
+   today, `SegmentDetection.kt:175`) and the offset search of `findIntroMatch` (`:221`) with a whole-song scorer. Store the bit error, the coverage and the
+   offset; the offset is what makes FR-305-14's two players start "from the same second". Run it through
+   `ProcessGate`'s background class, as 276's AcoustID fingerprints are. Cost, from the research: 387 tracks in 7.5 min
+   at four at a time on the first run; after that only new or changed files.
+
+7. **The pipeline.** Add a music step `compare_songs` (fingerprints and comparisons, no network) after
+   `match_musicbrainz`: in `MusicSteps.ALL` (`config/AppConfig.kt:178-193`), seeded by `MusicSteps.seed`, and in the
+   built-in default pipeline. Keeping it separate lets 154's pre-run dialog untick the heavy half. 303's
+   `WholeLibrarySteps` keeps it off a title's Checks card by itself (`MusicSteps.isMusic`). Official tracklists and
+   homes ride `match_musicbrainz`'s catch-up (item 4).
+
+8. **The copy shown (FR-305-10).**
+   - Lossless means `flac`, `alac`, `wav`/`pcm_*`, `ape`, `wavpack` or `tta`.
+   - The copy is chosen **per viewer** among present, visible copies. `MusicTvService.View` filters by allowed
+     libraries (`:80-92`), so a copy in a library the viewer cannot open is never shown or counted for them. The admin
+     chooses over every library.
+   - Favourite: the song is a favourite when any visible copy is. Un-favouriting a folded row must clear **every**
+     favourited copy (the server fans out from `/tv/music/favorite`, `MusicTvRoutes.kt:91-101`), or the union puts it
+     straight back. Play count is the sum; last played is the latest.
+   - Open question 2: fine as leaned. It is a sum at read time, and Jellyfin is untouched.
+
+9. **The admin.**
+   - `MusicAlbumPageDto` (`model/MusicApi.kt:308-333`) gains the official line (*k*, *m*, the pick), `gaps`,
+     `singles` (with how each is linked), `bsides` (as `MusicTrackRow`s with their single) and `single_from`.
+     `MusicTrackRow` gains `extra`, `first_on` and `number` (the official number). The server orders the rows; the page
+     renders what it gets.
+   - Routes: `GET /api/music/album/{id}/releases?official=1` (the paged list with *against the official*, `pickable`
+     and *+ 13 not in the library*), `PUT|DELETE /album/{id}/official`, `PUT|DELETE /album/{id}/home`,
+     `GET /track/{id}/copies`, `PUT /same-song {a, b, state}`, `GET /same-song/suggestions`.
+   - **Library → Songs.** The server folds (`MusicBrowse.browse`, SONGS, `MusicBrowse.kt:119-124`). *Show every copy*
+     is `copies=all` on the request, remembered in localStorage (`js-music-copies`, like `js-theme`). The client never
+     folds (constitution: the frontend renders server-pushed state only).
+   - **A Dashboard key opens every copy.** `MusicTriage`'s song keys (`music_reencodes`, `music_files_no_ids`,
+     `music_instrumental_lyrics`, `MusicTriage.kt:28-38`) count files, and 293 promises the Dashboard's count equals the
+     list it opens. A folded list would hide a WMA copy behind its FLAC song. So `filter=` forces `copies=all`.
+   - Facets on the folded list test the copy shown; with every copy, each file.
+   - **Counts.** `MusicArtistRow.songs` and the artist page's `songs` fold. Album rows keep their own tracks (*{n} songs
+     + {k} extras* in the cell). `MusicStore.health()` and every file count stay files (FR-305-3).
+   - **The Dashboard row** `music_same_songs`: music, info, unit *pair*, fix here. Today's music rows are triage keys
+     that open the Library (`DashboardRoutes.kt:111-117`). This one opens a modal, so `DashboardRow` needs an action
+     the page opens rather than posts. The count is the open suggestions (pairs with no decision). The players use
+     `/api/music/track/{id}/stream`. A file a browser cannot play (`MusicBrowse.browserPlays`) shows its player
+     disabled, with the reason, as the Tracks tab does.
+   - **FR-305-15.** `MusicArtistPageDto` gains `singles_under` (album id, title, count). A homed single leaves
+     whichever group holds it (item 2e).
+
+10. **Split it.** It is large. Three builds, each shippable on its own:
+    - **305a** — paged pressings, the official tracklist, extras, the owner's pick, the album page, bit depth;
+    - **305b** — single homes, B-sides, *Move to…*, the artist page's line;
+    - **305c** — fingerprints, `compare_songs`, the song index, folded Songs, the copies panel, the Dashboard row.
+
+    R373 follows: its album page needs a and b, its lists need c.
+
+11. **For the owner.**
+    - **Q-A — Bonus on a folded row.** The shown copy can be an extra on one album while the same recording is official
+      on another (a live cut on an anniversary edition and on the live album), and the better file decides which copy
+      is shown. **Lean: a folded row says *Bonus* only when no copy of the song is on an official tracklist**, so a song
+      that is official somewhere is never called bonus. *Show every copy* and the album page stay per copy, as drawn.
+    - **Q-B — A file a phone has to re-encode.** A 192 kbps WMA beats a 160 kbps MP3 on bitrate, but Ravilo plays it
+      only by re-encoding (`MusicFormats.reencodesOnPhone`). **Lean: a copy that re-encodes ranks below every copy that
+      plays as it is**, before bitrate.
+    - **Q-C — The edition's name in Ravilo's languages.** *Japanese edition* is built from a country, and the viewer
+      may read Danish or Faroese. **Lean: MusicBrainz's own title or disambiguation as it is (*super deluxe*, *20th
+      Anniversary*), like an album title; else the country's name in the viewer's language (*Extras · Japan*); else
+      *Extras* alone.**
+    - Open question 3 stands as leaned.
+
+12. **Shipped issues found, not fixed.** Only the 25-pressing cap (item 2d), which was already known from 290. It hides
+    pressings from Find match… today, before any of this is built.

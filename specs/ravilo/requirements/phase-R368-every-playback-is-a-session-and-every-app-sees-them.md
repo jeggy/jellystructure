@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-03 (design-authored), **not dev-reviewed**. Source: the brief
+`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** against `main` `5210045a` (see *Dev review* at the end: the route name collides, session events need an opt-in, the receiver's queue reporting moves to R369, and two owner questions). Source: the brief
 `specs/ravilo/design-brief-playback-sessions-2026-10-02.md`, the report
 `specs/research-reports/ravilo-playback-sessions-and-casting-2026-10-02.md`, and the canvases
 `design/ravilo/Playback Sessions - Directions.html` (part 1) and `… - Desktop, TV & Admin.html` (part 2).
@@ -184,3 +184,193 @@ viewer never sees the word *session*, and never the name of a product or protoco
 - Other people's sessions: visible with their name, no controls; 304's household switch can allow control.
 - After a restart **every** session comes back (FR-R368-4). The dev review may only narrow this if re-attaching
   proves unreliable, and must say so.
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `PlaybackService` (`PlaybackTracker`, `startPlayback`, `startMusicPlayback`, `reportProgress`,
+`stopPlayback`, the watchdog), `SeriesReplay.kt`, `ScreenStatusTracker`, `TvEventBus`, the events socket in `Server.kt`,
+`TvRoutes`, `MusicTvRoutes`, `AudiobooksTvService`, `CastService`, the receiver (`ravilo-cast` `Receiver.kt`), the
+client's `TvApiClient.connectEvents`, `RaviloApp`, `Cast.kt`, `ScreensSheet.kt`, `AppBar.kt`, the music engines,
+`i18n/*.json` and the canvases. The model holds and the restart rule needs no narrowing. Two things must change before
+anything is built (items 1 and 2), the receiver's queue reporting moves to R369 (item 7), and two questions are for the
+owner. Seventeen items.
+
+1. **`GET /api/tv/sessions` is taken.** It lists the profiles signed in on this device (`TvRoutes.kt:421`, `TvSession`,
+   ravilo `plan.md:117`), and `DELETE /api/tv/sessions/{userId}` is R191's single sign-out (`:442`, called by
+   `TvApiClient.signOutSession`). Neither can change: installed apps call the DELETE. **Use
+   `/api/tv/playback/sessions`** (the playback family already lives there): `GET /api/tv/playback/sessions` here, and
+   R369's `…/{id}/command`, R370's `POST` and R372's routes under the same prefix. The event names (`session_list`,
+   `session_state`) collide with nothing and stay. This also affects R369, R370 and R372.
+
+2. **Installed apps read any unknown event as "the config changed".** `connectEvents` routes every type it doesn't
+   know to `onEvent` (`TvApiClient.kt:919`), and `RaviloApp.kt:539` turns that into `liveConfig.emit` → `refreshConfig()`
+   (`:508`). So pushing `session_state` to an older phone makes it re-fetch `/api/tv/config` on every pause, every song
+   and every start anywhere in the house. "Older apps just don't see sessions" is only true if they never receive the
+   events. **The socket opts in:** `/api/tv/events?…&features=sessions`, beside R354's `remote=` (`wsUrl`,
+   `TvApiClient.kt:936`). The server sends `session_list`/`session_state` only to sockets that asked. The receiver
+   (`Receiver.kt:321`) and the screen ignore unknown events anyway, but they don't ask either. The TV doesn't ask in
+   this phase (FR-R368-10), which also saves its traffic. The new client handles both types explicitly, never in `else`.
+
+3. **Corrections to *Today*.**
+   - The receiver **does** report to the server: it negotiates through `/api/tv/playback/start`, reports progress
+     (with `is_paused` and R357's volume) and stop per item like any device (`Receiver.kt:71`, `:710`), and holds its own
+     events socket while something is loaded (R354, `:302`). Only the queue, the index and shuffle/repeat stay between
+     receiver and sender.
+   - An audiobook is not one item. It is one book with parts, each its own Jellyfin item and session (281 FR-281-10,
+     `MusicTvRoutes.kt:66`). The phone's heartbeat goes to `PUT /api/tv/music/audiobook/{id}/progress`, which mirrors it to
+     the part's session (`AudiobooksTvService.kt:120`).
+   - `SessionPlan` lives in `PlaybackService.plans`, keyed like the tracker (`PlaybackService.kt:375`). `ScreenShuffles`
+     is in `SeriesReplay.kt:61`. `ScreenStatusTracker` is written only by `POST /api/tv/playback/status`, which no
+     Ravilo app posts (FR-236-11 is half built).
+
+4. **Where it lands (server).**
+   - Table `playback_session` in a new `PlaybackSession.sq` plus migration `66.sqm` (the next one at HEAD; check again
+     before building, parallel work takes numbers). Drops nothing. **`index` is a reserved word in SQLite**: call it
+     `queue_index`. Add three columns the FRs imply: `lane` (`video` · `audio`, item 5), `started_by_device_id` (item 11)
+     and `end_reason`. The current item's `jellyfin_play_session_id` goes in too (item 12).
+   - A new `tv/PlaybackSessions.kt` (service plus store), called from `startPlayback` after `playbackTracker.started`,
+     from `startMusicPlayback` (which gains a `bookId` from `MusicTvRoutes` so it knows `kind = audiobook`), and from
+     `reportProgress`, `stopPlayback` and the watchdog reap.
+   - **Fold nothing in this phase.** `PlaybackTracker` is per item on purpose: it is what Jellyfin, phase 180's encode
+     release and 178's deferral need. The session sits above it. `ScreenShuffles` and `ScreenStatusTracker` belong to
+     the paused Tizen work and stay as they are.
+
+5. **One live session per target *and lane*, not per owner.** The rule "no live session for that owner" breaks twice:
+   - A device can hold a paused song under a playing film. The desktop pauses music for a film (R337), and the engine
+     stays loaded and heartbeats every 10 s (`MusicEngineAndroid.kt:384`), so the tracker holds both.
+   - A receiver plays one thing. When Olivar casts to a speaker Eyð is playing on, Eyð's session ends with
+     `end_reason = replaced`. Receiver rows are per (receiver, user) (phase 300) but share the `device_id`, so
+     `target_id` is the device id.
+
+   So: a start joins the live session on (target device, lane) when the owner matches. Otherwise it ends that session
+   and creates a new one. `lane` is `video` for film and episode, and `audio` for music and audiobook.
+
+6. **A song boundary must not end the session.** Every song is a stop then a start, on the phone and on the receiver
+   alike (FR-279-6, `Receiver.kt:710`). So a stop holds the session for **15 s**, and only ends it if no start for the
+   same (target, lane) arrives in that time. An episode's auto-advance falls inside the window too. At the end of the
+   queue the engine stays on the last song, paused at 0:00, and keeps heartbeating (FR-R322-5). The session is therefore
+   `paused` until the app closes (watchdog) or R372's 24-hour rule. No new request field is needed for this.
+
+7. **The queue: what this phase needs, and what moves to R369.** Nothing in R368 shows a queue, and the apps and
+   receivers keep their own queues through a restart. So in this phase `queue_json` holds the current item, with a
+   count only when one is known. Full-queue reporting by apps and the receiver (FR-R368-3's second half) **moves to
+   R369**, where `next`, `jump` and queue edits need it. When it comes, it sends ids only and reports on change, not
+   every tick: R359 casts 487-song queues and tests with 5 000.
+
+8. **`session_id` on the wire (all additive).** `StreamTicket` gains `session_id`, and `PlaybackProgressRequest`,
+   `PlaybackStopRequest` and `AudiobookProgressRequest` gain an optional `session_id`. A missing or unknown id falls
+   back to (device, item) as the FR says. An older server ignores the field: its decoder ignores unknown keys, the same
+   reason R357's volume was safe.
+
+9. **A position heartbeat is not a change.** `position_ms`/`position_at` are stored on every report (one `UPDATE` per
+   10 s per session is nothing). But a heartbeat doesn't bump `revision` and pushes nothing. `session_state` goes out on a
+   state change, an item change, a seek (a jump of more than 3 s from the expected position), an options change, and
+   when reconnecting starts or ends. Apps draw the moving position from `position_ms` plus the time since `position_at`,
+   frozen while not `playing`. That is the server's state drawn with a clock, not derived state. Both envelopes carry
+   `server_now_ms` so a device whose clock is wrong still draws the right time.
+   - Fan-out: `TvEventBus` gains `notifySessions(build: (userId, deviceId) -> String?)`. The list is built per socket,
+     because `mine`, `here`, `controllable` and the visibility filter (item 10) differ per viewer. It sends the whole
+     list each time: it is a few rows.
+
+10. **Visibility (owner question 1).** A kids profile or a library-limited user would receive the title and artwork of
+    whatever anyone else plays. Playback itself is gated per viewer (`requireVisible` via `MediaItem.visibleTo`,
+    `PlaybackService.kt:483`; music via `MusicTvService.visible`; books via `visibleBook`). So the list must apply the
+    same checks to other people's rows. What such a row shows is the owner's call.
+
+11. **`controllable` is the server's answer from day one.** In this phase it is true when `here`, or when this device
+    minted the cast's hand-off code (`CastService.mint(device)`, `TvRoutes.kt:662`) and that cast is live. That is exactly
+    FR-R368-9's "where control already works". R369 widens the rule, and its FR-R369-3 already says the app never works
+    it out itself. `playback_session_controller` should be created in R369, where attach exists: in this phase nothing
+    attaches, so the table would stay empty. R368 records `started_by_device_id` instead, which 304's *started from
+    which app* needs anyway.
+
+12. **Restart (FR-R368-4) is feasible for every target, so it is not narrowed.** The player streams from Jellyfin and
+    keeps going. The next progress report (≤ 10 s) or the events socket's reconnect brings the row back. Three things
+    the build must do:
+    - **(a)** While a session is reconnecting, the watchdog judges it by heartbeat only. Its socket test
+      (`PlaybackService.kt:980`) would otherwise end a session whose progress arrived before its events socket came
+      back.
+    - **(b)** On boot, rebuild the tracker entries from the rows, including the current item's
+      `jellyfin_play_session_id`, so phase 180 can still release a transcode started before the restart (shipped
+      gap 2).
+    - **(c)** Store `SessionPlan`'s fields in `options_json` and restore `plans` from it. Otherwise R343's shuffle and
+      Start over are forgotten across a restart (shipped gap 2).
+
+    *Reconnecting* is a boolean `reconnecting` on `SessionView`, not a seventh `state`, so the row keeps showing
+    paused or playing underneath it. One real limit: a film on R291's composed master
+    (`/api/tv/stream/{id}/master.m3u8`, served by this backend) loses its audio playlist while the backend is down. It
+    may fail rather than carry on, and its session then ends as `failed`. That is honest, and no different from today.
+
+13. **The glyph and the sheet.**
+    - R360 is `Planned`, not built. **Build R360 first.** This phase adds "any row in *Playing everywhere*" to its
+      `CastController.hasDevices` → `rememberCastIconShown()`.
+    - `CastButton` returns early when `LocalCast` is null (`Cast.kt:291`), and that is the case whenever no cast
+      capability exists. A household with sessions but no cast target needs the controller provided, or the gate moved.
+    - The sheet is a `HandsetSheet` on every platform, the desktop included (`ScreensSheet.kt:130`, opened from
+      `DeskCastButton`, `AppBar.kt:402`). So **the desktop popover is new chrome**.
+    - The section is a new composable at the top of `ScreensSheet`'s body. The bar half goes into `MusicMiniBar`
+      (`MusicPlayerScreens.kt:684`) and `DesktopMusicBar` (`DesktopMusicBar.kt:73`). The "touched last" choice is a local
+      selection of a session id, which is fine.
+    - **The 60 s fade must come from the server** (invariant 2): an ended session stays in `session_list` with
+      `state = ended` for 60 s, then a new list drops it. The client animates the change.
+
+14. **Strings.**
+    - `cast.playing_on` and `cast.paused_on` already ship in all three languages (placeholder `{device}`). Reuse them,
+      and drop `session.playing_on`.
+    - R265 has no *This phone* / *This Mac* keys. What exists is `mode.label` (*This phone*) and `mode.label_desk`
+      (*This computer*, R337). There is no *This Mac*: use *This computer*, or add `mode.label_mac`.
+    - The Faroese draft *Bindur í aftur…* differs from the shipped `cast.reconnecting` (*Sambindur aftur við {device}…*).
+      Use *Sambindur aftur…*.
+    - `loading` exists.
+    - New keys: `session.everywhere`, `session.person_listening`, `session.person_watching`, `session.reconnecting`.
+      Regenerate the lexicon.
+
+15. **`target.icon` from what the device row knows (`platform`).**
+    - `phone` → phone · `mac`/`linux` → computer · `web` → computer (the server can't tell a phone browser apart)
+    - `tv` → tv · `cast-audio` → speaker
+    - `cast` → tv, or display when the receiver's R351 probe reported a small screen
+    - `group` comes with R371.
+
+    `target_name` is the device row's `display_name` (the receiver sends its name at redeem). A dynamic group's
+    *Stue + Gæsteværelse* needs R371, because the receiver moves without redeeming again (R355).
+
+16. **Not sessions in this phase** (a lean, not asked): Live TV (`LiveTvService` keeps its own tracking, and `kind`
+    has no `live`), playback from other Jellyfin apps (report §8 Q4's lean: sessions are Ravilo's), and trailers.
+
+17. **Build order.**
+    1. R360.
+    2. Server: table, service, hooks, items 5, 6 and 12, the list route, the opt-in push. Unit tests on a fake clock:
+       the song boundary, lane replacement, restart restore with reconnecting expiring at 2 min, visibility per viewer.
+    3. Client: `TvApiClient` handlers, one `PlaybackSessions` `StateFlow`, the sheet section, the count, the bar.
+    4. The desktop popover.
+
+    The receiver needs nothing in this phase (item 7).
+
+**For the owner**
+
+1. **Someone else plays something this viewer isn't allowed to see** (a kids profile, a library-limited user). What
+   does their row show? **Lean: the person, the place and the state (*Eyð is watching · Stue*), with no title, no
+   artwork and no progress line.** It still counts on the glyph.
+2. **Who counts as the household?** Every Jellyfin user on this server who signs in to Ravilo, or fewer? Since 167, a
+   friend outside the house can have an account. **Lean: every user, as written.** A per-user "hide my playing" can
+   come later if anyone asks.
+
+**Shipped bugs found (not fixed)**
+
+1. **The admin's Users & devices shows a raw id for a song.** The *▶ playing …* line (`TvRoutes.kt:960`, `:1042`) uses
+   `MediaStore.titleForJellyfinId`, which knows only films and episodes (`MediaStore.kt:723`). A song or audiobook part
+   therefore shows its Jellyfin id.
+2. **A backend restart forgets what a playback needs at its stop.** `TrackedPlayback.jellyfinPlaySessionId` and
+   `SessionPlan` are memory only. After a restart the first heartbeat re-creates the entry with no play-session id
+   (`PlaybackService.kt:203`). So phase 180's teardown can't release a transcode started before the restart (Jellyfin's
+   own idle timeout ends it eventually). A shuffled episode stopped after a restart also writes its real position as
+   the resume point (R343 FR-R343-5), and a Start over's clear is lost. Item 12 (b) and (c) fix both.
+3. **A heartbeat drops `directPlay`.** `PlaybackTracker.heartbeat` rebuilds the entry without it (`PlaybackService.kt:204`,
+   default `false`). From the first progress report (≤ 10 s) on, every direct-played song on a speaker counts against
+   218's cast ceiling, which 286 FR-286-8 says it never should (`CastService.checkCeiling`, `CastService.kt:163`). With
+   the default ceiling of 2, two speakers playing MP3s block a third cast with a 503. This is the same shape as the
+   phase-180 fix documented just above it.
+4. **Possible, from the code and not observed:** after a restart, a playback whose progress report arrives before its
+   events socket reconnects can be force-stopped by the next watchdog tick (≤ 30 s, socket test at
+   `PlaybackService.kt:980`). Jellyfin is then told it stopped while it plays, and its heartbeats are ignored for 60 s
+   (`STOP_GRACE_MS`). Item 12 (a) covers this for sessions; the tracker has the same gap today.

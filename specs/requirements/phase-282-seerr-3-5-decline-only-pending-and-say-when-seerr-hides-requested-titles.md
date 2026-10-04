@@ -2,7 +2,8 @@
 
 ## Status
 
-`Planned` — written 2026-09-28, not dev-reviewed. Prompted by Seerr's v3.5.0 release the same day
+`Planned` — written 2026-09-28; dev-reviewed 2026-10-04 (section at the end — FR-282-1/2 confirmed; **FR-282-3/4's
+premise is wrong**: in 3.5.0 *Hide requested media* is applied only in Seerr's own web pages, never in the API we read). Prompted by Seerr's v3.5.0 release the same day
 (github.com/seerr-team/seerr/releases/tag/v3.5.0); the household's Seerr reports **3.4.1** with an update
 waiting. Numbering verified against `main` the same day (admin through 281). Amends phase 186 (FR-186-6).
 
@@ -94,3 +95,90 @@ Read against every Seerr call this codebase makes (`SeerrClient.kt`: `/status`, 
 1. Whether `GET /settings/main` should be read with the household key alone or also with `X-API-User` (156): the
    key is the admin's, so the plain read is right, but confirm the route needs no permission a service key
    lacks. Lean: plain read; a 403 counts as `false` per FR-282-3 either way.
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `SeerrClient.kt`, every caller of it, `RequestLifecycleService`, `ConfigRoutes`' Seerr test,
+`SuggestionService.seerrOk`, `OutboundHttp`, and Seerr's v3.5.0 release, PR #3385, PR #1855 and the tagged sources
+(`server/routes/discover.ts`, `server/entity/Media.ts`). The live Seerr was not called. FR-282-1/2 hold, while
+FR-282-3/4 should be dropped. Nine items, one for the owner.
+
+1. **The decline-guard finding is confirmed.** `removeRequest` (`RequestLifecycleService.kt:186-202`) sends
+   `if (req.status != 3) declineRequest(...)` and then `deleteRequest(...)` for every request on the title. PR #3385
+   guards `PUT /request/{id}`, `POST …/approve` and `POST …/decline` to *pending only*. They answer **409** with
+   `"Only pending requests can be approved or declined."`, and `…/retry` is guarded to *failed only*.
+   `DELETE /request/{id}` is not touched. Today the 409 is swallowed: `declineRequest` (`SeerrClient.kt:462`) returns
+   `false`, the result is discarded, and the delete still runs. The cascade's outcome is right on 3.5.0. Only the wasted
+   call and the silence are wrong.
+
+2. **It also runs unattended.** `removeRequest` has two callers: the admin's `POST /acquisition/request/remove`
+   (`AcquisitionRoutes.kt:45`) and the dead-request sweep (`RequestLifecycleService.kt:79`), on every retirement.
+   So after the upgrade every retired request that was approved or completed draws one refused call per sweep
+   retirement. FR-282-1 is worth doing for that alone.
+
+3. **FR-282-3/4's premise does not hold.** PR #1855 stores `hideRequested` on `MainSettings`, but the server never
+   drops a result. `Media.getRelatedMedia(…, includeActiveRequest = true)` only **sets `mediaInfo.hasActiveRequest`**
+   on each item (pending or approved request) when the switch is on. Every `/discover/*` route and the
+   movie/tv/collection routes return the full list. The hiding happens in Seerr's frontend (`MediaSlider`,
+   `useDiscover`). Ravilo's Request rows (`SeerrClient.discover`, `SeerrClient.kt:301`) and 274's build
+   (`movieRecommendations` / `movieSimilar` / `collection`) are therefore unaffected. A requested title still reaches
+   us and still shows as *Requested*. The extra `hasActiveRequest` field is ignored, because the shared client decodes
+   with `ignoreUnknownKeys = true` (`OutboundHttp.kt:190`). **Drop FR-282-3, FR-282-4, acceptance 3 and 4, and the
+   open question.** The non-goals about `/settings/main` go with them. 274's note that `hideBlocklisted` must stay
+   off was not re-checked here. If it follows the same pattern, that note is moot too; worth a look when 274 is next
+   opened.
+
+4. **Had FR-282-3 stayed, it was aimed at the wrong function.** `SeerrClient.ping` is also
+   `SuggestionService.seerrOk`'s health check (`SuggestionService.kt:417`, at most once a minute). A
+   `/settings/main` read inside `ping` would have run there too. If a hint is ever wanted, it belongs in the
+   `/config/test-seerr` route (`ConfigRoutes.kt:357-364`) as its own call. Moot if item 3 is accepted.
+
+5. **FR-282-1 as code.** Make the plan pure, so acceptance 1 is a plain unit test (no Seerr test exists today, and
+   there is no `MockEngine` in `linuxX64Test`):
+   - add `internal fun seerrRemovalCalls(requests: List<SeerrRequestRef>, mediaId: Int): List<SeerrCall>`, which
+     gives decline-then-delete for status **1**, delete only for every other status (2, 3, 4, 5, and an absent
+     status, which reads `0`), then `DeleteMedia(mediaId)` when `mediaId != 0`;
+   - `removeRequest` runs that list.
+
+   Status values are Seerr's `MediaRequestStatus`: 1 pending, 2 approved, 3 declined, 4 failed, 5 completed. Acceptance
+   1's "in that order" then means the list order: decline(1), delete(1), delete(2), delete(3), delete(5), then the
+   media delete.
+
+6. **FR-282-2 as code.** Change `declineRequest` to return a sealed `SeerrDecline { Declined; Refused(message);
+   Failed(detail) }`. Put the mapping in a pure `internal fun declineOutcome(status: Int, body: String?)`, so
+   acceptance 2 tests it without HTTP: 200/204 → Declined, 409 → Refused with the body's `message` (fall back to
+   the raw body), anything else → Failed. A thrown exception or timeout maps to `Failed` in the caller.
+   `declineRequest` has one caller, so the signature change is internal. With FR-282-1 a refusal should not happen
+   any more, so log it at **info** as the spec says: it means Seerr's state changed between our read and our call.
+
+7. **Acceptance 5 is true today, and doesn't test anything.** Nothing logs these calls: no `Logger` call in
+   `removeRequest`, and `OutboundHttp` logs no status codes. Replace it with what matters: a **failed
+   `deleteRequest` or `deleteMedia`** is logged at **warn** with the request/media id. Today both results are also
+   discarded (`RequestLifecycleService.kt:194-196`). So a delete that fails (Seerr down, a 403) is silent, and the
+   cascade then deletes our own `acquisition` / `request_intent` rows while Seerr still holds the request. No sweep
+   looks at that title again (shipped gap, below). Keep the cascade going after a failure (FR-186-6's
+   "defensive" rule), but say so in the log.
+
+8. **The rest of the read-through, checked.**
+   - **The call list is incomplete.** It omits `/movie/{id}/recommendations`, `/movie/{id}/similar`,
+     `/collection/{id}`, `GET/POST /blacklist`, `DELETE /blacklist/{tmdbId}`, `/service/radarr[/{id}]` and
+     `/user/{id}` (`SeerrClient.kt:318-357, 428-442`). None of them is touched by 3.5.0's breaking change (#3321,
+     library settings only) or by #3385.
+   - **#3377/#3380** (serialised creation) only slow `createRequest`. It runs under `OutboundHttp`'s 120 s request
+     timeout (`OutboundHttp.kt:194`), so nothing to do.
+   - **#3510** (DELETED → 7) matches what `classify` and the orphan sweep already test (`RequestLifecycleService.kt:120`,
+     `:170`).
+   - **#3412** (status changes scoped to requested seasons) and **#3279** (orphaned season statuses reset on delete)
+     change what Seerr does after our decline or delete, not what we send or read.
+
+   So the answer to the owner's original question stands: upgrading Seerr is safe today. The decline call is wasted
+   but harmless.
+
+9. **For the owner — keep a standing hint anyway?** Seerr 3.5.0's *Hide requested media* only hides titles in Seerr's
+   own web pages. Ravilo's Request rows and the suggestions are unaffected. **Lean: drop FR-282-3/4 entirely** and
+   say nothing on the Seerr card. A sentence about a switch that changes nothing for Ravilo is noise, and it would
+   become false if Seerr ever moves the filter server-side without us noticing.
+
+**API:** no route, DTO or wire change (`ArrTestResult` is untouched once FR-282-3 goes). **Tests:**
+`seerrRemovalCalls` and `declineOutcome` in `linuxX64Test`, both pure. Only the live house can confirm acceptance 5's
+replacement after the upgrade.

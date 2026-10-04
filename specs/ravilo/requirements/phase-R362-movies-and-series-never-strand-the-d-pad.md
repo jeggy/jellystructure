@@ -7,7 +7,7 @@
 ## Status
 
 `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA, reproduced on the
-installed `1.47-34` and again on release `1.49-11-g76f351b4` (= `main` for these files). Not dev-reviewed. Client only
+installed `1.47-34` and again on release `1.49-11-g76f351b4` (= `main` for these files). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only
 (`:ravilo-ui`, `SeededBrowseScreen.kt`). The case where the opened title has left the filtered grid is **R361**.
 
 **Amends:** R187 (the facet bar and popover), R350 FR-R350-9 (Up from the grid's first row).
@@ -78,3 +78,75 @@ is as tall as its options up to the current 280 dp cap. Sort's popover likewise 
 5. Grid column 4, Down ×6: every focused tile is in column 4.
 6. *Channel*'s popover opens under *Channel*; *Watched*'s is three rows tall.
 7. Robolectric key-by-key walks for 1–5 on the TV path (the existing `BrowseFocusTest` gains them).
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `SeededBrowseScreen` (`FacetBar`, `FacetPopover`, `SortPopover`, `BrowseCardGrid`), `BrowseScreen`,
+`FocusModifiers.kt`, `BrowseFocusTest` and the Compose UI 1.9.4 `FocusRequester` bytecode. The design holds. One
+correction to the cause and one more shipped bug of the same kind. Eleven items, none for the owner.
+
+1. **Cause 1: right result, wrong mechanism.** `requestFocus()` on a requester with no attached node does not throw
+   in Compose 1.9. It prints `FocusRelatedWarning` and returns `false`, so `runCatching` has nothing to swallow. The
+   key is still consumed, because `dpadFocusable` consumes any key it has a callback for. The sites are the app bar's
+   `onDown` (`SeededBrowseScreen.kt:606`), the grid's `onFirstRowUp` (`:593`) and the facet chips' `onBarDown`
+   (`:535`).
+
+2. **A second dead Down, same cause (shipped bug, fix here).** The grid attaches `firstCellFR` to tile 0 *unless*
+   tile 0 is the restore target (`:1069`; `BrowseScreen.kt:453` is the same). `store.focusItemKey` is never cleared
+   after a successful restore. So: open the **first** title, Back, Up to the facet bar, Down → nothing, until another
+   title is opened or the sort changes. The app bar's Down on a page without a facet bar, and My List's, die the same
+   way. FR-R361-4's "clear the key once resolved" removes the condition. FR-R362-1's "falls to the grid's first
+   visible tile" should not use `firstCellFR` at all (item 7).
+
+3. **Cause 3 is plausible but not proven here.** It is Compose's 2-D search over a lazy grid's beyond-bounds
+   layout. FR-R362-5's explicit index arithmetic removes the dependence either way.
+
+4. **Cause 4 confirmed.** The popover is a `Column` child with `padding(horizontal = raviloHPad)` (`:816`), so it
+   always sits at the left edge. Its list is `LazyColumn(Modifier.height(280.dp))` (`:832`).
+
+5. **The retry helper has to be fixed first.** `requestFocusRetrying` and `requestFocusRetryingOrMoveNative` test
+   `isSuccess`, which is `true` even when `requestFocus()` returned `false`. So they never retry and never fall back
+   (R361's review, item 3). After the fix, FR-R362-3's helper is a small wrapper:
+   `scrollThenFocus(state, index, requester, fallback)`. It scrolls only if the item is not fully visible, awaits a
+   frame, then calls the fixed helper with a native `moveFocus` fallback. That fallback is the "land focus somewhere"
+   half of FR-R362-3, since `dpadFocusable` cannot decline a key it has a callback for.
+
+6. **FR-R362-1/2: one `focusFacetBar()`, and drop the bar's `focusRestorer()`.** Keep the last-focused chip's key in
+   the store (set in the chips' `onFocused`). If that key is fully inside `facetBarState.layoutInfo.visibleItemsInfo`,
+   request its requester, which is composed. Otherwise `facetBarState.scrollToItem(0)`, then Genre with the fixed
+   helper. The app bar's `onDown` and the grid's `onFirstRowUp` both call it.
+   Replace `Modifier.focusRestorer()` on the bar (`:647`) with this explicit memory. R350 FR-R350-1 found, on the
+   season pills, that `focusRestorer()` in Compose 1.9 also redirects a `requestFocus()` aimed at a child. Here it
+   could send the Genre request to a chip that is no longer composed.
+
+7. **Down from a chip: the grid's first visible tile.** Replace `onBarDown`'s `firstCellFR` with a key-targeted
+   requester: the tile at `gridState.firstVisibleItemIndex` (the first fully visible one), attached the way
+   `restoreFR` is, then requested with the fixed helper. Never a requester fixed to item 0.
+
+8. **FR-R362-4 amends R187 FR-RV-BROWSE1-10 too.** That FR keeps the strip "scrolled as it was left"
+   (`SeededBrowseScreen.kt:645`). Add it to *Amends*. Do it in the screen's arrival effect (beside
+   `LaunchedEffect(store) { store.load() }`) as `facetBarState.requestScrollToItem(0)`. A Back from a title or the
+   player never restores focus into the bar (popovers close on leave, R187 FR-8a). So in practice every arrival
+   resets the strip. Only movement inside the bar scrolls it.
+
+9. **FR-R362-5 in the grid's key handler.** Extend the `onPreviewKeyEvent` at `:1052` with Down and Up, using a pure
+   `gridVerticalTarget(index, cols, count, down): Int?`:
+   - `index ± cols`, clamped to the last tile of a shorter last row;
+   - `null` when there is no row in that direction, so Up from row 0 stays R350's `onFirstRowUp` and Down from the
+     last row stays native, which reaches R190's Seerr overflow row on a person page.
+   Focus the target with `scrollThenFocus` and a key-targeted requester. Apply the same handler to `BrowseScreen`'s
+   `BrowseGrid` (My List, 6 columns, same fault). A shared grid key handler beats two copies.
+
+10. **FR-R362-6.** Record each chip's x in root coordinates (`onGloballyPositioned` on the chip; the opening chip
+    was just focused, so it is composed). Offset the popover to that x, clamped to
+    `[raviloHPad, screenWidth − raviloHPad − popoverWidth]`. `facetPopoverWidth` is already computed. Change
+    `height(280.dp)` to `heightIn(max = 280.dp)`. Sort works the same way under its chip. The phone gets the same
+    alignment, clamped; that is harmless.
+
+11. **Tests.**
+    - `commonTest`: `gridVerticalTarget`, for a short last row, the first row and the last row.
+    - `BrowseFocusTest` (Robolectric, already renders this screen with `fakeTvApiClient`) gains acceptance 1, 3, 4
+      and 5. It also gains item 2's walk (open the first tile, return, Up, Down). It needs enough facets in the fake
+      for the bar to scroll at the test's screen width.
+    - Device only: acceptance 2 (a real play and two Backs) and 6 (how the popover looks).
+    No conflict with the constitution: this is its "never strand focus" rule.

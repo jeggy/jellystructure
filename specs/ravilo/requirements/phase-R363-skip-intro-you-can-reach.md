@@ -8,7 +8,7 @@
 
 `Planned` — written 2026-10-04 (dev-authored) from a test on the living-room Sony BRAVIA (release
 `1.49-11-g76f351b4`), a series episode whose intro runs 0:05–0:34, Skip Intro mode **Prompt**, countdown 6 s.
-Not dev-reviewed. Client only (`PlayerScreen.kt`). Owner decisions 2026-10-04: the pill's **visibility stays as
+Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only (`PlayerScreen.kt`). Owner decisions 2026-10-04: the pill's **visibility stays as
 today** (its countdown, and whenever the controls are up); the countdown ring is drawn **only in Auto mode**.
 
 **Amends R182 FR-RV-SKIP1-1** (focus, reachability, the ring) and records that its *"stays visible until the intro
@@ -79,3 +79,101 @@ found there is fixed the same way, in this phase.
 6. Prompt mode draws no ring; Auto mode draws it and skips at zero.
 7. Outside the intro, OK on a hidden screen still pauses.
 8. Robolectric key walks for 1–7 (`PlayerScreen` focus model; `dpadRevealsOnly` gains the intro case).
+
+## Dev review (2026-10-04, against `main` `5210045a`)
+
+Read against `PlayerScreen.kt`: `PlFocus`, `dpadRevealsOnly`, `transportOrder`, the poll loop's intro latch, the
+pill's visibility and focus effect, the countdown effect, the root key handler, `SkipIntroPill` and the credits card.
+Also `PlayerDpadRevealTest`. The design holds. One correction to "What was seen" 2, two implementation traps, and the
+release-build register limit to respect. Twelve items; two for the owner.
+
+1. **Confirmed.**
+   - The pill is visible while `insideIntroWindow && mode != OFF && (skipIntroCountingDown || chromeVisible)`
+     (`:1290-1291`). After the countdown it rides the chrome's 3.6 s auto-hide (`CHROME_HIDE_MS`, `:145`).
+   - Up from anything but the seek bar goes to the seek bar, and Up on the seek bar does nothing (`:1587-1588`).
+   - `SKIP_INTRO` is first in `transportOrder` (`:248-254`). The seek bar consumes Left/Right as a scrub before the
+     order is consulted (`:1547-1550`, `:1567-1570`). So the pill is in the order but unreachable.
+   - Down from the pill goes to Play (`:1608`).
+   - Seen 4: −10 s back into the window re-arms the countdown, because leaving the window reset both latches
+     (`:1197-1205`). Then the visibility effect takes focus (`:1295-1298`).
+   - Seen 5: `SkipIntroPill` always draws `CountdownRing` (`:3526`), whatever the mode.
+
+2. **Correction to seen 2's mechanism.** Hiding the chrome no longer moves focus (R350 FR-7, `hideChrome()` at
+   `:611`). What moves focus to Play is the pill's own effect when it *disappears* (`:1297`). On Up from hidden
+   controls, the code at HEAD does the opposite of what was seen:
+   - Up acts on the first press, so focus goes to the seek bar;
+   - `wake()` makes the pill visible again;
+   - the visibility effect then moves focus to the pill.
+   **OK** from hidden controls does what was seen: `focus = PLAY` plus `togglePlay()` (`:1628-1633`). That is
+   FR-R363-4's bug. The two presses were probably mixed up in the notes. It does not change the fix: FR-R363-2/3
+   replace the visibility effect, so either path ends where the spec says.
+
+3. **Trap 1: Left/Right on the pill.** With `SKIP_INTRO` out of `transportOrder`, `order.indexOf(SKIP_INTRO)` is
+   `-1`. Right's `idx < order.lastIndex` then sends focus to `order[0]`, the seek bar (`:1572-1574`). FR-R363-1 must
+   say, and the code must do: **Left and Right on the pill do nothing.** Handle `focus == SKIP_INTRO` before the order
+   lookup.
+
+4. **Trap 2: never leave `focus = SKIP_INTRO` while the pill is hidden.** `dpadRevealsOnly` treats
+   `focus == SKIP_INTRO` as "not hidden" (`:215`). So an OK would run `skipIntro()` on a pill nobody can see. FR-R363-3's
+   "the pill had focus when the controls last hid" has to be its own flag, in `PlayerBookkeeping` (item 9). Focus
+   itself still leaves the pill when the pill goes, as today.
+
+5. **FR-R363-1.** In `onUp`: if the pill is visible and `focus` is `SEEK_BAR`, `TRACKS` or `NEXT_EP`, remember
+   `focus` as the pill's return target and move to `SKIP_INTRO`. In `onDown` from the pill, go to that return target
+   (Play when the pill took focus itself). The pill sits bottom-right (`:1997`), above Audio & Subs and Next, so this
+   matches what the viewer sees.
+
+6. **FR-R363-2.** Delete `LaunchedEffect(skipIntroPillVisible)`'s grab (`:1295-1296`). Keep its release half: when
+   the pill goes while focused, focus goes to the return target, else Play. Grab focus only on the arming edge in the
+   poll loop (`:1197-1200`, where `skipIntroCountingDown` becomes `true`), and only when `chromeVisible` is false at
+   that moment. A rewind into the intro always comes with `wake()` (`skip()`, `commitScrub()`), so it never grabs.
+   That is seen 4's fix.
+
+7. **FR-R363-3: Up and OK only.** The spec's parenthesis could be read as "Left/Right too". Keep Left and Right on
+   R350's act-on-first-press: from a remembered seek bar they scrub. Sending them to the pill would turn a scrub from
+   hidden controls into a jump to the pill. So:
+   - Up or OK that wakes hidden controls inside the armed window puts focus on the pill, when the flag from item 4 is
+     set or the viewer has touched no other control since the window began;
+   - Down keeps its reveal-only rule.
+
+8. **FR-R363-4: a third outcome.** Today `dpadRevealsOnly` returns a `Boolean` and the caller turns `true` into
+   play/pause. Give the hidden-OK case its own pure decision, for example
+   `hiddenSelect(introArmed, …): HiddenSelect { PLAY_PAUSE, REVEAL_TO_PILL, NONE }`. `introArmed` is
+   `insideIntroWindow && mode != OFF && !pickerOpen && !nextUpVisible && !epRailOpen`. A paused player never hides
+   its chrome on a TV (R350, `:1223-1225`), so the case does not arise while paused. Media Play/Pause stays
+   `togglePlay()` (`onMediaKey`, unchanged). This amends R178 FR-RV-SEL1-2 and R350 FR-7 for the intro window. Name
+   both in *Amends*.
+
+9. **The release build's register limit.** `PlayerScreen`'s body sits at ART's 256-register limit in the R8 build
+   (R258; `PlayerScreen.kt:434-437` says *add new state to `PlayerBookkeeping`, never another `var … by remember`*).
+   An earlier one-line `LaunchedEffect` in this body crashed the release player on open. So:
+   - new state (the pill's return target, the "had focus when hidden" flag, "touched another control") goes into
+     `PlayerBookkeeping`;
+   - the decisions go into top-level pure functions in their own file, for example
+     `skipIntroUpTarget(focus, pillVisible)`, `skipIntroWakeFocus(…)`, `skipIntroGrabsFocus(armingEdge, chromeVisible)`
+     and `hiddenSelect(…)`;
+   - run `scripts/check-player-dex.sh` on a release APK before shipping.
+
+10. **FR-R363-5.** Pass `showRing = mode == AUTO` to `SkipIntroPill` and skip the `CountdownRing` when it is false.
+    Nothing else changes, and visibility still uses the countdown.
+
+11. **FR-R363-6, the credits card, checked.** The card is modal. While `nextUpVisible`, every key branch goes to it,
+    and `dpadRevealsOnly` counts it as not hidden. So it cannot be unreachable, and OK cannot pause behind it.
+    **Seen 4's twin does exist.** +30 s (or a scrub commit) into the credits window shows the card at once with
+    **Play next** focused (`:1155-1158`). The next OK, meant as another +30 s, starts the next episode. See owner
+    question B.
+
+12. **Tests.**
+    - `commonTest` (`PlayerDpadRevealTest` already covers `dpadRevealsOnly`) gains every decision function in item
+      9. That covers acceptance 1–5 and 7 as decisions, and 6's ring flag.
+    - There is no Robolectric `PlayerScreen` test, and one needs a fake `RaviloPlayer`. Acceptance 8's key walks are
+      not worth that harness for this phase.
+    - Device: the walks in acceptance 1–7 on an episode with a known intro, in Prompt and in Auto.
+
+**For the owner.**
+- **A.** *During an intro, with the controls hidden, OK shows the controls with Skip Intro selected instead of
+  pausing (a second OK skips). To pause during an intro you'd press Play/Pause, or OK twice with Play selected. OK?*
+  Lean: yes. It is the press people use to skip.
+- **B.** *When you skip or scrub into the end credits yourself, the credits card appears with "Play next" selected,
+  so your next OK (meant as another skip) starts the next episode. Should the card then start on "Watch credits"
+  instead?* Lean: yes, when you brought it up yourself. It still starts on "Play next" when it appears on its own.
