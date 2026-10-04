@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from the owner's direction. Client only (`ravilo-ui` commonMain) plus
+`✓ Built` 2026-10-04 (build notes at the end). Written 2026-10-04 (dev-authored) from the owner's direction. Client only (`ravilo-ui` commonMain) plus
 the design mockup; no string, DTO, backend or config change. **Reverses R350 FR-R350-8's first bullet only** (the
 Home hero's inset ring). The other rings FR-R350-8 added stay: a focused `RaviloButton`, the synopsis and the
 trailer overlay's Close.
@@ -58,3 +58,17 @@ See *Tests* below.
   focused again and draws its ring" (a `RaviloButton`'s ring, FR-2).
 - **TV only (manual, D-pad on the TV):** acceptance 1–3, including a channel's hero, the synopsis and the trailer's
   Close. FR-3's mockup by eye.
+
+## Build notes (2026-10-04)
+
+Built as specified, client only.
+- `HeroCarousel.kt`: the `heroFocused` state, the hero's `onFocused`/`onBlurred` callbacks, the
+  `matchParentSize().border(…)` box and `HERO_FOCUS_RING_TAG` are gone. The hero is still the arrival focus target
+  and keeps its Left/Right/Up/Down/OK. `ChannelScreen`'s hero is the same composable, so it loses the ring too.
+  `RaviloButton`, `DetailSynopsis` and the trailer's Close are untouched (FR-2).
+- `design/ravilo/ravilo.css`: `.hero-hit.focused` is `box-shadow: none` with an R374 note (FR-3).
+- Tests: `HeroFocusRingTest` renamed `HeroNoFocusRingTest` (Robolectric, `w960dp-h540dp`): the hero takes focus on
+  arrival holding the stand-in's title, no `"hero-focus-ring"` node, Down → `"below"`; with two heroes Right pages to
+  slide 2 and the hero keeps focus, still no ring. Green.
+- Device only: acceptance 1–3 on the TV (no border on Home's or a channel's hero; the button, synopsis and Close
+  rings still drawn).

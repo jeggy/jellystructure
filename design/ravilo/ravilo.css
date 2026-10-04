@@ -337,7 +337,8 @@ body { font-family: 'Sora', sans-serif; }
 /* whole-hero focus target: transparent hit layer, inset ring when focused */
 .hero-hit { position: absolute; inset: 0; z-index: 5; cursor: pointer; border-radius: 4px;
   transition: box-shadow .2s var(--ease); }
-.hero-hit.focused { box-shadow: inset 0 0 0 4px var(--ring); }
+/* R374 — the hero draws no focus ring (owner 2026-10-04; reverses R350 FR-R350-8 for the hero). */
+.hero-hit.focused { box-shadow: none; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 12px; height: 60px; padding: 0 30px; border-radius: 12px;
