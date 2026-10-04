@@ -120,6 +120,8 @@ import dev.jellystructure.ravilo.ui.screens.signOutActiveSession
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailStore
 import dev.jellystructure.ravilo.ui.screens.UpcomingStore
+import dev.jellystructure.ravilo.ui.screens.DiscoverPrefs
+import dev.jellystructure.ravilo.ui.screens.upcomingEmptyAfter
 import dev.jellystructure.ravilo.ui.screens.WatchedBus
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -654,6 +656,9 @@ fun RaviloApp(
         var upcomingAvailable by remember { mutableStateOf(false) }
         // R310 (FR-R310-3) — which library walls hold anything for this viewer; null = no answer (show all).
         var taxonomyWalls by remember { mutableStateOf<Set<DiscoverSegment>?>(null) }
+        // R366 (owner decision) — the calendar's last answer, kept across launches: `true` makes Discover open on
+        // the chip after Coming Soon. Written by the Discover frame below whenever its upcoming store answers.
+        var upcomingEmpty by remember { mutableStateOf(DiscoverPrefs.upcomingEmpty()) }
         // R170 — the avatar opens this dropdown (My List/Settings/Switch profile/Unpair) instead of
         // pushing straight to the profile picker.
         var profileMenuOpen by remember { mutableStateOf(false) }
@@ -1586,7 +1591,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> {} // already home
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onSearch = { push(Dest.Search(dest.displayName)) },
@@ -1632,7 +1637,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1680,7 +1685,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1780,7 +1785,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1799,7 +1804,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onItemSelect = { openDetail(it, dest.displayName) },
@@ -1853,6 +1858,13 @@ fun RaviloApp(
                 // a store is constructed here (and only here) exactly when its segment is available, so
                 // an ungated household never fetches a Coming Soon/Request feed nobody can see.
                 val upcomingStore = if (DiscoverSegment.COMING_SOON in segs) keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) } else null
+                // R366 (owner decision) — remember whether the calendar is empty, for the next Discover entry.
+                if (upcomingStore != null) LaunchedEffect(upcomingStore) {
+                    upcomingStore.state.collect { st ->
+                        val next = upcomingEmptyAfter(upcomingEmpty, st)
+                        if (next != upcomingEmpty) { upcomingEmpty = next; DiscoverPrefs.setUpcomingEmpty(next) }
+                    }
+                }
                 val requestStore = if (DiscoverSegment.REQUEST in segs) keptStore("discover:${dest.displayName}") { DiscoverStore(apiClient) } else null
                 // R243 — the three library walls share one store (one facets fetch feeds all three); never gated.
                 val taxonomyStore = keptStore("taxonomy:${dest.displayName}") { TaxonomyStore(apiClient) }
@@ -1948,7 +1960,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -1996,7 +2008,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -2138,7 +2150,7 @@ fun RaviloApp(
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                             RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls)))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty)))
                         }
                     },
                     onProfile = { openProfile() },
@@ -2492,7 +2504,7 @@ fun RaviloApp(
                                 if (alreadyHere) reselectTick++
                                 resetTo(Dest.Discover(
                                     destDisplayName(dest),
-                                    defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls),
+                                    defaultDiscoverSegment(upcomingAvailable, discoverAvailable, taxonomyWalls, upcomingEmpty),
                                 ))
                             }
                         }

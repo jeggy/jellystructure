@@ -4,7 +4,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from the owner's direction; dev-reviewed 2026-10-04 (section at the end —
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from the owner's direction; dev-reviewed 2026-10-04 (section at the end —
 the design holds; FR-R366-4 breaks three more tests than it names, and the mockups are already done). Client only
 (`ravilo-ui` commonMain, `NavItems.kt`) plus the design mockup; no string, DTO, backend or config change.
 **Amends R268 FR-R268-1** (the declared order) only; R268's mechanism (one declared order, gating filters it,
@@ -185,3 +185,29 @@ step still walks every rendered chip. Add a test for both cases.
 
 Owner confirmed the two edge rules (2026-10-04): if Coming Soon is the only chip it still opens there, and overdue
 episodes alone count as an empty calendar.
+
+## Build notes (2026-10-04)
+
+Built as specified, with the owner decision. Client only.
+- `NavItems.kt`: `DiscoverSegment` is declared `COMING_SOON, NETWORKS, STUDIOS, GENRES, REQUEST` (so
+  `DISCOVER_SEGMENT_ORDER` follows). The R268 KDoc above the enum, above `DISCOVER_SEGMENT_ORDER` and on
+  `defaultDiscoverSegment` is rewritten to R366's rule. `defaultDiscoverSegment` gains `upcomingEmpty: Boolean? =
+  null`: `true` skips Coming Soon for the entry chip only, and never when Coming Soon is the only chip.
+- `UpcomingScreen.kt`: the pure `upcomingEmptyAfter(previous, state)` (`Loaded` → `items.isEmpty()`, so overdue
+  episodes alone count as empty; `Loading`/`Error` → `previous`).
+- `DiscoverPrefs` (new `expect object`, actuals on Android = its own `ravilo_discover` SharedPreferences, desktop =
+  `DesktopApp.prefs`, wasm = `localStorage`): the last answer, kept across launches and across sign-outs (per
+  device; the calendar is the same for every viewer, R160).
+- `RaviloApp.kt`: `upcomingEmpty` starts from `DiscoverPrefs`, the Discover frame collects the upcoming store's
+  state into it (and persists a change), and all nine `defaultDiscoverSegment` calls pass it.
+- Mockup: the stale first line of the comment above `SEG_ORDER` in `design/ravilo/ravilo-app.js` now names the
+  R366 order.
+- Tests (pure, `commonTest`, green on `:ravilo-ui:desktopTest` and `:ravilo-ui:testDebugUnitTest`):
+  `DiscoverSegmentOrderTest` — the five order-pinning tests updated as the table says (incl. the
+  `upcomingAvailable = false` variant of the wall cases), plus `anEmptyCalendarOpensOnTheNextChip`,
+  `anUnknownOrNonEmptyCalendarOpensOnComingSoon`, `anEmptyCalendarNeverMovesTheChip`,
+  `anEmptyCalendarIsIgnoredWithoutComingSoon`, `theEntryChipIsAlwaysRenderedWhateverTheCalendarSays`;
+  `UpcomingEmptyTest` (4 cases).
+- Not covered by CI, as the spec says: the persisted value and the `RaviloApp` wiring. Device only: the manual
+  check's four steps (order and entry chip on the TV and the phone, an empty calendar across a restart, a fresh
+  install, a household without Sonarr/Radarr).

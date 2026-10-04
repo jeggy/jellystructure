@@ -85,6 +85,18 @@ sealed class UpcomingState {
     data class Error(val message: String, val kind: LoadErrorKind = LoadErrorKind.GENERIC) : UpcomingState()
 }
 
+/**
+ * R366 (owner decision, 2026-10-04) — the calendar's last known answer, as [defaultDiscoverSegment]'s
+ * `upcomingEmpty`: a `Loaded` feed with no `items` is empty (`true`) — overdue (`missing`) episodes alone do not
+ * change that, as the page then still reads *Nothing scheduled* under *All* — and one with any item is not
+ * (`false`). `Loading` and `Error` keep [previous], so a failed refresh never forgets the last answer and a first
+ * launch stays `null` (never fetched).
+ */
+fun upcomingEmptyAfter(previous: Boolean?, state: UpcomingState): Boolean? = when (state) {
+    is UpcomingState.Loaded -> state.feed.items.isEmpty()
+    UpcomingState.Loading, is UpcomingState.Error -> previous
+}
+
 /** R160 — the calendar is the same for every viewer; `getUpcoming()` is itself server-cached
  *  (UpcomingService), so re-fetching on every silent refresh is cheap. */
 class UpcomingStore(private val apiClient: TvApiClient) {

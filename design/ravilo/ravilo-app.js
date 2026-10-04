@@ -930,8 +930,7 @@
       return r;
     }
     function seerrEnabled() { return !!(R.config && R.config.seerr); }
-    /* R268 — ONE declared order, library first: Networks · Studios · Genres · Coming Soon · Request.
-       Left to right the strip runs from what the household owns to what it does not. Gating
+    /* R268/R366 — ONE declared order: Coming Soon · Networks · Studios · Genres · Request. Gating
        FILTERS this list and never re-orders it (R243 FR-R243-1): Coming Soon needs Sonarr/Radarr
        and Request needs Seerr, so either may be absent — the three taxonomy tabs index the library
        itself and are always present. R366 (owner, 2026-10-04): Coming Soon moves first, so Discover

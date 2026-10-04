@@ -14,19 +14,22 @@ import kotlin.test.assertTrue
  * that was not rendered — a bug R243's own dev review had to find by hand. With one list and a filter
  * that is unrepresentable, and `theDefaultIsAlwaysARenderedChip` is the assertion that says so for
  * every gating combination at once.
+ *
+ * R366 — the declared order is now Coming Soon · Networks · Studios · Genres · Request, and an empty calendar
+ * (owner decision) skips Coming Soon for the entry chip only.
  */
 class DiscoverSegmentOrderTest {
 
     private val both = discoverSegments(upcomingAvailable = true, discoverAvailable = true)
 
     @Test
-    fun theDeclaredOrderIsLibraryFirst() {
+    fun theDeclaredOrderIsComingSoonThenTheLibraryThenRequest() {
         assertEquals(
             listOf(
+                DiscoverSegment.COMING_SOON,
                 DiscoverSegment.NETWORKS,
                 DiscoverSegment.STUDIOS,
                 DiscoverSegment.GENRES,
-                DiscoverSegment.COMING_SOON,
                 DiscoverSegment.REQUEST,
             ),
             both,
@@ -50,7 +53,7 @@ class DiscoverSegmentOrderTest {
         )
         val arrOnly = discoverSegments(upcomingAvailable = true, discoverAvailable = false)
         assertEquals(
-            listOf(DiscoverSegment.NETWORKS, DiscoverSegment.STUDIOS, DiscoverSegment.GENRES, DiscoverSegment.COMING_SOON),
+            listOf(DiscoverSegment.COMING_SOON, DiscoverSegment.NETWORKS, DiscoverSegment.STUDIOS, DiscoverSegment.GENRES),
             arrOnly,
         )
         val neither = discoverSegments(upcomingAvailable = false, discoverAvailable = false)
@@ -82,13 +85,12 @@ class DiscoverSegmentOrderTest {
     }
 
     @Test
-    fun theFirstChipIsNetworksOnEveryHouseholdThatHasNetworks() {
-        // FR-R268-2: with every wall holding something (or no answer from the server: R310), entry is the
-        // same everywhere. R310 gates the walls themselves; the tests below cover that.
-        for (upcoming in listOf(false, true)) {
-            for (discover in listOf(false, true)) {
-                assertEquals(DiscoverSegment.NETWORKS, defaultDiscoverSegment(upcoming, discover))
-            }
+    fun theFirstChipIsComingSoonWhenAvailableElseNetworks() {
+        // R366 (FR-R366-2): with Sonarr/Radarr, Discover opens on Coming Soon; without, on Networks. R310 gates the
+        // walls themselves; the tests below cover that.
+        for (discover in listOf(false, true)) {
+            assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(true, discover))
+            assertEquals(DiscoverSegment.NETWORKS, defaultDiscoverSegment(false, discover))
         }
     }
 
@@ -99,8 +101,8 @@ class DiscoverSegmentOrderTest {
         val neither = discoverSegments(upcomingAvailable = false, discoverAvailable = false)
         assertEquals(DiscoverSegment.STUDIOS, nextDiscoverSegment(neither, DiscoverSegment.NETWORKS))
         assertEquals(DiscoverSegment.NETWORKS, nextDiscoverSegment(neither, DiscoverSegment.GENRES))
-        assertEquals(DiscoverSegment.REQUEST, nextDiscoverSegment(both, DiscoverSegment.COMING_SOON))
-        assertEquals(DiscoverSegment.NETWORKS, nextDiscoverSegment(both, DiscoverSegment.REQUEST))
+        assertEquals(DiscoverSegment.NETWORKS, nextDiscoverSegment(both, DiscoverSegment.COMING_SOON))
+        assertEquals(DiscoverSegment.COMING_SOON, nextDiscoverSegment(both, DiscoverSegment.REQUEST))
     }
 
     // ── R310 (FR-R310-7) — a wall with nothing on it has no chip ──
@@ -126,9 +128,13 @@ class DiscoverSegmentOrderTest {
         )
         for ((walls, expected) in cases) {
             val segs = discoverSegments(upcomingAvailable = true, discoverAvailable = true, walls = walls)
-            assertEquals(expected + listOf(DiscoverSegment.COMING_SOON, DiscoverSegment.REQUEST), segs, "walls $walls")
+            assertEquals(listOf(DiscoverSegment.COMING_SOON) + expected + listOf(DiscoverSegment.REQUEST), segs, "walls $walls")
             assertEquals(DISCOVER_SEGMENT_ORDER.filter { it in segs }, segs, "re-ordered for $walls")
-            assertEquals(expected.first(), defaultDiscoverSegment(true, true, walls))
+            assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(true, true, walls))
+            // Without Coming Soon, "lands on the first wall left" stays covered.
+            val noArr = discoverSegments(upcomingAvailable = false, discoverAvailable = true, walls = walls)
+            assertEquals(expected + listOf(DiscoverSegment.REQUEST), noArr, "walls $walls without Coming Soon")
+            assertEquals(expected.first(), defaultDiscoverSegment(false, true, walls))
         }
     }
 
@@ -158,5 +164,73 @@ class DiscoverSegmentOrderTest {
             setOf(DiscoverSegment.NETWORKS, DiscoverSegment.STUDIOS, DiscoverSegment.GENRES),
             TAXONOMY_SEGMENTS,
         )
+    }
+
+    // ── R366 (owner decision, 2026-10-04) — an empty calendar opens on the next chip ──
+
+    private val wallSets: List<Set<DiscoverSegment>?> = listOf(
+        null, emptySet(), setOf(net), setOf(stu), setOf(gen),
+        setOf(net, stu), setOf(net, gen), setOf(stu, gen), setOf(net, stu, gen),
+    )
+
+    @Test
+    fun anEmptyCalendarOpensOnTheNextChip() {
+        assertEquals(DiscoverSegment.NETWORKS, defaultDiscoverSegment(true, true, upcomingEmpty = true))
+        assertEquals(DiscoverSegment.NETWORKS, defaultDiscoverSegment(true, false, upcomingEmpty = true))
+        assertEquals(DiscoverSegment.STUDIOS, defaultDiscoverSegment(true, true, walls = setOf(stu), upcomingEmpty = true))
+        assertEquals(DiscoverSegment.REQUEST, defaultDiscoverSegment(true, true, walls = emptySet(), upcomingEmpty = true))
+    }
+
+    @Test
+    fun anUnknownOrNonEmptyCalendarOpensOnComingSoon() {
+        for (empty in listOf<Boolean?>(null, false)) {
+            assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(true, true, upcomingEmpty = empty))
+            assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(true, false, upcomingEmpty = empty))
+        }
+    }
+
+    @Test
+    fun anEmptyCalendarNeverMovesTheChip() {
+        // discoverSegments takes no calendar argument: the strip starts with Coming Soon whatever the calendar says.
+        for (discover in listOf(false, true)) {
+            for (walls in wallSets) {
+                assertEquals(DiscoverSegment.COMING_SOON, discoverSegments(true, discover, walls).first(), "walls $walls")
+            }
+        }
+        // ...and the Discover button's step still reaches it.
+        assertEquals(DiscoverSegment.COMING_SOON, nextDiscoverSegment(both, DiscoverSegment.REQUEST))
+    }
+
+    @Test
+    fun anEmptyCalendarIsIgnoredWithoutComingSoon() {
+        for (discover in listOf(false, true)) {
+            for (walls in wallSets) {
+                assertEquals(
+                    defaultDiscoverSegment(false, discover, walls, upcomingEmpty = null),
+                    defaultDiscoverSegment(false, discover, walls, upcomingEmpty = true),
+                    "discover=$discover walls=$walls",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun theEntryChipIsAlwaysRenderedWhateverTheCalendarSays() {
+        for (upcoming in listOf(false, true)) {
+            for (discover in listOf(false, true)) {
+                for (walls in wallSets) {
+                    for (empty in listOf<Boolean?>(null, false, true)) {
+                        val rendered = discoverSegments(upcoming, discover, walls)
+                        val default = defaultDiscoverSegment(upcoming, discover, walls, empty)
+                        val case = "upcoming=$upcoming discover=$discover walls=$walls empty=$empty"
+                        if (rendered.isEmpty()) assertEquals(null, default, case)
+                        else assertTrue(default in rendered, case)
+                    }
+                }
+            }
+        }
+        // Coming Soon as the only chip: an empty calendar still opens there (skipping it would land on nothing).
+        assertEquals(listOf(DiscoverSegment.COMING_SOON), discoverSegments(true, false, emptySet()))
+        assertEquals(DiscoverSegment.COMING_SOON, defaultDiscoverSegment(true, false, emptySet(), upcomingEmpty = true))
     }
 }

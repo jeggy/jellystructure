@@ -64,22 +64,19 @@ fun raviloNavTarget(index: Int): RaviloNavTarget = when (index) {
 /**
  * R170 — the segments folded under the single Discover tab. R243 added the three taxonomy walls.
  *
- * R268 — **reordered**, library first. The enum's own declaration order is the shipped order, so there
- * is only ever one order in this file: anything reaching for `entries` or an ordinal agrees with the
- * bar by construction. Safe to reorder — the segment travels only in `Dest.Discover`, which is
- * in-memory, and `toRoute()` renders Discover as a bare `"/discover"` with no segment component, so no
- * ordinal is persisted or serialised anywhere.
+ * R366 — the enum's own declaration order is the shipped order (R268's mechanism), so there is only ever one
+ * order in this file: anything reaching for `entries` or an ordinal agrees with the bar by construction. Safe to
+ * reorder — the segment travels only in `Dest.Discover`, which is in-memory, and `toRoute()` renders Discover as a
+ * bare `"/discover"` with no segment component, so no ordinal is persisted or serialised anywhere.
  */
-enum class DiscoverSegment { NETWORKS, STUDIOS, GENRES, COMING_SOON, REQUEST }
+enum class DiscoverSegment { COMING_SOON, NETWORKS, STUDIOS, GENRES, REQUEST }
 
 /**
- * R268 (FR-R268-1) — the one declared order: **Networks · Studios · Genres · Coming Soon · Request**.
- *
- * Why this order, so it is not re-litigated: Networks and Studios are the two walls a viewer browses by
- * habit ("what's on DR?", "the Pixar shelf"); Genres is the widest and least specific of the three, so
- * it follows them; Coming Soon is about titles the household does not have yet, and Request is about
- * asking for one. Left to right the strip runs from what you own to what you don't, and the first chip
- * is the same one on every household.
+ * R366 (FR-R366-1, amends R268 FR-R268-1) — the one declared order: **Coming Soon · Networks · Studios · Genres ·
+ * Request** (owner, 2026-10-04). Coming Soon comes first where Sonarr or Radarr is set up, then the three library
+ * walls (Networks and Studios, the two a viewer browses by habit, then the wider Genres), and Request — asking for
+ * a title — last. Gating only filters this list (R268's mechanism, unchanged), so a household without Sonarr/Radarr
+ * starts at Networks.
  */
 val DISCOVER_SEGMENT_ORDER: List<DiscoverSegment> = DiscoverSegment.entries.toList()
 
@@ -116,23 +113,31 @@ fun discoverSegments(
     }
 
 /**
- * Where pressing Discover lands: the first **available** chip.
+ * Where pressing Discover lands: the first **rendered** chip — Coming Soon where Sonarr or Radarr is set up,
+ * otherwise the first library wall left (Networks, or the next one R310 left), and `null` when nothing is
+ * (Discover then opens with no chips and one sentence).
  *
- * R268 (FR-R268-2) — derived from [discoverSegments] rather than re-deciding precedence, which is what
- * makes the two incapable of disagreeing. Since the taxonomy segments cannot be gated off, this is
- * always **Networks** now.
+ * R268 (FR-R268-2) — derived from [discoverSegments] rather than re-deciding precedence, which is what makes the
+ * two incapable of disagreeing.
  *
- * ⚠ Real behaviour change for one configuration: a household with neither Sonarr/Radarr nor Seerr used
- * to land on **Studios** and now lands on **Networks**. Intended, and named here because that household
- * gets no other change from this phase and is the one most likely to notice.
+ * R366 (owner decision, 2026-10-04) — [upcomingEmpty] is the calendar's last known answer (kept across launches):
+ * `true` (nothing on the calendar; overdue episodes alone count as nothing) skips Coming Soon **for the entry
+ * chip only**, so Discover opens on the next chip; the strip itself still starts with Coming Soon, and the
+ * Discover button's step ([nextDiscoverSegment]) still reaches it. `null` (never fetched) and `false` open on
+ * Coming Soon. If Coming Soon is the only chip it still opens there, since skipping it would land on nothing.
  */
-/*
- * R310 (FR-R310-2/5) — the library walls can now be gated too (a wall with no values for this viewer has
- * no chip), so this lands on the first chip that is left, and is `null` when nothing is: Discover then
- * opens with no chips and one sentence.
- */
-fun defaultDiscoverSegment(upcomingAvailable: Boolean, discoverAvailable: Boolean, walls: Set<DiscoverSegment>? = null): DiscoverSegment? =
-    discoverSegments(upcomingAvailable, discoverAvailable, walls).firstOrNull()
+fun defaultDiscoverSegment(
+    upcomingAvailable: Boolean,
+    discoverAvailable: Boolean,
+    walls: Set<DiscoverSegment>? = null,
+    upcomingEmpty: Boolean? = null,
+): DiscoverSegment? {
+    val segments = discoverSegments(upcomingAvailable, discoverAvailable, walls)
+    if (upcomingEmpty == true && segments.firstOrNull() == DiscoverSegment.COMING_SOON && segments.size > 1) {
+        return segments[1]
+    }
+    return segments.firstOrNull()
+}
 
 /** The segment after [current] in [segments] (wrapping) — what the Discover nav button does while a
  *  Discover screen is already showing, so the button is never inert under focus. */
