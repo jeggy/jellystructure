@@ -427,9 +427,6 @@
   "screens.playing": "Playing {title}",
   "screens.busy": "Busy · {user} is watching",
   "screens.offline": "Offline · last seen {when}",
-  "screens.add": "Add a TV",
-  "screens.code_hint": "The code is on the TV’s screen.",
-  "screens.code_failed": "That code didn’t work",
   "screens.airplay_footnote": {
     "text": "AirPlay (phone must stay on)",
     "note": "R270 (FR-R270-6, dev review item 5) — RENAMED. This key has always held the footnote's own words; leaving it called `_notice` is how a connecting bar ends up displaying a parenthetical."

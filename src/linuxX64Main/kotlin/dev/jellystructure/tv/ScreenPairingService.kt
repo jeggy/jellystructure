@@ -82,6 +82,7 @@ class ScreenPairingService(
             kind = "screen",
         )
         db.screenPairingQueries.claim(claimed_by_user = phone.jellyfinUserId, claimed_token = deviceToken, code = row.code)
+        deviceService.onScreensChanged?.invoke(phone.jellyfinUserId)   // R360 (dev review item 3) — `paired` changed
         return (row.device_name ?: "Ravilo TV ${row.device_id.take(6)}") to row.device_id
     }
 

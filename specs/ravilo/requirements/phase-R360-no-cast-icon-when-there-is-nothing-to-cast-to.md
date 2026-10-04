@@ -168,3 +168,35 @@ answered.
     there is no icon. That means the *speakers need Android* line (R324 FR-R324-10) is never seen there. This is D1 as
     decided, since explanatory lines do not count. A Ravilo Android TV (`kind = tv`) has never been a sheet row
     (R327), so it doesn't count either.
+
+## Build notes (2026-10-04)
+
+Built as the dev review shaped it.
+
+- **One rule** in `ravilo-ui/…/components/CastPresence.kt`: `visibleCastRoutes(routes, music)` (the mode filter, now
+  shared by the sheet and the rule), `hasCastDevices(screensPaired, routes, music, airplayAvailable)` and
+  `castIconPresence(hasDevices, casting)` (show at once, hide after `CAST_ICON_GRACE_MS` = 10 s, a device back inside
+  the grace cancels the hide; the first `false` is emitted only after the grace, so a start with nothing never flashes).
+  `rememberCastIconShown(cast, music)` combines them with FR-R360-2 (`sender.link != NONE`, AirPlay `wireless`,
+  `MusicCast.linked`). `CastButton` (phone app bar, wide bar, player `castSlot`, Now playing), `DeskCastButton` and
+  `DesktopMusicBar`'s cast button all gate on it. `castActive` keeps its meaning (the capability).
+- **Item 2:** `RaviloConfig.screens.paired` is read in `refreshConfig()` beside `enabled` and re-applied on every config
+  read (`configRefreshes`), so the open sheet's newer fetch overrides it only until the next config read (item 4).
+- **Item 4:** the sheet sets `screensPaired` from its own fetch and closes itself when it has no row and nothing is
+  linked.
+- **Item 5:** `rememberCastRoutes` moved from `ScreensSheet` up into `CastSheetHost`; it publishes into
+  `CastController.routes` (a `StateFlow`), which the sheet and the rule read.
+- **FR-R360-5:** *Add a TV*, `AddTvSheetBody`, `onAddTv`, `CastController.pairScreen` and the empty-sheet hint are gone;
+  `screens.add`, `screens.code_hint`, `screens.code_failed` removed from `i18n/{en,da,fo}.json`. `TvApiClient.remotePair`
+  and `/api/remote/pair` stay.
+- **Item 3 (server):** `RaviloDeviceService.onScreensChanged` fires on a screen claim (`ScreenPairingService.claim`) and
+  when a `kind = screen` row is removed (`removeSession`, `deleteAllForUser`); `Main.kt` wires it to
+  `TvEventBus.notifyConfigChanged`.
+- `CastController.sessionRowCount` is R368's hook (rows in *Playing everywhere* count, amending FR-R360-1).
+
+Tests: `ravilo-ui/src/commonTest/…/components/CastIconRuleTest.kt` (10, FR-R360-7's cases on virtual time with
+`kotlinx-coroutines-test`, now a `commonTest` dependency). `:ravilo-ui:testDebugUnitTest`, `compileKotlinLinuxX64`,
+`:ravilo-ui:compileKotlinDesktop`, `:ravilo-ui:compileKotlinWasmJs` green.
+
+Only a device can confirm: acceptance 1–5 (the discovery timing and the 10 s hide after a Chromecast drops on the Pixel;
+an offline paired TV keeping the glyph). The design mockups still draw *Add a TV* (design-owned).

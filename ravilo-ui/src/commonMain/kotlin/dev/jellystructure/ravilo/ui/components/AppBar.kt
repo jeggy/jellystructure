@@ -419,11 +419,13 @@ fun Modifier.deskGlass(shape: androidx.compose.ui.graphics.Shape): Modifier {
 /** R337 — *Play on…* in the desktop toolbar: a glass pill on the Mac, a flat button on GNOME; absent where nothing can be cast to. */
 @Composable
 private fun DeskCastButton() {
-    val cast = LocalCast.current ?: return
+    val musicMode = LocalMusicMode.current
+    // R360 (FR-R360-6, dev review item 7) — the shared rule, not the capability alone.
+    val cast = LocalCast.current
+    if (!rememberCastIconShown(cast, musicMode) || cast == null) return
     val colors = RaviloTheme.colors
     val mac = dev.jellystructure.ravilo.ui.isMacPlatform
     val link by cast.sender.link.collectAsState()
-    val musicMode = LocalMusicMode.current
     val label = str("cast.sheet_music")
     val tint = if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) colors.text else colors.accentSecondary
     val shape = if (mac) RoundedCornerShape(16.dp) else RoundedCornerShape(6.dp)

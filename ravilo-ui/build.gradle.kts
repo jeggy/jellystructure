@@ -96,6 +96,7 @@ kotlin {
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.kotlinx.coroutines.test)   // R360 — the glyph's 10 s grace, on virtual time
             }
         }
         if (!desktopOnly) sourceSets.getByName("androidMain") {

@@ -220,6 +220,9 @@ fun main() = runBlocking {
     val castService = dev.jellystructure.tv.CastService(db, configStore, raviloDeviceService)
     // Phase 236 (FR-236-2) — the receiver-shows-a-code pairing flow (screen/code, remote/pair, screen/claim).
     val screenPairingService = dev.jellystructure.tv.ScreenPairingService(db, raviloDeviceService)
+    // R360 (dev review item 3) — a screen paired or revoked pushes the config, so `screens.paired` (the cast glyph's
+    // TV half) reaches that viewer's apps at once.
+    raviloDeviceService.onScreensChanged = { userId -> tvEventBus.notifyConfigChanged(userId) }
     val raviloConfigService = RaviloConfigService(
         db, tvEventBus, requestLanguageService,
         castCapability = { castService.capability() },

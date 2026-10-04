@@ -92,6 +92,8 @@ fun DesktopMusicBar(
     val image = t?.imageUrl ?: b?.detail?.coverUrl
     val live = rememberLivePosition()
     val cast = LocalCast.current
+    // R360 (FR-R360-6, dev review item 7) — the bar's cast button follows the shared rule (music mode: speakers count).
+    val castShown = dev.jellystructure.ravilo.ui.components.rememberCastIconShown(cast, music = true)
     val castLink = cast?.sender?.link?.collectAsState()?.value
     val casting = castLink != null && castLink != dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE
     // Graphite's one blue carries play; every other theme's play button is ink on the page's colour.
@@ -151,7 +153,7 @@ fun DesktopMusicBar(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!medium) BarButton(DeskIcon.LYRICS, colors.textSecondary, str("desk.show_lyrics"), onClick = onOpenPlaying)
                 BarButton(DeskIcon.QUEUE, if (queueOpen) colors.accentSecondary else colors.textSecondary, str(if (queueOpen) "desk.close_queue" else "desk.show_queue"), on = queueOpen, onClick = onQueue)
-                if (cast != null) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
+                if (cast != null && castShown) BarButton(DeskIcon.CAST, if (casting) colors.accentSecondary else colors.textSecondary, str("cast.sheet_music"), on = casting) { cast.openSheet(music = true) }
                 if (!medium) {
                     DeskIcon(DeskIcon.VOLUME, colors.textSecondary, 18.dp)
                     VolumeLine(Modifier.padding(start = 2.dp).width(70.dp))

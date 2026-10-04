@@ -437,6 +437,10 @@ fun RaviloApp(
     // R265 (dev review item 5) — same shape as castAppId: server-pushed, so the glyph can be present
     // for a household's very first screen (an empty device list alone can't answer "is this on at all").
     var screensEnabled by remember { mutableStateOf(false) }
+    // R360 (dev review item 2) — `RaviloConfig.screens.paired`: the sheet has a TV row. [configRefreshes] counts the
+    // config reads, so each one re-applies it over the open sheet's newer answer (item 4), even when unchanged.
+    var screensPaired by remember { mutableStateOf(false) }
+    var configRefreshes by remember { mutableStateOf(0) }
     // R324 (dev review 12) — `RaviloConfig.cast.music`: the receiver on this server plays music queues (286).
     var castMusic by remember { mutableStateOf(false) }
     fun refreshConfig() {
@@ -445,6 +449,8 @@ fun RaviloApp(
                 castAppId = cfg.cast?.appId
                 castMusic = cfg.cast?.music == true   // R324 (dev review 12)
                 screensEnabled = cfg.screens?.enabled == true
+                screensPaired = cfg.screens?.paired == true
+                configRefreshes++
                 // Remembered as well as applied, so signing out of this profile does not take the
                 // household's language with it.
                 lang = resolveAndRememberLanguage(cfg.uiLanguage)
@@ -1260,12 +1266,15 @@ fun RaviloApp(
         val castController = remember(castSender, apiClient) { CastController(castSender, apiClient, apiClient.baseUrl) }
         LaunchedEffect(castController, castAppId) { castAppId?.let { castController.appId = it } }
         SideEffect { castController.screensEnabled = screensEnabled; castController.userId = activeUserId; castController.musicEnabled = castMusic }
+        LaunchedEffect(castController, screensPaired, configRefreshes) { castController.screensPaired = screensPaired }
         // R324 — the music bridge reads the one controller; the screens read MusicPlayback, which follows the link.
         LaunchedEffect(castController) { dev.jellystructure.ravilo.ui.music.MusicCast.bind(castController) }
         // R356 (FR-R356-6) — back on screen with a cast connected: the sender asks the receiver where it is, and rejoins
         // it if nothing answers (a frozen app's Cast connection may have been dropped by Play services).
         LaunchedEffect(castController, appOnScreen) { if (appOnScreen) castController.sender.onAppForeground() }
-        // R265 (FR-R265-1) — present when the user has a TV to send to OR AirPlay is available here.
+        // R265 (FR-R265-1) — the CAPABILITY: something can be cast to from this server or platform. R360: this alone no
+        // longer shows a glyph (rememberCastIconShown decides, from the list); the reconnect, the mini bar, the connecting
+        // bar and the player hand-off stay keyed on it, because a session can exist while the list is empty.
         val airplayAvailable by (platformAirPlay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
         val castActive = if (castAppId != null || screensEnabled || airplayAvailable) castController else null
         // R265 (FR-R265-7) — reconnect is a list, not a session: on app start and on every return to the

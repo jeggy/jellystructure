@@ -15,14 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import dev.jellystructure.ravilo.ui.seams.rememberCastRoutes
 import dev.jellystructure.ravilo.ui.seams.CastRoute
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.castRouteInSession
@@ -35,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,24 +78,29 @@ fun ScreensSheet(
     var devices by remember { mutableStateOf<List<RemoteDevice>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var tier2Open by remember { mutableStateOf(ScreensSheetPrefs.tier2Open()) }
-    var addTvOpen by remember { mutableStateOf(false) }
     // R324 (FR-R324-2) — a busy speaker asks first: the route waiting for *Play on {device}*.
     var takeOver by remember { mutableStateOf<CastRoute?>(null) }
     val link by cast.sender.link.collectAsState()
     val deviceName by cast.sender.deviceName.collectAsState()
-    // Scan for Chromecasts while the app is on screen (and never while it is not — R293's rule): the SDK
-    // cannot finish resuming a session (FR-R245-5) until the route is found again, and its resume starts
-    // before this sheet or the sender exist, so "scan only while resuming" had nothing to key on (tried on
-    // the Pixel 9: the resume waited forever). A Cast app scanning while it is open is the platform norm.
-    val routes = rememberCastRoutes(cast.appId, discovering = dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen())
+    // Chromecasts are scanned for while the app is on screen (R293's rule) by [CastSheetHost], one level up, and read
+    // here from the controller (R360 dev review item 5): the glyph's presence rule reads the same list.
+    val routes by cast.routes.collectAsState()
     val status by cast.sender.status.collectAsState()
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
-        addTvOpen = false
         takeOver = null
         loaded = false
         devices = if (cast.screensEnabled) cast.screenDevices() else emptyList()
+        // R360 (dev review item 4) — the sheet's fetch is newer than the config's `paired`: it overrides it until the
+        // next config refresh, so a TV revoked in between takes the glyph with it (after the grace).
+        if (cast.screensEnabled) cast.screensPaired = devices.any { it.kind == DeviceKind.SCREEN }
         loaded = true
+    }
+    // R360 (dev review item 4) — the sheet can no longer open empty (*Add a TV* and its hint are gone): with no row at
+    // all and nothing to stop, it closes itself rather than showing a bare title.
+    val hasRows = devices.any { it.kind == DeviceKind.SCREEN } || visibleCastRoutes(routes, music).isNotEmpty() || airplayAvailable
+    LaunchedEffect(open, loaded, hasRows, link) {
+        if (open && loaded && !hasRows && link == CastLinkState.NONE) onClose()
     }
     fun tapDevice(d: RemoteDevice) {
         onClose()
@@ -129,9 +129,7 @@ fun ScreensSheet(
     }
     HandsetSheet(visible = open, onDismiss = onClose) {
         val pending = takeOver
-        if (addTvOpen) {
-            AddTvSheetBody(cast = cast, onBack = { addTvOpen = false }, onPaired = { addTvOpen = false })
-        } else if (pending != null) {
+        if (pending != null) {
             TakeOverSheetBody(route = pending, onBack = { takeOver = null }, onConfirm = { takeOver = null; startRoute(pending) })
         } else {
             ScreensSheetBody(
@@ -140,7 +138,6 @@ fun ScreensSheet(
                 tier2Open = tier2Open,
                 onToggleTier2 = { tier2Open = !tier2Open; ScreensSheetPrefs.setTier2Open(tier2Open) },
                 onTapDevice = ::tapDevice, onTapRoute = ::tapRoute, isConnected = ::connectedTo,
-                onAddTv = if (cast.screensEnabled) ({ addTvOpen = true }) else null,
                 airplayAvailable = airplayAvailable, onAirplay = { onClose(); onAirplay() },
                 // Music on a speaker: its queue comes back, paused where it stopped (FR-R324-5) — the same as the ⋯ menu's row.
                 onStop = if (link != CastLinkState.NONE) ({ onClose(); if (dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) dev.jellystructure.ravilo.ui.music.MusicCast.stop() else cast.stopCasting() }) else null,
@@ -154,7 +151,7 @@ fun ScreensSheet(
 private fun ScreensSheetBody(
     devices: List<RemoteDevice>, routes: List<CastRoute>, loaded: Boolean, lastDevice: String?, myUserId: String?,
     playingTitle: String?, music: Boolean, tier2Open: Boolean, onToggleTier2: () -> Unit,
-    onTapDevice: (RemoteDevice) -> Unit, onTapRoute: (CastRoute) -> Unit, isConnected: (CastRoute) -> Boolean, onAddTv: (() -> Unit)?,
+    onTapDevice: (RemoteDevice) -> Unit, onTapRoute: (CastRoute) -> Unit, isConnected: (CastRoute) -> Boolean,
     airplayAvailable: Boolean, onAirplay: () -> Unit, onStop: (() -> Unit)?, onClose: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -168,7 +165,7 @@ private fun ScreensSheetBody(
     val rest = screens.filter { !it.nearby }
     // R324 (FR-R324-1) — in video mode no audio-only route is listed, and nothing says so (Google's rule; R265's
     // absent-not-empty). In music mode the audio routes lead: speakers, groups, then the displays and the TVs.
-    val visibleRoutes = if (music) routes else routes.filter { it.kind == "display" }
+    val visibleRoutes = visibleCastRoutes(routes, music)   // R360 — the one mode filter, shared with the glyph's rule
     val audioRows = if (music) visibleRoutes.filter { it.kind != "display" }.sortedWith(compareByDescending<CastRoute> { it.id == lastDevice }.thenBy { it.kind != "speaker" }) else emptyList()
     val castRows = visibleRoutes.filter { it.kind == "display" }.sortedByDescending { it.id == lastDevice }
     val tier2Count = rest.size + castRows.size
@@ -194,9 +191,6 @@ private fun ScreensSheetBody(
                     castRows.forEach { ChromecastRow(it, isConnected(it), playingTitle, onClick = { onTapRoute(it) }) }
                 }
             }
-            if (near.isEmpty() && audioRows.isEmpty() && tier2Count == 0 && !airplayAvailable && onAddTv != null) {
-                Text(str("screens.add"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
-            }
             // R324 (FR-R324-10) — no Cast sender here (an iPhone, the web): the speakers are said to be missing, once.
             if (music && !hasCastSdk) {
                 Text(str("cast.speakers_ios"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
@@ -215,7 +209,6 @@ private fun ScreensSheetBody(
         if (airplayAvailable) {
             SimpleRow(icon = { AirplayGlyph(colors.textSecondary) }, label = str("screens.airplay_footnote"), onClick = onAirplay, labelColor = colors.textSecondary)
         }
-        if (onAddTv != null) SimpleRow(icon = { PlusGlyph(colors.text) }, label = str("screens.add"), onClick = onAddTv)
         // FR-R245-10 — ending a session is only ever explicit, and this is where the sheet says so.
         // The design's own warning ink for this row (`#ff9b8a`); the palette has no token for it.
         if (onStop != null) SimpleRow(icon = {}, label = str("cast.stop"), onClick = onStop, labelColor = Color(0xFFFF9B8A))
@@ -287,41 +280,6 @@ internal fun SpeakerGlyph(tint: Color, group: Boolean, sizeDp: Int = 20) {
         }
         if (group) { one(w * 0.42f, h * 0.02f, w * 0.44f, h * 0.7f); one(w * 0.08f, h * 0.22f, w * 0.5f, h * 0.76f) }
         else one(w * 0.22f, h * 0.04f, w * 0.56f, h * 0.92f)
-    }
-}
-
-@Composable
-private fun AddTvSheetBody(cast: CastController, onBack: () -> Unit, onPaired: () -> Unit) {
-    val colors = RaviloTheme.colors
-    var code by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-    var checking by remember { mutableStateOf(false) }
-    LaunchedEffect(code) {
-        if (code.length < 6 || checking) return@LaunchedEffect
-        checking = true
-        error = false
-        val result = cast.pairScreen(code)
-        checking = false
-        if (result != null) onPaired() else { error = true; code = "" }
-    }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        SheetHeader(str("screens.add"), onBack)
-        TextField(
-            value = code,
-            onValueChange = { v -> code = v.uppercase().filter { it.isLetterOrDigit() }.take(6) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            placeholder = { Text("· · · · · ·", color = colors.textDim) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = colors.surfaceVariant, unfocusedContainerColor = colors.surfaceVariant,
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = colors.text, unfocusedTextColor = colors.text,
-            ),
-        )
-        val hint = if (error) str("screens.code_failed") else str("screens.code_hint")
-        Text(hint, color = if (error) colors.accentSecondary else colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp))
-        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -418,7 +376,6 @@ private fun SimpleRow(icon: @Composable () -> Unit, label: String, onClick: () -
 }
 
 @Composable private fun TvGlyph(tint: Color) { ScreenCastGlyph(tint = tint, on = false, sizeDp = 20) }
-@Composable private fun PlusGlyph(tint: Color) { Text("+", color = tint, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
 @Composable private fun AirplayGlyph(tint: Color) { TriangleGlyph(GlyphDirection.UP, tint, 16.dp) }   // R315
 
 /**

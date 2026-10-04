@@ -412,6 +412,13 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
             )
         }
 
+    /**
+     * R360 (dev review item 3) — called with a user id whenever a `kind = "screen"` row of that user appears or goes
+     * (paired, revoked, signed out everywhere), so `RaviloConfig.screens.paired` reaches their apps at once instead of
+     * at the next unrelated config change. Main wires it to `TvEventBus.notifyConfigChanged`; null in tests.
+     */
+    var onScreensChanged: ((jellyfinUserId: String) -> Unit)? = null
+
     /** Removes a specific user's session from [deviceId] without affecting others. */
     fun removeSession(deviceId: String, jellyfinUserId: String) {
         // Security fix (2026-08-02 review, finding M3) — this deleted the DB row but never touched
@@ -419,10 +426,11 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         // for up to TOKEN_CACHE_TTL_MS (5 minutes) after the operator removed it. unpair() already got
         // this right; this one and deleteAllForUser below didn't. Look the token up before the DB row
         // is gone so the cache entry can be dropped too.
-        db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
-            .executeAsOneOrNull()?.let { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
+        val row = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId).executeAsOneOrNull()
+        row?.let { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
         dropHistoryIfGone(deviceId)   // Phase 259 (FR-259-5) — one viewer of two keeps it; the last takes it
+        if (row?.kind == "screen") onScreensChanged?.invoke(jellyfinUserId)   // R360 (dev review item 3)
     }
 
     /** Phase 143 — every device row across every user, for the Users & Devices admin overview.
@@ -460,6 +468,7 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         rows.forEach { tokenCache.remove(it.device_token); DeviceIdentityRegistry.forget(it.jellyfin_user_token) }
         db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
         rows.map { it.device_id }.distinct().forEach { dropHistoryIfGone(it) }   // Phase 259 (FR-259-5)
+        if (rows.any { it.kind == "screen" }) onScreensChanged?.invoke(jellyfinUserId)   // R360 (dev review item 3)
     }
 
     /**

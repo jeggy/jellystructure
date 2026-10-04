@@ -107,6 +107,15 @@ class CastController(
     /** R265 (dev review item 5) — the server's `RaviloConfig.screens.enabled`: the sheet lists screens
      *  and offers *Add a TV* only when this is true, exactly as [appId] gates the Chromecast rows. */
     var screensEnabled by mutableStateOf(false)
+    /** R360 (dev review item 2) — `RaviloConfig.screens.paired`: this viewer has at least one paired screen, online or
+     *  offline — exactly "the sheet has a TV row". The open sheet's own fetch is newer and overrides it (item 4) until the
+     *  next config refresh writes it again. */
+    var screensPaired by mutableStateOf(false)
+    /** R360 (dev review item 5) — the Cast routes the platform's discovery sees, published by [CastSheetHost] (one
+     *  discovery for the whole app) so the glyph's rule and the sheet read the same list. */
+    val routes = MutableStateFlow<List<dev.jellystructure.ravilo.ui.seams.CastRoute>>(emptyList())
+    /** R368 (amends FR-R360-1) — rows in *Playing everywhere*: they count toward the glyph like a device. */
+    val sessionRowCount = MutableStateFlow(0)
     /** The active viewer's (Jellyfin) user id — what a screen's `session_user_id` is compared with to
      *  tell *mine* (Playing, tappable) from *someone else's* (Busy, not tappable) — FR-R270-3. */
     var userId by mutableStateOf<String?>(null)
@@ -230,9 +239,6 @@ class CastController(
     /** FR-R245-10 — the sheet's *Stop casting*: explicit, ends the session on whichever side is linked. */
     fun stopCasting() = sender.stop()
 
-    /** R265 (FR-R265-5) — claims a code the TV is showing. Null = the sheet's one error sentence. */
-    suspend fun pairScreen(code: String) = api.remotePair(code)
-
     /** R265 (FR-R265-2/3) — the sheet's own device list; `nearby` already resolved server-side. */
     suspend fun screenDevices() = runCatching { api.remoteDevices() }.getOrDefault(emptyList())
 
@@ -288,9 +294,11 @@ fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = 
     // here rather than at the three call sites so a fourth inherits it — which is how it reached the
     // player's chrome to begin with. `isTvPlatform`, not a width: R256 is why (a 540dp TV is a TV).
     if (isTvPlatform) return
-    val cast = LocalCast.current ?: return
-    val link by cast.sender.link.collectAsState()
     val musicMode = LocalMusicMode.current
+    // R360 (FR-R360-1/-6) — present only when the sheet would list something (or a cast is on): one rule, here.
+    val cast = LocalCast.current
+    if (!rememberCastIconShown(cast, musicMode) || cast == null) return
+    val link by cast.sender.link.collectAsState()
     // R265 (FR-R265-4) — AirPlay has no sender and no session here, only the <video>'s own state; while
     // the picture is on an AirPlay TV the glyph takes its connected form (WebKit names no TV to show).
     val airplaying by (platformAirPlay?.wireless ?: remember { MutableStateFlow(false) }).collectAsState()
@@ -305,6 +313,10 @@ fun CastButton(modifier: Modifier = Modifier, playContext: ScreenPlayContext? = 
 @Composable
 fun CastSheetHost(cast: CastController) {
     val request by cast.sheet.collectAsState()
+    // R360 (dev review item 5) — discovery moved up from the sheet: one scan for the whole app while it is on screen
+    // (R293), published on the controller so every glyph's rule reads it (desktop's acquire() keeps one acquirer).
+    val routes = dev.jellystructure.ravilo.ui.seams.rememberCastRoutes(cast.appId, discovering = dev.jellystructure.ravilo.ui.seams.rememberAppOnScreen())
+    SideEffect { cast.routes.value = routes }
     val airplay = platformAirPlay
     val airplayAvailable by (airplay?.available ?: remember { MutableStateFlow(false) }).collectAsState()
     ScreensSheet(
