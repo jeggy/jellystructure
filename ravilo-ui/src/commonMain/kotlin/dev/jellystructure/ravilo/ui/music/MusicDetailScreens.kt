@@ -48,6 +48,8 @@ import dev.jellystructure.ravilo.ui.components.GlyphDirection
 import dev.jellystructure.ravilo.ui.components.MusicGlyph
 import dev.jellystructure.ravilo.ui.components.MusicIcon
 import dev.jellystructure.ravilo.ui.i18n.str
+
+import androidx.compose.foundation.layout.heightIn
 import dev.jellystructure.ravilo.ui.screens.HandsetSheet
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -83,7 +85,10 @@ private fun groundTint(): Brush {
     else Brush.verticalGradient(listOf(colors.accentDim.copy(alpha = 0.55f), colors.background))
 }
 
-// ── Album (FR-R321-7) ──
+// ── Album (FR-R321-7; R373 — the official album, its extras, its singles and B-sides) ──
+
+/** R373 — how the album page starts playback; tests catch it here so no engine runs. */
+typealias PlayQueueFn = (tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean) -> Unit
 
 @Composable
 fun MusicAlbumScreen(
@@ -92,6 +97,7 @@ fun MusicAlbumScreen(
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onTrackMore: (MusicTrackItem) -> Unit,
+    onPlayQueue: PlayQueueFn = { l, i, c, s -> MusicPlayback.playQueue(l, i, c, shuffle = s) },
 ) {
     val colors = RaviloTheme.colors
     val state by loader.state.collectAsState()
@@ -103,16 +109,65 @@ fun MusicAlbumScreen(
             val context = MusicContext("album", a.title, a.id)
             val albumArtistIds = a.artists.map { it.id }.toSet()
             val compilation = a.type == "compilation"
+            // R373 (FR-R373-2, dev review 4) — the ▾ pick, remembered per album on this device; an unmatched album
+            // ignores it (today's page).
+            val editions = hasEditions(d)
+            var pick by remember(a.id) { mutableStateOf(effectivePick(d, AlbumPickStore.get(a.id))) }
+            var bsidesOpen by remember(a.id) { mutableStateOf(false) }
+            fun choose(p: AlbumPick) { pick = p; AlbumPickStore.set(a.id, p) }
+            fun playPick(shuffle: Boolean) {
+                val q = albumQueue(d, pick)
+                if (q.isNotEmpty()) onPlayQueue(q, if (shuffle) q.indices.random() else 0, context, shuffle)
+            }
+            fun playFrom(t: MusicTrackItem) { val (q, i) = queueForTap(d, pick, t.id); onPlayQueue(q, i, context, false) }
+            val official = officialTracks(d)
+            val extras = extraTracks(d)
+            val lang = dev.jellystructure.ravilo.ui.i18n.LocalLang.current
             // R337 — on the desktop the album's header is the mockup's `.alh`: a 210 dp cover, the kind and year above a
             // 36 sp title, the artist as a link, the facts, then Play and Shuffle; the page has the desktop's toolbar.
             val deskWide = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
+            val total = headerLengthMs(d)
+            @Composable fun Facts(color: Color, size: androidx.compose.ui.unit.TextUnit, prefix: String?) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(listOfNotNull(prefix, songsCount(official.size), fmtTotal(total)).joinToString(" · "), color = color, fontSize = size, fontFamily = Sora)
+                    // FR-R373-2 point 1 — *+ 1 extra* in the dimmer ink.
+                    if (extras.isNotEmpty()) Text(" " + str(if (extras.size == 1) "ed.n_extra" else "ed.n_extras", mapOf("n" to extras.size.toString())), color = colors.textDim, fontSize = size, fontFamily = Sora)
+                }
+            }
+            @Composable fun SingleFrom() {
+                // FR-R373-2 point 2 — a single's own page: *Single from {album}*, tappable.
+                d.singleFrom?.let { s ->
+                    Text(str("ed.single_from", mapOf("album" to s.title)), color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+                        modifier = Modifier.padding(top = 6.dp).tap { onOpenAlbum(s.id) })
+                }
+            }
+            @Composable fun Buttons(desk: Boolean) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!editions) {
+                        PillButton(str("music.play"), MusicIcon.PLAY, primary = true, if (desk) Modifier else pillWidth()) { onPlayQueue(d.tracks, 0, context, false) }
+                        PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, if (desk) Modifier else pillWidth()) { onPlayQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, true) }
+                    } else {
+                        val n1 = official.size
+                        val n2 = albumQueue(d, AlbumPick.EXTRAS).size
+                        SplitPlayButton(
+                            label = str(if (pick == AlbumPick.EXTRAS) "ed.play_extras" else "ed.play_album"), icon = MusicIcon.PLAY, primary = true,
+                            modifier = if (desk) Modifier else pillWidth(), pick = pick, albumSongs = n1, extendedSongs = n2,
+                            onMain = { playPick(false) }, onPick = { p -> choose(p); playPick(false) },
+                        )
+                        SplitPlayButton(
+                            label = str("music.shuffle"), icon = MusicIcon.SHUFFLE, primary = false,
+                            modifier = if (desk) Modifier else pillWidth(), pick = pick, albumSongs = n1, extendedSongs = n2,
+                            onMain = { playPick(true) }, onPick = { p -> choose(p); playPick(true) },
+                        )
+                    }
+                }
+            }
             LazyColumn(contentPadding = PaddingValues(top = if (deskWide) 52.dp else 0.dp, bottom = 24.dp)) {
                 if (!deskWide) item(key = "cover") {
                     Box(Modifier.fillMaxWidth().background(groundTint())) {
                         MusicCover(a.imageUrl, a.title, Modifier.fillMaxWidth().aspectRatio(1f), corner = 0.dp, requestedWidth = 900, wordmarkSize = 30)
                     }
                 }
-                val total = d.tracks.sumOf { it.durationMs ?: 0L }
                 if (deskWide) item(key = "head") {
                     Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         MusicCover(a.imageUrl, a.title, Modifier.size(210.dp).shadow(24.dp, RoundedCornerShape(12.dp)), corner = 12.dp, requestedWidth = 600, wordmarkSize = 22)
@@ -125,11 +180,9 @@ fun MusicAlbumScreen(
                                     Text(r.name, color = colors.accentSecondary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onOpenArtist(r.id) })
                                 }
                             }
-                            Text(listOf(songsCount(d.tracks.size), fmtTotal(total)).joinToString(" · "), color = colors.textDim, fontSize = 12.5.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PillButton(str("music.play"), MusicIcon.PLAY, primary = true) { MusicPlayback.playQueue(d.tracks, 0, context) }
-                                PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
-                            }
+                            SingleFrom()
+                            Box(Modifier.padding(top = 6.dp, bottom = 16.dp)) { Facts(colors.textDim, 12.5.sp, null) }
+                            Buttons(desk = true)
                         }
                     }
                 } else item(key = "head") {
@@ -143,30 +196,71 @@ fun MusicAlbumScreen(
                                 Text(r.name, color = colors.accentSecondary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onOpenArtist(r.id) })
                             }
                         }
+                        SingleFrom()
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(listOfNotNull(a.year?.toString(), songsCount(d.tracks.size), fmtTotal(total)).joinToString(" · "), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                            Facts(colors.textSecondary, 13.sp, a.year?.toString())
                             musicTypeLabel(a.type)?.let { TypeBadge(it) }
                         }
                         Spacer(Modifier.height(14.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PillButton(str("music.play"), MusicIcon.PLAY, primary = true, pillWidth()) { MusicPlayback.playQueue(d.tracks, 0, context) }
-                            PillButton(str("music.shuffle"), MusicIcon.SHUFFLE, primary = false, pillWidth()) { MusicPlayback.playQueue(d.tracks, d.tracks.indices.randomOrNull() ?: 0, context, shuffle = true) }
-                        }
+                        Buttons(desk = false)
                         Spacer(Modifier.height(10.dp))
                     }
                     }
                 }
-                itemsIndexed(d.tracks, key = { _, t -> t.id }) { i, t ->
-                    // FR-R321-7 — *feat.* on an album; the credited artist on a compilation.
+                fun sub(t: MusicTrackItem): String {
                     val others = t.artists.filter { it.id !in albumArtistIds }
-                    val sub = when {
+                    return when {
                         compilation -> artistLine(t)
-                        others.isNotEmpty() -> str("music.feat", mapOf("x" to others.joinToString(", ") { it.name }))
+                        others.isNotEmpty() -> dev.jellystructure.ravilo.ui.i18n.t("music.feat", lang, mapOf("x" to others.joinToString(", ") { it.name }))
                         else -> ""
                     }
-                    Box(Modifier.padding(horizontal = raviloHPad)) {
-                        TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub, striped = i % 2 == 0, onPlay = { MusicPlayback.playQueue(d.tracks, i, context) }, onMore = { onTrackMore(t) })
+                }
+                if (!editions) {
+                    itemsIndexed(d.tracks, key = { _, t -> t.id }) { i, t ->
+                        Box(Modifier.padding(horizontal = raviloHPad)) {
+                            TrackRow(t, number = (t.position ?: (i + 1)).toString(), subtitle = sub(t), striped = i % 2 == 0, onPlay = { onPlayQueue(d.tracks, i, context, false) }, onMore = { onTrackMore(t) })
+                        }
+                    }
+                } else {
+                    // FR-R373-2 points 4–5 — the official songs numbered in the official order; a thin divider; the extras
+                    // unnumbered, with no Bonus chip (the divider says it).
+                    itemsIndexed(official, key = { _, t -> t.id }) { i, t ->
+                        Box(Modifier.padding(horizontal = raviloHPad)) {
+                            TrackRow(t, number = (i + 1).toString(), subtitle = sub(t), striped = i % 2 == 0, showBonus = false, onPlay = { playFrom(t) }, onMore = { onTrackMore(t) })
+                        }
+                    }
+                    if (extras.isNotEmpty()) {
+                        item(key = "ed-div") { EditionDivider(editionLabel(d.editionTitle, d.editionCountry, lang)) }
+                        itemsIndexed(extras, key = { _, t -> "x-" + t.id }) { i, t ->
+                            Box(Modifier.padding(horizontal = raviloHPad)) {
+                                TrackRow(t, number = "", subtitle = sub(t), striped = (official.size + i) % 2 == 0, showBonus = false, onPlay = { playFrom(t) }, onMore = { onTrackMore(t) })
+                            }
+                        }
+                    }
+                    // FR-R373-2 point 6 — Singles & B-sides: the single cards, then one fold row.
+                    if (d.singles.isNotEmpty()) item(key = "ed-singles") {
+                        Column {
+                            Box(Modifier.padding(horizontal = raviloHPad)) { MusicSectionHeader(str("ed.singles")) }
+                            ArrowRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(d.singles, key = { it.id }) { s -> SingleCardView(s, 130.dp) { onOpenAlbum(s.id) } }
+                            }
+                        }
+                    }
+                    if (d.bsideTracks.isNotEmpty()) {
+                        item(key = "ed-bfold") {
+                            val n = d.bsideTracks.size
+                            Row(Modifier.padding(horizontal = raviloHPad).fillMaxWidth().heightIn(min = 46.dp).tap { bsidesOpen = !bsidesOpen }, verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (n == 1) str("ed.one_bside") else str("ed.n_bsides", mapOf("n" to n.toString())), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                                Text(" · ", color = colors.textDim, fontSize = 14.sp, fontFamily = Sora)
+                                Text(str(if (bsidesOpen) "ed.hide" else "ed.show"), color = colors.accentSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                            }
+                        }
+                        if (bsidesOpen) itemsIndexed(d.bsideTracks, key = { _, t -> "b-" + t.id }) { i, t ->
+                            Box(Modifier.padding(horizontal = raviloHPad)) {
+                                TrackRow(t, showCover = true, subtitle = dev.jellystructure.ravilo.ui.i18n.t("ed.from_single", lang, mapOf("single" to (t.album ?: ""))), striped = i % 2 == 0, onPlay = { playFrom(t) }, onMore = { onTrackMore(t) })
+                            }
+                        }
                     }
                 }
                 if (d.moreFromArtist.isNotEmpty()) item(key = "more") {
@@ -180,6 +274,72 @@ fun MusicAlbumScreen(
             }
         } else if (state is Load.Failed) EmptyLine(str("mhome.empty"))
         DetailBack(onBack, title = d?.album?.title)
+    }
+}
+
+/** R373 (FR-R373-2 point 5) — the thin divider above an album's extras: *Extras · {edition}*. */
+@Composable
+private fun EditionDivider(label: String) {
+    val colors = RaviloTheme.colors
+    Row(Modifier.padding(horizontal = raviloHPad).padding(top = 18.dp, bottom = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 0.4.sp)
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(colors.fg.copy(alpha = 0.14f)))
+    }
+}
+
+/** R373 (FR-R373-2 point 6) — a single's card: cover, title, *{year} · Single*. */
+@Composable
+private fun SingleCardView(s: dev.jellystructure.shared.tv.MusicAlbumCard, width: androidx.compose.ui.unit.Dp, onOpen: () -> Unit) {
+    val colors = RaviloTheme.colors
+    Column(Modifier.width(width).tap(onOpen)) {
+        MusicCover(s.imageUrl, s.title, Modifier.size(width))
+        Spacer(Modifier.height(7.dp))
+        Text(s.title, color = colors.text, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (s.year != null) str("ed.single_year", mapOf("year" to s.year.toString())) else (musicTypeLabel(s.type) ?: ""), color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1)
+    }
+}
+
+/**
+ * R373 (FR-R373-2 point 3) — *Play album ▾* / *Shuffle ▾*: the main part plays the current pick; ▾ opens a menu of
+ * *Play album* (*{n} songs · the official order*) and *Play album + extras* (*{n} songs · extras, then the B-sides*),
+ * the current one ticked. Picking from the menu remembers the pick and starts playback.
+ */
+@Composable
+private fun SplitPlayButton(
+    label: String, icon: MusicIcon, primary: Boolean, modifier: Modifier, pick: AlbumPick, albumSongs: Int, extendedSongs: Int,
+    onMain: () -> Unit, onPick: (AlbumPick) -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PillButton(label, icon, primary = primary, Modifier.weight(1f, fill = false), onClick = onMain)
+            Spacer(Modifier.width(4.dp))
+            val ink = if (primary && !dev.jellystructure.ravilo.ui.theme.isDesktopLayout) colors.onAccent else colors.text
+            Box(
+                Modifier.size(if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) 38.dp else 46.dp).clip(CircleShape)
+                    .background(if (primary) colors.accent.copy(alpha = 0.35f) else colors.surfaceVariant).tap { open = true },
+                contentAlignment = Alignment.Center,
+            ) { ChevronGlyph(GlyphDirection.DOWN, ink, 14.dp, description = str("ed.more_play")) }
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = colors.surface) {
+            for ((p, title, sub) in listOf(
+                Triple(AlbumPick.ALBUM, str("ed.play_album"), str("ed.sub_album", mapOf("n" to albumSongs.toString()))),
+                Triple(AlbumPick.EXTRAS, str("ed.play_extras"), str("ed.sub_extras", mapOf("n" to extendedSongs.toString()))),
+            )) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(title, color = colors.text, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+                            Text(sub, color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
+                        }
+                    },
+                    leadingIcon = { Box(Modifier.width(18.dp)) { if (p == pick) MusicGlyph(MusicIcon.CHECK, colors.accentSecondary, 16.dp) } },
+                    onClick = { open = false; onPick(p) },
+                )
+            }
+        }
     }
 }
 
@@ -276,6 +436,21 @@ fun MusicArtistScreen(
                                 items(g.albums, key = { it.id }) { a -> AlbumCardView(a, 132.dp, onOpen = { onOpenAlbum(a.id) }, showYear = true) }
                             }
                         }
+                    }
+                }
+                // R373 (FR-R373-7) — the singles that left *Singles & EPs* live under their albums; each album opens.
+                if (d.singlesUnder.isNotEmpty()) item(key = "singles-under") {
+                    val n = d.singlesUnder.sumOf { it.count }
+                    val template = str(if (n == 1) "ed.under_one" else "ed.under", mapOf("n" to n.toString()))
+                    val before = template.substringBefore("{albums}")
+                    val after = template.substringAfter("{albums}", "")
+                    androidx.compose.foundation.layout.FlowRow(Modifier.padding(horizontal = raviloHPad).padding(top = 6.dp, bottom = 4.dp)) {
+                        Text(before, color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                        d.singlesUnder.forEachIndexed { i, u ->
+                            if (i > 0) Text(" · ", color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                            Text(u.album.title, color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, modifier = Modifier.tap { onOpenAlbum(u.album.id) })
+                        }
+                        if (after.isNotEmpty()) Text(after, color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
                     }
                 }
                 if (d.topTracks.isNotEmpty()) {

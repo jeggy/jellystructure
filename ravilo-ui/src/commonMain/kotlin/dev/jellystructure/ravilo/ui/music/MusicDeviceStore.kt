@@ -38,10 +38,31 @@ object MusicQueueStore {
     fun clear() { runCatching { MusicDeviceStore.put("queue", null) } }
 }
 
+/**
+ * R373 (dev review 4, open question 1) — the album page's ▾ pick, per album and per device: one key (`album_pick`)
+ * holding the albums whose pick is *Play album + extras*. A garbled value reads as the plain album.
+ */
+object AlbumPickStore {
+    private const val KEY = "album_pick"
+    /** One album id per line (Jellyfin ids have no line breaks); anything else reads as no pick. */
+    private fun read(): Set<String> = runCatching { MusicDeviceStore.get(KEY) }.getOrNull().orEmpty()
+        .split('\n').map { it.trim() }.filter { it.isNotEmpty() && it.all { c -> c.isLetterOrDigit() || c == '-' || c == '_' } }.toSet()
+
+    fun get(albumId: String): AlbumPick = if (albumId in read()) AlbumPick.EXTRAS else AlbumPick.ALBUM
+
+    fun set(albumId: String, pick: AlbumPick) {
+        val now = read().let { if (pick == AlbumPick.EXTRAS) it + albumId else it - albumId }
+        runCatching { MusicDeviceStore.put(KEY, if (now.isEmpty()) null else now.sorted().joinToString("\n")) }
+    }
+
+    fun clear() { runCatching { MusicDeviceStore.put(KEY, null) } }
+}
+
 /** FR-R321-1 — signing out: the next viewer on this phone starts in video mode, with nobody's queue. */
 fun forgetListening() {
     ListeningMode.write(ListeningMode.VIDEO)
     MusicQueueStore.clear()
+    AlbumPickStore.clear()   // R373 dev review 4
     BookLastStore.clear()
     runCatching { MusicEngine.clear() }
 }

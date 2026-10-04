@@ -365,6 +365,15 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    /** R373 (FR-R373-4) — the other copies of a song this viewer may open (*Also on*). Null from a server without the
+     *  route (an older one answers 404) or for a song not this viewer's to see. */
+    suspend fun getMusicCopies(trackId: String): MusicTrackCopies? {
+        val r = client.get("$baseUrl/api/tv/music/track/$trackId/copies") { auth() }
+        if (r.status.value == 404) return null
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     /** Null when the song has no lyrics (the lyrics glyph is then absent, never greyed). */
     suspend fun getLyrics(trackId: String): TrackLyrics? {
         val r = client.get("$baseUrl/api/tv/music/track/$trackId/lyrics") { auth() }

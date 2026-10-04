@@ -2569,6 +2569,7 @@ fun RaviloApp(
                 onGoAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(dest))) },
                 onGoArtist = { id -> push(Dest.ArtistDetail(id, destDisplayName(dest))) },
                 onFavorite = { t, fav -> setMusicFavorite(t, fav) },
+                loadCopies = { id -> apiClient.getMusicCopies(id) },   // R373 (FR-R373-4)
             )
         }
         // R265 — the "Play on a TV" sheet, drawn once over every screen (incl. the player), above the bottom

@@ -126,4 +126,25 @@ class VersionChipsTest {
         val fit = fitVersions(90, 8, groups, 130)
         assertTrue(fit.titleWidth == 90)
     }
+
+    // ── R373 (FR-R373-5) — Bonus is another axis ──
+
+    @Test
+    fun bonus_is_never_folded_into_more() {
+        // Four version keys and `extra` on a phone: two chips, *+2*, and Bonus beside them — Bonus is not a version key,
+        // so the fold never counts it, and an unknown `bonus` key from a server draws nothing.
+        val f = foldVersions(listOf("live", "acoustic", "alternate", "session"), VERSION_FOLD_PHONE)
+        assertEquals(listOf("live", "acoustic"), f.shown); assertEquals(2, f.more)
+        assertEquals(VersionFold(emptyList(), 0, emptyList()), foldVersions(listOf("bonus"), VERSION_FOLD_PHONE))
+    }
+
+    @Test
+    fun bonus_has_no_hue_and_meets_contrast_in_every_theme() {
+        for (t in listOf(AuroraColors, MidnightColors, NoirColors, GraphiteColors, DaylightColors)) {
+            val ink = bonusInk(t.textSecondary)
+            assertEquals(t.textSecondary, ink, "no hue: the theme's own secondary text")
+            val worst = listOf(t.background, t.card, t.surface).minOf { g -> contrast(ink, bonusFill(t.fg).compositeOver(g)) }
+            assertTrue(worst >= 4.5, "Bonus contrast $worst")
+        }
+    }
 }

@@ -233,8 +233,11 @@ private fun DeskPlaying(
                         Text(al, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAlbum(id) })
                     } }
                 }
-                // R344 — the Playing page shows every version, on its own line under the artist · album line.
-                if (t.versions.isNotEmpty()) VersionChips(t.versions, Modifier.padding(top = 10.dp), fold = Int.MAX_VALUE)
+                // R344 — the Playing page shows every version, on its own line under the artist · album line; R373 — *Bonus* after them.
+                if (t.versions.isNotEmpty() || t.extra) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    VersionChips(t.versions, fold = Int.MAX_VALUE)
+                    if (t.extra) BonusChip()
+                }
                 DeviceChip()
                 Spacer(Modifier.height(18.dp))
                 DeskSeek(st.durationMs)
@@ -387,8 +390,9 @@ private fun Credits(t: MusicTrackItem, onOpenAlbum: (String) -> Unit, onOpenArti
         Column(Modifier.weight(1f)) {
             Text(t.title, color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, maxLines = 1, modifier = Modifier.basicMarquee())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                // R344 — Now playing shows every version, at the start of the artist · album line.
+                // R344 — Now playing shows every version, at the start of the artist · album line; R373 — *Bonus* after them.
                 if (t.versions.isNotEmpty()) VersionChips(t.versions, fold = Int.MAX_VALUE, large = true)
+                if (t.extra) BonusChip(large = true)
                 t.artists.firstOrNull()?.let { a -> Text(artistLine(t), color = colors.accentSecondary, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenArtist(a.id) }) }
                 t.album?.let { al -> t.albumId?.let { id -> Text(al, color = colors.textSecondary, fontSize = 14.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).tap { onOpenAlbum(id) }) } }
             }
@@ -669,7 +673,8 @@ private fun QueuePanelRow(t: MusicTrackItem, now: Boolean, onPlay: () -> Unit, o
         Column(Modifier.weight(1f)) {
             // R344 — the queue panel is not a TrackRow; its chips are placed here (three then +N, the desktop's fold).
             // R352 (FR-R352-1) — the title first: in a 300 dp panel the chips used to take the line and leave *C…*.
-            TitleWithVersions(t.versions, gap = 8.dp) {
+            // R373 (FR-R373-5/6) — the chips and *Bonus* at the row's right; *Bonus* is never folded or cut.
+            TitleThenChips(t.versions, t.extra, Modifier.fillMaxWidth(), gap = 8.dp) {
                 Text(t.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(listOf(artistLine(t), fmtLen(t.durationMs)).filter { it.isNotBlank() }.joinToString(" · "), color = colors.textDim, fontSize = 11.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)

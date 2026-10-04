@@ -222,6 +222,8 @@ fun TrackRow(
     subtitle: String? = null,
     /** R337 — the desktop's track list is striped (`.trk .tr:nth-child(odd)`); true for every other row. */
     striped: Boolean = false,
+    /** R373 (FR-R373-5) — *Bonus* on this row when the song is one; false on an album's own extras (the divider says it). */
+    showBonus: Boolean = true,
 ) {
     val colors = RaviloTheme.colors
     val st by MusicPlayback.state.collectAsState()
@@ -241,18 +243,28 @@ fun TrackRow(
         }
         if (showCover && isCurrent) { Spacer(Modifier.width(8.dp)); PlayingBars(st.playing, colors.accentSecondary, if (desk) 12.dp else 14.dp) }
         Spacer(Modifier.width(if (desk) 10.dp else 12.dp))
+        val bonus = showBonus && t.extra
         Column(Modifier.weight(1f)) {
-            // R344 — the version chips after the title (two then +N on a phone, three on the desktop). R352 (FR-R352-1) —
-            // the title takes its space first and the chips fold to what is left; a chip is still never cut.
-            TitleWithVersions(t.versions, gap = if (desk) 8.dp else 7.dp) {
+            // R373 (FR-R373-6, amends R344/R352) — the version chips and *Bonus* sit at the row's right, just left of the
+            // length: on a phone at the right end of the title area (the chips fold first, then the title ellipsizes;
+            // *Bonus* is never cut); on the desktop in a column of their own before the length.
+            val titleText: @Composable () -> Unit = {
                 Text(
                     t.title, color = if (isCurrent) colors.accentSecondary else colors.text, fontSize = if (desk) 13.sp else 14.5.sp,
                     fontWeight = if (desk && !isCurrent) FontWeight.Normal else if (desk) FontWeight.SemiBold else FontWeight.Medium,
                     fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (desk) titleText() else TitleThenChips(t.versions, bonus, Modifier.fillMaxWidth(), gap = 7.dp, title = titleText)
             val sub = subtitle ?: artistLine(t)
             if (sub.isNotBlank()) Text(sub, color = if (desk) colors.textDim else colors.textSecondary, fontSize = if (desk) 11.5.sp else 12.5.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        // R373 (FR-R373-6) — the desktop's chip column: a fixed width so the columns line up down the list.
+        if (desk) Box(Modifier.width(DESK_CHIP_COLUMN), contentAlignment = Alignment.CenterEnd) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                VersionChips(t.versions)
+                if (bonus) BonusChip()
+            }
         }
         // R352 (FR-R352-2) — a gap between the title column (its chips can reach its end) and the lyrics mark or length.
         Spacer(Modifier.width(8.dp))
@@ -261,6 +273,9 @@ fun TrackRow(
         Box(Modifier.size(if (desk) 34.dp else 40.dp).tap(onMore), contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.MORE, colors.textSecondary, if (desk) 16.dp else 18.dp, description = str("music.more")) }
     }
 }
+
+/** R373 (FR-R373-6) — the desktop's version-chip column on a song row (three chips and *Bonus*). */
+val DESK_CHIP_COLUMN = 188.dp
 
 /** A plain tap target without a ripple (the app's idiom on the phone); under a mouse it shows the hand ([handCursor]). */
 @Composable
@@ -307,6 +322,8 @@ fun TrackActionsSheet(
     onGoAlbum: (String) -> Unit,
     onGoArtist: (String) -> Unit,
     onFavorite: (MusicTrackItem, Boolean) -> Unit,
+    /** R373 (FR-R373-4) — the other copies of the song (`GET /tv/music/track/{id}/copies`); null = not offered. */
+    loadCopies: (suspend (String) -> dev.jellystructure.shared.tv.MusicTrackCopies?)? = null,
 ) {
     val t = request?.track
     val msgNext = str("music.queued_next")
@@ -332,6 +349,36 @@ fun TrackActionsSheet(
             val favs by MusicFavorites.overrides.collectAsState()
             val fav = favs[t.id] ?: t.favorite
             SheetRow(str("nav.my_list"), if (fav) MusicIcon.HEART_FILLED else MusicIcon.HEART) { onFavorite(t, !fav); onDismiss() }
+            // R373 (FR-R373-4) — the sheet ends with *Also on {n} releases* and one row per other copy.
+            if (t.alsoOn > 0 && loadCopies != null) AlsoOnSection(t, loadCopies) { id -> onDismiss(); onGoAlbum(id) }
+        }
+    }
+}
+
+/** R373 (FR-R373-4) — *Also on {n} releases*: one row per other copy (cover · title · *{kind} · {year}*), each opening
+ *  its release. Asked for on open; a failed call leaves the rest of the sheet as it is. */
+@Composable
+fun AlsoOnSection(t: MusicTrackItem, loadCopies: suspend (String) -> dev.jellystructure.shared.tv.MusicTrackCopies?, onOpen: (String) -> Unit) {
+    val colors = RaviloTheme.colors
+    var copies by remember(t.id) { mutableStateOf<List<dev.jellystructure.shared.tv.MusicTrackCopy>?>(null) }
+    LaunchedEffect(t.id) { copies = runCatching { loadCopies(t.id) }.getOrNull()?.copies }
+    val list = copies ?: return
+    if (list.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.fg.copy(0.1f)))
+        Text(if (list.size == 1) str("ed.also_on_one") else str("ed.also_on", mapOf("n" to list.size.toString())),
+            color = colors.fg.copy(0.5f), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.sp, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+        for (c in list) {
+            val al = c.album
+            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).then(if (al != null) Modifier.tap { onOpen(al.id) } else Modifier), verticalAlignment = Alignment.CenterVertically) {
+                MusicCover(al?.imageUrl ?: c.track.imageUrl, al?.title ?: c.track.title, Modifier.size(40.dp), corner = 5.dp, requestedWidth = 120, wordmarkSize = 7)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(al?.title ?: c.track.title, color = colors.fg, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val sub = listOfNotNull(al?.type?.let { musicTypeLabel(it) ?: str("music.type.album") }, al?.year?.toString()).joinToString(" · ")
+                    if (sub.isNotEmpty()) Text(sub, color = colors.fg.copy(0.6f), fontSize = 12.5.sp, fontFamily = Sora, maxLines = 1)
+                }
+            }
         }
     }
 }

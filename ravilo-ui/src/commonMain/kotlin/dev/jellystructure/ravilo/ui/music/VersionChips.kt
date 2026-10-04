@@ -195,3 +195,61 @@ fun TitleWithVersions(keys: List<String>, modifier: Modifier = Modifier, gap: an
         }
     }
 }
+
+// ── R373 (FR-R373-5/6) — the Bonus chip, and the chips just left of the length ──
+
+/** R373 (FR-R373-5) — *Bonus*'s ink and fill: no hue (the chip family's shape, the theme's own text on a neutral fill). */
+fun bonusInk(textSecondary: Color): Color = textSecondary
+fun bonusFill(fg: Color): Color = fg.copy(alpha = 0.07f)
+fun bonusBorder(fg: Color): Color = fg.copy(alpha = 0.2f)
+
+/** R373 (FR-R373-5) — *Bonus*: R344's chip family, no hue, never folded into *+N* (it is another axis). */
+@Composable
+fun BonusChip(modifier: Modifier = Modifier, large: Boolean = false) {
+    val colors = RaviloTheme.colors
+    val fs = if (large) 11.5.sp else 10.5.sp
+    val shape = RoundedCornerShape(5.dp)
+    Text(
+        str("ed.bonus"), color = bonusInk(colors.textSecondary),
+        fontSize = fs, lineHeight = fs, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 0.01.em, maxLines = 1, softWrap = false,
+        modifier = modifier.clip(shape).background(bonusFill(colors.fg)).border(1.dp, bonusBorder(colors.fg), shape).padding(horizontal = if (large) 7.dp else 6.dp, vertical = 3.dp),
+    )
+}
+
+/**
+ * R373 (FR-R373-6, amends R344 FR-R344-3 and R352 FR-R352-1; owner 2026-10-04) — on Ravilo's song and track rows the
+ * version chips and *Bonus* sit at the row's right, just left of the length. The title keeps its space: the version
+ * chips fold first (down to *+N*, R352's [fitVersions]), then the title ellipsizes; *Bonus* is never cut. The title
+ * starts at the left; the chips end at this layout's right edge. Give it the row's remaining width (a weight).
+ */
+@Composable
+fun TitleThenChips(keys: List<String>, bonus: Boolean, modifier: Modifier = Modifier, gap: androidx.compose.ui.unit.Dp = 8.dp, fold: Int? = null, title: @Composable () -> Unit) {
+    val most = fold ?: if (isDesktopLayout) VERSION_FOLD_DESKTOP else VERSION_FOLD_PHONE
+    val known = foldVersions(keys, Int.MAX_VALUE).all
+    if (known.isEmpty() && !bonus) { androidx.compose.foundation.layout.Box(modifier) { title() }; return }
+    val top = minOf(most, known.size)
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { constraints ->
+        val gapPx = gap.roundToPx()
+        val chipGap = 4.dp.roundToPx()
+        val loose = androidx.compose.ui.unit.Constraints()
+        val titleM = subcompose("title") { androidx.compose.foundation.layout.Box { title() } }.first()
+        val natural = titleM.maxIntrinsicWidth(constraints.maxHeight.takeIf { constraints.hasBoundedHeight } ?: androidx.compose.ui.unit.Constraints.Infinity)
+        val bonusP = if (bonus) subcompose("bonus") { BonusChip() }.first().measure(loose) else null
+        val bonusW = bonusP?.let { it.width + (if (known.isNotEmpty()) chipGap else 0) } ?: 0
+        val groups = if (known.isEmpty()) listOf(0 to null) else (top downTo 0).map { k -> k to subcompose("chips-$k") { VersionChips(keys, fold = k) }.first().measure(loose) }
+        val full = if (constraints.hasBoundedWidth) constraints.maxWidth else natural + gapPx + (groups.first().second?.width ?: 0) + bonusW
+        val available = (full - bonusW).coerceAtLeast(0)
+        val fit = if (known.isEmpty()) VersionFit(0, minOf(natural, (available - gapPx).coerceAtLeast(0)))
+            else fitVersions(natural, gapPx, groups.map { (k, p) -> k to (p?.width ?: 0) }, available)
+        val chips = groups.first { it.first == fit.shown }.second
+        val titleP = titleM.measure(androidx.compose.ui.unit.Constraints(maxWidth = fit.titleWidth.coerceAtLeast(0)))
+        val h = maxOf(titleP.height, chips?.height ?: 0, bonusP?.height ?: 0)
+        val w = full.coerceAtLeast(constraints.minWidth)
+        layout(w, h) {
+            titleP.place(0, (h - titleP.height) / 2)
+            var x = w
+            bonusP?.let { x -= it.width; it.place(x, (h - it.height) / 2); x -= chipGap }
+            chips?.let { x = (if (bonusP != null) x else w) - it.width; it.place(x, (h - it.height) / 2) }
+        }
+    }
+}
