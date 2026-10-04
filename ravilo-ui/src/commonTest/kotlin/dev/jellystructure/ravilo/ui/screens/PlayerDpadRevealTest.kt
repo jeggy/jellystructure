@@ -80,4 +80,23 @@ class PlayerDpadRevealTest {
         // The owner's case: focus on Play, the chrome hid while watching — Right, Right is Audio & Subs, two presses.
         assertEquals(PlFocus.TRACKS, run(PlFocus.PLAY, startHidden = true))
     }
+
+    // ── R363 (FR-R363-4, owner decision 1) — OK on a hidden screen inside the armed intro reveals to the pill ──
+
+    @Test
+    fun `OK hidden inside the armed intro reveals the controls with the pill instead of pausing`() {
+        val hidden = dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible = false, focus = PlFocus.PLAY, nextUpVisible = false, epRailOpen = false, pickerOpen = false)
+        assertEquals(HiddenSelect.REVEAL_TO_PILL, hiddenSelect(hidden, introArmed = true))
+        assertEquals(HiddenSelect.PLAY_PAUSE, hiddenSelect(hidden, introArmed = false), "outside the intro OK still pauses")
+    }
+
+    @Test
+    fun `OK with the chrome visible is never re-routed, and the remembered control never fires from hidden`() {
+        assertEquals(HiddenSelect.NONE, hiddenSelect(wasHidden = false, introArmed = true))
+        assertEquals(HiddenSelect.NONE, hiddenSelect(wasHidden = false, introArmed = false))
+        for (f in listOf(PlFocus.SKIP_BACK, PlFocus.SKIP_FWD, PlFocus.TRACKS, PlFocus.NEXT_EP)) {
+            val hidden = dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible = false, focus = f, nextUpVisible = false, epRailOpen = false, pickerOpen = false)
+            assertEquals(HiddenSelect.PLAY_PAUSE, hiddenSelect(hidden, introArmed = false), "$f")
+        }
+    }
 }

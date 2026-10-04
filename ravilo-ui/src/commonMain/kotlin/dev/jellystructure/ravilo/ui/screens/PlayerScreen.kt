@@ -67,6 +67,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -220,7 +221,7 @@ internal fun dpadRevealsOnly(
         PlayerDpadKey.SELECT -> true
     }
 }
-private enum class NuFocus { PLAY, STAY }
+internal enum class NuFocus { PLAY, STAY }
 
 // R218 (FR-R218-1) — "PlayerStore exposes a single derived buffering state, not three booleans." This
 // enum IS that single state; it lives here (Compose-side, in PlayerScreen) rather than inside
@@ -236,8 +237,9 @@ private enum class PlBufferMoment { NONE, COLD, STALL, SEEK }
 // skip-credits/exit. "Watch credits" (NuFocus.STAY) is offered in every mode alongside this one action.
 private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 
-// R182 — SKIP_INTRO only enters the order while the pill is actually visible (mirrors NEXT_EP's own
-// hasNextEp gating), first in the order per the design prototype's own focus-order function.
+// R363 (FR-R363-1) — SKIP_INTRO is never in the order: Left from −10 s used to pass through the seek bar (which
+// consumes Left as a scrub), so the pill was in the order but unreachable. It is reached by Up from the controls
+// under it (`skipIntroUpTarget`), and Left/Right on the pill do nothing.
 //
 // Bug fix: BACK used to be appended last here, but BackButton lives in the top bar, spatially
 // unrelated to this bottom transport row (SeekRow/SkipButton/PlayPauseButton/TrackButton) — pressing
@@ -245,9 +247,8 @@ private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 // the top-left Back button, which read as "Right does Up" instead of a no-op at the row's end. BACK
 // stays reachable via mouse/touch hover (onControlHover sets `focus` directly, independent of this
 // list) and via the hardware Back key (root onBack), which is the primary D-pad way to leave anyway.
-private fun transportOrder(hasNextEp: Boolean, hasSkipIntro: Boolean): List<PlFocus> =
+internal fun transportOrder(hasNextEp: Boolean): List<PlFocus> =
     buildList {
-        if (hasSkipIntro) add(PlFocus.SKIP_INTRO)
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
@@ -283,6 +284,18 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var skipIntroCountingDown by mutableStateOf(false)
     var skipIntroCountdownDone by mutableStateOf(false)
     var skipIntroCountdownSecs by mutableIntStateOf(0)
+    // R363 — the pill's reachability (see SkipIntroFocus.kt): whether playback is inside the intro (the poll loop's
+    // answer), the countdown's arming edge not yet seen by the pill's focus effect, the control the pill was reached
+    // from (null: it took focus itself), whether the pill had focus when the controls last hid, and whether the
+    // viewer used another control since the intro began.
+    var skipIntroInside by mutableStateOf(false)
+    var skipIntroArmingEdge by mutableStateOf(false)
+    var skipIntroReturn by mutableStateOf<PlFocus?>(null)
+    var skipIntroHadFocus by mutableStateOf(false)
+    var skipIntroTouchedOther by mutableStateOf(false)
+    // R363 (FR-R363-6) — a skip or a scrub commit since the poll loop's last tick: a credits card it brings up starts
+    // on Watch credits.
+    var viewerSeek by mutableStateOf(false)
     var resolvedForItemId by mutableStateOf<String?>(null)
     var resolvedTrackSig by mutableStateOf<String?>(null)
     var resolvedTrackCount by mutableIntStateOf(0)
@@ -614,6 +627,7 @@ fun PlayerScreen(
         val newPos = (positionMs + ms).coerceIn(0L, durationMs.coerceAtLeast(0L))
         player.seekTo(newPos)
         positionMs = newPos
+        bk.viewerSeek = true   // R363 (FR-R363-6)
         tick()
         wake()
     }
@@ -621,6 +635,7 @@ fun PlayerScreen(
     fun commitScrub() {
         player.seekTo(scrubPos)
         positionMs = scrubPos
+        bk.viewerSeek = true   // R363 (FR-R363-6)
         scrubbing = false
         tick()   // FR-R244-9 — on release, never during the drag
         wake()
@@ -1155,7 +1170,7 @@ fun PlayerScreen(
                     !nextUpVisible && !nextUpDismissed && !player.isEnded &&
                     bk.skipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
                     nextUpVisible = true
-                    nuFocus = NuFocus.PLAY
+                    nuFocus = nextUpStartsOn(bk.viewerSeek)   // R363 (FR-R363-6)
                 }
 
                 // Natural end — safety net for a title whose duration/creditsStartMs never satisfied the
@@ -1194,15 +1209,24 @@ fun PlayerScreen(
                 val iEnd = currentSegments.introEndMs
                 val insideIntro = playerLoadedForCurrentItem && iStart != null && iEnd != null && iEnd > iStart &&
                     positionMs in iStart until iEnd
+                bk.skipIntroInside = insideIntro   // R363 — read by the key handlers' `skipIntroArmed`
                 if (insideIntro && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
                     !bk.skipIntroCountingDown && !bk.skipIntroCountdownDone) {
                     bk.skipIntroCountingDown = true
+                    // R363 (FR-R363-2/3) — the intro began: the pill's focus effect sees this edge once.
+                    bk.skipIntroArmingEdge = true
+                    bk.skipIntroReturn = null
+                    bk.skipIntroHadFocus = false
+                    bk.skipIntroTouchedOther = false
                 }
                 if (!insideIntro && (bk.skipIntroCountingDown || bk.skipIntroCountdownDone)) {
                     bk.skipIntroCountingDown = false
                     bk.skipIntroCountdownDone = false
+                    bk.skipIntroArmingEdge = false
+                    bk.skipIntroHadFocus = false
                     if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
                 }
+                bk.viewerSeek = false   // R363 (FR-R363-6) — only the tick right after a skip/scrub counts
             } catch (e: Throwable) {
                 // Bug fix: an exception on any single tick (e.g. a transient native-player getter
                 // failure) used to kill this whole polling loop for the rest of the PlayerScreen's
@@ -1290,11 +1314,20 @@ fun PlayerScreen(
     val skipIntroPillVisible = insideIntroWindow && bk.skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
         (bk.skipIntroCountingDown || chromeVisible) && !pickerOpen && !nextUpVisible && !epRailOpen
 
-    // Mirrors the design prototype: the pill grabs focus the instant it appears, and releases it back to
-    // PLAY the instant it's gone — so a later Select never dispatches on a control that's no longer shown.
+    // R363 (FR-R363-2) — the pill takes focus only when it appears on its own (the countdown's arming edge with the
+    // controls hidden), never because the viewer is already using the controls. It still releases focus the
+    // instant it is gone (so a later Select never dispatches on a control that's no longer shown) — back to where
+    // it was reached from, and remembering that it had focus (FR-R363-3). Not a new effect: the old one, re-bodied.
     LaunchedEffect(skipIntroPillVisible) {
-        if (skipIntroPillVisible) focus = PlFocus.SKIP_INTRO
-        else if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
+        if (skipIntroPillVisible) {
+            if (bk.skipIntroArmingEdge) {
+                bk.skipIntroArmingEdge = false
+                if (skipIntroGrabsFocus(armingEdge = true, chromeVisible = chromeVisible)) { focus = PlFocus.SKIP_INTRO; bk.skipIntroReturn = null }
+            }
+        } else if (focus == PlFocus.SKIP_INTRO) {
+            bk.skipIntroHadFocus = true
+            focus = skipIntroDownTarget(bk.skipIntroReturn)
+        }
     }
 
     // R182 (FR-RV-SKIP1-2) — priority: a stinger always wins (never auto-skip past it), else a real
@@ -1539,6 +1572,7 @@ fun PlayerScreen(
                     // the first press from the remembered control; see `dpadRevealsOnly`.
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.LEFT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
                     wake()
+                    if (!revealOnly && focus != PlFocus.SKIP_INTRO) bk.skipIntroTouchedOther = true   // R363
                     if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.PLAY
                         epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
@@ -1549,8 +1583,10 @@ fun PlayerScreen(
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
                         }
+                        // R363 (review item 3) — Left/Right on the pill do nothing (it is not in the order).
+                        focus == PlFocus.SKIP_INTRO -> {}
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, skipIntroPillVisible)
+                            val order = transportOrder(resolvedNextEpisodeId != null)
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -1560,6 +1596,7 @@ fun PlayerScreen(
                     if (playerArrowsSeek && !nextUpVisible && !epRailOpen && !pickerOpen) { skip(SKIP_FWD_MS); return@dpadFocusable }   // R329
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.RIGHT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
                     wake()
+                    if (!revealOnly && focus != PlFocus.SKIP_INTRO) bk.skipIntroTouchedOther = true   // R363
                     if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.STAY
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
@@ -1568,8 +1605,9 @@ fun PlayerScreen(
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
                         }
+                        focus == PlFocus.SKIP_INTRO -> {}   // R363 (review item 3)
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, skipIntroPillVisible)
+                            val order = transportOrder(resolvedNextEpisodeId != null)
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -1577,15 +1615,22 @@ fun PlayerScreen(
                 },
                 onUp = {
                     val revealOnly = dpadRevealsOnly(PlayerDpadKey.UP, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)  // R251
+                    // R363 (FR-R363-3) — Up that wakes hidden controls inside the armed intro offers the skip first.
+                    val wakeTo = if (chromeVisible) null else skipIntroWakeFocus(PlayerDpadKey.UP,
+                        skipIntroArmed(bk.skipIntroInside, bk.skipIntroMode, pickerOpen, nextUpVisible, epRailOpen), bk.skipIntroHadFocus, bk.skipIntroTouchedOther)
                     wake()
-                    if (!revealOnly) when {
+                    if (wakeTo != null) { focus = wakeTo; bk.skipIntroReturn = null }
+                    else if (!revealOnly) when {
                         epRailOpen -> { epRailOpen = false; scheduleHide() }
                         // R195 §D — Up/Down moves within whichever level is active.
                         pickerOpen -> if (pickerLevel == 1) { if (pickerVersionIdx > 0) pickerVersionIdx-- }
                                       else { if (pickerIdx > 0) pickerIdx-- }
                         nextUpVisible -> {}
-                        focus != PlFocus.SEEK_BAR -> focus = PlFocus.SEEK_BAR
-                        else -> {}
+                        // R363 (FR-R363-1) — the seek bar, Audio & Subs and Next reach the pill above them.
+                        else -> skipIntroUpTarget(focus, skipIntroPillVisible)?.let { t ->
+                            if (t == PlFocus.SKIP_INTRO) bk.skipIntroReturn = focus else bk.skipIntroTouchedOther = true
+                            focus = t
+                        }
                     }
                 },
                 onDown = {
@@ -1604,8 +1649,8 @@ fun PlayerScreen(
                             if (scrubbing) commitScrub()
                             focus = PlFocus.PLAY
                         }
-                        // R182 — matches the design prototype's own ArrowDown handling for 'skipintro'.
-                        focus == PlFocus.SKIP_INTRO -> focus = PlFocus.PLAY
+                        // R363 (FR-R363-1) — back to the control the pill was reached from (Play if it took focus itself).
+                        focus == PlFocus.SKIP_INTRO -> focus = skipIntroDownTarget(bk.skipIntroReturn)
                         episodes != null -> { epRailOpen = true; chromeVisible = true }
                         else -> {}
                     }
@@ -1625,9 +1670,15 @@ fun PlayerScreen(
                     // the pill/card was visibly focused on screen the whole time. Both are genuinely
                     // interactive whenever they're showing, regardless of chrome.
                     // R251 (FR-R251-1) — the same rule the four direction keys now use.
-                    val wasHidden = dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen)
+                    // R363 (FR-R363-4) — inside the armed intro, OK on a hidden screen reveals the controls with the
+                    // pill focused (a second OK skips) instead of pausing.
+                    val hidden = hiddenSelect(
+                        dpadRevealsOnly(PlayerDpadKey.SELECT, chromeVisible, focus, nextUpVisible, epRailOpen, pickerOpen),
+                        skipIntroArmed(bk.skipIntroInside, bk.skipIntroMode, pickerOpen, nextUpVisible, epRailOpen),
+                    )
                     wake()
-                    if (wasHidden) {
+                    if (hidden == HiddenSelect.REVEAL_TO_PILL) { focus = PlFocus.SKIP_INTRO; bk.skipIntroReturn = null }
+                    else if (hidden == HiddenSelect.PLAY_PAUSE) {
                         // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
                         // R350 (FR-R350-7) — and the highlight lands on Play, the control OK just acted as.
                         focus = PlFocus.PLAY
@@ -2002,6 +2053,7 @@ fun PlayerScreen(
                 totalSecs = bk.skipSecs,
                 focused = focus == PlFocus.SKIP_INTRO,
                 onTap = if (handset) ({ skipIntro() }) else null,
+                showRing = skipIntroShowsRing(bk.skipIntroMode),   // R363 (FR-R363-5)
             )
         }
 
@@ -3504,8 +3556,11 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
 
 // ─── Skip Intro pill (R182) ───────────────────────────────────────────────────
 
+/** R363 (FR-R363-5) — the pill's ring, by tag for `SkipIntroPillTest`. */
+internal const val SKIP_INTRO_RING_TAG = "skip-intro-ring"
+
 @Composable
-private fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, focused: Boolean, onTap: (() -> Unit)? = null) {
+internal fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, focused: Boolean, onTap: (() -> Unit)? = null, showRing: Boolean = true) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -3523,7 +3578,8 @@ private fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, 
             .then(if (focused) Modifier.shadow(12.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        CountdownRing(colors, countdown, totalSecs)
+        // R363 (FR-R363-5) — Auto only: in Prompt mode the ring counted down to nothing (the pill just hides).
+        if (showRing) Box(Modifier.testTag(SKIP_INTRO_RING_TAG)) { CountdownRing(colors, countdown, totalSecs) }
         Text(
             text = str("player.skip_intro"),
             color = if (focused) Color(0xFF0A0C13) else colors.text,

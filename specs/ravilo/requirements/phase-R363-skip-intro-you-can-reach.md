@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from a test on the living-room Sony BRAVIA (release
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a test on the living-room Sony BRAVIA (release
 `1.49-11-g76f351b4`), a series episode whose intro runs 0:05–0:34, Skip Intro mode **Prompt**, countdown 6 s.
 Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only (`PlayerScreen.kt`). Owner decisions 2026-10-04: the pill's **visibility stays as
 today** (its countdown, and whenever the controls are up); the countdown ring is drawn **only in Auto mode**.
@@ -224,3 +224,39 @@ release-build register limit to respect. Twelve items; two for the owner.
    pause during an intro: Play/Pause, or OK with Play selected.
 2. **The credits card starts on *Watch credits* when the viewer brought it up by skipping or scrubbing** into the
    credits; reached by normal playback it starts on *Play next* as today.
+
+## Build notes (2026-10-04)
+
+Built with both owner decisions. Client only. Every decision is a top-level function in the new
+`screens/SkipIntroFocus.kt`; `PlayerScreen` only calls them, and its new state lives in `PlayerBookkeeping`
+(`skipIntroInside`, `skipIntroArmingEdge`, `skipIntroReturn`, `skipIntroHadFocus`, `skipIntroTouchedOther`,
+`viewerSeek`). No new `var … by remember` and no new `LaunchedEffect` in the body: the pill's old focus effect was
+re-bodied (its grab removed, its release kept).
+- **FR-1:** `skipIntroUpTarget(focus, pillVisible)` — Up from the seek bar, Audio & Subs or Next reaches the visible
+  pill (remembering where from); from −10 s / Play / +30 s it is the seek bar as before. Down from the pill goes to
+  `skipIntroDownTarget(reachedFrom)` (Play when the pill took focus itself). `SKIP_INTRO` left `transportOrder`
+  (now `transportOrder(hasNextEp)`), and Left/Right on the pill do nothing (review item 3).
+- **FR-2:** the pill takes focus only at the countdown's arming edge with the controls hidden
+  (`skipIntroGrabsFocus`); the poll loop marks the edge, the pill's focus effect consumes it. A rewind or scrub into
+  the intro wakes the controls and never grabs (seen 4). Focus never stays on a hidden pill (review item 4): when
+  the pill goes while focused, focus returns to where it came from and `skipIntroHadFocus` remembers it.
+- **FR-3:** `skipIntroWakeFocus` — Up waking hidden controls inside the armed window (`skipIntroArmed`: inside the
+  intro, Prompt/Auto, no picker/next-up/rail) goes to the pill when it had focus when the controls hid or nothing
+  else was touched since the intro began. Left/Right keep R350's first-press rule, Down only reveals (review item 7).
+- **FR-4 (owner decision 1):** `hiddenSelect(wasHidden, introArmed)` → `REVEAL_TO_PILL` inside the armed intro (a
+  second OK skips), `PLAY_PAUSE` outside it, `NONE` when the controls are up. Media Play/Pause always toggles.
+- **FR-5:** `SkipIntroPill` is `internal` with `showRing`; the player passes `skipIntroShowsRing(mode)` (Auto only).
+  The ring carries `SKIP_INTRO_RING_TAG`.
+- **FR-6 (owner decision 2):** `skip()` and `commitScrub()` set `viewerSeek`; the credits card's early trigger starts
+  on `nextUpStartsOn(viewerSeek)` (*Watch credits* when brought up by a skip/scrub, *Play next* from playback); the
+  flag lives for one poll tick. The natural-end trigger keeps *Play next*. The card itself is modal, so FR-1/3/4's
+  faults cannot occur there (review item 11).
+- Tests (green): `SkipIntroFocusTest` (commonTest, 9: each decision above incl. `transportOrder` never holding the
+  pill), `PlayerDpadRevealTest` gains the hidden-OK cases (reveal to the pill when armed; play/pause outside; the
+  remembered control never fires from hidden), `SkipIntroPillTest` (Robolectric: no ring + the *OK* key cap in
+  Prompt, the ring in Auto).
+- **Register check:** `:ravilo-android:assembleRelease` then `scripts/check-player-dex.sh`: `PlayerScreenKt`'s widest
+  method uses **234** registers (limit 250) — unchanged from the build just before.
+- Device only (release build, an episode with a known intro, Prompt then Auto): acceptance 1–7 in order;
+  Play/Pause during the intro toggles; +30 s into the credits → the card on *Watch credits*, OK does not start the
+  next episode; playing into the credits → *Play next*.
