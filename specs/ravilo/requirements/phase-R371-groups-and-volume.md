@@ -306,3 +306,5 @@ None.
 2. **Each room's own slider on every app, through the same relay.** The linked Android/desktop app reports each
    room's level and applies room changes; the server fans them out. With no linked or relay app, the room sliders
    are disabled with *{place} doesn't report its volume*; the master still works (receiver path).
+3. **Android below 11 (no `MediaRouter2` routing controller) adds a speaker through the relay**, like the web app
+   (owner, 2026-10-04); the item is not hidden.

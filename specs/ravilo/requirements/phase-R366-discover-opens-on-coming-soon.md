@@ -182,3 +182,6 @@ Coming Soon's chip stays in first place in the strip. Build: `defaultDiscoverSeg
 from the upcoming store's last answer (kept across launches like the other client caches); `true` ⇒ skip Coming Soon
 for the entry chip only; `null` (never fetched) ⇒ open on Coming Soon as the rule says. The Discover nav button's
 step still walks every rendered chip. Add a test for both cases.
+
+Owner confirmed the two edge rules (2026-10-04): if Coming Soon is the only chip it still opens there, and overdue
+episodes alone count as an empty calendar.

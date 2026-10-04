@@ -589,3 +589,5 @@ owner. Seventeen items.
    setting. The admin (304) still sees every session.
 3. **Restart rule:** until R372 ships, R368-4's 2-minute end stands; once R372 ships, a place silent after a restart
    becomes *paused, offline* and is kept 24 h like any other silent place (R372-4 wins).
+4. **A viewer's own sessions are always listed**, on any network (owner, 2026-10-04): the household rule filters
+   only other people's sessions. The *Tests* section's "own session on another network is listed" case stands.
