@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.runtime.withFrameNanos
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.animateColorAsState
@@ -118,6 +120,18 @@ fun AppBar(
     val spaceGrotesk = SpaceGrotesk
     val ownAvatarFR = remember { FocusRequester() }
     val avatarFR = avatarFocusRequester ?: ownAvatarFR
+    // R365 (FR-R365-5) — Back from a page the profile menu opened (Settings, My List, Your profile): the page underneath
+    // gets its focus back on the avatar, not on its own default (the active tab). One shot, consumed here; it waits two
+    // frames so the page's own arrival focus has run first. A TV/remote affair: a phone draws no focus (R298).
+    val avatarReturn = LocalAvatarReturn.current
+    if (avatarReturn != null && onProfile != null && !LocalHandset.current) {
+        LaunchedEffect(avatarReturn) {
+            withFrameNanos { }
+            withFrameNanos { }
+            avatarFR.requestFocusAwaiting()
+            avatarReturn()
+        }
+    }
     val searchFR = remember { FocusRequester() }
     // R52: Search is no longer a nav tab — it lives as the magnifier icon in the right cluster.
     val items = navItems ?: listOf(
@@ -567,3 +581,9 @@ private fun ClockDisplay() {
 
 /** R364 / R365 — the app bar's avatar, by tag for the focus tests. */
 const val APP_BAR_AVATAR_TAG = "app-bar-avatar"
+
+/**
+ * R365 (FR-R365-5) — provided by the app frame to the page the profile menu was opened from, once that page is on top
+ * again: a one-shot "put focus back on the avatar", consumed (called) by the page's [AppBar]. Null everywhere else.
+ */
+val LocalAvatarReturn = androidx.compose.runtime.compositionLocalOf<(() -> Unit)?> { null }

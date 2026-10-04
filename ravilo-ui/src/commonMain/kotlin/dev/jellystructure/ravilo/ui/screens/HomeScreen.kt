@@ -384,6 +384,8 @@ private fun HomeLoaded(
                         // full-width hero stops its per-frame scaled redraw during the gesture.
                         driftEnabled = { !listState.isScrollInProgress },
                         onDown = { requestFocusRetryingOrMoveNative(scope, firstRowFR, focusManager, FocusDirection.Down) },
+                        initialHeroId = store.heroId,                 // R365 (FR-R365-10)
+                        onActiveChanged = { store.heroId = it },
                     )
                 }
             }

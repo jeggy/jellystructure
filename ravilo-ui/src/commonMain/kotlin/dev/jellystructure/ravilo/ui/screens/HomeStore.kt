@@ -51,6 +51,8 @@ class HomeStore(
     // R361 (FR-R361-5) — where they were at select time (the row's place on the page, the tile's in its row), so a
     // return to a row that is gone can land on the row now in its place.
     var focusRowIndex: Int = 0
+    /** R365 (FR-R365-10) — the hero slide showing (its id), so Back to Home shows the slide that was opened. */
+    var heroId: String? = null
     var focusItemIndex: Int = 0
 
     /** R139 / R361 — a tile was opened: remember it, and where it was, for the Back-return. */

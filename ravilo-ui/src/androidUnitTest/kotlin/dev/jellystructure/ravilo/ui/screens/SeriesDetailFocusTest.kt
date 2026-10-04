@@ -498,4 +498,47 @@ class SeriesDetailFocusTest {
         press(Key.Escape)                                    // and a key brings it back
         kotlin.test.assertTrue(ringShown(SeriesDetailTags.PLAY))
     }
+
+    // ── R365 ──
+
+    @Test fun `R365 FR-2 — Right and Left on the synopsis stay on it`() {
+        val d = series(3, 6, shuffle = false).copy(synopsis = "A stand-in synopsis about a lighthouse keeper.")
+        render(d, watched(d, upToSeason = 0))
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+        press(Key.DirectionUp)
+        val onSynopsis = isFocused() and androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasText("lighthouse", substring = true))
+        rule.onNode(onSynopsis, useUnmergedTree = true).assertExists()
+        press(Key.DirectionRight)
+        rule.onNode(onSynopsis, useUnmergedTree = true).assertExists()
+        press(Key.DirectionLeft)
+        rule.onNode(onSynopsis, useUnmergedTree = true).assertExists()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+    }
+
+    @Test fun `R365 FR-3 — Down after opening a season lands on the card the rail opened on`() {
+        val d = series(3, 6, shuffle = false)
+        val overlay = mapOf(
+            "s2e1" to CardPlayState(played = true, playedPct = 1f),
+            "s2e2" to CardPlayState(played = true, playedPct = 1f),
+            d.card.id to CardPlayState(),
+        )
+        render(d, overlay)
+        press(Key.DirectionDown)
+        rule.onNode(isFocused() and inPillRow, useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag(SeasonPickerTags.pill(1), useUnmergedTree = true).assertIsFocused()
+        press(Key.DirectionRight)
+        rule.onNodeWithTag(SeasonPickerTags.pill(2), useUnmergedTree = true).assertIsFocused()
+        press(Key.Enter)                      // open Season 2
+        press(Key.DirectionDown)
+        focusedInside(SeriesDetailTags.card("s2e3"))   // the first unwatched, not the card under the pill
+    }
+
+    @Test fun `R365 FR-9 — an episode the player moved on to is where Back lands, on its season`() {
+        val d = series(3, 6, shuffle = false)
+        val target = SeriesReturnTarget().apply { remember(SeriesReturnFocus.EpisodeId("s2e5")) }
+        renderLeavingForThePlayer(d, watched(d, upToSeason = 0), target)
+        focusedInside(SeriesDetailTags.card("s2e5"))
+        rule.onNodeWithTag(SeasonPickerTags.pill(2), useUnmergedTree = true).assertExists()
+    }
 }

@@ -159,4 +159,27 @@ class HomeFocusTest {
         serverNow(six.map { if (it.id == "row2") row(2, listOf(1, 2, 4, 5, 6, 7, 8)) else it })
         focused("Row2 Tile4").assertExists().assertIsDisplayed()
     }
+
+    // ── R365 (FR-R365-10) — Back to Home's hero shows the slide that was opened ──
+
+    @Test fun `R365 FR-10 — the 5th slide opened, Back shows the 5th slide with the hero focused`() {
+        val heroes = (1..5).map { i -> hero.copy(item = hero.item.copy(id = "hero$i", title = "Stand-in Slide $i")) }
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        served = HomeFeed(heroes = heroes, channels = emptyList(), rows = six.take(2), autoAdvanceSeconds = 0)
+        val api = fakeTvApiClient { path ->
+            if (path == "/api/tv/home") RaviloWireJson.encodeToString(HomeFeed.serializer(), served) else null
+        }
+        store = HomeStore(api)
+        rule.setContent {
+            if (shown) HomeScreen(store = store, apiClient = api, displayName = "Olivar", onItemSelect = { opened = it; shown = false })
+        }
+        rule.waitUntil(5_000) { rule.onAllNodes(hasText("Stand-in Slide 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+        repeat(4) { press(Key.DirectionRight) }
+        rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Slide 5")), useUnmergedTree = true).assertExists()
+        press(Key.Enter)
+        assertEquals("hero5", opened?.id)
+        back()
+        rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Slide 5")), useUnmergedTree = true).assertExists()
+    }
 }

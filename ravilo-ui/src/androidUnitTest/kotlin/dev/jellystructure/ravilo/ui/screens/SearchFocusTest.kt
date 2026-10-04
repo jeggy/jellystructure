@@ -28,6 +28,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.pressKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.shared.tv.MediaCard
@@ -185,5 +187,58 @@ class SearchFocusTest {
         assertFalse(editing())
         press(Key.DirectionCenter)
         assertTrue(keyboardUp(), "OK opens it again")
+    }
+
+    // ── R365 (FR-R365-1) — Clear is reachable on a TV ──
+
+    private val clear get() = rule.onNodeWithTag(SearchTags.CLEAR, useUnmergedTree = true)
+
+    private fun typedThenBackOnTheField() {
+        render()
+        press(Key.DirectionCenter)
+        field.performTextInput("Stand")
+        rule.waitForIdle()
+        waitForResults()
+        press(Key.DirectionDown)
+        press(Key.DirectionUp)
+        field.assertIsFocused()
+        assertFalse(keyboardUp())
+    }
+
+    @Test fun `Right from the field reaches Clear, and OK clears and returns to the field without the keyboard`() {
+        typedThenBackOnTheField()
+        press(Key.DirectionRight)
+        clear.assertIsFocused()
+        press(Key.DirectionCenter)
+        field.assertIsFocused()
+        field.assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("")))
+        assertFalse(keyboardUp(), "clearing never raises the keyboard")
+        clear.assertDoesNotExist()
+    }
+
+    @Test fun `Left or Down from Clear go back to the field, and Up stays`() {
+        typedThenBackOnTheField()
+        press(Key.DirectionRight)
+        clear.assertIsFocused()
+        press(Key.DirectionUp)
+        clear.assertIsFocused()
+        press(Key.DirectionLeft)
+        field.assertIsFocused()
+        press(Key.DirectionRight)
+        clear.assertIsFocused()
+        press(Key.DirectionDown)
+        field.assertIsFocused()
+    }
+
+    @Test fun `with no query there is no Clear and Right stays on the field`() {
+        init()
+        val store = SearchStore { q -> SearchResults(q, if (q.isBlank()) emptyList() else cards) }
+        rule.setContent { Host { SearchScreen(store = store, onBack = {}, onItemSelect = {}) } }
+        rule.waitForIdle()
+        field.assertIsFocused()
+        clear.assertDoesNotExist()
+        press(Key.DirectionRight)
+        field.assertIsFocused()
     }
 }

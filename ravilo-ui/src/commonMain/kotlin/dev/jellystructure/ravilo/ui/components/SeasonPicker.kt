@@ -77,6 +77,9 @@ fun SeasonPicker(
     onShuffle: (() -> Unit)? = null,
     // R350 (FR-R350-2) — lets the series page put focus back on Shuffle when the viewer returns from the player.
     shuffleFocusRequester: FocusRequester? = null,
+    /** R365 (FR-R365-3) — Down from the OPEN season's pill (the selected one): the card the rail opened on. Null leaves
+     *  Down to the native search, as for a pill that is only focused. */
+    onDownFromSelected: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -123,6 +126,7 @@ fun SeasonPicker(
                     isComplete = season.index in watchedSeasons,
                     watchedCount = watchedCounts[season.index] ?: 0,
                     onSelect = { onSelect(i) },
+                    onDown = onDownFromSelected.takeIf { i == selectedIndex },
                     onLeft = if (i == 0) {{ }} else {{ runCatching { pillFocusRequesters[i - 1].requestFocus() } }},
                     onRight = when {
                         i < seasons.lastIndex -> {{ runCatching { pillFocusRequesters[i + 1].requestFocus() } }}
@@ -183,6 +187,7 @@ private fun SeasonPill(
     focusSpec: androidx.compose.animation.core.AnimationSpec<Float>,
     dpSpec: androidx.compose.animation.core.AnimationSpec<Dp>,
     sora: androidx.compose.ui.text.font.FontFamily,
+    onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
@@ -206,6 +211,7 @@ private fun SeasonPill(
                 onSelect = onSelect,
                 onLeft = onLeft,
                 onRight = onRight,
+                onDown = onDown,
             ),
         contentAlignment = Alignment.Center,
     ) {

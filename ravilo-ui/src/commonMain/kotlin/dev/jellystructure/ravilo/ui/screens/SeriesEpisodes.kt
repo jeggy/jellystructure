@@ -105,6 +105,38 @@ internal sealed class SeriesReturnFocus {
     data class Shuffle(override val seasonIdx: Int) : SeriesReturnFocus()
     /** [cardId] is the rail slot's first episode id (a multi-episode file's card counts as one). */
     data class Episode(override val seasonIdx: Int, val cardId: String) : SeriesReturnFocus()
+    /** R365 (FR-R365-9) — the episode the player moved on to (next-up card, *Next*, the rail); the page resolves it to
+     *  its season and card with [returnFocusFor] when it is composed again. */
+    data class EpisodeId(val episodeId: String, override val seasonIdx: Int = -1) : SeriesReturnFocus()
+}
+
+/**
+ * R365 (FR-R365-9) — where Back lands for an episode the player moved on to: the season holding it and its rail card
+ * (a multi-episode file's card is its first episode's id); `null` for an id no season holds.
+ */
+internal fun returnFocusFor(seasons: List<Season>, episodeId: String): SeriesReturnFocus.Episode? {
+    seasons.forEachIndexed { si, season ->
+        val group = episodeGroups(season.episodes).firstOrNull { g -> g.any { it.id == episodeId } }
+        if (group != null) return SeriesReturnFocus.Episode(si, group.first().id)
+    }
+    return null
+}
+
+/**
+ * R365 (FR-R365-9, owner decision 2) — what the series page's return target becomes when the player moves on to
+ * [nextEpisodeId]: unchanged without a series page below the player (a play from Home's Continue Watching returns to
+ * Home, and a target left in a kept store would fire on a later, unrelated visit); unchanged while a shuffle is still
+ * running (Back lands on Shuffle, where the viewer started); else that episode.
+ */
+internal fun moveOnReturnFocus(
+    current: SeriesReturnFocus?,
+    nextEpisodeId: String,
+    shuffleActive: Boolean,
+    seriesPageBelow: Boolean,
+): SeriesReturnFocus? = when {
+    !seriesPageBelow -> current
+    shuffleActive -> current
+    else -> SeriesReturnFocus.EpisodeId(nextEpisodeId)
 }
 
 /** A LazyColumn's scroll: its first visible item and that item's offset. */
@@ -120,4 +152,6 @@ class SeriesReturnTarget {
     internal fun remember(focus: SeriesReturnFocus) { target = focus }
     /** The control to land on, once. Forgets it either way. */
     internal fun take(): SeriesReturnFocus? = target.also { target = null }
+    /** R365 — what is held, without spending it. */
+    internal fun peek(): SeriesReturnFocus? = target
 }

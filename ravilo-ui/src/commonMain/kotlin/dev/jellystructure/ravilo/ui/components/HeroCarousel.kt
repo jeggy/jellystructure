@@ -77,11 +77,15 @@ fun HeroCarousel(
     driftEnabled: () -> Boolean = { true },
     /** R337 — a computer's hero carries *Play* beside *More Info* (the TV's is button-less: OK opens the title). */
     onPlay: ((MediaCard) -> Unit)? = null,
+    /** R365 (FR-R365-10) — the slide to start on (a hero id) and where the showing slide is reported. */
+    initialHeroId: String? = null,
+    onActiveChanged: (String) -> Unit = {},
 ) {
     // The layout is read here, outside KeepDark (which only swaps the colours).
     val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
     dev.jellystructure.ravilo.ui.theme.KeepDark {
-        HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled, desk, onPlay)
+        HeroCarouselContent(items, focusRequester, heightDp, autoAdvanceSeconds, onOpenDetail, onUp, onDown, driftEnabled, desk, onPlay,
+            initialHeroId, onActiveChanged)
     }
 }
 
@@ -99,6 +103,11 @@ private fun HeroCarouselContent(
     driftEnabled: () -> Boolean = { true },
     desk: Boolean = false,
     onPlay: ((MediaCard) -> Unit)? = null,
+    /** R365 (FR-R365-10) — the slide to start on (a hero's id, kept by the page's store across the detail page and
+     *  back); a hero that is gone (a refresh re-ordered or dropped it) starts at slide 1. */
+    initialHeroId: String? = null,
+    /** R365 (FR-R365-10) — told the id of the slide now showing, so the store can keep it. */
+    onActiveChanged: (String) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -109,7 +118,7 @@ private fun HeroCarouselContent(
     val floorGradient = heroScrims.homeFloor
     val dotInactiveColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.35f) }
 
-    var activeIndex by remember { mutableIntStateOf(0) }
+    var activeIndex by remember { mutableIntStateOf(heroStartIndex(items.map { it.item.id }, initialHeroId)) }
     var resetTick   by remember { mutableIntStateOf(0) }
     // R374 — the hero draws no focus ring (reverses R350 FR-R350-8's hero ring, owner 2026-10-04). It is still the
     // focus target on arrival (R53); Left/Right page it, Up/Down/OK as before.
@@ -129,6 +138,7 @@ private fun HeroCarouselContent(
     // from competing with the scroll's frame budget.
     val kbScale = remember { Animatable(1.0f) }
     LaunchedEffect(activeIndex) {
+        items.getOrNull(activeIndex)?.let { onActiveChanged(it.item.id) }   // R365 (FR-R365-10)
         kbScale.snapTo(1.0f)  // instant reset; the 600ms crossfade covers the snap
         snapshotFlow { driftEnabled() }
             .collectLatest { enabled ->
@@ -372,3 +382,7 @@ private fun HeroCarouselContent(
         }
     }
 }
+
+/** R365 (FR-R365-10) — the slide the hero starts on: the saved hero's index, else (gone, or none saved) the first. */
+fun heroStartIndex(heroIds: List<String>, savedId: String?): Int =
+    savedId?.let { heroIds.indexOf(it) }?.takeIf { it >= 0 } ?: 0

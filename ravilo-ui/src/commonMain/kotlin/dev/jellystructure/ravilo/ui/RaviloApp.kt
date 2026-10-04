@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui
 
+import dev.jellystructure.ravilo.ui.screens.moveOnReturnFocus
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import dev.jellystructure.ravilo.ui.screens.themeSettings
@@ -731,8 +732,12 @@ fun RaviloApp(
         // R337 — on a computer Settings is a window of its own beside the app's (the mockup's T·e, ⌘, on the Mac), so
         // every way to Settings opens that window and the app's own page stays where it is.
         var deskSettingsOpen by remember { mutableStateOf(false) }
+        // R365 (FR-R365-5) — the page the profile menu pushed Settings / My List / Your profile from: when it is on top
+        // again (Back), its AppBar puts focus on the avatar (LocalAvatarReturn), once.
+        var avatarReturnTo by remember { mutableStateOf<Dest?>(null) }
         fun push(dest: Dest) {
             if (dest is Dest.Settings && isDesktopPlatform) { deskSettingsOpen = true; return }
+            avatarReturnTo = null   // R365 — any other navigation spends it (the menu's pushes set it after this)
             navDir = NavDir.Forward
             forwardStack = emptyList()
             stack = stack + dest
@@ -759,6 +764,7 @@ fun RaviloApp(
             if (!fromHistory.flag) pushRoute(next.toRoute())
         }
         fun resetTo(dest: Dest) {
+            avatarReturnTo = null   // R365
             navDir = NavDir.Reset
             forwardStack = emptyList()
             stack = listOf(dest)
@@ -1500,6 +1506,10 @@ fun RaviloApp(
                     else -> dev.jellystructure.ravilo.ui.seams.windowControlsWidth(true).let { if (it > 0.dp) it + 14.dp else 0.dp }
                 }),
                 dev.jellystructure.ravilo.ui.components.LocalDesktopTitle provides deskPageOf(dest)?.let { dev.jellystructure.ravilo.ui.components.desktopPageLabel(it) },
+                // R365 (FR-R365-5) — only to the page the menu was opened from, and only while it is the top (never to
+                // it while it slides out under the pushed page).
+                dev.jellystructure.ravilo.ui.components.LocalAvatarReturn provides (
+                    if (avatarReturnTo != null && avatarReturnTo === dest && stack.last() === dest) ({ avatarReturnTo = null }) else null),
             ) {
             when (dest) {
             is Dest.ProfilePicker -> {
@@ -1674,7 +1684,9 @@ fun RaviloApp(
                     store = store,
                     title = dest.title,
                     breadcrumb = dest.breadcrumb,
-                    subtitle = dest.breadcrumb?.let { str("browse.from_row", mapOf("row" to it)) },
+                    // R365 (FR-R365-7, owner decision 1) — the breadcrumb already says where the page came from; the
+                    // line under the title carries only the count.
+                    subtitle = null,
                     showTypeFacet = dest.seedMediaKind == null,
                     showFacetBar = !dest.continueWatching,
                     displayName = dest.displayName,
@@ -2056,6 +2068,15 @@ fun RaviloApp(
                         // on in that season's order, as below.
                         val plan = dest.shufflePlan
                         val planNext = plan?.getOrNull(dest.shuffleAt + 1)
+                        // R365 (FR-R365-9) — Back from here lands on the episode the player moved on to, on the series page
+                        // below (only when that page is right below the player; a running shuffle keeps Shuffle).
+                        val below = stack.dropLast(1).lastOrNull() as? Dest.SeriesDetail
+                        val seriesStore = below?.let { storeRegistry["series:${it.displayName}:${it.itemId}"] as? SeriesDetailStore }
+                        if (seriesStore != null) moveOnReturnFocus(
+                            seriesStore.returnTarget.peek(), nextId,
+                            shuffleActive = plan != null && planNext != null && planNext.episodeId == nextId,
+                            seriesPageBelow = below.itemId == dest.seriesId,
+                        )?.let { seriesStore.returnTarget.remember(it) }
                         if (plan != null && planNext != null && planNext.episodeId == nextId) {
                             replaceTop(playerDestFor(planNext, dest.displayName, plan, dest.shuffleAt + 1))
                             return@navigate
@@ -2524,10 +2545,10 @@ fun RaviloApp(
             ProfileMenu(
                 apiClient = apiClient,
                 onClose = { profileMenuOpen = false },
-                onMyList = { profileMenuOpen = false; push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)) },
-                onSettings = { profileMenuOpen = false; push(Dest.Settings(currentDisplayName)) },
+                onMyList = { profileMenuOpen = false; val under = stack.last(); push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)); avatarReturnTo = under },
+                onSettings = { profileMenuOpen = false; val under = stack.last(); push(Dest.Settings(currentDisplayName)); if (!isDesktopPlatform) avatarReturnTo = under },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
-                onYourProfile = { profileMenuOpen = false; push(Dest.YourProfile(currentDisplayName)) },
+                onYourProfile = { profileMenuOpen = false; val under = stack.last(); push(Dest.YourProfile(currentDisplayName)); avatarReturnTo = under },
                 // R191 — mirrors onUnpair's shape but only one profile was revoked/forgotten; go to
                 // the picker if another cached profile remains, else all the way to Login.
                 onSignedOut = {

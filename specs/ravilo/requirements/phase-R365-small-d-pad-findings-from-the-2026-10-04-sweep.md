@@ -5,7 +5,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release
+`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release
 `1.49-11-g76f351b4`, = `main` for every screen below). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client only. The larger findings of the same
 sweep are **R361** (a title that is gone), **R362** (Movies/Series), **R363** (Skip Intro), **R364** (My List) and
 phase **269**'s 2026-10-04 amendment. Each item below is small and independent; they can be built and ticked one by one.
@@ -237,3 +237,46 @@ two for the owner.
 
 1. **The *From "…"* line under a browse page's title is dropped on every seeded browse page**; the count stays.
 2. **Back from a shuffle lands on Shuffle**, not on the episode that was playing.
+
+## Build notes (2026-10-04)
+
+All ten items built, with both owner decisions. Client only.
+1. **FR-1 (Search · Clear):** on a TV *Clear* is a focusable control (`SearchTags.CLEAR`, a ring + underline when
+   focused). Right from the field reaches it while the field is not editing and the query is not empty (while the
+   keyboard is up, Right stays the caret's); OK moves focus to the field first (without the keyboard) and then
+   clears; Left and Down go back to the field; Up and Right do nothing. The phone keeps R277's tap.
+2. **FR-2:** `DetailSynopsis` consumes Left/Right (`onLeft = {}`, `onRight = {}`) — film and series pages at once.
+3. **FR-3:** `SeasonPicker(onDownFromSelected)` — Down from the open season's pill focuses the card the rail opened
+   on (`railOpeningIndex`, reworded per review item 3) through an `entryCardFR` on that card, with the fixed retry
+   and a native fallback. The rail is keyed on the season, so a new season's `focusRestorer` starts empty. Down from
+   a pill that is only focused is unchanged.
+4. **FR-4:** Coming Soon's `FilterChips` row is a `focusGroup` whose `onEnter` lands on the selected chip.
+5. **FR-5:** `RaviloApp` remembers the page the profile menu pushed Settings / My List / Your profile from
+   (`avatarReturnTo`, cleared by any other push or reset) and provides `LocalAvatarReturn` to that page only while it
+   is the top again; its `AppBar` (TV) puts focus on the avatar two frames after arrival and consumes it once. Uses
+   R364's `avatarFocusRequester` / `APP_BAR_AVATAR_TAG`. Switch profile resets the stack (nothing needed).
+6. **FR-6 (the shipped `.onFailure` bug):** `ChannelScreen`'s Back-to-top calls `focusHeroElseBar(heroFR, barFR)`:
+   the hero (awaited a few frames after the scroll) if the collection has one, else the app bar.
+7. **FR-7 (owner decision 1):** `RaviloApp` passes `subtitle = null` to every seeded browse page; the line under the
+   title is the count only. `browse.from_row` is no longer used in `commonMain` (left in the tables).
+8. **FR-8:** `SeekBar` draws the handle (and its focus ring) at the scrub position while scrubbing, and a faint marker
+   at the real position on the played fill (the 4 dp ghost is gone). Own composable: the player's register count is
+   unchanged (234, checked in the final release build).
+9. **FR-9 (owner decision 2):** `SeriesReturnFocus.EpisodeId`, written from `onNavigateToEpisode` into the series
+   page's kept store only when that series page is right below the player, by `moveOnReturnFocus` (a running shuffle
+   keeps Shuffle; a rail pick leaves it → that episode); the page resolves it with `returnFocusFor(seasons, id)` (the
+   season holding it, a multi-episode file's card) — unknown → Play.
+10. **FR-10:** `HeroCarousel(initialHeroId, onActiveChanged)`; `HomeStore.heroId` / `ChannelStore.heroId` keep the
+    showing slide by id (`heroStartIndex`: the saved hero, else slide 1); auto-advance restarts from it.
+
+Tests (green): `SearchFocusTest` (+3: Right → Clear, OK clears to the field with no keyboard; Left/Down back, Up
+stays; no query → no Clear), `SeriesDetailFocusTest` (+3: FR-2, FR-3 → S02E03, FR-9 → the S02E05 card on Season 2;
+the existing shuffle return stays green), `DiscoverFocusTest` (+3: FR-4 All then Series; FR-5 with and without the
+flag), `ChannelBackToTopTest` (FR-6: no hero → the bar; a hero after two frames → the hero), `SeriesMoveOnReturnTest`
+(commonTest: `returnFocusFor`, the multi-episode card, unknown id, the write rule, `heroStartIndex`), `HomeFocusTest`
+(+1: 5th slide opened → Back shows it, hero focused). Source checks: no `.onFailure`/`.isSuccess` on `requestFocus()`
+left in `ravilo-ui/src` (one KDoc mention in a test); `browse.from_row` absent from `commonMain`.
+
+Device only: every item's walk on the Sony (FR-5's wiring through the real menu, FR-6 on a two-row collection
+without a hero, FR-7 on a See all / cast face / genre chip / Discover wall, FR-8 on the release build, FR-10's
+auto-advance resuming and a channel's hero).

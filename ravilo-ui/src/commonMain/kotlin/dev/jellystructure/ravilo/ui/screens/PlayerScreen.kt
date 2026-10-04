@@ -2531,15 +2531,17 @@ private fun SeekBar(
             drawRoundRect(grad, Offset(0f, barTop), Size(w * played, barHPx), corner)
         }
 
-        // Scrub ghost bar
+        // R365 (FR-R365-8) — while scrubbing, the HANDLE (with its focus ring) is where the video will jump to, and a
+        // faint marker stays at the real position on the played fill; the 4 dp "ghost" hairline it replaces was the
+        // only thing that moved, so the scrub looked like nothing happening.
         if (scrubbing) {
-            val ghostX = w * scrubFrac
-            drawRect(Color.White, Offset(ghostX - 2.dp.toPx(), y - 13.dp.toPx()), Size(4.dp.toPx(), 26.dp.toPx()))
+            val realX = w * played
+            drawRect(Color.White.copy(alpha = 0.55f), Offset(realX - 1.5.dp.toPx(), y - 9.dp.toPx()), Size(3.dp.toPx(), 18.dp.toPx()))
         }
 
         // Handle
         val handleR = if (focused) 13.dp.toPx() else 10.dp.toPx()
-        val handleX = w * played
+        val handleX = w * (if (scrubbing) scrubFrac else played)
         if (focused) {
             drawCircle(ringColor.copy(alpha = 0.45f), handleR + 6.dp.toPx(), Offset(handleX, y))
         }

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
@@ -204,7 +205,7 @@ private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>, lang: Stri
  *  in-player episode picker never shows one entry per contained episode of the same file — bug fix:
  *  it used to map the flat episode list 1:1, so a 3-episode file produced 3 duplicate-looking picker
  *  entries all titled "Episodes 1-3", none of which reflected which file was actually playing. */
-private fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
+internal fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
     // Bug fix (auto-play-next loop): grouping is by FILE, so two different files that both claim the same
     // episode (a library folder extracted twice, or a mislabelled release) used to become two rail slots
     // carrying the SAME id — the "next" group after episode 1 was episode 1 again, the credits card
@@ -334,12 +335,16 @@ internal fun SeriesDetailLoaded(
     // scrolled into view — first paint is hero-only (supersedes R107's timed defer).
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current   // R365 (FR-R365-3)
     val density = LocalDensity.current
 
     // R350 (FR-R350-2) — the control that started playback, read once as the page is rebuilt on the way back.
     // Every control brings its season back with it — Play (and Start over) too, as Shuffle does (amended 2026-10-02:
     // Play used to follow the opening rule and land at the top of the page).
-    val returnFocus = remember(detail.card.id) { returnTarget?.take() }
+    // R365 (FR-R365-9) — an episode the player moved on to resolves to its season and card here (else, unknown: Play).
+    val returnFocus = remember(detail.card.id) {
+        returnTarget?.take()?.let { f -> if (f is SeriesReturnFocus.EpisodeId) returnFocusFor(detail.seasons, f.episodeId) else f }
+    }
     val returnSeason = returnFocus?.seasonIdx?.takeIf { it in detail.seasons.indices }
     // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
     var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(returnSeason ?: 0) }
@@ -425,6 +430,15 @@ internal fun SeriesDetailLoaded(
         if (!overlayLoaded) return@LaunchedEffect
         epRowState.requestScrollToItem(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId))
     }
+    // R365 (FR-R365-3) — Down from the open season's pill lands on the card the rail opened on (`railOpeningIndex`:
+    // the primary episode when this season holds it, else the first unwatched, else the start), through a requester
+    // on that card; never the card that merely sits under the pill.
+    val entryCardFR = remember { FocusRequester() }
+    val entryCardId = railGroups.getOrNull(railOpeningIndex(railGroups, overlay, resumeEpId, returnCardId))?.first()?.id
+    val focusEntryCard: () -> Unit = {
+        requestFocusRetryingOrMoveNative(scope, if (entryCardId != null && entryCardId == returnCardId) returnCardFR else entryCardFR,
+            focusManager, androidx.compose.ui.focus.FocusDirection.Down)
+    }
 
     val playFR = remember { FocusRequester() }
     val genreFR = remember { FocusRequester() }   // R221 — first (lead) genre chip
@@ -472,7 +486,7 @@ internal fun SeriesDetailLoaded(
                     requestFocusRetrying(scope, playFR)
                 }
             } ?: focusPlay()
-            null -> focusPlay()
+            is SeriesReturnFocus.EpisodeId, null -> focusPlay()   // EpisodeId is resolved above; unknown → Play
         }
     }
 
@@ -862,6 +876,7 @@ internal fun SeriesDetailLoaded(
                         shuffleLabel = if (pillShuffle) str("detail.shuffle") else null,
                         onShuffle = if (pillShuffle) startShuffle else null,
                         shuffleFocusRequester = shuffleFR,
+                        onDownFromSelected = focusEntryCard,   // R365 (FR-R365-3)
                         modifier = Modifier.onKeyEvent(upToHero),
                     )
                     Spacer(Modifier.height(4.dp))
@@ -898,6 +913,9 @@ internal fun SeriesDetailLoaded(
                     // R350 (FR-R350-2/3) — that scroll now runs at the page level (see `railOpenFor`), against the
                     // hoisted [epRowState], so this item leaving and re-entering composition never re-runs it.
                     Spacer(Modifier.height(raviloRowHeadPadB))
+                    // R365 (FR-R365-3) — keyed on the season, so a new season's rail starts with no saved card (the
+                    // restorer kept the previous season's and could redirect a request aimed at a child, R350 FR-1).
+                    androidx.compose.runtime.key(selectedSeasonIdx) {
                     ArrowRow(
                         state = epRowState,
                         // R296 — the single-season Up bridge to the hero lives on each card (cardUp below),
@@ -925,7 +943,7 @@ internal fun SeriesDetailLoaded(
                                     Box(cardUp.testTag(SeriesDetailTags.card(group.first().id))) {
                                         MultiEpisodeCard(
                                             episodes = group,
-                                            focusRequester = if (group.first().id == returnCardId) returnCardFR else null,   // R350
+                                            focusRequester = if (group.first().id == returnCardId) returnCardFR else if (group.first().id == entryCardId) entryCardFR else null,   // R350 / R365
                                             isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
                                             playstateOverlay = overlay,
                                             seasonNumber = currentSeason?.index,   // R350 (FR-R350-10)
@@ -942,7 +960,7 @@ internal fun SeriesDetailLoaded(
                                     Box(cardUp.testTag(SeriesDetailTags.card(ep.id))) {
                                         EpisodeCard(
                                             episode = ep,
-                                            focusRequester = if (ep.id == returnCardId) returnCardFR else null,   // R350 (FR-R350-2)
+                                            focusRequester = if (ep.id == returnCardId) returnCardFR else if (ep.id == entryCardId) entryCardFR else null,   // R350 (FR-R350-2) / R365
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
                                             isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
                                             playstateOverride = overlay[ep.id],
@@ -956,6 +974,7 @@ internal fun SeriesDetailLoaded(
                             }
                         }
                     }
+                    } // key(selectedSeasonIdx), R365
                 }
             }
 

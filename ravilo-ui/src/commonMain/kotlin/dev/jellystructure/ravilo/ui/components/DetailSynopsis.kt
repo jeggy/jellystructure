@@ -68,6 +68,9 @@ fun DetailSynopsis(
             onBlurred = { focused = false },
             onUp = onUp,
             onDown = onDown,
+            // R365 (FR-R365-2) — Left/Right stay on the page: the native search found the app bar's Search above-right.
+            onLeft = {},
+            onRight = {},
             onSelect = { if (truncated || expanded) expanded = !expanded },
         ),
     ) {

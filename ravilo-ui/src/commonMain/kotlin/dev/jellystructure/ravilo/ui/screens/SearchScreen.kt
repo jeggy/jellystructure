@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import dev.jellystructure.ravilo.ui.focus.fallbackIndex
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowGap
@@ -89,6 +90,7 @@ import kotlinx.coroutines.launch
 /** R350 — test tags. */
 internal object SearchTags {
     const val FIELD = "search-field"
+    const val CLEAR = "search-clear"   // R365 (FR-R365-1)
 }
 
 sealed class SearchState {
@@ -208,6 +210,7 @@ fun SearchScreen(
 
     val gridFR = remember { FocusRequester() }
     val textFieldFR = remember { FocusRequester() }
+    val clearFR = remember { FocusRequester() }   // R365 (FR-R365-1) — Clear, reachable on a TV
     val returnFR = remember { FocusRequester() }
     var focusedGridIdx by remember { mutableIntStateOf(returnIndex ?: 0) }
     // Opened scrolled to the returning tile's row, so it is on screen (and composed) from the first frame.
@@ -310,12 +313,28 @@ fun SearchScreen(
                 // this screen — reachable by Up from the field, ahead of whatever the viewer expects.
                 // The TV's search flow is this phase's own non-goal; a focusable header control there
                 // is a change someone should make deliberately, with a TV in front of them.
+                // R365 (FR-R365-1) — on a TV, Clear is now a focusable control, reached by Right from the field (not
+                // by Up, so it is never ahead of what the viewer expects): OK moves focus to the field FIRST (Clear
+                // leaves the composition once the query is empty) and then clears; Left or Down go back to the field.
+                var clearFocused by rememberFocusVisual()
+                val backToField: () -> Unit = { focusInput(false) }
                 Text(
                     str("search.clear"),
                     color = colors.accent,
                     fontSize = 16.sp,
                     fontFamily = sora,
-                    modifier = if (!handset) Modifier else Modifier
+                    textDecoration = if (clearFocused) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+                    modifier = if (!handset) Modifier
+                        .testTag(SearchTags.CLEAR)
+                        .then(if (clearFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .dpadFocusable(
+                            focusRequester = clearFR,
+                            onFocused = { clearFocused = true }, onBlurred = { clearFocused = false },
+                            onSelect = { focusInput(false); query = ""; store.onQuery("") },
+                            onLeft = backToField, onDown = backToField, onUp = {}, onRight = {},
+                        )
+                        .padding(vertical = 4.dp, horizontal = 8.dp)
+                    else Modifier
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -352,6 +371,12 @@ fun SearchScreen(
                     // D-pad Down moves focus into the results grid and hides the IME
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        // R365 (FR-R365-1) — Right from the field (not editing: while the keyboard is up, Right is
+                        // the caret's) reaches Clear on a TV.
+                        if (ev.key == Key.DirectionRight && !handset && edit.readOnly && query.isNotEmpty()) {
+                            clearFR.tryRequestFocus()
+                            return@onPreviewKeyEvent true
+                        }
                         if (ev.key == Key.DirectionDown && items.isNotEmpty()) {
                             inGrid = true
                             scope.launch { runCatching { gridFR.requestFocus() } }

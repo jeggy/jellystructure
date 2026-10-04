@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import dev.jellystructure.ravilo.ui.focus.resolveReturn
 import dev.jellystructure.ravilo.ui.focus.tryRequestFocus
 import androidx.compose.runtime.withFrameNanos
@@ -77,6 +78,8 @@ class ChannelStore(private val apiClient: TvApiClient) {
     var focusItemKey: String? = null
     // R361 (FR-R361-5) — where they were at select time, for a return to a title (or a row) that is gone.
     var focusRowIndex: Int = 0
+    /** R365 (FR-R365-10) — the hero slide showing, as on Home. */
+    var heroId: String? = null
     var focusItemIndex: Int = 0
 
     /** R139 / R361 — a tile was opened: remember it, and where it was, for the Back-return. */
@@ -180,9 +183,10 @@ fun ChannelScreen(
                 onBackToTop = {
                     scope.launch {
                         runCatching { listState.animateScrollToItem(0) }
-                        // heroFR throws if not attached (no hero configured) — fall back to bar
-                        runCatching { heroFR.requestFocus() }
-                            .onFailure { runCatching { channelBarFR.requestFocus() } }
+                        // R365 (FR-R365-6) — the hero if the collection has one, else the app bar. In Compose 1.9 an
+                        // unattached requester returns false rather than throwing, so the old `.onFailure` never
+                        // ran and focus stayed on the half-hidden tile of the row below.
+                        focusHeroElseBar(heroFR, channelBarFR)
                     }
                 },
             ),
@@ -275,6 +279,8 @@ fun ChannelScreen(
                                             // center, not index 0 (same off-by-one confirmed live on Home's
                                             // "On Now" row) — bridge explicitly to the real first tile.
                                             onDown = { runCatching { firstTileFR.requestFocus() } },
+                                            initialHeroId = store.heroId,   // R365 (FR-R365-10)
+                                            onActiveChanged = { store.heroId = it },
                                         )
                                     }
                                 }
@@ -367,4 +373,12 @@ fun ChannelScreen(
             )
         }
     }
+}
+
+/**
+ * R365 (FR-R365-6) — Back-to-top's focus on a collection page: the hero (awaited for a few frames, since the scroll to
+ * the top has just brought it back into composition), else the app bar.
+ */
+internal suspend fun focusHeroElseBar(heroFR: androidx.compose.ui.focus.FocusRequester, barFR: androidx.compose.ui.focus.FocusRequester) {
+    if (!heroFR.requestFocusAwaiting(maxFrames = 5)) barFR.requestFocusAwaiting()
 }

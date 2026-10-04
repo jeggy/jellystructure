@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -253,7 +255,15 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
     val colors = RaviloTheme.colors
     val chips = listOf(UpcomingFilter.ALL to "up.all", UpcomingFilter.SERIES to "up.series", UpcomingFilter.MOVIES to "up.movies")
     val frs = remember { chips.map { FocusRequester() } }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val activeIdx = chips.indexOfFirst { it.first == active }.coerceAtLeast(0)
+    // R365 (FR-R365-4) — any entry into the row (Down from the tab strip, Up from the date rail) lands on the SELECTED
+    // chip, not the one nearest the key (R350 FR-5's rule for the tab strip, applied here). Not lazy: always attached.
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .focusProperties { onEnter = { runCatching { frs[activeIdx].requestFocus() } } }
+            .focusGroup(),
+    ) {
         chips.forEachIndexed { i, (kind, labelKey) ->
             val isActive = active == kind
             var focused by rememberFocusVisual()

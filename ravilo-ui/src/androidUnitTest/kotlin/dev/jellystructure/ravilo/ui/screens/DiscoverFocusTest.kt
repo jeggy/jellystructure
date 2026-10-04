@@ -1,5 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import kotlin.test.assertEquals
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -105,5 +108,62 @@ class DiscoverFocusTest {
         rule.mainClock.advanceTimeBy(500)
         rule.waitForIdle()
         focusedWithText("Network 4")
+    }
+
+    // ── R365 ──
+
+    private fun renderComingSoon(avatarReturn: (() -> Unit)? = null) {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        val feed = dev.jellystructure.shared.tv.UpcomingFeed(enabled = true, items = (1..6).map { i ->
+            dev.jellystructure.shared.tv.UpcomingItem(id = "u$i", title = "Stand-in Arrival $i", date = "2026-10-1$i")
+        })
+        val api = fakeTvApiClient { path ->
+            if (path == "/api/tv/upcoming") dev.jellystructure.shared.tv.RaviloWireJson.encodeToString(dev.jellystructure.shared.tv.UpcomingFeed.serializer(), feed) else null
+        }
+        val upcoming = UpcomingStore(api)
+        rule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalAvatarReturn provides avatarReturn) {
+                DiscoverScreen(
+                    segment = DiscoverSegment.COMING_SOON,
+                    segments = listOf(DiscoverSegment.COMING_SOON, DiscoverSegment.NETWORKS),
+                    onSegment = {}, focusSegmentOnEntry = false, onFocusSegmentConsumed = {},
+                    displayName = "Olivar", onNavSelect = {}, onProfile = {}, onSearch = {},
+                    upcomingStore = upcoming, onUpcomingItemSelect = {}, requestStore = null, onEntrySelect = { _, _ -> },
+                    onSearchSeerr = {}, taxonomyStore = TaxonomyStore { facets }, onTileSelect = { _, _, _ -> },
+                )
+            }
+        }
+        rule.waitUntil(5_000) { rule.onAllNodes(hasText("Stand-in Arrival 1"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+    }
+
+    @Test fun `R365 FR-4 — Down from the tab strip lands on the selected chip, All and then Series`() {
+        renderComingSoon()
+        focusedWithText("Discover")
+        press(Key.DirectionDown)
+        focusedWithText("Coming Soon")
+        press(Key.DirectionDown)
+        focusedWithText("All")                       // not Movies, the chip nearest the tab
+        press(Key.DirectionRight)
+        press(Key.Enter)                             // select Series
+        focusedWithText("Series")
+        press(Key.DirectionUp)
+        focusedWithText("Coming Soon")
+        press(Key.DirectionDown)
+        focusedWithText("Series")
+    }
+
+    @Test fun `R365 FR-5 — arriving with the return-to-avatar flag focuses the avatar and consumes the flag once`() {
+        var consumed = 0
+        renderComingSoon(avatarReturn = { consumed++ })
+        rule.mainClock.advanceTimeBy(200)
+        rule.waitForIdle()
+        rule.onNodeWithTag(dev.jellystructure.ravilo.ui.components.APP_BAR_AVATAR_TAG, useUnmergedTree = true).assertIsFocused()
+        assertEquals(1, consumed)
+    }
+
+    @Test fun `R365 FR-5 — without the flag the active tab is focused`() {
+        renderComingSoon()
+        focusedWithText("Discover")
     }
 }
