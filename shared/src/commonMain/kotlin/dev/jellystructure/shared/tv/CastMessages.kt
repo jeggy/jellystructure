@@ -99,6 +99,23 @@ data class CastLoadData(
     @SerialName("session_id") val sessionId: String? = null,
 )
 
+/**
+ * R371 (found on the Pixel 9 Pro, 10:38:33) — Cast moves a session to another endpoint when a speaker group shrinks
+ * ("Endpoint switch"; stream transfer): the receiver playing it is asked for its state, and a new instance resumes from
+ * it with a LOAD. What a Ravilo receiver hands on: what plays now — the queue, the song, the place — and no hand-off code
+ * (the destination is signed in already on that device). Without it the resumed LOAD had no songs, failed, and the
+ * receiver went idle and closed on both speakers.
+ */
+fun castTransferState(current: CastLoadData, positionMs: Long): CastLoadData =
+    current.copy(code = "", positionMs = positionMs.coerceAtLeast(0L), startOver = false)
+
+/** R371 — the LOAD a resumed session runs: the handed-on state, at the place Cast says the media had reached. */
+fun castResumedLoad(state: CastLoadData?, currentTimeSec: Double?): CastLoadData? {
+    val s = state ?: return null
+    val at = currentTimeSec?.takeIf { it > 0.0 }?.let { (it * 1000.0).toLong() } ?: return s
+    return s.copy(positionMs = at)
+}
+
 /** A track the receiver reports back so the phone's picker can render it (R180/R195 shape). */
 @Serializable
 data class CastTrack(

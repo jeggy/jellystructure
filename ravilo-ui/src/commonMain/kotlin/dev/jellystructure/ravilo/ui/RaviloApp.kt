@@ -1330,6 +1330,7 @@ fun RaviloApp(
                     val room = c.castDeviceId
                     dev.jellystructure.ravilo.ui.seams.sessionLog("R371: ${c.op} $room for ${env.sessionId} (from ${env.source}; link ${castController.sender.link.value}, on ${castController.connectedDeviceKey()}, place ${env.placeCastDeviceId})")
                     castController.lastRoomOpAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                    env.placeCastDeviceId?.let { castController.lastPlaceCastDeviceId = it }
                     if (g == null || room == null) { dev.jellystructure.ravilo.ui.seams.sessionLog("R371: no routing controller for ${c.op}"); return@collect }
                     val effectScope = this@LaunchedEffect
                     val apply = {
@@ -1424,7 +1425,9 @@ fun RaviloApp(
                 // R371 (found on the Pixel 9 Pro, 10:25:37) — a session that dropped right after a room op (Play services'
                 // Cast provider died) while the receiver plays on: rejoin it, rather than leave it with no controller.
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE && rejoinJob?.isActive != true) {
-                    val key = castController.lastLinkedKey
+                    // The group's leader, as the server names the session's place (the link's own name reads *Stue + 1* in a
+                    // group), else the device the link was last on.
+                    val key = castController.lastPlaceCastDeviceId ?: castController.lastLinkedKey
                     val since = castController.lastRoomOpAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it }
                     val live = dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions.any { s ->
                         s.state != "ended" && (s.target.castDeviceId == key || s.rooms.any { it.castDeviceId == key })
@@ -1434,9 +1437,20 @@ fun RaviloApp(
                         dev.jellystructure.ravilo.ui.seams.sessionLog("R371: the session dropped ${since} ms after a room op; looking for $key to rejoin")
                         val joined = kotlinx.coroutines.withTimeoutOrNull(dev.jellystructure.ravilo.ui.sessions.REJOIN_SEARCH_MS) {
                             while (!castController.rejoin(key!!)) kotlinx.coroutines.delay(500)
+                            castController.sender.link.first { it == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED }
                             true
                         }
-                        if (joined == null) dev.jellystructure.ravilo.ui.seams.sessionLog("R371: $key not found in ${dev.jellystructure.ravilo.ui.sessions.REJOIN_SEARCH_MS / 1000} s; the speaker plays on without this app")
+                        if (joined == null) { dev.jellystructure.ravilo.ui.seams.sessionLog("R371: $key not found in ${dev.jellystructure.ravilo.ui.sessions.REJOIN_SEARCH_MS / 1000} s; the speaker plays on without this app"); return@launch }
+                        // R371 (found on the Pixel 9 Pro, 10:38:33) — the receiver may have closed with the session (a group that
+                        // shrank before receivers carried their state across): if nothing plays there after the join, the
+                        // music this device took back goes there again from its place — a move, not a loss.
+                        val playing = kotlinx.coroutines.withTimeoutOrNull(4_000) {
+                            castController.sender.status.first { it?.music == true && it.loaded && !it.ended }
+                        }
+                        if (playing == null) {
+                            val sent = dev.jellystructure.ravilo.ui.music.MusicCast.resumeOnDevice()
+                            dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rejoined $key with nothing playing; ${if (sent) "sending the music again from its place" else "nothing to send"}")
+                        } else dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rejoined $key; it plays on")
                     }
                 }
                 // R372 — a move's own LOAD: this app keeps the link (it is the mover).

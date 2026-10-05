@@ -373,6 +373,8 @@ class CastController(
     /** R371 — when this app last acted on its group's rooms, and the Cast device its link was last on (for a rejoin). */
     @kotlin.concurrent.Volatile var lastRoomOpAtMs: Long? = null
     @kotlin.concurrent.Volatile var lastLinkedKey: String? = null
+    /** The session's place (its group's leader) as the server named it with the last room op. */
+    @kotlin.concurrent.Volatile var lastPlaceCastDeviceId: String? = null
 
     /**
      * R371 (found on the Pixel 9 Pro, 10:25:37) — select [castDeviceId] again after the session dropped under a room op:

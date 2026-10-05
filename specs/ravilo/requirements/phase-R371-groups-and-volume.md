@@ -381,6 +381,18 @@ provider (seen once, re-adding a room that had just left). Ravilo reports what t
 reads, refuses nothing that Play services offers, and rejoins a session such a crash dropped; a group that Play services
 itself dissolves is not rebuilt. A display (Nest Hub) never joins a speaker group (round 2).
 
+**Removing a room, round 5 (2026-10-05):** deselecting Gæsteværelse from *Stue + Gæsteværelse* made Play services move
+the session to another endpoint (`setPlaybackDevicesForSession` → `Endpoint switch status code 2310` →
+`onApplicationDisconnected`): Cast's stream transfer, which asks the playing receiver for its state and resumes a new
+instance from it. Ravilo's receiver handed on nothing of its own, the resumed LOAD carried no songs and failed, and the
+receiver went idle and closed on both speakers; the phone's link sat in RECONNECTING and then ended. Now the receiver
+answers `SESSION_STATE` with its queue, song and place (`castTransferState`) and runs `RESUME_SESSION` as a LOAD of that
+state at the place Cast reports (`castResumedLoad`) — on the device it is already signed in on, no hand-off code. And on
+the phone, a session that drops within 15 s of a room op is rejoined on the group's leader (the place the server names;
+a group's link name reads *Stue + 1*, now resolved to its leader); if nothing plays there 4 s after the join, the music
+the phone took back is sent there again from its place (a move, not a loss). Tests: `CastTransferStateTest`,
+`SpeakerRoundTwoTest`. The receiver ships with the backend (`/cast/`); only the speakers can confirm the transfer.
+
 **Main-thread audit (bug 15):** every `CastRoute.select()` (move, start, relay, room-op join, rejoin) reaches Android's
 `selectRoute`, which re-posts to the main looper (ebb156cf); Cast SDK calls go through `onMain`; the room ops, the members
 poll and the leftover release run in `LaunchedEffect` (main); MediaRouter2 calls log if they are ever made off the main

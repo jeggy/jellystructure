@@ -175,6 +175,7 @@ class SpeakerRoundTwoTest {
             CastRoute("r-guest", "Guest room", selected = false, select = {}, kind = "speaker", deviceKey = "c-guest"),
         )
         assertEquals("c-guest", linkedDeviceKeyOf(routes, "Guest room"))
+        assertEquals("c-guest", linkedDeviceKeyOf(routes, "Guest room + 1"), "a group reads *{leader} + N* (10:38:33: the link was on null)")
         assertNull(linkedDeviceKeyOf(routes.take(1), "Guest room"))
     }
 }

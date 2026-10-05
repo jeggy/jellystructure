@@ -15,6 +15,8 @@ import dev.jellystructure.shared.tv.CastReceiverMessage
 import dev.jellystructure.shared.tv.CastTrackItem
 import dev.jellystructure.shared.tv.CastNext
 import dev.jellystructure.shared.tv.castNextIndex
+import dev.jellystructure.shared.tv.castResumedLoad
+import dev.jellystructure.shared.tv.castTransferState
 import dev.jellystructure.shared.tv.castPreviousWaits
 import dev.jellystructure.shared.tv.castQueueAttachAll
 import dev.jellystructure.shared.tv.castQueueIfFits
@@ -284,6 +286,35 @@ private class Receiver {
             val stop: dynamic = messages.MessageType.STOP
             if (stop != null) playerManager.setMessageInterceptor(stop) { request: dynamic -> onSenderStop(); request }
         }.onFailure { console.warn("ravilo-cast: no interceptor for STOP on this framework (${it.message})") }
+        // R371 (found on the Pixel 9 Pro, 10:38:33) — a speaker group that shrinks moves the session to another endpoint
+        // (Cast's stream transfer, "Endpoint switch"): this instance is asked for its state (SESSION_STATE) and a new one
+        // resumes from it (RESUME_SESSION, then a LOAD through [intercept]). Ravilo's queue and place ride in the state's
+        // customData; without them the resumed LOAD had no songs, failed, and the receiver went idle and closed on both
+        // speakers. Each registered on its own: a framework build without them costs only the transfer.
+        runCatching {
+            val stateType: dynamic = messages.MessageType.SESSION_STATE
+            if (stateType != null) playerManager.setMessageInterceptor(stateType) { sessionState: dynamic ->
+                val d = current
+                if (d != null) sessionState.customData = JSON.parse(json.encodeToString(CastLoadData.serializer(), castTransferState(d, positionMs)))
+                note("session state for a transfer: ${d?.itemId} at $positionMs ms, ${d?.tracks?.size ?: 0} songs")
+                sessionState
+            }
+        }.onFailure { console.warn("ravilo-cast: no interceptor for SESSION_STATE on this framework (${it.message})") }
+        runCatching {
+            val resumeType: dynamic = messages.MessageType.RESUME_SESSION
+            if (resumeType != null) playerManager.setMessageInterceptor(resumeType) { request: dynamic ->
+                val load: dynamic = request.sessionState?.loadRequestData
+                val handed = runCatching { json.decodeFromString(CastLoadData.serializer(), JSON.stringify(request.sessionState?.customData) as String) }.getOrNull()
+                val resumed = castResumedLoad(handed, load?.currentTime as? Double)
+                if (resumed != null && load != null) {
+                    val custom: dynamic = JSON.parse<dynamic>(json.encodeToString(CastLoadData.serializer(), resumed))
+                    load.customData = custom
+                    if (load.media != null) load.media.customData = custom
+                }
+                note("resume after a transfer: ${resumed?.itemId} at ${resumed?.positionMs} ms, ${resumed?.tracks?.size ?: 0} songs")
+                request
+            }
+        }.onFailure { console.warn("ravilo-cast: no interceptor for RESUME_SESSION on this framework (${it.message})") }
         // FR-286-5 — the display's own remote: media keys come as commands (the interceptors above), the D-pad
         // as key events, and a tap on the hub as a click. None of it exists on a speaker (no DOM, no remote).
         document.addEventListener("keydown", { ev -> onKey(ev as KeyboardEvent) })

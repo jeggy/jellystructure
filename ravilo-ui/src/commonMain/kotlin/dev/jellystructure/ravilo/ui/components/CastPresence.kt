@@ -81,4 +81,6 @@ fun rememberCastIconShown(cast: CastController?, music: Boolean): Boolean {
 /** R370 — the Cast device a link named [deviceName] is on: the route of that name (never a group), else the selected one. */
 fun linkedDeviceKeyOf(routes: List<CastRoute>, deviceName: String?): String? =
     deviceName?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n }?.deviceKey }
+        // A speaker group reads *Stue + 1*: its leader is the room named first.
+        ?: deviceName?.takeIf { " + " in it }?.substringBefore(" + ")?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n }?.deviceKey }
         ?: routes.firstOrNull { it.selected && it.kind != "group" }?.deviceKey
