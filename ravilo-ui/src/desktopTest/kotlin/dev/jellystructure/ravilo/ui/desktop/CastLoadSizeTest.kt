@@ -5,6 +5,7 @@ import dev.jellystructure.ravilo.castv2.CastNamespaces
 import dev.jellystructure.ravilo.castv2.DEFAULT_SENDER
 import dev.jellystructure.ravilo.castv2.castFrameBytes
 import dev.jellystructure.ravilo.castv2.castLoadBody
+import dev.jellystructure.ravilo.ui.seams.castLoadMedia
 import dev.jellystructure.shared.tv.CAST_MESSAGE_BUDGET_BYTES
 import dev.jellystructure.shared.tv.CastCommand
 import dev.jellystructure.shared.tv.CastLoadData
