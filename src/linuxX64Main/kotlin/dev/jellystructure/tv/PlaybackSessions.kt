@@ -272,7 +272,9 @@ internal fun toView(
 internal fun placeName(s: SessionRec): String {
     val rooms = s.options.rooms
     return when {
-        rooms.size <= 1 -> s.targetName
+        rooms.isEmpty() -> s.targetName
+        // A Cast receiver can name itself after the group it launched in; the rooms the link holder reports are the truth.
+        rooms.size == 1 -> rooms[0].name
         rooms.size == 2 -> "${rooms[0].name} + ${rooms[1].name}"
         else -> "${rooms[0].name} + ${rooms.size - 1}"
     }
@@ -297,7 +299,11 @@ internal const val MOVE_REWIND_MS = 2_000L
 internal fun moveStartMs(positionMs: Long): Long = (positionMs - MOVE_REWIND_MS).coerceAtLeast(0L)
 
 /** R372 — a move in flight: the place it goes to (a device id, or `cast:<id>` until the receiver redeems). */
-internal data class PendingMove(val sessionId: String, val targetKey: String, val targetName: String, val deadline: Long, val fromTargetId: String)
+internal data class PendingMove(
+    val sessionId: String, val targetKey: String, val targetName: String, val deadline: Long, val fromTargetId: String,
+    /** The Cast device a move onto `cast:<id>` goes to; [targetKey] becomes the receiver once it redeems. */
+    val castDeviceId: String? = targetKey.takeIf { it.startsWith("cast:") }?.removePrefix("cast:"),
+)
 
 /** R370 (review item 8) — a load with no `starting` / `playing` report by then fails. */
 internal const val SESSION_LOAD_TIMEOUT_MS = 10_000L
@@ -534,11 +540,19 @@ class PlaybackSessions(
                 val cur = sessions[m.sessionId]?.takeIf { it.live }
                 pendingMoves.remove(m.sessionId)
                 if (cur != null) {
+                    // A move onto a speaker that was in the old place's group (found on the Pixel 9 Pro, 2026-10-05: remove
+                    // the first room of Stue + Gæsteværelse): the receiver came up named after the group, and the row kept
+                    // the old Cast device, so Play on… listed Stue as busy and Gæsteværelse as free. The new place is the Cast
+                    // device the move named, under the name it was picked by, and the old group's rooms stay behind (the app
+                    // holding the link reports the new place's rooms).
+                    val cast = device.kind == "cast"
                     val next = cur.copy(
-                        targetId = device.deviceId, targetName = placeNameOf(device), targetKind = if (device.kind == "cast") "cast" else "app",
+                        targetId = device.deviceId, targetKind = if (cast) "cast" else "app",
+                        targetName = if (m.castDeviceId != null && m.targetName != m.castDeviceId) m.targetName else placeNameOf(device),
+                        castDeviceId = if (cast) receiverCastDevice[device.deviceId] ?: m.castDeviceId ?: cur.castDeviceId else null,
                         itemId = itemId, positionMs = positionMs, positionAt = t, state = SessionState.STARTING, movingTo = null, moveFailed = null,
                         offline = false, reconnecting = false, stopHoldUntil = null, loadDeadline = null, jellyfinPlaySessionId = jellyfinPlaySessionId,
-                        options = cur.options.withPlan(plan).copy(directPlay = directPlay), revision = cur.revision + 1, updatedAt = t,
+                        options = cur.options.withPlan(plan).copy(directPlay = directPlay, rooms = emptyList()), revision = cur.revision + 1, updatedAt = t,
                     )
                     sessions[next.id] = next
                     next.persist()

@@ -293,6 +293,44 @@ class PlaybackSessionsTest {
         assertEquals(1, s.all().count { it.live })
     }
 
+    @Test fun `a move onto a speaker from its group takes that speaker's id and name and leaves the group's rooms`() = runBlocking {
+        // Found on the Pixel 9 Pro (2026-10-05): Stue + Gæsteværelse, remove Stue. The receiver on Gæsteværelse came up
+        // named after the group, and the row kept Stue's Cast device: Play on… listed Stue as busy, Gæsteværelse as free.
+        val s = service()
+        s.stopPlace = { _, _ -> }
+        val phone = device("pixel")
+        val stue = device("rx-stue", kind = "cast")
+        s.onReceiverRedeemed(stue, "pixel", "c-stue", null)
+        val id = s.onStart(stue, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onMembersReport(phone, dev.jellystructure.shared.tv.SessionMembersReport("song-1",
+            listOf(SessionRoom("c-stue", "Lounge"), SessionRoom("c-guest", "Guest room"))))
+        assertEquals("Lounge + Guest room", placeName(s.get(id)!!))
+        s.beginMove(id, "cast:c-guest", "Guest room")
+        val guest = device("rx-guest", kind = "cast").copy(displayName = "Lounge + Guest room")
+        s.onReceiverRedeemed(guest, "pixel", "c-guest", id)
+        assertEquals(id, s.onStart(guest, "song-1", 40_000, kindHint = SessionKind.MUSIC))
+        val r = s.get(id)!!
+        assertEquals("rx-guest", r.targetId)
+        assertEquals("c-guest", r.castDeviceId)
+        assertEquals("Guest room", placeName(r))
+        assertTrue(r.options.rooms.isEmpty(), "the old group's rooms stay behind")
+        // The link holder's report of the new place's one room names it too.
+        s.onMembersReport(phone, dev.jellystructure.shared.tv.SessionMembersReport("song-1", listOf(SessionRoom("c-guest", "Guest room"))))
+        assertEquals("Guest room", placeName(s.get(id)!!))
+    }
+
+    @Test fun `a move from a speaker to the phone clears the Cast device`() = runBlocking {
+        val s = service()
+        s.stopPlace = { _, _ -> }
+        val phone = device("pixel")
+        val stue = device("rx-stue", kind = "cast")
+        s.onReceiverRedeemed(stue, "pixel", "c-stue", null)
+        val id = s.onStart(stue, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.beginMove(id, "pixel", "Pixel")
+        assertEquals(id, s.onStart(phone, "song-1", 10_000, kindHint = SessionKind.MUSIC))
+        assertNull(s.get(id)!!.castDeviceId)
+    }
+
     @Test fun `a move with no report in 10 s fails and the old place carries on`() = runBlocking {
         val s = service()
         val pixel = device("pixel")

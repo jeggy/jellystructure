@@ -147,6 +147,7 @@ class PlaybackSessionRulesTest {
     @Test fun `the place line names the rooms in the order they joined`() {
         val rooms = listOf(dev.jellystructure.shared.tv.SessionRoom("a", "Living room"), dev.jellystructure.shared.tv.SessionRoom("b", "Office"), dev.jellystructure.shared.tv.SessionRoom("c", "Kitchen"))
         assertEquals("Living room", placeName(rec()))
+        assertEquals("Office", placeName(rec().copy(options = SessionOptions(rooms = rooms.drop(1).take(1)))))
         assertEquals("Living room + Office", placeName(rec().copy(options = SessionOptions(rooms = rooms.take(2)))))
         assertEquals("Living room + 2", placeName(rec().copy(options = SessionOptions(rooms = rooms))))
     }
