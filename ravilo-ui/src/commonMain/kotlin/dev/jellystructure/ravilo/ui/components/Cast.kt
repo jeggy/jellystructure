@@ -233,6 +233,9 @@ class CastController(
      * the glyph never showed anything. Null = closed; otherwise what to start on a tapped screen.
      */
     val sheet = MutableStateFlow<SheetRequest?>(null)
+    /** FR-R245-8 — the remote's audio & subtitles sheet; drawn at the root ([dev.jellystructure.ravilo.ui.screens.CastTrackSheetHost])
+     *  so it sits above the bottom bar (owner, 2026-10-05: its foot was behind the bar since R278 put the bar on the remote). */
+    val trackSheetOpen = MutableStateFlow(false)
     /** [music] — R324 (FR-R324-1): the music-mode sheet, titled *Play on…*, listing the audio routes first. */
     fun openSheet(playContext: ScreenPlayContext? = null, music: Boolean = false) {
         if (dev.jellystructure.ravilo.ui.isTvPlatform) return   // a TV never casts (owner, 2026-10-05; rememberCastIconShown)

@@ -2980,6 +2980,8 @@ fun RaviloApp(
         // bar AND the cast mini bar (drawn before it here, the mini bar sat on top of the open sheet — seen
         // on the Pixel 9). Every cast glyph only asks for it (CastController.openSheet).
         castActive?.let { CastSheetHost(it) }
+        // FR-R245-8 — the cast remote's audio & subtitles sheet, likewise above the bottom bar.
+        if (dest is Dest.CastRemote) castActive?.let { dev.jellystructure.ravilo.ui.screens.CastTrackSheetHost(it) }
         // R372 (FR-R372-6, owner decision 3) — the TV's Speakers panel: the player's button follows the viewer's group
         // session (the TV reads the session list since R372), and the panel closes with the player.
         if (isTvPlatform) {

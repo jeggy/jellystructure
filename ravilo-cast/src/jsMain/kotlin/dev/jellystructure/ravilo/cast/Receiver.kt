@@ -120,7 +120,6 @@ private class Receiver {
     private var positionMs = 0L
     private var durationMs = 0L
     private var paused = false
-    private var overlayJob: Job? = null
     private var nextUpJob: Job? = null
     private var busySinceMs: Long? = null
     private var introSkipped = false
@@ -229,7 +228,8 @@ private class Receiver {
             // 289 — not while a LOAD is being prepared: whatever failed then is the item before, and `current` is the new one.
             if (loading == 0 && (playerManager.getPlayerState() as String) == "IDLE" && current != null) { stopSession(); failed() }
         }
-        playerManager.addEventListener(et.SEEKED) { _: dynamic -> flashOverlay() }
+        // Owner, 2026-10-05: no overlay of our own on a seek or a pause — the framework's player shows its own (title,
+        // progress, time), and the two were drawn on top of each other. The music screen keeps its transport.
         context.addCustomMessageListener(CAST_NAMESPACE) { ev: dynamic -> onCommand(JSON.stringify(ev.data) as String) }
         // 289 — registered so that the receiver may speak on it; nothing is ever said to it.
         runCatching { context.addCustomMessageListener(CAST_LOG_NAMESPACE) { _: dynamic -> } }
@@ -1135,22 +1135,10 @@ private class Receiver {
         when (st) {
             "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
             "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (music) { show("nowplaying"); paintTransport() } else show() }
-            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else { show(); flashOverlay() }; val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
+            "PAUSED" -> { paused = true; if (music) { show("nowplaying"); showTransport() } else show(); val vol = systemVolume(); GlobalScope.launch { runCatching { api?.reportProgress(current?.itemId ?: return@launch, positionMs, true, vol) } }; beatWhilePaused() }
             "IDLE" -> {}
         }
         sendStatus()
-    }
-
-    private fun flashOverlay() {
-        val data = current ?: return
-        el("ov-kicker").textContent = data.kicker ?: ""
-        el("ov-title").textContent = data.title
-        val frac = if (durationMs > 0) (positionMs.toDouble() / durationMs).coerceIn(0.0, 1.0) else 0.0
-        el("ov-fill").style.width = "${(frac * 100).toInt()}%"
-        el("ov-time").textContent = "${hms(positionMs)} / ${hms(durationMs)}"
-        el("overlay").classList.add("on")
-        overlayJob?.cancel()
-        overlayJob = GlobalScope.launch { delay(3_000); if (!paused) el("overlay").classList.remove("on") }
     }
 
     private fun nextEpisode(): CastEpisode? {

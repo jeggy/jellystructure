@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -102,7 +103,8 @@ fun CastRemoteScreen(
     val s = status ?: CastRemoteStatus()
     val name = device ?: ""
     val unreachable = link != CastLinkState.CONNECTED
-    var sheetOpen by remember { mutableStateOf(false) }
+    // The sheet itself is drawn at the root (CastTrackSheetHost), above the bottom bar; leaving the remote closes it.
+    DisposableEffect(cast) { onDispose { cast.trackSheetOpen.value = false } }
     var convertedOpen by remember { mutableStateOf(false) }
     // Optimistic on drag, resolved to the receiver's number on release (open question 3: it eases by
     // simply adopting the next report; nothing animates a snap).
@@ -272,7 +274,7 @@ fun CastRemoteScreen(
                         RemotePill(str("cast.stop"), primary = false) { cast.sender.stop(); onBack() }
                     }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f)) { sheetOpen = true }
+                        RemotePill(str("player.audio_subs"), primary = false, modifier = Modifier.weight(1f)) { cast.trackSheetOpen.value = true }
                         if (s.hasNext) RemotePill(str("player.next"), primary = false, modifier = Modifier.weight(1f)) { cast.command("next") }
                         RemotePill(str("cast.stop"), primary = false, modifier = Modifier.weight(1f)) { cast.sender.stop(); onBack() }
                     }
@@ -283,7 +285,6 @@ fun CastRemoteScreen(
     }
 
     // ── FR-R245-8 — subtitles & audio: the SAME picker component the local player opens ──
-    CastTrackSheet(cast = cast, status = s, deviceName = name, open = sheetOpen, onClose = { sheetOpen = false })
     if (convertedOpen) ConvertedPopover(deviceName = name, colors = colors) { convertedOpen = false }
 }
 
@@ -360,6 +361,15 @@ private fun ConvertedPopover(deviceName: String, colors: RaviloColors, onClose: 
             RemotePill(str("action.close"), primary = true, modifier = Modifier.fillMaxWidth(), onClick = onClose)
         }
     }
+}
+
+/** FR-R245-8 — the remote's audio & subtitles sheet, drawn by RaviloApp at the root (over the bottom bar) while the remote shows. */
+@Composable
+fun CastTrackSheetHost(cast: CastController) {
+    val open by cast.trackSheetOpen.collectAsState()
+    val status by cast.sender.status.collectAsState()
+    val device by cast.sender.deviceName.collectAsState()
+    CastTrackSheet(cast = cast, status = status ?: CastRemoteStatus(), deviceName = device ?: "", open = open, onClose = { cast.trackSheetOpen.value = false })
 }
 
 /** The same sheet as R244's local one — one component, two destinations; the only difference is the line naming the device. */
