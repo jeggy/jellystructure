@@ -534,3 +534,10 @@ away. The backend and the mock were stopped afterwards.
 **Not verified:** a real MusicBrainz run on the household's library (the box-set answer's size, item 1's last line);
 the LRCLIB publish; the pages against a real library. `MusicVersions.TYPES`' meanings are the spec's table; the
 mockup's longer ones were not copied.
+
+## Amended by 307 (2026-10-05)
+
+FR-292-15's second action no longer publishes: it is *Queue for LRCLIB* and adds one item per song to 307's publish
+queue. Nothing reaches LRCLIB until an admin presses **Publish** on the Dashboard's *Waiting to publish* panel
+(`specs/requirements/phase-307-nothing-goes-to-a-public-database-until-someone-presses-publish.md`). OQ3, the
+first live publish, is 307's acceptance 3.
