@@ -60,6 +60,10 @@ class SessionCommandRuleTest {
         }
         assertFalse("jump" in opsFor(targetControl = false))
         assertTrue("jump" in opsFor(targetControl = true))
+        // Shuffle and repeat only on a queue of songs.
+        assertTrue("set_shuffle" in opsFor(targetControl = true, music = true))
+        assertFalse("set_shuffle" in opsFor(targetControl = true, music = false))
+        assertFalse("set_repeat" in opsFor(targetControl = true, music = false))
     }
 
     @Test fun `a receiver in its reconnect gap goes through the attached sender phone`() =

@@ -99,8 +99,11 @@ internal fun roomOpRoute(linkHolderControl: Boolean, relayControl: Boolean): Roo
     else -> RoomRoute.Unreachable
 }
 
-/** The ops a target obeys — the remote shows a control for these only (absent, never greyed). */
-internal fun opsFor(targetControl: Boolean): List<String> = if (targetControl) SESSION_OPS_LEGACY + SESSION_OPS_CONTROL else SESSION_OPS_LEGACY
+/** The ops a target obeys — the remote shows a control for these only (absent, never greyed). Shuffle and repeat are a
+ *  queue of songs' (2026-10-05: an episode's remote showed both). */
+internal fun opsFor(targetControl: Boolean, music: Boolean = true): List<String> =
+    (if (targetControl) SESSION_OPS_LEGACY + SESSION_OPS_CONTROL else SESSION_OPS_LEGACY)
+        .filter { music || (it != "set_shuffle" && it != "set_repeat") }
 
 /** R371 — a music session's room ops, offered while an app can reach the speakers (the link holder or a relay). */
 internal fun roomOps(music: Boolean, reachable: Boolean): List<String> = if (music && reachable) listOf("add_room", "remove_room", "room_volume") else emptyList()
@@ -193,7 +196,7 @@ class SessionControl(
     internal suspend fun opsOf(s: SessionRec): List<String> {
         val minter = sessions.castMinterOf(s.targetId)
         val reach = (minter != null && holdsGroupControl(minter)) || relayAppFor(s) != null
-        return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
+        return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL), music = s.kind == SessionKind.MUSIC) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
     }
 
     /** R371 — the app that can act on a room: the one holding the Cast link, else a relay app on that network. */

@@ -100,7 +100,9 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         artUrl = said?.artUrl ?: media.imageUrl ?: p.artUrl,
         positionMs = media.positionMs?.coerceAtLeast(0) ?: p.positionMs,
         durationMs = duration,
-        playing = if (unknown) p.playing else media.playerState == "PLAYING",
+        // 2026-10-05 — BUFFERING (after a seek, a stall) is neither: the last known stands. It read as *Paused* on
+        // the phone's bar while the TV kept playing.
+        playing = if (unknown || media.playerState == "BUFFERING") p.playing else media.playerState == "PLAYING",
         buffering = if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
         loaded = (if (unknown) p.loaded else !idle) || said?.type == "status",
         ended = ended,

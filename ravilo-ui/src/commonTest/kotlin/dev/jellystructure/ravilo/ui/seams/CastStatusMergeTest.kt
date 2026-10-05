@@ -28,6 +28,11 @@ class CastStatusMergeTest {
         assertTrue(done.ended); assertFalse(done.loaded)
         assertTrue(mergeCastStatus(null, null, CastMediaSnapshot(), "ended", 0).ended, "the receiver's own ended event")
         assertTrue(mergeCastStatus(null, null, CastMediaSnapshot(playerState = "LOADING"), null, 0).buffering)
+        // Buffering keeps the play state it had: a seek while playing still reads as playing, while paused as paused.
+        val wasPlaying = mergeCastStatus(null, null, CastMediaSnapshot(playerState = "PLAYING"), null, 0)
+        assertTrue(mergeCastStatus(wasPlaying, null, CastMediaSnapshot(playerState = "BUFFERING"), null, 1).playing)
+        val wasPaused = mergeCastStatus(null, null, CastMediaSnapshot(playerState = "PAUSED"), null, 0)
+        assertFalse(mergeCastStatus(wasPaused, null, CastMediaSnapshot(playerState = "BUFFERING"), null, 1).playing)
     }
 
     @Test
