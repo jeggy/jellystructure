@@ -5,7 +5,8 @@
 
 ## Status
 
-`Planned` — written 2026-10-05 (dev-authored) from the owner's ask, checked against `main` `e0ed5f9b`. Not dev-reviewed.
+`⚠ Partial` — built 2026-10-05, not device-tested (see *Build notes*). Written 2026-10-05 (dev-authored) from the owner's
+ask, checked against `main` `e0ed5f9b`. Not dev-reviewed.
 Server half already on `main` (`e0ed5f9b`: `RELAY_PLATFORMS` gains `tv`). Client: the Android TV build. Amends R370's
 owner decision 1 (which apps relay).
 
@@ -77,3 +78,45 @@ no `group_control`, so the server sends those to a phone, as for the desktop.
    socket factory may need an Android actual.
 2. Should a TV be preferred over a phone as the relay (always on, always on the network)? Lean: no preference; the most
    recently reporting app wins, as today.
+
+## Build notes (2026-10-05)
+
+Built on the Android TV build only; a phone, a computer and the web are unchanged.
+
+- **`:ravilo-castv2` on Android (open question 1).** `ravilo-ui`'s `androidMain` depends on the module's JVM variant
+  (`implementation(projects.raviloCastv2)`, JmDNS excluded). It compiles and runs as is: the TLS transport
+  (`javax.net.ssl`, `java.net.Socket`) is plain Java that Android has; no Android actual was needed.
+- **Discovery (FR-R378-1)** — `AndroidTvCastRelay` (`seams/TvCastRelayAndroid.kt`): `NsdManager.discoverServices`
+  for `_googlecast._tcp` between `discover(appId, on = true)` and `false`, driven from `RaviloApp` by R293's
+  `rememberAppOnScreen()` and the server's receiver app id. Resolving: Android 14+ `registerServiceInfoCallback` (every
+  address, waiting up to 5 s for an IPv4 one); below 14 the deprecated `resolveService`, one at a time behind a mutex,
+  retried once on `FAILURE_ALREADY_ACTIVE`. The TXT record goes through the desktop's own `CastDevice.fromTxt`; the
+  address through the new `preferredCastHost` (IPv4 first, then a global or scoped IPv6, never a bare link-local one);
+  the TV's own receiver is dropped by `isOwnCastDevice` (its `fn` = `Settings.Global.DEVICE_NAME`, Android 7.1+, or one
+  of the TV's own addresses). Each device is asked once whether our receiver runs there (`GET_APP_AVAILABILITY`, R330
+  D2, as the Mac does) — the phone's route selector filters the same way. All three rules are in `ravilo-castv2`'s
+  `CastDiscoveryRules.kt`. No permission added (NsdManager needs only `INTERNET`, already declared).
+- **The reach report (FR-R378-2)** — `tvCastSeenOf` maps the found devices to `CastSeenDevice` (TXT `id` = the Cast
+  SDK's `CastDevice.deviceId`, the key the phone and the Mac report; `speaker` without a video output, else `display`;
+  no group, not our own, only *available*). On a TV, `RaviloApp` reports that list instead of the Cast SDK's (always
+  empty there) routes.
+- **The relay (FR-R378-3/-4)** — on a TV, `cast_relay_load` goes to `AndroidTvCastRelay.relay` instead of
+  `CastController.relayLoad` (no route select, no `ActiveCastSender` link, so no mini bar, remote, hand-off or
+  `MusicCast` state on the TV): open TLS to the device, `launchOrJoin()` the receiver app id, send the LOAD the Mac
+  sends (`castLoadMedia` moved from `CastSenderDesktop` to common `seams/CastLoadMedia.kt`; `castRelayFrames` adds
+  R359's parts), wait up to 15 s for a media status that is not `IDLE`, then `close()` (a CONNECTION `CLOSE`: the
+  receiver plays on). One relay at a time (a second is refused and logged); the whole conversation is capped at 45 s.
+  A TV playing its own film still relays — only the network is used. A failure is logged; the server's answer is
+  unchanged (it already said *Started*, as for a phone's relay).
+- **Room ops (FR-R378-5)** — already true: `eventsFeaturesFor(isTv = true, …)` never declares `group_control`, even
+  where `platformGroupController()` exists (MediaRouter2 on Android 11+). Now covered by a test.
+- **Logging** — logcat tag `RaviloSessions`, prefix `R378:` (looking for Cast devices, found …, cannot run the
+  receiver, relay launch on …, relay on …: LOAD sent … / did not start / failed).
+- **Tests** — `CastDiscoveryRulesTest` (`:ravilo-castv2:jvmTest`: TXT bytes, IPv4 first, scoped/bare link-local, own
+  device by name and by address); `TvCastSeenTest` (`:ravilo-ui:testDebugUnitTest`: ids and kinds, own device and
+  groups left out, only available devices, one row per device); `TvRelayTest` (common: the relay LOAD carries the
+  hand-off once as customData with the session id, a film's HLS card, a long queue in parts, the TV declares no
+  `group_control`). `chooseRelayApp` picking a TV was already on `main`.
+- **Open question 2** — no preference added: the most recently reporting app wins, as before.
+- **Only the TV can confirm:** that NsdManager on the BRAVIA finds the speakers and the hub (acceptance 1), that the
+  TV's own receiver is left out, and acceptance 2–3.

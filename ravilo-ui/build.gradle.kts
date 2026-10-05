@@ -117,6 +117,9 @@ kotlin {
                 implementation(libs.androidx.activity.compose) // BackHandler (PlatformBackHandler bug fix)
                 implementation(libs.play.services.cast.framework) // R245 — the Cast sender (CastContext, RemoteMediaClient, MediaRouteButton)
                 implementation(libs.androidx.mediarouter)         // R245 — MediaRouteButton / MediaTransferReceiver (Output Switcher)
+                // R378 — an Android TV relays a speaker launch with our own Cast v2 sender (its Cast SDK sees no device).
+                // The module's JVM variant; JmDNS stays out (Android browses with NsdManager).
+                implementation(projects.raviloCastv2) { exclude(group = "org.jmdns") }
             }
         }
         // R343 (FR-R343-9) — the repo's first Compose UI test (SeriesDetailFocusTest): JVM-only, under

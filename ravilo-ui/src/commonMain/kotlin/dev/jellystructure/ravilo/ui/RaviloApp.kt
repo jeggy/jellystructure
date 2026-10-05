@@ -1422,7 +1422,12 @@ fun RaviloApp(
                 // R370 (owner decision 1) — launch the receiver for someone else's session, then leave it playing.
                 if (type == "cast_relay_load") runCatching {
                     dev.jellystructure.shared.tv.RaviloWireJson.decodeFromString(dev.jellystructure.shared.tv.CastRelayLoadEnvelope.serializer(), text)
-                }.getOrNull()?.let { env -> if (!castController.relayLoad(env.castDeviceId, env.load)) println("R370: cannot relay to ${env.castDeviceId}") }
+                }.getOrNull()?.let { env ->
+                    // R378 (FR-R378-3) — a TV relays with its own Cast v2 sender: its Cast SDK sees no device, and it never casts.
+                    val tvRelay = dev.jellystructure.ravilo.ui.seams.platformTvCastRelay()
+                    val sent = tvRelay?.relay(env.castDeviceId, castController.appId, env.load) ?: castController.relayLoad(env.castDeviceId, env.load)
+                    if (!sent) println("R370: cannot relay to ${env.castDeviceId}")
+                }
                 // R370 (review item 11) — an open *Play on…* list reads its places again.
                 if (type == "targets_changed") dev.jellystructure.ravilo.ui.sessions.PlayOnStore.changed()
             }
@@ -1497,10 +1502,15 @@ fun RaviloApp(
         }
         // R370 (owner decision 1) — an Android or desktop app says which Cast devices it sees, so the server can relay.
         LaunchedEffect(castController) {
-            if (dev.jellystructure.ravilo.ui.hasCastSdk) castController.routes.collect { routes ->
+            // R378 (FR-R378-2) — a TV reports what its own discovery finds (its Cast SDK's routes are always empty).
+            val tvRelay = dev.jellystructure.ravilo.ui.seams.platformTvCastRelay()
+            if (tvRelay != null) tvRelay.seen.collect { dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportCastDevices(it) }
+            else if (dev.jellystructure.ravilo.ui.hasCastSdk) castController.routes.collect { routes ->
                 dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportCastDevices(dev.jellystructure.ravilo.ui.sessions.castSeenOf(routes))
             }
         }
+        // R378 (FR-R378-1) — and looks for Cast devices only while it is on screen (R293) and the server names a receiver app.
+        LaunchedEffect(appOnScreen, castAppId) { dev.jellystructure.ravilo.ui.seams.platformTvCastRelay()?.discover(castAppId, appOnScreen) }
         // R371 (review item 5) — while this app holds a music cast, the group's rooms and their levels, on change (polled:
         // MediaRouter2 says nothing when a member's level moves on the speaker itself).
         LaunchedEffect(Unit) {
