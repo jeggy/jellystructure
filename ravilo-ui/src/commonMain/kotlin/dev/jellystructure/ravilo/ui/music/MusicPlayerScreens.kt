@@ -272,11 +272,11 @@ private fun DeskSeek(durationMs: Long) {
             Canvas(Modifier.fillMaxSize().pointerInput(dur) {
                 detectHorizontalDragGestures(
                     onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
-                    onDragEnd = { dragFrac?.let { MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
+                    onDragEnd = { dragFrac?.let { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
                     onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
                 )
-            }.pointerInput(dur) { detectTapGestures { o -> MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
+            }.pointerInput(dur) { detectTapGestures { o -> dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
                 val y = size.height / 2
                 val h = 5.dp.toPx()
                 drawRoundRect(colors.fg.copy(alpha = 0.18f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
@@ -303,7 +303,7 @@ private fun DeskTransport(st: MusicPlayerState) {
         Box(Modifier.size(36.dp).tap { MusicPlayback.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
             dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp)
         }
-        Box(Modifier.size(36.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(36.dp).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }, contentAlignment = Alignment.Center) {
             dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.PREVIOUS, colors.text, 22.dp)
         }
         val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
@@ -311,7 +311,7 @@ private fun DeskTransport(st: MusicPlayerState) {
             val ink = if (graphite) Color.White else colors.background
             if (st.buffering) Pulse(ink) else dev.jellystructure.ravilo.ui.components.DeskIcon(if (st.playing) dev.jellystructure.ravilo.ui.components.DeskIcon.PAUSE else dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY, ink, 22.dp)
         }
-        Box(Modifier.size(36.dp).then(if (st.hasNext) Modifier.tap { MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(36.dp).then(if (st.hasNext) Modifier.tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
             dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, 22.dp)
         }
         Box(Modifier.size(36.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicPlayback.cycleRepeat() }, contentAlignment = Alignment.Center) {
@@ -370,8 +370,8 @@ private fun SwipeCover(t: MusicTrackItem) {
                             val v = dx.value
                             scope.launch {
                                 when {
-                                    v < -w * 0.25f -> { dx.animateTo(-w, tween(160)); MusicPlayback.next() }
-                                    v > w * 0.25f -> { dx.animateTo(w, tween(160)); MusicPlayback.previous() }
+                                    v < -w * 0.25f -> { dx.animateTo(-w, tween(160)); dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() }
+                                    v > w * 0.25f -> { dx.animateTo(w, tween(160)); dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }
                                     else -> dx.animateTo(0f, tween(160))
                                 }
                             }
@@ -421,11 +421,11 @@ private fun SeekBar(durationMs: Long) {
             Canvas(Modifier.fillMaxSize().pointerInput(dur) {
                 detectHorizontalDragGestures(
                     onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
-                    onDragEnd = { dragFrac?.let { MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
+                    onDragEnd = { dragFrac?.let { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo((it * dur).toLong()) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
                     onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
                 )
-            }.pointerInput(dur) { detectTapGestures { o -> MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
+            }.pointerInput(dur) { detectTapGestures { o -> dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * dur).toLong()) } }) {
                 val y = size.height / 2
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.textDim.copy(0.35f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))
@@ -455,13 +455,13 @@ private fun Transport(st: MusicPlayerState) {
         Box(Modifier.size(48.dp).tap { MusicPlayback.toggleShuffle(); MusicToasts.show(msgShuffle) }, contentAlignment = Alignment.Center) {
             MusicGlyph(MusicIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp, description = str("music.shuffle"))
         }
-        Box(Modifier.size(52.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.PREVIOUS, colors.text, 26.dp) }
+        Box(Modifier.size(52.dp).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.PREVIOUS, colors.text, 26.dp) }
         val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
         Box(Modifier.size(64.dp).clip(CircleShape).background(colors.accentGradient).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
             // FR-R322-5 — buffering: the play glyph's place shows R218's pulse, and nothing else moves.
             if (st.buffering) Pulse(colors.onAccent) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.onAccent, 28.dp)
         }
-        Box(Modifier.size(52.dp).then(if (st.hasNext) Modifier.tap { MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(52.dp).then(if (st.hasNext) Modifier.tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() } else Modifier), contentAlignment = Alignment.Center) {
             if (st.hasNext) MusicGlyph(MusicIcon.NEXT, colors.text, 26.dp)
         }
         Box(Modifier.size(48.dp).tap { MusicToasts.show(msgRepeat.getValue(st.repeat)); MusicPlayback.cycleRepeat() }, contentAlignment = Alignment.Center) {
@@ -559,7 +559,7 @@ private fun LyricsView(api: TvApiClient, t: MusicTrackItem, modifier: Modifier, 
                     color = when { i == current -> lit; large -> colors.textDim; i < current -> colors.textDim; else -> colors.textSecondary },
                     fontSize = if (large) 30.sp else 24.sp, lineHeight = if (large) 38.sp else 31.sp,
                     fontWeight = if (i == current || large) FontWeight.Bold else FontWeight.SemiBold, fontFamily = SpaceGrotesk,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = if (large) 9.dp else 7.dp).tap { MusicPlayback.seekTo(line.tMs) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = if (large) 9.dp else 7.dp).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo(line.tMs) },
                 )
             }
         }
@@ -588,8 +588,8 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
             item(key = "now-h") { if (panel) PanelHeading(str("music.now_playing")) else Box(Modifier.padding(horizontal = hPad)) { MusicSectionHeader(str("music.now_playing")) } }
             item(key = "now") {
                 Box(Modifier.padding(horizontal = hPad)) {
-                    if (panel) QueuePanelRow(cur, now = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
-                    else TrackRow(cur, showCover = true, onPlay = { MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
+                    if (panel) QueuePanelRow(cur, now = true, onPlay = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
+                    else TrackRow(cur, showCover = true, onPlay = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.togglePlay() }, onMore = { onTrackMore(cur) })
                 }
             }
             val up = st.upNext
@@ -633,8 +633,8 @@ fun MusicQueueScreen(onTrackMore: (MusicTrackItem) -> Unit, onProfile: () -> Uni
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.weight(1f)) {
-                        if (panel) QueuePanelRow(t, now = false, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
-                        else TrackRow(t, showCover = true, onPlay = { MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
+                        if (panel) QueuePanelRow(t, now = false, onPlay = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
+                        else TrackRow(t, showCover = true, onPlay = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.playAt(queueIndex) }, onMore = { onTrackMore(t) })
                     }
                     // The drag handle: lift and move; the row lands where it is dropped.
                     Box(Modifier.size(if (panel) 26.dp else 40.dp).pointerInput(queueIndex) {
@@ -742,7 +742,7 @@ fun MusicMiniBar(onOpen: () -> Unit) {
             Box(Modifier.size(46.dp).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
                 if (st.buffering) PlayingBars(true, colors.text, 18.dp) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.text, 22.dp)
             }
-            if (st.hasNext) Box(Modifier.size(46.dp).tap { MusicPlayback.next() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.NEXT, colors.text, 20.dp) }
+            if (st.hasNext) Box(Modifier.size(46.dp).tap { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.NEXT, colors.text, 20.dp) }
         }
     }
 }

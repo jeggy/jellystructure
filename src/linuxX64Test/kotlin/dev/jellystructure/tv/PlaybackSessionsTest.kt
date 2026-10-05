@@ -356,6 +356,18 @@ class PlaybackSessionsTest {
         assertTrue(r.live)
     }
 
+    @Test fun `the move failure is said for 8 s then the place line comes back`() = runBlocking {
+        val s = service()
+        val id = s.onStart(device("pixel"), "song-1", 0)
+        s.beginMove(id, "mac", "Mac")
+        now += 10_001; s.tick()
+        now += 7_000; s.tick()
+        assertEquals("Mac", s.get(id)!!.moveFailed)
+        now += 1_001; s.tick()
+        assertNull(s.get(id)!!.moveFailed)
+        assertTrue(s.get(id)!!.live)
+    }
+
     @Test fun `every move starts 2 s back and never below 0`() {
         assertEquals(2_888_000, moveStartMs(2_890_000))
         assertEquals(0, moveStartMs(1_500))

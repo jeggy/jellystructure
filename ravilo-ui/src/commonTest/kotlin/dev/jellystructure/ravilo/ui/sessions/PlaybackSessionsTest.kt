@@ -45,9 +45,27 @@ class PlaybackSessionsTest {
         assertEquals(s, applySessionState(s, SessionStateEnvelope(session = v("zz", rev = 9)), 0))
     }
 
-    @Test fun `this device first then mine by latest change then others`() {
-        val rows = listOf(v("other", mine = false, updated = 99), v("mine-old", updated = 1), v("here", here = true, updated = 0), v("mine-new", updated = 50))
+    @Test fun `this device first then mine newest started first then others`() {
+        val rows = listOf(v("other", mine = false, created = 99), v("mine-old", created = 1), v("here", here = true, created = 0), v("mine-new", created = 50))
         assertEquals(listOf("here", "mine-new", "mine-old", "other"), orderSessionRows(rows).map { it.id })
+    }
+
+    @Test fun `music mode prefers music over a newer film when nothing was touched`() {
+        val rows = listOf(v("song", created = 10), v("film", kind = "episode", created = 20))
+        assertEquals("song", pickBarSession(rows, null, filmsMode = false)?.id)
+    }
+
+    @Test fun `a touched session takes the bar unless this app's link drives it`() {
+        val rows = listOf(v("a"), v("b"))
+        assertEquals(true, touchedTakesBar(rows, "b", filmsMode = false, linkedPlace = "Place a"))
+        assertEquals(false, touchedTakesBar(rows, "a", filmsMode = false, linkedPlace = "Place a"))
+        assertEquals(false, touchedTakesBar(rows, null, filmsMode = false, linkedPlace = "Place a"))
+    }
+
+    @Test fun `a pause does not move a row`() {
+        val rows = listOf(v("a", created = 10, updated = 10), v("b", created = 20, updated = 20))
+        val paused = rows.map { if (it.id == "a") it.copy(state = "paused", updatedAt = 99) else it }
+        assertEquals(orderSessionRows(rows).map { it.id }, orderSessionRows(paused).map { it.id })
     }
 
     @Test fun `the count leaves out this device and is absent at zero`() {
@@ -81,7 +99,9 @@ class PlaybackSessionsTest {
     @Test fun `films mode shows only music and audiobooks from elsewhere`() {
         val rows = listOf(v("film", kind = "episode", created = 9), v("song", kind = "music", created = 1))
         assertEquals("song", pickBarSession(rows, null, filmsMode = true)?.id)
-        assertEquals("film", pickBarSession(rows, null, filmsMode = false)?.id)
+        // Music mode prefers music too (2026-10-05); a film shows when nothing else plays.
+        assertEquals("song", pickBarSession(rows, null, filmsMode = false)?.id)
+        assertEquals("film", pickBarSession(rows.take(1), null, filmsMode = false)?.id)
     }
 
     @Test fun `the bar never shows this device's own session and counts the rest`() {

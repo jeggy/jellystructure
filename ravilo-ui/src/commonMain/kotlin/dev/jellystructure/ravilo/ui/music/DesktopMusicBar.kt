@@ -142,14 +142,14 @@ fun DesktopMusicBar(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (!mac && !medium && b == null) BarButton(DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.text, str("music.shuffle")) { MusicPlayback.toggleShuffle() }
                 if (b != null) BookSkip(MusicIcon.BACK30, colors.text) { MusicPlayback.skipBy(-30_000) }
-                else BarButton(DeskIcon.PREVIOUS, colors.text, str("desk.key_prev")) { MusicPlayback.previous() }
+                else BarButton(DeskIcon.PREVIOUS, colors.text, str("desk.key_prev")) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.previous() }
                 val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
                 Box(Modifier.size(36.dp).clip(CircleShape).background(playBg).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
                     if (st.buffering) PlayingBars(true, playInk, 14.dp)
                     else DeskIcon(if (st.playing) DeskIcon.PAUSE else DeskIcon.PLAY, playInk, 16.dp)
                 }
                 if (b != null) BookSkip(MusicIcon.FWD30, colors.text) { MusicPlayback.skipBy(30_000) }
-                else BarButton(DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, str("desk.key_next"), enabled = st.hasNext) { MusicPlayback.next() }
+                else BarButton(DeskIcon.NEXT, if (st.hasNext) colors.text else colors.textDim, str("desk.key_next"), enabled = st.hasNext) { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.next() }
             }
             SeekLine(live, st.durationMs, Modifier.weight(1f), times = !tight)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -196,11 +196,11 @@ private fun SeekLine(positionMs: Long, durationMs: Long, modifier: Modifier, tim
             Canvas(Modifier.fillMaxSize().pointerInput(durationMs) {
                 detectHorizontalDragGestures(
                     onDragStart = { o -> dragFrac = (o.x / wPx).coerceIn(0f, 1f) },
-                    onDragEnd = { dragFrac?.let { MusicPlayback.seekTo((it * durationMs).toLong()) }; dragFrac = null },
+                    onDragEnd = { dragFrac?.let { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo((it * durationMs).toLong()) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
                     onHorizontalDrag = { ch, _ -> dragFrac = (ch.position.x / wPx).coerceIn(0f, 1f) },
                 )
-            }.pointerInput(durationMs) { detectTapGestures { o -> MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * durationMs).toLong()) } }) {
+            }.pointerInput(durationMs) { detectTapGestures { o -> dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal(); MusicPlayback.seekTo(((o.x / wPx).coerceIn(0f, 1f) * durationMs).toLong()) } }) {
                 val y = size.height / 2
                 val h = 4.dp.toPx()
                 drawRoundRect(colors.fg.copy(alpha = 0.16f), Offset(0f, y - h / 2), Size(size.width, h), CornerRadius(h / 2, h / 2))

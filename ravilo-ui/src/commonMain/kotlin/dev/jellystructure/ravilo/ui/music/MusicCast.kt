@@ -356,6 +356,7 @@ object MusicPlayback {
     private val casting: Boolean get() = MusicCast.linked.value
 
     fun playQueue(tracks: List<MusicTrackItem>, startIndex: Int, context: MusicContext, shuffle: Boolean = false) {
+        dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()   // FR-R368-8 (amended): this app's player takes the bar back
         if (casting || MusicCast.holdsDevice) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
     }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
@@ -365,6 +366,7 @@ object MusicPlayback {
      * press resumed it. A button passes what it SHOWED: a press on a pause glyph pauses, on a play glyph plays.
      */
     fun togglePlay(shownPlaying: Boolean) {
+        dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touchLocal()   // only the player's own buttons call this
         if (!casting) { togglePlay(); return }
         // Re-measured the same day: the Mac's click landed ~250 ms after the Pixel's pause had already turned its glyph
         // into ▶, so "what it showed" was play and the speaker resumed. Nobody reacts to a glyph that fast: a press within

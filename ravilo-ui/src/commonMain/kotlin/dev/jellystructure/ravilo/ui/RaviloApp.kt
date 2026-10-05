@@ -1102,18 +1102,25 @@ fun RaviloApp(
             if (musicState.playing) deskBarKeptOn = stack.lastOrNull()
             else if (deskBarKeptOn != stack.lastOrNull()) deskBarKeptOn = null
         }
-        // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
-        // R352 (FR-R352-6) — on a computer the phone-layout window (< 600 dp) keeps the computer's films-mode rule
-        // (Q2 + Q10): paused music stays only on the page it was paused on. A real phone keeps FR-R322-10.
-        fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
-            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker &&
-            (!isDesktopPlatform || inMusic || musicState.playing || deskBarKeptOn == d)
         // R368 (FR-R368-8) — with nothing playing on this device, the bar shows a session elsewhere: the one this app
         // touched last, else the latest playing one; in films mode only music and books.
         val sessionsNow by dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.collectAsState()
         val touchedSession by dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.touched.collectAsState()
         val barSession = dev.jellystructure.ravilo.ui.sessions.pickBarSession(sessionsNow.sessions, touchedSession, filmsMode = !inMusic)
-        fun sessionBarOver(d: Dest) = handset && !musicState.active && barSession != null && d !is Dest.MusicPlaying && d !is Dest.Player &&
+        // FR-R368-8 (amended 2026-10-05) — "always the one this app touched last" also holds while this app casts music
+        // somewhere: found with two sessions, pausing Gæsteværelse from a phone that cast Stue left Stue on the bar.
+        // A session touched since this app's own player was last used takes the slot; using the player takes it back.
+        val musicLinkedNow by dev.jellystructure.ravilo.ui.music.MusicCast.linked.collectAsState()
+        val musicLinkedPlace by dev.jellystructure.ravilo.ui.music.MusicCast.deviceName.collectAsState()
+        val sessionOverMusic = musicLinkedNow &&
+            dev.jellystructure.ravilo.ui.sessions.touchedTakesBar(sessionsNow.sessions, touchedSession, filmsMode = !inMusic, linkedPlace = musicLinkedPlace)
+        // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.
+        // R352 (FR-R352-6) — on a computer the phone-layout window (< 600 dp) keeps the computer's films-mode rule
+        // (Q2 + Q10): paused music stays only on the page it was paused on. A real phone keeps FR-R322-10.
+        fun musicMiniOver(d: Dest) = handset && musicState.active && !musicBarHidden && !sessionOverMusic && d !is Dest.MusicPlaying && d !is Dest.Player && d !is Dest.LiveTv &&
+            d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker &&
+            (!isDesktopPlatform || inMusic || musicState.playing || deskBarKeptOn == d)
+        fun sessionBarOver(d: Dest) = handset && (!musicState.active || sessionOverMusic) && barSession != null && d !is Dest.MusicPlaying && d !is Dest.Player &&
             d !is Dest.LiveTv && d !is Dest.CastRemote && d !is Dest.Login && d !is Dest.ProfilePicker
         /** The bottom slot the music bar or the session bar takes (the two never show together). */
         fun anyMusicBarOver(d: Dest) = musicMiniOver(d) || sessionBarOver(d)
@@ -1222,13 +1229,13 @@ fun RaviloApp(
         }
         // FR-R337-6 / Q2 + Q10 — in music mode the bar is always there; in films mode only while music plays, and a pause
         // from the bar keeps it until the viewer leaves the page. (`deskBarKeptOn` is declared beside the mini bar's rule.)
-        fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && d !is Dest.MusicPlaying &&
+        fun deskBarShows(d: Dest) = deskFramed(d) && musicState.active && !sessionOverMusic && d !is Dest.MusicPlaying &&
             (inMusic || musicState.playing || deskBarKeptOn == d)
         // The queue panel goes where the bar goes (and stays on Playing, which hides the bar): in films mode with nothing
         // playing there is no bar, and a queue beside a film's page would be a panel about nothing on screen.
         fun deskQueueShows(d: Dest) = deskFramed(d) && musicState.active && (deskBarShows(d) || d is Dest.MusicPlaying)
         // R368 (FR-R368-8) — the desktop's bar for a session elsewhere, when nothing plays on this computer.
-        fun deskSessionBarShows(d: Dest) = deskFramed(d) && !musicState.active && barSession != null && d !is Dest.MusicPlaying
+        fun deskSessionBarShows(d: Dest) = deskFramed(d) && (!musicState.active || sessionOverMusic) && barSession != null && d !is Dest.MusicPlaying
         // FR-R322-3 — nothing playing: the last queue this device kept (where it was), else the viewer's last-played song,
         // loaded paused and not started. The phone does it on the Playing tab; the desktop on entering music mode, where
         // the player bar is always there (FR-R337-6).
@@ -1396,8 +1403,13 @@ fun RaviloApp(
                     val id = env.items.getOrNull(env.index) ?: env.items.firstOrNull() ?: return@let
                     when (env.kind) {
                         "music" -> if (env.tracks.isNotEmpty() && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) with(dev.jellystructure.ravilo.ui.music.MusicCast) {
-                            dev.jellystructure.ravilo.ui.music.MusicPlayback.loadPaused(env.tracks.map { it.toItem() }, env.index.coerceIn(0, env.tracks.lastIndex), env.startMs, null)
-                            dev.jellystructure.ravilo.ui.music.MusicPlayback.play()
+                            // Found with two sessions (2026-10-05): *Play on this Mac* for Stue while the Mac drove
+                            // Gæsteværelse loaded the songs paused and sent the play to Gæsteværelse — nothing happened and
+                            // Stue played on. The session moved HERE, so this app lets go of the other speaker (it keeps
+                            // playing, as a relay's does) and plays on its own engine.
+                            if (linked.value) { dev.jellystructure.ravilo.ui.seams.sessionLog("R372: a move here while linked to ${deviceName.value}: leaving it playing"); leaveRelay() }
+                            dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(env.tracks.map { it.toItem() }, env.index.coerceIn(0, env.tracks.lastIndex), env.startMs, null)
+                            dev.jellystructure.ravilo.ui.music.MusicEngine.play()
                         }
                         "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(PlayItemEnvelope(
                             type = "play_item", jellyfinId = id, kind = if (env.kind == "episode") "episode" else "movie", title = env.title, startPositionMs = env.startMs,

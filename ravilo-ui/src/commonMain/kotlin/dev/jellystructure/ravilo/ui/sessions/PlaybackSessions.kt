@@ -37,9 +37,13 @@ fun applySessionState(state: SessionsState, env: SessionStateEnvelope, receivedA
     return state.copy(sessions = state.sessions.toMutableList().also { it[i] = env.session }, serverNowMs = env.serverNowMs, receivedAtMs = receivedAtMs)
 }
 
-/** FR-R368-7 — this device first, then the viewer's other sessions by latest change, then other people's. */
+/**
+ * FR-R368-7 — this device first, then the viewer's other sessions, then other people's; within each, the newest
+ * STARTED first. Amended 2026-10-05: ordering by latest change moved a row to the top on every pause, so the next
+ * click landed on the row that slid under the pointer (on the Mac, someone's film on a TV). A row keeps its place.
+ */
 fun orderSessionRows(rows: List<SessionView>): List<SessionView> =
-    rows.sortedWith(compareByDescending<SessionView> { it.here }.thenByDescending { it.mine }.thenByDescending { it.updatedAt })
+    rows.sortedWith(compareByDescending<SessionView> { it.here }.thenByDescending { it.mine }.thenByDescending { it.createdAt }.thenBy { it.id })
 
 /** A row that still plays somewhere (not the 60 s fade of an ended one). */
 fun SessionView.isLive(): Boolean = state != "ended"
@@ -58,7 +62,21 @@ fun castIconShown(hasDevices: Boolean, rows: List<SessionView>): Boolean = hasDe
 fun pickBarSession(rows: List<SessionView>, touchedId: String?, filmsMode: Boolean): SessionView? {
     val elsewhere = rows.filter { !it.here && it.isLive() && (!filmsMode || it.kind == "music" || it.kind == "audiobook") }
     elsewhere.firstOrNull { it.id == touchedId }?.let { return it }
-    return elsewhere.filter { it.state == "playing" }.maxByOrNull { it.createdAt }
+    val playing = elsewhere.filter { it.state == "playing" }
+    // 2026-10-05 — in music mode, music and books before a film: an untouched phone's music bar showed an episode
+    // playing on a TV (someone else's watching) with a pause button on it.
+    if (!filmsMode) playing.filter { it.kind == "music" || it.kind == "audiobook" }.maxByOrNull { it.createdAt }?.let { return it }
+    return playing.maxByOrNull { it.createdAt }
+}
+
+/**
+ * FR-R368-8 (amended 2026-10-05) — while this app casts its own music, a session elsewhere that the viewer touched since
+ * (not the one this app's link drives — that one is the music bar already) takes the bar. [PlaybackSessions.touchLocal]
+ * clears the touch when this app's own player is used.
+ */
+fun touchedTakesBar(rows: List<SessionView>, touchedId: String?, filmsMode: Boolean, linkedPlace: String?): Boolean {
+    val shown = pickBarSession(rows, touchedId, filmsMode) ?: return false
+    return shown.id == touchedId && shown.target.name != linkedPlace
 }
 
 /** FR-R368-8 — the bar's **+N**: the other sessions elsewhere besides the one it shows. */
@@ -110,6 +128,8 @@ object PlaybackSessions {
     fun onList(list: SessionList) { _state.value = applySessionList(list, now()) }
     fun onState(env: SessionStateEnvelope) { _state.value = applySessionState(_state.value, env, now()) }
     fun touch(id: String) { _touched.value = id }
+    /** This app's own player was used: the bar goes back to it (FR-R368-8, amended 2026-10-05). */
+    fun touchLocal() { _touched.value = null }
     /** Signed out / another profile: nothing of the last viewer's household stays on screen. */
     fun clear() { _state.value = SessionsState(); _touched.value = null }
 }

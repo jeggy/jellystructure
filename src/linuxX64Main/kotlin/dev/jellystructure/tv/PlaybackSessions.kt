@@ -300,6 +300,9 @@ internal sealed interface SessionChange {
 internal const val SESSION_STOP_HOLD_MS = 15_000L
 /** R372 (FR-R372-4, owner decision 1) — a paused (or offline) session ends this long after its last change. */
 internal const val SESSION_PAUSED_KEEP_MS = 24L * 60 * 60_000
+/** R372 — *Couldn't move to {place}* is said for this long, then the place line goes back to the place (found
+ *  2026-10-05: it stayed on the remote for good, minutes after the old place had carried on). */
+internal const val MOVE_FAILED_SHOWN_MS = 8_000L
 /** R372 (FR-R372-2, owner decision 2) — every move starts this far back, music included. */
 internal const val MOVE_REWIND_MS = 2_000L
 
@@ -873,6 +876,11 @@ class PlaybackSessions(
                     // R372 — no report from the new place in 10 s: the old one carries on.
                     pendingMoves.remove(s.id)
                     val n = s.copy(movingTo = null, moveFailed = move.targetName, revision = s.revision + 1, updatedAt = t)
+                    sessions[s.id] = n
+                    n.persist()
+                    changes += SessionChange.State(s.id)
+                } else if (s.live && s.moveFailed != null && t - s.updatedAt >= MOVE_FAILED_SHOWN_MS) {
+                    val n = s.copy(moveFailed = null, revision = s.revision + 1, updatedAt = t)
                     sessions[s.id] = n
                     n.persist()
                     changes += SessionChange.State(s.id)

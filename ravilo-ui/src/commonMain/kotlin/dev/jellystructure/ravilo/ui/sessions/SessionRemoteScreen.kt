@@ -147,6 +147,9 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
             DeskIcon(placeIcon(v.target.icon), colors.accentSecondary, 16.dp)
             Spacer(Modifier.width(6.dp))
             Text(placeLine, color = colors.accentSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+            // 2026-10-05 — nothing said the place line opens *Move to…*; the two-sessions test missed it on both apps.
+            if (extras.onMoveTo != null && v.controllable && !ended && !moveOpen)
+                Text("  ·  " + str("session.move_to"), color = colors.textDim, fontSize = 14.sp, fontFamily = Sora)
         }
         // R372 (FR-R372-2, canvas §B7) — *Move to…*: the single places, the current one ticked; a film only to a video place.
         if (moveOpen && extras.onMoveTo != null) {
@@ -235,10 +238,12 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
                 }
             }
         }
-        // The queue (FR-R369-6): tap to jump.
-        if (d != null && d.queue.size > 1) {
+        // The queue (FR-R369-6): tap to jump. Under *Up next*, the song playing and what follows it (2026-10-05: the
+        // whole window was listed, so the songs already played sat above the current one under *Up next*).
+        val ahead = d?.queue?.withIndex()?.filter { d.queueOffset + it.index >= d.queueIndex }.orEmpty()
+        if (d != null && ahead.size > 1) {
             Text(str("music.up_next"), color = colors.textDim, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
-            d.queue.forEachIndexed { i, e ->
+            ahead.forEach { (i, e) ->
                 val index = d.queueOffset + i
                 val current = index == d.queueIndex
                 Row(
