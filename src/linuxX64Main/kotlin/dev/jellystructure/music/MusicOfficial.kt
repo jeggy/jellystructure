@@ -87,6 +87,16 @@ object MusicOfficial {
     fun effective(a: MusicAlbum): MusicOfficialList? =
         if (a.matchState != MusicMatch.MATCHED || a.releaseGroupMbid == null) null else a.userOfficial ?: a.official
 
+    /**
+     * The tracklist an album's held files can be laid against: [effective], but only when at least one held file carries
+     * a recording id. Found on the dev stack 2026-10-05: 82 matched albums (~1 460 files) were never mapped track by
+     * track, so dev review 3's "no recording id ⇒ extra" turned every file into an extra (*0 songs + 54 extras*) and put a
+     * Bonus chip on songs that are on the official album. With nothing to compare, the album is today's plain list
+     * (FR-305-5) and none of its files is an extra. An album with some ids keeps dev review 3 for the rest.
+     */
+    fun usable(a: MusicAlbum, tracks: List<MusicTrack>): MusicOfficialList? =
+        effective(a)?.takeIf { tracks.any { it.recordingMbid != null } }
+
     /** FR-305-3 / dev review 3 — a held track is an extra when its recording is not on the official list, or it has
      *  none (it is not shown to be on the official album). Whatever its recording state (dev review 2a). */
     fun isExtra(official: MusicOfficialList?, t: MusicTrack): Boolean {
@@ -114,7 +124,7 @@ object MusicOfficial {
 
     /** FR-305-3/5 — [tracks] in the files' order. An unmatched album (or one with no list yet) is today's plain list. */
     fun layout(a: MusicAlbum, tracks: List<MusicTrack>): Layout {
-        val official = effective(a) ?: return Layout(null, emptyList(), emptyList(), tracks)
+        val official = usable(a, tracks) ?: return Layout(null, emptyList(), emptyList(), tracks)
         val index = official.songs.withIndex().associate { it.value.recordingMbid to it.index }
         val rows = ArrayList<Pair<Int, MusicTrack>>()
         val extras = ArrayList<MusicTrack>()

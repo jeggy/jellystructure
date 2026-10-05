@@ -637,3 +637,12 @@ an unknown bitrate ranks below every known one; a pressing whose extras aren't h
 26/27/30-pressing albums list fully, that the threshold makes exactly the 4 audio joins and 3 suggestions, and that the
 first `compare_songs` run takes minutes and the second is near-instant. The *Listen and decide* players start at the
 same second only as far as Jellyfin's direct stream allows a `currentTime` seek.
+
+**Fix 2026-10-05 (dev stack, orchestrator):** 82 matched albums (~1 460 files, e.g. a 54-file folder) were never
+mapped track by track — none of their files carries a recording id. Dev review 3's "no recording id ⇒ extra" made each
+of them *0 songs + 54 extras* and put a Bonus chip on songs that are on the official album. New
+`MusicOfficial.usable(album, tracks)`: the official list counts only when at least one held file has a recording id;
+otherwise the album is today's plain list (FR-305-5) and none of its files is an extra. Used by `layout`, the editions
+index (`isExtra` / Bonus / song folding), album rows and the single-homing title check. Albums with some ids keep dev
+review 3. Test: `MusicExtrasTest.a_matched_album_whose_files_carry_no_recording_ids_is_todays_plain_list`. Open: why
+those albums never got track-level recording ids (a re-match may fill them).

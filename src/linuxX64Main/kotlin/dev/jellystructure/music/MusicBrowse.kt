@@ -245,7 +245,7 @@ object MusicBrowse {
         fun albumRow(a: MusicAlbum): MusicAlbumRow {
             // Phase 305 (dev review 9) — an album row keeps its own tracks: *11 songs + 1 extra*.
             val live = liveTracks(a)
-            val official = MusicOfficial.effective(a)
+            val official = MusicOfficial.usable(a, live)
             val extras = if (official == null) 0 else live.count { MusicOfficial.isExtra(official, it) }
             return MusicAlbumRow(
             id = a.id, title = a.title, artist = a.albumArtists.joinToString(" & ") { it.name }, artistId = a.albumArtists.firstOrNull()?.artistId,

@@ -126,7 +126,7 @@ object MusicSingleHome {
         return candidates.filter { a ->
             val ay = a.originalYear() ?: return@filter false
             kotlin.math.abs(ay - year) <= 2 && (MusicOfficial.effective(a)?.songs.orEmpty().any { baseTitle(it.title) == base } ||
-                lib.tracksOf(a.id).any { baseTitle(it.title) == base && !MusicOfficial.isExtra(MusicOfficial.effective(a), it) })
+                lib.tracksOf(a.id).any { baseTitle(it.title) == base && !MusicOfficial.isExtra(MusicOfficial.usable(a, lib.tracksOf(a.id)), it) })
         }.minWithOrNull(compareBy({ kotlin.math.abs((it.originalYear() ?: 0) - year) }, { it.originalYear() ?: 0 }))?.let { Home(it.id, TITLE) }
     }
 }
@@ -187,7 +187,9 @@ class MusicEditionsIndex(private val snap: MusicStore.Snapshot) {
     private val liveAlbums by lazy { snap.albums.values.filter { it.missingSince == null } }
     fun liveTracks(albumId: String): List<MusicTrack> = snap.tracksByAlbum[albumId].orEmpty().filter { it.missingSince == null }
 
-    fun official(a: MusicAlbum): MusicOfficialList? = MusicOfficial.effective(a)
+    // Computed once per snapshot (the index is shared across requests; `lazy` is synchronized).
+    private val usableByAlbum by lazy { snap.albums.mapValues { (id, a) -> MusicOfficial.usable(a, snap.tracksByAlbum[id].orEmpty()) } }
+    fun official(a: MusicAlbum): MusicOfficialList? = usableByAlbum[a.id] ?: MusicOfficial.usable(a, snap.tracksByAlbum[a.id].orEmpty())
 
     fun isExtra(t: MusicTrack): Boolean {
         val a = t.albumId?.let { snap.albums[it] } ?: return false

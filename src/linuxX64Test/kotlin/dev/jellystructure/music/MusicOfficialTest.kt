@@ -130,6 +130,17 @@ class MusicExtrasTest {
     }
 
     @Test
+    fun a_matched_album_whose_files_carry_no_recording_ids_is_todays_plain_list() {
+        // Found on the dev stack 2026-10-05: 54 files, an official list, no recording ids ⇒ *0 songs + 54 extras*.
+        val files = listOf(t("01-01 - One", 1, null), t("01-02 - Two", 2, null), t("02-01 - One", 1, null))
+        val l = MusicOfficial.layout(album, files)
+        assertNull(l.official); assertTrue(l.rows.isEmpty()); assertTrue(l.gaps.isEmpty())
+        assertEquals(files.map { it.id }, l.extras.map { it.id }, "the files' own order, as an unmatched album")
+        assertNull(MusicOfficial.usable(album, files), "nothing to compare, so no file is an extra or Bonus")
+        assertEquals(official, MusicOfficial.usable(album, files + t("three", 3, "r3")), "one id is enough to lay out")
+    }
+
+    @Test
     fun an_official_song_the_files_lack_is_a_gap_row_above_the_divider() {
         val l = MusicOfficial.layout(album, listOf(t("one", 1, "r1"), t("three", 3, "r3")))
         assertEquals(listOf(1), l.gaps.map { it.first })
