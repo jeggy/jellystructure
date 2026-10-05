@@ -470,7 +470,11 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
     t.closest("[data-less]")?.let { ovOpen -= it.getAttribute("data-less")!!; renderOverview(scope); return }
     t.closest("[data-chip]")?.let { ovChip = it.getAttribute("data-chip")!!; runCatching { window.localStorage.setItem(DASH_CHIP_KEY, ovChip) }; renderOverview(scope); return }
     t.closest("[data-opens]")?.let { b ->
-        if (b.getAttribute("data-opens") == "same_songs") edOpenSameSongs(scope) { scope.launch { loadOverview(scope) } }
+        when (b.getAttribute("data-opens")) {
+            "same_songs" -> edOpenSameSongs(scope) { scope.launch { loadOverview(scope) } }
+            // Phase 307 (FR-307-3) — *Waiting to publish*: what would go to a public database, exactly.
+            "publish_queue" -> openPublishQueue(scope) { scope.launch { loadOverview(scope) } }
+        }
         return
     }
     t.closest("[data-act]")?.let { b ->
@@ -503,11 +507,13 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
                     s?.let { muToast(it) }
                     if (s != null) loadOverview(scope)
                 }
+                // 307 (FR-307-2) — *Queue for LRCLIB* queues; nothing is sent until Publish on *Waiting to publish*.
                 "music_lyrics_lrclib" -> {
-                    out("Sending…")
-                    val s = dev.jellystructure.api.MusicApi.tellLrclibInstrumental()
-                    out(if (s != null) "Started ✓" else "Failed")
+                    out("Queuing…")
+                    val s = dev.jellystructure.api.MusicApi.queueForLrclib()
+                    out(if (s != null) "Queued ✓" else "Failed")
                     s?.let { muToast(it) }
+                    if (s != null) loadOverview(scope)
                 }
             }
         }

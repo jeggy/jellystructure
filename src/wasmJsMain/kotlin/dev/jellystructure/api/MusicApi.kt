@@ -288,7 +288,8 @@ object MusicApi {
         if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
     }.getOrNull()
 
-    suspend fun tellLrclibInstrumental(): String? = runCatching {
+    /** 307 (FR-307-2) — *Queue for LRCLIB*: queues, never sends. */
+    suspend fun queueForLrclib(): String? = runCatching {
         val r = httpClient.post("/api/music/lyrics/tell-lrclib")
         if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
     }.getOrNull()

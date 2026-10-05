@@ -42,6 +42,8 @@ class DashboardService(
     private val suggestions: dev.jellystructure.suggestions.SuggestionService?,
     private val subtitles: dev.jellystructure.server.SubtitleCheckWiring?,
     private val lidarr: dev.jellystructure.arr.LidarrClient? = null,
+    /** Phase 307 — *Waiting to publish*. */
+    private val publish: dev.jellystructure.publish.PublishQueue? = null,
     private val webhookSince: () -> Long?,
 ) {
     /** FR-285-2 — how one triage type reads as a row. `domain == null` ⇒ a film row and a series row from the kind split. */
@@ -77,8 +79,9 @@ class DashboardService(
         "music_reencodes" to Spec("music", WARNING, "open", "Songs a phone plays only by re-encoding", "WMA. Convert… makes AAC copies and keeps the originals.", action = "Convert…"),
         "music_files_no_ids" to Spec("music", WARNING, "open", "Songs whose files don’t say what they are", "Matched, but none of it is in the files — no MusicBrainz ids. Write tags puts them there."),
         // Phase 292 (FR-292-15) — two actions, both by hand (amends FR-285-2's one-action rule for this row only).
+        // 307 (FR-307-2) — the second one queues; nothing is sent until Publish on *Waiting to publish*.
         "music_instrumental_lyrics" to Spec("music", WARNING, "here", "Lyrics on an instrumental", "These songs have no singing, but have lyrics beside them.",
-            action = "Remove the lyrics", actionId = "music_lyrics_remove", action2 = "Tell LRCLIB it is instrumental", action2Id = "music_lyrics_lrclib"),
+            action = "Remove the lyrics", actionId = "music_lyrics_remove", action2 = "Queue for LRCLIB", action2Id = "music_lyrics_lrclib"),
         "audiobooks_missing_part" to Spec("books", WARNING, "open", "A part is missing", "The folder’s files skip a number — the book will jump."),
         "audiobooks_two_in_one" to Spec("books", WARNING, "open", "Folder holds two books", "The parts carry two different book titles."),
         "audiobooks_no_cover" to Spec("books", WARNING, "open", "No cover", "No cover.jpg, no embedded art, no provider had one."),
@@ -122,6 +125,9 @@ class DashboardService(
 
         // Phase 305 (FR-305-14) — songs that may be the same: a modal on the page, not a list.
         music?.let { m -> runCatching { dev.jellystructure.music.MusicAlbumPage.sameSongsRow(m.store.snapshot()) }.getOrNull()?.let { rows += it } }
+
+        // Phase 307 (FR-307-3) — what is waiting to go to a public database, opened as a panel on the page.
+        publish?.let { p -> runCatching { p.dashboardRow() }.getOrNull()?.let { rows += it } }
 
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
@@ -314,7 +320,8 @@ class DashboardService(
         const val CRITICAL = "critical"
         const val WARNING = "warning"
         const val INFO = "info"
-        val DOMAINS = listOf("films" to "Films", "series" to "Series", "music" to "Music", "books" to "Audiobooks", "subs" to "Subtitles", "jf" to "Jellyfin", "host" to "This server", "svc" to "Services")
+        // Phase 307 (OQ2) — *Public databases* is its own chip: a different kind of decision from a fix.
+        val DOMAINS = listOf("films" to "Films", "series" to "Series", "music" to "Music", "books" to "Audiobooks", "subs" to "Subtitles", "jf" to "Jellyfin", "host" to "This server", "svc" to "Services", "public" to "Public databases")
     }
 }
 

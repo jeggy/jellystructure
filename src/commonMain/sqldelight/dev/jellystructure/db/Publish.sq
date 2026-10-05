@@ -1,0 +1,70 @@
+-- Phase 307 (FR-307-1) — one queue for public writes, kept by the server. Must stay in sync with 69.sqm.
+-- `payload` is the exact JSON body that will be sent, frozen when the item is queued and never rebuilt (FR-307-4).
+-- state: waiting · publishing · published · failed · dismissed. Only an admin's press moves an item past waiting
+-- (FR-307-7). Published and dismissed rows are kept: they are the never-twice record.
+
+CREATE TABLE publish_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    label TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'waiting',
+    queued_at INTEGER NOT NULL,
+    queued_by TEXT NOT NULL,
+    decided_at INTEGER,
+    decided_by TEXT,
+    sent_at INTEGER,
+    answer TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0
+);
+
+-- FR-307-1 — the same subject is never queued twice while not dismissed (a dismissed row is the declined record).
+CREATE UNIQUE INDEX publish_item_live ON publish_item(target, kind, subject) WHERE state != 'dismissed';
+CREATE INDEX publish_item_state ON publish_item(state, queued_at);
+
+insertItem:
+INSERT INTO publish_item(target, kind, subject, label, payload, reason, state, queued_at, queued_by)
+VALUES (:target, :kind, :subject, :label, :payload, :reason, 'waiting', :queued_at, :queued_by);
+
+liveFor:
+SELECT * FROM publish_item WHERE target = :target AND kind = :kind AND subject = :subject AND state != 'dismissed' LIMIT 1;
+
+lastDismissedFor:
+SELECT * FROM publish_item WHERE target = :target AND kind = :kind AND subject = :subject AND state = 'dismissed' ORDER BY id DESC LIMIT 1;
+
+byId:
+SELECT * FROM publish_item WHERE id = :id;
+
+byState:
+SELECT * FROM publish_item WHERE state = :state ORDER BY queued_at, id;
+
+recentPublished:
+SELECT * FROM publish_item WHERE state = 'published' ORDER BY sent_at DESC, id DESC LIMIT :limit;
+
+countState:
+SELECT COUNT(*) FROM publish_item WHERE state = :state;
+
+markPublishing:
+UPDATE publish_item SET state = 'publishing', decided_at = :decided_at, decided_by = :decided_by
+WHERE id = :id AND state IN ('waiting', 'failed');
+
+nextPublishing:
+SELECT * FROM publish_item WHERE state = 'publishing' ORDER BY queued_at, id LIMIT 1;
+
+markOutcome:
+UPDATE publish_item SET state = :state, sent_at = :sent_at, answer = :answer, attempts = attempts + 1
+WHERE id = :id AND state = 'publishing';
+
+dismiss:
+UPDATE publish_item SET state = 'dismissed', decided_at = :decided_at, decided_by = :decided_by
+WHERE id = :id AND state IN ('waiting', 'failed');
+
+queueAgain:
+UPDATE publish_item SET state = 'waiting', queued_at = :queued_at, queued_by = :queued_by, decided_at = NULL, decided_by = NULL
+WHERE id = :id AND state = 'dismissed';
+
+resetPublishing:
+UPDATE publish_item SET state = 'waiting' WHERE state = 'publishing';

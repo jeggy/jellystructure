@@ -316,6 +316,13 @@ fun main() = runBlocking {
         audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db)),
         versions = dev.jellystructure.music.MusicVersionService(musicStore, mediaHistory),
     )
+    // Phase 307 — nothing goes to a public database until someone presses Publish. The queue survives a restart; an
+    // item a restart left `publishing` goes back to `waiting` (FR-307-1), and only an admin's press wakes the worker.
+    val publishQueue = dev.jellystructure.publish.PublishQueue(db, onOutcome = { item, error ->
+        if (item.target == dev.jellystructure.publish.PublishQueue.LRCLIB) musicPipeline.media.recordLrclibOutcome(item.subject, item.label, error)
+    })
+    runCatching { publishQueue.recover() }.onFailure { Logger.warn("publish queue: recovery failed — ${it.message}", "publish") }
+    publishQueue.scope = rootScope
     // Phase 305 (dev review 6) — `compare_songs`: whole-song fingerprints cached under the data directory.
     musicPipeline.compare = dev.jellystructure.music.MusicCompareSongsStep(
         musicStore, dev.jellystructure.music.MusicFingerprintCache(dataDir, { path -> dev.jellystructure.media.FfmpegRunner.musicFingerprint(path) }),
@@ -538,7 +545,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, suggestionService = suggestionService, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, suggestionService = suggestionService, publishQueue = publishQueue, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         playbackQoeStore = playbackQoeStore,
         castService = castService, castDir = castDir,
         lidarrClient = lidarrClient,

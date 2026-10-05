@@ -6,8 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-05 (dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Not
-dev-reviewed. Backend (a table, a service, routes, one Dashboard row) and the admin Dashboard. No Ravilo change, no
+`✓ Built` 2026-10-05 — built, not deployed, not live-tested (nothing has been sent to LRCLIB; acceptance 3 is the
+first live publish). Written 2026-10-05 (dev-authored, from the owner's ask above), checked against `main` `6ee8197c`.
+Not dev-reviewed. Backend (a table, a service, routes, one Dashboard row) and the admin Dashboard. No Ravilo change, no
 wire change for installed apps. **Amends 292 FR-292-15** (its second action no longer publishes; it queues).
 
 ## What happens today
@@ -130,6 +131,31 @@ own files or lyrics; the Dashboard row *Lyrics on an instrumental* still counts 
 - 292's selection: the count and the queued set come from one function.
 - Dashboard: the row appears with the waiting count, disappears at zero; `opens` the panel.
 - No call site of `Lrclib.publishInstrumental` outside the worker (a grep-style test).
+
+## Build notes (2026-10-05)
+
+- **Table and service.** `publish_item` (`Publish.sq`, migration `69.sqm`) with a partial unique index
+  `(target, kind, subject) WHERE state != 'dismissed'`. `publish/PublishQueue.kt`: `propose` (skips a subject that is
+  waiting, publishing, published or failed; a dismissed one only when its payload is byte-identical), `publish` /
+  `dismiss` / `queueAgain`, `recover` (run at start in `Main.kt`: `publishing` → `waiting`), and `drain`, the one worker
+  (a `Mutex.tryLock`; re-checks after unlocking so a press that lands as it finishes is not stranded). A failure keeps
+  the one-sentence reason in `answer`; *Try again* re-publishes the same frozen payload.
+- **The only door out.** `Lrclib.publishInstrumental(payload)` now takes the frozen body and is called only from
+  `LivePublishSender` in `PublishQueue.kt` (`PublishCallSiteTest` greps the backend for it). The body is built once by
+  `Lrclib.instrumentalPayload` when the song is queued. A success's answer is *Accepted* plus LRCLIB's reply, one line.
+- **292's second action** is *Queue for LRCLIB*: `POST /api/music/lyrics/tell-lrclib` (path kept) queues and answers
+  how many are waiting; `MusicMediaService.lrclibInstrumentalSongs` is the one selection (no singing, and lyrics now or
+  removed by *Remove the lyrics*), used for the queued set; `tellLrclibInstrumental` is gone. A song with no artist,
+  album or length is left out and counted in the reply. History: one `music_lyrics` line per song on each answer.
+- **Routes** (admin, cookie-gated like the rest): `GET /api/publish/items`; `POST /api/publish/items/publish` and
+  `/dismiss` (`{ids}`); `POST /api/publish/items/{id}/publish`, `/dismiss`, `/try-again`, `/queue-again`.
+- **Dashboard.** Row `publish_waiting` (*Waiting to publish*, domain `public` = *Public databases*, info, `fix = here`,
+  unit *thing*, `opens = publish_queue`), absent at zero. The panel (`ui/PublishQueueUi.kt`) follows 305's modal:
+  per-target sentence and link, each item's label, reason, queued when/by, the payload field by field and *Show what is
+  sent*, Publish / Don't publish, Publish all n / Don't publish any, failed items with *Try again*, and foot tabs
+  *Published* (last 50) and *Dismissed (n)* with *Queue again*. While items are publishing it re-reads every 2 s.
+- **Open questions taken as leaned:** accepted = published (OQ1); *Public databases* is its own chip (OQ2).
+- **Tests:** `PublishQueueTest` (7), `LrclibQueueTest` (2, incl. the route sending nothing), `PublishCallSiteTest`.
 
 ## Open questions
 

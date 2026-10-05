@@ -240,31 +240,49 @@ class MusicMediaService(
     }
 
     /**
-     * Phase 292 (FR-292-15 action 2, Q9) — *Tell LRCLIB it is instrumental*, by hand only: one publish per song of
-     * the Dashboard row, through [Lrclib.publishInstrumental]. Slow (a proof of work per song), so the caller runs it
-     * in the background; the outcome goes to each album's History.
+     * Phase 292 (FR-292-15 action 2), amended by 307 (FR-307-2) — the songs LRCLIB could be told are instrumental:
+     * no singing, and lyrics beside them now or removed by *Remove the lyrics*. **The one selection rule** — the
+     * route's count and the queued set both come from here (292 counted one way and sent another).
      */
-    suspend fun tellLrclibInstrumental(trackIds: Collection<String>? = null): String {
-        val snap = store.snapshot()
-        val songs = snap.tracks.values.filter { t ->
+    fun lrclibInstrumentalSongs(snap: MusicStore.Snapshot, trackIds: Collection<String>? = null): List<MusicTrack> =
+        snap.tracks.values.filter { t ->
             t.missingSince == null && (trackIds == null || t.id in trackIds) && snap.versions.of(t).blocksLyrics &&
                 (snap.versions.hasLyrics(t) || t.lyricsState == MusicLyrics.BLOCKED)
-        }
-        var ok = 0
-        val failed = mutableListOf<String>()
-        for (t in songs) {
+        }.sortedWith(compareBy({ it.albumId }, { it.disc }, { it.position }, { it.title }))
+
+    /**
+     * 307 (FR-307-2) — *Queue for LRCLIB*: one proposal per song of [lrclibInstrumentalSongs], with the exact body
+     * that would be sent ([Lrclib.instrumentalPayload], frozen by the queue). Nothing is sent from here; a song
+     * with no artist, album or length cannot be described to LRCLIB and is left out ([skipped]).
+     */
+    data class LrclibProposals(val proposals: List<dev.jellystructure.publish.PublishProposal>, val skipped: List<String>)
+
+    fun lrclibInstrumentalProposals(trackIds: Collection<String>? = null): LrclibProposals {
+        val snap = store.snapshot()
+        val out = ArrayList<dev.jellystructure.publish.PublishProposal>()
+        val skipped = ArrayList<String>()
+        for (t in lrclibInstrumentalSongs(snap, trackIds)) {
             val artist = t.artists.firstOrNull()?.name
             val album = t.albumId?.let { snap.albums[it]?.title }
             val dur = t.durationMs?.let { (it / 1000).toInt() }
-            if (artist == null || album == null || dur == null) { failed += "${t.title}: no artist, album or length"; continue }
-            val err = Lrclib.publishInstrumental(artist, t.title, album, dur)
-            if (err == null) ok++ else failed += "${t.title}: $err"
+            if (artist == null || album == null || dur == null) { skipped += t.title; continue }
+            val reason = if (snap.versions.of(t).noWords) "MusicBrainz says this recording has no words"
+                else "Its version is Instrumental, so it has no singing"
+            out += dev.jellystructure.publish.PublishProposal(
+                target = dev.jellystructure.publish.PublishQueue.LRCLIB, kind = dev.jellystructure.publish.PublishQueue.INSTRUMENTAL,
+                subject = t.id, label = "${t.title} — $artist · $album", payload = Lrclib.instrumentalPayload(artist, t.title, album, dur), reason = reason,
+            )
         }
-        val sentence = "Told LRCLIB $ok of ${songs.size} song${if (songs.size == 1) "" else "s"} ${if (ok == 1) "is" else "are"} instrumental" +
-            if (failed.isNotEmpty()) " · ${failed.size} failed (${failed.first()})" else ""
-        songs.mapNotNull { it.albumId }.distinct().forEach { runCatching { history?.record(it, "music_lyrics", sentence) } }
-        Logger.info("lrclib publish: $sentence", "music")
-        return sentence
+        return LrclibProposals(out, skipped)
+    }
+
+    /** 307 (FR-307-4) — a publish writes the album's History as 292 did (`music_lyrics`), one line per song. */
+    suspend fun recordLrclibOutcome(trackId: String, label: String, error: String?) {
+        val albumId = store.snapshot().tracks[trackId]?.albumId ?: return
+        val title = store.snapshot().tracks[trackId]?.title ?: label
+        runCatching {
+            history?.record(albumId, "music_lyrics", if (error == null) "Told LRCLIB “$title” is instrumental" else "LRCLIB was not told “$title” is instrumental: $error")
+        }
     }
 
     private suspend fun writeText(path: String, text: String): Boolean = runCatching {

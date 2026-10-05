@@ -16,6 +16,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
+import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
@@ -162,6 +163,7 @@ fun startServer(
     acquisitionService: AcquisitionService? = null,
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
     suggestionService: dev.jellystructure.suggestions.SuggestionService? = null,
+    publishQueue: dev.jellystructure.publish.PublishQueue? = null,   // Phase 307
     bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
     lidarrClient: dev.jellystructure.arr.LidarrClient? = null,   // Phase 284
     tvEventBus: TvEventBus,
@@ -627,7 +629,8 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
                 dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
-                    suggestionService, subtitleCheckWiring, lidarrClient) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
@@ -636,7 +639,7 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, dirtyItemStore)
                 subtitleCheckWiring?.let { w -> subtitleCheckRoutes(configStore, w.db, mediaStore, w.checks, w.steering, w.hook, w.advisor) }
-                musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient) { mediaStore.allItems() } }   // Phases 276–278
+                musicPipeline?.let { musicRoutes(configStore, it, appScope, mediaJobQueue, jellyfinClient, publishQueue) { mediaStore.allItems() } }   // Phases 276–278 (+ 307)
                 // Phases 280/281 — audiobooks: the Audiobooks kind, the Audiobook and Author pages.
                 musicPipeline?.let { mp ->
                     audiobooksRoutes(configStore, mp, jellyfinClient) { uid -> deviceService.allDevices().firstOrNull { it.jellyfinUserId == uid }?.jellyfinUsername }

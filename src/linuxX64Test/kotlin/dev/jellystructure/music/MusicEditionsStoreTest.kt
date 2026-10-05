@@ -36,8 +36,8 @@ class MusicEditionsStoreTest {
             extendedConfig = DatabaseConfiguration.Extended(basePath = file.substringBeforeLast('/')),
         ))
         for (t in listOf("music_official_pick", "music_single_home", "music_same_song", "music_sound_pair")) raw.execute(null, "DROP TABLE $t", 0)
-        // The migrations after 305's (66.sqm) run again too: their tables go with it (R368/R369's 67 and 68).
-        for (t in listOf("playback_session", "playback_session_event", "playback_session_controller")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        // The migrations after 305's (66.sqm) run again too: their tables go with it (R368/R369's 67 and 68, 307's 69).
+        for (t in listOf("playback_session", "playback_session_event", "playback_session_controller", "publish_item")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

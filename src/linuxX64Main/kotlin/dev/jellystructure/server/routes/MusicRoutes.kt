@@ -90,7 +90,7 @@ internal suspend fun serveFile(call: ApplicationCall, path: String?) {
  * Phase 276 — the admin's MusicBrainz surface: *Match now*, Find match… (search, releases, identify by sound, use),
  * lock / clear, genre ticks, *Match this track…*, and the providers card's own save (FR-276-8/9).
  */
-fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }) {
+fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }) {
     val matcher = music.matcher
     val noAnswer = mapOf("error" to "MusicBrainz didn't answer — try again in a moment")
 
@@ -511,11 +511,19 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         post("/lyrics/remove-instrumental") {
             call.respond(MusicBulkResult(media.removeLyricsOnNoSinging()))
         }
-        /** FR-292-15 action 2 — by hand only, in the background (a proof of work per song); the outcome goes to History. */
+        /** FR-292-15 action 2, amended by 307 (FR-307-2) — *Queue for LRCLIB*: adds the songs to the publish queue and
+         *  stops. Nothing is sent until an admin presses Publish on the Dashboard (FR-307-4). */
         post("/lyrics/tell-lrclib") {
-            val n = music.store.snapshot().let { s -> s.tracks.values.count { it.missingSince == null && s.versions.lyricsOnNoSinging(it) } }
-            appScope.launch { runCatching { media.tellLrclibInstrumental() }.onFailure { Logger.warn("LRCLIB publish failed: ${it.message}", "music") } }
-            call.respond(MusicBulkResult("Telling LRCLIB about $n song${if (n == 1) "" else "s"} — the outcome goes to each album’s History"))
+            val queue = publishQueue ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "The publish queue isn’t running"))
+            val p = media.lrclibInstrumentalProposals()
+            val by = runCatching { call.attributes[dev.jellystructure.auth.SessionKey].jellyfinUsername }.getOrNull()?.takeIf { it.isNotBlank() } ?: "admin"
+            val r = queue.propose(p.proposals, by)
+            call.respond(MusicBulkResult(buildString {
+                append(if (r.queued > 0) "${r.queued} song${if (r.queued == 1) "" else "s"} waiting to publish — nothing is sent until you press Publish" else "Nothing new to queue")
+                if (r.already > 0) append(" · ${r.already} already queued or published")
+                if (r.declined > 0) append(" · ${r.declined} you said not to publish")
+                if (p.skipped.isNotEmpty()) append(" · ${p.skipped.size} without an artist, album or length")
+            }))
         }
 
         post("/artist/{id}/lock") {

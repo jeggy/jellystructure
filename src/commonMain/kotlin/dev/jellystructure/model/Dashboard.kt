@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class DashboardDto(
     val headline: DashboardHeadline = DashboardHeadline(),
-    /** The eight domains that have at least one row, in the fixed order, with their row counts (the filter chips). */
+    /** The domains that have at least one row, in the fixed order, with their row counts (the filter chips). */
     val domains: List<DashboardDomain> = emptyList(),
     /** Ordered critical → warning → info, then by count desc. */
     val rows: List<DashboardRow> = emptyList(),

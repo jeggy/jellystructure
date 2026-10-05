@@ -193,7 +193,23 @@ object Lrclib {
         return Lyrics(synced, plain, instrumental, (o["id"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.toLongOrNull())
     }
 
-    // ── Phase 292 (FR-292-15, Q9) — *Tell LRCLIB it is instrumental*, by hand only ──
+    // ── Phase 292 (FR-292-15, Q9) — LRCLIB told a song is instrumental; since 307, only through the publish queue ──
+
+    /**
+     * 307 (FR-307-1) — the exact body `POST /api/publish` is sent, built once when the song is queued and frozen in
+     * `publish_item.payload`: both lyrics fields empty mark the track instrumental.
+     */
+    fun instrumentalPayload(artist: String, title: String, album: String, durationSec: Int): String = kotlinx.serialization.json.buildJsonObject {
+        put("trackName", kotlinx.serialization.json.JsonPrimitive(title))
+        put("artistName", kotlinx.serialization.json.JsonPrimitive(artist))
+        put("albumName", kotlinx.serialization.json.JsonPrimitive(album))
+        put("duration", kotlinx.serialization.json.JsonPrimitive(durationSec))
+        put("plainLyrics", kotlinx.serialization.json.JsonPrimitive(""))
+        put("syncedLyrics", kotlinx.serialization.json.JsonPrimitive(""))
+    }.toString()
+
+    /** 307 (FR-307-4) — what one publish came to: [error] null = LRCLIB accepted it; [answer] is its reply, one line. */
+    data class PublishOutcome(val error: String?, val answer: String)
 
     /**
      * LRCLIB's documented publish API (no account): `POST /api/request-challenge` answers `{prefix, target}`; the
@@ -202,23 +218,20 @@ object Lrclib {
      * track instrumental. It adds an entry; it does not correct the copied one.
      *
      * **Not verified against the live API** (292 build notes): verifying needs a real write to a public database,
-     * which the build did not send. Every failure comes back as one sentence. Null = LRCLIB accepted it.
+     * which the build did not send. Every failure comes back as one sentence.
+     *
+     * 307 (FR-307-4) — called from one place only, the publish queue's worker ([dev.jellystructure.publish.LivePublishSender]),
+     * with the [payload] frozen when the song was queued, sent byte for byte (`PublishCallSiteTest` holds the line).
      */
-    suspend fun publishInstrumental(artist: String, title: String, album: String, durationSec: Int, maxTries: Long = 200_000_000L): String? {
-        val challenge = postText("https://lrclib.net/api/request-challenge", null, null) ?: return "LRCLIB didn't hand out a challenge"
-        val o = runCatching { json.parseToJsonElement(challenge).jsonObject }.getOrNull() ?: return "LRCLIB's challenge could not be read"
-        val prefix = o["prefix"].str() ?: return "LRCLIB's challenge had no prefix"
-        val target = o["target"].str()?.lowercase() ?: return "LRCLIB's challenge had no target"
-        val nonce = solve(prefix, target, maxTries) ?: return "the challenge was not solved in time"
-        val body = kotlinx.serialization.json.buildJsonObject {
-            put("trackName", kotlinx.serialization.json.JsonPrimitive(title))
-            put("artistName", kotlinx.serialization.json.JsonPrimitive(artist))
-            put("albumName", kotlinx.serialization.json.JsonPrimitive(album))
-            put("duration", kotlinx.serialization.json.JsonPrimitive(durationSec))
-            put("plainLyrics", kotlinx.serialization.json.JsonPrimitive(""))
-            put("syncedLyrics", kotlinx.serialization.json.JsonPrimitive(""))
-        }.toString()
-        return if (postText("https://lrclib.net/api/publish", body, "$prefix:$nonce") != null) null else "LRCLIB did not accept it"
+    suspend fun publishInstrumental(payload: String, maxTries: Long = 200_000_000L): PublishOutcome {
+        fun fail(why: String) = PublishOutcome(why, why)
+        val challenge = postText("https://lrclib.net/api/request-challenge", null, null) ?: return fail("LRCLIB didn't hand out a challenge")
+        val o = runCatching { json.parseToJsonElement(challenge).jsonObject }.getOrNull() ?: return fail("LRCLIB's challenge could not be read")
+        val prefix = o["prefix"].str() ?: return fail("LRCLIB's challenge had no prefix")
+        val target = o["target"].str()?.lowercase() ?: return fail("LRCLIB's challenge had no target")
+        val nonce = solve(prefix, target, maxTries) ?: return fail("the challenge was not solved in time")
+        val reply = postText("https://lrclib.net/api/publish", payload, "$prefix:$nonce") ?: return fail("LRCLIB did not accept it")
+        return PublishOutcome(null, "Accepted" + reply.trim().replace(Regex("\\s+"), " ").take(200).takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty())
     }
 
     /** The proof of work: the first nonce whose hash is at most [target]. Yields now and then so it can be cancelled. */
