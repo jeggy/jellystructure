@@ -370,6 +370,25 @@ class CastController(
 
     fun roomOpReady(): (() -> Unit)? = pendingRoomOp.also { pendingRoomOp = null }
 
+    /** R371 — when this app last acted on its group's rooms, and the Cast device its link was last on (for a rejoin). */
+    @kotlin.concurrent.Volatile var lastRoomOpAtMs: Long? = null
+    @kotlin.concurrent.Volatile var lastLinkedKey: String? = null
+
+    /**
+     * R371 (found on the Pixel 9 Pro, 10:25:37) — select [castDeviceId] again after the session dropped under a room op:
+     * the SDK joins the receiver that is still playing (no LOAD — nothing is handed off). False while the device is not
+     * listed yet (Play services restarts its provider first).
+     */
+    fun rejoin(castDeviceId: String): Boolean {
+        if (sender.link.value != CastLinkState.NONE) return true
+        val r = routes.value.firstOrNull { it.deviceKey == castDeviceId && it.kind != "group" } ?: return false
+        pendingMusicHandoff = false
+        dev.jellystructure.ravilo.ui.music.MusicCast.relaying = false
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rejoining ${r.name} ($castDeviceId), still playing after the session dropped")
+        r.select()   // Android re-posts to the main looper (selectRoute)
+        return true
+    }
+
     /** The relay's LOAD is out: nothing more is pending. */
     fun relayLoaded(): CastLoadData? = pendingRelay.also { pendingRelay = null }
 

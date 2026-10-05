@@ -39,10 +39,15 @@ private class MediaRouter2GroupController : GroupController {
      *  it, grouped nothing and lost the session's link (the Pixel 9 Pro, 2026-10-05). Speakers group with speakers. */
     private fun speaker(r: MediaRoute2Info): Boolean = MediaRoute2Info.FEATURE_REMOTE_VIDEO_PLAYBACK !in r.features
 
+    /** R372 audit (bug 15) — every caller is on the main thread (LaunchedEffect); MediaRouter2 is thread-safe, the
+     *  androidx MediaRouter is not: said loudly if that ever changes. */
+    private fun offMain(op: String) { if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) sessionLog("R371: $op called off the main thread") }
+
     override fun members(): List<SessionRoom> = controller()?.selectedRoutes.orEmpty().map(::room)
     override fun selectable(): List<SessionRoom> = controller()?.selectableRoutes.orEmpty().filter(::speaker).map(::room)
 
     override fun add(castDeviceId: String): Boolean {
+        offMain("add")
         val c = controller()
         if (c == null) { sessionLog("R371: add $castDeviceId — no routing controller for the Cast session (controllers: ${runCatching { router.controllers.size }.getOrNull()})"); return false }
         val r = find(c.selectableRoutes, castDeviceId)

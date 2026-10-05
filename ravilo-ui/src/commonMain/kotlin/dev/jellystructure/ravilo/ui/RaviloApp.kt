@@ -1329,6 +1329,7 @@ fun RaviloApp(
                     val g = dev.jellystructure.ravilo.ui.seams.platformGroupController()
                     val room = c.castDeviceId
                     dev.jellystructure.ravilo.ui.seams.sessionLog("R371: ${c.op} $room for ${env.sessionId} (from ${env.source}; link ${castController.sender.link.value}, on ${castController.connectedDeviceKey()}, place ${env.placeCastDeviceId})")
+                    castController.lastRoomOpAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds()
                     if (g == null || room == null) { dev.jellystructure.ravilo.ui.seams.sessionLog("R371: no routing controller for ${c.op}"); return@collect }
                     val effectScope = this@LaunchedEffect
                     val apply = {
@@ -1414,7 +1415,30 @@ fun RaviloApp(
         // this app leaves (the receiver joined the server with its own hand-off) and takes nothing back.
         LaunchedEffect(castController) {
             var leftoverJob: kotlinx.coroutines.Job? = null
+            var rejoinJob: kotlinx.coroutines.Job? = null
             castController.sender.link.collect { link ->
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) {
+                    rejoinJob?.cancel(); rejoinJob = null
+                    castController.connectedDeviceKey()?.let { castController.lastLinkedKey = it }
+                }
+                // R371 (found on the Pixel 9 Pro, 10:25:37) — a session that dropped right after a room op (Play services'
+                // Cast provider died) while the receiver plays on: rejoin it, rather than leave it with no controller.
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE && rejoinJob?.isActive != true) {
+                    val key = castController.lastLinkedKey
+                    val since = castController.lastRoomOpAtMs?.let { kotlin.time.Clock.System.now().toEpochMilliseconds() - it }
+                    val live = dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions.any { s ->
+                        s.state != "ended" && (s.target.castDeviceId == key || s.rooms.any { it.castDeviceId == key })
+                    }
+                    if (dev.jellystructure.ravilo.ui.sessions.rejoinAfterDrop(since, castController.stoppedHere, key, live)) rejoinJob = launch {
+                        castController.lastRoomOpAtMs = null
+                        dev.jellystructure.ravilo.ui.seams.sessionLog("R371: the session dropped ${since} ms after a room op; looking for $key to rejoin")
+                        val joined = kotlinx.coroutines.withTimeoutOrNull(dev.jellystructure.ravilo.ui.sessions.REJOIN_SEARCH_MS) {
+                            while (!castController.rejoin(key!!)) kotlinx.coroutines.delay(500)
+                            true
+                        }
+                        if (joined == null) dev.jellystructure.ravilo.ui.seams.sessionLog("R371: $key not found in ${dev.jellystructure.ravilo.ui.sessions.REJOIN_SEARCH_MS / 1000} s; the speaker plays on without this app")
+                    }
+                }
                 // R372 — a move's own LOAD: this app keeps the link (it is the mover).
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.moveLoaded()?.let { castController.sender.load(it) }
                 // R371 — a relay joined for a room op: act now that the link is up.
@@ -1452,14 +1476,17 @@ fun RaviloApp(
         // MediaRouter2 says nothing when a member's level moves on the speaker itself).
         LaunchedEffect(Unit) {
             val g = dev.jellystructure.ravilo.ui.seams.platformGroupController() ?: return@LaunchedEffect
-            var last: List<dev.jellystructure.shared.tv.SessionRoom>? = null
+            // R371 (found on the Pixel 9 Pro, 10:24) — a room gone is reported only when two reads agree (a route
+            // republish showed the leader alone for a moment), and a room that left waits before it is added again.
+            val debounce = dev.jellystructure.ravilo.ui.sessions.MembershipDebounce()
             while (true) {
                 kotlinx.coroutines.delay(3_000)
-                if (!dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) { last = null; continue }
+                if (!dev.jellystructure.ravilo.ui.music.MusicCast.linked.value) { debounce.reset(); continue }
                 val item = dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId ?: continue
-                val members = runCatching { g.members() }.getOrDefault(emptyList())
-                if (members == last) continue
-                last = members
+                val members = debounce.next(runCatching { g.members() }.getOrDefault(emptyList())) ?: continue
+                val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                debounce.lastLeft.forEach { dev.jellystructure.ravilo.ui.sessions.RoomCooldowns.left(it, now) }
+                dev.jellystructure.ravilo.ui.seams.sessionLog("R371: rooms ${members.joinToString { it.name }}${if (debounce.lastLeft.isNotEmpty()) " (left: ${debounce.lastLeft.joinToString()})" else ""}")
                 // R371 — and which speakers can join, so *Add a speaker…* offers only those.
                 dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, members,
                     runCatching { g.selectable() }.getOrNull()))

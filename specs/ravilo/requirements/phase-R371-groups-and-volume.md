@@ -356,5 +356,35 @@ exactly those; an add that the controller refuses or that does not show among th
 session keeps its rooms; a room op no longer waits on the session's revision, so it never turns into *Can't reach*.
 Tests: `SpeakerRoundTwoTest`, `PlaybackSessionsTest`. Whether two speakers group from the Pixel is still the device check.
 
+**Add a speaker on the Pixel 9 Pro, round 4 (2026-10-05) — what Play services does, and what Ravilo does about it.**
+From the system log (MediaRouter2 service + Play services' Cast provider):
+1. *Add (works):* `selectRouteWithRouter2` on the member's route → Play services publishes a `Stue + 1` dynamic-group route
+   and one `…-member` route per room; the app's Cast session moves onto the group route (RECONNECTING ~200–240 ms, then
+   CONNECTED — since round 3 not treated as an end). The group then held for more than 30 s.
+2. *A room "drops" 3 s later:* Play services rediscovered devices over mDNS and republished its routes (`Published 10 routes`,
+   `CastDynamicGroupRC … Published 6 dynamic routes`); the selected routes read right then listed the leader alone. Ravilo
+   read membership once per 3 s poll and reported Gæsteværelse gone. Now a room gone is reported only when two reads in a
+   row agree (`MembershipDebounce`; a room added or a level change is reported at once; an empty read — no controller —
+   never). Whether the speaker really stopped playing that time cannot be told from the logs.
+3. *Re-adding the room right after it left ended the session:* 400 ms after `onAddMemberRoute`, Play services' process
+   **died** (`unregisterManager … died: true`, `Scheduling restart of crashed service CastMediaRoute2ProviderService`),
+   every Cast route vanished, the session ended with it (unselect reason 2) and the receiver played on with no controller.
+   This is a Play services crash, not something Ravilo can prevent by itself. Ravilo now (a) waits until a room has been
+   gone 10 s before adding it again (`RoomCooldown`), and (b) when the Cast session drops within 15 s of a room op while the
+   server still has the session, rejoins it: it looks for the Cast device again for up to 30 s (the restarted provider
+   republished the routes after ~2 s) and selects it, which joins the receiver still playing — no LOAD (`rejoinAfterDrop`,
+   `CastController.rejoin`). The phone's paused copy from the hand-back is replaced by the speaker's state once joined.
+   Tests: `SpeakerRoundTwoTest`.
+**Known limits:** a dynamic group lives in Play services, not in Ravilo; its routes are republished whenever devices are
+rediscovered, a member can leave on Play services' own decision, and adding a member can crash Play services' Cast
+provider (seen once, re-adding a room that had just left). Ravilo reports what the group's route says after two agreeing
+reads, refuses nothing that Play services offers, and rejoins a session such a crash dropped; a group that Play services
+itself dissolves is not rebuilt. A display (Nest Hub) never joins a speaker group (round 2).
+
+**Main-thread audit (bug 15):** every `CastRoute.select()` (move, start, relay, room-op join, rejoin) reaches Android's
+`selectRoute`, which re-posts to the main looper (ebb156cf); Cast SDK calls go through `onMain`; the room ops, the members
+poll and the leftover release run in `LaunchedEffect` (main); MediaRouter2 calls log if they are ever made off the main
+thread.
+
 **Only real speakers can confirm:** building the group from the Pixel; Cast's group volume scaling; a room unplugged;
 the desktop road.

@@ -134,6 +134,41 @@ class SpeakerRoundTwoTest {
         assertEquals(album to 3, dev.jellystructure.ravilo.ui.music.handBackQueue(album, 3, listOf(song("s4"))), "the speaker's longer queue wins")
     }
 
+    // ── 16 — Add a speaker made reliable where it can be ──
+
+    private val stueRoom = SessionRoom("c-stue", "Lounge", 10)
+
+    @Test fun `a room gone is reported only when two reads agree and an added room at once`() {
+        val d = MembershipDebounce()
+        assertEquals(listOf(stueRoom), d.next(listOf(stueRoom)))
+        assertEquals(listOf(stueRoom, guest), d.next(listOf(stueRoom, guest)), "an added room at once")
+        assertNull(d.next(listOf(stueRoom)), "one republish showing the leader alone (10:24:08) is not a room gone")
+        assertNull(d.next(listOf(stueRoom, guest)), "and it was back on the next read")
+        assertNull(d.next(listOf(stueRoom)))
+        assertEquals(listOf(stueRoom), d.next(listOf(stueRoom)), "two reads agree: it left")
+        assertEquals(setOf("c-guest"), d.lastLeft)
+        assertNull(d.next(emptyList()), "no controller is never no rooms")
+    }
+
+    @Test fun `a room that just left waits before it is added again`() = runTest {
+        val cooldown = RoomCooldown()
+        cooldown.left("c-guest", atMs = 1_000)
+        val waited = mutableListOf<Long>()
+        val g = FakeGroup(mutableListOf(stueRoom), joins = true)
+        applyRoomOp(g, SessionCommandRequest(op = "add_room", castDeviceId = "c-guest"), "song-1", { "Guest room" }, {}, wait = { waited += it },
+            cooldown = cooldown, now = { 4_000 })
+        assertEquals(7_000, waited.first(), "re-adding a member that had just left took Play services' Cast provider down (10:25:37)")
+        assertEquals(0, RoomCooldown().remaining("c-guest", 4_000))
+    }
+
+    @Test fun `a session that dropped right after a room op is rejoined and not otherwise`() {
+        assertTrue(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = false, castDeviceId = "c-stue", sessionLive = true))
+        assertFalse(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = true, castDeviceId = "c-stue", sessionLive = true), "this app's own Stop")
+        assertFalse(rejoinAfterDrop(msSinceRoomOp = 60_000, stoppedHere = false, castDeviceId = "c-stue", sessionLive = true), "no room op near it")
+        assertFalse(rejoinAfterDrop(msSinceRoomOp = null, stoppedHere = false, castDeviceId = "c-stue", sessionLive = true))
+        assertFalse(rejoinAfterDrop(msSinceRoomOp = 470, stoppedHere = false, castDeviceId = "c-stue", sessionLive = false), "the server says it ended")
+    }
+
     @Test fun `the hand-off names the Cast device the link is on`() {
         val routes = listOf(
             CastRoute("r-group", "Guest room", selected = true, select = {}, kind = "group", deviceKey = "g"),
