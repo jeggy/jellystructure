@@ -195,6 +195,7 @@ class SessionPublisher(
             audioIndex = s.options.audioIndex, subtitleIndex = s.options.subtitleIndex,
             volume = s.options.volume, muted = s.options.muted == true,
             ops = if (s.live) (control?.opsOf(s) ?: opsOf(s)) else emptyList(),
+            addable = s.options.addable,
         )
     }
 

@@ -77,3 +77,8 @@ fun rememberCastIconShown(cast: CastController?, music: Boolean): Boolean {
     val shown by flow.collectAsState(initial = false)
     return shown
 }
+
+/** R370 — the Cast device a link named [deviceName] is on: the route of that name (never a group), else the selected one. */
+fun linkedDeviceKeyOf(routes: List<CastRoute>, deviceName: String?): String? =
+    deviceName?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n }?.deviceKey }
+        ?: routes.firstOrNull { it.selected && it.kind != "group" }?.deviceKey

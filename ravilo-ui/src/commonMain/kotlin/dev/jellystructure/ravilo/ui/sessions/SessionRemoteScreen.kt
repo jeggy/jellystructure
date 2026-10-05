@@ -87,7 +87,10 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
     // The row from the list is newer than the detail for the state and position (session_state reaches every socket).
     val row = listState.sessions.firstOrNull { it.id == sessionId }
     val d = detail
-    val v = row ?: d?.session
+    // R372 — a session that left the list ended: the remote says so (it kept *Playing on …* and a pause button).
+    val v = remoteSessionView(row, d?.session, listKnown = listState.receivedAtMs > 0)
+    val ended = v?.state == "ended"
+    LaunchedEffect(ended) { if (ended) SessionRemote.onEnded(sessionId) }
     val pending by SessionRemote.pending.collectAsState()
     val now = rememberSessionClock()
     val feedback = commandFeedback(pending?.first, Clock.System.now().toEpochMilliseconds().coerceAtLeast(now), reflected = false)
@@ -108,7 +111,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
             }
             return@Column
         }
-        val ops = d?.ops.orEmpty().takeIf { v.controllable } ?: emptyList()
+        val ops = if (ended) emptyList() else d?.ops.orEmpty().takeIf { v.controllable } ?: emptyList()
         val video = v.kind == "film" || v.kind == "episode"
         Spacer(Modifier.height(8.dp))
         Box(
@@ -116,11 +119,17 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
                 .aspectRatio(if (video) 16f / 9f else 1f).clip(RoundedCornerShape(14.dp)).background(colors.surfaceVariant),
         ) { v.artwork?.let { RemoteImage(it, null, Modifier.fillMaxSize(), requestedWidth = 720) } }
         Spacer(Modifier.height(18.dp))
-        Text(sessionRowTitle(v) ?: str(if (v.kind == "music" || v.kind == "audiobook") "session.person_listening" else "session.person_watching", mapOf("person" to v.owner.name)),
+        // A title not known yet is not a hidden one (R368 owner decision 1): it reads *Loading…*, never *{person} is listening*.
+        Text(sessionRowTitle(v) ?: if (!sessionTitleHidden(v)) str("loading") else str(if (v.kind == "music" || v.kind == "audiobook") "session.person_listening" else "session.person_watching", mapOf("person" to v.owner.name)),
             color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, maxLines = 2, overflow = TextOverflow.Ellipsis)
         v.subtitle?.takeIf { v.kind != "episode" }?.let { Text(it, color = colors.textSecondary, fontSize = 15.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         // The place line: *Playing on {place}*, in accent, with its icon; tapping it opens *Move to…* (R372).
         val placeLine = when {
+            ended -> str("session.ended", mapOf("place" to v.target.name))
+            // R371 — an add that failed is said for 5 s.
+            v.roomFailed != null && listState.serverNowMs > 0 &&
+                (listState.serverNowMs + (now - listState.receivedAtMs) - (v.roomFailedAt ?: 0L)) < dev.jellystructure.ravilo.ui.seams.ROOM_LEFT_SHOWN_MS ->
+                str("group.add_failed", mapOf("room" to v.roomFailed.orEmpty()))
             v.movingTo != null -> str("session.moving", mapOf("place" to v.movingTo.orEmpty()))
             v.moveFailed != null -> str("session.move_failed", mapOf("place" to v.moveFailed.orEmpty()))
             // R371 (FR-R371-3) — a room that left on its own is named for 5 s.
@@ -131,7 +140,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
             else -> str("cast.playing_on", mapOf("device" to v.target.name))
         }
         Row(
-            Modifier.padding(top = 6.dp).heightIn(min = 46.dp).then(if (extras.onMoveTo != null && v.controllable) Modifier.clickable { moveOpen = !moveOpen; if (moveOpen) PlayOnStore.changed() } else Modifier)
+            Modifier.padding(top = 6.dp).heightIn(min = 46.dp).then(if (extras.onMoveTo != null && v.controllable && !ended) Modifier.clickable { moveOpen = !moveOpen; if (moveOpen) PlayOnStore.changed() } else Modifier)
                 .testTag("session-place-line"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -178,7 +187,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
                 Text(dev.jellystructure.ravilo.ui.music.fmtLen(dur), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
             }
         }
-        if (feedback == CommandFeedback.CANT_REACH) Text(str("session.cant_reach", mapOf("place" to v.target.name)), color = colors.accentSecondary, fontSize = 13.sp, fontFamily = Sora)
+        if (feedback == CommandFeedback.CANT_REACH && !ended) Text(str("session.cant_reach", mapOf("place" to v.target.name)), color = colors.accentSecondary, fontSize = 13.sp, fontFamily = Sora)
         // Transport.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp).alpha(if (feedback == CommandFeedback.DIM) 0.5f else 1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if ("set_shuffle" in ops) RemoteButton(MusicIcon.SHUFFLE, if (d?.shuffle == true) colors.accentSecondary else colors.textDim, "session-shuffle") {
@@ -200,7 +209,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
             }
         }
         // R371 — volume (master and rooms) where the app supplies it.
-        if (d != null && v.controllable) extras.volume?.invoke(d)
+        if (d != null && v.controllable && !ended) extras.volume?.invoke(d)
         // A film's tracks: the picks, as the target reported them.
         if (d != null && "set_audio" in ops && d.audioTracks.size > 1) TrackRow(str("session.audio"), d.audioTracks.map { it.index to (it.label ?: it.language ?: "${it.index + 1}") }, d.audioIndex) { i ->
             SessionRemote.command(v.id, SessionCommandRequest(op = "set_audio", index = i))
@@ -212,7 +221,7 @@ fun SessionRemoteScreen(sessionId: String, onBack: () -> Unit, extras: SessionRe
         // ⋯ — Play here (R372) and Stop.
         var confirmStop by remember(v.id) { mutableStateOf(false) }
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (extras.onPlayHere != null && !v.here && v.controllable) Pill(extras.playHereLabel ?: str("cast.play_here"), "session-play-here") { extras.onPlayHere.invoke(v) }
+            if (extras.onPlayHere != null && !v.here && v.controllable && !ended) Pill(extras.playHereLabel ?: str("cast.play_here"), "session-play-here") { extras.onPlayHere.invoke(v) }
             if ("stop" in ops) Pill(str("cast.stop_room"), "session-stop") {
                 if (stopNeedsConfirm(v)) confirmStop = true else SessionRemote.command(v.id, SessionCommandRequest(op = "stop"))
             }

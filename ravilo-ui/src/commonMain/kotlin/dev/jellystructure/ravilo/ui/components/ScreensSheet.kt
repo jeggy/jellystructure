@@ -178,7 +178,7 @@ fun ScreensSheet(
             else -> Unit
         }
     }
-    val tierRows = serverTargets?.let { st -> dev.jellystructure.ravilo.ui.sessions.mergeTargets(st, visibleCastRoutes(routes, music)) }
+    val tierRows = serverTargets?.let { st -> dev.jellystructure.ravilo.ui.sessions.mergeTargets(st, visibleCastRoutes(routes, music), sessionsState.sessions) }
     HandsetSheet(visible = open, onDismiss = onClose, popover = true) {   // R368 — a popover on a computer
         val pending = takeOver
         if (pending != null) {

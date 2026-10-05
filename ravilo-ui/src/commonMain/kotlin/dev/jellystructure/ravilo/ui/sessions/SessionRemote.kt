@@ -55,9 +55,11 @@ object SessionRemote {
         PlaybackSessions.touch(id)
         _outgoing.tryEmit(attachFrame(id))
         refresh()
+        dev.jellystructure.ravilo.ui.seams.sessionLog("remote: open $id")
     }
 
     fun close() {
+        _openId.value?.let { dev.jellystructure.ravilo.ui.seams.sessionLog("remote: close $it") }
         _openId.value?.let { _outgoing.tryEmit(detachFrame(it)) }
         _openId.value = null
         _detail.value = null
@@ -100,13 +102,22 @@ object SessionRemote {
         if (id == _openId.value && revision > p.second) _pending.value = null
     }
 
+    /** R372 — the open session ended (or left the list): nothing is in flight any more (no *Can't reach* after it). */
+    fun onEnded(id: String) {
+        if (id != _openId.value) return
+        if (_pending.value != null) _pending.value = null
+        dev.jellystructure.ravilo.ui.seams.sessionLog("remote: $id ended")
+    }
+
     /** FR-R369-1 — one command; the session's revision as this app last saw it rides along. */
     fun command(id: String, c: SessionCommandRequest) {
         val a = api ?: return
         val rev = c.revision ?: (_detail.value?.session?.takeIf { it.id == id }?.revision
             ?: PlaybackSessions.state.value.sessions.firstOrNull { it.id == id }?.revision)
-        _pending.value = now() to (rev ?: 0L)
+        // R371 — a room op's answer is the rooms report (or *Couldn't add*), not the session's revision.
+        if (commandAwaitsReflection(c)) _pending.value = now() to (rev ?: 0L)
         PlaybackSessions.touch(id)
+        dev.jellystructure.ravilo.ui.seams.sessionLog("remote: ${c.op} on $id (rev $rev)")
         scope.launch {
             val refusal: SessionCommandRefusal? = runCatching { a.playbackSessionCommand(id, c.copy(revision = rev)) }.getOrElse { SessionCommandRefusal("unreachable") }
             when (refusal?.reason) {
@@ -114,6 +125,7 @@ object SessionRemote {
                 "stale" -> { _pending.value = null; refresh() }   // FR-R369-1 — redraw and do nothing more
                 else -> { _pending.value = null; _refusals.tryEmit(refusal.reason) }
             }
+            if (refusal != null) dev.jellystructure.ravilo.ui.seams.sessionLog("remote: ${c.op} on $id refused: ${refusal.reason}")
         }
     }
 

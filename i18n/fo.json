@@ -393,6 +393,8 @@
   "target.replace_person": "Steðga {title} hjá {person} og spæl her?",
   "group.add_speaker": "Legg ein hátalara afturat…",
   "group.left": "{room} fór úr bólkinum",
+  "group.add_failed": "Fekk ikki lagt {room} afturat",
+  "session.ended": "Steðgað á {place}",
   "volume.no_report": "{place} sigur ikki ljóðstyrkina",
   "group.no_reach": "Eingin telefon ella teldu í nándini fær samband við hátalararnar",
   "target.already_playing": "Spælir longu á {place}",

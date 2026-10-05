@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.shared.tv.CastLoadData
 import dev.jellystructure.shared.tv.CastRelayLoadEnvelope
@@ -179,6 +180,7 @@ class SessionStarter(
             val env = SessionLoadEnvelope(sessionId = rec.id, kind = kind, items = req.items, index = req.index, startMs = startMs,
                 shuffle = req.shuffle, repeat = req.repeat, title = items.getOrNull(req.index)?.title, tracks = tracks)
             bus.notifyDevice(target.jellyfinUserId, target.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
+            Logger.info("Playback sessions: ${rec.id} start $kind on ${target.deviceId} from ${caller.deviceId} → session_load", "tv")
             return StartResult2.Started(rec, loadHere = false, castDeviceId = null)
         }
         val castId = req.targetId.removePrefix("cast:")
@@ -186,9 +188,13 @@ class SessionStarter(
         val name = seen.firstOrNull()?.device?.name ?: castId
         val callerSees = seen.any { it.app.deviceId == caller.deviceId }
         val rec = sessions.createStarting(caller, "cast", "cast:$castId", name, kind, items, req.index, startMs, options, caller, castDeviceId = castId)
-        if (callerSees && caller.platform in RELAY_PLATFORMS) return StartResult2.Started(rec, loadHere = true, castDeviceId = castId)
+        if (callerSees && caller.platform in RELAY_PLATFORMS) {
+            Logger.info("Playback sessions: ${rec.id} start $kind on $name from ${caller.deviceId} → its own LOAD (it sees the device)", "tv")
+            return StartResult2.Started(rec, loadHere = true, castDeviceId = castId)
+        }
         val live = bus.liveSockets().map { it.second }.toSet()
         val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, live)
+        Logger.info("Playback sessions: ${rec.id} start $kind on $name from ${caller.deviceId} → ${relay?.let { "relay ${it.deviceId}" } ?: "no relay (seen by ${seen.joinToString { it.app.deviceId }.ifEmpty { "no app" }})"}", "tv")
         if (relay == null) { sessions.end(rec.id, "failed"); return StartResult2.Unreachable }
         if (!relayLaunch(caller, relay, rec, castId, items, req)) { sessions.end(rec.id, "failed"); return StartResult2.Unreachable }
         return StartResult2.Started(rec, loadHere = false, castDeviceId = castId)
@@ -209,6 +215,7 @@ class SessionStarter(
         val env = CastRelayLoadEnvelope(sessionId = rec.id, castDeviceId = castId, load = load)
         bus.notifyDevice(relay.jellyfinUserId, relay.deviceId, json.encodeToString(CastRelayLoadEnvelope.serializer(), env))
         sessions.record(rec.id, "relayed", relay.deviceId, castId)
+        Logger.info("Playback sessions: ${rec.id} relay launch on $castId sent to ${relay.deviceId} (hand-off for ${owner.deviceId})", "tv")
         return true
     }
 
@@ -248,6 +255,7 @@ class SessionStarter(
                 shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off", title = s.current?.title, tracks = tracks)
             bus.notifyDevice(app.device.jellyfinUserId, app.device.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             sessions.record(s.id, "moving", caller.deviceId, app.device.displayName)
+            Logger.info("Playback sessions: ${s.id} move to ${app.device.deviceId} from ${caller.deviceId} → session_load at $startMs ms", "tv")
             return StartResult2.Started(moving, loadHere = false, castDeviceId = null)
         }
         if (s.kind == SessionKind.AUDIOBOOK) return StartResult2.BadRequest   // owner decision 4 (R370) — books never cast
@@ -257,6 +265,7 @@ class SessionStarter(
         val name = seen.firstOrNull()?.device?.name ?: castId
         val callerSees = !admin && seen.any { it.app.deviceId == caller.deviceId } && caller.platform in RELAY_PLATFORMS
         val moving = sessions.beginMove(s.id, targetId, name) ?: return StartResult2.BadRequest
+        Logger.info("Playback sessions: ${s.id} move to $name from ${caller.deviceId}${if (admin) " (admin)" else ""} → ${if (callerSees) "its own LOAD" else "relay"}", "tv")
         if (callerSees) return StartResult2.Started(moving, loadHere = true, castDeviceId = castId)
         val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, bus.liveSockets().map { it.second }.toSet())
             ?: return StartResult2.Unreachable
@@ -314,6 +323,7 @@ class SessionStarter(
         if ((obj["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content != "cast_devices_seen") return
         val arr = obj["devices"] as? kotlinx.serialization.json.JsonArray ?: return
         val list = arr.mapNotNull { runCatching { Json { ignoreUnknownKeys = true }.decodeFromJsonElement(CastSeenDevice.serializer(), it) }.getOrNull() }
+        Logger.info("Playback sessions: ${app.deviceId} sees ${list.size} Cast devices: ${list.joinToString { "${it.name} (${it.kind})" }}", "tv")
         reach.report(app, list)
         targetsChanged()
     }

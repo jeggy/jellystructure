@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.EVENTS_FEATURE_SESSION_CONTROL
@@ -219,11 +220,15 @@ class SessionControl(
         val minter = sessions.castMinterOf(s.targetId)
         val holderControl = minter != null && holdsGroupControl(minter)
         val relay = if (holderControl) null else relayAppFor(s)
-        val to = when (roomOpRoute(holderControl, relay != null)) {
-            RoomRoute.LinkHolder -> devices.listSessions(minter!!).maxByOrNull { it.lastSeen } ?: return CommandResult.Unreachable
+        val route = roomOpRoute(holderControl, relay != null)
+        val to = when (route) {
+            RoomRoute.LinkHolder -> devices.listSessions(minter!!).maxByOrNull { it.lastSeen }
             RoomRoute.Relay -> relay!!
-            RoomRoute.Unreachable -> return CommandResult.Unreachable
+            RoomRoute.Unreachable -> null
         }
+        Logger.info("Playback sessions: ${s.id} room op ${c.op} ${c.castDeviceId ?: ""}${c.level?.let { " level=$it" } ?: ""} from ${source ?: "?"} → " +
+            (to?.let { "${route::class.simpleName} ${it.deviceId}" } ?: "unreachable (link holder ${minter ?: "none"}${if (minter != null) " without group_control" else ""}, no relay)"), "tv")
+        if (to == null) return CommandResult.Unreachable
         // A relay joins the session's Cast device before it acts (it holds no link yet), so the envelope names it.
         val env = SessionCommandEnvelope(sessionId = s.id, command = c, source = source,
             placeCastDeviceId = s.castDeviceId ?: sessions.castDeviceOfReceiver(s.targetId))
@@ -255,6 +260,7 @@ class SessionControl(
             queueRev = s.options.queueRev.takeIf { c.op.startsWith("queue_") && s.options.queueKnown },
         )
         val text = json.encodeToString(SessionCommandEnvelope.serializer(), env)
+        Logger.info("Playback sessions: ${s.id} ${c.op} from ${source ?: "?"} → ${route::class.simpleName} (${s.targetId})", "tv")
         when (route) {
             CommandRoute.SessionCommand -> bus.notifySessionCommand(s.ownerUserId, s.targetId, text)
             is CommandRoute.LegacyPlaystate -> bus.notifyPlaystateCommand(s.ownerUserId, s.targetId, route.command, route.seekMs)

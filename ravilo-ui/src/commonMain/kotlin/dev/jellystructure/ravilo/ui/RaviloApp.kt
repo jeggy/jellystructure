@@ -1328,15 +1328,17 @@ fun RaviloApp(
                 if (c.op == "add_room" || c.op == "remove_room" || ((c.op == "set_volume" || c.op == "set_mute") && c.castDeviceId != null)) {
                     val g = dev.jellystructure.ravilo.ui.seams.platformGroupController()
                     val room = c.castDeviceId
-                    if (g == null || room == null) { println("R371: no routing controller for ${c.op}"); return@collect }
+                    dev.jellystructure.ravilo.ui.seams.sessionLog("R371: ${c.op} $room for ${env.sessionId} (from ${env.source}; link ${castController.sender.link.value}, on ${castController.connectedDeviceKey()}, place ${env.placeCastDeviceId})")
+                    if (g == null || room == null) { dev.jellystructure.ravilo.ui.seams.sessionLog("R371: no routing controller for ${c.op}"); return@collect }
+                    val effectScope = this@LaunchedEffect
                     val apply = {
-                        when (c.op) {
-                            "add_room" -> g.add(room)
-                            "remove_room" -> g.remove(room)
-                            "set_volume" -> c.level?.let { g.setRoomVolume(room, it) }
+                        effectScope.launch {
+                            val item = dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId ?: castController.sender.status.value?.itemId
+                            dev.jellystructure.ravilo.ui.sessions.applyRoomOp(g, c, item,
+                                nameOf = { id -> dev.jellystructure.ravilo.ui.sessions.PlayOnStore.targets.value?.firstOrNull { it.castDeviceId == id }?.name
+                                    ?: castController.routes.value.firstOrNull { it.deviceKey == id }?.name ?: id },
+                                report = { r -> dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(r) })
                         }
-                        val item = dev.jellystructure.ravilo.ui.music.MusicCast.status.value?.itemId ?: castController.sender.status.value?.itemId
-                        item?.let { dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(it, g.members())) }
                         Unit
                     }
                     // A relay that holds no link joins the session's Cast device first (relaying: it mirrors nothing),
@@ -1345,7 +1347,7 @@ fun RaviloApp(
                         env.placeCastDeviceId != null && castController.routes.value.any { it.deviceKey == env.placeCastDeviceId })) {
                         dev.jellystructure.ravilo.ui.seams.RoomJoin.ACT -> apply()
                         dev.jellystructure.ravilo.ui.seams.RoomJoin.JOIN -> castController.joinForRooms(env.placeCastDeviceId!!, apply)
-                        dev.jellystructure.ravilo.ui.seams.RoomJoin.CANNOT -> println("R371: cannot reach ${env.placeCastDeviceId} for ${c.op}")
+                        dev.jellystructure.ravilo.ui.seams.RoomJoin.CANNOT -> dev.jellystructure.ravilo.ui.seams.sessionLog("R371: cannot reach ${env.placeCastDeviceId} for ${c.op}")
                     }
                     return@collect
                 }
@@ -1411,6 +1413,7 @@ fun RaviloApp(
         // R370 (owner decision 1) — the relay: once the route connects, the LOAD goes out; once the receiver has it,
         // this app leaves (the receiver joined the server with its own hand-off) and takes nothing back.
         LaunchedEffect(castController) {
+            var leftoverJob: kotlinx.coroutines.Job? = null
             castController.sender.link.collect { link ->
                 // R372 — a move's own LOAD: this app keeps the link (it is the mover).
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.moveLoaded()?.let { castController.sender.load(it) }
@@ -1424,6 +1427,19 @@ fun RaviloApp(
                     }
                 }
                 if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) dev.jellystructure.ravilo.ui.music.MusicCast.relaying = false
+                dev.jellystructure.ravilo.ui.seams.sessionLog("cast link $link (on ${castController.connectedDeviceKey()})")
+                // R371 (found with the speakers) — the Cast session ended and stayed ended (not a switch to another device):
+                // a routing session the platform still holds to the speaker is released, or it kept the route alive and the
+                // speaker came up with Google's Default Media Receiver.
+                leftoverJob?.cancel()
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED) castController.stoppedHere = false
+                if (link == dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE) leftoverJob = launch {
+                    kotlinx.coroutines.delay(3_000)
+                    if (castController.sender.link.value != dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE || !castController.stoppedHere) return@launch
+                    castController.stoppedHere = false
+                    val released = dev.jellystructure.ravilo.ui.seams.platformGroupController()?.releaseLeftover().orEmpty()
+                    if (released.isNotEmpty()) dev.jellystructure.ravilo.ui.seams.sessionLog("R371: released leftover routing sessions: ${released.joinToString(" · ")}")
+                }
             }
         }
         // R370 (owner decision 1) — an Android or desktop app says which Cast devices it sees, so the server can relay.
@@ -1444,7 +1460,9 @@ fun RaviloApp(
                 val members = runCatching { g.members() }.getOrDefault(emptyList())
                 if (members == last) continue
                 last = members
-                dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, members))
+                // R371 — and which speakers can join, so *Add a speaker…* offers only those.
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportMembers(dev.jellystructure.shared.tv.SessionMembersReport(item, members,
+                    runCatching { g.selectable() }.getOrNull()))
             }
         }
         // R369 (dev review item 5) — this phone or computer's music queue, to the server on change only (ids).

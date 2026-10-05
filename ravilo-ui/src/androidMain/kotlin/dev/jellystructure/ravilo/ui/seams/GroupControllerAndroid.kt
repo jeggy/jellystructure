@@ -35,19 +35,39 @@ private class MediaRouter2GroupController : GroupController {
     private fun find(list: List<MediaRoute2Info>, castDeviceId: String): MediaRoute2Info? =
         list.firstOrNull { keyOf(it) == castDeviceId || it.id.endsWith(castDeviceId) } ?: list.firstOrNull { it.name.toString() == castDeviceId }
 
+    /** A display (it plays video): never offered as a room — selecting a Nest Hub launched the Default Media Receiver on
+     *  it, grouped nothing and lost the session's link (the Pixel 9 Pro, 2026-10-05). Speakers group with speakers. */
+    private fun speaker(r: MediaRoute2Info): Boolean = MediaRoute2Info.FEATURE_REMOTE_VIDEO_PLAYBACK !in r.features
+
     override fun members(): List<SessionRoom> = controller()?.selectedRoutes.orEmpty().map(::room)
-    override fun selectable(): List<SessionRoom> = controller()?.selectableRoutes.orEmpty().map(::room)
+    override fun selectable(): List<SessionRoom> = controller()?.selectableRoutes.orEmpty().filter(::speaker).map(::room)
 
     override fun add(castDeviceId: String): Boolean {
-        val c = controller() ?: return false
-        val r = find(c.selectableRoutes, castDeviceId) ?: return false
-        return runCatching { c.selectRoute(r) }.isSuccess
+        val c = controller()
+        if (c == null) { sessionLog("R371: add $castDeviceId — no routing controller for the Cast session (controllers: ${runCatching { router.controllers.size }.getOrNull()})"); return false }
+        val r = find(c.selectableRoutes, castDeviceId)
+        if (r == null) { sessionLog("R371: add $castDeviceId — not selectable (selectable: ${c.selectableRoutes.joinToString { "${it.name}/${keyOf(it)}" }})"); return false }
+        if (!speaker(r)) { sessionLog("R371: add ${r.name} — a display, not added"); return false }
+        val ok = runCatching { c.selectRoute(r) }.onFailure { sessionLog("R371: selectRoute(${r.name}) failed: ${it.message}") }.isSuccess
+        sessionLog("R371: add ${r.name} → ${if (ok) "selected" else "failed"}")
+        return ok
     }
 
     override fun remove(castDeviceId: String): Boolean {
-        val c = controller() ?: return false
-        val r = find(c.deselectableRoutes, castDeviceId) ?: return false
-        return runCatching { c.deselectRoute(r) }.isSuccess
+        val c = controller() ?: return false.also { sessionLog("R371: remove $castDeviceId — no routing controller") }
+        val r = find(c.deselectableRoutes, castDeviceId) ?: return false.also { sessionLog("R371: remove $castDeviceId — not deselectable") }
+        val ok = runCatching { c.deselectRoute(r) }.isSuccess
+        sessionLog("R371: remove ${r.name} → ${if (ok) "deselected" else "failed"}")
+        return ok
+    }
+
+    override fun releaseLeftover(): List<String> {
+        val left = runCatching { router.controllers.filter { !it.isReleased && it != router.systemController } }.getOrDefault(emptyList())
+        return left.map { c ->
+            val names = c.selectedRoutes.joinToString { it.name.toString() }
+            runCatching { c.release() }.onFailure { sessionLog("R371: releasing the routing session to $names failed: ${it.message}") }
+            names
+        }
     }
 
     override fun setRoomVolume(castDeviceId: String, percent: Int): Boolean {
@@ -60,3 +80,6 @@ private class MediaRouter2GroupController : GroupController {
 
 actual fun platformGroupController(): GroupController? =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) MediaRouter2GroupController() else null   // owner decision 3: below 11 → the relay
+
+/** R370–R372 — the sessions log: logcat tag `RaviloSessions` (cast starts, relays, room ops, the remote's state). */
+actual fun sessionLog(message: String) { runCatching { android.util.Log.i("RaviloSessions", message) } }   // a plain JVM unit test has no Log

@@ -159,6 +159,7 @@ object MusicCast {
     private fun handBack(last: CastRemoteStatus?, elapsedMs: Long) {
         val plan = castHandBack(last, elapsedMs, endedByApp = false) ?: return
         val handed = last ?: return
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R353: hand-back — ${handed.queue.size} songs at #${plan.index} ${plan.positionMs} ms")
         scope.launch(Dispatchers.Main) { MusicEngine.loadPaused(state(handed).queue, plan.index, plan.positionMs, context) }
     }
 
@@ -197,8 +198,9 @@ object MusicCast {
 
     private fun handOff(c: CastController) {
         val st = MusicEngine.state.value
-        if (st.book != null || st.queue.isEmpty()) return   // a book never casts; nothing loaded ⇒ a plain join
-        val pos = MusicEngine.currentPositionMs()
+        if (st.book != null || st.queue.isEmpty()) { dev.jellystructure.ravilo.ui.seams.sessionLog("R324: connected with nothing to hand over (a plain join)"); return }
+        val pos = handOffPositionMs(MusicEngine.currentPositionMs(), st.positionMs, st.playing)
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R324: hand-off of ${st.queue.size} songs at #${st.index} ${pos} ms (${if (st.playing) "playing" else "paused"}) to ${c.sender.deviceName.value}")
         remember(st.queue); context = st.context
         // The engine stops and keeps its queue paused where it was (FR-R322-12's stop), so *Play on this phone*
         // and a failed hand-off both have somewhere to come back to.
@@ -246,6 +248,7 @@ object MusicCast {
         val c = cast ?: return
         val st = _status.value ?: return
         val s = state(st)
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R324: play here — ${s.queue.size} songs at #${s.index} ${st.positionMs} ms from ${_device.value}")
         if (s.queue.isNotEmpty() && s.index >= 0) {
             MusicEngine.loadPaused(s.queue, s.index, st.positionMs, context)
             MusicEngine.play()
@@ -472,6 +475,14 @@ fun castHandBackFrom(lastLive: CastRemoteStatus?, handOver: CastHandOver?): Cast
         CastRemoteStatus(itemId = h.itemId, music = true, loaded = true, queue = h.queue, queueIndex = h.index,
             positionMs = h.positionMs, durationMs = h.queue[h.index].durationMs ?: 0L)
     }
+
+/**
+ * R370 (found on the Pixel 9 Pro) — where a hand-off starts the song: the player's live place, or — for a song restored
+ * paused after a relaunch and never opened, whose player has no place yet — where the state says it is. The speaker used
+ * to start such a song at 0:00.
+ */
+fun handOffPositionMs(live: Long, statePositionMs: Long, playing: Boolean): Long =
+    if (live > 0L || playing) live.coerceAtLeast(0L) else statePositionMs.coerceAtLeast(0L)
 
 /** How close to a song's end counts as having played it out: the last report before the end is up to ~1 s early. */
 private const val SONG_END_SLACK_MS = 2_000L

@@ -149,6 +149,8 @@ internal data class SessionOptions(
     @SerialName("queue_known") val queueKnown: Boolean = false,
     val rooms: List<SessionRoom> = emptyList(),
     @SerialName("room_levels_before_mute") val roomLevelsBeforeMute: Map<String, Int> = emptyMap(),
+    /** R371 — the speakers the link holder's routing controller says can join (null = not reported). */
+    val addable: List<SessionRoom>? = null,
 ) {
     fun plan(): SessionPlan? = plan?.toPlan()
     fun withPlan(p: SessionPlan?): SessionOptions = if (p == null) this else copy(plan = StoredPlan.of(p))
@@ -197,6 +199,9 @@ internal data class SessionRec(
     /** R371 (FR-R371-3) — a room that left on its own, and when. */
     val leftRoom: String? = null,
     val leftAt: Long? = null,
+    /** R371 — a room that could not be added, and when (*Couldn't add {room}*). */
+    val roomFailed: String? = null,
+    val roomFailedAt: Long? = null,
 ) {
     val live: Boolean get() = endedAt == null
     // The item that plays, by id: a queue report moves [queueIndex] into the app's whole queue while [queue] may hold only the
@@ -259,7 +264,7 @@ internal fun toView(
         createdAt = s.createdAt, updatedAt = s.updatedAt,
         rooms = s.options.rooms,
         movingTo = s.movingTo, moveFailed = s.moveFailed,
-        leftRoom = s.leftRoom, leftAt = s.leftAt,
+        leftRoom = s.leftRoom, leftAt = s.leftAt, roomFailed = s.roomFailed, roomFailedAt = s.roomFailedAt,
     )
 }
 
@@ -549,7 +554,9 @@ class PlaybackSessions(
                 is StartDecision.Join -> {
                     val cur = sessions.getValue(d.sessionId)
                     val sameItem = cur.itemId == itemId
-                    val queue = if (sameItem) cur.queue.ifEmpty { listOf(item) } else listOf(item)
+                    // A progress report can name the new song first (a skip on the receiver): its item may not be in the
+                    // queue yet, and the row then had no title (the Mac, 2026-10-05).
+                    val queue = if (sameItem && cur.queue.any { it.id == itemId && it.title != null }) cur.queue else listOf(item)
                     val next = cur.copy(
                         kind = kind, itemId = itemId, bookId = bookId ?: cur.bookId, queue = queue, queueIndex = if (cur.options.queueKnown) cur.queueIndex else 0,
                         loadDeadline = null,
@@ -568,6 +575,14 @@ class PlaybackSessions(
                 else -> {
                     if (d is StartDecision.Replace) {
                         endLocked(d.sessionId, "replaced", by = device)?.let { changes += SessionChange.List }
+                    }
+                    // R370 (found on the Pixel 9 Pro) — music cast from an app: what that app held in the same lane goes
+                    // with it. A playing one ends by its own stop report; a paused one (restored after a relaunch, never
+                    // opened, so nothing stops it) stayed beside the cast as the same song twice.
+                    if (device.kind == "cast") castMinter[device.deviceId]?.let { minter ->
+                        sessions.values.filter { it.live && it.targetId == minter && it.lane == lane && it.state != SessionState.PLAYING }.forEach { left ->
+                            endLocked(left.id, "replaced")?.let { changes += SessionChange.List }
+                        }
                     }
                     val starter = startedBy ?: device
                     val rec = SessionRec(
@@ -621,6 +636,10 @@ class PlaybackSessions(
                            volumePercent: Int? = null, muted: Boolean? = null) {
         var created = false
         var change: SessionChange? = null
+        // A report that names another song than the session holds (the receiver skipped, and its progress came before its
+        // start): what that song is, so the row and the remote keep a title (the Mac, 2026-10-05).
+        val peek = mutex.withLock { findLocked(device, itemId, sessionId) }
+        val newItem = if (peek != null && peek.itemId != itemId) runCatching { describe(itemId, peek.bookId)?.second }.getOrNull() else null
         mutex.withLock {
             val t = now()
             val cur = findLocked(device, itemId, sessionId)
@@ -635,8 +654,9 @@ class PlaybackSessions(
             val changed = isSessionChange(cur, itemId, positionMs, paused, t) || cur.reconnecting || cur.offline || cur.stopHoldUntil != null
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
             val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
+            val queue = if (cur.itemId != itemId && cur.queue.none { it.id == itemId }) listOf(newItem ?: SessionItem(itemId)) else cur.queue
             val next = cur.copy(
-                itemId = itemId, positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
+                itemId = itemId, queue = queue, positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
                 options = if (volumePercent != null) cur.options.copy(volume = volumePercent, muted = muted) else cur.options,
                 revision = if (changed) cur.revision + 1 else cur.revision,
                 reconnecting = false, reconnectDeadline = null, offline = false, stopHoldUntil = null,
@@ -771,15 +791,22 @@ class PlaybackSessions(
                 ?: sessions.values.lastOrNull { it.live && it.itemId == r.itemId && it.ownerUserId == device.jellyfinUserId }
                 ?: return@withLock
             val before = cur.options.rooms
-            val diff = roomsDiff(before, r.members)
+            // A failed add from an app that could not read its controller says no members: the rooms stay as they were.
+            val members = if (r.members.isEmpty() && r.failed != null) before else r.members
+            val diff = roomsDiff(before, members)
             val t = now()
             diff.added.forEach { event(cur.id, "room_added", device.deviceId, it.name) }
             diff.left.forEach { event(cur.id, "room_removed", device.deviceId, it.name) }
+            r.failed?.let { event(cur.id, "room_failed", device.deviceId, it) }
+            val moved = diff.added.isNotEmpty() || diff.left.isNotEmpty() || r.failed != null
+            Logger.info("Playback sessions: ${cur.id} rooms from ${device.deviceId}: ${members.joinToString { it.name }}" +
+                (r.failed?.let { " · couldn't add $it" } ?: "") + (r.selectable?.let { " · can join: ${it.joinToString { s -> s.name }}" } ?: ""), "tv")
             val next = cur.copy(
-                options = cur.options.copy(rooms = r.members),
+                options = cur.options.copy(rooms = members, addable = r.selectable ?: cur.options.addable),
                 leftRoom = diff.left.lastOrNull()?.name ?: cur.leftRoom, leftAt = if (diff.left.isNotEmpty()) t else cur.leftAt,
-                revision = if (diff.added.isNotEmpty() || diff.left.isNotEmpty()) cur.revision + 1 else cur.revision,
-                updatedAt = if (diff.added.isNotEmpty() || diff.left.isNotEmpty()) t else cur.updatedAt,
+                roomFailed = r.failed ?: cur.roomFailed, roomFailedAt = if (r.failed != null) t else cur.roomFailedAt,
+                revision = if (moved) cur.revision + 1 else cur.revision,
+                updatedAt = if (moved) t else cur.updatedAt,
             )
             sessions[next.id] = next
             next.persist()

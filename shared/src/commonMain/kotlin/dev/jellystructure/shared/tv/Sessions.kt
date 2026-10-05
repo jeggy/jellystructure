@@ -96,6 +96,9 @@ data class SessionView(
     /** R371 (FR-R371-3) — a room that left on its own, and when: the place line says *{room} left* for 5 s. */
     @SerialName("left_room") val leftRoom: String? = null,
     @SerialName("left_at") val leftAt: Long? = null,
+    /** R371 — a room that could not be added, and when: *Couldn't add {room}* for 5 s. */
+    @SerialName("room_failed") val roomFailed: String? = null,
+    @SerialName("room_failed_at") val roomFailedAt: Long? = null,
 )
 
 /** `GET /api/tv/playback/sessions` — the whole list for this viewer. */
@@ -246,6 +249,10 @@ fun castCommandForSession(c: SessionCommandRequest, music: Boolean): CastCommand
 data class SessionMembersReport(
     @SerialName("item_id") val itemId: String,
     val members: List<SessionRoom> = emptyList(),
+    /** The speakers the routing controller says can join (null = not known; an older app). */
+    val selectable: List<SessionRoom>? = null,
+    /** A room this app was asked to add and could not (its name): every controller says *Couldn't add {room}*. */
+    val failed: String? = null,
 )
 
 /** R371 — the ops on one room of a group (they go to the app holding the session's Cast link, or a relay app). */
@@ -297,6 +304,8 @@ data class SessionDetail(
     val muted: Boolean = false,
     /** The ops the target obeys — a control for any other op is absent, not greyed. */
     val ops: List<String> = emptyList(),
+    /** R371 — the speakers that can join, as the app holding the link reported them; null = not known. */
+    val addable: List<SessionRoom>? = null,
 )
 
 /** `{"type":"session_detail", …}` — only to the session's attached controllers (dev review item 5). */

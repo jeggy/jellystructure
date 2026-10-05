@@ -409,6 +409,29 @@ point, across users 403 → allowed with the switch). Not written: Robolectric `
 - Not changed: an ended row stays in *Playing everywhere*, dimmed, for 60 s, then the server's next list drops it
   (FR-R368-7, review item 13). The phone's own local session after casting is such a row.
 
+**Fixed after the second round (Pixel 9 Pro + Mac + speakers, 2026-10-05):**
+- *Casting a song restored paused after a relaunch* started it at 0:00 and left the phone's paused session beside the
+  cast (the same song twice). The hand-off takes the state's place when the player has none yet (`handOffPositionMs`),
+  and a receiver's music start ends what its minting app held paused in that lane (`replaced`). Tests:
+  `SpeakerRoundTwoTest`, `PlaybackSessionsTest`.
+- *A song a receiver skipped to had no title* (row, remote, queue): its progress report came before its start, and
+  changed the item without describing it. A report naming another song describes it; a start for that song replaces a
+  queue that lacks it. Test: `PlaybackSessionsTest`.
+- *A busy Cast place was listed under Free on the Mac*: a hand-off now names the Cast device the link is on
+  (`linkedDeviceKey`, by the device's name — Android selects a group route), so the server knows which device a
+  receiver is; and the list marks a Cast row busy from *Playing everywhere* when the server's row cannot say. An unknown
+  title reads *Loading…*, never the hidden-title wording. Test: `SpeakerRoundTwoTest`.
+- *Logging:* logcat tag `RaviloSessions` (cast start/stop/link, hand-off and hand-back with queue size and place, relay
+  launch, room ops and their outcome, the remote's open/close/refusals/end) and backend INFO lines `Playback sessions:`
+  (starts with their road, relay launches, moves, every command and room op with its route or why it is unreachable,
+  the rooms each app reports, the Cast devices each app sees).
+- **Not fixed, open:** (9) the queue after a relaunch was one song: the phone's last session (DB) reported a one-song
+  queue right after *Play here* from a speaker whose session held the whole album — the hand-back's queue source; the
+  new hand-back log line (`R353: hand-back — N songs`) will say which path shrank it. (11) Google's Default Media
+  Receiver left on a released speaker: not reproducible from the code. The Android app now releases a routing session it
+  still holds 3 s after its own *Stop* (a leftover route is the one thing on the phone that can start that receiver);
+  a relay leaving never releases. Confirm on the speakers.
+
 **Open question (owner):** a TV that runs Ravilo *and* has Chromecast built in is two places — the Ravilo app (its
 device name, e.g. the set's model name) and its Cast receiver (its Cast name). The merge joins them only when the names
 match. Lean: let the TV app report its own Cast device id on its events socket so the server lists one place (the app

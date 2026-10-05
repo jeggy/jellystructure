@@ -347,5 +347,10 @@ place, a failed move, the restart → offline), `MoveToTest` (3), `TvSpeakersPan
 `SessionMoveIntegrationTest` (4: the id kept, `session_load` 2 s back, *moving to*, the old place stopped once the new
 one plays; a stale revision 409; a speaker move from the web app relayed; the admin's targets and move).
 
+**Fixed after the Pixel 9 Pro test (2026-10-05):** the remote did not follow its session's end — once the row left the
+list it fell back to the detail as it was (*Playing on …*, a pause button, the bar pinned at the end, *Can't reach …*).
+A session gone from the list is shown ended (`remoteSessionView`): *Stopped on {place}* (`session.ended`), no transport,
+volume, *Move to…* or *Play here*, nothing in flight. Test: `SpeakerRoundTwoTest`.
+
 **Only devices can confirm:** CAF's paused timeout on a speaker; a move Pixel → speaker → Pixel (each 2 s back); an
 unplugged speaker turning *offline · paused* within 90 s with *Play here*; a relay move from the web app.

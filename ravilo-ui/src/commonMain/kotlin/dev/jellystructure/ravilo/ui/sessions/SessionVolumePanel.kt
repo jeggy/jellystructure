@@ -101,7 +101,7 @@ private fun AddSpeakerRows(d: SessionDetail) {
     val canAdd = "add_room" in d.ops
     val targets by PlayOnStore.targets.collectAsState()
     val inGroup = d.session.rooms.map { it.castDeviceId }.toSet() + setOfNotNull(d.session.target.id)
-    val candidates = addSpeakerRows(targets.orEmpty(), inGroup)
+    val candidates = dev.jellystructure.ravilo.ui.seams.addableRooms(targets.orEmpty(), inGroup + setOfNotNull(d.session.target.castDeviceId), d.addable)
     Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).alpha(if (canAdd) 1f else 0.5f)
         .then(if (canAdd) Modifier.clickable { open = !open; if (open) PlayOnStore.changed() } else Modifier).testTag("session-add-speaker"),
         verticalAlignment = Alignment.CenterVertically) {

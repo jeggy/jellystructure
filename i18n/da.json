@@ -393,6 +393,8 @@
   "target.replace_person": "Stop {person}s {title} og afspil her?",
   "group.add_speaker": "Tilføj en højttaler…",
   "group.left": "{room} forlod gruppen",
+  "group.add_failed": "Kunne ikke tilføje {room}",
+  "session.ended": "Stoppet på {place}",
   "volume.no_report": "{place} oplyser ikke lydstyrken",
   "group.no_reach": "Ingen telefon eller computer i nærheden kan nå højttalerne",
   "target.already_playing": "Spiller allerede på {place}",

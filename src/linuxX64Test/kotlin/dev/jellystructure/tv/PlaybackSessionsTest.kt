@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
+import dev.jellystructure.shared.tv.SessionRoom
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.createDatabase
 import kotlinx.coroutines.runBlocking
@@ -83,6 +84,52 @@ class PlaybackSessionsTest {
         assertEquals(id, s.onStart(phone, "song-8", 0, kindHint = SessionKind.MUSIC))
         assertEquals("Song song-8", s.get(id)?.current?.title)
         assertEquals("The Lanterns · Paper Harbour", s.get(id)?.current?.subtitle)
+    }
+
+    @Test fun `music cast from a phone ends the phone's paused music session and leaves a film alone`() = runBlocking {
+        // Found on the Pixel 9 Pro: after a relaunch the phone held the last song paused; casting it left that session
+        // paused beside the speaker's, the same song twice in Playing everywhere.
+        val s = service()
+        val phone = device("pixel")
+        val paused = s.onStart(phone, "song-3", 45_825, kindHint = SessionKind.MUSIC)
+        s.onProgress(phone, "song-3", 45_825, paused = true)
+        val film = s.onStart(phone, "film-1", 0)
+        val speaker = device("rx-guest", kind = "cast")
+        s.onReceiverRedeemed(speaker, "pixel", "c-guest", null)
+        val cast = s.onStart(speaker, "song-3", 45_825, kindHint = SessionKind.MUSIC)
+        assertEquals("replaced", s.get(paused)?.endReason)
+        assertTrue(s.get(cast)!!.live)
+        assertTrue(s.get(film)!!.live, "another lane is not touched")
+    }
+
+    @Test fun `a progress report naming the next song before its start keeps a title`() = runBlocking {
+        // Found with the Mac: two nexts through the server, the receiver's progress for the new song came before its
+        // start, and the row and the remote's queue had no title for it.
+        val s = service()
+        val speaker = device("rx-guest", kind = "cast")
+        val id = s.onStart(speaker, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onQueueReport(speaker, dev.jellystructure.shared.tv.SessionQueueReport(sessionId = id, itemId = "song-1", queue = listOf("song-0", "song-1", "song-2"), queueIndex = 1))
+        s.onProgress(speaker, "song-2", 1_000, paused = false, sessionId = id)
+        assertEquals("Song song-2", s.get(id)?.current?.title)
+        assertEquals(id, s.onStart(speaker, "song-2", 1_000, kindHint = SessionKind.MUSIC))
+        assertEquals("Song song-2", s.get(id)?.current?.title)
+    }
+
+    @Test fun `a failed room add is said on the session and the rooms stay`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val speaker = device("rx-guest", kind = "cast")
+        s.onReceiverRedeemed(speaker, "pixel", "c-guest", null)
+        val id = s.onStart(speaker, "song-1", 0, kindHint = SessionKind.MUSIC)
+        val guest = SessionRoom("c-guest", "Guest room", 6)
+        s.onMembersReport(phone, dev.jellystructure.shared.tv.SessionMembersReport("song-1", listOf(guest), selectable = listOf(SessionRoom("c-stue", "Lounge"))))
+        val rev = s.get(id)!!.revision
+        s.onMembersReport(phone, dev.jellystructure.shared.tv.SessionMembersReport("song-1", emptyList(), failed = "Kitchen hub"))
+        val after = s.get(id)!!
+        assertEquals("Kitchen hub", after.roomFailed)
+        assertTrue(after.revision > rev, "the remote's press is answered")
+        assertEquals(listOf(guest), after.options.rooms)
+        assertEquals(listOf("c-stue"), after.options.addable?.map { it.castDeviceId })
     }
 
     @Test fun `a music start with a book id is an audiobook`() = runBlocking {

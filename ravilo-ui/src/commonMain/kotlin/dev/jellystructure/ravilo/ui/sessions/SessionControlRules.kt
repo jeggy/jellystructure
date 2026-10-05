@@ -75,3 +75,18 @@ fun castSeenOf(routes: List<dev.jellystructure.ravilo.ui.seams.CastRoute>): List
 /** R369 — the `attach_session` / `detach_session` frames (dev review item 7). */
 fun attachFrame(id: String): String = "{\"type\":\"attach_session\",\"id\":${JsonPrimitive(id)}}"
 fun detachFrame(id: String): String = "{\"type\":\"detach_session\",\"id\":${JsonPrimitive(id)}}"
+
+/**
+ * R372 (found on the Pixel 9 Pro) — what the remote shows: the list's row (newer for state and place); once the session
+ * has left the list (it ended, and its 60 s are over) the detail's last word, as ended. It used to fall back to that
+ * detail as it was — *Playing on …*, a pause button, the bar pinned at the end and *Can't reach …*.
+ */
+fun remoteSessionView(row: SessionView?, detail: SessionView?, listKnown: Boolean): SessionView? =
+    row ?: detail?.let { if (listKnown) it.copy(state = "ended") else it }
+
+/**
+ * R368 owner decision 1 — a session whose title this viewer may not see carries no title and no place in it. A title
+ * not known yet (a song whose description has not arrived) keeps its place: it is not hidden, and must not read
+ * *{person} is listening*.
+ */
+fun sessionTitleHidden(v: SessionView): Boolean = v.title == null && v.positionMs == null && v.durationMs == null

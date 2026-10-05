@@ -43,7 +43,6 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.volumeRows
 import dev.jellystructure.ravilo.ui.sessions.PlayOnStore
 import dev.jellystructure.ravilo.ui.sessions.SessionRemote
-import dev.jellystructure.ravilo.ui.sessions.addSpeakerRows
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.PlaybackTarget
@@ -110,7 +109,7 @@ fun tvSpeakersPanel(d: SessionDetail, addOpen: Boolean = false, targets: List<Pl
     val canAdd = "add_room" in d.ops
     val add = TvSpeakerRow(null, "", null, false, enabled = canAdd, reason = if (canAdd) null else "group.no_reach", add = true)
     val inGroup = v.rooms.map { it.castDeviceId }.toSet() + setOfNotNull(v.target.id, v.target.castDeviceId)
-    val candidates = if (addOpen && canAdd) addSpeakerRows(targets, inGroup).map { t ->
+    val candidates = if (addOpen && canAdd) dev.jellystructure.ravilo.ui.seams.addableRooms(targets, inGroup, d.addable).map { t ->
         TvSpeakerRow(t.castDeviceId, t.name, null, false, enabled = t.busy == null, candidate = true)
     } else emptyList()
     return rows + add + candidates

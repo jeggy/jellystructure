@@ -156,7 +156,7 @@ class CastController(
             return
         }
         scope.launch {
-            val code = runCatching { api.castHandoff() }.getOrElse { onError(it); return@launch }
+            val code = runCatching { api.castHandoff(linkedDeviceKey()) }.getOrElse { onError(it); return@launch }
             sender.load(CastLoadData(
                 serverUrl = serverUrl,
                 code = code.code,
@@ -182,7 +182,7 @@ class CastController(
         if (tracks.isEmpty()) return
         val t = tracks.getOrNull(currentIndex.coerceIn(0, tracks.lastIndex)) ?: return
         scope.launch {
-            val code = runCatching { api.castHandoff() }.getOrElse { onError(it); return@launch }
+            val code = runCatching { api.castHandoff(linkedDeviceKey()) }.getOrElse { onError(it); return@launch }
             sender.load(CastLoadData(
                 serverUrl = serverUrl, code = code.code,
                 itemId = t.id, title = t.title, kicker = t.artist, artUrl = t.coverUrl?.let { if (it.startsWith("http")) it else serverUrl.trimEnd('/') + it },
@@ -216,6 +216,7 @@ class CastController(
      * its own dialog would, and the in-player hand-off (FR-R245-4) fires on the connection as before.
      */
     fun castOnChromecast(route: dev.jellystructure.ravilo.ui.seams.CastRoute, music: Boolean = false) {
+        dev.jellystructure.ravilo.ui.seams.sessionLog("cast: start on ${route.name} (${route.deviceKey}) music=$music, link ${sender.link.value}")
         if (sender.screen.link.value != CastLinkState.NONE) sender.screen.unlink()
         // R324 — music playing on one speaker and another is chosen: the music moves. Its queue comes back to this
         // device, the first speaker goes quiet, and the hand-off on connection sends it on from where it was. (It used
@@ -237,7 +238,11 @@ class CastController(
     fun closeSheet() { sheet.value = null }
 
     /** FR-R245-10 — the sheet's *Stop casting*: explicit, ends the session on whichever side is linked. */
-    fun stopCasting() = sender.stop()
+    fun stopCasting() { stoppedHere = true; dev.jellystructure.ravilo.ui.seams.sessionLog("cast: stop casting on ${sender.deviceName.value}"); sender.stop() }
+
+    /** R371 — the last Cast session ended by this app's own *Stop* (not a relay leaving, not a switch): only then is a
+     *  leftover routing session released ([dev.jellystructure.ravilo.ui.seams.GroupController.releaseLeftover]). */
+    @kotlin.concurrent.Volatile var stoppedHere: Boolean = false
 
     /** R265 (FR-R265-2/3) — the sheet's own device list; `nearby` already resolved server-side. */
     suspend fun screenDevices() = runCatching { api.remoteDevices() }.getOrDefault(emptyList())
@@ -273,6 +278,7 @@ class CastController(
      * receiver then joins it), select the route, and LOAD the session's queue from its place on connection.
      */
     fun moveLoad(castDeviceId: String, sessionId: String, d: dev.jellystructure.shared.tv.SessionDetail?, startMs: Long, lang: String = "en") {
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R372: move $sessionId onto $castDeviceId at $startMs ms")
         val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return
         val v = d?.session ?: return
         scope.launch {
@@ -297,6 +303,7 @@ class CastController(
      * the session, then the route is selected and the LOAD goes out on connection, as a move's does.
      */
     fun startLoad(castDeviceId: String, sessionId: String, itemId: String, title: String, kicker: String?, artUrl: String?, positionMs: Long?, lang: String = "en") {
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R370: start on $castDeviceId for $sessionId at $positionMs ms")
         val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return
         scope.launch {
             val code = runCatching { api.castHandoff(castDeviceId, sessionId) }.getOrNull() ?: return@launch
@@ -316,6 +323,7 @@ class CastController(
      * sees the device. The app's root LOADs it on connection, then leaves ([dev.jellystructure.ravilo.ui.music.MusicCast.leaveRelay]).
      */
     fun relayLoad(castDeviceId: String, load: CastLoadData): Boolean {
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R370: relay launch on $castDeviceId for ${load.sessionId} at ${load.positionMs} ms (link ${sender.link.value})")
         if (sender.link.value != CastLinkState.NONE) return false
         val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return false
         pendingRelay = load
@@ -328,8 +336,15 @@ class CastController(
     /** R371 — a room op waiting for this app to join the session's Cast device. */
     private var pendingRoomOp: (() -> Unit)? = null
 
-    /** The Cast device this app's link is on (the selected route's), or null. */
-    fun connectedDeviceKey(): String? = if (sender.link.value == CastLinkState.CONNECTED) routes.value.firstOrNull { it.selected }?.deviceKey else null
+    /** The Cast device this app's link is on, or null. */
+    fun connectedDeviceKey(): String? = if (sender.link.value == CastLinkState.CONNECTED) linkedDeviceKey() else null
+
+    /**
+     * R370 (found with the Mac and the Pixel) — the Cast device the link is on, by the session's device name (Android
+     * selects a group route for a Cast session, so `selected` alone is not the device), else the selected route. It rides
+     * every hand-off, so the server knows which Cast device a receiver is and lists that place as busy, not free.
+     */
+    fun linkedDeviceKey(): String? = linkedDeviceKeyOf(routes.value, sender.deviceName.value)
 
     /**
      * R371 (review items 7 and 8) — the server sent a room op to this app as the relay: join the session's Cast device
@@ -337,6 +352,7 @@ class CastController(
      * then act once the link is up.
      */
     fun joinForRooms(castDeviceId: String, act: () -> Unit): Boolean {
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R371: join $castDeviceId for a room op (link ${sender.link.value})")
         if (sender.link.value != CastLinkState.NONE) return false
         val r = routes.value.firstOrNull { it.deviceKey == castDeviceId } ?: return false
         pendingRoomOp = act

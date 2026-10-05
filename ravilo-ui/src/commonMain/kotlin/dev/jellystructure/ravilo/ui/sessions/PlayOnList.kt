@@ -41,10 +41,16 @@ fun canPlay(c: TargetCapabilities, kind: String, castPlace: Boolean): Boolean = 
  * socket is open), never a group route. With [serverTargets] null (the server cannot be reached, or is older) the
  * local list stands alone.
  */
-fun mergeTargets(serverTargets: List<PlaybackTarget>?, localRoutes: List<CastRoute>): List<PlayOnRow> {
+fun mergeTargets(serverTargets: List<PlaybackTarget>?, localRoutes: List<CastRoute>, sessions: List<SessionView> = emptyList()): List<PlayOnRow> {
     val routes = localRoutes.filter { it.kind != "group" }
+    // A Cast place's session, when the server's row could not say (a receiver whose Cast id it does not know yet): the
+    // live session on that Cast id, else on a Cast place of that name. A busy place was listed as free (the Mac).
+    fun castBusy(castDeviceId: String?, name: String): SessionView? = sessions.firstOrNull { s ->
+        s.state != "ended" && s.target.kind != "app" &&
+            ((castDeviceId != null && s.target.castDeviceId == castDeviceId) || s.target.name.equals(name, ignoreCase = true))
+    }
     if (serverTargets == null) return routes.map { r ->
-        PlayOnRow(id = "cast:${r.deviceKey}", name = r.name, icon = if (r.kind == "speaker") "speaker" else "tv", route = r)
+        PlayOnRow(id = "cast:${r.deviceKey}", name = r.name, icon = if (r.kind == "speaker") "speaker" else "tv", route = r, busy = castBusy(r.deviceKey, r.name))
     }
     val rows = mutableListOf<PlayOnRow>()
     val usedRoutes = mutableSetOf<String>()
@@ -56,7 +62,7 @@ fun mergeTargets(serverTargets: List<PlaybackTarget>?, localRoutes: List<CastRou
                 ?: routes.firstOrNull { it.id !in usedRoutes && it.name.equals(t.name, ignoreCase = true) }
             if (r != null) usedRoutes += r.id
             // A place this app reaches itself is reachable whatever the server's relay state says.
-            rows += PlayOnRow(t.id, t.name, t.icon, target = t, route = r, busy = t.busy, reachable = t.reachable || r != null)
+            rows += PlayOnRow(t.id, t.name, t.icon, target = t, route = r, busy = t.busy ?: castBusy(t.castDeviceId, t.name), reachable = t.reachable || r != null)
         } else {
             // A TV running Ravilo and its own Cast route: one row, the app while its socket is open (review item 4).
             routes.firstOrNull { it.name.equals(t.name, ignoreCase = true) }?.let { usedRoutes += it.id }
@@ -64,7 +70,7 @@ fun mergeTargets(serverTargets: List<PlaybackTarget>?, localRoutes: List<CastRou
         }
     }
     for (r in routes) if (r.id !in usedRoutes && rows.none { it.name.equals(r.name, ignoreCase = true) }) {
-        rows += PlayOnRow(id = "cast:${r.deviceKey}", name = r.name, icon = if (r.kind == "speaker") "speaker" else "tv", route = r)
+        rows += PlayOnRow(id = "cast:${r.deviceKey}", name = r.name, icon = if (r.kind == "speaker") "speaker" else "tv", route = r, busy = castBusy(r.deviceKey, r.name))
     }
     return rows
 }

@@ -20,10 +20,37 @@ interface GroupController {
     fun remove(castDeviceId: String): Boolean
     /** 0–100. */
     fun setRoomVolume(castDeviceId: String, percent: Int): Boolean
+    /**
+     * R371 (found with the speakers) — the routing sessions this app still holds after its Cast session ended: released,
+     * so the platform does not keep a route to the speaker alive (and start Google's Default Media Receiver on it).
+     * Returns what it released, for the log.
+     */
+    fun releaseLeftover(): List<String> = emptyList()
 }
 
 /** This platform's controller, or null (see [GroupController]). */
 expect fun platformGroupController(): GroupController?
+
+/** R370–R372 — one line in the platform's log (Android: logcat tag `RaviloSessions`): cast starts, relays, room ops. */
+expect fun sessionLog(message: String)
+
+/**
+ * R371 (found on the Pixel 9 Pro with a Nest Hub) — the rooms *Add a speaker…* may offer: when the app holding the link
+ * reported what its routing controller says can join ([addable], speakers only), exactly those; otherwise the speakers
+ * the server lists that are not in the group yet. A display is never offered: selecting one launched the Default Media
+ * Receiver on it, grouped nothing, and the session's own link was lost.
+ */
+fun addableRooms(targets: List<dev.jellystructure.shared.tv.PlaybackTarget>, inGroup: Set<String>, addable: List<SessionRoom>?): List<dev.jellystructure.shared.tv.PlaybackTarget> {
+    val speakers = targets.filter { it.kind == "cast" && it.reachable && it.icon == "speaker" && it.castDeviceId != null && it.castDeviceId !in inGroup && it.id !in inGroup }
+    if (addable == null) return speakers
+    val ids = addable.map { it.castDeviceId }.toSet()
+    val listed = speakers.filter { it.castDeviceId in ids }
+    val extra = addable.filter { a -> a.castDeviceId !in inGroup && listed.none { it.castDeviceId == a.castDeviceId } }.map { a ->
+        dev.jellystructure.shared.tv.PlaybackTarget("cast:${a.castDeviceId}", "cast", a.name, "speaker",
+            dev.jellystructure.shared.tv.TargetCapabilities(audio = true), castDeviceId = a.castDeviceId)
+    }
+    return listed + extra
+}
 
 /** R371 (review items 7 and 8) — what an app does with a room op the server sent it. */
 enum class RoomJoin {

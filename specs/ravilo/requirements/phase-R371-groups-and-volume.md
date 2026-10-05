@@ -347,5 +347,14 @@ or the name; only a device session confirms it.
 `group_control` link holder and its members report reaching the controllers; a link holder that cannot group hands the
 op to the relay with `place_cast_device_id`; nobody ⇒ 409 and no room ops offered, the master still works).
 
+**Fixed after the Pixel 9 Pro test (2026-10-05):** *Add a speaker… → a Nest Hub* started Google's Default Media Receiver
+on the hub, grouped nothing, and the remote said *Can't reach* the speaker. Now: only speakers are ever offered (a display
+— a route with remote video playback — is filtered out on the routing controller and in the list), and once the link
+holder has reported what its controller says can join (`SessionMembersReport.selectable` → `SessionDetail.addable`),
+exactly those; an add that the controller refuses or that does not show among the members within 6 s is reported
+(`failed`) and every remote says *Couldn't add {room}* for 5 s (`group.add_failed`; `SessionView.room_failed`), the
+session keeps its rooms; a room op no longer waits on the session's revision, so it never turns into *Can't reach*.
+Tests: `SpeakerRoundTwoTest`, `PlaybackSessionsTest`. Whether two speakers group from the Pixel is still the device check.
+
 **Only real speakers can confirm:** building the group from the Pixel; Cast's group volume scaling; a room unplugged;
 the desktop road.
