@@ -59,3 +59,18 @@ expect fun switchesHlsAudioRenditions(): Boolean
  */
 expect fun playsOnlyHls(): Boolean
 
+/**
+ * R376 (FR-R376-5) — the containers this player opens, declared to the server. Android and the desktop keep the list
+ * every platform sent before (Media3 / mpv open them all); the web asks the browser (mp4 always, mkv/webm where it
+ * says so), so a container a browser cannot open is transcoded instead of failing in the element.
+ */
+expect fun supportedContainers(): List<String>
+
+/** The pre-R376 list every platform declared; still the Android and desktop answer. */
+internal val BASE_CONTAINERS = listOf("mkv", "mp4", "avi", "mov")
+
+/**
+ * R376 (FR-R376-3) — this player switches between the audio tracks INSIDE one direct-played file. False on the web
+ * (Chrome and Firefox expose no `audioTracks`): a multi-audio file is then asked for as HLS ([asksHlsForAudio]).
+ */
+expect fun switchesAudioInFile(): Boolean

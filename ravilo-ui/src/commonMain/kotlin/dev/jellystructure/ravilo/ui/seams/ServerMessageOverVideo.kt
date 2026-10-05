@@ -7,9 +7,9 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * R354 (FR-R354-10b) — true while a platform video layer sits ABOVE the app's own drawing, so nothing Compose draws can
- * be seen over the picture. Only the web has one: its `<video>` element is lifted over the Compose canvas while no
- * Compose-only overlay is open (R157/R169, [RaviloPlayer.setChromeVisible]). Android, the Mac and Linux draw the
- * picture inside (or under) Compose, so this stays false there.
+ * be seen over the picture. The web had one until R376: its `<video>` element was lifted over the Compose canvas
+ * (R157/R169). R376 (FR-R376-1) keeps it behind the canvas for good, so no platform sets this any more; it stays as
+ * the seam a future platform with such a layer would use.
  */
 object VideoOverApp {
     var covers: Boolean by mutableStateOf(false)

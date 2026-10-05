@@ -7,7 +7,8 @@ load them from `cdn.jsdelivr.net` — blocked by the corrected `script-src 'self
 
 | File | Source | License |
 |---|---|---|
-| `hls.min.js` | `hls.js@1.5.13` — `cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js` | Apache-2.0 |
+| `hls.min.js` | `hls.js@1.7.3` — `dist/hls.min.js` from `registry.npmjs.org/hls.js/-/hls.js-1.7.3.tgz` (R376 FR-R376-7; was 1.5.13) | Apache-2.0 |
+| `hls.worker.js` | `hls.js@1.7.3` — `dist/hls.worker.js` from the same tarball: the transmuxer worker (`enableWorker`), loaded by path (`workerPath`) because the CSP's `worker-src 'self'` refuses the blob: worker hls.js would otherwise build | Apache-2.0 |
 | `jassub.umd.js` | `jassub@1.7.0` — `.../dist/jassub.umd.js` | LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND MIT AND MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0 |
 | `jassub-worker.js` | `jassub@1.7.0` — `.../dist/jassub-worker.js` | (same as above) |
 | `jassub-worker.wasm` | `jassub@1.7.0` — `.../dist/jassub-worker.wasm` | (same as above) |
@@ -20,3 +21,5 @@ WebAssembly-only Compose app), `jassub.es.js`, `COPYRIGHT`, `README.md`, `LICENS
 Committed as plain binary files, not fetched by a build step — a reproducible build should not depend on
 a CDN being reachable at build time (the same reasoning phase 167 applied to the self-hosted admin
 fonts). Re-fetch with the exact URLs above if these ever need a version bump.
+
+R376 (2026-10-05): the hls.js tarball's integrity matched the registry's `sha512-MsPlx6yVW4Qv4C7mEVou4/gk/5cN2dVxOTnrNjPSmyH2f0Ln+/UkG10Ax1PE6OvrmTVPKgQYozTtBaPOuCzq7A==`; both files are copied unmodified.

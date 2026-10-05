@@ -49,6 +49,8 @@
             cursor: pointer;
         }
         #fs-btn:hover { background: rgba(255,255,255,.15); }
+        /* R376 (FR-R376-4) — the player takes fullscreen itself and draws its own controls where this button sat. */
+        body.rv-playing #fs-btn { display: none !important; }
         /* FR-R263-6 — read back via getComputedStyle from the wasmJs actual of the safe-area seam
            (RaviloRootActuals.kt); zero-size and unpainted, so it never affects layout or a screenshot.
            `env()` with no source (a Safari tab, most Android devices) resolves to the 0px fallback. */

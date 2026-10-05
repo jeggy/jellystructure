@@ -8,42 +8,39 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLVideoElement
 
 /**
- * Web actual: a browser <video> element appended to the document body.
- * HLS is handled by browser-native support (Safari/Edge) or a future hls.js injection.
- * Audio track selection is handled by the browser; subtitle tracks use <track> elements.
+ * Web actual: a browser `<video>` element, fixed full-window BEHIND the Compose viewport.
  *
- * R157: this Compose Multiplatform version's `CanvasBasedWindow` exposes no canvas-alpha/opaque
- * toggle (verified directly against the API — no such parameter exists), so the canvas can't be made
- * transparent to let the video show through underneath it as originally hoped. Instead [setChromeVisible]
- * swaps the video's z-order with the canvas (`z-index: 1` in index.html): above it — with
- * `pointer-events: none` set once here, so clicks always pass through to the canvas beneath regardless
- * of z-order — while demoted below it whenever a Compose-only overlay (track picker / next-up card /
- * episode rail) needs to paint over it. R169: the caller (`PlayerScreen`) now only asks for that demote
- * in those three cases — for the everyday "chrome visible, nothing else open" state the video stays
- * promoted (visible) and `PlayerChromeBridge` draws the basic transport on top of it in the DOM instead,
- * since this version's canvas still can't composite Compose's own chrome over a visible video. See
- * RaviloPlayer.kt's doc comment and PlayerChromeBridge.kt.
+ * R376 (FR-R376-1) — the element never moves above the canvas any more. ravilo-web boots with ComposeViewport, the
+ * player screen clears its own pixels (PlayerVideoSurface punches a BlendMode.Clear hole), and the picture shows
+ * through; every piece of Compose chrome — the phone's or the TV/desktop one, the picker, next-up, the rail, Skip
+ * Intro, R218's moments — draws over it as on every other platform. R157's z-index swap and R169's DOM transport bar
+ * are gone. `pointer-events:none`: the element never takes input, the canvas does.
+ *
+ * R376 (FR-R376-2) — the state the poll loop reads comes from the element's and hls.js's own events
+ * ([WebPlaybackEvents]), not from constants.
  */
 actual class RaviloPlayer actual constructor() {
-    private val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
-        // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing
-        // within the viewport. background:#000 fills the bars. Starts behind the canvas (z-index 0 <
-        // the canvas's 1 in index.html) — chrome is visible by default when the player opens.
+    internal val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
+        // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing within the viewport.
+        // background:#000 fills the bars. z-index 0, under #ComposeTarget's 1 (index.html), for the element's life.
         v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0;pointer-events:none"
         v.controls = false
+        // iOS: play inside the page, never in Apple's own player (which would drop every piece of Ravilo chrome).
+        v.setAttribute("playsinline", "")
         document.body?.appendChild(v)
         // R265 (FR-R265-4/-8) — offer this element to AirPlay and report what WebKit says about it.
         WebAirPlay.bind(v)
         // R265 — the chosen subtitle is re-applied as Safari adds the manifest's own tracks, which
         // arrive after load() (and one may arrive marked DEFAULT, e.g. a Croatian sidecar in the probe).
         watchTextTracks(v)
+        // R376 (FR-R376-2) — every event R218 needs, queued with its time.
+        wireEvents(v)
     }
 
-    actual fun setChromeVisible(visible: Boolean) {
-        video.style.zIndex = if (visible) "0" else "2"
-        // R354 (FR-R354-10b) — while the video covers the canvas, a dashboard message is drawn in the DOM above it.
-        VideoOverApp.covers = !visible
-    }
+    private val events = WebPlaybackEvents()
+
+    /** R376 (FR-R376-2) — what the element reported since the last read, in order. */
+    private fun sync() = events.feed(drainEvents(video))
 
     /** R244 (FR-R244-6) — fit/fill is the <video>'s object-fit on the web. */
     internal fun setObjectFit(fill: Boolean) {
@@ -59,12 +56,11 @@ actual class RaviloPlayer actual constructor() {
     private var subtitleSlots: List<SubtitleSlot> = emptyList()
     private var loadedAudio: List<AudioTrack> = emptyList()
 
-    // R192 — title/subtitle/artworkUrl are accepted but unused: this only feeds the browser's own local
-    // Media Session API (`wireMediaSession` below), which isn't mirrored to other devices the way
-    // Android's cross-device layer surfaces a native MediaSession, so there's no privacy concern to gate
-    // here. Wiring `navigator.mediaSession.metadata` for a nicer browser lock-screen/OS overlay is a
-    // reasonable future enhancement, just not the scope of this phase (Android-native controls only).
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
+        // R376 (FR-R376-2) — the outgoing stream's events belong to it; the new one starts with no frame from now,
+        // not from whenever the browser gets round to `loadstart`.
+        sync()
+        events.on("loadstart", nowMs())
         // R284 (FR-R284-4) — only subtitles this player can DRAW are its tracks. A URL-less entry is a
         // burn-in candidate (PGS), which PlayerScreen lists itself from the ticket; keeping it here too
         // showed every PGS track twice on the web, the first copy selecting nothing.
@@ -79,10 +75,14 @@ actual class RaviloPlayer actual constructor() {
         }
         // R17: lazy-load hls.js for HLS streams (the R56 transcode / burn-in TranscodingUrl is an
         // .m3u8, which non-Safari browsers can't play natively). Direct-play URLs set video.src.
-        attachSource(video, streamUrl)
-        video.currentTime = startPositionMs / 1000.0
+        // R376 (FR-R376-7) — hls.js starts at the ticket's position itself (`startPosition`).
+        attachSource(video, streamUrl, startPositionMs / 1000.0)
         // R44: route browser/OS media keys to the <video> via the Media Session API.
         wireMediaSession(video)
+        // R376 (FR-R376-4) — and name what plays, so the OS's media controls and lock screen say it (the research
+        // report's owner check, taken at its lean: a browser's own media session is the browser's, not R193's
+        // Android service).
+        setMediaMetadata(title, subtitle ?: "", artworkUrl ?: "")
         // R110: match the TV's white-text + black-outline caption look for native <track> (VTT) cues.
         installCueStyle()
         // R284 (FR-R284-4) — one slot per entry of [loadedSubtitles], in order: how that subtitle is
@@ -120,19 +120,27 @@ actual class RaviloPlayer actual constructor() {
         subtitleSlots = slots
     }
 
-    actual fun play() { video.play() }
+    actual fun play() { playVideo(video) }
     actual fun pause() { video.pause() }
     actual fun seekTo(positionMs: Long) { video.currentTime = positionMs / 1000.0 }
     /** R354 (FR-R354-6) — the video element's own volume. */
     actual fun setVolume(level: Float) { video.volume = level.coerceIn(0f, 1f).toDouble() }
 
     /**
-     * R291 (FR-R291-4) — a composed master (`audio_renditions`) names every audio rendition `a{position} …`;
-     * the pick selects that rendition: hls.js through `hls.audioTrack`, Safari through the element's own
-     * `audioTracks`. The picture keeps playing. Anything else (one muxed track, R284's restream) has nothing to
-     * select, and PlayerScreen restreams as before.
+     * R291 (FR-R291-4) / R376 (FR-R376-3) — a composed master (`audio_renditions`) names every audio rendition
+     * `a{position} …`; the pick selects that rendition: hls.js through `hls.audioTrack`, Safari through the element's
+     * own `audioTracks`. The picture keeps playing. A pick made before the browser has read the manifest is held and
+     * applied when it has. Returns false when nothing could switch (a direct-played file with several tracks in a
+     * browser with no `audioTracks`), and PlayerScreen restreams (R284) instead of doing nothing.
      */
-    actual fun selectAudioTrack(index: Int) { selectRendition(video, index) }
+    actual fun selectAudioTrack(index: Int): Boolean {
+        if (loadedAudio.size <= 1) return true   // one track: nothing to switch, and it is already playing
+        return when (selectRendition(video, index)) {
+            1, 2 -> true
+            // Nothing to select: true only when the pick is the track that already plays.
+            else -> index == loadedAudio.indexOfFirst { it.isDefault }.coerceAtLeast(0) && !hasRenditionList(video)
+        }
+    }
 
     /**
      * R284 (FR-R284-4) — really switches. Until this phase it was an empty stub, so the only subtitle
@@ -147,8 +155,8 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
-        VideoOverApp.covers = false
         WebAirPlay.unbind(video)
+        runCatching { clearMediaMetadata() }
         runCatching { destroyOverlays(video) } // R17: tear down any hls.js / JASSUB instance
         runCatching { document.body?.removeChild(video) }
     }
@@ -169,35 +177,87 @@ actual class RaviloPlayer actual constructor() {
         val buf = video.buffered
         return if (buf.length > 0) (buf.end(buf.length - 1) * 1000).toLong() else 0L
     }
-    actual val isPlaying: Boolean get() = !video.paused && !video.ended
-    // R306 (FR-R306-3) — a media error on the current source; a new src clears it.
-    actual val playbackFailed: Boolean get() = video.error != null
-    actual val isEnded: Boolean get() = video.ended
-    // R218 (FR-R218-6) — "the wasm player needs its own waiting/playing wiring; where it cannot, falls
-    // back to moment A's behaviour rather than inventing one." No `waiting`/`playing`/`seeking` event
-    // wiring exists on this <video> element yet, so these three constants keep B/C/D permanently
-    // inactive here — only moment A (the existing pre-ticket Loading state) ever shows on web, exactly
-    // the documented fallback, not a bug.
-    actual val hasRenderedFirstFrame: Boolean get() = true
-    actual val isBuffering: Boolean get() = false
-    actual val isSeeking: Boolean get() = false
-    // R46: the browser doesn't expose rich embedded-audio metadata, so surface the server-derived
-    // labels for the picker. (Switching multi-audio still needs an hls.js bridge — display only.)
-    actual val audioTracks: List<PlayerAudioTrack> get() =
-        loadedAudio.mapIndexed { i, a ->
+    actual val isPlaying: Boolean get() { sync(); return !video.paused && !video.ended && !events.failed }
+    // R306 (FR-R306-3) — a media error on the current source, or hls.js giving up on it; a new src clears it.
+    actual val playbackFailed: Boolean get() { sync(); return video.error != null || events.failed }
+    actual val isEnded: Boolean get() { sync(); return video.ended || events.ended }
+    // R218 (FR-R218-1) / R376 (FR-R376-2) — the element's own events: B (cold start), C (stall) and D (seek) show on
+    // the web exactly as on Android; PlayerScreen applies R218's 400 ms debounce and strings.
+    actual val hasRenderedFirstFrame: Boolean get() { sync(); return events.firstFrame }
+    actual val isBuffering: Boolean get() { sync(); return events.buffering }
+    actual val isSeeking: Boolean get() { sync(); return events.seeking }
+
+    /**
+     * R376 (FR-R376-3) — the stream's own audio list when it has one (a composed master's renditions, as hls.js or
+     * Safari lists them), labelled with the server's names by position. Anything else (direct play, one muxed track)
+     * lists the server's tracks, as before (R46). While a master's renditions are not read yet the list is empty, so
+     * R181's resolver waits for the real one.
+     */
+    actual val audioTracks: List<PlayerAudioTrack> get() {
+        val names = renditionNames(video)
+        if (names.isNotEmpty()) {
+            val fromStream = audioTracksFromRenditions(names.split('\u0001'), loadedAudio)
+            if (fromStream.isNotEmpty()) return fromStream
+        }
+        if (loadedAudio.size > 1 && renditionsPending(video)) return emptyList()
+        return loadedAudio.mapIndexed { i, a ->
             val label = a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language ?: "Track ${i + 1}"
             PlayerAudioTrack(i, label, a.language, a.channels, a.isDefault)
         }
+    }
     actual val subtitleTracks: List<PlayerSubtitleTrack> get() =
         loadedSubtitles.mapIndexed { i, s ->
             val label = s.label ?: languageName(s.language) ?: s.language ?: "Track ${i + 1}"
             PlayerSubtitleTrack(i, label, s.language, s.forced, s.isDefault)
         }
 
-    // R216 — out of scope for the web target (no browser API for dropped-frame/rebuffer counters
-    // comparable to Media3's AnalyticsListener); reports "nothing observed" honestly.
-    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot()
+    /**
+     * R216 / R376 (FR-R376-6) — what a browser can know: dropped frames from `getVideoPlaybackQuality()`, stalls (count
+     * and time, FR-R376-2's `waiting`), and where hls.js plays, its bandwidth estimate. The level hls.js chose and the
+     * decoded frame count ride in the diagnostic decoder line (no new wire field).
+     */
+    actual fun qoeSnapshot(): PlayerQoeSnapshot {
+        sync()
+        val bw = hlsBandwidth(video)
+        return PlayerQoeSnapshot(
+            droppedFrames = droppedFrames(video),
+            rebufferCount = events.stallCount,
+            rebufferMs = events.stallMsAt(nowMs()),
+            bandwidthEstimateBps = bw.takeIf { it > 0 }?.toLong(),
+            videoDecoder = decoderLine(video).takeIf { it.isNotEmpty() },
+        )
+    }
 }
+
+/** R376 (FR-R376-8) — the browser's picture-in-picture, where it has one for this element. */
+actual fun RaviloPlayer.pictureInPictureAvailable(): Boolean = jsPipAvailable(video)
+actual fun RaviloPlayer.togglePictureInPicture() { jsTogglePip(video) }
+
+private fun nowMs(): Double = js("performance.now()")
+
+/** R376 (FR-R376-2) — queue every event R218 needs with its time; [WebPlaybackEvents] reads the queue. A `stalled`
+ *  while the element still has data to play is the network pausing, not the viewer waiting, and is left out. */
+private fun wireEvents(video: HTMLVideoElement): Unit = js(
+    """{
+        video._rvq = [];
+        video._rvPush = function (n) { if (video._rvq.length < 500) video._rvq.push(n + '@' + performance.now()); };
+        ['loadstart','loadeddata','playing','canplay','waiting','stalled','seeking','seeked','play','ended','error'].forEach(function (n) {
+            video.addEventListener(n, function () {
+                if (n === 'stalled' && video.readyState >= 3) return;
+                video._rvPush(n);
+            });
+        });
+    }"""
+)
+
+private fun drainEvents(video: HTMLVideoElement): String = js(
+    """(function(){ var q = video._rvq || []; video._rvq = []; return q.join(','); })()"""
+)
+
+/** play() returns a promise that rejects when autoplay is refused; the refusal is the paused state the chrome shows. */
+private fun playVideo(video: HTMLVideoElement): Unit = js(
+    """{ try { var p = video.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {} }"""
+)
 
 /**
  * R44: wire the browser Media Session API so OS / keyboard media-transport keys drive the <video>.
@@ -223,21 +283,71 @@ private fun wireMediaSession(video: HTMLVideoElement): Unit = js(
     }"""
 )
 
-/**
- * R17 — set the video source, lazy-loading hls.js the first time an HLS (.m3u8) stream is played
- * (the R56 transcode / burn-in TranscodingUrl). Safari plays HLS natively; everything else uses
- * hls.js, fetched from a CDN only on demand. Direct-play URLs just set `video.src`.
- */
-private fun attachSource(video: HTMLVideoElement, url: String): Unit = js(
+/** R376 (FR-R376-4) — the title, the series/episode line and the artwork on the OS's media controls. */
+private fun setMediaMetadata(title: String, line: String, artwork: String): Unit = js(
     """{
-        function native(){ video.src = url; }
+        try {
+            if (navigator.mediaSession && typeof MediaMetadata !== 'undefined') {
+                var init = { title: title, artist: line };
+                if (artwork) init.artwork = [{ src: artwork }];
+                navigator.mediaSession.metadata = new MediaMetadata(init);
+            }
+        } catch (e) {}
+    }"""
+)
+
+private fun clearMediaMetadata(): Unit = js("""{ try { if (navigator.mediaSession) navigator.mediaSession.metadata = null; } catch (e) {} }""")
+
+/**
+ * R17 — set the video source, lazy-loading hls.js the first time an HLS (.m3u8) stream is played. Direct-play URLs
+ * just set `video.src`.
+ *
+ * R376 (FR-R376-7) — **native HLS first on Safari** (AirPlay needs it, R265): WebKit's playback-target event is the
+ * Safari tell, and a browser with no MediaSource at all has nothing else. Every other browser that can (Chrome on
+ * Android plays HLS natively too, but exposes no audio tracks to switch) gets hls.js 1.7, configured for the
+ * household: its transmuxer in a worker (self-hosted — `worker-src 'self'`), a bounded back buffer, the ticket's start
+ * position, and Managed Media Source where only that exists (an iPhone that reaches hls.js). A fatal media error is
+ * recovered once; anything else fatal is queued as `hlsfatal` (FR-R376-2), which R306 turns into the error card.
+ */
+private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double): Unit = js(
+    """{
+        video._rvWantAudio = null;
+        function native(){ video.src = url; if (startSec > 0) { try { video.currentTime = startSec; } catch (e) {} } }
+        if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
         if (url.indexOf('.m3u8') === -1) { native(); return; }
-        if (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl')) { native(); return; }
+        var nativeHls = video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '';
+        var safari = typeof window.WebKitPlaybackTargetAvailabilityEvent !== 'undefined';
+        var mse = !!(window.MediaSource || window.ManagedMediaSource);
+        if (nativeHls && (safari || !mse)) { native(); return; }
         function attach(){
             try {
                 if (window.Hls && window.Hls.isSupported()) {
-                    if (video._hls) { try { video._hls.destroy(); } catch(e){} }
-                    var hls = new window.Hls(); video._hls = hls;
+                    var Hls = window.Hls;
+                    var hls = new Hls({
+                        enableWorker: true,
+                        workerPath: 'vendor/hls.worker.js',
+                        backBufferLength: 90,
+                        maxBufferLength: 30,
+                        startPosition: startSec > 0 ? startSec : -1,
+                        preferManagedMediaSource: true
+                    });
+                    video._hls = hls;
+                    hls.on(Hls.Events.ERROR, function (ev, d) {
+                        if (!d || !d.fatal) return;
+                        if (d.type === Hls.ErrorTypes.MEDIA_ERROR && !hls._rvRecovered) { hls._rvRecovered = true; hls.recoverMediaError(); return; }
+                        if (video._rvPush) video._rvPush('hlsfatal');
+                    });
+                    // R376 (FR-R376-3) — a pick made before the manifest was read is applied once its renditions are.
+                    hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, function () {
+                        var want = video._rvWantAudio;
+                        if (want === null || want === undefined) return;
+                        video._rvWantAudio = null;
+                        var name = 'a' + want;
+                        for (var i = 0; i < hls.audioTracks.length; i++) {
+                            var n = hls.audioTracks[i].name;
+                            if (n === name || (typeof n === 'string' && n.indexOf(name + ' ') === 0)) { if (hls.audioTrack !== i) hls.audioTrack = i; return; }
+                        }
+                    });
                     hls.loadSource(url); hls.attachMedia(video);
                 } else { native(); }
             } catch(e) { native(); }
@@ -349,31 +459,111 @@ private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js
 )
 
 /**
- * R291 (FR-R291-4) — pick the audio rendition named `a{index}` / `a{index} …` (the backend's composeMaster). hls.js
- * lists the master's EXT-X-MEDIA entries, the muxed default included, in `hls.audioTracks`; Safari's native player
- * lists them in `video.audioTracks`, one enabled at a time. Returns whether one was found.
+ * R291 (FR-R291-4) / R376 (FR-R376-3) — pick the audio rendition named `a{index}` / `a{index} …` (the backend's
+ * composeMaster). hls.js lists the master's EXT-X-MEDIA entries, the muxed default included, in `hls.audioTracks`;
+ * Safari's native player lists them in `video.audioTracks`, one enabled at a time. 1 = selected; 2 = the browser has
+ * not read the renditions yet, so the pick is held and applied when it has; 0 = there is nothing by that name.
  */
-private fun selectRendition(video: HTMLVideoElement, index: Int): Boolean = js(
+private fun selectRendition(video: HTMLVideoElement, index: Int): Int = js(
     """(function(){
         var want = 'a' + index;
         function named(n){ return n === want || (typeof n === 'string' && n.indexOf(want + ' ') === 0); }
         var hls = video._hls;
-        if (hls && hls.audioTracks && hls.audioTracks.length) {
+        if (hls) {
+            if (!hls.audioTracks || !hls.audioTracks.length) { video._rvWantAudio = index; return 2; }
             for (var i = 0; i < hls.audioTracks.length; i++) {
-                if (named(hls.audioTracks[i].name)) { if (hls.audioTrack !== i) hls.audioTrack = i; return true; }
+                if (named(hls.audioTracks[i].name)) { if (hls.audioTrack !== i) hls.audioTrack = i; return 1; }
             }
-            return false;
+            return 0;
         }
         var list = video.audioTracks;
         if (list && list.length) {
             var hit = -1;
             for (var j = 0; j < list.length; j++) if (named(list[j].label)) hit = j;
-            if (hit < 0) return false;
+            if (hit < 0) return 0;
             for (var k = 0; k < list.length; k++) list[k].enabled = (k === hit);
-            return true;
+            return 1;
         }
-        return false;
+        if (list && video.readyState < 1 && (video.currentSrc || '').indexOf('.m3u8') !== -1) {
+            video._rvWantAudio = index;
+            video.addEventListener('loadedmetadata', function once() {
+                video.removeEventListener('loadedmetadata', once);
+                var w = video._rvWantAudio; video._rvWantAudio = null;
+                if (w === null || w === undefined) return;
+                var name = 'a' + w;
+                for (var m = 0; m < video.audioTracks.length; m++) {
+                    var l = video.audioTracks[m].label;
+                    if (l === name || (typeof l === 'string' && l.indexOf(name + ' ') === 0)) {
+                        for (var q = 0; q < video.audioTracks.length; q++) video.audioTracks[q].enabled = (q === m);
+                        return;
+                    }
+                }
+            });
+            return 2;
+        }
+        return 0;
     })()"""
+)
+
+/** R376 (FR-R376-3) — the names of the audio renditions the browser lists for this stream, joined by U+0001. */
+private fun renditionNames(video: HTMLVideoElement): String = js(
+    """(function(){
+        var out = [];
+        var hls = video._hls;
+        if (hls && hls.audioTracks) { for (var i = 0; i < hls.audioTracks.length; i++) out.push(hls.audioTracks[i].name || ''); }
+        else if (video.audioTracks) { for (var j = 0; j < video.audioTracks.length; j++) out.push(video.audioTracks[j].label || ''); }
+        return out.join('\u0001');
+    })()"""
+)
+
+/** True while an HLS stream's renditions are not known yet (hls.js before its manifest, Safari before metadata). */
+private fun renditionsPending(video: HTMLVideoElement): Boolean = js(
+    """(function(){
+        if (video._hls) return !(video._hls.audioTracks && video._hls.audioTracks.length) && !(video._hls.levels && video._hls.levels.length);
+        return (video.currentSrc || video.src || '').indexOf('.m3u8') !== -1 && video.readyState < 1;
+    })()"""
+)
+
+private fun hasRenditionList(video: HTMLVideoElement): Boolean = js(
+    """!!((video._hls && video._hls.audioTracks && video._hls.audioTracks.length) || (video.audioTracks && video.audioTracks.length > 1))"""
+)
+
+/** R376 (FR-R376-6) — `getVideoPlaybackQuality()` where the browser has it (all current ones), else 0. */
+private fun droppedFrames(video: HTMLVideoElement): Int = js(
+    """(function(){ try { var q = video.getVideoPlaybackQuality && video.getVideoPlaybackQuality(); return q ? (q.droppedVideoFrames | 0) : 0; } catch (e) { return 0; } })()"""
+)
+
+private fun hlsBandwidth(video: HTMLVideoElement): Double = js(
+    """(function(){ var h = video._hls; var b = h && h.bandwidthEstimate; return (b && isFinite(b)) ? b : 0; })()"""
+)
+
+/** The diagnostic line R216 keeps: which engine, the level hls.js chose, and the frames decoded so far. */
+private fun decoderLine(video: HTMLVideoElement): String = js(
+    """(function(){
+        var parts = [];
+        var h = video._hls;
+        if (h) {
+            parts.push('web hls.js');
+            var l = h.levels && h.levels[h.currentLevel];
+            if (l) parts.push((l.width || 0) + 'x' + (l.height || 0) + ' ' + Math.round((l.bitrate || 0) / 1000) + ' kbps');
+        } else parts.push((video.currentSrc || '').indexOf('.m3u8') !== -1 ? 'web native hls' : 'web');
+        try { var q = video.getVideoPlaybackQuality && video.getVideoPlaybackQuality(); if (q) parts.push(q.totalVideoFrames + ' frames decoded'); } catch (e) {}
+        return parts.join(' · ');
+    })()"""
+)
+
+/** R376 (FR-R376-8) — absent where the browser has no picture-in-picture for a video (iPhone Safari in a tab, Firefox). */
+private fun jsPipAvailable(video: HTMLVideoElement): Boolean = js(
+    """!!(document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture)"""
+)
+
+private fun jsTogglePip(video: HTMLVideoElement): Unit = js(
+    """{
+        try {
+            if (document.pictureInPictureElement === video) { document.exitPictureInPicture().catch(function(){}); }
+            else { video.requestPictureInPicture().catch(function(){}); }
+        } catch (e) {}
+    }"""
 )
 
 /** R17 — destroy any hls.js / JASSUB instance attached to the element (called on release). */
@@ -413,6 +603,7 @@ private fun unmountAss(video: HTMLVideoElement): Unit = js(
 
 private fun destroyOverlays(video: HTMLVideoElement): Unit = js(
     """{
+        if (document.pictureInPictureElement === video) { try { document.exitPictureInPicture().catch(function(){}); } catch (e) {} }
         if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
         if (video._jassub) { try { video._jassub.destroy(); } catch(e){} video._jassub = null; }
     }"""

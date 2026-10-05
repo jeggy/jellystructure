@@ -132,12 +132,6 @@ actual fun rememberHandsetPlayerControls(): HandsetPlayerControls = remember {
     )
 }
 
-/** The web's DOM chrome; the desktop draws the TV's chrome in Compose (D4). */
-actual object PlayerChromeBridge {
-    actual fun show(state: PlayerChromeState, actions: PlayerChromeActions) {}
-    actual fun hide() {}
-}
-
 /** FR-R329-11 — a trailer opens in the default browser; the player shows nothing of its own. */
 @Composable
 actual fun TrailerEmbed(site: String, key: String, modifier: Modifier) {

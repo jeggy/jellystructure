@@ -69,12 +69,48 @@ private fun jsAirPlayHls(): Boolean = js(
 )
 private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlayHls = v; }")
 
-/** R291 (FR-R291-4) — on (2026-10-05): hls.js switches a composed master's renditions with `hls.audioTrack` and
- *  Safari with the element's `audioTracks` ([RaviloPlayer.selectAudioTrack]), so a browser declares the capability
- *  and stops restreaming on an audio pick. A browser with neither (no MSE, no native HLS) cannot play the stream
- *  at all, so there is nothing to fall back to. */
-// Off again the same day: the Cast receiver's Shaka refused this same master shape outright, and no browser has
-// played it yet (R291's build note). R376 FR-R376-3 turns it on once it is measured in Chrome and Safari.
-actual fun switchesHlsAudioRenditions(): Boolean = false
+/** R291 (FR-R291-4) / R376 (FR-R376-3) — hls.js switches a composed master's renditions with `hls.audioTrack` and
+ *  Safari with the element's `audioTracks` ([RaviloPlayer.selectAudioTrack]), so a browser that has either declares
+ *  the capability and stops restreaming on an audio pick. Measured in headless Chromium + hls.js 1.7.3 against the
+ *  backend's master shape (R376 build notes); Safari's native switch is unmeasured, and a pick it cannot make reports
+ *  false and is restreamed (FR-R376-3), never dropped. */
+actual fun switchesHlsAudioRenditions(): Boolean = renditionsSwitchable
+
+private val renditionsSwitchable: Boolean by lazy { jsCanPlayHls() }
+
+private fun jsCanPlayHls(): Boolean = js(
+    """!!(window.MediaSource || window.ManagedMediaSource || document.createElement('video').canPlayType('application/vnd.apple.mpegurl'))"""
+)
+
+/** R376 (FR-R376-3) — no browser switches the audio tracks inside one direct-played file that Ravilo can rely on. */
+actual fun switchesAudioInFile(): Boolean = false
+
+/**
+ * R376 (FR-R376-5) — asked of the browser once: mp4 always; mkv and webm only where `canPlayType` or MediaSource says
+ * so. Published for the e2e suite as `window.__raviloContainers`.
+ */
+private val probedContainers: List<String> by lazy {
+    webContainers(mkv = jsCanOpenMkv(), webm = jsCanOpenWebm()).also { jsPublishContainers(it.joinToString(",")) }
+}
+
+actual fun supportedContainers(): List<String> = probedContainers
+
+private fun jsCanOpenMkv(): Boolean = js(
+    """(function(){
+        var v = document.createElement('video');
+        var t = ['video/x-matroska', 'video/x-matroska; codecs="avc1.640028, mp4a.40.2"'];
+        for (var i = 0; i < t.length; i++) {
+            if (v.canPlayType(t[i]) !== '') return true;
+            if (window.MediaSource && window.MediaSource.isTypeSupported && window.MediaSource.isTypeSupported(t[i])) return true;
+        }
+        return false;
+    })()"""
+)
+
+private fun jsCanOpenWebm(): Boolean = js(
+    """(document.createElement('video').canPlayType('video/webm; codecs="vp9, opus"') !== '') && (typeof window.WebKitPlaybackTargetAvailabilityEvent === 'undefined')"""
+)
+
+private fun jsPublishContainers(csv: String): Unit = js("{ window.__raviloContainers = csv; }")
 
 actual fun playsOnlyHls(): Boolean = false

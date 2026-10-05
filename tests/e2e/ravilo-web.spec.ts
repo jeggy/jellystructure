@@ -79,3 +79,22 @@ test.describe("mobile on-screen keyboard", () => {
     expect(["INPUT", "TEXTAREA"]).toContain(await focusedTag());
   });
 });
+
+// R376 (FR-R376-1/-5) — the viewport's canvas lives in #ComposeTarget's shadow root, above the player's <video> layer
+// (z-index 1 over 0), and the containers this browser opens were probed at boot (mp4 always).
+test("ComposeViewport hosts the canvas and the containers are probed", async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.goto(process.env.RAVILO_WEB_URL ?? "http://localhost:8082", { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await page.waitForTimeout(15_000);
+  const r = await page.evaluate(() => {
+    const host = document.getElementById("ComposeTarget");
+    return {
+      canvas: !!host?.shadowRoot?.querySelector("canvas"),
+      z: host ? getComputedStyle(host).zIndex : null,
+      containers: (window as any).__raviloContainers as string | undefined,
+    };
+  });
+  expect(r.canvas).toBe(true);
+  expect(r.z).toBe("1");
+  expect(r.containers?.split(",")[0]).toBe("mp4");
+});

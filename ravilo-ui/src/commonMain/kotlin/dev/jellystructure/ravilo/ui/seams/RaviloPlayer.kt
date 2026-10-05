@@ -53,8 +53,12 @@ expect class RaviloPlayer() {
     /** R354 (FR-R354-6) — the player's output level, 0–1 (a remote command's volume); kept across an engine rebuild. */
     fun setVolume(level: Float)
 
-    /** Select an audio track by its index in [audioTracks]. */
-    fun selectAudioTrack(index: Int)
+    /**
+     * Select an audio track by its index in [audioTracks]. R376 (FR-R376-3) — returns whether the player switched
+     * (or holds the pick until the stream lists its tracks); false when it cannot switch at all, and the caller then
+     * restreams (R284) instead of doing nothing. Android and the desktop select in their engines and answer true.
+     */
+    fun selectAudioTrack(index: Int): Boolean
 
     /** Select a subtitle track by its index in [subtitleTracks], or -1 to disable subtitles. */
     fun selectSubtitleTrack(index: Int)
@@ -83,18 +87,6 @@ expect class RaviloPlayer() {
      * resume without a full player rebuild. No-op on platforms with no such OS concept (web).
      */
     fun setSessionActive(active: Boolean)
-
-    /**
-     * R157 (FR-R157-1.3, the documented fallback) — on web, the Compose canvas has no accessible
-     * alpha/transparency toggle in this Compose Multiplatform version's `CanvasBasedWindow` API
-     * (verified: no such parameter exists), so the video can't simply show through a transparent
-     * scene as originally hoped. Instead the `<video>` element swaps z-order with the canvas: on top
-     * (with `pointer-events: none`, so clicks still reach the canvas beneath) while chrome is hidden
-     * so the picture is visible; back behind the canvas when chrome is shown so Compose's opaque
-     * chrome paints over it and the canvas receives pointer events for the controls. No-op on
-     * Android, where the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView.
-     */
-    fun setChromeVisible(visible: Boolean)
 
     /** R244 (FR-R244-10) — the handset picker sheet's Subtitle size row (S · M · L ⇒ 0.85 / 1.0 / 1.25),
      *  applied live to the caption renderer. Phone-local: nothing is sent to the server, nothing is

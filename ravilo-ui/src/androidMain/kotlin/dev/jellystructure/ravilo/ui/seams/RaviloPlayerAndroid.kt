@@ -390,7 +390,10 @@ actual class RaviloPlayer actual constructor() {
     actual fun seekTo(positionMs: Long) { engine?.seekTo(positionMs) }
     actual fun setVolume(level: Float) { outputVolume = level.coerceIn(0f, 1f); engine?.volume = outputVolume }
 
-    actual fun selectAudioTrack(index: Int) {
+    // R376 (FR-R376-3) — Media3 selects in place; the answer is always "switched".
+    actual fun selectAudioTrack(index: Int): Boolean { selectAudioInEngine(index); return true }
+
+    private fun selectAudioInEngine(index: Int) {
         val exo = engine ?: return
         val tracks = exo.currentTracks
         // R291 (FR-R291-2) — a composed master names every rendition `a{position} …` (the backend's
@@ -476,9 +479,6 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
-    // No-op — the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView
-    // inside the FrameLayout; nothing to swap z-order with.
-    actual fun setChromeVisible(visible: Boolean) {}
 
     actual fun setSubtitleScale(scale: Float) {
         subtitleScale = scale.coerceIn(0.5f, 2f)

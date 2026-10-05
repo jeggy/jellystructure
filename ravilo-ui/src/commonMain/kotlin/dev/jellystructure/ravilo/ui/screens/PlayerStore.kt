@@ -10,6 +10,9 @@ import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
+import dev.jellystructure.ravilo.ui.seams.asksHlsForAudio
+import dev.jellystructure.ravilo.ui.seams.supportedContainers
+import dev.jellystructure.ravilo.ui.seams.switchesAudioInFile
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
@@ -190,7 +193,7 @@ class PlayerStore(
                     // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
                     val hlsOnly = airplayHls || playsOnlyHls()
                     val capabilities = ClientCapabilities(
-                        containers = listOf("mkv", "mp4", "avi", "mov"),
+                        containers = supportedContainers(),   // R376 (FR-R376-5) — the web asks its browser
                         videoCodecs = supportedVideoCodecs(),
                         hlsOnly = hlsOnly,
                         hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls(),
@@ -220,7 +223,15 @@ class PlayerStore(
                     // Jellyfin's on any server, so even an older one never resumes a shuffled episode); a
                     // return from the background still carries its own position.
                     val startAt = startPositionMs ?: (if (startOver || shuffle) 0L else null)
-                    val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startAt, audioLanguage = audioLanguage, audioVariant = audioVariant, shuffle = shuffle, startOver = startOver)
+                    var ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startAt, audioLanguage = audioLanguage, audioVariant = audioVariant, shuffle = shuffle, startOver = startOver)
+                    // R376 (FR-R376-3) — a player that cannot switch the tracks inside one file (a browser) asks again
+                    // for a multi-audio title as HLS, where R291's master carries every track as a rendition. The
+                    // ticket is what says how many tracks the file has, so the decision is taken on it, once.
+                    if (asksHlsForAudio(ticket.directPlay, ticket.audio.size, capabilities.hlsOnly, switchesAudioInFile())) {
+                        val hls = capabilities.copy(hlsOnly = true)
+                        ticket = apiClient.startPlayback(itemId = itemId, capabilities = hls, startPositionMs = startAt, audioLanguage = audioLanguage, audioVariant = audioVariant, shuffle = shuffle, startOver = startOver)
+                        lastCapabilities = hls   // a restream keeps asking for HLS
+                    }
                     qoeLinkKind = link.kind
                     qoeLinkMbps = link.mbps
                     ticket

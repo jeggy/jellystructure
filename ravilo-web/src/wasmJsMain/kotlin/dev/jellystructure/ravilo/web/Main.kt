@@ -20,6 +20,8 @@ fun main() {
     // R265 (FR-R265-8) — the same, for the video codecs and for "Safari: HLS only, subtitles in the manifest".
     dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs()
     dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay()
+    // R376 (FR-R376-5) — and the containers this browser opens.
+    dev.jellystructure.ravilo.ui.seams.supportedContainers()
     val container = document.getElementById("ComposeTarget") ?: error("index.html has no #ComposeTarget")
     ComposeViewport(
         viewportContainer = container,
