@@ -2,6 +2,8 @@ package dev.jellystructure.ravilo.ui.sessions
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,9 +72,12 @@ fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -
                     colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = colors.fg, activeTrackColor = colors.accentSecondary, inactiveTrackColor = colors.fg.copy(0.2f)),
                 ) else Text("—", color = colors.textDim, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                 if (!master && row.enabled) {
+                    // Found on the Pixel 9 Pro (2026-10-05): both room buttons had no name for a screen reader (or a test).
+                    val muteLabel = str(if (row.muted) "volume.unmute_room" else "volume.mute_room", mapOf("place" to row.name))
                     Box(Modifier.size(40.dp).clip(CircleShape).clickable {
                         SessionRemote.command(v.id, SessionCommandRequest(op = "set_mute", muted = !row.muted, castDeviceId = row.castDeviceId))
-                    }, contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.VOLUME, if (row.muted) colors.textDim else colors.text, 18.dp) }
+                    }.semantics { contentDescription = muteLabel }, contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.VOLUME, if (row.muted) colors.textDim else colors.text, 18.dp) }
+                    val removeLabel = str("volume.remove_room", mapOf("place" to row.name))
                     if ("remove_room" in d.ops) Box(Modifier.size(40.dp).clip(CircleShape).clickable {
                         // R371 (review item 10) — the first room leads the group: dropping it is a *Move to* the next room
                         // (R372); the last room stops the session; any other room is deselected.
@@ -83,7 +88,7 @@ fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -
                                 onMoveToRoom?.invoke(p.castDeviceId) ?: SessionRemote.move(v.id, "cast:${p.castDeviceId}")
                             dev.jellystructure.ravilo.ui.seams.RoomRemoval.Stop -> SessionRemote.command(v.id, SessionCommandRequest(op = "stop"))
                         }
-                    }.testTag("session-room-remove-${row.castDeviceId}"), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.CLOSE, colors.textDim, 16.dp) }
+                    }.semantics { contentDescription = removeLabel }.testTag("session-room-remove-${row.castDeviceId}"), contentAlignment = Alignment.Center) { DeskIcon(DeskIcon.CLOSE, colors.textDim, 16.dp) }
                 }
             }
             if (!row.enabled && (row.level == null)) Text(str("volume.no_report", mapOf("place" to row.name)), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora,
