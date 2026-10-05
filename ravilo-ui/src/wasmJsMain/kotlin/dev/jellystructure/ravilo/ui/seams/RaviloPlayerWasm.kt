@@ -127,11 +127,12 @@ actual class RaviloPlayer actual constructor() {
     actual fun setVolume(level: Float) { video.volume = level.coerceIn(0f, 1f).toDouble() }
 
     /**
-     * R284 (FR-R284-5) — deliberately nothing. A browser session is an HLS transcode carrying ONE
-     * audio track (253 FR-253-2); there is no second track to select. Audio changes on the web are a
-     * restream, decided in PlayerScreen from the ticket — not a stub awaiting an hls.js bridge.
+     * R291 (FR-R291-4) — a composed master (`audio_renditions`) names every audio rendition `a{position} …`;
+     * the pick selects that rendition: hls.js through `hls.audioTrack`, Safari through the element's own
+     * `audioTracks`. The picture keeps playing. Anything else (one muxed track, R284's restream) has nothing to
+     * select, and PlayerScreen restreams as before.
      */
-    actual fun selectAudioTrack(index: Int) {}
+    actual fun selectAudioTrack(index: Int) { selectRendition(video, index) }
 
     /**
      * R284 (FR-R284-4) — really switches. Until this phase it was an empty stub, so the only subtitle
@@ -345,6 +346,34 @@ private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js
             })
             .catch(function(){ callback(url); }); // fall back to original on error
     }"""
+)
+
+/**
+ * R291 (FR-R291-4) — pick the audio rendition named `a{index}` / `a{index} …` (the backend's composeMaster). hls.js
+ * lists the master's EXT-X-MEDIA entries, the muxed default included, in `hls.audioTracks`; Safari's native player
+ * lists them in `video.audioTracks`, one enabled at a time. Returns whether one was found.
+ */
+private fun selectRendition(video: HTMLVideoElement, index: Int): Boolean = js(
+    """(function(){
+        var want = 'a' + index;
+        function named(n){ return n === want || (typeof n === 'string' && n.indexOf(want + ' ') === 0); }
+        var hls = video._hls;
+        if (hls && hls.audioTracks && hls.audioTracks.length) {
+            for (var i = 0; i < hls.audioTracks.length; i++) {
+                if (named(hls.audioTracks[i].name)) { if (hls.audioTrack !== i) hls.audioTrack = i; return true; }
+            }
+            return false;
+        }
+        var list = video.audioTracks;
+        if (list && list.length) {
+            var hit = -1;
+            for (var j = 0; j < list.length; j++) if (named(list[j].label)) hit = j;
+            if (hit < 0) return false;
+            for (var k = 0; k < list.length; k++) list[k].enabled = (k === hit);
+            return true;
+        }
+        return false;
+    })()"""
 )
 
 /** R17 — destroy any hls.js / JASSUB instance attached to the element (called on release). */

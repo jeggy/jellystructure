@@ -223,6 +223,16 @@ rows still warms nothing, and a deliberate OK lands on a segment already made.
 **Still restreams:** the web player (`ravilo-web`, hls.js) and the cast receiver / screen don't declare
 `hls_audio_renditions` yet (FR-R291-4).
 
+### Build (2026-10-05) — the web player switches renditions too (FR-R291-4)
+
+`switchesHlsAudioRenditions()` is now `true` on the web: `RaviloPlayer.selectAudioTrack` picks the rendition named
+`a{position}` — hls.js through `hls.audioTrack` (its `audioTracks` list the master's EXT-X-MEDIA entries, the muxed
+default included), Safari through the element's own `audioTracks` (one enabled). Checked against production: a web
+start of a transcoded film with eight audio tracks (Test Stream's *Ravilo Web* device, `hls_only`, h264/aac) got
+`audio_renditions = true` and a master with eight AAC renditions `a0`…`a7` joined to the video variant. **Not yet
+measured in a browser** — the session's headless Chromium has no H.264/AAC, and the Mac's browsers cannot be driven
+over SSH; the owner's browser is the first measurement. The cast receiver still restreams.
+
 ## What happens today
 
 On **direct play** switching audio is already instant: every track is in the file and ExoPlayer selects

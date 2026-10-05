@@ -69,8 +69,10 @@ private fun jsAirPlayHls(): Boolean = js(
 )
 private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlayHls = v; }")
 
-/** R291 (FR-R291-4) — not yet on the web: hls.js and Safari each switch renditions their own way, and
- *  neither is built or measured here, so a browser keeps R284's restream. */
-actual fun switchesHlsAudioRenditions(): Boolean = false
+/** R291 (FR-R291-4) — on (2026-10-05): hls.js switches a composed master's renditions with `hls.audioTrack` and
+ *  Safari with the element's `audioTracks` ([RaviloPlayer.selectAudioTrack]), so a browser declares the capability
+ *  and stops restreaming on an audio pick. A browser with neither (no MSE, no native HLS) cannot play the stream
+ *  at all, so there is nothing to fall back to. */
+actual fun switchesHlsAudioRenditions(): Boolean = true
 
 actual fun playsOnlyHls(): Boolean = false
