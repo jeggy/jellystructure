@@ -71,6 +71,20 @@ class PlaybackSessionsTest {
         assertEquals("started", s.timeline(id).single().second)
     }
 
+    @Test fun `a song deep in the app's queue keeps its title after the queue report and the next song boundary`() = runBlocking {
+        // Found on the Pixel: Play here resumed the queue at its 7th song, the queue report moved the index to 6 while the
+        // server held one song, and the row had no title, artist, artwork or length; the next song lost them too.
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "song-7", 0, kindHint = SessionKind.MUSIC)
+        s.onQueueReport(phone, dev.jellystructure.shared.tv.SessionQueueReport(sessionId = id, itemId = "song-7",
+            queue = (1..9).map { "song-$it" }, queueIndex = 6))
+        assertEquals("Song song-7", s.get(id)?.current?.title)
+        assertEquals(id, s.onStart(phone, "song-8", 0, kindHint = SessionKind.MUSIC))
+        assertEquals("Song song-8", s.get(id)?.current?.title)
+        assertEquals("The Lanterns · Paper Harbour", s.get(id)?.current?.subtitle)
+    }
+
     @Test fun `a music start with a book id is an audiobook`() = runBlocking {
         val s = service()
         val id = s.onStart(device("pixel"), "part-1", 0, bookId = "book-1")

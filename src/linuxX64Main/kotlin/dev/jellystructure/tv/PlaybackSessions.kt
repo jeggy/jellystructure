@@ -199,7 +199,9 @@ internal data class SessionRec(
     val leftAt: Long? = null,
 ) {
     val live: Boolean get() = endedAt == null
-    val current: SessionItem? get() = queue.getOrNull(queueIndex)
+    // The item that plays, by id: a queue report moves [queueIndex] into the app's whole queue while [queue] may hold only the
+    // songs the server has seen, and an index alone then named nothing (no title after Play here or a song boundary).
+    val current: SessionItem? get() = queue.getOrNull(queueIndex)?.takeIf { it.id == itemId } ?: queue.firstOrNull { it.id == itemId } ?: queue.getOrNull(queueIndex)
 }
 
 /** Who can be shown what: the per-socket projection's inputs (owner decisions 1, 2 and 4). */

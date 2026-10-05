@@ -50,8 +50,12 @@ fun mergeTargets(serverTargets: List<PlaybackTarget>?, localRoutes: List<CastRou
     val usedRoutes = mutableSetOf<String>()
     for (t in serverTargets) {
         if (t.kind == "cast") {
-            val r = routes.firstOrNull { it.deviceKey == t.castDeviceId }
+            // By the shared Cast id; else by name — a receiver's own record (`no_relay`, seen hours ago) carries no Cast id,
+            // and dropping the local route under it hid a speaker this app reaches itself (found on the Pixel).
+            val r = routes.firstOrNull { it.id !in usedRoutes && t.castDeviceId != null && it.deviceKey == t.castDeviceId }
+                ?: routes.firstOrNull { it.id !in usedRoutes && it.name.equals(t.name, ignoreCase = true) }
             if (r != null) usedRoutes += r.id
+            // A place this app reaches itself is reachable whatever the server's relay state says.
             rows += PlayOnRow(t.id, t.name, t.icon, target = t, route = r, busy = t.busy, reachable = t.reachable || r != null)
         } else {
             // A TV running Ravilo and its own Cast route: one row, the app while its socket is open (review item 4).

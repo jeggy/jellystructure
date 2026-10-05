@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -231,7 +232,13 @@ private fun ScreensSheetBody(
     val audioRows = if (music) visibleRoutes.filter { it.kind != "display" }.sortedWith(compareByDescending<CastRoute> { it.id == lastDevice }.thenBy { it.kind != "speaker" }) else emptyList()
     val castRows = visibleRoutes.filter { it.kind == "display" }.sortedByDescending { it.id == lastDevice }
     val tier2Count = rest.size + castRows.size
-    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+    // R370 (found on the Pixel 9 Pro) — with *Playing everywhere* and four tiers the list outgrows the sheet (72 % of the
+    // screen): the body scrolls, the sheet's nested-scroll hands a downward drag at the top to the sheet. The computer's
+    // popover scrolls itself (a second scroll inside it would be measured with an infinite height).
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    Column(Modifier.fillMaxWidth()
+        .then(if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout) Modifier else Modifier.verticalScroll(scroll))
+        .padding(horizontal = 8.dp, vertical = 4.dp)) {
         SheetHeader(str(if (music) "cast.sheet_music" else "screens.title"), onClose)
         top()
         if (!loaded) {

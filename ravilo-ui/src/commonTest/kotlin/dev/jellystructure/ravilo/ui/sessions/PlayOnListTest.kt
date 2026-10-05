@@ -37,6 +37,20 @@ class PlayOnListTest {
         assertEquals(listOf("Bedroom"), tiers.unreachable.map { it.name })
     }
 
+    @Test fun `a speaker this app reaches itself is free even when the server calls its old receiver record unreachable`() {
+        // The server's row is the receiver's own record (no Cast id, `no_relay`, seen hours ago); the phone's route has
+        // its own id. One row, reachable, through the local route (found on the Pixel with the guest-room speaker).
+        val rows = mergeTargets(listOf(
+            t("pixel", "Pixel", "phone", here = true),
+            t("cast-e9", "Guest room", "speaker", speakerCaps, reachable = false, kind = "cast"),
+        ), listOf(route("route-5c29", "Guest room", "speaker")))
+        assertEquals(1, rows.count { it.name == "Guest room" })
+        val tiers = playOnTiers(rows, "music")
+        assertEquals(listOf("Guest room"), tiers.free.map { it.name })
+        assertEquals("route-5c29", tiers.free.single().route?.id)
+        assertTrue(tiers.unreachable.isEmpty())
+    }
+
     @Test fun `free lists TVs and displays first then speakers each by name`() {
         val rows = mergeTargets(listOf(t("cast:s", "Attic", "speaker", speakerCaps, castId = "s"), t("tv-b", "Bedroom TV"), t("tv-a", "Atrium TV")), emptyList())
         assertEquals(listOf("Atrium TV", "Bedroom TV", "Attic"), playOnTiers(rows, "music").free.map { it.name })

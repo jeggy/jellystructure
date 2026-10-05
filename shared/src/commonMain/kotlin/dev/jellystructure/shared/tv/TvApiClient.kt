@@ -909,8 +909,11 @@ class TvApiClient(
                 socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
             }
         }) {
+            // The sender subscribes BEFORE onOpen: what onOpen emits (re-attach, the Cast devices this app sees) goes to a
+            // SharedFlow with no buffer for absent subscribers, and was dropped — so the server never heard a phone's
+            // Cast devices after a reconnect, and could not relay through it (R370, found on the Pixel).
+            val sender = launchEventsSender(outgoing) { send(Frame.Text(it)) }
             onOpen()
-            val sender = outgoing?.let { flow -> launch { flow.collect { runCatching { send(Frame.Text(it)) } } } }
             val closer = closeWhen?.let { signal ->
                 launch {
                     val reason = signal()

@@ -392,5 +392,27 @@ loopback `PlaybackStartIntegrationTest` (6: the targets list, `session_load` to 
 row, a speaker start relayed from the web app, refused with no relay, `replace` ending the busy session with its resume
 point, across users 403 → allowed with the switch). Not written: Robolectric `PlayOnSheetTest`.
 
+**Fixed after the first Pixel 9 Pro + speaker test (2026-10-05):**
+- *Play on…* did not scroll on the phone: with *Playing everywhere* and four tiers the list outgrew the sheet (72 % of the
+  screen) and the *Not reachable* rows were never laid out. The sheet's body scrolls now (the computer's popover already
+  did). Test: Robolectric `PlayOnSheetScrollTest`.
+- The phone never reported the Cast devices it sees: the events socket's sender started after `onOpen`, and what
+  `onOpen` emitted (`cast_devices_seen`, a remote's re-attach) went to a flow nobody collected yet — so the server could
+  not relay through the phone, and its only row for the guest-room speaker was the receiver's own 8-hour-old record
+  (`no_relay`). The sender now subscribes first (`launchEventsSender`). Test: `EventsSenderTest`.
+- A speaker this app reaches itself was hidden behind that unreachable record: the record has no Cast id, the merge
+  then dropped the local route of the same name. `mergeTargets` now matches by Cast id, else by name, and a place with a
+  local route is reachable whatever the server's relay state. Test: `PlayOnListTest`.
+- A session whose app reported its queue lost its title, artist, artwork and length: the queue report moved the index
+  into the app's whole queue while the server held one song (after *Play here*, and at the next song boundary). A
+  session's current item is now found by its id. Test: `PlaybackSessionsTest`.
+- Not changed: an ended row stays in *Playing everywhere*, dimmed, for 60 s, then the server's next list drops it
+  (FR-R368-7, review item 13). The phone's own local session after casting is such a row.
+
+**Open question (owner):** a TV that runs Ravilo *and* has Chromecast built in is two places — the Ravilo app (its
+device name, e.g. the set's model name) and its Cast receiver (its Cast name). The merge joins them only when the names
+match. Lean: let the TV app report its own Cast device id on its events socket so the server lists one place (the app
+while its socket is open, else the receiver); until then they show as two.
+
 **Only devices can confirm:** a relay launch from the web app with the Pixel online (and *Not reachable* once Ravilo is
 closed on it); that the Pixel's `CastDevice.deviceId` and the desktop's mDNS id for the same speaker are equal.
