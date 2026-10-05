@@ -200,3 +200,10 @@ Tests: `ravilo-ui/src/commonTest/…/components/CastIconRuleTest.kt` (10, FR-R36
 
 Only a device can confirm: acceptance 1–5 (the discovery timing and the 10 s hide after a Chromecast drops on the Pixel;
 an offline paired TV keeping the glyph). The design mockups still draw *Add a TV* (design-owned).
+
+## Amendment 2026-10-05 (owner) — a TV never shows a cast button
+
+*"Every device should be able to cast except TVs. So Phone, Web, Desktop should all be able to cast except the TVs."*
+On a TV (`isTvPlatform`) `rememberCastIconShown` is always false and `CastController.openSheet` does nothing, so no cast
+glyph, *Play on…* sheet or cast entry appears in the TV app. A TV may still act as a relay (owner: "TV can be a relay, it
+just needs to not show the cast button in its interface").

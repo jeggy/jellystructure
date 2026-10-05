@@ -60,7 +60,9 @@ fun castIconPresence(hasDevices: Flow<Boolean>, casting: Flow<Boolean>, graceMs:
  */
 @Composable
 fun rememberCastIconShown(cast: CastController?, music: Boolean): Boolean {
-    if (cast == null) return false
+    // Owner, 2026-10-05: every device casts except a TV — a TV is where things are cast to, so its interface never
+    // shows a cast button (it may still relay a launch for a phone or computer; that has no button).
+    if (cast == null || dev.jellystructure.ravilo.ui.isTvPlatform) return false
     val airplay = platformAirPlay
     val airplayAvailableFlow = remember(airplay) { airplay?.available ?: MutableStateFlow(false) }
     val airplayWirelessFlow = remember(airplay) { airplay?.wireless ?: MutableStateFlow(false) }

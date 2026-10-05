@@ -234,7 +234,10 @@ class CastController(
      */
     val sheet = MutableStateFlow<SheetRequest?>(null)
     /** [music] — R324 (FR-R324-1): the music-mode sheet, titled *Play on…*, listing the audio routes first. */
-    fun openSheet(playContext: ScreenPlayContext? = null, music: Boolean = false) { sheet.value = SheetRequest(playContext, music && musicEnabled) }
+    fun openSheet(playContext: ScreenPlayContext? = null, music: Boolean = false) {
+        if (dev.jellystructure.ravilo.ui.isTvPlatform) return   // a TV never casts (owner, 2026-10-05; rememberCastIconShown)
+        sheet.value = SheetRequest(playContext, music && musicEnabled)
+    }
     fun closeSheet() { sheet.value = null }
 
     /** FR-R245-10 — the sheet's *Stop casting*: explicit, ends the session on whichever side is linked. */
