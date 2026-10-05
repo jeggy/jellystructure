@@ -356,6 +356,14 @@ object MusicPlayback {
         if (casting || MusicCast.holdsDevice) MusicCast.playQueue(tracks, startIndex, context, shuffle) else MusicEngine.playQueue(tracks, startIndex, context, shuffle)
     }
     fun loadPaused(tracks: List<MusicTrackItem>, index: Int, positionMs: Long, context: MusicContext?) = MusicEngine.loadPaused(tracks, index, positionMs, context)
+    /**
+     * Found with the Pixel and the Mac pausing the same cast at once (2026-10-05): a press decided play-or-pause from the
+     * state when the click was HANDLED, and the other device's pause had landed a few milliseconds earlier, so the Mac's
+     * press resumed it. A button passes what it SHOWED: a press on a pause glyph pauses, on a play glyph plays.
+     */
+    fun togglePlay(shownPlaying: Boolean) {
+        if (casting) { if (shownPlaying) pause() else play() } else togglePlay()
+    }
     fun togglePlay() {
         if (casting) { if (_state.value.playing) pause() else play() }
         else if (!MusicEngine.state.value.playing && MusicCast.resumeOnDevice()) Unit

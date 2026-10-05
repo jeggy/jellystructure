@@ -143,7 +143,8 @@ fun DesktopMusicBar(
                 if (!mac && !medium && b == null) BarButton(DeskIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.text, str("music.shuffle")) { MusicPlayback.toggleShuffle() }
                 if (b != null) BookSkip(MusicIcon.BACK30, colors.text) { MusicPlayback.skipBy(-30_000) }
                 else BarButton(DeskIcon.PREVIOUS, colors.text, str("desk.key_prev")) { MusicPlayback.previous() }
-                Box(Modifier.size(36.dp).clip(CircleShape).background(playBg).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
+                val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
+                Box(Modifier.size(36.dp).clip(CircleShape).background(playBg).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
                     if (st.buffering) PlayingBars(true, playInk, 14.dp)
                     else DeskIcon(if (st.playing) DeskIcon.PAUSE else DeskIcon.PLAY, playInk, 16.dp)
                 }

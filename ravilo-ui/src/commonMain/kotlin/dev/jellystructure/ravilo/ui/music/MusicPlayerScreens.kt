@@ -306,7 +306,8 @@ private fun DeskTransport(st: MusicPlayerState) {
         Box(Modifier.size(36.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) {
             dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.PREVIOUS, colors.text, 22.dp)
         }
-        Box(Modifier.size(58.dp).clip(CircleShape).background(if (graphite) colors.accent else colors.text).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
+        val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
+        Box(Modifier.size(58.dp).clip(CircleShape).background(if (graphite) colors.accent else colors.text).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
             val ink = if (graphite) Color.White else colors.background
             if (st.buffering) Pulse(ink) else dev.jellystructure.ravilo.ui.components.DeskIcon(if (st.playing) dev.jellystructure.ravilo.ui.components.DeskIcon.PAUSE else dev.jellystructure.ravilo.ui.components.DeskIcon.PLAY, ink, 22.dp)
         }
@@ -455,7 +456,8 @@ private fun Transport(st: MusicPlayerState) {
             MusicGlyph(MusicIcon.SHUFFLE, if (st.shuffle) colors.accentSecondary else colors.textSecondary, 22.dp, description = str("music.shuffle"))
         }
         Box(Modifier.size(52.dp).tap { MusicPlayback.previous() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.PREVIOUS, colors.text, 26.dp) }
-        Box(Modifier.size(64.dp).clip(CircleShape).background(colors.accentGradient).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
+        val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
+        Box(Modifier.size(64.dp).clip(CircleShape).background(colors.accentGradient).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
             // FR-R322-5 — buffering: the play glyph's place shows R218's pulse, and nothing else moves.
             if (st.buffering) Pulse(colors.onAccent) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.onAccent, 28.dp)
         }
@@ -736,7 +738,8 @@ fun MusicMiniBar(onOpen: () -> Unit) {
                     }
                 }
             }
-            Box(Modifier.size(46.dp).tap { MusicPlayback.togglePlay() }, contentAlignment = Alignment.Center) {
+            val shownPlaying = st.playing   // what this glyph draws, captured at composition (MusicPlayback.togglePlay(Boolean))
+            Box(Modifier.size(46.dp).tap { MusicPlayback.togglePlay(shownPlaying) }, contentAlignment = Alignment.Center) {
                 if (st.buffering) PlayingBars(true, colors.text, 18.dp) else MusicGlyph(if (st.playing) MusicIcon.PAUSE else MusicIcon.PLAY, colors.text, 22.dp)
             }
             if (st.hasNext) Box(Modifier.size(46.dp).tap { MusicPlayback.next() }, contentAlignment = Alignment.Center) { MusicGlyph(MusicIcon.NEXT, colors.text, 20.dp) }
