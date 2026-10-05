@@ -425,9 +425,16 @@ point, across users 403 → allowed with the switch). Not written: Robolectric `
   launch, room ops and their outcome, the remote's open/close/refusals/end) and backend INFO lines `Playback sessions:`
   (starts with their road, relay launches, moves, every command and room op with its route or why it is unreachable,
   the rooms each app reports, the Cast devices each app sees).
-- **Not fixed, open:** (9) the queue after a relaunch was one song: the phone's last session (DB) reported a one-song
-  queue right after *Play here* from a speaker whose session held the whole album — the hand-back's queue source; the
-  new hand-back log line (`R353: hand-back — N songs`) will say which path shrank it. (11) Google's Default Media
+- (9) the queue after a relaunch was one song. Third round's log: a hand-back fired while the Cast session only moved
+  onto a group route (RECONNECTING for 200 ms), with whatever queue the speaker had said — and a one-song queue, once
+  back on the phone, stayed one song through every cast and relaunch after it. Now only a session that is gone (NONE)
+  hands back (`castSessionGone`; the media card keeps its grace through RECONNECTING), and a hand-back that is part of
+  the queue the phone still holds (one song, or a window) gives back the phone's whole queue at that song
+  (`handBackQueue`). Tests: `SpeakerRoundTwoTest`. A phone that already holds a one-song queue keeps it until an album
+  is started again. (14) the group's session ending 14 s after the room was added: nothing of ours ran (no rejoin,
+  no stop command, the leftover release only follows this app's own *Stop*); the backend shows the leader's receiver
+  reporting a stop — a STOP from some sender (an external status probe was connected to every device at the time).
+  Recheck without the probe. (11) Google's Default Media
   Receiver left on a released speaker: not reproducible from the code. The Android app now releases a routing session it
   still holds 3 s after its own *Stop* (a leftover route is the one thing on the phone that can start that receiver);
   a relay leaving never releases. Confirm on the speakers.

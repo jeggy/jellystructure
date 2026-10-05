@@ -123,7 +123,10 @@ object MusicCast {
                 }
                 // A session that ends any way but ours (Google Home's *Stop cast*, the notification, the device
                 // dropping the app, the network): the speaker's song and place come back to this device, paused.
-                if (wasConnected && link != CastLinkState.CONNECTED) {
+                // R371 (found on the Pixel 9 Pro) — only a session that is GONE hands back: adding a room switches the
+                // Cast session onto a group route, which reads RECONNECTING for ~200 ms, and that used to hand the music
+                // back to the phone mid-group (with whatever queue the speaker had said).
+                if (castSessionGone(wasConnected, link)) {
                     // R358 (FR-R358-1) — no live report at all (the device never got a stream): the hand-over's place.
                     val handed = castHandBackFrom(lastMusic, handOver)
                     val elapsed = lastMusicAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
@@ -132,7 +135,7 @@ object MusicCast {
                     handOver = null; heard = false
                     if (!byApp) handBack(handed, elapsed)
                 }
-                wasConnected = link == CastLinkState.CONNECTED
+                wasConnected = castLinkLive(wasConnected, link)
             }
         }
     }
@@ -160,7 +163,9 @@ object MusicCast {
         val plan = castHandBack(last, elapsedMs, endedByApp = false) ?: return
         val handed = last ?: return
         dev.jellystructure.ravilo.ui.seams.sessionLog("R353: hand-back — ${handed.queue.size} songs at #${plan.index} ${plan.positionMs} ms")
-        scope.launch(Dispatchers.Main) { MusicEngine.loadPaused(state(handed).queue, plan.index, plan.positionMs, context) }
+        val (queue, index) = handBackQueue(state(handed).queue, plan.index, MusicEngine.state.value.queue)
+        if (queue.size != handed.queue.size) dev.jellystructure.ravilo.ui.seams.sessionLog("R353: the speaker's ${handed.queue.size} songs are part of this device's ${queue.size}: the whole queue comes back")
+        scope.launch(Dispatchers.Main) { MusicEngine.loadPaused(queue, index, plan.positionMs, context) }
     }
 
     /**
@@ -250,7 +255,8 @@ object MusicCast {
         val s = state(st)
         dev.jellystructure.ravilo.ui.seams.sessionLog("R324: play here — ${s.queue.size} songs at #${s.index} ${st.positionMs} ms from ${_device.value}")
         if (s.queue.isNotEmpty() && s.index >= 0) {
-            MusicEngine.loadPaused(s.queue, s.index, st.positionMs, context)
+            val (queue, index) = handBackQueue(s.queue, s.index, MusicEngine.state.value.queue)
+            MusicEngine.loadPaused(queue, index, st.positionMs, context)
             MusicEngine.play()
         }
         endedByApp = true
@@ -483,6 +489,29 @@ fun castHandBackFrom(lastLive: CastRemoteStatus?, handOver: CastHandOver?): Cast
  */
 fun handOffPositionMs(live: Long, statePositionMs: Long, playing: Boolean): Long =
     if (live > 0L || playing) live.coerceAtLeast(0L) else statePositionMs.coerceAtLeast(0L)
+
+/**
+ * R371 — a Cast session is live while CONNECTED, and stays live through RECONNECTING when it was (a room added moves it
+ * onto a group route for a moment); it is gone only at NONE.
+ */
+fun castLinkLive(wasLive: Boolean, link: CastLinkState): Boolean = link == CastLinkState.CONNECTED || (wasLive && link == CastLinkState.RECONNECTING)
+
+/** The session that was live has ended: the music comes back to this device. */
+fun castSessionGone(wasLive: Boolean, link: CastLinkState): Boolean = wasLive && link == CastLinkState.NONE
+
+/**
+ * R353 / R371 (bug 9, found on the Pixel 9 Pro) — the queue that comes back: the speaker's, unless it is a part of the
+ * queue this device still holds (the hand-off keeps it, paused) — a window, or the one song a speaker was left with —
+ * then this device's whole queue, at the speaker's song. A queue that came back as one song stayed one song through every
+ * cast and relaunch after it.
+ */
+fun handBackQueue(received: List<MusicTrackItem>, receivedIndex: Int, local: List<MusicTrackItem>): Pair<List<MusicTrackItem>, Int> {
+    val song = received.getOrNull(receivedIndex) ?: return received to receivedIndex
+    if (received.size >= local.size) return received to receivedIndex
+    val start = local.indices.firstOrNull { i -> local.getOrNull(i + received.size - 1) != null && received.indices.all { k -> local[i + k].id == received[k].id } }
+        ?: return received to receivedIndex
+    return if (local[start + receivedIndex].id == song.id) local to (start + receivedIndex) else received to receivedIndex
+}
 
 /** How close to a song's end counts as having played it out: the last report before the end is up to ~1 s early. */
 private const val SONG_END_SLACK_MS = 2_000L

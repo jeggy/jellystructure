@@ -105,6 +105,35 @@ class SpeakerRoundTwoTest {
         assertEquals(listOf("Guest room"), ended.free.map { it.name })
     }
 
+    // ── 13 / 9 — a room added must not hand the music back, and a hand-back keeps the whole queue ──
+
+    @Test fun `the moment on a group route is not the end of the cast`() {
+        var live = false
+        val ends = mutableListOf<Boolean>()
+        for (link in listOf(dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED, dev.jellystructure.ravilo.ui.seams.CastLinkState.RECONNECTING,
+                dev.jellystructure.ravilo.ui.seams.CastLinkState.CONNECTED, dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE)) {
+            ends += dev.jellystructure.ravilo.ui.music.castSessionGone(live, link)
+            live = dev.jellystructure.ravilo.ui.music.castLinkLive(live, link)
+        }
+        assertEquals(listOf(false, false, false, true), ends, "only the final NONE hands back (09:51:54 on the Pixel handed back mid-group)")
+        assertTrue(dev.jellystructure.ravilo.ui.music.castSessionGone(dev.jellystructure.ravilo.ui.music.castLinkLive(true, dev.jellystructure.ravilo.ui.seams.CastLinkState.RECONNECTING),
+            dev.jellystructure.ravilo.ui.seams.CastLinkState.NONE), "a rejoin that gives up still hands back")
+        assertFalse(dev.jellystructure.ravilo.ui.music.castLinkLive(false, dev.jellystructure.ravilo.ui.seams.CastLinkState.RECONNECTING), "a resume at start-up is not live yet")
+    }
+
+    private fun song(id: String) = dev.jellystructure.shared.tv.MusicTrackItem(id = id, title = id)
+
+    @Test fun `a hand-back of one song or a window gives back this device's whole queue`() {
+        val album = (1..12).map { song("s$it") }
+        val (one, at) = dev.jellystructure.ravilo.ui.music.handBackQueue(listOf(song("s5")), 0, album)
+        assertEquals(12, one.size); assertEquals(4, at)
+        val (window, wAt) = dev.jellystructure.ravilo.ui.music.handBackQueue(album.subList(3, 7), 2, album)
+        assertEquals(12, window.size); assertEquals(5, wAt)
+        val other = listOf(song("x1"), song("s5"))
+        assertEquals(other to 1, dev.jellystructure.ravilo.ui.music.handBackQueue(other, 1, album), "a different queue on the speaker is the speaker's")
+        assertEquals(album to 3, dev.jellystructure.ravilo.ui.music.handBackQueue(album, 3, listOf(song("s4"))), "the speaker's longer queue wins")
+    }
+
     @Test fun `the hand-off names the Cast device the link is on`() {
         val routes = listOf(
             CastRoute("r-group", "Guest room", selected = true, select = {}, kind = "group", deviceKey = "g"),

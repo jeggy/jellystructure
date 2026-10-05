@@ -62,7 +62,8 @@ internal object CastSessionRemote {
             combine(sender.link, sender.status, sender.volume) { link, raw, vol ->
                 val st = MusicCast.shown(link, raw)
                 link to castCard(link, st, vol, st?.takeIf { it.music }?.let { MusicCast.state(it) })
-            }.collect { (link, card) -> show(card, link == CastLinkState.CONNECTED) }
+            // R371 — RECONNECTING (a room added: the session moves onto a group route for a moment) keeps the card's grace.
+            }.collect { (link, card) -> show(card, link == CastLinkState.CONNECTED || link == CastLinkState.RECONNECTING) }
         }
     }
 
