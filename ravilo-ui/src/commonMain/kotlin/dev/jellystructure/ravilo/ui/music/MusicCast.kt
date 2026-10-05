@@ -342,7 +342,10 @@ object MusicPlayback {
     init {
         scope.launch {
             combine(MusicEngine.state, MusicCast.linked, MusicCast.status) { local, linked, st -> if (linked && st != null) MusicCast.state(st) else local }
-                .collect { _state.value = it }
+                .collect {
+                    if (it.playing != _state.value.playing) { glyphBefore = _state.value.playing; glyphFlippedAt = kotlin.time.TimeSource.Monotonic.markNow() }
+                    _state.value = it
+                }
         }
         // When the device last said where it is: between its reports the position moves on by itself (below).
         scope.launch {
@@ -362,8 +365,20 @@ object MusicPlayback {
      * press resumed it. A button passes what it SHOWED: a press on a pause glyph pauses, on a play glyph plays.
      */
     fun togglePlay(shownPlaying: Boolean) {
-        if (casting) { if (shownPlaying) pause() else play() } else togglePlay()
+        if (!casting) { togglePlay(); return }
+        // Re-measured the same day: the Mac's click landed ~250 ms after the Pixel's pause had already turned its glyph
+        // into ▶, so "what it showed" was play and the speaker resumed. Nobody reacts to a glyph that fast: a press within
+        // [GLYPH_REACTION] of a flip this device did not cause is meant for the glyph that was there before it.
+        val flipped = glyphFlippedAt
+        val pressedOwn = ownPressAt
+        val meant = if (flipped != null && flipped.elapsedNow() < GLYPH_REACTION && (pressedOwn == null || pressedOwn.elapsedNow() > flipped.elapsedNow())) glyphBefore else shownPlaying
+        ownPressAt = kotlin.time.TimeSource.Monotonic.markNow()
+        if (meant) pause() else play()
     }
+    private val GLYPH_REACTION = kotlin.time.Duration.parse("700ms")
+    @kotlin.concurrent.Volatile private var glyphBefore = false
+    @kotlin.concurrent.Volatile private var glyphFlippedAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
+    @kotlin.concurrent.Volatile private var ownPressAt: kotlin.time.TimeSource.Monotonic.ValueTimeMark? = null
     fun togglePlay() {
         if (casting) { if (_state.value.playing) pause() else play() }
         else if (!MusicEngine.state.value.playing && MusicCast.resumeOnDevice()) Unit
