@@ -360,3 +360,15 @@ app: `CastController.moveLoad` called `route.select()` on `Dispatchers.Default` 
 MediaRouter throws off the main thread (*"The media router service must only be accessed on the application's main
 thread"*). `selectRoute` (Android) now re-posts itself to the main looper, and `moveLoad`/`startLoad` leave and select
 on `Dispatchers.Main`. Before the fix the group kept playing with no controller and the session row stayed "playing".
+
+## Amendment 2026-10-05 — moves found with two sessions
+
+- **A move to an app that is casting another session:** the app lets go of that other speaker and leaves it playing
+  (as a relay does), then plays the moved queue itself. Before, *Play on this Mac* for Stue while the Mac drove
+  Gæsteværelse loaded the songs paused and sent the play to Gæsteværelse; nothing was heard, Stue played on, and
+  10 s later the remote said *Couldn't move*.
+- **`session.move_failed` is said for 8 s** (`MOVE_FAILED_SHOWN_MS`), then the place line names the place again. It
+  had stayed on the remote until the next move.
+- **The place line says it opens *Move to…*:** a dim *· Move to…* follows *Playing on {place}* while the list is
+  closed and the session can move.
+- **The remote's *Up next*** lists the song playing and what follows it, not the songs already played.

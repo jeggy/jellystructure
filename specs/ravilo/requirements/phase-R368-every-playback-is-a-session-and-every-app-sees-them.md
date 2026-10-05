@@ -640,3 +640,18 @@ Playwright spec.
 **Only a device / live server can confirm:** acceptance 1's "within a second"; a dev-backend restart during a cast and
 during a film (rows read *Reconnecting…*); the household rule behind the real proxy; an installed older build showing no
 rise in `/api/tv/config`; the desktop popover on the Mac and Linux.
+
+## Amendment 2026-10-05 — two sessions at once, tested on the Pixel and the Mac
+
+Found by running Gæsteværelse and Stue as two music sessions and managing both from both apps (commit `54ae06f2`):
+
+- **FR-R368-7, order:** rows keep their place. Within *this device* / *mine* / *other people's*, the newest
+  **started** first (`created_at`), not the latest change: ordering by change moved a row to the top on every pause,
+  so the next click landed on whatever slid under the pointer (on the Mac, a child's episode on a TV).
+- **FR-R368-8, the bar:** "always the one this app touched last" now also holds while this app casts music itself.
+  A session elsewhere that the viewer touched since this app's own player was last used (paused, played, skipped,
+  opened) takes the bar from the music bar; using the app's own player (its play, next, previous, seek, a song
+  started from a list) gives it back. The session this app's link drives is the music bar already and never
+  takes it from itself.
+- **FR-R368-8, untouched:** in music mode a playing music or book session is preferred over a newer playing film or
+  episode; a film shows only when no music or book plays. (Films mode is unchanged: music and books only.)
