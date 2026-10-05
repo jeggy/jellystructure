@@ -46,6 +46,10 @@ actual fun playsHlsForAirPlay(): Boolean = false
 /** FR-R329-4 — AVPlayer switches the composed master's audio renditions in place (R291). */
 actual fun switchesHlsAudioRenditions(): Boolean = MacNative.lib != null
 
+/** 308 — AVPlayer switches HLS variants on its own (it starts on the first listed one: the server lists its first
+ *  guess first). mpv plays one variant and never switches, so it keeps one stream sized to the measurements. */
+actual fun playsAdaptiveHls(): Boolean = !mpv && MacNative.lib != null
+
 /** R335 (FR-R335-5) — mpv renders the container's own text and PGS tracks. */
 actual fun supportsEmbeddedTextSubtitles(): Boolean = mpv
 actual fun warmAudioRendition(index: Int) {}

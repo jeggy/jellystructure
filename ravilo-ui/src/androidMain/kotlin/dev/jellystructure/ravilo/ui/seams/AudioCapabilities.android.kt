@@ -32,4 +32,8 @@ actual fun playsHlsForAirPlay(): Boolean = false
  */
 actual fun switchesHlsAudioRenditions(): Boolean = true
 
+/** 308 — Media3's adaptive track selection switches HLS variants at segment boundaries, seeded by
+ *  [RaviloPlayer.seedBandwidthEstimate]. */
+actual fun playsAdaptiveHls(): Boolean = true
+
 actual fun playsOnlyHls(): Boolean = false

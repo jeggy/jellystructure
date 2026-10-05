@@ -32,6 +32,7 @@ import dev.jellystructure.shared.tv.nextUpStartMs
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.StreamTicket
+import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.RECEIVER_PAUSED_BEAT_MS
@@ -113,6 +114,18 @@ private class Receiver {
     private var sessionOpen = false
     /** A LOAD is being prepared (enrolment, the ticket): the player has not been handed the new item yet. */
     private var loading = 0
+
+    // ── 308 (FR-308-5): the receiver's own QoE — rebuffers, the variant playing and its switches ──
+    private var qoeItem: String? = null
+    private var qoeDirect = false
+    private var qoePlayed = false
+    private var qoeSeeking = false
+    private var qoeRebuffers = 0
+    private var qoeRebufferMs = 0L
+    private var qoeRebufferFrom = -1L
+    private var qoeVariantBps: Long? = null
+    private var qoeDown = 0
+    private var qoeUp = 0
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
     // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
     private var pendingRestream: Triple<Int, Int?, Int>? = null
@@ -217,6 +230,10 @@ private class Receiver {
         for (type in listOf(et.PLAYING, et.PAUSE, et.BUFFERING)) {
             playerManager.addEventListener(type) { _: dynamic -> onPlayerState() }
         }
+        // 308 (FR-308-5) — variant switches, and a seek's own buffering not counted as a stall. Each registered on its
+        // own, like every event this framework build may not have.
+        runCatching { playerManager.addEventListener(et.BITRATE_CHANGED) { ev: dynamic -> onBitrate((ev.totalBitrate as? Number)?.toDouble()) } }
+        runCatching { playerManager.addEventListener(et.SEEKING) { _: dynamic -> qoeSeeking = true } }
         playerManager.addEventListener(et.MEDIA_FINISHED) { ev: dynamic -> note("finished ${ev.endedReason} loading=$loading state=${playerManager.getPlayerState()}"); onFinished(ev.endedReason as String?) }
         // R297 (FR-R297-3) — record why a stream failed, so the next failure is read through DevTools, not guessed.
         playerManager.addEventListener(et.ERROR) { ev: dynamic ->
@@ -576,6 +593,7 @@ private class Receiver {
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
         sessionOpen = true
+        startQoe(data.itemId, t)
         // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
         note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel}/ch${decode.maxAudioChannels} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
         val messages = cast.framework.messages
@@ -681,6 +699,8 @@ private class Receiver {
             audioCodecs = listOfNotNull("aac", "mp3", "opus".takeIf { opus }, "ac3".takeIf { ac3 && multichannel("ac-3") }, "eac3".takeIf { eac3 && multichannel("ec-3") }),
             maxAudioChannels = d.maxAudioChannels,
             hlsOnly = true,
+            // 308 (FR-308-2) — CAF's player (Shaka) chooses between a master's variants on its own.
+            hlsAdaptive = true,
             // R285 (FR-R285-5) / 253 — CAF plays fMP4 HLS, and `hevc` here is this device's own answer
             // to canDisplayType('video/mp4', hev1…): fMP4-HEVC is exactly what was probed. Without this
             // every HEVC title was re-encoded to h264 for a stick that had just said it decodes HEVC.
@@ -1132,6 +1152,7 @@ private class Receiver {
 
     private fun onPlayerState() {
         val st = playerManager.getPlayerState() as String
+        qoeState(st)
         when (st) {
             "BUFFERING" -> if (music) show("nowplaying", "buffering") else if (!el("loading").classList.contains("on")) show("buffering")
             "PLAYING" -> { paused = false; pausedBeat?.cancel(); pausedBeat = null; if (music) { show("nowplaying"); paintTransport() } else show() }
@@ -1139,6 +1160,70 @@ private class Receiver {
             "IDLE" -> {}
         }
         sendStatus()
+    }
+
+    /**
+     * 308 (FR-308-3/-5) — a film's new stream: the counters start again, and an adaptive stream's first variant is
+     * seeded with what this receiver measured on its recent plays (`PlaybackConfig.initialBandwidth`, which CAF hands to
+     * its player's ABR); with nothing measured the player's own default stands.
+     */
+    private fun startQoe(itemId: String, t: StreamTicket) {
+        // A restream of the same film (R285: a subtitle or audio change) keeps the session's counts.
+        if (qoeItem != itemId) {
+            if (qoeItem != null) postQoe()
+            qoeRebuffers = 0; qoeRebufferMs = 0L; qoeDown = 0; qoeUp = 0
+        }
+        qoeItem = itemId; qoeDirect = t.directPlay; qoePlayed = false; qoeSeeking = false; qoeRebufferFrom = -1L; qoeVariantBps = null
+        runCatching {
+            val cfg: dynamic = playerManager.getPlaybackConfig() ?: js("new cast.framework.PlaybackConfig()")
+            val seed = t.measuredBandwidthBps?.takeIf { t.adaptive && it > 0 }
+            cfg.initialBandwidth = if (seed != null) seed.toDouble() else js("undefined")
+            playerManager.setPlaybackConfig(cfg)
+        }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
+    }
+
+    /** 308 (FR-308-5) — a stall after the first frame, not one a seek asked for, counts as a rebuffer. */
+    private fun qoeState(st: String) {
+        if (qoeItem == null || music) return
+        when (st) {
+            "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0) qoeRebufferFrom = nowMs()
+            "PLAYING" -> {
+                if (qoeRebufferFrom >= 0) { qoeRebuffers++; qoeRebufferMs += (nowMs() - qoeRebufferFrom).coerceAtLeast(0); qoeRebufferFrom = -1L }
+                qoePlayed = true; qoeSeeking = false
+            }
+            else -> if (st == "PAUSED") qoeRebufferFrom = -1L
+        }
+    }
+
+    /** 308 (FR-308-5) — CAF's `BITRATE_CHANGED`: the player moved to another variant; reported at once. */
+    private fun onBitrate(totalBitrate: Double?) {
+        if (qoeItem == null || music) return
+        val bps = totalBitrate?.toLong()?.takeIf { it > 0 } ?: return
+        val was = qoeVariantBps
+        if (was != null && bps != was) { if (bps < was) qoeDown++ else qoeUp++ }
+        qoeVariantBps = bps
+        if (was != null && bps != was) postQoe()
+    }
+
+    /** 308 (FR-308-5) — the receiver reports like every other player: at a switch and when its stream ends. */
+    private fun postQoe() {
+        val item = qoeItem ?: return
+        val a = api ?: return
+        val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
+        fun num(v: dynamic): Double? = (v as? Number)?.toDouble()?.takeIf { !it.isNaN() && it > 0 }
+        val report = PlaybackQoeReport(
+            itemId = item,
+            droppedFrames = num(stats?.droppedFrames)?.toInt() ?: 0,
+            rebufferCount = qoeRebuffers,
+            rebufferMs = qoeRebufferMs,
+            bandwidthEstimateBps = num(stats?.estimatedBandwidth)?.toLong(),
+            directPlay = qoeDirect,
+            variantSwitchesDown = qoeDown,
+            variantSwitchesUp = qoeUp,
+            variantBandwidthBps = qoeVariantBps ?: num(stats?.streamBandwidth)?.toLong(),
+            variantHeight = num(stats?.height)?.toInt(),
+        )
+        GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
     }
 
     private fun nextEpisode(): CastEpisode? {
@@ -1230,6 +1315,7 @@ private class Receiver {
         val a = api ?: return
         val pos = positionMs
         sessionOpen = false
+        postQoe(); qoeItem = null
         GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }
     }
 
@@ -1244,6 +1330,7 @@ private class Receiver {
         val a = api ?: return
         if (!sessionOpen) return
         sessionOpen = false
+        postQoe(); qoeItem = null
         val pos = positionMs
         if (d.itemId == byItemId) runCatching { a.stopPlayback(d.itemId, pos) }
         else GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }

@@ -140,6 +140,9 @@ actual class RaviloPlayer actual constructor() {
     /** R354 (FR-R354-6) — the engine's own output level (AVPlayer / mpv). */
     actual fun setVolume(level: Float) = engine.setVolume(level.coerceIn(0f, 1f))
 
+    /** 308 (FR-308-3) — AVPlayer starts on the first variant the server listed (its first guess); mpv gets one stream. */
+    actual fun seedBandwidthEstimate(bps: Long?) {}
+
     /** FR-R329-4 — [index] is a position in [audioTracks], which are the ticket's; the library finds the rendition. */
     actual fun selectAudioTrack(index: Int) = engine.selectAudio(index)
 

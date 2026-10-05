@@ -53,6 +53,13 @@ expect fun playsHlsForAirPlay(): Boolean
 expect fun switchesHlsAudioRenditions(): Boolean
 
 /**
+ * 308 (FR-308-2) — this player chooses between a master's video variants on its own, stepping down before its buffer
+ * runs dry and back up when the throughput holds (Media3, hls.js, Safari and the Mac's AVPlayer do; mpv does not).
+ * A player that says so is offered a transcode as a ladder of variants; one that does not keeps a single stream.
+ */
+expect fun playsAdaptiveHls(): Boolean
+
+/**
  * R329 (FR-R329-3) — this player takes nothing but HLS: the Mac's AVPlayer plays no MKV, so every film arrives as the
  * Chromecast receiver's would (`hls_only`), with HEVC in fMP4 where [supportsHevcOverHls] says so. False on Android
  * and the web, whose Safari case is [playsHlsForAirPlay].

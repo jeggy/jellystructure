@@ -53,6 +53,14 @@ expect class RaviloPlayer() {
     /** R354 (FR-R354-6) — the player's output level, 0–1 (a remote command's volume); kept across an engine rebuild. */
     fun setVolume(level: Float)
 
+    /**
+     * 308 (FR-308-3) — before [load]: what this device measured its path to carry on its recent plays
+     * (`StreamTicket.measuredBandwidthBps`), so an adaptive stream starts on the variant those measurements say plays
+     * without stopping; the player's own live measurement takes over from its first segments. Null leaves the
+     * player's own default. No-op where the player does not adapt.
+     */
+    fun seedBandwidthEstimate(bps: Long?)
+
     /** Select an audio track by its index in [audioTracks]. */
     fun selectAudioTrack(index: Int)
 
@@ -176,6 +184,12 @@ data class PlayerQoeSnapshot(
     val backgroundReturns: Int = 0,
     /** R292 (FR-R292-6) — starts from saved state after an activity recreation this session. */
     val restoredAfterRecreate: Int = 0,
+    /** 308 (FR-308-5) — switches between video variants this session (to a lower / a higher bandwidth), and the
+     *  variant playing now (its `BANDWIDTH` and picture height); 0 / null with one variant or no signal. */
+    val variantSwitchesDown: Int = 0,
+    val variantSwitchesUp: Int = 0,
+    val variantBandwidthBps: Long? = null,
+    val variantHeight: Int? = null,
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

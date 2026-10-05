@@ -77,4 +77,8 @@ private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlay
 // played it yet (R291's build note). R376 FR-R376-3 turns it on once it is measured in Chrome and Safari.
 actual fun switchesHlsAudioRenditions(): Boolean = false
 
+/** 308 — hls.js's ABR (seeded by [RaviloPlayer.seedBandwidthEstimate]) and Safari's native HLS both switch variants;
+ *  a browser with neither cannot play an HLS stream at all. */
+actual fun playsAdaptiveHls(): Boolean = true
+
 actual fun playsOnlyHls(): Boolean = false

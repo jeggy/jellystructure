@@ -11,6 +11,7 @@ import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
+import dev.jellystructure.ravilo.ui.seams.playsAdaptiveHls
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
@@ -197,6 +198,8 @@ class PlayerStore(
                         hlsSubtitles = airplayHls,
                         // R291 (FR-R291-2) — every audio track in one master, switched in the player.
                         hlsAudioRenditions = switchesHlsAudioRenditions(),
+                        // 308 (FR-308-2) — a transcode as a ladder of variants the player chooses between.
+                        hlsAdaptive = playsAdaptiveHls(),
                         // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
                         // when the FFmpeg extension is installed); was a literal that omitted both.
                         audioCodecs = supportedAudioCodecs(),
@@ -390,10 +393,18 @@ class PlayerStore(
                     linkKind = qoeLinkKind,
                     linkMbps = qoeLinkMbps,
                     subtitleLoadErrors = snapshot.subtitleLoadErrors,
+                    // 308 (FR-308-5) — the variant switches and the variant playing now.
+                    variantSwitchesDown = snapshot.variantSwitchesDown,
+                    variantSwitchesUp = snapshot.variantSwitchesUp,
+                    variantBandwidthBps = snapshot.variantBandwidthBps,
+                    variantHeight = snapshot.variantHeight,
                 ),
             )
         }
     }
+
+    /** 308 (FR-308-5) — the variant last reported; a different one is reported at the next tick, not in ten minutes. */
+    private var reportedVariant: Triple<Long?, Int, Int>? = null
 
     /**
      * Bug fix: this store used to have no lifecycle at all — nothing ever cancelled [scope], so every
@@ -478,8 +489,11 @@ class PlayerStore(
                 }
                 // R216 (FR-R216-4) — "a long-session interval, so an abandoned/crashed session is not
                 // lost" alongside the end-of-session report in stopSession().
-                if (++qoeTicksSinceReport >= QOE_REPORT_EVERY_N_TICKS) {
+                val variant = qoeSnapshotProvider?.invoke()?.let { Triple(it.variantBandwidthBps, it.variantSwitchesDown, it.variantSwitchesUp) }
+                val variantMoved = variant?.first != null && variant != reportedVariant
+                if (++qoeTicksSinceReport >= QOE_REPORT_EVERY_N_TICKS || variantMoved) {
                     qoeTicksSinceReport = 0
+                    reportedVariant = variant
                     postQoeNow(itemId)
                 }
             }

@@ -194,10 +194,24 @@ actual class RaviloPlayer actual constructor() {
             PlayerSubtitleTrack(i, label, s.language, s.forced, s.isDefault)
         }
 
+    /** 308 (FR-308-3) — hls.js's first estimate for the next stream ([attachSource] reads it); Safari starts on the
+     *  first variant the server listed, which is the same guess. */
+    actual fun seedBandwidthEstimate(bps: Long?) = jsSeedAbr((bps ?: 0L).toDouble())
+
     // R216 — out of scope for the web target (no browser API for dropped-frame/rebuffer counters
-    // comparable to Media3's AnalyticsListener); reports "nothing observed" honestly.
-    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot()
+    // comparable to Media3's AnalyticsListener); reports "nothing observed" honestly. 308 (FR-308-5) — hls.js's
+    // variant switches are counted ([attachSource]); Safari's native HLS exposes none.
+    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot(
+        variantSwitchesDown = jsQ308(video, "down").toInt(),
+        variantSwitchesUp = jsQ308(video, "up").toInt(),
+        variantBandwidthBps = jsQ308(video, "bps").toLong().takeIf { it > 0 },
+        variantHeight = jsQ308(video, "h").toInt().takeIf { it > 0 },
+    )
 }
+
+private fun jsSeedAbr(bps: Double): Unit = js("{ window.__raviloAbrSeed = bps > 0 ? bps : 0; }")
+
+private fun jsQ308(video: HTMLVideoElement, key: String): Double = js("(video._q308 && video._q308[key]) || 0")
 
 /**
  * R44: wire the browser Media Session API so OS / keyboard media-transport keys drive the <video>.
@@ -237,7 +251,18 @@ private fun attachSource(video: HTMLVideoElement, url: String): Unit = js(
             try {
                 if (window.Hls && window.Hls.isSupported()) {
                     if (video._hls) { try { video._hls.destroy(); } catch(e){} }
-                    var hls = new window.Hls(); video._hls = hls;
+                    // 308 (FR-308-2/-3) — hls.js's own ABR picks between the master's variants, seeded with what this
+                    // device measured; its switches are counted for the QoE report (FR-308-5).
+                    var cfg = {};
+                    if (window.__raviloAbrSeed > 0) cfg.abrEwmaDefaultEstimate = window.__raviloAbrSeed;
+                    var hls = new window.Hls(cfg); video._hls = hls;
+                    var q = video._q308 || (video._q308 = { down: 0, up: 0, bps: 0, h: 0 });
+                    q.bps = 0; q.h = 0;
+                    hls.on(window.Hls.Events.LEVEL_SWITCHED, function (e, d) {
+                        var l = hls.levels && hls.levels[d.level]; if (!l) return;
+                        if (q.bps && l.bitrate !== q.bps) { if (l.bitrate < q.bps) q.down++; else q.up++; }
+                        q.bps = l.bitrate || 0; q.h = l.height || 0;
+                    });
                     hls.loadSource(url); hls.attachMedia(video);
                 } else { native(); }
             } catch(e) { native(); }

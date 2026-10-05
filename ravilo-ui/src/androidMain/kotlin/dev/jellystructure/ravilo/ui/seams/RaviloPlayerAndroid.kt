@@ -86,6 +86,8 @@ actual class RaviloPlayer actual constructor() {
         // reported TV's dalvik.vm.heapgrowthlimit (192 MB) leaves less headroom above Media3's own
         // 128 MB default video buffer than the time-based defaults suggest (see the phase's own doc) —
         // enlarging buffer SIZE needs FR-R216-4's telemetry to validate first, not a blind bump here.
+        // 308 (FR-308-3) — the app-wide meter, seeded per stream with what this device measured on its recent plays.
+        builder.setBandwidthMeter(bandwidthMeter)
         builder.setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -163,6 +165,17 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun recordRestoredAfterRecreate() { qoeRestoredAfterRecreate++ }
+
+    // 308 (FR-308-3) — see [SeededBandwidthMeter]: one for the app, over Media3's app-wide meter.
+    private val bandwidthMeter: SeededBandwidthMeter get() = SeededBandwidthMeter.shared(ctx)
+
+    actual fun seedBandwidthEstimate(bps: Long?) { bandwidthMeter.seed(bps) }
+
+    // 308 (FR-308-5) — the video variant playing (its BANDWIDTH and height) and the switches between variants.
+    @Volatile private var qoeVariantBps: Long? = null
+    @Volatile private var qoeVariantHeight: Int? = null
+    @Volatile private var qoeVariantDown: Int = 0
+    @Volatile private var qoeVariantUp: Int = 0
 
     // R216 (FR-R216-4) — accumulated playback-quality counters for this session; read by [qoeSnapshot].
     // @Volatile: read from PlayerStore's coroutine, written from whichever thread Media3 dispatches
@@ -255,6 +268,19 @@ actual class RaviloPlayer actual constructor() {
                 else -> {}
             }
         }
+        // 308 (FR-308-5) — a new video variant reached the playhead: an HLS variant's format carries the master's
+        // BANDWIDTH (peak) and RESOLUTION. A muxed variant is reported as the DEFAULT track type, a demuxed one as VIDEO;
+        // an audio rendition never counts.
+        override fun onDownstreamFormatChanged(eventTime: AnalyticsListener.EventTime, mediaLoadData: androidx.media3.exoplayer.source.MediaLoadData) {
+            val f = mediaLoadData.trackFormat ?: return
+            val video = mediaLoadData.trackType == C.TRACK_TYPE_VIDEO || (mediaLoadData.trackType == C.TRACK_TYPE_DEFAULT && f.height > 0)
+            if (!video) return
+            val bps = (f.peakBitrate.takeIf { it > 0 } ?: f.bitrate.takeIf { it > 0 })?.toLong() ?: return
+            val was = qoeVariantBps
+            if (was != null && bps != was) { if (bps < was) qoeVariantDown++ else qoeVariantUp++ }
+            qoeVariantBps = bps
+            qoeVariantHeight = f.height.takeIf { it > 0 }
+        }
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             qoeVideoDecoder = decoderName
         }
@@ -309,6 +335,9 @@ actual class RaviloPlayer actual constructor() {
         _isBuffering = false
         _playbackFailed = false
         _isSeeking = false
+        // 308 — a new stream's first variant is not a switch.
+        qoeVariantBps = null
+        qoeVariantHeight = null
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
             val mime = when {
@@ -581,6 +610,10 @@ actual class RaviloPlayer actual constructor() {
         videoOutputRecoveryMs = qoeVideoOutputRecoveryMs,
         backgroundReturns = qoeBackgroundReturns,
         restoredAfterRecreate = qoeRestoredAfterRecreate,
+        variantSwitchesDown = qoeVariantDown,
+        variantSwitchesUp = qoeVariantUp,
+        variantBandwidthBps = qoeVariantBps,
+        variantHeight = qoeVariantHeight,
     )
 
     /**

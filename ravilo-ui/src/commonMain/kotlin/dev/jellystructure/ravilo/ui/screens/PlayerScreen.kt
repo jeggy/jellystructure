@@ -1018,6 +1018,8 @@ fun PlayerScreen(
         bk.startRestreamPending = false   // R290 — the restream the resolver asked for is this ticket
         // R290 (FR-R290-3, dev review item 3) — the first position shown is the target, never the poll's 0.
         positionMs = s.ticket.startPositionMs
+        // 308 (FR-308-3) — an adaptive stream starts from what this device measured, never from a guess about where it is.
+        player.seedBandwidthEstimate(s.ticket.measuredBandwidthBps?.takeIf { s.ticket.adaptive })
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
         // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
