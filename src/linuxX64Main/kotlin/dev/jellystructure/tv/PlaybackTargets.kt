@@ -21,8 +21,12 @@ import kotlin.time.Clock
 /** Review item 12, owner decision 3 — places seen this recently are listed *Not reachable* (TVs, displays, speakers). */
 internal const val TARGET_UNREACHABLE_WINDOW_MS = 24L * 60 * 60_000
 
-/** Owner decision 1 — the apps that can relay a speaker launch: Android phones and the desktop apps. */
-internal val RELAY_PLATFORMS = setOf("phone", "mac", "linux")
+/**
+ * Owner decision 1 — the apps that can relay a speaker launch: Android phones, the desktop apps and (owner, 2026-10-05:
+ * *"TVs are a good candidate for being relays"* — on and on the household's network most of the day) Android TVs.
+ * A TV shows no cast button (R360's amendment); relaying needs none.
+ */
+internal val RELAY_PLATFORMS = setOf("phone", "mac", "linux", "tv")
 
 /** One Ravilo app holding its events socket. */
 internal data class LiveApp(val device: DeviceData, val features: Set<String>)

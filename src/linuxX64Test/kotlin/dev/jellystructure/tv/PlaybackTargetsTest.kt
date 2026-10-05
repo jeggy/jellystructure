@@ -83,6 +83,11 @@ class PlaybackTargetsTest {
     @Test fun `an app on another public address is never chosen`() =
         assertNull(chooseRelayApp(listOf(reach(dev("phone2", address = "203.0.113.9"), "cast-1", "Office")), "cast-1", home, setOf("phone2")))
 
+    @Test fun `an Android TV can relay`() {
+        val tv = dev("stue-tv", platform = "tv")
+        assertEquals("stue-tv", chooseRelayApp(listOf(reach(tv, "cast-1", "Office")), "cast-1", home, setOf("stue-tv"))?.deviceId)
+    }
+
     @Test fun `the most recently reporting app wins`() {
         val a = dev("phone-a"); val b = dev("mac-b", platform = "mac")
         val pick = chooseRelayApp(listOf(reach(a, "cast-1", "Office", at = 1), reach(b, "cast-1", "Office", at = 7)), "cast-1", home, setOf("phone-a", "mac-b"))
