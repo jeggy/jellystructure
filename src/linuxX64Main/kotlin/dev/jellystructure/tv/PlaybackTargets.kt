@@ -52,11 +52,13 @@ class CastReach(private val clock: () -> Long = { Clock.System.now().toEpochMill
 /**
  * Owner decision 1 — which app relays a launch onto [castDeviceId]: only an Android or desktop app that reports the
  * device and shares the requester's public address; the most recently reporting one. Null = no relay (the place is
- * *Not reachable*).
+ * *Not reachable*). A launch passes over [busy] — apps already driving a cast (found 2026-10-05: the Mac's start on
+ * the Køkken hub went to the Pixel while it cast Stue; an Android app holds one Cast session, so it refused and the
+ * session ended as *Stopped on Køkken hub*). A room op joins the session's own device, so it passes nothing.
  */
-internal fun chooseRelayApp(reach: List<ReachEntry>, castDeviceId: String, callerAddress: String?, liveDeviceIds: Set<String>): DeviceData? =
+internal fun chooseRelayApp(reach: List<ReachEntry>, castDeviceId: String, callerAddress: String?, liveDeviceIds: Set<String>, busy: Set<String> = emptySet()): DeviceData? =
     reach.filter { it.device.castDeviceId == castDeviceId && (it.app.platform in RELAY_PLATFORMS) && it.app.deviceId in liveDeviceIds &&
-        isNearby(callerAddress, it.app.lastPublicAddress) }
+        it.app.deviceId !in busy && isNearby(callerAddress, it.app.lastPublicAddress) }
         .maxByOrNull { it.reportedAt }?.app
 
 /** Review item 6 — what an app plays, from its `plays=`; an app that declared nothing (an older build) plays video. */
@@ -193,7 +195,7 @@ class SessionStarter(
             return StartResult2.Started(rec, loadHere = true, castDeviceId = castId)
         }
         val live = bus.liveSockets().map { it.second }.toSet()
-        val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, live)
+        val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, live, busy = sessions.linkHolders())
         Logger.info("Playback sessions: ${rec.id} start $kind on $name from ${caller.deviceId} → ${relay?.let { "relay ${it.deviceId}" } ?: "no relay (seen by ${seen.joinToString { it.app.deviceId }.ifEmpty { "no app" }})"}", "tv")
         if (relay == null) { sessions.end(rec.id, "failed"); return StartResult2.Unreachable }
         if (!relayLaunch(caller, relay, rec, castId, items, req)) { sessions.end(rec.id, "failed"); return StartResult2.Unreachable }
@@ -267,7 +269,7 @@ class SessionStarter(
         val moving = sessions.beginMove(s.id, targetId, name) ?: return StartResult2.BadRequest
         Logger.info("Playback sessions: ${s.id} move to $name from ${caller.deviceId}${if (admin) " (admin)" else ""} → ${if (callerSees) "its own LOAD" else "relay"}", "tv")
         if (callerSees) return StartResult2.Started(moving, loadHere = true, castDeviceId = castId)
-        val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, bus.liveSockets().map { it.second }.toSet())
+        val relay = chooseRelayApp(seen, castId, caller.lastPublicAddress, bus.liveSockets().map { it.second }.toSet(), busy = sessions.linkHolders())
             ?: return StartResult2.Unreachable
         val owner = devices.listSessions(s.startedByDeviceId ?: caller.deviceId).firstOrNull { it.jellyfinUserId == s.ownerUserId } ?: caller
         val items = ids.map { id -> if (id == s.itemId) s.current ?: SessionItem(id) else sessions.describe(id, s.bookId)?.second ?: SessionItem(id) }

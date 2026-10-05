@@ -89,6 +89,13 @@ class PlaybackTargetsTest {
         assertEquals("mac-b", assertNotNull(pick).deviceId)
     }
 
+    @Test fun `an app already driving a cast is never the relay for a launch`() {
+        val a = dev("phone-a"); val b = dev("mac-b", platform = "mac")
+        val entries = listOf(reach(a, "cast-1", "Office", at = 9), reach(b, "cast-1", "Office", at = 1))
+        assertEquals("mac-b", chooseRelayApp(entries, "cast-1", home, setOf("phone-a", "mac-b"), busy = setOf("phone-a"))?.deviceId)
+        assertNull(chooseRelayApp(entries.take(1), "cast-1", home, setOf("phone-a"), busy = setOf("phone-a")))
+    }
+
     @Test fun `no candidate means no relay`() {
         assertNull(chooseRelayApp(emptyList(), "cast-1", home, emptySet()))
         // A reporting app whose socket closed is not a candidate either.

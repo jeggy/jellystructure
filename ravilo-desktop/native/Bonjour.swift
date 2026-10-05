@@ -82,8 +82,13 @@ private final class CastBrowser {
         lock.unlock()
     }
 
-    func resolve(_ name: String, _ endpoint: NWEndpoint) {
-        let c = NWConnection(to: endpoint, using: .tcp)
+    /// IPv4 first (2026-10-05): a Nest Hub answered over IPv6 link-local, and an `fe80::` address without its `%en0`
+    /// scope cannot be connected to — the Mac listed the hub as unreachable. Only when IPv4 fails is IPv6 tried, and
+    /// then the scope stays on the address.
+    func resolve(_ name: String, _ endpoint: NWEndpoint, ipv4: Bool = true) {
+        let params = NWParameters.tcp
+        if ipv4, let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
+        let c = NWConnection(to: endpoint, using: params)
         lock.lock(); entries[name]?.resolving = c; lock.unlock()
         c.stateUpdateHandler = { [weak self, weak c] st in
             guard let self = self, let c = c else { return }
@@ -91,7 +96,7 @@ private final class CastBrowser {
             case .ready:
                 if case .hostPort(let host, let port) = c.currentPath?.remoteEndpoint {
                     var h = "\(host)"
-                    if let pct = h.firstIndex(of: "%") { h = String(h[..<pct]) }
+                    if ipv4, let pct = h.firstIndex(of: "%") { h = String(h[..<pct]) }
                     self.lock.lock()
                     self.entries[name]?.host = h
                     self.entries[name]?.port = Int(port.rawValue)
@@ -99,8 +104,12 @@ private final class CastBrowser {
                     self.lock.unlock()
                 }
                 c.cancel()
-            case .failed, .cancelled:
+            case .failed:
                 self.lock.lock(); self.entries[name]?.resolving = nil; self.lock.unlock()
+                c.cancel()
+                if ipv4 { self.resolve(name, endpoint, ipv4: false) }
+            case .cancelled:
+                self.lock.lock(); if self.entries[name]?.resolving === c { self.entries[name]?.resolving = nil }; self.lock.unlock()
             default: break
             }
         }

@@ -388,6 +388,11 @@ class PlaybackSessions(
     fun recordCastRedeemed(receiverDeviceId: String, minterDeviceId: String) { castMinter[receiverDeviceId] = minterDeviceId }
     internal fun castMinterOf(receiverDeviceId: String): String? = castMinter[receiverDeviceId]
 
+    /** The apps driving a live cast session right now (each holds its one Cast link); a launch is never relayed through one. */
+    suspend fun linkHolders(): Set<String> = mutex.withLock {
+        castMinter.filterKeys { r -> sessions.values.any { it.live && it.targetId == r } }.values.toSet()
+    }
+
     /** R370 (review item 3) — receiver device id → the Cast device it runs on (from the hand-off's body). */
     private val receiverCastDevice = HashMap<String, String>()
     internal fun castDeviceOfReceiver(receiverDeviceId: String): String? = receiverCastDevice[receiverDeviceId]
