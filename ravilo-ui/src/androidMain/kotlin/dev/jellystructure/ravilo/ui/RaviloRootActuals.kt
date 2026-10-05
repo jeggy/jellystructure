@@ -80,7 +80,15 @@ actual object DeviceIdStore {
     }
 }
 
-actual fun deviceDisplayName(): String = android.os.Build.MODEL ?: "Ravilo TV"
+/**
+ * The name the household gave this device (Settings → Device name: *Stue TV*, *Eyð's Pixel*), else the model. Found
+ * 2026-10-05: the living-room TV's sessions said *BRAVIA 4K VH21* while its Cast entry in *Play on…* said *Stue TV*,
+ * so one TV read as two places. Sent at sign-in, so a device already signed in keeps its old name until the next one.
+ */
+actual fun deviceDisplayName(): String =
+    runCatching { if (android.os.Build.VERSION.SDK_INT < 25) null else android.provider.Settings.Global.getString(RaviloAppContext.get().contentResolver, android.provider.Settings.Global.DEVICE_NAME) }
+        .getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        ?: android.os.Build.MODEL ?: "Ravilo TV"
 
 // R80: no-ops on Android — navigation is handled by Key.Back key events.
 actual fun pushRoute(route: String) {}

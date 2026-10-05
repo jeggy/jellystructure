@@ -43,7 +43,9 @@ fun applySessionState(state: SessionsState, env: SessionStateEnvelope, receivedA
  * click landed on the row that slid under the pointer (on the Mac, someone's film on a TV). A row keeps its place.
  */
 fun orderSessionRows(rows: List<SessionView>): List<SessionView> =
-    rows.sortedWith(compareByDescending<SessionView> { it.here }.thenByDescending { it.mine }.thenByDescending { it.createdAt }.thenBy { it.id })
+    // Ended rows go last (2026-10-05): one fading out above a live row moved that row up when it left 60 s later,
+    // and a tap meant for the music opened someone's episode instead.
+    rows.sortedWith(compareByDescending<SessionView> { it.isLive() }.thenByDescending { it.here }.thenByDescending { it.mine }.thenByDescending { it.createdAt }.thenBy { it.id })
 
 /** A row that still plays somewhere (not the 60 s fade of an ended one). */
 fun SessionView.isLive(): Boolean = state != "ended"

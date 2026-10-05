@@ -62,6 +62,11 @@ class PlaybackSessionsTest {
         assertEquals(false, touchedTakesBar(rows, null, filmsMode = false, linkedPlace = "Place a"))
     }
 
+    @Test fun `an ended row sits below every live one`() {
+        val rows = listOf(v("old", created = 1), v("gone", state = "ended", here = true, created = 50))
+        assertEquals(listOf("old", "gone"), orderSessionRows(rows).map { it.id })
+    }
+
     @Test fun `a pause does not move a row`() {
         val rows = listOf(v("a", created = 10, updated = 10), v("b", created = 20, updated = 20))
         val paused = rows.map { if (it.id == "a") it.copy(state = "paused", updatedAt = 99) else it }
