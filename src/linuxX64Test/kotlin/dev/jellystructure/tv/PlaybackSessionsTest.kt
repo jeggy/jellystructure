@@ -319,6 +319,19 @@ class PlaybackSessionsTest {
         assertEquals("Guest room", placeName(s.get(id)!!))
     }
 
+    @Test fun `a cast session keeps its Cast device and link holder across a restart`() = runBlocking {
+        // Found on the Pixel 9 Pro (2026-10-05): after a backend deploy, Add a speaker said no phone nearby could reach it.
+        val s = service()
+        val speaker = device("rx-guest", kind = "cast")
+        s.onReceiverRedeemed(speaker, "pixel", "c-guest", null)
+        val id = s.onStart(speaker, "song-1", 0, kindHint = SessionKind.MUSIC)
+        val after = service()
+        after.restore()
+        assertEquals("c-guest", after.get(id)!!.castDeviceId)
+        assertEquals("pixel", after.castMinterOf("rx-guest"))
+        assertEquals("c-guest", after.castDeviceOfReceiver("rx-guest"))
+    }
+
     @Test fun `a move from a speaker to the phone clears the Cast device`() = runBlocking {
         val s = service()
         s.stopPlace = { _, _ -> }

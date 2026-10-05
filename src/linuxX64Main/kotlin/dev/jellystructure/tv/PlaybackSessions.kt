@@ -151,6 +151,14 @@ internal data class SessionOptions(
     @SerialName("room_levels_before_mute") val roomLevelsBeforeMute: Map<String, Int> = emptyMap(),
     /** R371 — the speakers the link holder's routing controller says can join (null = not reported). */
     val addable: List<SessionRoom>? = null,
+    /**
+     * A Cast session's device and the app holding its link, kept with the row so a restart keeps them (found on the
+     * Pixel 9 Pro, 2026-10-05: after a backend deploy, *Add a speaker…* said no phone nearby could reach the speaker until
+     * a new cast). Written by persist, read back by restore; the live values are [SessionRec.castDeviceId] and the
+     * service's link-holder map.
+     */
+    @SerialName("cast_device_id") val castDeviceId: String? = null,
+    @SerialName("link_holder") val linkHolder: String? = null,
 ) {
     fun plan(): SessionPlan? = plan?.toPlan()
     fun withPlan(p: SessionPlan?): SessionOptions = if (p == null) this else copy(plan = StoredPlan.of(p))
@@ -444,7 +452,8 @@ class PlaybackSessions(
             id = id, owner_user_id = ownerUserId, owner_name = ownerName, target_kind = targetKind, target_id = targetId,
             target_name = targetName, lane = lane, kind = kind, item_id = itemId, book_id = bookId,
             queue_json = json.encodeToString(queueSer, queue), queue_index = queueIndex.toLong(), position_ms = positionMs,
-            position_at = positionAt, state = state, options_json = json.encodeToString(SessionOptions.serializer(), options),
+            position_at = positionAt, state = state,
+            options_json = json.encodeToString(SessionOptions.serializer(), options.copy(castDeviceId = castDeviceId, linkHolder = castMinter[targetId])),
             revision = revision, started_by_device_id = startedByDeviceId, jellyfin_play_session_id = jellyfinPlaySessionId,
             offline = if (offline) 1L else 0L, end_reason = endReason, ended_by = endedBy, created_at = createdAt,
             updated_at = updatedAt, ended_at = endedAt,
@@ -484,7 +493,12 @@ class PlaybackSessions(
         val rows = db.playbackSessionQueries.liveOrEndedSince(t - SESSION_ENDED_LINGER_MS).executeAsList().map { it.toRec() }
         val restored = mutableListOf<SessionRec>()
         for (r in rows) {
-            val rec = if (r.live) r.copy(reconnecting = true, reconnectDeadline = t + SESSION_RECONNECT_MS, stopHoldUntil = null) else r
+            val rec = if (r.live) r.copy(reconnecting = true, reconnectDeadline = t + SESSION_RECONNECT_MS, stopHoldUntil = null,
+                castDeviceId = r.castDeviceId ?: r.options.castDeviceId) else r
+            if (rec.live && rec.targetKind == "cast") {
+                rec.options.linkHolder?.let { castMinter.getOrPut(rec.targetId) { it } }
+                rec.castDeviceId?.let { receiverCastDevice.getOrPut(rec.targetId) { it } }
+            }
             sessions[rec.id] = rec
             if (rec.live) restored += rec
         }
