@@ -448,3 +448,5 @@ stale.
 - update `RecommendationServiceTest` as the Tests paragraph says.
 
 *(This amendment was deleted by the design export `5210045a` and restored from `fdbc1263` the same day.)*
+
+**Built 2026-10-05** as the dev note says: `servedFor` serves `byJf[id]` only; the `Main.kt` hook and `PlaystateCache.onNewlyPlayed` are deleted; the starter path keeps `markStale`. `RecommendationServiceTest`: *a title finished or started since the build stays in place until the next build* (and a title made invisible leaves). Not device-tested yet.

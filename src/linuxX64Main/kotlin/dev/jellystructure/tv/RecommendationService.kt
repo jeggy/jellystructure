@@ -259,8 +259,9 @@ class RecommendationService(
     // ─── Serving (FR-269-7) ───────────────────────────────────────────────────
 
     /**
-     * [device]'s list as stored, minus whatever became ineligible since the build: no longer visible,
-     * finished or started since ([PlaystateCache], a filter and not a recompute). A viewer with no list
+     * [device]'s list as stored, in its stored order, minus only what is no longer visible (FR-269-7 amended
+     * 2026-10-04: a title finished, marked watched or started since the build stays where it is, with its tick or
+     * progress bar; the weekly build leaves it out next time). A viewer with no list
      * yet gets their scope's starter list at once, and a build is queued (FR-269-8 (3)). [visible] is the
      * caller's already-fetched `liveItems(device)`.
      */
@@ -273,11 +274,7 @@ class RecommendationService(
         }
         if (ids.isEmpty()) return emptyList()
         val byJf = visible.mapNotNull { it.jellyfinId?.let { id -> id to it } }.toMap()
-        val ps = PlaystateCache.get(device.jellyfinUserId)
-        return ids.mapNotNull { id ->
-            val state = ps[id]
-            if (state != null && (state.played || state.resumeMs > 0)) null else byJf[id]
-        }.take(RecommendationEngine.LIST_SIZE)
+        return ids.mapNotNull { byJf[it] }.take(RecommendationEngine.LIST_SIZE)
     }
 
     /** FR-269-9 — the admin's view of one user's stored list(s), newest build first. */

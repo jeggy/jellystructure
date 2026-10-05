@@ -88,7 +88,7 @@ class RecommendationServiceTest {
     }
 
     @Test
-    fun `a title finished since the build is skipped at request time without a rebuild`() = runBlocking {
+    fun `a title finished or started since the build stays in place until the next build`() = runBlocking {
         (1..70).forEach { mediaStore.addOrUpdate(film(it)) }
         val a = login("ann")
         histories["ann"] = RecommendationService.History(listOf(played("jf1")), emptyList(), emptySet())
@@ -99,8 +99,12 @@ class RecommendationServiceTest {
         val started = before[1].jellyfinId!!
         PlaystateCache.replaceForTest("ann", mapOf(finished to CardPlayState(played = true), started to CardPlayState(resumeMs = 60_000)))
         val after = service.servedFor(a, live)
-        assertFalse(after.any { it.jellyfinId == finished || it.jellyfinId == started })
-        assertEquals(before.drop(2).map { it.jellyfinId }, after.map { it.jellyfinId })
+        // FR-269-7 (amended 2026-10-04): served as stored, in place, ticks and all.
+        assertEquals(before.map { it.jellyfinId }, after.map { it.jellyfinId })
+        // A title made invisible is the only thing that leaves.
+        val gone = before[2].jellyfinId!!
+        val fewer = service.servedFor(a, live.filterNot { it.jellyfinId == gone })
+        assertEquals(before.map { it.jellyfinId }.filterNot { it == gone }, fewer.map { it.jellyfinId })
         PlaystateCache.replaceForTest("ann", emptyMap())
     }
 

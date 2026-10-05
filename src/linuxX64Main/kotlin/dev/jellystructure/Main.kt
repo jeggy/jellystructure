@@ -261,7 +261,6 @@ fun main() = runBlocking {
     // Phase 269 — each viewer's Recommended list: built in the background, read by the Home row.
     val recommendationService = dev.jellystructure.tv.RecommendationService(db, mediaStore, jellyfinClient, configStore, raviloDeviceService)
     homeFeedService.recommendations = recommendationService
-    dev.jellystructure.tv.PlaystateCache.onNewlyPlayed = { device -> recommendationService.markStale(device) }
     dev.jellystructure.tv.RecommendationService.current = recommendationService
     // Phase 270 — the AI jobs, on top of 269. Off by default; with AI off not one request leaves the server.
     val aiJobs = dev.jellystructure.ai.AiJobs(db, configStore, library = { mediaStore.liveItems() })
