@@ -233,6 +233,16 @@ start of a transcoded film with eight audio tracks (Test Stream's *Ravilo Web* d
 measured in a browser** — the session's headless Chromium has no H.264/AAC, and the Mac's browsers cannot be driven
 over SSH; the owner's browser is the first measurement. The cast receiver still restreams.
 
+**The receiver, tried and reverted (2026-10-05).** `d42bc2c1` made the Cast receiver declare the capability and
+select the rendition through CAF's `AudioTracksManager`. On the Soveværelse TV's built-in Chromecast (Toy Story,
+eight audio tracks, cast from the Pixel 9 Pro) the server handed it the composed master (`audio renditions=8`) and the
+load failed at once: the TV's `cast_shell` log shows Shaka adding an `audio/mp4; mp4a.40.2` and a
+`video/mp4; avc1.640029` SourceBuffer, then aborting both within 60 ms (`LOAD_FAILED`, *couldn't play this* on the
+phone). Reverted the same hour, so the receiver is back on R285's restream. The likely cause is the composed master
+itself as Shaka reads it — a video variant whose `CODECS` names its own muxed AAC *and* an `aud` group of separate
+renditions — and it needs Shaka's own error code (the receiver's console, which the Android sender does not relay) to
+say more. Still `⚠ Partial` for the receiver.
+
 ## What happens today
 
 On **direct play** switching audio is already instant: every track is in the file and ExoPlayer selects
