@@ -199,6 +199,19 @@ private fun pnStateWord(r: AdminSessionRow): String = when {
     else -> r.state.replaceFirstChar { it.uppercase() }
 }
 
+/** 308 (FR-308-5) — the variant playing now, in words: *1080p · 8 Mbps · stepped down twice*; empty with one variant. */
+internal fun pnVariantWords(bps: Long?, height: Int?, down: Int, up: Int): String {
+    if (bps == null || bps <= 0) return ""
+    val mbps = bps / 1_000_000.0
+    val rate = if (mbps >= 10) "${kotlin.math.round(mbps).toLong()} Mbps" else "${kotlin.math.round(mbps * 10) / 10.0} Mbps".replace(".0 ", " ")
+    fun times(n: Int) = when (n) { 1 -> "once"; 2 -> "twice"; else -> "$n times" }
+    return listOfNotNull(
+        height?.let { "${it}p" }, rate,
+        down.takeIf { it > 0 }?.let { "stepped down ${times(it)}" },
+        up.takeIf { it > 0 }?.let { "up ${times(it)}" },
+    ).joinToString(" · ")
+}
+
 private fun pnEventWord(what: String, detail: String?): String = when (what) {
     "started" -> "Started"
     "paused" -> "Paused"
@@ -232,7 +245,7 @@ private fun pnRow(r: AdminSessionRow, nowMs: Long, serverNowMs: Long): String {
         <td style="white-space:nowrap"><b>${r.ownerName.esc()}</b></td>
         <td><span class="ses-what">$art<span><b>${title.esc()}</b>${sub?.let { "<span class=\"tiny muted\">${it.esc()}</span>" } ?: ""}</span></span></td>
         <td style="white-space:nowrap">${pnIcon(r.targetIcon)} ${r.targetName.esc()}</td>
-        <td style="white-space:nowrap">${pnStateWord(r).esc()}</td>
+        <td style="white-space:nowrap">${pnStateWord(r).esc()}${pnVariantWords(r.variantBps, r.variantHeight, r.variantStepsDown, r.variantStepsUp).takeIf { it.isNotEmpty() }?.let { "<div class=\"tiny muted\">${it.esc()}</div>" } ?: ""}</td>
         <td><span class="ses-pr">${pnClock(pos)}$progress</span></td>
         <td class="tiny muted" style="white-space:nowrap">${pnRan(r.createdAt, nowMs)}${if (who.isNotEmpty()) " · $who" else ""}</td>
       </tr>""" + if (open) """<tr class="ses-x"><td colspan="6"><div class="grid2"><div>${pnRemote(r)}</div><div><div class="ses-h">History</div><div class="ses-tl">$timeline</div></div></div></td></tr>""" else ""

@@ -78,6 +78,9 @@ suspend fun wirePlaybackSessions(
     val publisher = SessionPublisher(sessions, devices, bus, canSee, scope)
     publisher.zoneOffsetMs = { ms -> runCatching { TimeZone.currentSystemDefault().offsetAt(kotlin.time.Instant.fromEpochMilliseconds(ms)).totalSeconds * 1000L }.getOrDefault(0L) }
     publisher.adminBroadcast = { list -> broadcaster.broadcast(JobEvent.PlaybackSessions(list)) }
+    // 308 (FR-308-5) — *Playing now* shows the variant the session's player last reported.
+    publisher.variantOf = { s -> playback.variantOf(s.targetId, s.itemId) }
+    playback.onVariantReported = { publisher.adminChanged() }
     // R369 + 304b — commands through the server, attached controllers, the household switch.
     val control = SessionControl(db, sessions, devices, bus)
     control.clearOnBoot()

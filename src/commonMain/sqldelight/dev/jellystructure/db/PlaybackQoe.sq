@@ -32,6 +32,12 @@ CREATE TABLE playback_qoe (
     video_output_recovery_ms INTEGER NOT NULL DEFAULT 0,
     background_returns INTEGER NOT NULL DEFAULT 0,
     restored_after_recreate INTEGER NOT NULL DEFAULT 0,
+    -- 308 (FR-308-5) — the player's switches between video variants (down / up) and the variant it was on at the
+    -- report (its BANDWIDTH in bits/s and picture height; NULL on a stream with one variant). 70.sqm.
+    variant_switches_down INTEGER NOT NULL DEFAULT 0,
+    variant_switches_up INTEGER NOT NULL DEFAULT 0,
+    variant_bandwidth_bps INTEGER,
+    variant_height INTEGER,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (device_id, jellyfin_id, play_session_id)
 );
@@ -39,8 +45,8 @@ CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
 CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
 
 upsertQoe:
-INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, updated_at)
-VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :updated_at);
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, variant_switches_down, variant_switches_up, variant_bandwidth_bps, variant_height, updated_at)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :variant_switches_down, :variant_switches_up, :variant_bandwidth_bps, :variant_height, :updated_at);
 
 recentForDevice:
 SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;

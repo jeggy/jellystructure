@@ -38,6 +38,15 @@ class SessionPublisher(
     /** 304 — the admin's `/ws` (null in tests). */
     var adminBroadcast: (suspend (AdminSessionList) -> Unit)? = null
 
+    /** 308 (FR-308-5) — the variant a session's player last reported (null in tests). */
+    internal var variantOf: (SessionRec) -> VariantNow? = { null }
+
+    /** 308 (FR-308-5) — only the admin's list changed (a player reported another variant). */
+    fun adminChanged() {
+        val send = adminBroadcast ?: return
+        scope?.launch { runCatching { send(adminList()) } }
+    }
+
     /** 304 — controller names per session (R369's table), for the admin row. */
     var controllersOf: suspend (sessionId: String) -> List<String> = { emptyList() }
 
@@ -222,7 +231,11 @@ class SessionPublisher(
                 events = sessions.timeline(s.id).map { (at, what, src) ->
                     AdminSessionEvent(at, what, src.first?.let { id -> if (id == "admin") "admin" else index[id]?.let { sessions.placeNameOf(it) } ?: id }, src.second)
                 },
-            )
+            ).let { row ->
+                // 308 (FR-308-5) — the variant playing now; a live session only.
+                val v = if (s.live) runCatching { variantOf(s) }.getOrNull() else null
+                if (v == null) row else row.copy(variantBps = v.bandwidthBps, variantHeight = v.height, variantStepsDown = v.stepsDown, variantStepsUp = v.stepsUp)
+            }
         }
         return AdminSessionList(rows, now, householdControl())
     }

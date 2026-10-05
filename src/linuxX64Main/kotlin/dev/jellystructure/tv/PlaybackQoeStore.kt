@@ -34,6 +34,11 @@ data class QoeSummary(
     @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
     @SerialName("background_returns") val backgroundReturns: Int = 0,
     @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
+    // 308 (FR-308-5) — the variant switches and the variant it was on; see PlaybackQoe.sq.
+    @SerialName("variant_switches_down") val variantSwitchesDown: Int = 0,
+    @SerialName("variant_switches_up") val variantSwitchesUp: Int = 0,
+    @SerialName("variant_bandwidth_bps") val variantBandwidthBps: Long? = null,
+    @SerialName("variant_height") val variantHeight: Int? = null,
     // R237 (FR-R237-6) — non-null only when the start never reached the player.
     @SerialName("start_failure_status") val startFailureStatus: Int? = null,
     @SerialName("updated_at") val updatedAt: Long,
@@ -77,6 +82,10 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             video_output_recovery_ms = report.videoOutputRecoveryMs,
             background_returns = report.backgroundReturns.toLong(),
             restored_after_recreate = report.restoredAfterRecreate.toLong(),
+            variant_switches_down = report.variantSwitchesDown.toLong(),
+            variant_switches_up = report.variantSwitchesUp.toLong(),
+            variant_bandwidth_bps = report.variantBandwidthBps,
+            variant_height = report.variantHeight?.toLong(),
             updated_at = nowEpochSec(),
         )
     }
@@ -113,5 +122,9 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     videoOutputRecoveryMs = video_output_recovery_ms,
     backgroundReturns = background_returns.toInt(),
     restoredAfterRecreate = restored_after_recreate.toInt(),
+    variantSwitchesDown = variant_switches_down.toInt(),
+    variantSwitchesUp = variant_switches_up.toInt(),
+    variantBandwidthBps = variant_bandwidth_bps,
+    variantHeight = variant_height?.toInt(),
     updatedAt = updated_at,
 )

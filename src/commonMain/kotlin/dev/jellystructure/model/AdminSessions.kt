@@ -52,6 +52,12 @@ data class AdminSessionRow(
     /** R369 — the commands the target obeys (`play`, `pause`, `seek`, `next` …); empty = no remote yet. */
     val ops: List<String> = emptyList(),
     val events: List<AdminSessionEvent> = emptyList(),
+    /** 308 (FR-308-5) — the video variant the player last reported playing: its bandwidth (bits/s), picture height and
+     *  how many times it stepped down and up; null on a stream with one variant (direct play, a non-adaptive player). */
+    val variantBps: Long? = null,
+    val variantHeight: Int? = null,
+    val variantStepsDown: Int = 0,
+    val variantStepsUp: Int = 0,
 )
 
 @Serializable

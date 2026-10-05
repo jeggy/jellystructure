@@ -96,6 +96,14 @@ data class ClientCapabilities(
      */
     @SerialName("hls_audio_renditions") val hlsAudioRenditions: Boolean = false,
     /**
+     * 308 (FR-308-1/-2) — this player switches between HLS **video variants** on its own (Media3's adaptive track
+     * selection, hls.js's ABR, Safari/AVPlayer, Shaka on the Cast receiver), so a transcode is offered a ladder of
+     * variants in one composed master and the player steps down before its buffer runs dry and back up when the
+     * throughput holds. Opt-in, default false: a player that cannot adapt (mpv) keeps one stream, sized to what this
+     * device has measured (FR-308-4).
+     */
+    @SerialName("hls_adaptive") val hlsAdaptive: Boolean = false,
+    /**
      * Phase 288 (FR-288-1) — this player cannot seek in a file that has no index: to find a time it would read the file
      * from its start. Set by the Cast receiver (a FLAC without a `SEEKTABLE`, asked to begin at 2:40, ended at once on
      * a TV); the server then negotiates such a file as a conversion, which seeks by segment. Default false: every
@@ -184,6 +192,13 @@ data class PlaybackQoeReport(
     @SerialName("video_output_recovery_ms") val videoOutputRecoveryMs: Long = 0,
     @SerialName("background_returns") val backgroundReturns: Int = 0,
     @SerialName("restored_after_recreate") val restoredAfterRecreate: Int = 0,
+    /** 308 (FR-308-5) — this session's switches between video variants (down = to a lower bandwidth, up = higher),
+     *  and the variant playing at the time of the report (its `BANDWIDTH` and picture height). 0 / null on a
+     *  stream with one variant, and on every player without the signal. Additive. */
+    @SerialName("variant_switches_down") val variantSwitchesDown: Int = 0,
+    @SerialName("variant_switches_up") val variantSwitchesUp: Int = 0,
+    @SerialName("variant_bandwidth_bps") val variantBandwidthBps: Long? = null,
+    @SerialName("variant_height") val variantHeight: Int? = null,
 )
 
 @Serializable
@@ -277,6 +292,15 @@ data class StreamTicket(
      * only for a client that declared [ClientCapabilities.hlsAudioRenditions]; false everywhere else.
      */
     @SerialName("audio_renditions") val audioRenditions: Boolean = false,
+    /** 308 (FR-308-1) — [hlsUrl] is a composed master with a ladder of video variants; the player adapts on its own. */
+    @SerialName("adaptive") val adaptive: Boolean = false,
+    /**
+     * 308 (FR-308-3) — what this device itself measured the path to carry on its recent HLS plays (the median of its
+     * last R216 bandwidth estimates), bits/s; null when it has measured nothing yet. A player seeds its own throughput
+     * estimate with it, so the first variant is the one the measurements say plays without stopping; from the first
+     * segment on, the player's live measurement decides. Never a limit, never a setting.
+     */
+    @SerialName("measured_bandwidth_bps") val measuredBandwidthBps: Long? = null,
     /** R368 (dev review item 8) — the server's playback session this start belongs to; the client echoes it on its
      *  progress and stop reports. Absent from an older server (and then nothing is echoed). */
     @SerialName("session_id") val sessionId: String? = null,

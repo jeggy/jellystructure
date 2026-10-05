@@ -67,7 +67,7 @@ internal fun audioDeviceProfile(capabilities: ClientCapabilities): String {
         """"CodecProfiles":[${audioChannelCondition(capabilities, "Audio") ?: ""}],"SubtitleProfiles":[]}"""
 }
 
-internal fun deviceProfile(capabilities: ClientCapabilities): String {
+internal fun deviceProfile(capabilities: ClientCapabilities, throughputCapBps: Long? = null): String {
     val audioCodecs = capabilities.audioCodecs.takeIf { it.isNotEmpty() }
         ?.joinToString(",") ?: "aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"
     val codecProfiles = buildList {
@@ -115,7 +115,7 @@ internal fun deviceProfile(capabilities: ClientCapabilities): String {
     // takes the stream and not the page's <track>s) gets its text subtitles as HLS renditions; everyone
     // else keeps them sideloaded. Image subtitles are unchanged either way.
     val textSubMethod = if (capabilities.hlsOnly && capabilities.hlsSubtitles) "Hls" else "External"
-    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"$textSubMethod"},{"Format":"srt","Method":"$textSubMethod"},{"Format":"subrip","Method":"$textSubMethod"},{"Format":"ass","Method":"$textSubMethod"},{"Format":"ssa","Method":"$textSubMethod"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+    return """{"MaxStreamingBitrate":${maxStreamingBitrate(capabilities, throughputCapBps)},"DirectPlayProfiles":[$directPlayProfiles],"CodecProfiles":[$codecProfiles],"TranscodingProfiles":[$transcodingProfile],"SubtitleProfiles":[{"Format":"vtt","Method":"$textSubMethod"},{"Format":"srt","Method":"$textSubMethod"},{"Format":"subrip","Method":"$textSubMethod"},{"Format":"ass","Method":"$textSubMethod"},{"Format":"ssa","Method":"$textSubMethod"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 }
 
 /**
@@ -175,8 +175,11 @@ internal fun withChannelLimit(url: String, capabilities: ClientCapabilities?): S
  * cap, and doing so makes Jellyfin choose a transcode rather than a direct play the link can't feed,
  * which is strictly better than today's outcome (see the phase's own invariant).
  */
-private fun maxStreamingBitrate(capabilities: ClientCapabilities): Long {
+internal fun maxStreamingBitrate(capabilities: ClientCapabilities, throughputCapBps: Long? = null): Long {
     var cap = 120_000_000L
+    // 308 (FR-308-4) — what this device measured its path to carry (with headroom): a file above it is not
+    // direct-played into a stall but transcoded, and an adaptive player then gets the ladder. Only ever narrows.
+    throughputCapBps?.takeIf { it > 0 }?.let { cap = minOf(cap, it) }
     capabilities.maxVideoBitrate.takeIf { it > 0 }?.let { cap = minOf(cap, it.toLong()) }
     capabilities.linkMbps.takeIf { it > 0 }?.let { mbps ->
         val fraction = when (capabilities.linkKind) {
@@ -984,6 +987,8 @@ class JellyfinClient {
         audioStreamIndex: Int? = null,
         /** Phase 279 — a song: [audioDeviceProfile] instead of the video one. */
         audio: Boolean = false,
+        /** 308 (FR-308-4) — the bitrate this device's own measurements say its path carries with headroom; null = none. */
+        throughputCapBps: Long? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
@@ -994,7 +999,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities)}$mediaSourceBody$subBody}""")
+            setBody("""{"DeviceProfile":${if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps)}$mediaSourceBody$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 

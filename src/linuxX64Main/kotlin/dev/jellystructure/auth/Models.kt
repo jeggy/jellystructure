@@ -254,6 +254,8 @@ data class JellyfinMediaStream(
     @SerialName("DisplayTitle") val displayTitle: String? = null,
     @SerialName("Title") val title: String? = null,
     @SerialName("Channels") val channels: Int? = null,
+    // 308 (FR-308-1) — a video stream's own bitrate (bits/s): the ladder's top never asks for more.
+    @SerialName("BitRate") val bitRate: Long? = null,
     @SerialName("IsForced") val isForced: Boolean = false,
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,
@@ -292,7 +294,10 @@ data class JellyfinMediaSourceInfo(
     @SerialName("RequiresClosing") val requiresClosing: Boolean = false,
     @SerialName("OpenToken") val openToken: String? = null,
     @SerialName("LiveStreamId") val liveStreamId: String? = null,
-)
+) {
+    /** 308 (FR-308-1) — the first video stream's bitrate, when Jellyfin knows it. */
+    fun videoBitrate(): Long? = mediaStreams.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.bitRate?.takeIf { it > 0 }
+}
 
 // ── Phase 147 — Live TV (surfaced from Jellyfin; jellystructure never manages tuners/guide) ──────────
 
