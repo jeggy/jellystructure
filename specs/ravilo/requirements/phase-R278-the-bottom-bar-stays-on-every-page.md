@@ -123,3 +123,15 @@ On a Pixel 9 (debug build):
 6. Profile menu → Settings, and → My List: the bar is there, lighting the page they were opened over.
    Tapping an item leaves for that page.
 7. The cast mini bar, while a cast runs, docks against the bar on a pushed page as it does on Home.
+
+## Amendment (2026-10-05, owner): the bar is everywhere but the picture
+
+> Owner, 2026-10-05: *"The bottom navbar on Mobile should always be shown unless watching a movie/series in
+> fullscreen. This was always the case when you were navigating around the music side of the app."*
+
+**FR-R278-1 (amended).** On a phone the bar is absent only while a film or episode plays (`Dest.Player`, and Live TV's
+player) and before a profile exists (sign-in, the profile picker). A title's detail (film, series, Discover, upcoming),
+the Cast remote and a session's remote keep it, in both modes, as music mode already did (R326) — superseding this
+phase's detail exception and R321 FR-R321-4 / R323 FR-R323-3 in films mode. Music's landscape *Playing* (FR-R322-6)
+stays full screen. Built 2026-10-05 in `RaviloApp.bottomBarShows`; checked on the Pixel 9 Pro (debug): a series
+detail shows the bar with Home lit, the player hides it, Back brings it back.

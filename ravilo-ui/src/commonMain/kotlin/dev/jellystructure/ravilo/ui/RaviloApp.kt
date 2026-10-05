@@ -973,13 +973,13 @@ fun RaviloApp(
         // last one is R275 FR-R275-2's reasoning: four pages that do not exist for a signed-out
         // viewer). Everything else keeps it, including every pushed list and the account screens —
         // superseding R267 FR-R267-7's "absent on anything pushed over a page".
+        // Owner, 2026-10-05: "The bottom navbar on Mobile should always be shown unless watching a movie/series in
+        // fullscreen" — as music mode already had it (R326). So a title's detail, a remote and the Cast remote keep
+        // it too (superseding R278's detail exception and R321/R323's in films mode); only the picture playing and
+        // the screens before a profile exist are without it.
         fun bottomBarShows(d: Dest): Boolean = when (d) {
-            is Dest.Player, is Dest.LiveTv, is Dest.CastRemote, is Dest.SessionRemote -> false
-            is Dest.MovieDetail, is Dest.SeriesDetail, is Dest.DiscoverItem, is Dest.UpcomingDetail -> false
+            is Dest.Player, is Dest.LiveTv -> false
             is Dest.Login, is Dest.ProfilePicker -> false
-            // R321 (FR-R321-4) — one title's detail hides the bar; the mini bar stays.
-            is Dest.AlbumDetail, is Dest.ArtistDetail, is Dest.PlaylistDetail -> false
-            is Dest.AudiobookDetail, is Dest.AudiobookAuthor -> false   // R323 (FR-R323-3)
             else -> true
         }
 
