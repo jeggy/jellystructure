@@ -254,3 +254,16 @@ when the tab was opened, and it stayed open across tab switches. Back did not cl
 its rows were in the accessibility tree, inside the app's own window. From a cold start, Library opens
 without it, so something in the test's taps opened it, most likely a tap that landed while the screen
 was still loading. Worth a look: a facet popover left open should close on Back and on leaving the tab.
+
+## Device check (2026-10-05, stue TV, release build `1.49-55`)
+
+- **Acceptance 3 — passed.** The stue TV (BRAVIA 4K VH21), the sideloaded release build (R8-minified, AOT):
+  five rounds each on **Movies** (326 titles) and **Discover → Coming Soon**, each round 15 × Down + 6 × Right then
+  10 × Up + 6 × Left in one burst. The process stayed the same (pid 17611), `dumpsys dropbox data_app_crash` had no
+  Ravilo entry before or after, and the posters deep in the grid and Discover's stills were loaded when the burst
+  stopped.
+- **Acceptance 2 — covered by the same run.** It is the release build with R8, so OkHttp, Coil and the REST client
+  ran minified under a fast scroll. The Pixel's own release fling is still not run: a release APK carries the Play
+  app's package and must not overwrite it.
+- **Acceptance 4 — passed** on production (`v1.49-63`): `/api/tv/home` answers `Content-Encoding: gzip`; a poster
+  (`/api/tv/image/…/poster`) answers no `Content-Encoding`, a plain JPEG.
