@@ -32,4 +32,11 @@ class SameKindAskTest {
         val cast = sameKindStartRequest(SameKindAsk(s(castId = "c-den"), "film", "f-1", "Night Train") {})
         assertEquals("cast:c-den", cast.targetId)
     }
+
+    @Test fun `the same film elsewhere is resumed or moved, not started again`() {
+        kotlin.test.assertTrue(sameTitle(SameKindAsk(s(), "film", "f-1", "Night Train") {}))
+        kotlin.test.assertFalse(sameTitle(SameKindAsk(s(), "film", "f-2", "Day Train") {}))
+        // An episode's session carries the series title: another episode of it is not the same.
+        kotlin.test.assertFalse(sameTitle(SameKindAsk(s(kind = "episode"), "episode", "ep-6", "Night Train") {}))
+    }
 }

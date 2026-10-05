@@ -160,6 +160,16 @@ fun ScreensSheet(
         // A Cast device this app's own discovery sees: today's path (the SDK starts it; the receiver's first report
         // makes the session). Anything else goes through the server (a Ravilo app, or the relay — owner decision 1).
         row.route?.let { startRoute(it); return }
+        // 2026-10-05 — from the player, the film already playing here is a session: it MOVES (R372 — same session,
+        // its place carried over 2 s back) instead of a second one starting at 0:00 beside it.
+        val playingHere = if (!music && playContext != null && replace == null)
+            sessionsState.sessions.firstOrNull { it.here && it.state != "ended" && (it.kind == "film" || it.kind == "episode") } else null
+        if (playingHere != null) {
+            onClose()
+            dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(playingHere.id, row.id)
+            onOpenSession(playingHere)
+            return
+        }
         val req = startRequestFor(row, replace) ?: return
         onClose()
         dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(req, onStarted = { r -> r.session?.let { onOpenSession(it) } },

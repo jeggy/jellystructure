@@ -293,6 +293,20 @@ class PlaybackSessionsTest {
         assertEquals(1, s.all().count { it.live })
     }
 
+    @Test fun `a move onto a device ends what else was live in its lane there`() = runBlocking {
+        val s = service()
+        s.stopPlace = { _, _ -> }
+        val pixel = device("pixel"); val tv = device("tv")
+        val stale = s.onStart(pixel, "film-1", 0)   // the phone's own copy, never ended (the app was reinstalled)
+        val id = s.onStart(tv, "film-1", 150_000)
+        s.beginMove(id, "pixel", "Pixel")!!
+        assertEquals(id, s.onStart(pixel, "film-1", 148_000))
+        assertEquals(false, s.get(stale)!!.live)
+        // The next report from the phone lands on the moved session.
+        s.onProgress(pixel, "film-1", 160_000, paused = false)
+        assertEquals(160_000, s.get(id)!!.positionMs)
+    }
+
     @Test fun `a move onto a speaker from its group takes that speaker's id and name and leaves the group's rooms`() = runBlocking {
         // Found on the Pixel 9 Pro (2026-10-05): Stue + Gæsteværelse, remove Stue. The receiver on Gæsteværelse came up
         // named after the group, and the row kept Stue's Cast device: Play on… listed Stue as busy, Gæsteværelse as free.

@@ -34,6 +34,10 @@ data class SameKindAsk(val elsewhere: SessionView, val kind: String, val itemId:
 fun sameKindAskFor(sessions: List<SessionView>, kind: String, isTv: Boolean): SessionView? =
     if (isTv) null else sameKindElsewhere(sessions, kind)?.takeIf { it.controllable }
 
+/** The film pressed is the one already playing elsewhere (the session carries a title, not an item id). Films only: an
+ *  episode's session title is the series', so another episode of it would match. */
+fun sameTitle(a: SameKindAsk): Boolean = a.elsewhere.kind == "film" && a.elsewhere.title != null && a.elsewhere.title == a.title
+
 /** The place to start on instead: the Cast device's own id when the place is a Cast device, else the device. */
 fun sameKindStartRequest(a: SameKindAsk): SessionStartRequest = SessionStartRequest(
     targetId = a.elsewhere.target.castDeviceId?.let { "cast:$it" } ?: a.elsewhere.target.id, kind = a.kind, items = listOf(a.itemId),

@@ -373,6 +373,9 @@ fun PlayerScreen(
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
+    /** Where the first start begins when another app sent this film here (a session moved or started on this device,
+     *  R370/R372); null = the usual (Jellyfin's resume point). */
+    startAtMs: Long? = null,
 ) {
     // R237 (FR-R237-3) — the action that can actually resolve a re-auth failure, in place of a Retry
     // that is guaranteed to fail again: the same exit R234's forced sign-out already uses (sign the
@@ -967,7 +970,8 @@ fun PlayerScreen(
             armSession(itemId, restored.positionMs)
         } else {
             bk.playOnLatch = true
-            armSession(itemId)
+            // 2026-10-05 — a film moved here from the phone at 0:45 began at 0:00: the place it was sent with goes in.
+            armSession(itemId, startAtMs?.takeIf { it > 0 })
         }
         delay(BUFFER_MOMENT_DEBOUNCE_MS)
         bk.startScreenDue = true   // FR-R290-2 — the start screen fades in once, and stays up across a restream
@@ -1973,7 +1977,9 @@ fun PlayerScreen(
                 onBack = onBack,
                 onRotate = { landscapeForced = !landscapeForced; handsetControls?.setLandscape(landscapeForced); wake() },
                 onTitleTap = if (episodes != null) ({ epRailOpen = true; chromeVisible = true }) else null,
-                castSlot = if (castController != null) ({ CastButton() }) else null,
+                // 2026-10-05 — with no play context a tap on a Ravilo app (a TV, the Mac) in the player's sheet did
+                // nothing at all; the film and where it is now go along (a Chromecast keeps its own hand-off).
+                castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(currentItemId, positionMs)) }) else null,
                 onSkipBack = { skip(-SKIP_BACK_MS) },
                 onPlayPause = { togglePlay() },
                 onSkipFwd = { skip(SKIP_FWD_MS) },

@@ -326,6 +326,8 @@ private sealed class Dest {
         /** R343 — this entry is a shuffled one (from 0:00, no resume point left behind); true with a plan, and on
          *  an entry restored from the resume record without one. */
         val shuffled: Boolean = false,
+        /** R370/R372 — the place a film sent here by another app starts at (see PlayerScreen's `startAtMs`). */
+        val startAtMs: Long? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -915,6 +917,7 @@ fun RaviloApp(
                         displayName = displayName,
                         seriesId = env.jellyfinId,   // R181 — a movie is its own remembered bucket
                         logoUrl = env.logoUrl, logoInk = env.logoInk, seriesName = env.seriesName,   // R303 (FR-R303-2)
+                        startAtMs = env.startPositionMs.takeIf { it > 0 },
                     ))
                 }
             }
@@ -2401,6 +2404,7 @@ fun RaviloApp(
                     logoUrl          = dest.logoUrl, logoInk = dest.logoInk, seriesName = dest.seriesName,  // R303
                     resume           = playerResume,  // R292
                     store            = store,
+                    startAtMs        = dest.startAtMs,
                     // R292 — leaving the player on purpose drops the record: the next launch must not restore it.
                     onBack           = { playerResume.clear(); pop() },
                     onNavigateToEpisode = navigate@{ nextId ->
@@ -2478,9 +2482,11 @@ fun RaviloApp(
                     // R299 (FR-R299-2) — the receiver could not play it; end the cast (or Play would cast
                     // again, FR-R245-4) and open this phone's own player at the start.
                     onPlayHere = { itemId, title, kicker ->
+                        // 2026-10-05 — the film goes on where the TV was, not at Jellyfin's resume point.
+                        val at = cc.sender.status.value?.positionMs?.let { dev.jellystructure.ravilo.ui.sessions.moveStartMs(it) }
                         cc.sender.stop()
                         pop()
-                        push(Dest.Player(itemId = itemId, title = title, kicker = kicker, displayName = dest.displayName))
+                        push(Dest.Player(itemId = itemId, title = title, kicker = kicker, displayName = dest.displayName, startAtMs = at))
                     },
                 ) }
             }
@@ -3001,7 +3007,21 @@ fun RaviloApp(
             dev.jellystructure.ravilo.ui.screens.HandsetSheet(visible = a != null, onDismiss = { sameKindAsk = null }) {
                 if (a != null) dev.jellystructure.ravilo.ui.sessions.SameKindAskBody(a,
                     playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
-                    onThere = { playThere(a) }, onHere = { sameKindAsk = null; a.playHere() })
+                    // 2026-10-05 — the SAME title elsewhere is not a second film: *there* resumes that session, *here*
+                    // moves it (R372 Play here, 2 s back). Pressing Play on M3GAN paused on the TV at 2:31 started it
+                    // again at 0:00 on either side and left the other copy behind.
+                    onThere = {
+                        if (dev.jellystructure.ravilo.ui.sessions.sameTitle(a)) {
+                            sameKindAsk = null
+                            dev.jellystructure.ravilo.ui.sessions.SessionRemote.command(a.elsewhere.id, dev.jellystructure.shared.tv.SessionCommandRequest(op = "play"))
+                            push(Dest.SessionRemote(a.elsewhere.id, destDisplayName(stack.lastOrNull())))
+                        } else playThere(a)
+                    },
+                    onHere = {
+                        sameKindAsk = null
+                        if (dev.jellystructure.ravilo.ui.sessions.sameTitle(a)) dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(a.elsewhere.id, "here")
+                        else a.playHere()
+                    })
             }
         }
         // R270 (FR-R270-2) — the AirPlay caveat, once, when the picture moves to the TV (web only).

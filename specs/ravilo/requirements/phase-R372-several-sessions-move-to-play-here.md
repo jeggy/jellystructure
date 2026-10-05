@@ -372,3 +372,18 @@ on `Dispatchers.Main`. Before the fix the group kept playing with no controller 
 - **The place line says it opens *Move to…*:** a dim *· Move to…* follows *Playing on {place}* while the list is
   closed and the session can move.
 - **The remote's *Up next*** lists the song playing and what follows it, not the songs already played.
+
+## Amendment 2026-10-05 (night) — films moved between the phone and a TV
+
+Found moving *M3GAN 2.0* between the Pixel and the Ravilo app on Stue TV:
+
+- **From the player, a place moves the film:** with no play context, a tap on a Ravilo app in the players *Play on a TV*
+  sheet did nothing. The player now passes its film and position, and the film already playing here moves (R372) rather
+  than a second session starting.
+- **The film starts where it was sent:** a `session_load` / `play_item` start position reaches the player
+  (`Dest.Player.startAtMs`); a moved film began at 0:00 before. The Chromecast remote's *Play on this phone* keeps the
+  cast's place too (2 s back).
+- **The same film elsewhere:** the same-kind ask's *Play on {place} instead* resumes that session, and *Play on this
+  phone* moves it here. A different film keeps R370's behaviour. Films only: an episode's session title is the series'.
+- **One per lane on a device:** a move landing on a device ends anything else live in that lane there (the moved session
+  stayed *starting* while reports went to an older copy on the same phone).
