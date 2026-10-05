@@ -109,6 +109,8 @@ private class Receiver {
 
     private var current: CastLoadData? = null
     private var ticket: StreamTicket? = null
+    /** R291 — the audio position picked in place among the ticket's renditions (null = the carried track). */
+    private var renditionAudio: Int? = null
     /** The server holds a playback session for [current]: true from a negotiated ticket until its stop is sent. */
     private var sessionOpen = false
     /** A LOAD is being prepared (enrolment, the ticket): the player has not been handed the new item yet. */
@@ -575,6 +577,7 @@ private class Receiver {
             } ?: return null
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
+        renditionAudio = null
         sessionOpen = true
         // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
         note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel}/ch${decode.maxAudioChannels} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
@@ -685,6 +688,9 @@ private class Receiver {
             // to canDisplayType('video/mp4', hev1…): fMP4-HEVC is exactly what was probed. Without this
             // every HEVC title was re-encoded to h264 for a stick that had just said it decodes HEVC.
             hlsHevc = hevc,
+            // R291 (FR-R291-4) — an audio pick selects one of the master's audio renditions in place (CAF's
+            // AudioTracksManager), so the picture keeps playing; [selectRendition] falls back to R285's restream.
+            hlsAudioRenditions = true,
             supportsHdr10 = hdr10,
             supportsHlg = hdr10,
             supportsDolbyVision = false,
@@ -789,6 +795,7 @@ private class Receiver {
         val startAt = data.positionMs
         val ticket = negotiate(api, t.id) { api.playMusic(t.id, audioCapabilities(), startAt?.takeIf { it > 0 }) } ?: return null
         this.ticket = ticket
+        renditionAudio = null
         sessionOpen = true
         val messages = cast.framework.messages
         val url = absolute(ticket.hlsUrl) ?: ticket.hlsUrl.orEmpty()
@@ -1312,8 +1319,11 @@ private class Receiver {
             // R285 (FR-R285-4) — both were named in CastCommand's own doc and handled nowhere. An HLS
             // cast carries one audio track and no picture subtitles, so both are a restream.
             "audio" -> {
-                val wanted = ticket?.audio?.getOrNull(cmd.index ?: return) ?: return
-                if (wanted.index == ticket?.audioStreamIndex) return
+                val position = cmd.index ?: return
+                val wanted = ticket?.audio?.getOrNull(position) ?: return
+                // R291 (FR-R291-4) — a composed master: select the rendition, no restream.
+                if (ticket?.audioRenditions == true && selectRendition(position)) { renditionAudio = position; sendStatus(); return }
+                if (wanted.index == ticket?.audioStreamIndex && renditionAudio == null) return
                 reload(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = activeTextPosition())
             }
             "subtitle" -> when (val pick = receiverSubPick(ticket, cmd.index ?: -1)) {
@@ -1325,6 +1335,29 @@ private class Receiver {
             }
         }
     }
+
+    /**
+     * R291 (FR-R291-4) — make the audio rendition named `a{position}` / `a{position} …` (the backend's composeMaster)
+     * the active audio track. False when CAF lists no such track (the caller then restreams, as before).
+     */
+    private fun selectRendition(position: Int): Boolean = runCatching {
+        val mgr = playerManager.getAudioTracksManager()
+        val tracks = mgr.getTracks()
+        val n = (tracks?.length as Int?) ?: 0
+        val want = "a$position"
+        var hit: dynamic = null
+        val names = mutableListOf<String>()
+        for (i in 0 until n) {
+            val t = tracks[i]
+            val name = (t.name as String?) ?: ""
+            names += "${t.trackId}:$name"
+            if (hit == null && (name == want || name.startsWith("$want "))) hit = t
+        }
+        note("R291: audio $want among ${names.joinToString(" | ")} → ${if (hit == null) "restream" else "in place"}")
+        if (hit == null) return@runCatching false
+        mgr.setActiveById(hit.trackId)
+        true
+    }.getOrDefault(false)
 
     /** Position (in receiverSubtitles) of the CAF text track showing now; -1 = none. Ids are 100 + position. */
     private fun activeTextPosition(): Int = runCatching {
@@ -1379,7 +1412,7 @@ private class Receiver {
             hasNext = if (music) nextStep(byViewer = true) != CastNext.End else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.
-            selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
+            selectedAudio = renditionAudio ?: receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
             // 286 (dev review 10) — the music snapshot the phone mirrors (R324 FR-R324-4).
             queue = d.tracks.takeIf { full }, queueIndex = (d.queueStart + d.currentIndex).takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },
