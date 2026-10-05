@@ -354,3 +354,9 @@ volume, *Move to…* or *Play here*, nothing in flight. Test: `SpeakerRoundTwoTe
 
 **Only devices can confirm:** CAF's paused timeout on a speaker; a move Pixel → speaker → Pixel (each 2 s back); an
 unplugged speaker turning *offline · paused* within 90 s with *Play here*; a relay move from the web app.
+
+**Fix 2026-10-05 (Pixel 9, orchestrator):** removing the first room of a group (a move onto the other room) crashed the
+app: `CastController.moveLoad` called `route.select()` on `Dispatchers.Default` after its hand-off request, and
+MediaRouter throws off the main thread (*"The media router service must only be accessed on the application's main
+thread"*). `selectRoute` (Android) now re-posts itself to the main looper, and `moveLoad`/`startLoad` leave and select
+on `Dispatchers.Main`. Before the fix the group kept playing with no controller and the session row stayed "playing".

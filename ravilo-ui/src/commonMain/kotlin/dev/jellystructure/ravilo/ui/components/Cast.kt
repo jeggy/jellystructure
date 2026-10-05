@@ -293,8 +293,11 @@ class CastController(
                 currentIndex = if (music) (d.queueIndex - d.queueOffset).coerceAtLeast(0) else -1, lang = lang,
                 shuffle = d.shuffle, repeat = d.repeat, sessionId = sessionId,
             )
-            if (sender.link.value != CastLinkState.NONE) sender.leave()
-            r.select()
+            // Cast SDK and MediaRouter calls belong on the main thread (the hand-off above ran on Default).
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (sender.link.value != CastLinkState.NONE) sender.leave()
+                r.select()
+            }
         }
     }
 
@@ -309,8 +312,11 @@ class CastController(
             val code = runCatching { api.castHandoff(castDeviceId, sessionId) }.getOrNull() ?: return@launch
             pendingMoveLoad = CastLoadData(serverUrl = serverUrl, code = code.code, itemId = itemId, title = title, kicker = kicker, artUrl = artUrl,
                 positionMs = positionMs, deviceName = sender.deviceName.value, lang = lang, sessionId = sessionId)
-            if (sender.link.value != CastLinkState.NONE) sender.leave()
-            r.select()
+            // Cast SDK and MediaRouter calls belong on the main thread (the hand-off above ran on Default).
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (sender.link.value != CastLinkState.NONE) sender.leave()
+                r.select()
+            }
         }
     }
 

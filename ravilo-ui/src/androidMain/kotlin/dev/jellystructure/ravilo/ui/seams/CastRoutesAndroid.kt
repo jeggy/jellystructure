@@ -85,6 +85,13 @@ actual fun rememberCastRoutes(appId: String?, discovering: Boolean): List<CastRo
  * route that has gone or that something else selected in the meantime is left alone.
  */
 internal fun selectRoute(router: MediaRouter, routeId: String, attempt: Int = 0) {
+    // MediaRouter throws off the main thread ("The media router service must only be accessed on the application's main
+    // thread") — a move's select ran on Dispatchers.Default after its hand-off call and killed the app (Pixel 9,
+    // 2026-10-05, removing the first room of a group). Every caller is safe this way.
+    if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { selectRoute(router, routeId, attempt) }
+        return
+    }
     val route = router.routes.firstOrNull { it.id == routeId } ?: return
     val at = android.os.SystemClock.elapsedRealtime()
     route.select()
