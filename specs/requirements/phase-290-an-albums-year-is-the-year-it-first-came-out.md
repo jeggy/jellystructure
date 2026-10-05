@@ -122,3 +122,11 @@ year); no Ravilo client change — `MusicAlbumCard.year` already exists and now 
   group has 26 (all three pressings that matter came back). A release group past 25 can lose pressings from
   *Find match…*.
 - Not deployed; acceptance 1–3 wait for it, and for *Find match…* → the 2015 *24bit/96kHz* pressing on the §1 album.
+
+## Check on production (2026-10-05, backend `v1.49-64`)
+
+- **Acceptance 1 — passed for Ravilo.** `GET /api/tv/music/album/{id}` answers `year: 1999` for the §1 album (its files
+  say 2015), and `1998` for two other 13-song albums whose files say 2015 and whose first release is 1998. The admin
+  page and Library → Music read the same resolver (`originalYear()`), not re-checked by hand.
+- **Acceptance 2 and 3 are left to the owner:** *Save → files* rewrites the tags of the household's own FLAC files, and
+  *Find match…* re-chooses a pressing; both are by-hand actions on the album's admin page, not something to run unasked.
