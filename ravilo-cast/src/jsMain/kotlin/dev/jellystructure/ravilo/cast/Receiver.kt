@@ -597,8 +597,9 @@ private class Receiver {
         // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
         note("ticket ${data.itemId} direct=${t.directPlay} caps=${decode.maxWidth}x${decode.maxHeight}/L${decode.maxLevel}/ch${decode.maxAudioChannels} ${CastDecodeProbe.streamSummary(t.hlsUrl ?: "")}")
         val messages = cast.framework.messages
-        request.media.contentId = t.hlsUrl
-        request.media.contentUrl = t.hlsUrl
+        // 308 — a composed master (the ladder) is a path on this server, resolved like a song's URL is.
+        request.media.contentId = absolute(t.hlsUrl)
+        request.media.contentUrl = absolute(t.hlsUrl)
         request.media.contentType = "application/x-mpegURL"
         request.media.streamType = messages.StreamType.BUFFERED
         val tracks = js("[]")
