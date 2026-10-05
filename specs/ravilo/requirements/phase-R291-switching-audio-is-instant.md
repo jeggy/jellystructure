@@ -243,6 +243,11 @@ itself as Shaka reads it — a video variant whose `CODECS` names its own muxed 
 renditions — and it needs Shaka's own error code (the receiver's console, which the Android sender does not relay) to
 say more. Still `⚠ Partial` for the receiver.
 
+**The web, switched off again (2026-10-05, same day).** After the receiver's failure the web's declaration went back to
+`false` (`AudioCapabilities.wasmJs.kt`): the same master shape, never played in a browser, could break transcoded
+multi-audio films on the web the same way. `selectRendition` stays. **R376** (a real web player) turns it on with its
+measurement in Chrome and Safari (FR-R376-3).
+
 ## What happens today
 
 On **direct play** switching audio is already instant: every track is in the file and ExoPlayer selects

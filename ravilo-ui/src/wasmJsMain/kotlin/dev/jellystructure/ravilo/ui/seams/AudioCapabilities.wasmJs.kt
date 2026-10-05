@@ -73,6 +73,8 @@ private fun jsPublishAirPlayHls(v: Boolean): Unit = js("{ window.__raviloAirPlay
  *  Safari with the element's `audioTracks` ([RaviloPlayer.selectAudioTrack]), so a browser declares the capability
  *  and stops restreaming on an audio pick. A browser with neither (no MSE, no native HLS) cannot play the stream
  *  at all, so there is nothing to fall back to. */
-actual fun switchesHlsAudioRenditions(): Boolean = true
+// Off again the same day: the Cast receiver's Shaka refused this same master shape outright, and no browser has
+// played it yet (R291's build note). R376 FR-R376-3 turns it on once it is measured in Chrome and Safari.
+actual fun switchesHlsAudioRenditions(): Boolean = false
 
 actual fun playsOnlyHls(): Boolean = false
