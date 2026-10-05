@@ -29,11 +29,13 @@
             user-select: none;
             -webkit-user-select: none;
         }
-        canvas#ComposeTarget {
-            display: block;
+        /* R376 (FR-R376-1) — ComposeViewport's container: the canvas lives in its shadow root and fills it. On top
+           of the player's <video> (z-index 0, RaviloPlayerWasm.kt), which shows through wherever the player screen
+           clears the canvas. touch-action is not inherited, but the effective value is the intersection along the
+           ancestors, so setting it here reaches the canvas inside the shadow root. */
+        #ComposeTarget {
+            position: fixed; inset: 0;
             width: 100%; height: 100%;
-            /* Compose canvas on top; video element sits behind at z-index: 0 */
-            position: relative;
             z-index: 1;
             /* Prevent browser from stealing pointer events */
             touch-action: none;
@@ -60,16 +62,10 @@
     </style>
 </head>
 <body>
-    <canvas id="ComposeTarget" tabindex="0"></canvas>
-    <!-- R281 — CanvasBasedWindow has no DOM text field, so a touchscreen has nothing to raise its
-         software keyboard for (document.activeElement is always the canvas above). On a coarse-pointer
-         device only, boot.js focuses this real, invisible, tabindex=-1 (so it never appears in Tab
-         order) input in place of the canvas whenever a Compose text field reports focus, and rewrites
-         what the on-screen keyboard produces into the same synthetic KeyboardEvents on #ComposeTarget
-         the gamepad bridge below already uses — see boot.js. -->
-    <input id="ravilo-kb-bridge" type="text" tabindex="-1" aria-hidden="true"
-           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-           style="position:fixed; top:0; left:0; width:1px; height:1px; opacity:0; border:none; padding:0; margin:0; pointer-events:none;">
+    <!-- R376 (FR-R376-1) — ComposeViewport's container (it attaches a shadow root holding the canvas and the real DOM
+         input a focused Compose text field types into — which is also what raises a phone's own keyboard, so R281's
+         hidden bridge <input> is gone). -->
+    <div id="ComposeTarget"></div>
     <!-- R279 (FR-R279-13) — no text here: boot.js fills both the label and the tooltip from
          ravilo-shell-strings.js, which is generated from i18n/*.json, in the language this device
          last drew in. -->
