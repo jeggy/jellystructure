@@ -201,7 +201,7 @@ internal object CastSenderDesktop : CastSender {
         println("${DesktopLog.stamp()} cast: session to ${d?.name} closed ($reason)")
         session = null
         watch?.cancel(); watch = null
-        val silent = reason == null || reason == "stopped" || reason == "replaced by another app" || reason == "the device closed the app"
+        val silent = reason == null || reason == "stopped" || reason == "replaced by another app" || reason == "the app ended" || reason == "the device closed the app"
         if (!silent && d != null) {
             // The connection dropped, the app did not end: rejoin it, as the phone's SDK does.
             repeat(3) {

@@ -337,7 +337,9 @@ private fun DeviceChip() {
     ) {
         if (display) CastMarkGlyph(tint = colors.accentSecondary, link = CastLinkState.CONNECTED, sizeDp = 16) else SpeakerGlyph(colors.accentSecondary, group = false, sizeDp = 16)
         Spacer(Modifier.width(8.dp))
-        Text(str("cast.playing_on", mapOf("device" to name)), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // 2026-10-05 — said *Playing on* while the speaker was paused (the remote said *Paused on*); the chip follows it.
+        val playing = MusicPlayback.state.collectAsState().value.playing
+        Text(str(if (playing) "cast.playing_on" else "cast.paused_on", mapOf("device" to name)), color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

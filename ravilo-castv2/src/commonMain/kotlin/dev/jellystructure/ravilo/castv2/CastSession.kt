@@ -254,7 +254,10 @@ class CastSession(
                 _receiver.value = status
                 // Another sender launched something else: ours is gone (FR-R330-4's other side).
                 val joined = app
-                if (joined != null && status != null && status.apps.none { it.sessionId == joined.sessionId }) close("replaced by another app")
+                // 2026-10-05 — the receiver ending on its own (the last song of a queue) left nothing but the idle
+                // screen and was logged as *replaced by another app*; only another sender's app is a replacement.
+                if (joined != null && status != null && status.apps.none { it.sessionId == joined.sessionId })
+                    close(if (status.apps.all { it.appId == BACKDROP_APP_ID }) "the app ended" else "replaced by another app")
             }
             CastNamespaces.MEDIA -> if (body != null && CastParse.type(body) == "MEDIA_STATUS") {
                 _media.value = CastParse.mediaStatus(body)?.withMediaFrom(_media.value)

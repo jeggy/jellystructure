@@ -275,6 +275,21 @@ class CastSessionTest {
     }
 
     @Test
+    fun `the app ending on its own is not a replacement`() = runTest {
+        val device = FakeDevice { m, body ->
+            if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()
+        }
+        val s = session(device)
+        val joined = async { s.joinIfRunning() }
+        runCurrent(); joined.await()
+        device.say(receiverStatus(0, app(BACKDROP_APP_ID, "sess-b", "web-b", "Backdrop")))
+        runCurrent()
+        assertEquals(CastSession.State.CLOSED, s.state.value)
+        assertEquals("the app ended", s.closedReason)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `stopping the app sends STOP for its session and closes`() = runTest {
         val device = FakeDevice { m, body ->
             if (m.namespace == CastNamespaces.RECEIVER && body?.let(CastParse::type) == "GET_STATUS") listOf(receiverStatus(reqId(body), app(APP))) else emptyList()

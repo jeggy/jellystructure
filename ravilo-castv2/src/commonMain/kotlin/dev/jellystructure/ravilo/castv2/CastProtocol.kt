@@ -50,6 +50,9 @@ private fun Any.toJson(): JsonElement = when (this) {
 }
 
 /** An app the receiver runs, from `RECEIVER_STATUS.status.applications`. */
+/** The device's idle screen (Backdrop / ambient mode): running it means no sender's app is. */
+const val BACKDROP_APP_ID = "E8C28D3C"
+
 data class CastApp(
     val appId: String,
     val displayName: String?,
