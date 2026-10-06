@@ -143,6 +143,12 @@ class VideoLadderTest {
         // A target codec that is not the source's: encoded, whatever the reasons say (a DV7 film on a Chromecast).
         assertTrue(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported%2CDirectPlayError&VideoCodec=h264", "hevc"))
         assertFalse(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported&VideoCodec=h264%2Chevc", "hevc"))
+        // The codec is allowed but its range is not (Dolby Vision 7 with an enhancement layer): encoded.
+        val dv7 = "x?TranscodeReasons=AudioCodecNotSupported%2CDirectPlayError&VideoCodec=hevc,h264" +
+            "&hevc-rangetype=SDR,HDR10,DOVIWithHDR10&h264-rangetype=SDR"
+        assertTrue(reencodesVideo(dv7, "hevc", "DOVIWithEL"))
+        assertFalse(reencodesVideo(dv7, "hevc", "HDR10"))
+        assertFalse(reencodesVideo(dv7, "hevc", null))
     }
 
     @Test

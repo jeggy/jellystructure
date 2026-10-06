@@ -256,6 +256,9 @@ data class JellyfinMediaStream(
     @SerialName("Channels") val channels: Int? = null,
     // 308 (FR-308-1) — a video stream's own bitrate (bits/s): the ladder's top never asks for more.
     @SerialName("BitRate") val bitRate: Long? = null,
+    // 308 — a video stream's range (SDR, HDR10, DOVIWithEL …): Jellyfin re-encodes a picture whose range the target
+    // codec's `{codec}-rangetype` list lacks, without saying so in TranscodeReasons.
+    @SerialName("VideoRangeType") val videoRangeType: String? = null,
     @SerialName("IsForced") val isForced: Boolean = false,
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,

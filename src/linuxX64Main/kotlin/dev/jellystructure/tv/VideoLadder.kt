@@ -68,7 +68,7 @@ private val VIDEO_REASONS = setOf(
 )
 
 /** 308 (FR-308-1) — does this Jellyfin transcode URL re-encode the picture (so a ladder of encodes is possible)? */
-internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null): Boolean {
+internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null, sourceRangeType: String? = null): Boolean {
     val reasons = queryParam(transcodingUrl, "TranscodeReasons")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim() }.orEmpty()
     if (reasons.any { it in VIDEO_REASONS }) return true
     if (queryParam(transcodingUrl, "SubtitleMethod").equals("Encode", ignoreCase = true)) return true
@@ -77,7 +77,13 @@ internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null)
     // for a codec the file is not in. A target codec list without the source's own codec means the picture is encoded.
     val targets = queryParam(transcodingUrl, "VideoCodec")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim().lowercase() }.orEmpty()
     val src = sourceCodec?.lowercase()?.let { if (it == "h265") "hevc" else it }
-    return src != null && targets.isNotEmpty() && src !in targets
+    if (src != null && targets.isNotEmpty() && src !in targets) return true
+    // Found on the same Chromecast with The Housemaid (2026-10-06): Dolby Vision 7 with an enhancement layer
+    // (`DOVIWithEL`) under `VideoCodec=hevc,h264` — the source's codec is allowed, its range is not, and Jellyfin
+    // tone-maps the picture to H.264 SDR. A source range missing from that codec's `{codec}-rangetype` list re-encodes.
+    val ranges = src?.let { queryParam(transcodingUrl, "$it-rangetype") }?.replace("%2C", ",", ignoreCase = true)
+        ?.split(',')?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }.orEmpty()
+    return sourceRangeType != null && ranges.isNotEmpty() && sourceRangeType.lowercase() !in ranges
 }
 
 /**

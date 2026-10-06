@@ -428,20 +428,21 @@ class PlaybackService(
         sourceVideoBps: Long? = null,
         measuredBps: Long? = null,
         sourceVideoCodec: String? = null,
+        sourceVideoRange: String? = null,
     ): StreamTicket {
         val measured = ticket.copy(measuredBandwidthBps = measuredBps)
         if (ticket.directPlay || capabilities == null || jellyfinPlaySessionId == null || abandoned) return measured
         val master = ticket.hlsUrl ?: return measured
         // 308 (FR-308-1) — a ladder for a player that adapts, on a transcode that re-encodes the picture.
         val ceiling = decodeCeiling(capabilities, master)
-        val ladder = if (capabilities.hlsAdaptive && reencodesVideo(master, sourceVideoCodec)) {
+        val ladder = if (capabilities.hlsAdaptive && reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
             topVideoBps(queryParam(master, "VideoBitrate")?.toLongOrNull(), sourceVideoBps, ceiling)
                 ?.let { AudioRenditions.LadderPlan(master, jellyfinPlaySessionId, it, ceiling, throughputBudget(measuredBps)) }
         } else null
         // 308 — when a transcode gets no ladder, say why (found 2026-10-06: a Chromecast's cast streamed at the
         // source's 80.9 Mbps with no ladder and nothing in the log to tell which condition said no).
         if (ladder == null) Logger.info("playback: item=$jellyfinId no ladder: adaptive=${capabilities.hlsAdaptive} " +
-            "reencodes=${reencodesVideo(master, sourceVideoCodec)} reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec " +
+            "reencodes=${reencodesVideo(master, sourceVideoCodec, sourceVideoRange)} reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec range=$sourceVideoRange " +
             "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling " +
             "url=${master.substringAfter('?').split('&').filterNot { it.startsWith("api_key=", true) || it.startsWith("ApiKey=", true) || it.startsWith("Tag=", true) }.joinToString("&")} (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
@@ -765,7 +766,8 @@ class PlaybackService(
             sessionId = sessionId,   // R368 (dev review item 8)
         ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
-            sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec)
+            sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
+            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
     }
 
     /**
@@ -1541,7 +1543,8 @@ class PlaybackService(
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
         ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
-            sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec) }
+            sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
+            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType) }
     }
 
     /**
