@@ -1,5 +1,7 @@
 # Phase R222 — One plain line: "slow to start on this TV"
 
+> **Retired by Phase 309 (2026-10-07, owner):** no slow-to-start sentence any more — every play starts at once on a rung the device carries and climbs. `playback_note` stays on the wire, always null.
+
 > The viewer half of **Phase 185**. The server has decided whether tonight's film will be slow to start
 > on the device asking, and how sure it is. Ravilo's whole job is to render one sentence, or nothing.
 > No thresholds, no numbers of its own, no decision logic — and, per **R180 FR-RV-ASP1-2**, not one word

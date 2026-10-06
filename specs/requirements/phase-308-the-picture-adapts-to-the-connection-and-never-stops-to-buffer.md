@@ -1,5 +1,7 @@
 # Phase 308 — The picture adapts to the connection, and never stops to buffer
 
+> **Phase 309 (2026-10-07) replaces FR-308-3 (the start rule) and FR-308-4 (the direct-play gate)** and adds the climb/step-down rules and prewarming.
+
 > Owner, 2026-10-05: *"The user should never decide. Ravilo and Jellystructure should talk together and if needed then
 > automatically pick a lower bitrate. Ravilo should automatically pick a lower rate if needed (even mid-stream) and if it
 > thinks it can bump the bitrate again then it should do that. It should always automatically pick the best quality it
