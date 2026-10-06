@@ -1181,8 +1181,10 @@ private class Receiver {
             cfg.initialBandwidth = if (seed != null) seed.toDouble() else js("undefined")
             // A variant switch is a new Jellyfin encode (~17 s to its first segment): Shaka steps up only with real
             // headroom, stays down a while once down, and never flaps between rungs faster than an encode can start.
-            // The buffer goal stays the framework's — a Chromecast's memory is the limit there, not ours to raise.
-            if (t.adaptive) cfg.shakaConfig = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 } })")
+            // Shaka keeps only 10 s ahead by default, so on Stue TV (2026-10-06) a step up to a rung whose encode had not
+            // started yet stalled 2.7 s. 40 s ahead covers that start; 10 s behind (not 30) pays for it in memory, and
+            // Shaka lowers the goal itself when the device's buffer quota is hit.
+            if (t.adaptive) cfg.shakaConfig = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 }, streaming: { bufferingGoal: 40, bufferBehind: 10 } })")
             playerManager.setPlaybackConfig(cfg)
         }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
     }
