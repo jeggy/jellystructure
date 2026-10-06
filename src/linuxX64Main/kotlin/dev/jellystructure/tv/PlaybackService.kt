@@ -437,6 +437,11 @@ class PlaybackService(
             topVideoBps(queryParam(master, "VideoBitrate")?.toLongOrNull(), sourceVideoBps, ceiling)
                 ?.let { AudioRenditions.LadderPlan(master, jellyfinPlaySessionId, it, ceiling, throughputBudget(measuredBps)) }
         } else null
+        // 308 — when a transcode gets no ladder, say why (found 2026-10-06: a Chromecast's cast streamed at the
+        // source's 80.9 Mbps with no ladder and nothing in the log to tell which condition said no).
+        if (ladder == null) Logger.info("playback: item=$jellyfinId no ladder: adaptive=${capabilities.hlsAdaptive} " +
+            "reencodes=${reencodesVideo(master)} reasons=${queryParam(master, "TranscodeReasons")} " +
+            "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
         val file = if (capabilities.hlsAudioRenditions) localFileOf(jellyfinId) else null
         if (file == null && ladder == null) return measured
