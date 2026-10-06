@@ -99,4 +99,4 @@ HDR suffix on each tier, and a series picking its largest episode track.
   on each tier, the badge rule and a series taking its largest episode.
 - Open question 2 answered: nothing persists the tier — it is computed from the stored track dimensions on each build
   of the feed, the detail page and the facets.
-- Acceptance 1–4 need a deploy and a look at the phone and TV.
+- Deployed v1.50-28-g8252aca0 (2026-10-06 05:37). **Acceptance 1 seen on Stue TV:** *Newly Added — Movies* shows *Spider-Man: Brand New Day* as **4K HDR** beside M3GAN 2.0 and Clown in a Cornfield. Acceptance 2–4 and the phone not yet looked at.
