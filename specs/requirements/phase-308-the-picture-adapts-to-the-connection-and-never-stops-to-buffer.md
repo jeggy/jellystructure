@@ -160,6 +160,20 @@ today.)
   common HLS shape, but R291's composed master failed on a built-in Chromecast; device-test first.
 - Migration number 70 is the next free on `main` at `c081e82d`; re-check at merge.
 
+### Device testing (2026-10-06)
+
+- **Pixel 9 Pro, through a 5 Mbps throttle:** the first build kept Media3's default, which steps down only once less
+  than 25 s is buffered. A new rung is a new encode that took ~17 s to deliver its first segment, so a 52 s buffer
+  fell to 5 s, then 1.4 s, before the lower rung arrived. Now it steps down while up to 45 s is buffered, steps up
+  only with 25 s in hand, and uses 70 % of the estimate. Retest: down at the throttle, back up when freed, the buffer
+  never under 35 s. hls.js and the receiver's Shaka got the same rule (step up only with real headroom; Shaka switches
+  at most every 20 s; hls.js keeps a minute ahead).
+- **Chromecast (Stue TV), Dolby Vision films:** `TranscodeReasons` does not always say the picture is re-encoded.
+  *The Housemaid* (DV 7 with an enhancement layer, `DOVIWithEL`) read only `AudioCodecNotSupported,DirectPlayError`
+  under `VideoCodec=hevc,h264`, yet Jellyfin tone-mapped it to H.264 at the source's 80.9 Mbps with no ladder. The rule
+  is now: a re-encoding reason, a burned-in subtitle, a target codec list without the source's codec, **or a source
+  `VideoRangeType` missing from that codec's `{codec}-rangetype` list**.
+
 ## Non-goals
 
 - A manual quality menu.
