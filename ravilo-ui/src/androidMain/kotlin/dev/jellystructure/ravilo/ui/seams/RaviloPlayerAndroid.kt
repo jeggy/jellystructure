@@ -88,6 +88,23 @@ actual class RaviloPlayer actual constructor() {
         // enlarging buffer SIZE needs FR-R216-4's telemetry to validate first, not a blind bump here.
         // 308 (FR-308-3) — the app-wide meter, seeded per stream with what this device measured on its recent plays.
         builder.setBandwidthMeter(bandwidthMeter)
+        // 308 (FR-308-2) — step down early. Media3's default only steps down once less than 25 s is buffered, and a
+        // lower variant is a NEW Jellyfin encode that took ~17 s to deliver its first segment (Pixel 9 Pro,
+        // 2026-10-06: a 5 Mbps throttle drove a 52 s buffer down to 5 s before the 1.5 Mbps rung arrived). Stepping
+        // down while up to 45 s is buffered leaves the new encode time to start. Stepping up waits for 25 s of buffer
+        // (more than a new encode needs to start) and keeps everything already buffered (50 s, the whole buffer):
+        // with the defaults (10 s, keep 25 s) a step-up threw away 30 s and the cold encode drained it to 1.4 s.
+        builder.setTrackSelector(
+            androidx.media3.exoplayer.trackselection.DefaultTrackSelector(
+                ctx,
+                androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection.Factory(
+                    /* minDurationForQualityIncreaseMs = */ 25_000,
+                    /* maxDurationForQualityDecreaseMs = */ 45_000,
+                    /* minDurationToRetainAfterDiscardMs = */ 50_000,
+                    /* bandwidthFraction = */ 0.7f,
+                ),
+            )
+        )
         builder.setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
