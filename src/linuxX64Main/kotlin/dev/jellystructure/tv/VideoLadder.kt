@@ -68,10 +68,16 @@ private val VIDEO_REASONS = setOf(
 )
 
 /** 308 (FR-308-1) — does this Jellyfin transcode URL re-encode the picture (so a ladder of encodes is possible)? */
-internal fun reencodesVideo(transcodingUrl: String): Boolean {
+internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null): Boolean {
     val reasons = queryParam(transcodingUrl, "TranscodeReasons")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim() }.orEmpty()
     if (reasons.any { it in VIDEO_REASONS }) return true
-    return queryParam(transcodingUrl, "SubtitleMethod").equals("Encode", ignoreCase = true)
+    if (queryParam(transcodingUrl, "SubtitleMethod").equals("Encode", ignoreCase = true)) return true
+    // Found on a Chromecast (2026-10-06): a Dolby Vision 7 film's reasons read only `AudioCodecNotSupported,
+    // DirectPlayError`, yet Jellyfin re-encoded the picture to H.264 at the source's 80.9 Mbps — the receiver asked
+    // for a codec the file is not in. A target codec list without the source's own codec means the picture is encoded.
+    val targets = queryParam(transcodingUrl, "VideoCodec")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim().lowercase() }.orEmpty()
+    val src = sourceCodec?.lowercase()?.let { if (it == "h265") "hevc" else it }
+    return src != null && targets.isNotEmpty() && src !in targets
 }
 
 /**

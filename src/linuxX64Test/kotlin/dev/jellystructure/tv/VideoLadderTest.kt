@@ -140,6 +140,9 @@ class VideoLadderTest {
         assertTrue(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported&SubtitleMethod=Encode&SubtitleStreamIndex=11"))
         assertFalse(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported%2CContainerNotSupported"))
         assertFalse(reencodesVideo("x?VideoCodec=h264"))
+        // A target codec that is not the source's: encoded, whatever the reasons say (a DV7 film on a Chromecast).
+        assertTrue(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported%2CDirectPlayError&VideoCodec=h264", "hevc"))
+        assertFalse(reencodesVideo("x?TranscodeReasons=AudioCodecNotSupported&VideoCodec=h264%2Chevc", "hevc"))
     }
 
     @Test
