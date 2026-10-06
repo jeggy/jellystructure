@@ -308,18 +308,8 @@ class HomeFeedService(
     private fun MediaItem.toFocusDetailFacts(): FocusDetailFacts {
         val isSeries = kind == MediaKind.TV_SHOW
         val allTracks = if (isSeries) episodes.flatMap { it.tracks } else tracks
-        val bestVideo = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
-            .maxByOrNull { (it.width ?: 0) * (it.height ?: 0) }
-        val badge = bestVideo?.let { v ->
-            val tier = when {
-                (v.width ?: 0) >= 3840 || (v.height ?: 0) >= 2160 -> "4K"
-                (v.width ?: 0) >= 1920 || (v.height ?: 0) >= 1080 -> "1080p"
-                (v.width ?: 0) >= 1280 || (v.height ?: 0) >= 720  -> "720p"
-                v.width != null || v.height != null -> "SD"
-                else -> null
-            } ?: return@let null
-            if (v.videoRange == "HDR") "$tier HDR" else tier
-        }
+        // R377 (FR-R377-2) — the one resolver (Quality.kt), so this badge can never disagree with the tile's.
+        val badge = qualityLabel()
         val cert = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)
         return FocusDetailFacts(
             year = year,
