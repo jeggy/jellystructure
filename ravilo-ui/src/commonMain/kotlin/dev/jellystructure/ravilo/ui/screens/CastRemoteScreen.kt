@@ -103,6 +103,14 @@ fun CastRemoteScreen(
     val s = status ?: CastRemoteStatus()
     val name = device ?: ""
     val unreachable = link != CastLinkState.CONNECTED
+    // A session that ENDED is not a lost link. Seen on the Pixel 9 (2026-10-06): another sender stopped the film on
+    // Stue TV, the receiver closed, and the remote sat on "Lost contact · It may still be playing" with Retry. As
+    // FR-R245-5 does for a finished cast, the remote leaves quietly; only a suspended link (RECONNECTING) says Lost contact.
+    var wasLinked by remember { mutableStateOf(false) }
+    LaunchedEffect(link) {
+        if (link != CastLinkState.NONE) wasLinked = true
+        else if (wasLinked) onBack()
+    }
     // The sheet itself is drawn at the root (CastTrackSheetHost), above the bottom bar; leaving the remote closes it.
     DisposableEffect(cast) { onDispose { cast.trackSheetOpen.value = false } }
     var convertedOpen by remember { mutableStateOf(false) }
