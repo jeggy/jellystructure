@@ -442,7 +442,8 @@ class PlaybackService(
         // source's 80.9 Mbps with no ladder and nothing in the log to tell which condition said no).
         if (ladder == null) Logger.info("playback: item=$jellyfinId no ladder: adaptive=${capabilities.hlsAdaptive} " +
             "reencodes=${reencodesVideo(master, sourceVideoCodec)} reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec " +
-            "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling (308)", "tv")
+            "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling " +
+            "url=${master.substringAfter('?').split('&').filterNot { it.startsWith("api_key=", true) || it.startsWith("ApiKey=", true) || it.startsWith("Tag=", true) }.joinToString("&")} (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
         val file = if (capabilities.hlsAudioRenditions) localFileOf(jellyfinId) else null
         if (file == null && ladder == null) return measured
