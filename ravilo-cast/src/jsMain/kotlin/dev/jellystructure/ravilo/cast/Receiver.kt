@@ -1179,6 +1179,10 @@ private class Receiver {
             val cfg: dynamic = playerManager.getPlaybackConfig() ?: js("new cast.framework.PlaybackConfig()")
             val seed = t.measuredBandwidthBps?.takeIf { t.adaptive && it > 0 }
             cfg.initialBandwidth = if (seed != null) seed.toDouble() else js("undefined")
+            // A variant switch is a new Jellyfin encode (~17 s to its first segment): Shaka steps up only with real
+            // headroom, stays down a while once down, and never flaps between rungs faster than an encode can start.
+            // The buffer goal stays the framework's — a Chromecast's memory is the limit there, not ours to raise.
+            if (t.adaptive) cfg.shakaConfig = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 } })")
             playerManager.setPlaybackConfig(cfg)
         }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
     }

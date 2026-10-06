@@ -253,7 +253,10 @@ private fun attachSource(video: HTMLVideoElement, url: String): Unit = js(
                     if (video._hls) { try { video._hls.destroy(); } catch(e){} }
                     // 308 (FR-308-2/-3) — hls.js's own ABR picks between the master's variants, seeded with what this
                     // device measured; its switches are counted for the QoE report (FR-308-5).
-                    var cfg = {};
+                    // Every variant is its own Jellyfin encode, and a new one takes ~17 s to deliver its first segment
+                    // (the Pixel's run, 2026-10-06), so keep a minute ahead (the 60 MB default holds 12 s of a 40 Mbps
+                    // top), step down while there is still room for that start, and step up only with real headroom.
+                    var cfg = { maxBufferLength: 60, maxBufferSize: 300 * 1000 * 1000, abrBandWidthFactor: 0.7, abrBandWidthUpFactor: 0.5 };
                     if (window.__raviloAbrSeed > 0) cfg.abrEwmaDefaultEstimate = window.__raviloAbrSeed;
                     var hls = new window.Hls(cfg); video._hls = hls;
                     var q = video._q308 || (video._q308 = { down: 0, up: 0, bps: 0, h: 0 });
