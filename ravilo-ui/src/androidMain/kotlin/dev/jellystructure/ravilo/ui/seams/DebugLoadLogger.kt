@@ -48,7 +48,11 @@ internal class DebugLoadLogger(private val position: () -> Pair<Long, Long>) : A
         Log.i(TAG, "downstream ${what(mediaLoadData)} ${where()}")
     }
     override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
-        Log.w(TAG, "player ERROR ${error.errorCodeName}: ${error.message} ${where()}")
+        Log.w(TAG, "player ERROR ${error.errorCodeName}: ${error.message} cause=${error.cause?.javaClass?.simpleName} ${where()}")
+    }
+    // R379 — which audio decoder took the stream (a platform one, or FFmpeg); passthrough initialises none.
+    override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+        Log.i(TAG, "audio decoder $decoderName ${where()}")
     }
 
     companion object { const val TAG = "R291" }

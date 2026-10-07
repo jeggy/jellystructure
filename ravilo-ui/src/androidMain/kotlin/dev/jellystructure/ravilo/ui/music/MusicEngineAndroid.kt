@@ -112,8 +112,9 @@ actual object MusicEngine {
     private fun build(): ExoPlayer {
         val ctx = RaviloAppContext.get()
         val b = ExoPlayer.Builder(ctx)
-        // Dev review 4 — the same FFmpeg audio renderers the video player uses (FLAC, Opus, ALAC…), when the app set them.
-        RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { b.setRenderersFactory(it) }
+        // Dev review 4 — the same FFmpeg audio renderers the video player uses (WMA, ALAC…), when the app set them.
+        // R379 — the device's own decoders first; FFmpeg for what they don't take.
+        RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx, false)?.let { b.setRenderersFactory(it) }
         b.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
         b.setHandleAudioBecomingNoisy(true)
         b.setWakeMode(C.WAKE_MODE_NETWORK)

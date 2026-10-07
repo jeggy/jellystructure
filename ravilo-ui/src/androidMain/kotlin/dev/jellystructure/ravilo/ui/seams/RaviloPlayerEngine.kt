@@ -14,7 +14,9 @@ import androidx.media3.extractor.ExtractorsFactory
  * boundary in `:ravilo-player` while the player code stays in the shared module. See R31.
  */
 object RaviloPlayerEngine {
-    var renderersFactoryProvider: ((Context) -> RenderersFactory)? = null
+    /** R379 — the Boolean is `preferExtensions`: FFmpeg before the device's own audio decoders (the video
+     *  player's one retry after a platform decoder failed); `false` = the device's decoders first. */
+    var renderersFactoryProvider: ((Context, Boolean) -> RenderersFactory)? = null
 
     /** R294 — the extractor set, so a Matroska file with `Tracks` after its first Cluster starts at once.
      *  Unset (e.g. unit tests) means Media3's defaults. */

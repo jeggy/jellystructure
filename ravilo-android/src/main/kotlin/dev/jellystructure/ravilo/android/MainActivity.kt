@@ -24,7 +24,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         RaviloAppContext.init(this) // also wires SvgDecoder via SingletonImageLoader
         // R31: route player renderers through the GPL-contained FFmpeg decoders (DTS/TrueHD/AC3).
-        RaviloPlayerEngine.renderersFactoryProvider = { ctx -> RaviloRenderers.create(ctx) }
+        RaviloPlayerEngine.renderersFactoryProvider = { ctx, prefer -> RaviloRenderers.create(ctx, prefer) }
         RaviloPlayerEngine.extractorsFactoryProvider = { RaviloExtractorsFactory() }
 
         // Keep screen on during playback; go full-screen (leanback style)

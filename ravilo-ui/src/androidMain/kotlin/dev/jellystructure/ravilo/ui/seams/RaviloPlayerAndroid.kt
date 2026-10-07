@@ -53,6 +53,10 @@ actual class RaviloPlayer actual constructor() {
     // R354 (FR-R354-6) — the remote's output level, re-applied to a rebuilt engine.
     @Volatile private var outputVolume = 1f
 
+    // R379 (FR-R379-2) — jellyfin-android's fallback: engines prefer the FFmpeg extension over the device's own
+    // decoders once a platform decoder has failed, for the rest of this player's life (the player screen).
+    @Volatile private var preferExtensions = false
+
     private fun exo(): ExoPlayer = engine ?: buildEngine().also { built ->
         engine = built
         bindEngine(built)
@@ -78,7 +82,7 @@ actual class RaviloPlayer actual constructor() {
             else androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
         ).setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
         val builder = ExoPlayer.Builder(ctx, mediaSourceFactory)
-        RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
+        RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx, preferExtensions)?.let { builder.setRenderersFactory(it) }
         // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock
         // bufferForPlaybackAfterRebufferMs: on a link that dips mid-playback, resuming on a thin buffer
         // turns one stall into a train of them. Only that one value is raised — min/max buffer and
@@ -183,6 +187,30 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun recordRestoredAfterRecreate() { qoeRestoredAfterRecreate++ }
 
+    /** R379 (FR-R379-2) — the same item, position, play state and track choices on a new engine built with
+     *  [preferExtensions] set. A released or replaced engine (the screen left, the next item loaded) is left alone. */
+    private fun restartPreferringExtensions(failed: ExoPlayer) {
+        if (engine !== failed) return
+        val item = failed.currentMediaItem ?: run { _playbackFailed = true; return }
+        val positionMs = failed.currentPosition
+        val playWhenReady = failed.playWhenReady
+        val tracks = failed.trackSelectionParameters
+        mediaSessionRef?.release()
+        mediaSessionRef = null
+        engine = null
+        _hasRenderedFirstFrame = false
+        _isBuffering = false
+        _isSeeking = false
+        failed.release()
+        val p = exo()
+        p.trackSelectionParameters = tracks
+        p.setMediaItem(item)
+        p.seekTo(positionMs)
+        p.playWhenReady = playWhenReady
+        p.prepare()
+        ensureMediaSession()
+    }
+
     // 308 (FR-308-3) — see [SeededBandwidthMeter]: one for the app, over Media3's app-wide meter.
     private val bandwidthMeter: SeededBandwidthMeter get() = SeededBandwidthMeter.shared(ctx)
 
@@ -262,6 +290,16 @@ actual class RaviloPlayer actual constructor() {
             }
         }
         override fun onPlayerError(eventTime: AnalyticsListener.EventTime, error: androidx.media3.common.PlaybackException) {
+            // R379 (FR-R379-2) — a platform decoder failed: once, restart the item on an engine that prefers FFmpeg
+            // instead of reporting the failure. Posted, so the failed engine is released outside its own callback.
+            val failed = engine
+            if (!preferExtensions && failed != null &&
+                error.cause is androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
+            ) {
+                preferExtensions = true
+                android.os.Handler(failed.applicationLooper).post { restartPreferringExtensions(failed) }
+                return
+            }
             _playbackFailed = true
         }
         override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
