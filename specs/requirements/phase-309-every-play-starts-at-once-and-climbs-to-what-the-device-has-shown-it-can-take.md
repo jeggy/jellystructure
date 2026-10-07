@@ -12,7 +12,7 @@
 ## Status
 
 `Planned` — written 2026-10-07 (dev-authored) from the owner's direction above, checked against `main` `00429b14`
-(31 commits ahead of `origin/main`; 309 is free on both). Not dev-reviewed, not built (owner: spec only).
+(31 commits ahead of `origin/main`; 309 is free on both). **Dev-reviewed 2026-10-07** (see *Dev review*), not built (owner: spec only).
 **Builds on 308** (the ladder, the composed master, the players' own ABR, the receiver's QoE) and **replaces 308
 FR-308-3's start rule and FR-308-4's direct-play gate**. **Retires 185 FR-185-5…7's note and all of R222** (the
 *"Slow to start on …"* line). Backend, every player (Android/Media3, web/hls.js, Mac/AVPlayer, Linux/mpv, Cast/Shaka),
@@ -111,8 +111,9 @@ happens, drops at least one rung at once and writes `stalled_bps` (FR-309-1).
   player climbs, the new rung above is warmed and the one two below is let go.
 - **After a seek** the same three (current, above, below) are started at the new position at once; the player resumes
   on the current rung, never higher, and climbs again from there.
-- **Bound:** at most **3 encodes per play**; warming never queues or delays a real play — if the GPU encoder slots
-  (`ProcessGate` / NVENC) are short, warming is skipped first, and a warm encode for another viewer is stopped before a
+- **Bound:** at most **3 encodes per play**; warming never queues or delays a real play — if the backend's own count of live
+  variant encodes (Jellyfin's ffmpeg runs in Jellyfin's container — our `ProcessGate` never sees it; dev review 6) is at
+  its limit, warming is skipped first, and a warm encode for another viewer is stopped before a
   play is refused.
 
 ### FR-309-7 — Decide before Play (prewarm the negotiation)
@@ -130,8 +131,9 @@ under what it was carrying, and records the stall; it does not wait for a second
 
 ### FR-309-9 — Players that cannot switch variants themselves
 
-- **Linux (mpv)** — no HLS adaptation. It gets one variant chosen by FR-309-2 and the backend steps it by restream at
-  the current position when FR-309-5's rule fires (mpv's buffer level from `demuxer-cache-duration`), or up one rung
+- **Linux (mpv)** — no HLS adaptation. It gets one variant chosen by FR-309-2 and **the Linux app steps itself** with R284's
+  restream (its capabilities' `max_video_bitrate` set to the rung) at the current position when FR-309-5's rule fires
+  (mpv's buffer level from `demuxer-cache-duration`; the backend never sees it — dev review 9), or up one rung
   after 2 min clean with the rung above warm.
 - **Mac (AVPlayer)** — native ABR. It is given the start rung first, `preferredForwardBufferDuration` 40 s, and
   `preferredPeakBitRate` capped one rung above where it is until it has climbed (lifted one rung per climb), so it
@@ -204,3 +206,149 @@ No setting, no toggle, no quality menu, for the viewer or the admin (as 308 FR-3
    data. The owner's rule forbids location, but a **network type** (Wi-Fi vs mobile) is the device's own fact, not a
    location; lean: key `measured_bps` on (device, link kind), keep `proven_bps` per device, and let the stall rule
    correct the rest.
+
+## Dev review (2026-10-07, against `main` `23600c28`)
+
+Read against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `stopFor`), `PlaybackService` (`startPlayback`,
+`withRenditions`, `measuredThroughputOf`, `releaseEncodes`), `PlaybackQoeStore` + `PlaybackQoe.sq`, `DetailService` +
+`PlaybackNoteResolver`, `Models.kt` (`PlaybackQoeReport`, `playback_note`), the players (`RaviloPlayerAndroid.kt` with
+Media3 1.8.0, `SeededBandwidthMeter.kt`, `RaviloPlayerWasm.kt`'s hls.js config, `ravilo-cast` `Receiver.kt`,
+`ravilo-desktop/native/Player.swift`, `MpvPlayer.kt`), Jellyfin's live `encoding.xml` (nvenc, throttling on at 180 s,
+segments kept 720 s, one CUDA device `cu:0`), 308's build notes on `GetDynamicSegment` and the 60 s ping timer, and
+30 days of `playback_start_sample`. The direction holds. Fourteen items, five for the owner.
+
+1. **Starting low makes the first minutes safe, not the first frame fast.** A transcode's first frame is Jellyfin
+   starting ffmpeg (`-analyzeduration 200M -probesize 1G`, then, for Dolby Vision, CUDA tone-mapping), and that cost is
+   the same for every rung: 480p at 1.5 Mbps starts no sooner than 1080p at 24 Mbps. 30 days of start samples: direct
+   plays on the household TVs start in 1–2 s (≈ 800 of them), transcodes in **8–38 s**. So acceptance 1's *first frame
+   ≤ 3 s* and FR-309-2's target cannot be met by a start rung alone. Only an encode that is already running at Play can
+   do it, and the spec's non-goal forbids one before Play. **For the owner (Q1):** start the first encode before Play?
+   Lean: yes, but only on a strong signal — the TV's Play button focused for ≥ 1 s, a phone's detail page or cast sheet
+   open — stopped 60 s after the signal ends (Jellyfin's ping timer does it for free). Without it, change the target
+   to "no slower than today's start for that file" and keep the stall-free goal.
+
+2. **The decision cache (FR-309-7) saves almost nothing; drop it.** PlaybackInfo starts no encode and mints a fresh
+   `PlaySessionId` per call (180's teardown keys on it). Play must still read the resume position (`getItemDetail`)
+   and post `/Sessions/Playing`, so caching PlaybackInfo saves one round trip of a few hundred ms against an 8–38 s
+   cold encode, at the price of a stale audio/subtitle choice and a play-session id that must be used at most once.
+   Lean: drop FR-309-7; Q1's early encode is the prewarm that matters.
+
+3. **Warm encodes: "above" is covered by the climb rule, "below" is the one that pays.** A warm job is the backend
+   fetching one segment of that variant at a position (Jellyfin starts ffmpeg there), then fetching again at least
+   every 60 s (the ping timer) near the player's buffer end, because throttling stops it 180 s past its last fetched
+   segment and a request more than 8 segments past its encode starts a new ffmpeg anyway — so "kept warm" is a
+   **continuous second encode** for the whole play, not a one-off. A climb only happens with ≥ 30 s buffered
+   (FR-309-4b) and a cold start is ≤ 20 s for most files, so the climb survives a cold rung; a step down happens with a
+   draining buffer and is exactly when a cold start hurt (308's Pixel run: 52 s → 1.4 s). **For the owner (Q2):** warm
+   only the rung below (2 encodes per play), both (3), or none. Lean: below only, and FR-309-4(c) becomes "with
+   ≥ 30 s buffered (a cold rung starts inside that)".
+
+4. **A seek is a cold start on every rung (FR-309-6, acceptance 4).** A forward seek past the encoded range restarts
+   ffmpeg with `-ss` (seen 2026-10-06: `-ss 00:18:22.101`, `-start_number 367`), paying item 1's cost again; warming
+   three rungs *at the new position* starts them at the same moment as the player's own request, so it cannot make the
+   seek faster. Acceptance 4's *within 3 s* holds only inside the already-encoded range. Lean: keep "the player resumes
+   on the current rung, never higher", drop "the same three started at the new position", and reword acceptance 4 to
+   "no slower than a cold start, and never on a higher rung".
+
+5. **Old and non-adaptive clients must keep today's behaviour.** A client that does not declare `hls_adaptive`
+   (everything before 1.50, and mpv) gets one stream: if FR-309-2's "no record ⇒ 4 Mbps" became its
+   `MaxStreamingBitrate`, it would sit at 720p forever. Rule: the no-record start applies to the **ladder's first
+   listed variant and seed only**; a non-adaptive client keeps 308's FR-308-4 cap (measured or nothing). 1.50 clients
+   (adaptive, 308 rules) benefit from the backend half at once — the new start order and seed reach them with no app
+   release, and the receiver ships with the backend (`ravilo-cast` is served by it).
+
+6. **The encode budget is ours to count, and on one GPU.** `ProcessGate` gates this server's own ffmpeg; Jellyfin's
+   runs in its container (FR-309-6 corrected). Jellyfin encodes on a single CUDA device (`cu:0`); if that is the
+   RTX 2060 SUPER, the consumer NVENC session limit (8 on current drivers) is shared by every viewer and every warm job;
+   the Quadro P4000 has none. Count live variant jobs from `AudioRenditions`' registry (it already knows every
+   variant session it composed) and check which card `cu:0` is before fixing the per-play bound.
+
+7. **The stream record needs a table and one more QoE moment.** `playback_qoe` is an upsert per (device, item, play
+   session) — the last state only, so "held ≥ 2 min with no rebuffer" cannot be rebuilt from it. Lean: migration
+   **71** (`70` is 308's), a `device_stream_record` row per device (`proven_bps`, `measured_bps`, `stalled_bps`,
+   `stalled_at`, `updated_at`), updated on every QoE post: a hold is the time between two posts on the same variant
+   with the rebuffer count unchanged. That works with the reports players already send **if** they also post at every
+   rebuffer (FR-309-11) — the receiver and Android post only at a switch and at the end today. Additive wire fields
+   only: `time_to_first_frame_ms`, `start_variant_bps`; no field removed.
+
+8. **Media3 can do both rules, by subclassing.** `AdaptiveTrackSelection` (1.8.0) picks the best format under
+   `bandwidthFraction` × estimate and can jump several rungs; FR-309-4 needs a subclass whose `canSelectFormat` allows
+   at most one rung above the selected one, and FR-309-5's buffer rule an override of `updateSelectedTrack` that forces
+   a lower index when `bufferedDurationUs` < 20 s and falling. Both are protected/public and non-final; plug in through
+   `AdaptiveTrackSelection.Factory.createAdaptiveTrackSelection`. *"Only to a warm rung"* cannot be known by the client —
+   it goes (item 3). **hls.js**: `autoLevelCapping` set to current + 1 on each `LEVEL_SWITCHED` gives one rung at a time;
+   its own ABR already switches down on predicted starvation. **AVPlayer**: `preferredPeakBitRate` and
+   `preferredForwardBufferDuration` are settable on the item at any time in `Player.swift` — feasible as written.
+
+9. **Linux (mpv) steps itself (FR-309-9 corrected).** The backend never sees mpv's buffer; the app reads
+   `demuxer-cache-duration` (already read in `MpvPlayer.kt`) and calls R284's restream with a lower
+   `max_video_bitrate`. A restream is a visible cut (new stream at the position) — acceptable as the last resort it is.
+
+10. **The receiver needs its own ABR manager.** CAF's `PlaybackConfig.shakaConfig` is applied at load; there is no
+    public handle on the Shaka instance to change restrictions live. Shaka's config takes `abrFactory`; the receiver
+    can pass a small AbrManager of its own (Kotlin/JS, the shared rule of item 13) that does one-rung-up and the buffer
+    rule, reading the buffer from the media element. Verify on the Stue TV Chromecast that CAF passes a function-valued
+    `abrFactory` through (fallback: `restrictions.maxBandwidth` re-applied by a new `setPlaybackConfig` at the next
+    load only — not live).
+
+11. **The probe is fine through Caddy, with two guards.** Ktor native sends no compression and the Caddy labels on
+    these services set no `encode`, so random bytes reach the client as sent. The route must be **authenticated**
+    (device token — otherwise it is an open bandwidth sink on the public address) and `Cache-Control: no-store`. It
+    measures the same uplink the segments use (both go through the same Caddy). On the receiver, probe **in parallel**
+    with the load, not before it (a 2 s probe ahead of the first segment adds 2 s to every cast); the result seeds the
+    next play.
+
+12. **Removing the note is a backend-only change for installed apps (FR-309-10 holds).** `playback_note` defaults to
+    null in `Models.kt` and every client renders nothing on null, so sending null retires the line on every installed
+    app the day the backend ships. Keep `PlaybackNote`, the field, the strings and the `WireBaseline` entry until the
+    clients drop `PlaybackNoteLine`; `playback_start_sample` stays (it becomes FR-309-11's time-to-first-frame history).
+
+13. **The climb and step-down rules belong in `:shared`.** `ravilo-cast` already depends on `:shared` (it posts
+    `PlaybackQoeReport`), so one pure rule — `nextRung(current, rungs, estimateBps, bufferedMs, bufferTrendMs)` — can be
+    the same code on the receiver, Android, web and desktop; each player only adapts its inputs and outputs. The Tests
+    section's "shared where the code is common" becomes "one implementation, tested once, plus a thin adapter test per
+    player".
+
+14. **Two more for the owner.** **Q3 — a device with no record and a file it could direct-play**: FR-309-8 sends every
+    such file through the ladder on its first play, so a new phone's first episode is a transcode even on a perfect
+    link. Options: direct play anyway; ladder until proven; direct play only files ≤ ~8 Mbps (most 1080p web
+    releases) or when FR-309-3's probe says it fits, ladder above. Lean: the last. **Q4 — a video-copy transcode**
+    (only the audio or container changes — 308's `reencodesVideo` says no ladder): a 60 Mbps 4K remux with TrueHD
+    goes to an unproven device as one stream at 60 Mbps, the one case "the same ladder always" doesn't cover. Options:
+    keep it (fast start, no adaptation); force a picture re-encode until the device has proven the bitrate (gets the
+    ladder). Lean: force it, only when unproven. **Q5 — the probe on mobile data**: 1 MB (as written), never on mobile
+    data, or the same 4 MB. Lean: 1 MB.
+
+**Build order:** **309a** (backend + receiver, ships with one deploy): the stream record (migration 71), the start rule
+with item 5's exemption, `playback_note` null, the probe route, warm-below (if Q2), Q1's early encode, the receiver's
+AbrManager and its rebuffer post. **309b** (app releases): the shared rule in `:shared`, Media3 subclass, hls.js
+capping, AVPlayer caps, mpv self-restream, the detail-page probe, rebuffer posts on Android/web/desktop. **309c**:
+admin *Playing now* and device-row lines. Each part stands on its own; 309a alone fixes the 2026-10-06 case
+(receiver jump 4 → 24.4 Mbps, no step down).
+
+**Tests to add (beyond the Tests section):** the non-adaptive exemption (no-record v1.49 client gets no 4 Mbps cap);
+the record derived from a QoE timeline (hold, rebuffer, stall decay); the encode budget counted from the registry; the
+shared `nextRung` table (one-up only, never past the record, down at 20 s falling, several down at once); a Media3
+subclass test with a fake meter and buffered durations; a receiver AbrManager test under a Node runner; the probe
+route refusing an unauthenticated request.
+
+## Decided by the owner (2026-10-07)
+
+1. **Start the first encode before Play — on any detail page open for more than 2 s.** TV, phone, web and desktop
+   alike. The warm encode is the one Play would start (the start rung at the resume position, with the remembered
+   audio/subtitle choice). **Stop it fast when the viewer leaves** the page without pressing Play: the client says so
+   at once (page closed / another title opened), and the backend stops the job on that signal, with Jellyfin's 60 s
+   ping timer only as the fallback. **Casting gets the same:** when a phone (or desktop) has a Google Cast session
+   to a TV, the warm encode is made for **the receiver** (its capabilities, its record, its play session), so
+   pressing Play on the phone lands on a stream that is already running; the receiver then plays it as its own
+   device (308's rule — a receiver never borrows the phone's measurement).
+2. **Warm rungs: the owner left it to us ("the fastest and best experience").** Decided: the rung **below** is kept
+   warm for the whole play (a step down never waits); the rung **above** is warmed only while a climb is possible
+   (the player's estimate × 0.7 clears it and FR-309-4's buffer rule is close to met) and let go otherwise. So 2
+   encodes per play most of the time, 3 briefly around a climb. The encode budget (FR-309-6, counted by us — review
+   item on Jellyfin's own container) still drops warming first, never a play.
+3. **No record + a direct-playable file:** direct play when the file is **≤ ~8 Mbps or the speed test (FR-309-3)
+   says it fits** with 0.7 headroom; otherwise the ladder until the device has proven it.
+4. **A big audio-only transcode on an unproven device:** force a picture re-encode so it gets the ladder, only while
+   the device has not proven the file's bitrate.
+5. **Speed test size: 4 MB everywhere**, mobile data included (overrides FR-309-3's 1 MB on a metered link).

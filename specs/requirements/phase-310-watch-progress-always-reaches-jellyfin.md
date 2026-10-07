@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-07 (dev-authored) from a read-only investigation on the dev stack (v1.50-30-g0df9d193,
+`Planned` — **Dev-reviewed 2026-10-07** (see *Dev review*); written 2026-10-07 (dev-authored) from a read-only investigation on the dev stack (v1.50-30-g0df9d193,
 container up since 2026-10-06 ~07:56 CEST). Not dev-reviewed, not built. Backend only (`PlaybackWriter`,
 `PlaybackService`, the timeout helpers, health, Dashboard).
 
@@ -155,3 +155,117 @@ The phase is not done until these exist and pass in CI (`linuxX64Test`):
 
 A backend restart revives the writer (the 15 queued writes are stale and would be dropped). It needs the owner's go
 (dev-compose deploys/restarts need approval), and it does not undo what Jellyfin already marked.
+
+## Dev review (2026-10-07, against `main` `23600c28`)
+
+Read against `PlaybackWriter.kt` (and `PlaybackWriterTest.kt`), `PlaybackService` (`JellyfinSink`, `reportProgress`,
+`stopPlayback`, `cachedTokenCheck`, `startPlaybackSession`'s body), `HomeFeedService` (the Continue Watching build and
+loop), `PlaystateCache`, `OutboundHttp`, `JellyfinClient`, `Main.kt` (`rootScope`), every `while (true)` in
+`src/linuxX64Main`, `shared/…/PlaybackFinish.kt`; kotlinx.coroutines **1.11.0** `Timeout.kt`; Ktor **3.6.0**'s Curl
+engine (`CurlProcessor.kt`, `CurlMultiApiHandler.kt`); Jellyfin **12.1** (`SessionManager.cs`, `SessionInfo.cs`,
+`PlaybackStartInfo`/`PlaybackProgressInfo`); the container log (it survives `docker restart`) and Jellyfin's logs and
+`system.xml`. The spec's diagnosis holds and the root cause is now found: it is not in our timeout code at all. Ten
+items, four for the owner.
+
+1. **Root cause: Ktor's Curl engine hands one request's cancellation to another request.** When a call's context is
+   cancelled, `CurlProcessor.handleSendRequest` queues `cancelRequest(easyHandle, cause)` on `curlScope`, and
+   `CurlMultiApiHandler` processes it later as `removeEasyHandle(easyHandle, cause)` →
+   `activeHandles.remove(easyHandle)…responseCompletable.completeExceptionally(cause)`. `activeHandles` is keyed by
+   the **easy-handle pointer**. If the cancelled call has already finished and its handle was freed, and a new request
+   was given a handle at the same address before the queued cancellation runs, the **new** request fails with the
+   **old** cause (a classic ABA). The cause here is Continue Watching's own `TimeoutCancellationException`
+   (*"Timed out waiting for 6000 ms"* — `CONTINUE_TIMEOUT_MS` is the only 6000 ms timer in the backend). Evidence
+   from the logs, every time 1–37 s after a Continue Watching build timed out:
+   - 2026-10-06 15:34:57 — the next user's Continue Watching build (its own `withTimeoutOrNull` rethrows it, because
+     `e.coroutine !== coroutine`: 1.11's rule for a timeout that isn't its own) **and the writer's progress call**;
+   - 2026-10-06 17:31:00 — `scan_music failed: Timed out waiting for 6000 ms` (no timer of its own);
+   - 2026-10-07 06:16:39 and 06:16:59 — `Playstate refresh failed: Timed out waiting for 6000 ms` (its timers are
+     5 s and 20 s).
+   The writer survived 06:16 because nothing was in flight; positions land again from 12:30 today.
+
+2. **Why it was silent (FR-310-1 holds).** `attempt()` rethrows any `CancellationException`; out of `drain()` it ends
+   the `launch` as a *cancellation*. `rootScope` has a `SupervisorJob` and a `CoroutineExceptionHandler`, but a
+   handler is never called for a `CancellationException`, so nothing was logged. Implement FR-310-1 as
+   `if (e is CancellationException && !currentCoroutineContext().isActive) throw e`; anything else is a failed write.
+
+3. **FR-310-4 belongs at the HTTP boundary, not only around `withTimeoutOrNull`.** One choke point carries every
+   outbound call: `OutboundHttp.withPermit`. There, a `CancellationException` while the caller's own coroutine is
+   still active is **foreign**: convert it to an `IOException` (`ForeignCancellation`, logged once with its message),
+   and let FR-194-6's idempotent retry run once. That repairs every caller at once (Continue Watching, playstate, the
+   pipeline, the writer), and the many correct `if (e is CancellationException) throw e` sites (`JellyfinClient.kt:450,
+   492, 514, 1678`, the music clients) become right again. `boundedOrNull` stays as a second guard on the
+   `withTimeoutOrNull` sites. **For the owner:** report the Curl engine bug upstream to Ktor (no household details,
+   just the pointer-keyed cancel). Lean: yes.
+
+4. **FR-310-2 holds, with two notes.** The 30 s deadline must be a constructor parameter (as `baseBackoffMs` is) so
+   tests can shrink it. The after-stop work must stay **in its current order** inside one background job
+   (`releaseEncodes` → R375 restore → R343 write-back → `afterStartOverWriteBack`/`onStopLanded`); only the job moves
+   off the writer's line, not each step.
+
+5. **FR-310-5's list is wrong; narrow it.** Of every `while (true)` that is a forever-loop in `src/linuxX64Main`,
+   only `PlaybackWriter.drain` dies on a foreign cancellation. The rest wrap their body in `runCatching` (Continue
+   Watching, playstate, session tick, AI jobs, Bazarr poll, acquisition, request lifecycle, recommendations, MKV
+   health, FD watchdog, genre/file-size/version refreshers); the job-queue workers catch `Exception` and the pool
+   supervisor refills them; `AudioRenditionJobs`' idle loop calls nothing that throws. The one other casualty is
+   `PublishQueue.sendOne` (`catch (e: CancellationException) { throw e }`): a press's drain ends and the item waits
+   for the next press or restart (307's restart → waiting). There is no "realtime ingest" loop. So: fix the writer and
+   `sendOne`, add the guard script (`scripts/check-cancellation-rethrow.sh`: a rethrow of `CancellationException`
+   without an `isActive` check, outside `OutboundHttp`), and drop the `supervisedLoop` migration of loops that are
+   already safe.
+
+6. **FR-310-6: Jellyfin's guess is ours to prevent, and it's one field.** Jellyfin 12.1: an idle timer every 5 min
+   stops a session whose `LastPlaybackCheckIn` is > 5 min old (only a non-automated progress report moves it), with
+   `PositionTicks = LastPlaybackCheckInPositionTicks`; that value is set from the **start report's `PositionTicks`**
+   and each progress report. A stop with no position does `PlayCount++, Played = true, PlaybackPositionTicks = 0`.
+   Our `startPlaybackSession` sends **`StartPositionTicks`**, which `PlaybackStartInfo` doesn't have (it inherits
+   `PositionTicks` from `PlaybackProgressInfo`), so every Ravilo play is "unknown" until its first progress lands.
+   **Send `PositionTicks` in the start body** — that replaces the extra progress report. `InactiveSessionThreshold`
+   is 0 here (Jellyfin's paused-session stop is off). The session bridge gets no idle-stop signal, so **drop the
+   third point** (re-register).
+
+7. **"The stop is the last word" — make it one write.** Today a stop can trigger up to three separate user-data
+   writes after it lands: R347's tick (`mark(watched = true)` in the background, racing), R343's unwatched
+   write-back, R375's date restore. Fold them into **one** `setUserData(played, positionTicks, lastPlayedDate)` built
+   from `resolveStop` (finished ⇒ played, position 0; unfinished ⇒ unplayed at `reportMs`; shuffled ⇒ R343's
+   rule), sent after the stop lands. One write, no ordering race, and it also overrides Jellyfin's guess when a stop
+   lands late.
+
+8. **FR-310-7: `playback_session` can't be the repair's source.** It is one row per *session*: a shuffled kids'
+   session spans many episodes and keeps only its last position. The per-item positions exist only as the backend's
+   `playback stop: device=… item=… at Nms` log lines: **21 in the window** (2026-10-06 15:34:40–22:28:30 UTC; the
+   shuffled ones say `(reported 0ms: shuffled, R343)`). They survive a `docker restart`, **not** a redeploy (the
+   container is recreated). **For the owner:** save them now and repair from them (lean), or repair by hand. Also,
+   the 15 writes queued at the restart were in memory and are gone. **For the owner:** keep queued *stops* in
+   SQLite so a restart never drops one (lean: yes, a small `playback_outbox` table; progress ticks stay in memory).
+   Songs got Jellyfin's guess too (play count +1, marked played). **For the owner:** leave music alone (lean) or
+   include it.
+
+9. **FR-310-8 is feasible; one test is the reason this shipped.** `PlaybackWriterTest`'s "thrown timeout" fakes it as
+   `IllegalStateException("Timed out waiting for 6000 ms")`, so the rethrow was never exercised. The new tests must
+   throw a **real** `TimeoutCancellationException` (its constructor is internal: capture one from another
+   coroutine's `withTimeout(1) { awaitCancellation() }`). The backend tests use `runBlocking` and real time with
+   millisecond backoffs, so no `kotlinx-coroutines-test` is needed. Files: `PlaybackWriterTest` (extended: foreign
+   cancellation, hang + deadline, slow follow-up, own cancellation, supervisor), `OutboundHttpForeignCancellationTest`
+   (a call that throws a foreign cancellation becomes an `IOException`; the caller's own cancellation still
+   propagates), `JellyfinStartBodyTest` (`PositionTicks` present), `StopUserDataWriteTest` (item 7's single write),
+   `PlaybackRepairTest`, `DashboardWriterRowTest`. The Curl ABA itself needs libcurl and a real server, so it is not
+   reproducible in a unit test; the boundary test covers its effect.
+
+10. **Compatibility and order.** No wire change. `/api/health`'s new fields are additive. A migration only if the
+    outbox is accepted. Build order: (a) the boundary conversion + FR-310-1 + their tests (stops the bleeding),
+    (b) `PositionTicks` in the start body, (c) supervisor, health, Dashboard row, (d) the single user-data write,
+    (e) the repair, (f) the guard script.
+
+## Decided by the owner (2026-10-07)
+
+1. **Repair (FR-310-7): videos, from the saved stop log.** The backend's stop lines were saved before any redeploy:
+   `~/jellystructure/backups/playback-stops-2026-10-06-writer-outage.log` (on the server, outside the repo — it names
+   household titles). Every film or episode stopped before its finish (R347) in the window goes back to unwatched at
+   its real position, `LastPlayedDate` restored; dry run first, the owner presses Apply. **Songs are left alone.**
+2. **Queued stops are kept in the database** (a small table, one migration — the next free number at build time; 309
+   also wants one): a stop survives a restart or redeploy until Jellyfin has acknowledged it. Progress ticks stay in
+   memory (the next tick supersedes them anyway).
+3. **The Ktor Curl-engine bug is written up outside this repo first:** a separate git repository next to this one,
+   `../ktor-curl-cancel-repro/`, holds a minimal reproduction and the report, with no household details. It is
+   picked up later and becomes either an issue or a pull request to Ktor; nothing is posted yet. Our own fix
+   (review item 3, at `OutboundHttp.withPermit`) does not wait for upstream.
