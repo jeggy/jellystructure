@@ -118,3 +118,11 @@ Each change is its own small commit, with the before and after numbers recorded 
    one has corrected the numbers.
 2. Whether the desktop (mpv) and Cast receiver counters have the same carry-over (the receiver resets per load in
    `Receiver.kt`; mpv's `stalls` is per player instance). Check and align with FR-R381-1.
+
+## Decided by the owner (2026-10-08)
+
+1. **Preload the next episode inside this phase** (owner, over the lean of its own phase): during a binge the next
+   episode is added to the player's queue before the current one ends (at the credits marker, or 60 s before the end),
+   so it starts with no wait. It follows R375's next episode, never preloads after a film, stops preloading if the
+   viewer seeks back out of the credits, and counts nothing as a stall (FR-R381-1's rules apply per item). A direct play
+   preloads its file; a transcode asks for the next episode's encode at the same moment (309's early encode / 313's job).

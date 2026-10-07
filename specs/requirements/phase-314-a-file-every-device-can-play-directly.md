@@ -216,3 +216,18 @@ language** changes no score and cannot start an upgrade or a re-download. Rules 
    input is a copy job (no encode), and how fast it starts.
 5. Dev: whether the downmix should match Jellyfin's `DownMixStereoAlgorithm` exactly, or use a dialogue-friendly
    matrix (the household watches on TV speakers).
+
+## Decided by the owner (2026-10-08)
+
+1. **Seeded files are never modified (Q1).** The owner first answered *"do it anyway"*; told what that does (the torrent's
+   piece check fails, qBittorrent re-downloads the changed parts and undoes our work, a private tracker may flag a bad
+   seed, cross-seed breaks), the owner chose **add beside, never modify**. For a seeded file, kinds A and B write the
+   new audio as a separate `.mka` next to the video (FR-314-6), never into it. Unseeded files may still get the track
+   added inside the file, as FR-314-3/-4 say.
+2. **Dolby Vision 7: keep both, both pickable (Q2 + Q3).** The original file stays exactly as it is, full enhancement
+   layer included, and the converted profile 8.1 file is **a second version** of the same title (≈ 0.8 TB for all
+   16 films), seeded or not. This replaces converting in place and the Restore data. The backend plays the 8.1 version
+   for a device that cannot play profile 7 (the TVs) and the original for one that can; the viewer can switch between
+   them in Ravilo's picker (R195's versions level), labelled in plain words (e.g. *Dolby Vision* · *Dolby Vision, full
+   detail*). FEL films are converted too, since nothing is lost.
+3. Disk: kind C needs about 0.8 TB of free space on the films' disk; the dry run shows the total before Apply.
