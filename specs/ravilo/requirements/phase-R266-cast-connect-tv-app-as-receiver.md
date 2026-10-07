@@ -221,3 +221,89 @@ rewritten around what shipped, and two open questions close against the code.
 and `CastReceiverContext` on the TV build, `customData` → 236's play, a launch observation, and the
 media-session reconciliation in item 4. Everything else it described is either already shipped by 236 or
 must not be built the way it is written.
+
+## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read against branch `r266-cast-connect` (5 commits, built 2026-10-05, **not merged, 42 commits behind `main`**),
+`ravilo-cast/…/Receiver.kt` on `main`, `cast-receiver/index.html`, 308/309/310 as they now stand, Stue TV's codec list
+(`/vendor/etc/media_codecs*.xml`, read over adb 2026-10-08) and 30 days of `playback_start_sample`/`playback_qoe`. The
+question asked: is Cast Connect the lever that removes most Chromecast stalls? **Yes, for every TV that can run Ravilo,
+and it is the largest single one available.** Nine items, three for the owner.
+
+1. **The numbers.** Over 30 days the Ravilo TV app started **1 142** plays at **1.7 s on average**, 1 084 of them under
+   3 s, and direct-played **753 of 812**. The Chromecast web receiver records **no start samples at all** (the gap is
+   item 6). Its two QoE rows since 308 hold one 29.4 s stall. A cast to a TV that runs Ravilo would get the first
+   number instead of the second.
+2. **Why the web receiver must transcode what Ravilo on the same TV would not.** `Receiver.capabilities()` declares
+   `hlsOnly = true` (every play is at least a remux, a Jellyfin job and its cold start), `supportsDolbyVision = false`,
+   and no DTS. Its audio channels come from `canDisplayType`, which gave 2 on the 2026-10-05 cast. Stue TV's own
+   decoders, read 2026-10-08:
+   - HEVC Main 10 at 4096×2304 up to **60 Mbps**;
+   - Dolby Vision `dvhe.dtr`/`dvhe.st`/`dvhe.stn` (single-layer profiles, not profile 7's enhancement layer);
+   - AC3, EAC3, DTS, DTS-HD (MTK DSP decoders).
+
+   Ravilo's Media3 path uses all of these and direct-plays the MKV. So on the TVs, R266 turns most casts from
+   *re-encode, then adapt* (308/309) into *play the file*, with Ravilo's own playback tracker, QoE, picker and gating.
+3. **Who benefits.** The household's two BRAVIAs, and any Google TV device (Chromecast with Google TV, Google TV
+   Streamer) once Ravilo is installed there **from the Play Store**. The Play Store is a whitelisted installer, so the
+   *Play-installed* release qualifies without test-device registration. Plain Chromecast dongles (3rd gen, Ultra) and
+   meidam's receivers (models unknown) stay on the web receiver, which is what 309 is for. **R266 does not replace
+   309: it shrinks the set of plays that need it.**
+4. **The branch must be rebased before anything else.**
+   - Its `69.sqm` (`cast_connect_launch`) collides with `main`'s `69.sqm` (307's publish queue), and `70.sqm` is 308's.
+     It becomes the next free number, coordinated with 309's and 310's migrations (each also wants one).
+   - `Receiver.kt`, `Cast.kt` and `CastSenderAndroid.kt` changed on `main` since (308's adaptive seed, R245's quiet
+     end `b8c67fab`, R372/R378).
+5. **A regression the branch would ship: music to a TV running Ravilo.** With `androidReceiverCompatible` on, a
+   music cast to Stue TV launches the TV app, which refuses the queue. Today the web receiver plays it.
+   `LaunchOptions` is set once per `CastContext`, so one Application ID can't mean "Cast Connect for films, web for
+   music". **For the owner, Q1** below.
+6. **The receiver itself, while it remains the path for everything else** (these belong in 309's build, noted here
+   because they are cast-path findings):
+   - **(a) `useShakaForHls` is never set.** CAF v3 plays HLS with its own MPL player unless
+     `PlaybackConfig.useShakaForHls = true`, and `shakaConfig` (308's ABR targets, 0df9d193's `bufferingGoal 40`) only
+     applies under Shaka.
+     - Our signals can't tell the two apart: `BITRATE_CHANGED` and `getStats()` fire for both, so 308's
+       "Shaka 4 → 12 → 40" device test did not prove Shaka was playing.
+     - 2026-10-06's 29.4 s stall with **0 down-switches** on receiver v1.50-30, which already had the 40 s goal, is
+       what MPL would do.
+     - First build step: log `playerManager.getPlaybackConfig().useShakaForHls` on every load. Then set it explicitly
+       (with `shakaVersion` pinned) and re-test the down-switch.
+     - Shaka needs its TS transmuxer for our MPEG-TS segments; Shaka ≥ 4.3 has one built in. Verify on a Chromecast
+       before relying on it.
+   - **(b) No time to first frame from the receiver.** `playback_start_sample` has no `cast` rows. 309 FR-309-11 must
+     cover the receiver, or "fast start on Chromecast" can't be measured.
+   - **(c) The receiver's bandwidth estimate has the same default-guess problem as 309 FR-309-13.**
+     `getStats().estimatedBandwidth` is the player's prior until segments arrive, so it needs the same sample count.
+7. **The gaps the build notes name are real, and two block a release:**
+   - The phone remote's subtitles & audio, and *Next episode*, do nothing against the TV app until it speaks
+     `CAST_NAMESPACE`. For a Stue TV cast that is a step back from today's web-receiver remote.
+   - `position_ms` is ignored (a hand-over starts at the server's resume point, a few seconds behind).
+
+   Build both before release. Neither needs a new string.
+8. **Device testing is now possible** (owner, 2026-10-08: Stue TV's debug build `dev.jellystructure.ravilo.debug`,
+   the development Cast application). The acceptance can run end to end without touching the Play Store install.
+   Verify the release APK on ART (`scripts/verify-release-apk-on-art.sh`) before any release that carries the
+   manifest change.
+9. **Order.** Rebase → device test on Stue TV (acceptance 1, 3–6) → Q1's music answer → the remote namespace → merge →
+   release with 308's Android half (the TV app must declare `hls_adaptive` for its own HLS fallbacks).
+
+**For the owner:**
+- **Q1 — Music casts to a TV that runs Ravilo:**
+  - (a) a second Cast Application ID used only for music, registered without an Android TV package, so music always
+    opens the web receiver **(lean: no regression, one console entry)**;
+  - (b) the TV app refuses music (as built: music to the BRAVIAs breaks);
+  - (c) give the TV app a music mode first (big, its own phase).
+- **Q2 — Priority:** (a) rebase and device-test R266 now, before 309 **(lean: it fixes the TVs outright, and 309 then
+  only has to serve dongles and remote viewers)**; (b) after 309; (c) park it.
+- **Q3 — Remote parity before release:** (a) the TV app implements `CAST_NAMESPACE` first **(lean)**; (b) release with
+  basic transport only and add it later.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **Priority:** step 2 of the order, right after the hotfixes, 310 and 312. Rebase `r266-cast-connect` onto `main`
+   and renumber its migration with 309's and 310's. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+2. **Music casts to a TV running Ravilo (Q1): build a TV music mode first** (against the lean of a separate music-only
+   Cast app). R266 does not ship until a TV running Ravilo can play a music cast itself.
+3. **The phone's remote must work fully against the TV app before release (Q3):** subtitles, audio and Next episode,
+   the same remote whichever receiver plays.

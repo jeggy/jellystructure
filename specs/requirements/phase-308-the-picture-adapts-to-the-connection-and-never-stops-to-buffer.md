@@ -204,3 +204,69 @@ today.)
 2. **Jellyfin's own `EnableAdaptiveBitrateStreaming`** — check what Jellyfin 12.1 does with it before composing the
    ladder ourselves; use it if it already lists variants we can trust.
 3. Shaka on older Chromecasts and multi-variant H.264 — verify on the bedroom TV's Chromecast and a stick.
+
+## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read again against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `composeLadderMaster`, `stopFor`),
+`PlaybackService` (`startPlayback`, `withRenditions`, `measuredThroughputOf`), `JellyfinClient.deviceProfile` /
+`maxStreamingBitrate`, `RaviloPlayerAndroid.kt`, the receiver's `Receiver.kt`, Jellyfin's live `encoding.xml`, the tag
+`v1.50`, and 14 days of `playback_qoe` / `playback_start_sample`. Eight items, one for the owner.
+
+1. **No released app has the ladder.** 308 (`7e35f624`) is not an ancestor of `v1.50`, and `v1.50`'s `Models.kt` has
+   no `hls_adaptive`: every Android phone and TV in the household and outside it declares nothing and gets one stream.
+   Confirmed in production on 2026-10-07 (`no ladder: adaptive=false` for a Pixel 9 Pro on 1.50). Today only the Cast
+   receiver (served by the backend, so it ships with a deploy) and debug/dev builds get variants. Acceptance 2 was met
+   on a debug build only. The Status line should say so; the next app release is on the critical path for phones and
+   TVs.
+2. **FR-308-4's cap is applied to every client, adaptive or not, and it has done harm.** `throughputBudget(measured)`
+   goes into `MaxStreamingBitrate` for every start (`PlaybackService` ~l.661). On 2026-10-07 the Pixel's only "HLS
+   measurement" in 30 days was 4 300 000 bps, Media3's initial guess, so a film was transcoded to **1280×532 at
+   2.37 Mbps** on a 680 Mbps Wi-Fi link (the same play measured 168 Mbps). 34 QoE rows hold exactly 4 300 000 and
+   11 hold 3 200 000. Until 309's FR-309-13 ships, this is 308's most harmful behaviour in production. Lean: ship
+   FR-309-13's backend half (ignore known Media3 defaults and plays under 30 s) as its own small deploy first: it is
+   backend-only and helps every installed app.
+3. **The top rung ignores the output resolution.** `topVideoBps` takes the source's bitrate, capped at 40 Mbps, then
+   the decode ceiling. A 1080p H.264 top therefore asks for up to 40 Mbps (the 2026-10-06 cast: 24.4 Mbps 1080p over a
+   ~15 Mbps path), about twice what 1080p needs to look the same. It also makes the step from the 12 Mbps rung to the
+   top the big jump Shaka took. Lean: cap the top by its output, e.g. 1080p H.264 ≤ 15 Mbps, 2160p ≤ 40 Mbps
+   (H.264) / 25 Mbps (HEVC, item 4). One table next to `LADDER`.
+4. **Every rung is H.264.** Jellyfin's `AllowHevcEncoding` is `false`, and Android sets `hlsHevc` only for HLS-only
+   clients (`PlayerStore`: `hlsHevc = hlsOnly && …`), so Android always gets H.264 in TS. Two costs:
+   - every rung needs roughly 1.6–2× the bits of HEVC for the same picture, which is exactly what makes a slow link
+     stall;
+   - an HDR source is always tone-mapped to SDR, even on a 4K HDR TV.
+
+   It also means R284's video-copy path (an audio-only transcode of an HEVC file as a remux, starting in well under a
+   second) never applies on Android. **For the owner:** (a) HEVC transcodes (fMP4 HLS, Main10, HDR kept) for devices
+   that decode HEVC over HLS (Android TVs, the Pixel, receivers that declare it), with H.264 rungs kept for the rest
+   **(lean)**; (b) keep H.264 only. Needs one measurement first: NVENC HEVC on the encoding card, and Media3 on the
+   BRAVIAs playing Jellyfin's fMP4 HEVC HLS.
+5. **Every rung and every seek is a Jellyfin cold start.** Each variant is its own Jellyfin job under
+   `{PlaySessionId}v{n}`: the measured first segment after a switch was ~17 s on the Pixel (308's own notes), and
+   30 days of transcode starts took 8–38 s. A seek restarts the job being read. The ladder hides switches behind the
+   buffer, but starts and seeks stay slow. This points the same way as fork 2's research: R291's own
+   `AudioRenditionJobs` start their first segment in 0.6–0.8 s from the same files, against Jellyfin's 2–5 s for the
+   same audio, so a jellystructure-owned encoder is the proven faster mechanism here (see 309's re-review, item 8).
+6. **The encoding card.** Jellyfin encodes on `cu:0`. The host has a Quadro P4000 (no session limit) and an RTX 2060
+   SUPER (consumer NVENC limit); 2026-10-05's investigation saw the job on the 2060. Every warm or variant job counts
+   against that limit; 309 must count before adding warm encodes.
+7. **Where the waiting actually is.** Of the last 14 days' QoE rows, about 95 % are direct plays. Transcodes are rare,
+   but they carry the long waits: on Stue TV 4 of 7 transcodes stalled, 4.5 s on average, and starts took 8–38 s. The
+   ladder addresses the stalls of that minority. Start time is 309's prewarm, and direct play's own short stalls are
+   309's re-review, item 3.
+8. **Still owed:** acceptance 1–2 on a release build once one declares `hls_adaptive`, and the receiver re-test after
+   `0df9d193` (40 s buffer goal).
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **The order of the no-buffering work** (owner): (1) backend hotfixes, 310, 312 and the Chromecast's own settings;
+   (2) R266, casts play in the Ravilo app on a TV; (3) fix files at the source, opt-in per kind; (4) cut the cold start
+   of Jellyfin's own transcodes; (5) HEVC transcodes after measuring. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+2. **No encoder of our own: the ladder stays on Jellyfin's transcoder** (owner declined the one-process,
+   every-rung encoder). The re-review's items about cold starts are therefore answered inside Jellyfin: 309's early
+   encodes, a warm rung below, and finding out whether Jellyfin's per-job probe (`-analyzeduration 200M
+   -probesize 1G`) can be made smaller.
+3. **HEVC transcodes for devices that decode HEVC over HLS, H.264 kept as the fallback** (re-review 308-4): yes, after
+   measuring NVENC HEVC on the card and Jellyfin's HEVC HLS on a BRAVIA. Its own phase.
+4. **The measured-speed cap no longer narrows `MaxStreamingBitrate` for a client that cannot change quality** unless
+   the measurement is real (FR-309-13): shipped first, in 309a0.

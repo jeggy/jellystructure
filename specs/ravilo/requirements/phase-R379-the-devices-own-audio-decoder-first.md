@@ -89,3 +89,45 @@ they are; direct play vs transcode is decided exactly as today.
   the same `MediaItem` at the same position with the same `playWhenReady` and `trackSelectionParameters`.
 - Debug builds: `DebugLoadLogger` (tag `R291`) logs `audio decoder <name>` and an error's cause class (acceptance 2).
 - Check: `:ravilo-android:compileDebugKotlin` green. Device acceptance 1–3 owed.
+
+## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read against `RaviloRenderers.kt` (`create(context, preferExtensions)`), `RaviloPlayerAndroid.kt`
+(`preferExtensions`, the `onPlayerError` path, `restartPreferringExtensions`), `RaviloPlayerEngine.kt`, the
+dependency `org.jellyfin.media3:media3-ffmpeg-decoder:1.8.0+1`, and 308/309/R291 for interactions. Five items, one for
+the owner.
+
+1. **Built as specified.** `EXTENSION_RENDERER_MODE_ON` by default, `PREFER` on the one retry after a
+   `MediaCodecDecoderException`, video still MediaCodec-only, the music engine always `false`. The `preferExtensions`
+   flag lives as long as the player, as jellyfin-android does. Device acceptance 1–3 is still owed.
+2. **The crash stays on devices with no platform AC3/E-AC3 decoder, possibly including the household's Pixel.**
+   Platform-first only helps where a Dolby decoder exists (the reporting Galaxy S23 has one). Google's Pixel phones
+   have historically shipped without platform AC3/E-AC3 decoding; if the Pixel 9 Pro is one of them, every AC3 file
+   still goes through the FFmpeg extension and still crashes on a channel-count change. Verify first, as acceptance 2's
+   decoder log (or the phone's `media_codecs*.xml`) shows. **For the owner:**
+   - (a) fix the native decoder: rebuild `SwrContext` in `ffmpeg_jni.cc` when the channel layout changes, in our own
+     build of the jellyfin decoder 1.8.0+1, and offer it upstream **(lean: a small, contained native change that fixes
+     every device)**;
+   - (b) server-side: the app reports which audio codecs its platform decodes, and AC3 files with a channel change
+     (found at scan by ffprobe) get an audio-only transcode on devices without one. This costs a transcode, though a
+     video-copy one;
+   - (c) accept the gap, as Jellyfin's apps do.
+3. **The retry is a cold start on a transcode.** The rebuild re-prepares the same `MediaItem` at the position. On a
+   direct play that is cheap. On an HLS transcode it is a new Jellyfin request at that position: 8–38 s cold today, and
+   on a ladder it starts from the first listed variant. It is acceptable for a rare failure, but 309's re-review item 7
+   applies: refresh the ladder's first listed variant from the device's record.
+4. **Interaction with R291: an improvement.** Renditions are made in the variant's audio codec (AC3 when Jellyfin
+   copies AC3). Under platform-first those AC3 renditions now reach the device's own decoder, or passthrough on a TV,
+   instead of FFmpeg, which removes the crash path for transcoded multi-audio films on Dolby-capable devices. No
+   conflict with 308/309: the audio decoder is independent of the video rung.
+5. **Make the decoder visible in production.** Acceptance 2's decoder name is logged only in debug builds. Add it to
+   the QoE report as an additive `audio_decoder` field (like `video_decoder`), so the next crash report says which
+   decoder was in use without a device in hand. Lean: yes, in the same app release as 309b.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **Phones with no platform AC3 decoder: the server re-encodes just the audio** for them (against the lean of
+   patching our FFmpeg decoder). A device whose decoder list has no AC3/E-AC3 decoder declares so, and the backend asks
+   Jellyfin for an audio-only transcode (video copied) for AC3/E-AC3 sources on it. Verify first whether the household
+   Pixel is one of them.
+2. QoE gains an `audio_decoder` field, so a crash report names the decoder. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.

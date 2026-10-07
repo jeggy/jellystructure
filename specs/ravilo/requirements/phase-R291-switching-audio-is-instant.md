@@ -450,3 +450,41 @@ after the table answered them; fold what is left into the "still to measure" lis
 
 **Net effect.** FR-R291-1 is one shared resolver, two request fields (with R292) and one
 `getPlaybackInfo` argument — buildable now. FR-R291-2 stays gated on four measurements, the new one first.
+
+## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`ladderMaster`, `composeLadderMaster`,
+`renditionAudioCodec`, `stopFor`), `AudioRenditionJobs.kt`, `PlaybackService.withRenditions`,
+`JellyfinClient.fetchPlaylist`, the receiver. The Status is accurate. Six items, one for the owner.
+
+1. **Built as the Status says.** FR-R291-1 (the start resolves the remembered audio, every client) is in;
+   FR-R291-2's own renditions are on for Android (TV and phone), off on the web (R376 turns them on), and reverted on
+   the receiver (Shaka `LOAD_FAILED`). The receiver gets 308's plain muxed ladder with no audio group, which is right
+   until Shaka's own error code is captured.
+2. **With the ladder, the renditions follow the top variant's codec.** `renditionAudioCodec` reads the top variant's
+   `CODECS`. The lower variants are Jellyfin jobs from the same template, so they carry the same audio decision. Only
+   a ladder whose rungs disagree about copying vs re-encoding the audio would break this, which the shared template
+   prevents. A test that composes a ladder whose top copies AC3 should assert that every variant names `ac-3`.
+3. **A lead for 312's stray stop.** `fetchPlaylist` GETs Jellyfin's master/`main` playlists **with only the URL's
+   credential and the HTTP client's default user agent**: once per stream for R291, and once per rung for 308's ladder.
+   Jellyfin keys sessions on the request's device and client. If those GETs register a second session holding the
+   item, it is a candidate for the `stopped … at "0"ms` that follows a real stop. Include them in FR-312-1's
+   instrumented play.
+4. **No warming from a detail-page prewarm (309).** A rendition job reads the whole interleaved file around its audio
+   track: R291 measured ~1.2 GB of disk for a 2-minute run-ahead, which is why a warm-only job stops 3 segments ahead.
+   309's detail-page prewarm must start the video only; the picker's 250 ms warm stays the only rendition warm.
+5. **This phase already proves the faster mechanism.** jellystructure's own ffmpeg jobs (`AudioRenditionJobs`)
+   start their first segment in 0.6–0.8 s, stay within 21 ms of Jellyfin's video, pause ahead, restart on a seek and
+   clean up with the play. The same runner, extended to video, is the jellystructure-owned encoder 309's re-review
+   (item 8) recommends. Design it so a video job can share the scheduler, the segment store and the teardown (one
+   `stopFor`).
+6. **For the owner:** the receiver's renditions. Options: (a) leave the receiver on restream until a Shaka error code
+   is captured on a real Chromecast **(lean)**; (b) give the receiver its own master shape (audio-only renditions plus
+   a video variant with no muxed audio), measured first on the Soveværelse TV's Chromecast.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **The receiver's renditions:** stay on restream until a Shaka error code is captured (the re-review's lean; the
+   owner answered the other questions and left this one to us).
+2. **A detail-page prewarm (309) never warms an audio rendition** (a rendition job reads about 1.2 GB).
+3. The owner declined a video encoder of our own, so this phase's ffmpeg runner stays audio-only. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.

@@ -378,3 +378,97 @@ route refusing an unauthenticated request.
 4. **A big audio-only transcode on an unproven device:** force a picture re-encode so it gets the ladder, only while
    the device has not proven the file's bitrate.
 5. **Speed test size: 4 MB everywhere**, mobile data included (overrides FR-309-3's 1 MB on a metered link).
+
+## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read again after the 2026-10-07 Pixel case and FR-309-13, against the same code as the 2026-10-07 review plus the
+tag `v1.50`, `RaviloPlayerAndroid.kt`'s QoE counting, Jellyfin's `encoding.xml`, and 14 days of `playback_qoe`.
+The policy holds; the mechanism and two rules need changing. Ten items, three for the owner.
+
+1. **Correction to the 2026-10-07 review, item 5: the 1.50 apps are not adaptive.** `v1.50` predates 308 and declares
+   no `hls_adaptive` (production, 2026-10-07: `adaptive=false` for a Pixel on 1.50). So 309a, the backend half,
+   reaches **only the Cast receiver**, plus single-stream decisions for everyone else. Android phones and TVs get the
+   start rung, the climb and the step-down only with 309b in an app release. Build order:
+   - **309a0:** FR-309-13's backend half alone, as a hotfix deploy (ignore known Media3 defaults and plays under 30 s
+     in `measuredThroughput`). It is the one change that helps every installed app today.
+   - **309a:** as written, for the receiver.
+   - **309b:** the app release.
+2. **Non-adaptive clients keep exactly one decision: the cap.** For a client without `hls_adaptive` (every installed
+   app, mpv), `MaxStreamingBitrate` is the whole story. Rule: a real measurement (FR-309-13) × 0.7, or no cap at all.
+   Never FR-309-2's no-record 4 Mbps start, which would pin them at 720p for the whole film.
+3. **Most direct plays already "stall" once, briefly, and FR-309-8 would turn them into transcodes.** Stue TV, 14
+   days: 170 of 265 direct plays report a rebuffer. All are under 2 s: 121 are a single stall under 0.5 s, 49 are
+   0.5–2 s. Seeks are already excluded (`qoeSuppressNextBuffering`). FR-309-8 ("a direct play that rebuffers once
+   switches to the ladder") and FR-309-1's `stalled_bps` would therefore move most of Stue TV's direct plays to a
+   1080p H.264 transcode: worse picture, an 8–38 s restart, and GPU load. Change both to count a stall only when it
+   lasts **≥ 2 s, or two within a minute**. Separately, find the single sub-0.5 s stall: it looks like a start
+   artefact (a BUFFERING after the first frame while tracks settle), not the network. A small Android phase; it is
+   also the one stall most viewers actually see.
+4. **FR-309-13 is feasible on every player.**
+   - Android: Media3's `BandwidthMeter` exposes no sample count, but `SeededBandwidthMeter` wraps it and can count
+     transfers through its own `TransferListener` (`getTransferListener()`).
+   - The receiver: count the segment loads it sees.
+   - hls.js: count `FRAG_LOADED`.
+
+   Add a test that the backend ignores a sample with `bandwidth_samples` < 3 even when the value is not a known
+   default.
+5. **Owner decisions 1 + 2 together set the GPU load, so the budget comes first.** Jellyfin encodes on one card (the
+   RTX 2060 SUPER per 2026-10-05; consumer NVENC session limit). Per viewer: a detail-page prewarm, plus the playing
+   rung, plus the warm rung below, plus briefly the one above, is up to **4** encodes. Two viewers, plus someone
+   browsing detail pages, can reach the card's limit. Two things must be built first, not left to tuning:
+   - the encode budget, counting every prewarm, variant and warm job from `AudioRenditions`' registry and the prewarm
+     table, with prewarms dropped first;
+   - the "stop fast on leaving" signal.
+
+   R291's audio rendition jobs are CPU and disk, not GPU. A prewarm must **not** warm audio renditions: a rendition job
+   reads the whole interleaved file around its audio, ~1.2 GB per 2-minute run-ahead, measured in R291.
+6. **A prewarm is the play, or it is a stray session.** The detail-page encode must hand its `PlaySessionId` (and its
+   Jellyfin `/Sessions/Playing`, if one was sent) to the Play that follows. Otherwise Play starts a second job, and
+   the abandoned one's stop is exactly 312's stray stop at 0. Tie FR-309-6 to 312's FR-312-2 (one Jellyfin session per
+   play): a prewarm posts **no** `/Sessions/Playing` until Play, and Play adopts the prewarm's job if the position and
+   tracks still match, else stops it before starting its own.
+7. **R379's retry restarts on the start rung.** Its engine rebuild re-prepares the same `MediaItem`, so on a ladder the
+   player starts again from the first listed variant (the start rung), not the rung it held. It is rare, so it is fine,
+   but the ladder's first listed variant should be refreshed from the device's record at that moment, not the
+   original start guess.
+8. **Better mechanism: one encoder per play, owned by jellystructure.** 309's warm rungs exist to hide Jellyfin's
+   per-job cold start: `-analyzeduration 200M -probesize 1G`, CUDA init and tone-mapping, paid per rung and again per
+   seek. R291 already runs jellystructure's own ffmpeg per play: its rendition jobs start their first segment in
+   **0.6–0.8 s** from the same files, timed to Jellyfin's video within 21 ms. The same runner, for video, should be
+   **one** process per play: probe facts already known from our scan, one decode and tone-map, a split to N NVENC
+   outputs with keyframes aligned at the segment length, segments made on demand, paused ahead, restarted once per
+   seek. Compared with 309 on Jellyfin jobs:
+   - every rung is always warm, for one decode;
+   - the first segment should come in about a second;
+   - a seek restarts one process, not N;
+   - the GPU budget is one decode plus N encodes, not N full pipelines;
+   - there is no Jellyfin play session to leak a stray stop (312).
+
+   This is fork 2's direction, grounded in code that already ships. **For the owner (Q6):** (a) keep 309's policy and
+   move its mechanism to a jellystructure encoder in a new phase (309's prewarm and warm rungs then become "start the
+   encoder early") **(lean)**; (b) build 309 on Jellyfin jobs as decided, and revisit later.
+9. **HEVC rungs (308's re-review, item 4) are the cheapest big win.** The same quality at roughly half the bits makes
+   every rung of every ladder less likely to stall, and an HDR TV keeps HDR. **For the owner (Q7):** HEVC transcodes
+   for devices that decode HEVC over HLS, H.264 kept for the rest. Lean: yes, after one measurement on a BRAVIA and the
+   encoding card.
+10. **The top rung by output resolution (308's re-review, item 3).** Fold into FR-309-2: the start rung and the climb's
+    ceiling use a top capped per output (1080p H.264 ≤ 15 Mbps). The 2026-10-06 cast would then have topped out at
+    15 Mbps, under the measured ~15 Mbps × 0.7 rule, and stayed on 8 Mbps.
+
+**For the owner (Q8):** the direct-play stall rule (item 3). Lean: **≥ 2 s or two within a minute**, plus a small
+phase to remove the single sub-0.5 s stall at start.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **Who encodes (Q6): Jellyfin.** The owner declined an encoder of our own, so 309's rules stay on Jellyfin's jobs:
+   the early encode on a detail page (> 2 s), the warm rung below, the encode budget counted by us, and a stop signal the
+   moment the viewer leaves. The re-review's GPU budget items apply in full (up to 4 encodes per viewer, all on one card):
+   **the budget and the leave signal are built before any warming**.
+2. **Which stalls lower a device's record (Q8): a stall of ≥ 2 s, or two within a minute.** Plus a small phase of its
+   own to find and remove the sub-0.5 s stall at the start of direct plays (170 of Stue TV's 265 direct plays).
+3. **Build order:** **309a0** first, as a backend-only hotfix that helps every installed app: FR-309-13 (a guess is
+   never a measurement), no cap from a guess on a client that cannot adapt, and the receiver's own player settings
+   (`useShakaForHls` so 308's Shaka settings apply at all; its start time and its estimate's sample count). Then 309a,
+   309b (the app release), 309c.
+4. **HEVC (Q7): yes, after measuring**, as its own phase (see 308's decisions).
+5. **The order of the whole work:** See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.

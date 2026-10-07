@@ -149,3 +149,55 @@ hidden where unsupported (absent, never greyed). Uses R244's existing string set
    rendition switch does not work natively.
 3. **Should the web ever direct-play?** Forcing HLS for everything would make every browser path one path, at the cost
    of a transcode for files a browser could play. Lean: no — only multi-audio files (FR-R376-3).
+
+## Dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read against branch `r376-web-player` (2 commits, built 2026-10-05, **not merged, 35 commits behind `main`**; its own
+copy of this spec says `⚠ Partial` with build notes, so this file on `main` is stale), `RaviloPlayerWasm.kt` on both,
+308/309 as they now stand, and 30 days of `playback_start_sample` (web: 21 starts, all ~1 s, all direct play). The
+design holds and the risky gate (FR-R376-1) passed in Chromium. This review is about what merging it would do to
+streaming. Six items, two for the owner.
+
+1. **Merging the branch as it is would undo 308 on the web.** The branch rewrote hls.js's construction as
+   `{ enableWorker, backBufferLength: 90, maxBufferLength: 30, startPosition }`. `main`'s (308: `1e10108d`, `2485b1fd`)
+   is:
+   - `maxBufferLength: 60`, `maxBufferSize: 300 MB`;
+   - `abrBandWidthFactor 0.7` / `abrBandWidthUpFactor 0.5`;
+   - the measurement seed `abrEwmaDefaultEstimate`;
+   - the `LEVEL_SWITCHED` QoE counters.
+
+   Both changed the same block, so the merge must take the union: R376's worker, back-buffer and `startPosition` plus
+   308's buffer, ABR, seed and QoE. It must also later take 309's one-rung climb (hls.js `autoLevelCapping` raised one
+   level per switch) and FR-309-13's rule that hls.js's default estimate is not a measurement (report none until
+   `bwEstimator` has real samples). A rebase that keeps the branch's block silently halves the web's buffer and
+   removes its ABR tuning.
+2. **FR-R376-3 makes starts slower for multi-audio files.** Today every web start is a direct play at about 1 s.
+   Forcing `hls_only` for any file with two or more audio tracks turns those into a Jellyfin job: a remux at best, a
+   transcode at worst, with the 8–38 s cold start the 309 review measured for transcodes. Most films carry several
+   audio tracks, so this would make the common case slower, against the owner's "no waiting" goal. Better: **start
+   with direct play, and switch to HLS only when the viewer picks a non-default track**, using R284's restream at the
+   current position (a one-off wait, at the moment the viewer asked for something). **For the owner, Q1.**
+3. **FR-R376-2 and FR-R376-6 are what 309 needs from the web.** Real `waiting`/`playing` events give stall truth, and
+   `qoeSnapshot()` gives frames and stalls. Add **time to first frame** (`loadeddata` minus load) as 309 FR-309-11 asks
+   of every player. The web currently reports none, so web starts could not be compared.
+4. **Native HLS on Safari (FR-R376-7) means 309's climb rules can't be enforced there.** AVPlayer chooses variants
+   itself. 309's AVPlayer rule (`preferredPeakBitRate`) has no web equivalent, so on Safari the start rung must be the
+   first listed variant (308's `startOrder`, already built). Climbing stays Safari's own. Say so in 309.
+5. **Priority.** The owner's targets for "no buffering" are Android, TV and Chromecast. The web is a secondary
+   surface: merge this after 310, 312 and R266, not before. It shares no code with those, so it can go out alone.
+6. **Before merging:** rebase (item 1's union), then run the open acceptance on Safari macOS (the owner's Mac) and the
+   iPhone PWA. Neither was possible on this host.
+
+**For the owner:**
+- **Q1 — Multi-audio files on the web:**
+  - (a) direct play first, switch to HLS only when another audio track is picked **(lean: keeps the 1 s start)**;
+  - (b) as written, HLS from the start for any multi-audio file (switching is instant, the start is slower).
+- **Q2 — When to merge:** (a) after rebasing with item 1's union and a Safari check on the Mac **(lean)**; (b) wait for
+  the iPhone PWA too; (c) park it behind 310/312/R266.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **A file with several audio tracks (Q1): direct play first; switch to HLS only when another audio track is
+   picked** (changes FR-R376-3).
+2. **Merge (Q2): after a rebase that keeps 308's hls.js settings (and 309's later rules), and a Safari check on the
+   Mac.** After 310, 312 and R266 in the order. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.

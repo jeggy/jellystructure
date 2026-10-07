@@ -102,3 +102,74 @@ stop's time. Dry run first, the owner presses Apply. Logs older than Jellyfin's 
 
 1. FR-312-1's finding decides how big FR-312-2 is; if the second session comes from the stream URL's `ApiKey`,
    check whether Jellyfin 12.1 has a request form that streams without creating a session.
+
+## Dev review (2026-10-08, against `main` `4222ac4c`)
+
+Read against `PlaybackService` (`stopPlayback`, `releaseSession` and its seven callers, `mark`, `setPlayed`,
+`JellyfinSink`), `PlaybackWriter`, `JellyfinSessionBridge`, `TvRoutes` (`/tv/playback/stop`), `JellyfinClient`
+(`forDevice`, the auth header, every `/Sessions/Playing*` call), the Ravilo clients (`TvApiClient`, `ravilo-ui`,
+`ravilo-cast`), and Jellyfin `master`: `SessionManager.cs` (`OnPlaybackStopped`, `CheckForIdlePlayback`,
+`CloseIfNeededAsync`, `ReportSessionEnded`, `OnSessionEnded`, `Logout`), `PlaystateController.cs` and
+`TranscodeManager.cs`. The diagnosis of the *effect* holds. The *source* is narrower than the spec says, and FR-312-2
+probably fixes nothing. Seven items, two for the owner.
+
+1. **Jellyfin never makes up a stop at 0 on its own.** Its stops come from three places only:
+   - the API (`POST /Sessions/Playing/Stopped`, `DELETE /PlayingItems/{id}`);
+   - the idle check, which reports `LastPlaybackCheckInPositionTicks`, needs a session idle for over 5 min, and
+     reads *"unknown"* when nothing was reported;
+   - `OnPlaybackStart` stopping a *different* previous item.
+
+   Ending a session (`CloseIfNeededAsync` → `OnSessionEnded`, `Logout`, `ReportSessionEnded`) reports **no** stop, and
+   the transcode manager never calls `OnPlaybackStopped`. So the spec's lead is wrong: *a second session ending
+   reports its `PlayState.PositionTicks`* does not happen. The 0.9 s-later stop is an explicit API call from a client.
+2. **The only clients are ours, and the Ravilo apps never call Jellyfin's session API.** Nothing in `ravilo-ui`,
+   `ravilo-cast` or `shared` calls `/Sessions/Playing*`; every stop goes through `/api/tv/playback/stop` →
+   `stopPlayback`, which always logs `playback stop:`, and only one was logged. Of the backend's four Jellyfin stop
+   calls:
+   - `mark`/`setPlayed` send 0 but then mark played, which didn't happen;
+   - `releaseSession`'s writer-less path is dead in production;
+   - so it is `JellyfinSink.stop`, whose STOPs come from `releaseSession`.
+
+   `releaseSession` has **seven callers**, five of them *silent*: start-supersede (`:724`), abandoned start (`:746`),
+   the music start (`:802`, `:805`) and the restream pair (`:1458/1464`, `:1522/1527`). Each queues a STOP at
+   `old.positionMs` or `startPositionMs`, which is 0 for a play that began at 0:00. **Most likely source: one of those
+   silent releases for the same (device, item), landing just after the real stop.** For example, a start or restream
+   still negotiating when the viewer pressed Back (FR-180-3's `stopAlreadyArrived` path releases at
+   `startPositionMs` = 0), or a superseded tracker entry. The writer keys pending writes by (device, item), so a STOP
+   queued after the first one landed is a fresh write that lands 1 s later. The 2026-10-07 film started at 0:00 and
+   was seeked, which fits. So does Stue TV's `0 · real · 0`, where the leading 0 precedes the backend's own stop log
+   line.
+3. **FR-312-1: instrument our side first, the cheapest proof.** Every STOP gets a permanent INFO line naming its
+   caller (`stop write: item=… at=…ms reason=user|supersede|abandoned|restream|music-start|mark`), logged when queued
+   and when it lands. One test play then names the path. Add to the test: start at 0, press Back during the cold
+   start, seek, change the audio track (restream). `GET /Sessions` sampling is still useful but secondary. FR-312-2
+   (one session per play) is **probably moot**: the stream URLs and every `/Sessions/Playing*` call already carry the
+   same `forDevice` identity (`ravilo-<device>-<user>`).
+4. **The real fix belongs in `releaseSession`'s callers:** a release for a play the viewer has already stopped must
+   not send a stop at all. It only needs to free encodes (`stopActiveEncoding`, 180). Make a "release encodes only"
+   variant for supersede/abandon/restream when the tracker shows a stop already landed for that key, or when the
+   superseded entry is the same play. That replaces FR-312-4's 10 s heuristic with a rule that has no window to tune.
+5. **FR-312-3 (read back, write our decision) stays as the net, with one guard.** Skip the correction when a new play
+   of that item has started on any device since the stop (`playbackTracker`), or the 3 s re-check could overwrite a
+   resume elsewhere. It must also share 310 review item 7's single `setUserData` write, so R343, R347 and R375 don't
+   race it. **310 is a prerequisite:** with the writer dead, neither the stop nor the re-check lands.
+6. **FR-312-5's evidence needs filtering.** Of the 71 zero-ms stops, some are legitimate: R343 shuffles report 0 by
+   design (`reported 0ms: shuffled`), and start-over clears. Restrict the repair to a 0 ms stop within 5 s **after** a
+   real stop of the same item (the 24), and drop items R343/R375 deliberately reset.
+7. **Tests:** add to FR-312-6 a `PlaybackService` test per silent caller (abandoned start, supersede, restream) that,
+   after a real stop has landed, asserts **no** second STOP reaches the sink; that is the regression test FR-312-6
+   item 5 asks for.
+
+**For the owner:**
+- **Q1 — How to find the source:** (a) the permanent stop log line plus one dev-stack test play on the Pixel **(lean)**;
+  (b) also turn on Jellyfin request logging for that test; (c) skip finding it and rely on the read-back net only.
+- **Q2 — Repair scope:** (a) the 24 cases from Jellyfin's logs, dry run then Apply **(lean)**; (b) only the 2026-10-07
+  film; (c) no repair.
+
+## Decided by the owner (2026-10-08, after the streaming re-review)
+
+1. **Finding the source (Q1): a permanent log line naming the caller of every stop the backend sends, then one test
+   play on the dev stack** (start, seek, stop). The review's lead is one of `releaseSession`'s silent callers queueing a
+   stop at the start position; the fix is a "release the encodes only" path for a play that has already stopped.
+2. **Repair (Q2): all 24 cases from Jellyfin's log**, dry run first, the owner presses Apply.
+3. Comes right after 310 (it needs the working writer), in step 1 of the order. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
