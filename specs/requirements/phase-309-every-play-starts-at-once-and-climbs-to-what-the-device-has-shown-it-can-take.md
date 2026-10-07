@@ -156,6 +156,32 @@ once*. The admin's device row shows what the device can take (*holds 8 Mbps · s
 
 No setting, no toggle, no quality menu, for the viewer or the admin (as 308 FR-308-6).
 
+### FR-309-13 — A guess is never a measurement (added 2026-10-08)
+
+Found on 2026-10-07: a Pixel 9 Pro on home Wi-Fi (680 Mbps link) was given a **2.37 Mbps 1280×532** transcode of a 4K
+HDR10+ film. 308's `measuredThroughput` read the device's only HLS sample in 30 days, **exactly 4 300 000 bps**, and
+capped the stream at 70 % of it (`measured 4300k → budget 3010k (308)`). That number was never measured. It is
+Media3 `DefaultBandwidthMeter`'s **initial estimate**, the guess it reports before it has transferred anything. The same
+play then measured **168 Mbps**. Across `playback_qoe`, 34 rows hold exactly 4 300 000 and 11 hold exactly 3 200 000,
+both meter defaults (Media3 picks its guess by network type and country, so the set of values is open-ended).
+
+- **The player says whether its estimate is real.** Each QoE report gains `bandwidth_samples` (the number of transfers
+  the estimate is built from) and `bandwidth_bytes`. Android reads them from its own meter: `SeededBandwidthMeter`
+  already wraps it, so it counts the samples it passes on. hls.js and Shaka count their fragment loads. A report with
+  fewer than **3 samples or under 2 MB** carries no estimate, so `bandwidth_estimate_bps` is sent as null.
+- **The backend never trusts a guess.** `measuredThroughput` ignores a sample whose `bandwidth_samples` is below 3. For
+  rows from apps that don't send the field yet (1.50 and older), it ignores **the known defaults**: Media3's initial
+  estimates for every network type, kept as one table next to the code, including 4 300 000 and 3 200 000. It also ignores
+  any sample from a play that ran under 30 s.
+- **A newer real sample wins.** With FR-309-1's record in place, a real measurement newer than the samples in the
+  median replaces them rather than averaging with them (the Pixel's next play would otherwise use the median of
+  168 Mbps and 4.3 Mbps).
+- **One-off clean-up:** the existing rows at a known default have their estimate set to null in the same migration
+  (no other field changes).
+- **Tests:** `measuredThroughput` with the Pixel's rows (a 4 300 000 sample from 2026-09-25 and nothing else) gives null,
+  not 4.3 Mbps; a report with 2 samples is ignored; a newer real sample replaces older ones; the migration nulls only
+  known-default values.
+
 ## Non-goals
 
 - A manual quality menu, or any per-location rule.
