@@ -472,3 +472,17 @@ phase to remove the single sub-0.5 s stall at start.
    309b (the app release), 309c.
 4. **HEVC (Q7): yes, after measuring**, as its own phase (see 308's decisions).
 5. **The order of the whole work:** See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+
+## Owner, 2026-10-08 (later): use our own encoder
+
+> *"Then let's change and use our own encoder if that makes the experience better."* This reverses the earlier
+> "stay on Jellyfin" answer.
+
+- **Who encodes (Q6): our own encoder** (replaces decision 1 of the earlier owner section). 309's per-device record,
+  FR-309-13, the speed test, the start rung, the early step-down (the receiver enforcing it), the early encode on a
+  detail page and its leave signal, the direct-play gate, the stall rule and the mpv/AVPlayer rules all **stay**.
+- **Changed once the encoder exists:** the warm-rung rules (FR-309-6) go: every rung is already running in the one
+  process. The climb rule relaxes to the players' stock values (a switch no longer waits for a cold encode). The
+  decision cache (FR-309-7) is dropped (the start is now ~1 s). Until the encoder ships, 309a keeps only "warm the
+  rung below" on Jellyfin, with the budget and the leave signal first.
+- The early encode on a detail page starts **our** encoder's job, which becomes the play's own job when Play is pressed.

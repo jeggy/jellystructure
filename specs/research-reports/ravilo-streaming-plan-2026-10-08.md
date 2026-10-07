@@ -32,8 +32,7 @@ R376 and R379 (each spec's last sections hold the details and the owner's decisi
 | 1 | **312** — find the stray stop (log the caller + one test play), repair the 24 places | 312 | spec'd, reviewed |
 | 2 | **R266** — casts to a TV running Ravilo play in the Ravilo app (direct play, 1.7 s starts on Stue TV); rebase the branch; the phone's remote complete before release; **a TV music mode first** | R266 + a new TV music-mode spec | branch exists; music mode to spec |
 | 3 | **Fix files at the source, opt-in per kind:** a compatible audio track (E-AC3/AAC) beside TrueHD/DTS-only audio; Dolby Vision 7 → 8.1. Dry run first; originals stay in the file | new spec | to spec |
-| 4 | **Cut the cold start of Jellyfin's own transcodes** (no encoder of our own — owner): 309's early encode on a detail page and the warm rung below, with the encode budget and the leave signal first; find out whether Jellyfin's per-job probe can be smaller | 309a–c + a probe investigation | spec'd (309); probe to spec |
-| 5 | **HEVC transcodes** for devices that decode HEVC over HLS, H.264 as the fallback, after measuring | new spec | to spec |
+| 4 | **Our own encoder** (owner, later the same day): one ffmpeg per play, every rung from one decode, aligned 2 s CMAF segments, ~1 s to the first frame, instant switches, one restart per seek; HEVC rungs (HDR kept) for HEVC devices, H.264 for the rest; GPU passed into the backend container; Jellyfin's transcode as the fallback. Measure the P4000 with 3–4 rungs first. Until then 309a warms only the rung below on Jellyfin | new spec (encoder) + 309 | to spec |
 | later | Pre-encoding likely titles (≈ 1.5–2.5 TB for the 4K titles); only if steps 1–5 leave a gap | — | not planned |
 
 Alongside, small and independent:
@@ -43,11 +42,10 @@ Alongside, small and independent:
 - **R376:** direct play first on the web, HLS only on an audio switch; merge after a rebase keeping 308's hls.js
   settings and a Safari check on the Mac.
 
-## Declined
+## Changed the same day
 
-- **A jellystructure-owned video encoder** (one ffmpeg per play, every rung from one decode). The approach report and
-  the 309 re-review recommended it as the end state; the owner chose to stay on Jellyfin's transcoder. If steps 1–5 leave
-  transcode starts or rung switches noticeably slow, this is the option to revisit.
+- The owner first chose to stay on Jellyfin's transcoder, then reversed it: *"let's change and use our own encoder if
+  that makes the experience better"*. HEVC is now part of the encoder phase rather than a phase of its own.
 
 ## Side findings to file
 

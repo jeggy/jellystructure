@@ -488,3 +488,12 @@ Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`la
    owner answered the other questions and left this one to us).
 2. **A detail-page prewarm (309) never warms an audio rendition** (a rendition job reads about 1.2 GB).
 3. The owner declined a video encoder of our own, so this phase's ffmpeg runner stays audio-only. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+
+## Owner, 2026-10-08 (later): use our own encoder
+
+> *"Then let's change and use our own encoder if that makes the experience better."* This reverses the earlier
+> "stay on Jellyfin" answer.
+
+- R291's own ffmpeg runner (`AudioRenditionJobs`: first segment in 0.6–0.8 s) is the base for the new encoder: it
+  grows from audio renditions to the whole stream (video rungs + audio), in one job per play. Its renditions then come
+  from the same process, so a prewarm warms them together (decision 2 above is then moot).

@@ -270,3 +270,16 @@ Read again against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `comp
    measuring NVENC HEVC on the card and Jellyfin's HEVC HLS on a BRAVIA. Its own phase.
 4. **The measured-speed cap no longer narrows `MaxStreamingBitrate` for a client that cannot change quality** unless
    the measurement is real (FR-309-13): shipped first, in 309a0.
+
+## Owner, 2026-10-08 (later): use our own encoder
+
+> *"Then let's change and use our own encoder if that makes the experience better."* This reverses the earlier
+> "stay on Jellyfin" answer.
+
+- **Step 4 of the order is now a jellystructure-owned encoder** (new phase): one ffmpeg per play decodes the source
+  once and writes every rung with aligned keyframes and short CMAF/fMP4 segments, so a switch never waits for a cold
+  encode, a seek restarts one job, and the probe comes from our own scan. Jellyfin's per-rung transcode stays as the
+  fallback (encoder unavailable, GPU busy, a source our encoder refuses).
+- **HEVC folds into it:** our encoder writes HEVC rungs for devices that decode HEVC over HLS (HDR kept), H.264 rungs
+  for the rest; measured first (NVENC HEVC throughput with 3–4 rungs on the P4000).
+- 308's ladder table, the composed master and the players' ABR stay; only who produces the rungs changes.
