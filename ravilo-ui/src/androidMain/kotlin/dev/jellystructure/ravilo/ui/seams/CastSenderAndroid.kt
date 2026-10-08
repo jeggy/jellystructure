@@ -90,8 +90,12 @@ class RaviloCastOptionsProvider : OptionsProvider {
             // start-up, against THIS id, and a session with the real receiver never matched the
             // placeholder, so after the app process died the phone never rejoined a TV that was still
             // playing (seen on the Pixel 9 against the soveværelse TV).
-            .setReceiverApplicationId(lastAppId(context) ?: PLACEHOLDER_APP_ID)
+            .setReceiverApplicationId(lastAppId(context) ?: CastAppIdOverride.devAppId?.takeIf { it.isNotBlank() } ?: PLACEHOLDER_APP_ID)
             .setCastMediaOptions(media)
+            // R266 (FR-R266-1) — Cast Connect: a TV that runs the Ravilo Android TV app (registered for this application
+            // id, and Play-installed or a test device) opens Ravilo itself; any other device opens the web receiver at
+            // /cast/ exactly as before (FR-R266-7: the fallback is silent). The phone UI is the same either way.
+            .setLaunchOptions(com.google.android.gms.cast.LaunchOptions.Builder().setAndroidReceiverCompatible(true).build())
             // R265 (2026-09-26, Pixel 9 → stue TV): with the reconnection service on, killing the app
             // restarted it in the background at once to resume the session — and Android's freezer froze
             // that half-done resume. Opened again seconds later, the SDK ended the stuck session, and with

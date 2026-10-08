@@ -922,6 +922,58 @@ fun RaviloApp(
                 }
             }
         }
+        // R266 — a Cast Connect LOAD (the Android TV app launched or reused by the Cast SDK, ravilo-android's
+        // CastConnectReceiver). The play travels 236's road: the viewer's own token on this TV, a normal Dest.Player, so
+        // 180 teardown, R216, requireVisible(), the ACL and kids gating all see an ordinary play (FR-R266-3).
+        var castConnectRestore by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(Unit) {
+            dev.jellystructure.ravilo.ui.seams.CastConnectInbox.pending.collect { req ->
+                if (req == null) return@collect
+                dev.jellystructure.ravilo.ui.seams.CastConnectInbox.taken(req)
+                val play = req.play
+                // A launch LOAD lands as the activity comes up: give it a moment to be on screen (R293's gate).
+                kotlinx.coroutines.withTimeoutOrNull(5_000L) { androidx.compose.runtime.snapshotFlow { onScreenNow }.first { it } }
+                val held = MultiTokenStore.getAll()
+                val verdict = dev.jellystructure.ravilo.ui.seams.castConnectVerdict(play.userId, held.map { it.userId }, activeUserId,
+                    signingIn = stack.lastOrNull() is Dest.Login)
+                println("R266: Cast Connect load of ${play.itemId} for ${play.userId}: $verdict")
+                when (verdict) {
+                    dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.REFUSE_NO_TOKEN,
+                    dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.REFUSE_NOT_READY -> { req.answer.complete(false); return@collect }
+                    dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.SWITCH_THEN_PLAY -> {
+                        val session = held.first { it.userId == play.userId }
+                        // FR-R266-4 — remember the TV's own profile once (a second cast keeps the first one's).
+                        if (castConnectRestore == null) castConnectRestore = activeUserId
+                        MultiTokenStore.setActive(session.userId)
+                        activeUserId = session.userId
+                        activeAvatarUrl = session.avatarUrl
+                        refreshConfig()
+                        resetTo(Dest.Home(session.displayName))
+                    }
+                    dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.PLAY -> Unit
+                }
+                val name = MultiTokenStore.getActive()?.displayName.orEmpty()
+                // FR-R266-4 — an incoming cast replaces what plays (the player being left saves its position as on Back).
+                if (stack.lastOrNull() is Dest.Player) pop()
+                push(Dest.Player(itemId = play.itemId, title = play.title, kicker = play.kicker, displayName = name, seriesId = play.itemId))
+                req.answer.complete(true)
+                // Dev review item 2 — the launch observation, for the admin card's line (acceptance 8).
+                configScope.launch { runCatching { apiClient.reportCastConnectLaunch() }.onFailure { println("R266: launch observation not sent: ${it.message}") } }
+            }
+        }
+        // FR-R266-4 — once the cast's player closes, the TV is back on its own last-selected profile.
+        LaunchedEffect(stack.lastOrNull(), castConnectRestore) {
+            val prev = castConnectRestore ?: return@LaunchedEffect
+            if (stack.lastOrNull() is Dest.Player) return@LaunchedEffect
+            castConnectRestore = null
+            val session = MultiTokenStore.getAll().firstOrNull { it.userId == prev } ?: return@LaunchedEffect
+            if (session.userId == activeUserId) return@LaunchedEffect
+            MultiTokenStore.setActive(session.userId)
+            activeUserId = session.userId
+            activeAvatarUrl = session.avatarUrl
+            refreshConfig()
+            resetTo(Dest.Home(session.displayName))
+        }
         LaunchedEffect(Unit) {
             liveNavigate.collect { env ->
                 if (activeUserId == null) return@collect
