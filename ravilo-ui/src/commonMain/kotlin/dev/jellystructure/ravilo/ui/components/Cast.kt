@@ -103,7 +103,12 @@ class CastController(
     private var appIdState by mutableStateOf<String?>(null)
     var appId: String?
         get() = appIdState
-        set(value) { appIdState = value; if (value != null) sender.setAppId(value) }
+        // R266 — a debug build swaps in the development Cast application here, the one place the id enters: the sender
+        // and the route discovery (rememberCastRoutes keys on this) then both use it. Release: the server's, unchanged.
+        set(value) {
+            val id = dev.jellystructure.ravilo.ui.seams.effectiveCastAppId(value, dev.jellystructure.ravilo.ui.seams.CastAppIdOverride.devAppId)
+            appIdState = id; if (id != null) sender.setAppId(id)
+        }
     /** R265 (dev review item 5) — the server's `RaviloConfig.screens.enabled`: the sheet lists screens
      *  and offers *Add a TV* only when this is true, exactly as [appId] gates the Chromecast rows. */
     var screensEnabled by mutableStateOf(false)
@@ -157,7 +162,7 @@ class CastController(
         }
         scope.launch {
             val code = runCatching { api.castHandoff(linkedDeviceKey()) }.getOrElse { onError(it); return@launch }
-            sender.load(CastLoadData(
+            load(CastLoadData(
                 serverUrl = serverUrl,
                 code = code.code,
                 itemId = itemId, title = title, kicker = kicker, artUrl = artUrl,
@@ -183,7 +188,7 @@ class CastController(
         val t = tracks.getOrNull(currentIndex.coerceIn(0, tracks.lastIndex)) ?: return
         scope.launch {
             val code = runCatching { api.castHandoff(linkedDeviceKey()) }.getOrElse { onError(it); return@launch }
-            sender.load(CastLoadData(
+            load(CastLoadData(
                 serverUrl = serverUrl, code = code.code,
                 itemId = t.id, title = t.title, kicker = t.artist, artUrl = t.coverUrl?.let { if (it.startsWith("http")) it else serverUrl.trimEnd('/') + it },
                 positionMs = positionMs, deviceName = sender.deviceName.value, receiverId = sender.status.value?.receiverId,
@@ -327,7 +332,11 @@ class CastController(
     }
 
     /** R372 — the move's LOAD, once the route connected. */
-    fun moveLoaded(): CastLoadData? = pendingMoveLoad.also { pendingMoveLoad = null }
+    fun moveLoaded(): CastLoadData? = pendingMoveLoad?.let { it.copy(userId = it.userId ?: userId) }.also { pendingMoveLoad = null }
+
+    /** R266 (dev review item 1) — every LOAD this viewer sends says who is casting, for the Android TV app (Cast
+     *  Connect), which plays under that viewer only if it already holds their token. The web receiver ignores it. */
+    private fun load(data: CastLoadData) = sender.load(data.copy(userId = data.userId ?: userId))
 
     /**
      * R370 (owner decision 1) — the server asks this app to launch the receiver on [castDeviceId] for someone else's

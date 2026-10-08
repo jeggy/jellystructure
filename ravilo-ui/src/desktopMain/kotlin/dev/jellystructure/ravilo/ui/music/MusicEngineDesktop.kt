@@ -376,6 +376,12 @@ actual object MusicEngine {
         if (wasEmpty) { context = MusicContext("queue", track.title); startSong(0) } else { publish(); save() }
     }
 
+    actual fun replaceQueue(tracks: List<MusicTrackItem>, index: Int) {
+        if (tracks.isEmpty() || book != null) return
+        q.restore(tracks, index)
+        publish(); save()
+    }
+
     actual fun addToQueue(track: MusicTrackItem) {
         endBook()
         val wasEmpty = q.current == null

@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.components.flagFor
@@ -806,14 +807,11 @@ fun PlayerScreen(
         bk.manualPickSinceResolve = false
     }
 
-    // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
-    // or level-2's focused pickerVersionIdx). Never touches pickerOpen/pickerLevel itself — callers
-    // (pickerSelect(), touch taps) decide whether picking should close the picker or leave it open.
-    fun choosePick() {
-        val group = pickerGroups.getOrNull(pickerIdx) ?: return
-        val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
+    // R380 (FR-R380-7) — the pick itself, for [tab] (0 = audio, 1 = subtitles) — the picker's OK and a cast remote's
+    // `audio`/`subtitle` command (castChannelVideo below) choose through this one door.
+    fun applyPick(tab: Int, group: PickerLanguage, version: PickerVersion) {
         bk.manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
-        if (pickerTab == 0) {
+        if (tab == 0) {
             persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
             // R284 (FR-R284-2) — a single-audio stream changes audio by restream (keeping the burn-in);
             // re-picking the carried track does nothing. Direct play selects in the player, as always.
@@ -846,6 +844,15 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    // R195 §3 — applies whichever version is currently targeted (level-1's implicit single version,
+    // or level-2's focused pickerVersionIdx). Never touches pickerOpen/pickerLevel itself — callers
+    // (pickerSelect(), touch taps) decide whether picking should close the picker or leave it open.
+    fun choosePick() {
+        val group = pickerGroups.getOrNull(pickerIdx) ?: return
+        val version = group.versions.getOrNull(if (pickerLevel == 1) pickerVersionIdx else 0) ?: return
+        applyPick(pickerTab, group, version)
     }
 
     // R195 §A / R197 (FR-RV-PICK1-1) — OK on a level-1 row: a single-version language selects
@@ -937,6 +944,20 @@ fun PlayerScreen(
         next = { if (resolvedNextEpisodeId != null) advanceNext() },
         previous = { episodes?.getOrNull(currentEpIndex - 1)?.id?.let { onNavigateToEpisode?.invoke(it) } },
     )
+    // R380 (FR-R380-7) — a cast remote's view of this player (TV only): fields, not parameters (R258).
+    val castSource = remember { CastVideoSource() }
+    // One closure (R258): the eight lambdas are built inside it, so their captures don't spend PlayerScreen's registers.
+    if (isTvPlatform) SideEffect {
+        castSource.title = { itemTitle }
+        castSource.kicker = { itemKicker }
+        castSource.lists = { castVideoLists(audioGroups, subGroupsWithOff, audioTracks, subVersionOptions, selectedAudio, shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)) }
+        castSource.subSize = { subtitleSize }
+        castSource.hasNext = { resolvedNextEpisodeId != null }
+        castSource.applyPick = { tab, g, v -> applyPick(tab, g, v) }
+        castSource.setSubSize = { subtitleSize = it }
+        castSource.next = { if (resolvedNextEpisodeId != null) advanceNext() }
+    }
+    CastChannelVideoHost(itemId, castSource)
 
     // ─── Effects ────────────────────────────────────────────────────────────
 

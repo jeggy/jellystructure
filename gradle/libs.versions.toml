@@ -84,6 +84,9 @@ androidx-media3-session = { module = "androidx.media3:media3-session", version =
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version = "1.8.0" }
 # R245 — the Cast SDK (sender) and the MediaRouter it rides on; the receiver is our own web page (218).
 play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version = "22.1.0" }
+# R266 — Cast Connect: the Android TV app as a Cast receiver (CastReceiverContext, MediaManager). 21.1.1 is the newest
+# published (2024-10); it depends on play-services-cast 21.5.0, which the framework above already supersedes.
+play-services-cast-tv = { module = "com.google.android.gms:play-services-cast-tv", version = "21.1.1" }
 androidx-mediarouter = { module = "androidx.mediarouter:mediarouter", version = "1.7.0" }
 # R245 amendment — MediaRouteButton refuses to open its chooser unless the activity is a FragmentActivity.
 androidx-fragment = { module = "androidx.fragment:fragment", version = "1.8.5" }

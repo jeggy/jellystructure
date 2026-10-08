@@ -86,6 +86,9 @@ data class ChromecastStatus(
     // 286 (FR-286-2)
     @SerialName("speakers_confirmed_at") val speakersConfirmedAt: Long? = null,
     @SerialName("speaker_name") val speakerName: String? = null,
+    // R266 (acceptance 8)
+    @SerialName("tv_opens_ravilo_at") val tvOpensRaviloAt: Long? = null,
+    @SerialName("tv_opens_ravilo_name") val tvOpensRaviloName: String? = null,
 )
 
 @Serializable

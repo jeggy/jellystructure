@@ -44,6 +44,10 @@ data class ChromecastStatus(
      *  (`platform = "cast-audio"`); null until the first real cast to a speaker. No backend probe (Q6). */
     @SerialName("speakers_confirmed_at") val speakersConfirmedAt: Long? = null,
     @SerialName("speaker_name") val speakerName: String? = null,
+    /** R266 (acceptance 8) — the newest Cast Connect launch an Android TV app reported, and that TV's name; null until
+     *  one really happened. Never derived from the console's settings (jellystructure cannot read them). */
+    @SerialName("tv_opens_ravilo_at") val tvOpensRaviloAt: Long? = null,
+    @SerialName("tv_opens_ravilo_name") val tvOpensRaviloName: String? = null,
 )
 
 /**
@@ -73,6 +77,9 @@ class CastService(
         fun isCastDevice(device: DeviceData): Boolean = device.kind == "cast"
         /** 286 (dev review 1) — the receiver's own `X-Ravilo-Platform` on an audio-only device (FR-286-3). */
         const val AUDIO_PLATFORM = "cast-audio"
+        /** R266 — only the Android TV app (`kind = "tv"`) can be a Cast Connect receiver; a launch observation from
+         *  any other kind (a phone, a web receiver, a Tizen screen) is not one and is not recorded. */
+        fun observesCastConnect(device: DeviceData): Boolean = device.kind == "tv"
     }
 
     /** FR-218-3/11 — null unless enabled AND an 8-hex application id is set. Nothing derived from the
@@ -203,11 +210,22 @@ class CastService(
         }
     }
 
+    // ── R266: the launch observation ─────────────────────────────────────────
+
+    /** Records that [device] took a Cast Connect launch. False (nothing recorded) for anything but the TV app. */
+    fun recordCastConnectLaunch(device: DeviceData, now: Long = nowMs()): Boolean {
+        if (!observesCastConnect(device)) return false
+        db.castConnectLaunchQueries.record(device.deviceId, device.displayName.ifBlank { device.deviceId }, now)
+        println("[INFO] Cast Connect: ${device.displayName.ifBlank { device.deviceId }} (${device.deviceId}) took a cast in the Ravilo app")
+        return true
+    }
+
     // ── FR-218-7: honest status ───────────────────────────────────────────────
 
     fun status(activeDevices: List<DeviceData>): ChromecastStatus {
         val cc = configStore.current.chromecast
         val receivers = deviceService.allDevices().filter { isCastDevice(it) }
+        val launch = runCatching { db.castConnectLaunchQueries.newest().executeAsOneOrNull() }.getOrNull()
         return ChromecastStatus(
             enabled = cc?.enabled == true,
             appIdSet = cc?.hasAppId() == true,
@@ -219,6 +237,8 @@ class CastService(
             activeSessions = activeDevices.count { isCastDevice(it) },
             speakersConfirmedAt = receivers.filter { it.platform == AUDIO_PLATFORM }.maxOfOrNull { it.lastSeen },
             speakerName = receivers.filter { it.platform == AUDIO_PLATFORM }.maxByOrNull { it.lastSeen }?.displayName?.removePrefix("$DEVICE_PREFIX · "),
+            tvOpensRaviloAt = launch?.launched_at,
+            tvOpensRaviloName = launch?.device_name,
         )
     }
 }

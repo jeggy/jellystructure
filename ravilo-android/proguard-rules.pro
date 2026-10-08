@@ -2,6 +2,10 @@
 # Most consumer rules come from library AAR manifests (Compose, Ktor, Coil, Media3).
 # Only add rules here that those libraries don't provide themselves.
 
+# R266 — Cast Connect's receiver options provider is named only in a manifest <meta-data> value, which R8 does not
+# read; the Cast TV SDK instantiates it by reflection.
+-keep class * implements com.google.android.gms.cast.tv.ReceiverOptionsProvider { <init>(); *; }
+
 # kotlinx.serialization: keep generated serializer companions
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
