@@ -8,6 +8,9 @@ import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CAST_LOG_NAMESPACE
 import dev.jellystructure.shared.tv.CAST_NAMESPACE
 import dev.jellystructure.shared.tv.CastCommand
+import dev.jellystructure.shared.tv.CastChannelMusic
+import dev.jellystructure.shared.tv.CastChannelStep
+import dev.jellystructure.shared.tv.castChannelStep
 import dev.jellystructure.shared.tv.CastDecodeProbe
 import dev.jellystructure.shared.tv.CastEpisode
 import dev.jellystructure.shared.tv.CastLoadData
@@ -1350,60 +1353,42 @@ private class Receiver {
         if (cmd.type == "queue_part") { onQueuePart(cmd); return }
         // R359 (FR-R359-4) — an edit's places are the whole queue's: while it is still arriving, the edit waits for it.
         if (music && assembling && cmd.type in DEFERRED_WHILE_ARRIVING) { if (deferred.size < MAX_WAITING_PARTS) deferred += raw; return }
-        // R369 (dev review item 4c) — a sender's next/prev/play_at for a song that is no longer playing is dropped (two
-        // nexts on two paths skip once); the status that follows says where the queue is.
-        if (music && cmd.type in setOf("next", "prev", "play_at")) {
-            val d = current
-            val stale = (cmd.expectItem != null && d != null && cmd.expectItem != d.itemId) ||
-                (cmd.expectIndex != null && d != null && cmd.expectIndex != d.queueStart + d.currentIndex)
-            if (stale) { note("${cmd.type} dropped: stale"); sendStatus(); return }
-        }
-        if (music) when (cmd.type) {
-            "next" -> { musicNext(byViewer = true); return }
-            "prev" -> { musicPrevious(); return }
-            "play_at" -> { cmd.index?.let { loadTrack(it) }; return }
-            "queue_move" -> {
-                val d = current ?: return; val from = cmd.index ?: return; val to = cmd.to ?: return
-                if (from !in d.tracks.indices || to !in d.tracks.indices) return
-                val list = d.tracks.toMutableList(); val item = list.removeAt(from); list.add(to, item)
-                val idx = list.indexOfFirst { it.id == d.itemId }.coerceAtLeast(0)
-                current = d.copy(tracks = list, currentIndex = idx); paintNow(); sendStatus(); return
-            }
-            "queue_remove" -> {
-                val d = current ?: return; val i = cmd.index ?: return
-                if (i !in d.tracks.indices || i == d.currentIndex) return
-                val list = d.tracks.toMutableList(); list.removeAt(i)
-                current = d.copy(tracks = list, currentIndex = if (i < d.currentIndex) d.currentIndex - 1 else d.currentIndex); paintNow(); sendStatus(); return
-            }
-            "queue_add" -> { val d = current ?: return; val t = cmd.track ?: return; current = d.copy(tracks = d.tracks + t); paintNow(); sendStatus(); return }
-            "queue_play_next" -> { val d = current ?: return; val t = cmd.track ?: return; val list = d.tracks.toMutableList(); list.add(d.currentIndex + 1, t); current = d.copy(tracks = list); paintNow(); sendStatus(); return }
-            "repeat" -> { setRepeat(cmd.mode ?: "off"); paintNow(); return }
-            "shuffle" -> { setShuffle(cmd.on == true); return }
-            "lyrics" -> { setLyrics(cmd.on == true); return }
-            // R356 (FR-R356-8) — asked: the answer carries the whole queue (an installed sender older than R356 asks
-            // `status` on every resume; a newer one asks `get_queue` when it missed a revision).
-            "status", "get_queue" -> { fullDue = true; sendStatus(); return }
-            else -> return
-        }
-        when (cmd.type) {
-            "subsize" -> { subSize = cmd.size ?: "M"; playerManager.setTextTrackStyle(textStyle()); sendStatus() }
-            "next" -> loadNext()
-            "nextup_cancel" -> cancelNextUp()
-            "nextup_play" -> { nextUpJob?.cancel(); nextUpJob = null; el("nextup").classList.remove("on"); loadNext() }
-            "status" -> sendStatus()
-            // R285 (FR-R285-4) — both were named in CastCommand's own doc and handled nowhere. An HLS
-            // cast carries one audio track and no picture subtitles, so both are a restream.
-            "audio" -> {
-                val wanted = ticket?.audio?.getOrNull(cmd.index ?: return) ?: return
+        // R380 (FR-R380-7) — what the command means is :shared's castChannelStep, the same reading the Android TV app
+        // uses; this receiver only carries it out.
+        val d = current
+        val musicNow = if (music && d != null) CastChannelMusic(d.tracks, d.currentIndex, d.itemId, d.queueStart) else null
+        when (val step = castChannelStep(cmd, musicNow)) {
+            CastChannelStep.Ignore -> Unit
+            is CastChannelStep.QueuePart -> onQueuePart(step.command)
+            // R369 (dev review item 4c) — a sender's next/prev/play_at for a song that is no longer playing is dropped
+            // (two nexts on two paths skip once); the status that follows says where the queue is.
+            CastChannelStep.Stale -> { note("${cmd.type} dropped: stale"); sendStatus() }
+            // R356 (FR-R356-8) — asked: for music the answer carries the whole queue (an installed sender older than
+            // R356 asks `status` on every resume; a newer one asks `get_queue` when it missed a revision).
+            is CastChannelStep.Status -> { if (step.full) fullDue = true; sendStatus() }
+            CastChannelStep.MusicNext -> musicNext(byViewer = true)
+            CastChannelStep.MusicPrevious -> musicPrevious()
+            is CastChannelStep.PlayAt -> loadTrack(step.index)
+            is CastChannelStep.QueueEdited -> { current = d?.copy(tracks = step.tracks, currentIndex = step.currentIndex); paintNow(); sendStatus() }
+            is CastChannelStep.Repeat -> { setRepeat(step.mode); paintNow() }
+            is CastChannelStep.Shuffle -> setShuffle(step.on)
+            is CastChannelStep.Lyrics -> setLyrics(step.on)
+            is CastChannelStep.SubSize -> { subSize = step.size; playerManager.setTextTrackStyle(textStyle()); sendStatus() }
+            CastChannelStep.EpisodeNext -> loadNext()
+            CastChannelStep.NextUpCancel -> cancelNextUp()
+            CastChannelStep.NextUpPlay -> { nextUpJob?.cancel(); nextUpJob = null; el("nextup").classList.remove("on"); loadNext() }
+            // R285 (FR-R285-4) — an HLS cast carries one audio track and no picture subtitles, so both are a restream.
+            is CastChannelStep.Audio -> {
+                val wanted = ticket?.audio?.getOrNull(step.index) ?: return
                 if (wanted.index == ticket?.audioStreamIndex) return
                 reload(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = activeTextPosition())
             }
-            "subtitle" -> when (val pick = receiverSubPick(ticket, cmd.index ?: -1)) {
+            is CastChannelStep.Subtitle -> when (val pick = receiverSubPick(ticket, step.index)) {
                 ReceiverSubPick.Nothing -> Unit
                 is ReceiverSubPick.Burn -> reload(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1)
                 is ReceiverSubPick.Text ->
-                    if (pick.unburnFirst) reload(-1, ticket?.audioStreamIndex, thenShow = cmd.index ?: -1)
-                    else { setActiveText(cmd.index ?: -1); sendStatus() }
+                    if (pick.unburnFirst) reload(-1, ticket?.audioStreamIndex, thenShow = step.index)
+                    else { setActiveText(step.index); sendStatus() }
             }
         }
     }

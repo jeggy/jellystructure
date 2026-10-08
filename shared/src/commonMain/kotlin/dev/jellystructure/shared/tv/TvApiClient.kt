@@ -892,6 +892,9 @@ class TvApiClient(
         outgoing: kotlinx.coroutines.flow.Flow<String>? = null,
         // R370 (review item 6) — what this app plays (`video,music,book`); null = not said (today's URL).
         plays: String? = null,
+        // R380 (owner decision 2) — a TV's name as Cast shows it (its Android device name), so the server lists the TV's
+        // Ravilo app and its Cast device as ONE place. Null = not said (today's URL).
+        castName: String? = null,
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -904,7 +907,7 @@ class TvApiClient(
         // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
         // R210 — wsClient (not client): on Android this is the CIO-backed client, kept solely for
         // this WebSocket upgrade after REST calls moved to a different engine.
-        wsClient.webSocket(wsUrl("/api/tv/events", token, remote, features, plays), request = {
+        wsClient.webSocket(wsUrl("/api/tv/events", token, remote, features, plays, castName), request = {
             identify()
             wsAuth(token)
             previousSockets?.let { headers { append(EVENTS_PREV_HEADER, it) } }
@@ -976,7 +979,7 @@ class TvApiClient(
 
     // R293 (FR-R293-7) — one place composes a socket URL and one place authenticates it: the token is a
     // query parameter only on a browser build (WS_TOKEN_IN_QUERY), a Bearer header everywhere else.
-    internal fun wsUrl(path: String, token: String, remote: String? = null, features: String? = null, plays: String? = null): String {
+    internal fun wsUrl(path: String, token: String, remote: String? = null, features: String? = null, plays: String? = null, castName: String? = null): String {
         var url = baseUrl.replaceFirst("http", "ws").trimEnd('/') + path +
             (if (WS_TOKEN_IN_QUERY) "?token=" + token.encodeURLParameter() else "")
         // R354 (FR-R354-1) — what this player obeys (299 FR-299-1); absent ⇒ today's URL exactly.
@@ -984,6 +987,7 @@ class TvApiClient(
         // R368 (dev review item 2) — the opt-in for session events; absent ⇒ today's URL exactly.
         if (features != null) url += (if ('?' in url) "&" else "?") + "features=" + features.encodeURLParameter()
         if (plays != null) url += (if ('?' in url) "&" else "?") + "plays=" + plays.encodeURLParameter()
+        if (!castName.isNullOrBlank()) url += (if ('?' in url) "&" else "?") + "cast_name=" + castName.encodeURLParameter()
         return url
     }
 

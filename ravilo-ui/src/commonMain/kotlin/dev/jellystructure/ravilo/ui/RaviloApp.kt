@@ -353,6 +353,8 @@ private sealed class Dest {
     data class CastRemote(val displayName: String) : Dest()
     /** R369 (FR-R369-6) — a session's remote: a playback on another place, controlled through the server. */
     data class SessionRemote(val sessionId: String, val displayName: String) : Dest()
+    /** R380 (FR-R380-3) — the TV's Now playing: music (or a book) the TV plays, a cast's or its own. TV only. */
+    data class TvNowPlaying(val displayName: String) : Dest()
     // R321 — music mode's pages (the phone only). The four tabs sit on the bar; the three details hide it (R278's rule).
     data class MusicListen(val displayName: String) : Dest()
     /** [focusInput] — a re-tap of Browse raises the keyboard (R277's rule), consumed like [Search.focusInput]. */
@@ -391,6 +393,7 @@ private sealed class Dest {
         is LiveTvGuide    -> "/livetv-guide"
         is CastRemote     -> "/cast"
         is SessionRemote  -> "/session"
+        is TvNowPlaying   -> "/tv/now-playing"   // R380 — TV only
         is MusicListen    -> "/music"
         is MusicBrowse    -> "/music/browse"
         is MusicPlaying   -> "/music/playing"
@@ -559,10 +562,12 @@ fun RaviloApp(
                     },
                     onSessionDirective = { type, text -> liveSessionDirectives.emit(type to text) },
                     outgoing = dev.jellystructure.ravilo.ui.sessions.SessionRemote.outgoing,
-                    // R370 (review item 6) — what this app plays: the web app has no music engine, the TV no music mode.
+                    // R370 (review item 6) — what this app plays: the web app has no music engine. R380 (FR-R380-1, dev
+                    // review item 6) — the TV plays music and books too now (its Now playing), so it is offered as a place.
                     plays = dev.jellystructure.shared.tv.playsQuery(video = true,
-                        music = !isTvPlatform && dev.jellystructure.ravilo.ui.music.MusicEngine.supported,
-                        book = !isTvPlatform && dev.jellystructure.ravilo.ui.music.MusicEngine.supported),
+                        music = dev.jellystructure.ravilo.ui.music.MusicEngine.supported,
+                        book = dev.jellystructure.ravilo.ui.music.MusicEngine.supported),
+                    castName = if (isTvPlatform) dev.jellystructure.ravilo.ui.seams.TvDeviceName.value else null,   // R380
                     onOpen = {
                         openedAt = Clock.System.now()
                         serverOpens.value = serverOpens.value + 1
@@ -887,6 +892,7 @@ fun RaviloApp(
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.CastRemote -> d.displayName
             is Dest.SessionRemote -> d.displayName   // R369
+            is Dest.TvNowPlaying -> d.displayName   // R380
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName
             is Dest.Profile -> d.displayName; is Dest.AppLanguage -> d.displayName   // R304
             is Dest.MusicListen -> d.displayName; is Dest.MusicBrowse -> d.displayName; is Dest.MusicPlaying -> d.displayName   // R321
@@ -936,7 +942,7 @@ fun RaviloApp(
                 val held = MultiTokenStore.getAll()
                 val verdict = dev.jellystructure.ravilo.ui.seams.castConnectVerdict(play.userId, held.map { it.userId }, activeUserId,
                     signingIn = stack.lastOrNull() is Dest.Login)
-                println("R266: Cast Connect load of ${play.itemId} for ${play.userId}: $verdict")
+                println("R266: Cast Connect load of ${(play as? dev.jellystructure.ravilo.ui.seams.CastConnectPlay)?.itemId ?: "a music queue"} for ${play.userId}: $verdict")
                 when (verdict) {
                     dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.REFUSE_NO_TOKEN,
                     dev.jellystructure.ravilo.ui.seams.CastConnectVerdict.REFUSE_NOT_READY -> { req.answer.complete(false); return@collect }
@@ -954,17 +960,40 @@ fun RaviloApp(
                 }
                 val name = MultiTokenStore.getActive()?.displayName.orEmpty()
                 // FR-R266-4 — an incoming cast replaces what plays (the player being left saves its position as on Back).
-                if (stack.lastOrNull() is Dest.Player) pop()
-                push(Dest.Player(itemId = play.itemId, title = play.title, kicker = play.kicker, displayName = name, seriesId = play.itemId))
+                if (stack.lastOrNull() is Dest.Player || stack.lastOrNull() is Dest.TvNowPlaying) pop()
+                when (play) {
+                    is dev.jellystructure.ravilo.ui.seams.CastConnectPlay -> {
+                        // A film the phone hands over keeps the phone's place (R266 build notes' gap: position_ms was unused).
+                        dev.jellystructure.ravilo.ui.music.MusicEngine.stopForVideo()   // FR-R380-2 — a film stops the music
+                        dev.jellystructure.ravilo.ui.seams.TvCastChannel.startFilm()
+                        push(Dest.Player(itemId = play.itemId, title = play.title, kicker = play.kicker, displayName = name, seriesId = play.itemId,
+                            startAtMs = play.positionMs.takeIf { it > 0 }))
+                    }
+                    // R380 (FR-R380-1/2) — a music queue plays on the TV's own engine, under this viewer, and Now playing opens.
+                    is dev.jellystructure.ravilo.ui.seams.CastConnectMusic -> with(dev.jellystructure.ravilo.ui.music.MusicCast) {
+                        val engine = dev.jellystructure.ravilo.ui.music.MusicEngine
+                        engine.attach(apiClient)
+                        engine.loadPaused(play.tracks.map { it.toItem() }, play.currentIndex, play.positionMs,
+                            dev.jellystructure.ravilo.ui.music.MusicContext("queue", play.tracks.getOrNull(play.currentIndex)?.album.orEmpty()))
+                        val want = when (play.repeat) { "all" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ALL; "one" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ONE; else -> dev.jellystructure.ravilo.ui.music.RepeatMode.OFF }
+                        repeat(3) { if (engine.state.value.repeat != want) engine.cycleRepeat() }
+                        engine.play()
+                        dev.jellystructure.ravilo.ui.seams.TvCastChannel.startMusic(play.queueId, play.queueTotal, play.queueStart)
+                        push(Dest.TvNowPlaying(name))
+                    }
+                }
                 req.answer.complete(true)
                 // Dev review item 2 — the launch observation, for the admin card's line (acceptance 8).
                 configScope.launch { runCatching { apiClient.reportCastConnectLaunch() }.onFailure { println("R266: launch observation not sent: ${it.message}") } }
             }
         }
         // FR-R266-4 — once the cast's player closes, the TV is back on its own last-selected profile.
-        LaunchedEffect(stack.lastOrNull(), castConnectRestore) {
+        // R380 (dev review item 7) — a music cast: once the music stops, not when Now playing is hidden.
+        val castMode by dev.jellystructure.ravilo.ui.seams.TvCastChannel.mode.collectAsState()
+        LaunchedEffect(stack.lastOrNull(), castConnectRestore, castMode) {
             val prev = castConnectRestore ?: return@LaunchedEffect
             if (stack.lastOrNull() is Dest.Player) return@LaunchedEffect
+            if (castMode == dev.jellystructure.ravilo.ui.seams.TvCastChannel.Mode.MUSIC) return@LaunchedEffect
             castConnectRestore = null
             val session = MultiTokenStore.getAll().firstOrNull { it.userId == prev } ?: return@LaunchedEffect
             if (session.userId == activeUserId) return@LaunchedEffect
@@ -1132,6 +1161,23 @@ fun RaviloApp(
         // R342 — the Mac's running Dock icon follows what the screen shows (a no-op everywhere else).
         LaunchedEffect(inMusic) { dev.jellystructure.ravilo.ui.seams.reportListeningMode(inMusic) }
         fun homeDest(name: String): Dest = if (inMusic) Dest.MusicListen(name) else Dest.Home(name)
+        // R380 (FR-R380-6) — Back on the TV's Now playing only hides it: the music keeps playing and the pill
+        // shows on Home. Found live on Stue TV: a cast that cold-starts the app has nothing under Now
+        // playing (or a sign-in/profile screen, or the cast's finished film), so a plain pop()
+        // left the app and the music stopped. Under it now lies a page, or Home.
+        fun hideTvNowPlaying() {
+            val rest = stack.dropLastWhile { it is Dest.TvNowPlaying }
+            val under = rest.lastOrNull()
+            println("R380: Now playing hides; under it ${under?.let { it::class.simpleName } ?: "nothing"}")
+            if (under == null || under is Dest.Login || under is Dest.ProfilePicker || under is Dest.Player || under is Dest.LiveTv || under is Dest.CastRemote) {
+                resetTo(homeDest(MultiTokenStore.getActive()?.displayName ?: destDisplayName(stack.last())))
+            } else {
+                navDir = NavDir.Back
+                forwardStack = emptyList()
+                stack = rest
+                if (!fromHistory.flag) replaceRoute(rest.last().toRoute())
+            }
+        }
         // FR-R321-2 — a mode stored for a viewer who lost the grant falls back to video, silently.
         LaunchedEffect(musicAvailable) {
             if (musicAvailable == false && stack.any { it is Dest.MusicListen || it is Dest.MusicBrowse || it is Dest.MusicPlaying || it is Dest.MusicQueue || it is Dest.AudiobookDetail || it is Dest.AudiobookAuthor }) {
@@ -1465,6 +1511,9 @@ fun RaviloApp(
                             if (linked.value) { dev.jellystructure.ravilo.ui.seams.sessionLog("R372: a move here while linked to ${deviceName.value}: leaving it playing"); leaveRelay() }
                             dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(env.tracks.map { it.toItem() }, env.index.coerceIn(0, env.tracks.lastIndex), env.startMs, null)
                             dev.jellystructure.ravilo.ui.music.MusicEngine.play()
+                            // R380 (FR-R380-3) — a TV shows what it now plays (it has no listening pages to show it in).
+                            if (isTvPlatform && stack.lastOrNull() !is Dest.TvNowPlaying && acceptsRemoteCommand(onScreenNow, true))
+                                push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty()))
                         }
                         "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(PlayItemEnvelope(
                             type = "play_item", jellyfinId = id, kind = if (env.kind == "episode") "episode" else "movie", title = env.title, startPositionMs = env.startMs,
@@ -1696,7 +1745,10 @@ fun RaviloApp(
         // mints one when the Chromecast is the side that connected, so the hand-off needs no gate beyond
         // "something can be cast to" (R265's first build gated it on castAppId, leaving a screen-only
         // household with no way to move a playing title to the TV).
-        CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive, LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
+        CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalMusicMode provides inMusic, LocalCast provides castActive,
+            // R380 (FR-R380-6) — the TV app bar's now-playing pill opens Now playing.
+            dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying provides (if (isTvPlatform) { -> if (dest !is Dest.TvNowPlaying) push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty())) } else null),
+            LocalCastHandoff provides (if (castActive != null && dest is Dest.Player) { pos: Long ->
             val d = dest as Dest.Player
             // R343 (FR-R343-8, dev review item 14) — a shuffled player hands over the REST of its plan (this entry
             // first), not the season rail; Start over rides along while this session carries it.
@@ -1758,13 +1810,14 @@ fun RaviloApp(
         // from so the two cannot drift — and NOT extended to Login/ProfilePicker, which have no Home to
         // go to and keep the platform default per rememberExitAction's doc comment.
         val backGoesHome = handset && bottomItemOf(dest) != null && dest !is Dest.Home && dest !is Dest.MusicListen
-        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || trackSheet != null || stack.size > 1 || backGoesHome || atHomeRoot)) {
+        PlatformBackHandler(enabled = !ownsItsOwnBack && (profileMenuOpen || trackSheet != null || stack.size > 1 || backGoesHome || atHomeRoot || dest is Dest.TvNowPlaying)) {
             // FR-R275-4 — one order, stated once, first match wins. backToTop sits above the stack: a
             // scrolled pushed screen goes to its top before it pops, exactly as it does on the TV.
             when {
                 profileMenuOpen -> profileMenuOpen = false
                 trackSheet != null -> trackSheet = null   // R322 — Back with the ⋯ sheet up closes the sheet
                 backToTop.consumeBack() -> Unit
+                dest is Dest.TvNowPlaying -> hideTvNowPlaying()   // R380 — hide, never leave the app
                 stack.size > 1 -> pop()
                 backGoesHome -> resetTo(homeDest(destDisplayName(dest)))   // R321 — Listen is music mode's Home
                 atHomeRoot -> exitApp()
@@ -1803,6 +1856,8 @@ fun RaviloApp(
                         ownsItsOwnBack -> false
                         // FR-R337-8 — Esc closes the queue while it lies over the content.
                         ev.key == Key.Escape && desktop && queueOpen && !deskLarge -> { queueOpen = false; true }
+                        (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && dest is Dest.TvNowPlaying ->
+                            { hideTvNowPlaying(); true }
                         (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && stack.size > 1 ->
                             { pop(); true }
                         // Bug fix: same root-exit treatment as PlatformBackHandler above, for the TV
@@ -2530,6 +2585,8 @@ fun RaviloApp(
             is Dest.SessionRemote -> dev.jellystructure.ravilo.ui.sessions.SessionRemoteScreen(
                 sessionId = dest.sessionId, onBack = { pop() }, extras = sessionRemoteExtras(),
             )
+            // R380 (FR-R380-3/-6/-8) — Back hides it (the music plays on); the queue's end closes it.
+            is Dest.TvNowPlaying -> dev.jellystructure.ravilo.ui.music.TvNowPlayingScreen(api = apiClient, onHide = { hideTvNowPlaying() })
             is Dest.CastRemote -> {
                 val cc = castActive
                 if (cc == null) { LaunchedEffect(Unit) { pop() } }

@@ -165,6 +165,12 @@ fun AppBar(
         innerFRs.mapIndexed { i, fr -> if (i == activeNav.coerceIn(0, innerFRs.lastIndex)) navFR else fr }
     }
     var focusedIdx by remember { mutableIntStateOf(-1) }
+    // R380 (FR-R380-6) — the TV's now-playing pill, between the tabs and Search, while the TV plays music.
+    val openNowPlaying = dev.jellystructure.ravilo.ui.music.LocalOpenTvNowPlaying.current
+    val musicNow by dev.jellystructure.ravilo.ui.music.MusicEngine.state.collectAsState()
+    val pillShown = openNowPlaying != null && musicNow.active
+    val pillFR = remember { FocusRequester() }
+    var pillFocused by remember { mutableStateOf(false) }
 
     // Bug fix: on a narrow/portrait screen the nav items + search + clock + avatar don't all fit and
     // used to just clip off the edge. horizontalScroll can't coexist with the weight(1f) spacer below
@@ -300,6 +306,7 @@ fun AppBar(
                             onRight    = {
                                 // R52: rightmost nav item → search icon → avatar.
                                 if (i < items.lastIndex) allFRs[i + 1].requestFocus()
+                                else if (pillShown) pillFR.requestFocus()
                                 else if (onSearch != null) searchFR.requestFocus()
                                 else if (onProfile != null) avatarFR.requestFocus()
                             },
@@ -315,11 +322,26 @@ fun AppBar(
             // R245 (FR-R245-1) — the cast button, present only when the server says Chromecast is set up
             // and this platform has a sender (CastButton renders nothing otherwise — never greyed).
             CastButton()
+            if (pillShown && openNowPlaying != null) {
+                dev.jellystructure.ravilo.ui.music.TvMusicPill(
+                    focused = pillFocused,
+                    modifier = Modifier
+                        .onFocusChanged { pillFocused = it.isFocused }
+                        .dpadFocusable(
+                            focusRequester = pillFR,
+                            onFocused = { pillFocused = true },
+                            onLeft = { allFRs.last().requestFocus() },
+                            onRight = { if (onSearch != null) searchFR.requestFocus() else if (onProfile != null) avatarFR.requestFocus() },
+                            onDown = onDown,
+                            onSelect = openNowPlaying,
+                        ),
+                )
+            }
             // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
             if (onSearch != null) {
                 SearchIcon(
                     focusRequester = searchFR,
-                    onLeft = { allFRs.last().requestFocus() },
+                    onLeft = { if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onRight = { if (onProfile != null) avatarFR.requestFocus() },
                     onDown = onDown,
                     onSelect = onSearch,
@@ -330,7 +352,7 @@ fun AppBar(
                 ProfileAvatar(
                     initials = userInitials.ifEmpty { "?" },
                     focusRequester = avatarFR,
-                    onLeft = { if (onSearch != null) searchFR.requestFocus() else allFRs.last().requestFocus() },
+                    onLeft = { if (onSearch != null) searchFR.requestFocus() else if (pillShown) pillFR.requestFocus() else allFRs.last().requestFocus() },
                     onDown = onDown,
                     onSelect = onProfile,
                 )

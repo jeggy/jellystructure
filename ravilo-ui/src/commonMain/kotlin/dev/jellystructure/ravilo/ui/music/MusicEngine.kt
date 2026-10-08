@@ -82,6 +82,11 @@ expect object MusicEngine {
     fun remove(index: Int)
     fun playNext(track: MusicTrackItem)
     fun addToQueue(track: MusicTrackItem)
+    /**
+     * R380 — the queue grew or changed around the song that plays (a cast's long queue arriving in parts, a cast's
+     * queue edit): [tracks] is the whole queue and [index] the playing song's place in it. The song plays on.
+     */
+    fun replaceQueue(tracks: List<MusicTrackItem>, index: Int)
     /** FR-R322-10 — the mini bar's swipe-down: stop, and the queue is gone. */
     fun clear()
     /** FR-R322-12 — a video took the screen: the song stops (the queue stays, paused where it was). */

@@ -67,6 +67,34 @@ class PlaybackTargetsTest {
         assertEquals("s1", t.busy?.id)
     }
 
+    @Test fun `R380 - a TV running Ravilo and its own Cast device are one place named as Cast names it`() {
+        val tvDevice = dev("bravia", platform = "tv", kind = "tv")
+        val tvApp = LiveApp(tvDevice, setOf("plays:video", "plays:music", "plays:book") + parseCastName("Stue TV"))
+        val t = buildTargets(viewer, listOf(tvApp), listOf(reach(dev("phone2"), "cast-tv", "Stue TV", kind = "tv")), emptyList(), emptyMap(), { _, _ -> null }, 0)
+        val only = t.single()
+        assertEquals("bravia", only.id, "a start goes to the app")
+        assertEquals("app", only.kind)
+        assertEquals("Stue TV", only.name)
+        assertEquals("cast-tv", only.castDeviceId)
+        assertTrue(only.capabilities.audio && only.capabilities.book, "the TV plays music and books now")
+    }
+
+    @Test fun `R380 - a TV that says no Cast name keeps both rows and an unmatched name keeps the Cast row`() {
+        val tvDevice = dev("bravia", platform = "tv", kind = "tv")
+        val cast = reach(dev("phone2"), "cast-tv", "Stue TV", kind = "tv")
+        assertEquals(2, buildTargets(viewer, listOf(app(tvDevice, "video")), listOf(cast), emptyList(), emptyMap(), { _, _ -> null }, 0).size)
+        val other = LiveApp(tvDevice, setOf("plays:video") + parseCastName("Kitchen TV"))
+        val t = buildTargets(viewer, listOf(other), listOf(cast), emptyList(), emptyMap(), { _, _ -> null }, 0)
+        assertEquals(setOf("bravia", "cast:cast-tv"), t.map { it.id }.toSet())
+        assertEquals("Kitchen TV", t.first { it.id == "bravia" }.name)
+    }
+
+    @Test fun `R380 - a Cast name is bounded and blank is nothing`() {
+        assertTrue(parseCastName("   ").isEmpty())
+        assertTrue(parseCastName(null).isEmpty())
+        assertEquals(CAST_NAME_FEATURE.length + 64, parseCastName("x".repeat(200)).single().length)
+    }
+
     @Test fun `no group is ever built`() = runBlocking {
         val r = CastReach()
         r.report(dev("phone2"), listOf(CastSeenDevice("g1", "Whole house", "group"), CastSeenDevice("c1", "Office", "speaker")))

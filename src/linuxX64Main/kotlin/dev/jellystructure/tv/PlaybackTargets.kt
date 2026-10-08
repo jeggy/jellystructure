@@ -119,6 +119,27 @@ internal fun buildTargets(
             busy = busyOf(r.deviceId, castId), castDeviceId = castId, reason = "no_relay", lastSeen = r.lastSeen,
         )
     }
+    return mergeTvApps(out, apps)
+}
+
+/**
+ * R380 (owner decision 2) — a TV running Ravilo is ONE place: its app's row (named as Cast names it, from its socket's
+ * `cast_name`) takes the Cast place of that name, which a relay lists from the TV's built-in Cast device. The app's row
+ * keeps the app's id (a start goes to the app, R370's `session_load`) and gains the Cast device id.
+ */
+internal fun mergeTvApps(targets: List<PlaybackTarget>, apps: List<LiveApp>): List<PlaybackTarget> {
+    val castNames = apps.mapNotNull { a ->
+        a.features.firstOrNull { it.startsWith(CAST_NAME_FEATURE) }?.removePrefix(CAST_NAME_FEATURE)?.let { a.device.deviceId to it }
+    }.toMap()
+    if (castNames.isEmpty()) return targets
+    val out = targets.toMutableList()
+    for ((appId, castName) in castNames) {
+        val i = out.indexOfFirst { it.id == appId && it.kind == "app" }
+        if (i < 0) continue
+        val cast = out.firstOrNull { it.kind == "cast" && it.name.equals(castName, ignoreCase = true) }
+        out[i] = out[i].copy(name = castName, castDeviceId = cast?.castDeviceId ?: out[i].castDeviceId, busy = out[i].busy ?: cast?.busy)
+        if (cast != null) out.remove(cast)
+    }
     return out
 }
 
