@@ -136,7 +136,7 @@ fun SeriesDetailScreen(
     // playstate says which); leaving stops it.
     val loadedSeries = (state as? SeriesDetailState.Loaded)?.detail
     val prewarmEp = if (loadedSeries != null && overlay.isNotEmpty()) primaryEpisodeId(loadedSeries, overlay) else null
-    LaunchedEffect(prewarmEp) { prewarmEp?.let { store.prewarm.dwell(it, seriesId = loadedSeries?.id) } }
+    LaunchedEffect(prewarmEp) { prewarmEp?.let { store.prewarm.dwell(it, seriesId = loadedSeries?.card?.id) } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {

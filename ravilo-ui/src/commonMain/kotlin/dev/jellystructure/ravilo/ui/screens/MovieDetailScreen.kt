@@ -110,7 +110,7 @@ fun MovieDetailScreen(
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()
     // 309 (FR-309-3/-6) — 2 s on the page: the speed test, then the encode Play would start; leaving stops it.
-    val prewarmId = (state as? MovieDetailState.Loaded)?.detail?.id
+    val prewarmId = (state as? MovieDetailState.Loaded)?.detail?.card?.id
     LaunchedEffect(prewarmId) { prewarmId?.let { store.prewarm.dwell(it) } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
