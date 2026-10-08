@@ -96,7 +96,7 @@ WORKDIR /app
 # /config/encoder on first start when [encoder] is on. The build is not shipped in this public image (it contains
 # libfdk_aac); it is downloaded and checked against its pinned SHA-256 on the operator's own machine.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget ca-certificates libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
 # dovi_tool -- Phase 314 kind C: converts a Dolby Vision profile 7 picture's RPU to profile 8.1 (the TVs decode 4/5/8,
