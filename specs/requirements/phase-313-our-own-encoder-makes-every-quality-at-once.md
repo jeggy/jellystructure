@@ -471,3 +471,14 @@ enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for
 - **Køkken Hub:** casting from the Pixel failed before anything reached the backend — the hub's Cast port (8009) times
   out from both the host and the phone (8008 answers), so the hub's Cast service is down; not a jellystructure fault.
   Reboot the hub.
+- **With level 5.1 (v1.50-78), the same cast to Stue TV's receiver started:** `encoder=ours HEVC HDR` 2160p/1080p/720p/480p,
+  TS, card 0, first segment 5.9 s; the receiver reported PLAYING and advanced normally for the first minutes. **But
+  the unattended play then ran ~62 min (23:15–00:17 UTC) with 208 rebuffers totalling 1 495 s** (QoE: first frame
+  15.9 s, 5 steps up / 3 down, last variant ~30 Mbps, 5 212 bandwidth samples). **Not diagnosed yet** — candidates:
+  (a) the P4000 can't hold 4 HEVC Main 10 rungs incl. 2160p at realtime while the qBittorrent force recheck reads the
+  films disk (~220 MB/s, 60–80 % busy); (b) Shaka climbing to the 2160p rung the receiver then can't fetch/decode fast
+  enough; (c) the paused-job / in-flight-segment wait seen on the Pixel. Measure next: segment production rate vs
+  realtime per rung during a cast, after the recheck has finished; consider capping a cast at 1080p HEVC, or the
+  2160p rung on the 2060 SUPER. **Until then, 313 should not be the default for casts.**
+- **The receiver's stop lost the place:** it reported its stop at 0 ms after ~37 min of film (backend `playback stop …
+  at 0ms`); a 312-class bug on the receiver side — to fix with 312.

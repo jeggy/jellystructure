@@ -77,3 +77,10 @@ The live check planned after the v1.50-54 deploy was not made: Stue TV was in us
 paused all device use except the Pixel. Owed: a cast to Stue TV's built-in Chromecast confirming the receiver plays
 with Shaka and reports its start time and sample count (309a0), and an audio switch on Android on R382's confirmed
 film.
+
+## Live check (2026-10-09, v1.50-76, Pixel debug app)
+
+On the confirmed film, under our own encoder (313), the encoder maps the file's own streams (`-map 0:a:0`,
+`-map 0:a:1`); switching in the picker from *English · 1/2* (TrueHD 7.1) to *English · 2/2* (AC-3 5.1) loaded the
+`a1 AC-3 5.1-EX` rendition at once (its first segment in 18 ms) with no restart. **Verified on Android.** (Not
+re-checked on Jellyfin's own transcode path, where R291's renditions use the same mapping.)
