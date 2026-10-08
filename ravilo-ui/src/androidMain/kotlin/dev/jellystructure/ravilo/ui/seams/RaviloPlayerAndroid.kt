@@ -61,7 +61,11 @@ actual class RaviloPlayer actual constructor() {
         engine = built
         bindEngine(built)
         built.volume = outputVolume
-        if (releasedForBackground) { releasedForBackground = false; qoeBackgroundReturns++ }
+        if (releasedForBackground) {
+            releasedForBackground = false
+            qoeBackgroundReturns++
+            synchronized(qoeLock) { qoeCounter.engineRebuilt() }   // R381 (FR-R381-2) — the rebuilt engine's start is not a stall
+        }
     }
 
     private fun buildEngine(): ExoPlayer {
@@ -76,12 +80,7 @@ actual class RaviloPlayer actual constructor() {
         // for the rest of playback. SubtitleRetryingLoadErrorHandlingPolicy only widens the retry
         // allowance for that one URL pattern; every other load (video/audio HLS segments, manifests)
         // delegates straight through to Media3's own DefaultLoadErrorHandlingPolicy, unchanged.
-        val extractors = RaviloPlayerEngine.extractorsFactoryProvider?.invoke()
-        val mediaSourceFactory = (
-            if (extractors != null) androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx, extractors)
-            else androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
-        ).setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
-        val builder = ExoPlayer.Builder(ctx, mediaSourceFactory)
+        val builder = ExoPlayer.Builder(ctx, mediaSourceFactory(null))
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx, preferExtensions)?.let { builder.setRenderersFactory(it) }
         // R216 (FR-R216-3) — an explicit LoadControl instead of inheriting DefaultLoadControl's stock
         // bufferForPlaybackAfterRebufferMs: on a link that dips mid-playback, resuming on a thin buffer
@@ -131,6 +130,19 @@ actual class RaviloPlayer actual constructor() {
         return builder.build()
     }
 
+    /** The engine's media sources: R294's extractors, 179's subtitle retry policy; [dataSourceFactory] null = the network
+     *  (Media3's default), else R381's prefetch cache in front of it. */
+    private fun mediaSourceFactory(dataSourceFactory: androidx.media3.datasource.DataSource.Factory?): androidx.media3.exoplayer.source.DefaultMediaSourceFactory {
+        val extractors = RaviloPlayerEngine.extractorsFactoryProvider?.invoke()
+        val f = when {
+            dataSourceFactory != null && extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory, extractors)
+            dataSourceFactory != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
+            extractors != null -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx, extractors)
+            else -> androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
+        }
+        return f.setLoadErrorHandlingPolicy(SubtitleRetryingLoadErrorHandlingPolicy())
+    }
+
     /**
      * R292 (FR-R292-10) — EVERYTHING bound to an engine, bound here and nowhere else, so a rebuilt engine
      * misses nothing: the video-size listener (R77), the QoE analytics listener (R216/R218/179/R220), the
@@ -172,6 +184,7 @@ actual class RaviloPlayer actual constructor() {
 
     /** R292 (FR-R292-1) — see the expect's doc. Safe to call with no engine. */
     actual fun releaseEngine() {
+        NextPrefetch.discard()   // R381 (dev review item 9) — a background release drops the preload
         mediaSessionRef?.release()
         mediaSessionRef = null
         val e = engine ?: return
@@ -202,6 +215,7 @@ actual class RaviloPlayer actual constructor() {
         _isBuffering = false
         _isSeeking = false
         failed.release()
+        synchronized(qoeLock) { qoeCounter.engineRebuilt() }   // R381 (FR-R381-2) — R379's restart is not a stall
         val p = exo()
         p.trackSelectionParameters = tracks
         p.setMediaItem(item)
@@ -222,15 +236,14 @@ actual class RaviloPlayer actual constructor() {
     @Volatile private var qoeVariantDown: Int = 0
     @Volatile private var qoeVariantUp: Int = 0
 
-    // R216 (FR-R216-4) — accumulated playback-quality counters for this session; read by [qoeSnapshot].
+    // R216 (FR-R216-4) — playback-quality counters, read by [qoeSnapshot]. R381 (FR-R381-1): per ITEM since R381 (reset
+    // by [beginQoeItem] when a binge moves to the next item); they used to be the session's running totals.
     // @Volatile: read from PlayerStore's coroutine, written from whichever thread Media3 dispatches
     // analytics events on — plain field writes here are always whole-value replacements, never a
     // read-modify-write race (each field is only ever touched inside the single-threaded qoeListener
     // callbacks Media3 itself serializes), so @Volatile alone (no mutex) is sufficient for cross-thread
     // visibility, matching this file's other cross-thread state (_videoSize).
     @Volatile private var qoeDroppedFrames: Int = 0
-    @Volatile private var qoeRebufferCount: Int = 0
-    @Volatile private var qoeRebufferMs: Long = 0
     @Volatile private var qoeBandwidthEstimateBps: Long? = null
     @Volatile private var qoeVideoDecoder: String? = null
     // Phase 179 (FR-179-3) — counts every failed load whose URI matches PlaybackService.buildSubtracks()'
@@ -239,27 +252,23 @@ actual class RaviloPlayer actual constructor() {
     // counters here.
     @Volatile private var qoeSubtitleLoadErrors: Int = 0
     // Phase R220 (FR-R220-6) — bumped once per recovery-ladder firing (any rung) by
-    // PlayerVideoSurface's detector; deliberately persists across the whole session like the other
-    // qoe* counters (not the R218 per-item ones below), since "did this happen at all this session" is
-    // the useful signal.
+    // PlayerVideoSurface's detector; per item since R381, like the other qoe* counters.
     @Volatile private var qoeVideoOutputRecoveries: Int = 0
     // R292 (FR-R292-11) — the rung that recovered last and its time; the two return counters.
     @Volatile private var qoeVideoOutputRecoveryRung: Int = 0
     @Volatile private var qoeVideoOutputRecoveryMs: Long = 0
     @Volatile private var qoeBackgroundReturns: Int = 0
     @Volatile private var qoeRestoredAfterRecreate: Int = 0
-    // Rebuffer bookkeeping: only counted once the first frame has rendered (excludes initial buffering)
-    // and only when the buffering wasn't itself caused by a seek (excludes user-initiated seeks) — see
-    // the phase's FR-R216-4 doc.
-    private var qoeFirstFrameRendered = false
-    private var qoeRebufferStartMs: Long = -1L
-    private var qoeSuppressNextBuffering = false
+    // R381 — every qoe* counter above is now THIS ITEM's (reset by [beginQoeItem] for a new item, kept across a
+    // restream of the same item); stalls are counted by the shared [QoeCounter]: after this load's first frame, and
+    // never for a seek, a track switch, a variant switch, an engine rebuild or a recovery (each counted by name).
+    // Guarded by [qoeLock]: Media3 calls the listener on its looper, the session store reads the snapshot elsewhere.
+    private val qoeLock = Any()
+    private val qoeCounter = QoeCounter()
 
     // R218 (FR-R218-1) — fed by this same qoeListener's callbacks below, but distinct fields from the
-    // qoe* ones above: those deliberately persist across a binge's episode-to-episode player reuse
-    // (never reset), which is correct for cumulative QoE counters but wrong here — moment B (cold start)
-    // needs to reappear for episode 2 even though qoeFirstFrameRendered is already true from episode 1.
-    // These three reset in load() instead. @Volatile for the same cross-thread-visibility reason as the
+    // qoe* ones above: these are per LOAD (moment B, the cold start, reappears for every stream), the qoe* ones
+    // per item (R381). These reset in load(). @Volatile for the same cross-thread-visibility reason as the
     // qoe* fields (read from PlayerScreen's poll loop, written from Media3's analytics thread).
     @Volatile private var _hasRenderedFirstFrame = false
     @Volatile private var _isBuffering = false
@@ -269,7 +278,7 @@ actual class RaviloPlayer actual constructor() {
 
     private val qoeListener = object : AnalyticsListener {
         override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
-            qoeFirstFrameRendered = true
+            synchronized(qoeLock) { qoeCounter.firstFrame(eventTime.realtimeMs) }
             _hasRenderedFirstFrame = true
         }
         override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
@@ -285,7 +294,7 @@ actual class RaviloPlayer actual constructor() {
             reason: Int,
         ) {
             if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                qoeSuppressNextBuffering = true
+                synchronized(qoeLock) { qoeCounter.seek() }
                 _isSeeking = true
             }
         }
@@ -306,22 +315,22 @@ actual class RaviloPlayer actual constructor() {
             when (state) {
                 Player.STATE_BUFFERING -> {
                     _isBuffering = true
-                    if (qoeFirstFrameRendered && !qoeSuppressNextBuffering) {
-                        qoeRebufferStartMs = eventTime.realtimeMs
-                    }
-                    qoeSuppressNextBuffering = false
+                    val e = engine
+                    val pos = e?.currentPosition ?: eventTime.currentPlaybackPositionMs
+                    val ahead = e?.let { it.bufferedPosition - it.currentPosition } ?: 0L
+                    synchronized(qoeLock) { qoeCounter.buffering(eventTime.realtimeMs, pos, ahead, qoeVariantBps) }
                 }
                 Player.STATE_READY -> {
                     _isBuffering = false
                     _isSeeking = false
-                    if (qoeRebufferStartMs >= 0) {
-                        qoeRebufferCount++
-                        qoeRebufferMs += (eventTime.realtimeMs - qoeRebufferStartMs).coerceAtLeast(0)
-                        qoeRebufferStartMs = -1L
-                    }
+                    synchronized(qoeLock) { qoeCounter.ready(eventTime.realtimeMs) }
                 }
-                else -> {}
+                else -> synchronized(qoeLock) { qoeCounter.interrupted() }
             }
+        }
+        // R381 — a pause while waiting is the viewer's, not a stall.
+        override fun onPlayWhenReadyChanged(eventTime: AnalyticsListener.EventTime, playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady) synchronized(qoeLock) { qoeCounter.interrupted() }
         }
         // 308 (FR-308-5) — a new video variant reached the playhead: an HLS variant's format carries the master's
         // BANDWIDTH (peak) and RESOLUTION. A muxed variant is reported as the DEFAULT track type, a demuxed one as VIDEO;
@@ -332,7 +341,10 @@ actual class RaviloPlayer actual constructor() {
             if (!video) return
             val bps = (f.peakBitrate.takeIf { it > 0 } ?: f.bitrate.takeIf { it > 0 })?.toLong() ?: return
             val was = qoeVariantBps
-            if (was != null && bps != was) { if (bps < was) qoeVariantDown++ else qoeVariantUp++ }
+            if (was != null && bps != was) {
+                if (bps < was) qoeVariantDown++ else qoeVariantUp++
+                synchronized(qoeLock) { qoeCounter.variantSwitched(eventTime.realtimeMs) }   // R381 — a wait just after it is the switch
+            }
             qoeVariantBps = bps
             qoeVariantHeight = f.height.takeIf { it > 0 }
         }
@@ -384,8 +396,7 @@ actual class RaviloPlayer actual constructor() {
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>, title: String, subtitle: String?, artworkUrl: String?) {
         activeRaviloPlayer = this
         audioMeta = audio
-        // R218 — a new item is its own cold start; see these fields' own doc for why they reset here
-        // and the qoe* counters above deliberately don't.
+        // R218 — a new stream is its own cold start (per load); the qoe* counters are per item (R381, [beginQoeItem]).
         _hasRenderedFirstFrame = false
         _isBuffering = false
         _playbackFailed = false
@@ -393,6 +404,7 @@ actual class RaviloPlayer actual constructor() {
         // 308 — a new stream's first variant is not a switch.
         qoeVariantBps = null
         qoeVariantHeight = null
+        synchronized(qoeLock) { qoeCounter.load() }   // R381 — this stream's first wait is its start
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
             val mime = when {
@@ -421,13 +433,26 @@ actual class RaviloPlayer actual constructor() {
             .setSubtitle(subtitle)
             .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
             .build()
+        // R381 — the next episode a binge prefetched at the credits is read from that cache; any other stream drops it.
+        val prefetchKey = NextPrefetch.cacheKeyFor(streamUrl).also { if (it == null) NextPrefetch.keepOnlyFor(streamUrl) }
         val mediaItem = MediaItem.Builder()
             .setUri(streamUrl)
             .setSubtitleConfigurations(subConfigs)
             .setMediaMetadata(mediaMetadata)
+            .apply { if (prefetchKey != null) setCustomCacheKey(prefetchKey) }
             .build()
         val p = exo()   // R292 — builds and binds a fresh engine after a background release
-        p.setMediaItem(mediaItem)
+        if (prefetchKey != null) {
+            val cached = androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(NextPrefetch.cache)
+                .setUpstreamDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(ctx))
+                .setCacheWriteDataSinkFactory(null)   // read only: playback never writes this cache
+                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            p.setMediaSource(mediaSourceFactory(cached).createMediaSource(mediaItem))
+            android.util.Log.i("R381", "load: the prefetched next item, read from its cache")
+        } else {
+            p.setMediaItem(mediaItem)
+        }
         p.seekTo(startPositionMs)
         p.prepare()
         ensureMediaSession() // touch/recreate the session so it's active for the OS while this item plays (R44)
@@ -476,6 +501,7 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun selectAudioTrack(index: Int) {
         val exo = engine ?: return
+        synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2) — a switch's wait is not a stall
         val tracks = exo.currentTracks
         // R291 (FR-R291-2) — a composed master names every rendition `a{position} …` (the backend's
         // composeMaster), because Media3 lists the muxed audio first and the audio-only renditions after
@@ -517,6 +543,7 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun selectSubtitleTrack(index: Int) {
         val exo = engine ?: return
+        synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2)
         if (index < 0) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -653,10 +680,28 @@ actual class RaviloPlayer actual constructor() {
             return result
         }
 
-    actual fun qoeSnapshot(): PlayerQoeSnapshot = PlayerQoeSnapshot(
+    /** R381 (FR-R381-1) — a new item resets every per-item counter; the same item again (a restream) keeps them. */
+    actual fun beginQoeItem(itemKey: String) {
+        val fresh = synchronized(qoeLock) { qoeCounter.beginItem(itemKey) }
+        if (!fresh) return
+        qoeDroppedFrames = 0
+        qoeBandwidthEstimateBps = null
+        // The decoder is the engine's, not the item's: a reused engine keeps it without a new init event (seen live on
+        // Stue TV, 2026-10-08: the second item's report carried no decoder), so its name is kept.
+        qoeSubtitleLoadErrors = 0
+        qoeVideoOutputRecoveries = 0
+        qoeVideoOutputRecoveryRung = 0
+        qoeVideoOutputRecoveryMs = 0
+        qoeBackgroundReturns = 0
+        qoeRestoredAfterRecreate = 0
+        qoeVariantDown = 0
+        qoeVariantUp = 0
+    }
+
+    actual fun qoeSnapshot(): PlayerQoeSnapshot = synchronized(qoeLock) { PlayerQoeSnapshot(
         droppedFrames = qoeDroppedFrames,
-        rebufferCount = qoeRebufferCount,
-        rebufferMs = qoeRebufferMs,
+        rebufferCount = qoeCounter.rebufferCount,
+        rebufferMs = qoeCounter.rebufferMs,
         bandwidthEstimateBps = qoeBandwidthEstimateBps,
         videoDecoder = qoeVideoDecoder,
         subtitleLoadErrors = qoeSubtitleLoadErrors,
@@ -669,7 +714,12 @@ actual class RaviloPlayer actual constructor() {
         variantSwitchesUp = qoeVariantUp,
         variantBandwidthBps = qoeVariantBps,
         variantHeight = qoeVariantHeight,
-    )
+        perItem = true,
+        stalls = qoeCounter.stallEvents(),
+        sessionRebufferCount = qoeCounter.sessionRebufferCount,
+        sessionRebufferMs = qoeCounter.sessionRebufferMs,
+        waits = qoeCounter.waitCounts(),
+    ) }
 
     /**
      * Phase R220 (FR-R220-2) — a real frame COUNT, not a boolean, so the "playing but not rendering"

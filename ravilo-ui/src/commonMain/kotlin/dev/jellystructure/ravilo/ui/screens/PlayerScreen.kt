@@ -232,6 +232,9 @@ internal enum class NuFocus { PLAY, STAY }
 // LaunchedEffect debouncing it below) delivers.
 private enum class PlBufferMoment { NONE, COLD, STALL, SEEK }
 
+/** R381 — with no trusted credits marker, the next episode is preloaded this long before the end (owner: 60 s). */
+private const val NEXT_PREFETCH_BEFORE_END_MS = 60_000L
+
 // R182 (FR-RV-SKIP1-2) — the credits card's ONE primary action, chosen by priority: a stinger (from
 // Phase 150 §C) always wins (never auto-skip past it); else a real next episode; else a plain
 // skip-credits/exit. "Watch credits" (NuFocus.STAY) is offered in every mode alongside this one action.
@@ -318,6 +321,8 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var loadedForItemId by mutableStateOf<String?>(null)
     var positionKnownForItemId by mutableStateOf<String?>(null)
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
+    /** R381 — the item whose next episode was prepared and prefetched (at most once per item). */
+    var prefetchedForItemId: String? = null
     // R290 — the start latch, per item (see PlayerStart.kt): the item whose latch has opened; whether
     // R218's 400 ms have passed since the press (before that the start is plain black); a `play()` held
     // back until the latch (FR-R290-4: a discarded stream is prepared, never played); a restream the
@@ -1020,6 +1025,8 @@ fun PlayerScreen(
         positionMs = s.ticket.startPositionMs
         // 308 (FR-308-3) — an adaptive stream starts from what this device measured, never from a guess about where it is.
         player.seedBandwidthEstimate(s.ticket.measuredBandwidthBps?.takeIf { s.ticket.adaptive })
+        // R381 (FR-R381-1) — the QoE counters are this item's: a new item resets them, a restream of it keeps them.
+        player.beginQoeItem(itemId)
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio, title = itemTitle, subtitle = itemKicker, artworkUrl = artworkUrl)
         // R282 (FR-R282-1/-4) — relate the two subtitle mechanisms, here, on every ticket. A burn-in
         // ticket turns the text renderer OFF unconditionally: the reload reuses this ExoPlayer, whose
@@ -1178,6 +1185,20 @@ fun PlayerScreen(
                     bk.skipCreditsMode != dev.jellystructure.shared.tv.SkipMode.OFF) {
                     nextUpVisible = true
                     nuFocus = nextUpStartsOn(bk.viewerSeek)   // R363 (FR-R363-6)
+                }
+
+                // R381 (owner, 2026-10-08) — preload the next episode at the credits marker (or 60 s before the end with
+                // no trusted marker), autoplay on or off; a seek back out of the credits drops it again.
+                val prefetchAt = creditsStart ?: (durationMs - NEXT_PREFETCH_BEFORE_END_MS)
+                val nextForPrefetch = resolvedNextEpisodeId
+                if (playerLoadedForCurrentItem && nextForPrefetch != null && durationMs > 0) {
+                    if (bk.prefetchedForItemId != currentItemId && positionMs >= prefetchAt) {
+                        bk.prefetchedForItemId = currentItemId
+                        store.prepareNext(nextForPrefetch)
+                    } else if (bk.prefetchedForItemId == currentItemId && positionMs < prefetchAt - 5_000) {
+                        bk.prefetchedForItemId = null
+                        store.discardNext()
+                    }
                 }
 
                 // Natural end — safety net for a title whose duration/creditsStartMs never satisfied the

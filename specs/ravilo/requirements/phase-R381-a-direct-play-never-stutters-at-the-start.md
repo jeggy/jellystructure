@@ -6,9 +6,11 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from a read-only investigation (`playback_qoe` and the Android player's
-code). No test plays were needed; no device was touched. **Dev-reviewed 2026-10-08** (section at the end). Not built. Android (TV + phone) player and
-the backend's readers of `playback_qoe` (308, 309).
+`⚠ Partial` — **R381a (counting) and R381b (prepare + direct-play prefetch) built 2026-10-08** on branch
+`worktree-agent-aceb0612dd5f38a6b` (not merged, not deployed, no app release); the counting half verified live on Stue TV
+with a debug build (see *Build notes*). R381c (FR-R381-5, fixing what real start stalls remain) waits for a week of
+corrected numbers by design. Written 2026-10-08 (dev-authored) from a read-only investigation; **dev-reviewed 2026-10-08**
+(section below). Android (TV + phone) player and the backend's readers of `playback_qoe` (308, 309).
 
 ## What happens
 
@@ -206,3 +208,65 @@ the direct-play prefetch. R381c — FR-R381-5's fixes after a week of corrected 
 1. **Preload the next episode whether or not autoplay is on** (Q1): a few MB, thrown away if unused.
 2. **No preload for a next episode that needs a transcode until 309's early encode or 313's encoder exists** (Q2);
    only direct-play episodes preload until then.
+
+## Build notes (2026-10-08)
+
+**R381a — a stall is counted once, per item (FR-R381-1…-4, -6).**
+- `QoeCounter` (`ravilo-ui` commonMain `seams/QoeCounter.kt`): a pure state machine (events in: item, load, engine
+  rebuild, first frame, seek, track switch, variant switch, recovery, buffering, ready, interrupted; counts out). An
+  item is a Jellyfin item (`beginItem(key)`: a new key resets the item's counts, the same key — a restream — keeps them);
+  a load's first wait is its `start`; a wait after the load's first frame is a stall unless a seek, track switch, variant
+  switch (≤ 3 s before), engine rebuild (R292's return, R379's restart) or recovery explains it — each counted by name in
+  `waits`. A pause while waiting drops the wait. Each stall: ms after the item's first frame, position, buffered ahead,
+  duration, phase (`start` < 10 s, else `mid`), variant; newest 20 kept. Session totals kept apart.
+- Android (`RaviloPlayerAndroid.kt`): the listener feeds the counter (under one lock); **every** per-item counter
+  (dropped frames, bandwidth estimate, subtitle errors, recoveries, returns, restores, variant switches) resets on a new
+  item (`beginQoeItem`, called by `PlayerScreen` before every `load`, and by the Live TV player per channel). The video
+  decoder's name is the engine's and is kept (a reused engine has no new init event — found live). Track switches,
+  engine rebuilds and R379's restart tell the counter.
+- The report (`PlaybackQoeReport`, additive): `per_item`, `stalls`, `waits`, `session_rebuffer_count/_ms`; `PlayerStore`
+  also posts R292's recovery/return counters, which it carried but had never posted.
+- The backend: migration **72** (`per_item`, `stalls_json`, `waits_json`, `session_rebuffer_count`, `_ms`; existing rows
+  get `per_item = 0`, nothing deleted). `QoeSummary` reports a legacy row's rebuffers as 0 (kept as
+  `legacy_rebuffer_count` for the record), so the admin's device line and Activity's quality card stop showing them,
+  with no frontend change. `measuredThroughput` never read rebuffers; 309's record must read `per_item` rows only.
+- The desktop players and the web report `per_item = false` (not fed through the counter yet; the web has no counters).
+
+**R381b — prepare, then prefetch (FR-R381-7, owner decisions).**
+- `POST /api/tv/playback/prepare` → `PreparedStream` (`PlaybackService.preparePlayback`): the same gate and negotiation
+  as a start (requireVisible, PlaybackInfo with the device's capabilities and 308's budget) and **none** of its side
+  effects — no `/Sessions/Playing`, no tracker, no session, no plan, no encode, no composed master; valid 5 min. A
+  transcode answers `direct_play = false`, no URL (owner: no transcode preload until 309/313). The real start is the
+  ordinary `startPlayback` when the episode begins (the dev review's "begin").
+- Client: at the credits marker (or 60 s before the end without a trusted one), autoplay on or off (owner), the player
+  screen asks `PlayerStore.prepareNext(next)`; a direct play from 0:00 is prefetched by `NextPrefetch` (Android): its
+  first 16 MB and last 4 MB (where a Matroska file keeps its Cues) into a 64 MB cache of its own. `load()` reads that
+  item from the cache when its URL is the prepared one (read-only cache source, `FLAG_IGNORE_CACHE_ON_ERROR`); any other
+  stream drops the prefetch; a seek back out of the credits, a background release, and 5 minutes unused drop it too.
+  A preload that fails or is late changes nothing. An older server without the route answers 404 → no preload.
+- Desktop and web: `NextPrefetch` is a no-op.
+
+**Tests.** `QoeCounterTest` (10, commonTest: one item; a three-item binge; a seek; a mid-play stall with phase and
+position; a start-phase stall; rebuild/recovery/track/variant named, none a stall; item 2's stall absent from item 3;
+a restream keeps the item's stall; a pause drops the wait; 20 kept). `PlaybackQoeStorePerItemTest` (2: a legacy row's
+rebuffers unread and unbadged; a per-item row's stalls/waits/session totals). `PlaybackPrepareIntegrationTest` (2, a
+fake Jellyfin over loopback: `prepare` sends no `/Sessions/Playing`, no release, no user data and starts no tracker, the
+start then reports exactly once; a transcode-only item is not prepared). `MusicEditionsStoreTest`'s rewind drops 72's
+columns. Full runs: backend `:linuxX64Test` 1 219 tests (the one failure, that rewind, fixed and re-run green);
+`:ravilo-ui:testDebugUnitTest` 693 green; `:ravilo-android:assembleDebug`, desktop and wasm compile.
+Not built: FR-R381-6 test 4 (a Media3 `TestPlayerRunHelper` integration test; `media3-test-utils` not added — the pure
+counter covers the event sequences).
+
+**Live (Stue TV, debug build `dev.jellystructure.ravilo.debug` against the dev backend, 2026-10-08 13:17–13:19).** A
+never-watched series: S01E01 played ~33 s, then the remote's Next key → S01E02 on the same engine (the binge case) for
+~45 s, then Back. Both direct play. `playback_qoe`: S01E02 **0 rebuffers** (the old counting reported the next item's
+start as one in 91 of Stue TV's 100 new events), S01E01 0. The prefetch path was not exercised live: the deployed
+backend has no `prepare` route yet (the app then gets 404 and preloads nothing, as designed). Found and fixed: the
+decoder name was reset per item (above). Cleanup: both episodes marked unplayed through `/api/tv/mark` (Jellyfin's
+`MarkUnplayed` clears play count, position and last-played date — verified in Jellyfin's database; the series left
+Continue Watching again); the TV was put back to its home screen and asleep. An early install of a build made while two
+Gradle runs overlapped crashed at launch (`ClassNotFoundException`); a clean rebuild fixed it — nothing wrong in the code.
+
+**Open:** R381c after a week of per-item numbers (needs the app release); the desktop players through `QoeCounter`;
+309's record must read `per_item` rows only; migration 72's number is to be checked against whatever lands on `main`
+first (309a0/310 may take numbers).

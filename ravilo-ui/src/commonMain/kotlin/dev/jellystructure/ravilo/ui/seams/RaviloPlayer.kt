@@ -151,6 +151,10 @@ expect class RaviloPlayer() {
      *  PlayerStore's existing 10s heartbeat tick and at session end with no extra cost. Every field
      *  defaults to "nothing observed" on a platform/state with no real signal (see [PlayerQoeSnapshot]). */
     fun qoeSnapshot(): PlayerQoeSnapshot
+
+    /** R381 (FR-R381-1) — the item the next [load] belongs to. A new key resets every per-item counter in
+     *  [qoeSnapshot]; the same key again (a restream of the same item) keeps them. Called before [load]. */
+    fun beginQoeItem(itemKey: String)
 }
 
 /**
@@ -190,6 +194,16 @@ data class PlayerQoeSnapshot(
     val variantSwitchesUp: Int = 0,
     val variantBandwidthBps: Long? = null,
     val variantHeight: Int? = null,
+    /** R381 (FR-R381-1) — true when every counter above is the current item's own (see [QoeCounter]); false on a
+     *  platform still reporting session totals. */
+    val perItem: Boolean = false,
+    /** R381 (FR-R381-3) — this item's counted stalls (newest 20). */
+    val stalls: List<dev.jellystructure.shared.tv.QoeStall> = emptyList(),
+    /** R381 (FR-R381-1) — the session's running totals, apart from the item's own. */
+    val sessionRebufferCount: Int = 0,
+    val sessionRebufferMs: Long = 0,
+    /** R381 (FR-R381-2) — waits that are not stalls, by cause. */
+    val waits: Map<String, Int> = emptyMap(),
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

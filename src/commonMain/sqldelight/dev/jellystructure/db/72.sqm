@@ -1,0 +1,8 @@
+-- R381 (FR-R381-1/-3/-4) — per-item QoE: whether a row's counters are the item's own, its stalls, its named waits and
+-- the session totals. Existing rows get per_item = 0 (legacy: their rebuffer counts are never read); no data is
+-- deleted. Must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE TABLE (the SQLDelight-migration rule).
+ALTER TABLE playback_qoe ADD COLUMN per_item INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN stalls_json TEXT;
+ALTER TABLE playback_qoe ADD COLUMN waits_json TEXT;
+ALTER TABLE playback_qoe ADD COLUMN session_rebuffer_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playback_qoe ADD COLUMN session_rebuffer_ms INTEGER NOT NULL DEFAULT 0;

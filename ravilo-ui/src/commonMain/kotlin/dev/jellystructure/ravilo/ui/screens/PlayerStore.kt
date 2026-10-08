@@ -286,6 +286,22 @@ class PlayerStore(
     // restream so an un-burn (252) negotiates as the real device instead of conservative defaults.
     private var lastCapabilities: ClientCapabilities? = null
 
+    /**
+     * R381 (owner, 2026-10-08) — at the credits, prepare the next episode (no side effects on the server: FR-R381-7) and
+     * prefetch its start if it is a direct play. Fire-and-forget on [scope]: a preload that fails or comes too late
+     * changes nothing (the next episode then starts as it always did). With autoplay on or off alike (owner).
+     */
+    fun prepareNext(nextItemId: String) {
+        val caps = lastCapabilities ?: return
+        scope.launch {
+            val prepared = apiClient.preparePlayback(nextItemId, caps) ?: return@launch
+            if (prepared.directPlay) dev.jellystructure.ravilo.ui.seams.NextPrefetch.prefetch(prepared)
+        }
+    }
+
+    /** R381 — the viewer sought back out of the credits: the preload is dropped. */
+    fun discardNext() = dev.jellystructure.ravilo.ui.seams.NextPrefetch.discard()
+
     /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item).
      *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2).
      *  R284 — [audioStreamIndex] is the audio track the new stream must carry (253 FR-253-1); callers
@@ -398,6 +414,18 @@ class PlayerStore(
                     variantSwitchesUp = snapshot.variantSwitchesUp,
                     variantBandwidthBps = snapshot.variantBandwidthBps,
                     variantHeight = snapshot.variantHeight,
+                    // R381 (FR-R381-1/-3) — this item's own counts, its stalls, the session totals and the named waits.
+                    perItem = snapshot.perItem,
+                    stalls = snapshot.stalls,
+                    sessionRebufferCount = snapshot.sessionRebufferCount,
+                    sessionRebufferMs = snapshot.sessionRebufferMs,
+                    waits = snapshot.waits,
+                    // R292 (FR-R292-11) — carried since R292 but never posted from here.
+                    videoOutputRecoveries = snapshot.videoOutputRecoveries,
+                    videoOutputRecoveryRung = snapshot.videoOutputRecoveryRung,
+                    videoOutputRecoveryMs = snapshot.videoOutputRecoveryMs,
+                    backgroundReturns = snapshot.backgroundReturns,
+                    restoredAfterRecreate = snapshot.restoredAfterRecreate,
                 ),
             )
         }

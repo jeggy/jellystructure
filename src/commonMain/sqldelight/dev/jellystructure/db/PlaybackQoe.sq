@@ -39,14 +39,22 @@ CREATE TABLE playback_qoe (
     variant_bandwidth_bps INTEGER,
     variant_height INTEGER,
     updated_at INTEGER NOT NULL,
+    -- R381 (FR-R381-1/-3/-4) — 1 when the counters above are the item's own (an app with R381); 0 = a legacy row
+    -- whose rebuffer counts were session totals or a reused player's next start, never read (72.sqm). The item's
+    -- counted stalls and its named non-stall waits as JSON, and the session's running totals.
+    per_item INTEGER NOT NULL DEFAULT 0,
+    stalls_json TEXT,
+    waits_json TEXT,
+    session_rebuffer_count INTEGER NOT NULL DEFAULT 0,
+    session_rebuffer_ms INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (device_id, jellyfin_id, play_session_id)
 );
 CREATE INDEX playback_qoe_device ON playback_qoe(device_id);
 CREATE INDEX playback_qoe_updated ON playback_qoe(updated_at);
 
 upsertQoe:
-INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, variant_switches_down, variant_switches_up, variant_bandwidth_bps, variant_height, updated_at)
-VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :variant_switches_down, :variant_switches_up, :variant_bandwidth_bps, :variant_height, :updated_at);
+INSERT OR REPLACE INTO playback_qoe(device_id, jellyfin_id, play_session_id, dropped_frames, rebuffer_count, rebuffer_ms, bandwidth_estimate_bps, video_decoder, direct_play, link_kind, link_mbps, subtitle_load_errors, start_failure_status, video_output_recoveries, video_output_recovery_rung, video_output_recovery_ms, background_returns, restored_after_recreate, variant_switches_down, variant_switches_up, variant_bandwidth_bps, variant_height, updated_at, per_item, stalls_json, waits_json, session_rebuffer_count, session_rebuffer_ms)
+VALUES (:device_id, :jellyfin_id, :play_session_id, :dropped_frames, :rebuffer_count, :rebuffer_ms, :bandwidth_estimate_bps, :video_decoder, :direct_play, :link_kind, :link_mbps, :subtitle_load_errors, :start_failure_status, :video_output_recoveries, :video_output_recovery_rung, :video_output_recovery_ms, :background_returns, :restored_after_recreate, :variant_switches_down, :variant_switches_up, :variant_bandwidth_bps, :variant_height, :updated_at, :per_item, :stalls_json, :waits_json, :session_rebuffer_count, :session_rebuffer_ms);
 
 recentForDevice:
 SELECT * FROM playback_qoe WHERE device_id = :device_id ORDER BY updated_at DESC LIMIT :result_limit;

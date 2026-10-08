@@ -256,6 +256,11 @@ actual class RaviloPlayer actual constructor() {
         )
     }
 
+    /** R381 — not yet fed through [QoeCounter] on the desktop (mpv's and AVPlayer's stall counters are per player
+     *  instance and may include a load's own start): the report stays `per_item = false`, so the backend never reads
+     *  its rebuffer counts (FR-R381-4). */
+    actual fun beginQoeItem(itemKey: String) {}
+
     /** R335 path (b): the engine wants a native window of its own; the surface gives it one and draws no frames. */
     internal val usesWindow: Boolean get() = engine.usesWindow
     internal fun attachWindow(id: Long) = engine.attachWindow(id)

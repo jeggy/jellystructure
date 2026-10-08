@@ -223,6 +223,18 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
+    /** R381 (FR-R381-7) — the next item's stream with none of a start's side effects (nothing reported to Jellyfin, no
+     *  session, no encode). Null on any failure, including a server without the route: a preload is never worth an
+     *  error. */
+    suspend fun preparePlayback(itemId: String, capabilities: ClientCapabilities): PreparedStream? = runCatching {
+        val r = client.post("$baseUrl/api/tv/playback/prepare") {
+            auth()
+            jsonBody(json.encodeToString(PreparePlaybackRequest(itemId, capabilities)))
+        }
+        if (!r.status.isSuccess()) return@runCatching null
+        json.decodeFromString<PreparedStream>(r.bodyAsText())
+    }.getOrNull()
+
     /** [volume] — R357 (FR-R357-3/-5): the player's own level and mute, or null when it cannot know them (then
      *  the body is exactly the pre-R357 one). */
     suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false, volume: VolumeReport? = null) {

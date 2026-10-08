@@ -4,6 +4,11 @@ import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.db.Playback_qoe
 import dev.jellystructure.nowEpochSec
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.QoeStall
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -42,6 +47,15 @@ data class QoeSummary(
     // R237 (FR-R237-6) — non-null only when the start never reached the player.
     @SerialName("start_failure_status") val startFailureStatus: Int? = null,
     @SerialName("updated_at") val updatedAt: Long,
+    // R381 (FR-R381-1/-3/-4) — true when the counters are this item's own. On a legacy row (false) [rebufferCount]
+    // and [rebufferMs] are reported as 0: they were session totals or a reused player's next start, never a stall
+    // of this item; [legacyRebufferCount] keeps what the old app sent, for the record only.
+    @SerialName("per_item") val perItem: Boolean = false,
+    val stalls: List<QoeStall> = emptyList(),
+    val waits: Map<String, Int> = emptyMap(),
+    @SerialName("session_rebuffer_count") val sessionRebufferCount: Int = 0,
+    @SerialName("session_rebuffer_ms") val sessionRebufferMs: Long = 0,
+    @SerialName("legacy_rebuffer_count") val legacyRebufferCount: Int = 0,
 ) {
     // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
     // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
@@ -87,6 +101,11 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             variant_bandwidth_bps = report.variantBandwidthBps,
             variant_height = report.variantHeight?.toLong(),
             updated_at = nowEpochSec(),
+            per_item = if (report.perItem) 1L else 0L,
+            stalls_json = report.stalls.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(STALLS, it.take(20)) },
+            waits_json = report.waits.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(WAITS, it) },
+            session_rebuffer_count = report.sessionRebufferCount.toLong(),
+            session_rebuffer_ms = report.sessionRebufferMs,
         )
     }
 
@@ -103,13 +122,18 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
     }
 }
 
+private val qoeJson = Json { ignoreUnknownKeys = true }
+private val STALLS = ListSerializer(QoeStall.serializer())
+private val WAITS = MapSerializer(String.serializer(), Int.serializer())
+
 private fun Playback_qoe.toSummary() = QoeSummary(
     deviceId = device_id,
     jellyfinId = jellyfin_id,
     playSessionId = play_session_id,
     droppedFrames = dropped_frames.toInt(),
-    rebufferCount = rebuffer_count.toInt(),
-    rebufferMs = rebuffer_ms,
+    // R381 (FR-R381-4) — a legacy row's rebuffer counts are never read.
+    rebufferCount = if (per_item == 1L) rebuffer_count.toInt() else 0,
+    rebufferMs = if (per_item == 1L) rebuffer_ms else 0L,
     bandwidthEstimateBps = bandwidth_estimate_bps,
     videoDecoder = video_decoder,
     directPlay = direct_play == 1L,
@@ -127,4 +151,10 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     variantBandwidthBps = variant_bandwidth_bps,
     variantHeight = variant_height?.toInt(),
     updatedAt = updated_at,
+    perItem = per_item == 1L,
+    stalls = stalls_json?.let { runCatching { qoeJson.decodeFromString(STALLS, it) }.getOrNull() } ?: emptyList(),
+    waits = waits_json?.let { runCatching { qoeJson.decodeFromString(WAITS, it) }.getOrNull() } ?: emptyMap(),
+    sessionRebufferCount = session_rebuffer_count.toInt(),
+    sessionRebufferMs = session_rebuffer_ms,
+    legacyRebufferCount = if (per_item == 1L) 0 else rebuffer_count.toInt(),
 )
