@@ -1,0 +1,27 @@
+# Phase 313 (FR-313-11) — our own encoder needs an NVIDIA card. Use this file ON TOP of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# and switch the encoder on in config.toml:
+#
+#   [encoder]
+#   enabled = true
+#
+# Without this file (or without an NVIDIA card) jellystructure starts as before and every transcode stays Jellyfin's.
+# Requires the NVIDIA driver and the NVIDIA Container Toolkit on the host (the same setup Jellyfin's own hardware
+# transcoding uses).
+services:
+  jellystructure:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video, compute, utility]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    # Segments live in memory (FR-313-9); the kernel enforces the cap. ~1 GB per 4K play at 3–4 qualities.
+    tmpfs:
+      - /transcode/js:size=4g,mode=0700,uid=${PUID:-1000},gid=${PGID:-1000}

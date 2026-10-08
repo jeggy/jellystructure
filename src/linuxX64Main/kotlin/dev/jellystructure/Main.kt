@@ -287,6 +287,7 @@ fun main() = runBlocking {
     // (every song in a queue is one session, and one stop).
     playbackService.onStopLanded = { device, stoppedId -> if (musicStore.track(stoppedId) == null) homeFeedService.invalidatePlaystate(device, stoppedId) }
     playbackService.anchorDateFor = homeFeedService::anchorDate  // R375 (FR-R375-6)
+    playbackService.encoder.ensureFfmpeg(rootScope)   // Phase 313 (FR-313-11) — fetch jellyfin-ffmpeg when the encoder is on
     // R343 (FR-R343-4) — Start over's clear ends with the invalidation `PUT /tv/played` runs; R347 — the stop
     // judges "finished" by the credits marker the player's next-up card fires at.
     playbackService.onSeriesCleared = { device, seriesId -> homeFeedService.invalidatePlaystate(device, seriesId) }

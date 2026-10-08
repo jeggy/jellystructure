@@ -414,8 +414,14 @@ class PlaybackService(
      *  audio renditions beside them, and the jobs phase 180's teardown stops with the playback. */
     val audioRenditions = AudioRenditions(jellyfinClient::fetchPlaylist)
 
+    /** Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback. */
+    val encoder = Encoder({ configStore.current.encoder })
+
     /** Phase 180 + R291 — releases the encode AND this server's audio rendition jobs for it. */
     private suspend fun releaseEncodes(jellyfinBase: String, token: String, identity: JellyfinDeviceIdentity, jellyfinPlaySessionId: String) {
+        // Phase 313 (dev review item 13) — a play our encoder serves has no Jellyfin job: stop ours. Jellyfin's stop is
+        // still sent (it is a no-op for a play session with no job) so a fallback play is always released.
+        encoder.stopFor(jellyfinPlaySessionId)
         jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, jellyfinPlaySessionId)
         // 308 (FR-308-1) — every ladder variant is a job under its own play session: each is stopped by its own id.
         audioRenditions.stopFor(jellyfinPlaySessionId).forEach { jellyfinClient.stopActiveEncoding(jellyfinBase, token, identity, it) }
@@ -452,10 +458,32 @@ class PlaybackService(
         measuredBps: Long? = null,
         sourceVideoCodec: String? = null,
         sourceVideoRange: String? = null,
+        /** Phase 313 — the device's kind (`cast` gets MPEG-TS segments until fMP4 is verified on the receiver). */
+        deviceKind: String = "tv",
     ): StreamTicket {
         val measured = ticket.copy(measuredBandwidthBps = measuredBps)
         if (ticket.directPlay || capabilities == null || jellyfinPlaySessionId == null || abandoned) return measured
         val master = ticket.hlsUrl ?: return measured
+        // Phase 313 (FR-313-10/-12) — our own encoder serves the transcode when it can: one job, every rung, no
+        // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
+        if (reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
+            val file = localFileOf(jellyfinId)
+            val (plan, why) = if (file == null) null to "file not on this server's disk"
+            else encoder.planFor(capabilities, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
+                throughputBudget(measuredBps), sourceVideoRange, burnsSubtitle = ticket.burnedSubtitleIndex != null)
+            if (plan != null) {
+                val id = encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt)
+                Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
+                    "rungs=${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }} start=${plan.startRung} " +
+                    "audio=${plan.audio.size} ${plan.mux} card=${plan.cudaDevice} (313)", "tv")
+                return measured.copy(hlsUrl = "/api/tv/stream/$id/master.m3u8",
+                    audioRenditions = capabilities.hlsAudioRenditions && plan.audio.size >= 2, adaptive = plan.rungs.size > 1)
+            }
+            if (configStore.current.encoder.enabled) {
+                encoder.recordFallback(why)
+                Logger.info("encoder: fallback to Jellyfin — $why item=$jellyfinId (313)", "tv")
+            }
+        }
         // 308 (FR-308-1) — a ladder for a player that adapts, on a transcode that re-encodes the picture.
         val ceiling = decodeCeiling(capabilities, master)
         val ladder = if (capabilities.hlsAdaptive && reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
@@ -862,7 +890,7 @@ class PlaybackService(
             // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
             sessionId = sessionId,   // R368 (dev review item 8)
-        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived,
+        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
@@ -1660,7 +1688,7 @@ class PlaybackService(
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
             audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps) }
     }
 
@@ -1720,7 +1748,7 @@ class PlaybackService(
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType) }

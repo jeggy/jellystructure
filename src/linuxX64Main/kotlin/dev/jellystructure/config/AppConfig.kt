@@ -48,6 +48,25 @@ data class AppConfig(
     val audiobooks: AudiobooksConfig = AudiobooksConfig(),
     // 304b (FR-304-4, dev review item 6) — Ravilo's household settings that live on the server, not in a viewer's layout.
     val ravilo: RaviloHouseholdConfig = RaviloHouseholdConfig(),
+    // Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback.
+    val encoder: EncoderConfig = EncoderConfig(),
+)
+
+/**
+ * Phase 313 — our own encoder. [enabled] makes it serve every transcode it can (FR-313-12 falls back to Jellyfin
+ * otherwise, and always without a GPU or without [ffmpegDir]'s binary). [ffmpegDir] holds jellyfin-ffmpeg's portable
+ * build, downloaded and checksum-verified there on first start when [downloadFfmpeg] (it is not shipped in the public
+ * image: the build includes libfdk_aac). [workDir] should be a tmpfs; [cudaCacheDir] keeps the GPU kernels compiled
+ * once (313a: without it every ffmpeg start spends 7–10 s compiling them).
+ */
+@Serializable
+data class EncoderConfig(
+    val enabled: Boolean = false,
+    @SerialName("ffmpeg_dir") val ffmpegDir: String = "/config/encoder/jellyfin-ffmpeg",
+    @SerialName("download_ffmpeg") val downloadFfmpeg: Boolean = true,
+    @SerialName("work_dir") val workDir: String = "/transcode/js",
+    @SerialName("cuda_cache_dir") val cudaCacheDir: String = "/config/encoder/cuda-cache",
+    @SerialName("max_disk_mb") val maxDiskMb: Int = 4096,
 )
 
 /** 304b (FR-304-4) — *Household members can control each other's playing*: off by default; the admin is never limited. */

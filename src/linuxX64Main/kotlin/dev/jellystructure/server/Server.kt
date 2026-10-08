@@ -441,6 +441,8 @@ fun startServer(
                     // Phase 219 (FR-219-4) — the playback writer's queue and each refresher's last
                     // successful cycle per user, so a stale household is visible without reading logs.
                     val writerJson = playbackService.writerStats()?.toJson() ?: "null"
+                    // Phase 313 (FR-313-8) — our own encoder: cards, sessions, jobs, fallbacks in the last hour.
+                    val encoderJson = runCatching { playbackService.encoder.healthJson() }.getOrDefault("null")
                     fun ages(m: Map<String, Long>) = m.entries.joinToString(",", "{", "}") { "\"${it.key}\":${it.value}" }
                     val refreshersJson = """{"playstate_age_ms":${ages(dev.jellystructure.tv.PlaystateCache.refresherAges())},"continue_age_ms":${ages(homeFeedService.continueRefreshAges())}}"""
                     // Phase 243 (FR-243-2) — the connected Jellyfin's version, last as observed by the
@@ -460,7 +462,7 @@ fun startServer(
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
-                            """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
+                            """"playback_writer":$writerJson,"encoder":$encoderJson,"refreshers":$refreshersJson,""" +
                             """"session_bridges":{"connected":$bridgesConnected,"failing":$bridgesFailing},""" +
                             """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
                             // Phase 276 (FR-276-2) — the two fixed-rate hosts, beside TMDB's learned one.

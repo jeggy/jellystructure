@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Not built. Backend (a new
+`⚠ Partial` — **built 2026-10-08 on a worktree branch (313a measured, 313b/313c built, 313d partly, 313e not; encoder off by default), not merged, not deployed, no device has played through it yet** (see Build notes). Written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
 encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and compose files (GPU
 and ffmpeg), the admin's *Playing now*. No app release is needed for the backend half: every adaptive player already
 reads a composed master (308). Builds on **308** (the ladder table, the composed master, the players' ABR), **309**
@@ -348,3 +348,88 @@ measurement would have run, so it stays 313a's first step. The design holds; fif
 
 1. **Installed 1.50 apps get our encoder as one fixed quality as soon as 313b works** (Q1, the lean): ~1 s starts for
    every installed app before any app release; the ladder follows with the app update.
+
+
+## Build notes (2026-10-08, worktree branch, not merged or deployed)
+
+### 313a — measured on the household host (nobody watching; Jellyfin's container and its jellyfin-ffmpeg 8.1.2)
+
+Source: a 4K HDR10 HEVC REMUX (3840×2160, ~50 Mbps), 60 s of film from 10:00. Cards: `nvidia-smi` index 0 = Quadro
+P4000 (bus 08:00.0), index 1 = RTX 2060 SUPER (42:00.0); with `CUDA_DEVICE_ORDER=PCI_BUS_ID` CUDA's numbering matches.
+
+| Run (one ffmpeg, one decode) | First segment | Speed | Notes |
+|---|---|---|---|
+| H.264 SDR, 4 rungs (1080p 12 · 1080p 8 · 720p 4 · 480p 1.5 Mbps), tone-mapped once, P4000, **no kernel cache** | 17.7 s | 2.1× | see below |
+| same, **CUDA kernel cache warm** | **2.0 s** | **4.7×** | |
+| HEVC Main 10 HDR, 4 rungs (2160p 20 · 1080p 8 · 720p 4 · 480p 1.5 Mbps), P4000 | **2.3 s** | **2.6×** | 2160p top: 132 MB/min |
+| two HEVC 4-rung jobs at once on the P4000 | 2.9 / 3.2 s | **1.3× each** | the P4000 carries two 4K HEVC ladders |
+| decode only, 4 s of film | — | — | 2.4 s wall incl. start-up |
+
+**The 15 s "cold start" is the GPU kernels being compiled, not the encoder.** `tonemap_cuda`/`scale_cuda` kernels are
+JIT-compiled on first use; Jellyfin's container has `HOME=/` and no `CUDA_CACHE_PATH`, so the compiled kernels are never
+kept and **every Jellyfin transcode with a tone-map pays ~7–10 s** (on the 2060 SUPER too: 12.5 s cold, 2.3 s cached).
+This is very likely a large part of the 8.5 s median transcode start in the evidence report. Our encoder sets
+`CUDA_CACHE_PATH` to a persistent folder (`[encoder] cuda_cache_dir`, under `/config`). **Side finding for Jellyfin itself:**
+giving Jellyfin's container a persistent `CUDA_CACHE_PATH` (e.g. `/cache/cuda`) should cut its own tone-mapped starts by
+~7 s — a one-line compose change, the owner's call.
+
+Decisions from the numbers: up to **4 rungs** per play; the **P4000 first** (no session cap), a 4K HEVC ladder counts as
+half the card (two fit at ≥ 1.3×), an H.264 1080p ladder a quarter; the 2060 SUPER only when the P4000 is full, within
+6 of its 8 sessions. The FR-313-3 caps stand (2160p HEVC 20 Mbps, 1080p H.264 12 Mbps, 1080p HEVC 8 Mbps).
+
+### What was built
+
+- `tv/EncoderPlan.kt` (pure): rungs (top capped by its own output size, the source and the decode ceiling; lower rungs
+  capped per codec family), `trimRungs` (start, below, above), `startRung` (309's budget), codec family per device
+  (HEVC only with `hls_hevc` + the source's HDR form), exact `CODECS` strings (`avc1.6400xx`, `hvc1.2.4.L150.B0`…),
+  `VIDEO-RANGE`, the master (start rung first, audio renditions `a{pos} {label}` as R291), the VOD playlists (2 s, init
+  segment for fMP4), the ffmpeg command (5 MB probe, one GPU decode, scale-then-tone-map once, `split`, NVENC per rung,
+  `-tag:v hvc1`, colour tags, every audio rendition from the same process, `-copyts`, `temp_file`), the budget
+  (`placeJob`, `nvidia-smi` parsing) and the fallback rules with their reasons.
+- `tv/EncoderJobs.kt`: one ffmpeg per stream; pause 40 s ahead / resume within 20 s; a seek replaces the job and keeps
+  the two previous jobs' segments (served without an encode); idle kill after 60 s; stop with the play; a sweep of
+  leftovers at start.
+- `tv/Encoder.kt`: the per-play decision and plan (`planFor`), the stream registry under 128-bit ids, the routes'
+  playlists/segments/init, `stopFor` (phase 180), `/api/health`'s `encoder` block, and `ensureFfmpeg`: jellyfin-ffmpeg's
+  **portable GPL build 8.1.2-5, pinned by SHA-256**, downloaded into `/config/encoder` on first start when the encoder is
+  on (not shipped in the public image — it contains libfdk_aac; we never use that encoder, ffmpeg's own `aac` is used).
+- `tv/SecureIds.kt`: stream ids from `/dev/urandom` (dev review item 7) — R291's rendition ids now use it too.
+- `PlaybackService.withRenditions`: for a transcode that re-encodes the picture, our encoder is asked first; when it
+  serves, the ticket's URL is our master and **no Jellyfin stream URL is handed out** (so Jellyfin starts no transcode
+  job); otherwise the 308/R291 path as before, with `encoder: fallback to Jellyfin — <reason>` logged.
+  `releaseEncodes` stops our job first (phase 180 / 312's encodes-only path).
+- Routes `GET /api/tv/stream/{id}/{v|a}/{i}/main.m3u8 | init.mp4 | <k>.m4s | <k>.ts`, segments sent in 256 KB pieces
+  (`server/RespondFileChunked.kt`, dev review item 6b).
+- Config `[encoder]`: `enabled` (default **false**), `ffmpeg_dir`, `download_ffmpeg`, `work_dir` (tmpfs), `cuda_cache_dir`,
+  `max_disk_mb`. `docker-compose.gpu.yml` (new): the GPU + a 4 GB tmpfs at `/transcode/js`, used on top of the base
+  compose; without it the backend starts as before and every transcode stays Jellyfin's. `Dockerfile`: `xz-utils`.
+- **Found while building (EncoderAlignmentTest):** `-start_number K` makes ffmpeg's HLS muxer count its cut targets from
+  K (a restarted job's first segment came out 2(K+1) s long), and `force_key_frames`' `t` counts from the job's own first
+  frame even with `-copyts`. Every job therefore numbers its files from 0 and forces keyframes on its own 2 s grid, which
+  is the file's grid because a job always starts on a 2 s boundary; `EncoderJobs` maps segment k to file `s<k − start>`.
+
+### Sub-phases
+
+- **313a** ✓ measured; GPU override + ffmpeg fetch + health block built.
+- **313b** ✓ built (H.264 and the one-rung mode for 1.50 apps — owner Q1 — via `hls_adaptive`), behind `[encoder] enabled`.
+- **313c** ✓ built in the same code: HEVC Main 10 HDR rungs for HEVC/HDR devices, tone-map once for H.264. Dolby Vision 5
+  falls back to Jellyfin; DV 7/8 play as their HDR10 base (the decoder drops the RPU/EL).
+- **313d** partly: text subtitles are left to the player as today (the ticket's own subtitle list); the burn-in overlay
+  is in the command builder (`overlay_cuda`, composited once before the split, H.264 only) but **a burn-in play still
+  goes to Jellyfin** until it is verified on a device. WebVTT renditions in the master: not built.
+- **313e** not done: the encoder is **off by default**; turning it on for the dev stack is the live test.
+
+### Tests
+
+`EncoderPlanTest` (16: caps, cropped 4K, ceilings, trim order, start rung, codec family, codec strings, master, playlists,
+commands incl. one tone-map and the keyframe grid, burn-in before the split, budget across cards, every fallback reason,
+the planner for a BRAVIA-like device / a 1.50 app / the receiver / a burn-in, secure ids) and `EncoderAlignmentTest`
+(a real libx264 encode: segment k of every rung and of a job restarted at segment 3 starts at the same PTS, 2 s apart;
+the audio rendition and fMP4 init segments exist). Full `linuxX64Test` green. Also verified by hand on the host's GPU:
+the builder's exact command shape (H.264 tone-mapped, 2 rungs + audio, fMP4) on the P4000 — 10 aligned 2.002 s segments
+per rung and an init segment each.
+
+### Not verified (needs the deploy)
+
+No device has played through our encoder yet: that needs `docker-compose.gpu.yml` on the dev stack, `[encoder]
+enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for the TS path).
