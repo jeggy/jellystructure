@@ -11,6 +11,8 @@ import dev.jellystructure.model.PublishTargetDto
 import dev.jellystructure.nowEpochSec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
@@ -180,7 +182,12 @@ class PublishQueue(
     }
 
     private suspend fun sendOne(item: Publish_item) {
-        val r = try { sender.send(item.target, item.kind, item.payload) } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+        // Phase 310 (dev review item 5) — only this coroutine's OWN cancellation ends the drain; a foreign one (Ktor's Curl
+        // engine can hand one call's cancellation to another) is a failed send like any other, so the press is not lost.
+        val r = try { sender.send(item.target, item.kind, item.payload) } catch (e: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw e
+            PublishSendResult("${TARGETS[item.target]?.name ?: item.target} could not be reached", e.message?.take(200) ?: "")
+        } catch (e: Throwable) {
             PublishSendResult("${TARGETS[item.target]?.name ?: item.target} could not be reached", e.message?.take(200) ?: "")
         }
         val state = if (r.error == null) PUBLISHED else FAILED

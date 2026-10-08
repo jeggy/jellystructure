@@ -38,6 +38,8 @@ class MusicEditionsStoreTest {
         for (t in listOf("music_official_pick", "music_single_home", "music_same_song", "music_sound_pair")) raw.execute(null, "DROP TABLE $t", 0)
         // The migrations after 305's (66.sqm) run again too: their tables go with it (R368/R369's 67 and 68, 307's 69).
         for (t in listOf("playback_session", "playback_session_event", "playback_session_controller", "publish_item")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        // …and 310's 71 creates playback_outbox.
+        raw.execute(null, "DROP TABLE IF EXISTS playback_outbox", 0)
         // …and 308's 70 adds four columns to playback_qoe.
         for (c in listOf("variant_switches_down", "variant_switches_up", "variant_bandwidth_bps", "variant_height")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)

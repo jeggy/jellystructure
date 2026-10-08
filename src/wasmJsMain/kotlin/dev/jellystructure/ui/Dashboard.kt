@@ -474,6 +474,8 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
             "same_songs" -> edOpenSameSongs(scope) { scope.launch { loadOverview(scope) } }
             // Phase 307 (FR-307-3) — *Waiting to publish*: what would go to a public database, exactly.
             "publish_queue" -> openPublishQueue(scope) { scope.launch { loadOverview(scope) } }
+            // Phase 310/312 — *Watch places to put back*: the dry run, then the owner's press.
+            "playback_repair" -> openPlaybackRepair(scope) { scope.launch { loadOverview(scope) } }
         }
         return
     }

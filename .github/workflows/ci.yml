@@ -33,6 +33,10 @@ jobs:
         run: ./scripts/check-css-scoping.sh
       - name: Design-sync-fragile CSS
         run: ./scripts/check-mobile-css.sh
+      - name: Only the caller's own cancellation is rethrown (phase 310)
+        run: ./scripts/check-cancellation-rethrow.sh
+      - name: No raw withTimeoutOrNull creeps back (phase 310)
+        run: ./scripts/check-timeouts.sh
       - name: Shared Docker toolchain cache ids
         run: ./scripts/check-docker-cache-ids.sh
       - name: No Jellyfin version branching

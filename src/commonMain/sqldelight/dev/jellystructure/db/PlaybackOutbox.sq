@@ -1,0 +1,31 @@
+-- Phase 310 (owner decision 2) — queued STOPs kept until Jellyfin has acknowledged them, so a restart or a
+-- redeploy never drops one (the 15 writes queued at the 2026-10-07 restart were in memory and were lost).
+-- One row per (device, item): the newest stop wins, as in the writer. Progress ticks are never kept.
+-- Times are epoch MILLISECONDS. Must stay byte-for-byte in sync with 71.sqm (the SQLDelight-migration rule).
+CREATE TABLE playback_outbox (
+    device_id TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_id TEXT NOT NULL,
+    position_ms INTEGER NOT NULL,
+    jellyfin_play_session_id TEXT,
+    start_over_unplayed INTEGER NOT NULL DEFAULT 0,
+    restore_last_played TEXT,
+    reason TEXT NOT NULL DEFAULT 'user',
+    user_played INTEGER,
+    user_position_ms INTEGER,
+    user_last_played TEXT,
+    has_user_data INTEGER NOT NULL DEFAULT 0,
+    queued_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id, jellyfin_id)
+);
+
+upsert:
+INSERT OR REPLACE INTO playback_outbox(device_id, jellyfin_user_id, jellyfin_id, position_ms, jellyfin_play_session_id,
+    start_over_unplayed, restore_last_played, reason, user_played, user_position_ms, user_last_played, has_user_data, queued_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+remove:
+DELETE FROM playback_outbox WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id;
+
+all:
+SELECT * FROM playback_outbox ORDER BY queued_at;

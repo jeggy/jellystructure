@@ -1,0 +1,18 @@
+-- Phase 310 (owner decision 2) — queued STOPs kept until Jellyfin has acknowledged them. Must stay byte-for-byte in
+-- sync with PlaybackOutbox.sq's CREATE TABLE (the SQLDelight-migration rule).
+CREATE TABLE playback_outbox (
+    device_id TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_id TEXT NOT NULL,
+    position_ms INTEGER NOT NULL,
+    jellyfin_play_session_id TEXT,
+    start_over_unplayed INTEGER NOT NULL DEFAULT 0,
+    restore_last_played TEXT,
+    reason TEXT NOT NULL DEFAULT 'user',
+    user_played INTEGER,
+    user_position_ms INTEGER,
+    user_last_played TEXT,
+    has_user_data INTEGER NOT NULL DEFAULT 0,
+    queued_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id, jellyfin_id)
+);

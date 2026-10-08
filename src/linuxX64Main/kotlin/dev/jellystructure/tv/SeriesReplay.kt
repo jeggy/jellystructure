@@ -29,7 +29,40 @@ internal data class SessionPlan(
     /** R375 — a shuffle's series anchor date (its last finished episode's `LastPlayedDate`) as the last Continue
      *  build saw it; null when the series had nothing finished or the start was not a shuffle. */
     val anchorLastPlayed: String? = null,
+    /** Phase 310 (dev review item 7) — the item was watched when this play started (any kind; [watchedAtStart] is
+     *  series-only, R375's own). An unfinished replay of a watched item leaves it watched. */
+    val playedAtStart: Boolean = false,
 )
+
+/**
+ * Phase 310 (dev review item 7) / 312 (FR-312-3) — what Jellyfin must hold for an item once its stop has landed:
+ * one `setUserData(played, position, lastPlayedDate)` built from the stop's own decision, written after the stop and
+ * checked again a few seconds later. It replaces three separate writes that raced each other (R347's tick, R343's
+ * unwatched write-back, R375's date restore), and it overrides whatever Jellyfin guessed meanwhile (a stop with no
+ * position marks an item watched, 310; a stray stop at 0 wipes its place, 312).
+ *
+ * [played] null = leave Jellyfin's flag as it is; [lastPlayedDate] null = leave Jellyfin's date.
+ */
+data class StopUserData(val played: Boolean?, val positionMs: Long, val lastPlayedDate: String?)
+
+/** Jellyfin's own `MinResumePct`: a stop before this share of the file keeps no place. */
+internal const val MIN_RESUME_PERCENT = 5L
+
+internal fun stopUserData(positionMs: Long, plan: SessionPlan, startOverUnplayed: Boolean): StopUserData {
+    val finished = playbackFinished(positionMs, plan.durationMs, plan.creditsStartMs)
+    fun place(ms: Long) = if (plan.durationMs > 0 && ms < plan.durationMs * MIN_RESUME_PERCENT / 100) 0L else ms
+    return when {
+        // R343 — a Start over session that cleared its series and did not finish: unwatched at the stop's position.
+        startOverUnplayed -> StopUserData(played = false, positionMs = place(positionMs), lastPlayedDate = null)
+        // R347 — finished (90 %, or the trusted credits marker): watched, no place; R375 caps a shuffle's date.
+        finished -> StopUserData(played = true, positionMs = 0L, lastPlayedDate = lastPlayedRestore(plan, finished = true))
+        // FR-R343-5 — a shuffled entry that did not finish keeps the place it had before the shuffle, and its flag.
+        plan.shuffle -> StopUserData(played = null, positionMs = plan.priorPositionMs, lastPlayedDate = lastPlayedRestore(plan, finished = false))
+        // Anything else that did not finish: at its place; not watched unless it already was (a replay stays watched).
+        else -> StopUserData(played = if (plan.playedAtStart) null else false, positionMs = place(positionMs),
+            lastPlayedDate = lastPlayedRestore(plan, finished = false))
+    }
+}
 
 /**
  * R375 (FR-R375-6, owner decisions 2026-10-04) — the `LastPlayedDate` to write back once a stop has landed, or null

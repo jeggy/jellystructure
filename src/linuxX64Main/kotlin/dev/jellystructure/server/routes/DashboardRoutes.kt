@@ -206,6 +206,15 @@ class DashboardService(
                 "Tick *Supports casting to audio-only devices* on the console, then cast a song to a speaker once.", fix = "info", href = "/settings?tab=connections")
         }
 
+        // ── Phase 310 (FR-310-3) — the one writer every watch position goes through; critical, since it stops watch history.
+        playbackWriterRow(runCatching { playbackService.writerStats() }.getOrNull())?.let { rows += it }
+        // Phase 310 (FR-310-7) / 312 (FR-312-5) — places Jellyfin lost that can be put back; the owner presses Apply.
+        runCatching { playbackService.repairPlan() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { plan ->
+            rows += DashboardRow("playback_repair", "jf", WARNING, "Watch places to put back",
+                "Jellyfin lost the place (or marked it watched by guessing) for these after the playback writer stopped or a stray stop at 0. Look at the list, then *Put them back*.",
+                plan.size, "title", "here", action = "Show the list", opens = "playback_repair")
+        }
+
         // ── Order, headline, domains ──
         val ordered = rows.sortedWith(compareBy<DashboardRow>({ severityRank(it.severity) }, { -(it.count ?: 0) }, { it.label }))
         val domains = DOMAINS.mapNotNull { (id, label) -> ordered.count { it.domain == id }.takeIf { it > 0 }?.let { DashboardDomain(id, label, it) } }
@@ -316,6 +325,10 @@ class DashboardService(
 
     private fun severityRank(s: String) = when (s) { CRITICAL -> 0; WARNING -> 1; else -> 2 }
 
+    /** Phase 310/312 — the dry run behind the *Watch places to put back* row, and the owner's Apply. */
+    suspend fun repairPlan() = playbackService.repairPlan()
+    suspend fun applyRepair() = playbackService.applyRepair()
+
     companion object {
         const val CRITICAL = "critical"
         const val WARNING = "warning"
@@ -331,10 +344,32 @@ fun Route.dashboardRoutes(service: DashboardService, mediaHistory: MediaHistory)
             val uid = runCatching { call.attributes[SessionKey].jellyfinUserId }.getOrNull()
             call.respond(service.build(uid))
         }
+        /** Phase 310 (FR-310-7) / 312 (FR-312-5) — the dry run: what *Put them back* would change. Writes nothing. */
+        get("/playback-repair") { call.respond(service.repairPlan()) }
+        /** The owner's press. */
+        post("/playback-repair/apply") { call.respond(mapOf("put_back" to service.applyRepair())) }
         /** FR-285-8 — the page says it was seen when the admin leaves it; the next open measures from here. */
         post("/seen") {
             runCatching { call.attributes[SessionKey].jellyfinUserId }.getOrNull()?.let { mediaHistory.markDashboardVisit(it, nowEpochSec()) }
             call.respond(mapOf("ok" to true))
         }
     }
+}
+
+/**
+ * Phase 310 (FR-310-3) — *Watch progress isn't reaching Jellyfin*: shown when the playback writer's loop is not
+ * running, or its oldest queued write has waited longer than [dev.jellystructure.tv.PlaybackWriter.STALLED_AFTER_S];
+ * nothing otherwise (zero is silence, FR-285-5). Critical: while it shows, no place, stop or watched mark is saved.
+ */
+internal fun playbackWriterRow(stats: dev.jellystructure.tv.PlaybackWriter.Stats?): DashboardRow? {
+    stats ?: return null
+    if (!stats.stalled) return null
+    val why = if (!stats.alive) "The playback writer is not running" else "Its oldest write has waited ${stats.oldestWaitingS / 60} min"
+    return DashboardRow(
+        id = "playback_writer", domain = "host", severity = DashboardService.CRITICAL,
+        label = "Watch progress isn’t reaching Jellyfin",
+        sentence = "$why: places, stops and watched marks are not being saved." +
+            (stats.lastFailure?.let { " Last failure: $it." } ?: "") + " Restarting the backend starts it again.",
+        count = stats.queued, unit = "write", fix = "info",
+    )
 }

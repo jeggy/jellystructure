@@ -141,7 +141,7 @@ object PlaystateCache {
         // Phase 219 (FR-219-4) — time the permit wait and the Jellyfin round trip separately, so a cycle
         // skipped for want of a permit is INFO ("pool busy") and only a real Jellyfin timeout stays WARN.
         val recorder = dev.jellystructure.ops.GateWaitRecorder()
-        val ps = withTimeoutOrNull(timeoutMs) {
+        val ps = dev.jellystructure.ops.boundedOrNull(timeoutMs, "playstate refresh") {
             withContext(recorder) {
                 val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
                 fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
@@ -160,7 +160,7 @@ object PlaystateCache {
         // R352 (FR-R352-8) — a series whose own row changed since the last cycle (marked in Jellyfin's own UI, say) is
         // read whole now; the rotation alone took five minutes to reach all its episodes (2 → 8 → 12 → 18 → 20 of 20).
         val whole = if (scope is RefreshScope.Cycle && previous != null) episodesOfChangedSeries(items, previous, ps, ids.toSet()) else emptyList()
-        val extra = if (whole.isEmpty()) emptyMap() else withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+        val extra = if (whole.isEmpty()) emptyMap() else dev.jellystructure.ops.boundedOrNull(FETCH_TIMEOUT_MS, "playstate refresh") {
             val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
             fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, whole)
         }.orEmpty()

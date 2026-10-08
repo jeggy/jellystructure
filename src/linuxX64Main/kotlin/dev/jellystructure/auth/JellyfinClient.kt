@@ -283,8 +283,9 @@ data class TokenCheckResult(
 )
 
 class JellyfinClient {
+    // Phase 310 — a GET is idempotent: one retry when a foreign cancellation (Ktor's Curl engine) failed it.
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
-        OutboundHttp.withPermit { http.get(url, block) }
+        OutboundHttp.withPermit(retryForeignCancellation = true) { http.get(url, block) }
     private suspend fun httpPost(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         OutboundHttp.withPermit { http.post(url, block) }
     private suspend fun httpDelete(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
@@ -961,8 +962,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
-            setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true$psid}""")
+            setBody(jellyfinStartBody(jellyfinId, positionTicks, mediaSourceId, playSessionId))
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin startPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
 
@@ -1552,6 +1552,18 @@ data class JellyfinDeviceIdentity(
 
 /** What Jellyfin is told when a Ravilo client signs in without saying which build it is. */
 internal const val UNKNOWN_CLIENT_VERSION = "0.0.0"
+
+/**
+ * Phase 310 (dev review item 6) — the body of Jellyfin's `POST /Sessions/Playing`. Jellyfin's `PlaybackStartInfo`
+ * reads **`PositionTicks`** (inherited from `PlaybackProgressInfo`) into the session's last check-in position; it has no
+ * `StartPositionTicks`, which is all this body used to send. So every Ravilo play was at an *unknown* position until its
+ * first progress report landed, and Jellyfin's 5-minute idle stop then assumed *watched* (310's 13 items). Both are
+ * sent: `PositionTicks` is the one Jellyfin reads; `StartPositionTicks` is kept, byte-compatible with what was there.
+ */
+internal fun jellyfinStartBody(jellyfinId: String, positionTicks: Long, mediaSourceId: String, playSessionId: String?): String {
+    val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+    return """{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true$psid}"""
+}
 
 /**
  * The body of Jellyfin's `POST /Sessions/Playing/Progress`, for both the inline report and the 219 writer's. R357

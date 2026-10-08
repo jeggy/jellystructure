@@ -11,7 +11,10 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpMethod
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.AtomicInt
@@ -93,8 +96,50 @@ object OutboundHttp {
      * there is no such window; the cost is up to [POLL_INTERVAL_MS] of extra latency once contended,
      * which is immaterial next to either timeout.
      */
-    suspend fun <T> withPermit(block: suspend () -> T): T =
-        if (currentGateClass() == GateClassKind.BACKGROUND) withBackgroundPermit(block) else withInteractivePermit(block)
+    suspend fun <T> withPermit(block: suspend () -> T): T = withPermit(retryForeignCancellation = false, block)
+
+    /**
+     * Phase 310 (dev review item 3) — [block] runs behind [foreignSafe]: a `CancellationException` that reaches
+     * here while the CALLER's own coroutine is still active did not come from the caller. Ktor 3.6's Curl engine
+     * queues a cancelled call's cancellation under the easy handle's pointer and applies it later, so a new request
+     * that was handed the freed handle's address fails with the OLD call's cause (2026-10-06 15:34:57: Continue
+     * Watching's "Timed out waiting for 6000 ms" failed the playback writer's progress call and ended its loop).
+     * Such a foreign cancellation becomes a [ForeignCancellationException] — an `IOException`, so every caller's
+     * correct `if (e is CancellationException) throw e` treats it as the failed call it is. An idempotent caller
+     * ([retryForeignCancellation], `JellyfinClient`'s GETs) gets one retry, FR-194-6's rule. The caller's own
+     * cancellation still propagates untouched.
+     */
+    suspend fun <T> withPermit(retryForeignCancellation: Boolean, block: suspend () -> T): T {
+        val guarded: suspend () -> T = { foreignSafe(block) }
+        val gated: suspend () -> T = {
+            if (currentGateClass() == GateClassKind.BACKGROUND) withBackgroundPermit(guarded) else withInteractivePermit(guarded)
+        }
+        return try {
+            gated()
+        } catch (e: ForeignCancellationException) {
+            if (!retryForeignCancellation) throw e
+            dev.jellystructure.log.Logger.warn("OutboundHttp: ${e.message} — retrying once (310)", "ops")
+            gated()
+        }
+    }
+
+    /** Phase 310 — see [withPermit]: a cancellation the caller didn't cause is an I/O failure, not a cancellation. */
+    internal suspend fun <T> foreignSafe(block: suspend () -> T): T = try {
+        block()
+    } catch (e: CancellationException) {
+        if (!currentCoroutineContext().isActive) throw e
+        foreignCancellations.incrementAndGet()
+        throw ForeignCancellationException(e)
+    }
+
+    /** Phase 310 — a cancellation that reached a call whose own coroutine was still running (see [withPermit]). */
+    class ForeignCancellationException(cause: CancellationException) :
+        kotlinx.io.IOException("a foreign cancellation reached this call (${cause::class.simpleName}: ${cause.message})", cause)
+
+    private val foreignCancellations = AtomicInt(0)
+
+    /** Phase 310 — how many foreign cancellations [withPermit] turned into failures since start (`/api/health`). */
+    fun foreignCancellationCount(): Int = foreignCancellations.value
 
     private suspend fun <T> withInteractivePermit(block: suspend () -> T): T {
         val recorder = kotlin.coroutines.coroutineContext[dev.jellystructure.ops.GateWaitRecorder]

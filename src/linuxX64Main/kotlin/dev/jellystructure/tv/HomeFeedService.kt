@@ -967,7 +967,8 @@ class HomeFeedService(
         val recorder = dev.jellystructure.ops.GateWaitRecorder()
         // Phase 230 (FR-230-4) — no list to fall back on ⇒ be patient; R231's 6 s stands once there is one.
         val continueTimeoutMs = if (continueListCache[device.jellyfinUserId] == null) CONTINUE_COLD_TIMEOUT_MS else CONTINUE_TIMEOUT_MS
-        val fetched = withTimeoutOrNull(continueTimeoutMs) {
+        // Phase 310 (FR-310-4) — boundedOrNull: on 2026-10-06 this very call let a TimeoutCancellationException escape.
+        val fetched = dev.jellystructure.ops.boundedOrNull(continueTimeoutMs, "Continue Watching build") {
             kotlinx.coroutines.withContext(recorder) {
                 coroutineScope {
                     val resumeDeferred   = async { jellyfinClient.getResumeItemsAll(jellyfinUrl, token, device.jellyfinUserId) }

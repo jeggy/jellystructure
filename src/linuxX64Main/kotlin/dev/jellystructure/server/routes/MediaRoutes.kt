@@ -95,6 +95,7 @@ import dev.jellystructure.shared.tv.migrateFlatQuery
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.isActive
 
 @Serializable
 private data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
@@ -2670,7 +2671,8 @@ internal suspend fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, paylo
         }
     }
     val elapsed = started.elapsedNow().inWholeMilliseconds
-    result.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+    // Phase 310 — only the caller's own cancellation ends it; a foreign one is a failed delivery like any other.
+    result.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException && !kotlinx.coroutines.currentCoroutineContext().isActive) throw it }
     val response = result.getOrNull()
     val ok = response != null && response.status.value in 200..299
     val reason = when {
