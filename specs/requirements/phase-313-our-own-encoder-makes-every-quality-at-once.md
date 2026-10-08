@@ -452,3 +452,11 @@ enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for
 - **The app's 8 s segment timeout** fires before a cold first segment (9 s, 12.9 s after a seek at p4); Media3 retries
   and recovers, but the first frame waits for the retry. With p1 and a warm cache the first segment should land well
   inside 8 s; if not, the backend should answer a not-yet-made segment early (e.g. 503 + Retry-After) rather than hold.
+- **With p1 (v1.50-76), the same film on the Pixel:** first segment **1.7 s**, READY **3.2 s** after Play, ~2.5× overall;
+  one slow patch early (segments 4–5 took 9 s for 4 s of film → a 3.8 s stall at 0:10). A seek (to 43:33) restarted the
+  job once, first segment 1.6 s after the restart, but seek-to-picture took ~8.7 s and stalled once more:
+  (a) Media3 waited ~4 s for an in-flight request for a segment the job hadn't made (paused 40 s ahead) before it asked
+  for the new position — a request for a segment beyond the pause point should resume the job or be answered at once,
+  never held; (b) the first segments after a restart came at ~0.6× before the job sped up. Both measured while the
+  qBittorrent force recheck read the films disk at ~220 MB/s (60–80 % busy), which likely explains the slow patches;
+  re-measure when the recheck is done.
