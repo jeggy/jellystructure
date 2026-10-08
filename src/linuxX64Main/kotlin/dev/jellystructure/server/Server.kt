@@ -18,6 +18,7 @@ import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.seedingRoutes
+import dev.jellystructure.server.routes.fileFixRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
@@ -635,6 +636,7 @@ fun startServer(
                     suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
+                dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)

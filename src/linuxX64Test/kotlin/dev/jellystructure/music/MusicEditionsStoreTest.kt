@@ -48,6 +48,8 @@ class MusicEditionsStoreTest {
         for (c in listOf("bandwidth_samples", "bandwidth_bytes", "first_frame_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         // …and R381's 73 adds five more.
         for (c in listOf("per_item", "stalls_json", "waits_json", "session_rebuffer_count", "session_rebuffer_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
+        // …and 314's 76 creates file_fix and file_fix_setting.
+        for (t in listOf("file_fix", "file_fix_setting")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

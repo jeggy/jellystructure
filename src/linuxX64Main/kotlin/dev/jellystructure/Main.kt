@@ -390,6 +390,39 @@ fun main() = runBlocking {
         c.tagWriter = tagWriter
         mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
     }
+    // Phase 314 — a file every device can play directly: the dry run, Apply, one job at a time on the media lane.
+    val fileFix = dev.jellystructure.filefix.FileFixService(
+        db = db, store = mediaStore, config = { configStore.current }, history = mediaHistory,
+        seeding = { path -> seedingGuard.check(path, configStore.current, inPlace = true, countRefusal = false) },
+        radarrParse = { title ->
+            val r = configStore.current.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
+            if (r == null) dev.jellystructure.arr.ArrParseResult(null, 0) else arrClient.parseRelease(r.url, r.apiKey, title)
+        },
+        afterWrite = { item ->
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank())
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+            arrRescan.nudge(item)
+        },
+        playbackActive = {
+            dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())
+        },
+        now = ::nowEpochSec,
+        today = { dev.jellystructure.filefix.isoDateUtc(nowEpochSec()) },
+    )
+    dev.jellystructure.filefix.FileFixService.current = fileFix
+    mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }
+    runCatching { db.fileFixQueries.resetRunning() }   // a restart mid-job: the row goes back to pending, the work file is swept
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            runCatching {
+                if (!dev.jellystructure.tv.isPlaybackActive()) fileFix.nextToQueue(mediaJobQueue.fileFixJobActive())?.let { row ->
+                    mediaJobQueue.enqueueFileFix(row.media_id, "Make file play directly · ${row.label}", row.path, row.kind)
+                }
+            }.onFailure { Logger.warn("file fix: queue tick failed: ${it.message} (314)", "jobs") }
+        }
+    }
     // Phase 281 — the book editor: suggestions from four providers, the cover, Save (tags only with the switch on).
     musicPipeline.audiobooksMedia = musicPipeline.audiobooks?.let { b ->
         dev.jellystructure.audiobooks.AudiobooksMediaService(b.store, dev.jellystructure.audiobooks.AudiobookProviders(configStore, musicPipeline.matcher.mb),

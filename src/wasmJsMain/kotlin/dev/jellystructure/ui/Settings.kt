@@ -341,6 +341,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
+${fileFixSectionHtml()}
             <div class="card set-section" id="sect-scanning" data-tab="libraries">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
@@ -1224,6 +1225,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireChromecast(scope)
     wireRequestLanguage(scope)
     wireAi(scope) { refreshTomlPreview(readForm()) }   // Phase 270
+    wireFileFix(scope)   // Phase 314 — Make files play directly
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone

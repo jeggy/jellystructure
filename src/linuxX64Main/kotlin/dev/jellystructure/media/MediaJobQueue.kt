@@ -116,6 +116,30 @@ class MediaJobQueue(
     /** Phase 278 (FR-278-7) — the music library's *Convert…* job body, set once music is wired (Main.kt). Takes the
      *  job's owner id, the files, a per-file progress callback and the cancel flag; returns null or why it failed. */
     var audioConverter: (suspend (String, List<String>, suspend (Int) -> Unit, () -> Boolean) -> String?)? = null
+
+    /** Phase 314 — the file-fix job body (FileFixService.runJob), set once it is wired (Main.kt): path, kind, the
+     *  cancel flag, a progress callback (percent). */
+    var fileFixer: (suspend (String, String, () -> Boolean, (Double) -> Unit) -> dev.jellystructure.filefix.FixOutcome)? = null
+
+    /** Phase 314 — is a file-fix job waiting or running (the service queues one at a time)? */
+    fun fileFixJobActive(): Boolean =
+        queries.listRunning().executeAsList().any { it.type == FILE_FIX_JOB } || queries.listQueued().executeAsList().any { it.type == FILE_FIX_JOB }
+
+    /** Phase 314 — one file, one kind, on the media lane; waits while a TV plays (and the household defers). */
+    suspend fun enqueueFileFix(mediaId: String, label: String, path: String, kind: String): MediaJobSnapshot =
+        enqueue(FILE_FIX_JOB, mediaId, label, MediaJobParams(filePath = path, fixKind = kind, deferWhilePlaying = true))
+
+    private suspend fun runFileFix(row: Media_job, params: MediaJobParams): Outcome {
+        val fixer = fileFixer ?: return Failure("File fixing is not set up on this server")
+        val path = params.filePath ?: return Failure("Missing file")
+        val kind = params.fixKind ?: return Failure("Missing kind")
+        return when (val r = fixer(path, kind, { cancelRunning }) { pct -> queries.updateProgress(pct, null, 0, null, row.id); kotlinx.coroutines.runBlocking { broadcastSnapshot(row.id) } }) {
+            is dev.jellystructure.filefix.FixOutcome.Done -> Success
+            is dev.jellystructure.filefix.FixOutcome.Skipped -> Success
+            is dev.jellystructure.filefix.FixOutcome.Stopped -> Cancelled(r.reason)
+            is dev.jellystructure.filefix.FixOutcome.Failed -> Failure(r.reason)
+        }
+    }
     private val queries get() = db.mediaJobQueries
 
     // Phase 213 — the shared worker pool. Replaces the old per-lane pair (media's fixed FIFO-1
@@ -636,6 +660,7 @@ class MediaJobQueue(
             "presize_artwork" -> runPresizeArtwork(row)
             "convert_audio" -> runConvertAudio(row, params)
             "write_tags" -> runWriteTags(row)   // Phase 284
+            FILE_FIX_JOB -> runFileFix(row, params)   // Phase 314
             else -> Failure("Unknown job type '${row.type}'")
         }
     }
@@ -1321,6 +1346,8 @@ class MediaJobQueue(
         val RETIRED_TYPES = setOf("file_integrity_sweep", "track_coverage_sweep", "file_integrity_title")
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */
         const val QUEUE_EMPTIED_TYPE = "queue_emptied"
+        /** Phase 314 — a file every device can play directly: one file, one kind (FileFixService). */
+        const val FILE_FIX_JOB = "file_fix"
     }
 }
 
