@@ -207,3 +207,8 @@ calls no qBittorrent write.
 - The move has only run against fakes. It runs for real when the owner presses *Move the ticked films* after a deploy.
 - The second film's Radarr entry pointing at another film's file is Radarr's own mismatch; 316 leaves it alone and says
   so on the row.
+
+## Live (2026-10-09, v1.50-78)
+
+The Dashboard shows the warning **"3 films have no folder of their own"** (wording fixed on merge). **Move** was not
+pressed (the owner's button).
