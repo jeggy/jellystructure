@@ -84,3 +84,12 @@ fun parseTrackUids(output: String): Map<Int, String> {
     val tracks = root["tracks"]?.jsonArray?.map { it.jsonObject } ?: return emptyMap()
     return tracks.filter { it.str("type") == "audio" }.mapIndexedNotNull { i, t -> t.obj("properties")?.str("uid")?.let { i to it } }.toMap()
 }
+
+/**
+ * Phase 314c (Remove) — the file carries our global `JELLYSTRUCTURE_DV` tag (FR-314-4): only then is a version file deleted.
+ * The name alone (`… - Dolby Vision.mkv`) is enough to plan around, never to delete.
+ */
+fun hasOurDvTag(ffprobeOutput: String): Boolean {
+    val root = runCatching { probeJson.parseToJsonElement(ffprobeOutput).jsonObject }.getOrNull() ?: return false
+    return root.obj("format")?.obj("tags")?.keys?.any { it.equals("JELLYSTRUCTURE_DV", ignoreCase = true) } == true
+}

@@ -306,6 +306,7 @@
   "player.rail_hint": "← → skift  ·  ↵ afspil  ·  ↑ tilbage",
   "player.tab_audio": "Lyd",
   "player.tab_subtitles": "Undertekster",
+  "player.tab_picture": "Billede",
   "player.badge_default": "Standard",
   "player.badge_surround51": "Surround 5.1",
   "player.badge_surround71": "Surround 7.1",

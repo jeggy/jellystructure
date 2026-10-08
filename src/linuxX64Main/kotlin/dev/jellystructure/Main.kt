@@ -411,6 +411,8 @@ fun main() = runBlocking {
         },
         now = ::nowEpochSec,
         today = { dev.jellystructure.filefix.isoDateUtc(nowEpochSec()) },
+        // Phase 314c — a Dolby Vision 7 original renamed after its folder, by 316's mover (in place).
+        renameOriginal = { path -> looseFilms.renameToFolder(path) },
     )
     dev.jellystructure.filefix.FileFixService.current = fileFix
     mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }

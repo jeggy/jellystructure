@@ -91,3 +91,10 @@ internal val BASE_CONTAINERS = listOf("mkv", "mp4", "avi", "mov")
  * (Chrome and Firefox expose no `audioTracks`): picking another track then restreams the item as HLS ([audioPickNeedsHls]).
  */
 expect fun switchesAudioInFile(): Boolean
+
+/**
+ * Phase 314b (FR-314-6) — this player plays an audio track from a separate `.mka` file beside a direct-played video
+ * (Media3 merges the two sources). A player that says so is handed the sidecar's URL; one that doesn't is never offered
+ * the sidecar on a direct play (it would be a row that does nothing) and gets it through Jellyfin's stream instead.
+ */
+expect fun mergesExternalAudio(): Boolean

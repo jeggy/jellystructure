@@ -857,7 +857,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex))
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs, req.capabilities, req.audioStreamIndex, req.mediaSourceId))
     }
 
     post("/tv/mark") {
@@ -1391,6 +1391,12 @@ fun Route.tvRoutes(
     }
     // R291 (2026-09-26) — this server's own audio renditions (Jellyfin's audio endpoint cannot map a track):
     // one track's playlist, and its segments made on demand. Same capability id as the master.
+    // Phase 314b (FR-314-6) — a `.mka` sidecar a direct-playing client merges with the video; ranges for its seeks.
+    get("/tv/stream/{id}/sidecar.mka") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val path = playbackService.sidecars.path(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        dev.jellystructure.server.respondFileRange(call, path, ContentType.parse("audio/x-matroska"))
+    }
     get("/tv/stream/{id}/audio/{pos}/main.m3u8") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)

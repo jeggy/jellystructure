@@ -1248,7 +1248,7 @@ class JellyfinClient {
         // Phase 208 — migrated off /Users/{userId}/Items/{itemId}; verified live 2026-09-13,
         // byte-identical response on this exact query shape.
         val url = baseUrl.trimEnd('/') +
-            "/Items/$jellyfinId?userId=$userId&Fields=UserData,RunTimeTicks,MediaStreams"
+            "/Items/$jellyfinId?userId=$userId&Fields=UserData,RunTimeTicks,MediaStreams,MediaSources"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinItemDetail>("getItemDetail")
     }.let { result ->

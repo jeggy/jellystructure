@@ -38,6 +38,20 @@ class FileFixLiveDryRunTest {
                 val folder = shell.listDir(p.substringBeforeLast('/')).filter { it.lowercase().endsWith(".mkv") || it.lowercase().endsWith(".mp4") }
                 val v = planDolbyVision(probe.facts, film, folder)
                 bump("c.${v.action}" + (v.reason?.let { if (v.action == "skip") ": " + it.substringBefore(',') else "" } ?: "") + if (probe.facts.video?.dvElPresent == true) " (EL)" else "")
+                // Phase 314c — the dry run's needs_rename rule (FileFixService.planOne): a rename after the folder would
+                // make it eligible; and what the rename would take with it (dev.jellystructure.media.planRenameToFolder).
+                val renamed = renamedToFolder(p)
+                if (v.action == "skip" && renamed != null && !namedAfterFolder(p) &&
+                    planDolbyVision(probe.facts.copy(path = renamed), film, folder.map { if (it == p) renamed else it }).action == "add"
+                ) {
+                    val dir = p.substringBeforeLast('/')
+                    val names = shell.run("ls -1A ${FileFixCommands.q(dir)}").output.lines().filter { it.isNotBlank() }
+                    val plan = dev.jellystructure.media.planRenameToFolder(p.substringAfterLast('/'), names, dir.substringAfterLast('/'))
+                    val clash = plan.any { f -> f.target != f.name && f.target in names }
+                    val links = linkInfo(p)?.links ?: 1L
+                    bump("c.needs_rename" + (if (links > 1) " (hard-linked: seeding elsewhere goes on)" else " (no other link: ask qBittorrent)") + if (clash) " CLASH" else "")
+                    bump("c.needs_rename files renamed with it = ${plan.size - 1}")
+                }
             }
         }
         println("FILEFIX LIVE DRY RUN over ${paths.size} files")

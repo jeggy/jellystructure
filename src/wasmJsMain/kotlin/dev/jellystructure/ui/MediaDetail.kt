@@ -578,7 +578,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() + subtitleCheckCardShellHtml() else ""
+    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + movieSegmentsCardShellHtml(item.id) + bazarrMovieCardShellHtml() + subtitleCheckCardShellHtml() + fileFixTitleCardShellHtml() else ""
 
     val resolverTraceHtml = buildMetadataLanguageCard(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
@@ -1178,6 +1178,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadTrackCoverage(item) }   // Phase 255
     scope.launch { loadChecksCard(item, scope) }   // Phase 261
     scope.launch { loadSubtitleVerdicts(item, scope) }   // Phase 273
+    scope.launch { loadFileFixTitleCard(item.id, scope) }   // Phase 314c
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -1602,6 +1603,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
           </div>
           $seasonSummary
           ${subtitleCheckCardShellHtml(bottom = true)}
+          ${fileFixTitleCardShellHtml(bottom = true)}
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;gap:14px;">
               $votingCard

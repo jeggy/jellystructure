@@ -104,3 +104,6 @@ actual fun supportedContainers(): List<String> = BASE_CONTAINERS
 
 /** R376 (FR-R376-3) — the player selects a direct-played file's own audio tracks. */
 actual fun switchesAudioInFile(): Boolean = true
+
+/** Phase 314b — not built for mpv or AVPlayer yet: the sidecar comes through Jellyfin's stream there. */
+actual fun mergesExternalAudio(): Boolean = false

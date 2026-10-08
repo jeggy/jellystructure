@@ -213,6 +213,46 @@ class LooseFilmsTest {
         assertEquals("moved", out.state)
     }
 
+    // ── Phase 314c — a Dolby Vision original renamed after its own folder (the same mover, in place) ──
+
+    private val dvDir = "$root/Some Film (2023)"
+    private val dvVideo = "Some.Film.2023.2160p.UHD.BluRay.REMUX.mkv"
+
+    @Test fun `a rename after the folder takes the video and every file named after it - folder-named files stay`() {
+        val plan = planRenameToFolder(dvVideo, listOf(dvVideo, "Some.Film.2023.2160p.UHD.BluRay.REMUX.nfo",
+            "Some.Film.2023.2160p.UHD.BluRay.REMUX.da.srt", "Some.Film.2023.2160p.UHD.BluRay.REMUX-thumb.jpg", "poster.jpg", "movie.nfo"), "Some Film (2023)")
+        assertEquals(mapOf(
+            dvVideo to "Some Film (2023).mkv",
+            "Some.Film.2023.2160p.UHD.BluRay.REMUX.nfo" to "Some Film (2023).nfo",
+            "Some.Film.2023.2160p.UHD.BluRay.REMUX.da.srt" to "Some Film (2023).da.srt",
+            "Some.Film.2023.2160p.UHD.BluRay.REMUX-thumb.jpg" to "Some Film (2023)-thumb.jpg",
+        ), plan.associate { it.name to it.target })
+        assertEquals(emptyList(), planRenameToFolder("Some Film (2023).mkv", listOf("Some Film (2023).mkv"), "Some Film (2023)"))
+    }
+
+    private fun renameFilm(torrents: List<LooseTorrent> = emptyList()) = LooseFilm(
+        key = "$dvDir/$dvVideo", root = dvDir, mediaId = "some-film-2023", title = "Some Film", year = 2023, jellyfinId = "old",
+        video = dvVideo, files = planRenameToFolder(dvVideo, listOf(dvVideo, "Some.Film.2023.2160p.UHD.BluRay.REMUX.nfo", "poster.jpg"), "Some Film (2023)"),
+        torrents = torrents, radarr = RadarrPlan.UPDATE, radarrId = 7, targetFolder = dvDir,
+    )
+
+    @Test fun `a rename in place makes no folder - renames inside it - and Radarr and Jellyfin are told`() = runBlocking {
+        val fake = Fake()
+        val out = LooseFilmMover(fake).move(renameFilm(torrents = listOf(LooseTorrent("t1", "Seeding", "h1", false))))
+        assertTrue(out.state != "failed", out.error)
+        assertTrue("mkdir" !in fake.calls && "rmdir" !in fake.calls)
+        assertEquals(setOf("$dvDir/$dvVideo" to "$dvDir/Some Film (2023).mkv", "$dvDir/Some.Film.2023.2160p.UHD.BluRay.REMUX.nfo" to "$dvDir/Some Film (2023).nfo"), fake.renamed.toSet())
+        assertTrue("setLocation:h1" !in fake.calls, "a hard-link seed is untouched: the inode is the same")
+        assertTrue("radarrRefresh" in fake.calls && "jellyfinNotify" in fake.calls && "updateMedia:new" in fake.calls)
+        assertEquals("$dvDir/Some Film (2023).mkv", out.key)
+    }
+
+    @Test fun `a rename in place stops when the new name is taken`() = runBlocking {
+        val fake = Fake(targetExists = true)
+        assertEquals("failed", LooseFilmMover(fake).move(renameFilm()).state)
+        assertTrue(fake.renamed.isEmpty())
+    }
+
     @Test fun `jellyfin not finding it yet marks the move partial and not failed`() = runBlocking {
         val fake = Fake(newId = null)
         val out = LooseFilmMover(fake).move(looseFilm())

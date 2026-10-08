@@ -454,14 +454,26 @@ actual class RaviloPlayer actual constructor() {
             .apply { if (prefetchKey != null) setCustomCacheKey(prefetchKey) }
             .build()
         val p = exo()   // R292 — builds and binds a fresh engine after a background release
+        // Phase 314b (FR-314-6) — a `.mka` sidecar beside the video, merged in: its audio follows the container's own
+        // tracks, which is the order the ticket lists them in (so the ordinal mapping below still holds).
+        val sidecars = audio.mapNotNull { it.externalUrl?.takeIf { _ -> it.external } }
+        val sidecarSources = sidecars.map { url ->
+            androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(androidx.media3.datasource.DefaultDataSource.Factory(ctx))
+                .createMediaSource(MediaItem.fromUri(url))
+        }
         if (prefetchKey != null) {
             val cached = androidx.media3.datasource.cache.CacheDataSource.Factory()
                 .setCache(NextPrefetch.cache)
                 .setUpstreamDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(ctx))
                 .setCacheWriteDataSinkFactory(null)   // read only: playback never writes this cache
                 .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-            p.setMediaSource(mediaSourceFactory(cached).createMediaSource(mediaItem))
+            val main = mediaSourceFactory(cached).createMediaSource(mediaItem)
+            p.setMediaSource(if (sidecarSources.isEmpty()) main else androidx.media3.exoplayer.source.MergingMediaSource(main, *sidecarSources.toTypedArray()))
             android.util.Log.i("R381", "load: the prefetched next item, read from its cache")
+        } else if (sidecarSources.isNotEmpty()) {
+            val main = mediaSourceFactory(null).createMediaSource(mediaItem)
+            p.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(main, *sidecarSources.toTypedArray()))
+            android.util.Log.i("314", "load: ${sidecarSources.size} sidecar audio file(s) merged with the video")
         } else {
             p.setMediaItem(mediaItem)
         }
@@ -663,7 +675,10 @@ actual class RaviloPlayer actual constructor() {
                     // R180 — prefer the server-derived meta (Jellyfin MediaStreams); fall back to the
                     // container format's own channel count when meta lacks it.
                     val channels = meta?.channels ?: format.channelCount.takeIf { it > 0 }
-                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language, channels, meta?.isDefault ?: false)
+                    // Phase 314b — a copy's source by its place in the ticket (the same order the player sees).
+                    val copyOf = meta?.copyOf?.let { src -> audioMeta.indexOfFirst { it.index == src } }?.takeIf { it >= 0 }
+                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language, channels, meta?.isDefault ?: false,
+                        copyOf = copyOf, supported = group.isTrackSupported(0))
                     idx++
                 }
             }

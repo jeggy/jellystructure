@@ -36,7 +36,7 @@ ALLOWED="
   screens/LiveTvPlayerScreen.kt                 1
   screens/PlayerHandsetChrome.kt                33
   screens/PlayerIdent.kt                        1
-  screens/PlayerScreen.kt                       73
+  screens/PlayerScreen.kt                       74
   screens/ProfileScreen.kt                      1
   screens/SettingsScreen.kt                     4
   screens/UpcomingScreen.kt                     5

@@ -121,3 +121,6 @@ actual fun playsOnlyHls(): Boolean = false
 
 /** R379 — a browser decodes (or refuses) AC-3 itself; [supportedAudioCodecs] already says which. */
 actual fun platformAudioDecoders(): List<String>? = null
+
+/** Phase 314b — a <video> element plays one source: no sidecar on a direct play. */
+actual fun mergesExternalAudio(): Boolean = false

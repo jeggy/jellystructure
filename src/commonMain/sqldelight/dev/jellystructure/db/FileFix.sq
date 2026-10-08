@@ -31,10 +31,12 @@ insertPlanned:
 INSERT OR IGNORE INTO file_fix(path, kind, media_id, label, state, detail, est_bytes, size, mtime, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Phase 314c — a queued Remove (`remove_pending`) is left alone like a queued add, and a Remove the owner pressed
+-- (`removed`) stays removed: neither Apply nor *new files automatically* adds it back; only the title's own Add does.
 updatePlanned:
 UPDATE file_fix SET media_id = :media_id, label = :label,
-    state = CASE WHEN state IN ('pending', 'running') THEN state ELSE :state END,
-    detail = CASE WHEN state IN ('pending', 'running') THEN detail ELSE :detail END,
+    state = CASE WHEN state IN ('pending', 'running', 'remove_pending', 'removed') THEN state ELSE :state END,
+    detail = CASE WHEN state IN ('pending', 'running', 'remove_pending', 'removed') THEN detail ELSE :detail END,
     est_bytes = :est_bytes, size = :size, mtime = :mtime, updated_at = :updated_at
 WHERE path = :path AND kind = :kind;
 
@@ -49,14 +51,18 @@ revertPendingForKind:
 UPDATE file_fix SET state = CASE WHEN detail LIKE 'seeded%' THEN 'sidecar' ELSE 'would_add' END, updated_at = :updated_at
 WHERE kind = :kind AND state = 'pending';
 
+-- Phase 314c — a Remove the owner pressed is queued as `remove_pending` and runs on the same lane.
 nextPending:
-SELECT * FROM file_fix WHERE state = 'pending' ORDER BY updated_at, path LIMIT 1;
+SELECT * FROM file_fix WHERE state IN ('pending', 'remove_pending') ORDER BY updated_at, path LIMIT 1;
+
+listForMedia:
+SELECT * FROM file_fix WHERE media_id = :media_id ORDER BY kind, path;
 
 countRunning:
 SELECT COUNT(*) FROM file_fix WHERE state = 'running';
 
 resetRunning:
-UPDATE file_fix SET state = 'pending' WHERE state = 'running';
+UPDATE file_fix SET state = CASE WHEN detail LIKE 'removing%' THEN 'remove_pending' ELSE 'pending' END WHERE state = 'running';
 
 find:
 SELECT * FROM file_fix WHERE path = :path AND kind = :kind;
@@ -74,7 +80,11 @@ readBytesSince:
 SELECT COALESCE(SUM(read_bytes), 0) FROM file_fix WHERE updated_at >= :since;
 
 deleteMissing:
-DELETE FROM file_fix WHERE kind = :kind AND updated_at < :before AND state IN ('would_add', 'sidecar', 'waiting', 'skipped');
+DELETE FROM file_fix WHERE kind = :kind AND updated_at < :before AND state IN ('would_add', 'sidecar', 'waiting', 'skipped', 'needs_rename', 'removed');
+
+-- Phase 314c — a renamed original's rows are planned again under its new path.
+deleteForPath:
+DELETE FROM file_fix WHERE path = :path;
 
 settingFor:
 SELECT * FROM file_fix_setting WHERE kind = :kind;
