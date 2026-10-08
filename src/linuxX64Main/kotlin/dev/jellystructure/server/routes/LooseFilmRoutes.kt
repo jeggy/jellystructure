@@ -57,7 +57,7 @@ fun looseFilmsDashboardRow(service: LooseFilmsService?): DashboardRow? {
     if (n == 0 && !applying) return null
     return DashboardRow(
         id = "loose_films", domain = "films", severity = "warning",
-        label = if (applying) "Moving films into folders of their own…" else "$n ${if (n == 1) "film has" else "films have"} no folder of its own",
+        label = if (applying) "Moving films into folders of their own…" else "$n ${if (n == 1) "film has" else "films have"} no folder of ${if (n == 1) "its" else "their"} own",
         sentence = "Their files sit in the library's root folder, so their artwork can show up on other films. Each can be moved into its own folder; torrents keep seeding and Radarr and Jellyfin are told.",
         count = n.takeIf { it > 0 }, unit = "film", fix = "here", action = "Show the films", opens = "loose_films",
     )
