@@ -55,6 +55,10 @@ data class OverviewDevice(
     @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
     @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
     @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
+    // 309 (FR-309-11) — what the device has shown it can take, and its last stall within 24 h.
+    @SerialName("stream_holds_bps") val streamHoldsBps: Long? = null,
+    @SerialName("stream_stalled_bps") val streamStalledBps: Long? = null,
+    @SerialName("stream_stalled_at") val streamStalledAt: Long? = null,
     // Phase 224 (FR-224-5) — the build and platform this device last reported; both null ⇒ never said.
     @SerialName("app_version") val appVersion: String? = null,
     val platform: String? = null,

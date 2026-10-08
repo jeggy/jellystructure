@@ -10,6 +10,10 @@ import dev.jellystructure.shared.tv.PlaybackNote
 // re-encode with no note, is a bug in this phase.
 private const val NOTE_MARGIN = 0.9
 
+/** 309 (FR-309-10) — the note is retired: the detail payloads always send `playback_note` null (the resolver stays,
+ *  tested, until the clients drop `PlaybackNoteLine`; 309's dev review item 12). */
+internal const val PLAYBACK_NOTE_RETIRED = true
+
 /**
  * Phase 185 (FR-185-6) — the pure predicate, separated out so it's testable without a live store: does
  * [videoTrack]'s own bitrate exceed [NOTE_MARGIN] of [capabilities]'s ceiling **for that track's own

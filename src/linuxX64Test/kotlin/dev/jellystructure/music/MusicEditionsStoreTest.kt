@@ -50,6 +50,9 @@ class MusicEditionsStoreTest {
         for (c in listOf("per_item", "stalls_json", "waits_json", "session_rebuffer_count", "session_rebuffer_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         // …and 314's 76 creates file_fix and file_fix_setting.
         for (t in listOf("file_fix", "file_fix_setting")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
+        // …and 309's 77 creates device_stream_record and adds two columns to playback_qoe.
+        raw.execute(null, "DROP TABLE IF EXISTS device_stream_record", 0)
+        for (c in listOf("start_variant_bps", "encoder")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

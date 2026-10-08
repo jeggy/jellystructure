@@ -85,7 +85,9 @@ class DetailService(
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
         // Phase 185 (FR-185-5) — resolved for THIS requesting device, from THIS movie's own file.
         val movieVideoTrack = item.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
-        val playbackNote = resolvePlaybackNote(
+        // 309 (FR-309-10) — no more "slow to start": every play starts at once on a rung the device carries and climbs,
+        // so the note is never sent (the field stays on the wire, null — installed apps draw nothing for null).
+        val playbackNote: dev.jellystructure.shared.tv.PlaybackNote? = if (PLAYBACK_NOTE_RETIRED) null else resolvePlaybackNote(
             videoTrack = movieVideoTrack,
             capabilities = raviloDeviceService.decodeCapabilities(device.deviceId, device.jellyfinUserId),
             deviceId = device.deviceId,
@@ -153,7 +155,7 @@ class DetailService(
                 // so the image route serves THIS episode's still, not always the group's first one.
                 val stillUrl = RaviloImageUrl.still(item.id, ep.filename, ep.episodeNumber)
                 val epVideoTrack = ep.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }
-                val epPlaybackNote = resolvePlaybackNote(
+                val epPlaybackNote: dev.jellystructure.shared.tv.PlaybackNote? = if (PLAYBACK_NOTE_RETIRED) null else resolvePlaybackNote(
                     videoTrack = epVideoTrack,
                     capabilities = seriesDecodeCapabilities,
                     deviceId = device.deviceId,

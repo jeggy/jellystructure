@@ -58,6 +58,12 @@ data class AdminSessionRow(
     val variantHeight: Int? = null,
     val variantStepsDown: Int = 0,
     val variantStepsUp: Int = 0,
+    /** 309 (FR-309-11) — the variant the play started on (bits/s), for *4 Mbps → 1080p · 8 Mbps · climbing*. */
+    val variantStartBps: Long? = null,
+    /** 313 (FR-313-13) — who serves it: `ours` / `jellyfin` / `direct` (null: unknown, e.g. after a restart). */
+    val encoder: String? = null,
+    /** 313 (FR-313-13) — for ours: *4 qualities · HEVC HDR*. */
+    val encoderDetail: String? = null,
 )
 
 @Serializable

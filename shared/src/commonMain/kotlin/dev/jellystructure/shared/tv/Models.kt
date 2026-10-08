@@ -207,6 +207,8 @@ data class PlaybackQoeReport(
     /** 309a0 — this item's time from the load request to its first frame, where the player measures it (the Cast
      *  receiver). Additive. */
     @SerialName("first_frame_ms") val firstFrameMs: Long? = null,
+    /** 309 (FR-309-11) — the variant this item started on (its BANDWIDTH), where the player knows it. Additive. */
+    @SerialName("start_variant_bps") val startVariantBps: Long? = null,
     /** R381 (FR-R381-1) — true when every counter above is THIS item's own (an app with R381). Absent/false = an
      *  older app whose counters were the session's running totals and whose first-start wait of a reused player
      *  was counted as a stall: the backend never reads such a row's rebuffer counts (FR-R381-4). Additive. */
@@ -255,6 +257,37 @@ data class PreparePlaybackRequest(
     @SerialName("item_id") val itemId: String,
     val capabilities: ClientCapabilities,
 )
+
+/**
+ * 309 (FR-309-6, owner 2026-10-07/08) — the viewer has been on a title's detail page for more than 2 s: the server may
+ * start the encode Play would start (our own encoder only), so a transcode starts at once. [castDeviceId]: the Google
+ * Cast device the phone is casting to (the warm encode is then made for that receiver, as its own device). The request
+ * is repeated every 30 s while the page stays open (it keeps the encode from idling out) and cancelled with
+ * `prewarm/cancel` the moment the viewer leaves. Additive: an older server answers 404, and the client ignores it.
+ */
+@Serializable
+data class PrewarmRequest(
+    @SerialName("item_id") val itemId: String,
+    val capabilities: ClientCapabilities,
+    @SerialName("audio_language") val audioLanguage: String? = null,
+    @SerialName("audio_variant") val audioVariant: String? = null,
+    @SerialName("cast_device_id") val castDeviceId: String? = null,
+)
+
+/** 309 — what a prewarm did: `warm` (an encode is running), `direct` (the file plays untouched; nothing to warm) or
+ *  `none` (the server won't warm it, [reason] says why). */
+@Serializable
+data class PrewarmResult(val status: String, val reason: String? = null)
+
+@Serializable
+data class PrewarmCancel(
+    @SerialName("item_id") val itemId: String,
+    @SerialName("cast_device_id") val castDeviceId: String? = null,
+)
+
+/** 309 (FR-309-3) — the client timed `GET /api/tv/probe`: [bytes] received in [ms] milliseconds. */
+@Serializable
+data class ProbeResult(val bytes: Long, val ms: Long)
 
 @Serializable
 data class SubTrack(
@@ -359,6 +392,13 @@ data class StreamTicket(
     /** R368 (dev review item 8) — the server's playback session this start belongs to; the client echoes it on its
      *  progress and stop reports. Absent from an older server (and then nothing is echoed). */
     @SerialName("session_id") val sessionId: String? = null,
+    /** 313 (FR-313-13) — who makes this stream: `ours` (jellystructure's own encoder: every rung from one job, a switch
+     *  never waits for a new encode), `jellyfin` (a Jellyfin transcode) or `direct`. Absent from an older server. A
+     *  player relaxes its climb rule on `ours` (309 FR-309-4 / 313 FR-313-14). Additive. */
+    val encoder: String? = null,
+    /** 309 (FR-309-2) — the variant the server listed first (its BANDWIDTH): where this device should start. Null with
+     *  one stream. Diagnostic: the player starts on the first listed variant, seeded with [measuredBandwidthBps]. */
+    @SerialName("start_variant_bps") val startVariantBps: Long? = null,
 )
 
 @Serializable

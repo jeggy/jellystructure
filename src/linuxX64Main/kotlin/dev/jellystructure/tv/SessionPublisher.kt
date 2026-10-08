@@ -41,6 +41,9 @@ class SessionPublisher(
     /** 308 (FR-308-5) — the variant a session's player last reported (null in tests). */
     internal var variantOf: (SessionRec) -> VariantNow? = { null }
 
+    /** 313 (FR-313-13) — who serves a session's play (null in tests). */
+    internal var servedOf: (SessionRec) -> ServedNow? = { null }
+
     /** 308 (FR-308-5) — only the admin's list changed (a player reported another variant). */
     fun adminChanged() {
         val send = adminBroadcast ?: return
@@ -234,7 +237,10 @@ class SessionPublisher(
             ).let { row ->
                 // 308 (FR-308-5) — the variant playing now; a live session only.
                 val v = if (s.live) runCatching { variantOf(s) }.getOrNull() else null
-                if (v == null) row else row.copy(variantBps = v.bandwidthBps, variantHeight = v.height, variantStepsDown = v.stepsDown, variantStepsUp = v.stepsUp)
+                val served = if (s.live) runCatching { servedOf(s) }.getOrNull() else null
+                val withServed = if (served == null) row else row.copy(encoder = served.how, encoderDetail = served.detail)
+                if (v == null) withServed else withServed.copy(variantBps = v.bandwidthBps, variantHeight = v.height, variantStepsDown = v.stepsDown,
+                    variantStepsUp = v.stepsUp, variantStartBps = v.startBps)
             }
         }
         return AdminSessionList(rows, now, householdControl())

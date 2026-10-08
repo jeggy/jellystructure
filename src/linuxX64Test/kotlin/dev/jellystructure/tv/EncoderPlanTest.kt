@@ -175,7 +175,7 @@ class EncoderPlanTest {
 
     @Test fun `a BRAVIA-like device gets HEVC HDR rungs and every audio rendition`() = runBlocking {
         val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true, maxAudioChannels = 6)
-        val (plan, why) = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, null, "HDR10", burnsSubtitle = false)
+        val (plan, why) = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10")
         assertEquals("ours", why)
         plan!!
         assertEquals(EncoderCodec.HEVC, plan.codec)
@@ -196,19 +196,19 @@ class EncoderPlanTest {
         assertEquals(EncoderMux.TS, encoderMuxFor("cast", "web"))
     }
 
-    @Test fun `an installed 1_50 app gets one quality — the receiver gets TS — and a burn-in stays Jellyfin's`() = runBlocking {
+    @Test fun `an installed 1_50 app gets one quality — the receiver gets TS — and an unplaced burn-in stays Jellyfin's`() = runBlocking {
         val old = ClientCapabilities(videoCodecs = listOf("h264"), hlsAdaptive = false)
-        val (one, _) = encoder().planFor(old, "phone", "/m/film.mkv", 7_200_000, tracks, audio, 1, 10_000_000, "HDR10", burnsSubtitle = false)
+        val (one, _) = encoder().planFor(old, "phone", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = 10_000_000, noRecord = false, sourceVideoRange = "HDR10")
         assertEquals(1, one!!.rungs.size)
         assertEquals(EncoderCodec.H264, one.codec)
         assertTrue(one.tonemaps)
         assertEquals(1, one.audio.size)   // no renditions declared: the carried track only
         val cast = ClientCapabilities(videoCodecs = listOf("h264"), hlsAdaptive = true)
-        assertEquals(EncoderMux.TS, encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, null, "HDR10", false).first!!.mux)
-        val (none, why) = encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, null, "HDR10", burnsSubtitle = true)
+        assertEquals(EncoderMux.TS, encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!.mux)
+        val (none, why) = encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", burnRequested = true)
         assertNull(none)
-        assertContains(why, "burn-in")
-        assertEquals("encoder off", encoder(enabled = false).planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, null, "HDR10", false).second)
+        assertContains(why, "313d")
+        assertEquals("encoder off", encoder(enabled = false).planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").second)
     }
 
     @Test fun `stream ids are 128 random bits`() {
@@ -216,5 +216,99 @@ class EncoderPlanTest {
         assertEquals(32, a.length)
         assertTrue(a.all { it in "0123456789abcdef" })
         assertTrue(a != b)
+    }
+
+    // ── 309 (FR-309-2) — where a play starts ──────────────────────────────────────────────────────────────────────
+    @Test fun `with no record a climbing player starts on the 4 Mbps rung — never the top`() = runBlocking {
+        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true, maxAudioChannels = 6)
+        val plan = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertTrue(plan.startRung > 0)
+        assertTrue(plan.rungs[plan.startRung].videoBps <= NO_RECORD_START_VIDEO_BPS)
+        assertTrue(plan.rungs[plan.startRung - 1].videoBps > NO_RECORD_START_VIDEO_BPS)
+    }
+
+    @Test fun `a record starts on the best rung its stream fits`() {
+        val rungs = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null)
+        val audioPeak = 640_000L
+        val take = rungBandwidth(rungs[1], audioPeak)
+        assertEquals(1, startRungFor(rungs, audioPeak, take, noRecord = false))
+        assertEquals(1, startRungFor(rungs, audioPeak, take + 1, noRecord = false))
+        assertEquals(2, startRungFor(rungs, audioPeak, take - 1, noRecord = false))
+        assertEquals(rungs.lastIndex, startRungFor(rungs, audioPeak, 1_000, noRecord = false))   // below everything: the lowest
+        assertEquals(0, startRungFor(rungs, audioPeak, null, noRecord = false))                 // can't climb: the top
+        assertEquals(0, startRungFor(rungs, audioPeak, Long.MAX_VALUE, noRecord = false))
+    }
+
+    @Test fun `a player that cannot climb gets one rung — the one its record fits`() = runBlocking {
+        val old = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = false)
+        val plan = encoder().planFor(old, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = 12_000_000, noRecord = false, sourceVideoRange = "HDR10").first!!
+        assertEquals(1, plan.rungs.size)
+        assertTrue(rungBandwidth(plan.rungs[0], 640_000) <= 12_000_000)
+    }
+
+    // ── 313d (FR-313-6) — subtitles ───────────────────────────────────────────────────────────────────────────────
+    @Test fun `a picked image subtitle is burned in by our job as H_264`() = runBlocking {
+        val withSubs = tracks + Track(3, "s:0", TrackKind.SUBTITLE, "srt", "eng", null, false, false) + Track(4, "s:1", TrackKind.SUBTITLE, "hdmv_pgs_subtitle", "dan", null, false, false)
+        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val plan = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, withSubs, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10",
+            burnSubtitleOrder = 1).first!!
+        assertEquals(EncoderCodec.H264, plan.codec)
+        assertEquals(1, plan.burnSubtitleOrder)
+        assertTrue(plan.tonemaps)
+        assertContains(encoderCommand(plan, 0, "/tmp/x"), "[0:s:1]")
+        assertContains(encoderCommand(plan, 0, "/tmp/x"), "overlay_cuda")
+        // A subtitle the scan doesn't have stays Jellyfin's.
+        val (none, why) = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, withSubs, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10",
+            burnSubtitleOrder = 2)
+        assertNull(none)
+        assertContains(why, "313d")
+    }
+
+    @Test fun `text subtitles are WebVTT renditions in the master — only for a player that reads them there`() = runBlocking {
+        val subs = listOf(EncoderSubtitle("English", "eng", forced = false, default = true, sourceUrl = "http://jf/1.vtt"),
+            EncoderSubtitle("Dansk \"tvungen\"", "dan", forced = true, default = false, sourceUrl = "http://jf/2.vtt"))
+        val reads = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsSubtitles = true)
+        val plan = encoder().planFor(reads, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", subtitles = subs).first!!
+        val master = encoderMaster(plan)
+        assertContains(master, "TYPE=SUBTITLES,GROUP-ID=\"subs\"")
+        assertContains(master, "URI=\"t/0/main.m3u8\"")
+        assertContains(master, "URI=\"t/1/main.m3u8\"")
+        assertContains(master, ",SUBTITLES=\"subs\"")
+        assertTrue("\"tvungen\"" !in master)   // a quote in a name never breaks the attribute
+        val noSubs = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val plain = encoder().planFor(noSubs, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", subtitles = subs).first!!
+        assertTrue("SUBTITLES" !in encoderMaster(plain))
+        val pl = encoderSubtitlePlaylist(7_200_500)
+        assertContains(pl, "#EXTINF:7200.500,\nsub.vtt")
+        assertContains(pl, "#EXT-X-ENDLIST")
+    }
+
+    @Test fun `encoder words for the admin`() = runBlocking {
+        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val plan = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals("4 qualities · HEVC HDR", encoderWords(plan))
+        assertEquals("1 quality · H.264 · burned-in subtitles", encoderWords(plan.copy(rungs = plan.rungs.take(1), codec = EncoderCodec.H264, burnSubtitleOrder = 0)))
+    }
+
+    // ── 309 (FR-309-6) — the early encode ─────────────────────────────────────────────────────────────────────────
+    @Test fun `a prewarm is adopted by the play that matches it and stopped when the viewer leaves`() = runBlocking {
+        val enc = encoder().also { it.kickJobs = false }
+        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val plan = enc.planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        val far = Long.MAX_VALUE / 2
+        val warm = enc.prewarm(plan, "dev1", "item1", 10, far)
+        assertEquals(warm, enc.prewarm(plan, "dev1", "item1", 10, far))           // the client re-posts: same job
+        assertNull(enc.adoptPrewarm("dev2", "item1", plan, 10, "ps1", far))      // another device
+        val adopted = enc.adoptPrewarm("dev1", "item1", plan, 11, "ps1", far)
+        assertNotNull(adopted)
+        assertNotNull(enc.master(adopted))
+        assertTrue(enc.serves("ps1"))
+        enc.prewarm(plan, "dev1", "item2", 0, far)
+        assertEquals(1, enc.cancelPrewarm("dev1", "item2"))
+        assertEquals(0, enc.cancelPrewarm("dev1", "item2"))
+        assertEquals(0, enc.cancelPrewarm("dev1", "item1"))   // adopted: a play's job now, the page's leave can't stop it
+        enc.prewarm(plan, "dev1", "item3", 10, far)
+        assertNull(enc.adoptPrewarm("dev1", "item3", plan, 40, "ps3", far))      // the play starts elsewhere: not this job…
+        assertEquals(0, enc.cancelPrewarm("dev1", "item3"))                       // …and the prewarm is already stopped
     }
 }
