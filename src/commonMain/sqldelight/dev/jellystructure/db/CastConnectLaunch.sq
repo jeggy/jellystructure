@@ -1,0 +1,18 @@
+-- R266 (dev review item 2) — a Cast Connect launch observed on an Android TV app: the TV reports it on the status
+-- route (236) when Cast Connect launched it and it took the load. One row per TV, the newest launch. Not an enrolment
+-- and not a device: the TV is already its own `ravilo_device`. What the admin's Chromecast card reads for its
+-- "opens Ravilo itself when cast to" line (acceptance 8). Must stay byte-for-byte in sync with 72.sqm's CREATE TABLE.
+CREATE TABLE cast_connect_launch (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    device_name TEXT NOT NULL,
+    launched_at INTEGER NOT NULL
+);
+
+record:
+INSERT OR REPLACE INTO cast_connect_launch(device_id, device_name, launched_at) VALUES (?, ?, ?);
+
+newest:
+SELECT * FROM cast_connect_launch ORDER BY launched_at DESC LIMIT 1;
+
+forget:
+DELETE FROM cast_connect_launch WHERE device_id = ?;

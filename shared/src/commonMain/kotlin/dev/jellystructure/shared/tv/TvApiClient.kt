@@ -538,6 +538,10 @@ class TvApiClient(
         r.assertSuccess()
     }
 
+    /** R266 (dev review item 2) — the Android TV app took a Cast Connect launch: one observation on the status route
+     *  236 already serves, so the admin's Chromecast card can say a TV opens Ravilo itself only once one really did. */
+    suspend fun reportCastConnectLaunch() = postScreenStatus(ScreenStatus(castConnectLaunch = true))
+
     // ─── R265 — play on a TV from the phone, over the same /api/remote/** an API key uses ────
 
     /** The caller's own devices — every kind (screen/cast/tv/phone/web), `nearby` already resolved

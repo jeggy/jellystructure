@@ -755,6 +755,10 @@ fun Route.tvRoutes(
         val statusAddress = call.request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf { it.isNotBlank() }
             ?: call.request.local.remoteHost
         deviceService.recordAddress(device.deviceId, device.jellyfinUserId, statusAddress)
+        // R266 (dev review item 2) — a Cast Connect launch observation: recorded for the admin card; a status that
+        // carries nothing else is not a now-playing report and never reaches the tracker or a subscribed remote.
+        if (status.castConnectLaunch) castService?.recordCastConnectLaunch(device)
+        if (dev.jellystructure.shared.tv.isLaunchObservationOnly(status)) return@post call.respond(HttpStatusCode.OK, mapOf("ok" to true))
         dev.jellystructure.tv.screenStatusTracker.update(device.deviceId, status)
         tvEventBus?.notifyDeviceStatus(
             device.deviceId,

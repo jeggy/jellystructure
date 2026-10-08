@@ -1564,7 +1564,15 @@ data class ScreenStatus(
     /** FR-236-4 — which of the receiver's own tokens this status describes; absent on a single-session
      *  device (today's TVs and receivers, unchanged). */
     @SerialName("session_user_id") val sessionUserId: String? = null,
+    /** R266 (dev review item 2) — a *launch observation*: the Android TV app reports that Cast Connect launched it
+     *  and it took the load. Not an enrolment (the TV is already a device) and not a now-playing report — a status
+     *  that carries only this ([isLaunchObservationOnly]) is recorded and never fanned out to a remote. */
+    @SerialName("cast_connect_launch") val castConnectLaunch: Boolean = false,
 )
+
+/** R266 — a status that only reports a Cast Connect launch: nothing is loaded, so a subscriber must not read it as
+ *  "this screen stopped playing". The route records it and answers; the tracker and the fan-out never see it. */
+fun isLaunchObservationOnly(status: ScreenStatus): Boolean = status.castConnectLaunch && !status.loaded && status.itemId == null
 
 /** Phase 236 (FR-236-1) — a device kind, not a name prefix; `cast`/`screen` behave alike except at the
  *  two sites that still care which is which (218's session ceiling, the Jellyfin dashboard identity). */
