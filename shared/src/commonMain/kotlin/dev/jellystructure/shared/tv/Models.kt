@@ -199,6 +199,14 @@ data class PlaybackQoeReport(
     @SerialName("variant_switches_up") val variantSwitchesUp: Int = 0,
     @SerialName("variant_bandwidth_bps") val variantBandwidthBps: Long? = null,
     @SerialName("variant_height") val variantHeight: Int? = null,
+    /** 309 (FR-309-13) — how many transfers [bandwidthEstimateBps] rests on, and their bytes. A player sends no
+     *  estimate (null) when it rests on fewer than 3 transfers or under 2 MB — its meter is still guessing. Null on a
+     *  player that does not count them (older apps); the server then rejects known meter defaults. Additive. */
+    @SerialName("bandwidth_samples") val bandwidthSamples: Int? = null,
+    @SerialName("bandwidth_bytes") val bandwidthBytes: Long? = null,
+    /** 309a0 — this item's time from the load request to its first frame, where the player measures it (the Cast
+     *  receiver). Additive. */
+    @SerialName("first_frame_ms") val firstFrameMs: Long? = null,
 )
 
 @Serializable

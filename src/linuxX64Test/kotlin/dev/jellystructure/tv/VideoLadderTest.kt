@@ -171,4 +171,37 @@ class VideoLadderTest {
         assertEquals("secret", queryParam(u, "ApiKey"))
         assertEquals(u.split('&').size, template.split('&').size)
     }
+
+    // 309 (FR-309-13) — a guess is never a measurement.
+    @Test
+    fun `the Pixel's only HLS sample was Media3's Wi-Fi guess - so nothing is measured and nothing is capped`() {
+        val now = 2_000L * 86_400L
+        val pixel = listOf(ThroughputSample(4_300_000, directPlay = false, updatedAtSec = now - 12L * 86_400L))
+        assertNull(measuredThroughput(pixel, now))
+        assertNull(throughputBudget(measuredThroughput(pixel, now)))
+        // Every known meter default is a guess, from any player.
+        for (g in KNOWN_BANDWIDTH_GUESSES) assertNull(measuredThroughput(listOf(ThroughputSample(g, false, now - 10)), now), "$g")
+    }
+
+    @Test
+    fun `an estimate on fewer than 3 transfers is ignored - and a counted one is trusted whatever its value`() {
+        val now = 2_000L * 86_400L
+        assertNull(measuredThroughput(listOf(ThroughputSample(168_000_000, false, now - 10, samples = 2)), now))
+        assertEquals(168_000_000, measuredThroughput(listOf(ThroughputSample(168_000_000, false, now - 10, samples = 3)), now))
+        // A counted sample that equals a default to the bit is still a measurement (it rests on real transfers).
+        assertEquals(4_300_000, measuredThroughput(listOf(ThroughputSample(4_300_000, false, now - 10, samples = 40)), now))
+    }
+
+    @Test
+    fun `a newer real sample replaces the older ones instead of being averaged with them`() {
+        val now = 2_000L * 86_400L
+        val rows = listOf(
+            ThroughputSample(168_000_000, false, now - 10, samples = 25),   // the newest, from an app that counts
+            ThroughputSample(9_000_000, false, now - 3_600),                   // an older app's short-play figure
+            ThroughputSample(11_000_000, false, now - 7_200),
+        )
+        assertEquals(168_000_000, measuredThroughput(rows, now))
+        // Without the counted sample, the older samples' median stands as before.
+        assertEquals(10_000_000, measuredThroughput(rows.drop(1), now))
+    }
 }

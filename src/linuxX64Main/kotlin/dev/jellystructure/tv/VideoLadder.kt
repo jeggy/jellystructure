@@ -137,8 +137,37 @@ internal fun variantUrl(template: String, playSessionId: String, videoBps: Long,
 /** The play session of a ladder's [index]th variant (0 = the top) under Jellyfin's own [jellyfinPlaySessionId]. */
 internal fun variantSession(jellyfinPlaySessionId: String, index: Int): String = "${jellyfinPlaySessionId}v$index"
 
-/** One QoE row as the throughput rule reads it. */
-internal data class ThroughputSample(val bandwidthBps: Long?, val directPlay: Boolean, val updatedAtSec: Long)
+/** One QoE row as the throughput rule reads it. [samples]: the transfers the estimate rests on (null: the player
+ *  doesn't count them, i.e. an older app). */
+internal data class ThroughputSample(val bandwidthBps: Long?, val directPlay: Boolean, val updatedAtSec: Long, val samples: Int? = null)
+
+/**
+ * 309 (FR-309-13) — the numbers a player reports before it has measured anything: Media3 1.8.0's
+ * `DefaultBandwidthMeter` initial estimates (its Wi-Fi, 2G, 3G, 4G, 5G-NSA and 5G-SA tables, `DEFAULT_INITIAL_BITRATE_ESTIMATE`
+ * 1 Mbps, which is also Shaka's default) and hls.js's `abrEwmaDefaultEstimate` (500 kbps). A Pixel on a 680 Mbps Wi-Fi
+ * link was capped at 2.37 Mbps on 2026-10-07 because 4 300 000, Media3's Wi-Fi guess, had been stored as its
+ * measurement. A real estimate equal to one of these to the bit is practically impossible. Same list as 72.sqm.
+ */
+internal val KNOWN_BANDWIDTH_GUESSES: Set<Long> = setOf(
+    4_300_000, 3_200_000, 2_400_000, 1_700_000, 860_000,
+    1_500_000, 980_000, 750_000, 520_000, 290_000,
+    2_000_000, 1_300_000, 1_000_000, 610_000,
+    2_500_000, 1_200_000, 970_000, 680_000,
+    4_700_000, 2_800_000, 2_100_000,
+    2_700_000, 1_600_000,
+    500_000,
+)
+
+/** 309 (FR-309-13) — fewer transfers than this and the estimate is still the meter's guess. */
+internal const val MIN_BANDWIDTH_SAMPLES = 3
+
+/** 309 (FR-309-13) — a sample that is a measurement: HLS, positive, not a known guess, resting on enough transfers. */
+internal fun isRealMeasurement(s: ThroughputSample): Boolean {
+    val bps = s.bandwidthBps ?: return false
+    if (s.directPlay || bps <= 0L) return false
+    if (s.samples != null) return s.samples >= MIN_BANDWIDTH_SAMPLES
+    return bps !in KNOWN_BANDWIDTH_GUESSES
+}
 
 /**
  * 308 (FR-308-3) — what this device has measured the path to carry: the median of its latest [MEASUREMENTS] bandwidth
@@ -147,14 +176,13 @@ internal data class ThroughputSample(val bandwidthBps: Long?, val directPlay: Bo
  * (the household's LAN direct plays report 4–8 Mbps on a link its HLS plays measure at 200+).
  */
 internal fun measuredThroughput(samples: List<ThroughputSample>, nowSec: Long): Long? {
-    val recent = samples.asSequence()
-        .filter { !it.directPlay && (it.bandwidthBps ?: 0L) > 0L && nowSec - it.updatedAtSec <= MEASUREMENT_MAX_AGE_SEC }
+    val real = samples.filter { isRealMeasurement(it) && nowSec - it.updatedAtSec <= MEASUREMENT_MAX_AGE_SEC }
         .sortedByDescending { it.updatedAtSec }
-        .take(MEASUREMENTS)
-        .map { it.bandwidthBps!! }
-        .sorted()
-        .toList()
-    if (recent.isEmpty()) return null
+    if (real.isEmpty()) return null
+    // 309 (FR-309-13) — a newer measurement from a player that counts its transfers replaces the older samples instead
+    // of being averaged with them (an older app's samples may still hold a short play's warm-up figure).
+    real.firstOrNull()?.takeIf { it.samples != null }?.let { return it.bandwidthBps }
+    val recent = real.take(MEASUREMENTS).map { it.bandwidthBps!! }.sorted()
     return if (recent.size % 2 == 1) recent[recent.size / 2] else (recent[recent.size / 2 - 1] + recent[recent.size / 2]) / 2
 }
 

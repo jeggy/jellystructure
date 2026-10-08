@@ -74,7 +74,7 @@ class FileIntegrityTest {
 
     @Test
     fun `a path containing a quote is quoted - never left to the shell`() {
-        assertTrue("'/mnt/series/jellyfin/Bob'\\''s Show/Season 1/.jsreplace_Bob.S01E01.mkv'" in plan.copyCommand)
+        assertTrue("'/mnt/series/jellyfin/Bob'\\''s Show/Season 1/.jellystructure/replace_Bob.S01E01.mkv'" in plan.copyCommand)
         assertFalse("Bob's Show" in plan.snippet)
     }
 
@@ -144,7 +144,7 @@ class FileIntegrityTest {
     fun `the damaged file is moved aside before the new one takes its name - and never over an existing quarantine file`() {
         val swap = plan.swapCommand
         val toQuarantine = swap.indexOf("mv '/mnt/series/jellyfin/Bob'\\''s Show/Season 1/Bob.S01E01.mkv'")
-        val intoPlace = swap.indexOf("mv '/mnt/series/jellyfin/Bob'\\''s Show/Season 1/.jsreplace_")
+        val intoPlace = swap.indexOf("mv '/mnt/series/jellyfin/Bob'\\''s Show/Season 1/.jellystructure/replace_")
         assertTrue(toQuarantine in 0 until intoPlace)
         assertTrue("[ ! -e '/mnt/series/.js-quarantine/" in swap)
     }

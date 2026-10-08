@@ -1,5 +1,9 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.log.Logger
+import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.Track
 import dev.jellystructure.shared.tv.AudioTrack
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -35,7 +39,9 @@ import kotlin.time.Clock
  * when there are any, are shared by every variant (the carried track is muxed in each).
  */
 class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
-    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null)
+    /** [streamIndex] is Jellyfin's number for the track (it numbers external streams first); [audioOrder] is the
+     *  track's place among the FILE's own audio streams, the only number ffmpeg may be given (R382). */
+    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null, val audioOrder: Int = position)
 
     /**
      * 308 (FR-308-1/-3) — one transcode's ladder: Jellyfin's negotiated URL as the [template] every variant is made
@@ -77,11 +83,17 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         durationMs: Long,
         withRenditions: Boolean = true,
         ladder: LadderPlan? = null,
+        /** R382 — the file's own tracks from our scan (ffprobe), to place each Jellyfin audio track in the file. */
+        fileTracks: List<Track>? = null,
     ): String? {
         val carried = audio.indexOfFirst { it.index == carriedIndex }
-        val renditions = if (!withRenditions || audio.size < 2 || carriedIndex == null || durationMs <= 0 || carried < 0) emptyList()
+        // R382 (FR-R382-2/-3) — every rendition needs its place among the file's own audio streams; no confident
+        // match ⇒ no renditions (the switch then restreams, as on a player without them).
+        val order = if (fileTracks != null) fileAudioOrder(audio, fileTracks) else audio.indices.toList()
+        if (withRenditions && order == null && audio.size >= 2) Logger.info("audio renditions: Jellyfin's audio tracks don't match the file's (${audio.size} vs ${fileTracks?.count { it.kind == TrackKind.AUDIO }}): none offered (R382)", "tv")
+        val renditions = if (!withRenditions || order == null || audio.size < 2 || carriedIndex == null || durationMs <= 0 || carried < 0) emptyList()
         else audio.mapIndexed { pos, a ->
-            Rendition(pos, a.index, a.label, a.language, if (pos == carried) null else "audio/$pos/main.m3u8", a.channels)
+            Rendition(pos, a.index, a.label, a.language, if (pos == carried) null else "audio/$pos/main.m3u8", a.channels, order[pos])
         }
         if (renditions.isEmpty() && ladder == null) return null
         val id = randomId()
@@ -115,7 +127,7 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         val e = entry(id) ?: return null
         val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
         if (segment < 0 || segment * RENDITION_SEGMENT_MS >= e.durationMs) return null
-        return jobs.segment("$id:$position", RenditionSource(e.filePath, r.streamIndex, r.channels, e.durationMs), e.codec, segment)
+        return jobs.segment("$id:$position", RenditionSource(e.filePath, r.audioOrder, r.channels, e.durationMs), e.codec, segment)
     }
 
     /**
@@ -258,4 +270,31 @@ internal fun renditionAudioCodec(jellyfinMaster: String): String {
         codecs.any { it == "ec-3" } -> "eac3"
         else -> "aac"
     }
+}
+
+/**
+ * R382 (FR-R382-2) — each Jellyfin audio track's place among the file's own audio streams, or null when they can't be
+ * matched with confidence. Jellyfin numbers external streams first (2026-10-08: a film with three external subtitles
+ * listed its embedded audio as 4 and 5, which are 1 and 2 in the file, so `-map 0:4` picked a PGS subtitle). Embedded
+ * audio keeps the file's order in Jellyfin's list, so the n-th Jellyfin audio track is the file's n-th, provided the two
+ * lists have the same length and agree track by track on codec and language. An external audio file (phase 314) makes
+ * the lists differ, and then nothing is guessed.
+ */
+internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>): List<Int>? {
+    val fileAudio = file.filter { it.kind == TrackKind.AUDIO }.sortedBy { it.streamIndex }
+    if (fileAudio.size != jellyfin.size) return null
+    for ((i, a) in jellyfin.withIndex()) {
+        val f = fileAudio[i]
+        if (!sameAudioCodec(a.codec, f.codec)) return null
+        val la = a.language?.let { LanguageResolver.toIso6392(it) }
+        val lf = f.language?.let { LanguageResolver.toIso6392(it) }
+        if (la != null && lf != null && la != lf) return null
+    }
+    return jellyfin.indices.toList()
+}
+
+private fun sameAudioCodec(a: String?, b: String?): Boolean {
+    if (a.isNullOrBlank() || b.isNullOrBlank()) return true
+    fun n(c: String) = when (val x = c.lowercase()) { "dca" -> "dts"; "e-ac-3", "ec-3" -> "eac3"; "a_aac", "mp4a" -> "aac"; else -> x }
+    return n(a) == n(b)
 }

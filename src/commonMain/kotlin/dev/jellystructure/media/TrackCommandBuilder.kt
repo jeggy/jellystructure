@@ -14,8 +14,9 @@ import dev.jellystructure.resolver.LanguageResolver
 object TrackCommandBuilder {
 
     private fun trackArg(streamIndex: Int) = "track:@${streamIndex + 1}"
-    private fun tmpPath(filePath: String) =
-        "${filePath.substringBeforeLast('/')}/.jstmp_${filePath.substringAfterLast('/')}"
+    // Phase 311 — the remux output lives in `<dir>/.jellystructure/` (WorkFiles), never beside the video.
+    private fun tmpPath(filePath: String) = WorkFiles.pathFor(filePath, WorkFiles.Kind.REMUX)
+    private fun prepare(filePath: String) = WorkFiles.prepareCommand(filePath) + " && \\\n"
     private fun esc(path: String) = path.replace("'", "'\\''")
 
     // ── MKV (mkvpropedit, in-place, fast) ────────────────────────────────────────
@@ -56,7 +57,7 @@ object TrackCommandBuilder {
         val cleanLang = iso3.replace("'", "").replace("\"", "").take(10)
         val escaped = esc(filePath)
         val escapedTmp = esc(tmpPath(filePath))
-        return "ffmpeg -y -i '$escaped' \\\n" +
+        return prepare(filePath) + "ffmpeg -y -i '$escaped' \\\n" +
             "  -map 0 -c copy \\\n" +
             "  -metadata:s:$streamIndex language=$cleanLang \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
@@ -75,7 +76,7 @@ object TrackCommandBuilder {
         val dispositions = sameTypeIndices.mapIndexed { relIdx, absIdx ->
             "-disposition:$typeChar:$relIdx ${if (absIdx == defaultStreamIndex) "default" else "0"}"
         }.joinToString(" \\\n  ")
-        return "ffmpeg -y -i '$escaped' \\\n" +
+        return prepare(filePath) + "ffmpeg -y -i '$escaped' \\\n" +
             "  -map 0 -c copy \\\n" +
             "  $dispositions \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
@@ -100,7 +101,7 @@ object TrackCommandBuilder {
         // the front, matching mkvmerge's layout and restoring normal fast playback start. Matroska-only
         // flag — output keeps the input's extension (tmpPath), so only add it for an actual .mkv target.
         val cuesFix = if (filePath.substringAfterLast('.').lowercase() == "mkv") " -cues_to_front 1" else ""
-        return "ffmpeg -y -i '$escaped' \\\n" +
+        return prepare(filePath) + "ffmpeg -y -i '$escaped' \\\n" +
             "  $maps \\\n" +
             "  -c copy$cuesFix \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
@@ -116,7 +117,7 @@ object TrackCommandBuilder {
     fun ffmpegRepairTracksLayout(filePath: String): String {
         val escaped = esc(filePath)
         val escapedTmp = esc(tmpPath(filePath))
-        return "ffmpeg -y -i '$escaped' \\\n" +
+        return prepare(filePath) + "ffmpeg -y -i '$escaped' \\\n" +
             "  -map 0 -c copy -cues_to_front 1 \\\n" +
             "  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
     }

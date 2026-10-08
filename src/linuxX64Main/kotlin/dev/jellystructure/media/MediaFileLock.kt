@@ -32,6 +32,9 @@ object MediaFileLock {
         }
     }
 
+    /** Phase 311 — is [path] held (or waited on) by a running job? The work-file sweep never removes such a file's work. */
+    suspend fun isHeld(path: String): Boolean = guard.withLock { entries.containsKey(path) }
+
     /** Paths currently held or waited on — for tests. */
     internal suspend fun activePaths(): Int = guard.withLock { entries.size }
 }

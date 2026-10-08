@@ -39,6 +39,9 @@ data class QoeSummary(
     @SerialName("variant_switches_up") val variantSwitchesUp: Int = 0,
     @SerialName("variant_bandwidth_bps") val variantBandwidthBps: Long? = null,
     @SerialName("variant_height") val variantHeight: Int? = null,
+    // 309 (FR-309-13) — the transfers the estimate rests on (null: the player doesn't count them); see PlaybackQoe.sq.
+    @SerialName("bandwidth_samples") val bandwidthSamples: Int? = null,
+    @SerialName("first_frame_ms") val firstFrameMs: Long? = null,
     // R237 (FR-R237-6) — non-null only when the start never reached the player.
     @SerialName("start_failure_status") val startFailureStatus: Int? = null,
     @SerialName("updated_at") val updatedAt: Long,
@@ -86,6 +89,9 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             variant_switches_up = report.variantSwitchesUp.toLong(),
             variant_bandwidth_bps = report.variantBandwidthBps,
             variant_height = report.variantHeight?.toLong(),
+            bandwidth_samples = report.bandwidthSamples?.toLong(),
+            bandwidth_bytes = report.bandwidthBytes,
+            first_frame_ms = report.firstFrameMs,
             updated_at = nowEpochSec(),
         )
     }
@@ -126,5 +132,7 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     variantSwitchesUp = variant_switches_up.toInt(),
     variantBandwidthBps = variant_bandwidth_bps,
     variantHeight = variant_height?.toInt(),
+    bandwidthSamples = bandwidth_samples?.toInt(),
+    firstFrameMs = first_frame_ms,
     updatedAt = updated_at,
 )

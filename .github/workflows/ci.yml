@@ -31,6 +31,8 @@ jobs:
         run: ./scripts/check-phases.sh
       - name: In-place media writers ask the seeding guard (315)
         run: ./scripts/check-inplace-guard.sh
+      - name: Work files never beside a library file (phase 311)
+        run: ./scripts/check-workfiles.sh
       - name: CSS scoping
         run: ./scripts/check-css-scoping.sh
       - name: Design-sync-fragile CSS

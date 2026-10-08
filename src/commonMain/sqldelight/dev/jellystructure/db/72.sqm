@@ -1,0 +1,17 @@
+-- 309 (FR-309-13, 309a0) — how many transfers a player's bandwidth estimate rests on, their bytes, and the time to the
+-- first frame. Must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE TABLE (the SQLDelight-migration rule).
+ALTER TABLE playback_qoe ADD COLUMN bandwidth_samples INTEGER;
+ALTER TABLE playback_qoe ADD COLUMN bandwidth_bytes INTEGER;
+ALTER TABLE playback_qoe ADD COLUMN first_frame_ms INTEGER;
+-- The rows already stored with a player's built-in guess (Media3 1.8's DefaultBandwidthMeter tables and its 1 Mbps
+-- fallback, hls.js's 500 kbps default) carry no measurement: the estimate goes, nothing else changes. Same list as
+-- VideoLadder.kt's KNOWN_BANDWIDTH_GUESSES.
+UPDATE playback_qoe SET bandwidth_estimate_bps = NULL WHERE bandwidth_estimate_bps IN (
+    4300000, 3200000, 2400000, 1700000, 860000,
+    1500000, 980000, 750000, 520000, 290000,
+    2000000, 1300000, 1000000, 610000,
+    2500000, 1200000, 970000, 680000,
+    4700000, 2800000, 2100000,
+    2700000, 1600000,
+    500000
+);

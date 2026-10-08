@@ -326,6 +326,9 @@ suspend fun runPipeline(
                     batch.forEach { realtimeIngest.enqueue(it) }
                 }
             }.onFailure { Logger.warn("Library sweep failed: ${it.message}", "ingest") }
+            // Phase 311 (FR-311-3) — leftover work files from a crashed or stopped remux, every Library cycle.
+            runCatching { WorkFileSweep.run(configStore.current, store.nowMs() / 1000) }
+                .onFailure { Logger.warn("work-file sweep failed: ${it.message}", "jobs") }
 
             val freshnessFilter = computeFreshnessFilter(scanStep, store, fullRun, target)
             val result = withContext(RunContext(jobId, "scan_files")) {

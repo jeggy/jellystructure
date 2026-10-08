@@ -62,6 +62,7 @@ object FfmpegRunner {
             @OptIn(ExperimentalForeignApi::class)
             remove(tmp)
         }
+        removeWorkDirIfEmpty(filePath)   // Phase 311 — after the swap and after a failed or cancelled remux
         return ok
     }
 
@@ -78,11 +79,12 @@ object FfmpegRunner {
 
     // Phase 109: exposed so MediaJobQueue can target the same temp file for cancellation (pkill -f) and
     // for the disk-space preflight — the tmp copy is a second full-size file on the same filesystem.
-    fun tmpPath(filePath: String): String {
-        val dir = filePath.substringBeforeLast('/')
-        val name = filePath.substringAfterLast('/')
-        return "$dir/.jstmp_$name"
-    }
+    /** Phase 311 — `rmdir` the work folder: it only goes when empty, so another job's work file is never touched. */
+    @OptIn(ExperimentalForeignApi::class)
+    fun removeWorkDirIfEmpty(filePath: String) { platform.posix.rmdir(WorkFiles.dirFor(filePath)) }
+
+    // Phase 311 — the same path TrackCommandBuilder writes to (one function, WorkFiles.pathFor).
+    fun tmpPath(filePath: String): String = WorkFiles.pathFor(filePath, WorkFiles.Kind.REMUX)
 
     /** Phase 109: source duration in seconds via ffprobe, for live remux progress %. Null if unknown
      *  (ffprobe failure, or a non-numeric/empty duration) — callers degrade to speed-only progress. */
@@ -123,6 +125,7 @@ object FfmpegRunner {
             @OptIn(ExperimentalForeignApi::class)
             remove(tmp)
         }
+        removeWorkDirIfEmpty(filePath)   // Phase 311
         return ok
     }
 

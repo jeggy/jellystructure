@@ -63,6 +63,9 @@ private const val TOKEN_NEGATIVE_TTL_MS = 10 * 60_000L // ~10 minutes, per spec 
 private const val TOKEN_CHECK_TIMEOUT_MS = 5_000L
 private const val TICKS_PER_MS = 10_000L
 
+/** 308 — query keys a logged stream URL never shows (credentials and Jellyfin's cache tag), compared by name. */
+private val LOG_REDACTED_QUERY_KEYS = setOf("api_key", "apikey", "tag")
+
 // R142: bound the played write-through fan-out (a series mark-all can be dozens of episode calls).
 // Kotlin/Native CIO select() crashes on FD ≥ 1024, so every fan-out MUST be Semaphore-capped.
 private val playedGate = Semaphore(4)
@@ -422,7 +425,7 @@ class PlaybackService(
      */
     private fun measuredThroughputOf(device: DeviceData): Long? = runCatching {
         measuredThroughput(
-            playbackQoeStore.recentForDevice(device.deviceId, 20).map { ThroughputSample(it.bandwidthEstimateBps, it.directPlay, it.updatedAt) },
+            playbackQoeStore.recentForDevice(device.deviceId, 20).map { ThroughputSample(it.bandwidthEstimateBps, it.directPlay, it.updatedAt, it.bandwidthSamples) },
             nowMs() / 1000,
         )
     }.getOrNull()
@@ -462,7 +465,7 @@ class PlaybackService(
         if (ladder == null) Logger.info("playback: item=$jellyfinId no ladder: adaptive=${capabilities.hlsAdaptive} " +
             "reencodes=${reencodesVideo(master, sourceVideoCodec, sourceVideoRange)} reasons=${queryParam(master, "TranscodeReasons")} codec=${queryParam(master, "VideoCodec")}/$sourceVideoCodec range=$sourceVideoRange " +
             "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling " +
-            "url=${master.substringAfter('?').split('&').filterNot { it.startsWith("api_key=", true) || it.startsWith("ApiKey=", true) || it.startsWith("Tag=", true) }.joinToString("&")} (308)", "tv")
+            "url=${master.substringAfter('?').split('&').filterNot { it.substringBefore('=').lowercase() in LOG_REDACTED_QUERY_KEYS }.joinToString("&")} (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
         val file = if (capabilities.hlsAudioRenditions) localFileOf(jellyfinId) else null
         if (file == null && ladder == null) return measured
@@ -470,7 +473,7 @@ class PlaybackService(
             jellyfinPlaySessionId = jellyfinPlaySessionId, jellyfinMasterUrl = master,
             audio = ticket.audio, carriedIndex = ticket.audioStreamIndex, expiresAt = ticket.expiresAt,
             filePath = file?.first ?: "", durationMs = file?.second ?: 0L,
-            withRenditions = file != null, ladder = ladder,
+            withRenditions = file != null, ladder = ladder, fileTracks = file?.tracks,
         ) ?: return measured
         val renditions = file != null && ticket.audio.size >= 2 && ticket.audioStreamIndex != null && (file.second ?: 0L) > 0L &&
             ticket.audio.any { it.index == ticket.audioStreamIndex }
@@ -491,10 +494,13 @@ class PlaybackService(
 
     /** R291 — the file on this server's disk behind a Jellyfin id (a movie, or one series' episode), and its
      *  length; the same top-level-or-episode lookup [requireVisible] does. */
-    private suspend fun localFileOf(jellyfinId: String): Pair<String, Long?>? {
-        mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return it.path to it.tracks.fileDurationMs() }
+    /** The file on this server's disk for [jellyfinId]: its path, length and our scan's tracks (R382 maps by them). */
+    private data class LocalFile(val first: String, val second: Long?, val tracks: List<dev.jellystructure.model.Track>)
+
+    private suspend fun localFileOf(jellyfinId: String): LocalFile? {
+        mediaStore.resolveByJellyfinId(jellyfinId)?.takeIf { it.episodes.isEmpty() }?.let { return LocalFile(it.path, it.tracks.fileDurationMs(), it.tracks) }
         val ep = mediaStore.allItems().firstNotNullOfOrNull { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId } } ?: return null
-        return ep.path to ep.tracks.fileDurationMs()
+        return LocalFile(ep.path, ep.tracks.fileDurationMs(), ep.tracks)
     }
 
     /** R248 — true when stops are queued on the [PlaybackWriter] (production): the Home-feed

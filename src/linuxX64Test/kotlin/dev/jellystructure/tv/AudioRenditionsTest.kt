@@ -69,14 +69,14 @@ class AudioRenditionsTest {
         assertContains(renditionCommand(src(2, 6), "mp3", 10, "/d"), "-c:a libmp3lame -b:a 320k -ac 2 ")
     }
 
-    private fun src(stream: Int, channels: Int?) = RenditionSource("/mnt/media/it's a film.mkv", stream, channels, 6_756_352)
+    private fun src(audioOrder: Int, channels: Int?) = RenditionSource("/mnt/media/it's a film.mkv", audioOrder, channels, 6_756_352)
 
     @Test
     fun `a rendition job maps the picked track and nothing else — on Jellyfin's timing`() {
         // 2026-09-26: Jellyfin's audio-only job had no -map at all — ffmpeg took the track with the most
         // channels (English TrueHD) whatever was asked, plus a subtitle stream that cut empty segments.
         val cmd = renditionCommand(src(2, 6), "aac", 100, "/tmp/js-renditions/x")
-        assertContains(cmd, "-ss 300.000 -i '/mnt/media/it'\\''s a film.mkv' -map 0:2 -sn -dn -vn ")
+        assertContains(cmd, "-ss 300.000 -i '/mnt/media/it'\\''s a film.mkv' -map 0:a:2 -sn -dn -vn ")
         assertContains(cmd, "-copyts -avoid_negative_ts disabled")
         assertContains(cmd, "-f hls -max_delay 5000000 -hls_time 3 -hls_segment_type mpegts -hls_flags temp_file -start_number 100 ")
         assertContains(cmd, "-hls_segment_filename '/tmp/js-renditions/x/s%d.ts'")
@@ -124,5 +124,43 @@ class AudioRenditionsTest {
         assertEquals(3, renditionPauseAhead(1), "one request is the picker's warm: the viewer may never pick it")
         assertEquals(20, renditionPauseAhead(2))
         assertTrue(AudioRenditionJobs.RESUME_AHEAD < AudioRenditionJobs.PAUSE_AHEAD)
+    }
+
+    // R382 — ffmpeg is given the track's place among the file's own audio streams, never Jellyfin's number.
+    private fun ft(index: Int, kind: dev.jellystructure.model.TrackKind, codec: String, lang: String?) =
+        dev.jellystructure.model.Track(index, "$index", kind, codec, lang, null, false, false)
+
+    @Test
+    fun `external subtitles shift Jellyfin's numbers - the rendition maps the file's own audio order`() {
+        // 2026-10-08, a real film: 3 external subtitles, so Jellyfin lists the embedded audio as 4 and 5; in the file
+        // they are streams 1 and 2 (0 is the video), i.e. audio 0 and 1.
+        val jf = listOf(AudioTrack(index = 4, language = "eng", label = "TrueHD 7.1", codec = "truehd"), AudioTrack(index = 5, language = "eng", label = "AC3 5.1", codec = "ac3"))
+        val file = listOf(ft(0, dev.jellystructure.model.TrackKind.VIDEO, "h264", "eng"), ft(1, dev.jellystructure.model.TrackKind.AUDIO, "truehd", "eng"),
+            ft(2, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "eng"), ft(3, dev.jellystructure.model.TrackKind.SUBTITLE, "hdmv_pgs_subtitle", "eng"))
+        assertEquals(listOf(0, 1), fileAudioOrder(jf, file))
+        assertContains(renditionCommand(src(1, 6), "aac", 0, "/d"), "-map 0:a:1 ")
+    }
+
+    @Test
+    fun `no confident match means no rendition`() {
+        val jf = listOf(AudioTrack(index = 2, language = "eng", label = "a", codec = "ac3"), AudioTrack(index = 3, language = "dan", label = "b", codec = "aac"))
+        val two = listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "eng"), ft(2, dev.jellystructure.model.TrackKind.AUDIO, "aac", "dan"))
+        assertEquals(listOf(0, 1), fileAudioOrder(jf, two))
+        // An external audio file (314's sidecar) makes Jellyfin list one more track than the file holds.
+        assertNull(fileAudioOrder(jf + AudioTrack(index = 0, language = "eng", label = "c", codec = "aac"), two))
+        // The languages disagree track by track.
+        assertNull(fileAudioOrder(jf, listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "dan"), ft(2, dev.jellystructure.model.TrackKind.AUDIO, "aac", "eng"))))
+        // The codecs disagree (dca is ffprobe's old name for DTS and still matches).
+        assertNull(fileAudioOrder(jf, listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "eac3", "eng"), ft(2, dev.jellystructure.model.TrackKind.AUDIO, "aac", "dan"))))
+        assertEquals(listOf(0), fileAudioOrder(listOf(AudioTrack(index = 5, language = null, label = null, codec = "dts")), listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "dca", null))))
+    }
+
+    @Test
+    fun `register offers no renditions when the file's audio can't be matched`(): Unit = kotlinx.coroutines.runBlocking {
+        val r = AudioRenditions { null }
+        val later = kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000
+        val jf = listOf(AudioTrack(index = 4, language = "eng", label = "a", codec = "truehd"), AudioTrack(index = 5, language = "dan", label = "b", codec = "ac3"))
+        val mismatch = listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "truehd", "eng"))
+        assertNull(r.register("P", "https://jf/videos/abc/master.m3u8", jf, 4, later, "/m/f.mkv", 60_000, fileTracks = mismatch))
     }
 }

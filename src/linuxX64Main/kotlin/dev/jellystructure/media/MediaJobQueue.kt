@@ -713,7 +713,8 @@ class MediaJobQueue(
 
         val escaped = targetPath.replace("'", "'\\''")
         val escapedTmp = FfmpegRunner.tmpPath(targetPath).replace("'", "'\\''")
-        val cmd = "ffmpeg -y -i '$escaped' -map 0 -map -0:${target.streamIndex} -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        // Phase 311 — the work file goes in `<dir>/.jellystructure/`, made first (WorkFiles).
+        val cmd = "${WorkFiles.prepareCommand(targetPath)} && ffmpeg -y -i '$escaped' -map 0 -map -0:${target.streamIndex} -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
         val duration = FfmpegRunner.probeDurationSeconds(targetPath)
         val ok = FfmpegRunner.runRemuxTracked(targetPath, cmd, duration) { pct, speed, etaSeconds -> onProgress(row.id, pct, speed, etaSeconds) }
         if (cancelRunning) return Cancelled()

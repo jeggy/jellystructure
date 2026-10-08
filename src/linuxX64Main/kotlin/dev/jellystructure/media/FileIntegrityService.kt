@@ -280,7 +280,8 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
             }
         }
 
-        fun refuse(why: String): String { platform.posix.remove(plan.tmpPath); return why }
+        // Phase 311 — the work folder goes with the work file (rmdir: only when empty).
+        fun refuse(why: String): String { platform.posix.remove(plan.tmpPath); platform.posix.rmdir(WorkFiles.dirFor(libraryPath)); return why }
         if (!run(plan.copyCommand)) return@withLock refuse("ffmpeg couldn't copy the source")
         val got = hashPass(plan.newHashCommand) ?: return@withLock refuse("Couldn't verify the new file")
         if (got.damage.isNotEmpty()) return@withLock refuse("The new file did not verify clean")
@@ -290,6 +291,7 @@ class FileIntegrityService(private val db: JellystructureDb, private val seeding
         val wrong = TrackPairer.positionsNotHolding(planning.libraryWindow, newWindow)
         if (wrong.isNotEmpty()) return@withLock refuse("Track${if (wrong.size != 1) "s" else ""} ${wrong.joinToString(", ")} of the new file don't hold what the library copy held there")
         if (!run(plan.swapCommand)) return@withLock refuse("Couldn't move the damaged file to ${plan.quarantinePath}")
+        platform.posix.rmdir(WorkFiles.dirFor(libraryPath))   // Phase 311
 
         stampOf(libraryPath)?.let { q.put(libraryPath, it.size, it.mtime, nowEpochSec(), 0, null) }
         FileDamage.bump()

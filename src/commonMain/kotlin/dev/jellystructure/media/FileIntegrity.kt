@@ -238,14 +238,15 @@ class FileRepairPlan(
         }
     }
 
-    val tmpPath: String = libraryPath.substringBeforeLast('/') + "/.jsreplace_" + libraryPath.substringAfterLast('/')
+    // Phase 311 — the replacement is written in `<dir>/.jellystructure/` (WorkFiles), never beside the video.
+    val tmpPath: String = WorkFiles.pathFor(libraryPath, WorkFiles.Kind.REPLACE)
 
     private fun q(s: String) = "'${FileIntegrity.esc(s)}'"
 
     private val maps: String = pairs.joinToString(" ") { "-map 0:${it.sourceIndex}" }
 
     val copyCommand: String = buildString {
-        append("nice -n 19 ffmpeg -nostdin -v error -y -i ${q(sourcePath)} $maps -c copy -cues_to_front 1")
+        append("${WorkFiles.prepareCommand(libraryPath)} && nice -n 19 ffmpeg -nostdin -v error -y -i ${q(sourcePath)} $maps -c copy -cues_to_front 1")
         for ((position, f) in libraryFlags.withIndex()) {
             append(" -disposition:$position ${f.dispositions.joinToString("+").ifEmpty { "0" }}")
             append(" -metadata:s:$position ${q("language=${f.language}")}")

@@ -31,7 +31,8 @@ import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 
 /** R291 — one audio rendition's source: the file on this server's disk, the track, and how long the file is. */
-data class RenditionSource(val path: String, val streamIndex: Int, val channels: Int?, val durationMs: Long)
+/** [audioOrder]: the track's place among the file's own audio streams (`-map 0:a:<n>`), never Jellyfin's number (R382). */
+data class RenditionSource(val path: String, val audioOrder: Int, val channels: Int?, val durationMs: Long)
 
 /** R291 — a rendition is 3.000 s segments from 0, as Jellyfin's own audio playlists are; segment k is [3k, 3k+3). */
 const val RENDITION_SEGMENT_MS = 3_000L
@@ -81,7 +82,7 @@ internal fun renditionCommand(src: RenditionSource, codec: String, startSegment:
     val startMs = startSegment * RENDITION_SEGMENT_MS
     return "ffmpeg -nostdin -hide_banner -loglevel error -probesize 50M -analyzeduration 10M " +
         "-ss ${startMs / 1000}.${(startMs % 1000).toString().padStart(3, '0')} -i ${q(src.path)} " +
-        "-map 0:${src.streamIndex} -sn -dn -vn -map_metadata -1 -map_chapters -1 " +
+        "-map 0:a:${src.audioOrder} -sn -dn -vn -map_metadata -1 -map_chapters -1 " +
         "-c:a $encoder -b:a $bitrate -ac $channels " +
         "-copyts -avoid_negative_ts disabled -max_muxing_queue_size 2048 " +
         "-f hls -max_delay 5000000 -hls_time 3 -hls_segment_type mpegts -hls_flags temp_file " +

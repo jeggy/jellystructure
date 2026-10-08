@@ -26,7 +26,7 @@ ALLOWED=(
   "src/linuxX64Test/kotlin/dev/jellystructure/JellyfinServerVersionTest.kt"           # its unit tests
 )
 
-mapfile -t HITS < <(grep -rl "$SYMBOL" --include='*.kt' --include='*.kts' . \
+mapfile -t HITS < <(grep -rl "$SYMBOL" --include='*.kt' --include='*.kts' --exclude-dir=.claude . \
   | sed 's|^\./||' \
   | grep -v '^build/' | grep -v '/build/' \
   | sort -u)

@@ -124,6 +124,9 @@ private class Receiver {
     private var qoeRebufferMs = 0L
     private var qoeRebufferFrom = -1L
     private var qoeVariantBps: Long? = null
+    private var qoeLoadAt = 0L                       // 309a0 — when this item's load began
+    private var qoeFirstFrameMs: Long? = null
+    private var qoeSegments = 0                       // 309 (FR-309-13) — segment fetches since the load
     private var qoeDown = 0
     private var qoeUp = 0
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
@@ -339,6 +342,10 @@ private class Receiver {
         document.addEventListener("click", { _ -> if (music) toggle() })
         val opts: dynamic = js("({})")
         opts.disableIdleTimeout = false
+        // 309a0 — CAF plays HLS with its own player (MPL) unless told otherwise, and MPL ignores the Shaka settings this
+        // receiver hands it (startQoe: buffer goal, ABR targets). Found by the 2026-10-08 review: the 29 s stall with
+        // zero step-downs fits MPL, not Shaka. With Shaka, the 308 tuning applies at last.
+        opts.useShakaForHls = true
         context.start(opts)
         eventLoop()
     }
@@ -1175,6 +1182,8 @@ private class Receiver {
             qoeRebuffers = 0; qoeRebufferMs = 0L; qoeDown = 0; qoeUp = 0
         }
         qoeItem = itemId; qoeDirect = t.directPlay; qoePlayed = false; qoeSeeking = false; qoeRebufferFrom = -1L; qoeVariantBps = null
+        // 309a0 — this item's start time (load → first frame) and the segment fetches the estimate rests on.
+        qoeLoadAt = nowMs(); qoeFirstFrameMs = null; qoeSegments = 0
         runCatching {
             val cfg: dynamic = playerManager.getPlaybackConfig() ?: js("new cast.framework.PlaybackConfig()")
             val seed = t.measuredBandwidthBps?.takeIf { t.adaptive && it > 0 }
@@ -1185,6 +1194,8 @@ private class Receiver {
             // started yet stalled 2.7 s. 40 s ahead covers that start; 10 s behind (not 30) pays for it in memory, and
             // Shaka lowers the goal itself when the device's buffer quota is hit.
             if (t.adaptive) cfg.shakaConfig = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 }, streaming: { bufferingGoal: 40, bufferBehind: 10 } })")
+            // 309 (FR-309-13) — count segment fetches: an estimate resting on fewer than 3 is Shaka's own guess.
+            cfg.segmentRequestHandler = { _: dynamic -> qoeSegments++ }
             playerManager.setPlaybackConfig(cfg)
         }.onFailure { note("no initialBandwidth on this framework: ${it.message}") }
     }
@@ -1196,6 +1207,7 @@ private class Receiver {
             "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0) qoeRebufferFrom = nowMs()
             "PLAYING" -> {
                 if (qoeRebufferFrom >= 0) { qoeRebuffers++; qoeRebufferMs += (nowMs() - qoeRebufferFrom).coerceAtLeast(0); qoeRebufferFrom = -1L }
+                if (!qoePlayed && qoeFirstFrameMs == null && qoeLoadAt > 0) qoeFirstFrameMs = (nowMs() - qoeLoadAt).coerceAtLeast(0)   // 309a0
                 qoePlayed = true; qoeSeeking = false
             }
             else -> if (st == "PAUSED") qoeRebufferFrom = -1L
@@ -1223,7 +1235,10 @@ private class Receiver {
             droppedFrames = num(stats?.droppedFrames)?.toInt() ?: 0,
             rebufferCount = qoeRebuffers,
             rebufferMs = qoeRebufferMs,
-            bandwidthEstimateBps = num(stats?.estimatedBandwidth)?.toLong(),
+            // 309 (FR-309-13) — no estimate until it rests on 3 segment fetches (before that it is Shaka's default).
+            bandwidthEstimateBps = num(stats?.estimatedBandwidth)?.toLong()?.takeIf { qoeSegments >= 3 },
+            bandwidthSamples = qoeSegments,
+            firstFrameMs = qoeFirstFrameMs,
             directPlay = qoeDirect,
             variantSwitchesDown = qoeDown,
             variantSwitchesUp = qoeUp,
