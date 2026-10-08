@@ -16,7 +16,7 @@ class StopUserDataTest {
     }
 
     @Test fun `an ordinary unfinished stop is unwatched at its place`() =
-        assertEquals(StopUserData(false, 1_117_014L, null), stopUserData(1_117_014L, SessionPlan(durationMs = twoHours), startOverUnplayed = false))
+        assertEquals(StopUserData(false, 1_117_014L, null), stopUserData(1_117_014L, SessionPlan(durationMs = twoHours, playedAtStart = false), startOverUnplayed = false))
 
     @Test fun `an unfinished replay of a watched film stays watched — at its place`() =
         assertEquals(StopUserData(null, 1_117_014L, null), stopUserData(1_117_014L, SessionPlan(durationMs = twoHours, playedAtStart = true), false))
@@ -30,7 +30,7 @@ class StopUserDataTest {
     }
 
     @Test fun `a stop before 5 percent keeps no place — as Jellyfin's own rule`() =
-        assertEquals(StopUserData(false, 0L, null), stopUserData(60_000L, SessionPlan(durationMs = twoHours), false))
+        assertEquals(StopUserData(false, 0L, null), stopUserData(60_000L, SessionPlan(durationMs = twoHours, playedAtStart = false), false))
 
     @Test fun `an unfinished shuffled entry keeps its place and flag from before the shuffle`() {
         val plan = SessionPlan(durationMs = 660_000L, shuffle = true, priorPositionMs = 0L, priorLastPlayed = "2026-09-01T10:00:00.0000000Z", watchedAtStart = true)
@@ -39,4 +39,7 @@ class StopUserDataTest {
 
     @Test fun `a cleared Start over that did not finish is unwatched at its place · R343`() =
         assertEquals(StopUserData(false, 300_000L, null), stopUserData(300_000L, SessionPlan(durationMs = 660_000L, playedAtStart = true), startOverUnplayed = true))
+
+    @Test fun `a plan rebuilt after a restart does not know the flag and leaves it alone`() =
+        assertEquals(StopUserData(null, 1_117_014L, null), stopUserData(1_117_014L, SessionPlan(durationMs = twoHours), false))
 }

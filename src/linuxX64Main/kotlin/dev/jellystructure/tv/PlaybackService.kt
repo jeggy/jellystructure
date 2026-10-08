@@ -794,7 +794,7 @@ class PlaybackService(
             // R375 (FR-R375-6) — an episode's date and watched flag before this play, and a shuffle's series anchor.
             priorLastPlayed = saved?.lastPlayedDate?.takeIf { facts?.seriesJellyfinId != null },
             watchedAtStart = saved?.played == true && facts?.seriesJellyfinId != null,
-            playedAtStart = saved?.played == true,   // 310 (dev review item 7)
+            playedAtStart = saved?.played,   // 310 (dev review item 7) — null when Jellyfin's user data was unavailable
             anchorLastPlayed = facts?.seriesJellyfinId?.takeIf { asShuffle }?.let { sid -> anchorDateFor?.invoke(device.jellyfinUserId, sid) },
         )
         val key = PlaybackKey(device.deviceId, jellyfinId)

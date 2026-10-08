@@ -30,8 +30,9 @@ internal data class SessionPlan(
      *  build saw it; null when the series had nothing finished or the start was not a shuffle. */
     val anchorLastPlayed: String? = null,
     /** Phase 310 (dev review item 7) — the item was watched when this play started (any kind; [watchedAtStart] is
-     *  series-only, R375's own). An unfinished replay of a watched item leaves it watched. */
-    val playedAtStart: Boolean = false,
+     *  series-only, R375's own). An unfinished replay of a watched item leaves it watched. Null = not known (a plan
+     *  rebuilt after a restart, or Jellyfin's user data was unavailable at the start): the flag is then left alone. */
+    val playedAtStart: Boolean? = null,
 )
 
 /**
@@ -58,8 +59,9 @@ internal fun stopUserData(positionMs: Long, plan: SessionPlan, startOverUnplayed
         finished -> StopUserData(played = true, positionMs = 0L, lastPlayedDate = lastPlayedRestore(plan, finished = true))
         // FR-R343-5 — a shuffled entry that did not finish keeps the place it had before the shuffle, and its flag.
         plan.shuffle -> StopUserData(played = null, positionMs = plan.priorPositionMs, lastPlayedDate = lastPlayedRestore(plan, finished = false))
-        // Anything else that did not finish: at its place; not watched unless it already was (a replay stays watched).
-        else -> StopUserData(played = if (plan.playedAtStart) null else false, positionMs = place(positionMs),
+        // Anything else that did not finish: at its place; not watched unless it already was (a replay stays watched),
+        // and the flag untouched when that is not known.
+        else -> StopUserData(played = if (plan.playedAtStart == false) false else null, positionMs = place(positionMs),
             lastPlayedDate = lastPlayedRestore(plan, finished = false))
     }
 }
