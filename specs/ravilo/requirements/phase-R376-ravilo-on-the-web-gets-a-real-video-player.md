@@ -5,9 +5,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-05 on branch `r376-web-player`, not merged, not deployed.** The FR-R376-1 gate passed in
-headless Chromium (desktop and Pixel 7 emulation) and every FR is built; nothing was run on Safari (macOS or iPhone)
-or on a real Android phone, so the acceptance items that name them are open (see *Build notes*). Written 2026-10-05
+`⚠ Partial` — **rebased onto `main` on 2026-10-08 (branch `worktree-agent-ab00abd5d58e10631`), with the dev review's union and the owner's decisions built in; not merged, not deployed.** The FR-R376-1 gate passed in headless Chromium (2026-10-05) and **Safari 27 on the owner's Mac boots it** (2026-10-08: the Compose canvas, signed in, the Home feed and its artwork; no JS error). Not run: a play on Safari (a background window takes no key focus), the iPhone PWA, a real Android phone. Written 2026-10-05
 (dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Client only (`ravilo-ui` wasmJs
 actuals, `ravilo-web` boot); no server change, no wire change. Picks up the 2026-09-18 research report's option A
 (`specs/research-reports/ravilo-web-pwa-player-cast-2026-09-18.md` §4.1, "the single most valuable spike") and its
@@ -288,6 +286,61 @@ en/da/fo. The lab showed the control; entering PiP was not exercised (headless).
 Safari (macOS, iPhone PWA): native rendition switching, the held pick, `playsinline` playback with the chrome on top,
 Media Session on the lock screen. Android Chrome: orientation lock, the soft keyboard on the viewport's input, PiP.
 Real gamepads. Acceptance 2–3 on ravilo.jebster.net with a film with eight audio tracks (no deploy).
+
+### Rebased onto `main` (2026-10-08)
+
+Merged into a fresh branch from `main` `c27301be` (after R381, 316, 315, 311, 309a0, R382, 310/312). Five conflicts:
+- **hls.js (dev review item 1):** the union — R376's worker (`vendor/hls.worker.js`), `backBufferLength 90`,
+  `startPosition`, Managed Media Source, fatal-error recovery and the held audio pick, **plus 308's**
+  `maxBufferLength 60`, `maxBufferSize 300 MB`, `abrBandWidthFactor 0.7` / `abrBandWidthUpFactor 0.5`, the measurement
+  seed (`abrEwmaDefaultEstimate`) and the `LEVEL_SWITCHED` counters. The branch's `maxBufferLength 30` is dropped.
+- **`RaviloPlayer`:** keeps `seedBandwidthEstimate` (308) and R376's `selectAudioTrack(): Boolean`.
+- **`PlayerScreen`:** keeps main's cast play context and R376's picture-in-picture control.
+- **`STATUS.md` / this spec:** both kept.
+
+Built on top, from the review and the owner's decisions:
+- **FR-R376-3 changed (owner, 2026-10-08): direct play first.** The start no longer re-asks a multi-audio file as HLS
+  (`asksHlsForAudio` removed). An audio pick the browser cannot make inside the file (`selectAudioTrack` false, i.e.
+  Chrome/Firefox on a direct play) restreams through R284 with `hls_only` set (`audioPickNeedsHls` in `WebPlayback.kt`,
+  applied in `PlayerStore.restreamWithSub`); the item stays on HLS for its later restreams. Safari switches inside the
+  file (its element has `audioTracks`).
+- **R381 on the web:** the web's QoE stalls are now `QoeCounter`'s (per item via `beginQoeItem`, only after the item's
+  first frame, never inside a seek, a track switch, a variant switch or after a pause). `WebPlaybackEvents` feeds it
+  from the same element events (new `pause` and hls.js `variant` events); `qoeSnapshot` reports `per_item`, the stalls,
+  the waits and the session totals with R376's dropped frames and 308's variant fields.
+- **FR-309-13 on the web:** hls.js's bandwidth is reported only once its estimator rests on real fragment samples
+  (`bwEstimator.canEstimate()`); before that it is its default or 308's seed, never a measurement.
+- **Time to first frame (review item 3):** PlayerScreen's start timer already reads `hasRenderedFirstFrame`, which on
+  the web is now the element's own `loadeddata`/`playing` — the old constant made every web start read "1 s".
+- **Safari's quality (review item 4):** native HLS picks its own variant; the start rung is 308's first listed variant
+  (`startOrder`). Noted for 309.
+- The acceptance no longer names a library title.
+
+Tests: `WebPlaybackTest` (desktop JVM) — the new `audioPickNeedsHls` rules and three `QoeCounter`-on-the-web cases
+(a stall only after the first frame and per item; a seek, a track switch, a variant switch and a pause are never
+stalls; a restream of the same item keeps its counts). Full runs: `:shared:desktopTest` 128, `:ravilo-ui:desktopTest`
+574, `:ravilo-ui:testDebugUnitTest` 710 — 0 failures; `:ravilo-ui` wasm/desktop/Android and `:ravilo-web` compile;
+`wasmJsBrowserDistribution` builds. Every `scripts/check-*.sh` passes; the four Android APK checks (http engine,
+min SDK, Play device filter, player dex) need a release APK and were not run here. (`:shared:allTests` fails on its own
+test targets without `kotlin-test` — pre-existing on `main`, not this phase.)
+
+### Live: Safari 27 on the owner's Mac (2026-10-08)
+
+The branch's `wasmJsBrowserDistribution`, served from this host on a throwaway Node server that proxies `/api` (HTTP
+and the events WebSocket) to the dev backend on the same origin (so the backend's CORS allowlist never applied), with
+a script in `index.html` signing the browser in as the Test Stream account. Safari was opened with `open -g` (behind the
+owner's apps; their front app never changed) and quit afterwards; the session was wiped from Safari's storage first.
+- **Boots:** the Compose canvas in `#ComposeTarget`'s shadow root, the config, Home, Discover, upcoming, Live TV and
+  facets fetched (all 200), the hero's artwork loading as the carousel turned; no `error` or `unhandledrejection`.
+- **What Safari offers the player:** native HLS `maybe`, H.264 and HEVC `probably`, MediaSource and Managed Media
+  Source, `WebKitPlaybackTargetAvailabilityEvent` (so FR-R376-7 takes native HLS), WebGL 2, picture-in-picture, the
+  element's `audioTracks`.
+- **Not run:** a play. Synthetic keys reached the canvas but a background Safari window has no key focus (and its
+  timers are throttled), so nothing opened; bringing Safari to the front would have taken over the owner's screen.
+  The events WebSocket reconnected every few seconds through the throwaway proxy, most likely the proxy's own upgrade
+  handling; to be watched on a real deploy.
+- WebKit in Playwright could not run on this host (missing system libraries), and this host's headless Chromium had no
+  WebGL this time, so the play checks still need the Mac in front, the iPhone PWA and a real Android phone.
 
 ## Dev review (2026-10-08, against `main` `4222ac4c`)
 
