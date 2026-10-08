@@ -112,4 +112,17 @@ class QoeCounterTest {
         assertEquals(20, c.stallEvents().size)
         assertEquals(150_000L, c.stallEvents().first().positionMs)
     }
+
+    @Test
+    fun `the item's time to its first frame is its first load's (309)`() {
+        val c = QoeCounter()
+        c.beginItem("film"); c.load(10_000)
+        kotlin.test.assertNull(c.firstFrameMs())
+        c.firstFrame(11_200)
+        assertEquals(1_200L, c.firstFrameMs())
+        c.load(50_000); c.firstFrame(50_400)   // a restream of the same item keeps the first one
+        assertEquals(1_200L, c.firstFrameMs())
+        c.beginItem("next"); c.load(); c.firstFrame(60_000)   // untimed load: nothing reported
+        kotlin.test.assertNull(c.firstFrameMs())
+    }
 }

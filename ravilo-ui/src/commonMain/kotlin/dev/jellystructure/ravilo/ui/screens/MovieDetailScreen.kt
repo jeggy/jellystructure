@@ -66,7 +66,6 @@ import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.GenreChipRow
 import dev.jellystructure.ravilo.ui.components.ImdbChip
-import dev.jellystructure.ravilo.ui.components.PlaybackNoteLine
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
@@ -110,6 +109,9 @@ fun MovieDetailScreen(
     val state by store.state.collectAsState()
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()
+    // 309 (FR-309-3/-6) — 2 s on the page: the speed test, then the encode Play would start; leaving stops it.
+    val prewarmId = (state as? MovieDetailState.Loaded)?.detail?.id
+    LaunchedEffect(prewarmId) { prewarmId?.let { store.prewarm.dwell(it) } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
@@ -290,13 +292,7 @@ private fun MovieDetailLoaded(
                                 onDown = { runCatching { playFR.requestFocus() } },
                             )
                         }
-                        // R222 (Phase 185, FR-R222-4) — directly above the actions, never the meta row: a
-                        // fact about tonight, not about the film. Play must not move — this takes its own
-                        // slot and never reflows the button row below it.
-                        detail.playbackNote?.let {
-                            Spacer(Modifier.height(10.dp))
-                            PlaybackNoteLine(note = it, compact = LocalCompact.current)
-                        }
+                        // 309 (FR-309-10) — R222's "slow to start" line is gone: every play starts at once.
                     }
                     Spacer(Modifier.height(18.dp))
                     Row(

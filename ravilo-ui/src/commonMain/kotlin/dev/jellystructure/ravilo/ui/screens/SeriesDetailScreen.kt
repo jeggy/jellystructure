@@ -132,6 +132,11 @@ fun SeriesDetailScreen(
     val state by store.state.collectAsState()
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()
+    // 309 (FR-309-3/-6) — 2 s on the page: the speed test, then the encode of the episode Play would play (once the
+    // playstate says which); leaving stops it.
+    val loadedSeries = (state as? SeriesDetailState.Loaded)?.detail
+    val prewarmEp = if (loadedSeries != null && overlay.isNotEmpty()) primaryEpisodeId(loadedSeries, overlay) else null
+    LaunchedEffect(prewarmEp) { prewarmEp?.let { store.prewarm.dwell(it, seriesId = loadedSeries?.id) } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
