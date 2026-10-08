@@ -9,7 +9,12 @@
 
 ## Status
 
-`Planned` — design-authored 2026-09-18, **dev-reviewed 2026-09-19 against `main` `b397f5e6`**, **not
+`⚠ Partial` — **built 2026-10-05 on `r266-cast-connect`, rebased onto `main` and completed with R380 on 2026-10-08
+(branch `worktree-agent-a97c82f5673ccb803`, not merged)**: the phone's full remote against the TV app (subtitles, audio,
+Next episode, the queue) and the TV's music mode are in; **a film and a music cast were played live on Stue TV** from a
+host-side Cast Connect sender, not yet from a real phone (see *Build notes (2026-10-08)*). Released only with R380.
+
+*The status as first written:* `Planned` — design-authored 2026-09-18, **dev-reviewed 2026-09-19 against `main` `b397f5e6`**, **not
 built, deliberately.** Two of its three open questions are closed below from the review's code
 citations; the build itself is the only remaining phase in this batch that was left alone, and the
 reason is worth stating rather than leaving as a gap.
@@ -417,4 +422,46 @@ the held-token verdict, the inbox hand-over/replace/timeout, the debug app-id ru
   app, which refuses the queue (it has no music mode) — where today the web receiver would play it. Worth an owner
   call before release: refuse (as built), or have the TV app hand a music LOAD back to the web receiver.
 - The phone's `position_ms` (a hand-over mid-film may start a few seconds behind where the phone was).
+
+## Build notes (2026-10-08)
+
+**Rebased onto `main` `97b9e588`** (branch `worktree-agent-a97c82f5673ccb803`; the R266 commits cherry-picked). The
+`cast_connect_launch` migration moved **69 → 72** (main had taken 69–71); **`main` has since taken 72 and 73** (R381 and
+the backend batch), so it becomes **74** when this branch is merged. `MusicEditionsStoreTest`'s rewind drops the table.
+
+### The known gaps of 2026-10-05, closed
+
+- **The remote's richer half (FR-R266-5, owner decision 3).** The TV app speaks Ravilo's Cast channel through the
+  shared module R380 introduced (`shared/…/tv/CastChannel.kt`, the same `castChannelStep` the web receiver now uses):
+  `CastConnectReceiver` sets the custom namespace and a message listener, and `TvCastChannel` answers `status` with the
+  playing film's title, kicker, audio and subtitle lists, selections, subtitle size and next episode, and acts on
+  `audio`, `subtitle`, `subsize` and `episode_next` through the player's own pick path (`CastVideoSource` /
+  `CastChannelVideoHost`, `PlayerScreen.applyPick`). The film's `MediaInfo` is rebuilt with **no Cast media tracks**, so
+  the phone's picker sends its picks on the channel rather than as a standard track selection (which the TV maps too).
+- **Music to the TV (owner decision 2):** R380 — a music LOAD plays in the TV app's own music mode.
+- **`position_ms`:** a film LOAD now starts where the phone was (`Dest.Player(startAtMs)`).
+
+### Verified live (Stue TV, 2026-10-08)
+
+Debug build `dev.jellystructure.ravilo.debug` (over the R381 fork's debug build; the Play Store app untouched), the
+development Cast application, a host-side Cast Connect sender (LAUNCH with `supportedAppTypes` WEB + ANDROID_TV, then
+the phone's own LOAD shape and channel messages); the phone itself could not be driven.
+- The Cast SDK **launches the debug TV app** for the development application, and a LOAD reaches
+  `MediaLoadCommandCallback.onLoad` with `customData` intact (logcat: `Cast Connect intent …LOAD`, `load of … : PLAY`).
+- The film started at **1:00, the phone's `position_ms`**; the receiver handed the player's Media3 session to
+  `MediaManager` (`media session handed to Cast Connect`) and the standard media status followed it (BUFFERING →
+  PLAYING with the position).
+- The channel's `status` listed the film's real audio track and its Danish subtitle; `subtitle 0` turned it on
+  (`selected_sub: 0`), `subtitle -1` off; quitting the app released the session (`media session released`).
+- Music: see R380's build notes (launch from cold, queue status, next, stale refusal, lyrics, the TV remote's keys,
+  Back → Home with the pill, Home stops).
+- The test's resume point on the film (and the songs' plays) were reset in Jellyfin afterwards.
+
+### Still not verified
+
+- A cast from a real phone: the remote's screens following the TV (play state, tracks sheet, Next episode).
+- Acceptance 6 on the phone (what its remote shows when the TV's session is released), a second cast while one plays,
+  display standby, the admin card's *opens Ravilo itself* line (the observation is posted; the card was not opened).
+- Release build on a device: R8 + `check-player-dex.sh` pass (245 registers), `verify-release-apk-on-art.sh` not run.
+- Soveværelse TV (not tested).
 

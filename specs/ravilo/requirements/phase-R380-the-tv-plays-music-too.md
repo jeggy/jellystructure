@@ -6,9 +6,11 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from the owner's decision above and R266's re-dev review (item 5,
-2026-10-08). **Dev-reviewed 2026-10-08** (see the end), not built. **Blocks R266's release.** Ravilo (TV build of `ravilo-android` + `ravilo-ui`),
-with a small backend part (the session for a TV target). Designs: none for a TV music mode yet; the shapes to follow are
+`⚠ Partial` — written 2026-10-08 (dev-authored) from the owner's decision above and R266's re-dev review (item 5,
+2026-10-08). **Dev-reviewed 2026-10-08** (see the end). **Built 2026-10-08 on the R266 branch, together with R266, not
+merged** (see *Build notes*). Live-tested on Stue TV with the debug build and a host-side Cast Connect sender; **not yet
+cast from a real phone**. Ravilo (TV build of `ravilo-android` + `ravilo-ui`), with a small backend part (one TV row in
+*Play on…*). Designs: none for a TV music mode yet; the shapes followed are
 286's *Now playing on a display* (FR-286-5/-6) and the phone's Playing page (R322).
 
 ## Why
@@ -241,3 +243,112 @@ the owner.
    audiobooks are offered.
 3. **Home stops the music** (Q3, against the lean): leaving Ravilo on the TV ends the music cast; the phone's remote
    closes quietly (as R245's ended session does).
+
+## Build notes (2026-10-08)
+
+Built on the R266 branch (`worktree-agent-a97c82f5673ccb803`, rebased from `r266-cast-connect` onto `main` `97b9e588`),
+in the same commits' series as R266's remote work, because the owner's decision 1 makes them one piece: **one
+receiver-side module for Ravilo's Cast channel**, used by the web receiver and the TV app.
+
+### What was built
+
+- **One Cast channel, two receivers (owner decision 1).** `shared/…/tv/CastChannel.kt`: `castChannelStep(cmd, music)`
+  turns every `CastCommand` into one `CastChannelStep` (status, stale, queue part, next/previous, play at, queue edit,
+  repeat, shuffle, lyrics, subtitle size, Next episode, next-up, audio, subtitle), plus `castCommandIsStale` (R369's
+  `expect_index`/`expect_item`), `castQueueEdit` and `CastQueueRevision` (R356). The web receiver
+  (`ravilo-cast/…/Receiver.kt`) now dispatches through it; the TV app does too (`ravilo-ui/…/seams/TvCastChannel.kt`,
+  wired by `CastConnectReceiver` through `setCustomNamespaces` + `setMessageReceivedListener`). The TV answers with the
+  same `status` messages, queue windows and `queue_part`s (R359) as the web receiver, so the phone's remote is the same
+  one whichever receiver plays.
+- **A music LOAD is accepted (FR-R380-1).** `castConnectLoadFromJson` → `CastConnectPlay` (a film) or
+  `CastConnectMusic` (`castConnectMusicOf`: tracks, current index, position, repeat, shuffle, `queue_id`), under R266's
+  held-token verdict. The root (`RaviloApp.kt`) attaches the engine, loads the queue paused at the phone's place, sets
+  repeat, plays, and opens `Dest.TvNowPlaying`. A film LOAD stops the music first (FR-R380-2).
+- **The TV's own engine plays it (FR-R380-2).** `MusicEngine` on the TV (it was already in the build), so each song goes
+  through `POST /tv/music/play` with the TV's own device and token. `MusicEngine.replaceQueue` (new, all three actuals)
+  serves the phone's queue edits.
+- **Now playing on the TV (FR-R380-3).** `ravilo-ui/…/music/TvNowPlaying.kt`: cover left, title, artist, album, version
+  chips, progress, *Next · {song}*, synced lyrics (off at first, remembered per TV as `tv_lyrics`), a book's chapter and
+  speed; no buttons until a key, then a transport row (previous · play/pause · next · Lyrics · Queue) with a ▲ ▼ hint,
+  hidden after 5 s. The row is an **echo of the key just pressed**, lit on the action it did, not a focus row: the keys
+  themselves carry the owner's rules, so there is nothing to move focus to (a deviation from FR-R380-4's "ordinary focus
+  groups", recorded here). Icons are `DeskIcon` drawings: a ⏸ glyph rendered as a colour emoji on the BRAVIA.
+- **The remote's keys (FR-R380-4)** as a pure function, `tvMusicAction(key, book)`: OK / Play-Pause toggle, Play, Pause,
+  Stop (stops and ends the cast), ◀ ▶ previous/next (a book: ∓30 s), held ◀ ▶ seek 10 s, ▼ lyrics, ▲ queue, Back hides.
+- **The queue (FR-R380-5)** is a side panel with its own D-pad handling: ▲ ▼ move, OK jumps (`playAt`), Back and ◀
+  close it. No reordering on the TV.
+- **Back hides; the pill (FR-R380-6).** `hideTvNowPlaying()` in `RaviloApp.kt` takes the page off and lands on the page
+  under it, or on Home when there is none (a cast that cold-starts the app has nothing under Now playing, or only a
+  sign-in/profile screen or the cast's finished film). The page reads Back itself, down and up, so the key-up cannot
+  reach the activity and close the app. `TvMusicPill` sits on the app bar between the tabs and Search while music plays
+  (cover, title, play/pause), in the D-pad chain; OK reopens Now playing.
+- **Home stops the music (owner decision 3).** Leaving the activity stops the engine and ends the cast; the phone's
+  remote closes as an ended session does.
+- **The phone stays the remote (FR-R380-7, owner decision 1).** Through the Cast channel above, not the events socket:
+  play/pause/seek arrive as the standard Cast media commands on the music engine's own session (`TvMusicSession`: its
+  token goes to `MediaManager.setSessionCompatToken` for a music cast, the video player's for a film), and every richer
+  command arrives on the Ravilo channel. Film casts get the same remote: `CastVideoSource` + `CastChannelVideoHost`
+  (`screens/RemoteVideoCommands.kt`) expose the player's audio and subtitle lists (`castVideoLists`), its picks
+  (`applyPick`, the picker's own path), subtitle size and Next episode. The receiver rebuilds a film LOAD's
+  `MediaInfo` with explicitly no Cast tracks, so the phone sends subtitle and audio picks on the channel; a standard
+  track selection that still arrives is mapped too (`onSelectTracksByType`).
+- **The TV appears once in Play on… (owner decision 2).** The TV app reports its Android device name on its events
+  socket (`cast_name=`, `TvDeviceName` from `Settings.Global.DEVICE_NAME`) and `features` music/audiobooks when its
+  engine is supported; the server's `mergeTvApps` (`tv/PlaybackTargets.kt`) folds the Cast place of that name into the
+  app's row, which keeps the app's id (a start goes to the app, R370) and gains the Cast device id.
+- **FR-R380-8:** the queue's end shows the last song finished, then the page closes and the cast ends.
+- **Strings (FR-R380-10):** `tvmusic.*` × en/da/fo in `i18n/*.json` (da/fo drafts as tabled).
+- **R258:** `PlayerScreen`'s cast binding is one `SideEffect` closure; the release APK's widest player method is
+  **245 registers** (limit 250) after it (250 before the closure).
+
+### Tests
+
+`CastChannelTest` (shared: every command → step, stale `expect_index`, queue edits, the revision), `CastConnectMusicTest`
+(a LOAD with tracks and with a server-held `queue_id` → music; refused without a held token; a film LOAD unchanged),
+`TvNowPlayingKeysTest` (the key map for music and a book), `CastVideoListsTest` (the film remote's lists, ids and the
+Off row), and three `PlaybackTargetsTest` cases (the TV app and its Cast place merge into one row; no merge without a
+name; two TVs stay two). Totals at the end: shared desktopTest 138/138, ravilo-ui desktopTest 564/564, backend
+`linuxX64Test` green, `ravilo-cast` JS + Wasm + Android debug/release compile; `check-phases`, `check-ravilo-strings`,
+`check-web-glyphs`, `check-theme-whites`, `check-mobile-css`, `check-player-dex` green. `check-deanonymization` fails on
+files this phase did not touch (R291/R376/R377 specs, `CastDiscoveryRulesTest`, `TvCastSeenTest`); it adds nothing.
+**Not written:** Tests 3 (a `session_command` per op on a fake engine — the commands travel the Cast channel instead,
+covered by `CastChannelTest` at the decision level, not on an engine), 4 (queue end / Back keeps playing, as a test) and
+5 (the Compose screenshot and focus test at 1920×1080 in three skins).
+
+### Verified live (Stue TV, 2026-10-08, debug build `dev.jellystructure.ravilo.debug`, development Cast app)
+
+The phone could not be driven (not reachable over adb), so the sender was a host-side Cast Connect sender
+(`pychromecast`, LAUNCH with `supportedAppTypes` WEB + ANDROID_TV, then LOAD and channel messages exactly as the phone's
+`CastLoadData` / `CastCommand`), against the viewer's held token:
+- **Music:** a three-song queue launched the debug app from cold and opened Now playing with the first song playing;
+  `status` returned the queue (3 songs, index 0, `queue_rev` 1); `next` moved to song 2; a second `next` with a stale
+  `expect_index` was refused (status unchanged); `lyrics on` came back `lyrics_on: true`.
+- **TV remote:** OK paused and resumed (media session state 2 → 3), ▶ skipped to the next song, ▼ toggled lyrics and
+  showed the transport row, ▲ opened the queue with the playing song marked, Back closed the queue, Back hid the page
+  **onto Ravilo's Home with the pill, the music still playing** (after the fixes below), → → → → reached the pill, OK
+  reopened Now playing, **Home stopped the music** (session state 0).
+- **Found and fixed live:** (1) Back from a cold-started Now playing left the app and stopped the music (nothing under
+  the page; the page did not read Back) → `hideTvNowPlaying` + the page consumes Back; (2) the transport row overflowed
+  the column and ⏸ drew as a colour emoji → narrower cover, one-line labels, drawn icons; (3) the pill's fixed title
+  width pushed the avatar off the bar → `widthIn(max = 110.dp)`. Fix (2)'s final icon version and fix (3) compiled and
+  passed the checks but were **not seen on the TV again** (it was put to sleep).
+- **Film (R266):** see R266's build notes of the same day.
+- Clean-up: every play count, played mark, resume point and last-played date the tests left on the viewer's account
+  (one film, three songs) was reset through Jellyfin (`DELETE /UserPlayedItems` + `PlaybackPositionTicks 0`), checked in
+  Jellyfin's database afterwards; the TV was left asleep on the launcher.
+
+### Not verified / not built
+
+- **A real phone casting** (acceptance 1 and 3): the phone's Now playing following the TV, *Recently played* listing the
+  songs, the merged *Play on…* row (backend unit-tested, not deployed).
+- **A book cast** (acceptance 4): built (book facts, ∓30 s), not cast — the phone's sender does not send audiobooks over
+  Cast today.
+- Hold ◀ ▶ seek, a Stop key, the queue's end (acceptance 2, 5 in part), the three skins (acceptance 6), a plain
+  Chromecast after this build (acceptance 7), Soveværelse TV (its test viewer has no music library).
+- *Up next from {album}* in the queue panel and `tvmusic.from_phone` are not shown; the ▲ ▼ hint does not change with the
+  lyrics state; `nextup_cancel` from the phone is accepted and does nothing on the TV app (it has no next-up countdown
+  card to cancel); `subsize` sets the player's subtitle size, whose effect on the TV's captions was not checked.
+- **Merge:** R266's `cast_connect_launch` migration is `72.sqm` on this branch; `main` now has 72 and 73 (R381 and the
+  backend batch), so it must become **74** on the rebase. R381 also edits `PlayerScreen` (QoE counter, prefetch):
+  re-run `scripts/check-player-dex.sh` on the merged release APK.
+
