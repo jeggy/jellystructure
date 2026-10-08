@@ -521,7 +521,17 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
         // The remote holds the whole queue from the start; the receiver says each song's place in the whole of it.
         _status.value = CastRemoteStatus(itemId = data.itemId, title = data.title, kicker = data.kicker, artUrl = data.artUrl, loaded = true, buffering = true,
             music = data.tracks.isNotEmpty(), queue = data.tracks, queueIndex = data.currentIndex, repeat = data.repeat, shuffle = data.shuffle)
-        rmc.load(req)
+        // R266 (FR-R266-3) — the Ravilo TV app answers a refused LOAD with a media error, not with the web receiver's own
+        // `failed` message: fold it in as one, so the remote shows R237's *couldn't play this* rather than *Paused* at 0:00
+        // (found on the soveværelse TV, 2026-10-05). A load replaced or cancelled by a newer one is not a failure.
+        rmc.load(req).setResultCallback { r ->
+            val code = r.status.statusCode
+            if (!r.status.isSuccess && code != com.google.android.gms.cast.CastStatusCodes.REPLACED && code != com.google.android.gms.cast.CastStatusCodes.CANCELED) {
+                android.util.Log.w("RaviloCast", "R266: the receiver refused the load of ${data.itemId} (status $code)")
+                receiverSaid = foldReceiverMessage(receiverSaid, dev.jellystructure.shared.tv.CastReceiverMessage(type = "failed", itemId = data.itemId, title = data.title))
+                rebuildStatus("failed")
+            }
+        }
         plan.parts.forEach { sendRaw(json.encodeToString(dev.jellystructure.shared.tv.CastCommand.serializer(), it)) }
         // FR-R359-7 — the LOAD's size and the number of parts, so a future limit is visible in the log.
         val bytes = runCatching { castWireBytes(req.toJson().toString()) }.getOrDefault(0)
