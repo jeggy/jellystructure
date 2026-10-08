@@ -6,9 +6,13 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-08 (314a) on branch `worktree-agent-a5d8835a82b48c051`**, not merged, not deployed: the
-three kinds' dry run, jobs, card, Dashboard rows and the backend's copy choice; Ravilo's one-row picker, sidecar direct
-play and the Dolby Vision version choice in Ravilo playback are 314b/c (see *Build notes*). Before that: `Planned` —
+`⚠ Partial` — **314b/c built 2026-10-08 on branch `worktree-agent-a75a1e096454ab621`** (on top of 314a, merged to
+`main`), not merged, not deployed, not tried on a device: the picker's one row for a source and its copy, sidecar
+`.mka` direct play on Android, the Dolby Vision version per device with a Picture tab, the per-film rename ticks, the
+Tracks-tab card and Remove (see *Build notes (314b/c)*). Left: the live checks on devices, hls.js/receiver sidecar
+renditions only through R382's ladder, 313's encoder with a sidecar. **314a built 2026-10-08** on branch
+`worktree-agent-a5d8835a82b48c051`: the three kinds' dry run, jobs, card, Dashboard rows and the backend's copy
+choice. Before that: `Planned` —
 written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach
 reports of the same day (option D), and a read-only count over Jellyfin's database, the library's files (link counts)
 and qBittorrent. Dev-reviewed 2026-10-08 (section at the end). Backend (a new job kind on the media lane, the track resolver), admin
@@ -451,3 +455,108 @@ Sonarr `develop` (`MediaFileExtensions.cs`, `ExistingOtherExtraImporter.cs`); th
    rename setting is off; (c) keep their copies hidden in `.jellystructure/` served by our backend (the review's
    original lean). Lean: (b) for the unseeded ones, asked per title in the dry run.
 
+## Build notes (2026-10-08, 314b/c — branch `worktree-agent-a75a1e096454ab621`)
+
+Owner's answer to *For the owner* 1 above: **(b), asked per film** — a rename keeps the inode, so cross-seed's hard links
+keep seeding; Radarr is rescanned; never for a file a torrent seeds in the library itself unless qBittorrent is
+repointed as 316 does (this build refuses that case rather than repointing).
+
+### What was built
+
+- **One row for a source and its copy (FR-314-5).** `copySourcesOf` (Jellyfin's numbering, sidecars included) maps each
+  copy — AAC *Stereo* / E-AC-3 *Surround 5.1* — to the same language's main original (default first; never a commentary,
+  a description or another copy). The ticket's `AudioTrack` gains `copy_of` (+ `external`, `external_url`). Ravilo folds
+  a copy onto its source's row (`foldedAudioGroups`, the R195 groups keep the player's own flat indices), shows the
+  source's row while the copy plays (`shownAudio`), and a pick of the source plays the copy only when Media3 says the
+  device can't decode the source and can the copy (`playableAudio`, `PlayerAudioTrack.supported` =
+  `Tracks.Group.isTrackSupported`). A copy whose source isn't in the list stays its own row.
+- **Ticket audio order.** Jellyfin numbers external streams first; a player sees the container's tracks, then any it
+  merged. The ticket now lists the container's audio first and external tracks last (`ticketAudioTracks`), so the
+  position mapping holds with or without a sidecar.
+- **Sidecar direct play (FR-314-6).** `ClientCapabilities.external_audio` (Android `true`; desktop and web `false`). On a
+  direct play to such a client each `.mka` beside the video is registered under a 128-bit id
+  (`SidecarStreams`, lives as long as the ticket) and served at `GET /api/tv/stream/{id}/sidecar.mka` with byte ranges
+  (`respondFileRange`: 206 / 416 / whole file). The file is found by name beside jellystructure's own path of the video
+  (`localSidecarPath`: `.mka` only, no `..`). Media3 plays it with `MergingMediaSource(main, ProgressiveMediaSource…)`.
+  A client without the capability never sees an external track on a direct play; a transcode keeps Jellyfin's handling.
+  R382's renditions make an external track from its own file (`Rendition.sourcePath`, `sidecarFileFor`); a missing
+  sidecar ⇒ no renditions, as before.
+- **The Dolby Vision version in playback (FR-314-5, kind C).** `JellyfinItemDetail` reads `MediaSources` (+ `Name`).
+  `chooseMediaSource`: a requested version wins; else a device without dual-layer DV (`supportsDolbyVision &&
+  supportsDolbyVisionEl` false) plays our 8.1 version, every other device the original. The id flows through
+  `getPlaybackInfo`, the direct/transcode URL, both restream paths and the un-burn path. The ticket carries `versions`
+  (`Dolby Vision, full detail` / `Dolby Vision`, other versions by Jellyfin's name) and `media_source_id`;
+  `PlaybackRestreamRequest.media_source_id` asks for one. Ravilo's picker gains a **Picture** tab (only with two
+  versions; `player.tab_picture` × en/da/fo) whose pick restreams at the same position with the same tracks.
+- **Rename ticks (kind C).** The dry run lists a DV7 original as `needs_rename` when renaming it to `<folder>.<ext>`
+  would make it eligible (and only then): *rename to X first, then + a Dolby Vision 8.1 version beside it*. Settings →
+  Libraries shows a tick per such film and *Rename the ticked and add their versions*; the Tracks-tab card has *Rename
+  and add the version*. `POST /api/file-fix/c/rename {paths}` → `LooseFilmsService.renameToFolder`: 316's mover in
+  place (`targetFolder == root`; `planRenameToFolder` takes every `<base>.…`/`<base>-…` file with it, folder-named files
+  stay; refused when a target name is taken). It reads watch data, renames (undone in reverse on any failure), refreshes
+  Radarr, tells Jellyfin, carries watch data and our rows to the new item, and writes History. **Refused, with nothing
+  changed, when a torrent seeds the library file itself.** Then the row is planned again under the new name and its
+  version queued. Apply never renames.
+- **Tracks tab and Remove (FR-314-7/-8).** `GET /api/file-fix/title/{mediaId}` → a card (*Plays directly on every
+  device*) on a film's Tracks & subtitles tab and a series' Seasons & episodes tab, hidden when the dry run has nothing
+  for it: per kind its state, **Add** (`would_add · sidecar · failed · removed`), **Remove** (`done`). Remove is a job
+  on the media lane (`remove_pending`, survives a restart via `resetRunning`): kinds A/B delete our `.mka` beside the
+  file and remux our tagged copies out (`copyTrackIds` from `mkvmerge -J`: codec + our name + our
+  `JELLYSTRUCTURE_ADDED`/`_COPY_OF` tag; `mkvmerge --audio-tracks '!ids'`; `verifyRemoved` + the duration; the seeding
+  guard before and at the swap; one rename). Kind C deletes the version file **only when it carries our
+  `JELLYSTRUCTURE_DV` tag** (the name alone never deletes). A removed row stays `removed`: neither the dry run, Apply nor
+  *new files automatically* adds it back — only the title's own Add.
+
+### Deviations
+
+- **No migration**: the new states (`needs_rename`, `remove_pending`, `removed`) are values of the existing `state`
+  column; only queries changed.
+- **Remove is a job, not a request** (a remux of a 60 GB file can't run in a request).
+- **The rename reuses 316's mover in place** rather than a new routine, so its order, undo and checks are 316's.
+- **Desktop and web don't merge a sidecar** (`external_audio = false`): a direct play there lists no external track;
+  their transcode path still has it through Jellyfin.
+- **313's encoder doesn't map an external sidecar**: a play that would use our encoder with a sidecar track falls back
+  to Jellyfin as before.
+- **`dvVersionSource` (314a) stays unused**; `chooseMediaSource` replaces it (it also honours a request).
+- A version's own **external subtitles**: Jellyfin lists for the version only what is named after the version; the
+  original's sidecar subtitles may not attach to it (not handled here).
+
+### Tests
+
+New: `FileFixPlaybackTest` (9: ticket order + `copy_of`, no external track for a client that can't merge, copies in the
+file, the sidecar's path, the version per device and on request, the versions' words, the capability id's life, byte
+ranges, an external track's rendition file), `FileFixRemoveRulesTest` (5: `copySourcesOf`, `copyTrackIds` on
+`mkvmerge -J`'s shape with statistics tags, the remux command, `verifyRemoved`, `renamedToFolder`), 6 more in
+`FileFixServiceTest` (needs_rename and that Apply never renames; a tick renames, re-plans and queues; a refused rename
+changes nothing; Remove remuxes our copy out with verification and stays removed through the dry run, Apply and
+*new files automatically*; a seeded file's Remove only deletes the `.mka`; a version file without our tag is never
+deleted), 3 in `LooseFilmsTest` (`planRenameToFolder`, the mover in place, a taken name), and Ravilo's
+`AddedCopyFoldingTest` (5: folding, an orphan copy, `playableAudio`, `shownAudio`, the Picture tab's rows).
+Green on the branch: backend `linuxX64Test` 1 320, `:ravilo-ui:testDebugUnitTest` 715, `:ravilo-ui:desktopTest` 579,
+`:shared:desktopTest` 138 (wire contract included), `:ravilo-i18n` 24, `:ravilo-player` 8, `:ravilo-castv2` 33; the
+admin and Ravilo Wasm compiles, `:ravilo-desktop:compileKotlinDesktop`, `:ravilo-android:assembleRelease`; every
+`scripts/check-*.sh` except `check-deanonymization` (its hits are in files this phase doesn't touch: two cast tests and
+the R291/R376/R377 specs). `check-player-dex`: the widest method is `PlayerScreen`'s body (R8 mapping) at **247**
+registers (limit 250); `main`'s own is 246, the picture versions live in `PlayerBookkeeping` to keep it there.
+`check-theme-whites`: PlayerScreen 73 → 74 (the Picture row's focus fill, over the video like its siblings).
+
+### Validated (read-only)
+
+`FILEFIX_LIVE_LIST` over the 299 film files (ffprobe headers, niced, nothing written, 2026-10-09): **16** Dolby Vision
+7 originals — **3** eligible as they are, **12** `needs_rename` (no target name taken; 11 have another hard link, so a
+seed elsewhere goes on; **1** has no other link and goes through the qBittorrent check — refused if a torrent seeds it
+in place), **1** stays skipped (renaming doesn't make it eligible). A rename takes 0–3 files with it (NFO, subtitles,
+`-thumb`). 1 file unreadable (as in 314a's run). Nothing applied to the library; no device used.
+
+### Left for main (needs devices; none were used)
+
+1. Merge, deploy the dev stack. *Find files* (the dry run lists `needs_rename` rows for kind C).
+2. Kind A on one unseeded film → in Ravilo (Pixel, debug build) the picker shows **one** row for the original and its
+   *Stereo* copy; a seeded film's `.mka` plays **directly** (`adb logcat -s 314`: *load: N sidecar audio file(s) merged with the video*; Jellyfin's
+   dashboard shows no transcode/remux).
+3. Tick one DV7 film in Settings → *Rename the ticked…*: the file is renamed in place (same inode: `stat -c %i`),
+   Radarr shows the new name after its rescan, every torrent keeps seeding, the version is queued and made.
+4. Stue TV (debug build): a film with the version opens on the original where the TV decodes dual-layer DV, the 8.1
+   version elsewhere; the **Picture** tab switches between them at the same position.
+5. *Remove* on a test title: the copy is gone from the file (`mkvmerge -J`), the `.mka`/version file deleted, the row
+   reads *removed* and stays so through *Find files*.
