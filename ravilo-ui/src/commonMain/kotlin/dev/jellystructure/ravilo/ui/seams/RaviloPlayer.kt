@@ -207,6 +207,11 @@ data class PlayerQoeSnapshot(
     val sessionRebufferMs: Long = 0,
     /** R381 (FR-R381-2) — waits that are not stalls, by cause. */
     val waits: Map<String, Int> = emptyMap(),
+    /** 309 (FR-309-13) — the transfers (and bytes) the estimate rests on, this item's; null where unknown. */
+    val bandwidthSamples: Int? = null,
+    val bandwidthBytes: Long? = null,
+    /** 309 (FR-309-11) — this load's time from the start of loading to its first frame (ms); null before it. */
+    val firstFrameMs: Long? = null,
 )
 
 // R247 — `languageName()` and its table live in LanguageIdentity.kt (one table, keyed by canonical code).

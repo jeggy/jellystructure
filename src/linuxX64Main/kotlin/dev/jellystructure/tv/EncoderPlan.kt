@@ -115,8 +115,31 @@ internal fun startRung(rungs: List<EncoderRung>, budgetBps: Long?): Int {
     return rungs.indexOfFirst { it.videoBps <= budgetBps }.let { if (it < 0) rungs.lastIndex else it }
 }
 
+/** FR-313-7 — a rung's `BANDWIDTH` in the master (its peak: video × 1.5, plus the loudest audio rendition). */
+internal fun rungBandwidth(r: EncoderRung, audioPeakBps: Long): Long = (r.videoBps * 1.5).roundToLong() + audioPeakBps
+
+/**
+ * 309 (FR-309-2) — where a play starts: the best rung whose advertised stream fits [takeBps] (what this device has
+ * shown it can take, in the master's own units); with no record ([takeBps] null and [noRecord]), the 720p 4 Mbps rung —
+ * the highest rung at or under [NO_RECORD_START_VIDEO_BPS] of video, never the top first; with neither (a player that
+ * cannot climb, re-dev review item 2), the top.
+ */
+internal fun startRungFor(rungs: List<EncoderRung>, audioPeakBps: Long, takeBps: Long?, noRecord: Boolean): Int {
+    if (rungs.isEmpty()) return 0
+    if (takeBps != null && takeBps > 0) return rungs.indexOfFirst { rungBandwidth(it, audioPeakBps) <= takeBps }.let { if (it < 0) rungs.lastIndex else it }
+    if (noRecord) return rungs.indexOfFirst { it.videoBps <= NO_RECORD_START_VIDEO_BPS }.let { if (it < 0) rungs.lastIndex else it }
+    return 0
+}
+
 /** One audio rendition the job makes: its place among the file's own audio streams, codec and channels. */
 data class EncoderAudio(val position: Int, val audioOrder: Int, val codec: String, val channels: Int, val language: String?, val label: String?, val default: Boolean)
+
+/**
+ * 313d (FR-313-6) — one text subtitle offered as a WebVTT rendition in the master (only to a player that takes its
+ * subtitles from the manifest, `hls_subtitles`). [sourceUrl] is Jellyfin's own VTT conversion of that stream (embedded
+ * or a sidecar), fetched once server-side and cached; it never reaches the player.
+ */
+data class EncoderSubtitle(val name: String, val language: String?, val forced: Boolean, val default: Boolean, val sourceUrl: String)
 
 /** The source a job reads, from our own scan (no probe). [hdr] = PQ/HLG; [dolbyVisionProfile5] has no HDR10 base. */
 data class EncoderSource(
@@ -136,6 +159,8 @@ data class EncoderPlan(
     val burnSubtitleOrder: Int? = null,
     /** CUDA device index (PCI bus order: 0 = P4000 on the household host); null = CPU (tests, never production). */
     val cudaDevice: Int? = 0,
+    /** 313d (FR-313-6) — text subtitles as WebVTT renditions (not part of the job: served from Jellyfin's VTT). */
+    val subtitles: List<EncoderSubtitle> = emptyList(),
 ) {
     /** HDR kept (HEVC rungs from an HDR source) vs tone-mapped once to SDR. */
     val keepsHdr: Boolean get() = codec == EncoderCodec.HEVC && source.hdr
@@ -190,10 +215,17 @@ internal fun encoderMaster(plan: EncoderPlan): String {
         if (a.channels > 0) out.append(",CHANNELS=\"").append(a.channels).append('"')
         out.append(",URI=\"a/").append(a.position).append("/main.m3u8\"\n")
     }
+    for ((i, t) in plan.subtitles.withIndex()) {
+        out.append("#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"").append(q(t.name.ifBlank { t.language ?: "Subtitles ${i + 1}" })).append('"')
+        t.language?.takeIf { it.isNotBlank() }?.let { out.append(",LANGUAGE=\"").append(q(it)).append('"') }
+        out.append(if (t.default) ",DEFAULT=YES,AUTOSELECT=YES" else ",DEFAULT=NO,AUTOSELECT=${if (t.forced) "YES" else "NO"}")
+        if (t.forced) out.append(",FORCED=YES")
+        out.append(",URI=\"t/").append(i).append("/main.m3u8\"\n")
+    }
     val order = listOf(plan.startRung) + plan.rungs.indices.filter { it != plan.startRung }
     for (i in order) {
         val r = plan.rungs[i]
-        val peak = (r.videoBps * 1.5).roundToLong() + audioPeak
+        val peak = rungBandwidth(r, audioPeak)
         val avg = r.videoBps + audioPeak
         val codecs = listOfNotNull(videoCodecString(plan.codec, r.boxHeight, plan.keepsHdr || plan.codec == EncoderCodec.HEVC && plan.source.hdr), audioCodec).joinToString(",")
         out.append("#EXT-X-STREAM-INF:BANDWIDTH=").append(peak).append(",AVERAGE-BANDWIDTH=").append(avg)
@@ -201,6 +233,7 @@ internal fun encoderMaster(plan: EncoderPlan): String {
             .append(",CODECS=\"").append(codecs).append('"')
             .append(",VIDEO-RANGE=").append(if (plan.keepsHdr) (if (plan.source.hlg) "HLG" else "PQ") else "SDR")
         if (plan.audio.isNotEmpty()) out.append(",AUDIO=\"aud\"")
+        if (plan.subtitles.isNotEmpty()) out.append(",SUBTITLES=\"subs\"")
         out.append(",CLOSED-CAPTIONS=NONE\n")
         out.append("v/").append(i).append("/main.m3u8\n")
     }
@@ -220,6 +253,13 @@ internal fun encoderPlaylist(durationMs: Long, mux: EncoderMux): String {
         out.append(k).append('.').append(ext).append('\n')
     }
     return out.append("#EXT-X-ENDLIST\n").toString()
+}
+
+/** 313d (FR-313-6) — a subtitle rendition's playlist: the whole film as one WebVTT segment (VOD). */
+internal fun encoderSubtitlePlaylist(durationMs: Long): String {
+    val secs = ((durationMs + 999) / 1000).coerceAtLeast(1)
+    return "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:$secs\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n" +
+        "#EXTINF:${durationMs / 1000}.${(durationMs % 1000).toString().padStart(3, '0')},\nsub.vtt\n#EXT-X-ENDLIST\n"
 }
 
 private fun q(s: String) = s.replace('"', '\'').replace('\n', ' ').replace('\r', ' ')

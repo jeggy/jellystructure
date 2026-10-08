@@ -266,6 +266,45 @@ class TvApiClient(
         }
     }
 
+    /**
+     * 309 (FR-309-3) — the speed test: `GET /api/tv/probe` (4 MB over the segments' own route), timed here, the result
+     * posted back. Returns the measured bits/s, or null when the server says this device was measured within 24 h
+     * (204), on an older server (404) or on any failure. Never throws; never awaited by anything the viewer waits on.
+     */
+    suspend fun probe(): Long? = runCatching {
+        val mark = kotlin.time.TimeSource.Monotonic.markNow()
+        val r = client.get("$baseUrl/api/tv/probe") { auth() }
+        if (r.status != HttpStatusCode.OK) return@runCatching null
+        val bytes = r.bodyAsBytes().size.toLong()
+        val ms = mark.elapsedNow().inWholeMilliseconds
+        if (bytes < 1_000_000L || ms <= 0) return@runCatching null
+        client.post("$baseUrl/api/tv/probe/result") {
+            auth()
+            jsonBody(json.encodeToString(ProbeResult(bytes, ms)))
+        }
+        bytes * 8_000L / ms
+    }.getOrNull()
+
+    /** 309 (FR-309-6) — start the encode Play would start (the viewer has been on the detail page > 2 s). */
+    suspend fun prewarmPlayback(req: PrewarmRequest): PrewarmResult? = runCatching {
+        val r = client.post("$baseUrl/api/tv/playback/prewarm") {
+            auth()
+            jsonBody(json.encodeToString(req))
+        }
+        if (!r.status.isSuccess()) return@runCatching null
+        json.decodeFromString<PrewarmResult>(r.bodyAsText())
+    }.getOrNull()
+
+    /** 309 — the viewer left the detail page without pressing Play: the early encode stops at once. */
+    suspend fun cancelPrewarm(itemId: String, castDeviceId: String? = null) {
+        runCatching {
+            client.post("$baseUrl/api/tv/playback/prewarm/cancel") {
+                auth()
+                jsonBody(json.encodeToString(PrewarmCancel(itemId, castDeviceId)))
+            }
+        }
+    }
+
     /** R56 — re-stream with a subtitle burned in via Jellyfin HLS transcode (encode/PGS path). */
     suspend fun restream(itemId: String, subtitleStreamIndex: Int, positionMs: Long, capabilities: ClientCapabilities? = null, audioStreamIndex: Int? = null): StreamTicket {
         val r = client.post("$baseUrl/api/tv/playback/restream") {

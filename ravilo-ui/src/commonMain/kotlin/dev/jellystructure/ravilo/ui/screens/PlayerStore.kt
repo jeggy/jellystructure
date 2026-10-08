@@ -76,8 +76,68 @@ internal class FailureLatch {
     }
 }
 // R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
-// lost entirely; 60 heartbeat ticks × PROGRESS_INTERVAL_MS = 10 minutes.
-private const val QOE_REPORT_EVERY_N_TICKS = 60
+// lost entirely (was 60 ticks = 10 minutes). 309 (FR-309-1) — now two minutes: a stream is proven after two minutes
+// held without a stall, so the server needs a post at least that often (one row per play, upserted).
+private const val QOE_PROOF_EVERY_N_TICKS = 12
+
+/**
+ * The capabilities a start negotiates with (every platform probe, sampled now). 309 (FR-309-6) — shared by
+ * [PlayerStore.startSession] and the detail page's early encode ([DetailPrewarm]), so the two ask for the same stream.
+ */
+internal fun currentClientCapabilities(link: dev.jellystructure.ravilo.ui.seams.LinkState = detectLinkState()): ClientCapabilities {
+    // Bug fix: this used to be a static literal with no HDR signal, so the server always
+    // assumed direct-play was safe even for HDR10/HLG sources the device might not be
+    // able to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
+    val hdr = detectHdrSupport()
+    // R183: Dolby Vision + the real H.264 decode ceiling, so DV profile-8 titles
+    // direct-play and any fallback transcode is one this device can actually decode.
+    // R216 generalises this probe to also report the device's real decode-bitrate
+    // ceilings (see DecoderLimits' doc).
+    val decoderLimits = detectDecoderLimits()
+    // Phase 161: whether this client renders embedded text subs (SRT/ASS/SSA) natively
+    // in-container on a direct-played file, so the server can skip a redundant VTT
+    // sideload of the same stream (bug: it used to always sideload, double-delivering
+    // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
+    val embeddedSubs = supportsEmbeddedTextSubtitles()
+    // R265 (FR-R265-8) — Safari takes only HLS and shows the manifest's subtitles, so
+    // AirPlay has a stream to hand to the TV with its subtitles inside it.
+    val airplayHls = playsHlsForAirPlay()
+    // R329 (FR-R329-3) — a player that takes nothing but HLS (the Mac's AVPlayer), and HEVC in it
+    // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
+    val hlsOnly = airplayHls || playsOnlyHls()
+    val capabilities = ClientCapabilities(
+        containers = listOf("mkv", "mp4", "avi", "mov"),
+        videoCodecs = supportedVideoCodecs(),
+        hlsOnly = hlsOnly,
+        hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls(),
+        hlsSubtitles = airplayHls,
+        // R291 (FR-R291-2) — every audio track in one master, switched in the player.
+        hlsAudioRenditions = switchesHlsAudioRenditions(),
+        // 308 (FR-308-2) — a transcode as a ladder of variants the player chooses between.
+        hlsAdaptive = playsAdaptiveHls(),
+        // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
+        // when the FFmpeg extension is installed); was a literal that omitted both.
+        audioCodecs = supportedAudioCodecs(),
+        // R379 — the AC-3 family this device decodes itself; the server re-encodes a missing one.
+        platformAudioDecoders = platformAudioDecoders(),
+        hlsHevcCapable = supportsHevcOverHls(),
+        maxAudioChannels = 8,
+        supportsHdr10 = hdr.hdr10,
+        supportsHlg = hdr.hlg,
+        supportsDolbyVision = hdr.dolbyVision,
+        supportsDolbyVisionEl = hdr.dolbyVisionEl,
+        maxH264Width = decoderLimits.maxWidth,
+        maxH264Height = decoderLimits.maxHeight,
+        maxH264Level = decoderLimits.maxLevel,
+        supportsEmbeddedTextSubs = embeddedSubs,
+        maxVideoBitrate = decoderLimits.maxVideoBitrate,
+        maxHevcBitrate = decoderLimits.maxHevcBitrate,
+        maxH264Bitrate = decoderLimits.maxH264Bitrate,
+        linkKind = link.kind,
+        linkMbps = link.mbps,
+    )
+    return capabilities
+}
 
 class PlayerStore(
     private val apiClient: TvApiClient,
@@ -125,6 +185,10 @@ class PlayerStore(
     private var qoeLinkMbps: Int = 0
     private var qoeDirectPlay: Boolean = false
     private var qoeTicksSinceReport = 0
+    // 309 (FR-309-11) — the rung the play started on (the ticket's), and what the last post already said.
+    private var qoeStartVariantBps: Long? = null
+    private var reportedStalls = 0
+    private var reportedFirstFrame = false
 
     fun startSession(
         itemId: String,
@@ -145,6 +209,7 @@ class PlayerStore(
     ) {
         failedProvider?.let { this.failedProvider = it }
         failureWatchJob?.cancel()
+        DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.durationProvider = durationProvider
@@ -167,61 +232,13 @@ class PlayerStore(
             var delayMs = 1_000L
             repeat(5) { attempt ->
                 val result = runCatching {
-                    // Bug fix: this used to be a static literal with no HDR signal, so the server always
-                    // assumed direct-play was safe even for HDR10/HLG sources the device might not be
-                    // able to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
-                    val hdr = detectHdrSupport()
-                    // R183: Dolby Vision + the real H.264 decode ceiling, so DV profile-8 titles
-                    // direct-play and any fallback transcode is one this device can actually decode.
-                    // R216 generalises this probe to also report the device's real decode-bitrate
-                    // ceilings (see DecoderLimits' doc).
-                    val decoderLimits = detectDecoderLimits()
                     // R216 (FR-R216-2) — this device's own network link, sampled once here (not
                     // continuously — see the phase's Out-of-scope section). Reused below for the QoE
                     // reports this same session posts, so it isn't re-sampled per report.
                     val link = detectLinkState()
-                    // Phase 161: whether this client renders embedded text subs (SRT/ASS/SSA) natively
-                    // in-container on a direct-played file, so the server can skip a redundant VTT
-                    // sideload of the same stream (bug: it used to always sideload, double-delivering
-                    // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
-                    val embeddedSubs = supportsEmbeddedTextSubtitles()
-                    // R265 (FR-R265-8) — Safari takes only HLS and shows the manifest's subtitles, so
-                    // AirPlay has a stream to hand to the TV with its subtitles inside it.
-                    val airplayHls = playsHlsForAirPlay()
-                    // R329 (FR-R329-3) — a player that takes nothing but HLS (the Mac's AVPlayer), and HEVC in it
-                    // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
-                    val hlsOnly = airplayHls || playsOnlyHls()
-                    val capabilities = ClientCapabilities(
-                        containers = listOf("mkv", "mp4", "avi", "mov"),
-                        videoCodecs = supportedVideoCodecs(),
-                        hlsOnly = hlsOnly,
-                        hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls(),
-                        hlsSubtitles = airplayHls,
-                        // R291 (FR-R291-2) — every audio track in one master, switched in the player.
-                        hlsAudioRenditions = switchesHlsAudioRenditions(),
-                        // 308 (FR-308-2) — a transcode as a ladder of variants the player chooses between.
-                        hlsAdaptive = playsAdaptiveHls(),
-                        // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
-                        // when the FFmpeg extension is installed); was a literal that omitted both.
-                        audioCodecs = supportedAudioCodecs(),
-                        // R379 — the AC-3 family this device decodes itself; the server re-encodes a missing one.
-                        platformAudioDecoders = platformAudioDecoders(),
-                        hlsHevcCapable = supportsHevcOverHls(),
-                        maxAudioChannels = 8,
-                        supportsHdr10 = hdr.hdr10,
-                        supportsHlg = hdr.hlg,
-                        supportsDolbyVision = hdr.dolbyVision,
-                        supportsDolbyVisionEl = hdr.dolbyVisionEl,
-                        maxH264Width = decoderLimits.maxWidth,
-                        maxH264Height = decoderLimits.maxHeight,
-                        maxH264Level = decoderLimits.maxLevel,
-                        supportsEmbeddedTextSubs = embeddedSubs,
-                        maxVideoBitrate = decoderLimits.maxVideoBitrate,
-                        maxHevcBitrate = decoderLimits.maxHevcBitrate,
-                        maxH264Bitrate = decoderLimits.maxH264Bitrate,
-                        linkKind = link.kind,
-                        linkMbps = link.mbps,
-                    )
+                    // 309 (FR-309-6) — one builder, shared with the detail page's early encode, so the prewarm and the
+                    // play negotiate the same thing (and Play adopts the prewarm's job).
+                    val capabilities = currentClientCapabilities(link)
                     lastCapabilities = capabilities   // R282 (FR-R282-5)
                     // R343 — a Start over or a shuffled entry starts at 0:00 (the client's position wins over
                     // Jellyfin's on any server, so even an older one never resumes a shuffled episode); a
@@ -250,6 +267,9 @@ class PlayerStore(
                         return@launch
                     }
                     qoeDirectPlay = ticket.directPlay
+                    qoeStartVariantBps = ticket.startVariantBps
+                    reportedStalls = 0
+                    reportedFirstFrame = false
                     startHeartbeat(itemId, positionProvider, isPausedProvider)
                     _state.value = PlayerSessionState.Ready(ticket.onThisServer())
                     startFailureWatch()
@@ -408,6 +428,11 @@ class PlayerStore(
                     rebufferCount = snapshot.rebufferCount,
                     rebufferMs = snapshot.rebufferMs,
                     bandwidthEstimateBps = snapshot.bandwidthEstimateBps,
+                    // 309 (FR-309-13/-11) — what the estimate rests on, the time to the first frame and the start rung.
+                    bandwidthSamples = snapshot.bandwidthSamples,
+                    bandwidthBytes = snapshot.bandwidthBytes,
+                    firstFrameMs = snapshot.firstFrameMs,
+                    startVariantBps = qoeStartVariantBps,
                     videoDecoder = snapshot.videoDecoder,
                     audioDecoder = snapshot.audioDecoder,   // R379
                     directPlay = qoeDirectPlay,
@@ -527,11 +552,18 @@ class PlayerStore(
                 }
                 // R216 (FR-R216-4) — "a long-session interval, so an abandoned/crashed session is not
                 // lost" alongside the end-of-session report in stopSession().
-                val variant = qoeSnapshotProvider?.invoke()?.let { Triple(it.variantBandwidthBps, it.variantSwitchesDown, it.variantSwitchesUp) }
+                val snap = qoeSnapshotProvider?.invoke()
+                val variant = snap?.let { Triple(it.variantBandwidthBps, it.variantSwitchesDown, it.variantSwitchesUp) }
                 val variantMoved = variant?.first != null && variant != reportedVariant
-                if (++qoeTicksSinceReport >= QOE_REPORT_EVERY_N_TICKS || variantMoved) {
+                // 309 (FR-309-11) — also at the first frame and at every new stall, and every two minutes so the server
+                // sees a stream held long enough to prove it (FR-309-1; one row per play, upserted).
+                val firstFrame = snap?.firstFrameMs != null && !reportedFirstFrame
+                val newStall = (snap?.rebufferCount ?: 0) > reportedStalls
+                if (++qoeTicksSinceReport >= QOE_PROOF_EVERY_N_TICKS || variantMoved || firstFrame || newStall) {
                     qoeTicksSinceReport = 0
                     reportedVariant = variant
+                    if (firstFrame) reportedFirstFrame = true
+                    reportedStalls = snap?.rebufferCount ?: reportedStalls
                     postQoeNow(itemId)
                 }
             }

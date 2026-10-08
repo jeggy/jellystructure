@@ -61,6 +61,9 @@ data class QoeSummary(
     @SerialName("session_rebuffer_count") val sessionRebufferCount: Int = 0,
     @SerialName("session_rebuffer_ms") val sessionRebufferMs: Long = 0,
     @SerialName("legacy_rebuffer_count") val legacyRebufferCount: Int = 0,
+    // 309 (FR-309-11) / 313 (FR-313-13) — the variant the item started on, and who served it (ours/jellyfin/direct).
+    @SerialName("start_variant_bps") val startVariantBps: Long? = null,
+    val encoder: String? = null,
 ) {
     // R292 (dev review item 7) — a recovery-ladder firing and a restore after a recreation are worth a second
     // look; a plain return from the background is not (it is what HOME does), so it is carried, not badged.
@@ -81,7 +84,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
      *  TvRoutes.kt for why. Upserts: [report]'s counters are the session's running totals (R216 —
      *  PlayerStore never resets them between posts), so a later post for the same session just advances
      *  this row to its latest cumulative state. */
-    fun record(deviceId: String, playSessionId: String, report: PlaybackQoeReport) {
+    fun record(deviceId: String, playSessionId: String, report: PlaybackQoeReport, encoder: String? = null) {
         queries.upsertQoe(
             device_id = deviceId,
             jellyfin_id = report.itemId,
@@ -115,6 +118,8 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             session_rebuffer_count = report.sessionRebufferCount.toLong(),
             session_rebuffer_ms = report.sessionRebufferMs,
             audio_decoder = report.audioDecoder,
+            start_variant_bps = report.startVariantBps,
+            encoder = encoder,
         )
     }
 
@@ -169,4 +174,6 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     sessionRebufferCount = session_rebuffer_count.toInt(),
     sessionRebufferMs = session_rebuffer_ms,
     legacyRebufferCount = if (per_item == 1L) 0 else rebuffer_count.toInt(),
+    startVariantBps = start_variant_bps,
+    encoder = encoder,
 )

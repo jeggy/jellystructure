@@ -29,6 +29,8 @@ sealed class SeriesDetailState {
 
 class MovieDetailStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** 309 (FR-309-6) — the speed test and the early encode while the page is read. */
+    val prewarm = DetailPrewarm(apiClient)
     private val _state = MutableStateFlow<MovieDetailState>(MovieDetailState.Loading)
     val state: StateFlow<MovieDetailState> = _state.asStateFlow()
     /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */
@@ -115,6 +117,8 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
 
 class SeriesDetailStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** 309 (FR-309-6) — the speed test and the early encode of the episode Play would play. */
+    val prewarm = DetailPrewarm(apiClient)
     /** R350 (FR-R350-2) — the control that started playback, so Back from the player lands on it. */
     val returnTarget = SeriesReturnTarget()
     private val _state = MutableStateFlow<SeriesDetailState>(SeriesDetailState.Loading)

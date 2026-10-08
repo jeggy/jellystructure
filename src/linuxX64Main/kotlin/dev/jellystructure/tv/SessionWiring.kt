@@ -80,6 +80,7 @@ suspend fun wirePlaybackSessions(
     publisher.adminBroadcast = { list -> broadcaster.broadcast(JobEvent.PlaybackSessions(list)) }
     // 308 (FR-308-5) — *Playing now* shows the variant the session's player last reported.
     publisher.variantOf = { s -> playback.variantOf(s.targetId, s.itemId) }
+    publisher.servedOf = { s -> playback.servedOf(s.targetId, s.itemId) }   // 313 (FR-313-13)
     playback.onVariantReported = { publisher.adminChanged() }
     // R369 + 304b — commands through the server, attached controllers, the household switch.
     val control = SessionControl(db, sessions, devices, bus)

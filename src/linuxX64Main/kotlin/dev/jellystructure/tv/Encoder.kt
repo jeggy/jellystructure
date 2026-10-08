@@ -37,8 +37,15 @@ class Encoder(
     /** Tests only: the cards and the binary check, instead of `nvidia-smi` and the file system. */
     private val cardsOverride: (suspend () -> List<EncoderCard>)? = null,
     private val ffmpegOverride: (() -> Boolean)? = null,
+    /** 313d — a text fetch (Jellyfin's VTT conversion of a subtitle stream, by its tokened URL); null = none. */
+    private val fetchText: (suspend (String) -> String?)? = null,
 ) {
-    private class Entry(val plan: EncoderPlan, val jellyfinPlaySessionId: String, val expiresAt: Long)
+    /**
+     * One stream behind an id. [deviceId]/[itemId] say whose play it is (309's prewarm is adopted by the play that matches
+     * it); [prewarmSegment] is non-null while it is a prewarm nobody has pressed Play on yet (FR-313-1 / 309 FR-309-6).
+     */
+    private class Entry(val plan: EncoderPlan, var jellyfinPlaySessionId: String, var expiresAt: Long,
+                        val deviceId: String = "", val itemId: String = "", var prewarmSegment: Int? = null)
 
     private val mutex = Mutex()
     private val entries = mutableMapOf<String, Entry>()
@@ -69,12 +76,17 @@ class Encoder(
 
     /**
      * FR-313-1..-8/-12 — the plan for one play, or the reason Jellyfin does it. [audio] is Jellyfin's audio list for
-     * the item (the ticket's), [carriedIndex] the track the play starts with, [budgetBps] the bitrate the device's own
-     * measurements allow (308/309, null = none), [sourceVideoRange] Jellyfin's `VideoRangeType` when known.
+     * the item (the ticket's), [carriedIndex] the track the play starts with, [takeBps] what this device has shown it
+     * can take (309's record, in the master's own units; null = nothing), [noRecord] true when it has no record at all
+     * (309 FR-309-2: start on 720p, never the top), [sourceVideoRange] Jellyfin's `VideoRangeType` when known,
+     * [burnSubtitleOrder] the picked image subtitle's place among the file's subtitle streams (313d; null = none,
+     * [burnRequested] true when one was asked for but could not be mapped), [subtitles] text subtitles as WebVTT
+     * renditions (313d, only for a player that takes them from the manifest).
      */
     suspend fun planFor(
         caps: ClientCapabilities, deviceKind: String, path: String, durationMs: Long?, tracks: List<Track>,
-        audio: List<AudioTrack>, carriedIndex: Int?, budgetBps: Long?, sourceVideoRange: String?, burnsSubtitle: Boolean,
+        audio: List<AudioTrack>, carriedIndex: Int?, takeBps: Long?, noRecord: Boolean, sourceVideoRange: String?,
+        burnSubtitleOrder: Int? = null, burnRequested: Boolean = burnSubtitleOrder != null, subtitles: List<EncoderSubtitle> = emptyList(),
         platform: String? = null,
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
@@ -91,47 +103,166 @@ class Encoder(
         val cards = if (cfg.enabled) cards() else emptyList()
         encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false)?.let { return null to it }
         source!!
-        // 313d — a burned-in image subtitle is still Jellyfin's until the subtitle mapping is verified on a device.
-        if (burnsSubtitle) return null to "image subtitle burn-in (313d)"
+        // 313d (FR-313-6) — a picked image subtitle is burned in by this job (composited once, before the split). One
+        // the scan can't place among the file's subtitle streams stays Jellyfin's.
+        if (burnRequested && burnSubtitleOrder == null) return null to "image subtitle not found among the file's subtitle streams (313d)"
+        if (burnSubtitleOrder != null && tracks.count { it.kind == TrackKind.SUBTITLE } <= burnSubtitleOrder)
+            return null to "image subtitle not found among the file's subtitle streams (313d)"
         val order = fileAudioOrder(audio, tracks) ?: return null to "audio tracks don't match the file (R382)"
-        val codec = encoderCodecFor(caps.hlsHevc, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)
+        // overlay_cuda composites 8-bit frames only: a burn-in play is H.264 SDR (tone-mapped once when HDR).
+        val codec = if (burnSubtitleOrder != null) EncoderCodec.H264
+            else encoderCodecFor(caps.hlsHevc, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)
         val ceiling = listOf(if (codec == EncoderCodec.HEVC) caps.maxHevcBitrate else caps.maxH264Bitrate, caps.maxVideoBitrate)
             .filter { it > 0 }.minOrNull()?.toLong()
-        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling)
-        var start = startRung(rungs, budgetBps)
-        // Dev review item 8 / owner Q1 — a player that does not adapt (Ravilo 1.50) gets one quality: the start rung.
-        if (!caps.hlsAdaptive) { rungs = listOf(rungs[start]); start = 0 }
-        val load = running().groupBy { it.plan.cudaDevice ?: -1 }.mapValues { (_, js) -> js.sumOf { jobLoad(it.plan.codec, it.plan.rungs[0].boxHeight, it.plan.rungs.size) } }
-        val placement = placeJob(cards, load, codec, rungs[0].boxHeight, rungs.size) ?: return null to "no encoder slot free on any card"
-        if (placement.rungs < rungs.size) {
-            val kept = trimRungs(rungs, start, placement.rungs)
-            start = kept.indexOf(rungs[start]).coerceAtLeast(0)
-            rungs = kept
-        }
         val carried = audio.indexOfFirst { it.index == carriedIndex }.let { if (it < 0) audio.indexOfFirst { a -> a.isDefault }.coerceAtLeast(0) else it }
         val positions = if (caps.hlsAudioRenditions) audio.indices.toList() else listOf(carried)
         val encAudio = positions.filter { it in audio.indices }.map { pos ->
             val a = audio[pos]
             EncoderAudio(pos, order[pos], "aac", minOf(a.channels ?: 2, caps.maxAudioChannels.coerceAtLeast(1), 6), a.language, a.label, pos == carried)
         }
+        val audioPeak = encAudio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
+        var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling)
+        // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
+        // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.
+        var start = startRungFor(rungs, audioPeak, takeBps, noRecord && caps.hlsAdaptive)
+        // Dev review item 8 / owner Q1 — a player that does not adapt (Ravilo 1.50) gets one quality: the start rung.
+        if (!caps.hlsAdaptive) { rungs = listOf(rungs[start]); start = 0 }
+        var placement = place(cards, codec, rungs)
+        if (placement == null && stopPrewarms("a play needs the slot") > 0) placement = place(cards, codec, rungs)
+        placement ?: return null to "no encoder slot free on any card"
+        if (placement.rungs < rungs.size) {
+            val kept = trimRungs(rungs, start, placement.rungs)
+            start = kept.indexOf(rungs[start]).coerceAtLeast(0)
+            rungs = kept
+        }
         val plan = EncoderPlan(
             source = source, codec = codec, mux = encoderMuxFor(deviceKind, platform),
             rungs = rungs, startRung = start, audio = encAudio, cudaDevice = placement.card,
+            burnSubtitleOrder = burnSubtitleOrder, subtitles = if (caps.hlsSubtitles) subtitles else emptyList(),
         )
         return plan to "ours"
     }
 
+    /** FR-313-8 — the card a job of [rungs] would go to, counting every running job (prewarms included). */
+    private suspend fun place(cards: List<EncoderCard>, codec: EncoderCodec, rungs: List<EncoderRung>): EncoderPlacement? {
+        val load = running().groupBy { it.plan.cudaDevice ?: -1 }.mapValues { (_, js) -> js.sumOf { jobLoad(it.plan.codec, it.plan.rungs[0].boxHeight, it.plan.rungs.size) } }
+        return placeJob(cards, load, codec, rungs[0].boxHeight, rungs.size)
+    }
+
     /** Registers [plan] behind a new stream id (the capability, FR-313-7); the job starts when a player reads it. */
-    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long): String {
+    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = ""): String {
         val id = secureHexId()
         mutex.withLock {
             val now = nowMs()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt)
+            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId)
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
         }
         return id
     }
+
+    // ── 309 (FR-309-6, owner 2026-10-07/08) — the early encode on a detail page ───────────────────────────────────
+
+    /**
+     * Starts [plan] for (device, item) at [startSegment] before Play (the viewer has been on the detail page > 2 s), or
+     * touches the one already running for the same plan so its idle timer doesn't end it while the viewer still reads
+     * the page. A prewarm posts nothing to Jellyfin (no `/Sessions/Playing`, no transcode job) and warms no R291
+     * rendition job (its audio is in this one process). Returns the stream id.
+     */
+    suspend fun prewarm(plan: EncoderPlan, deviceId: String, itemId: String, startSegment: Int, expiresAt: Long): String {
+        val key = prewarmKey(deviceId, itemId)
+        val existing = mutex.withLock {
+            entries.entries.firstOrNull { (_, e) -> e.prewarmSegment != null && e.deviceId == deviceId && e.itemId == itemId }?.toPair()
+        }
+        if (existing != null) {
+            val (id, e) = existing
+            if (samePlay(e.plan, plan) && kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) <= 1) {
+                mutex.withLock { e.expiresAt = expiresAt }
+                if (kickJobs) scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, e.prewarmSegment ?: startSegment) }
+                return id
+            }
+            stopFor(key)
+        }
+        val id = register(plan, key, expiresAt, deviceId, itemId)
+        mutex.withLock { entries[id]?.prewarmSegment = startSegment }
+        Logger.info("encoder: prewarm device=$deviceId item=$itemId at segment $startSegment ${plan.codec} rungs=${plan.rungs.size} start=${plan.startRung} (309)", "tv")
+        if (kickJobs) scope.launch { jobs.segment(id, plan, ffmpegPath, 0, startSegment) }
+        return id
+    }
+
+    /**
+     * Play adopts the prewarm for (device, item) when it is the same play: same plan (codec, rungs, audio, subtitles,
+     * burn-in, muxing) and a start within one segment. The stream id (and its running job) then belongs to
+     * [jellyfinPlaySessionId], so phase 180 stops it with the play. Otherwise the prewarm is stopped first (never two
+     * jobs for one play) and null is returned. Owner, 2026-10-08: the early encode becomes the play's own job.
+     */
+    suspend fun adoptPrewarm(deviceId: String, itemId: String, plan: EncoderPlan, startSegment: Int, jellyfinPlaySessionId: String, expiresAt: Long): String? {
+        val key = prewarmKey(deviceId, itemId)
+        val adopted = mutex.withLock {
+            val hit = entries.entries.firstOrNull { (_, e) -> e.prewarmSegment != null && e.deviceId == deviceId && e.itemId == itemId }
+                ?: return@withLock null
+            val e = hit.value
+            if (!samePlay(e.plan, plan) || kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) > 1) return@withLock null
+            e.prewarmSegment = null
+            e.jellyfinPlaySessionId = jellyfinPlaySessionId
+            e.expiresAt = expiresAt
+            byPlay[key]?.remove(hit.key)
+            if (byPlay[key]?.isEmpty() == true) byPlay.remove(key)
+            byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(hit.key)
+            hit.key
+        }
+        if (adopted != null) Logger.info("encoder: play adopted the prewarm for item=$itemId (309)", "tv")
+        else stopFor(key)
+        return adopted
+    }
+
+    /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
+    suspend fun cancelPrewarm(deviceId: String, itemId: String): Int = stopFor(prewarmKey(deviceId, itemId))
+
+    /** FR-313-8 — a prewarm never holds a slot a play needs: every prewarm is stopped. Returns how many. */
+    private suspend fun stopPrewarms(why: String): Int {
+        val keys = mutex.withLock { entries.values.filter { it.prewarmSegment != null }.map { prewarmKey(it.deviceId, it.itemId) }.distinct() }
+        keys.forEach { stopFor(it) }
+        if (keys.isNotEmpty()) Logger.info("encoder: stopped ${keys.size} prewarm(s) — $why (313/309)", "tv")
+        return keys.size
+    }
+
+    private fun samePlay(a: EncoderPlan, b: EncoderPlan): Boolean =
+        a.source.path == b.source.path && a.codec == b.codec && a.mux == b.mux && a.rungs == b.rungs && a.startRung == b.startRung &&
+            a.audio == b.audio && a.burnSubtitleOrder == b.burnSubtitleOrder && a.subtitles.map { it.name } == b.subtitles.map { it.name }
+
+    private fun prewarmKey(deviceId: String, itemId: String) = "prewarm:$deviceId:$itemId"
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Tests: register prewarms without starting ffmpeg. */
+    internal var kickJobs: Boolean = true
+
+    // ── 313d (FR-313-6) — WebVTT renditions ───────────────────────────────────────────────────────────────────
+
+    private val vttCache = mutableMapOf<String, String>()
+
+    suspend fun subtitlePlaylist(id: String, index: Int): String? {
+        val e = entry(id) ?: return null
+        if (index !in e.plan.subtitles.indices) return null
+        return encoderSubtitlePlaylist(e.plan.source.durationMs)
+    }
+
+    /** The rendition's WebVTT: Jellyfin's conversion of that stream, fetched once and kept (at most 64 texts). */
+    suspend fun subtitleVtt(id: String, index: Int): String? {
+        val e = entry(id) ?: return null
+        val t = e.plan.subtitles.getOrNull(index) ?: return null
+        mutex.withLock { vttCache[t.sourceUrl] }?.let { return it }
+        val text = fetchText?.invoke(t.sourceUrl)?.takeIf { it.trimStart().startsWith("WEBVTT") } ?: return null
+        mutex.withLock {
+            vttCache[t.sourceUrl] = text
+            while (vttCache.size > 64) vttCache.remove(vttCache.keys.first())
+        }
+        return text
+    }
+
+    /** 313 (FR-313-13) — whether the play behind [jellyfinPlaySessionId] is served by our encoder. */
+    suspend fun serves(jellyfinPlaySessionId: String): Boolean = mutex.withLock { byPlay[jellyfinPlaySessionId]?.isNotEmpty() == true }
 
     fun recordFallback(reason: String) {
         fallbacks.addLast(nowMs() to reason)
@@ -199,6 +330,9 @@ class Encoder(
         val c = cfg
         if (!c.enabled || !c.downloadFfmpeg || ffmpegReady()) return
         scope.launch(Dispatchers.IO) {
+            // 313e — on by default: a machine with no GPU in the container never downloads the build (every
+            // transcode there is Jellyfin's anyway, FR-313-11).
+            if (cards().isEmpty()) { Logger.info("encoder: no GPU in the container — every transcode stays Jellyfin's (313)", "tv"); return@launch }
             val dir = c.ffmpegDir
             val cmd = "mkdir -p '$dir' && cd '$dir' && wget -q -O ff.tar.xz '$JELLYFIN_FFMPEG_URL' && " +
                 "echo '$JELLYFIN_FFMPEG_SHA256  ff.tar.xz' | sha256sum -c - >/dev/null && tar xJf ff.tar.xz && rm -f ff.tar.xz && echo ok"

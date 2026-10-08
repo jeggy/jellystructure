@@ -97,16 +97,10 @@ actual class RaviloPlayer actual constructor() {
         // down while up to 45 s is buffered leaves the new encode time to start. Stepping up waits for 25 s of buffer
         // (more than a new encode needs to start) and keeps everything already buffered (50 s, the whole buffer):
         // with the defaults (10 s, keep 25 s) a step-up threw away 30 s and the cold encode drained it to 1.4 s.
+        // 309 (FR-309-4/-5) — bounded by LadderRules: one rung up at a time (after 30 s buffered, the stock 10 s on our
+        // own encoder), and down as soon as the buffer is under 20 s and falling.
         builder.setTrackSelector(
-            androidx.media3.exoplayer.trackselection.DefaultTrackSelector(
-                ctx,
-                androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection.Factory(
-                    /* minDurationForQualityIncreaseMs = */ 25_000,
-                    /* maxDurationForQualityDecreaseMs = */ 45_000,
-                    /* minDurationToRetainAfterDiscardMs = */ 50_000,
-                    /* bandwidthFraction = */ 0.7f,
-                ),
-            )
+            androidx.media3.exoplayer.trackselection.DefaultTrackSelector(ctx, ClimbingTrackSelection.Factory())
         )
         builder.setLoadControl(
             DefaultLoadControl.Builder()
@@ -245,6 +239,9 @@ actual class RaviloPlayer actual constructor() {
     // visibility, matching this file's other cross-thread state (_videoSize).
     @Volatile private var qoeDroppedFrames: Int = 0
     @Volatile private var qoeBandwidthEstimateBps: Long? = null
+    // 309 (FR-309-13) — the transfers behind the estimate, this item's.
+    @Volatile private var qoeBandwidthSamples: Int = 0
+    @Volatile private var qoeBandwidthBytes: Long = 0
     @Volatile private var qoeVideoDecoder: String? = null
     // R379 — the audio decoder (Media3's onAudioDecoderInitialized): the engine's, like the video one, so kept across
     // items; a rebuild with FFmpeg preferred (FR-R379-2) reports its new decoder. Null = passthrough or none yet.
@@ -289,6 +286,10 @@ actual class RaviloPlayer actual constructor() {
         }
         override fun onBandwidthEstimate(eventTime: AnalyticsListener.EventTime, totalLoadTimeMs: Int, totalBytesLoaded: Long, bitrateEstimate: Long) {
             qoeBandwidthEstimateBps = bitrateEstimate
+            // 309a0 / FR-309-13 — what the estimate rests on: this item's transfers and bytes (each callback is one
+            // completed transfer's worth of samples), so the backend can tell a measurement from Media3's guess.
+            qoeBandwidthSamples += 1
+            qoeBandwidthBytes += totalBytesLoaded
         }
         override fun onPositionDiscontinuity(
             eventTime: AnalyticsListener.EventTime,
@@ -413,7 +414,9 @@ actual class RaviloPlayer actual constructor() {
         // 308 — a new stream's first variant is not a switch.
         qoeVariantBps = null
         qoeVariantHeight = null
-        synchronized(qoeLock) { qoeCounter.load() }   // R381 — this stream's first wait is its start
+        // R381 — this stream's first wait is its start; 309 — and the item's first load is timed to its first frame
+        // (elapsedRealtime: the clock Media3's eventTime.realtimeMs is on).
+        synchronized(qoeLock) { qoeCounter.load(android.os.SystemClock.elapsedRealtime()) }
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
             val mime = when {
@@ -708,6 +711,8 @@ actual class RaviloPlayer actual constructor() {
         qoeRestoredAfterRecreate = 0
         qoeVariantDown = 0
         qoeVariantUp = 0
+        qoeBandwidthSamples = 0
+        qoeBandwidthBytes = 0
     }
 
     actual fun qoeSnapshot(): PlayerQoeSnapshot = synchronized(qoeLock) { PlayerQoeSnapshot(
@@ -715,6 +720,9 @@ actual class RaviloPlayer actual constructor() {
         rebufferCount = qoeCounter.rebufferCount,
         rebufferMs = qoeCounter.rebufferMs,
         bandwidthEstimateBps = qoeBandwidthEstimateBps,
+        bandwidthSamples = qoeBandwidthSamples,
+        bandwidthBytes = qoeBandwidthBytes,
+        firstFrameMs = qoeCounter.firstFrameMs(),
         videoDecoder = qoeVideoDecoder,
         audioDecoder = qoeAudioDecoder,
         subtitleLoadErrors = qoeSubtitleLoadErrors,

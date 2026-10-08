@@ -218,4 +218,6 @@ internal fun firstVariant(master: String): MasterVariant? {
 }
 
 /** 308 (FR-308-5) — the variant a player last reported playing: its `BANDWIDTH`, picture height and switch counts. */
-data class VariantNow(val bandwidthBps: Long, val height: Int?, val stepsDown: Int, val stepsUp: Int)
+data class VariantNow(val bandwidthBps: Long, val height: Int?, val stepsDown: Int, val stepsUp: Int,
+    /** 309 (FR-309-11) — the variant the play started on (its `BANDWIDTH`), so *Playing now* can say *→ … · climbing*. */
+    val startBps: Long? = null)

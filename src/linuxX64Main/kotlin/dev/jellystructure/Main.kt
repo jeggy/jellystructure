@@ -276,7 +276,7 @@ fun main() = runBlocking {
     // Phase 310 (owner decision 2) — queued stops survive a restart: kept in SQLite until Jellyfin has them.
     val playbackOutbox = dev.jellystructure.tv.SqlPlaybackOutbox(db, { id, uid -> raviloDeviceService.listSessions(id).firstOrNull { it.jellyfinUserId == uid } })
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore, playbackQoeStore, playbackStartSampleStore, raviloDeviceService, castService, writerScope = rootScope,
-        playbackOutbox = playbackOutbox)
+        playbackOutbox = playbackOutbox, streamRecords = dev.jellystructure.tv.StreamRecordStore(db))   // 309 (FR-309-1)
     // Phase 310 (FR-310-7) / 312 (FR-312-5) — the one-off repair's candidates, prepared from the logs next to the database.
     playbackService.repairCandidatesFile = "${dbFile.substringBeforeLast('/')}/playback-repair-candidates.json"
     // R248 (FR-R248-2) — once a queued stop has landed in Jellyfin, fold it into the Home feed and tell

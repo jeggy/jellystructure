@@ -1,0 +1,25 @@
+-- 309 (FR-309-1) — what one device has shown it can take: the stream it held (≥ 2 min, no stall), the path it measured
+-- (a QoE estimate or 309's probe), and the stream it was on at its last stall that counts (≥ 2 s, or two within a
+-- minute). One row per device (a Cast receiver is its own device). Bits per second as the master advertises a stream
+-- (its BANDWIDTH; a direct play's own file bitrate). Times are epoch SECONDS. Must stay byte-for-byte in sync with
+-- 77.sqm (the SQLDelight-migration rule).
+CREATE TABLE device_stream_record (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    proven_bps INTEGER,
+    proven_at INTEGER,
+    measured_bps INTEGER,
+    measured_at INTEGER,
+    stalled_bps INTEGER,
+    stalled_at INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
+get:
+SELECT * FROM device_stream_record WHERE device_id = :device_id;
+
+upsert:
+INSERT OR REPLACE INTO device_stream_record(device_id, proven_bps, proven_at, measured_bps, measured_at, stalled_bps, stalled_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+all:
+SELECT * FROM device_stream_record;

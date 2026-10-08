@@ -1,0 +1,15 @@
+-- 309 (FR-309-1/-11) and 313 (FR-313-13) — the per-device stream record; the QoE row's start variant and which encoder
+-- served the play. Must stay byte-for-byte in sync with StreamRecord.sq's and PlaybackQoe.sq's CREATE TABLEs (the
+-- SQLDelight-migration rule). 76 is R379's (on its branch at the time of writing): this one is 77.
+CREATE TABLE device_stream_record (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    proven_bps INTEGER,
+    proven_at INTEGER,
+    measured_bps INTEGER,
+    measured_at INTEGER,
+    stalled_bps INTEGER,
+    stalled_at INTEGER,
+    updated_at INTEGER NOT NULL
+);
+ALTER TABLE playback_qoe ADD COLUMN start_variant_bps INTEGER;
+ALTER TABLE playback_qoe ADD COLUMN encoder TEXT;

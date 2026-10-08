@@ -53,12 +53,24 @@ class QoeCounter {
         stalls.clear()
         waits.clear()
         itemFirstFrameAtMs = -1L
+        itemTimeToFirstFrameMs = null
         resetLoad()
         return true
     }
 
-    /** A new stream (of the current item) begins: its first wait is its start, not a stall. */
-    fun load() = resetLoad()
+    /** A new stream (of the current item) begins: its first wait is its start, not a stall. [nowMs] (the same clock as
+     *  [firstFrame]'s) times the item's first load to its first frame (309 FR-309-11); -1 = not timed. */
+    fun load(nowMs: Long = -1L) {
+        resetLoad()
+        if (itemTimeToFirstFrameMs == null) loadAtMs = nowMs
+    }
+
+    // 309 (FR-309-11) — when the item's first load began, and its time to the first frame.
+    private var loadAtMs = -1L
+    private var itemTimeToFirstFrameMs: Long? = null
+
+    /** 309 (FR-309-11) — this item's time from its first load to its first frame (ms), or null before it. */
+    fun firstFrameMs(): Long? = itemTimeToFirstFrameMs
 
     /** The engine was rebuilt (R292, R379): its first wait is a rebuild, not a stall. */
     fun engineRebuilt() {
@@ -69,6 +81,7 @@ class QoeCounter {
     fun firstFrame(nowMs: Long) {
         firstFrameRendered = true
         if (itemFirstFrameAtMs < 0) itemFirstFrameAtMs = nowMs
+        if (itemTimeToFirstFrameMs == null && loadAtMs >= 0 && nowMs >= loadAtMs) itemTimeToFirstFrameMs = nowMs - loadAtMs
     }
 
     fun seek() { pendingCause = CAUSE_SEEK }

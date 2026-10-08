@@ -58,10 +58,14 @@ data class AppConfig(
  * build, downloaded and checksum-verified there on first start when [downloadFfmpeg] (it is not shipped in the public
  * image: the build includes libfdk_aac). [workDir] should be a tmpfs; [cudaCacheDir] keeps the GPU kernels compiled
  * once (313a: without it every ffmpeg start spends 7–10 s compiling them).
+ *
+ * 313e — on by default: every transcode it can serve is ours, Jellyfin's is the fallback. Without a GPU in the container
+ * (the public compose file alone) nothing changes: the decision falls back with *no GPU in the container*, and the
+ * ffmpeg build is not even downloaded.
  */
 @Serializable
 data class EncoderConfig(
-    val enabled: Boolean = false,
+    val enabled: Boolean = true,
     @SerialName("ffmpeg_dir") val ffmpegDir: String = "/config/encoder/jellyfin-ffmpeg",
     @SerialName("download_ffmpeg") val downloadFfmpeg: Boolean = true,
     @SerialName("work_dir") val workDir: String = "/transcode/js",

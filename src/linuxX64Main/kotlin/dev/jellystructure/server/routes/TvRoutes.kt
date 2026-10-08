@@ -44,6 +44,7 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.response.respondBytes
+import io.ktor.server.response.header
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -79,6 +80,11 @@ private data class OverviewDevice(
     @SerialName("decode_max_bitrate_hevc") val decodeMaxBitrateHevc: Long? = null,
     @SerialName("decode_max_bitrate_h264") val decodeMaxBitrateH264: Long? = null,
     @SerialName("decode_measured_at") val decodeMeasuredAt: Long? = null,
+    // 309 (FR-309-11) — what this device has shown it can take (bits/s of stream; null = nothing yet) and its
+    // last counting stall within 24 h (the variant it stalled on, and when, epoch seconds).
+    @SerialName("stream_holds_bps") val streamHoldsBps: Long? = null,
+    @SerialName("stream_stalled_bps") val streamStalledBps: Long? = null,
+    @SerialName("stream_stalled_at") val streamStalledAt: Long? = null,
     // Phase 224 (FR-224-5) — the build and platform this device last reported (R252). Both null ⇒ the
     // device has never said (an un-updated client); the row spells that out.
     @SerialName("app_version") val appVersion: String? = null,
@@ -248,6 +254,9 @@ private const val SESSION_ID_PREFIX_LEN = 12
 // as `undefined`, not `0`/`false`. Same footgun HomeFeedService/PlaystateCache/AcquisitionService's own
 // wire-JSON instances already guard against with encodeDefaults=true — this call site had been missed.
 private val screenStatusJson = kotlinx.serialization.json.Json { encodeDefaults = true }
+
+/** 309 (FR-309-3) — the speed test's 4 MB, made once: random so no compressor on the path can shorten it. */
+private val probePayload: ByteArray by lazy { kotlin.random.Random(309).nextBytes(4 * 1024 * 1024) }
 
 @Serializable
 private data class AdminConfigEnvelope(
@@ -814,6 +823,36 @@ fun Route.tvRoutes(
         call.respond(mapOf("status" to "ok"))
     }
 
+    // 309 (FR-309-6) — the viewer has been on a detail page > 2 s (or a Cast target is picked): start the encode Play
+    // would start. Fire-and-forget for the client; the answer says what happened (warm · direct · none + why).
+    post("/tv/playback/prewarm") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<dev.jellystructure.shared.tv.PrewarmRequest>()
+        call.respond(playbackService.prewarmPlayback(device, req.itemId, req.capabilities, req.audioLanguage, req.audioVariant, req.castDeviceId))
+    }
+    // 309 (owner) — the viewer left the page without pressing Play: the warm encode stops at once.
+    post("/tv/playback/prewarm/cancel") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<dev.jellystructure.shared.tv.PrewarmCancel>()
+        playbackService.cancelPrewarm(device, req.itemId, req.castDeviceId)
+        call.respond(mapOf("status" to "ok"))
+    }
+
+    // 309 (FR-309-3) — the speed test: 4 MB of incompressible bytes over the same route the segments take, timed by the
+    // client. 204 when this device was measured within 24 h (nothing to do). Never cached by anything in between.
+    get("/tv/probe") {
+        val device = call.attributes[DeviceKey]
+        call.response.header(HttpHeaders.CacheControl, "no-store")
+        if (!playbackService.probeNeeded(device) && call.request.queryParameters["force"] != "1") return@get call.respond(HttpStatusCode.NoContent)
+        call.respondBytes(probePayload, ContentType.Application.OctetStream)
+    }
+    post("/tv/probe/result") {
+        val device = call.attributes[DeviceKey]
+        val req = runCatching { call.receive<dev.jellystructure.shared.tv.ProbeResult>() }.getOrNull()
+        if (req != null) playbackService.recordProbe(device, req.bytes, req.ms)
+        call.respond(mapOf("status" to "ok"))
+    }
+
     // R56: restream with a subtitle burned in (PGS encode path)
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
@@ -1058,6 +1097,9 @@ fun Route.tvRoutes(
                         decodeMaxBitrateHevc = decode?.hevcMaxBitrate,
                         decodeMaxBitrateH264 = decode?.h264MaxBitrate,
                         decodeMeasuredAt = decode?.measuredAt,
+                        streamHoldsBps = playbackService.takeOf(d.deviceId),   // 309 (FR-309-11)
+                        streamStalledBps = playbackService.recordSummary(d.deviceId)?.takeIf { (it.stalledAt ?: 0) > dev.jellystructure.nowEpochSec() - dev.jellystructure.tv.STALL_HOLD_SEC }?.stalledBps,
+                        streamStalledAt = playbackService.recordSummary(d.deviceId)?.takeIf { (it.stalledAt ?: 0) > dev.jellystructure.nowEpochSec() - dev.jellystructure.tv.STALL_HOLD_SEC }?.stalledAt,
                         appVersion = d.appVersion,
                         platform = d.platform,
                         reconnectsLastHour = tvEventBus?.unstable(d.deviceId)?.connectsLastHour,   // Phase 256 (FR-256-3)
@@ -1361,6 +1403,21 @@ fun Route.tvRoutes(
         val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
         val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondBytes(bytes, ContentType.parse("video/mp2t"))
+    }
+
+    // Phase 313d (FR-313-11) — a text subtitle as a WebVTT rendition of our master (clients that take subtitles in HLS):
+    // one segment, the whole track, fetched from Jellyfin by this server. Same capability id as the master.
+    get("/tv/stream/{id}/t/{i}/main.m3u8") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val text = playbackService.encoder.subtitlePlaylist(id, i) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
+    }
+    get("/tv/stream/{id}/t/{i}/sub.vtt") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val text = playbackService.encoder.subtitleVtt(id, i) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondText(text, ContentType.parse("text/vtt; charset=utf-8"))
     }
 
     // Phase 313 (FR-313-7) — our own encoder's variants: `v/<rung>` and `a/<audio position>`, each a VOD playlist of

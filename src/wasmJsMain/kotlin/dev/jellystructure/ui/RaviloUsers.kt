@@ -83,7 +83,19 @@ private fun decodeCapabilityLine(d: dev.jellystructure.api.OverviewDevice): Stri
         h264?.let { add("up to ${mbps(it)} H.264") }
     }
     val whenPart = d.decodeMeasuredAt?.let { " · measured ${usersAgo(it)}" } ?: ""
-    return "picture it can take · ${parts.joinToString(" · ")}$whenPart"
+    return "picture it can take · ${parts.joinToString(" · ")}$whenPart" + streamRecordWords(d.streamHoldsBps, d.streamStalledBps, d.streamStalledAt?.let { usersAgo(it * 1000L) })
+}
+
+/** 309 (FR-309-11) — *· holds 8 Mbps · stalled at 24 Mbps yesterday*; nothing when the device has shown nothing. */
+internal fun streamRecordWords(holdsBps: Long?, stalledBps: Long?, stalledAgo: String?): String {
+    fun mbps(bps: Long): String {
+        val m = bps / 1_000_000.0
+        return if (m >= 10) "${kotlin.math.round(m).toLong()} Mbps" else "${kotlin.math.round(m * 10) / 10.0} Mbps".replace(".0 ", " ")
+    }
+    return listOfNotNull(
+        holdsBps?.takeIf { it > 0 }?.let { "holds ${mbps(it)}" },
+        stalledBps?.takeIf { it > 0 }?.let { "stalled at ${mbps(it)}" + (stalledAgo?.let { a -> " $a" } ?: "") },
+    ).joinToString("") { " · $it" }
 }
 
 // Phase 224 (FR-224-5) — which build this device runs, from the headers R252 clients send on every
