@@ -460,3 +460,14 @@ enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for
   never held; (b) the first segments after a restart came at ~0.6× before the job sped up. Both measured while the
   qBittorrent force recheck read the films disk at ~220 MB/s (60–80 % busy), which likely explains the slow patches;
   re-measure when the recheck is done.
+- **A cast to Stue TV's web receiver (2026-10-09, debug Pixel build with the development Cast app):** the receiver
+  enrolled, `encoder=ours HEVC HDR rungs=2160p@20000k/… TS card=0`, but ffmpeg exited at once: NVENC refused the 2160p
+  rung — *"InitializeEncoder failed: Invalid Level"*. Level 5.0 (Main tier) caps the peak at 25 Mbps and the 20 Mbps
+  top rung peaks at 30 Mbps (`-maxrate` 1.5×). Fixed: 2160p HEVC is level **5.1** (`hvc1.2.4.L153.B0`), verified by
+  hand on the P4000 (5.0 fails, 5.1 encodes). The job retried 3× and the phone's remote showed *"Stue TV couldn't play
+  this · Play on this phone"* — the failure path works. **Open:** when our encoder's job fails to start, the play should
+  fall back to Jellyfin's transcode instead of retrying the same command (FR-313 fallback covers "no slot/no GPU" but not
+  "ffmpeg refused").
+- **Køkken Hub:** casting from the Pixel failed before anything reached the backend — the hub's Cast port (8009) times
+  out from both the host and the phone (8008 answers), so the hub's Cast service is down; not a jellystructure fault.
+  Reboot the hub.

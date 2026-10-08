@@ -151,7 +151,9 @@ internal fun encoderSegmentCount(durationMs: Long): Int = ((durationMs + ENCODER
 /** The H.264 / HEVC level for a rung's box (also its CODECS string, FR-313's dev review item 9). */
 internal fun levelOf(codec: EncoderCodec, boxHeight: Int): String = when (codec) {
     EncoderCodec.H264 -> when { boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
-    EncoderCodec.HEVC -> when { boxHeight >= 2160 -> "5.0"; boxHeight >= 1440 -> "5.0"; boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
+    // 2160p is 5.1: level 5.0 (Main tier) caps the peak at 25 Mbps, and a 20 Mbps top rung peaks at 30 (-maxrate 1.5×);
+    // NVENC refuses the encode outright ("Invalid Level"), found casting to Stue TV 2026-10-09.
+    EncoderCodec.HEVC -> when { boxHeight >= 2160 -> "5.1"; boxHeight >= 1440 -> "5.0"; boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
 }
 
 /** The exact `CODECS` value of a rung's video (Media3 hides a variant whose codec string no decoder supports). */
