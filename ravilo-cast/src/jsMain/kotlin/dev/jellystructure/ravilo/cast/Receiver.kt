@@ -228,7 +228,8 @@ private class Receiver {
             GlobalScope.promise { loading++; try { intercept(request) } finally { loading-- } }
         }
         val et = cast.framework.events.EventType
-        playerManager.addEventListener(et.TIME_UPDATE) { ev: dynamic -> onTime(((ev.currentMediaTime as Double?) ?: 0.0) * 1000) }
+        // 312/313 (2026-10-09) — an update with no media time (CAF sends one once the player stops) no longer reads as 0.
+        playerManager.addEventListener(et.TIME_UPDATE) { ev: dynamic -> onTime((ev.currentMediaTime as Double?)?.times(1000)) }
         // R245 amendment (2026-09-18) — there is no `PLAYER_STATE_CHANGED` in CAF's EventType (checked
         // against the live framework): the constant was `undefined`, `addEventListener(undefined)`
         // throws, and the whole receiver died in start() before `context.start()` — so a TV that had
@@ -1130,8 +1131,9 @@ private class Receiver {
     }
 
     // ── playback events ──
-    private fun onTime(ms: Double) {
-        positionMs = ms.toLong()
+    private fun onTime(ms: Double?) {
+        // 312/313 (2026-10-09) — the stop used to be reported at 0 ms: the idle player's last update overwrote the place.
+        positionMs = dev.jellystructure.shared.tv.castPositionAfterUpdate(positionMs, ms?.toLong())
         // A speaker's player reports no length for a FLAC; the song's own, from the queue, stands in (289 FR-289-3).
         val said = ((playerManager.getDurationSec() as Double?) ?: 0.0).times(1000).toLong()
         durationMs = if (said > 0) said else track()?.durationMs ?: 0L

@@ -502,3 +502,23 @@ enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for
   removed.
 - **Deploy:** the dev stack needs `docker-compose.gpu.yml` (else the default-on encoder simply falls back).
 
+
+## Integration fixes (2026-10-09, before the deploy of R379 + 309 + R376 + 314b/c)
+
+From the live cast test (a Chromecast cast served by our encoder stalled **208 times, ~25 min of stalls in 62 min, first
+frame 15.9 s**; cause not found — the qBittorrent force recheck had the films disk 60–80 % busy at the time):
+
+1. **Cast receivers use Jellyfin until the stall is diagnosed.** `encoderDecision` gains the device kind: a `cast`
+   device (the Chromecast web receiver) gets `cast receivers use Jellyfin until the stall is diagnosed (313)` as its
+   logged fallback reason. A Cast Connect load into the Ravilo TV app plays as the TV (`tv`) and keeps our encoder.
+   Test: `EncoderPlanTest`'s decision test. To lift: diagnose the stall (receiver QoE + segment timings with the disk
+   idle), then remove the rule.
+2. **ffmpeg refusing a plan no longer loops.** A job that exits with an error before writing its first segment marks
+   its stream *refused*: no job is started again for it (its segments answer null until the play ends), and the file is
+   remembered for 6 h, so the next play of it (the player's retry asks for a new ticket) goes to Jellyfin with
+   `ffmpeg refused this file (…) — Jellyfin serves it (313)`. A job that fails later (after segments) is not a refusal.
+   Tests: `refusedBeforeFirstSegment` and `RefusedSources` in `EncoderPlanTest`. Not done: switching the *running* play
+   to Jellyfin without the player's own retry (needs a server-sent restream; listed for later).
+3. **The receiver reports its stop where it stopped** (312's class): CAF's last `TIME_UPDATE` after the player stops
+   carries no media time, which read as 0 and overwrote the place just before the stop was sent. `castPositionAfterUpdate`
+   (`:shared`, `CastStopPositionTest`) keeps the last real position over a missing time or an idle reset to 0.

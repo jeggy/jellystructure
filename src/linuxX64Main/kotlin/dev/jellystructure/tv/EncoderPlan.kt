@@ -416,9 +416,14 @@ internal val GPU_DECODABLE = setOf("h264", "hevc", "h265", "vp9", "mpeg4")
  */
 internal fun encoderDecision(
     enabled: Boolean, ffmpegReady: Boolean, cards: List<EncoderCard>, source: EncoderSource?, isLiveOrAudio: Boolean,
+    /** The playing device's kind. A Cast Connect load into the TV app plays as the TV (`tv`), not as a receiver. */
+    deviceKind: String = "tv",
 ): String? = when {
     !enabled -> "encoder off"
     isLiveOrAudio -> "live TV or audio"
+    // 2026-10-09 — a Chromecast cast served by our encoder stalled 208 times in 62 min (first frame 15.9 s); until that
+    // is diagnosed the web receiver (`cast`) is served by Jellyfin. Cast Connect into the TV app is a `tv` play.
+    deviceKind.equals("cast", ignoreCase = true) -> CAST_RECEIVER_FALLBACK
     !ffmpegReady -> "no jellyfin-ffmpeg"
     cards.isEmpty() -> "no GPU in the container"
     source == null -> "file not on this server's disk or not scanned"
@@ -427,6 +432,26 @@ internal fun encoderDecision(
     source.dolbyVisionProfile5 -> "Dolby Vision profile 5 (no HDR10 base layer)"
     else -> null
 }
+
+/**
+ * 313 (2026-10-09) — files ffmpeg refused (exit before the first segment). Their plays go to Jellyfin for [ttlMs] (a
+ * driver or binary update may fix it, so it isn't forever) instead of retrying the same command. Thread-safe enough for
+ * its use: one write per refusal, reads per plan.
+ */
+internal class RefusedSources(private val ttlMs: Long = 6 * 3_600_000L) {
+    private val refused = kotlin.concurrent.AtomicReference<Map<String, Pair<Long, String>>>(emptyMap())
+    fun markRefused(path: String, codec: EncoderCodec, exitCode: Int, nowMs: Long) {
+        while (true) {
+            val cur = refused.value
+            if (refused.compareAndSet(cur, cur + (path to (nowMs to "ffmpeg refused this file ($codec, exit $exitCode) — Jellyfin serves it (313)")))) return
+        }
+    }
+    /** The reason [path] goes to Jellyfin, or null when ffmpeg hasn't refused it within [ttlMs]. */
+    fun reason(path: String, nowMs: Long): String? = refused.value[path]?.takeIf { nowMs - it.first < ttlMs }?.second
+}
+
+/** 313 (2026-10-09) — the logged reason a cast receiver's transcode stays Jellyfin's. */
+internal const val CAST_RECEIVER_FALLBACK = "cast receivers use Jellyfin until the stall is diagnosed (313)"
 
 /** FR-313-4 — the codec family for a device: HEVC when it decodes HEVC over HLS and (for an HDR source) the source's HDR form. */
 internal fun encoderCodecFor(hlsHevc: Boolean, videoCodecs: List<String>, supportsHdr10: Boolean, supportsHlg: Boolean, source: EncoderSource): EncoderCodec {

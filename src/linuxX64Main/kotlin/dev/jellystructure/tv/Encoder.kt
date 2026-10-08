@@ -56,8 +56,12 @@ class Encoder(
         // FR-313-9 — the configured work folder (a tmpfs in docker-compose.gpu.yml), else /tmp when it can't be made.
         val root = cfg.workDir.takeIf { mkdirs(it) } ?: "/tmp/js-encoder"
         mkdirs(cfg.cudaCacheDir)
-        EncoderJobs(root) { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" }
+        EncoderJobs(root, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
+            onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, nowMs()) })
     }
+
+    /** 313 (2026-10-09) — files ffmpeg refused: their next plays go to Jellyfin instead of retrying the same command. */
+    internal val refused = RefusedSources()
 
     private var cardsCache: Pair<Long, List<EncoderCard>>? = null
 
@@ -101,8 +105,9 @@ class Encoder(
             )
         }
         val cards = if (cfg.enabled) cards() else emptyList()
-        encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false)?.let { return null to it }
+        encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind)?.let { return null to it }
         source!!
+        refused.reason(path, nowMs())?.let { return null to it }
         // 313d (FR-313-6) — a picked image subtitle is burned in by this job (composited once, before the split). One
         // the scan can't place among the file's subtitle streams stays Jellyfin's.
         if (burnRequested && burnSubtitleOrder == null) return null to "image subtitle not found among the file's subtitle streams (313d)"

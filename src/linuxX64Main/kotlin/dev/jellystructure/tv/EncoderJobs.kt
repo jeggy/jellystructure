@@ -47,6 +47,8 @@ class EncoderJobs(
     private val root: String,
     /** The environment and binary prefix every command runs with (CUDA order and kernel cache, FR-313 313a). */
     private val envPrefix: () -> String = { "" },
+    /** 313 (2026-10-09) — told when ffmpeg refuses a plan (exits with an error before its first segment): the source. */
+    private val onRefused: (EncoderPlan, Int) -> Unit = { _, _ -> },
 ) {
     internal class Job(val streamId: String, val dir: String, val startSegment: Int, val variants: Int, val plan: EncoderPlan) {
         @Volatile var pid: Int = -1
@@ -62,7 +64,9 @@ class EncoderJobs(
         fun file(variant: Int, k: Int): String = "$dir/$variant/s${k - startSegment}.${if (plan.mux == EncoderMux.FMP4) "m4s" else "ts"}"
     }
 
-    private class Stream(var current: Job?, val retired: ArrayDeque<Job> = ArrayDeque())
+    /** [refused] — ffmpeg refused this stream's plan: no job is started again for it (the same command would fail the
+     *  same way, and a player asking again would loop); its segments answer null until the play ends. */
+    private class Stream(var current: Job?, val retired: ArrayDeque<Job> = ArrayDeque(), @Volatile var refused: Boolean = false)
 
     private val mutex = Mutex()
     private val streams = mutableMapOf<String, Stream>()
@@ -99,6 +103,7 @@ class EncoderJobs(
                 s.current?.let { touch(it, k) }
                 return made.file(variant, k)
             }
+            if (s.refused) return null
             var j = s.current
             if (j != null) refresh(j)
             if (j == null || !j.reaches(k)) {
@@ -178,7 +183,16 @@ class EncoderJobs(
                 val rc = pclose(pipe)
                 job.exited = true
                 refresh(job)
-                if (rc != 0 && !job.stopped) Logger.warn("encoder $streamId: ffmpeg exit $rc (see $dir/ffmpeg.log)", "tv")
+                if (rc != 0 && !job.stopped) {
+                    Logger.warn("encoder $streamId: ffmpeg exit $rc (see $dir/ffmpeg.log)", "tv")
+                    // 313 (2026-10-09) — refused before its first segment: never restarted with the same command; the
+                    // source goes to Jellyfin from the next play on (the player's own retry asks for a new ticket).
+                    if (refusedBeforeFirstSegment(rc, job.highest, job.startSegment)) {
+                        mutex.withLock { streams[streamId]?.refused = true }
+                        Logger.warn("encoder $streamId: ffmpeg refused this plan — no restart; the file goes to Jellyfin (313)", "tv")
+                        runCatching { onRefused(plan, rc) }
+                    }
+                }
             }
         }
         return job
@@ -261,6 +275,9 @@ class EncoderJobs(
 }
 
 private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
+
+/** 313 (2026-10-09) — ffmpeg refused a plan: it exited with an error before writing the job's first segment. */
+internal fun refusedBeforeFirstSegment(exitCode: Int, highest: Int, startSegment: Int): Boolean = exitCode != 0 && highest < startSegment
 
 /** Creates [path] and its missing parents (0700); true when it exists afterwards and is writable. */
 @OptIn(ExperimentalForeignApi::class)

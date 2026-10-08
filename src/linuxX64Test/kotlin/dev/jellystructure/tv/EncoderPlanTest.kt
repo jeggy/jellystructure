@@ -162,6 +162,22 @@ class EncoderPlanTest {
         assertContains(encoderDecision(true, true, card, hdr4k.copy(videoCodec = "vc1"), false)!!, "vc1")
         assertContains(encoderDecision(true, true, card, hdr4k.copy(dolbyVisionProfile5 = true), false)!!, "profile 5")
         assertNull(encoderDecision(true, true, card, hdr4k, false))
+        // 2026-10-09 — a cast receiver's transcode stays Jellyfin's until the stall is diagnosed; the TV app (Cast
+        // Connect) plays as a `tv` and keeps our encoder.
+        assertEquals(CAST_RECEIVER_FALLBACK, encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast"))
+        assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "tv"))
+    }
+
+    @Test fun `a file ffmpeg refused goes to Jellyfin for a while instead of being retried`() {
+        assertTrue(refusedBeforeFirstSegment(exitCode = 1, highest = 9, startSegment = 10))   // nothing written: refused
+        assertFalse(refusedBeforeFirstSegment(exitCode = 1, highest = 12, startSegment = 10)) // failed later: not a refusal
+        assertFalse(refusedBeforeFirstSegment(exitCode = 0, highest = 9, startSegment = 10))
+        val r = RefusedSources(ttlMs = 1_000)
+        assertNull(r.reason("/m/film.mkv", 0))
+        r.markRefused("/m/film.mkv", EncoderCodec.HEVC, 187, nowMs = 100)
+        assertContains(r.reason("/m/film.mkv", 500)!!, "Jellyfin")
+        assertNull(r.reason("/m/other.mkv", 500))
+        assertNull(r.reason("/m/film.mkv", 1_200))   // the TTL passed: our encoder may try again
     }
 
     private val tracks = listOf(
