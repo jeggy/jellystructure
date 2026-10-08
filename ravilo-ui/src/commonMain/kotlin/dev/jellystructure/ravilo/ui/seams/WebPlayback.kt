@@ -12,6 +12,8 @@ import dev.jellystructure.shared.tv.AudioTrack
  *
  * - `loadstart` — a new source: the per-load facts start again. R381 (FR-R381-1) — the QoE counts are [qoe]'s, per
  *   item ([QoeCounter.beginItem]); a new load of the same item (a restream) keeps them.
+ * - `soundblocked` / `soundon` — the browser refused sound for a play with no gesture, and the viewer's next real
+ *   click, tap or key gave it back ([soundBlocked]).
  * - `pause` — a wait the viewer caused is dropped from the QoE counts, never a stall. `variant` (hls.js switched
  *   level, 308) — a wait right after it belongs to the switch.
  * - `loadeddata` / `playing` — a frame is on screen.
@@ -27,6 +29,10 @@ internal class WebPlaybackEvents(private val qoe: QoeCounter? = null) {
     var seeking = false; private set
     var ended = false; private set
     var failed = false; private set
+    /** The browser refused sound for a play that did not come from a gesture; the element plays muted until the
+     *  viewer's next real click, tap or key (`soundblocked` → `soundon`). Survives a new source: the element stays
+     *  muted until then. */
+    var soundBlocked = false; private set
     var stallCount = 0; private set
     var stallMs = 0L; private set
     private var stallStartedAt: Double? = null
@@ -48,6 +54,8 @@ internal class WebPlaybackEvents(private val qoe: QoeCounter? = null) {
             "seeked" -> seeking = false
             "play" -> ended = false
             "pause" -> qoe?.interrupted()
+            "soundblocked" -> { soundBlocked = true; qoe?.load() }   // the muted retry is this play's real start, not a stall
+            "soundon" -> soundBlocked = false
             "variant" -> qoe?.variantSwitched(at)
             "ended" -> { ended = true; buffering = false; endStall(atMs); qoe?.interrupted() }
             "error", "hlsfatal" -> { failed = true; buffering = false; endStall(atMs); qoe?.interrupted() }

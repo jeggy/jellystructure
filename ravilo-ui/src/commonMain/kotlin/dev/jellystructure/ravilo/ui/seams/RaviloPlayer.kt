@@ -132,6 +132,15 @@ expect class RaviloPlayer() {
      *  the Android actual's single `qoeListener`. */
     val isSeeking: Boolean
 
+    /**
+     * R376 (2026-10-08, found on Safari) — true while a browser refused to play with sound because the play did not
+     * come from a real click, tap or key (Safari's autoplay rule: a play pushed by the server, or started after an
+     * async fetch, is not a user gesture). The player then plays muted and unmutes on the viewer's next real
+     * interaction; the chrome says so ([dev.jellystructure.ravilo.ui.screens.BrowserSoundHint]). Always false where the
+     * platform has no such rule (Android, desktop).
+     */
+    val soundBlockedByBrowser: Boolean
+
     /** Audio track list, discovered from the stream after load. May be empty until media is ready. */
     val audioTracks: List<PlayerAudioTrack>
 

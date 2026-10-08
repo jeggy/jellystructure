@@ -631,6 +631,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
     actual val isBuffering: Boolean get() = _isBuffering
     actual val isSeeking: Boolean get() = _isSeeking
+    actual val soundBlockedByBrowser: Boolean get() = false   // R376 — no autoplay rule on Android
 
     actual val audioTracks: List<PlayerAudioTrack>
         get() {

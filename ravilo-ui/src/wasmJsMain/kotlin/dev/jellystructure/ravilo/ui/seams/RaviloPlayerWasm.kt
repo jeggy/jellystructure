@@ -188,6 +188,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() { sync(); return events.firstFrame }
     actual val isBuffering: Boolean get() { sync(); return events.buffering }
     actual val isSeeking: Boolean get() { sync(); return events.seeking }
+    actual val soundBlockedByBrowser: Boolean get() { sync(); return events.soundBlocked }
 
     /**
      * R376 (FR-R376-3) — the stream's own audio list when it has one (a composed master's renditions, as hls.js or
@@ -278,9 +279,35 @@ private fun drainEvents(video: HTMLVideoElement): String = js(
     """(function(){ var q = video._rvq || []; video._rvq = []; return q.join(','); })()"""
 )
 
-/** play() returns a promise that rejects when autoplay is refused; the refusal is the paused state the chrome shows. */
+/**
+ * play() returns a promise that rejects when the browser refuses it. R376 (2026-10-08, measured on Safari 27): a play
+ * that did not come from a real click, tap or key — a play pushed by the server, one started after the ticket's fetch
+ * — is refused with sound (`NotAllowedError`) and the element just sits paused. Then: play **muted** (allowed), queue
+ * `soundblocked` for [WebPlaybackEvents] (the chrome shows *Click or press a key for sound*), and unmute on the
+ * viewer's next trusted click, tap or key, which Safari accepts as the gesture it wanted (`soundon`).
+ */
 private fun playVideo(video: HTMLVideoElement): Unit = js(
-    """{ try { var p = video.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {} }"""
+    """{
+        try {
+            var p = video.play();
+            if (p && p.catch) p.catch(function (e) {
+                if (!e || e.name !== 'NotAllowedError' || video.muted) return;
+                video.muted = true;
+                if (video._rvPush) video._rvPush('soundblocked');
+                try { var q = video.play(); if (q && q.catch) q.catch(function(){}); } catch (e2) {}
+                if (video._rvUnmute) return;
+                var names = ['pointerdown', 'keydown', 'touchend'];
+                video._rvUnmute = function (ev) {
+                    if (!ev.isTrusted) return;
+                    names.forEach(function (n) { window.removeEventListener(n, video._rvUnmute, true); });
+                    video._rvUnmute = null;
+                    video.muted = false;
+                    if (video._rvPush) video._rvPush('soundon');
+                };
+                names.forEach(function (n) { window.addEventListener(n, video._rvUnmute, true); });
+            });
+        } catch (e) {}
+    }"""
 )
 
 /**

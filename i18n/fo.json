@@ -293,6 +293,7 @@
   "action.cancel": "Angra",
   "player.audio_subs": "Ljóð & undirtekstir",
   "player.pip": "Mynd í mynd",
+  "player.sound_blocked": "Trýst á ein knapp fyri at fáa ljóð",
   "player.next": "Næsti",
   "player.up_next": {
     "text": "NÆSTI",

@@ -342,6 +342,39 @@ owner's apps; their front app never changed) and quit afterwards; the session wa
 - WebKit in Playwright could not run on this host (missing system libraries), and this host's headless Chromium had no
   WebGL this time, so the play checks still need the Mac in front, the iPhone PWA and a real Android phone.
 
+### Live: Safari 27 in front on the owner's Mac (2026-10-08, evening)
+
+The owner allowed taking over the Mac's screen. The same throwaway same-origin proxy as above (it had to rewrite
+`Origin` to the web app's real address: the backend refuses the events socket and every state-changing request from an
+unknown origin, which was also why the socket "reconnected every few seconds" in the earlier run — the proxy, not the
+app). No accessibility or screen-recording permission over ssh and no `cliclick`, so the page drove itself: a lab
+script injected into `index.html` logged the element's events, its `audioTracks`, the app's console and a play() wrapper
+to the proxy, and pressed keys on the Compose canvas (synthetic, so never a user gesture). Plays were started the way
+a phone or the admin starts one on a screen: `POST /api/remote/play` to the Test Stream web device; seeks and the stop
+by `POST /api/remote/command`. Test Stream account only; both films were marked unplayed afterwards (Jellyfin shows
+position 0, play count 0, no last-played date), Safari's storage was wiped and Safari quit.
+
+| Check | Result |
+|---|---|
+| **Direct play on Safari** | **Never happens:** R265 FR-R265-8 (`playsHlsForAirPlay`) makes Safari ask for HLS only, so even an MP4 Safari can open (an open-licence test film, H.264 + MP3 + AC3) came as R291's composed master (video copied, two audio renditions). FR-R376-3's *direct play first* is therefore Chrome/Firefox only. **For the owner:** keep HLS-only on Safari for AirPlay, or direct-play there and switch to HLS when AirPlay is picked. |
+| **Time to first frame** (element `loadstart` → `loadeddata`) | MP4 film, cold: **8.5 s** (playing at 10 s after the push); the same film warm: **4.0 s** (playing at 5.7 s). An MKV with four AC3 tracks (needs HLS), cold: first frame data **1.6 s**, but `playing` only **29.5 s** after `loadstart` (the cold start of Jellyfin's job and R291's four rendition jobs on a file not in the page cache). |
+| **Audio switch inside the stream** (Safari's own `audioTracks`, via the app's picker: wake, → → to *Audio & subtitles*, OK, ↓ to Finnish, OK) | **Works:** the element's enabled track moved from `dan` to `fin` at the same moment, no restream. The picture held at the same second for **~7 s** before playing on (the new language's rendition job starting cold); afterwards it played normally. Exactly one track is enabled before and after. |
+| **Seek** (remote command to 5:00) | `seeking` → `seeked`/`playing` in **5.8 s** (Jellyfin restarts its job at the new position). |
+| **Multi-audio title** | Safari lists the four renditions by language (`dan`, `fin`, `nor`, `swe`, named *Danish – Dolby Digital* …); the picker shows them as four languages. |
+| **Sound** | The owner heard nothing during the first runs: **the lab script muted every element on purpose** (to keep the Mac quiet). Without it, **Safari refused the start with sound** (`play()` → `NotAllowedError`: a play pushed by the server, like one started after the ticket's fetch, is not a user gesture), and the element sat paused at 0:00. **Fixed** (below). The system output was not muted (13–25 %). The audio itself is AC-3 in HLS, which Safari on macOS decodes; the composed master's renditions are copies, not AAC. |
+
+**Fixed on this branch: a play the browser refuses with sound plays muted and says how to get the sound.**
+`playVideo` (wasmJs) catches `NotAllowedError`, sets the element muted and plays again (allowed), queues
+`soundblocked`, and unmutes on the viewer's next **trusted** click, tap or key (`pointerdown`/`keydown`/`touchend`,
+capture phase, `isTrusted` only), queueing `soundon`. `WebPlaybackEvents.soundBlocked` carries it (surviving a new
+source, since the element stays muted until then; the muted retry counts as the load's start, never a stall), the
+player exposes it as `RaviloPlayer.soundBlockedByBrowser` (false on Android and the desktop), and `BrowserSoundHint`
+shows one pill at the top of the player: *Click or press a key for sound* (`player.sound_blocked`, en/da/fo).
+Re-tested on Safari: the refused play retried muted and was playing in 0.7 s. **Not verified:** that a real click
+brings the sound back — that needs a trusted click, which nothing over ssh can produce (and nobody clicked during the
+test window). Tests: `WebPlaybackTest` (the blocked fact survives a new source and clears on `soundon`; a refused
+play is never a stall).
+
 ## Dev review (2026-10-08, against `main` `4222ac4c`)
 
 Read against branch `r376-web-player` (2 commits, built 2026-10-05, **not merged, 35 commits behind `main`**; its own

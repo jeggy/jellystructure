@@ -293,6 +293,7 @@
   "action.cancel": "Annuller",
   "player.audio_subs": "Lyd & undertekster",
   "player.pip": "Billede i billede",
+  "player.sound_blocked": "Klik eller tryk på en tast for at få lyd",
   "player.next": "Næste",
   "player.up_next": {
     "text": "NÆSTE",

@@ -203,6 +203,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() = engine.state.firstFrame
     actual val isBuffering: Boolean get() = engine.state.let { it.buffering && !it.failed }
     actual val isSeeking: Boolean get() = engine.state.seeking
+    actual val soundBlockedByBrowser: Boolean get() = false   // R376 — no autoplay rule on the desktop
 
     /** The ticket's audio, once AVPlayer is ready (R181 resolves against tracks that exist) — or mpv's own list (R335). */
     actual val audioTracks: List<PlayerAudioTrack>

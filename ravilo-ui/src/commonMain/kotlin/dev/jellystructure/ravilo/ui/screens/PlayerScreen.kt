@@ -1828,6 +1828,7 @@ fun PlayerScreen(
         )
         // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
         VideoShutter(startPhase != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
+        BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {

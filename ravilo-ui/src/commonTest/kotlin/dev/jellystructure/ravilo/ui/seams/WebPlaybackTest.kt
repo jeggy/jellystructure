@@ -158,6 +158,25 @@ class WebPlaybackTest {
         assertEquals(mapOf("seek" to 1, "track_switch" to 1, "variant_switch" to 1), q.waitCounts() - "start")
     }
 
+    // ── R376 (2026-10-08, Safari) — a play with no gesture plays muted until a real click, tap or key ──
+
+    @Test fun aRefusedSoundIsKnownUntilTheViewerInteractsAndSurvivesANewSource() {
+        val e = WebPlaybackEvents()
+        e.feed("loadstart@0,soundblocked@10,playing@500")
+        assertTrue(e.soundBlocked); assertTrue(e.firstFrame)
+        e.feed("loadstart@9000,playing@9600")   // the next episode on the same, still muted, element
+        assertTrue(e.soundBlocked)
+        e.feed("soundon@12000")
+        assertFalse(e.soundBlocked)
+    }
+
+    @Test fun aRefusedPlayIsNeverCountedAsAStall() {
+        val q = QoeCounter(); val e = WebPlaybackEvents(q)
+        q.beginItem("film")
+        e.feed("loadstart@0,loadeddata@400,play@410,pause@411,soundblocked@412,waiting@420,playing@900")
+        assertEquals(0, q.rebufferCount)
+    }
+
     @Test fun aRestreamOfTheSameItemKeepsItsCounts() {
         val q = QoeCounter(); val e = WebPlaybackEvents(q)
         q.beginItem("film"); e.feed("loadstart@0,playing@500,waiting@2000,playing@2300")
