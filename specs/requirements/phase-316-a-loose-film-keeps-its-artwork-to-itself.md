@@ -5,8 +5,11 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from a read-only investigation. Not dev-reviewed, not built. Backend
-(`media/ArtworkDownloader.kt`'s `assetFilePath`, every artwork writer and reader).
+`⚠ Partial` — **built 2026-10-08** (branch `worktree-agent-a20570a9bfe5edf8c`, not merged, not deployed); dev-reviewed
+2026-10-08. Unit-tested and checked read-only against the real films root, Radarr and qBittorrent; **the move itself has
+not run on the real library** — that is the owner's Apply once it is deployed (see *Build notes*). Written 2026-10-08
+(dev-authored) from a read-only investigation. Backend (`media/ArtworkDownloader.kt`'s `assetFilePath`, every artwork
+writer and reader) and the admin's Dashboard.
 
 ## What happened
 
@@ -110,3 +113,97 @@ For each film, in order, stopping that film (and reporting why) at the first fai
 3. The film from the screenshot no longer shows another film's logo on Jellyfin's dashboard (the films root has no
    folder-named images left).
 4. Saving a new logo for a loose film (before it is moved) writes `<basename>-logo.png`; the library root gains no file.
+
+## Dev review (2026-10-08, against `main` `17b8a08a`)
+
+Read against `ArtworkDownloader.assetFilePath` and its callers (`ClearlogoInk`, `MediaRoutes` artwork routes,
+`RaviloArtworkService` through `assetPath`), 315's `LinkGuard`/`SeedingDamageCheck`/`SeedingSnapshot`, `ArrClient`,
+`QBittorrentClient`, `JellyfinClient` (`getItemByPath`, `getUserDataBulk`, `setUserData`, `refreshItem`),
+`MediaStore.updateOne`, `MediaFileLock`, `MediaHistory`, `DashboardRoutes` and the admin's `Dashboard.kt`, and checked
+read-only against the real films root, Radarr and the seeder qBittorrent. The design holds; no owner question.
+
+1. **One function decides every artwork path** (`assetFilePath`), used by writers and readers alike, so FR-316-1 is one
+   rule there. **Only a library root counts as "not alone".** Checked against the real films library: 5 film folders hold
+   more than one video file and every one of them is one title (macOS `._` copies, two versions of one film, a sample).
+   A rule judging a folder's contents would have moved those films' `poster.jpg` to per-file names and hidden it, so
+   "holds another title's video" is dropped from FR-316-1 and FR-316-3 lists library roots only.
+2. **Jellyfin's own names for these files are `-poster.jpg`, `-backdrop.jpg`, `-logo.png`, `-landscape.jpg`** (the three
+   loose films already have them from Jellyfin, March 2026), so jellystructure reads and writes exactly those: one name
+   per image, no second copy.
+3. **Matching a root image to its film needs a second rule.** The root `clearlogo.png`'s `.src` matches no film's
+   recorded source (logos aren't recorded on `MediaItem`), but it is byte-identical to one loose film's own
+   `-logo.png`. So: `.src` equal to the film's `posterPath`/`backdropPath`, **or** the same bytes as one of the film's
+   own images. An image that matches no loose film stays where it is and is listed as *unmatched*.
+4. **Every other name of the three files is in cross-seed's link folder** (real data: one film single-link, one with
+   2 other names, one with 1; 5 torrents in all, all `stalledUP`/`checkingUP` from `cross-seed-links`). A same-disk
+   `rename` keeps the inode, so none of them is touched; no torrent seeds the library path itself today. The
+   `setLocation` path stays for that case, behind the same check.
+5. **Radarr is messier than the spec assumes**, so step 4 gets a guard: Radarr's path is updated only when Radarr has
+   **no file** for the film or its file **is** the one being moved. Real data: one film's Radarr path is Jellyfin's
+   `.trickplay` folder with no file (updating fixes it); one film is mapped to a different film's folder and file
+   (Radarr's own mismatch — left alone, shown as *Radarr maps this film to another file*); one isn't in Radarr. Paths go
+   to Radarr in Jellyfin's view (`/media/movies/…`), which Radarr shares here; a Radarr root that isn't a Jellyfin
+   library path skips Radarr with a note.
+6. **Jellyfin gives a moved film a new item id** (ids are derived from the path). Its user data usually follows by its
+   provider keys, but not always, so FR-316-4 step 5 reads every user's data first and writes it back when the new item
+   lacks it. `setUserData` gains optional `IsFavorite`/`PlayCount` (additive). Instead of a whole-library scan, the move
+   tells Jellyfin exactly which paths changed (`POST /Library/Media/Updated`: the new folder *Created*, the old file
+   *Deleted*), then polls `getItemByPath` for the new item.
+7. **Our rows keyed by Jellyfin id** (checked on the real database): `playback_session`, `playback_start_sample`,
+   `playback_qoe`, `playback_outbox`, `dirty_item`, `recommendation`, `starter_list`, `ai_order`, `ai_theme`. Everything
+   else keys films by slug, which a move doesn't change; the media record keeps its slug and gets the new path and id.
+8. **Backups go to `/config/backups/loose-films/<time>/`** (the container's `/config` is `~/jellystructure/config`):
+   `~/jellystructure/backups` is not mounted in the backend container. Copies, never moves, across the filesystem
+   boundary; only our own images are ever backed up (never a video file).
+9. **Never half-moved:** every rename of a film is recorded; any failure before Jellyfin/Radarr are told renames the
+   film's files back in reverse order. After the files are in place, a failure in steps 3–7 leaves the film in its new
+   folder (which plays) and is shown on that film's row with what still needs doing.
+
+## Build notes (2026-10-08)
+
+**Built** (backend + admin):
+
+- **FR-316-1** — `assetFilePath` (`ArtworkDownloader.kt`): a film loose in a library root gets `<basename>-poster.jpg`,
+  `-backdrop.jpg`, `-logo.png`, `-landscape.jpg`; every other film is unchanged. The roots come from
+  `LibraryRootsRegistry`, kept current by `ConfigStore` on every load and save (`media/ArtworkPaths.kt`). Readers
+  (Ravilo's artwork route, the admin, the clearlogo ink check) go through the same function.
+- **FR-316-2** — `refuseRootFolderImage` in `ArtworkDownloader.download` and the upload route (`MediaRoutes`, HTTP 409
+  with a plain sentence); `scripts/check-artwork-paths.sh` in CI (fails on `<dir>/<folder-level image>` literals outside
+  the artwork files and the music code; checked against a planted violation).
+- **FR-316-3** — `LooseFilmsService` (`media/LooseFilmsService.kt`): the Dashboard's **warning** row (`loose_films`,
+  domain Films, nothing at zero) from a cheap count of videos in each movie library root; the overview
+  (`GET /api/loose-films`, `POST /api/loose-films/scan`) lists each film's files and where they go
+  (`planLooseFilm`), its size, the torrents seeding it (315's inode walk, `SeedingDamageCheck.multiLinked`, and whether a
+  torrent seeds the library path itself), Radarr's view (`radarrPlan`), the folder it moves to, and root images that match
+  no film. The admin's panel (`ui/LooseFilmsUi.kt`) rescans when opened, ticks every waiting film, and follows a move.
+- **FR-316-4** — `LooseFilmMover` (`media/LooseFilmMover.kt`) in the spec's order behind `LooseFilmPorts`;
+  `POST /api/loose-films/apply` is the owner's press. Clients gained, all additive: `QBittorrentClient.setLocation` /
+  `recheck`; `ArrClient.radarrMovie` / `radarrMovieById` / `updateMoviePath` (`moveFiles=false`) / `refreshMovie`;
+  `JellyfinClient.notifyMediaUpdated` (`POST /Library/Media/Updated`) and `setUserData`'s optional `IsFavorite` /
+  `PlayCount`. Our rows keyed by the old Jellyfin id move with `JellyfinIdRemap.sq` (queries only, no migration). The
+  media record keeps its slug and gets the new path and id. Backups: `/config/backups/loose-films/<time>/`.
+- **FR-316-5** — `LooseFilmsTest` (15) + `AssetFilePathTest` (3): per-file names, the root refusal, two loose films never
+  sharing an image, the plan (rename map, `.manual` wins, the film's own wins a tie, the loser backed up), root-image
+  matching, Radarr's rule, folder names, and the mover with fakes (the order, only renames, the hard-link torrent left
+  alone and the library-path one repointed, user data written back only where missing, a failed rename undone in
+  reverse with the folder removed, nothing moving while playing or into a taken folder, Radarr's other file left alone,
+  Jellyfin not finding it yet ⇒ `partial`).
+
+**Checked read-only against the real library (2026-10-08):**
+
+| Film | Size | Other names | Torrents | Radarr | Moves to |
+|---|---|---|---|---|---|
+| the film from the screenshot's logo | 3.1 GB | 0 | none | has no file (its path is Jellyfin's `.trickplay` folder) → path updated | `<Title> (2023)/` |
+| a 4K REMUX | 48.8 GB | 2 (cross-seed link folder) | 2, both via hard links — untouched | not in Radarr | `<Title> (2023)/` |
+| a 4K WEB-DL | 37.8 GB | 1 (cross-seed link folder) | 3, all via hard links — untouched | maps it to a different film's file → left alone | `<Title> (2025)/` |
+
+The root's `poster.jpg`/`fanart.jpg` (owner-picked, `.manual`) match the first film by `.src` and win over its older
+`-poster`/`-backdrop` (backed up); the root `clearlogo.png` matches it by identical bytes and loses the tie to the film's
+own `-logo.png` (backed up). No root image is left unmatched. No torrent seeds a library path itself, so the real move
+calls no qBittorrent write.
+
+**Not done / for the owner:**
+
+- The move has only run against fakes. It runs for real when the owner presses *Move the ticked films* after a deploy.
+- The second film's Radarr entry pointing at another film's file is Radarr's own mismatch; 316 leaves it alone and says
+  so on the row.

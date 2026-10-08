@@ -158,7 +158,7 @@ object SeedingDamageCheck {
 
     /** Every multiply-linked regular file under [mount] as ((device, inode), path), one low-priority `find`. */
     @OptIn(ExperimentalForeignApi::class)
-    private suspend fun multiLinked(mount: String): List<Pair<Pair<Long, Long>, String>> = dev.jellystructure.ops.ProcessGate.withPermit {
+    internal suspend fun multiLinked(mount: String): List<Pair<Pair<Long, Long>, String>> = dev.jellystructure.ops.ProcessGate.withPermit {
         val q = mount.replace("'", "'\\''")
         val out = ArrayList<Pair<Pair<Long, Long>, String>>()
         memScoped {

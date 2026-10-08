@@ -1,0 +1,36 @@
+-- Phase 316 (FR-316-4 step 6, dev review 7) — a film moved into its own folder gets a new Jellyfin item id (Jellyfin
+-- derives ids from the path). Every table that keys a video by its Jellyfin id follows it to the new one; tables keyed
+-- by the media slug need nothing. `OR IGNORE` keeps a row that would collide with one the new id already has.
+
+remapPlaybackSession:
+UPDATE OR IGNORE playback_session SET item_id = :new_id, queue_json = replace(queue_json, :old_id, :new_id) WHERE item_id = :old_id;
+
+remapStartSample:
+UPDATE OR IGNORE playback_start_sample SET item_id = :new_id WHERE item_id = :old_id;
+
+remapQoe:
+UPDATE OR IGNORE playback_qoe SET jellyfin_id = :new_id WHERE jellyfin_id = :old_id;
+
+remapOutbox:
+UPDATE OR IGNORE playback_outbox SET jellyfin_id = :new_id WHERE jellyfin_id = :old_id;
+
+remapDirtyItem:
+UPDATE OR IGNORE dirty_item SET jellyfin_id = :new_id WHERE jellyfin_id = :old_id;
+
+remapRecommendation:
+UPDATE OR IGNORE recommendation SET item_id = :new_id WHERE item_id = :old_id;
+
+remapRecommendationReason:
+UPDATE OR IGNORE recommendation SET reason_item_id = :new_id WHERE reason_item_id = :old_id;
+
+remapStarterList:
+UPDATE OR IGNORE starter_list SET item_id = :new_id WHERE item_id = :old_id;
+
+remapAiOrder:
+UPDATE OR IGNORE ai_order SET item_id = :new_id WHERE item_id = :old_id;
+
+remapAiTheme:
+UPDATE OR IGNORE ai_theme SET item_id = :new_id WHERE item_id = :old_id;
+
+changes:
+SELECT changes();
