@@ -6,9 +6,12 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach
+`⚠ Partial` — **built 2026-10-08 (314a) on branch `worktree-agent-a5d8835a82b48c051`**, not merged, not deployed: the
+three kinds' dry run, jobs, card, Dashboard rows and the backend's copy choice; Ravilo's one-row picker, sidecar direct
+play and the Dolby Vision version choice in Ravilo playback are 314b/c (see *Build notes*). Before that: `Planned` —
+written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach
 reports of the same day (option D), and a read-only count over Jellyfin's database, the library's files (link counts)
-and qBittorrent. Dev-reviewed 2026-10-08 (section at the end), not built. Backend (a new job kind on the media lane, the track resolver), admin
+and qBittorrent. Dev-reviewed 2026-10-08 (section at the end). Backend (a new job kind on the media lane, the track resolver), admin
 (Settings, the dry-run list, the Tracks tab, Activity, Dashboard), Ravilo (the picker hides a compatible copy).
 Builds on **284** (the file is the record), **311** (work files in `<dir>/.jellystructure/`), **213** (job lanes),
 **R291** (the backend chooses the audio stream), **R195**/**R241** (remembered tracks), **R379** (no-AC3 phones).
@@ -355,3 +358,96 @@ Sonarr `develop` (`MediaFileExtensions.cs`, `ExistingOtherExtraImporter.cs`); th
      make it safe (e.g. an exclusion Radarr honours, or Radarr's own handling of extra files); a dry run on one film,
      watched through a Radarr rescan and an upgrade search, is part of acceptance.
    - The version file is written through 311's work folder and verified before it appears.
+
+
+## Build notes (2026-10-08, 314a — branch `worktree-agent-a5d8835a82b48c051`)
+
+### What was built
+
+- **`filefix/FileFixRules.kt`** (pure, tested): the three kinds; per-language eligibility (main track = default, else
+  first; commentary and audio description never sources, by disposition or title; our copies recognised by their
+  `JELLYSTRUCTURE_COPY_OF` tag); MP4 *skipped*; kind C = a profile-7 film whose file is named after its folder in a
+  form Jellyfin groups as versions; the version path `<folder> - Dolby Vision.mkv`; the sidecar name
+  `<base>.<lang>.<Stereo|Surround>.mka`; the verification of an appended file and of a version; the Radarr rule; the
+  device choice (`copyForDevice`, `dvVersionSource`).
+- **`filefix/FileFixCommands.kt`** (pure, tested): encode (`-map 0:a:<n>` — the file's own order, R382), decode check
+  of the small encoded file, append with mkvmerge (`--default-track-flag 0:no --forced-display-flag 0:no`, appended
+  last), dovi_tool convert (ffmpeg's exit status checked without `pipefail`), mkvextract timestamps, mkvmerge version
+  mux with a global `JELLYSTRUCTURE_DV` tag, frame count, the move into place with the original's owner and mode.
+  Every work file comes from `WorkFiles.pathFor` (311), which gained six kinds; a kind with its own extension
+  (`.mka`, `.hevc`, `.txt`, `.xml`) still reads back to its library file, so 311's sweep removes a leftover.
+- **`filefix/FileFixService.kt`**: the dry run (all films and episodes, one probe each, cached by size + mtime), the
+  per-kind switches, Apply, one title, the queue tick, the job per kind, the card's overview, the Dashboard rows.
+  **`FileFixShell`**: `popen` through the ProcessGate; a long command is stopped (`pkill -f` on its work file) within
+  about a second of a playback start or a cancel.
+- **Job** `file_fix` on the media lane (`MediaJobQueue.fileFixer`, `enqueueFileFix`, `deferWhilePlaying = true`);
+  the tick (every 60 s, `Main.kt`) queues the next pending file when nothing plays, no file-fix job waits or runs, and
+  the last 24 h read stays under the cap. A restart puts a running row back to pending.
+- **Migration 76** (`file_fix`, `file_fix_setting`) — 73 is R381's (merged), 74 is reserved for R266 and 75 for 313.
+  Merge 314 after 74 and 75 exist on main, or renumber: a database already past a skipped number never runs it later.
+- **Routes** `/api/file-fix` (overview), `POST /plan`, `GET /{kind}/rows`, `POST /{kind}/setting`, `POST /{kind}/apply`,
+  `POST /{kind}/title/{mediaId}`. **Admin:** *Make files play directly* card in Settings → Libraries
+  (`SettingsFileFix.kt`): *Find files*, three rows with switch, counts, *Show the list*, *Apply*, *Apply automatically to
+  new files*. **Dashboard:** an information row per kind that is off with files to add; a warning for failures.
+- **Backend copy choice (FR-314-5, start of a play):** a device that can't decode the stream that would play gets the
+  added copy of the same language (`… audio → stream N, the added copy this device plays (314)`).
+- **Radarr:** `ArrClient.parseRelease` (`GET /parse`, read-only).
+- **Image:** `dovi_tool` 2.3.4 (musl, sha256 pinned) in `/usr/local/bin`.
+
+### Validated (2026-10-08)
+
+- **On scratch copies** (never the library): kind A on a 2.0 AC-3 film — the AAC track appended last, not default,
+  language and `JELLYSTRUCTURE_COPY_OF` kept, duration identical; kind B on a DTS 5.1 episode — E-AC-3 5.1 640 kbps in
+  9.5 s for 22 minutes, the original video and audio **byte-identical** after the append (ffmpeg `streamhash` MD5),
+  duration identical; kind C on a 20 s clip of a DV 7 film — dovi_tool → profile 8, BL compatibility 1, no EL, the
+  same 481 frames, every stream in the original order, the HDR10 mastering and content-light SEI kept.
+- **Radarr (read-only `/parse`):** every DV 7 original reads `Remux-2160p` (one reads `Unknown`), every
+  `<folder> - Dolby Vision` copy reads `Unknown`, custom-format score 0 for both: never an upgrade. This Radarr has
+  `renameMovies = false` and no recycle bin — an upgrade would delete, which is why the check runs before each write.
+- **Live dry run** over the real library (read-only: ffprobe headers and link counts; `FileFixLiveDryRunTest`, gated by
+  `FILEFIX_LIVE_LIST`): every film (317 MKV/MP4 on disk) and every 10th episode (918 of 9 173), 1 235 files: **kind A** — films 245 to add (154 seeded ⇒ a `.mka` beside them, 91 in the file), 2 MP4 skipped; episodes 464 of the sample (240 seeded, 224 in the file; ≈ 4 640 across the library), 17 MP4 skipped; ~113 GB for the sample. **Kind B** — films 22 (12 seeded), episodes 42 of the sample (all seeded; ≈ 420); ~16 GB. **Kind C** — 16 DV 7 films, all with an EL: **3 eligible, 13 skipped because the file is not named after its folder** (a scene-named file: Jellyfin would show `<folder> - Dolby Vision.mkv` as a second film, not a version). 6 files unreadable (probe failed). Counts match the spec's Jellyfin-database figures (248 / 155 films for A).
+- **Tests:** `FileFixRulesTest` (20) and `FileFixServiceTest` (8, a fake shell + a real database): FR-314's tests 1–6
+  and 8, and the Radarr rule. The repo's check scripts pass (work files, in-place guard, cancellation rethrow, timeouts,
+  fd hygiene, Docker cache ids).
+
+### Deviations
+
+1. **The switches act at once** (stored in `file_fix_setting`, like the job controls on Activity), not through
+   Settings' global Save: a switch here starts nothing by itself, Apply does.
+2. **Show the list** opens the kind's rows on the card (the first 300), not a Library facet.
+3. **The read cap is a rolling 24 h** (2 TB), and **one job at a time** overall — the media lane already runs one — not
+   one per disk.
+4. **Playback first** is the job queue's own rule (review item 10): a job never starts while something plays (the
+   household's defer switch), and a running one is stopped and goes back to pending; no SIGSTOP.
+5. **Seeded** = 315's guard asked as an in-place writer: a hard link outside the library, or a seeding torrent's path.
+   qBittorrent unreachable and no hard link ⇒ the row waits.
+6. **Kind C's name rule is stricter than Jellyfin's cleaner** (anchored: ` - `, `_`, `.` or a resolution token right
+   after the folder name); a stricter rule only skips a film, it never makes a duplicate in Jellyfin.
+7. **Downmix** = ffmpeg's `-ac 2`, which is Jellyfin's default `DownMixStereoAlgorithm` (`None`), so a copy sounds like
+   today's transcode.
+
+### Not built (314b / 314c)
+
+- **Ravilo:** the picker showing a source and its copy as one row; Media3 merging a `.mka` sidecar with the direct-played
+  video, and the backend serving the `.mka`; an HLS rendition of a sidecar for hls.js and the receiver. Until then a
+  sidecar plays through Jellyfin (a remux job: video and audio copied).
+- **The Dolby Vision version in Ravilo playback:** `dvVersionSource` is built and tested but not wired — the version's
+  media-source id has to flow through the start path, both restream paths and the subtitle URLs, and sidecar subtitles
+  named after the original do not attach to the version. Jellyfin's own apps see both versions once Jellyfin has
+  re-read the folder.
+- **Tracks tab** title-by-title buttons and **Remove** (the route for one title exists; no button yet). A sidecar
+  removed by a Radarr/Sonarr upgrade is listed again as *seeded, beside it* by the next dry run, so Apply redoes it.
+- **Live on the dev stack** (main deploys this branch): Find files; one unseeded film through kind A (Jellyfin lists
+  `Stereo`; a cast to a Chromecast becomes a copy job); one seeded episode through kind A (a `.mka` appears, Jellyfin
+  attaches it, the torrent's piece check stays clean); kind C on one eligible film, watched through a Radarr rescan
+  (one video file, no change) — no upgrade search is triggered by this phase.
+
+### For the owner
+
+1. **Kind C reaches only 3 of the 16 Dolby Vision 7 films** as built: Jellyfin groups `<folder> - Dolby Vision.mkv` as a
+   version only when every video in the folder starts with the folder's name, and 13 originals keep their release
+   name. Options: (a) leave those 13 (as built); (b) rename the 13 originals to `<folder>.mkv` first — a rename of a
+   seeded/hard-linked file is safe for the torrent (another name, same inode) but Radarr must be told (rescan) and its
+   rename setting is off; (c) keep their copies hidden in `.jellystructure/` served by our backend (the review's
+   original lean). Lean: (b) for the unseeded ones, asked per title in the dry run.
+

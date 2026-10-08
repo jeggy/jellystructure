@@ -96,6 +96,16 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen && \
     rm -rf /var/lib/apt/lists/*
 
+# dovi_tool -- Phase 314 kind C: converts a Dolby Vision profile 7 picture's RPU to profile 8.1 (the TVs decode 4/5/8,
+# never 7) for a version file beside the film. A static musl binary, pinned by version and checksum; without it the
+# card shows kind C as unavailable and nothing else changes.
+ARG DOVI_TOOL_VERSION=2.3.4
+ARG DOVI_TOOL_SHA256=1844258e13c26607b32224bf1fa82b595d3b35949f5467405fda560daad32b3f
+RUN wget -q -O /tmp/dovi.tgz "https://github.com/quietvoid/dovi_tool/releases/download/${DOVI_TOOL_VERSION}/dovi_tool-${DOVI_TOOL_VERSION}-x86_64-unknown-linux-musl.tar.gz" && \
+    echo "${DOVI_TOOL_SHA256}  /tmp/dovi.tgz" | sha256sum -c - && \
+    tar -xzf /tmp/dovi.tgz -C /usr/local/bin dovi_tool && chmod 755 /usr/local/bin/dovi_tool && rm /tmp/dovi.tgz && \
+    /usr/local/bin/dovi_tool --version
+
 RUN adduser --system --uid 1000 jellystructure
 
 # --chmod/--chown on the COPY itself (FR-167-2) instead of a separate RUN chmod/chown layer -- the old

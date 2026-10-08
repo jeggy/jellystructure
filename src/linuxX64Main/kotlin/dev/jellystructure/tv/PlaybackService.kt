@@ -752,10 +752,18 @@ class PlaybackService(
                 ?.let { tracks[it].index }
                 ?.also { Logger.info("playback start: device=${device.deviceId} item=$jellyfinId audio $lang/${audioVariant ?: "-"} → stream $it (R291)", "tv") }
         }
+        // Phase 314 (FR-314-5) — a track jellystructure added is the same audio as its source: a device that can't decode
+        // the stream that would play gets the added copy of the same language (a cast becomes a copy, not an audio
+        // encode). Nothing changes for a file without one, nor for a device that decodes the original.
+        val copyIndex = dev.jellystructure.filefix.copyForDevice(
+            itemDetail?.mediaStreams.orEmpty().filter { it.type.equals("Audio", ignoreCase = true) }
+                .map { dev.jellystructure.filefix.JellyfinAudio(it.index, it.codec, it.language, it.title, it.isDefault) },
+            wantedAudioIndex, capabilities.audioCodecs,
+        )?.also { Logger.info("playback start: device=${device.deviceId} item=$jellyfinId audio → stream $it, the added copy this device plays (314)", "tv") }
         // 308 (FR-308-4) — direct play only when the file fits what this device has measured its path to carry: the
         // measured budget joins Phase 177's MaxStreamingBitrate, so a file above it is transcoded (and gets the ladder).
         val measuredBps = measuredThroughputOf(device)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity, audioStreamIndex = wantedAudioIndex, throughputCapBps = throughputBudget(measuredBps))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity, audioStreamIndex = copyIndex ?: wantedAudioIndex, throughputCapBps = throughputBudget(measuredBps))
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         if (measuredBps != null) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId measured ${measuredBps / 1000}k → budget ${throughputBudget(measuredBps)!! / 1000}k (308)", "tv")

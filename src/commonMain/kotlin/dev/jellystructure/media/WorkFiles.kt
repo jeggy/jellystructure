@@ -15,8 +15,17 @@ object WorkFiles {
     /** The hidden work folder's name, inside the library file's own directory. */
     const val DIR = ".jellystructure"
 
-    /** What the work file is for; its prefix keeps two kinds of work on one file apart (MediaFileLock serialises them). */
-    enum class Kind(val prefix: String) { REMUX("remux_"), REPLACE("replace_") }
+    /**
+     * What the work file is for; its prefix keeps two kinds of work on one file apart (MediaFileLock serialises them).
+     * A kind with an [extension] is a different kind of file than the video (phase 314: an encoded audio track, a raw
+     * HEVC stream, timestamps): `<prefix><name>[.<part>].<extension>`, so the owner can still be read back from it.
+     */
+    enum class Kind(val prefix: String, val extension: String? = null) {
+        REMUX("remux_"), REPLACE("replace_"),
+        // Phase 314 — a file every device can play directly.
+        FILE_FIX("filefix_"), ADDED_AUDIO("addaudio_", "mka"), SIDECAR("sidecar_", "mka"),
+        DV_HEVC("dvhevc_", "hevc"), DV_TIMESTAMPS("dvts_", "txt"), DV_TAGS("dvtags_", "xml"), DV_VERSION("dvversion_"),
+    }
 
     /** The library file's directory. */
     fun parentOf(libraryPath: String): String = libraryPath.substringBeforeLast('/')
@@ -24,9 +33,13 @@ object WorkFiles {
     /** `<dir>/.jellystructure` for [libraryPath]. */
     fun dirFor(libraryPath: String): String = "${parentOf(libraryPath)}/$DIR"
 
-    /** `<dir>/.jellystructure/<prefix><name>`: the one work-file path for [libraryPath] and [kind]. */
-    fun pathFor(libraryPath: String, kind: Kind): String =
-        "${dirFor(libraryPath)}/${kind.prefix}${libraryPath.substringAfterLast('/')}"
+    /** `<dir>/.jellystructure/<prefix><name>`: the one work-file path for [libraryPath] and [kind]. [part] tells two
+     *  files of one kind apart (phase 314: one encoded track per language); only kinds with an extension take it. */
+    fun pathFor(libraryPath: String, kind: Kind, part: Int? = null): String {
+        val base = "${dirFor(libraryPath)}/${kind.prefix}${libraryPath.substringAfterLast('/')}"
+        val ext = kind.extension ?: return base
+        return if (part != null) "$base.$part.$ext" else "$base.$ext"
+    }
 
     /** The library file a work file belongs to, or null if [workPath] is not one of ours. */
     fun libraryPathOf(workPath: String): String? {
@@ -34,7 +47,13 @@ object WorkFiles {
         if (dir.substringAfterLast('/') != DIR) return null
         val name = workPath.substringAfterLast('/')
         val kind = Kind.entries.firstOrNull { name.startsWith(it.prefix) && name.length > it.prefix.length } ?: return null
-        return "${dir.substringBeforeLast('/')}/${name.removePrefix(kind.prefix)}"
+        var rest = name.removePrefix(kind.prefix)
+        kind.extension?.let { ext ->
+            if (!rest.endsWith(".$ext")) return null
+            rest = rest.removeSuffix(".$ext")
+            rest = rest.replace(Regex("""\.\d+$"""), "").takeIf { it.isNotEmpty() } ?: return null
+        }
+        return "${dir.substringBeforeLast('/')}/$rest"
     }
 
     /** True for a path inside a work folder, or an old-style work file beside the video (before this phase). */

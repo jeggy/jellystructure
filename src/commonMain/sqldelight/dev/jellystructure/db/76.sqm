@@ -1,0 +1,24 @@
+-- Phase 314 — a file every device can play directly: the dry run's and the jobs' per-file state, and the per-kind
+-- switches. Must stay byte-for-byte in sync with FileFix.sq's CREATE TABLEs (the SQLDelight-migration rule).
+-- 73 is R381, 74 is reserved for R266 and 75 for 313 (2026-10-08); this one is 76. Merge after 74 and 75 exist, else renumber.
+CREATE TABLE file_fix (
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    media_id TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    est_bytes INTEGER NOT NULL DEFAULT 0,
+    read_bytes INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0,
+    mtime INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (path, kind)
+);
+
+CREATE TABLE file_fix_setting (
+    kind TEXT NOT NULL PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    auto_new INTEGER NOT NULL DEFAULT 0,
+    applied_at INTEGER
+);

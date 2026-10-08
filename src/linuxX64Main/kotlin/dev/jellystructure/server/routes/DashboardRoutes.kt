@@ -132,6 +132,9 @@ class DashboardService(
         // Phase 315 (FR-315-3/-4) — edits refused to keep a seeding torrent intact, and torrents an earlier edit may have changed.
         rows += runCatching { dev.jellystructure.torrent.seedingDashboardRows() }.getOrDefault(emptyList())
 
+        // Phase 314 (FR-314-11) — files a kind would fix while it is off, and files that couldn't be fixed.
+        rows += runCatching { dev.jellystructure.filefix.FileFixService.current?.dashboardRows().orEmpty() }.getOrDefault(emptyList())
+
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
         val jellyfinReachable = advisor?.reachable != false

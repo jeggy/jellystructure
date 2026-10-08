@@ -29,6 +29,9 @@ import kotlinx.serialization.json.put
 @Serializable
 data class ArrSystemStatus(val version: String = "", val appName: String = "")
 
+/** Phase 314 — what Radarr's `/parse` says about a release name: its quality (null = none parsed) and custom-format score. */
+data class ArrParseResult(val quality: String?, val customFormatScore: Int)
+
 @Serializable
 private data class ArrRootFolder(val path: String = "")
 
@@ -129,6 +132,21 @@ class ArrClient {
 
     suspend fun rescanSeries(url: String, apiKey: String, seriesId: Int): Boolean =
         command(url, apiKey, """{"name":"RescanSeries","seriesId":$seriesId}""")
+
+    /**
+     * Phase 314 — Radarr's own reading of a release name (`GET /parse`, read-only): the quality it would give a file of
+     * that name and its custom-format score. Used before a Dolby Vision version file is written beside a film, so
+     * Radarr can never take the copy for an upgrade and delete the original. Null when Radarr didn't answer.
+     */
+    suspend fun parseRelease(url: String, apiKey: String, title: String): ArrParseResult? = runCatching {
+        val resp = httpGet(base(url) + "/parse") { header("X-Api-Key", apiKey); parameter("title", title) }
+        if (resp.status != HttpStatusCode.OK) null else {
+            val o = kotlinx.serialization.json.Json.parseToJsonElement(resp.body<String>()).jsonObject
+            val quality = (((o["parsedMovieInfo"] as? JsonObject)?.get("quality") as? JsonObject)?.get("quality") as? JsonObject)
+                ?.get("name")?.jsonPrimitive?.contentOrNull
+            ArrParseResult(quality, o["customFormatScore"]?.jsonPrimitive?.intOrNull ?: 0)
+        }
+    }.getOrNull()
 
     private suspend fun command(url: String, apiKey: String, body: String): Boolean = runCatching {
         val resp = httpPost(base(url) + "/command") {

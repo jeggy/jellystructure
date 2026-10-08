@@ -1,0 +1,87 @@
+-- Phase 314 — a file every device can play directly. One row per (file, kind): what the dry run found and what the job
+-- did. state: would_add · sidecar (seeded: a .mka beside it) · waiting (seeded or unreachable, kind C) · pending (Apply
+-- pressed, not done yet) · running · done · failed · skipped. Times are epoch SECONDS. Must stay byte-for-byte in sync
+-- with 76.sqm (the SQLDelight-migration rule).
+CREATE TABLE file_fix (
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    media_id TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    est_bytes INTEGER NOT NULL DEFAULT 0,
+    read_bytes INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0,
+    mtime INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (path, kind)
+);
+
+-- One row per kind: its switch, the automatic switch for new files, and when Apply was last pressed.
+CREATE TABLE file_fix_setting (
+    kind TEXT NOT NULL PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    auto_new INTEGER NOT NULL DEFAULT 0,
+    applied_at INTEGER
+);
+
+-- The dry run's write, in two steps (this dialect has no UPSERT): a new row, or an update that leaves a row already
+-- pending or running as it is.
+insertPlanned:
+INSERT OR IGNORE INTO file_fix(path, kind, media_id, label, state, detail, est_bytes, size, mtime, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updatePlanned:
+UPDATE file_fix SET media_id = :media_id, label = :label,
+    state = CASE WHEN state IN ('pending', 'running') THEN state ELSE :state END,
+    detail = CASE WHEN state IN ('pending', 'running') THEN detail ELSE :detail END,
+    est_bytes = :est_bytes, size = :size, mtime = :mtime, updated_at = :updated_at
+WHERE path = :path AND kind = :kind;
+
+setState:
+UPDATE file_fix SET state = :state, detail = :detail, read_bytes = :read_bytes, updated_at = :updated_at WHERE path = :path AND kind = :kind;
+
+markPendingForKind:
+UPDATE file_fix SET state = 'pending', updated_at = :updated_at WHERE kind = :kind AND state IN ('would_add', 'sidecar');
+
+-- FR-314-8 — a kind switched off stops its new jobs: what waited goes back to the list (a seeded row to its sidecar state).
+revertPendingForKind:
+UPDATE file_fix SET state = CASE WHEN detail LIKE 'seeded%' THEN 'sidecar' ELSE 'would_add' END, updated_at = :updated_at
+WHERE kind = :kind AND state = 'pending';
+
+nextPending:
+SELECT * FROM file_fix WHERE state = 'pending' ORDER BY updated_at, path LIMIT 1;
+
+countRunning:
+SELECT COUNT(*) FROM file_fix WHERE state = 'running';
+
+resetRunning:
+UPDATE file_fix SET state = 'pending' WHERE state = 'running';
+
+find:
+SELECT * FROM file_fix WHERE path = :path AND kind = :kind;
+
+listForKind:
+SELECT * FROM file_fix WHERE kind = :kind AND (:state IS NULL OR state = :state) ORDER BY state, label, path LIMIT :lim OFFSET :off;
+
+countsForKind:
+SELECT state, COUNT(*) AS n, SUM(est_bytes) AS bytes FROM file_fix WHERE kind = :kind GROUP BY state;
+
+failedRows:
+SELECT * FROM file_fix WHERE state = 'failed' ORDER BY updated_at DESC LIMIT :lim;
+
+readBytesSince:
+SELECT COALESCE(SUM(read_bytes), 0) FROM file_fix WHERE updated_at >= :since;
+
+deleteMissing:
+DELETE FROM file_fix WHERE kind = :kind AND updated_at < :before AND state IN ('would_add', 'sidecar', 'waiting', 'skipped');
+
+settingFor:
+SELECT * FROM file_fix_setting WHERE kind = :kind;
+
+insertSetting:
+INSERT OR IGNORE INTO file_fix_setting(kind, enabled, auto_new, applied_at) VALUES (?, 0, 0, NULL);
+
+updateSetting:
+UPDATE file_fix_setting SET enabled = :enabled, auto_new = :auto_new, applied_at = COALESCE(:applied_at, applied_at)
+WHERE kind = :kind;
