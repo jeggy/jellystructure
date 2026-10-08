@@ -6,7 +6,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-08 on a worktree branch (313a measured, 313b/313c built, 313d partly, 313e not; encoder off by default), not merged, not deployed, no device has played through it yet** (see Build notes). Written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
+`⚠ Partial` — **built 2026-10-08 on worktree branches (313a measured, 313b–313e built; the encoder is now on by default), not deployed, no device has played through it yet** (see Build notes and *Build notes — 313d / 313e*). Written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
 encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and compose files (GPU
 and ffmpeg), the admin's *Playing now*. No app release is needed for the backend half: every adaptive player already
 reads a composed master (308). Builds on **308** (the ladder table, the composed master, the players' ABR), **309**
@@ -433,3 +433,23 @@ per rung and an init segment each.
 
 No device has played through our encoder yet: that needs `docker-compose.gpu.yml` on the dev stack, `[encoder]
 enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for the TS path).
+
+## Build notes — 313d / 313e (2026-10-08, worktree branch with 309a/309b, not merged or deployed)
+
+- **313d, burn-in in our job:** a restream with an image subtitle passes its place among the file's own subtitle streams
+  (`embeddedSubtitleOrder`: Jellyfin's non-external subtitle streams in index order, what `0:s:N` names) to the plan;
+  the plan is H.264 (tone-mapped once from HDR; `overlay_cuda` composites 8-bit frames), the overlay before the split as
+  already built. A subtitle the scan can't place, or a sidecar, stays Jellyfin's (`… (313d)` fallback reason). Not yet
+  seen on a device.
+- **313d, WebVTT renditions:** for a client with `hls_subtitles` (AVPlayer/Safari), the ticket's `hls` text subtitles
+  become `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs"` renditions of our master (`SUBTITLES="subs"` on every variant);
+  `/api/tv/stream/{id}/t/{i}/main.m3u8` is one VOD segment of the whole track and `…/sub.vtt` is Jellyfin's own VTT
+  conversion, fetched by this server (the tokened URL never reaches the player), cached ≤ 64 texts, refused unless it
+  starts with `WEBVTT`. Other clients keep the ticket's own subtitle list as before.
+- **313e:** `[encoder] enabled` now defaults to **true**; with no GPU in the container the ffmpeg download is skipped and
+  every play falls back to Jellyfin with the reason *no GPU in the container*. The ticket says `encoder`
+  (`ours`/`jellyfin`/`direct`), QoE stores it, and *Playing now* shows *our encoder · 4 qualities · HEVC HDR* or
+  *Jellyfin* beside 308's variant. FR-313-14: 309's warm rungs and decision cache were never built, so nothing was
+  removed.
+- **Deploy:** the dev stack needs `docker-compose.gpu.yml` (else the default-on encoder simply falls back).
+

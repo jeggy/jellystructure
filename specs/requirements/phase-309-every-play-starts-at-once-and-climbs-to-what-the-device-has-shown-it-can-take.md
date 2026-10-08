@@ -11,12 +11,15 @@
 
 ## Status
 
-`Planned` — written 2026-10-07 (dev-authored) from the owner's direction above, checked against `main` `00429b14`
-(31 commits ahead of `origin/main`; 309 is free on both). **Dev-reviewed 2026-10-07** (see *Dev review*), not built (owner: spec only).
-**Builds on 308** (the ladder, the composed master, the players' own ABR, the receiver's QoE) and **replaces 308
-FR-308-3's start rule and FR-308-4's direct-play gate**. **Retires 185 FR-185-5…7's note and all of R222** (the
-*"Slow to start on …"* line). Backend, every player (Android/Media3, web/hls.js, Mac/AVPlayer, Linux/mpv, Cast/Shaka),
-the admin's *Playing now*.
+`⚠ Partial` — **309a0 built and deployed 2026-10-08; 309a (backend) and most of 309b (Android + every client's detail page)
+built 2026-10-08 on a worktree branch on top of 313, not merged, not deployed, not device-tested** (see *Build notes —
+309a / 309b*). Written 2026-10-07 (dev-authored), dev-reviewed 2026-10-07 and re-reviewed 2026-10-08; the owner then
+moved the mechanism to our own encoder (313). **Not built yet:** the Cast receiver enforcing the step-down over Shaka
+(FR-309-5's receiver half), the probe on the receiver, a direct play that stalls switching to the ladder mid-play
+(FR-309-8's in-play half), the phone casting with a prewarm for its receiver (the backend accepts `cast_device_id`; no
+client sends it), mpv restream stepping and AVPlayer peak-bitrate climbing (FR-309-9), and the web player (left alone:
+R376 is rebuilding it). Builds on **308**, replaces 308 FR-308-3's start rule and FR-308-4's direct-play gate, retires
+185 FR-185-5…7's note and R222.
 
 ## What happened (2026-10-06 23:20–23:25, read-only from logs and the DB)
 
@@ -528,3 +531,71 @@ The live check planned after the v1.50-54 deploy was not made: Stue TV was in us
 paused all device use except the Pixel. Owed: a cast to Stue TV's built-in Chromecast confirming the receiver plays
 with Shaka and reports its start time and sample count (309a0), and an audio switch on Android on R382's confirmed
 film.
+
+## Build notes — 309a / 309b (2026-10-08, worktree branch, not merged or deployed)
+
+Built together with 313d/313e (they share `PlaybackService`). Under our own encoder (owner, 2026-10-08) FR-309-6's warm
+rungs and FR-309-7's decision cache are **not built and not needed**: every rung runs in the one process, a start is
+about a second. 309 had built neither, so nothing was removed.
+
+**Backend (309a):**
+- **The record (FR-309-1).** `device_stream_record` (migration **77**): `proven_bps/at`, `measured_bps/at`,
+  `stalled_bps/at`, one row per device, in the master's own units (a variant's `BANDWIDTH`; a direct play's file bitrate
+  ×1.05 + 256 kbps). `StreamRecord.kt`: a stream held ≥ 2 min with no new stall proves it; a stall counts when it is
+  ≥ 2 s or two come within 60 s (owner Q8); a counting stall sets `stalled` (that stream) and restarts the hold; a later
+  proof at or above it clears the stall. Only R381 per-item reports are read (FR-309-13). The hold between posts is kept
+  in memory (a restart delays a proof, nothing else).
+- **What a device can take** (`canTake`): the higher of its proof and its newest real measurement × 0.7 (the probe's or
+  308's QoE measurement, whichever is newer, each ≤ 30 days), under a stall's cap (× 0.8 for 24 h). **Deviation:** the
+  spec says *proof or measurement*; taking the higher keeps a device that has proved only its 720p start from being held
+  there once it has measured a fast path. The stall cap still wins.
+- **The negotiation's cap** (`negotiationCap`, FR-309-8 + owner decisions 3/4): an adaptive client gets *take*, else
+  8 Mbps (the no-record direct-play gate; a file above it gets the ladder); a non-adaptive client (1.50 apps, mpv) gets
+  *take* or no cap (re-review item 2). Used by start, prepare, restream and the prewarm.
+- **The start rung (FR-309-2):** our encoder starts on the best rung whose advertised stream fits *take*; with no record
+  and a player that climbs, the highest rung with ≤ 4 Mbps of video (720p); a player that can't climb gets one rung (the
+  one its record fits, else the top). Jellyfin's own ladder (the fallback) gets the same budget (*take*, else 4.5 Mbps).
+  The ticket carries `start_variant_bps`, and the seed (`measured_bandwidth_bps`) is the start stream ÷ 0.7 so the
+  player's own × 0.7 rule lands on the start rung.
+- **The speed test (FR-309-3):** `GET /api/tv/probe` — 4 MB of random bytes (made once), `Cache-Control: no-store`,
+  **204** when the device was measured within 24 h (`?force=1` always sends); `POST /api/tv/probe/result {bytes, ms}`
+  stores `measured` (ignored under 1 MB or 50 ms).
+- **The early encode (FR-309-6):** `POST /api/tv/playback/prewarm {item_id, capabilities, audio_language?,
+  audio_variant?, cast_device_id?}` → `{status: warm|direct|none, reason?}`; `POST /api/tv/playback/prewarm/cancel`.
+  Our encoder only: the same negotiation and plan Play would make, registered under a prewarm key, no
+  `/Sessions/Playing`, no R368 session, no tracker, no R291 rendition job. Play **adopts** it when the plan matches (file,
+  codec, rungs, start rung, audio, subtitles, burn-in, mux) and the start is within one segment; otherwise the prewarm is
+  stopped first. A re-post touches the running job; an abandoned one ends on the job's 60 s idle timer. When the cards
+  are full, prewarms are stopped before a play falls back. With `cast_device_id` the encode is made for that Cast
+  device's receiver (its last capabilities, its own record).
+- **No more "slow to start" (FR-309-10):** `playback_note` is always null (the field stays on the wire); the resolver and
+  its tests stay until the field can go.
+- **Admin (FR-309-11):** *Playing now* reads *our encoder · 4 qualities · HEVC HDR · 4.4 Mbps → 1080p · 8 Mbps ·
+  climbing* (or *stepped down once*); the device row adds *· holds 8 Mbps · stalled at 24 Mbps yesterday*
+  (`stream_holds_bps`, `stream_stalled_bps`, `stream_stalled_at` on the overview device). QoE stores
+  `start_variant_bps` and `encoder` (77).
+
+**Clients (309b):**
+- `LadderRules` (`:shared`): never past the next rung up; a climb only with 30 s buffered (the stock 10 s on our encoder,
+  owner); down below the playing rung whenever the buffer is under 20 s and falling (again each time it keeps falling).
+- **Android:** `ClimbingTrackSelection` bounds Media3's adaptive selection with it (`canSelectFormat`), on the 308 values
+  (decrease while ≤ 45 s buffered, keep 50 s on a switch up, × 0.7). `PlayerLadderHints.oursEncoder` from the ticket.
+  QoE now carries `bandwidth_samples`/`bandwidth_bytes` (one per `onBandwidthEstimate`, this item's), `first_frame_ms`
+  (the item's first load to its first frame) and `start_variant_bps`.
+- **Every client (commonMain):** QoE is posted every 2 min (was 10), at the first frame and at every new stall, so a
+  2-minute hold reaches the server (one upserted row per play). The detail page (`DetailPrewarm`, movie and series — the
+  episode Play would play, once the playstate says which): after 2 s the speed test, then the prewarm with the
+  remembered audio, re-posted every 30 s, cancelled on leaving (1.5 s grace, skipped when a play of that item started).
+  `currentClientCapabilities()` is now the one builder for a start and a prewarm. R222's line is no longer drawn.
+
+**Tests:** `StreamRecordTest` (stall counting, proof, a stall's cap and expiry, legacy rows ignored, `canTake`,
+`probeNeeded`, the negotiation's cap, the store, the QoE columns), `EmbeddedSubtitleOrderTest`, `EncoderPlanTest` (+7:
+no-record start rung, record start rung, one rung for a non-climbing player, burn-in, WebVTT renditions, admin words,
+prewarm adopt/cancel), `LadderRulesTest`, `QoeCounterTest` (time to first frame), `MusicEditionsStoreTest` rewind
+updated for 77.
+
+**For the deploy:** migration 77 sits after a free 76 (R379's branch uses 76): **merge R379 first**, or a database
+already at 78 never runs 76. Live tests: a Stue TV debug play with no record starts on 720p and climbs one rung at a
+time; `GET /api/tv/probe` answers 204 the second time; a detail page held 2 s logs `encoder: prewarm …` and Play logs
+`… prewarmed`; Back logs `prewarm cancelled`; the admin's device row shows *holds …* after a 2-minute play.
+
