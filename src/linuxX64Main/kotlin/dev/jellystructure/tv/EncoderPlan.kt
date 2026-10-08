@@ -275,7 +275,9 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
         else -> "libx264"
     }
     enc.append(" -c:v ").append(vEncoder)
-    if (gpu != null) enc.append(" -preset p4 -rc vbr -forced-idr 1 -no-scenecut 1")
+    // p1, measured on the P4000 2026-10-08 (one 4K DV source, 30 s, decode + tone-map + 4 rungs): H.264 p4 1.1× → p1 8.8×,
+    // HEVC Main 10 (2160p top) p4 2.3× → p1 4.6×. Pascal's NVENC can't carry four rungs at p4; Jellyfin uses p1 as well.
+    if (gpu != null) enc.append(" -preset p1 -rc vbr -forced-idr 1 -no-scenecut 1")
     else enc.append(if (plan.codec == EncoderCodec.HEVC) " -preset ultrafast -x265-params log-level=error:scenecut=0:open-gop=0" else " -preset ultrafast -sc_threshold 0")
     // `t` in this expression counts from the job's own first frame, not the file's clock (`-copyts` doesn't change it;
     // found by EncoderAlignmentTest). Every job starts exactly on a 2 s boundary, so the job's 2 s grid is the file's.

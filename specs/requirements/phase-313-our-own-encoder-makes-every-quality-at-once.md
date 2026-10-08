@@ -433,3 +433,22 @@ per rung and an init segment each.
 
 No device has played through our encoder yet: that needs `docker-compose.gpu.yml` on the dev stack, `[encoder]
 enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for the TS path).
+
+## Live testing (2026-10-08 night, v1.50-73/-74)
+
+- **Deployed** with the GPU override and `[encoder] enabled = true`: `/api/health` shows jellyfin-ffmpeg 8.1.2-5 ready
+  (checksum OK) and both cards.
+- **Pixel 9 Pro (debug app), a 4K Dolby Vision 7 REMUX:** `encoder=ours`, H.264, 4 rungs, card 0; **no Jellyfin
+  transcode job** (no `FFmpeg.Transcode-*` log). First segment 9.0 s on the first start after the deploy (empty CUDA
+  cache), 5.8 s on the next.
+- **Found 1 — fMP4 doesn't play on Media3:** with fMP4 video + fMP4 audio renditions the player stayed BUFFERING at 0 with
+  48 s buffered and never created a decoder (the stream itself decodes cleanly in ffmpeg). Fixed: `encoderMuxFor` gives
+  MPEG-TS to everything except the Mac, iOS and the web (`b43de79f`); with TS the Pixel went READY 7.5 s after Play.
+- **Found 2 — the P4000 couldn't keep up at preset p4:** a seek restarted the job once (segment 725, as designed), but
+  the job then ran at ~0.5× realtime and playback stalled. Measured on the same source, 30 s: decode only 9.2×,
+  decode + tone-map 4.8×, + 4 H.264 rungs at **p4 1.1×**, at **p1 8.8×**; the 2060 SUPER at p4 4.4×, p1 6.1×; HEVC Main 10
+  (2160p top + 3) on the P4000 p4 2.3×, p1 4.6×. 313a's 4.7× figure matched decode + tone-map, not the encode. Fixed:
+  preset p1 for every GPU encode.
+- **The app's 8 s segment timeout** fires before a cold first segment (9 s, 12.9 s after a seek at p4); Media3 retries
+  and recovers, but the first frame waits for the retry. With p1 and a warm cache the first segment should land well
+  inside 8 s; if not, the backend should answer a not-yet-made segment early (e.g. 503 + Retry-After) rather than hold.
