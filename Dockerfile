@@ -92,8 +92,11 @@ WORKDIR /app
 # python3-mutagen -- Phase 281 (FR-281-8): writes tags into audiobook parts in place when the admin turns tag
 # writing on (off by default). A tagger, not an ffmpeg remux, so an M4B's chapter atoms survive. Without it the
 # providers card says the switch has nothing to drive; nothing else depends on it.
+# xz-utils -- Phase 313 (FR-313-11): our own encoder unpacks jellyfin-ffmpeg's portable build (a .tar.xz) into
+# /config/encoder on first start when [encoder] is on. The build is not shipped in this public image (it contains
+# libfdk_aac); it is downloaded and checked against its pinned SHA-256 on the operator's own machine.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
 RUN adduser --system --uid 1000 jellystructure

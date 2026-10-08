@@ -10,7 +10,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.random.Random
 import kotlin.time.Clock
 
 /**
@@ -180,7 +179,8 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
 
     private suspend fun entry(id: String): Entry? = mutex.withLock { entries[id]?.takeIf { it.expiresAt >= nowMs() } }
 
-    private fun randomId(): String = buildString { repeat(32) { append("0123456789abcdef"[Random.nextInt(16)]) } }
+    // Phase 313 (dev review item 7) — the id is the capability: from the kernel's random source, not kotlin.random.
+    private fun randomId(): String = secureHexId()
 }
 
 private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()

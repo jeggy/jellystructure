@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.tv.forClients
 import dev.jellystructure.server.respondCachedBytes
+import dev.jellystructure.server.respondFileChunked
 import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
@@ -1341,6 +1342,8 @@ fun Route.tvRoutes(
     // R291 (FR-R291-2) — every audio track as an HLS rendition; public, the id is the capability (see AuthPlugin).
     get("/tv/stream/{id}/master.m3u8") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        // Phase 313 — a stream our own encoder serves.
+        playbackService.encoder.master(id)?.let { return@get call.respondText(it, ContentType.parse("application/vnd.apple.mpegurl")) }
         val text = playbackService.audioRenditions.master(id) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
     }
@@ -1358,6 +1361,33 @@ fun Route.tvRoutes(
         val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
         val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondBytes(bytes, ContentType.parse("video/mp2t"))
+    }
+
+    // Phase 313 (FR-313-7) — our own encoder's variants: `v/<rung>` and `a/<audio position>`, each a VOD playlist of
+    // the whole file in 2 s segments made on demand, its init segment (fMP4) and its segments, streamed from the file.
+    for (kind in listOf("v", "a")) {
+        get("/tv/stream/{id}/$kind/{i}/main.m3u8") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+            val text = playbackService.encoder.playlist(id, kind, i) ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
+        }
+        get("/tv/stream/{id}/$kind/{i}/{file}") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+            val file = call.parameters["file"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val path = when {
+                file == "init.mp4" -> playbackService.encoder.init(id, kind, i)
+                file.endsWith(".m4s") || file.endsWith(".ts") -> file.substringBefore('.').toIntOrNull()?.let { playbackService.encoder.segment(id, kind, i, it) }
+                else -> null
+            } ?: return@get call.respond(HttpStatusCode.NotFound)
+            val type = when {
+                file.endsWith(".ts") -> "video/mp2t"
+                kind == "a" -> "audio/mp4"
+                else -> "video/mp4"
+            }
+            respondFileChunked(call, path, ContentType.parse(type))
+        }
     }
 
     get("/tv/image/{itemId}/{type}") {
