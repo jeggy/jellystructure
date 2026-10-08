@@ -163,4 +163,13 @@ the owner.
 - **Tests:** `PlatformAudioTest` (9: an older app unchanged, both decoders unchanged, none ⇒ both out of the direct-play
   and transcode profiles, only the missing one leaves, AC-3 play + HEVC-capable ⇒ fMP4 profile, not capable ⇒ TS, the
   declared-nothing guard, the playing-track choice, 314's AAC copy chosen on a phone without Dolby); `MusicEditionsStoreTest`'s schema rewind drops the new column.
+- **Device check, Pixel 9 Pro (2026-10-09, debug build `1.50-80-gd7fb4d61` from this branch, against the deployed dev
+  backend):** a 1962 short film with AC-3 2.0 audio (H.264 480p) direct-played. The app logged
+  `R379 platform_audio_decoders=[ac3, eac3]` (the value `PlayerStore` puts on the start request) and the player logged
+  `audio decoder c2.dolby.eac3.decoder.ac3` — the platform's Dolby decoder, not FFmpeg: **acceptance 2 holds on the
+  Pixel**. The field's presence on the wire is pinned by `PlaybackStartRequestWireTest` with the app's own encoder
+  (`RaviloWireJson`); the request body itself was not captured (no packet capture on the host). **Owed:** the backend
+  half live (this branch's backend isn't deployed: the narrowing log line and QoE `audio_decoder` storage), and the
+  no-Dolby path on a real device (no allowed device lacks a Dolby decoder — unit tests only). The test play's
+  play count and last-played date were put back on the owner's account afterwards.
 

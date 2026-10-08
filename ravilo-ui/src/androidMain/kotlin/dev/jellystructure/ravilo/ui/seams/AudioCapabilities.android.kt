@@ -57,5 +57,8 @@ private val platformAc3Decoders: List<String>? by lazy {
             if ("audio/ac3" in types) add("ac3")
             if ("audio/eac3" in types || "audio/eac3-joc" in types) add("eac3")
         }
-    }.getOrNull()
+    }.getOrNull().also {
+        // One line per process: which AC-3 family codecs this device reports as platform-decoded (R379 acceptance).
+        android.util.Log.i("R379", "platform_audio_decoders=${it ?: "unknown"}")
+    }
 }
