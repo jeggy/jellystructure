@@ -212,4 +212,7 @@ in `PlayerScreen`, the advance path and the stop path), and the backend's `mark(
 position 0) and the stop's own user-data write lands after, but it is the 0 ms stop this phase set out to remove, and
 it would wipe a place if the app's "finished" and the server's R347 rule ever disagreed. Lean: `mark(watched = true)`
 writes the user data (`setUserData(played = true, position 0)`) instead of sending a stop, and the app sends one
-mark per episode. Not fixed.
+mark per episode. **Fixed 2026-10-08 (late):** `mark(watched = true)` and `setPlayed(played = true)` mark played, then
+zero the position with a user-data write (`zeroPosition` → `setUserData(position 0)`); no `/Sessions/Playing/Stopped` at 0
+is sent any more. `PlayerStore` keeps the items it has marked (`markedWatched`), so advancing at the credits and the stop
+that follows send one mark. Test: `PlaybackStopIntegrationTest` *marking an item watched sends Jellyfin no stop at 0*.

@@ -26,6 +26,7 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -1355,6 +1356,14 @@ class PlaybackService(
         }
     }
 
+    /** 312 / R185 — a watched item's resume position set to 0 by a user-data write (`setUserData`, position only), never by a
+     *  `/Sessions/Playing/Stopped` at 0 ms. A failure only logs: the played mark already landed. */
+    private suspend fun zeroPosition(base: String, token: String, userId: String, jellyfinId: String) {
+        runCatching { jellyfinClient.setUserData(base, token, userId, jellyfinId, played = null, positionTicks = 0L) }
+            .onFailure { e -> if (e is kotlinx.coroutines.CancellationException && !kotlinx.coroutines.currentCoroutineContext().isActive) throw e
+                Logger.warn("mark watched: position zeroing failed for item=$jellyfinId: ${e.message}", "tv") }
+    }
+
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
         requireVisible(device, jellyfinId)
         StartOverHolds.release(device.jellyfinUserId, jellyfinId)   // R343 (FR-R343-13) — the viewer's word wins
@@ -1365,12 +1374,11 @@ class PlaybackService(
             // position can outlive the played flag and keep this item showing as "in progress" in
             // Continue Watching. Zero it explicitly at the same choke point every "mark watched" path
             // goes through, rather than relying on whichever caller happens to also report a stop.
-            Logger.info("stop write: item=$jellyfinId device=${device.deviceId} at=0ms reason=mark-watched direct (312)", "tv")
-            jellyfinClient.stopPlaybackSession(
-                jellyfinBase, token, jellyfinId, 0L, jellyfinId,
-                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
-            )
+            // 312 (found live 2026-10-08) — the zeroing used to be a `/Sessions/Playing/Stopped` at 0 ms, a stop Jellyfin
+            // logs and treats as a playback stop; it is now a user-data write, after the played mark, so no stop at 0 is
+            // ever sent for a watched item.
             jellyfinClient.markPlayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+            zeroPosition(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         } else {
             jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         }
@@ -1411,11 +1419,8 @@ class PlaybackService(
                             // handling at all, so a partially-watched item flipped to "watched" here kept
                             // its stale nonzero PlaybackPositionTicks forever. Zero it alongside markPlayed.
                             Logger.info("stop write: item=$id device=${device.deviceId} at=0ms reason=set-played direct (312)", "tv")
-                            jellyfinClient.stopPlaybackSession(
-                                base, token, id, 0L, id,
-                                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, id),
-                            )
                             jellyfinClient.markPlayed(base, token, uid, id)
+                            zeroPosition(base, token, uid, id)   // 312 — a user-data write, never a stop at 0
                         } else {
                             jellyfinClient.markUnplayed(base, token, uid, id)
                         }
