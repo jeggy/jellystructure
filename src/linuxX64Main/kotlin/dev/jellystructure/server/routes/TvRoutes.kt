@@ -771,6 +771,13 @@ fun Route.tvRoutes(
             startOver = req.startOver, shuffle = req.shuffle))   // R292 / R291 / R343
     }
 
+    // R381 (FR-R381-7) — the next item's stream with none of a start's side effects (see preparePlayback's doc).
+    post("/tv/playback/prepare") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<dev.jellystructure.shared.tv.PreparePlaybackRequest>()
+        call.respond(playbackService.preparePlayback(device, req.itemId, req.capabilities))
+    }
+
     post("/tv/playback/progress") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackProgressRequest>()

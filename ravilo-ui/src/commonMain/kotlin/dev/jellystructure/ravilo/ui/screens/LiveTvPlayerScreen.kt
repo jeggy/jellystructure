@@ -128,6 +128,7 @@ fun LiveTvPlayerScreen(
         val s = state
         if (s is LiveTvPlayerState.Ready) {
             // R192 — feed the channel/current-program into the OS media session (TV-only; see RaviloPlayer.load doc).
+            player.beginQoeItem("live:" + s.channel.channelId)   // R381 (FR-R381-1) — one channel's counts, not the session's
             player.load(
                 s.ticket.hlsUrl, startPositionMs = 0L, subtitles = emptyList(), audio = emptyList(),
                 title = s.channel.name, subtitle = s.channel.currentProgram?.name, artworkUrl = resolveImageUrl(s.channel.logoUrl),

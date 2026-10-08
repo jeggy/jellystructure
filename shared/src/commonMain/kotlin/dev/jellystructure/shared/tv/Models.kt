@@ -207,6 +207,53 @@ data class PlaybackQoeReport(
     /** 309a0 — this item's time from the load request to its first frame, where the player measures it (the Cast
      *  receiver). Additive. */
     @SerialName("first_frame_ms") val firstFrameMs: Long? = null,
+    /** R381 (FR-R381-1) — true when every counter above is THIS item's own (an app with R381). Absent/false = an
+     *  older app whose counters were the session's running totals and whose first-start wait of a reused player
+     *  was counted as a stall: the backend never reads such a row's rebuffer counts (FR-R381-4). Additive. */
+    @SerialName("per_item") val perItem: Boolean = false,
+    /** R381 (FR-R381-3) — each counted stall of this item (newest 20): when, where, how much was buffered. */
+    val stalls: List<QoeStall> = emptyList(),
+    /** R381 (FR-R381-1) — the session's running totals, kept apart from the item's own counts. */
+    @SerialName("session_rebuffer_count") val sessionRebufferCount: Int = 0,
+    @SerialName("session_rebuffer_ms") val sessionRebufferMs: Long = 0,
+    /** R381 (FR-R381-2) — waits that are not stalls, by cause (`start`, `seek`, `track_switch`, `variant_switch`,
+     *  `rebuild`, `recovery`): counted, never hidden, never a stall. */
+    val waits: Map<String, Int> = emptyMap(),
+)
+
+/** R381 (FR-R381-3) — one counted stall: a wait after this item's first frame that no seek, track switch, variant
+ *  switch, engine rebuild or recovery explains. */
+@Serializable
+data class QoeStall(
+    /** Milliseconds after this item's first frame. */
+    @SerialName("after_first_frame_ms") val afterFirstFrameMs: Long,
+    @SerialName("position_ms") val positionMs: Long,
+    /** How far ahead of the playhead the buffer reached when the wait began. */
+    @SerialName("buffered_ms") val bufferedMs: Long,
+    @SerialName("duration_ms") val durationMs: Long,
+    /** `start` within 10 s of the first frame, `mid` after. */
+    val phase: String,
+    @SerialName("variant_bps") val variantBps: Long? = null,
+)
+
+/** R381 (FR-R381-7) — the next item's stream, prepared ahead of time with none of a start's side effects: nothing is
+ *  reported to Jellyfin, no session moves, no tracker starts, no encode starts. `directPlay` false ⇒ nothing to
+ *  prefetch (owner, 2026-10-08: a transcoded next episode is not preloaded until 309/313). */
+@Serializable
+data class PreparedStream(
+    @SerialName("item_id") val itemId: String,
+    @SerialName("direct_play") val directPlay: Boolean = false,
+    /** The direct-play URL (absolute, carrying its own credential) when [directPlay]; null otherwise. */
+    val url: String? = null,
+    @SerialName("start_position_ms") val startPositionMs: Long = 0,
+    /** When the URL stops being valid (epoch ms); a prefetch after it is dropped. */
+    @SerialName("expires_at") val expiresAt: Long = 0,
+)
+
+@Serializable
+data class PreparePlaybackRequest(
+    @SerialName("item_id") val itemId: String,
+    val capabilities: ClientCapabilities,
 )
 
 @Serializable

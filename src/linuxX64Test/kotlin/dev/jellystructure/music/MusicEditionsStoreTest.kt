@@ -44,6 +44,8 @@ class MusicEditionsStoreTest {
         for (c in listOf("variant_switches_down", "variant_switches_up", "variant_bandwidth_bps", "variant_height")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         // …and 309a0's 72 adds three more.
         for (c in listOf("bandwidth_samples", "bandwidth_bytes", "first_frame_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
+        // …and R381's 73 adds five more.
+        for (c in listOf("per_item", "stalls_json", "waits_json", "session_rebuffer_count", "session_rebuffer_ms")) raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN $c", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

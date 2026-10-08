@@ -207,6 +207,9 @@ actual class RaviloPlayer actual constructor() {
         variantBandwidthBps = jsQ308(video, "bps").toLong().takeIf { it > 0 },
         variantHeight = jsQ308(video, "h").toInt().takeIf { it > 0 },
     )
+
+    /** R381 — the web reports no stall counters (R216), so there is nothing per item to reset. */
+    actual fun beginQoeItem(itemKey: String) {}
 }
 
 private fun jsSeedAbr(bps: Double): Unit = js("{ window.__raviloAbrSeed = bps > 0 ? bps : 0; }")

@@ -43,6 +43,8 @@ import platform.posix.clock_gettime
 import platform.posix.timespec
 
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
+// R381 (FR-R381-7, dev review item 8) — a prepared next item is valid for at most five minutes.
+private const val PREPARED_TTL_MS = 5 * 60 * 1000L
 
 // Cache token validity so we don't make a live Jellyfin round-trip on every API request.
 // Key = jellyfinUserToken; value = expiry timestamp (ms). On cache hit tvToken() returns instantly.
@@ -864,6 +866,41 @@ class PlaybackService(
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
+    }
+
+    /**
+     * R381 (FR-R381-7) — the next item's stream, prepared ahead of time (the player prefetches its first seconds at the
+     * credits) with **none** of a start's side effects: nothing is reported to Jellyfin (no `/Sessions/Playing`, so its
+     * *now playing* never switches while the current item still plays, and no stop can follow from it), no R368 session
+     * moves, no tracker or heartbeat, no plan, no encode, no composed master. The real start, with all of them, is the
+     * ordinary [startPlayback] when the item actually begins.
+     *
+     * The same gate as a start ([requireVisible]: library ACL and kids rules), the same negotiation (PlaybackInfo with the
+     * device's capabilities and 308's measured budget), so a direct play here is a direct play at the start. A transcode
+     * is answered `directPlay = false`, no URL: a transcoded next item is not preloaded until 309's early encode or 313's
+     * encoder exists (owner, 2026-10-08).
+     */
+    suspend fun preparePlayback(device: DeviceData, jellyfinId: String, capabilities: ClientCapabilities): dev.jellystructure.shared.tv.PreparedStream {
+        requireVisible(device, jellyfinId)
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
+            ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — re-pair it to continue watching.")
+        val identity = JellyfinDeviceIdentity.forDevice(device)
+        val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        val startPositionMs = resolveStartPositionTicks(null, itemDetail?.userData) / TICKS_PER_MS
+        val measuredBps = measuredThroughputOf(device)
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities,
+            identity = identity, throughputCapBps = throughputBudget(measuredBps))
+        val source = playbackInfo?.mediaSources?.firstOrNull()
+        val direct = source != null && (source.supportsDirectPlay || source.transcodingUrl == null)
+        Logger.info("playback prepare: device=${device.deviceId} item=$jellyfinId directPlay=$direct from ${startPositionMs}ms (R381, nothing reported)", "tv")
+        return dev.jellystructure.shared.tv.PreparedStream(
+            itemId = jellyfinId,
+            directPlay = direct,
+            url = if (direct) streamUrlFor(jellyfinBase, jellyfinId, token, identity, null, capabilities) else null,
+            startPositionMs = startPositionMs,
+            expiresAt = nowMs() + PREPARED_TTL_MS,
+        )
     }
 
     /**
