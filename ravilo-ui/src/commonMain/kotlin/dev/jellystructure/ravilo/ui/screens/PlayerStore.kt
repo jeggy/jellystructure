@@ -10,6 +10,9 @@ import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
+import dev.jellystructure.ravilo.ui.seams.audioPickNeedsHls
+import dev.jellystructure.ravilo.ui.seams.supportedContainers
+import dev.jellystructure.ravilo.ui.seams.switchesAudioInFile
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.playsAdaptiveHls
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
@@ -191,7 +194,7 @@ class PlayerStore(
                     // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
                     val hlsOnly = airplayHls || playsOnlyHls()
                     val capabilities = ClientCapabilities(
-                        containers = listOf("mkv", "mp4", "avi", "mov"),
+                        containers = supportedContainers(),   // R376 (FR-R376-5) — the web asks its browser
                         videoCodecs = supportedVideoCodecs(),
                         hlsOnly = hlsOnly,
                         hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls(),
@@ -223,6 +226,8 @@ class PlayerStore(
                     // Jellyfin's on any server, so even an older one never resumes a shuffled episode); a
                     // return from the background still carries its own position.
                     val startAt = startPositionMs ?: (if (startOver || shuffle) 0L else null)
+                    // R376 (FR-R376-3, owner 2026-10-08) — a multi-audio file starts as direct play too; only an audio
+                    // pick the player cannot make inside the file moves the item to HLS ([restreamWithSub]).
                     val ticket = apiClient.startPlayback(itemId = itemId, capabilities = capabilities, startPositionMs = startAt, audioLanguage = audioLanguage, audioVariant = audioVariant, shuffle = shuffle, startOver = startOver)
                     qoeLinkKind = link.kind
                     qoeLinkMbps = link.mbps
@@ -307,6 +312,11 @@ class PlayerStore(
      *  R284 — [audioStreamIndex] is the audio track the new stream must carry (253 FR-253-1); callers
      *  pass the current one on a subtitle change so the two choices never reset each other. */
     fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null) {
+        // R376 (FR-R376-3) — an audio pick on a player that cannot switch tracks inside one file asks for HLS, where
+        // every track is a rendition; the item stays on HLS for its later restreams.
+        lastCapabilities?.let { caps ->
+            if (audioPickNeedsHls(audioStreamIndex != null, caps.hlsOnly, switchesAudioInFile())) lastCapabilities = caps.copy(hlsOnly = true)
+        }
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {

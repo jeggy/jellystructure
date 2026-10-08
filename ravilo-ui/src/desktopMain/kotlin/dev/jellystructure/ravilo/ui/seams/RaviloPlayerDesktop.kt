@@ -144,7 +144,7 @@ actual class RaviloPlayer actual constructor() {
     actual fun seedBandwidthEstimate(bps: Long?) {}
 
     /** FR-R329-4 — [index] is a position in [audioTracks], which are the ticket's; the library finds the rendition. */
-    actual fun selectAudioTrack(index: Int) = engine.selectAudio(index)
+    actual fun selectAudioTrack(index: Int): Boolean { engine.selectAudio(index); return true }   // R376 — selects in place
 
     /** FR-R329-5 — [index] is a position in [subtitleTracks]; -1 = off. The cues are fetched and parsed here. */
     actual fun selectSubtitleTrack(index: Int) {
@@ -186,7 +186,6 @@ actual class RaviloPlayer actual constructor() {
 
     actual fun recordRestoredAfterRecreate() { restoredAfterRecreate++ }
     actual fun setSessionActive(active: Boolean) { if (!active) MacNowPlaying.release(nowPlaying) }
-    actual fun setChromeVisible(visible: Boolean) {}
     actual fun setSubtitleScale(scale: Float) { captionScale = scale; engine.setSubtitleScale(scale) }
 
     actual val positionMs: Long get() = engine.state.positionMs

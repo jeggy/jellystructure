@@ -95,3 +95,9 @@ actual fun detectLinkState(): LinkState = runCatching {
         else -> LinkState.UNKNOWN
     }
 }.getOrDefault(LinkState.UNKNOWN)
+
+/** R376 (FR-R376-5) — unchanged: the list every platform declared before. */
+actual fun supportedContainers(): List<String> = BASE_CONTAINERS
+
+/** R376 (FR-R376-3) — the player selects a direct-played file's own audio tracks. */
+actual fun switchesAudioInFile(): Boolean = true

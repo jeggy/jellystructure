@@ -13,15 +13,11 @@ import kotlin.js.ExperimentalWasmJsInterop
 // (new field's onFocusChanged can fire before the old field's blur), so a plain flag could get
 // stuck cleared by the second event. index.html reads window.raviloTextFieldFocused.
 //
-// R281 — the same edge also feeds window.raviloMobileKeyboardBridge(focused), boot.js's hook for
-// the hidden native <input> a touch device's on-screen keyboard actually attaches to (CanvasBasedWindow
-// has no DOM text field of its own — see this file's own doc comment). Called unconditionally; boot.js
-// is what decides whether the device is touch-capable at all.
+// R376 (FR-R376-1) — R281 also fed boot.js's hidden keyboard-bridge <input> from this edge. Under ComposeViewport a
+// focused text field has a real DOM input of its own (the viewport's BackingDomInput), which is what a phone raises
+// its keyboard for, so the bridge is gone and only the F-key guard is left.
 private fun jsMarkTextFieldFocus(delta: Int): Unit =
-    js(
-        "(window.raviloTextFieldFocused = (window.raviloTextFieldFocusCount = (window.raviloTextFieldFocusCount || 0) + delta) > 0, " +
-            "window.raviloMobileKeyboardBridge && window.raviloMobileKeyboardBridge(window.raviloTextFieldFocused))",
-    )
+    js("window.raviloTextFieldFocused = (window.raviloTextFieldFocusCount = (window.raviloTextFieldFocusCount || 0) + delta) > 0")
 
 actual fun Modifier.reportTextFieldFocus(): Modifier = composed {
     // A field disposed while still focused (e.g. navigating away mid-edit) never fires a final

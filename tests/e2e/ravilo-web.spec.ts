@@ -39,27 +39,15 @@ test("Ravilo web boots without a JS crash", async ({ page }) => {
   expect(pageErrors).toEqual([]);
 });
 
-// R281 — CanvasBasedWindow routes all text entry through Compose's own focus system on a single
-// canvas (see ravilo-ui's TextFieldFocusBridge.kt), so document.activeElement never left
-// #ComposeTarget: a touchscreen had nothing a software keyboard could attach to, and Compose's own
-// focus state moving (the text caret visibly blinking in the right field) was never itself proof
-// that a mobile browser would raise its keyboard. This is the regression guard for the fix — a
-// hidden native <input> (#ravilo-kb-bridge) that boot.js focuses in its place on a coarse-pointer
-// device whenever a Compose text field reports focus.
+// R281 → R376 (FR-R376-1) — a touchscreen raises its keyboard only for a real, focused DOM input. R281 put a hidden
+// bridge <input> in place of the canvas because CanvasBasedWindow had none; under ComposeViewport a focused Compose text
+// field has one of its own (the viewport's backing input, inside #ComposeTarget's shadow root), so the bridge is gone.
+// This guards the same precondition: on a coarse-pointer device, a focused text field is backed by a DOM input — on
+// the page's initial autofocus and again after Compose's focus moves to another field.
 //
-// Scoped to that DOM precondition only, deliberately not to whether a typed character reaches
-// Compose: this file's own boot test above already found headless Chromium's rendering behavior on
-// a real CI runner too unreliable to assert on the canvas by screenshot, and confirming a character
-// arrived would need exactly that. The bridge's beforeinput/keydown handling was instead verified by
-// hand against a real production build (typed text, including a Danish/Faroese-alphabet character
-// and a backspace, landing correctly) — see phase R281's own spec for that verification.
-//
-// Moves focus from the Login screen's Username field to Password via a synthetic ArrowDown
-// KeyboardEvent on the canvas — the same D-pad-navigation key path LoginScreen.kt already wires for
-// TV remotes, and the same mechanism boot.js's gamepad poller already uses — rather than a tap or
-// click at a hardcoded pixel position, which would couple this test to the login screen's exact
-// layout and font metrics.
-test.describe("mobile on-screen keyboard bridge", () => {
+// Moves focus from the Login screen's Username field to Password via a synthetic ArrowDown on the viewport's canvas —
+// the same path boot.js's gamepad poller uses — rather than a tap at a hardcoded position.
+test.describe("mobile on-screen keyboard", () => {
   // defaultBrowserType is left out — it forces a new worker and can't be set inside a describe
   // group (only top-level or in the config's own projects), and this suite already pins chromium.
   const { defaultBrowserType: _unused, ...pixel5 } = devices["Pixel 5"];
@@ -74,20 +62,39 @@ test.describe("mobile on-screen keyboard bridge", () => {
     });
     await page.waitForTimeout(15_000);
 
-    // The login screen's Username field autofocuses on load — already enough to exercise the bridge
-    // without any input at all.
-    const activeOnLoad = await page.evaluate(() => document.activeElement?.tagName);
-    expect(activeOnLoad).toBe("INPUT");
+    const focusedTag = () => page.evaluate(() => {
+      const root = document.getElementById("ComposeTarget")?.shadowRoot;
+      return root?.activeElement?.tagName ?? null;
+    });
+
+    // The login screen's Username field autofocuses on load.
+    expect(["INPUT", "TEXTAREA"]).toContain(await focusedTag());
 
     await page.evaluate(() => {
-      const canvas = document.getElementById("ComposeTarget");
+      const canvas = document.getElementById("ComposeTarget")?.shadowRoot?.querySelector("canvas");
       ["keydown", "keyup"].forEach((t) => canvas?.dispatchEvent(new KeyboardEvent(t, { key: "ArrowDown", bubbles: true })));
     });
     await page.waitForTimeout(1_000);
 
-    // Still a real input after Compose's focus moved to a *different* text field — proves the
-    // bridge re-fires on every focus change, not only on the page's initial autofocus.
-    const activeAfterMove = await page.evaluate(() => document.activeElement?.tagName);
-    expect(activeAfterMove).toBe("INPUT");
+    expect(["INPUT", "TEXTAREA"]).toContain(await focusedTag());
   });
+});
+
+// R376 (FR-R376-1/-5) — the viewport's canvas lives in #ComposeTarget's shadow root, above the player's <video> layer
+// (z-index 1 over 0), and the containers this browser opens were probed at boot (mp4 always).
+test("ComposeViewport hosts the canvas and the containers are probed", async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.goto(process.env.RAVILO_WEB_URL ?? "http://localhost:8082", { waitUntil: "domcontentloaded", timeout: 10_000 });
+  await page.waitForTimeout(15_000);
+  const r = await page.evaluate(() => {
+    const host = document.getElementById("ComposeTarget");
+    return {
+      canvas: !!host?.shadowRoot?.querySelector("canvas"),
+      z: host ? getComputedStyle(host).zIndex : null,
+      containers: (window as any).__raviloContainers as string | undefined,
+    };
+  });
+  expect(r.canvas).toBe(true);
+  expect(r.z).toBe("1");
+  expect(r.containers?.split(",")[0]).toBe("mp4");
 });

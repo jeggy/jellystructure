@@ -90,70 +90,47 @@ if (!raviloSupportsWasmGC()) {
         });
     }
 
-    // Ensure canvas receives focus immediately for keyboard events
-    window.addEventListener('load', function() {
-        var canvas = document.getElementById('ComposeTarget');
-        if (canvas) canvas.focus();
-    });
+    // R376 (FR-R376-1) — ComposeViewport creates its canvas inside #ComposeTarget's (open) shadow root once skiko is
+    // ready, so nothing can hold a reference to it at load. Every caller asks for it when it needs it.
+    function raviloComposeCanvas() {
+        var host = document.getElementById('ComposeTarget');
+        return host && host.shadowRoot ? host.shadowRoot.querySelector('canvas') : null;
+    }
+    window.raviloComposeCanvas = raviloComposeCanvas;
 
-    // Shared by the mobile-keyboard bridge and the gamepad poller below — both feed Compose's key
-    // handling by re-firing whatever they receive as a synthetic KeyboardEvent on the canvas, since
-    // CanvasBasedWindow has no DOM text field of its own for either to target instead.
+    // Ensure canvas receives focus as soon as it exists, for keyboard events.
+    (function focusWhenMounted(tries) {
+        var canvas = raviloComposeCanvas();
+        if (canvas) { canvas.focus(); return; }
+        if (tries > 0) setTimeout(function() { focusWhenMounted(tries - 1); }, 100);
+    })(600);
+
+    // R376 (FR-R376-1) — when a Compose text field closes its input session the viewport removes the DOM input that
+    // held focus, and the browser hands focus to <body>, where no key reaches Compose any more (the D-pad was dead
+    // on Home right after signing in). Whenever focus falls to nothing, it goes back to the canvas.
+    document.addEventListener('focusout', function() {
+        setTimeout(function() {
+            var a = document.activeElement;
+            if (a && a !== document.body && a !== document.documentElement) return;
+            var canvas = raviloComposeCanvas();
+            if (canvas) canvas.focus({preventScroll: true});
+        }, 0);
+    }, true);
+
+    // The gamepad poller feeds Compose's key handling by re-firing what it receives as a synthetic KeyboardEvent on
+    // the canvas (the viewport listens on the canvas itself, so an event on the shadow host would never reach it).
     function raviloFireCanvasKey(key) {
-        var canvas = document.getElementById('ComposeTarget');
+        var canvas = raviloComposeCanvas();
         if (!canvas) return;
         ['keydown', 'keyup'].forEach(function(t) {
             canvas.dispatchEvent(new KeyboardEvent(t, {key: key, bubbles: true}));
         });
     }
 
-    // R281 — mobile on-screen keyboard bridge. CanvasBasedWindow routes all text entry through
-    // Compose's own focus system on a single canvas (see TextFieldFocusBridge.kt's doc comment) —
-    // there is no DOM `<input>` for document.activeElement to ever become, and no mobile browser
-    // raises its keyboard for anything else. On a coarse-pointer (touch) device only, the hidden
-    // #ravilo-kb-bridge input steps in as that DOM anchor: window.raviloMobileKeyboardBridge(focused)
-    // — called from TextFieldFocusBridge.kt on every Compose text-field focus/blur, the same edge
-    // that already drives the fullscreen-toggle guard above — focuses or blurs it, and its own
-    // beforeinput/keydown handlers translate what the on-screen keyboard produces into a
-    // raviloFireCanvasKey call each (proved to reach Compose's own key handling, single Unicode
-    // characters included, the same way the gamepad poller below already does for D-pad keys).
-    // Composition input (CJK IME) isn't bridged — this household's languages (en/da/fo) don't need
-    // it, and beforeinput.preventDefault() below is what keeps the hidden input's own value from
-    // ever accumulating anything to bridge in the first place.
-    (function() {
-        var isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-        var bridge = document.getElementById('ravilo-kb-bridge');
-        if (!isTouch || !bridge) return;
-
-        window.raviloMobileKeyboardBridge = function(focused) {
-            if (focused) {
-                bridge.value = '';
-                bridge.focus();
-            } else if (document.activeElement === bridge) {
-                bridge.blur();
-            }
-        };
-
-        bridge.addEventListener('beforeinput', function(e) {
-            if (e.inputType === 'deleteContentBackward') {
-                e.preventDefault();
-                raviloFireCanvasKey('Backspace');
-            } else if (e.inputType === 'deleteContentForward') {
-                e.preventDefault();
-                raviloFireCanvasKey('Delete');
-            } else if (e.inputType && e.inputType.indexOf('insert') === 0 && e.data) {
-                e.preventDefault();
-                Array.from(e.data).forEach(raviloFireCanvasKey);
-            }
-        });
-
-        bridge.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                raviloFireCanvasKey('Enter');
-            }
-        });
-    })();
+    // R281's hidden #ravilo-kb-bridge input lived here. R376: ComposeViewport puts a real DOM input under a focused
+    // Compose text field itself (its BackingDomInput), which is what a phone raises its keyboard for; a second input
+    // stealing focus from it would break typing, so the bridge is gone (TextFieldFocusBridge.kt keeps only the F-key
+    // guard).
 
     // Gamepad polling — re-fires gamepad axis/button presses as keyboard events so the Compose focus
     // engine handles them identically to hardware D-pad. Harmless in standalone mode (FR-R263-7);
