@@ -135,3 +135,34 @@ internal fun airplayNeedsHls(onAirPlay: Boolean, streamIsHls: Boolean, alreadyRe
 /** R376 — what the AirPlay restart asks for: HLS only, the manifest's subtitles, and H.264 (no HEVC over AirPlay). */
 internal fun airplayCapabilities(c: dev.jellystructure.shared.tv.ClientCapabilities): dev.jellystructure.shared.tv.ClientCapabilities =
     c.copy(hlsOnly = true, hlsSubtitles = true, hlsHevc = false)
+
+/**
+ * R376 (FR-R376-S1) — sound on the first click in Safari. WebKit lets an element play with sound only once a `play()`
+ * on it ran inside a user gesture; after that the element keeps the right for good (WebKit's
+ * `removeBehaviorRestrictionsAfterFirstUserGesture`, applied by `play()` even with no source loaded). Ravilo's Play
+ * click fetches the ticket first, so the film's own `play()` comes too late. So the page keeps **one** `<video>` element
+ * for its lifetime, and every trusted click, tap or key calls `play()` + `pause()` on it while it holds no film — before
+ * any network call — which unlocks it ahead of the play that follows.
+ */
+internal object WebSoundUnlock {
+    /** The DOM events WebKit treats as a gesture for media (iOS counts `touchend`/`click`, macOS the mouse and keys). */
+    val gestureEvents: List<String> = listOf("pointerdown", "mousedown", "pointerup", "mouseup", "click", "touchend", "keydown")
+
+    /** Unlock on this event? Only a trusted gesture, and only while the element holds no film: a click during a film
+     *  must never resume or restart it. */
+    fun shouldUnlock(event: String, trusted: Boolean, hasSource: Boolean): Boolean =
+        trusted && !hasSource && event in gestureEvents
+}
+
+/**
+ * R376 (FR-R376-S1) — who holds the page's one `<video>` element. A new player takes it over; an older player's late
+ * release (Compose can create the next screen's player before disposing the last one's) must not reset the element the
+ * new one is already playing on.
+ */
+internal class SharedElementOwner {
+    private var owner: Any? = null
+    val current: Any? get() = owner
+    fun acquire(player: Any) { owner = player }
+    /** True when [player] still held it (so the element is reset); false for a stale release. */
+    fun release(player: Any): Boolean = if (owner === player) { owner = null; true } else false
+}

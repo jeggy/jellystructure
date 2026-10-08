@@ -20,21 +20,15 @@ import org.w3c.dom.HTMLVideoElement
  * ([WebPlaybackEvents]), not from constants.
  */
 actual class RaviloPlayer actual constructor() {
-    internal val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
-        // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing within the viewport.
-        // background:#000 fills the bars. z-index 0, under #ComposeTarget's 1 (index.html), for the element's life.
-        v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0;pointer-events:none"
-        v.controls = false
-        // iOS: play inside the page, never in Apple's own player (which would drop every piece of Ravilo chrome).
-        v.setAttribute("playsinline", "")
-        document.body?.appendChild(v)
+    /**
+     * R376 (FR-R376-S1) — the page's one `<video>` element ([SharedVideo]), not a new one per player: Safari's right to
+     * play with sound belongs to an element, and the click that unlocked it came before this player existed. This
+     * player takes the element over; its [release] hands it back, reset and hidden, for the next one.
+     */
+    internal val video: HTMLVideoElement = SharedVideo.video.also { v ->
+        SharedVideo.owner.acquire(this)
         // R265 (FR-R265-4/-8) — offer this element to AirPlay and report what WebKit says about it.
         WebAirPlay.bind(v)
-        // R265 — the chosen subtitle is re-applied as Safari adds the manifest's own tracks, which
-        // arrive after load() (and one may arrive marked DEFAULT, e.g. a Croatian sidecar in the probe).
-        watchTextTracks(v)
-        // R376 (FR-R376-2) — every event R218 needs, queued with its time.
-        wireEvents(v)
     }
 
     /** R381 (FR-R381-1) — this item's QoE, counted from the same events as R218's facts. */
@@ -62,6 +56,9 @@ actual class RaviloPlayer actual constructor() {
         // R376 (FR-R376-2) — the outgoing stream's events belong to it; the new one starts with no frame from now,
         // not from whenever the browser gets round to `loadstart`.
         sync()
+        // R376 (FR-R376-S1) — the element shows again, its unlock bookkeeping stops, and it tries sound again (a film
+        // left muted by a gesture-less start must not leave the next one silent with no pill).
+        prepareForSource(video)
         events.on("loadstart", nowMs())
         // R284 (FR-R284-4) — only subtitles this player can DRAW are its tracks. A URL-less entry is a
         // burn-in candidate (PGS), which PlayerScreen lists itself from the ticket; keeping it here too
@@ -157,10 +154,14 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun release() {
+        // R376 (FR-R376-S1) — a player that no longer holds the element (the next screen's player took it over) leaves
+        // it alone; the holder resets it — no source, no tracks, nothing queued, hidden — and the element stays in the
+        // page, keeping the sound Safari gave it.
+        if (!SharedVideo.owner.release(this)) return
         WebAirPlay.unbind(video)
         runCatching { clearMediaMetadata() }
         runCatching { destroyOverlays(video) } // R17: tear down any hls.js / JASSUB instance
-        runCatching { document.body?.removeChild(video) }
+        runCatching { resetElement(video) }
     }
 
     // R292 — a browser tab has no decoder to leak (the phase's non-goal); the element stays, paused.
@@ -250,6 +251,80 @@ actual class RaviloPlayer actual constructor() {
     actual fun beginQoeItem(itemKey: String) { qoe.beginItem(itemKey) }
 }
 
+/**
+ * R376 (FR-R376-S1) — the page's one `<video>` element, made once and kept for the page's life: fixed full-window
+ * BEHIND the Compose viewport (z-index 0 under #ComposeTarget's 1, index.html), hidden while no player holds it, its
+ * event queue (R376 FR-R376-2), text-track watcher (R265) and the gesture listener ([installSoundUnlock]) wired once.
+ */
+private object SharedVideo {
+    val owner = SharedElementOwner()
+    val video: HTMLVideoElement by lazy {
+        (document.createElement("video") as HTMLVideoElement).also { v ->
+            // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing within the viewport.
+            // background:#000 fills the bars. pointer-events:none — the canvas takes every input.
+            v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0;pointer-events:none;visibility:hidden"
+            v.controls = false
+            // iOS: play inside the page, never in Apple's own player (which would drop every piece of Ravilo chrome).
+            v.setAttribute("playsinline", "")
+            document.body?.appendChild(v)
+            // R265 — the chosen subtitle is re-applied as Safari adds the manifest's own tracks, which
+            // arrive after load() (and one may arrive marked DEFAULT, e.g. a Croatian sidecar in the probe).
+            watchTextTracks(v)
+            // R376 (FR-R376-2) — every event R218 needs, queued with its time.
+            wireEvents(v)
+            installSoundUnlock(v, WebSoundUnlock.gestureEvents.joinToString(","))
+        }
+    }
+}
+
+/**
+ * R376 (FR-R376-S1) — called at boot (ravilo-web's `main`), so the element exists and listens for the first click, tap
+ * or key before any screen can start a play: the click that opens a film and the Play click both happen before the
+ * player screen is composed.
+ */
+fun prepareWebVideo() { SharedVideo.video }
+
+/**
+ * R376 (FR-R376-S1) — on every trusted gesture while the element holds no film ([WebSoundUnlock.shouldUnlock]):
+ * `play()` then `pause()`, synchronously inside the event — WebKit then lifts the element's "a gesture is needed for
+ * sound" restriction for good. Its own `play`/`pause` events are not the viewer's ([wireEvents] skips them while
+ * `_rvQuiet`); the next real source clears the flag ([prepareForSource]). Capture phase on `window`, so it runs before
+ * the canvas handles the event.
+ */
+private fun installSoundUnlock(video: HTMLVideoElement, events: String): Unit = js(
+    """{
+        var unlock = function (ev) {
+            if (!ev.isTrusted) return;
+            if (video.getAttribute('src') || video.currentSrc || video._hls) return;
+            video._rvQuiet = true;
+            video.muted = false;
+            try { var p = video.play(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+            try { video.pause(); } catch (e) {}
+            video._rvUnlocks = (video._rvUnlocks || 0) + 1;
+        };
+        events.split(',').forEach(function (n) { window.addEventListener(n, unlock, true); });
+    }"""
+)
+
+/** R376 (FR-R376-S1) — a new source: shown, the viewer's events count again, and sound is tried again. */
+private fun prepareForSource(video: HTMLVideoElement): Unit = js(
+    """{ video._rvQuiet = false; video.muted = false; video.style.visibility = 'visible'; }"""
+)
+
+/** R376 (FR-R376-S1) — back to idle: paused, no source, no `<track>`s, nothing queued, the default fit, hidden. */
+private fun resetElement(video: HTMLVideoElement): Unit = js(
+    """{
+        try { video.pause(); } catch (e) {}
+        while (video.firstChild) video.removeChild(video.firstChild);
+        video.removeAttribute('src');
+        try { video.load(); } catch (e) {}
+        video._rvq = [];
+        video._raviloShow = -1;
+        video.style.objectFit = 'contain';
+        video.style.visibility = 'hidden';
+    }"""
+)
+
 private fun jsSeedAbr(bps: Double): Unit = js("{ window.__raviloAbrSeed = bps > 0 ? bps : 0; }")
 
 private fun jsQ308(video: HTMLVideoElement, key: String): Double = js("(video._q308 && video._q308[key]) || 0")
@@ -265,7 +340,7 @@ private fun nowMs(): Double = js("performance.now()")
 private fun wireEvents(video: HTMLVideoElement): Unit = js(
     """{
         video._rvq = [];
-        video._rvPush = function (n) { if (video._rvq.length < 500) video._rvq.push(n + '@' + performance.now()); };
+        video._rvPush = function (n) { if (video._rvQuiet) return; if (video._rvq.length < 500) video._rvq.push(n + '@' + performance.now()); };
         ['loadstart','loadeddata','playing','canplay','waiting','stalled','seeking','seeked','play','pause','ended','error'].forEach(function (n) {
             video.addEventListener(n, function () {
                 if (n === 'stalled' && video.readyState >= 3) return;
