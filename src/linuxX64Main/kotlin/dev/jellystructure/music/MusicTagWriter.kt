@@ -155,7 +155,7 @@ class MusicTagWriter(
             val path = t.path!!
             val f = tags[path]
             val isWma = MusicFormats.reencodesOnPhone(t.container, t.codec) && (t.container?.contains("asf", true) == true || path.endsWith(".wma", true))
-            val guard = seedingGuard?.check(path, cfg)
+            val guard = seedingGuard?.check(path, cfg, inPlace = false)
             val seed = guard is SeedingCheckResult.Blocked || guard is SeedingCheckResult.Unreachable
             val want = wanted(album, t, tracks)
             val cells = LinkedHashMap<String, MusicFileCell>()
@@ -254,7 +254,7 @@ class MusicTagWriter(
         var seeding = 0; var wma = 0
         for (t in tracks) {
             val path = t.path!!
-            val guard = seedingGuard?.check(path, cfg)
+            val guard = seedingGuard?.check(path, cfg, inPlace = false)
             if (guard is SeedingCheckResult.Blocked || guard is SeedingCheckResult.Unreachable) { seeding++; continue }
             if (path.endsWith(".wma", true)) wma++
             plan += PlanFile(path, wanted(album, t, tracks), dropUnmanaged = removeJunk, cover = cover)
@@ -289,7 +289,7 @@ class MusicTagWriter(
         var seeding = 0
         val plan = ArrayList<PlanFile>()
         for ((path, tags) in files) {
-            val guard = seedingGuard?.check(path, cfg)
+            val guard = seedingGuard?.check(path, cfg, inPlace = false)
             if (guard is SeedingCheckResult.Blocked || guard is SeedingCheckResult.Unreachable) { seeding++; continue }
             plan += PlanFile(path, tags)
         }

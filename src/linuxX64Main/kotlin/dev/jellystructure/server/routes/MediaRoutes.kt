@@ -1178,7 +1178,7 @@ fun Route.mediaRoutes(
                     val sameType = ep.tracks.filter { it.kind == targetTrack.kind }
 
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                         else -> Unit
                     }
@@ -1225,7 +1225,7 @@ fun Route.mediaRoutes(
                     val ext = ep.path.substringAfterLast('.').lowercase()
 
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                         else -> Unit
                     }
@@ -1293,7 +1293,7 @@ fun Route.mediaRoutes(
                         return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag editing requires MKV container"))
 
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                         else -> Unit
                     }
@@ -1340,7 +1340,7 @@ fun Route.mediaRoutes(
                     // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
                     // since the seeding state can change while it waits in the queue.
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                         else -> Unit
                     }
@@ -1369,7 +1369,7 @@ fun Route.mediaRoutes(
                         ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@delete }
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@delete }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
                         else -> Unit
                     }

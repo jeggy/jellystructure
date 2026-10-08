@@ -241,7 +241,7 @@ fun Route.trackRoutes(
             val sameType = item.tracks.filter { it.kind == targetTrack.kind && !it.external }
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }
@@ -302,7 +302,7 @@ fun Route.trackRoutes(
             }
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }
@@ -353,7 +353,7 @@ fun Route.trackRoutes(
             val ext = item.path.substringAfterLast('.').lowercase()
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }
@@ -416,7 +416,7 @@ fun Route.trackRoutes(
             if (deleteTarget.external) return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot edit an external subtitle track"))
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@delete }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@delete }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
                 else -> Unit
             }
@@ -453,7 +453,7 @@ fun Route.trackRoutes(
             // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
             // since the seeding state can change while it waits in the queue.
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }

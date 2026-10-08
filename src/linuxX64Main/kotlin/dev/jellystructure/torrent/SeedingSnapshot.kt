@@ -113,13 +113,18 @@ class SeedingSnapshot(
         fresh
     }
 
-    suspend fun checkPath(localFilePath: String, config: AppConfig): SeedingCheckResult {
-        val qbConfig = config.qbittorrent ?: return SeedingCheckResult.Unconfigured
-        if (!qbConfig.enabled) return SeedingCheckResult.Unconfigured
+    suspend fun checkPath(localFilePath: String, config: AppConfig, linkCheck: Boolean = true): SeedingCheckResult {
+        // Phase 315 (FR-315-1) — a name outside the library shares these bytes: refused whatever qBittorrent says
+        // (unconfigured or unreachable included — unknown means no).
+        val link = if (linkCheck) hardLinkVerdict(localFilePath, config) else LinkVerdict.SINGLE
+        val qbConfig = config.qbittorrent
+        if (qbConfig == null || !qbConfig.enabled) {
+            return if (link == LinkVerdict.OUTSIDE) SeedingCheckResult.Blocked("", hardLink = true) else SeedingCheckResult.Unconfigured
+        }
         val remotePath = translateLocalToRemote(localFilePath, qbConfig)
         val snap = get()
         if (!snap.reachable && snap.unreachableReason != null) {
-            return SeedingCheckResult.Unreachable(snap.unreachableReason)
+            return if (link == LinkVerdict.OUTSIDE) SeedingCheckResult.Blocked("", hardLink = true) else SeedingCheckResult.Unreachable(snap.unreachableReason)
         }
         for (t in snap.torrents) {
             val norm = t.contentPath.trimEnd('/')
@@ -127,8 +132,23 @@ class SeedingSnapshot(
                 return SeedingCheckResult.Blocked(t.name)
             }
         }
+        if (link == LinkVerdict.OUTSIDE) return SeedingCheckResult.Blocked("", hardLink = true)
+        if (link == LinkVerdict.LIBRARY_ONLY) Logger.info("Seeding guard: $localFilePath has other names, all inside the library - allowed (315)", "torrent")
         return SeedingCheckResult.Allowed
     }
+
+    /** Phase 315 — the walked library roots' names for each multiply-linked inode (cached, built on first need). */
+    private val linkIndex = LibraryLinkIndex()
+
+    /** Phase 315 (FR-315-1) — [LinkVerdict] for [localFilePath]; a file that can't be stat'ed reads as [LinkVerdict.SINGLE]. */
+    suspend fun hardLinkVerdict(localFilePath: String, config: AppConfig): LinkVerdict {
+        val info = linkInfo(localFilePath) ?: return LinkVerdict.SINGLE
+        if (info.links <= 1L) return LinkVerdict.SINGLE
+        return linkVerdict(info.links, linkIndex.insideCount(info, libraryRoots(config)))
+    }
+
+    /** Phase 315 — drop the cached library walk (after a scan moved files). */
+    suspend fun invalidateLinks() = linkIndex.invalidate()
 
     suspend fun reportForItem(item: MediaItem, config: AppConfig): SeedingReport {
         val qbConfig = config.qbittorrent

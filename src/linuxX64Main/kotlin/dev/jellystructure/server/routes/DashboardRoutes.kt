@@ -129,6 +129,9 @@ class DashboardService(
         // Phase 307 (FR-307-3) — what is waiting to go to a public database, opened as a panel on the page.
         publish?.let { p -> runCatching { p.dashboardRow() }.getOrNull()?.let { rows += it } }
 
+        // Phase 315 (FR-315-3/-4) — edits refused to keep a seeding torrent intact, and torrents an earlier edit may have changed.
+        rows += runCatching { dev.jellystructure.torrent.seedingDashboardRows() }.getOrDefault(emptyList())
+
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
         val jellyfinReachable = advisor?.reachable != false

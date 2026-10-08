@@ -1070,6 +1070,12 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /** Phase 315 (FR-315-4) — start the read-only check for torrents an earlier in-place edit may have changed. */
+    suspend fun seedingDamageCheck(): Boolean = runCatching {
+        val response = httpClient.post("/api/seeding/damage-check")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun batchJellyfinPush(): Boolean = runCatching {
         val response = httpClient.post("/api/media/batch/jellyfin-push")
         response.status.value in 200..299
