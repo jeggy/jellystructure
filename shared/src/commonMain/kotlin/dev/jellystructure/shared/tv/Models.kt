@@ -110,6 +110,20 @@ data class ClientCapabilities(
      * other player seeks in such a file itself.
      */
     @SerialName("seek_needs_index") val seekNeedsIndex: Boolean = false,
+    /**
+     * R379 (owner decision 2026-10-08) — the AC-3 family codecs (`ac3`, `eac3`) this device plays with its OWN
+     * decoders or HDMI passthrough, i.e. without the FFmpeg extension. FFmpeg's resampler is built once from the first
+     * frame, so an AC-3 stream that changes channel count mid-file (5.1 → 2.0, common in TV captures) crashes it. On a
+     * device that reports a list here, the server leaves the missing codecs out of the profile, so Jellyfin
+     * re-encodes just the audio. Null = an app that does not report it (unchanged negotiation).
+     */
+    @SerialName("platform_audio_decoders") val platformAudioDecoders: List<String>? = null,
+    /**
+     * R379 — this player takes HEVC in fMP4 HLS (what `hls_hevc` declares), stated without opting every transcode into
+     * it. The server uses it only for an audio-only transcode of an HEVC source on a device that lacks a platform AC-3
+     * decoder, so the video is copied instead of re-encoded. Default false.
+     */
+    @SerialName("hls_hevc_capable") val hlsHevcCapable: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to
@@ -171,6 +185,9 @@ data class PlaybackQoeReport(
     @SerialName("rebuffer_ms") val rebufferMs: Long = 0,
     @SerialName("bandwidth_estimate_bps") val bandwidthEstimateBps: Long? = null,
     @SerialName("video_decoder") val videoDecoder: String? = null,
+    /** R379 — the audio decoder this item used, when the platform exposes it (Media3's `onAudioDecoderInitialized`:
+     *  a platform `c2.*`/`OMX.*` name, or the FFmpeg extension's). Null = passthrough or unknown. Additive. */
+    @SerialName("audio_decoder") val audioDecoder: String? = null,
     @SerialName("direct_play") val directPlay: Boolean = false,
     @SerialName("link_kind") val linkKind: String = "unknown",
     @SerialName("link_mbps") val linkMbps: Int = 0,

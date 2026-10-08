@@ -82,3 +82,6 @@ actual fun switchesHlsAudioRenditions(): Boolean = false
 actual fun playsAdaptiveHls(): Boolean = true
 
 actual fun playsOnlyHls(): Boolean = false
+
+/** R379 — a browser decodes (or refuses) AC-3 itself; [supportedAudioCodecs] already says which. */
+actual fun platformAudioDecoders(): List<String>? = null

@@ -5,8 +5,8 @@
 
 ## Status
 
-`⚠ Partial` — written and built 2026-10-07 (dev-authored) from the owner's ask; compiles, **not device-tested**, not
-dev-reviewed. Android only (`:ravilo-player`, `:ravilo-ui`
+`⚠ Partial` — written and built 2026-10-07 (dev-authored) from the owner's ask; re-dev-reviewed 2026-10-08; the
+owner's decisions built 2026-10-08 (*Build notes (2026-10-08)*), unit-tested; device acceptance partly owed. Android only (`:ravilo-player`, `:ravilo-ui`
 androidMain, `:ravilo-android`); no server, wire, string or config change. Number verified free on `origin/main`
 `938b92b5`'s tree and the local `main` (Ravilo tops at R378).
 
@@ -131,3 +131,36 @@ the owner.
    Jellyfin for an audio-only transcode (video copied) for AC3/E-AC3 sources on it. Verify first whether the household
    Pixel is one of them.
 2. QoE gains an `audio_decoder` field, so a crash report names the decoder. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+
+## Build notes (2026-10-08) — the owner's decisions
+
+- **The Pixel 9 Pro has platform Dolby decoders** (read-only `dumpsys media.player`: `c2.dolby.eac3.decoder` takes
+  `audio/ac3` and `audio/eac3`, vendor `media_codecs_dolby_c2.xml`). So on the household phone R379's platform-first
+  already keeps AC-3 away from FFmpeg, and the rule below changes nothing there; it is for phones without Dolby.
+- **The app reports what its platform decodes** (additive wire fields on `ClientCapabilities`):
+  `platform_audio_decoders` — the AC-3 family (`ac3`, `eac3`) a `MediaCodecList` decoder takes for `audio/ac3`,
+  `audio/eac3` or `audio/eac3-joc`, read once per process (`platformAudioDecoders()`, Android; null on the desktop
+  and the web, which never decode AC-3 with Media3's FFmpeg extension). HDMI passthrough is deliberately not counted:
+  it depends on what is plugged in at the moment, and without it Media3 falls back to the crashing FFmpeg path.
+  `hls_hevc_capable` — the player takes HEVC in fMP4 HLS (`supportsHevcOverHls()`), stated without opting every
+  transcode into it (Android's `hls_hevc` stays false, as today).
+- **The server re-encodes just the audio** (`tv/PlatformAudio.kt`, one pure rule `forPlatformAudio`): on a device that
+  reports the list, every AC-3 family codec it lacks leaves the declared audio codecs, so Jellyfin neither direct-plays
+  nor copies it (R297's transcode audio is the declared list's intersection) and converts it instead. When the play's
+  own audio track (the picked one, else the default, else the first — `playingAudioCodec`) is such a codec and the app
+  is `hls_hevc_capable`, the negotiation also offers fMP4 with HEVC first, so an HEVC picture is copied, not re-encoded
+  (an H.264 picture is copied in either container). Applied at every negotiation: start, R381's prepare, both restreams
+  (the burn-in one narrows before `burnInLimits`) and Live TV's tune (list only — a channel's codec isn't known before
+  tuning). A start that narrows logs `no platform … decoder — those are re-encoded[, HEVC copied in fMP4] (R379)`.
+  Older apps (no list) are negotiated byte for byte as before.
+- **QoE `audio_decoder`** (additive): Media3's `onAudioDecoderInitialized` name on Android (the engine's, kept across
+  items like the video decoder's; a FR-R379-2 rebuild reports its new one), null for passthrough and elsewhere; stored in
+  `playback_qoe.audio_decoder` (migration 76, after 314a's 75) and returned in the QoE
+  summaries.
+- **With 314's added copies:** the list is narrowed first, so 314's `copyForDevice` chooses against it: an AC-3 film
+  that 314 gave an AAC *Stereo* copy plays that copy directly on a phone without Dolby (no encode at all); only then
+  does the playing track decide the HEVC-copy path.
+- **Tests:** `PlatformAudioTest` (9: an older app unchanged, both decoders unchanged, none ⇒ both out of the direct-play
+  and transcode profiles, only the missing one leaves, AC-3 play + HEVC-capable ⇒ fMP4 profile, not capable ⇒ TS, the
+  declared-nothing guard, the playing-track choice, 314's AAC copy chosen on a phone without Dolby); `MusicEditionsStoreTest`'s schema rewind drops the new column.
+

@@ -28,6 +28,8 @@ data class QoeSummary(
     @SerialName("rebuffer_ms") val rebufferMs: Long,
     @SerialName("bandwidth_estimate_bps") val bandwidthEstimateBps: Long?,
     @SerialName("video_decoder") val videoDecoder: String?,
+    // R379 — the audio decoder the item used; null = passthrough, unknown or an older app.
+    @SerialName("audio_decoder") val audioDecoder: String? = null,
     @SerialName("direct_play") val directPlay: Boolean,
     @SerialName("link_kind") val linkKind: String,
     @SerialName("link_mbps") val linkMbps: Int,
@@ -112,6 +114,7 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
             waits_json = report.waits.takeIf { it.isNotEmpty() }?.let { qoeJson.encodeToString(WAITS, it) },
             session_rebuffer_count = report.sessionRebufferCount.toLong(),
             session_rebuffer_ms = report.sessionRebufferMs,
+            audio_decoder = report.audioDecoder,
         )
     }
 
@@ -142,6 +145,7 @@ private fun Playback_qoe.toSummary() = QoeSummary(
     rebufferMs = if (per_item == 1L) rebuffer_ms else 0L,
     bandwidthEstimateBps = bandwidth_estimate_bps,
     videoDecoder = video_decoder,
+    audioDecoder = audio_decoder,
     directPlay = direct_play == 1L,
     linkKind = link_kind,
     linkMbps = link_mbps.toInt(),

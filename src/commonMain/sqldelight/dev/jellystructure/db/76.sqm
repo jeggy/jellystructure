@@ -1,0 +1,4 @@
+-- R379 (owner decision 2026-10-08) — the audio decoder an item used (Media3's onAudioDecoderInitialized), so a crash
+-- report says whether the platform's decoder or the FFmpeg extension was decoding. NULL = passthrough, unknown, or an
+-- older app. Must stay byte-for-byte in sync with PlaybackQoe.sq's CREATE TABLE (the SQLDelight-migration rule).
+ALTER TABLE playback_qoe ADD COLUMN audio_decoder TEXT;

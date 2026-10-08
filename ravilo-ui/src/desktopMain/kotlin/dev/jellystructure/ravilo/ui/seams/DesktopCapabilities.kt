@@ -95,3 +95,6 @@ actual fun detectLinkState(): LinkState = runCatching {
         else -> LinkState.UNKNOWN
     }
 }.getOrDefault(LinkState.UNKNOWN)
+
+/** R379 — mpv and the Mac's AVPlayer decode AC-3 with their own libavcodec/CoreAudio; never Media3's FFmpeg extension. */
+actual fun platformAudioDecoders(): List<String>? = null
