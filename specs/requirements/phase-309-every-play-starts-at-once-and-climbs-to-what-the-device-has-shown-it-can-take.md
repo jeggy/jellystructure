@@ -521,3 +521,10 @@ dev stack; the rest of 309 (record, probe, prewarm, the climb rules) is not buil
 - The deployed `/cast/ravilo-cast.js` contains `useShakaForHls`. **Not verified on a Chromecast:** no free sender at the
   time (Stue TV was in another test, the Pixel off adb, the Mac playing the owner's music). The receiver's next QoE
   rows will show `bandwidth_samples` and `first_frame_ms`; a cast to Stue TV's Chromecast should be checked next.
+
+### Still owed (2026-10-08 evening)
+
+The live check planned after the v1.50-54 deploy was not made: Stue TV was in use by a viewer, and the owner then
+paused all device use except the Pixel. Owed: a cast to Stue TV's built-in Chromecast confirming the receiver plays
+with Shaka and reports its start time and sample count (309a0), and an audio switch on Android on R382's confirmed
+film.

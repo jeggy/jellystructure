@@ -270,3 +270,34 @@ Gradle runs overlapped crashed at launch (`ClassNotFoundException`); a clean reb
 **Open:** R381c after a week of per-item numbers (needs the app release); the desktop players through `QoeCounter`;
 309's record must read `per_item` rows only; migration renumbered to 73 at the merge into `main` (309a0 took 72)
 first (309a0/310 may take numbers).
+
+### Merged, deployed and live-tested (2026-10-08 evening)
+
+- **Merged into `main`** (`f569aeb9`): this phase's migration renumbered 72 → **73** (309a0 took 72); the QoE upsert,
+  the shared report model and `MusicEditionsStoreTest`'s rewind carry both phases' columns. Backend `linuxX64Test`,
+  `:ravilo-ui` unit tests, the admin and receiver compiles and every check script green. **Deployed** to the dev stack
+  as `v1.50-54-gf569aeb9` (schema 74); public health OK at once.
+- **R381b live on the Pixel 9 Pro** (debug build, a series the owner had never watched; marks undone afterwards):
+  at the credits marker the app called `prepare` for the next episode (backend: `playback prepare: … directPlay=true
+  (R381, nothing reported)`), prefetched its head in 0.5–2.8 s, and the next episode loaded from that cache
+  (`load: the prefetched next item, read from its cache`); Jellyfin logged the next episode's start only after the
+  previous stop (no early start); the cached episode's start sample was 2 s.
+- **Bug found live and fixed (`PlayerScreen.kt`):** only the FIRST episode a player opened preloaded its next one.
+  The poll loop is launched once per player (`LaunchedEffect(Unit)`), but read `resolvedNextEpisodeId` and `store`
+  as plain values, so from the second episode on it held episode 1's next-episode id and **episode 1's PlayerStore,
+  which an auto-advance closes** (RaviloApp builds a new store per episode with `remember(dest.itemId)`); the call
+  went to a cancelled scope and nothing happened. Now the loop reads `currentNextEpisodeId` / `currentItemId` /
+  `currentStore` (`rememberUpdatedState`), as the rest of the loop already does. Re-tested on the Pixel: E11 → E12
+  and then E12 → E13 in the same player both prepared and loaded from the cache. **App-side only; reaches devices
+  with the next app build** (the Pixel's debug app has it).
+- **Found, not fixed:**
+  - The tail prefetch never runs: the cache reports the content length as unknown (`length -1`), so only the first
+    16 MB are prefetched. The start is still instant (the head is what the start reads).
+  - Every finished episode still sends Jellyfin two `stop write … at=0ms reason=mark-watched direct` (the app's
+    mark-watched at the credits → the backend's `mark(watched = true)` → `stopPlaybackSession(0)`). Harmless for a
+    finished item (played, position 0), but it is the 0 ms stop pattern 312 set out to remove — see 312.
+- **Test plays left on Soveværelse TV** (before the owner put it off limits): the debug app `1.50-54-gf569aeb9`
+  stays installed, its **sound is muted** (the test's mute key), and 8 episodes of a kids' series were played on the
+  *Test Stream* account (not a household viewer). The device is not to be touched; the owner may want to unmute it.
+- **Not verified live:** R381a on the receiver/desktop/web (not in scope of this build), FR-R381-6 test 4 (Media3
+  integration test, not written).

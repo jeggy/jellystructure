@@ -412,6 +412,9 @@ fun PlayerScreen(
     // "auto play next" never working again. rememberUpdatedState gives the poll loop a live
     // reference that always reflects the latest recomposition, without needing to restart it.
     val currentItemId by rememberUpdatedState(itemId)
+    // R381 — the poll loop's live store: an auto-advance builds a new PlayerStore per episode (RaviloApp's
+    // remember(dest.itemId)) and closes the old one.
+    val currentStore by rememberUpdatedState(store)
     val currentNextEpisodeId by rememberUpdatedState(nextEpisodeId)
     // R181/R180 — same staleness risk as itemId/nextEpisodeId above: these are read inside the poll
     // loop's resolution/remember logic, which must see the current recomposition's value.
@@ -1190,14 +1193,19 @@ fun PlayerScreen(
                 // R381 (owner, 2026-10-08) — preload the next episode at the credits marker (or 60 s before the end with
                 // no trusted marker), autoplay on or off; a seek back out of the credits drops it again.
                 val prefetchAt = creditsStart ?: (durationMs - NEXT_PREFETCH_BEFORE_END_MS)
-                val nextForPrefetch = resolvedNextEpisodeId
+                // The live next episode and the live store (rememberUpdatedState), never `resolvedNextEpisodeId` or
+                // `store`: this loop is launched once per player, while an auto-advance swaps in a new episode and a new
+                // PlayerStore (closing the old one, its scope cancelled). Holding the first episode's values, every later
+                // episode prepared nothing — the call went to a closed store (found on the Pixel 2026-10-08: S01E01 →
+                // E02 preloaded, E02 → E03 did not).
+                val nextForPrefetch = currentNextEpisodeId?.takeIf { it != currentItemId }
                 if (playerLoadedForCurrentItem && nextForPrefetch != null && durationMs > 0) {
                     if (bk.prefetchedForItemId != currentItemId && positionMs >= prefetchAt) {
                         bk.prefetchedForItemId = currentItemId
-                        store.prepareNext(nextForPrefetch)
+                        currentStore.prepareNext(nextForPrefetch)
                     } else if (bk.prefetchedForItemId == currentItemId && positionMs < prefetchAt - 5_000) {
                         bk.prefetchedForItemId = null
-                        store.discardNext()
+                        currentStore.discardNext()
                     }
                 }
 

@@ -202,3 +202,14 @@ the old encode; a stray stop at 0 after ours is undone by the read-back. `Playba
 **Live (Stue TV, debug app, 2026-10-08 12:22 CEST):** a 4K film started from 0:00, seeked forward to 15 min, stopped
 with Back. Jellyfin's log: one *started*, **one** *stopped … at "921779"ms*, no stop at 0; its `UserData` held the place
 (unwatched at 921 779 ms); the read-back found nothing to correct. The test play was undone afterwards.
+
+### Found live (2026-10-08 evening, R381's test plays)
+
+Every finished episode still sends Jellyfin **two stops at 0 ms** around the real stop, logged as
+`stop write: … at=0ms reason=mark-watched direct (312)`: the app marks the episode watched at the credits (two calls
+in `PlayerScreen`, the advance path and the stop path), and the backend's `mark(watched = true)` still calls
+`stopPlaybackSession(0)` (R185's zeroing) before `markPlayed`. For a finished item the result is right (played,
+position 0) and the stop's own user-data write lands after, but it is the 0 ms stop this phase set out to remove, and
+it would wipe a place if the app's "finished" and the server's R347 rule ever disagreed. Lean: `mark(watched = true)`
+writes the user data (`setUserData(played = true, position 0)`) instead of sending a stop, and the app sends one
+mark per episode. Not fixed.
