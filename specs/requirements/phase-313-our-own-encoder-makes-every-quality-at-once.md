@@ -6,7 +6,7 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored), against `main` `c9883354`. Not dev-reviewed, not built. Backend (a new
+`Planned` — written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Not built. Backend (a new
 encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and compose files (GPU
 and ffmpeg), the admin's *Playing now*. No app release is needed for the backend half: every adaptive player already
 reads a composed master (308). Builds on **308** (the ladder table, the composed master, the players' ABR), **309**
@@ -244,3 +244,107 @@ channel, and a music or audiobook stream (never this encoder). A job that fails 
 - **313d — subtitles:** WebVTT renditions and the burn-in switch.
 - **313e — make it the default:** on for every transcode; 309's FR-309-6/-7 removed; the Jellyfin path stays as the
   fallback.
+
+## Dev review (2026-10-08, against `main` `fdd48f10`)
+
+Read against `AudioRenditionJobs.kt`, `AudioRenditions.kt`, `VideoLadder.kt`, `PlaybackService` (`withRenditions`,
+`releaseEncodes`, `TICKET_TTL_MS`), `TvRoutes.kt` (`/tv/stream/{id}/…`), `AuthPlugin.kt`, the `Dockerfile`, both
+compose files in the deployment and Jellyfin's, and on the host: `nvidia-smi`, the NVIDIA container toolkit, the
+`/dev/nvidia*` nodes, `/dev/shm`, and the jellyfin-ffmpeg build in Jellyfin's container (filters, encoders, build
+configuration). **Not measured:** NVENC throughput (open question 1). A household play started two minutes before the
+measurement would have run, so it stays 313a's first step. The design holds; fifteen items, one for the owner.
+
+1. **The GPU can reach the backend container, as Jellyfin's does.** Driver 550.163.01, NVIDIA container toolkit 1.20,
+   default runtime `runc`; Jellyfin gets both cards through a `DeviceRequests` entry (`driver: nvidia`, all devices,
+   `capabilities: [gpu]`) plus `NVIDIA_VISIBLE_DEVICES=all` / `NVIDIA_DRIVER_CAPABILITIES=all`. The device nodes are
+   `0666`, so the backend's uid 1000 needs no extra group. FR-313-11: mirror that stanza, with
+   `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`. **Put it in a separate override file** (e.g.
+   `docker-compose.gpu.yml`): the public compose must still start on a machine without an NVIDIA card (the repo is
+   public), and FR-313-11's "runs without a GPU" then holds by construction.
+
+2. **Which card is which.** `nvidia-smi` index 0 is the P4000 (bus 08:00.0), index 1 the RTX 2060 SUPER (42:00.0). CUDA
+   numbers devices fastest first by default, so Jellyfin's `-init_hw_device cuda=cu:0` is almost certainly the 2060
+   SUPER (consistent with 2026-10-05, when `nvidia-smi` showed Jellyfin's ffmpeg on GPU 1). Our encoder must set
+   `CUDA_DEVICE_ORDER=PCI_BUS_ID` (or address the card by UUID) and choose the P4000 deliberately.
+
+3. **Count sessions from the card, not only our own.** FR-313-8 counts "its own encoder sessions per card", but
+   Jellyfin's jobs and trickplay share the 2060 SUPER. Read the live counts from NVML at each start
+   (`nvidia-smi --query-gpu=encoder.stats.sessionCount`, or the library). A paused (SIGSTOP) job **keeps** its NVENC
+   sessions, so paused jobs count as holding them until they are stopped.
+
+4. **The P4000 is Pascal.** It has one NVENC engine, HEVC Main 10 encode but no HEVC B-frames, and lower quality per
+   bit than the Turing 2060 SUPER. A four-rung 4K HEVC job may not reach the ≥ 1.5× realtime the targets need. 313a
+   decides: H.264 ladders on the P4000; a 4K HEVC top rung on the 2060 SUPER (within the 6-session limit) if the P4000
+   can't keep up. One job stays on one card (no frame copies between cards).
+
+5. **ffmpeg in the image.** The backend image is Debian 12 (bookworm) with Debian's ffmpeg **5.1** (no `tonemap_cuda`).
+   The jellyfin-ffmpeg in Jellyfin's container is the **trixie** package `jellyfin-ffmpeg8 8.1.2`, 218 MB, GPL v3, built
+   with `libfdk-aac`. Our image is public on GHCR, so avoid redistributing fdk-aac. Lean: **jellyfin-ffmpeg's portable
+   GPL build**, pinned by version and SHA-256, in `/usr/lib/jellyfin-ffmpeg`, used by the encoder only. Its built-in
+   `aac` encoder replaces fdk (R291 already uses `aac`). Moving the whole image to trixie is the alternative. Debian's
+   ffmpeg + `libplacebo` would need Vulkan and the `graphics` capability in the container, so no.
+
+6. **R291's runner is the base, with three differences.** (a) It writes to `/tmp/js-renditions`, the container's
+   overlay disk, not a tmpfs. Mount a dedicated tmpfs with a `size=` limit for the encoder (the host's `/dev/shm` is
+   63 GB), so FR-313-9's cap is enforced by the kernel too. (b) A segment is read whole into a `ByteArray` and sent with
+   `respondBytes`. A 2 s 4K rung is ~5 MB per request, and that churn hits K/N's GC (phase 228). Stream video segments
+   from the file in chunks instead. (c) `IDLE_MS` is **90 s**, not 60 (FR-313-1's text). Its segments are 3 s MPEG-TS
+   aligned to Jellyfin's; inside a 313 job, audio follows the video's 2 s fMP4 timeline. R291's own jobs (direct-play
+   renditions, the Jellyfin fallback) keep theirs. One master never mixes the two timelines.
+
+7. **The stream URL is a bearer, so its id must be unguessable.** `/api/tv/stream/` is a public prefix in
+   `AuthPlugin`, and `AudioRenditions.randomId()` uses `kotlin.random.Random`, not a cryptographic generator. Today it
+   guards audio segments; with 313 it guards whole films. Take 128 bits from `getrandom`/`/dev/urandom` (313b, which
+   fixes R291 at the same time). An id expires with its ticket (4 h); resuming after that re-issues it through the
+   normal restream.
+
+8. **"No app release is needed for the backend half" is true only for the Cast receiver and post-308 builds.** Ravilo
+   1.50 does not declare `hls_adaptive` (308's re-review), so installed phones and TVs never get a ladder. **But they
+   can still get our encoder:** a **one-rung** master (the rung 309's rules pick) gives a non-adaptive client a ~1 s
+   start instead of Jellyfin's 8.5 s, with no app change. Media3 1.50 plays a single-variant fMP4 HLS. Add this as an FR
+   in 313b: the quickest felt win for every installed app.
+
+9. **What each player needs in the master and the segments.** HEVC in fMP4 must use the `hvc1` sample entry
+   (`-tag:v hvc1`) or AVPlayer/Safari refuse it. `CODECS` must be exact (`avc1.6400xx`, `hvc1.2.4.L1xx.B0`, `mp4a.40.2`,
+   `ec-3`), computed from each rung's profile and level. Media3 drops a variant whose codec string its decoders don't
+   support, so a wrong string silently hides rungs. HDR10 rungs carry `VIDEO-RANGE=PQ` (HLG: `HLG`); every rung carries
+   `FRAME-RATE` and `CLOSED-CAPTIONS=NONE`. Tests for each string.
+
+10. **The Chromecast.** CAF's default HLS player assumes MPEG-TS unless the load request sets
+    `hlsSegmentFormat`/`hlsVideoSegmentFormat` to FMP4; with 309a0's `useShakaForHls`, Shaka handles fMP4. The encoder
+    supports both muxings, one per job: **TS for the receiver** until 309a0 is verified on the device, fMP4 elsewhere.
+    HEVC rungs on a receiver only when its own capabilities say HEVC. The BRAVIA's built-in Cast may; a Chromecast HD
+    does not.
+
+11. **A restart must line up with what was already made.** After a seek or burn-in switch the new job must produce the
+    same init segment and continuous `tfdt`/PTS for its `start_number`: identical encoder settings, `-copyts` and the
+    segment's start offset, as R291 does for TS. Kept-behind segments from an earlier job then sit in the same rung, so
+    a test decodes segment k from the restarted job right after segment k−1 from the first.
+
+12. **Jobs have a fixed set of rungs.** A running ffmpeg can't gain an output, so a prewarm (309) starts with the full
+    rung set the play will use, and adoption (FR-313-1) requires the same set. Starting the full set is cheap: it
+    pauses 40 s ahead.
+
+13. **Teardown.** `releaseEncodes` today calls Jellyfin's `stopActiveEncoding` and `audioRenditions.stopFor`. With 313,
+    a play has no Jellyfin job, so it stops **our** job by the play's key and skips the Jellyfin call. 312's "release
+    the encodes only" path is the same call. PlaybackInfo still mints a `PlaySessionId` (it starts nothing), and the
+    Jellyfin session keeps `PlayMethod: Transcode` (FR-313-10).
+
+14. **Tests are feasible as listed.** `AudioRenditionsTest`/`VideoLadderTest` show the pattern for pure builders.
+    Lifecycle tests use a fake process like R291's. The e2e alignment test (Test 9) needs libx264/libx265 in the CI image
+    (CPU encode, no GPU).
+
+15. **Build order:** 313a also does items 1, 2, 5 and the tmpfs mount; 313b adds item 7 and item 8's one-rung mode
+    first, then the ladder.
+
+**For the owner:**
+
+- **Q1 — Installed apps (1.50) and our encoder:** they can't use a ladder until the app update, but a **single fixed
+  quality from our encoder** starts in ~1 s instead of ~8.5 s, with the quality chosen from the device's record. Options:
+  (a) **yes, as soon as 313b works (lean)**; (b) only after the app update brings the ladder, so installed apps keep
+  Jellyfin's single stream until then.
+
+## Decided by the owner (2026-10-08, after the dev review)
+
+1. **Installed 1.50 apps get our encoder as one fixed quality as soon as 313b works** (Q1, the lean): ~1 s starts for
+   every installed app before any app release; the ladder follows with the app update.

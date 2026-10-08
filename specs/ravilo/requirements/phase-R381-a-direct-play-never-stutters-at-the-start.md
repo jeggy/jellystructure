@@ -7,7 +7,7 @@
 ## Status
 
 `Planned` — written 2026-10-08 (dev-authored) from a read-only investigation (`playback_qoe` and the Android player's
-code). No test plays were needed; no device was touched. Not dev-reviewed, not built. Android (TV + phone) player and
+code). No test plays were needed; no device was touched. **Dev-reviewed 2026-10-08** (section at the end). Not built. Android (TV + phone) player and
 the backend's readers of `playback_qoe` (308, 309).
 
 ## What happens
@@ -126,3 +126,83 @@ Each change is its own small commit, with the before and after numbers recorded 
    so it starts with no wait. It follows R375's next episode, never preloads after a film, stops preloading if the
    viewer seeks back out of the credits, and counts nothing as a stall (FR-R381-1's rules apply per item). A direct play
    preloads its file; a transcode asks for the next episode's encode at the same moment (309's early encode / 313's job).
+
+## Dev review (2026-10-08, against `main` `fdd48f10`)
+
+Read against `RaviloPlayerAndroid.kt` (the `qoe*` fields, `qoeListener`, `load()`, `releaseEngine()`,
+`restartPreferringExtensions()`, `qoeSnapshot()`), `PlayerStore.kt` (`startSession`, `postQoeNow`), `PlayerScreen.kt`
+(`advanceNext`, the next-up trigger, `resolvedNextEpisodeId`), `PlaybackQoe.sq`, `PlaybackService.recordQoe`,
+`VideoLadder.measuredThroughput`, `TvRoutes.kt` (the admin's `recentQuality`), the receiver's QoE in `Receiver.kt`, the
+desktop players (`RaviloPlayerDesktop.kt`, `MacPlayer.kt`), and Media3 1.8.0 (`libs.versions.toml`). The diagnosis
+holds; the preload needs one backend change the spec does not name yet. Twelve items, two for the owner.
+
+1. **The diagnosis holds, and it is wider than rebuffers.** `load()` resets only R218's per-item fields
+   (`_hasRenderedFirstFrame`, `_isBuffering`, `_playbackFailed`, `_isSeeking`) and 308's variant; every `qoe*` counter
+   and `qoeFirstFrameRendered` survive. `PlaybackQoe.sq` writes `INSERT OR REPLACE` per (device, item), so each item's
+   row holds the running totals. The same carry-over hits `dropped_frames`, `subtitle_load_errors`, the recovery
+   counters and `bandwidth_estimate_bps` (the shared meter's last value). **FR-R381-1 must cover every counter in
+   `PlayerQoeSnapshot`, not only rebuffers.**
+2. **Two more paths count a start as a stall:** `releaseEngine()` (R292's return from the background) and
+   `restartPreferringExtensions()` (R379) rebuild the engine but leave `qoeFirstFrameRendered` true, so the rebuilt
+   engine's first `STATE_BUFFERING` is counted. FR-R381-2 lists both; the build must reset the flag on every engine
+   build, not only in `load()`.
+3. **What an "item" is.** A restream (R195/R291 subtitle or audio switch, R284) calls `load()` again for the **same**
+   item. Counts must be per Jellyfin item id and survive a restream; the first-frame flag is per load. Without this
+   rule FR-R381-1's "reset in `load()`" would wipe a real stall the moment the viewer switches subtitles.
+4. **Build it as a pure state machine** in `commonMain` (`QoeCounter`: events in — load, first frame, buffering, ready,
+   seek, track switch, variant change, engine rebuild, decoder restart — counts and stall events out), fed by the
+   Android listener, the desktop players and later the web. FR-R381-6's test 1 then runs in `commonTest` with no
+   Media3 at all.
+5. **The wire is additive** (never delete a DTO field): `PlaybackQoeReport` gains `per_item` (bool), `stalls` (≤ 20
+   events: seconds after first frame, position, buffered ms, phase, delivery, variant) and the optional session
+   totals. The backend stores `per_item` and the events (one migration, numbered at build time with 309's and 310's).
+   Rows without `per_item` are the legacy rows of FR-R381-4.
+6. **Who reads the stall counts today:** not 308. `measuredThroughput` reads only `bandwidth_estimate_bps` and
+   `direct_play`. The harm starts with 309's record (`stalled_bps`, FR-309-8). So **R381's counting half must ship
+   before 309's record**, and the admin's device line (`TvRoutes.kt` `recentQuality`) must stop showing legacy counts.
+7. **The other players.** The receiver resets its counters per load (`Receiver.kt`), fine. The desktop players report
+   mpv's/AVPlayer's `stalls` per player instance; whether that instance survives an episode change has to be checked,
+   then fed through the same `QoeCounter`.
+8. **The preload cannot use today's start call.** The next episode starts through `onNavigateToEpisode` → a new
+   `startSession` → `POST` start, which (a) reports `/Sessions/Playing` to Jellyfin, (b) moves the R368 session to the
+   next item, (c) starts the tracker and its heartbeat, (d) for a transcode starts the Jellyfin job and the composed
+   master. Doing that at the credits would make Jellyfin switch *now playing* while the current episode still plays
+   (Jellyfin then stops the current one with the session's position, another source of 312-style writes), move
+   Continue Watching early, and leave a started next episode behind when the viewer stops at the credits. **Add
+   FR-R381-7: a `prepare` call** that returns the next item's ticket with none of those side effects (same ACL and
+   kids gating as a start, valid ≤ 5 min, nothing reported to Jellyfin), and the real start's side effects run only
+   when the item actually begins (a `begin` with the prepared ticket, or the first progress report).
+9. **Media3's mechanism.** The player is built around one `MediaItem` per `load()` (per-item subtitles, R291's master
+   per ticket, R218 state, the screen per episode), so turning it into a playlist (`addMediaItem` +
+   `setPreloadConfiguration`) would touch all of that. Lean: **prefetch the next file's first ~15 s into Media3's
+   cache** (`CacheDataSource` over the prepared direct-play URL) at the credits, and start the next item from that
+   cache on advance; Media3's `DefaultPreloadManager` (unstable API in 1.8) is the later upgrade if a prefetch is not
+   enough. The cache is dropped on `releaseEngine()`, on Back and after 5 min unused.
+10. **Transcoded next episodes.** For a direct play the prefetch is cheap. For a transcode, "preload" means starting
+    the encode early: that is 309's early encode / 313's job, adopted on advance. Until one of those exists, a
+    transcoded next episode gets no preload (see the owner question). R291's audio renditions are never warmed for a
+    preload (R291 decision 2).
+11. **Edge rules for the build:** the trigger is the next-up card's own trigger (trusted credits marker or the
+    heuristic); the next id is `resolvedNextEpisodeId` (so R343's shuffle and R375's next follow automatically); a
+    multi-episode file (149) whose next part is in the same file needs no preload; a seek back out of the credits, Back,
+    a stop or a background release discards the preload; a viewer who stops at the credits leaves nothing started.
+12. **Tests are feasible, with one dependency.** `media3-test-utils` and `media3-test-utils-robolectric` (1.8.0) are
+    not in the build yet; Robolectric 4.14.1 is. Add them for FR-R381-6's test 4. Add backend tests that `prepare`
+    sends nothing to a fake Jellyfin and that `begin` sends exactly the start report.
+
+**Build order:** R381a — the `QoeCounter`, per-item counts, the wire fields, the backend's legacy handling and the admin
+line (backend half reaches every app at once; the counting half needs the app release). R381b — `prepare`/`begin` and
+the direct-play prefetch. R381c — FR-R381-5's fixes after a week of corrected numbers.
+
+**For the owner:**
+- **Q1 — preload when "play next automatically" is off?** (a) Yes, prefetch anyway and discard if not used (lean: the
+  next-up card still offers *Next*, and a prefetch of a direct play costs a few MB); (b) only when autoplay is on.
+- **Q2 — a transcoded next episode, before 309's early encode or 313 exists?** (a) No preload for it until then (lean);
+  (b) start Jellyfin's transcode at the credits (hides the 8–38 s cold start, costs a GPU encode for every binge
+  episode, and is wasted when the viewer stops).
+
+## Decided by the owner (2026-10-08, after the dev review)
+
+1. **Preload the next episode whether or not autoplay is on** (Q1): a few MB, thrown away if unused.
+2. **No preload for a next episode that needs a transcode until 309's early encode or 313's encoder exists** (Q2);
+   only direct-play episodes preload until then.

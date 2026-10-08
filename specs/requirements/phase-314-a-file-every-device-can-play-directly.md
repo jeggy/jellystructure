@@ -8,7 +8,7 @@
 
 `Planned` — written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach
 reports of the same day (option D), and a read-only count over Jellyfin's database, the library's files (link counts)
-and qBittorrent. Not dev-reviewed, not built. Backend (a new job kind on the media lane, the track resolver), admin
+and qBittorrent. Dev-reviewed 2026-10-08 (section at the end), not built. Backend (a new job kind on the media lane, the track resolver), admin
 (Settings, the dry-run list, the Tracks tab, Activity, Dashboard), Ravilo (the picker hides a compatible copy).
 Builds on **284** (the file is the record), **311** (work files in `<dir>/.jellystructure/`), **213** (job lanes),
 **R291** (the backend chooses the audio stream), **R195**/**R241** (remembered tracks), **R379** (no-AC3 phones).
@@ -231,3 +231,127 @@ language** changes no score and cannot start an upgrade or a re-download. Rules 
    them in Ravilo's picker (R195's versions level), labelled in plain words (e.g. *Dolby Vision* · *Dolby Vision, full
    detail*). FEL films are converted too, since nothing is lost.
 3. Disk: kind C needs about 0.8 TB of free space on the films' disk; the dry run shows the total before Apply.
+
+## Dev review (2026-10-08, against `main` `fdd48f10`)
+
+Read against `torrent/SeedingGuard.kt` + `SeedingSnapshot.kt`, `media/MediaJobQueue.kt` (guard, lanes, playback
+deferral), `media/Scanner.kt` (`scanMovie`), `media/FfmpegRunner.kt` (`.jstmp_`), `tv/PlaybackService.kt`
+(`buildAudioTracks`, media source ids), `tv/AudioRenditions.kt` + `AudioRenditionJobs.kt`, `auth/JellyfinClient.kt`
+(device profile), `ravilo-cast/…/Receiver.kt` (capabilities); Jellyfin **v12.1** (`FFProbeVideoInfo.cs`,
+`MediaInfoResolver.cs`, `NamingOptions.cs`, `VideoListResolver.cs`, `StreamBuilder.cs`, `EncodingHelper.cs`); Radarr and
+Sonarr `develop` (`MediaFileExtensions.cs`, `ExistingOtherExtraImporter.cs`); the backend and Jellyfin images
+(`command -v`); `df` on both media disks. The kinds and the safety rules hold. Twelve items, one for the owner.
+
+1. **"Seeded" in this spec is not what `SeedingGuard` checks.** The guard matches the file's path against each
+   torrent's `content_path` (translated to the local mount) in a seeding state; it never looks at hard links. A library
+   file hard-linked from a torrent saved elsewhere (cross-seed, the perma-seed folder) reads **Allowed**. The spec's
+   counts (155 films, 427 episodes) are link counts. For 314, **seeded = guard `Blocked` OR `st_nlink > 1`**, and
+   qBittorrent unreachable still waits. Note what each kind of write does to a hard-linked seed: a `rename(2)` swap
+   leaves the torrent's inode untouched (it does not corrupt the seed, it only ends the sharing and doubles the disk
+   use), while an in-place `mkvpropedit` rewrites the shared inode and **does** corrupt it. The owner's rule (never
+   modify a seeded file) covers both here. **Outside this phase, worth its own bug:** today's in-place `mkvpropedit`
+   jobs (track flags, 201/263 repairs) consult only the path guard, so a hard-linked seed can be edited in place.
+
+2. **Jellyfin attaches the sidecar, with the name the spec uses.** v12.1's `MediaInfoResolver.GetExternalFiles` takes
+   any file in the folder whose name starts with the video's file name, then a `MediaFlagDelimiters` character, with an
+   extension from `AudioFileExtensions` (`.mka` is listed). `ExternalPathParser` reads the language, `default` and
+   `forced` from the dot-separated tokens and keeps the rest as the title. So `<base>.<lang>.<kind>.mka` works. Keep the
+   kind token a plain word (`Stereo`, `Surround`), never `default` or `forced`.
+
+3. **A sidecar shifts every embedded stream's Jellyfin index.** `FFProbeVideoInfo` builds the list as external
+   **subtitles**, then external **audio**, then the file's own streams, and renumbers them 0…n. FR-314-5's "appended
+   last, so every original stream keeps its index" holds for a track added *inside* the file, not for a sidecar: one
+   `.mka` moves the video from index 0 to 1, and so on. Required: one resolver maps a Jellyfin index to the file's own
+   stream index (by type and order, external streams skipped), used by everything that hands an index to ffmpeg or
+   stores one. **Likely an existing bug:** `AudioRenditionJobs` maps R291's renditions with `-map 0:<index>`, where
+   the index is **Jellyfin's** (`buildAudioTracks` copies `MediaStream.Index`). On a title with an external subtitle
+   (Bazarr writes many) and two or more audio tracks, that picks the wrong stream or none. Verify on such a title and
+   fix with the same resolver, before 314 adds audio sidecars.
+
+4. **Jellyfin never direct-plays an external audio stream.** `StreamBuilder.GetCompatibilityAudioCodecDirect` adds
+   `TranscodeReason.AudioIsExternal`, so a play that picks the sidecar through Jellyfin is always a job: a remux with
+   `-i <sidecar>`, the video copied and the audio copied when its codec fits. That beats an audio transcode, but it
+   still pays Jellyfin's cold start (the 1 GB probe). Real direct play of a sidecar needs **our** route: the backend
+   serves the `.mka` (range requests, the same auth as R291's renditions), and Media3 merges it with the direct-played
+   video (`MergingMediaSource`), as FR-314-6 says. Players that only take HLS (the web's hls.js, the receiver) need the
+   sidecar as an HLS audio rendition: copied, never encoded (R291's job model, or 313's).
+
+5. **The Chromecast never direct-plays, so kind A turns a transcode into a remux.** The receiver declares
+   `hlsOnly = true`, and the device profile then has no direct-play profile at all
+   (`JellyfinClient.deviceProfile`). Jellyfin always answers with a `TranscodingUrl`: a codec-copy remux when the
+   codecs fit. With kind A applied, a cast becomes `-c:v copy -c:a copy` instead of an audio encode, which is much
+   cheaper and faster. **Acceptance 1 is wrong as written** ("direct-plays, no ffmpeg job"); it should read: Jellyfin's
+   job for the cast copies both streams, and the first frame comes within N s. With 313, our encoder serves the copied
+   segments itself and the cold start goes. Also, the receiver declares `ac3`/`eac3` when the device answers yes for
+   multichannel (a TV's built-in Chromecast may). Eligibility per play must follow the declared capabilities, not a
+   blanket "Chromecast has no AC-3".
+
+6. **Radarr and Sonarr ignore `.mka` as a video file, but they adopt it as an extra.** Neither `MediaFileExtensions`
+   list contains `.mka` (verified). On a rescan, both register any other file in the folder that parses as the title as
+   an **Other extra file** (`ExistingOtherExtraImporter`). So a *Rename* renames the sidecar with the video, which keeps
+   Jellyfin's prefix match. An upgrade or delete of the video removes its extras, the sidecar included. 314 must treat
+   a missing sidecar for a still-eligible file as *redo*, and the new video after an upgrade is a new file anyway. Add a
+   test for the rename case: the sidecar's prefix equals the new video name.
+
+7. **The Dolby Vision "second version" has no home in our stack yet, and in the folder it is 311's failure mode.**
+   Jellyfin does group `<folder name> - <label>.mkv` files as versions of one film (`VideoListResolver`). But:
+   - **No media sources anywhere on our side.** Nothing in the scanner, `MediaStore`, the backend or Ravilo models
+     media sources: `scanMovie` reads one file per film, PlaybackInfo is always sent with `MediaSourceId = item id`, and
+     Ravilo has no version chooser. R195's "versions" are versions of a *track*, so "pick it in the picker" needs a new
+     row and plumbing end to end.
+   - **A second video file in the folder.** Radarr's disk scan sees it as a candidate movie file. It is normally
+     rejected (not an upgrade) and left alone, but in any window where the original is missing (a remux, a rescan
+     mid-write), Radarr can adopt it as the film (311's incident), and an upgrade deletes only Radarr's own file and
+     orphans the copy.
+
+   **For the owner** (below). Lean: keep the 8.1 version **hidden in `<dir>/.jellystructure/`**, where Radarr, Sonarr
+   and Jellyfin never see it. Our backend serves it (direct play for a device that cannot play profile 7, range
+   requests from our own route) and Ravilo's picker offers a picture row: *Dolby Vision* / *Dolby Vision, full
+   detail*. Playstate stays on the Jellyfin item.
+
+8. **`dovi_tool` is missing from both images.** The backend image has `mkvmerge`, `mkvextract`, `mkvpropedit`, `ffmpeg`
+   and `ffprobe`; Jellyfin's has none of the mkvtoolnix tools. jellyfin-ffmpeg's `dovi_rpu` bitstream filter can strip
+   an RPU but cannot convert profile 7 to 8.1, so `dovi_tool` (a static binary) must be added to the backend image.
+   FR-314-10's *unavailable* state stays. With the owner's "keep both", FR-314-8's *Restore profile 7* and FR-314-4's
+   kept EL/RPU files go: the original is never changed.
+
+9. **Disk.** Films disk: 5.0 TB free of 13 TB (59 % used); series disk: 11 TB free of 24 TB. Kind C's ~0.8 TB fits.
+   The A/B sidecars are small (≈ 230 MB per film stereo, ≈ 575 MB surround). The dry run's total plus the 10 % margin
+   per file (FR-314-3) stands.
+
+10. **Reuse the job queue's playback rule instead of `SIGSTOP`.** `MediaJobQueue` already defers and yields to playback
+    (`waitsForPlayback`, `yieldsToPlayback`: R262/295, the household `deferWhilePlaying` switch). FR-314-10's
+    "paused within 2 s" should use that yield (a running job stops and requeues at its checkpoint), not
+    `SIGSTOP`/`SIGCONT` of a child process. A stopped mkvmerge holds the file and the disk queue open, and its
+    `.jellystructure/` work file may outlive a restart. "One job per disk" and the nightly read cap are new and go in
+    the claim.
+
+11. **Build order: after 311.** `WorkFiles`/`.jellystructure/` is not built (work files are still `.jstmp_<name>` beside
+    the video, `FfmpegRunner.kt:84`), and 314's safety depends on it. Order: 311 → the index resolver (item 3, also
+    fixes R291) → 314 A (in-file, unseeded) → the sidecar route + A/B sidecars → C (after Q1).
+
+12. **Smaller.**
+    - The downmix (open question 5): use Jellyfin's own `DownMixStereoAlgorithm`, so a copy sounds like today's
+      transcode; a dialogue-friendly matrix can be a later switch.
+    - The added in-file track's tag and name (FR-314-4) also let *Remove* find it after a remux by another tool.
+    - The dry-run counts must exclude files whose only audio is commentary or audio description (FR-314-1 says
+      "main track").
+
+**For the owner:**
+- **Q1. Where does the Dolby Vision 8.1 version live?** (a) Hidden in `<dir>/.jellystructure/`, served by our
+  backend, with a picture row in Ravilo's picker. Radarr, Sonarr and Jellyfin never see it, so there is no
+  second-file risk (lean). (b) As a Jellyfin version file `<name> - Dolby Vision.mkv` in the film's folder: Jellyfin's
+  own apps see both, but Radarr's second-file risk (311) applies, plus the media-source plumbing.
+
+## Decided by the owner (2026-10-08, after the dev review)
+
+1. **The Dolby Vision 8.1 copy is a Jellyfin version file** (Q1, against the lean): `<name> - Dolby Vision.mkv` beside
+   the film, so Jellyfin's own apps see both versions too. This makes three things requirements of 314:
+   - **Media-source plumbing:** the scanner, `MediaStore`, the backend's playback choice and Ravilo's picker learn that
+     one film can have two video files (today nothing models media sources). The backend picks the 8.1 version for a
+     device without a profile 7 decoder, the original for one with it; the picker offers both in plain words.
+   - **Radarr must never delete, replace or import it:** 311's failure mode (a second video file in the film's folder).
+     Before writing the first one, verify on Radarr how it treats an extra video file named like a Jellyfin version, and
+     make it safe (e.g. an exclusion Radarr honours, or Radarr's own handling of extra files); a dry run on one film,
+     watched through a Radarr rescan and an upgrade search, is part of acceptance.
+   - The version file is written through 311's work folder and verified before it appears.

@@ -7,7 +7,7 @@
 ## Status
 
 `Planned` — written 2026-10-08 (dev-authored) from the owner's decision above and R266's re-dev review (item 5,
-2026-10-08). Not dev-reviewed, not built. **Blocks R266's release.** Ravilo (TV build of `ravilo-android` + `ravilo-ui`),
+2026-10-08). **Dev-reviewed 2026-10-08** (see the end), not built. **Blocks R266's release.** Ravilo (TV build of `ravilo-android` + `ravilo-ui`),
 with a small backend part (the session for a TV target). Designs: none for a TV music mode yet; the shapes to follow are
 286's *Now playing on a display* (FR-286-5/-6) and the phone's Playing page (R322).
 
@@ -138,3 +138,106 @@ with the later browsing phase). Long-press / ⋯ is not offered.
    second `MediaSession` (R322 FR-R322-1 owns its own on the phone).
 4. Should the screensaver (ambient mode) be held off while Now playing is open? Lean: yes while the page is open,
    no once it is hidden.
+
+## Dev review (2026-10-08, against `main` `fdd48f10` and `r266-cast-connect` `026410fc`)
+
+Read against `r266-cast-connect` (`CastConnectReceiver.kt`, `CastConnect.kt`, `TvPlayerSessionHooks.kt`, the `RaviloApp.kt`
+and `CastSenderAndroid.kt` diffs), and on `main`: `RaviloApp.kt` (the listening layout, the events socket's `plays` and
+`features`, `session_load`), `PlaybackSessions.eventsFeaturesFor`, `MusicEngineAndroid`, the manifest, `CastMessages.kt`
+(the Ravilo Cast channel) and `ravilo-cast/…/Receiver.kt`'s command handler. The scope is right, and the engine half is
+smaller than it looks. **But FR-R380-7 rests on a wrong premise, and that decides most of the work.** Nine items, three for
+the owner.
+
+1. **The engine half holds, and is mostly there.** `RaviloMusicService` is in the one manifest the TV build shares,
+   `MusicEngine.supported` is true on Android, and `session_load` with `kind = "music"` already plays a queue on the
+   device's own engine on any Android app (`RaviloApp.kt` ~1404), the TV included. What the TV lacks is the page (FR-R380-3),
+   the key map (FR-R380-4) and the pill (FR-R380-6), all new UI gated on `isTvPlatform`, not on `listeningLayout` (which must
+   stay false on a TV so no music *browsing* appears, FR-R380-9).
+
+2. **FR-R380-7 is wrong as written: the phone does not control a music cast through the server.** A cast is driven over
+   the **Ravilo Cast channel** (`CAST_NAMESPACE`, `urn:x-cast:dev.jellystructure.ravilo`). The phone sends `CastCommand`s
+   (`next`, `prev`, `play_at`, `queue_move`, `queue_remove`, `queue_add`, `queue_play_next`, `repeat`, `shuffle`,
+   `lyrics`, `status`/`get_queue`, with R358's `expect_index`/`expect_item`). The web receiver answers with
+   `CastReceiverMessage` statuses (`queue`, `queue_index`, `queue_rev`, `queue_size`, `queue_part` pages for R359,
+   `repeat`, `shuffle`, `lyrics_on`, `failed`), and the phone's cast remote (R356) is built from those. Standard
+   play/pause/seek go through the Cast media channel. **The R266 branch never registers that channel on the TV**
+   (`CastReceiverContext` has no message listener for it), so against the TV app the phone would send queue commands into
+   the void and show no queue, no lyrics state and no *Next*. This is also why R266's remote lacks subtitles, audio and
+   *Next episode* (its review item; the owner made that parity a release condition): those are the same channel
+   (`subtitle`, `audio`, `subsize`, `next`, `nextup`). **One TV-side implementation of the Ravilo Cast channel fixes both**
+   (see the owner question). R369's `session_command` path is for *other* controllers (the admin, a second phone); keep it,
+   but it isn't the casting phone's road.
+
+3. **Make the channel one piece of code, not two.** The web receiver's handler lives in `ravilo-cast` (Kotlin/JS,
+   `Receiver.kt` `onCommand`, ~1360). Lift the protocol (command → state change, state → the status message, the queue
+   pages, the `expect_*` checks) into a pure reducer in `shared/commonMain`, used by both the web receiver and the TV app.
+   The TV then registers it with `CastReceiverContext.registerEventCallback`/`setMessageReceivedListener(CAST_NAMESPACE, …)`
+   and answers with `sendMessage(CAST_NAMESPACE, senderId, …)`. Tests run once against the reducer.
+
+4. **Hand Cast Connect the music session, not the video one.** `TvPlayerSessionHooks` tracks only the video player's
+   R44 session; `CastConnectReceiver.bindSession` gives that token to `MediaManager`. A music cast must hand over
+   `RaviloMusicService`'s own session token instead (play/pause/seek from the phone's standard controls, and the system UI).
+   Generalise the hook to "the session the current cast drives", set by whichever engine the load started. This answers
+   open question 3: one session per engine, and Cast Connect points at the one in use.
+
+5. **Leaving the app must not end the cast while music plays.** On the branch the receiver context is started while the
+   TV activity is started and stopped in `onStop` (`CastConnectReceiver.stop`). With music, FR-R380-6 keeps the engine
+   playing when Back hides the page, which is fine (the activity stays). But the TV's **Home** key stops the activity, so
+   the receiver stops and the phone loses its remote while the music plays on in the service. Keep the receiver started
+   while the music service is playing a cast, and stop it when the music stops (see the owner question).
+
+6. **`plays` must say music once this ships.** The TV reports `plays = video only` (`music = !isTvPlatform && …`,
+   `book = …`, R370), so the server never lists a TV as a music place, and *Move to…* never offers it. Once R380 is in,
+   the TV should report `music = true, book = true`. Then the same TV is reachable twice: as a Cast route (Cast Connect)
+   and as a Ravilo app place (server road, `session_load`, which already plays music, item 1). R370's single-place list
+   must merge the two into one row (the BRAVIA's Cast device and its Ravilo app are one place), or the sheet shows
+   *Stue TV* twice (see the owner question).
+
+7. **A music LOAD needs its own parse, and the viewer rule holds.** `castConnectPlayOf` returns null when `tracks` is not
+   empty; add `castConnectMusicOf` beside it (inline tracks, or `queue_id` + `queue_total` for R359's server-held queue,
+   fetched by the TV with the casting viewer's token). The viewer rule (`castConnectVerdict`) and FR-R266-4's switch-back
+   work unchanged; the switch-back fires when *the music* stops, not when a player screen closes (today it keys on
+   `Dest.Player` leaving the stack).
+
+8. **Build on the rebased branch, and renumber the migration.** The branch is 5 commits on a base 46 commits behind
+   `main`. Its files overlap `main` in `RaviloApp.kt` (4 later commits), `RaviloPlayerAndroid.kt` (3), `Cast.kt` (2),
+   `MainActivity.kt`, `Models.kt`, and **`69.sqm`, which `main` already uses** (`main` has 69 and 70). Rebase first, give
+   `CastConnectLaunch` the next free migration at merge (309 and 310 also want one), and build R380 on top. Merge the two
+   together, as the spec's open question 1 says. Order inside: the shared channel reducer (item 3) → the TV channel bridge
+   (films: subtitles, audio, *Next*; this closes R266's remote-parity condition) → the music LOAD, the session hand-over,
+   the receiver lifetime → the TV Now playing page, keys, pill → `plays`.
+
+9. **Smaller notes.**
+   - Back (open question 2): inside the app it is always ours; the risk is only when the app isn't in front, which
+     item 5 covers.
+   - Screensaver (open question 4): the lean is fine. Hold it with `FLAG_KEEP_SCREEN_ON` on the page only.
+   - **Tests to add:** the shared reducer (each `CastCommand` and the status it produces, the `expect_*` mismatch, the
+     queue pages); the session-token hand-over (music vs video); the receiver staying started while music plays and stopping
+     after; `plays` and the merged single place in R370's list.
+   - The strings mostly exist (R322/286). Of the new keys, only `tvmusic.from_phone` is new copy.
+
+**For the owner**
+
+1. **How the phone controls a music cast on a TV running Ravilo** (item 2):
+   (a) the TV app speaks the Ravilo Cast channel, the same one the web receiver speaks. One shared implementation, which
+   also gives films their subtitles, audio and *Next* (R266's release condition). **Lean.**
+   (b) after the LOAD the phone ends the Cast session and controls the TV through the server's session road (R369)
+   instead. No channel on the TV, but the phone's cast screen becomes a session remote, and the film side still needs
+   (a) for R266's parity.
+2. **The TV as a music place in Ravilo's own *Play on…* list** (item 6):
+   (a) yes, merged with its Cast route into one row. **Lean.**
+   (b) only through Cast.
+3. **The TV's Home key while a cast plays music** (item 5):
+   (a) the music keeps playing in the background, and the phone stays the remote. **Lean.**
+   (b) leaving the Ravilo app stops the music.
+
+## Decided by the owner (2026-10-08, after the dev review)
+
+1. **The phone keeps the same remote against anything** (Q1, the owner's words: *"the phone keeps the same nice TV
+   remote as it has for Chromecast currently, but it'll work against anything"*): the receiver side of Ravilo's Cast
+   message channel moves into one shared module used by the web receiver and the TV app (and any later receiver), so
+   music and R266's films get the full remote: queue, next/previous, subtitles, audio, Next episode.
+2. **The TV appears once in Play on…** (Q2): its Cast entry and its server entry merge into one row; music and
+   audiobooks are offered.
+3. **Home stops the music** (Q3, against the lean): leaving Ravilo on the TV ends the music cast; the phone's remote
+   closes quietly (as R245's ended session does).
