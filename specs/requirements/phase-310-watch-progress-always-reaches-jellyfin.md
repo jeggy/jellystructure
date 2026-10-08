@@ -6,9 +6,10 @@
 
 ## Status
 
-`Planned` — **Dev-reviewed 2026-10-07** (see *Dev review*); written 2026-10-07 (dev-authored) from a read-only investigation on the dev stack (v1.50-30-g0df9d193,
-container up since 2026-10-06 ~07:56 CEST). Not dev-reviewed, not built. Backend only (`PlaybackWriter`,
-`PlaybackService`, the timeout helpers, health, Dashboard).
+`⚠ Partial` — **built 2026-10-08 (`5966a6b2`, `2142e2e7`), deployed to the dev stack (v1.50-45 → v1.50-46), live-verified
+on Stue TV**; the repair (FR-310-7) waits for the owner's *Put them back*. Dev-reviewed 2026-10-07; written 2026-10-07
+(dev-authored). Backend only (`PlaybackWriter`, `PlaybackService`, `OutboundHttp`, the timeout helpers, health,
+Dashboard). See *Build notes*.
 
 ## What happened (2026-10-06, all times UTC; read-only from logs and both databases)
 
@@ -269,3 +270,54 @@ items, four for the owner.
    `../ktor-curl-cancel-repro/`, holds a minimal reproduction and the report, with no household details. It is
    picked up later and becomes either an issue or a pull request to Ktor; nothing is posted yet. Our own fix
    (review item 3, at `OutboundHttp.withPermit`) does not wait for upstream.
+
+## Build notes (2026-10-08)
+
+**Built** (`5966a6b2`, fix `2142e2e7`), in review item 10's order:
+- **Boundary + FR-310-1** — `OutboundHttp.withPermit` runs every call behind `foreignSafe`: a `CancellationException`
+  reaching it while the caller's own coroutine is still active becomes `ForeignCancellationException` (a
+  `kotlinx.io.IOException`, counted for `/api/health`), and `JellyfinClient`'s GETs retry once on it. The writer
+  rethrows only `!currentCoroutineContext().isActive`; `PublishQueue.sendOne` and the webhook sender likewise.
+- **FR-310-2** — each attempt runs under `withTimeout(attemptDeadlineMs = 30 s)` (a constructor parameter); a landed stop's
+  work runs in one background job (`PlaybackSink.afterStop`, its own 60 s deadline): encode release → the one user-data
+  write → R343's refresh or `onStopLanded` → 312's read-back.
+- **FR-310-3** — a supervisor restarts the drain loop on anything but the writer's own cancellation (logged at ERROR,
+  counted); `playback_writer` in `/api/health` gains `alive`, `restarts`, `oldest_waiting_s`; the Dashboard shows the
+  critical *Watch progress isn't reaching Jellyfin* row when it is down or a write has waited > 120 s.
+- **FR-310-4** — `ops/Bounded.kt` `boundedOrNull` on the token check (×2), Continue Watching's build, the playstate
+  refresh (×2) and R343's clear wait; `scripts/check-timeouts.sh` (baseline 7 raw sites, all reviewed).
+- **FR-310-5** (narrowed by review item 5) — the writer and `PublishQueue.sendOne`; `scripts/check-cancellation-rethrow.sh`
+  (rethrows must check `isActive`, or sit in a reviewed file behind `OutboundHttp`); both scripts in CI.
+- **FR-310-6** (review items 6–7) — the start body sends `PositionTicks` (and keeps `StartPositionTicks`); one
+  `setUserData(played, position, lastPlayedDate)` per stop from `stopUserData` (`SeriesReplay.kt`), folding R347's tick
+  (whose separate `mark` sent its own stop at 0), R343's unwatched write-back and R375's date; a stop before 5 % keeps no
+  place (Jellyfin's `MinResumePct`); the watched flag is left alone when its state at start is unknown (`2142e2e7`: seen
+  live — a play restored after the restart has no start state).
+- **Owner decision 2** — queued STOPs persist in `playback_outbox` (migration **71**), restored on start.
+- **FR-310-7** — the repair: a candidates file next to the database (`playback-repair-candidates.json`, prepared once
+  outside the repo from the saved stop log and the backend's own log — it names household items), planned against
+  Jellyfin's state now (`planRepair`: films/episodes only, unfinished, still damaged, not played again since), shown as
+  the Dashboard row *Watch places to put back* with the list; **Apply is the owner's press** (`POST
+  /api/dashboard/playback-repair/apply`), after which the file is renamed `.applied`.
+
+**Tests** (FR-310-8): `PlaybackWriterSurvivesTest` (a real `TimeoutCancellationException` captured from `withTimeout(1)`,
+a hang past the deadline, a slow after-stop step, the writer's own cancellation, the supervisor, a stop surviving a
+restart through the outbox), `OutboundHttpForeignCancellationTest`, `StopUserDataTest` (incl. the start body),
+`PlaybackRepairTest`, `DashboardWriterRowTest`, `PlaybackStopIntegrationTest` (the real `PlaybackService` + writer against a
+fake Jellyfin). Full `linuxX64Test`: 1 205 / 1 206 before the last fixes (the one failure was `MusicEditionsStoreTest`'s
+rewind, which now drops `playback_outbox` too); the touched suites green after them. `verifyCommonMainJellystructureDbMigration`
+and the admin's `compileKotlinWasmJs` pass.
+
+**Live (dev stack, 2026-10-08):**
+- **The writer had died a second time** before the deploy: last stop landed 07:30:32 UTC, and at 07:30:53 the same
+  Continue Watching `timed out after 6000 ms` — the mechanism, seen twice. Deployed v1.50-45 at 10:13:51 UTC: `alive: true`.
+- A Stue TV play (debug app, a film, start → seek → Back at 15:21): the stop landed once with its place and one
+  user-data write (unwatched at 921 779 ms) — see 312's notes. The test play was undone (place 0, play count 0; the
+  last-played date cannot be cleared through the API).
+- Not verified live: a stop surviving a restart (Jellyfin acks in milliseconds, so nothing stays queued long enough;
+  covered by the outbox test), and the Dashboard row in a browser.
+
+**Repair dry run** (computed live, nothing applied): **7** films and episodes from the first outage (all now *watched*
+by Jellyfin's guess, the owner's 2 h 42 min episode at 45:52 among them); none from the second outage (only songs played).
+
+**Left:** the owner's *Put them back*; the Ktor upstream report (`../ktor-curl-cancel-repro`).

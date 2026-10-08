@@ -6,10 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from a read-only investigation (Jellyfin's log and database, the backend
-log, the backend database). Not dev-reviewed, not built. Backend only. Related: **310** (the writer; its review item 7
-already proposes one user-data write per stop, which this phase extends); **R375** and **R343** (the other write-backs
-after a stop).
+`⚠ Partial` — **built 2026-10-08 with 310 (`5966a6b2`), deployed to the dev stack, live-verified on Stue TV**; the repair
+waits for the owner's *Put them back*. Dev-reviewed 2026-10-08; written 2026-10-08 (dev-authored). Backend only. See
+*Build notes*.
 
 ## What happened
 
@@ -173,3 +172,33 @@ probably fixes nothing. Seven items, two for the owner.
    stop at the start position; the fix is a "release the encodes only" path for a play that has already stopped.
 2. **Repair (Q2): all 24 cases from Jellyfin's log**, dry run first, the owner presses Apply.
 3. Comes right after 310 (it needs the working writer), in step 1 of the order. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+
+## Build notes (2026-10-08)
+
+**Built** (`5966a6b2`, with 310):
+- **FR-312-1** — every stop the backend sends is logged with its reason when queued and when it lands
+  (`stop write: item=… at=…ms reason=user|watchdog|abandoned-resend|… queued|landed (312)`); `mark`/`setPlayed`'s direct
+  stops at 0 log too; a superseded start's release logs *encodes only, no stop*.
+- **The source, found from the logs:** of the 24 *0 ms after a real stop* cases, every one that could still be matched to an
+  item was a **finished** episode or film. The 0 came from R347's own tick: `mark(watched = true)` ran in the background
+  right after the stop and sent Jellyfin a stop at 0 before marking it watched — harmless for a finished item, and gone
+  now that the tick is folded into 310's single user-data write. The 2026-10-07 film's own 0 could not be matched any
+  more: its Jellyfin item was re-imported that evening and the old id no longer exists.
+- **Review item 4** — the silent `releaseSession` callers no longer send a stop: a superseded start, music start or
+  restream only releases the old encode (`releaseEncodesOnly`, skipped when the play session is the same); an abandoned
+  start re-sends **the viewer's own stop position**, which the tracker now keeps with its pending stop
+  (`StartResult.stoppedAtMs`), never its own start position.
+- **FR-312-3** — 3 s after the stop's user-data write the backend reads `UserData` back and writes it again if it
+  drifted (played flag, or place by > 2 s); skipped while the item is playing anywhere.
+- **FR-312-2** — not needed: every call already carries one `forDevice` identity (review item 3).
+- **FR-312-4** — replaced by review item 4's rule (no window to tune).
+- **FR-312-5** — in 310's repair (the candidates file's `312` rows). Jellyfin keeps three days of logs, so the 10-04 and
+  10-05 cases were already gone; of the rest, all matched cases were finished plays, so the dry run lists none from 312.
+
+**Tests** (FR-312-6): `PlaybackStopIntegrationTest` — a stop lands once at its place with one user-data write; an
+abandoned start re-sends the viewer's own stop (no stop at 0); a superseded start sends Jellyfin no stop, only releases
+the old encode; a stray stop at 0 after ours is undone by the read-back. `PlaybackRepairTest` covers the repair.
+
+**Live (Stue TV, debug app, 2026-10-08 12:22 CEST):** a 4K film started from 0:00, seeked forward to 15 min, stopped
+with Back. Jellyfin's log: one *started*, **one** *stopped … at "921779"ms*, no stop at 0; its `UserData` held the place
+(unwatched at 921 779 ms); the read-back found nothing to correct. The test play was undone afterwards.
