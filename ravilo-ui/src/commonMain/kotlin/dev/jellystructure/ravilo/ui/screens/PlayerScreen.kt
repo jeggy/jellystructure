@@ -311,6 +311,8 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     // R282 (FR-R282-4) — an un-burn restream is in flight: when its ticket loads, re-arm R181's
     // resolver so the just-persisted pick is matched against the FRESH track set.
     var rearmResolveOnLoad by mutableStateOf(false)
+    // Phase 314c — the film's picture versions (the original and its Dolby Vision 8.1 version), from the ticket.
+    var videoVersions by mutableStateOf<List<dev.jellystructure.shared.tv.VideoVersion>>(emptyList())
     // R284 — a SINGLE-AUDIO session (the ticket is a transcode that names the one audio track it
     // carries, 253 FR-253-2): the ticket's full audio list, and the Jellyfin index of the carried
     // track. Empty/null on direct play, where the player's own track list is the truth.
@@ -526,8 +528,6 @@ fun PlayerScreen(
     var pickerLevel by remember { mutableIntStateOf(0) }        // 0 = language list, 1 = version list
     var pickerVersionIdx by remember { mutableIntStateOf(0) }
     var selectedAudio by remember { mutableIntStateOf(0) }
-    // Phase 314c — the film's picture versions (the original and its Dolby Vision 8.1 version), from the ticket.
-    var videoVersions by remember { mutableStateOf<List<dev.jellystructure.shared.tv.VideoVersion>>(emptyList()) }
     var selectedSub   by remember { mutableIntStateOf(-1) } // -1 = off
     // R181 — which itemId the layered resolver has already run for; compared against currentItemId
     // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
@@ -624,8 +624,7 @@ fun PlayerScreen(
     val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0, clusterSize = 1)
     val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
     // Phase 314c — the Picture tab: one row per version, offered only when the film has two or more.
-    val pictureGroups: List<PickerLanguage> = remember(videoVersions) { pictureVersionGroups(videoVersions) }
-    val pickerGroups: List<PickerLanguage> = when (pickerTab) { 0 -> audioGroups; 1 -> subGroupsWithOff; else -> pictureGroups }
+    val pickerGroups: List<PickerLanguage> = when (pickerTab) { 0 -> audioGroups; 1 -> subGroupsWithOff; else -> pictureVersionGroups(bk.videoVersions) }
 
     // R246 (FR-R246-2) — the poll loop resolves against the exact track lists it read in that tick;
     // nothing derived from the lists is read from composed state. The `currentAudioGroups` /
@@ -822,7 +821,7 @@ fun PlayerScreen(
         if (tab == 2) {
             // Phase 314c — another picture version: the same item at the playhead from that version's file. The audio and
             // subtitle choices are resolved again from the viewer's remembered choice once the new stream loads.
-            val v = videoVersions.getOrNull(version.flatIndex) ?: return
+            val v = bk.videoVersions.getOrNull(version.flatIndex) ?: return
             if (!v.current) {
                 bk.rearmResolveOnLoad = true
                 store.restreamVersion(itemId, v.id, player.positionMs, bk.burnedSubIndex ?: -1, bk.sessionAudio.getOrNull(selectedAudio)?.index)
@@ -913,7 +912,7 @@ fun PlayerScreen(
         pickerTab = tab
         pickerLevel = 0
         pickerIdx = if (tab == 2) {
-            videoVersions.indexOfFirst { it.current }.coerceAtLeast(0)
+            bk.videoVersions.indexOfFirst { it.current }.coerceAtLeast(0)
         } else if (tab == 0) {
             audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == shownAudio(selectedAudio, audioTracks) } }.coerceAtLeast(0)
         } else {
@@ -1082,7 +1081,7 @@ fun PlayerScreen(
         // R291 (FR-R291-2) — a master with every audio track as a rendition carries no single track: an
         // audio pick is a player track selection, exactly as on direct play, never a restream.
         bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay && !s.ticket.audioRenditions }
-        videoVersions = s.ticket.versions   // phase 314c
+        bk.videoVersions = s.ticket.versions   // phase 314c
         bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
         carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
         if (s.ticket.burnedSubtitleIndex != null) {
@@ -1680,7 +1679,7 @@ fun PlayerScreen(
                     if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.STAY
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
-                        pickerOpen -> pickerTapTab(if (pickerTab >= 1 && pictureGroups.isNotEmpty()) 2 else 1)   // phase 314c
+                        pickerOpen -> pickerTapTab(if (pickerTab >= 1 && bk.videoVersions.size >= 2) 2 else 1)   // phase 314c
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
@@ -2161,8 +2160,7 @@ fun PlayerScreen(
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
                 selectedAudio    = shownAudio(selectedAudio, audioTracks),
-                pictureGroups    = pictureGroups,
-                selectedPicture  = videoVersions.indexOfFirst { it.current },
+                pictureVersions  = bk.videoVersions,
                 selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
                 onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
@@ -2200,8 +2198,7 @@ fun PlayerScreen(
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
                 selectedAudio    = shownAudio(selectedAudio, audioTracks),
-                pictureGroups    = pictureGroups,
-                selectedPicture  = videoVersions.indexOfFirst { it.current },
+                pictureVersions  = bk.videoVersions,
                 selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 // R195 — touch parity with the D-pad: a tap just moves the target index then runs the
                 // EXACT SAME pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone)
@@ -2889,10 +2886,11 @@ internal fun TrackPicker(
     handset: Boolean = false,
     extraRow: (@Composable () -> Unit)? = null,
     // Phase 314c — the Picture tab (the film's versions), shown only when there are two or more.
-    pictureGroups: List<PickerLanguage> = emptyList(),
-    selectedPicture: Int = -1,
+    pictureVersions: List<dev.jellystructure.shared.tv.VideoVersion> = emptyList(),
 ) {
     val lang = LocalLang.current
+    val pictureGroups = remember(pictureVersions) { pictureVersionGroups(pictureVersions) }
+    val selectedPicture = pictureVersions.indexOfFirst { it.current }
     val groups = when (pickerTab) { 0 -> audioGroups; 1 -> subGroups; else -> pictureGroups }
     val selectedFlat = when (pickerTab) { 0 -> selectedAudio; 1 -> selectedSub; else -> selectedPicture }
     val audioFlag = flagFor(audioGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedAudio } }?.language)
