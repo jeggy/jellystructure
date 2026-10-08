@@ -82,3 +82,6 @@ actual fun switchesHlsAudioRenditions(): Boolean = false
 actual fun playsAdaptiveHls(): Boolean = true
 
 actual fun playsOnlyHls(): Boolean = false
+
+/** Phase 314b — a <video> element plays one source: no sidecar on a direct play. */
+actual fun mergesExternalAudio(): Boolean = false

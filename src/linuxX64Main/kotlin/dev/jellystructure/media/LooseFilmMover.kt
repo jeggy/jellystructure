@@ -29,7 +29,12 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
         // ── 1 — preconditions ──
         if (ports.isPlaying(film)) { step("check", false, "Someone is playing it"); return failed("Someone is playing it right now") }
         if (ports.isLocked(film.key)) { step("check", false, "A job is working on its file"); return failed("A job is working on its file") }
-        if (ports.exists(film.targetFolder) && !ports.isEmptyDir(film.targetFolder)) {
+        // Phase 314c — a rename in place (the film keeps its folder, its files get the folder's name) has no new folder.
+        val inPlace = film.targetFolder == film.root
+        if (inPlace) {
+            val clash = film.files.firstOrNull { it.target != null && it.target != it.name && ports.exists("${film.root}/${it.target}") }
+            if (clash != null) { step("check", false, "${clash.target} already exists"); return failed("${clash.target} already exists") }
+        } else if (ports.exists(film.targetFolder) && !ports.isEmptyDir(film.targetFolder)) {
             step("check", false, "${film.targetFolder.substringAfterLast('/')} already exists and isn't empty")
             return failed("The folder ${film.targetFolder.substringAfterLast('/')} already exists")
         }
@@ -37,8 +42,8 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
         step("check", true, "Nobody is playing it; ${userData.size} ${if (userData.size == 1) "viewer has" else "viewers have"} watch data")
 
         // ── 2 — move ──
-        val planned = film.files.filter { it.target != null }
-        val createdDir = !ports.exists(film.targetFolder)
+        val planned = film.files.filter { it.target != null && !(inPlace && it.target == it.name) }
+        val createdDir = !inPlace && !ports.exists(film.targetFolder)
         if (createdDir && !ports.mkdir(film.targetFolder)) { step("move", false, "Couldn't create the folder"); return failed("Couldn't create the folder") }
         val done = ArrayList<Pair<String, String>>()
         for (f in planned) {
@@ -61,7 +66,7 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
         step("move", true, "${done.size} ${if (done.size == 1) "file" else "files"} moved" +
             (if (backedUp > 0) "; $backedUp older ${if (backedUp == 1) "image" else "images"} backed up" else "") +
             (if (keptInPlace > 0) "; $keptInPlace couldn't be backed up and stayed" else ""))
-        val newVideo = "${film.targetFolder}/${film.video}"
+        val newVideo = "${film.targetFolder}/${film.files.firstOrNull { it.name == film.video }?.target ?: film.video}"
         val problems = ArrayList<String>()
 
         // ── 3 — qBittorrent ──
@@ -127,7 +132,8 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
             steps = steps.toList(),
             error = (problems + checks).distinct().takeIf { it.isNotEmpty() }?.joinToString("; "),
         )
-        film.mediaId?.let { ports.history(it, "Moved into its own folder ${film.targetFolder.substringAfterLast('/')}: " + steps.joinToString(" · ") { s -> "${s.step} ${if (s.ok) "✓" else "✗"} ${s.detail}" }) }
+        val what = if (inPlace) "Renamed to ${newVideo.substringAfterLast('/')}" else "Moved into its own folder ${film.targetFolder.substringAfterLast('/')}"
+        film.mediaId?.let { ports.history(it, "$what: " + steps.joinToString(" · ") { s -> "${s.step} ${if (s.ok) "✓" else "✗"} ${s.detail}" }) }
         return result
     }
 }

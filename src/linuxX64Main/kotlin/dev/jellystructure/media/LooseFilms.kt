@@ -102,6 +102,25 @@ fun looseFilmFolderName(title: String, year: Int?): String {
 }
 
 /**
+ * Phase 314c — a film renamed in its own folder so it is named after the folder (Jellyfin groups a version file beside it
+ * only then): the video becomes `<folder>.<ext>`, and every file named after the old video (`<base>.<…>`, `<base>-<…>`:
+ * its NFO, subtitles, sidecar audio, `-thumb` …) keeps its tail under the new name. Folder-named files (`poster.jpg`,
+ * `movie.nfo` …) stay as they are and are not listed. Empty when the video already starts with the folder's name.
+ */
+fun planRenameToFolder(video: String, folderEntries: Collection<String>, folderName: String): List<LooseFile> {
+    val base = video.substringBeforeLast('.')
+    if (base == folderName || folderName.isBlank()) return emptyList()
+    val ext = video.substringAfterLast('.', "mkv")
+    val out = ArrayList<LooseFile>()
+    out += LooseFile(video, "video", "$folderName.$ext")
+    for (e in folderEntries) {
+        if (e == video || !(e.startsWith("$base.") || e.startsWith("$base-"))) continue
+        out += LooseFile(e, if (isImageName(e)) "image" else "other", folderName + e.substring(base.length))
+    }
+    return out
+}
+
+/**
  * FR-316-4 step 2 — the pure plan of one move: every name in the root that belongs to [video] and where it goes.
  *
  * - The video keeps its name.

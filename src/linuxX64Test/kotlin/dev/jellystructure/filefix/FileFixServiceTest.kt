@@ -66,6 +66,7 @@ class FileFixServiceTest {
         val probes = HashMap<String, String>()   // path → ffprobe JSON
         val ran = ArrayList<String>()
         var stopDuring: String? = null           // a command fragment whose run is stopped (playback)
+        var identifyJson: String? = null         // phase 314c — what `mkvmerge -J` says (Remove reads our tags from it)
         override suspend fun run(cmd: String): ShellResult = exec(cmd)
         override suspend fun runStoppable(cmd: String, marker: String, shouldStop: () -> Boolean): ShellResult? {
             if (stopDuring != null && cmd.contains(stopDuring!!)) { ran += cmd; return null }
@@ -76,7 +77,12 @@ class FileFixServiceTest {
             ran += cmd
             return when {
                 cmd.startsWith("ffprobe -v error -print_format json") -> probes[arg(cmd, "-show_format ")]?.let { ShellResult(0, it) } ?: ShellResult(1, "no such file")
-                cmd.startsWith("mkvmerge -J") -> ShellResult(0, """{"tracks": [{"type": "video", "properties": {"uid": 1}}, {"type": "audio", "properties": {"uid": 99}}]}""")
+                cmd.startsWith("mkvmerge -J") -> ShellResult(0, identifyJson ?: """{"tracks": [{"type": "video", "properties": {"uid": 1}}, {"type": "audio", "properties": {"uid": 99}}]}""")
+                cmd.contains(" mkvmerge -q -o ") && cmd.contains("--audio-tracks") -> {   // phase 314c — Remove's remux
+                    val out = arg(cmd, "mkvmerge -q -o ")
+                    files[out] = 1_500; probes[out] = ac3
+                    ShellResult(0, "")
+                }
                 cmd.contains("ffmpeg -nostdin -y -v error -i") && cmd.contains(" -f matroska ") -> { files[cmd.substringAfterLast(" -f matroska ").trim('\'')] = 1_000; ShellResult(0, "") }
                 cmd.contains("-f null -") -> ShellResult(0, "")
                 cmd.contains(" mkvmerge -q -o ") -> {
@@ -105,11 +111,14 @@ class FileFixServiceTest {
         override fun listDir(dir: String): List<String> = files.keys.filter { it.substringBeforeLast('/') == dir }
     }
 
+    private var renamer: (suspend (String) -> dev.jellystructure.model.FileFixRenameResult)? = null
+
     private fun service() = FileFixService(
         db = db, store = store, config = { error("unused") }, history = history,
         seeding = { seedingAnswer() },
         radarrParse = { title -> if (title.endsWith(" - Dolby Vision")) radarrCopy else ArrParseResult("Remux-2160p", 0) },
         afterWrite = {}, playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
+        renameOriginal = renamer,
     )
 
     @BeforeTest fun setUp() = runBlocking {
@@ -238,5 +247,120 @@ class FileFixServiceTest {
         assertIs<FixOutcome.Stopped>(s.runJob(dvFilm, "c", { false }))
         assertTrue(shell.ran.none { it.contains("convert --discard") })
         assertTrue(WorkFiles.libraryPathOf(WorkFiles.pathFor(dvFilm, WorkFiles.Kind.DV_VERSION)) == dvFilm)
+    }
+
+    // ── Phase 314c — the rename ticks, and Remove ──
+
+    private val looseDv = "$dir/Third (2022)/Third.2022.2160p.UHD.BluRay.REMUX.mkv"
+    private val renamedDv = "$dir/Third (2022)/Third (2022).mkv"
+
+    private suspend fun addLooseDv() {
+        shell.files[looseDv] = 40_000_000; shell.probes[looseDv] = dv7
+        store.addOrUpdate(MediaItem(id = "third", title = "Third", year = 2022, kind = MediaKind.MOVIE, path = looseDv, tmdbId = null,
+            originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList()))
+    }
+
+    @Test fun `a Dolby Vision original not named after its folder waits for a rename tick - nothing else gets one`() = runBlocking {
+        addLooseDv()
+        val s = service()
+        s.buildPlan()
+        assertEquals("needs_rename", row(looseDv, FixKind.DOLBY_VISION)?.state)
+        assertTrue(row(looseDv, FixKind.DOLBY_VISION)!!.detail.startsWith("rename to Third (2022).mkv first"))
+        assertEquals("would_add", row(dvFilm, FixKind.DOLBY_VISION)?.state, "named after its folder already")
+        s.setSetting(FixKind.DOLBY_VISION, true, false)
+        s.apply(FixKind.DOLBY_VISION)
+        assertEquals("needs_rename", row(looseDv, FixKind.DOLBY_VISION)?.state, "Apply never renames: only a tick does")
+        val t = s.title("third").rows.single { it.kind == "c" }
+        assertTrue(t.canAdd && !t.canRemove)
+    }
+
+    @Test fun `a ticked film is renamed - planned again under its new name - and its version queued`() = runBlocking {
+        addLooseDv()
+        renamer = { path ->
+            // What 316's mover does in place: the file keeps its inode under the folder's name.
+            shell.files[renamedDv] = shell.files.remove(path)!!; shell.probes[renamedDv] = shell.probes.remove(path)!!
+            store.addOrUpdate(store.resolve("third")!!.copy(path = renamedDv))
+            dev.jellystructure.model.FileFixRenameResult(path, renamedDv, "renamed")
+        }
+        val s = service()
+        s.buildPlan()
+        val out = s.renameAndQueue(listOf(looseDv, film))
+        assertEquals(listOf("renamed", "failed"), out.map { it.state }, "only a needs_rename row can be renamed")
+        assertNull(row(looseDv, FixKind.DOLBY_VISION))
+        assertEquals("pending", row(renamedDv, FixKind.DOLBY_VISION)?.state)
+        assertTrue(history.forItem("third").any { it.detail.contains("Renamed to Third (2022).mkv") })
+    }
+
+    @Test fun `a rename the mover refuses changes nothing`() = runBlocking {
+        addLooseDv()
+        renamer = { path -> dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "a torrent seeds this file in the library itself") }
+        val s = service()
+        s.buildPlan()
+        assertEquals("failed", s.renameAndQueue(listOf(looseDv)).single().state)
+        assertEquals("needs_rename", row(looseDv, FixKind.DOLBY_VISION)?.state)
+    }
+
+    private val ourCopy = """{"tracks": [
+        {"id": 0, "type": "video", "properties": {"codec_id": "V_MPEG4/ISO/AVC", "tag_bps": "1"}},
+        {"id": 1, "type": "audio", "properties": {"codec_id": "A_AC3", "track_name": "Dansk", "tag_bps": "1"}},
+        {"id": 2, "type": "audio", "properties": {"codec_id": "A_AAC", "track_name": "Stereo", "tag_bps": "1", "tag_jellystructure_added": "2026-10-08"}}]}"""
+
+    @Test fun `Remove takes our copy out of the file - verified - and the row stays removed until the title's own Add`() = runBlocking {
+        val s = service()
+        s.buildPlan()
+        // 314a's job ran: the file now holds the copy (a new size, so the next probe reads it again).
+        shell.probes[film] = ac3PlusCopy; shell.files[film] = 10_000_001
+        db.fileFixQueries.setState("done", "", 0, clock, film, FixKind.STEREO.id)
+        shell.identifyJson = ourCopy
+        assertEquals(1, s.removeTitle(FixKind.STEREO, "film"))
+        assertEquals("remove_pending", row(film, FixKind.STEREO)?.state)
+        s.buildPlan()
+        assertEquals("remove_pending", row(film, FixKind.STEREO)?.state, "a dry run leaves a queued Remove alone")
+        assertEquals(film, s.nextToQueue(jobActive = false)?.path)
+        assertIs<FixOutcome.Done>(s.runJob(film, "a", { false }))
+        val mux = shell.ran.single { it.contains("--audio-tracks") }
+        assertTrue(mux.contains("'!2'"), mux)
+        assertTrue(shell.ran.any { it.contains("mv -f ") && it.endsWith("'$film'") })
+        assertEquals("removed", row(film, FixKind.STEREO)?.state)
+        assertTrue(history.forItem("film").any { it.detail.contains("removed") })
+        // Switched on with new files automatically: the owner's Remove still sticks.
+        s.setSetting(FixKind.STEREO, true, true)
+        s.buildPlan()
+        s.apply(FixKind.STEREO)
+        assertEquals("removed", row(film, FixKind.STEREO)?.state)
+        assertTrue(s.title("film").rows.single { it.kind == "a" }.canAdd)
+        assertEquals(1, s.applyTitle(FixKind.STEREO, "film"))
+        assertEquals("pending", row(film, FixKind.STEREO)?.state)
+    }
+
+    @Test fun `Remove on a seeded file only deletes the mka beside it`() = runBlocking {
+        val s = service()
+        s.buildPlan()
+        val mka = "$dir/Film (2020)/Film (2020).dan.Stereo.mka"
+        shell.files[mka] = 1_000
+        db.fileFixQueries.setState("done", "seeded", 0, clock, film, FixKind.STEREO.id)
+        s.removeTitle(FixKind.STEREO, "film")
+        assertIs<FixOutcome.Done>(s.runJob(film, "a", { false }))
+        assertTrue(mka !in shell.files)
+        assertTrue(shell.ran.none { it.contains("--audio-tracks") || it.contains("mv -f") }, "the video itself is never touched")
+    }
+
+    @Test fun `Remove deletes our Dolby Vision version - never a file beside it that isn't ours`() = runBlocking {
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        shell.files[version] = 30_000_000
+        shell.probes[version] = dv81
+        db.fileFixQueries.setState("done", "", 0, clock, dvFilm, FixKind.DOLBY_VISION.id)
+        s.removeTitle(FixKind.DOLBY_VISION, "other")
+        assertIs<FixOutcome.Failed>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(version in shell.files, "untagged: not ours, left alone")
+        assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+        shell.probes[version] = dv81.replace("\"duration\": \"100.000000\"}", "\"duration\": \"100.000000\", \"tags\": {\"JELLYSTRUCTURE_DV\": \"8.1-from-7\"}}")
+        s.removeTitle(FixKind.DOLBY_VISION, "other")
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(version !in shell.files)
+        assertTrue(dvFilm in shell.files, "the original stays")
+        assertEquals("removed", row(dvFilm, FixKind.DOLBY_VISION)?.state)
     }
 }

@@ -53,3 +53,38 @@ data class FileFixRow(
 
 @Serializable
 data class FileFixSettingRequest(val enabled: Boolean, @SerialName("auto_new") val autoNew: Boolean = false)
+
+/** Phase 314c — the owner's ticks: the Dolby Vision 7 originals to rename after their folder, each then given its version. */
+@Serializable
+data class FileFixRenameRequest(val paths: List<String>)
+
+/** Phase 314c — one rename's outcome: the new path, or why it didn't happen (nothing was changed then). */
+@Serializable
+data class FileFixRenameResult(
+    val path: String,
+    @SerialName("new_path") val newPath: String? = null,
+    /** `renamed` (and its version queued) · `failed` · `partial` (renamed, but a later step — Radarr, Jellyfin — didn't finish). */
+    val state: String,
+    val detail: String? = null,
+)
+
+/** Phase 314c — one title's rows for the Tracks tab: what each kind would add, did add, or can't. */
+@Serializable
+data class FileFixTitle(
+    @SerialName("media_id") val mediaId: String,
+    val rows: List<FileFixTitleRow> = emptyList(),
+)
+
+@Serializable
+data class FileFixTitleRow(
+    val kind: String,
+    @SerialName("kind_label") val kindLabel: String,
+    val path: String,
+    val label: String,
+    val state: String,
+    val detail: String,
+    /** Add is offered (would_add · sidecar · failed · needs_rename · removed). */
+    @SerialName("can_add") val canAdd: Boolean = false,
+    /** Remove is offered (done: something jellystructure added is there). */
+    @SerialName("can_remove") val canRemove: Boolean = false,
+)

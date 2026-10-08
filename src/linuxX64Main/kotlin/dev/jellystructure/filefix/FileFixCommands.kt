@@ -85,6 +85,10 @@ object FileFixCommands {
         append("</Tag></Tags>\n")
     }
 
+    /** Phase 314c (Remove) — the original without the tracks [ids] (mkvmerge's track ids from [identify]): our copies only. */
+    fun removeTracks(videoPath: String, ids: List<Int>, out: String): String =
+        "$BG mkvmerge -q -o ${q(out)} --audio-tracks ${q("!" + ids.joinToString(","))} ${q(videoPath)}"
+
     /** Free bytes on [dir]'s filesystem. */
     fun freeBytes(dir: String): String = "df -B1 --output=avail ${q(dir)} 2>/dev/null | tail -n1"
 }

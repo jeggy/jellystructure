@@ -12,6 +12,7 @@ import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
 import dev.jellystructure.ravilo.ui.seams.playsAdaptiveHls
+import dev.jellystructure.ravilo.ui.seams.mergesExternalAudio
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
@@ -217,6 +218,8 @@ class PlayerStore(
                         maxH264Bitrate = decoderLimits.maxH264Bitrate,
                         linkKind = link.kind,
                         linkMbps = link.mbps,
+                        // Phase 314b — this player merges a `.mka` sidecar with a direct-played video.
+                        externalAudio = mergesExternalAudio(),
                     )
                     lastCapabilities = capabilities   // R282 (FR-R282-5)
                     // R343 — a Start over or a shuffled entry starts at 0:00 (the client's position wins over
@@ -279,8 +282,24 @@ class PlayerStore(
 
     /** R291 (FR-R291-2) — a composed master is a path on THIS server (`/api/tv/stream/{id}/master.m3u8`):
      *  resolved against the address the app already talks to, never a host the server guessed. */
-    private fun StreamTicket.onThisServer(): StreamTicket =
-        hlsUrl?.takeIf { it.startsWith("/") }?.let { copy(hlsUrl = apiClient.baseUrl.trimEnd('/') + it) } ?: this
+    private fun StreamTicket.onThisServer(): StreamTicket {
+        currentMediaSourceId = mediaSourceId   // phase 314c — every ticket says which version it plays
+        val base = apiClient.baseUrl.trimEnd('/')
+        val withHls = hlsUrl?.takeIf { it.startsWith("/") }?.let { copy(hlsUrl = base + it) } ?: this
+        // Phase 314b — a sidecar's URL is a path on this server too.
+        return if (withHls.audio.none { it.externalUrl?.startsWith("/") == true }) withHls
+        else withHls.copy(audio = withHls.audio.map { a -> a.externalUrl?.takeIf { it.startsWith("/") }?.let { a.copy(externalUrl = base + it) } ?: a })
+    }
+
+    /** Phase 314c — the picture version the current stream plays (`StreamTicket.mediaSourceId`), kept across restreams. */
+    var currentMediaSourceId: String? = null
+        private set
+
+    /** Phase 314c — the viewer picked another picture version: the same item at [positionMs] from that version's file. */
+    fun restreamVersion(itemId: String, mediaSourceId: String, positionMs: Long, subtitleStreamIndex: Int, audioStreamIndex: Int?) {
+        currentMediaSourceId = mediaSourceId
+        restreamWithSub(itemId, subtitleStreamIndex, positionMs, audioStreamIndex, mediaSourceId)
+    }
 
     // R282 (FR-R282-5) — what startSession last told the server this device can do, re-sent with every
     // restream so an un-burn (252) negotiates as the real device instead of conservative defaults.
@@ -306,11 +325,11 @@ class PlayerStore(
      *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2).
      *  R284 — [audioStreamIndex] is the audio track the new stream must carry (253 FR-253-1); callers
      *  pass the current one on a subtitle change so the two choices never reset each other. */
-    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null) {
+    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null, mediaSourceId: String? = currentMediaSourceId) {
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
-                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex).onThisServer())
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex, mediaSourceId).onThisServer())
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)

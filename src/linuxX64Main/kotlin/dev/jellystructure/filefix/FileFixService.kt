@@ -57,6 +57,8 @@ class FileFixService(
     private val doviTool: String = DEFAULT_DOVI_TOOL,
     private val now: () -> Long,
     private val today: () -> String,
+    /** Phase 314c — renames a Dolby Vision 7 original after its folder (316's mover, in place); null where not wired. */
+    private val renameOriginal: (suspend (String) -> dev.jellystructure.model.FileFixRenameResult)? = null,
 ) {
     private val q get() = db.fileFixQueries
 
@@ -97,11 +99,69 @@ class FileFixService(
         return n
     }
 
-    /** FR-314-7 — one title, whatever the switches say: its rows of [kind] that would add something go pending. */
+    /** FR-314-7 — one title, whatever the switches say: its rows of [kind] that would add something go pending (a row
+     *  the owner removed too — phase 314c: the title's own Add is the one way back). */
     fun applyTitle(kind: FixKind, mediaId: String): Int {
-        val rows = q.listForKind(kind.id, null, 10_000, 0).executeAsList().filter { it.media_id == mediaId && it.state in setOf("would_add", "sidecar", "failed") }
+        val rows = q.listForKind(kind.id, null, 10_000, 0).executeAsList().filter { it.media_id == mediaId && it.state in setOf("would_add", "sidecar", "failed", "removed") }
         for (r in rows) q.setState("pending", r.detail, r.read_bytes, now(), r.path, r.kind)
         return rows.size
+    }
+
+    /** Phase 314c — one title's rows for the admin's Tracks tab (add, remove, or why not). */
+    fun title(mediaId: String): dev.jellystructure.model.FileFixTitle =
+        dev.jellystructure.model.FileFixTitle(mediaId, q.listForMedia(mediaId).executeAsList().mapNotNull { r ->
+            val k = FixKind.of(r.kind) ?: return@mapNotNull null
+            dev.jellystructure.model.FileFixTitleRow(
+                kind = k.id, kindLabel = k.label, path = r.path, label = r.label, state = r.state, detail = r.detail,
+                canAdd = r.state in setOf("would_add", "sidecar", "failed", "needs_rename", "removed"),
+                canRemove = r.state == "done",
+            )
+        })
+
+    /**
+     * Phase 314c (Remove) — what [kind] added to [mediaId]'s files is taken away again, as a job on the media lane (a copy in
+     * the file is a remux): only rows that are `done`. Seeded files only ever got a `.mka` beside them, which the job deletes;
+     * a Dolby Vision version file of ours is deleted; the original is never touched beyond dropping our own tracks.
+     */
+    suspend fun removeTitle(kind: FixKind, mediaId: String): Int {
+        val rows = q.listForMedia(mediaId).executeAsList().filter { it.kind == kind.id && it.state == "done" }
+        for (r in rows) q.setState("remove_pending", "removing what jellystructure added", r.read_bytes, now(), r.path, r.kind)
+        if (rows.isNotEmpty()) Logger.info("file fix: Remove ${kind.label} for $mediaId — ${rows.size} file(s) queued (314)", "jobs")
+        return rows.size
+    }
+
+    /**
+     * Phase 314c (owner, 2026-10-08: rename, asked per film) — the ticked Dolby Vision 7 originals are renamed after their
+     * folder (316's mover in place: hard links and seeding untouched, Radarr refreshed, Jellyfin told, watch data and our
+     * own rows carried over), then planned again under the new name and their version queued. A torrent seeding the
+     * library file itself is never renamed under (the mover's caller refuses it). Only `needs_rename` rows qualify.
+     */
+    suspend fun renameAndQueue(paths: List<String>): List<dev.jellystructure.model.FileFixRenameResult> {
+        val renamer = renameOriginal
+        return paths.map { path ->
+            val row = q.find(path, FixKind.DOLBY_VISION.id).executeAsOneOrNull()
+            when {
+                renamer == null -> dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "renaming isn't available here")
+                row == null || row.state != "needs_rename" -> dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "not waiting for a rename")
+                else -> {
+                    val r = runCatching { renamer(path) }.getOrElse { dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = it.message) }
+                    val newPath = r.newPath
+                    if (newPath != null && r.state != "failed") {
+                        q.deleteForPath(path)
+                        probeCache.remove(path)
+                        val item = store.resolve(row.media_id)
+                        if (item != null) {
+                            runCatching { planOne(FixTarget(item, newPath, true, row.label)) }
+                            val queued = applyTitle(FixKind.DOLBY_VISION, row.media_id)
+                            history.record(item.id, "file_fix", "Renamed to ${newPath.substringAfterLast('/')} for its Dolby Vision version" +
+                                if (queued > 0) "; the version is queued" else "")
+                        }
+                        Logger.info("file fix: renamed $path → $newPath for its Dolby Vision version (314)", "jobs")
+                    }
+                    r
+                }
+            }
+        }
     }
 
     // ── The dry run ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -195,7 +255,19 @@ class FileFixService(
             val joined = state == "would_add" && autoNew(kind) && enabled(kind)
             upsertPlanned(t.path, kind.id, t.item.id, t.label, if (joined) "pending" else state, detail, v.estBytes, st.first, st.second, now())
         }
-        val dv = planDolbyVision(facts, t.isFilm, if (facts.video?.dvProfile == 7) videosInFolder(t.path) else emptyList())
+        val folderVideos = if (facts.video?.dvProfile == 7) videosInFolder(t.path) else emptyList()
+        val dv = planDolbyVision(facts, t.isFilm, folderVideos)
+        // Phase 314c (owner, 2026-10-08: rename, asked per film) — a film that would get its version once its file is
+        // named after its folder is listed as `needs_rename`: the owner ticks it, the rename runs, then the version.
+        val renamedTo = renamedToFolder(t.path)
+        if (dv.action == "skip" && renamedTo != null && !namedAfterFolder(t.path) &&
+            planDolbyVision(facts.copy(path = renamedTo), t.isFilm, folderVideos.map { if (it == t.path) renamedTo else it }).action == "add"
+        ) {
+            upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "needs_rename",
+                "rename to ${renamedTo.substringAfterLast('/')} first, then + a Dolby Vision 8.1 version beside it · ~${st.first / 1_000_000_000} GB",
+                st.first, st.first, st.second, now())
+            return
+        }
         when (dv.action) {
             "add" -> upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "would_add",
                 "+ a Dolby Vision 8.1 version beside it (${dv.reason}) · ~${st.first / 1_000_000_000} GB", st.first, st.first, st.second, now())
@@ -282,13 +354,16 @@ class FileFixService(
         val item = row?.let { store.resolve(it.media_id) } ?: store.allItems().firstOrNull { it.path == path || it.episodes.any { e -> e.path == path } }
             ?: return finish(path, kind, "failed", FixOutcome.Failed("the title is no longer in the library"))
         val stop = { cancelled() || playbackActive() }
-        if (stop()) return finish(path, kind, "pending", FixOutcome.Stopped("waiting for playback to end"))
-        q.setState("running", row?.detail ?: "", row?.read_bytes ?: 0, now(), path, kind.id)
+        val removing = row?.state == "remove_pending"   // phase 314c — a Remove, not an add
+        val waitState = if (removing) "remove_pending" else "pending"
+        if (stop()) return finish(path, kind, waitState, FixOutcome.Stopped("waiting for playback to end"), keepDetail = removing)
+        q.setState("running", if (removing) "removing what jellystructure added" else row?.detail ?: "", row?.read_bytes ?: 0, now(), path, kind.id)
         val outcome = try {
             MediaFileLock.withLock(path) {
-                when (kind) {
-                    FixKind.STEREO, FixKind.SURROUND -> runAudio(item, path, kind, stop, progress)
-                    FixKind.DOLBY_VISION -> runDolbyVision(item, path, stop, progress)
+                when {
+                    removing -> runRemove(item, path, kind, stop)
+                    kind == FixKind.DOLBY_VISION -> runDolbyVision(item, path, stop, progress)
+                    else -> runAudio(item, path, kind, stop, progress)
                 }
             }
         } catch (e: Exception) {
@@ -301,18 +376,19 @@ class FileFixService(
         }
         return when (outcome) {
             is FixOutcome.Done -> outcome
-            is FixOutcome.Stopped -> finish(path, kind, "pending", outcome)
-            is FixOutcome.Skipped -> finish(path, kind, "skipped", outcome)
-            is FixOutcome.Failed -> finish(path, kind, "failed", outcome)
+            is FixOutcome.Stopped -> finish(path, kind, waitState, outcome, keepDetail = removing)
+            // A Remove that found nothing, or failed, leaves the row as it was: what we added is still there (or wasn't).
+            is FixOutcome.Skipped -> finish(path, kind, if (removing) "done" else "skipped", outcome)
+            is FixOutcome.Failed -> finish(path, kind, if (removing) "done" else "failed", outcome)
         }
     }
 
-    private suspend fun finish(path: String, kind: FixKind, state: String, outcome: FixOutcome): FixOutcome {
+    private suspend fun finish(path: String, kind: FixKind, state: String, outcome: FixOutcome, keepDetail: Boolean = false): FixOutcome {
         val reason = when (outcome) {
             is FixOutcome.Failed -> outcome.reason; is FixOutcome.Stopped -> outcome.reason; is FixOutcome.Skipped -> outcome.reason; else -> ""
         }
         val row = q.find(path, kind.id).executeAsOneOrNull()
-        if (row != null) q.setState(state, reason, row.read_bytes, now(), path, kind.id)
+        if (row != null) q.setState(state, if (keepDetail) "removing what jellystructure added" else reason, row.read_bytes, now(), path, kind.id)
         if (outcome is FixOutcome.Failed) Logger.warn("file fix: ${kind.label} failed for $path: $reason (314)", "jobs")
         return outcome
     }
@@ -326,6 +402,58 @@ class FileFixService(
     }
 
     private suspend fun freeBytes(path: String): Long? = shell.run(FileFixCommands.freeBytes(path.substringBeforeLast('/'))).output.trim().lines().lastOrNull()?.trim()?.toLongOrNull()
+
+    /**
+     * Phase 314c (Remove) — takes away what [kind] added: kind A/B's `.mka` beside the file (deleted) and its copies in the
+     * file (a remux without our tracks, verified, swapped in one rename; never on a seeded file); kind C's version file
+     * (deleted, only when it is ours by its `JELLYSTRUCTURE_DV` tag). Then the file is planned again.
+     */
+    private suspend fun runRemove(item: MediaItem, path: String, kind: FixKind, stop: () -> Boolean): FixOutcome {
+        val did = ArrayList<String>()
+        if (kind == FixKind.DOLBY_VISION) {
+            val version = dvVersionPath(path)
+            if (!shell.exists(version)) return FixOutcome.Skipped("no Dolby Vision version beside it")
+            val p = shell.run(FileFixCommands.probe(version)).takeIf { it.ok }?.output ?: return FixOutcome.Failed("the version file can't be read; left alone")
+            if (!hasOurDvTag(p)) return FixOutcome.Failed("the file beside it isn't jellystructure's version; left alone")
+            shell.remove(version)
+            if (shell.exists(version)) return FixOutcome.Failed("the version file couldn't be deleted")
+            did += "deleted ${version.substringAfterLast('/')}"
+        } else {
+            val token = if (kind == FixKind.STEREO) "Stereo" else "Surround"
+            val dir = path.substringBeforeLast('/')
+            val base = path.substringAfterLast('/').substringBeforeLast('.')
+            // listDir gives full paths (`find -maxdepth 1`).
+            for (f in shell.listDir(dir).map { it.substringAfterLast('/') }.filter { it.startsWith("$base.") && it.endsWith(".$token.mka") }) {
+                shell.remove("$dir/$f")
+                if (shell.exists("$dir/$f")) return FixOutcome.Failed("$f couldn't be deleted")
+                did += "deleted $f"
+            }
+            val ids = copyTrackIds(shell.run(FileFixCommands.identify(path)).output, kind)
+            if (ids.isNotEmpty()) {
+                if (seeding(path) is SeedingCheckResult.Blocked) return FixOutcome.Failed("the file is seeded now, so its added track can't be taken out of it")
+                val before = probe(path) ?: return FixOutcome.Failed("ffprobe could not read the file")
+                shell.run(WorkFiles.prepareCommand(path)).takeIf { it.ok } ?: return FixOutcome.Failed("could not make the work folder")
+                val work = WorkFiles.pathFor(path, WorkFiles.Kind.FILE_FIX)
+                val mux = shell.runStoppable(FileFixCommands.removeTracks(path, ids, work), work, stop) ?: return FixOutcome.Stopped("stopped for playback")
+                if (mux.exit > 1) return FixOutcome.Failed("mkvmerge failed: ${mux.output.lines().lastOrNull { it.isNotBlank() } ?: "exit ${mux.exit}"}")
+                val after = probe(work) ?: return FixOutcome.Failed("the new file can't be read")
+                // mkvmerge's track ids are the file's track order, which is ffprobe's stream order (attachments come after).
+                verifyRemoved(before.streams, ids.toSet(), after.streams)?.let { return FixOutcome.Failed("verification: $it") }
+                if (kotlin.math.abs(after.facts.durationMs - before.facts.durationMs) > 60) return FixOutcome.Failed("verification: the duration changed")
+                if (seeding(path) is SeedingCheckResult.Blocked) return FixOutcome.Stopped("the file became seeded during the job")
+                if (!shell.run(FileFixCommands.moveIntoPlace(work, path, path)).ok) return FixOutcome.Failed("the swap failed; the file is untouched")
+                did += "${ids.size} added ${if (ids.size == 1) "track" else "tracks"} taken out of the file"
+            }
+        }
+        if (did.isEmpty()) return FixOutcome.Skipped("nothing jellystructure added is there")
+        history.record(item.id, "file_fix", "${kind.label} removed: ${did.joinToString("; ")} · ${path.substringAfterLast('/')}")
+        q.setState("removed", did.joinToString("; "), 0, now(), path, kind.id)
+        probeCache.remove(path)
+        runCatching { planOne(FixTarget(item, path, item.kind == MediaKind.MOVIE, item.title)) }
+        runCatching { afterWrite(item) }
+        Logger.info("file fix: ${kind.label} removed for $path (${did.joinToString("; ")}) (314)", "jobs")
+        return FixOutcome.Done
+    }
 
     /** Kinds A and B: encode each planned track, then either append them (unseeded) or place them as sidecars (seeded). */
     private suspend fun runAudio(item: MediaItem, path: String, kind: FixKind, stop: () -> Boolean, progress: (Double) -> Unit): FixOutcome {

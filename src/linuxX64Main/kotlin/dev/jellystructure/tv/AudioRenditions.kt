@@ -40,7 +40,9 @@ import kotlin.time.Clock
 class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
     /** [streamIndex] is Jellyfin's number for the track (it numbers external streams first); [audioOrder] is the
      *  track's place among the FILE's own audio streams, the only number ffmpeg may be given (R382). */
-    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null, val audioOrder: Int = position)
+    data class Rendition(val position: Int, val streamIndex: Int, val label: String?, val language: String?, val uri: String?, val channels: Int? = null, val audioOrder: Int = position,
+        /** Phase 314b — an external track's own file (a `.mka` sidecar beside the video): made from that file's first audio. */
+        val sourcePath: String? = null)
 
     /**
      * 308 (FR-308-1/-3) — one transcode's ladder: Jellyfin's negotiated URL as the [template] every variant is made
@@ -87,12 +89,19 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
     ): String? {
         val carried = audio.indexOfFirst { it.index == carriedIndex }
         // R382 (FR-R382-2/-3) — every rendition needs its place among the file's own audio streams; no confident
-        // match ⇒ no renditions (the switch then restreams, as on a player without them).
-        val order = if (fileTracks != null) fileAudioOrder(audio, fileTracks) else audio.indices.toList()
+        // match ⇒ no renditions (the switch then restreams, as on a player without them). Phase 314b — an external
+        // track (a sidecar beside the video) is made from its own file instead, found by phase 314's naming.
+        val embedded = audio.filter { !it.external }
+        val embeddedOrder = if (fileTracks != null) fileAudioOrder(embedded, fileTracks) else embedded.indices.toList()
+        val sidecars = audio.filter { it.external }.associate { it.index to sidecarFileFor(filePath, it) }
+        val order: List<Pair<Int, String?>>? = if (embeddedOrder == null || sidecars.values.any { it == null }) null else {
+            var e = 0
+            audio.map { a -> if (a.external) 0 to sidecars[a.index] else embeddedOrder[e++] to null }
+        }
         if (withRenditions && order == null && audio.size >= 2) Logger.info("audio renditions: Jellyfin's audio tracks don't match the file's (${audio.size} vs ${fileTracks?.count { it.kind == TrackKind.AUDIO }}): none offered (R382)", "tv")
         val renditions = if (!withRenditions || order == null || audio.size < 2 || carriedIndex == null || durationMs <= 0 || carried < 0) emptyList()
         else audio.mapIndexed { pos, a ->
-            Rendition(pos, a.index, a.label, a.language, if (pos == carried) null else "audio/$pos/main.m3u8", a.channels, order[pos])
+            Rendition(pos, a.index, a.label, a.language, if (pos == carried) null else "audio/$pos/main.m3u8", a.channels, order[pos].first, order[pos].second)
         }
         if (renditions.isEmpty() && ladder == null) return null
         val id = randomId()
@@ -126,7 +135,7 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
         val e = entry(id) ?: return null
         val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
         if (segment < 0 || segment * RENDITION_SEGMENT_MS >= e.durationMs) return null
-        return jobs.segment("$id:$position", RenditionSource(e.filePath, r.audioOrder, r.channels, e.durationMs), e.codec, segment)
+        return jobs.segment("$id:$position", RenditionSource(r.sourcePath ?: e.filePath, r.audioOrder, r.channels, e.durationMs), e.codec, segment)
     }
 
     /**
@@ -280,6 +289,20 @@ internal fun renditionAudioCodec(jellyfinMaster: String): String {
  * lists have the same length and agree track by track on codec and language. An external audio file (phase 314) makes
  * the lists differ, and then nothing is guessed.
  */
+/**
+ * Phase 314b — the sidecar file of an external [track] beside [videoPath], by phase 314's naming
+ * (`<video base>.<lang>.<Stereo|Surround>.mka`), when it exists; null otherwise (no rendition is then guessed).
+ */
+internal fun sidecarFileFor(videoPath: String, track: AudioTrack, exists: (String) -> Boolean = { kotlinx.io.files.SystemFileSystem.exists(kotlinx.io.files.Path(it)) }): String? {
+    if (videoPath.isBlank()) return null
+    val codec = dev.jellystructure.filefix.normCodec(track.codec)
+    val planned = dev.jellystructure.filefix.PlannedTrack(
+        sourceOrder = 0, language = track.language, sourceCodec = codec, sourceChannels = track.channels, codec = codec,
+        channels = track.channels ?: 2, bitrateKbps = 0, name = track.label.orEmpty(), estBytes = 0,
+    )
+    return dev.jellystructure.filefix.sidecarPath(videoPath, planned).takeIf(exists)
+}
+
 internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>): List<Int>? {
     val fileAudio = file.filter { it.kind == TrackKind.AUDIO }.sortedBy { it.streamIndex }
     if (fileAudio.size != jellyfin.size) return null

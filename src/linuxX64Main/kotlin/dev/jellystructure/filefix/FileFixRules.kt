@@ -220,6 +220,54 @@ fun namedAfterFolder(originalPath: String): Boolean {
     return rest.isEmpty() || rest[0] == '-' || rest[0] == '_' || rest[0] == '.' || MULTI_VERSION_TAIL.containsMatchIn(rest)
 }
 
+/**
+ * Phase 314c (Remove) — the mkvmerge track ids of the copies [kind] added in the file: audio tracks named like our copy
+ * (*Stereo* AAC for A, *Surround 5.1* E-AC-3 for B) that carry the `JELLYSTRUCTURE_COPY_OF` tag when mkvmerge reports
+ * tags, from `mkvmerge -J`. Never an original: a track without our name is never listed, whatever its codec.
+ */
+fun copyTrackIds(mkvmergeJson: String, kind: FixKind): List<Int> {
+    if (kind == FixKind.DOLBY_VISION) return emptyList()
+    val root = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(mkvmergeJson) as kotlinx.serialization.json.JsonObject }.getOrNull() ?: return emptyList()
+    val tracks = root["tracks"] as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+    val wantCodec = if (kind == FixKind.STEREO) "A_AAC" else "A_EAC3"
+    val wantName = if (kind == FixKind.STEREO) STEREO_NAME else SURROUND_NAME
+    return tracks.mapNotNull { t ->
+        val o = t as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+        fun str(obj: kotlinx.serialization.json.JsonObject?, k: String) = (obj?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+        if (str(o, "type") != "audio") return@mapNotNull null
+        val props = o["properties"] as? kotlinx.serialization.json.JsonObject
+        val codecId = str(props, "codec_id") ?: return@mapNotNull null
+        if (!codecId.startsWith(wantCodec)) return@mapNotNull null
+        if (!isCopyTitle(str(props, "track_name"), wantName)) return@mapNotNull null
+        // mkvmerge lists a track's tags as `tag_<name>` (statistics tags on every track): ours must be there —
+        // `JELLYSTRUCTURE_ADDED` on every copy, `JELLYSTRUCTURE_COPY_OF` on one made from a source with a UID.
+        val tagged = props?.keys?.any { it.startsWith("tag_") } == true
+        if (tagged && props?.get("tag_jellystructure_added") == null && props?.get("tag_jellystructure_copy_of") == null) return@mapNotNull null
+        (o["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
+    }
+}
+
+/** Phase 314c (Remove) — the file after a Remove holds every original stream, in order, and none of the removed ones. */
+fun verifyRemoved(before: List<StreamFacts>, removedPositions: Set<Int>, after: List<StreamFacts>): String? {
+    val expected = before.filterIndexed { i, _ -> i !in removedPositions }
+    if (after.size != expected.size) return "the new file has ${after.size} streams, expected ${expected.size}"
+    for ((i, e) in expected.withIndex()) {
+        val a = after[i]
+        if (a.type != e.type || normCodec(a.codec) != normCodec(e.codec) || langKey(a.language) != langKey(e.language)) return "stream $i changed"
+        if (a.default != e.default || a.forced != e.forced) return "stream $i's flags changed"
+    }
+    return null
+}
+
+/** Phase 314c — the original's name once renamed after its folder (`<dir>/<folder>.<ext>`); null when it already is. */
+fun renamedToFolder(originalPath: String): String? {
+    val dir = originalPath.substringBeforeLast('/')
+    val folder = dir.substringAfterLast('/')
+    val ext = originalPath.substringAfterLast('.', "mkv")
+    val target = "$dir/$folder.$ext"
+    return target.takeIf { it != originalPath && folder.isNotBlank() }
+}
+
 /** Jellyfin's `CheckMultiVersionRegex` (`[0-9]{2}[0-9]+[ip]`) and its bracket form, for a tail like `2160p`. */
 private val MULTI_VERSION_TAIL = Regex("""^(\[[^]]*]|[0-9]{2}[0-9]+[ip])""", RegexOption.IGNORE_CASE)
 
@@ -307,10 +355,35 @@ fun copyForDevice(audio: List<JellyfinAudio>, chosenIndex: Int?, decodable: List
     val can = decodable.map { normCodec(it) }.toSet()
     val source = audio.firstOrNull { it.index == chosenIndex } ?: audio.firstOrNull { it.isDefault } ?: audio.first()
     if (normCodec(source.codec) in can) return null
-    fun isCopy(a: JellyfinAudio, name: String) = a.title?.trim()?.let { it.equals(name, true) || it.startsWith("$name ", true) || it.equals(name.substringBefore(' '), true) } == true
+    fun isCopy(a: JellyfinAudio, name: String) = isCopyTitle(a.title, name)
     val sameLang = audio.filter { it.index != source.index && langKey(it.language) == langKey(source.language) && normCodec(it.codec) in can }
     return (sameLang.firstOrNull { isCopy(it, SURROUND_NAME) && normCodec(it.codec) == "eac3" }
         ?: sameLang.firstOrNull { isCopy(it, STEREO_NAME) && normCodec(it.codec) == "aac" })?.index
+}
+
+/** A track named like one of our copies (FR-314-4): `Stereo`, `Surround 5.1`, or either followed by more words. */
+fun isCopyTitle(title: String?, name: String): Boolean =
+    title?.trim()?.let { it.equals(name, true) || it.startsWith("$name ", true) || it.equals(name.substringBefore(' '), true) } == true
+
+/**
+ * Phase 314b (FR-314-4/-5) — which tracks are copies jellystructure added, and of which track: copy index → source index
+ * (Jellyfin's numbering, external sidecar tracks included). A copy is an AAC track named *Stereo* or an E-AC-3 track named
+ * *Surround 5.1*; its source is the same language's main original — the default one, else the first — never another
+ * copy, a commentary or an audio description. A copy whose language has no original is not folded (it stays its own row).
+ */
+fun copySourcesOf(audio: List<JellyfinAudio>): Map<Int, Int> {
+    fun copyKind(a: JellyfinAudio): Boolean =
+        (normCodec(a.codec) == "aac" && isCopyTitle(a.title, STEREO_NAME)) || (normCodec(a.codec) == "eac3" && isCopyTitle(a.title, SURROUND_NAME))
+    val copies = audio.filter { copyKind(it) }.map { it.index }.toSet()
+    val out = mutableMapOf<Int, Int>()
+    for (c in audio.filter { it.index in copies }) {
+        val originals = audio.filter {
+            it.index !in copies && langKey(it.language) == langKey(c.language) && !isCommentary(it.title) && !isDescription(it.title)
+        }
+        val source = originals.firstOrNull { it.isDefault } ?: originals.firstOrNull() ?: continue
+        out[c.index] = source.index
+    }
+    return out
 }
 
 /** Kind C — of a film's media sources (id → path), the profile-8.1 version's id, for a device without dual-layer DV. */

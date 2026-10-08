@@ -243,6 +243,8 @@ data class JellyfinItemDetail(
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("UserData") val userData: JellyfinUserData? = null,
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
+    /** Phase 314c — the item's versions (one per video file Jellyfin groups as this film); one for most items. */
+    @SerialName("MediaSources") val mediaSources: List<JellyfinMediaSourceInfo> = emptyList(),
 )
 
 @Serializable
@@ -281,6 +283,8 @@ data class JellyfinPlaybackInfoResponse(
 @Serializable
 data class JellyfinMediaSourceInfo(
     @SerialName("Id") val id: String? = null,
+    /** Phase 314c — Jellyfin's label for a version (the file-name suffix after ` - `, e.g. *Dolby Vision*). */
+    @SerialName("Name") val name: String? = null,
     @SerialName("Container") val container: String? = null,
     @SerialName("SupportsDirectPlay") val supportsDirectPlay: Boolean = false,
     @SerialName("SupportsDirectStream") val supportsDirectStream: Boolean = false,

@@ -319,6 +319,7 @@
   "player.rail_hint": "← → switch  ·  ↵ play  ·  ↑ back",
   "player.tab_audio": "Audio",
   "player.tab_subtitles": "Subtitles",
+  "player.tab_picture": "Picture",
   "player.badge_default": "Default",
   "player.badge_surround51": "Surround 5.1",
   "player.badge_surround71": "Surround 7.1",

@@ -526,6 +526,8 @@ fun PlayerScreen(
     var pickerLevel by remember { mutableIntStateOf(0) }        // 0 = language list, 1 = version list
     var pickerVersionIdx by remember { mutableIntStateOf(0) }
     var selectedAudio by remember { mutableIntStateOf(0) }
+    // Phase 314c — the film's picture versions (the original and its Dolby Vision 8.1 version), from the ticket.
+    var videoVersions by remember { mutableStateOf<List<dev.jellystructure.shared.tv.VideoVersion>>(emptyList()) }
     var selectedSub   by remember { mutableIntStateOf(-1) } // -1 = off
     // R181 — which itemId the layered resolver has already run for; compared against currentItemId
     // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
@@ -604,9 +606,12 @@ fun PlayerScreen(
     val pickerLang = LocalLang.current
     val audioGroups: List<PickerLanguage> = remember(audioTracks, originalLanguage, pickerLang) {
         val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
-        buildLanguageGroups(effectiveAudio.map {
-            PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = audioBadges(it, originalLanguage, pickerLang))
-        })
+        // Phase 314b — an added copy rides its source's row.
+        foldedAudioGroups(effectiveAudio) { list ->
+            buildLanguageGroups(list.map {
+                PickerEntryInput(it.language, it.label, forced = false, isDefault = it.isDefault, badges = audioBadges(it, originalLanguage, pickerLang))
+            })
+        }
     }
     val subVersionOptions: List<PlayerSubtitleTrack> = remember(subtitleTracks, encodeSubTracks) { subtitleTracks + encodeSubTracks }
     val subGroups: List<PickerLanguage> = remember(subVersionOptions, pickerLang) {
@@ -618,7 +623,9 @@ fun PlayerScreen(
     // the first row, as today"). flatIndex -1 is a sentinel `group.isOff`/choosePick() checks for.
     val offVersion = PickerVersion(flatIndex = -1, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false, isDefault = false, hadTitleText = false, ordinal = 0, clusterSize = 1)
     val subGroupsWithOff: List<PickerLanguage> = listOf(PickerLanguage(language = null, isOff = true, versions = listOf(offVersion), isUnnamed = false)) + subGroups
-    val pickerGroups: List<PickerLanguage> = if (pickerTab == 0) audioGroups else subGroupsWithOff
+    // Phase 314c — the Picture tab: one row per version, offered only when the film has two or more.
+    val pictureGroups: List<PickerLanguage> = remember(videoVersions) { pictureVersionGroups(videoVersions) }
+    val pickerGroups: List<PickerLanguage> = when (pickerTab) { 0 -> audioGroups; 1 -> subGroupsWithOff; else -> pictureGroups }
 
     // R246 (FR-R246-2) — the poll loop resolves against the exact track lists it read in that tick;
     // nothing derived from the lists is read from composed state. The `currentAudioGroups` /
@@ -787,8 +794,9 @@ fun PlayerScreen(
         val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
         val wanted = bk.sessionAudio.getOrNull(result.audioIndex)
         if (carried == null) {
-            player.selectAudioTrack(result.audioIndex)
-            selectedAudio = result.audioIndex
+            val play = playableAudio(result.audioIndex, tickAudio)   // phase 314b — a copy where the source can't be decoded
+            player.selectAudioTrack(play)
+            selectedAudio = play
         } else if (wanted != null && result.audioIndex != carried && bk.audioRestreamTriedFor != currentItemId) {
             bk.audioRestreamTriedFor = currentItemId
             selectedAudio = result.audioIndex
@@ -811,6 +819,16 @@ fun PlayerScreen(
     // `audio`/`subtitle` command (castChannelVideo below) choose through this one door.
     fun applyPick(tab: Int, group: PickerLanguage, version: PickerVersion) {
         bk.manualPickSinceResolve = true   // R246 (FR-R246-5) — a grown track set never overrides a manual pick
+        if (tab == 2) {
+            // Phase 314c — another picture version: the same item at the playhead from that version's file. The audio and
+            // subtitle choices are resolved again from the viewer's remembered choice once the new stream loads.
+            val v = videoVersions.getOrNull(version.flatIndex) ?: return
+            if (!v.current) {
+                bk.rearmResolveOnLoad = true
+                store.restreamVersion(itemId, v.id, player.positionMs, bk.burnedSubIndex ?: -1, bk.sessionAudio.getOrNull(selectedAudio)?.index)
+            }
+            return
+        }
         if (tab == 0) {
             persistChoice(newAudioLanguage = group.language, newAudioVariant = version.signature())
             // R284 (FR-R284-2) — a single-audio stream changes audio by restream (keeping the burn-in);
@@ -818,8 +836,9 @@ fun PlayerScreen(
             val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
             val wanted = bk.sessionAudio.getOrNull(version.flatIndex)
             if (carried == null) {
-                selectedAudio = version.flatIndex
-                player.selectAudioTrack(version.flatIndex)
+                val play = playableAudio(version.flatIndex, audioTracks)   // phase 314b
+                selectedAudio = play
+                player.selectAudioTrack(play)
             } else if (wanted != null && version.flatIndex != carried) {
                 selectedAudio = version.flatIndex
                 bk.rearmResolveOnLoad = true
@@ -867,7 +886,7 @@ fun PlayerScreen(
         val group = pickerGroups.getOrNull(pickerIdx) ?: return
         if (pickerLevel == 0 && group.versions.size > 1) {
             pickerLevel = 1
-            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
+            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
             pickerVersionIdx = group.versions.indexOfFirst { it.flatIndex == currentFlat }.coerceAtLeast(0)
             wake()
             return
@@ -893,8 +912,10 @@ fun PlayerScreen(
     fun pickerTapTab(tab: Int) {
         pickerTab = tab
         pickerLevel = 0
-        pickerIdx = if (tab == 0) {
-            audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == selectedAudio } }.coerceAtLeast(0)
+        pickerIdx = if (tab == 2) {
+            videoVersions.indexOfFirst { it.current }.coerceAtLeast(0)
+        } else if (tab == 0) {
+            audioGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == shownAudio(selectedAudio, audioTracks) } }.coerceAtLeast(0)
         } else {
             subGroupsWithOff.indexOfFirst { g -> g.versions.any { it.flatIndex == shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex) } }.coerceAtLeast(0)
         }
@@ -950,7 +971,7 @@ fun PlayerScreen(
     if (isTvPlatform) SideEffect {
         castSource.title = { itemTitle }
         castSource.kicker = { itemKicker }
-        castSource.lists = { castVideoLists(audioGroups, subGroupsWithOff, audioTracks, subVersionOptions, selectedAudio, shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)) }
+        castSource.lists = { castVideoLists(audioGroups, subGroupsWithOff, audioTracks, subVersionOptions, shownAudio(selectedAudio, audioTracks), shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)) }
         castSource.subSize = { subtitleSize }
         castSource.hasNext = { resolvedNextEpisodeId != null }
         castSource.applyPick = { tab, g, v -> applyPick(tab, g, v) }
@@ -1061,6 +1082,7 @@ fun PlayerScreen(
         // R291 (FR-R291-2) — a master with every audio track as a rendition carries no single track: an
         // audio pick is a player track selection, exactly as on direct play, never a restream.
         bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay && !s.ticket.audioRenditions }
+        videoVersions = s.ticket.versions   // phase 314c
         bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
         carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
         if (s.ticket.burnedSubtitleIndex != null) {
@@ -1636,7 +1658,7 @@ fun PlayerScreen(
                         epRailOpen -> focusedEpIdx = (focusedEpIdx - 1).coerceAtLeast(0)
                         // R195 §D — switching tab always resets to level 1, focused on whichever
                         // group currently contains the live selection.
-                        pickerOpen -> pickerTapTab(0)
+                        pickerOpen -> pickerTapTab(if (pickerTab == 2) 1 else 0)   // phase 314c — Picture sits right of Subtitles
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
@@ -1658,7 +1680,7 @@ fun PlayerScreen(
                     if (!revealOnly) when {
                         nextUpVisible -> nuFocus = NuFocus.STAY
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
-                        pickerOpen -> pickerTapTab(1)
+                        pickerOpen -> pickerTapTab(if (pickerTab >= 1 && pictureGroups.isNotEmpty()) 2 else 1)   // phase 314c
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
@@ -1762,7 +1784,7 @@ fun PlayerScreen(
                         focus == PlFocus.TRACKS    -> {
                             pickerOpen = true
                             pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
+                            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
@@ -2082,7 +2104,7 @@ fun PlayerScreen(
                         PlFocus.TRACKS    -> {
                             pickerOpen = true
                             pickerLevel = 0
-                            val currentFlat = if (pickerTab == 0) selectedAudio else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
+                            val currentFlat = if (pickerTab == 0) shownAudio(selectedAudio, audioTracks) else shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex)
                             pickerIdx = pickerGroups.indexOfFirst { g -> g.versions.any { it.flatIndex == currentFlat } }.coerceAtLeast(0)
                         }
                         PlFocus.NEXT_EP   -> advanceNext()
@@ -2138,7 +2160,9 @@ fun PlayerScreen(
                 subGroups        = subGroupsWithOff,
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
-                selectedAudio    = selectedAudio,
+                selectedAudio    = shownAudio(selectedAudio, audioTracks),
+                pictureGroups    = pictureGroups,
+                selectedPicture  = videoVersions.indexOfFirst { it.current },
                 selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 onTapLanguage = { idx -> pickerIdx = idx; pickerSelect() },
                 onTapVersion  = { idx -> pickerVersionIdx = idx; pickerSelect() },
@@ -2175,7 +2199,9 @@ fun PlayerScreen(
                 subGroups        = subGroupsWithOff,
                 pickerIdx        = pickerIdx,
                 pickerVersionIdx = pickerVersionIdx,
-                selectedAudio    = selectedAudio,
+                selectedAudio    = shownAudio(selectedAudio, audioTracks),
+                pictureGroups    = pictureGroups,
+                selectedPicture  = videoVersions.indexOfFirst { it.current },
                 selectedSub      = shownSelectedSub(selectedSub, subtitleTracks.size, encodeSubTracks, bk.burnedSubIndex),
                 // R195 — touch parity with the D-pad: a tap just moves the target index then runs the
                 // EXACT SAME pickerSelect()/pickerBack() logic Select/Back already use, so touch (phone)
@@ -2862,10 +2888,13 @@ internal fun TrackPicker(
     // is the sheet's one addition (the Subtitle size row), rendered after the list.
     handset: Boolean = false,
     extraRow: (@Composable () -> Unit)? = null,
+    // Phase 314c — the Picture tab (the film's versions), shown only when there are two or more.
+    pictureGroups: List<PickerLanguage> = emptyList(),
+    selectedPicture: Int = -1,
 ) {
     val lang = LocalLang.current
-    val groups = if (pickerTab == 0) audioGroups else subGroups
-    val selectedFlat = if (pickerTab == 0) selectedAudio else selectedSub
+    val groups = when (pickerTab) { 0 -> audioGroups; 1 -> subGroups; else -> pictureGroups }
+    val selectedFlat = when (pickerTab) { 0 -> selectedAudio; 1 -> selectedSub; else -> selectedPicture }
     val audioFlag = flagFor(audioGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedAudio } }?.language)
     val subFlag = flagFor(subGroups.firstOrNull { g -> g.versions.any { it.flatIndex == selectedSub } }?.language)
 
@@ -2884,6 +2913,7 @@ internal fun TrackPicker(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag, onTap = { onTapTab(0) })
                     PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag, onTap = { onTapTab(1) })
+                    if (pictureGroups.isNotEmpty()) PickerTab(str("player.tab_picture"), pickerTab == 2, null, onTap = { onTapTab(2) })
                 }
                 Spacer(Modifier.height(14.dp))
             }
@@ -2931,7 +2961,18 @@ internal fun TrackPicker(
                 modifier = Modifier.heightIn(max = 400.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (pickerLevel == 0) {
+                if (pickerLevel == 0 && pickerTab == 2) {
+                    // Phase 314c — a version is a plain row: its name in plain words, the tick on the one playing.
+                    itemsIndexed(groups) { i, g ->
+                        PickerPictureRow(
+                            label = g.sampleTitle.orEmpty(),
+                            selected = g.versions.any { it.flatIndex == selectedFlat },
+                            focused = i == pickerIdx,
+                            colors = colors,
+                            onTap = { onTapLanguage(i) },
+                        )
+                    }
+                } else if (pickerLevel == 0) {
                     itemsIndexed(groups) { i, g ->
                         val active = g.versions.any { it.flatIndex == selectedFlat }
                         PickerLanguageRow(
@@ -3172,6 +3213,40 @@ internal fun languageRowBadges(group: PickerLanguage, selectedFlat: Int): List<S
     val only = group.versions.filter { it.flatIndex >= 0 }
     return if (only.size == 1) only[0].badges else emptyList()
 }
+
+/** Phase 314c — one picture version in the Picture tab. */
+@Composable
+private fun PickerPictureRow(label: String, selected: Boolean, focused: Boolean, colors: RaviloColors, onTap: () -> Unit) {
+    val focused = focused && LocalFocusVisible.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) colors.focusRing.copy(0.7f) else Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        PickerTick(selected = selected, colors = colors)
+        Text(label, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+    }
+}
+
+/** Phase 314c — the Picture tab's rows: one group per version, its label carried as the group's title; none for one version. */
+internal fun pictureVersionGroups(versions: List<dev.jellystructure.shared.tv.VideoVersion>): List<PickerLanguage> =
+    if (versions.size < 2) emptyList() else versions.mapIndexed { i, v ->
+        PickerLanguage(
+            language = null, isOff = false, isUnnamed = false, sampleTitle = v.label,
+            versions = listOf(PickerVersion(flatIndex = i, kind = VariantKind.PLAIN, region = null, badges = emptyList(), forced = false,
+                isDefault = false, hadTitleText = true, ordinal = 0, clusterSize = 1)),
+        )
+    }
 
 /** R195 §A — one row per language. No arrow + no count when there's exactly one version (OK selects
  *  it outright, matching R180's original one-press behaviour); a count + arrow otherwise. Badges
@@ -4180,8 +4255,32 @@ internal fun shownSelectedSub(selectedSub: Int, nativeCount: Int, encodeSubs: Li
 internal fun sessionAudioTracks(sessionAudio: List<dev.jellystructure.shared.tv.AudioTrack>, carriedIndex: Int?, playerTracks: List<PlayerAudioTrack>): List<PlayerAudioTrack> =
     if (carriedIndex == null || sessionAudio.isEmpty() || playerTracks.isEmpty()) playerTracks
     else sessionAudio.mapIndexed { i, a ->
-        PlayerAudioTrack(i, a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language?.uppercase() ?: "Track ${i + 1}", a.language, a.channels, a.isDefault)
+        PlayerAudioTrack(i, a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language?.uppercase() ?: "Track ${i + 1}", a.language, a.channels, a.isDefault,
+            copyOf = a.copyOf?.let { src -> sessionAudio.indexOfFirst { it.index == src } }?.takeIf { it >= 0 })
     }
+
+/**
+ * Phase 314b (FR-314-4/-5) — the audio picker's groups with every added copy folded onto its source's row: a copy
+ * jellystructure added (an AAC *Stereo*, an E-AC-3 *Surround*) is the same audio, so the viewer sees one row per real
+ * track. [build] is the grouping (R195's `buildLanguageGroups` over the entries); the versions keep their flat index
+ * into [tracks], so selection still addresses the player's own list. A copy whose source isn't in the list stays a row.
+ */
+internal fun foldedAudioGroups(tracks: List<PlayerAudioTrack>, build: (List<PlayerAudioTrack>) -> List<PickerLanguage>): List<PickerLanguage> {
+    val visible = tracks.withIndex().filter { (_, t) -> t.copyOf == null || t.copyOf !in tracks.indices }
+    if (visible.size == tracks.size) return build(tracks)
+    return build(visible.map { it.value }).map { g -> g.copy(versions = g.versions.map { v -> v.copy(flatIndex = visible[v.flatIndex].index) }) }
+}
+
+/** Phase 314b — the row the picker shows as playing: a copy that plays shows its source's row. */
+internal fun shownAudio(selected: Int, tracks: List<PlayerAudioTrack>): Int =
+    tracks.getOrNull(selected)?.copyOf?.takeIf { it in tracks.indices } ?: selected
+
+/** Phase 314b (FR-314-5) — what a pick of [flat] plays: its added copy when this device can't decode it and can the copy. */
+internal fun playableAudio(flat: Int, tracks: List<PlayerAudioTrack>): Int {
+    val t = tracks.getOrNull(flat) ?: return flat
+    if (t.supported) return flat
+    return tracks.indexOfFirst { it.copyOf == flat && it.supported }.takeIf { it >= 0 } ?: flat
+}
 
 /** R284 — the carried track's position in the session's audio list; null = not a single-audio session
  *  (or the ticket names a track its own list lacks — then the player's list is all there is). */

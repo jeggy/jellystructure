@@ -11,6 +11,11 @@ data class PlayerAudioTrack(
     val channels: Int? = null,
     /** R180 — the source's own "pick this automatically" track, for the Default badge. */
     val isDefault: Boolean = false,
+    /** Phase 314b — this track is a copy jellystructure added of the track at this flat index (its source): the
+     *  picker shows the two as one row, and plays the copy only where the source can't be decoded. */
+    val copyOf: Int? = null,
+    /** Phase 314b — the device can decode this track (Media3's renderer support); true where the player can't tell. */
+    val supported: Boolean = true,
 )
 data class PlayerSubtitleTrack(
     val index: Int,

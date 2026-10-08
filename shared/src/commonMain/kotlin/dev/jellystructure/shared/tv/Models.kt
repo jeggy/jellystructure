@@ -153,6 +153,10 @@ data class ClientCapabilities(
     // "unknown"/0 ⇒ Phase 177's link-derived MaxStreamingBitrate cap never applies (today's behaviour).
     @SerialName("link_kind") val linkKind: String = "unknown",
     @SerialName("link_mbps") val linkMbps: Int = 0,
+    /** Phase 314b (FR-314-6) — this client plays an audio track from a separate file beside the video
+     *  ([AudioTrack.externalUrl]) together with a direct-played video. Opt-in: an older client is never handed
+     *  an external track on a direct play, since its player could not open it. */
+    @SerialName("external_audio") val externalAudio: Boolean = false,
 )
 
 /**
@@ -282,6 +286,27 @@ data class AudioTrack(
     val codec: String? = null,
     val channels: Int? = null,
     @SerialName("is_default") val isDefault: Boolean = false,
+    /** Phase 314b — the track lives in a separate file beside the video (a `.mka` sidecar), not in the container.
+     *  The ticket lists every container track first, in the container's order, and external tracks after them,
+     *  so a player that merges the sidecar sees its audio after the container's own. */
+    val external: Boolean = false,
+    /** Phase 314b — on a direct play to a client that declared [ClientCapabilities.externalAudio], where to fetch
+     *  this external track: a path on this server (`/api/tv/stream/sidecar/{id}.mka`), resolved against the
+     *  client's own server address. Null on a transcode (Jellyfin's stream carries it) and for container tracks. */
+    @SerialName("external_url") val externalUrl: String? = null,
+    /** Phase 314b (FR-314-5) — this track is a copy jellystructure added of another track (an AAC *Stereo* or an
+     *  E-AC-3 *Surround*): the source's [index]. A picker shows the source and its copy as one row and plays the
+     *  copy only on a device that can't decode the source. Null for every original track. */
+    @SerialName("copy_of") val copyOf: Int? = null,
+)
+
+/** Phase 314c — one picture version of a film (Jellyfin's media sources: the original and, say, a Dolby Vision
+ *  profile 8.1 version beside it). [label] is plain words for the picker; [current] is the one this stream plays. */
+@Serializable
+data class VideoVersion(
+    val id: String,
+    val label: String,
+    val current: Boolean = false,
 )
 
 @Serializable
@@ -359,6 +384,12 @@ data class StreamTicket(
     /** R368 (dev review item 8) — the server's playback session this start belongs to; the client echoes it on its
      *  progress and stop reports. Absent from an older server (and then nothing is echoed). */
     @SerialName("session_id") val sessionId: String? = null,
+    /** Phase 314c — the film's picture versions when it has more than one; empty otherwise (and from an older
+     *  server). The picker offers a *Picture* choice only when there are two or more. */
+    val versions: List<VideoVersion> = emptyList(),
+    /** Phase 314c — the Jellyfin media source this stream plays (one of [versions]); a restream echoes it to keep
+     *  the version, or names another to switch. Null when the film has a single version. */
+    @SerialName("media_source_id") val mediaSourceId: String? = null,
 )
 
 @Serializable
@@ -1469,6 +1500,9 @@ data class PlaybackRestreamRequest(
      *  null ⇒ Jellyfin's default. Composes with [subtitleStreamIndex]: a subtitle pick keeps the
      *  audio, an audio pick keeps the burn-in. */
     @SerialName("audio_stream_index") val audioStreamIndex: Int? = null,
+    /** Phase 314c — the picture version (a [StreamTicket.versions] id) the restreamed session must play; null keeps
+     *  the server's own choice for this device. */
+    @SerialName("media_source_id") val mediaSourceId: String? = null,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */

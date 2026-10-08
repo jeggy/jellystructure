@@ -37,3 +37,6 @@ actual fun switchesHlsAudioRenditions(): Boolean = true
 actual fun playsAdaptiveHls(): Boolean = true
 
 actual fun playsOnlyHls(): Boolean = false
+
+/** Phase 314b — Media3 merges a sidecar with the direct-played video (MergingMediaSource). */
+actual fun mergesExternalAudio(): Boolean = true

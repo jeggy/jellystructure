@@ -27,7 +27,24 @@ fun Route.fileFixRoutes(service: FileFixService, scope: CoroutineScope) {
             scope.launch(GateClass.BACKGROUND) { runCatching { service.buildPlan() } }
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))
         }
+        // Phase 314c — one title's rows for the Tracks tab.
+        get("/title/{mediaId}") {
+            val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing title"))
+            call.respond(service.title(mediaId))
+        }
+        // Phase 314c (owner: rename, asked per film) — the ticked Dolby Vision 7 originals, renamed after their folder and
+        // then given their version. Runs now (renames are instant); the version itself is a job on the media lane.
+        post("/c/rename") {
+            val req = call.receive<dev.jellystructure.model.FileFixRenameRequest>()
+            if (req.paths.isEmpty()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Tick at least one film"))
+            call.respond(service.renameAndQueue(req.paths.distinct()))
+        }
         route("/{kind}") {
+            post("/title/{mediaId}/remove") {
+                val kind = FixKind.of(call.parameters["kind"]) ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown kind"))
+                val mediaId = call.parameters["mediaId"] ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing title"))
+                call.respond(mapOf("queued" to service.removeTitle(kind, mediaId)))
+            }
             get("/rows") {
                 val kind = FixKind.of(call.parameters["kind"]) ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown kind"))
                 val state = call.request.queryParameters["state"]?.takeIf { it.isNotBlank() }

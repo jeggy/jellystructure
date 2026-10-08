@@ -95,3 +95,6 @@ actual fun detectLinkState(): LinkState = runCatching {
         else -> LinkState.UNKNOWN
     }
 }.getOrDefault(LinkState.UNKNOWN)
+
+/** Phase 314b — not built for mpv or AVPlayer yet: the sidecar comes through Jellyfin's stream there. */
+actual fun mergesExternalAudio(): Boolean = false

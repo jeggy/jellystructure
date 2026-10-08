@@ -198,6 +198,42 @@ class LooseFilmsService(
         }
     }
 
+    /**
+     * Phase 314c (owner, 2026-10-08: rename, asked per film) — a Dolby Vision 7 original renamed after its own folder, so
+     * Jellyfin groups the 8.1 version file beside it as a version. The same mover and ports as a loose film's move, in
+     * place: every file named after the video is renamed (a `rename(2)`: hard links elsewhere — cross-seed's — stay
+     * valid, so every torrent seeding through them keeps seeding), Radarr refreshed, Jellyfin told, watch data and our own
+     * rows carried over. Refused, with nothing changed, when a torrent seeds the library file itself (renaming it would
+     * break that torrent's file).
+     */
+    suspend fun renameToFolder(path: String): dev.jellystructure.model.FileFixRenameResult {
+        val cfg = configStore.current
+        val dir = path.substringBeforeLast('/')
+        val folder = dir.substringAfterLast('/')
+        val video = path.substringAfterLast('/')
+        val item = store.allItems().firstOrNull { it.kind == MediaKind.MOVIE && it.path == path }
+        val names = listNames(dir).filter { !it.startsWith(".") }
+        val files = planRenameToFolder(video, names, folder)
+        if (files.isEmpty()) return dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "it is already named after its folder")
+        val (title, year) = titleAndYear(item, video)
+        val base = LooseFilm(
+            key = path, root = dir, mediaId = item?.id, title = title, year = year, jellyfinId = item?.jellyfinId, video = video,
+            sizeBytes = SystemFileSystem.metadataOrNull(Path(path))?.size ?: 0L, files = files, targetFolder = dir,
+        )
+        val film = attachRadarr(attachTorrents(listOf(base), cfg), cfg, item?.let { mapOf(path to it) } ?: emptyMap()).first()
+        if (film.torrents.any { it.seedsLibraryPath })
+            return dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "a torrent seeds this file in the library itself; renaming it would break that torrent")
+        val moved = LooseFilmMover(Ports(cfg, "${configDir()}/backups/dv-rename/${nowEpochSec()}")).move(film)
+        val newPath = files.firstOrNull { it.name == video }?.target?.let { "$dir/$it" }
+        Logger.info("DV rename: $video → ${newPath?.substringAfterLast('/')} ${moved.state}${moved.error?.let { " ($it)" } ?: ""} (314)", "media")
+        return dev.jellystructure.model.FileFixRenameResult(
+            path = path,
+            newPath = newPath.takeIf { moved.state != "failed" },
+            state = when (moved.state) { "moved" -> "renamed"; "partial" -> "partial"; else -> "failed" },
+            detail = moved.error ?: moved.steps.joinToString(" · ") { "${it.step} ${if (it.ok) "✓" else "✗"} ${it.detail}" },
+        )
+    }
+
     private fun updateFilm(key: String, f: (LooseFilm) -> LooseFilm) = lock.withLock {
         val l = last ?: return@withLock
         last = l.copy(films = l.films.map { if (it.key == key) f(it) else it })
