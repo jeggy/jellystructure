@@ -287,6 +287,7 @@ fun main() = runBlocking {
     // (every song in a queue is one session, and one stop).
     playbackService.onStopLanded = { device, stoppedId -> if (musicStore.track(stoppedId) == null) homeFeedService.invalidatePlaystate(device, stoppedId) }
     playbackService.anchorDateFor = homeFeedService::anchorDate  // R375 (FR-R375-6)
+    playbackService.encoder.ensureFfmpeg(rootScope)   // Phase 313 (FR-313-11) — fetch jellyfin-ffmpeg when the encoder is on
     // R343 (FR-R343-4) — Start over's clear ends with the invalidation `PUT /tv/played` runs; R347 — the stop
     // judges "finished" by the credits marker the player's next-up card fires at.
     playbackService.onSeriesCleared = { device, seriesId -> homeFeedService.invalidatePlaystate(device, seriesId) }
@@ -360,6 +361,8 @@ fun main() = runBlocking {
     // Phase 254 — deep checks + replace-from-source repairs. One instance: the queue runs the jobs,
     // Triage/Library/the detail routes read it through FileDamage.
     val fileIntegrity = dev.jellystructure.media.FileIntegrityService(db, seedingSnapshot)
+    // Phase 316 — films with no folder of their own: the Dashboard warning and the owner's Apply.
+    val looseFilms = dev.jellystructure.media.LooseFilmsService(configStore, mediaStore, jellyfinClient, arrClient, qbClient, seedingSnapshot, mediaHistory, db)
     dev.jellystructure.media.FileDamage.service = fileIntegrity
     // Phase 255 — a track that stops before the file does: the tail probe, its table, and the two Triage types.
     val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
@@ -388,6 +391,39 @@ fun main() = runBlocking {
     musicPipeline.convert = dev.jellystructure.music.MusicConvert(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory).also { c ->
         c.tagWriter = tagWriter
         mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
+    }
+    // Phase 314 — a file every device can play directly: the dry run, Apply, one job at a time on the media lane.
+    val fileFix = dev.jellystructure.filefix.FileFixService(
+        db = db, store = mediaStore, config = { configStore.current }, history = mediaHistory,
+        seeding = { path -> seedingGuard.check(path, configStore.current, inPlace = true, countRefusal = false) },
+        radarrParse = { title ->
+            val r = configStore.current.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
+            if (r == null) dev.jellystructure.arr.ArrParseResult(null, 0) else arrClient.parseRelease(r.url, r.apiKey, title)
+        },
+        afterWrite = { item ->
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank())
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+            arrRescan.nudge(item)
+        },
+        playbackActive = {
+            dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())
+        },
+        now = ::nowEpochSec,
+        today = { dev.jellystructure.filefix.isoDateUtc(nowEpochSec()) },
+    )
+    dev.jellystructure.filefix.FileFixService.current = fileFix
+    mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }
+    runCatching { db.fileFixQueries.resetRunning() }   // a restart mid-job: the row goes back to pending, the work file is swept
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            runCatching {
+                if (!dev.jellystructure.tv.isPlaybackActive()) fileFix.nextToQueue(mediaJobQueue.fileFixJobActive())?.let { row ->
+                    mediaJobQueue.enqueueFileFix(row.media_id, "Make file play directly · ${row.label}", row.path, row.kind)
+                }
+            }.onFailure { Logger.warn("file fix: queue tick failed: ${it.message} (314)", "jobs") }
+        }
     }
     // Phase 281 — the book editor: suggestions from four providers, the cover, Save (tags only with the switch on).
     musicPipeline.audiobooksMedia = musicPipeline.audiobooks?.let { b ->
@@ -550,7 +586,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, suggestionService = suggestionService, publishQueue = publishQueue, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, suggestionService = suggestionService, publishQueue = publishQueue, looseFilms = looseFilms, bazarrClient = bazarrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, dirtyItemStore = dirtyItemStore, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore, requestLifecycleService = requestLifecycleService, liveTvService = liveTvService, fingerprintService = fingerprintService, mediaSegmentStore = mediaSegmentStore,
         playbackQoeStore = playbackQoeStore,
         castService = castService, castDir = castDir,
         lidarrClient = lidarrClient,

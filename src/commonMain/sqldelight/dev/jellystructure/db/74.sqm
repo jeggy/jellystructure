@@ -1,0 +1,7 @@
+-- R266 — Cast Connect launch observations (renumbered 69 → 72 → 74 at the merge into main, 2026-10-08). Must stay in sync with CastConnectLaunch.sq. Drops nothing.
+
+CREATE TABLE cast_connect_launch (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    device_name TEXT NOT NULL,
+    launched_at INTEGER NOT NULL
+);

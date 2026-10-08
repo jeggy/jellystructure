@@ -18,6 +18,7 @@ import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkAsset
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.assetFilePath
+import dev.jellystructure.media.refuseRootFolderImage
 import dev.jellystructure.media.clearTmdbMatch
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
@@ -673,6 +674,11 @@ fun Route.mediaRoutes(
                     // needs the same per-basename convention as everything else in ArtworkDownloader —
                     // see assetFilePath's doc comment.
                     val destPath = assetFilePath(item, filename)
+                    // Phase 316 (FR-316-2) — never a folder-named image in a library root.
+                    refuseRootFolderImage(destPath)?.let { reason ->
+                        call.respond(HttpStatusCode.Conflict, mapOf("error" to "This film's file sits in the library's root folder, so a $type there would show on every film. ($reason)"))
+                        return@post
+                    }
                     val tmpPath = "$destPath.tmp"
                     // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink.
                     SystemFileSystem.sink(Path(tmpPath)).buffered().use { sink ->

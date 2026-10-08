@@ -28,6 +28,7 @@ actual object MusicEngine {
     actual fun remove(index: Int) = Unit
     actual fun playNext(track: MusicTrackItem) = Unit
     actual fun addToQueue(track: MusicTrackItem) = Unit
+    actual fun replaceQueue(tracks: List<MusicTrackItem>, index: Int) = Unit
     actual fun clear() = Unit
     actual fun stopForVideo() = Unit
     actual fun retry() = Unit

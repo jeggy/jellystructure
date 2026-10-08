@@ -5,7 +5,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import dev.jellystructure.ravilo.ui.RemoteControl
+import dev.jellystructure.ravilo.ui.isTvPlatform
+import dev.jellystructure.ravilo.ui.seams.CastChannelVideo
+import dev.jellystructure.ravilo.ui.seams.CastVideoSnapshot
+import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
+import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
+import dev.jellystructure.ravilo.ui.seams.TvCastChannel
+import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.RemotePlayer
 
 /**
@@ -46,6 +53,104 @@ internal fun RemoteVideoCommands(
             override fun setVolume(level: Float, muted: Boolean) = player.setVolume(if (muted) 0f else level)
         }
         val detach = RemoteControl.attachVideo(remote)
+        onDispose { detach() }
+    }
+}
+
+/** R380 (FR-R380-7) — one row of the phone's track list: where it sits in the picker's groups. */
+internal data class CastPickEntry(val group: PickerLanguage, val version: PickerVersion)
+
+/** R380 — the picker's groups as the phone's remote lists them (R285's shape), and what each position picks. */
+internal data class CastVideoLists(
+    val audio: List<CastTrack>,
+    val subtitles: List<CastTrack>,
+    val audioEntries: List<CastPickEntry>,
+    val subtitleEntries: List<CastPickEntry>,
+    val selectedAudio: Int,
+    val selectedSub: Int,
+    val subtitleOff: CastPickEntry?,
+)
+
+/**
+ * R380 — flattens the picker's two-level groups into the flat lists a cast remote shows: every version of every
+ * language, in the picker's order. Subtitle *Off* is not a row (the phone's own picker adds it; `subtitle -1` picks it).
+ * [selectedAudioFlat]/[selectedSubFlat] are the picker's flat indexes (-1 = subtitles off). Track ids follow the web
+ * receiver's scheme (100 + position for subtitles, 200 + position for audio) so the phone can address them.
+ */
+internal fun castVideoLists(
+    audioGroups: List<PickerLanguage>,
+    subGroupsWithOff: List<PickerLanguage>,
+    audioTracks: List<PlayerAudioTrack>,
+    subOptions: List<PlayerSubtitleTrack>,
+    selectedAudioFlat: Int,
+    selectedSubFlat: Int,
+): CastVideoLists {
+    val audioEntries = audioGroups.flatMap { g -> g.versions.map { CastPickEntry(g, it) } }
+    val subEntries = subGroupsWithOff.filter { !it.isOff }.flatMap { g -> g.versions.map { CastPickEntry(g, it) } }
+    val off = subGroupsWithOff.firstOrNull { it.isOff }?.let { g -> g.versions.firstOrNull()?.let { CastPickEntry(g, it) } }
+    val audio = audioEntries.mapIndexed { i, e ->
+        CastTrack(index = i, label = audioTracks.getOrNull(e.version.flatIndex)?.label, language = e.group.language,
+            isDefault = e.version.isDefault, trackId = 200L + i)
+    }
+    val subs = subEntries.mapIndexed { i, e ->
+        CastTrack(index = i, label = subOptions.getOrNull(e.version.flatIndex)?.label, language = e.group.language,
+            forced = e.version.forced, isDefault = e.version.isDefault, trackId = 100L + i)
+    }
+    return CastVideoLists(
+        audio = audio, subtitles = subs, audioEntries = audioEntries, subtitleEntries = subEntries,
+        selectedAudio = audioEntries.indexOfFirst { it.version.flatIndex == selectedAudioFlat }.coerceAtLeast(0),
+        selectedSub = if (selectedSubFlat < 0) -1 else subEntries.indexOfFirst { it.version.flatIndex == selectedSubFlat },
+        subtitleOff = off,
+    )
+}
+
+/**
+ * R380 (FR-R380-7) — what the film player hands the cast channel, as fields the player fills one statement at a time.
+ * A holder, not ten parameters: PlayerScreen's dex method sits near ART's register limit (R258,
+ * `scripts/check-player-dex.sh`), and a ten-lambda call keeps ten values live at once; a field write keeps two.
+ */
+internal class CastVideoSource {
+    var title: () -> String = { "" }
+    var kicker: () -> String? = { null }
+    var lists: () -> CastVideoLists? = { null }
+    var subSize: () -> Char = { 'M' }
+    var hasNext: () -> Boolean = { false }
+    var applyPick: (Int, PickerLanguage, PickerVersion) -> Unit = { _, _, _ -> }
+    var setSubSize: (Char) -> Unit = {}
+    var next: () -> Unit = {}
+}
+
+/**
+ * R380 (FR-R380-7) — while a cast drives this film player (R266, the TV app), the phone's remote reads its tracks and
+ * picks them through the player's own `applyPick` door (persistence, restreams and burn-ins as a picker OK). Its own
+ * composable, beside [RemoteVideoCommands], for the same register-count reason (R258). TV only.
+ */
+@Composable
+internal fun CastChannelVideoHost(itemId: String, source: CastVideoSource) {
+    if (!isTvPlatform) return
+    DisposableEffect(itemId, source) {
+        val host = object : CastChannelVideo {
+            override fun snapshot(): CastVideoSnapshot? {
+                val l = source.lists() ?: return null
+                return CastVideoSnapshot(
+                    itemId = itemId, title = source.title(), kicker = source.kicker(), audioTracks = l.audio, subtitleTracks = l.subtitles,
+                    selectedAudio = l.selectedAudio, selectedSub = l.selectedSub, subSize = source.subSize().toString(),
+                    hasNext = source.hasNext(), transcoding = null,
+                )
+            }
+            override fun selectAudio(index: Int) {
+                val e = source.lists()?.audioEntries?.getOrNull(index) ?: return
+                source.applyPick(0, e.group, e.version)
+            }
+            override fun selectSubtitle(index: Int) {
+                val l = source.lists() ?: return
+                val e = if (index < 0) l.subtitleOff else l.subtitleEntries.getOrNull(index)
+                if (e != null) source.applyPick(1, e.group, e.version)
+            }
+            override fun setSubSize(size: String) { source.setSubSize(size.firstOrNull()?.takeIf { it in "SML" } ?: 'M') }
+            override fun nextEpisode() = source.next()
+        }
+        val detach = TvCastChannel.attachVideo(host)
         onDispose { detach() }
     }
 }

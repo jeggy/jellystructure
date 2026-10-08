@@ -11,6 +11,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -124,5 +125,31 @@ class CastServiceTest {
         assertFailsWith<CastCeilingException> {
             cast.checkCeiling(r3, tracker.activeDeviceObjects(), tracker.activeDirectDeviceIds())
         }
+    }
+
+    /** R266 (acceptance 8) — the admin line's signal: only a TV app's Cast Connect launch is recorded, and the status
+     *  carries it only once one really happened. A phone or a web receiver reporting one records nothing. */
+    @Test
+    fun `a Cast Connect launch is on record only once the TV app reported one`() = runBlocking<Unit> {
+        configStore.update(configStore.current.copy(chromecast = ChromecastConfig(enabled = true, appId = "A1B2C3D4")))
+        assertNull(cast.status(emptyList()).tvOpensRaviloAt, "nothing on record ⇒ no line, whatever the console says")
+        val p = phone().copy(kind = "phone")
+        assertFalse(cast.recordCastConnectLaunch(p, now = 1_000L))
+        val (receiver, _) = assertNotNull(cast.redeem(cast.mint(phone()).code, "Stue", null))
+        assertFalse(cast.recordCastConnectLaunch(receiver, now = 2_000L), "a web receiver is not a Cast Connect receiver")
+        assertNull(cast.status(emptyList()).tvOpensRaviloAt)
+        val tv = devices.loginDevice(
+            deviceId = "stue-tv", deviceName = "Stue TV", jellyfinUserId = "u1", jellyfinUsername = "jeggy",
+            jellyfinUserToken = "jf-token", isAdmin = false, isKids = false,
+        ).first
+        assertEquals("tv", tv.kind)
+        assertTrue(cast.recordCastConnectLaunch(tv, now = 3_000L))
+        assertTrue(cast.recordCastConnectLaunch(tv, now = 4_000L), "a second launch replaces the first, one row per TV")
+        val st = cast.status(emptyList())
+        assertEquals(4_000L, st.tvOpensRaviloAt)
+        assertEquals("Stue TV", st.tvOpensRaviloName)
+        // Acceptance 5 by construction: a Cast Connect launch never mints a device — the TV is still one device.
+        assertEquals(1, devices.allDevices().count { it.deviceId == "stue-tv" })
+        assertTrue(devices.allDevices().none { it.displayName.contains("Stue TV") && it.kind == "cast" })
     }
 }

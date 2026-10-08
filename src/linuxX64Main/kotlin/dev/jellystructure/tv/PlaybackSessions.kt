@@ -93,6 +93,14 @@ internal fun parseEventFeatures(raw: String?): Set<String> =
 
 private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)   // R371 — group_control
 
+/** R380 (owner decision 2) — a TV's name as Cast shows it (`cast_name=`), kept beside its features as `castname:<name>`. */
+internal fun parseCastName(raw: String?): Set<String> {
+    val name = raw?.trim()?.filter { it >= ' ' }?.take(CAST_NAME_MAX)?.takeIf { it.isNotEmpty() } ?: return emptySet()
+    return setOf("$CAST_NAME_FEATURE$name")
+}
+internal const val CAST_NAME_FEATURE = "castname:"
+private const val CAST_NAME_MAX = 64
+
 /** R370 (review item 6) — what an app declares it plays (`plays=video,music,book`), kept beside its features. */
 internal fun parsePlays(raw: String?): Set<String> =
     raw.orEmpty().split(',').map { it.trim().lowercase() }.filter { it in setOf("video", "music", "book") }.map { "plays:$it" }.toSet()

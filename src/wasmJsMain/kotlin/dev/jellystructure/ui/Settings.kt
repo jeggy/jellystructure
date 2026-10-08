@@ -341,6 +341,7 @@ X-JS-Api-Key: jsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
               </div>
             </div>
 
+${fileFixSectionHtml()}
             <div class="card set-section" id="sect-scanning" data-tab="libraries">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
@@ -1224,6 +1225,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireChromecast(scope)
     wireRequestLanguage(scope)
     wireAi(scope) { refreshTomlPreview(readForm()) }   // Phase 270
+    wireFileFix(scope)   // Phase 314 — Make files play directly
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -3452,6 +3454,10 @@ private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?)
         st.speakersConfirmedAt != null -> """<div><span class="cc-dot"></span> Speakers <b>reachable</b> · ${(st.speakerName ?: "a speaker").esc()} played music ${formatRelativeTime(st.speakersConfirmedAt).esc()} — only a real cast confirms it; jellystructure can't ask Google</div>"""
         else -> """<div><span class="cc-dot off"></span> Speakers <b>not confirmed</b> — tick step 5a, then cast a song to one once.</div>"""
     }
+    // R266 (acceptance 8, carved out of 237 FR-237-7) — said only once an Android TV app really took a Cast Connect
+    // launch; never on the strength of step 6 being filled in, which jellystructure cannot see.
+    val tvLine = chromecastTvOpensRaviloLine(st?.tvOpensRaviloName, st?.tvOpensRaviloAt?.let { formatRelativeTime(it) })
+        ?.let { """<div><span class="cc-dot"></span> $it</div>""" } ?: ""
     val castLines = if (st != null && st.devices.isNotEmpty()) {
         val last = st.lastCastAt?.let { formatRelativeTime(it) } ?: "—"
         val n = st.devices.size
@@ -3460,7 +3466,13 @@ private fun renderChromecastStatus(st: ChromecastStatus?, reach: ReceiverCheck?)
         """<div><span class="cc-dot"></span> Jellyfin shows it as <b>Chromecast via Ravilo · ${st.devices.first().name.esc()}</b></div>""" +
         (if (st.activeSessions > 0) """<div><span class="cc-dot"></span> <b>${st.activeSessions} of ${st.maxSessions}</b> cast sessions in use right now</div>""" else "")
     } else ""
-    stat.innerHTML = reachLine + idLine + castLines + speakerLine
+    stat.innerHTML = reachLine + idLine + castLines + tvLine + speakerLine
+}
+
+/** R266 (acceptance 8) — the line, or null while no Cast Connect launch is on record. */
+internal fun chromecastTvOpensRaviloLine(tvName: String?, whenText: String?): String? {
+    val name = tvName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return "<b>${name.esc()}</b> opens Ravilo itself when cast to" + (whenText?.let { " · last ${it.esc()}" } ?: "")
 }
 
 private fun ccNowMs(): Double = js("Date.now()")

@@ -376,6 +376,9 @@ actual class RaviloPlayer actual constructor() {
     // from a household member's phone; a phone's own playback must never be advertised the same way
     // to other devices, so the phone build never creates a session in the first place.
     private var mediaSessionRef: MediaSession? = null
+        // R266 (dev review item 4) — ONE session: R44's own is the one Cast Connect's MediaManager drives (no second,
+        // cast-only session). Every create/release goes through here, so the receiver always holds the live one.
+        set(value) { if (field !== value) { val old = field; field = value; TvPlayerSessionHooks.sessionChanged(old, value) } }
     // R244 (FR-R244-10) — the attached caption view and the phone's chosen size multiplier.
     private var subtitleViewRef: SubtitleView? = null
     private var subtitleScale: Float = 1f
@@ -582,6 +585,9 @@ actual class RaviloPlayer actual constructor() {
     // next load builds one (bindEngine creates the session then). A `false` on an already-released
     // session is a no-op.
     actual fun setSessionActive(active: Boolean) {
+        // R266 (dev review item 4) — R192's visibility toggle never deactivates the session a live cast drives: the
+        // phone's remote reaches the TV through it. Leaving playback still ends it (releaseEngine/release, FR-R266-2).
+        if (!active && TvPlayerSessionHooks.castDriving) return
         if (active) {
             ensureMediaSession()
         } else {

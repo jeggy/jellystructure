@@ -12,6 +12,11 @@ import kotlinx.io.files.SystemFileSystem
 class ConfigStore(private val filePath: String) {
     private val mutex = Mutex()
     private var _config: AppConfig = AppConfig()
+        set(value) {
+            field = value
+            // Phase 316 (FR-316-1) — artwork paths need the library roots; one place keeps them current.
+            dev.jellystructure.media.LibraryRootsRegistry.roots = dev.jellystructure.torrent.libraryRoots(value)
+        }
 
     // Phase 132: tolerant of unknown TOML keys — otherwise removing any config field (e.g. RapidAPI's
     // streaming_availability_key) throws UnknownNameException on an existing config that still has it,

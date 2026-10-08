@@ -10,6 +10,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -107,4 +108,24 @@ class QBittorrentClient {
             throw IllegalStateException("qBittorrent setSpeedLimitsMode failed: HTTP ${response.status.value}")
         }
     }
+
+    /** Phase 316 (FR-316-4 step 3) — point a torrent at a new folder (its own data moved there); the caller rechecks. */
+    suspend fun setLocation(config: QBittorrentConfig, sid: String, hash: String, location: String): Boolean = runCatching {
+        val r = httpPost(config.url.trimEnd('/') + "/api/v2/torrents/setLocation") {
+            if (sid.isNotBlank()) header("Cookie", "SID=$sid")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("hashes=$hash&location=${location.encodeURLParameter()}")
+        }
+        r.status == HttpStatusCode.OK
+    }.getOrDefault(false)
+
+    /** Phase 316 (FR-316-4 step 3) — recheck one torrent after its data was moved. */
+    suspend fun recheck(config: QBittorrentConfig, sid: String, hash: String): Boolean = runCatching {
+        val r = httpPost(config.url.trimEnd('/') + "/api/v2/torrents/recheck") {
+            if (sid.isNotBlank()) header("Cookie", "SID=$sid")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("hashes=$hash")
+        }
+        r.status == HttpStatusCode.OK
+    }.getOrDefault(false)
 }

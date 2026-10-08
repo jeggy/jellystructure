@@ -29,6 +29,9 @@ import kotlinx.serialization.json.put
 @Serializable
 data class ArrSystemStatus(val version: String = "", val appName: String = "")
 
+/** Phase 314 — what Radarr's `/parse` says about a release name: its quality (null = none parsed) and custom-format score. */
+data class ArrParseResult(val quality: String?, val customFormatScore: Int)
+
 @Serializable
 private data class ArrRootFolder(val path: String = "")
 
@@ -129,6 +132,21 @@ class ArrClient {
 
     suspend fun rescanSeries(url: String, apiKey: String, seriesId: Int): Boolean =
         command(url, apiKey, """{"name":"RescanSeries","seriesId":$seriesId}""")
+
+    /**
+     * Phase 314 — Radarr's own reading of a release name (`GET /parse`, read-only): the quality it would give a file of
+     * that name and its custom-format score. Used before a Dolby Vision version file is written beside a film, so
+     * Radarr can never take the copy for an upgrade and delete the original. Null when Radarr didn't answer.
+     */
+    suspend fun parseRelease(url: String, apiKey: String, title: String): ArrParseResult? = runCatching {
+        val resp = httpGet(base(url) + "/parse") { header("X-Api-Key", apiKey); parameter("title", title) }
+        if (resp.status != HttpStatusCode.OK) null else {
+            val o = kotlinx.serialization.json.Json.parseToJsonElement(resp.body<String>()).jsonObject
+            val quality = (((o["parsedMovieInfo"] as? JsonObject)?.get("quality") as? JsonObject)?.get("quality") as? JsonObject)
+                ?.get("name")?.jsonPrimitive?.contentOrNull
+            ArrParseResult(quality, o["customFormatScore"]?.jsonPrimitive?.intOrNull ?: 0)
+        }
+    }.getOrNull()
 
     private suspend fun command(url: String, apiKey: String, body: String): Boolean = runCatching {
         val resp = httpPost(base(url) + "/command") {
@@ -448,6 +466,51 @@ class ArrClient {
         val resp = httpDelete(base(url) + path) { header("X-Api-Key", apiKey) }
         resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent || resp.status == HttpStatusCode.Accepted
     }.getOrElse { false }
+
+    // ---- Phase 316: moving a loose film into its own folder ----
+
+    /** Radarr's view of one film (by TMDB id): its movie id, its folder, and its file's full path (null: no file). */
+    suspend fun radarrMovie(url: String, apiKey: String, tmdbId: Int): RadarrMovieInfo? = runCatching {
+        val movies: List<JsonObject> = httpGet(base(url) + "/movie") {
+            header("X-Api-Key", apiKey)
+            parameter("tmdbId", tmdbId)
+        }.body()
+        movies.firstOrNull { it["tmdbId"]?.jsonPrimitive?.intOrNull == tmdbId }?.let(::radarrMovieInfo)
+    }.getOrNull()
+
+    /** The same by Radarr movie id (FR-316-4 step 7's re-read after a refresh). */
+    suspend fun radarrMovieById(url: String, apiKey: String, movieId: Int): RadarrMovieInfo? = runCatching {
+        radarrMovieInfo(httpGet(base(url) + "/movie/$movieId") { header("X-Api-Key", apiKey) }.body<JsonObject>())
+    }.getOrNull()
+
+    /**
+     * FR-316-4 step 4 — point Radarr's movie at [newPath] **without letting Radarr move any file** (`moveFiles=false`): the
+     * files are already there. The movie's own JSON is sent back with only `path` changed.
+     */
+    suspend fun updateMoviePath(url: String, apiKey: String, movieId: Int, newPath: String): Boolean = runCatching {
+        val movie: JsonObject = httpGet(base(url) + "/movie/$movieId") { header("X-Api-Key", apiKey) }.body()
+        val changed = JsonObject(movie + ("path" to kotlinx.serialization.json.JsonPrimitive(newPath)))
+        val resp = httpPut(base(url) + "/movie/$movieId?moveFiles=false") {
+            header("X-Api-Key", apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(changed.toString())
+        }
+        resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.Accepted
+    }.getOrElse { false }
+
+    /** FR-316-4 step 4 — `RefreshMovie` for one movie, so Radarr finds its file in the new folder. */
+    suspend fun refreshMovie(url: String, apiKey: String, movieId: Int): Boolean =
+        command(url, apiKey, """{"name":"RefreshMovie","movieIds":[$movieId]}""")
+}
+
+/** Phase 316 — what the move needs from one Radarr movie. */
+data class RadarrMovieInfo(val id: Int, val path: String, val filePath: String?)
+
+internal fun radarrMovieInfo(m: JsonObject): RadarrMovieInfo? {
+    val id = m["id"]?.jsonPrimitive?.intOrNull ?: return null
+    val path = m["path"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val file = (m["movieFile"] as? JsonObject)?.get("path")?.jsonPrimitive?.contentOrNull
+    return RadarrMovieInfo(id, path, file)
 }
 
 @Serializable

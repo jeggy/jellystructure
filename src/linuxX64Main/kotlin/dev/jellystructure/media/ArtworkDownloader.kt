@@ -86,7 +86,10 @@ data class EpisodeStillStatus(
  */
 internal fun assetFilePath(item: MediaItem, filename: String): String = when (item.kind) {
     MediaKind.MUSIC_VIDEO -> "${item.path.substringBeforeLast('.')}-$filename"
-    MediaKind.MOVIE -> "${item.path.substringBeforeLast('/')}/$filename"
+    // Phase 316 (FR-316-1) — a film loose in a library root (or sharing its folder with another title) gets Jellyfin's
+    // per-file names; folder names there would become the whole library's images. A film in its own folder is unchanged.
+    MediaKind.MOVIE -> if (inSharedFolder(item.path)) "${item.path.substringBeforeLast('.')}${basenameSuffix(filename)}"
+        else "${item.path.substringBeforeLast('/')}/$filename"
     MediaKind.TV_SHOW -> "${item.path}/$filename"
 }
 
@@ -317,6 +320,8 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     }
 
     private suspend fun download(url: String, destPath: String): Boolean {
+        // Phase 316 (FR-316-2) — never a folder-named image in a library root, whatever asked for it.
+        refuseRootFolderImage(destPath)?.let { Logger.warn("Artwork $it", "artwork"); return false }
         // Security fix (2026-08-02 review, finding M5) — see UrlSafety's doc comment. `source` here can
         // be an admin-pasted URL (the Artwork manager's "pick from URL" flow); without this check the
         // server would fetch and WRITE TO DISK, then re-serve via /api/tv/image/**, whatever an

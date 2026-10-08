@@ -32,6 +32,7 @@
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <application
+        android:name=".android.RaviloApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/banner"
@@ -44,6 +45,10 @@
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
             android:value="dev.jellystructure.ravilo.ui.seams.RaviloCastOptionsProvider" />
+        <!-- R266 (FR-R266-2) — Cast Connect: the TV app is a Cast receiver (android/castconnect/CastConnectReceiver.kt). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.tv.RECEIVER_OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="dev.jellystructure.ravilo.android.castconnect.RaviloReceiverOptionsProvider" />
         <!-- R245 (FR-R245-2) — Output Switcher discovery of Cast devices. -->
         <receiver
             android:name="androidx.mediarouter.media.MediaTransferReceiver"
@@ -64,11 +69,22 @@
         <activity
             android:name=".android.MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|uiMode|orientation|screenLayout|smallestScreenSize|colorMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- R266 (FR-R266-2) — Cast Connect's launch and load. singleTask above: a cast to a TV that already runs
+                 Ravilo reaches this same activity through onNewIntent instead of stacking a second one. -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.cast.tv.action.LAUNCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.cast.tv.action.LOAD" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 

@@ -97,6 +97,10 @@ data class CastLoadData(
     /** R370 (review item 1) — the server's `starting` session this LOAD fulfils; the hand-off already joined the receiver
      *  to it, so this is for the log. An older receiver ignores it. */
     @SerialName("session_id") val sessionId: String? = null,
+    /** R266 (dev review item 1) — the casting viewer's Jellyfin user id. Read only by the Android TV app when Cast
+     *  Connect launched it: it plays under this viewer ONLY if it already holds a token for them (236's road), and
+     *  never redeems [code]. The web receiver ignores it (it enrols by [code], as before). */
+    @SerialName("user_id") val userId: String? = null,
 )
 
 /**

@@ -18,6 +18,8 @@ import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.seedingRoutes
+import dev.jellystructure.server.routes.fileFixRoutes
+import dev.jellystructure.server.routes.looseFilmRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
@@ -165,6 +167,7 @@ fun startServer(
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
     suggestionService: dev.jellystructure.suggestions.SuggestionService? = null,
     publishQueue: dev.jellystructure.publish.PublishQueue? = null,   // Phase 307
+    looseFilms: dev.jellystructure.media.LooseFilmsService? = null,   // Phase 316
     bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
     lidarrClient: dev.jellystructure.arr.LidarrClient? = null,   // Phase 284
     tvEventBus: TvEventBus,
@@ -441,6 +444,8 @@ fun startServer(
                     // Phase 219 (FR-219-4) — the playback writer's queue and each refresher's last
                     // successful cycle per user, so a stale household is visible without reading logs.
                     val writerJson = playbackService.writerStats()?.toJson() ?: "null"
+                    // Phase 313 (FR-313-8) — our own encoder: cards, sessions, jobs, fallbacks in the last hour.
+                    val encoderJson = runCatching { playbackService.encoder.healthJson() }.getOrDefault("null")
                     fun ages(m: Map<String, Long>) = m.entries.joinToString(",", "{", "}") { "\"${it.key}\":${it.value}" }
                     val refreshersJson = """{"playstate_age_ms":${ages(dev.jellystructure.tv.PlaystateCache.refresherAges())},"continue_age_ms":${ages(homeFeedService.continueRefreshAges())}}"""
                     // Phase 243 (FR-243-2) — the connected Jellyfin's version, last as observed by the
@@ -460,7 +465,7 @@ fun startServer(
                             """"outbound_http_gate":${outboundHttp.toJson()},"process_gate":${processGate.toJson()},""" +
                             """"tmdb_pacing":${Json.encodeToString(TmdbPacingStats.serializer(), tmdbPacing)},""" +
                             """"mkv_health_swept_at":${mkvHealthSweptAt ?: "null"},"job_queues":${jobQueues.toJson()},""" +
-                            """"playback_writer":$writerJson,"refreshers":$refreshersJson,""" +
+                            """"playback_writer":$writerJson,"encoder":$encoderJson,"refreshers":$refreshersJson,""" +
                             """"session_bridges":{"connected":$bridgesConnected,"failing":$bridgesFailing},""" +
                             """"tv_image":${imageProxyService?.stats()?.toJson() ?: "null"},""" +
                             // Phase 276 (FR-276-2) — the two fixed-rate hosts, beside TMDB's learned one.
@@ -633,6 +638,8 @@ fun startServer(
                     suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
+                dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314
+                looseFilms?.let { looseFilmRoutes(it, appScope) }   // Phase 316 — FR-316-3/-4
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
@@ -745,7 +752,8 @@ fun startServer(
                     // R368 (dev review item 2) — what this socket opted into: session events go only to a socket that
                     // asked (`features=sessions`); an installed app reads any unknown event as a config change.
                     val features = dev.jellystructure.tv.parseEventFeatures(call.request.queryParameters["features"]) +
-                        dev.jellystructure.tv.parsePlays(call.request.queryParameters["plays"])   // R370 (review item 6)
+                        dev.jellystructure.tv.parsePlays(call.request.queryParameters["plays"]) +   // R370 (review item 6)
+                        dev.jellystructure.tv.parseCastName(call.request.queryParameters["cast_name"])   // R380 (owner decision 2)
                     if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this, features)) {
                         close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
                         return@webSocket

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.android
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.fragment.app.FragmentActivity
@@ -8,6 +9,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.jellystructure.ravilo.android.castconnect.CastConnectReceiver
 import dev.jellystructure.ravilo.player.RaviloExtractorsFactory
 import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
@@ -38,5 +40,26 @@ class MainActivity : FragmentActivity() {
         setContent {
             RaviloRoot()
         }
+        // R266 — launched by Cast Connect: the SDK reads its LAUNCH/LOAD intent and calls the load callback.
+        CastConnectReceiver.handleIntent(intent)
+    }
+
+    // R266 — a cast to a TV already running Ravilo (singleTask).
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        CastConnectReceiver.handleIntent(intent)
+    }
+
+    // R266 (FR-R266-2) — the receiver lives while the app is on screen and is stopped with it: never held across a
+    // backgrounded player.
+    override fun onStart() {
+        super.onStart()
+        CastConnectReceiver.start()
+    }
+
+    override fun onStop() {
+        CastConnectReceiver.stop()
+        super.onStop()
     }
 }
