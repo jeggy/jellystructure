@@ -7,6 +7,15 @@ plugins {
     alias(libs.plugins.androidx.baselineprofile) // R213
 }
 
+/** R266 — the development Cast application id for debug builds: `-PraviloCastDevAppId=…`, else local.properties'
+ *  `raviloCastDevAppId`, else empty. Only 8 hex characters are passed on; anything else is empty (a typo must not
+ *  silently cast to nothing). */
+fun castDevAppId(): String {
+    val lp = Properties().also { p -> rootProject.file("local.properties").takeIf { it.exists() }?.let { p.load(it.reader()) } }
+    val raw = ((project.findProperty("raviloCastDevAppId") as String?) ?: (lp["raviloCastDevAppId"] as? String)).orEmpty().trim()
+    return if (Regex("^[0-9A-Fa-f]{8}$").matches(raw)) raw.uppercase() else ""
+}
+
 android {
     namespace = "dev.jellystructure.ravilo"
     compileSdk = 36
@@ -54,8 +63,15 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix   = "-debug"
+            // R266 (owner, 2026-10-05) — a debug build casts with the DEVELOPMENT Cast application (its Android TV
+            // package is dev.jellystructure.ravilo.debug, so Cast Connect can launch a debug TV build), in place of the
+            // server's chromecast.app_id. From -PraviloCastDevAppId or local.properties' raviloCastDevAppId (never
+            // committed); empty = the server's id, exactly as before.
+            buildConfigField("String", "CAST_DEV_APP_ID", "\"${castDevAppId()}\"")
         }
         release {
+            // R266 — a release build always casts with the server's application id.
+            buildConfigField("String", "CAST_DEV_APP_ID", "\"\"")
             isMinifyEnabled    = true
             isShrinkResources  = true
             // Opt-in dev convenience: `-Pravilo.releaseAsDebugId` suffixes the release id with
@@ -88,6 +104,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true   // R266 — CAST_DEV_APP_ID
     }
 
     // The release APK is named like every other release asset — ravilo-<platform>-<version>.<extension>
@@ -132,6 +149,8 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.session) // R266 — R44's session, handed to Cast Connect's MediaManager
+    implementation(libs.play.services.cast.tv)   // R266 — Cast Connect receiver (TV only at runtime)
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
