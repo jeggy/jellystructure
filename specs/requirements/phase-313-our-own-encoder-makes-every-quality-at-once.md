@@ -433,3 +433,52 @@ per rung and an init segment each.
 
 No device has played through our encoder yet: that needs `docker-compose.gpu.yml` on the dev stack, `[encoder]
 enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for the TS path).
+
+## Live testing (2026-10-08 night, v1.50-73/-74)
+
+- **Deployed** with the GPU override and `[encoder] enabled = true`: `/api/health` shows jellyfin-ffmpeg 8.1.2-5 ready
+  (checksum OK) and both cards.
+- **Pixel 9 Pro (debug app), a 4K Dolby Vision 7 REMUX:** `encoder=ours`, H.264, 4 rungs, card 0; **no Jellyfin
+  transcode job** (no `FFmpeg.Transcode-*` log). First segment 9.0 s on the first start after the deploy (empty CUDA
+  cache), 5.8 s on the next.
+- **Found 1 — fMP4 doesn't play on Media3:** with fMP4 video + fMP4 audio renditions the player stayed BUFFERING at 0 with
+  48 s buffered and never created a decoder (the stream itself decodes cleanly in ffmpeg). Fixed: `encoderMuxFor` gives
+  MPEG-TS to everything except the Mac, iOS and the web (`b43de79f`); with TS the Pixel went READY 7.5 s after Play.
+- **Found 2 — the P4000 couldn't keep up at preset p4:** a seek restarted the job once (segment 725, as designed), but
+  the job then ran at ~0.5× realtime and playback stalled. Measured on the same source, 30 s: decode only 9.2×,
+  decode + tone-map 4.8×, + 4 H.264 rungs at **p4 1.1×**, at **p1 8.8×**; the 2060 SUPER at p4 4.4×, p1 6.1×; HEVC Main 10
+  (2160p top + 3) on the P4000 p4 2.3×, p1 4.6×. 313a's 4.7× figure matched decode + tone-map, not the encode. Fixed:
+  preset p1 for every GPU encode.
+- **The app's 8 s segment timeout** fires before a cold first segment (9 s, 12.9 s after a seek at p4); Media3 retries
+  and recovers, but the first frame waits for the retry. With p1 and a warm cache the first segment should land well
+  inside 8 s; if not, the backend should answer a not-yet-made segment early (e.g. 503 + Retry-After) rather than hold.
+- **With p1 (v1.50-76), the same film on the Pixel:** first segment **1.7 s**, READY **3.2 s** after Play, ~2.5× overall;
+  one slow patch early (segments 4–5 took 9 s for 4 s of film → a 3.8 s stall at 0:10). A seek (to 43:33) restarted the
+  job once, first segment 1.6 s after the restart, but seek-to-picture took ~8.7 s and stalled once more:
+  (a) Media3 waited ~4 s for an in-flight request for a segment the job hadn't made (paused 40 s ahead) before it asked
+  for the new position — a request for a segment beyond the pause point should resume the job or be answered at once,
+  never held; (b) the first segments after a restart came at ~0.6× before the job sped up. Both measured while the
+  qBittorrent force recheck read the films disk at ~220 MB/s (60–80 % busy), which likely explains the slow patches;
+  re-measure when the recheck is done.
+- **A cast to Stue TV's web receiver (2026-10-09, debug Pixel build with the development Cast app):** the receiver
+  enrolled, `encoder=ours HEVC HDR rungs=2160p@20000k/… TS card=0`, but ffmpeg exited at once: NVENC refused the 2160p
+  rung — *"InitializeEncoder failed: Invalid Level"*. Level 5.0 (Main tier) caps the peak at 25 Mbps and the 20 Mbps
+  top rung peaks at 30 Mbps (`-maxrate` 1.5×). Fixed: 2160p HEVC is level **5.1** (`hvc1.2.4.L153.B0`), verified by
+  hand on the P4000 (5.0 fails, 5.1 encodes). The job retried 3× and the phone's remote showed *"Stue TV couldn't play
+  this · Play on this phone"* — the failure path works. **Open:** when our encoder's job fails to start, the play should
+  fall back to Jellyfin's transcode instead of retrying the same command (FR-313 fallback covers "no slot/no GPU" but not
+  "ffmpeg refused").
+- **Køkken Hub:** casting from the Pixel failed before anything reached the backend — the hub's Cast port (8009) times
+  out from both the host and the phone (8008 answers), so the hub's Cast service is down; not a jellystructure fault.
+  Reboot the hub.
+- **With level 5.1 (v1.50-78), the same cast to Stue TV's receiver started:** `encoder=ours HEVC HDR` 2160p/1080p/720p/480p,
+  TS, card 0, first segment 5.9 s; the receiver reported PLAYING and advanced normally for the first minutes. **But
+  the unattended play then ran ~62 min (23:15–00:17 UTC) with 208 rebuffers totalling 1 495 s** (QoE: first frame
+  15.9 s, 5 steps up / 3 down, last variant ~30 Mbps, 5 212 bandwidth samples). **Not diagnosed yet** — candidates:
+  (a) the P4000 can't hold 4 HEVC Main 10 rungs incl. 2160p at realtime while the qBittorrent force recheck reads the
+  films disk (~220 MB/s, 60–80 % busy); (b) Shaka climbing to the 2160p rung the receiver then can't fetch/decode fast
+  enough; (c) the paused-job / in-flight-segment wait seen on the Pixel. Measure next: segment production rate vs
+  realtime per rung during a cast, after the recheck has finished; consider capping a cast at 1080p HEVC, or the
+  2160p rung on the 2060 SUPER. **Until then, 313 should not be the default for casts.**
+- **The receiver's stop lost the place:** it reported its stop at 0 ms after ~37 min of film (backend `playback stop …
+  at 0ms`); a 312-class bug on the receiver side — to fix with 312.

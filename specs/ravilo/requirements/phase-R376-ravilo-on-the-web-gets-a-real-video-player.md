@@ -453,3 +453,22 @@ streaming. Six items, two for the owner.
    picked** (changes FR-R376-3).
 2. **Merge (Q2): after a rebase that keeps 308's hls.js settings (and 309's later rules), and a Safari check on the
    Mac.** After 310, 312 and R266 in the order. See `specs/research-reports/ravilo-streaming-plan-2026-10-08.md` for the whole order.
+
+## Owner, 2026-10-09: sound on the first click in Safari
+
+> *"Why is the Safari sound only working after a click and not right away?"* → *"yes"* to fixing it.
+
+**FR-R376-S1 — Unlock the player inside the click.** Safari (macOS and iOS) allows audible playback only when
+`play()` is called within a user gesture. Ravilo's Play click first fetches the stream ticket from the server, and the
+`play()` that follows is no longer inside the gesture, so Safari starts it muted (today's fallback shows *"Click or press
+a key for sound"*). Fix: the Play click (and every other control that starts a play: a resume card, *Next episode*, a
+row's play button) synchronously calls `play()` on the **one shared `<video>` element** — muted-false, with no source or
+a tiny silent placeholder, catching the rejection — before any network call; when the ticket arrives the same element
+gets its source and plays with sound. The element is kept for the whole page lifetime (never recreated per item), so
+auto-advance to the next episode keeps the unlocked state. The muted fallback and its pill stay for the cases where no
+gesture happened (a cast handing playback to the browser, a restored session).
+
+**Acceptance:** in Safari on the Mac and the iPhone home-screen app, a real click on Play starts the film **with sound**
+and no pill; the next episode auto-advances with sound; a seek/track switch keeps sound. **Tests:** the click handler
+calls `play()` before any suspension point (a unit test on the web player seam with a fake element recording call
+order); one element across two items.

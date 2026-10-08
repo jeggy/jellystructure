@@ -96,7 +96,7 @@ WORKDIR /app
 # /config/encoder on first start when [encoder] is on. The build is not shipped in this public image (it contains
 # libfdk_aac); it is downloaded and checked against its pinned SHA-256 on the operator's own machine.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget ca-certificates libsqlite3-0 libchromaprint-tools python3-mutagen xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
 # dovi_tool -- Phase 314 kind C: converts a Dolby Vision profile 7 picture's RPU to profile 8.1 (the TVs decode 4/5/8,
@@ -106,7 +106,7 @@ ARG DOVI_TOOL_VERSION=2.3.4
 ARG DOVI_TOOL_SHA256=1844258e13c26607b32224bf1fa82b595d3b35949f5467405fda560daad32b3f
 RUN wget -q -O /tmp/dovi.tgz "https://github.com/quietvoid/dovi_tool/releases/download/${DOVI_TOOL_VERSION}/dovi_tool-${DOVI_TOOL_VERSION}-x86_64-unknown-linux-musl.tar.gz" && \
     echo "${DOVI_TOOL_SHA256}  /tmp/dovi.tgz" | sha256sum -c - && \
-    tar -xzf /tmp/dovi.tgz -C /usr/local/bin dovi_tool && chmod 755 /usr/local/bin/dovi_tool && rm /tmp/dovi.tgz && \
+    tar -xzf /tmp/dovi.tgz -C /usr/local/bin ./dovi_tool && chmod 755 /usr/local/bin/dovi_tool && rm /tmp/dovi.tgz && \
     /usr/local/bin/dovi_tool --version
 
 RUN adduser --system --uid 1000 jellystructure

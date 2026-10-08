@@ -75,6 +75,7 @@ class Encoder(
     suspend fun planFor(
         caps: ClientCapabilities, deviceKind: String, path: String, durationMs: Long?, tracks: List<Track>,
         audio: List<AudioTrack>, carriedIndex: Int?, budgetBps: Long?, sourceVideoRange: String?, burnsSubtitle: Boolean,
+        platform: String? = null,
     ): Pair<EncoderPlan?, String> {
         val video = tracks.firstOrNull { it.kind == TrackKind.VIDEO }
         val range = sourceVideoRange.orEmpty()
@@ -114,7 +115,7 @@ class Encoder(
             EncoderAudio(pos, order[pos], "aac", minOf(a.channels ?: 2, caps.maxAudioChannels.coerceAtLeast(1), 6), a.language, a.label, pos == carried)
         }
         val plan = EncoderPlan(
-            source = source, codec = codec, mux = if (deviceKind == "cast") EncoderMux.TS else EncoderMux.FMP4,
+            source = source, codec = codec, mux = encoderMuxFor(deviceKind, platform),
             rungs = rungs, startRung = start, audio = encAudio, cudaDevice = placement.card,
         )
         return plan to "ours"

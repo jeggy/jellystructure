@@ -20,6 +20,15 @@ enum class EncoderCodec { H264, HEVC }
 /** 313 — how segments are muxed: fMP4 (CMAF) everywhere, MPEG-TS for the Cast receiver until fMP4 is verified there. */
 enum class EncoderMux { FMP4, TS }
 
+/**
+ * Phase 313 — the segment format per device. fMP4 only for Apple's and the browsers' players (Safari needs it for HEVC;
+ * hls.js reads either); everything else — Media3 on Android phones and TVs, the Cast receiver — gets MPEG-TS. Found on the
+ * Pixel 2026-10-08: an all-fMP4 ladder (fMP4 video + fMP4 audio renditions) left Media3 BUFFERING at 0 with 48 s
+ * buffered and no decoder ever created, while every stream that plays on these devices (Jellyfin's, R291's) is TS.
+ */
+fun encoderMuxFor(deviceKind: String, platform: String?): EncoderMux =
+    if (deviceKind != "cast" && platform?.lowercase() in setOf("mac", "ios", "web")) EncoderMux.FMP4 else EncoderMux.TS
+
 /** One output rung: its picture box (the frame is fitted inside, aspect kept), its size, and its video bitrate. */
 data class EncoderRung(val boxHeight: Int, val width: Int, val height: Int, val videoBps: Long)
 
@@ -142,7 +151,9 @@ internal fun encoderSegmentCount(durationMs: Long): Int = ((durationMs + ENCODER
 /** The H.264 / HEVC level for a rung's box (also its CODECS string, FR-313's dev review item 9). */
 internal fun levelOf(codec: EncoderCodec, boxHeight: Int): String = when (codec) {
     EncoderCodec.H264 -> when { boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
-    EncoderCodec.HEVC -> when { boxHeight >= 2160 -> "5.0"; boxHeight >= 1440 -> "5.0"; boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
+    // 2160p is 5.1: level 5.0 (Main tier) caps the peak at 25 Mbps, and a 20 Mbps top rung peaks at 30 (-maxrate 1.5×);
+    // NVENC refuses the encode outright ("Invalid Level"), found casting to Stue TV 2026-10-09.
+    EncoderCodec.HEVC -> when { boxHeight >= 2160 -> "5.1"; boxHeight >= 1440 -> "5.0"; boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
 }
 
 /** The exact `CODECS` value of a rung's video (Media3 hides a variant whose codec string no decoder supports). */
@@ -266,7 +277,9 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
         else -> "libx264"
     }
     enc.append(" -c:v ").append(vEncoder)
-    if (gpu != null) enc.append(" -preset p4 -rc vbr -forced-idr 1 -no-scenecut 1")
+    // p1, measured on the P4000 2026-10-08 (one 4K DV source, 30 s, decode + tone-map + 4 rungs): H.264 p4 1.1× → p1 8.8×,
+    // HEVC Main 10 (2160p top) p4 2.3× → p1 4.6×. Pascal's NVENC can't carry four rungs at p4; Jellyfin uses p1 as well.
+    if (gpu != null) enc.append(" -preset p1 -rc vbr -forced-idr 1 -no-scenecut 1")
     else enc.append(if (plan.codec == EncoderCodec.HEVC) " -preset ultrafast -x265-params log-level=error:scenecut=0:open-gop=0" else " -preset ultrafast -sc_threshold 0")
     // `t` in this expression counts from the job's own first frame, not the file's clock (`-copyts` doesn't change it;
     // found by EncoderAlignmentTest). Every job starts exactly on a 2 s boundary, so the job's 2 s grid is the file's.

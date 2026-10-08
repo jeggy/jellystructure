@@ -73,7 +73,7 @@ class EncoderPlanTest {
         assertEquals("avc1.640029", videoCodecString(EncoderCodec.H264, 1080, false))
         assertEquals("avc1.64001f", videoCodecString(EncoderCodec.H264, 720, false))
         assertEquals("avc1.64001e", videoCodecString(EncoderCodec.H264, 480, false))
-        assertEquals("hvc1.2.4.L150.B0", videoCodecString(EncoderCodec.HEVC, 2160, true))
+        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, 2160, true))
         assertEquals("hvc1.2.4.L123.B0", videoCodecString(EncoderCodec.HEVC, 1080, true))
         assertEquals("hvc1.1.6.L93.B0", videoCodecString(EncoderCodec.HEVC, 720, false))
         assertEquals("ec-3", audioCodecString("eac3"))
@@ -126,7 +126,7 @@ class EncoderPlanTest {
         assertFalse(hdr.contains("tonemap_cuda"))
         assertContains(hdr, "-tag:v hvc1 -profile:v main10")
         assertContains(hdr, "-color_trc smpte2084")
-        assertContains(hdr, "-level:v:0 5.0")
+        assertContains(hdr, "-level:v:0 5.1")
         val ts = encoderCommand(plan(EncoderCodec.H264, EncoderMux.TS, start = 0), startSegment = 0, dir = "/w/x")
         assertContains(ts, "-hls_segment_type mpegts")
         assertContains(ts, "s%d.ts")
@@ -183,7 +183,17 @@ class EncoderPlanTest {
         assertEquals(4, plan.rungs.size)
         assertEquals(listOf(0, 1), plan.audio.map { it.audioOrder })
         assertEquals(listOf(6, 6), plan.audio.map { it.channels })
-        assertEquals(EncoderMux.FMP4, plan.mux)
+        assertEquals(EncoderMux.TS, plan.mux, "Media3 (a BRAVIA, a phone) gets MPEG-TS")
+    }
+
+    @Test fun `only Apple's and the browsers' players get fMP4 segments`() {
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("tv", "mac"))
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("tv", "web"))
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("phone", "ios"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("phone", "phone"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("tv", "tv"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("tv", null))
+        assertEquals(EncoderMux.TS, encoderMuxFor("cast", "web"))
     }
 
     @Test fun `an installed 1_50 app gets one quality — the receiver gets TS — and a burn-in stays Jellyfin's`() = runBlocking {
@@ -206,5 +216,10 @@ class EncoderPlanTest {
         assertEquals(32, a.length)
         assertTrue(a.all { it in "0123456789abcdef" })
         assertTrue(a != b)
+    }
+
+    @Test fun `a 2160p HEVC rung is level 5_1 — its peak exceeds level 5_0's 25 Mbps`() {
+        assertEquals("5.1", levelOf(EncoderCodec.HEVC, 2160))
+        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, 2160, tenBit = true))
     }
 }

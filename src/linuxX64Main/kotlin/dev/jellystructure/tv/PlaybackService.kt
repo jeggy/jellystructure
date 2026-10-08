@@ -26,6 +26,7 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -460,6 +461,10 @@ class PlaybackService(
         sourceVideoRange: String? = null,
         /** Phase 313 — the device's kind (`cast` gets MPEG-TS segments until fMP4 is verified on the receiver). */
         deviceKind: String = "tv",
+        /** Phase 313 (found on the Pixel 2026-10-08) — the device's platform: only Apple's and the browsers' players get
+         *  fMP4 segments from our encoder; Media3 (Android phones, TVs) gets MPEG-TS, the shape every working stream
+         *  there already has. */
+        devicePlatform: String? = null,
     ): StreamTicket {
         val measured = ticket.copy(measuredBandwidthBps = measuredBps)
         if (ticket.directPlay || capabilities == null || jellyfinPlaySessionId == null || abandoned) return measured
@@ -470,7 +475,7 @@ class PlaybackService(
             val file = localFileOf(jellyfinId)
             val (plan, why) = if (file == null) null to "file not on this server's disk"
             else encoder.planFor(capabilities, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
-                throughputBudget(measuredBps), sourceVideoRange, burnsSubtitle = ticket.burnedSubtitleIndex != null)
+                throughputBudget(measuredBps), sourceVideoRange, burnsSubtitle = ticket.burnedSubtitleIndex != null, platform = devicePlatform)
             if (plan != null) {
                 val id = encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
@@ -898,7 +903,7 @@ class PlaybackService(
             // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
             sessionId = sessionId,   // R368 (dev review item 8)
-        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
@@ -1355,6 +1360,14 @@ class PlaybackService(
         }
     }
 
+    /** 312 / R185 — a watched item's resume position set to 0 by a user-data write (`setUserData`, position only), never by a
+     *  `/Sessions/Playing/Stopped` at 0 ms. A failure only logs: the played mark already landed. */
+    private suspend fun zeroPosition(base: String, token: String, userId: String, jellyfinId: String) {
+        runCatching { jellyfinClient.setUserData(base, token, userId, jellyfinId, played = null, positionTicks = 0L) }
+            .onFailure { e -> if (e is kotlinx.coroutines.CancellationException && !kotlinx.coroutines.currentCoroutineContext().isActive) throw e
+                Logger.warn("mark watched: position zeroing failed for item=$jellyfinId: ${e.message}", "tv") }
+    }
+
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
         requireVisible(device, jellyfinId)
         StartOverHolds.release(device.jellyfinUserId, jellyfinId)   // R343 (FR-R343-13) — the viewer's word wins
@@ -1365,12 +1378,11 @@ class PlaybackService(
             // position can outlive the played flag and keep this item showing as "in progress" in
             // Continue Watching. Zero it explicitly at the same choke point every "mark watched" path
             // goes through, rather than relying on whichever caller happens to also report a stop.
-            Logger.info("stop write: item=$jellyfinId device=${device.deviceId} at=0ms reason=mark-watched direct (312)", "tv")
-            jellyfinClient.stopPlaybackSession(
-                jellyfinBase, token, jellyfinId, 0L, jellyfinId,
-                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
-            )
+            // 312 (found live 2026-10-08) — the zeroing used to be a `/Sessions/Playing/Stopped` at 0 ms, a stop Jellyfin
+            // logs and treats as a playback stop; it is now a user-data write, after the played mark, so no stop at 0 is
+            // ever sent for a watched item.
             jellyfinClient.markPlayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+            zeroPosition(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         } else {
             jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         }
@@ -1411,11 +1423,8 @@ class PlaybackService(
                             // handling at all, so a partially-watched item flipped to "watched" here kept
                             // its stale nonzero PlaybackPositionTicks forever. Zero it alongside markPlayed.
                             Logger.info("stop write: item=$id device=${device.deviceId} at=0ms reason=set-played direct (312)", "tv")
-                            jellyfinClient.stopPlaybackSession(
-                                base, token, id, 0L, id,
-                                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, id),
-                            )
                             jellyfinClient.markPlayed(base, token, uid, id)
+                            zeroPosition(base, token, uid, id)   // 312 — a user-data write, never a stop at 0
                         } else {
                             jellyfinClient.markUnplayed(base, token, uid, id)
                         }
@@ -1696,7 +1705,7 @@ class PlaybackService(
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
             audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps) }
     }
 
@@ -1756,7 +1765,7 @@ class PlaybackService(
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType) }

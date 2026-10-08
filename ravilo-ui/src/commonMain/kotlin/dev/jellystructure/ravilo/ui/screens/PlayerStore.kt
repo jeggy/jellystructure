@@ -382,7 +382,7 @@ class PlayerStore(
             // R142: finishing marks the item played so its tiles flip to ✓ and a series episode advances
             // up-next — no manual toggle. Below threshold it stays in-progress (resume preserved). R347
             // (FR-R347-1) — finished is past 90 % or past the item's trusted credits marker.
-            if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, creditsStartMs)) {
+            if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, creditsStartMs) && markedWatched.add(itemId)) {
                 runCatching { apiClient.markPlayed(itemId, watched = true) }
                 WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
             }
@@ -492,7 +492,12 @@ class PlayerStore(
      *  Runs on [exitScope], not [scope]: its only caller (PlayerScreen.advanceNext) navigates away in the
      *  very next statement, which now closes this store — a request launched on `scope` would be cancelled
      *  before it ever reached the server, so the finished episode never got marked played. */
+    /** 312 (found live 2026-10-08) — the items this store has already marked watched: advancing at the credits and the
+     *  stop that follows both used to send a mark, so a finished episode was marked twice. One mark per item. */
+    private val markedWatched = mutableSetOf<String>()
+
     fun markWatched(itemId: String) {
+        if (!markedWatched.add(itemId)) return
         exitScope.launch {
             runCatching { apiClient.markPlayed(itemId, watched = true) }
             WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147

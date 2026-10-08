@@ -53,6 +53,7 @@ class PlaybackStopIntegrationTest {
         val stops = mutableListOf<Pair<String, Long>>()        // item → PositionTicks / 10 000
         val userDataWrites = mutableListOf<Pair<String, String>>()
         val releases = mutableListOf<String>()
+        val markedPlayed = mutableListOf<String>()
         var psidSeq = 0
         var position = mutableMapOf<String, Long>()             // item → ticks Jellyfin holds
         var played = mutableMapOf<String, Boolean>()
@@ -109,6 +110,11 @@ class PlaybackStopIntegrationTest {
                     if (stray != null) scope.launch { delay(stray); fake.lock.withLock { fake.stops += id to 0L; fake.position[id] = 0L } }
                     call.respondText("{}", ContentType.Application.Json)
                 }
+                post("/UserPlayedItems/{id}") {
+                    val id = call.parameters["id"]!!
+                    fake.lock.withLock { fake.played[id] = true; fake.position[id] = 0L; fake.markedPlayed += id }
+                    call.respondText("{}", ContentType.Application.Json)
+                }
                 delete("/Videos/ActiveEncodings") {
                     fake.lock.withLock { fake.releases += call.request.queryParameters["playSessionId"].orEmpty() }
                     call.respond(HttpStatusCode.NoContent)
@@ -121,7 +127,7 @@ class PlaybackStopIntegrationTest {
         configStore.update(configStore.current.copy(apiKeys = configStore.current.apiKeys.copy(jellyfinUrl = base, jellyfinToken = "server-token-$run")))
         val db = createDatabase("/tmp/jellystructure-test-312-$run.db")
         val mediaStore = MediaStore(db, JsTagStore("/tmp/jellystructure-test-312-$run-tags.json"), configStore)
-        for (id in listOf("film-a", "film-b", "film-c", "film-d")) mediaStore.addOrUpdate(MediaItem(
+        for (id in listOf("film-a", "film-b", "film-c", "film-d", "film-e")) mediaStore.addOrUpdate(MediaItem(
             id = id, title = id, year = 2026, kind = MediaKind.MOVIE, path = "/tmp/$id.mkv", tmdbId = null, imdbId = null,
             originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList(), jellyfinId = id,
         ))
@@ -197,6 +203,19 @@ class PlaybackStopIntegrationTest {
         fake.lock.withLock {
             assertEquals(11_170_140_000L, fake.position["film-d"], "Jellyfin holds our place again")
             assertTrue(fake.stops.any { it == ("film-d" to 0L) }, "the stray stop did land")
+        }
+    }
+
+    @Test
+    fun `marking an item watched sends Jellyfin no stop at 0 — a played mark and a position write`() = rig("mark") {
+        val tv = device("phone-mark")
+        service.mark(tv, "film-e", watched = true)
+        fake.lock.withLock {
+            assertTrue(fake.stops.none { it.first == "film-e" }, "no /Sessions/Playing/Stopped for a watched mark: ${fake.stops}")
+            assertEquals(listOf("film-e"), fake.markedPlayed, "one played mark")
+            val w = fake.userDataWrites.filter { it.first == "film-e" }
+            assertEquals(1, w.size, "one position write: $w")
+            assertTrue("\"PlaybackPositionTicks\":0" in w.single().second && "\"Played\"" !in w.single().second, w.single().second)
         }
     }
 }

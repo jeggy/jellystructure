@@ -528,3 +528,9 @@ The live check planned after the v1.50-54 deploy was not made: Stue TV was in us
 paused all device use except the Pixel. Owed: a cast to Stue TV's built-in Chromecast confirming the receiver plays
 with Shaka and reports its start time and sample count (309a0), and an audio switch on Android on R382's confirmed
 film.
+
+## Live check of 309a0 on the Cast receiver (2026-10-09, v1.50-78)
+
+The receiver now plays with Shaka's ABR and reports what 309a0 asked for: `first_frame_ms` (15 888), `bandwidth_samples`
+(5 212), variant switches (5 up / 3 down) and the variant bandwidth. **Verified.** (The play itself stalled badly; see
+313's live notes.)
