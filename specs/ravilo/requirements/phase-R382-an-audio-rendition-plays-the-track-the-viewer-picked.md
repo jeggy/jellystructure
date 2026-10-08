@@ -65,3 +65,8 @@ reason is logged.
 - Tests (`AudioRenditionsTest`): the confirmed film's numbers map to `0:a:0`/`0:a:1`; a sidecar audio track (314), a
   language swap or a codec mismatch gives null; `register` offers nothing on a mismatch; the command uses `0:a:<n>`.
 
+### Live (2026-10-08)
+
+- On the FR-R382-1 film, the rendition command with the old mapping (`-map 0:5`, Jellyfin's number for the AC3 track)
+  fails (*Error opening output files*: stream 5 is a PGS subtitle); with the new `-map 0:a:1` it encodes the file's
+  stream 2, AC3 5.1 English: the track the viewer picked. Not yet switched on a device (acceptance 1).

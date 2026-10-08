@@ -150,3 +150,9 @@ and `PipelineEngine` (the Library cycle). The design holds; five notes, none for
   ends with the `mv`; Radarr's/Sonarr's `DiskScanService` regexes copied in, plus Jellyfin's dot rule; a failed remux
   of a real junk file leaves neither work file nor folder; the sweep rule), `FileIntegrityTest` updated to the new path.
 
+### Live (2026-10-08, dev stack v1.50-51-g285663ef)
+
+- An audio reorder of a single-link 3 GB film (a real ffmpeg remux through the job queue): the work file appeared as
+  `<film dir>/.jellystructure/remux_<name>.mkv`, no dot-file beside the video at any point, and the folder was gone when
+  the job ended; the reorder back restored the original order and default flag (ffprobe before/after identical).
+- Not yet seen: Radarr/Sonarr history over two weeks (acceptance 1–3).

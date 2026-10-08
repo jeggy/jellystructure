@@ -511,3 +511,13 @@ dev stack; the rest of 309 (record, probe, prewarm, the climb rules) is not buil
 - Tests: `VideoLadderTest` (the Pixel's rows give null and no cap; every known guess ignored; < 3 transfers ignored, a
   counted sample trusted whatever its value; a newer counted sample replaces older ones).
 
+### Live — 309a0 (2026-10-08, dev stack v1.50-51-g285663ef)
+
+- Migration 72 ran (schema 73): the three columns exist and no stored `bandwidth_estimate_bps` holds a known guess.
+- A Stue TV debug-app play after the deploy logged `measured 247094k → budget 172966k (308)` (a real HLS
+  measurement) and direct-played.
+- The Pixel 9 Pro's stored rows now give its real 168 Mbps HLS sample as the measurement (its guessed 4 300 000 row is
+  null), so its next play is no longer capped at ~3 Mbps; not played live (the Pixel was off adb).
+- The deployed `/cast/ravilo-cast.js` contains `useShakaForHls`. **Not verified on a Chromecast:** no free sender at the
+  time (Stue TV was in another test, the Pixel off adb, the Mac playing the owner's music). The receiver's next QoE
+  rows will show `bandwidth_samples` and `first_frame_ms`; a cast to Stue TV's Chromecast should be checked next.
