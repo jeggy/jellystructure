@@ -5,8 +5,8 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored) from a read-only investigation of Radarr's history, its debug log and
-the backend's temp-file code. Not dev-reviewed, not built. Backend only (`FfmpegRunner`, `TrackCommandBuilder`,
+`⚠ Partial` — written 2026-10-08 (dev-authored); dev-reviewed and built 2026-10-08 (see *Dev review* and *Build notes*);
+deployed to the dev stack, acceptance 1–3 need two weeks of Radarr/Sonarr history. Backend only (`FfmpegRunner`, `TrackCommandBuilder`,
 `MediaJobQueue`, `FileIntegrity`, `MkvLayoutAudit`).
 
 ## What happened (2026-10-07/08, local time)
@@ -113,3 +113,40 @@ video or audio extension inside a library directory other than through `WorkFile
 
 1. The folder name: `.jellystructure/` (lean: names the owner) vs a shorter `.js/`. Any leading dot works for all
    three scanners.
+
+## Dev review (2026-10-08, against `main` `97b9e588`)
+
+Read against `TrackCommandBuilder`, `FfmpegRunner` (both `tmpPath`s, `runRemux*`), `MediaJobQueue` (the track-removal
+remux, `tmpFileFor` for the `pkill -f` cancel, the disk preflight), `FileIntegrity`/`FileIntegrityService` (the
+`.jsreplace_` copy, verify and swap), `MkvLayoutAudit` (goes through `FfmpegRunner.repairTracksLayout`), `MediaFileLock`
+and `PipelineEngine` (the Library cycle). The design holds; five notes, none for the owner.
+
+1. **Two kinds share a folder, so the file names carry the kind:** `remux_<name>` and `replace_<name>` inside
+   `.jellystructure/`. They never run at once on one file (`MediaFileLock`), but distinct names keep the `pkill -f`
+   cancel and the sweep's owner lookup unambiguous. The extension is kept, as FR-311-1 asks.
+2. **Making the folder is part of the command**, so the admin's preview shows it: `mkdir -p` then, best-effort,
+   `chown`/`chmod --reference` the library file's *directory* (a folder needs a folder's mode; a non-root container
+   keeps its own). Removing it is done by the runner after every run (`rmdir`, which fails harmlessly while another
+   work file is in it), not in the shell string, so a remux's exit status stays ffmpeg's and `mv`'s.
+3. **The disk preflight is unchanged:** `df` of the library file's directory measures the same filesystem the work
+   folder is on.
+4. **The sweep needs the library roots, not the scan's items:** it runs `find <roots> -xdev` once per Library cycle (after
+   the Jellyfin sweep), for files in a `.jellystructure/` folder and old-style `.jstmp_*`/`.jsreplace_*`; a file whose
+   name has no work prefix is never removed. `MediaFileLock.isHeld` added for FR-311-3's "no running job holds it".
+5. **Open question 1:** `.jellystructure/` kept (names the owner; any leading dot works).
+
+## Build notes (2026-10-08)
+
+- `src/commonMain/.../media/WorkFiles.kt` — `WorkFiles.pathFor(libraryPath, kind)`, `dirFor`, `libraryPathOf`,
+  `isWorkPath`, `prepareCommand`, `cleanupCommand`; `TrackCommandBuilder.tmpPath` and `FfmpegRunner.tmpPath` both call
+  it; every remux command starts with the `mkdir`. `FfmpegRunner.removeWorkDirIfEmpty` after every remux;
+  `FileIntegrity`'s copy writes to `.jellystructure/replace_<name>` and `FileIntegrityService` removes the folder after
+  the swap or a refusal; `MediaJobQueue`'s track removal uses the same path.
+- `src/linuxX64Main/.../media/WorkFileSweep.kt` — FR-311-3 (pure rule `workFilesToRemove` + the `find`), run from
+  `PipelineEngine` every Library cycle.
+- `scripts/check-workfiles.sh` (CI, after `check-inplace-guard.sh`): fails on a string literal building a `.jstmp_`,
+  `.jsreplace_` or `/.js…_` name outside `WorkFiles.kt`.
+- Tests: `WorkFilesTest` (paths incl. `'`, spaces and unicode; every builder command writes only to the work path and
+  ends with the `mv`; Radarr's/Sonarr's `DiskScanService` regexes copied in, plus Jellyfin's dot rule; a failed remux
+  of a real junk file leaves neither work file nor folder; the sweep rule), `FileIntegrityTest` updated to the new path.
+

@@ -4,7 +4,8 @@
 
 ## Status
 
-`Planned` — written 2026-10-08 (dev-authored). Not dev-reviewed, not built. Backend (`tv/AudioRenditions.kt`,
+`⚠ Partial` — written 2026-10-08 (dev-authored), confirmed and built the same day (see *Build notes*); deployed to the
+dev stack; the device check of acceptance 1 is in the build notes. Backend (`tv/AudioRenditions.kt`,
 `AudioRenditionJobs.kt`), touching R291.
 
 ## What happens today (suspected, to be confirmed first)
@@ -49,3 +50,18 @@ reason is logged.
 ## Acceptance
 
 1. On the FR-R382-1 title, switching to each audio track on Android plays that language.
+
+## Build notes (2026-10-08)
+
+- **FR-R382-1, confirmed on a real film** (read-only, Jellyfin's `MediaStreamInfos` vs `ffprobe`): three external SRT
+  subtitles are Jellyfin's streams 0–2, so the embedded video is 3 and the two audio tracks (TrueHD 7.1, AC3 5.1) are
+  **4 and 5**; in the file they are **1 and 2** (0 is the video). `-map 0:4` / `-map 0:5` therefore picked two PGS
+  subtitles: a rendition of either audio track could not be made on this title.
+- **FR-R382-2/3:** `fileAudioOrder(jellyfin audio, our scan's tracks)` in `AudioRenditions.kt`: the n-th Jellyfin audio
+  track is the file's n-th audio stream when both lists have the same length and agree track by track on codec
+  (`dca`/`dts`, `ec-3`/`eac3` aliases) and language (ISO 639-2 via `LanguageResolver`); otherwise null and **no
+  renditions are registered** (the switch restreams). `Rendition.audioOrder` carries the place; `RenditionSource.audioOrder`
+  → `-map 0:a:<n>`. `PlaybackService.localFileOf` now returns our scan's tracks with the path.
+- Tests (`AudioRenditionsTest`): the confirmed film's numbers map to `0:a:0`/`0:a:1`; a sidecar audio track (314), a
+  language swap or a codec mismatch gives null; `register` offers nothing on a mismatch; the command uses `0:a:<n>`.
+

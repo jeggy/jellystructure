@@ -486,3 +486,28 @@ phase to remove the single sub-0.5 s stall at start.
   decision cache (FR-309-7) is dropped (the start is now ~1 s). Until the encoder ships, 309a keeps only "warm the
   rung below" on Jellyfin, with the budget and the leave signal first.
 - The early encode on a detail page starts **our** encoder's job, which becomes the play's own job when Play is pressed.
+
+## Build notes — 309a0 (2026-10-08)
+
+The backend-only hotfix (decision 3 of the owner section after the re-dev review), built on `main` and deployed to the
+dev stack; the rest of 309 (record, probe, prewarm, the climb rules) is not built.
+
+- **FR-309-13, backend half.** `VideoLadder.kt`: `KNOWN_BANDWIDTH_GUESSES` (Media3 1.8.0's `DefaultBandwidthMeter`
+  initial estimates for Wi-Fi, 2G, 3G, 4G, 5G-NSA and 5G-SA, its 1 Mbps fallback (also Shaka's default) and hls.js's
+  500 kbps default), `isRealMeasurement`, and `measuredThroughput`: a sample counts only if HLS, positive, not a known
+  guess, and (when the player says how many transfers it rests on) at least 3. A newest sample from a player that counts
+  its transfers replaces the older ones instead of being averaged with them.
+- **No cap from a guess.** The cap (`throughputBudget(measuredThroughput)`) is now fed only real measurements, so a
+  client without `hls_adaptive` (every installed 1.50 app) is capped only by a real one. The Pixel's 2026-10-07 case (one
+  stored 4 300 000) now gives no measurement and no cap.
+- **Wire (additive, optional):** `PlaybackQoeReport.bandwidth_samples`, `bandwidth_bytes`, `first_frame_ms`; stored in
+  `playback_qoe` (72.sqm), which also sets `bandwidth_estimate_bps` to NULL on rows holding a known guess (nothing else).
+  The Android/web/desktop players don't send the counts yet (309b); the backend falls back to the known-guess table.
+  *Plays under 30 s* is not used: a row carries no play length, and the transfer count covers the same case for new apps.
+- **Cast receiver** (served by the backend, so it ships with the deploy): `context.start({ useShakaForHls: true })` so
+  308's Shaka settings (buffer goal 40 s, ABR targets) apply at all; its QoE now carries `first_frame_ms` (load → first
+  PLAYING) and `bandwidth_samples` (segment requests counted by `PlaybackConfig.segmentRequestHandler`); it sends no
+  estimate before 3 segments.
+- Tests: `VideoLadderTest` (the Pixel's rows give null and no cap; every known guess ignored; < 3 transfers ignored, a
+  counted sample trusted whatever its value; a newer counted sample replaces older ones).
+
