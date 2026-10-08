@@ -18,6 +18,7 @@ import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.seedingRoutes
+import dev.jellystructure.server.routes.looseFilmRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
@@ -165,6 +166,7 @@ fun startServer(
     seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
     suggestionService: dev.jellystructure.suggestions.SuggestionService? = null,
     publishQueue: dev.jellystructure.publish.PublishQueue? = null,   // Phase 307
+    looseFilms: dev.jellystructure.media.LooseFilmsService? = null,   // Phase 316
     bazarrClient: dev.jellystructure.bazarr.BazarrClient? = null,
     lidarrClient: dev.jellystructure.arr.LidarrClient? = null,   // Phase 284
     tvEventBus: TvEventBus,
@@ -633,6 +635,7 @@ fun startServer(
                     suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
+                looseFilms?.let { looseFilmRoutes(it, appScope) }   // Phase 316 — FR-316-3/-4
                 segmentRoutes(mediaStore, mediaSegmentStore, configStore, fingerprintService, appScope, jellyfinClient, mediaJobQueue, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)

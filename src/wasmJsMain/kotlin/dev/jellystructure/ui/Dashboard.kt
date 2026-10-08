@@ -476,6 +476,8 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
             "publish_queue" -> openPublishQueue(scope) { scope.launch { loadOverview(scope) } }
             // Phase 310/312 — *Watch places to put back*: the dry run, then the owner's press.
             "playback_repair" -> openPlaybackRepair(scope) { scope.launch { loadOverview(scope) } }
+            // Phase 316 (FR-316-3/-4) — films with no folder of their own: the overview, then the owner's Apply.
+            "loose_films" -> openLooseFilms(scope) { scope.launch { loadOverview(scope) } }
         }
         return
     }

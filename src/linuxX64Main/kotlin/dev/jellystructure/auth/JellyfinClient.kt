@@ -816,6 +816,20 @@ class JellyfinClient {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /**
+     * Phase 316 (dev review 6) — tell Jellyfin exactly which paths changed (`POST /Library/Media/Updated`), instead of a
+     * whole-library scan. [updates] are (path in Jellyfin's view, `Created` | `Modified` | `Deleted`).
+     */
+    suspend fun notifyMediaUpdated(baseUrl: String, token: String, updates: List<Pair<String, String>>): Boolean = runCatching {
+        val body = updates.joinToString(",", "{\"Updates\":[", "]}") { (path, type) -> "{\"Path\":${path.jsonEscape()},\"UpdateType\":\"$type\"}" }
+        val r = httpPost(baseUrl.trimEnd('/') + "/Library/Media/Updated") {
+            jellyfinAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        r.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/Refresh"
         val response = httpPost(url) { jellyfinAuth(token) }
@@ -1156,11 +1170,13 @@ class JellyfinClient {
      */
     // R375 (FR-R375-6) — [lastPlayedDate] too, optional: Jellyfin's SaveUserData applies only the fields a request
     // carries, so a date-only write (played and position null) moves nothing else. Absent ⇒ today's body, byte for byte.
-    suspend fun setUserData(baseUrl: String, userToken: String, userId: String, jellyfinId: String, played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null): Boolean {
+    // Phase 316 (dev review 6) — [isFavorite]/[playCount] too, optional, for carrying a moved film's data over.
+    suspend fun setUserData(baseUrl: String, userToken: String, userId: String, jellyfinId: String, played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null,
+                            isFavorite: Boolean? = null, playCount: Int? = null): Boolean {
         val r = httpPost(baseUrl.trimEnd('/') + "/UserItems/$jellyfinId/UserData?userId=$userId") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
-            setBody(userDataBody(played, positionTicks, lastPlayedDate))
+            setBody(userDataBody(played, positionTicks, lastPlayedDate, isFavorite, playCount))
         }
         if (r.status.value !in 200..299) throw IllegalStateException("Jellyfin answered ${r.status.value} to a user-data write")
         return true
@@ -1697,9 +1713,11 @@ private fun String.jsonEscape(): String =
 
 /** R343 / R375 — the `POST /UserItems/{id}/UserData` body: only the fields given, in this order. Two non-null values
  *  and no date give exactly R343's `{"Played":…,"PlaybackPositionTicks":…}`. */
-internal fun userDataBody(played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null): String =
+internal fun userDataBody(played: Boolean?, positionTicks: Long?, lastPlayedDate: String? = null, isFavorite: Boolean? = null, playCount: Int? = null): String =
     listOfNotNull(
         played?.let { "\"Played\":$it" },
         positionTicks?.let { "\"PlaybackPositionTicks\":$it" },
         lastPlayedDate?.let { "\"LastPlayedDate\":" + it.jsonEscape() },
+        isFavorite?.let { "\"IsFavorite\":$it" },
+        playCount?.let { "\"PlayCount\":$it" },
     ).joinToString(",", "{", "}")

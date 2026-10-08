@@ -131,6 +131,8 @@ class DashboardService(
 
         // Phase 315 (FR-315-3/-4) — edits refused to keep a seeding torrent intact, and torrents an earlier edit may have changed.
         rows += runCatching { dev.jellystructure.torrent.seedingDashboardRows() }.getOrDefault(emptyList())
+        // Phase 316 (FR-316-3) — films loose in a library root: their artwork becomes the library's.
+        runCatching { looseFilmsDashboardRow(dev.jellystructure.media.LooseFilmsService.current) }.getOrNull()?.let { rows += it }
 
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
