@@ -158,6 +158,26 @@ class WebPlaybackTest {
         assertEquals(mapOf("seek" to 1, "track_switch" to 1, "variant_switch" to 1), q.waitCounts() - "start")
     }
 
+    // ── R376 (owner 2026-10-08, changes R265 FR-R265-8) — Safari direct-plays; HLS only once on AirPlay ──
+
+    @Test fun safariStartsLikeAnyBrowserUnlessThePictureIsAlreadyOnAirPlay() {
+        assertFalse(startsAsAirPlayHls(nativeHlsWithAirPlay = true, onAirPlayNow = false))   // Safari, on the Mac's screen
+        assertTrue(startsAsAirPlayHls(nativeHlsWithAirPlay = true, onAirPlayNow = true))     // the next episode while on AirPlay
+        assertFalse(startsAsAirPlayHls(nativeHlsWithAirPlay = false, onAirPlayNow = true))   // Chrome, Firefox
+    }
+
+    @Test fun pickingAirPlayRestartsADirectPlayAsHlsOncePerItem() {
+        assertTrue(airplayNeedsHls(onAirPlay = true, streamIsHls = false, alreadyRestartedForAirPlay = false))
+        assertFalse(airplayNeedsHls(onAirPlay = true, streamIsHls = true, alreadyRestartedForAirPlay = false))    // already HLS
+        assertFalse(airplayNeedsHls(onAirPlay = true, streamIsHls = false, alreadyRestartedForAirPlay = true))    // once
+        assertFalse(airplayNeedsHls(onAirPlay = false, streamIsHls = false, alreadyRestartedForAirPlay = false))  // not on AirPlay
+    }
+
+    @Test fun theAirPlayRestartAsksForHlsWithTheManifestsSubtitlesAndNoHevc() {
+        val c = airplayCapabilities(dev.jellystructure.shared.tv.ClientCapabilities(hlsOnly = false, hlsSubtitles = false, hlsHevc = true))
+        assertTrue(c.hlsOnly); assertTrue(c.hlsSubtitles); assertFalse(c.hlsHevc)
+    }
+
     // ── R376 (2026-10-08, Safari) — a play with no gesture plays muted until a real click, tap or key ──
 
     @Test fun aRefusedSoundIsKnownUntilTheViewerInteractsAndSurvivesANewSource() {

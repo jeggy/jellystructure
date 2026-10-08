@@ -11,6 +11,9 @@ import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
 import dev.jellystructure.ravilo.ui.seams.audioPickNeedsHls
+import dev.jellystructure.ravilo.ui.seams.airplayCapabilities
+import dev.jellystructure.ravilo.ui.seams.platformAirPlay
+import dev.jellystructure.ravilo.ui.seams.startsAsAirPlayHls
 import dev.jellystructure.ravilo.ui.seams.supportedContainers
 import dev.jellystructure.ravilo.ui.seams.switchesAudioInFile
 import dev.jellystructure.ravilo.ui.seams.switchesHlsAudioRenditions
@@ -187,9 +190,11 @@ class PlayerStore(
                     // sideload of the same stream (bug: it used to always sideload, double-delivering
                     // every text subtitle on a direct-played title — see PlaybackService.buildSubtracks).
                     val embeddedSubs = supportsEmbeddedTextSubtitles()
-                    // R265 (FR-R265-8) — Safari takes only HLS and shows the manifest's subtitles, so
-                    // AirPlay has a stream to hand to the TV with its subtitles inside it.
-                    val airplayHls = playsHlsForAirPlay()
+                    // R265 (FR-R265-8), changed by R376 (owner, 2026-10-08): Safari direct-plays what it can, like
+                    // any browser, and takes HLS (with the manifest's subtitles, which AirPlay carries to the TV) only
+                    // once the picture is on AirPlay — a start while already on AirPlay (the next episode), or the
+                    // restart [restreamForAirPlay] makes the moment AirPlay is picked.
+                    val airplayHls = startsAsAirPlayHls(playsHlsForAirPlay(), platformAirPlay?.wireless?.value == true)
                     // R329 (FR-R329-3) — a player that takes nothing but HLS (the Mac's AVPlayer), and HEVC in it
                     // where it says so; Android and the web negotiate exactly as before (hlsHevc stays false).
                     val hlsOnly = airplayHls || playsOnlyHls()
@@ -311,6 +316,16 @@ class PlayerStore(
      *  R282 — a negative [subtitleStreamIndex] re-streams with NO burn-in (252 FR-252-2).
      *  R284 — [audioStreamIndex] is the audio track the new stream must carry (253 FR-253-1); callers
      *  pass the current one on a subtitle change so the two choices never reset each other. */
+    /**
+     * R376 (owner, 2026-10-08) — the viewer picked AirPlay while a file direct-plays in Safari: the same item restarts
+     * as HLS at [positionMs] (what AirPlay hands to the TV, subtitles inside the manifest), keeping the subtitle and
+     * audio choices; the item stays on HLS for its later restreams.
+     */
+    fun restreamForAirPlay(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int?) {
+        lastCapabilities = lastCapabilities?.let { airplayCapabilities(it) }
+        restreamWithSub(itemId, subtitleStreamIndex, positionMs, audioStreamIndex)
+    }
+
     fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long, audioStreamIndex: Int? = null) {
         // R376 (FR-R376-3) — an audio pick on a player that cannot switch tracks inside one file asks for HLS, where
         // every track is a rendition; the item stays on HLS for its later restreams.

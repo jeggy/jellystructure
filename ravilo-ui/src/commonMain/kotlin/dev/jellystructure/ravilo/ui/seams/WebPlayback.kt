@@ -119,3 +119,19 @@ internal fun webContainers(mkv: Boolean, webm: Boolean): List<String> =
  */
 internal fun audioPickNeedsHls(audioRestream: Boolean, alreadyHlsOnly: Boolean, switchesInFile: Boolean): Boolean =
     audioRestream && !alreadyHlsOnly && !switchesInFile
+
+/**
+ * R376 (owner, 2026-10-08; changes R265 FR-R265-8 for Safari) — a Safari start asks for HLS only when the picture is
+ * already on AirPlay (the next episode of an AirPlay session); otherwise it negotiates like any browser and
+ * direct-plays what it can.
+ */
+internal fun startsAsAirPlayHls(nativeHlsWithAirPlay: Boolean, onAirPlayNow: Boolean): Boolean =
+    nativeHlsWithAirPlay && onAirPlayNow
+
+/** R376 — the viewer just picked AirPlay: a stream that is not HLS yet restarts as HLS, once per item. */
+internal fun airplayNeedsHls(onAirPlay: Boolean, streamIsHls: Boolean, alreadyRestartedForAirPlay: Boolean): Boolean =
+    onAirPlay && !streamIsHls && !alreadyRestartedForAirPlay
+
+/** R376 — what the AirPlay restart asks for: HLS only, the manifest's subtitles, and H.264 (no HEVC over AirPlay). */
+internal fun airplayCapabilities(c: dev.jellystructure.shared.tv.ClientCapabilities): dev.jellystructure.shared.tv.ClientCapabilities =
+    c.copy(hlsOnly = true, hlsSubtitles = true, hlsHevc = false)

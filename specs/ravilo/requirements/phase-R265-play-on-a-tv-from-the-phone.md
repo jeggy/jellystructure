@@ -254,6 +254,8 @@ a screen with `now_playing` for this user ⇒ mini bar with the live position; n
 (FR-R245-5's two outcomes, without an SDK). The connecting bar (FR-R245-3) reads *"Sending to {TV}…"* /
 *"Playing on {TV}"* and retires itself.
 
+> **Changed by R376 (owner, 2026-10-08):** Safari (Mac and iPhone) no longer takes only HLS. It negotiates like any browser and direct-plays what it can; the moment the viewer picks AirPlay (WebKit reports the picture on a wireless target) a stream that is not HLS restarts as HLS at the current position, with the manifest's subtitles, and a start while already on AirPlay asks for HLS from the beginning. AirPlay keeps working; Safari starts the common case without a Jellyfin job. See R376's *Safari: direct play, HLS only for AirPlay*.
+
 **FR-R265-8 · The web player sends the truth, so AirPlay has something to hand over.** On the web the
 capability list is probed, not copied: `hls_only=true` when the browser plays HLS natively (Safari), else
 `containers`/`video_codecs`/`audio_codecs` from `canPlayType`/`MediaCapabilities` (report §4.3);

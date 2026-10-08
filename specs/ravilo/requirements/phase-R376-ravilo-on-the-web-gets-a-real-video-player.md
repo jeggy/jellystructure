@@ -356,7 +356,7 @@ position 0, play count 0, no last-played date), Safari's storage was wiped and S
 
 | Check | Result |
 |---|---|
-| **Direct play on Safari** | **Never happens:** R265 FR-R265-8 (`playsHlsForAirPlay`) makes Safari ask for HLS only, so even an MP4 Safari can open (an open-licence test film, H.264 + MP3 + AC3) came as R291's composed master (video copied, two audio renditions). FR-R376-3's *direct play first* is therefore Chrome/Firefox only. **For the owner:** keep HLS-only on Safari for AirPlay, or direct-play there and switch to HLS when AirPlay is picked. |
+| **Direct play on Safari** (before the owner's decision below) | **Never happened:** R265 FR-R265-8 (`playsHlsForAirPlay`) makes Safari ask for HLS only, so even an MP4 Safari can open (an open-licence test film, H.264 + MP3 + AC3) came as R291's composed master (video copied, two audio renditions). FR-R376-3's *direct play first* is therefore Chrome/Firefox only. **For the owner:** keep HLS-only on Safari for AirPlay, or direct-play there and switch to HLS when AirPlay is picked. |
 | **Time to first frame** (element `loadstart` → `loadeddata`) | MP4 film, cold: **8.5 s** (playing at 10 s after the push); the same film warm: **4.0 s** (playing at 5.7 s). An MKV with four AC3 tracks (needs HLS), cold: first frame data **1.6 s**, but `playing` only **29.5 s** after `loadstart` (the cold start of Jellyfin's job and R291's four rendition jobs on a file not in the page cache). |
 | **Audio switch inside the stream** (Safari's own `audioTracks`, via the app's picker: wake, → → to *Audio & subtitles*, OK, ↓ to Finnish, OK) | **Works:** the element's enabled track moved from `dan` to `fin` at the same moment, no restream. The picture held at the same second for **~7 s** before playing on (the new language's rendition job starting cold); afterwards it played normally. Exactly one track is enabled before and after. |
 | **Seek** (remote command to 5:00) | `seeking` → `seeked`/`playing` in **5.8 s** (Jellyfin restarts its job at the new position). |
@@ -374,6 +374,33 @@ Re-tested on Safari: the refused play retried muted and was playing in 0.7 s. **
 brings the sound back — that needs a trusted click, which nothing over ssh can produce (and nobody clicked during the
 test window). Tests: `WebPlaybackTest` (the blocked fact survives a new source and clears on `soundon`; a refused
 play is never a stall).
+
+### Safari: direct play, HLS only for AirPlay (owner, 2026-10-08)
+
+Owner, after the Safari run above: *Safari (Mac and iPhone) direct-plays what it can, and switches to HLS only when
+AirPlay is picked* — changing R265 FR-R265-8 for Safari, keeping AirPlay working.
+- **The start** (`PlayerStore`): `hls_only`/`hls_subtitles` for Safari only when the picture is already on AirPlay
+  (`startsAsAirPlayHls(playsHlsForAirPlay(), platformAirPlay.wireless)` — e.g. the next episode of an AirPlay
+  session). Otherwise Safari sends the same probed containers and codecs as any browser (Safari: `mp4`), so an MP4 it
+  decodes direct-plays and anything else gets the ladder/transcode exactly as before.
+- **Picking AirPlay** (`AirPlayHlsRestart`, one call in `PlayerScreen`): when WebKit reports the wireless target and
+  the ticket is a direct play, the same item restarts once (`airplayNeedsHls`) through
+  `PlayerStore.restreamForAirPlay` at the current position, keeping the burned-in subtitle and the audio track, with
+  `hls_only`, `hls_subtitles` and no HEVC (`airplayCapabilities`); the item stays on HLS for its later restreams. The
+  `<video>` keeps its AirPlay target across the new source.
+- Android and the desktop have no AirPlay (`platformAirPlay` is null): nothing changes there.
+- Tests (`WebPlaybackTest`): the start rule (Safari on the Mac's screen → no HLS; already on AirPlay → HLS; Chrome
+  never), the restart rule (only a non-HLS stream, once per item, only on AirPlay), and the restart's capabilities.
+- **Live on Safari 27 (2026-10-08, Test Stream, against the dev backend v1.50 with 313's encoder):** the start sent
+  no `hls_only` (`containers: ["mp4"]`, the probed codecs). A 1080p H.264/AAC MP4 film **direct-played**
+  (`/Videos/…/stream`, `directPlay=true`): first frame **1.55 s** after `loadstart`, playing at 1.7 s (HLS on the same
+  Safari: 4–8.5 s), and a remote seek to 10:00 resumed in **0.24 s** (HLS: 5.8 s). The play had no gesture, so the
+  muted fallback above engaged as designed. A 4K H.264 MP4 still goes through the encoder: the web reports no decoder
+  limits, so the profile's H.264 default of 1080p applies (Safari on a Mac decodes 4K H.264 — a decoder-limit probe for
+  Safari would let it direct-play; not done here). **Not verified:** picking AirPlay (Apple's picker needs a real tap,
+  and a target the test could not choose) — the restart rule is covered by its tests only.
+- Release APK checks after this change: `check-player-dex` 246 registers (limit 250), and the HTTP-engine, min-SDK and
+  Play device-filter checks pass.
 
 ## Dev review (2026-10-08, against `main` `4222ac4c`)
 

@@ -1829,6 +1829,11 @@ fun PlayerScreen(
         // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
         VideoShutter(startPhase != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
         BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
+        // R376 (owner, 2026-10-08) — Safari direct-plays; picking AirPlay restarts the item as HLS where it is.
+        AirPlayHlsRestart(currentItemId, streamIsHls = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay != true) {
+            bk.rearmResolveOnLoad = true
+            store.restreamForAirPlay(itemId, bk.burnedSubIndex ?: -1, player.positionMs, bk.ticketAudio.getOrNull(selectedAudio)?.index)
+        }
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
