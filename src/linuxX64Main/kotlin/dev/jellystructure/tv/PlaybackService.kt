@@ -461,6 +461,10 @@ class PlaybackService(
         sourceVideoRange: String? = null,
         /** Phase 313 — the device's kind (`cast` gets MPEG-TS segments until fMP4 is verified on the receiver). */
         deviceKind: String = "tv",
+        /** Phase 313 (found on the Pixel 2026-10-08) — the device's platform: only Apple's and the browsers' players get
+         *  fMP4 segments from our encoder; Media3 (Android phones, TVs) gets MPEG-TS, the shape every working stream
+         *  there already has. */
+        devicePlatform: String? = null,
     ): StreamTicket {
         val measured = ticket.copy(measuredBandwidthBps = measuredBps)
         if (ticket.directPlay || capabilities == null || jellyfinPlaySessionId == null || abandoned) return measured
@@ -471,7 +475,7 @@ class PlaybackService(
             val file = localFileOf(jellyfinId)
             val (plan, why) = if (file == null) null to "file not on this server's disk"
             else encoder.planFor(capabilities, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
-                throughputBudget(measuredBps), sourceVideoRange, burnsSubtitle = ticket.burnedSubtitleIndex != null)
+                throughputBudget(measuredBps), sourceVideoRange, burnsSubtitle = ticket.burnedSubtitleIndex != null, platform = devicePlatform)
             if (plan != null) {
                 val id = encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +
@@ -899,7 +903,7 @@ class PlaybackService(
             // Phase 253 (FR-253-2) — which audio a single-audio (transcoded) stream carries.
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, null) else null,
             sessionId = sessionId,   // R368 (dev review item 8)
-        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ), capabilities, jellyfinBase, jellyfinId, token, identity, jellyfinPlaySessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType)
@@ -1701,7 +1705,7 @@ class PlaybackService(
             // is already in the pixels, so no text track may render beside it.
             burnedSubtitleIndex = subtitleStreamIndex,
             audioStreamIndex = carriedAudioIndex(transcodingUrl, audioStreamIndex),
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps) }
     }
 
@@ -1761,7 +1765,7 @@ class PlaybackService(
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
             audioStreamIndex = if (needsTranscode) carriedAudioIndex(source?.transcodingUrl, audioStreamIndex) else null,
-        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind,
+        ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, deviceKind = device.kind, devicePlatform = device.platform,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType) }

@@ -183,7 +183,17 @@ class EncoderPlanTest {
         assertEquals(4, plan.rungs.size)
         assertEquals(listOf(0, 1), plan.audio.map { it.audioOrder })
         assertEquals(listOf(6, 6), plan.audio.map { it.channels })
-        assertEquals(EncoderMux.FMP4, plan.mux)
+        assertEquals(EncoderMux.TS, plan.mux, "Media3 (a BRAVIA, a phone) gets MPEG-TS")
+    }
+
+    @Test fun `only Apple's and the browsers' players get fMP4 segments`() {
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("tv", "mac"))
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("tv", "web"))
+        assertEquals(EncoderMux.FMP4, encoderMuxFor("phone", "ios"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("phone", "phone"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("tv", "tv"))
+        assertEquals(EncoderMux.TS, encoderMuxFor("tv", null))
+        assertEquals(EncoderMux.TS, encoderMuxFor("cast", "web"))
     }
 
     @Test fun `an installed 1_50 app gets one quality — the receiver gets TS — and a burn-in stays Jellyfin's`() = runBlocking {

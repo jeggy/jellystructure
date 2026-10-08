@@ -20,6 +20,15 @@ enum class EncoderCodec { H264, HEVC }
 /** 313 — how segments are muxed: fMP4 (CMAF) everywhere, MPEG-TS for the Cast receiver until fMP4 is verified there. */
 enum class EncoderMux { FMP4, TS }
 
+/**
+ * Phase 313 — the segment format per device. fMP4 only for Apple's and the browsers' players (Safari needs it for HEVC;
+ * hls.js reads either); everything else — Media3 on Android phones and TVs, the Cast receiver — gets MPEG-TS. Found on the
+ * Pixel 2026-10-08: an all-fMP4 ladder (fMP4 video + fMP4 audio renditions) left Media3 BUFFERING at 0 with 48 s
+ * buffered and no decoder ever created, while every stream that plays on these devices (Jellyfin's, R291's) is TS.
+ */
+fun encoderMuxFor(deviceKind: String, platform: String?): EncoderMux =
+    if (deviceKind != "cast" && platform?.lowercase() in setOf("mac", "ios", "web")) EncoderMux.FMP4 else EncoderMux.TS
+
 /** One output rung: its picture box (the frame is fitted inside, aspect kept), its size, and its video bitrate. */
 data class EncoderRung(val boxHeight: Int, val width: Int, val height: Int, val videoBps: Long)
 
