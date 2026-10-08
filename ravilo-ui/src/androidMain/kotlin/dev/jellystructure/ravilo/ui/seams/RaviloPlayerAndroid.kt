@@ -246,6 +246,9 @@ actual class RaviloPlayer actual constructor() {
     @Volatile private var qoeDroppedFrames: Int = 0
     @Volatile private var qoeBandwidthEstimateBps: Long? = null
     @Volatile private var qoeVideoDecoder: String? = null
+    // R379 — the audio decoder (Media3's onAudioDecoderInitialized): the engine's, like the video one, so kept across
+    // items; a rebuild with FFmpeg preferred (FR-R379-2) reports its new decoder. Null = passthrough or none yet.
+    @Volatile private var qoeAudioDecoder: String? = null
     // Phase 179 (FR-179-3) — counts every failed load whose URI matches PlaybackService.buildSubtracks()'
     // sideload pattern, retried or not; a nonzero count is itself the useful signal (something raced
     // Jellyfin's extraction this session), same "badge only when non-clean" philosophy as the other
@@ -350,6 +353,9 @@ actual class RaviloPlayer actual constructor() {
         }
         override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
             qoeVideoDecoder = decoderName
+        }
+        override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+            qoeAudioDecoder = decoderName
         }
         // Phase 179 (FR-179-3) — fires for every failed load attempt, including ones SubtitleRetryingLoad-
         // ErrorHandlingPolicy will go on to retry; counts attempts, not just terminal failures, since
@@ -710,6 +716,7 @@ actual class RaviloPlayer actual constructor() {
         rebufferMs = qoeCounter.rebufferMs,
         bandwidthEstimateBps = qoeBandwidthEstimateBps,
         videoDecoder = qoeVideoDecoder,
+        audioDecoder = qoeAudioDecoder,
         subtitleLoadErrors = qoeSubtitleLoadErrors,
         videoOutputRecoveries = qoeVideoOutputRecoveries,
         videoOutputRecoveryRung = qoeVideoOutputRecoveryRung,

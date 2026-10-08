@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.ravilo.ui.seams.detectLinkState
 import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
+import dev.jellystructure.ravilo.ui.seams.platformAudioDecoders
 import dev.jellystructure.ravilo.ui.seams.supportedVideoCodecs
 import dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay
 import dev.jellystructure.ravilo.ui.seams.playsOnlyHls
@@ -203,6 +204,9 @@ class PlayerStore(
                         // R283 — what this build really decodes (the Android actual adds TrueHD/DTS
                         // when the FFmpeg extension is installed); was a literal that omitted both.
                         audioCodecs = supportedAudioCodecs(),
+                        // R379 — the AC-3 family this device decodes itself; the server re-encodes a missing one.
+                        platformAudioDecoders = platformAudioDecoders(),
+                        hlsHevcCapable = supportsHevcOverHls(),
                         maxAudioChannels = 8,
                         supportsHdr10 = hdr.hdr10,
                         supportsHlg = hdr.hlg,
@@ -405,6 +409,7 @@ class PlayerStore(
                     rebufferMs = snapshot.rebufferMs,
                     bandwidthEstimateBps = snapshot.bandwidthEstimateBps,
                     videoDecoder = snapshot.videoDecoder,
+                    audioDecoder = snapshot.audioDecoder,   // R379
                     directPlay = qoeDirectPlay,
                     linkKind = qoeLinkKind,
                     linkMbps = qoeLinkMbps,

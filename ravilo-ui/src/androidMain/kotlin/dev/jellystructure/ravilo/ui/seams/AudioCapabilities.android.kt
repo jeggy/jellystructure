@@ -37,3 +37,28 @@ actual fun switchesHlsAudioRenditions(): Boolean = true
 actual fun playsAdaptiveHls(): Boolean = true
 
 actual fun playsOnlyHls(): Boolean = false
+
+/**
+ * R379 (owner decision 2026-10-08) — the AC-3 family codecs a platform decoder on this device takes (`MediaCodecList`,
+ * any decoder for `audio/ac3`, `audio/eac3` or `audio/eac3-joc`). HDMI passthrough is deliberately NOT counted: it
+ * depends on what is plugged in at the moment (a soundbar switched off), and without it Media3 falls back to the FFmpeg
+ * extension, the path that crashes on a channel-count change. Read once per process; a failure to read the list
+ * reports nothing (null), which keeps today's negotiation rather than inventing a gap.
+ */
+actual fun platformAudioDecoders(): List<String>? = platformAc3Decoders
+
+private val platformAc3Decoders: List<String>? by lazy {
+    runCatching {
+        val types = android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos
+            .filter { !it.isEncoder }
+            .flatMap { it.supportedTypes.map { t -> t.lowercase() } }
+            .toSet()
+        buildList {
+            if ("audio/ac3" in types) add("ac3")
+            if ("audio/eac3" in types || "audio/eac3-joc" in types) add("eac3")
+        }
+    }.getOrNull().also {
+        // One line per process: which AC-3 family codecs this device reports as platform-decoded (R379 acceptance).
+        android.util.Log.i("R379", "platform_audio_decoders=${it ?: "unknown"}")
+    }
+}

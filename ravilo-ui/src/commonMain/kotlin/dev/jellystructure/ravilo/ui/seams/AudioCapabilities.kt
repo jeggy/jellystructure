@@ -66,3 +66,12 @@ expect fun playsAdaptiveHls(): Boolean
  */
 expect fun playsOnlyHls(): Boolean
 
+
+/**
+ * R379 (owner decision 2026-10-08) — which of the AC-3 family (`ac3`, `eac3`) this device plays with its OWN decoders or
+ * HDMI passthrough, without the FFmpeg extension, reported as `ClientCapabilities.platformAudioDecoders`. The server
+ * then has a missing one re-encoded instead of handing it to FFmpeg, whose resampler crashes when an AC-3 stream
+ * changes channel count mid-file. Null where the player never decodes AC-3 with that extension (the desktop's mpv,
+ * a browser): the negotiation stays as it is.
+ */
+expect fun platformAudioDecoders(): List<String>?

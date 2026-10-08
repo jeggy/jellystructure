@@ -276,14 +276,17 @@ class LiveTvService(
     suspend fun tune(device: DeviceData, channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket? {
         val base = jellyfinBase(); val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)
-        val info = jellyfinClient.getPlaybackInfo(base, token, device.jellyfinUserId, channelId, capabilities = capabilities, identity = identity, mediaSourceId = null)
+        // R379 — a channel's AC-3 on a device without a platform decoder is converted, never copied (the track's codec
+        // isn't known before tuning, so only the list narrows).
+        val liveCaps = forPlatformAudio(capabilities, null)
+        val info = jellyfinClient.getPlaybackInfo(base, token, device.jellyfinUserId, channelId, capabilities = liveCaps, identity = identity, mediaSourceId = null)
         val source = info?.mediaSources?.firstOrNull { !it.openToken.isNullOrBlank() } ?: info?.mediaSources?.firstOrNull()
         val openToken = source?.openToken
         if (openToken.isNullOrBlank()) {
             Logger.warn("LiveTv: no OpenToken for channel=$channelId — cannot tune", "livetv")
             return null
         }
-        val opened = jellyfinClient.openLiveStream(base, token, device.jellyfinUserId, openToken, channelId, info?.playSessionId, capabilities, identity) ?: return null
+        val opened = jellyfinClient.openLiveStream(base, token, device.jellyfinUserId, openToken, channelId, info?.playSessionId, liveCaps, identity) ?: return null
         val mediaSource = opened.mediaSource ?: return null
         val streamUrl = mediaSource.path ?: return null
         val liveStreamId = mediaSource.liveStreamId ?: opened.id ?: return null

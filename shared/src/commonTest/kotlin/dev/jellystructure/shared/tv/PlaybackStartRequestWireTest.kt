@@ -45,4 +45,18 @@ class PlaybackStartRequestWireTest {
         val r = server.decodeFromString(PlaybackQoeReport.serializer(), old)
         assertEquals(0, r.videoOutputRecoveries); assertEquals(0, r.backgroundReturns); assertEquals(0, r.restoredAfterRecreate)
     }
+
+    @Test
+    fun `R379 - the platform decoder list rides the start request with the client real encoder and is absent when unknown`() {
+        val withList = RaviloWireJson.encodeToString(PlaybackStartRequest.serializer(),
+            PlaybackStartRequest("i1", caps.copy(platformAudioDecoders = listOf("ac3", "eac3"), hlsHevcCapable = true)))
+        assertTrue(withList.contains("\"platform_audio_decoders\":[\"ac3\",\"eac3\"]"), withList)
+        assertTrue(withList.contains("\"hls_hevc_capable\":true"), withList)
+        val back = server.decodeFromString(PlaybackStartRequest.serializer(), withList)
+        assertEquals(listOf("ac3", "eac3"), back.capabilities.platformAudioDecoders)
+        // An empty list (no platform decoder at all) is still sent: it differs from "unknown".
+        val none = RaviloWireJson.encodeToString(PlaybackStartRequest.serializer(), PlaybackStartRequest("i1", caps.copy(platformAudioDecoders = emptyList())))
+        assertTrue(none.contains("\"platform_audio_decoders\":[]"), none)
+        assertFalse(RaviloWireJson.encodeToString(PlaybackStartRequest.serializer(), PlaybackStartRequest("i1", caps)).contains("platform_audio_decoders"))
+    }
 }
