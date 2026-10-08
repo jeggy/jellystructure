@@ -47,7 +47,7 @@ class MusicConvert(
     suspend fun plan(req: MusicConvertRequest): MusicConvertPlan {
         val ts = targets(req)
         val cfg = configStore.current
-        val seeding = ts.count { seedingGuard.check(it.path!!, cfg) is SeedingCheckResult.Blocked }
+        val seeding = ts.count { seedingGuard.check(it.path!!, cfg, inPlace = false) is SeedingCheckResult.Blocked }
         return MusicConvertPlan(
             songs = ts.size - seeding, seeding = seeding,
             formats = ts.map { MusicFormats.label(it.container, it.codec, it.bitrate) }.distinct(),
@@ -93,7 +93,7 @@ class MusicConvert(
 
     private suspend fun convertOne(path: String, cfg: AppConfig): String? {
         if (!SystemFileSystem.exists(Path(path))) return "the file is gone"
-        when (val g = seedingGuard.check(path, cfg)) {
+        when (val g = seedingGuard.check(path, cfg, inPlace = false)) {
             is SeedingCheckResult.Blocked -> return SEEDING
             is SeedingCheckResult.Unreachable -> return "qBittorrent unreachable (${g.reason}) — skipped to be safe"
             else -> Unit

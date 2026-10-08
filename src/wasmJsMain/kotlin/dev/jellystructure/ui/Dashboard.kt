@@ -501,6 +501,8 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
                 "artwork_repair" -> { out("Checking…"); out(if (MediaApi.batchArtworkRepair()) "Started ✓" else "Failed") }
                 "jf_push" -> { out("Writing…"); out(if (MediaApi.batchJellyfinPush()) "Started ✓" else "Failed") }
                 "jf_refresh" -> { out("Sending…"); out(if (MediaApi.jellyfinRefreshAll()) "Triggered ✓" else "Failed") }
+                // Phase 315 (FR-315-4) — read-only: the page reloads to show "Checking…", then the result.
+                "seeding_damage_check" -> { out("Starting…"); val ok = MediaApi.seedingDamageCheck(); out(if (ok) "Started ✓" else "Failed"); if (ok) loadOverview(scope) }
                 // Phase 292 (FR-292-15) — never run on their own; each is this button.
                 "music_lyrics_remove" -> {
                     out("Removing…")

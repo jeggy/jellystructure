@@ -175,7 +175,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val ext = ep.path.substringAfterLast('.').lowercase()
 
             when (val guard = seedingGuard.check(ep.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }
@@ -235,7 +235,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val ext = item.path.substringAfterLast('.').lowercase()
 
             when (val guard = seedingGuard.check(item.path, configStore.current)) {
-                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to guard.message)); return@post }
                 is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                 else -> Unit
             }

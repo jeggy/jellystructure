@@ -1230,8 +1230,8 @@ class MediaJobQueue(
     }
 
     /** Null = the seeding guard passed; non-null = the [Failure] to short-circuit the job with. */
-    private suspend fun guard(path: String): Outcome? = when (val g = seedingGuard.check(path, configStore.current)) {
-        is SeedingCheckResult.Blocked -> Failure("File is seeded by '${g.torrentName}'")
+    private suspend fun guard(path: String): Outcome? = when (val g = seedingGuard.check(path, configStore.current, inPlace = false)) {  // a remux renames a new file in (315)
+        is SeedingCheckResult.Blocked -> Failure(g.message)
         is SeedingCheckResult.Unreachable -> Failure("qBittorrent unreachable: ${g.reason}")
         else -> null
     }

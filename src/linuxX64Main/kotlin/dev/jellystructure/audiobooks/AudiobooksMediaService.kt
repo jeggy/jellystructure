@@ -270,7 +270,7 @@ else:
         for ((i, p) in parts.withIndex()) {
             val path = p.path!!
             val f = read[path]
-            val guard = seeding?.check(path, cfg)
+            val guard = seeding?.check(path, cfg, inPlace = shared == null || !shared.available(), countRefusal = false)
             val seed = guard is dev.jellystructure.torrent.SeedingCheckResult.Blocked || guard is dev.jellystructure.torrent.SeedingCheckResult.Unreachable
             val want = bookTags(b, p, i)
             val ft = f?.tags.orEmpty()
@@ -413,7 +413,7 @@ else:
         } else if (cfg.audiobooks.writeTags && taggerAvailable()) {
             for ((i, p) in parts.withIndex()) {
                 val path = p.path ?: continue
-                val guard = seeding?.check(path, cfg)
+                val guard = seeding?.check(path, cfg)  // 315: the fallback tagger saves in place
                 if (guard is SeedingCheckResult.Blocked || guard is SeedingCheckResult.Unreachable) { seeded++; continue }
                 val kv = mapOf(
                     "title" to p.title.ifBlank { b.title }, "album" to b.title, "artist" to b.authors.joinToString(", "), "albumartist" to b.authors.joinToString(", "),
