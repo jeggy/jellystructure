@@ -511,7 +511,10 @@ actual class RaviloPlayer actual constructor() {
     actual fun seekTo(positionMs: Long) { engine?.seekTo(positionMs) }
     actual fun setVolume(level: Float) { outputVolume = level.coerceIn(0f, 1f); engine?.volume = outputVolume }
 
-    actual fun selectAudioTrack(index: Int) {
+    // R376 (FR-R376-3) — Media3 selects in place; the answer is always "switched".
+    actual fun selectAudioTrack(index: Int): Boolean { selectAudioInEngine(index); return true }
+
+    private fun selectAudioInEngine(index: Int) {
         val exo = engine ?: return
         synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2) — a switch's wait is not a stall
         val tracks = exo.currentTracks
@@ -602,9 +605,6 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
-    // No-op — the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView
-    // inside the FrameLayout; nothing to swap z-order with.
-    actual fun setChromeVisible(visible: Boolean) {}
 
     actual fun setSubtitleScale(scale: Float) {
         subtitleScale = scale.coerceIn(0.5f, 2f)
@@ -640,6 +640,7 @@ actual class RaviloPlayer actual constructor() {
     actual val hasRenderedFirstFrame: Boolean get() = _hasRenderedFirstFrame
     actual val isBuffering: Boolean get() = _isBuffering
     actual val isSeeking: Boolean get() = _isSeeking
+    actual val soundBlockedByBrowser: Boolean get() = false   // R376 — no autoplay rule on Android
 
     actual val audioTracks: List<PlayerAudioTrack>
         get() {

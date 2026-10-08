@@ -171,6 +171,8 @@ internal fun HandsetPlayerChrome(
     onTitleTap: (() -> Unit)? = null,
     /** R245 (FR-R245-1/4) — the cast button; casting from inside the player hands the position over. */
     castSlot: (@Composable () -> Unit)? = null,
+    /** R376 (FR-R376-8) — picture-in-picture, where the platform has it (a browser); null = absent. */
+    onPictureInPicture: (() -> Unit)? = null,
     onSkipBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipFwd: () -> Unit,
@@ -223,6 +225,14 @@ internal fun HandsetPlayerChrome(
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
                 castSlot?.invoke()
+                if (onPictureInPicture != null) {
+                    HandsetIconButton(size = HANDSET_TARGET, onClick = onPictureInPicture, label = str("player.pip"), showLabel = false) { tint ->
+                        Canvas(Modifier.size(20.dp)) {
+                            drawRoundRect(tint, Offset(0f, size.height * 0.14f), Size(size.width, size.height * 0.72f), CornerRadius(3.dp.toPx()), style = Stroke(2.dp.toPx()))
+                            drawRoundRect(tint, Offset(size.width * 0.5f, size.height * 0.48f), Size(size.width * 0.38f, size.height * 0.28f), CornerRadius(1.5.dp.toPx()))
+                        }
+                    }
+                }
                 if (showRotate) {
                     HandsetIconButton(size = HANDSET_TARGET, onClick = onRotate, label = str("pl.rotate"), showLabel = false) { tint ->
                         Canvas(Modifier.size(20.dp)) {

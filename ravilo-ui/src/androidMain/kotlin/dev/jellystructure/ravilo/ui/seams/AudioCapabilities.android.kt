@@ -62,3 +62,9 @@ private val platformAc3Decoders: List<String>? by lazy {
         android.util.Log.i("R379", "platform_audio_decoders=${it ?: "unknown"}")
     }
 }
+
+/** R376 (FR-R376-5) — unchanged: the list every platform declared before. */
+actual fun supportedContainers(): List<String> = BASE_CONTAINERS
+
+/** R376 (FR-R376-3) — the player selects a direct-played file's own audio tracks. */
+actual fun switchesAudioInFile(): Boolean = true

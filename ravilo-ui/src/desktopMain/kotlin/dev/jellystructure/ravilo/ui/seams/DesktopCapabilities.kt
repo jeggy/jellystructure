@@ -98,3 +98,9 @@ actual fun detectLinkState(): LinkState = runCatching {
 
 /** R379 — mpv and the Mac's AVPlayer decode AC-3 with their own libavcodec/CoreAudio; never Media3's FFmpeg extension. */
 actual fun platformAudioDecoders(): List<String>? = null
+
+/** R376 (FR-R376-5) — unchanged: the list every platform declared before. */
+actual fun supportedContainers(): List<String> = BASE_CONTAINERS
+
+/** R376 (FR-R376-3) — the player selects a direct-played file's own audio tracks. */
+actual fun switchesAudioInFile(): Boolean = true

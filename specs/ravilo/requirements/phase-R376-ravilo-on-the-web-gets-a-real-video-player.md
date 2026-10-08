@@ -5,12 +5,13 @@
 
 ## Status
 
-`Planned` — written 2026-10-05 (dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Not
-dev-reviewed. Client only (`ravilo-ui` wasmJs actuals, `ravilo-web` boot); no server change, no wire change. Picks up
-the 2026-09-18 research report's option A (`specs/research-reports/ravilo-web-pwa-player-cast-2026-09-18.md` §4.1,
-"the single most valuable spike") and its §4.4 checklist, which no phase took. Supersedes **R169**'s HTML-chrome
-fallback and **R157**'s DOM transport, and **R284 FR-R284-5** (web audio is a no-op); closes **R218 FR-R218-6**'s web
-fallback and **R291 FR-R291-4** for the browser.
+`⚠ Partial` — **rebased onto `main` on 2026-10-08 (branch `worktree-agent-ab00abd5d58e10631`), with the dev review's union and the owner's decisions built in; not merged, not deployed.** The FR-R376-1 gate passed in headless Chromium (2026-10-05) and **Safari 27 on the owner's Mac boots it** (2026-10-08: the Compose canvas, signed in, the Home feed and its artwork; no JS error). Not run: a play on Safari (a background window takes no key focus), the iPhone PWA, a real Android phone. Written 2026-10-05
+(dev-authored, from the owner's ask above), checked against `main` `6ee8197c`. Client only (`ravilo-ui` wasmJs
+actuals, `ravilo-web` boot); no server change, no wire change. Picks up the 2026-09-18 research report's option A
+(`specs/research-reports/ravilo-web-pwa-player-cast-2026-09-18.md` §4.1, "the single most valuable spike") and its
+§4.4 checklist, which no phase took. Supersedes **R169**'s HTML-chrome fallback and **R157**'s DOM transport, and
+**R284 FR-R284-5** (web audio is a no-op); closes **R218 FR-R218-6**'s web fallback and **R291 FR-R291-4** for the
+browser.
 
 ## What happens today
 
@@ -125,7 +126,7 @@ hidden where unsupported (absent, never greyed). Uses R244's existing string set
    PWA) — keyboard, gamepad, text input, touch scroll and install all still work.
 2. On ravilo.jebster.net (Chrome desktop) a film shows the Compose player chrome over the picture: the audio &
    subtitles picker opens over the playing video without the video disappearing.
-3. Toy Story (eight audio tracks): picking another language in Chrome changes the sound within ~1 s with no restart
+3. A film with eight audio tracks: picking another language in Chrome changes the sound within ~1 s with no restart
    and no black frame; the same on Safari macOS and the iPhone PWA.
 4. A direct-playable single-audio file still direct-plays; a multi-audio file is negotiated as HLS with renditions.
 5. A throttled network (DevTools *Slow 4G*) shows R218's stall treatment; a seek shows its seek spinner.
@@ -149,6 +150,257 @@ hidden where unsupported (absent, never greyed). Uses R244's existing string set
    rendition switch does not work natively.
 3. **Should the web ever direct-play?** Forcing HLS for everything would make every browser path one path, at the cost
    of a transcode for files a browser could play. Lean: no — only multi-audio files (FR-R376-3).
+
+## Build notes
+
+Built 2026-10-05 on branch `r376-web-player` (worktree `~/IdeaProjects/jellystructure-r376`). Not merged, not
+deployed, no device touched.
+
+### The gate (FR-R376-1)
+
+Tested in headless Chromium 149 (Playwright's build, `--use-angle=swiftshader`; the default GL path skips Skia's
+draws in this headless shell for want of a stencil buffer, with or without this phase) against the production
+`wasmJsBrowserDistribution` served by a throwaway Node server that mocks `/api/tv/*` and sends web-static-server's
+CSP. Media: an ffmpeg test pattern as a direct-play WebM, a three-audio MKV, and HLS in the backend's composed-master
+shape (TS main variant with the muxed `a0`, audio-only `a1`/`a2` renditions).
+
+- **Passed:** typing into the login fields (incl. `æ`, by `keyboard.type` and by `insertText` the way a soft keyboard
+  delivers it; the request body carried exactly what was typed), keyboard D-pad focus and Enter, the gamepad path
+  (synthetic keys on the viewport's canvas), mouse-wheel and touch scrolling of Home, the install card and the
+  service worker. Baseline: the same flows on the current `main` bundle behave the same.
+- **The decisive part:** the Compose chrome (TV/desktop chrome in a 1280×720 window, the handset chrome under Pixel 7
+  emulation) draws over a playing `<video>`, and the audio & subtitles picker opens over it while it keeps playing
+  (screenshots in the lab, `currentTime` advancing under the open picker).
+- **Unverified:** Safari macOS, Safari iPhone (standalone PWA, iOS ≥ 18.2), Chrome on a real Android phone, a real
+  gamepad, a real on-screen keyboard. No WebKit run was possible on this host (Playwright's WebKit lacks system
+  libraries here).
+
+**How transparency was actually reached (deviation from the spec's wording).** `isWindowTransparent` is not a
+viewport switch in CMP 1.9.3 — it is a `PlatformContext` flag for dialog scrims — and skiko 0.9.22.2's web
+`CanvasRenderer` clears the canvas to **opaque white** every frame. The WebGL context does have alpha
+(`alpha: 1, premultipliedAlpha: 1`), so the player screen punches its own hole: the wasmJs `PlayerVideoSurface` draws
+a `BlendMode.Clear` rect, writing zero alpha into the canvas, and everything drawn after it (shutter, scrim, chrome,
+picker, toasts) paints over the picture. The `<video>` is fixed at `z-index: 0` under `#ComposeTarget` (`z-index: 1`)
+for its whole life. ComposeViewport was still required: it is what gives a focused text field a real DOM input.
+
+**ComposeViewport consequences.** `#ComposeTarget` is now a `<div>`; the canvas lives in its open shadow root.
+boot.js finds it there for the gamepad path and focuses it on mount. The viewport's own backing input (inside the
+shadow root) is what a phone raises its keyboard for, so **R281's hidden `#ravilo-kb-bridge` input is removed**
+(focusing it would steal focus from the viewport's input); `TextFieldFocusBridge` keeps only the F-key guard. One
+regression found and fixed: when a text field closes its input session the viewport removes the focused input and
+focus fell to `<body>`, where no key reached Compose (the D-pad was dead on Home after signing in) — boot.js now hands
+focus back to the canvas whenever it falls to nothing. `isA11YEnabled = false` keeps CanvasBasedWindow's behaviour
+(no second DOM tree); turning accessibility on is its own decision. `setPointerCursorHidden` also sets the shadow
+canvas's own cursor.
+
+**Deleted:** `PlayerChromeBridge` (common, Android, desktop, web), `RaviloPlayer.setChromeVisible` and the z-index
+swap, the `videoBehindCanvas` effect in PlayerScreen, and R354's DOM toast cards on the web
+(`platformServerMessageOverVideo()` is null everywhere now; `VideoOverApp` stays as an unused seam).
+
+### FR-R376-2 — state
+
+The `<video>` queues `loadstart/loadeddata/playing/canplay/waiting/stalled/seeking/seeked/play/ended/error` (and
+hls.js's unrecoverable error as `hlsfatal`) with `performance.now()`; every getter drains the queue into
+`WebPlaybackEvents` (commonMain, pure), which yields `firstFrame/buffering/seeking/ended/failed` and the stall count
+and time. `stalled` is queued only while `readyState < 3`. A fatal media error is recovered once
+(`recoverMediaError`). Seen in the lab: segments delayed by Playwright → R218's moment C (chrome up by itself,
+spinner in the play button); a +30 s skip into unbuffered media → moment D (spinner by the time).
+
+### FR-R376-3 — audio
+
+- `RaviloPlayer.selectAudioTrack` now returns `Boolean` (Android and the desktop always `true`, their behaviour
+  unchanged). The web answers from the stream: a rendition named `a{position}` → selected; a pick before hls.js or
+  Safari has read the manifest → held and applied on `AUDIO_TRACKS_UPDATED` / `loadedmetadata`; nothing to switch →
+  `false`, and PlayerScreen restreams with that track (once per item for the resolver; on every manual pick) through a
+  new `restreamForAudio` and `bk.ticketAudio`.
+- The picker lists the stream's renditions labelled with the server's names by position
+  (`audioTracksFromRenditions`); while a master's renditions are not read yet the list is empty, so R181's resolver
+  waits for the real one.
+- `switchesHlsAudioRenditions()` is **on** in every browser with MediaSource or native HLS. **Measured in headless
+  Chromium + hls.js 1.7.3:** picking *Dansk* fetched the first `a1` segment 33 ms after the pick, `currentTime` kept
+  advancing, no new start/restream request. **Not measured on Safari** (native `audioTracks`); a pick Safari cannot
+  make reports `false` and is restreamed.
+- Multi-audio direct play: PlayerStore takes the decision on the first ticket (the client has no track count before
+  it): `asksHlsForAudio(directPlay, audio.size, hlsOnly, switchesAudioInFile())` → a second `playback/start` with
+  `hls_only = true`, and `lastCapabilities` keeps it for restreams. Seen in the lab: MKV with three tracks → second
+  start with `hls_only` → composed master with `a0 English`, `a1 Dansk`, `a2 Føroyskt`. Deviation: the first
+  negotiation is wasted (one extra start request per multi-audio title on the web); the server's session supersede
+  covers it.
+- Chrome on Android plays HLS natively but exposes no audio tracks, so only Safari takes native HLS
+  (`WebKitPlaybackTargetAvailabilityEvent` present, or no MediaSource at all); every other browser uses hls.js.
+
+### FR-R376-4 — fullscreen, orientation, background, Media Session
+
+- `PlayerImmersiveEffect` (wasmJs) enters fullscreen on `document.documentElement` when the player opens in a tab
+  (not standalone, not already fullscreen, `fullscreenEnabled`), and leaves on exit only a fullscreen it entered.
+  Android (UA) locks landscape after fullscreen or in standalone and unlocks on exit, silently on refusal. Never
+  `webkitEnterFullscreen`. The shell's Fullscreen button hides while the player is up (`body.rv-playing`) — it sat
+  over the chrome's bottom-right controls. Lab: fullscreen on start and off after Back, desktop and Pixel 7 emulation;
+  the orientation lock is unverified (emulation stays portrait).
+- `PlayerLifecycleEffect` (wasmJs): page hidden → pause and Android's `onBackground` path with `wasPlaying = false`
+  (resume record, `playback/stop` with the position); visible again → `onForeground` (a fresh start at the record's
+  position) without auto-resume. Not while in picture-in-picture or on AirPlay. Lab: stop at 10 362 ms, the return
+  start at 10 362 ms, paused.
+- Media Session metadata: title, the kicker line, the artwork URL (open question 1 taken at its lean).
+
+### FR-R376-5 — containers
+
+`supportedContainers()` (new expect; Android/desktop return the old list): the web sends `mp4`, plus `mkv` when
+`canPlayType`/MediaSource answer for `video/x-matroska` (with or without codecs) and `webm` when VP9/Opus WebM plays
+and the browser is not Safari. Chromium 149 headless answers `mp4,mkv,webm`. Published as `window.__raviloContainers`.
+
+### FR-R376-6 — QoE
+
+`droppedFrames` from `getVideoPlaybackQuality()`, `rebufferCount`/`rebufferMs` from FR-R376-2's stalls (a stall still
+running counts up to the report), `bandwidthEstimateBps` from hls.js. The level hls.js chose and the decoded frame
+count ride in `videoDecoder` (`web hls.js · 640x360 600 kbps · 262 frames decoded`) — no wire field added. Lab: QoE
+rows arrive on the stop.
+
+### FR-R376-7 — hls.js
+
+1.5.13 → **1.7.3** (`hls.min.js` + `hls.worker.js`, registry tarball, integrity checked, unmodified; NOTICE updated).
+`enableWorker` with `workerPath: 'vendor/hls.worker.js'` — the CSP's `worker-src 'self'` refuses the blob: worker
+hls.js would build otherwise, so the CSP is unchanged; `backBufferLength: 90`, `maxBufferLength: 30`,
+`startPosition` from the ticket, `preferManagedMediaSource: true`. Native HLS first on Safari.
+
+### FR-R376-8 — picture-in-picture
+
+The player has no ⋯ menu on any platform, so the control sits where the chrome's other secondary controls are: a
+*Picture in picture* pill in the TV/desktop transport row (`PlFocus.PIP`, after Next, before the TV's Speakers) and a
+glyph beside the cast glyph in the handset top bar. Both only when `document.pictureInPictureEnabled` and the element
+allows it (`pictureInPictureAvailable()`, false on Android/desktop); absent otherwise. String `player.pip` in
+en/da/fo. The lab showed the control; entering PiP was not exercised (headless).
+
+### Tests
+
+- `WebPlaybackTest` (commonTest, run on the desktop JVM — this module has no browser test runner, Phase 198): the event
+  → state mapping (cold start, stall with its length, a seek's buffering, repeated waits, new source, fatal errors),
+  rendition lookup by name and the picker list, the container probe, the multi-audio → `hls_only` decision.
+- `ravilo-web.spec.ts`: R281's keyboard test rewritten for the shadow root; a new boot test (canvas in the shadow
+  root at z-index 1, containers probed). Not run here (the e2e stack is not on this host's path for this branch).
+- Not added: the spec's e2e for *the player renders Compose chrome with a video behind it* — the mock stack has no
+  playback endpoints or media; the same checks were run in the lab harness instead.
+
+### Open / unverified
+
+Safari (macOS, iPhone PWA): native rendition switching, the held pick, `playsinline` playback with the chrome on top,
+Media Session on the lock screen. Android Chrome: orientation lock, the soft keyboard on the viewport's input, PiP.
+Real gamepads. Acceptance 2–3 on ravilo.jebster.net with a film with eight audio tracks (no deploy).
+
+### Rebased onto `main` (2026-10-08)
+
+Merged into a fresh branch from `main` `c27301be` (after R381, 316, 315, 311, 309a0, R382, 310/312). Five conflicts:
+- **hls.js (dev review item 1):** the union — R376's worker (`vendor/hls.worker.js`), `backBufferLength 90`,
+  `startPosition`, Managed Media Source, fatal-error recovery and the held audio pick, **plus 308's**
+  `maxBufferLength 60`, `maxBufferSize 300 MB`, `abrBandWidthFactor 0.7` / `abrBandWidthUpFactor 0.5`, the measurement
+  seed (`abrEwmaDefaultEstimate`) and the `LEVEL_SWITCHED` counters. The branch's `maxBufferLength 30` is dropped.
+- **`RaviloPlayer`:** keeps `seedBandwidthEstimate` (308) and R376's `selectAudioTrack(): Boolean`.
+- **`PlayerScreen`:** keeps main's cast play context and R376's picture-in-picture control.
+- **`STATUS.md` / this spec:** both kept.
+
+Built on top, from the review and the owner's decisions:
+- **FR-R376-3 changed (owner, 2026-10-08): direct play first.** The start no longer re-asks a multi-audio file as HLS
+  (`asksHlsForAudio` removed). An audio pick the browser cannot make inside the file (`selectAudioTrack` false, i.e.
+  Chrome/Firefox on a direct play) restreams through R284 with `hls_only` set (`audioPickNeedsHls` in `WebPlayback.kt`,
+  applied in `PlayerStore.restreamWithSub`); the item stays on HLS for its later restreams. Safari switches inside the
+  file (its element has `audioTracks`).
+- **R381 on the web:** the web's QoE stalls are now `QoeCounter`'s (per item via `beginQoeItem`, only after the item's
+  first frame, never inside a seek, a track switch, a variant switch or after a pause). `WebPlaybackEvents` feeds it
+  from the same element events (new `pause` and hls.js `variant` events); `qoeSnapshot` reports `per_item`, the stalls,
+  the waits and the session totals with R376's dropped frames and 308's variant fields.
+- **FR-309-13 on the web:** hls.js's bandwidth is reported only once its estimator rests on real fragment samples
+  (`bwEstimator.canEstimate()`); before that it is its default or 308's seed, never a measurement.
+- **Time to first frame (review item 3):** PlayerScreen's start timer already reads `hasRenderedFirstFrame`, which on
+  the web is now the element's own `loadeddata`/`playing` — the old constant made every web start read "1 s".
+- **Safari's quality (review item 4):** native HLS picks its own variant; the start rung is 308's first listed variant
+  (`startOrder`). Noted for 309.
+- The acceptance no longer names a library title.
+
+Tests: `WebPlaybackTest` (desktop JVM) — the new `audioPickNeedsHls` rules and three `QoeCounter`-on-the-web cases
+(a stall only after the first frame and per item; a seek, a track switch, a variant switch and a pause are never
+stalls; a restream of the same item keeps its counts). Full runs: `:shared:desktopTest` 128, `:ravilo-ui:desktopTest`
+574, `:ravilo-ui:testDebugUnitTest` 710 — 0 failures; `:ravilo-ui` wasm/desktop/Android and `:ravilo-web` compile;
+`wasmJsBrowserDistribution` builds. Every `scripts/check-*.sh` passes; the four Android APK checks (http engine,
+min SDK, Play device filter, player dex) need a release APK and were not run here. (`:shared:allTests` fails on its own
+test targets without `kotlin-test` — pre-existing on `main`, not this phase.)
+
+### Live: Safari 27 on the owner's Mac (2026-10-08)
+
+The branch's `wasmJsBrowserDistribution`, served from this host on a throwaway Node server that proxies `/api` (HTTP
+and the events WebSocket) to the dev backend on the same origin (so the backend's CORS allowlist never applied), with
+a script in `index.html` signing the browser in as the Test Stream account. Safari was opened with `open -g` (behind the
+owner's apps; their front app never changed) and quit afterwards; the session was wiped from Safari's storage first.
+- **Boots:** the Compose canvas in `#ComposeTarget`'s shadow root, the config, Home, Discover, upcoming, Live TV and
+  facets fetched (all 200), the hero's artwork loading as the carousel turned; no `error` or `unhandledrejection`.
+- **What Safari offers the player:** native HLS `maybe`, H.264 and HEVC `probably`, MediaSource and Managed Media
+  Source, `WebKitPlaybackTargetAvailabilityEvent` (so FR-R376-7 takes native HLS), WebGL 2, picture-in-picture, the
+  element's `audioTracks`.
+- **Not run:** a play. Synthetic keys reached the canvas but a background Safari window has no key focus (and its
+  timers are throttled), so nothing opened; bringing Safari to the front would have taken over the owner's screen.
+  The events WebSocket reconnected every few seconds through the throwaway proxy, most likely the proxy's own upgrade
+  handling; to be watched on a real deploy.
+- WebKit in Playwright could not run on this host (missing system libraries), and this host's headless Chromium had no
+  WebGL this time, so the play checks still need the Mac in front, the iPhone PWA and a real Android phone.
+
+### Live: Safari 27 in front on the owner's Mac (2026-10-08, evening)
+
+The owner allowed taking over the Mac's screen. The same throwaway same-origin proxy as above (it had to rewrite
+`Origin` to the web app's real address: the backend refuses the events socket and every state-changing request from an
+unknown origin, which was also why the socket "reconnected every few seconds" in the earlier run — the proxy, not the
+app). No accessibility or screen-recording permission over ssh and no `cliclick`, so the page drove itself: a lab
+script injected into `index.html` logged the element's events, its `audioTracks`, the app's console and a play() wrapper
+to the proxy, and pressed keys on the Compose canvas (synthetic, so never a user gesture). Plays were started the way
+a phone or the admin starts one on a screen: `POST /api/remote/play` to the Test Stream web device; seeks and the stop
+by `POST /api/remote/command`. Test Stream account only; both films were marked unplayed afterwards (Jellyfin shows
+position 0, play count 0, no last-played date), Safari's storage was wiped and Safari quit.
+
+| Check | Result |
+|---|---|
+| **Direct play on Safari** (before the owner's decision below) | **Never happened:** R265 FR-R265-8 (`playsHlsForAirPlay`) makes Safari ask for HLS only, so even an MP4 Safari can open (an open-licence test film, H.264 + MP3 + AC3) came as R291's composed master (video copied, two audio renditions). FR-R376-3's *direct play first* is therefore Chrome/Firefox only. **For the owner:** keep HLS-only on Safari for AirPlay, or direct-play there and switch to HLS when AirPlay is picked. |
+| **Time to first frame** (element `loadstart` → `loadeddata`) | MP4 film, cold: **8.5 s** (playing at 10 s after the push); the same film warm: **4.0 s** (playing at 5.7 s). An MKV with four AC3 tracks (needs HLS), cold: first frame data **1.6 s**, but `playing` only **29.5 s** after `loadstart` (the cold start of Jellyfin's job and R291's four rendition jobs on a file not in the page cache). |
+| **Audio switch inside the stream** (Safari's own `audioTracks`, via the app's picker: wake, → → to *Audio & subtitles*, OK, ↓ to Finnish, OK) | **Works:** the element's enabled track moved from `dan` to `fin` at the same moment, no restream. The picture held at the same second for **~7 s** before playing on (the new language's rendition job starting cold); afterwards it played normally. Exactly one track is enabled before and after. |
+| **Seek** (remote command to 5:00) | `seeking` → `seeked`/`playing` in **5.8 s** (Jellyfin restarts its job at the new position). |
+| **Multi-audio title** | Safari lists the four renditions by language (`dan`, `fin`, `nor`, `swe`, named *Danish – Dolby Digital* …); the picker shows them as four languages. |
+| **Sound** | The owner heard nothing during the first runs: **the lab script muted every element on purpose** (to keep the Mac quiet). Without it, **Safari refused the start with sound** (`play()` → `NotAllowedError`: a play pushed by the server, like one started after the ticket's fetch, is not a user gesture), and the element sat paused at 0:00. **Fixed** (below). The system output was not muted (13–25 %). The audio itself is AC-3 in HLS, which Safari on macOS decodes; the composed master's renditions are copies, not AAC. |
+
+**Fixed on this branch: a play the browser refuses with sound plays muted and says how to get the sound.**
+`playVideo` (wasmJs) catches `NotAllowedError`, sets the element muted and plays again (allowed), queues
+`soundblocked`, and unmutes on the viewer's next **trusted** click, tap or key (`pointerdown`/`keydown`/`touchend`,
+capture phase, `isTrusted` only), queueing `soundon`. `WebPlaybackEvents.soundBlocked` carries it (surviving a new
+source, since the element stays muted until then; the muted retry counts as the load's start, never a stall), the
+player exposes it as `RaviloPlayer.soundBlockedByBrowser` (false on Android and the desktop), and `BrowserSoundHint`
+shows one pill at the top of the player: *Click or press a key for sound* (`player.sound_blocked`, en/da/fo).
+Re-tested on Safari: the refused play retried muted and was playing in 0.7 s. **Not verified:** that a real click
+brings the sound back — that needs a trusted click, which nothing over ssh can produce (and nobody clicked during the
+test window). Tests: `WebPlaybackTest` (the blocked fact survives a new source and clears on `soundon`; a refused
+play is never a stall).
+
+### Safari: direct play, HLS only for AirPlay (owner, 2026-10-08)
+
+Owner, after the Safari run above: *Safari (Mac and iPhone) direct-plays what it can, and switches to HLS only when
+AirPlay is picked* — changing R265 FR-R265-8 for Safari, keeping AirPlay working.
+- **The start** (`PlayerStore`): `hls_only`/`hls_subtitles` for Safari only when the picture is already on AirPlay
+  (`startsAsAirPlayHls(playsHlsForAirPlay(), platformAirPlay.wireless)` — e.g. the next episode of an AirPlay
+  session). Otherwise Safari sends the same probed containers and codecs as any browser (Safari: `mp4`), so an MP4 it
+  decodes direct-plays and anything else gets the ladder/transcode exactly as before.
+- **Picking AirPlay** (`AirPlayHlsRestart`, one call in `PlayerScreen`): when WebKit reports the wireless target and
+  the ticket is a direct play, the same item restarts once (`airplayNeedsHls`) through
+  `PlayerStore.restreamForAirPlay` at the current position, keeping the burned-in subtitle and the audio track, with
+  `hls_only`, `hls_subtitles` and no HEVC (`airplayCapabilities`); the item stays on HLS for its later restreams. The
+  `<video>` keeps its AirPlay target across the new source.
+- Android and the desktop have no AirPlay (`platformAirPlay` is null): nothing changes there.
+- Tests (`WebPlaybackTest`): the start rule (Safari on the Mac's screen → no HLS; already on AirPlay → HLS; Chrome
+  never), the restart rule (only a non-HLS stream, once per item, only on AirPlay), and the restart's capabilities.
+- **Live on Safari 27 (2026-10-08, Test Stream, against the dev backend v1.50 with 313's encoder):** the start sent
+  no `hls_only` (`containers: ["mp4"]`, the probed codecs). A 1080p H.264/AAC MP4 film **direct-played**
+  (`/Videos/…/stream`, `directPlay=true`): first frame **1.55 s** after `loadstart`, playing at 1.7 s (HLS on the same
+  Safari: 4–8.5 s), and a remote seek to 10:00 resumed in **0.24 s** (HLS: 5.8 s). The play had no gesture, so the
+  muted fallback above engaged as designed. A 4K H.264 MP4 still goes through the encoder: the web reports no decoder
+  limits, so the profile's H.264 default of 1080p applies (Safari on a Mac decodes 4K H.264 — a decoder-limit probe for
+  Safari would let it direct-play; not done here). **Not verified:** picking AirPlay (Apple's picker needs a real tap,
+  and a target the test could not choose) — the restart rule is covered by its tests only.
+- Release APK checks after this change: `check-player-dex` 246 registers (limit 250), and the HTTP-engine, min-SDK and
+  Play device-filter checks pass.
 
 ## Dev review (2026-10-08, against `main` `4222ac4c`)
 

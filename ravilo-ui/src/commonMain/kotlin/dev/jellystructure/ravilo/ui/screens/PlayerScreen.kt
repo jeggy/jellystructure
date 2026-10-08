@@ -101,9 +101,8 @@ import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.warmAudioRendition
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
-import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
-import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
-import dev.jellystructure.ravilo.ui.seams.PlayerChromeState
+import dev.jellystructure.ravilo.ui.seams.pictureInPictureAvailable
+import dev.jellystructure.ravilo.ui.seams.togglePictureInPicture
 import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import dev.jellystructure.ravilo.ui.seams.rememberHandsetPlayerControls
 import dev.jellystructure.ravilo.ui.components.CastButton
@@ -181,7 +180,7 @@ private const val BUFFER_MOMENT_DEEPEN_MS = 60_000L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
-internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK, SPEAKERS }   // R372 — SPEAKERS
+internal enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK, SPEAKERS, PIP }   // R372 — SPEAKERS · R376 — PIP
 
 /** R251 — the five D-pad keys the chrome-hidden rule applies to (media keys are not among them, R44). */
 internal enum class PlayerDpadKey { LEFT, RIGHT, UP, DOWN, SELECT }
@@ -251,11 +250,12 @@ private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
 // the top-left Back button, which read as "Right does Up" instead of a no-op at the row's end. BACK
 // stays reachable via mouse/touch hover (onControlHover sets `focus` directly, independent of this
 // list) and via the hardware Back key (root onBack), which is the primary D-pad way to leave anyway.
-internal fun transportOrder(hasNextEp: Boolean, hasSpeakers: Boolean = false): List<PlFocus> =
+internal fun transportOrder(hasNextEp: Boolean, hasSpeakers: Boolean = false, hasPip: Boolean = false): List<PlFocus> =
     buildList {
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
+        if (hasPip) add(PlFocus.PIP)   // R376 (FR-R376-8) — the browser's picture-in-picture, before the TV's Speakers
         if (hasSpeakers) add(PlFocus.SPEAKERS)   // R372 (owner decision 3) — the TV's Speakers panel, last in the row
     }
 
@@ -315,6 +315,8 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     // carries, 253 FR-253-2): the ticket's full audio list, and the Jellyfin index of the carried
     // track. Empty/null on direct play, where the player's own track list is the truth.
     var sessionAudio by mutableStateOf<List<dev.jellystructure.shared.tv.AudioTrack>>(emptyList())
+    /** R376 (FR-R376-3) — every audio track of the current ticket, for a pick the player could not make in place. */
+    var ticketAudio by mutableStateOf<List<dev.jellystructure.shared.tv.AudioTrack>>(emptyList())
     var sessionAudioIndex by mutableStateOf<Int?>(null)
     // R284 (FR-R284-3) — the item an automatic audio restream was already tried for: at most one, so
     // a server that does not honour the request can never loop the player.
@@ -775,6 +777,14 @@ fun PlayerScreen(
     // remembered tier returned null on exactly that tick — the 2026-09-16 repros.
     // R246 (FR-R246-1/2) — takes the lists the calling tick read; the resolver builds its own groups
     // from them, so no caller can hand it a group list that is one composition behind.
+    // R376 (FR-R376-3) — the audio a player could not select in place is asked of the server instead: the stream cut
+    // with that track (R284's restream; on a composed master it becomes the master's default).
+    fun restreamForAudio(flatIndex: Int) {
+        val wanted = bk.ticketAudio.getOrNull(flatIndex) ?: return
+        bk.rearmResolveOnLoad = true
+        store.restreamWithSub(itemId, bk.burnedSubIndex ?: -1, player.positionMs, wanted.index)
+    }
+
     fun resolveTrackSelection(tickAudio: List<PlayerAudioTrack>, tickSubs: List<PlayerSubtitleTrack>) {
         val profileId = MultiTokenStore.getActive()?.userId
         val seriesKey = currentSeriesId ?: currentItemId
@@ -787,8 +797,14 @@ fun PlayerScreen(
         val carried = carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)
         val wanted = bk.sessionAudio.getOrNull(result.audioIndex)
         if (carried == null) {
-            player.selectAudioTrack(result.audioIndex)
             selectedAudio = result.audioIndex
+            // R376 (FR-R376-3) — a player that could not switch says so, and the stream is cut with that audio
+            // instead, once per item, rather than nothing happening.
+            if (!player.selectAudioTrack(result.audioIndex) && bk.audioRestreamTriedFor != currentItemId) {
+                bk.audioRestreamTriedFor = currentItemId
+                bk.startRestreamPending = true   // R290 (FR-R290-4)
+                restreamForAudio(result.audioIndex)
+            }
         } else if (wanted != null && result.audioIndex != carried && bk.audioRestreamTriedFor != currentItemId) {
             bk.audioRestreamTriedFor = currentItemId
             selectedAudio = result.audioIndex
@@ -819,7 +835,7 @@ fun PlayerScreen(
             val wanted = bk.sessionAudio.getOrNull(version.flatIndex)
             if (carried == null) {
                 selectedAudio = version.flatIndex
-                player.selectAudioTrack(version.flatIndex)
+                if (!player.selectAudioTrack(version.flatIndex)) restreamForAudio(version.flatIndex)   // R376 (FR-R376-3)
             } else if (wanted != null && version.flatIndex != carried) {
                 selectedAudio = version.flatIndex
                 bk.rearmResolveOnLoad = true
@@ -1064,6 +1080,7 @@ fun PlayerScreen(
         // audio pick is a player track selection, exactly as on direct play, never a restream.
         bk.sessionAudioIndex = s.ticket.audioStreamIndex.takeIf { !s.ticket.directPlay && !s.ticket.audioRenditions }
         bk.sessionAudio = if (bk.sessionAudioIndex != null) s.ticket.audio else emptyList()
+        bk.ticketAudio = s.ticket.audio   // R376 (FR-R376-3)
         carriedAudioPosition(bk.sessionAudio, bk.sessionAudioIndex)?.let { selectedAudio = it }
         if (s.ticket.burnedSubtitleIndex != null) {
             player.selectSubtitleTrack(-1)
@@ -1403,32 +1420,6 @@ fun PlayerScreen(
         else -> CreditsCardMode.SKIP_CREDITS
     }
 
-    // R157/R169 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
-    // in sync. The video only needs to hide behind the canvas when a *Compose-drawn* overlay that the
-    // web DOM chrome (below) doesn't replicate is open — the track picker, next-up card, episode rail,
-    // or (R182) the Skip Intro pill.
-    val videoBehindCanvas = pickerOpen || nextUpVisible || epRailOpen || skipIntroPillVisible
-    LaunchedEffect(videoBehindCanvas) { player.setChromeVisible(videoBehindCanvas) }
-
-    // R169 (FR-R169-3) — push live state to the web DOM transport bar (no-op on Android/TV) whenever
-    // it's the active chrome (chromeVisible, and none of the Compose-only overlays are open); hide it
-    // otherwise so Compose's own picker/next-up/rail — still drawn exactly as before — aren't covered.
-    SideEffect {
-        if (chromeVisible && !videoBehindCanvas) {
-            PlayerChromeBridge.show(
-                PlayerChromeState(isPlaying = isPlaying, positionMs = positionMs, durationMs = durationMs),
-                PlayerChromeActions(
-                    onTogglePlay = ::togglePlay,
-                    onSkipBack = { skip(-SKIP_BACK_MS) },
-                    onSkipForward = { skip(SKIP_FWD_MS) },
-                    onSeek = { ms -> player.seekTo(ms); positionMs = ms; wake() },
-                ),
-            )
-        } else {
-            PlayerChromeBridge.hide()
-        }
-    }
-
     // R157 (FR-R157-3.2) — cursor auto-hides after a couple of seconds of no pointer movement during
     // playback (no-op on Android/TV); reappears immediately on the next move via the restart above.
     LaunchedEffect(pointerActivityRevision) {
@@ -1581,7 +1572,6 @@ fun PlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             player.release()
-            PlayerChromeBridge.hide()  // R169 — no-op on Android/TV
         }
     }
 
@@ -1646,7 +1636,7 @@ fun PlayerScreen(
                         // R363 (review item 3) — Left/Right on the pill do nothing (it is not in the order).
                         focus == PlFocus.SKIP_INTRO -> {}
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available)
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable())
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -1667,7 +1657,7 @@ fun PlayerScreen(
                         }
                         focus == PlFocus.SKIP_INTRO -> {}   // R363 (review item 3)
                         else -> {
-                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available)
+                            val order = transportOrder(resolvedNextEpisodeId != null, TvSpeakers.available, player.pictureInPictureAvailable())
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -1769,6 +1759,7 @@ fun PlayerScreen(
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
                         focus == PlFocus.SPEAKERS  -> TvSpeakers.open = true
+                        focus == PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
                         focus == PlFocus.BACK      -> onBack()
                         else -> {}
                     }
@@ -1839,6 +1830,12 @@ fun PlayerScreen(
         )
         // R290 (FR-R290-4) — also shut until the latch: a discarded stream's first frame must not show through.
         VideoShutter(startPhase != StartPhase.PLAYING || sessionState is PlayerSessionState.Loading || (sessionState is PlayerSessionState.Ready && !hasRenderedFirstFrame))
+        BrowserSoundHint(player)   // R376 — a browser that played muted says how to get the sound
+        // R376 (owner, 2026-10-08) — Safari direct-plays; picking AirPlay restarts the item as HLS where it is.
+        AirPlayHlsRestart(currentItemId, streamIsHls = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay != true) {
+            bk.rearmResolveOnLoad = true
+            store.restreamForAirPlay(itemId, bk.burnedSubIndex ?: -1, player.positionMs, bk.ticketAudio.getOrNull(selectedAudio)?.index)
+        }
 
         // ── Dim scrim (deepens when chrome is up, paused, or R218's moment C stalls) ──
         val dimAlpha = when {
@@ -2034,6 +2031,7 @@ fun PlayerScreen(
                 // 2026-10-05 — with no play context a tap on a Ravilo app (a TV, the Mac) in the player's sheet did
                 // nothing at all; the film and where it is now go along (a Chromecast keeps its own hand-off).
                 castSlot = if (castController != null) ({ CastButton(playContext = dev.jellystructure.ravilo.ui.components.ScreenPlayContext(currentItemId, positionMs)) }) else null,
+                onPictureInPicture = if (player.pictureInPictureAvailable()) ({ wake(); player.togglePictureInPicture() }) else null,   // R376 (FR-R376-8)
                 onSkipBack = { skip(-SKIP_BACK_MS) },
                 onPlayPause = { togglePlay() },
                 onSkipFwd = { skip(SKIP_FWD_MS) },
@@ -2063,7 +2061,8 @@ fun PlayerScreen(
                 isPlaying       = isPlaying,
                 focus           = focus,
                 hasNextEp       = resolvedNextEpisodeId != null,
-                hasSpeakers     = TvSpeakers.available,   // R372 — snapshot state, no new locals here (R258's register limit)
+                hasSpeakers     = TvSpeakers.available,
+                hasPip          = player.pictureInPictureAvailable(),   // R376 (FR-R376-8) — absent where unsupported   // R372 — snapshot state, no new locals here (R258's register limit)
                 isSeries        = episodes != null,
                 epRailOpen      = epRailOpen,
                 pickerOpen      = pickerOpen,
@@ -2089,6 +2088,7 @@ fun PlayerScreen(
                         }
                         PlFocus.NEXT_EP   -> advanceNext()
                         PlFocus.SPEAKERS  -> TvSpeakers.open = true
+                        PlFocus.PIP       -> player.togglePictureInPicture()   // R376 (FR-R376-8)
                         else -> {}
                     }
                 },
@@ -2301,6 +2301,7 @@ private fun PlayerChrome(
     focus: PlFocus,
     hasNextEp: Boolean,
     hasSpeakers: Boolean = false,
+    hasPip: Boolean = false,
     isSeries: Boolean,
     epRailOpen: Boolean,
     pickerOpen: Boolean,
@@ -2445,6 +2446,12 @@ private fun PlayerChrome(
                     label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP,
                     onClick = { onControlClick(PlFocus.NEXT_EP) },
                     onHover = { onControlHover(PlFocus.NEXT_EP) },
+                )
+                // R376 (FR-R376-8) — picture-in-picture, where the browser has it; absent, never greyed.
+                if (hasPip) TrackButton(
+                    label = str("player.pip"), focused = focus == PlFocus.PIP,
+                    onClick = { onControlClick(PlFocus.PIP) },
+                    onHover = { onControlHover(PlFocus.PIP) },
                 )
                 if (hasSpeakers) TrackButton(
                     label = str("tv.speakers"), focused = focus == PlFocus.SPEAKERS,

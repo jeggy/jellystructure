@@ -3,11 +3,8 @@ package dev.jellystructure.ravilo.ui.seams
 import androidx.compose.ui.graphics.Color
 
 /**
- * R157 — the player screen's root fill color. Opaque on Android, where the video surface is
- * in-scene (Compose paints on top of it via a normal SurfaceView). Transparent on web, where the real
- * <video> element sits behind the (now non-opaque, see ravilo-web's CanvasBasedWindow(opaque=false))
- * Compose canvas — an opaque root fill there would paint over the video exactly like before this
- * phase. Player chrome (scrims, controls, next-up card, subtitles) keeps rendering normally on top.
+ * R157 — the player screen's root fill color, under the video surface. R376 (FR-R376-1) — on the web the surface
+ * clears its own pixels so the `<video>` behind the canvas shows through, whatever this fill is.
  */
 expect val playerBackdropColor: Color
 

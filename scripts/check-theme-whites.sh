@@ -30,6 +30,7 @@ ALLOWED="
   music/MusicCommon.kt                          4
   music/MusicDetailScreens.kt                   3
   music/MusicPlayerScreens.kt                   3
+  screens/BrowserSoundHint.kt                   1
   screens/CastRemoteScreen.kt                   2
   screens/HomeScreen.kt                         1
   screens/LiveTvPlayerScreen.kt                 1

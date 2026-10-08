@@ -307,6 +307,8 @@
   "toast.signed_out_all": {"text": "Everyone is signed out", "note": "R340 — shown on the server setup screen right after Everyone on this TV."},
   "action.cancel": "Cancel",
   "player.audio_subs": "Audio & Subs",
+  "player.pip": "Picture in picture",
+  "player.sound_blocked": "Click or press a key for sound",
   "player.next": "Next",
   "player.up_next": "UP NEXT",
   "player.up_next_shuffled": {
