@@ -307,3 +307,114 @@ and it is the largest single one available.** Nine items, three for the owner.
    Cast app). R266 does not ship until a TV running Ravilo can play a music cast itself.
 3. **The phone's remote must work fully against the TV app before release (Q3):** subtitles, audio and Next episode,
    the same remote whichever receiver plays.
+## Build notes (2026-10-05)
+
+**Built on branch `r266-cast-connect` (not merged to `main`), compile- and unit-tested only. Nothing here has run on a
+device.** The build follows the dev review's shape, not the original FRs: Cast Connect carries the launch and the
+transport; the play travels 236's road; no hand-off is redeemed; a launch is an *observation*, not an enrolment; R44's
+media session is the only session.
+
+### What was built
+
+- **Sender flag (FR-R266-1).** `RaviloCastOptionsProvider` sets
+  `LaunchOptions.Builder().setAndroidReceiverCompatible(true)` (`ravilo-ui/…/seams/CastSenderAndroid.kt:95`). The web
+  sender is unchanged (the Wasm build has no Cast sender of its own).
+- **The casting viewer on every LOAD (review item 1).** `CastLoadData.userId` (`user_id`, `shared/…/tv/CastMessages.kt`),
+  filled in by `CastController.load()` and `moveLoaded()` from the controller's `userId`
+  (`ravilo-ui/…/components/Cast.kt:331`). It rides where the rest of `CastLoadData` already rides — the media's
+  `customData` (R359). A relay of someone else's session (R370) carries none and the TV refuses it. The web receiver
+  ignores the field and still enrols by `code`.
+- **The receiver (FR-R266-2).** `ravilo-android/…/android/castconnect/CastConnectReceiver.kt`: `CastReceiverContext.initInstance`
+  in the new `RaviloApplication` (TV only — a `UiModeManager` check; the phone in the same APK never becomes a
+  receiver), `RaviloReceiverOptionsProvider` named by the manifest's
+  `com.google.android.gms.cast.tv.RECEIVER_OPTIONS_PROVIDER_CLASS_NAME`, `start()`/`stop()` on the TV activity's
+  `onStart`/`onStop`, `mediaManager.onNewIntent(intent)` from `onCreate` and `onNewIntent`. The TV `MainActivity`
+  gains the `com.google.android.gms.cast.tv.action.LAUNCH` and `…action.LOAD` filters and becomes
+  `launchMode="singleTask"`, so a cast to a TV already running Ravilo arrives through `onNewIntent` instead of
+  stacking a second activity. Dependency `com.google.android.gms:play-services-cast-tv:21.1.1` (the newest published;
+  its `play-services-cast 21.5.0` is superseded by the framework's 22.1.0 without conflict). One R8 keep rule for
+  `ReceiverOptionsProvider` implementations (named only in a `<meta-data>` value).
+- **A LOAD is a Ravilo play (FR-R266-3, review item 1).** The load callback parses `CastLoadData` from the media's
+  `customData` (`castConnectPlayFromJson`, `ravilo-ui/…/seams/CastConnect.kt`) and hands it to
+  `CastConnectInbox`; the app's root (`RaviloApp.kt:922`) decides and answers. A LOAD with no viewer, no item, a music
+  queue (the TV app has no music mode) or no parseable payload is refused with `MediaError.ERROR_REASON_INVALID_REQUEST`
+  — never a Jellyfin URL, never a silent blank.
+- **Whose profile (FR-R266-4, review item 1).** `castConnectVerdict`: the phone-supplied user id is trusted **only if
+  `MultiTokenStore` already holds a token for it** — `PLAY` when it is the active profile, `SWITCH_THEN_PLAY` when it
+  is another held profile, `REFUSE_NO_TOKEN` otherwise, `REFUSE_NOT_READY` while someone is signing in on the TV. A
+  switch remembers the TV's own profile and switches back once the player closes (`RaviloApp.kt:961`). A cast that
+  arrives while a player is open replaces it (the open player is popped first, so it saves its position as on Back).
+- **The play itself** is a plain `Dest.Player(itemId, title, kicker, …)` — the same destination 236's `play_item`
+  pushes — so 180 teardown, R216 QoE, `requireVisible()`, the per-user ACL and kids gating all see an ordinary play.
+  As with `play_item`, the start position is the server's own resume point for that viewer; the phone's `position_ms`
+  is parsed but not yet used (see *Not built*).
+- **One media session (review item 4).** `RaviloPlayerAndroid.mediaSessionRef` now reports every create/release
+  through `TvPlayerSessionHooks` (`ravilo-ui/…/seams/TvPlayerSessionHooks.kt`; setter at
+  `RaviloPlayerAndroid.kt:285`), and the receiver hands that session's token to `MediaManager.setSessionCompatToken`
+  (`MediaSessionCompat.Token.fromToken(session.platformToken)`) — no second, cast-only session. A release that is not
+  of the current session (the previous player's, disposed after the next built its own) changes nothing.
+  **R192's toggle:** `setSessionActive(false)` returns early while `TvPlayerSessionHooks.castDriving`
+  (`RaviloPlayerAndroid.kt:473`) — set when the session of the player a cast opened appears, cleared when that session
+  is released or the receiver stops. Leaving playback (Back, a 180 teardown, `releaseEngine` on ON_STOP) still releases
+  the session, and the receiver then broadcasts a media status with no session behind it (acceptance 6).
+- **The launch observation (review item 2, acceptance 8).** The TV did *not* already post a status under 236 (only the
+  receiver-only screen app does), so it now posts one: `TvApiClient.reportCastConnectLaunch()` sends
+  `ScreenStatus(cast_connect_launch = true)` to `POST /api/tv/playback/status` once a LOAD has been accepted. The route
+  (`TvRoutes.kt:758`) records it via `CastService.recordCastConnectLaunch` — only for `kind == "tv"` devices — in the new
+  `cast_connect_launch` table (`CastConnectLaunch.sq`, migration `69.sqm`, one row per TV), and a status that carries
+  only the observation (`isLaunchObservationOnly`) never reaches the tracker or a subscribed remote.
+  `ChromecastStatus` gains `tv_opens_ravilo_at`/`tv_opens_ravilo_name`, and Settings → Connections → Chromecast shows
+  *"<TV> opens Ravilo itself when cast to · last …"* only when one is on record (`Settings.kt:3455`), never from the
+  console's settings.
+- **Acceptance 5 by construction.** Nothing redeems a hand-off on the TV, so no `cast-` device is ever minted for it;
+  `CastServiceTest` asserts the TV stays one device after a recorded launch.
+- **No new viewer-facing strings (FR-R266-8, acceptance 7).** Logs only. The admin line is the admin's (English) card.
+
+### Debug builds cast with the development Cast application (owner, 2026-10-05)
+
+The owner registered a second Cast application for development whose Android TV package is
+`dev.jellystructure.ravilo.debug`. A **debug** build casts with it instead of the server's `chromecast.app_id`:
+
+- `ravilo-android/build.gradle.kts` — `buildConfigField("String", "CAST_DEV_APP_ID", …)` on the debug build type, read
+  by `castDevAppId()` from the Gradle property **`-PraviloCastDevAppId=…`**, else **`raviloCastDevAppId=…` in the
+  root `local.properties`** (gitignored — the id is never committed), else empty. Anything but 8 hex characters reads as
+  empty. The release build type sets it to `""` unconditionally.
+- `RaviloApplication.onCreate` copies it into `CastAppIdOverride.devAppId`; `effectiveCastAppId(server, dev)` is applied
+  in the one place the server's id enters (`CastController.appId`'s setter, `Cast.kt:106`), so the sender's
+  `setReceiverApplicationId` and the route discovery (`rememberCastRoutes(cast.appId, …)` → `categoryForCast`) both
+  use it; `RaviloCastOptionsProvider` also falls back to it before the first config load. A server with casting off
+  (no id) still shows no cast button — the override never turns casting on.
+- Empty ⇒ exactly today's behaviour. Verified: a debug build with `raviloCastDevAppId` set compiles
+  `BuildConfig.CAST_DEV_APP_ID = "EA91BAE4"`.
+
+### Tests
+
+`CastConnectTest` (ravilo-ui commonTest: the LOAD → play parse, refusals incl. music and a Jellyfin-URL-shaped payload,
+the held-token verdict, the inbox hand-over/replace/timeout, the debug app-id rule), `CastConnectWireTest` (shared:
+`user_id` on the wire and an older LOAD without it; the observation-only rule), and a `CastServiceTest` case (only a
+`kind = "tv"` launch is recorded; the status carries it; one device for the TV).
+
+### Not verified — everything that matters happens on a device
+
+- That the Cast SDK launches the **debug** TV app for the development application at all (test-device registration,
+  sideload/whitelisted-installer rules), and that a LOAD actually reaches `MediaLoadCommandCallback.onLoad`.
+- That `customData` arrives on `mediaInfo` as the phone puts it (the code also reads the request's own `customData`).
+- That `MediaManager` mirrors Media3's session correctly (play/pause/seek/stop from the phone's remote, position and
+  state back) once handed the token, and what the phone's remote shows when the session is released (acceptance 6).
+- That R192's guard and the `singleTask` change behave on the BRAVIA (display standby, Back from the player, a second
+  cast while one plays).
+- Release builds: R8 compiled; ART verification of the release APK (`scripts/verify-release-apk-on-art.sh`) needs a
+  device and was **not** run.
+
+### Not built (known gaps)
+
+- **The remote's richer half against the TV app.** R245's remote reads tracks, next-up and the episode list from the
+  web receiver's own messages on `CAST_NAMESPACE`; the TV app does not speak that namespace yet, so against Cast
+  Connect the phone gets the SDK's standard media status only (play state, position, title). Subtitles & audio from
+  the remote and *Next episode* (FR-R266-5) therefore do nothing on the TV app until it implements the namespace
+  (`CastReceiverOptions.setCustomNamespaces` + `CastReceiverContext.setMessageReceivedListener`).
+- **Music to the TV.** With `androidReceiverCompatible` on, a music cast to a TV that runs the Ravilo app launches the
+  app, which refuses the queue (it has no music mode) — where today the web receiver would play it. Worth an owner
+  call before release: refuse (as built), or have the TV app hand a music LOAD back to the web receiver.
+- The phone's `position_ms` (a hand-over mid-film may start a few seconds behind where the phone was).
+
