@@ -97,6 +97,17 @@ class StreamRecordTest {
         assertEquals(30_000_000, negotiationCap(adaptive = false, take = 30_000_000))
     }
 
+    @Test fun `a direct play proves the file's whole bitrate`() {
+        // Found live 2026-10-09: a 2 h 4 min remux, 51.6 Mbps of picture + TrueHD, 52.9 GB on disk. Proving the picture
+        // plus a little audio (54.5 Mbps) capped the same film's next start below Jellyfin's 56.7 Mbps: a transcode.
+        val proof = directPlayStreamBps(52_921_788_821, 7_469_280, 51_625_050)!!
+        assertTrue(proof in 57_000_000..58_500_000, "$proof")
+        assertTrue(proof >= 52_921_788_821L * 8_000 / 7_469_280, "never below what Jellyfin compares")
+        assertEquals((51_625_050 * 1.05).toLong() + 256_000L, directPlayStreamBps(null, 7_469_280, 51_625_050), "no size: the old estimate")
+        assertEquals((51_625_050 * 1.05).toLong() + 256_000L, directPlayStreamBps(52_921_788_821, 0, 51_625_050))
+        assertNull(directPlayStreamBps(null, null, null))
+    }
+
     @Test fun `a TV app with no record plays what its decoder takes and not a guess`() {
         // Found live 2026-10-09: a Cast Connect start on the BRAVIA with no record was capped at 8 Mbps (a 1080p
         // transcode of a 4K film it plays directly). The decode ceiling (max_video_bitrate) decides instead.

@@ -99,6 +99,19 @@ internal fun probeNeeded(record: StreamRecord?, now: Long, qoeAt: Long?): Boolea
 internal fun negotiationCap(adaptive: Boolean, take: Long?, tvApp: Boolean = false): Long? =
     take ?: if (adaptive && !tvApp) NO_RECORD_DIRECT_PLAY_BPS else null
 
+/**
+ * 309 (FR-309-15, found live 2026-10-09 on Stue TV) — what a direct play proves the device takes: the file's whole bitrate
+ * (size × 8 / length, +2 %), the figure Jellyfin weighs against `MaxStreamingBitrate`. The video bitrate plus "a little
+ * audio" (×1.05 + 256 kbps) fell short of it for a remux with TrueHD — 54.5 Mbps proven for a 51.6 Mbps picture with a
+ * 4.3 Mbps track — so the next start of the same film, after standby, was capped below it and transcoded to 1080p H.264.
+ * Without a size or a length, the old estimate.
+ */
+internal fun directPlayStreamBps(fileSizeBytes: Long?, durationMs: Long?, videoBps: Long?): Long? {
+    if (fileSizeBytes != null && fileSizeBytes > 0 && durationMs != null && durationMs > 0)
+        return (fileSizeBytes * 8_000.0 / durationMs * 1.02).toLong()
+    return videoBps?.takeIf { it > 0 }?.let { (it * 1.05).toLong() + 256_000L }
+}
+
 /** 309 — the Ravilo app on a TV (Android TV / Google TV): `platform = tv`, and never a Cast receiver's row. */
 internal val DeviceData.isTvApp: Boolean get() = platform == "tv" && kind != "cast"
 

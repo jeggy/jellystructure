@@ -725,3 +725,23 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   when this TV was measured within 24 h; nothing waits on it.
 - **Tests:** `StreamRecordTest` — a TV app with no record has no cap; a record still caps it; a phone keeps 8 Mbps;
   `isTvApp` is true only for `platform = tv` and never for a Cast receiver or a device that sent no platform.
+
+### FR-309-15 — A direct play proves the file's whole bitrate (found live 2026-10-10)
+
+- **Found on Stue TV (debug, dev stack v1.50-158):** a 4K HDR10 remux (51.6 Mbps of picture, TrueHD 7.1 + AC-3) direct-
+  played from a Cast Connect start with no record (`takes no record → cap none`, FR-309-14 ✓). Its direct play then
+  proved `54 462 kbps` — the picture × 1.05 + 256 kbps — while Jellyfin weighs the whole file (≈ 56.7 Mbps) against
+  `MaxStreamingBitrate`. After standby the same film restarted with `cap 54462k` and Jellyfin answered with a transcode:
+  our encoder, H.264 SDR 1080p, on a TV that had just played the file directly.
+- **Fix:** a direct play's proof is the file's whole bitrate — size × 8 / length, + 2 % (`directPlayStreamBps`); the
+  old estimate only when the size or length is unknown. A record held at the old value is replaced by the next proof
+  (a proof at or above it always wins).
+- **Test:** `StreamRecordTest` — the remux above proves 57–58.5 Mbps, never below what Jellyfin compares; no size or no
+  length falls back to the old estimate.
+
+### Live, 2026-10-10 (Stue TV debug 1.50-157 = 2be7cd26's code, dev stack v1.50-158)
+
+- **FR-309-14 passed:** a Cast Connect start of the 4K HDR10 remux on the TV app with no record: `takes no record → cap
+  none (309)`, `PlaybackInfo directPlay=true`; the speed test ran with the cast (a measurement of 48 Mbps landed in the
+  record a few seconds later). A server-road start (`session_load`) direct-played too.
+- **FR-309-15** found here (above), fixed the same night.

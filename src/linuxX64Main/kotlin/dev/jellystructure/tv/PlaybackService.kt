@@ -503,10 +503,13 @@ class PlaybackService(
     /** 313 (FR-313-13) — who serves it and, for ours, *4 qualities · HEVC HDR* (the admin's *Playing now*). */
     fun servedOf(deviceId: String, itemId: String): ServedNow? = servedBy.value[PlaybackKey(deviceId, itemId)]
 
-    /** 309 (FR-309-1) — a direct play's stream is its file: the video bitrate our scan measured, plus a little audio. */
-    private suspend fun fileStreamBpsOf(jellyfinId: String): Long? =
-        localFileOf(jellyfinId)?.tracks?.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }?.videoBitrate?.toLong()
-            ?.takeIf { it > 0 }?.let { (it * 1.05).toLong() + 256_000L }
+    /** 309 (FR-309-1, FR-309-15) — a direct play's stream is its whole file: what Jellyfin weighs against the cap. */
+    private suspend fun fileStreamBpsOf(jellyfinId: String): Long? {
+        val file = localFileOf(jellyfinId) ?: return null
+        val size = runCatching { kotlinx.io.files.SystemFileSystem.metadataOrNull(kotlinx.io.files.Path(file.first))?.size }.getOrNull()
+        val video = file.tracks.firstOrNull { it.kind == dev.jellystructure.model.TrackKind.VIDEO }?.videoBitrate?.toLong()
+        return directPlayStreamBps(size, file.second, video)
+    }
 
     /** 309 (FR-309-1) — [report] folded into its device's record (only an R381 per-item report is read). */
     private suspend fun foldIntoRecord(device: DeviceData, report: PlaybackQoeReport) {
