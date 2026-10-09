@@ -122,9 +122,15 @@ object TvCastChannel {
         }
     }
 
+    private val _senderName = MutableStateFlow<String?>(null)
+    /** R380 (owner 2026-10-09) — the device that cast the music now playing, for *Playing from {device}*; null when the
+     *  sender sent no name (an older phone) or nothing is cast. */
+    val senderName: StateFlow<String?> = _senderName.asStateFlow()
+
     /** R380 (FR-R380-1) — a music LOAD was accepted and the engine holds its queue. */
-    fun startMusic(queueId: String?, queueTotal: Int?, queueStart: Int) {
+    fun startMusic(queueId: String?, queueTotal: Int?, queueStart: Int, senderName: String? = null) {
         stopWatch()
+        _senderName.value = senderName
         this.queueId = queueId; this.queueTotal = queueTotal; this.queueStart = queueStart
         waitingParts.removeAll { it.queueId != queueId }
         deferred.clear()
@@ -171,6 +177,7 @@ object TvCastChannel {
             repeat = st.repeat.wire(), shuffle = st.shuffle, lyricsOn = _lyricsOn.value, headless = false,
         ), json))
         _mode.value = Mode.NONE
+        _senderName.value = null
         queueId = null; queueTotal = null; queueStart = 0; waitingParts.clear(); deferred.clear()
     }
 

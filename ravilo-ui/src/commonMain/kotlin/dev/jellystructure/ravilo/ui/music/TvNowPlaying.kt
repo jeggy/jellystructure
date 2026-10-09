@@ -128,6 +128,10 @@ internal fun upNextHeading(context: MusicContext?): Pair<String, Map<String, Str
     return if (label != null) "tvmusic.up_next_from" to mapOf("x" to label) else "music.up_next" to emptyMap()
 }
 
+/** R380 (owner 2026-10-09) — *Playing from {device}* under the kicker: only when the sender named its device. */
+internal fun fromLineArgs(senderName: String?): Map<String, String>? =
+    senderName?.trim()?.takeIf { it.isNotEmpty() }?.let { mapOf("device" to it) }
+
 /** FR-R380-3 — the transport row shows this long after a key. */
 private const val TRANSPORT_MS = 5_000L
 /** FR-R380-8 — the last song shows as finished this long, then the page closes. */
@@ -178,6 +182,7 @@ fun TvNowPlayingScreen(api: TvApiClient, onHide: () -> Unit) {
     val colors = RaviloTheme.colors
     val st by MusicEngine.state.collectAsState()
     val lyricsOn by TvCastChannel.lyricsOn.collectAsState()
+    val sender by TvCastChannel.senderName.collectAsState()
     var transportUntil by remember { mutableLongStateOf(0L) }
     var shownAction by remember { mutableStateOf<TvMusicAction?>(null) }
     var queueOpen by remember { mutableStateOf(false) }
@@ -265,6 +270,10 @@ fun TvNowPlayingScreen(api: TvApiClient, onHide: () -> Unit) {
             Spacer(Modifier.width(64.dp))
             Column(Modifier.weight(1f)) {
                 Text(str("tvmusic.now_playing").uppercase(), color = colors.accentSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+                fromLineArgs(sender)?.let { args ->
+                    Text(str("tvmusic.from_phone", args), color = colors.textSecondary, fontSize = 16.sp, fontFamily = Sora,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
                 Spacer(Modifier.height(12.dp))
                 if (book != null) BookFacts(book, colors.text, colors.textSecondary) else if (t != null) SongFacts(t, colors.text, colors.textSecondary)
                 Spacer(Modifier.height(28.dp))

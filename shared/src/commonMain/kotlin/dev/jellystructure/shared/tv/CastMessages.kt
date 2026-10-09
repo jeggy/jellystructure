@@ -101,6 +101,11 @@ data class CastLoadData(
      *  Connect launched it: it plays under this viewer ONLY if it already holds a token for them (236's road), and
      *  never redeems [code]. The web receiver ignores it (it enrols by [code], as before). */
     @SerialName("user_id") val userId: String? = null,
+    /** R380 (FR-R380-3, owner 2026-10-09) — the SENDER's own device name (the phone or computer that cast, e.g. *Pixel 9
+     *  Pro*), shown on the TV's Now playing as *Playing from {device}*. Not [deviceName], which names the receiver's
+     *  device row. Optional and additive: an older sender leaves it out and the line is not shown; an older receiver
+     *  ignores it. */
+    @SerialName("sender_name") val senderName: String? = null,
 )
 
 /**

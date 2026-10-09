@@ -46,6 +46,8 @@ data class CastConnectMusic(
     val queueTotal: Int?,
     val queueStart: Int,
     override val userId: String,
+    /** R380 (owner 2026-10-09) — the sender's device name for *Playing from {device}*; null when the sender sent none. */
+    val senderName: String? = null,
 ) : CastConnectLoad
 
 /**
@@ -83,6 +85,7 @@ fun castConnectMusicOf(data: CastLoadData?): CastConnectMusic? {
         queueTotal = d.queueTotal?.takeIf { it > d.tracks.size },
         queueStart = d.queueStart.coerceAtLeast(0),
         userId = user,
+        senderName = d.senderName?.trim()?.takeIf { it.isNotEmpty() },
     )
 }
 

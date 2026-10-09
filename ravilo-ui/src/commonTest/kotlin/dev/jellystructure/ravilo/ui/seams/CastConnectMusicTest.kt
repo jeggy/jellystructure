@@ -26,6 +26,12 @@ class CastConnectMusicTest {
         assertNull(m.queueTotal, "the whole queue came in the LOAD")
     }
 
+    @Test fun `the sender's device name reaches the TV, and none or a blank one is no name`() {
+        assertEquals("Pixel 9 Pro", castConnectMusicOf(load().copy(senderName = " Pixel 9 Pro "))?.senderName)
+        assertNull(castConnectMusicOf(load())?.senderName, "an older phone sends no name")
+        assertNull(castConnectMusicOf(load().copy(senderName = "  "))?.senderName)
+    }
+
     @Test fun `a window of a long queue says how long the queue is`() {
         val m = assertNotNull(castConnectMusicOf(load().copy(queueId = "q1", queueTotal = 300, queueStart = 120)))
         assertEquals(300, m.queueTotal)
