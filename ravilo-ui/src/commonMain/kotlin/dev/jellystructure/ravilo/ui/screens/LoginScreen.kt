@@ -65,6 +65,7 @@ object LoginTags {
     const val PASSWORD = "login-password"
     const val SIGN_IN = "login-sign-in"
     const val CHANGE_SERVER = "login-change-server"
+    const val CANCEL = "login-cancel"
 }
 
 /** Phase 141/R175 — replaces the retired code-pairing flow (see git history for `PairingScreen`). */
@@ -130,6 +131,9 @@ fun LoginScreen(
     store: LoginStore,
     onSignedIn: () -> Unit,
     onChangeServer: () -> Unit = {},
+    /** R175 (found live 2026-10-09) — *Add user* is escapable: a Cancel in the form's own flow, under Sign in. It used
+     *  to be an overlay pinned to the screen's foot, which the system keyboard pushed up over *Sign in*. */
+    onCancel: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -141,6 +145,7 @@ fun LoginScreen(
     val passwordFR = remember { FocusRequester() }
     val signInFR = remember { FocusRequester() }
     val changeServerFR = remember { FocusRequester() }
+    val cancelFR = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     // R350 re-test (FR-R350-15) — on a TV each field is focused first (a ring, no keyboard) and edited on OK.
     val usernameEdit = rememberOkToEdit()
@@ -234,14 +239,26 @@ fun LoginScreen(
                         onSelect = { submit() },
                         // R349 (FR-R349-3) — explicit, whatever the height the keyboard leaves.
                         onUp = { passwordFR.requestFocus() },
-                        onDown = { changeServerFR.requestFocus() },
+                        onDown = { if (onCancel != null) cancelFR.requestFocus() else changeServerFR.requestFocus() },
                     )
 
+                    if (onCancel != null) {
+                        Spacer(Modifier.height(12.dp))
+                        LoginLink(
+                            label = str("profile.cancel"), tag = LoginTags.CANCEL, focusRequester = cancelFR,
+                            onSelect = onCancel, onBack = onCancel,
+                            onUp = { if (locked) passwordFR.requestFocus() else signInFR.requestFocus() },
+                            onDown = { changeServerFR.requestFocus() },
+                            fontSize = 14,
+                        )
+                    }
+
                     Spacer(Modifier.height(18.dp))
-                    ChangeServerLink(
+                    LoginLink(
+                        label = str("login.change_server"), tag = LoginTags.CHANGE_SERVER,
                         focusRequester = changeServerFR,
                         onSelect = onChangeServer,
-                        onUp = { if (locked) passwordFR.requestFocus() else signInFR.requestFocus() },
+                        onUp = { if (onCancel != null) cancelFR.requestFocus() else if (locked) passwordFR.requestFocus() else signInFR.requestFocus() },
                     )
                     Spacer(Modifier.height(4.dp))
                     ServerIndicator(store.baseUrl)
@@ -344,27 +361,30 @@ private fun ServerIndicator(baseUrl: String) {
 }
 
 // R349 (FR-R349-5) — focused, the link is a filled pill like Sign in (accent, onAccent text, focus ring); a colour
-// change alone read as unfocused from a sofa. Down from here stays put: it is the last focusable on the screen.
+// change alone read as unfocused from a sofa. Down from *Change server* stays put: it is the last focusable on the screen.
 @Composable
-private fun ChangeServerLink(focusRequester: FocusRequester, onSelect: () -> Unit, onUp: () -> Unit) {
+private fun LoginLink(
+    label: String, tag: String, focusRequester: FocusRequester, onSelect: () -> Unit, onUp: () -> Unit,
+    onDown: () -> Unit = {}, onBack: (() -> Unit)? = null, fontSize: Int = 12,
+) {
     val colors = RaviloTheme.colors
     var focused by rememberFocusVisual()
     val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
-            .testTag(LoginTags.CHANGE_SERVER)
+            .testTag(tag)
             .then(if (focused) Modifier.background(colors.accent, shape).border(2.dp, colors.focusRing, shape) else Modifier)
             .dpadFocusable(
                 focusRequester = focusRequester, onFocused = { focused = true }, onBlurred = { focused = false },
-                onSelect = onSelect, onUp = onUp, onDown = {},
+                onSelect = onSelect, onUp = onUp, onDown = onDown, onBack = onBack,
             )
             .padding(vertical = 6.dp, horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            str("login.change_server"),
+            label,
             color = if (focused) colors.onAccent else colors.textSecondary,
-            fontSize = 12.sp,
+            fontSize = fontSize.sp,
             fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
         )
     }

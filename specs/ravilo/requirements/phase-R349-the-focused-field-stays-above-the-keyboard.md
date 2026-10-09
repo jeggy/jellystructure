@@ -141,3 +141,16 @@ the 8 fail. Plus `PasswordKeyboardTest` (R348), the whole `:ravilo-ui:testDebugU
 **Owed (device):** acceptance 1–6 on the Stue TV (Gboard) and the Pixel 9. Not checked on a device: that Gboard on
 the TV reports its height through `WindowInsets.ime` (the earlier squeeze says it does); if it doesn't, the form
 still scrolls with the D-pad but the keyboard would cover the lower half.
+
+## Found live 2026-10-09
+
+- **Add user: *Cancel* drew over *Sign in* with the keyboard up** (R266's live run, Soveværelse TV debug 1.50-119,
+  profile menu ▸ Switch ▸ ＋ Add user). The add-user flow (R175) laid `LoginScreen` in a full-screen `Box` and put its
+  Cancel as an overlay pinned 48 dp above the screen's foot. With the system keyboard up the root pads the screen by the
+  keyboard (FR-R349-1), so the foot rose to the middle of the form and the overlay sat on *Sign in* — this phase's
+  scrolling form never knew the overlay was there. **Fixed 2026-10-09 (FR-R349-1, FR-R349-3):** `LoginScreen` takes an
+  optional `onCancel`; when given, *Cancel* is a pill link in the form's own flow under *Sign in* (Sign in ▼ Cancel ▼
+  Change server, ▲ back up; Back on it cancels), so it scrolls with the form inside what the keyboard leaves. The
+  overlay is gone from `ProfilePickerScreen`. Test: `KeyboardFormTest` — at 540 dp and at the keyboard's 240 dp,
+  Cancel is displayed, below Sign in and never overlapping it, the D-pad walks through it, OK cancels.
+  **TV re-test owed:** Add user with Gboard up — *Sign in* and *Cancel* both readable and reachable.
