@@ -560,3 +560,18 @@ in place), **1** stays skipped (renaming doesn't make it eligible). A rename tak
    version elsewhere; the **Picture** tab switches between them at the same position.
 5. *Remove* on a test title: the copy is gone from the file (`mkvmerge -J`), the `.mka`/version file deleted, the row
    reads *removed* and stays so through *Find files*.
+
+
+## Live dry run (2026-10-09, v1.50-78, deployed — nothing applied)
+
+*Find files* over the whole library: 9 779 files in 28 min (during the qBittorrent force recheck), 0 failures.
+
+| Kind | Added inside the file | As a `.mka` beside it (seeded / hard-linked) | Skipped | Space |
+|---|---|---|---|---|
+| A — stereo AAC | 2 336 | 2 618 | 182 | ~433 GB read |
+| B — E-AC-3 5.1 | 12 | 439 | — | ~62 GB read |
+| C — Dolby Vision 8.1 version | 3 | — | 13 (file name ≠ folder name) | ~207 GB written |
+
+Every kind is still **off**; nothing was written. The 13 skipped kind-C films wait for the owner's per-film rename
+ticks (owner decision 2026-10-08), which 314a does not offer yet (314b/c). The image carries `dovi_tool` 2.3.4 (two
+Dockerfile fixes on merge: `ca-certificates` in the runtime stage, and the archive member is `./dovi_tool`).
