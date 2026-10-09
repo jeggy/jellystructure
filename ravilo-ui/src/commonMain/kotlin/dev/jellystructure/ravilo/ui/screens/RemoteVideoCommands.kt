@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import dev.jellystructure.ravilo.ui.RemoteControl
@@ -14,6 +15,8 @@ import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.seams.TvCastChannel
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.RemotePlayer
+import dev.jellystructure.shared.tv.SessionQueueReport
+import kotlinx.coroutines.delay
 
 /**
  * R354 (FR-R354-3/-4) — while the film player is composed, it is the player remote commands drive (the Jellyfin
@@ -51,6 +54,10 @@ internal fun RemoteVideoCommands(
             override fun next() = forward()
             override fun previous() = back()
             override fun setVolume(level: Float, muted: Boolean) = player.setVolume(if (muted) 0f else level)
+            // R266 (found live 2026-10-09) — a session remote's *Audio & Subs* (`set_audio` / `set_subtitle`): the same
+            // picks a cast remote makes, through the player's own picker door. Indexes are the reported lists'.
+            override fun selectAudio(index: Int) { SessionVideoTracks.source?.selectAudioAt(index) }
+            override fun selectSubtitle(index: Int) { SessionVideoTracks.source?.selectSubtitleAt(index) }
         }
         val detach = RemoteControl.attachVideo(remote)
         onDispose { detach() }
@@ -120,6 +127,38 @@ internal class CastVideoSource {
     var next: () -> Unit = {}
 }
 
+/** R380 — the audio track at [index] of the flat list a remote shows, picked as the picker's OK picks it. */
+internal fun CastVideoSource.selectAudioAt(index: Int) {
+    val e = lists()?.audioEntries?.getOrNull(index) ?: return
+    applyPick(0, e.group, e.version)
+}
+
+/** R380 — the subtitle at [index] of the flat list a remote shows; -1 is *Off*. */
+internal fun CastVideoSource.selectSubtitleAt(index: Int) {
+    val l = lists() ?: return
+    val e = if (index < 0) l.subtitleOff else l.subtitleEntries.getOrNull(index)
+    if (e != null) applyPick(1, e.group, e.version)
+}
+
+/**
+ * R266 (found live 2026-10-09) — the film player's tracks for the playback session it is the place of: the server
+ * keeps them on the session ([SessionQueueReport] with no queue — a film has none), and the session remote shows
+ * *Audio & Subs* from them. Null while the player has no track lists yet.
+ */
+internal fun sessionTracksReport(itemId: String, l: CastVideoLists?): SessionQueueReport? {
+    if (l == null || (l.audio.isEmpty() && l.subtitles.isEmpty())) return null
+    return SessionQueueReport(itemId = itemId, audioTracks = l.audio, subtitleTracks = l.subtitles, audioIndex = l.selectedAudio, subtitleIndex = l.selectedSub)
+}
+
+/** R266 — the film player a session's track commands reach (the TV's, while [CastChannelVideoHost] is composed). */
+internal object SessionVideoTracks {
+    var source: CastVideoSource? = null
+}
+
+/** How often the TV looks for a changed track list or pick, and re-sends an unchanged one (the session may be newer). */
+private const val TRACKS_CHECK_MS = 2_000L
+private const val TRACKS_RESEND_MS = 30_000L
+
 /**
  * R380 (FR-R380-7) — while a cast drives this film player (R266, the TV app), the phone's remote reads its tracks and
  * picks them through the player's own `applyPick` door (persistence, restreams and burn-ins as a picker OK). Its own
@@ -138,19 +177,29 @@ internal fun CastChannelVideoHost(itemId: String, source: CastVideoSource) {
                     hasNext = source.hasNext(), transcoding = null,
                 )
             }
-            override fun selectAudio(index: Int) {
-                val e = source.lists()?.audioEntries?.getOrNull(index) ?: return
-                source.applyPick(0, e.group, e.version)
-            }
-            override fun selectSubtitle(index: Int) {
-                val l = source.lists() ?: return
-                val e = if (index < 0) l.subtitleOff else l.subtitleEntries.getOrNull(index)
-                if (e != null) source.applyPick(1, e.group, e.version)
-            }
+            override fun selectAudio(index: Int) = source.selectAudioAt(index)
+            override fun selectSubtitle(index: Int) = source.selectSubtitleAt(index)
             override fun setSubSize(size: String) { source.setSubSize(size.firstOrNull()?.takeIf { it in "SML" } ?: 'M') }
             override fun nextEpisode() = source.next()
         }
         val detach = TvCastChannel.attachVideo(host)
-        onDispose { detach() }
+        SessionVideoTracks.source = source
+        onDispose { detach(); if (SessionVideoTracks.source === source) SessionVideoTracks.source = null }
+    }
+    // R266 (found live 2026-10-09) — the server road: a film the server started here has a session remote whose *Audio &
+    // Subs* reads the tracks from the session. Sent on change, and again now and then (a first report can come before
+    // the session exists; the server drops a report that changes nothing).
+    LaunchedEffect(itemId, source) {
+        var last: SessionQueueReport? = null
+        var sentAt = 0L
+        while (true) {
+            val r = sessionTracksReport(itemId, source.lists())
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            if (r != null && (r != last || now - sentAt >= TRACKS_RESEND_MS)) {
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportQueue(r)
+                last = r; sentAt = now
+            }
+            delay(TRACKS_CHECK_MS)
+        }
     }
 }

@@ -404,3 +404,24 @@ event, i.e. a config change. Fixed (`encodeDefaults = true`).
 
 **Only a speaker can confirm:** the receiver's socket path with the phone in airplane mode (pause/skip/seek from the
 computer); two `next`s pressed together skip once.
+
+## Found live 2026-10-09
+
+- **A film on the TV app reached through the server had no *Audio & Subs*** (R266's live run, Soveværelse TV debug
+  1.50-119 + Pixel 9 Pro): with the Ravilo app already open on the TV, *Play on…* went through the server (R372's move)
+  and the phone showed this phase's session remote — play/pause and seek reached the TV, but no track rows, while the
+  Cast road's remote (R245) had them (R380 owner decision 1: the same remote against anything). Two gaps: the TV never
+  reported a film's tracks to the session (only a music queue was reported), so `SessionDetail.audio_tracks` was empty
+  and the remote hides the rows; and a `set_audio` / `set_subtitle` reaching the TV's film player picked nothing (its
+  `RemotePlayer` kept the interface's empty defaults). **Fixed 2026-10-09:** while the film player is up, the TV reports
+  its picker's flat lists (the same `castVideoLists` the Cast channel sends, R380 FR-R380-7) as a `SessionQueueReport`
+  with **no queue** — on change, checked every 2 s, re-sent every 30 s in case a first report came before the session
+  existed; the server treats an empty queue as a tracks-only report (the session's queue, index and revision stand),
+  a first track index is detail (not a move), and a report that changes nothing pushes nothing. The film player's
+  remote picks through the picker's own door (`selectAudioAt` / `selectSubtitleAt`, `-1` = Off), so a pick from the
+  phone persists, restreams and burns in as an OK on the TV does. No wire change (`audio_tracks` etc. existed).
+  Tests: `PlaybackSessionsTest` (tracks-only report keeps the place; an unchanged one pushes nothing; a pick is a state),
+  `SessionVideoTracksTest` (the report; `set_audio`/`set_subtitle` incl. Off through `applyTo`). **TV re-test owed:**
+  Ravilo open on the TV, *Play on…* a film from the phone → the session remote lists the TV's tracks; a pick applies
+  on the TV and the remote's ✓ follows. Not covered: a film playing on a phone or computer as a session's place (the
+  picker lists are built for the TV only).
