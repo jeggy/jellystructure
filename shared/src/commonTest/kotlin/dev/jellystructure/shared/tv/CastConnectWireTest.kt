@@ -21,7 +21,7 @@ class CastConnectWireTest {
     }
 
     @Test
-    fun `the sender's device name rides the LOAD as sender_name, beside the receiver's device_name, and an older LOAD has none`() {
+    fun `the sender's device name rides the LOAD as sender_name beside the receiver's device_name and an older LOAD has none`() {
         val load = CastLoadData(serverUrl = "https://media.example.test", code = "ABC123", itemId = "i1", title = "A song",
             deviceName = "Living Room TV", senderName = "Pixel 9 Pro")
         val text = json.encodeToString(CastLoadData.serializer(), load)
