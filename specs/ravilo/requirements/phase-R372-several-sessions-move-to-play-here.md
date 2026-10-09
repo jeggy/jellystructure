@@ -387,3 +387,22 @@ Found moving *M3GAN 2.0* between the Pixel and the Ravilo app on Stue TV:
   phone* moves it here. A different film keeps R370's behaviour. Films only: an episode's session title is the series'.
 - **One per lane on a device:** a move landing on a device ends anything else live in that lane there (the moved session
   stayed *starting* while reports went to an older copy on the same phone).
+
+## Found live 2026-10-09 (evening, the Mac re-test) — fixed
+
+From the server's session timeline and the Mac's log of the same evening:
+
+- **A play that failed stayed in *Playing everywhere* as paused at 0:00 for hours.** An HDR film failed on the Mac in the
+  afternoon (`started` → `paused` at 0 → `offline` a minute later from the 110 watchdog) and, under FR-R372-4, was kept
+  24 h as *paused, offline* — until a new play on the Mac replaced it six and a half hours later. In the evening the same
+  film failed again: the error screen stood for four and a half minutes with the session *paused · 0:00*, and it ended
+  only when the player was left. *Fix, two halves:* (1) **the app stops the session the moment a play ends on R237's
+  error** (a failed or never-moving stream after its one restream) — the row goes 15 s later, and *Retry* starts a
+  new one; (2) **the server ends, rather than keeps, a session the watchdog reaps at 0:00** (`failed`): nothing was
+  played, so there is no place to resume (FR-R372-4 keeps a session that has a place).
+- **A late progress report undid a stop.** The app cancels its heartbeat before posting the stop, but a report already
+  on the wire can land after it; it cleared the 15 s hold and left the film *paused* until the watchdog made it
+  *offline* (24 h). *Fix:* while a stop holds the session, a **paused** report of the same item keeps the hold (a start
+  or a playing report still joins, as a song boundary or an auto-advance needs).
+- Tests: `PlaybackSessionsTest` — a reap at 0:00 ends the session `failed`; a paused report inside the hold leaves it to
+  end `stopped`; a playing one still keeps it; `OurStreamStuckTest` covers the recovery decision the stop hangs on.

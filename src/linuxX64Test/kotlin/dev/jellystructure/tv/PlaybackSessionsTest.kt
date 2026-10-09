@@ -259,10 +259,49 @@ class PlaybackSessionsTest {
         assertFalse(s.get(id)!!.offline)
     }
 
+    /** R372 — found live 2026-10-09 (evening, Mac): a failed play stayed *paused · offline* at 0:00 for hours. */
+    @Test fun `a watchdog reap of a play that never got past zero ends it as failed`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 0, paused = true)
+        pushes.clear()
+        s.onReaped(phone, "film-1")
+        val r = s.get(id)!!
+        assertFalse(r.live)
+        assertEquals("failed", r.endReason)
+        assertEquals(listOf<SessionChange>(SessionChange.List), pushes)
+    }
+
+    /** R372 — found live 2026-10-09 (evening): a report already on the wire when the app stopped undid the stop. */
+    @Test fun `a paused report that lands after the stop keeps the hold and the session ends`() = runBlocking {
+        val s = service()
+        val phone = device("mac")
+        val id = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 60_000, paused = false)
+        s.onStop(phone, "film-1", 61_000)
+        now += 1_000
+        s.onProgress(phone, "film-1", 61_000, paused = true)
+        assertNotNull(s.get(id)!!.stopHoldUntil)
+        now += 15_000; s.tick()
+        assertEquals("stopped", s.get(id)!!.endReason)
+    }
+
+    @Test fun `a playing report after a stop still keeps the session`() = runBlocking {
+        val s = service()
+        val tv = device("living-tv", kind = "tv")
+        val id = s.onStart(tv, "film-1", 0)
+        s.onStop(tv, "film-1", 30_000)
+        s.onProgress(tv, "film-1", 31_000, paused = false)
+        now += 20_000; s.tick()
+        assertTrue(s.get(id)!!.live)
+    }
+
     @Test fun `the 24 h sweep ends a paused offline session and a paused one`() = runBlocking {
         val s = service()
         val phone = device("pixel"); val tv = device("living-tv", kind = "tv")
         val off = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 5_000, paused = false)
         s.onReaped(phone, "film-1")
         val paused = s.onStart(tv, "song-1", 0)
         s.onProgress(tv, "song-1", 1_000, paused = true)

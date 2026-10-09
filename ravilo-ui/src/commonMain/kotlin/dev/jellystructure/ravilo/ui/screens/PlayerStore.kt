@@ -645,13 +645,23 @@ class PlayerStore(
                         println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — restreaming once from Jellyfin at ${pos ?: 0}ms")
                         restreamWithSub(item!!, t!!.burnedSubtitleIndex ?: -1, pos ?: 0L, lastRestreamAudio ?: t.audioStreamIndex)
                     }
-                    StreamRecovery.FAILED -> _state.value = PlayerSessionState.Error("The player failed after the stream started",
-                        if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC)
-                    StreamRecovery.NOT_STARTED -> _state.value = PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC)
+                    StreamRecovery.FAILED -> endOnError(PlayerSessionState.Error("The player failed after the stream started",
+                        if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC), pos)
+                    StreamRecovery.NOT_STARTED -> endOnError(PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC), pos)
                 }
                 break
             }
         }
+    }
+
+    /**
+     * R372 (found live 2026-10-09, evening, Mac) — a play that ends on R237's error stops its session now: the error
+     * screen stood for minutes with the session *paused · 0:00* in every *Playing everywhere*, and a failure the
+     * watchdog reaped stayed 24 h. The row goes 15 s later; *Retry* starts a new session; leaving sends nothing more.
+     */
+    private fun endOnError(error: PlayerSessionState.Error, positionMs: Long?) {
+        stopSession(positionMs ?: 0L)
+        _state.value = error
     }
 
     private fun startHeartbeat(

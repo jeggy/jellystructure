@@ -701,6 +701,10 @@ class PlaybackSessions(
                     (movedFrom[device.deviceId] ?: 0L) < t
                 return@withLock
             }
+            // R372 (found live 2026-10-09, evening) — a paused report of the same item that lands after the stop (it was
+            // on the wire when the app cancelled its heartbeat) keeps the stop's hold: it used to clear it and leave the
+            // film paused until the watchdog made it offline for 24 h. A start or a playing report still joins.
+            if (cur.stopHoldUntil != null && paused && cur.itemId == itemId) return@withLock
             val changed = isSessionChange(cur, itemId, positionMs, paused, t) || cur.reconnecting || cur.offline || cur.stopHoldUntil != null
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
             val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
@@ -755,17 +759,20 @@ class PlaybackSessions(
      * *Play here* and *Move to…* offered.
      */
     suspend fun onReaped(device: DeviceData, itemId: String) {
-        val id = mutex.withLock {
+        val change: SessionChange? = mutex.withLock {
             val cur = sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && (it.itemId == itemId || it.stopHoldUntil != null) } ?: return@withLock null
+            // R372 (found live 2026-10-09, evening) — a play that never got past 0:00 (it failed) has no place to keep:
+            // it ends, rather than staying *paused · offline* for 24 h.
+            if (cur.positionMs <= 0L) return@withLock endLocked(cur.id, "failed")?.let { SessionChange.List }
             event(cur.id, "offline", null, cur.targetName)
             val t = now()
             val next = cur.copy(state = SessionState.PAUSED, offline = true, stopHoldUntil = null, reconnecting = false, reconnectDeadline = null,
                 revision = cur.revision + 1, updatedAt = t)
             sessions[next.id] = next
             next.persist()
-            next.id
+            SessionChange.State(next.id)
         }
-        if (id != null) notify(SessionChange.State(id))
+        change?.let { notify(it) }
     }
 
     /** Ends [id] (must hold [mutex]). Returns the ended row, or null when it was not live. */
