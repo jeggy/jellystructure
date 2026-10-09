@@ -569,3 +569,17 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   restream asks for the audio the viewer picked (R291's renditions carry none in the session, so the picked track's
   index is sent). **Mac re-test owed:** a PGS pick on a film with several audio tracks (picture + subtitle + the picked
   audio, from the current place), and a forced refusal (playback continues from Jellyfin; Esc leaves).
+
+## The cast stall: cause and fix (2026-10-09, v1.50-118 → v1.50-130)
+
+- **Cause (ours):** nothing ever deleted a job's segments. Four H.264 rungs plus audio fill the 4 GB tmpfs
+  (`/transcode/js`) in about 16 minutes of a film; from then on ffmpeg cannot write, the receiver's next segment never
+  comes and the cast stalls for good — the stall the receiver showed at the same point every time.
+- **Fix (d476880f):** the job keeps `KEEP_BEHIND = 30` segments (a minute) behind the furthest one asked for and
+  unlinks everything older, for itself and for the stream's retired jobs (every 8 progress lines); a request below the
+  pruned point is not "reached" (a seek back restarts the job there). `pruneRangeKeepsAMinuteBehind` tests the range.
+- **Verified with the dev-only override** (`[encoder] cast_receivers = true`, set for this one test and removed
+  again): a 21-minute cast of a 4K HDR film to the Køkken hub on our encoder (H.264 4 rungs, TS, tone-mapped) went
+  BUFFERING → PLAYING in 7 s and stayed PLAYING to the end (1242 s, no rebuffer); the tmpfs held 350–415 MB the whole
+  way (it had reached 4 GB at ~16 min before); the encoder stopped with the cast. Casts stay on Jellyfin's transcode by
+  default (`cast_receivers` off) until the owner turns them on.
