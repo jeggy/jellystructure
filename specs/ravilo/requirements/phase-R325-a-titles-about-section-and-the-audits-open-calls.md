@@ -128,3 +128,12 @@ Not deployed and not device-tested: the owner withdrew backend-restart and devic
 
 Emulator against the local backend: a film's detail shows the About section under the actions — *Released ·
 Original language · In your library since* for the fixture film, then More Like This.
+
+### Found live 2026-10-09 — fixed (search)
+
+- **A title with punctuation was not found by its words.** *Defect:* `/api/tv/search` matched a plain substring of the
+  lowercased title, so *"Name-Name Word"* did not find *"Name-Name: Word Word Word"* (the colon). *Fix:* the query and
+  the title are reduced to their words (any run of characters that are not letters or digits is one space); a title
+  matches when it holds the query's words in order, holds them with the spaces dropped (*namename*), or every query word
+  starts one of its words in any order — the plain substring still matches (`SearchQuery`, `SearchQueryTest`). Music
+  search is unchanged. **Re-test owed:** the Mac's search for the film's first words.
