@@ -310,7 +310,15 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var burnedSubIndex by mutableStateOf<Int?>(null)
     // R282 (FR-R282-4) — an un-burn restream is in flight: when its ticket loads, re-arm R181's
     // resolver so the just-persisted pick is matched against the FRESH track set.
-    var rearmResolveOnLoad by mutableStateOf(false)
+    private var rearmLocal by mutableStateOf(false)
+    // 309 (FR-309-8/-9) — a restream the store started on its own (a stalled direct play moved to the ladder, mpv's
+    // stepping) re-arms the resolver the same way; reading it here keeps the player body unchanged.
+    var rearmResolveOnLoad: Boolean
+        get() = rearmLocal || dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.rearmTracks
+        set(value) {
+            rearmLocal = value
+            if (!value) dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.rearmTracks = false
+        }
     // Phase 314c — the film's picture versions (the original and its Dolby Vision 8.1 version), from the ticket.
     var videoVersions by mutableStateOf<List<dev.jellystructure.shared.tv.VideoVersion>>(emptyList())
     // R284 — a SINGLE-AUDIO session (the ticket is a transcode that names the one audio track it

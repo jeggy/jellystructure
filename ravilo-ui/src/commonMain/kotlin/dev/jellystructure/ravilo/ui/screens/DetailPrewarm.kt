@@ -34,8 +34,12 @@ class DetailPrewarm(private val api: TvApiClient) {
             val remembered = MultiTokenStore.getActive()?.userId?.let { pid ->
                 PlaybackPrefsStore.getSeriesChoice(pid, seriesId ?: itemId) ?: PlaybackPrefsStore.getGlobalChoice(pid)
             }
+            // 309 — while this app is linked to a Cast device, Play hands the film to that device's receiver: warm its
+            // encode, not this phone's (the server uses the receiver's own capabilities and record).
+            val castTo = dev.jellystructure.ravilo.ui.seams.CastTargetHint.castDeviceId
+            castDeviceId = castTo
             val req = PrewarmRequest(itemId, currentClientCapabilities(),
-                audioLanguage = remembered?.audioLanguage, audioVariant = remembered?.audioVariant)
+                audioLanguage = remembered?.audioLanguage, audioVariant = remembered?.audioVariant, castDeviceId = castTo)
             while (true) {
                 val r = api.prewarmPlayback(req) ?: return   // an older server, or a failure: nothing to keep warm
                 if (r.status != "warm") return               // direct play, or the server won't warm it
@@ -52,10 +56,13 @@ class DetailPrewarm(private val api: TvApiClient) {
             withContext(NonCancellable) {
                 delay(LEAVE_GRACE_MS)
                 if (playStartedItem == itemId && nowMs() - playStartedAtMs < PLAY_COUNTS_MS) return@withContext
-                api.cancelPrewarm(itemId)
+                api.cancelPrewarm(itemId, castDeviceId)
             }
         }
     }
+
+    /** The Cast device the last early encode was made for (null: this device), so leaving cancels the right one. */
+    @Volatile private var castDeviceId: String? = null
 
     companion object {
         const val DWELL_MS = 2_000L

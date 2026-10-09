@@ -202,6 +202,18 @@ private class Receiver {
         el("idle-sentence").textContent = ReceiverStrings.t("cast.ready")
         el("nextup").classList.remove("on"); el("overlay").classList.remove("on")
         show("idle")
+        probeWhenIdle()
+    }
+
+    /**
+     * 309 (FR-309-3) — the receiver measures its own path like any other player, at the idle view (never during a
+     * start, where 4 MB would compete with the film): the server answers 204 when this receiver was measured within
+     * 24 h, so this costs nothing most of the time. Its result is the next cast's start rung.
+     */
+    private fun probeWhenIdle() {
+        if (music || isHeadless()) return
+        val a = api ?: return
+        GlobalScope.launch { a.probe()?.let { note("309 probe: ${it / 1000} kb/s") } }
     }
 
     /** FR-286-3 — `display_supported` from CAF, asked once the context has started; false ⇒ the DOM is emptied. */
@@ -1198,7 +1210,14 @@ private class Receiver {
             // Shaka keeps only 10 s ahead by default, so on Stue TV (2026-10-06) a step up to a rung whose encode had not
             // started yet stalled 2.7 s. 40 s ahead covers that start; 10 s behind (not 30) pays for it in memory, and
             // Shaka lowers the goal itself when the device's buffer quota is hit.
-            if (t.adaptive) cfg.shakaConfig = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 }, streaming: { bufferingGoal: 40, bufferBehind: 10 } })")
+            if (t.adaptive) {
+                val sc: dynamic = js("({ abr: { bandwidthUpgradeTarget: 0.6, bandwidthDowngradeTarget: 0.8, switchInterval: 20 }, streaming: { bufferingGoal: 40, bufferBehind: 10 } })")
+                // 309 (FR-309-4/-5) — Shaka chooses within the ladder rule: one rung up at a time, down before the buffer
+                // runs dry (ReceiverAbr; Shaka's own manager if this framework build won't take the factory).
+                ReceiverAbr.oursEncoder = t.encoder == "ours"
+                runCatching { sc.abrFactory = ReceiverAbr.factory { line: String -> note(line) } }
+                cfg.shakaConfig = sc
+            }
             // 309 (FR-309-13) — count segment fetches: an estimate resting on fewer than 3 is Shaka's own guess.
             cfg.segmentRequestHandler = { _: dynamic -> qoeSegments++ }
             playerManager.setPlaybackConfig(cfg)

@@ -31,10 +31,10 @@ internal const val RECORD_MAX_AGE_SEC = 30L * 86_400L
 internal const val STALL_HOLD_SEC = 24L * 3_600L
 /** FR-309-1 — after a stall, at most this share of the stream it stalled on. */
 internal const val STALL_HEADROOM = 0.8
-/** Owner (Q8, 2026-10-08): a stall counts when it lasts at least this long… */
-internal const val STALL_COUNTS_MS = 2_000L
+/** Owner (Q8, 2026-10-08): a stall counts when it lasts at least this long… (the shared [dev.jellystructure.shared.tv.StallRule]) */
+internal const val STALL_COUNTS_MS = dev.jellystructure.shared.tv.StallRule.COUNTS_MS
 /** …or when two come within this long of each other. */
-internal const val STALL_PAIR_WINDOW_MS = 60_000L
+internal const val STALL_PAIR_WINDOW_MS = dev.jellystructure.shared.tv.StallRule.PAIR_WINDOW_MS
 /** FR-309-3 — a measurement (probe or QoE) older than this is refreshed by the next probe. */
 internal const val MEASUREMENT_FRESH_SEC = 24L * 3_600L
 
@@ -98,14 +98,7 @@ internal data class RecordSample(val variantBps: Long?, val stalls: List<QoeStal
 internal data class HoldState(val variantBps: Long?, val sinceSec: Long, val stallsSeen: Int)
 
 /** FR-309-1 / owner Q8 — the stalls among [stalls] that count: ≥ 2 s, or two within a minute of each other. */
-internal fun countingStalls(stalls: List<QoeStall>): List<QoeStall> {
-    val sorted = stalls.sortedBy { it.afterFirstFrameMs }
-    return sorted.filterIndexed { i, s ->
-        s.durationMs >= STALL_COUNTS_MS ||
-            (i > 0 && s.afterFirstFrameMs - sorted[i - 1].afterFirstFrameMs <= STALL_PAIR_WINDOW_MS) ||
-            (i < sorted.lastIndex && sorted[i + 1].afterFirstFrameMs - s.afterFirstFrameMs <= STALL_PAIR_WINDOW_MS)
-    }
-}
+internal fun countingStalls(stalls: List<QoeStall>): List<QoeStall> = dev.jellystructure.shared.tv.StallRule.counting(stalls)
 
 /**
  * FR-309-1 — one QoE post folded into the record. Only an R381 per-item report is read (a legacy row's counters were

@@ -114,6 +114,7 @@ internal object CastSenderDesktop : CastSender {
         }
         session = s; device = d; said = null
         _connectedId.value = d.id
+        dev.jellystructure.ravilo.ui.seams.CastTargetHint.castDeviceId = d.id   // 309 — the detail page warms its receiver
         DesktopApp.prefs.put(LAST_DEVICE, d.id)
         observe(s)
         _link.value = CastLinkState.CONNECTED
@@ -210,6 +211,7 @@ internal object CastSenderDesktop : CastSender {
     }
 
     private fun endQuietly() {
+        dev.jellystructure.ravilo.ui.seams.CastTargetHint.castDeviceId = null   // 309
         _link.value = CastLinkState.NONE
         _device.value = null
         _status.value = null

@@ -145,6 +145,11 @@ public func ravilo_player_load(_ h: Int64, _ url: UnsafePointer<CChar>, _ mime: 
     let it = AVPlayerItem(asset: asset)
     it.audioTimePitchAlgorithm = .timeDomain   // a book at 1.5× keeps its voice
     if audioOnly == 0 {
+        // 309 (FR-309-9) — keep 40 s ahead, as the other players do: a step to a rung whose encode has just started
+        // is covered by what is already buffered. The peak (`ravilo_player_set_peak_bitrate`) bounds the climb.
+        it.preferredForwardBufferDuration = 40
+    }
+    if audioOnly == 0 {
         let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ])
@@ -230,6 +235,14 @@ public func ravilo_player_set_rate(_ h: Int64, _ rate: Float) {
     b.rate = max(0.25, min(rate, 4.0))
     b.player.defaultRate = b.rate
     if b.player.timeControlStatus != .paused { b.player.rate = b.rate }
+}
+
+/// 309 (FR-309-9) — the highest variant AVPlayer may pick on its own (`preferredPeakBitRate`, bits/s; 0 = no bound).
+/// Kotlin raises it one rung at a time once enough is buffered and lowers it when the buffer runs low.
+@_cdecl("ravilo_player_set_peak_bitrate")
+public func ravilo_player_set_peak_bitrate(_ h: Int64, _ bps: Double) {
+    guard let b = box(h), let it = b.item else { return }
+    it.preferredPeakBitRate = max(0, bps)
 }
 
 @_cdecl("ravilo_player_set_volume")

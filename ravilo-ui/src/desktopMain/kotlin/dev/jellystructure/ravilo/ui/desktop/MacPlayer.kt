@@ -51,6 +51,9 @@ internal class MacPlayer(private val audioOnly: Boolean) {
     fun setRate(rate: Float) { if (handle != 0L) lib?.ravilo_player_set_rate(handle, rate) }
     fun setVolume(volume: Float) { if (handle != 0L) lib?.ravilo_player_set_volume(handle, volume.coerceIn(0f, 1f)) }
     fun selectAudio(index: Int) { if (handle != 0L) lib?.ravilo_player_select_audio(handle, index) }
+    /** 309 (FR-309-9) — AVPlayerItem's `preferredPeakBitRate` (0 = none). A library built before 309 lacks the call:
+     *  the bound is then simply not applied (AVPlayer's own ABR, as before). */
+    fun setPeakBitrate(bps: Double) { if (handle != 0L) runCatching { lib?.ravilo_player_set_peak_bitrate(handle, bps.coerceAtLeast(0.0)) } }
 
     /** The engine goes; this object stays and a later [load] builds a new one (R292's releaseEngine). */
     fun release() {

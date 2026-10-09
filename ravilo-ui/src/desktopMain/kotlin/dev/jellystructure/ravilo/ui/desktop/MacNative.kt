@@ -41,6 +41,8 @@ object MacNative {
         fun ravilo_player_set_rate(h: Long, rate: Float)
         fun ravilo_player_set_volume(h: Long, volume: Float)
         fun ravilo_player_select_audio(h: Long, index: Int)
+        /** 309 (FR-309-9) — added with 309; an older library throws `UnsatisfiedLinkError` here (caught by the caller). */
+        fun ravilo_player_set_peak_bitrate(h: Long, bps: Double)
         fun ravilo_player_tick(h: Long)
         fun ravilo_player_state(h: Long, out: LongArray, count: Int)
         fun ravilo_player_error(h: Long): Pointer?

@@ -62,6 +62,8 @@ import java.net.URI
 actual class RaviloPlayer actual constructor() {
     private val engine: DesktopEngine = DesktopEngines.film()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // 309 (FR-309-9) — the Mac bounds AVPlayer's climb; mpv (Linux) is stepped by the store's restreams.
+    private val macPeak = dev.jellystructure.ravilo.ui.desktop.MacLadderPeak(engine)
     private var noEngineFailure = false
     private var streamUrl = ""
     private var textTracks: List<SubTrack> = emptyList()
@@ -106,6 +108,10 @@ actual class RaviloPlayer actual constructor() {
         noEngineFailure = false
         println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
         engine.load(streamUrl, startMs = startPositionMs)
+        // 309 (FR-309-9) — a ladder on the Mac: AVPlayer's peak starts on the server's start rung and climbs one at a time.
+        if (!DesktopEngines.isMpv) macPeak.start(streamUrl, scope)
+        PlayerLadderHints.restreamStepping = DesktopEngines.isMpv
+        PlayerLadderHints.bufferedAheadMs = -1L
         // R335 (FR-R335-5) — mpv draws the ticket's sidecar files itself; the embedded ones it already has.
         if (engine.rendersSubtitles) textTracks.forEach { t -> t.url?.let { engine.addSubtitle(absolute(it), t.label, t.language) } }
         npTitle = title; npKicker = subtitle; npArtwork = artworkUrl
@@ -128,6 +134,9 @@ actual class RaviloPlayer actual constructor() {
                 val playing = s.wantsPlay && !s.ended && !s.failed
                 if (playing != awake) { awake = playing; MacNative.lib?.ravilo_display_keep_awake(if (playing) 1 else 0) }
                 MacNowPlaying.update(nowPlaying, npTitle, npKicker, null, s.durationMs, s.positionMs, 1.0, playing && s.timeControl == 2, video = true)
+                // 309 (FR-309-9) — mpv's buffer ahead, for the store's stepping; the Mac's peak, every other second.
+                if (DesktopEngines.isMpv) PlayerLadderHints.bufferedAheadMs = (s.bufferedMs - s.positionMs).coerceAtLeast(0L)
+                else if (ticks % 2 == 0) macPeak.tick(s)
                 delay(1_000)
             }
             if (awake) MacNative.lib?.ravilo_display_keep_awake(0)
