@@ -28,6 +28,10 @@ internal interface DesktopEngine {
     /** What this engine calls itself in a QoE snapshot. */
     val decoderName: String
 
+    /** 309 (FR-309-9) — the highest variant bandwidth the engine may pick on its own (AVPlayer's
+     *  `preferredPeakBitRate`); 0 = no bound. An engine that cannot switch variants ignores it. */
+    fun setPeakBitrate(bps: Double) {}
+
     // ── Linux (FR-R335-5/6): the engine that renders subtitles and knows the container's tracks ──
     /** The surface's size in pixels, so a renderer that scales can stop at what is shown. */
     fun surfaceHint(width: Int, height: Int) {}
@@ -74,6 +78,7 @@ internal class MacEngine(private val p: MacPlayer) : DesktopEngine {
     override fun takeFrame(): Image? = p.takeFrame()
     override fun release() = p.release()
     override val decoderName: String get() = "AVFoundation"
+    override fun setPeakBitrate(bps: Double) = p.setPeakBitrate(bps)
 }
 
 /** Which engine this desktop runs: the Mac's, or mpv where libmpv is there (FR-R335-7's honest absence otherwise). */

@@ -417,6 +417,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
 
     private fun attach(s: CastSession) {
         session = s
+        CastTargetHint.castDeviceId = runCatching { s.castDevice?.deviceId }.getOrNull()   // 309 — the detail page warms its receiver
         sizeLogged = false; askedQueueRev = null
         CastSessionRemote.start(appContext, this)   // R356 (FR-R356-1) — Ravilo's one media card mirrors this cast
         runCatching { s.addCastListener(castListener) }
@@ -437,6 +438,7 @@ class CastSenderAndroid(private val appContext: Context) : CastSender {
     }.getOrNull()
 
     private fun detach() {
+        CastTargetHint.castDeviceId = null   // 309
         runCatching { session?.removeCastListener(castListener) }
         _volume.value = null
         session?.remoteMediaClient?.let { rmc ->

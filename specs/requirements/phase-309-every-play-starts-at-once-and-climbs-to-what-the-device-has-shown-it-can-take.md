@@ -14,12 +14,12 @@
 `⚠ Partial` — **309a0 built and deployed 2026-10-08; 309a (backend) and most of 309b (Android + every client's detail page)
 built 2026-10-08 on a worktree branch on top of 313, not merged, not deployed, not device-tested** (see *Build notes —
 309a / 309b*). Written 2026-10-07 (dev-authored), dev-reviewed 2026-10-07 and re-reviewed 2026-10-08; the owner then
-moved the mechanism to our own encoder (313). **Not built yet:** the Cast receiver enforcing the step-down over Shaka
-(FR-309-5's receiver half), the probe on the receiver, a direct play that stalls switching to the ladder mid-play
-(FR-309-8's in-play half), the phone casting with a prewarm for its receiver (the backend accepts `cast_device_id`; no
-client sends it), mpv restream stepping and AVPlayer peak-bitrate climbing (FR-309-9), and the web player (left alone:
-R376 is rebuilding it). Builds on **308**, replaces 308 FR-308-3's start rule and FR-308-4's direct-play gate, retires
-185 FR-185-5…7's note and R222.
+moved the mechanism to our own encoder (313). **309c built 2026-10-09 on a worktree branch, not merged, not deployed,
+not device-tested** (see *Build notes — 309c*): the receiver bounds Shaka's ABR by the ladder rule and runs the speed
+test, a direct play that stalls moves to the ladder once, the phone and the desktop send the receiver's id with the
+prewarm (a no-op while casts go to Jellyfin, 313), mpv restreams a rung down/up, AVPlayer climbs under a peak bitrate
+with 40 s forward buffer. **Not built:** the web player (left alone: R376 is rebuilding it). Builds on **308**,
+replaces 308 FR-308-3's start rule and FR-308-4's direct-play gate, retires 185 FR-185-5…7's note and R222.
 
 ## What happened (2026-10-06 23:20–23:25, read-only from logs and the DB)
 
@@ -624,3 +624,52 @@ Deployed with R379, 313d/e, R376 and 314b/c (`22a955c8`, then `d7ecba1e` with th
 - **Not verified live:** *no record ⇒ 720p, then one rung at a time* (every household device already has a real
   measurement, so none starts without a record — covered by `EncoderPlanTest`/`LadderRulesTest`), *holds …* on the
   admin device row after a 2-minute play (needs a real player's QoE), the client half (309b) on a device.
+
+## Build notes — 309c (2026-10-09, worktree branch, not merged or deployed)
+
+The rest of 309 except the web player. No migration, no new wire field (the cast prewarm uses the `cast_device_id`
+309a already accepts). Nothing here is device-tested.
+
+- **One stall rule (`StallRule`, `:shared`):** a stall counts if it lasts ≥ 2 s, or two within 60 s (owner Q8). The
+  server's `StreamRecord` now uses it too, so the client's decision and the server's record cannot disagree.
+- **A direct play that stalls moves to the ladder, once per item (FR-309-8):** on a counting stall the store posts
+  QoE, **waits for that post**, then restreams at the current position (R284). The server's record already has the
+  stall and caps *take* at the stalled stream × 0.8 (FR-309-1), so the new negotiation transcodes on the rung under
+  what it carried — no new field says "ladder please". The audio index is left `null` (a non-null pick would force
+  HLS-only on players that switch audio inside the file); the server takes the remembered audio, and the track
+  resolver is re-armed for the new ticket (`PlayerLadderHints.rearmTracks`, read through `PlayerBookkeeping`'s
+  property so PlayerScreen's body stays at 249 registers in the release dex).
+- **Receiver over Shaka (FR-309-5):** `PlaybackConfig.shakaConfig.abrFactory` builds `ReceiverAbr`, a wrapper round
+  Shaka's own `shaka.abr.SimpleAbrManager`: every call forwarded, every choice bounded by `LadderRules.allowedMaxBps`
+  (one rung up, with 30 s buffered — 10 s on our encoder), and a 2 s timer that switches down when the buffer is under
+  20 s and falling, whatever Shaka's estimate says. Logs `309 abr: …`. **Unverified:** if this CAF build drops the
+  function from the config or its Shaka has another ABR interface, the factory is not called (or returns null) and
+  Shaka's own manager runs as before.
+- **Receiver speed test (FR-309-3):** on its idle view (never during a start), the receiver calls `/api/tv/probe`; the
+  server answers 204 when it was measured within 24 h. Logs `309 probe: N kb/s`.
+- **Cast prewarm (FR-309-3/-6, sender side):** Android's and the desktop's cast senders put the chosen receiver's
+  device id in `CastTargetHint`; `DetailPrewarm` sends it as `cast_device_id` with the prewarm and its cancel.
+  **Decision: while casts are routed to Jellyfin (313's `CAST_RECEIVER_FALLBACK`), the server answers `none` and the
+  prewarm is a no-op** — warming our encoder for a play that will go to Jellyfin would waste a GPU job, and
+  Jellyfin's own start cannot be warmed without starting a transcode session nobody adopts. Once 313's cast stall
+  is fixed, the id is already there and nothing on the clients changes.
+- **mpv (FR-309-9):** `RestreamStepper` (`:shared`) — one rung down when the buffer ahead (`bufferedMs − positionMs`
+  from mpv's demuxer cache) is under 20 s and falling, not again within 30 s; one rung up after 2 min clean with
+  ≥ 30 s buffered, the cap lifted above the top rung. The store restreams with `max_video_bitrate` set to the rung
+  (under the device's own, restored when lifted), keeping the burned subtitle and audio. Rungs are 308's video
+  bitrates (1.5 / 4 / 8 / 12 Mbps); the playing rung is read from the ticket's start variant.
+- **Mac (FR-309-9):** the AVPlayer item gets `preferredForwardBufferDuration = 40` s; `MacLadderPeak` reads the master
+  playlist's `BANDWIDTH`s, sets `preferredPeakBitRate` (+5 %) to the start rung, and lifts or lowers it by
+  `LadderRules` every other tick of the watch loop (`309 peak: …`). New Swift symbol
+  `ravilo_player_set_peak_bitrate` — **not compiled here (Linux)**; an older dylib without it is caught
+  (`UnsatisfiedLinkError`) and the player runs as before.
+
+**Tests:** `LadderSteppingTest` (`:shared`, 8 — the stall rule, the master's bandwidths, the Mac's peak, mpv down/gap/up
+/lowest, a variant's video bitrate) and `PlayerLadderSwitchTest` (`:ravilo-ui`, 4 — once per item, only from a direct
+play, the stepping cap). `:shared:linuxX64Test`, `:ravilo-ui:desktopTest` + `testDebugUnitTest`, the wasm and receiver
+compiles, `:linuxX64Test`, the release APK (`check-player-dex` 249) and the check scripts.
+
+**Live checks owed:** a Chromecast cast logging `309 abr: Shaka bounded by the ladder rule` (and a step down under a
+throttle) and `309 probe`; a direct play throttled on Android or the web logging `309: the direct play … stalled` and
+continuing on a transcode at the same position; mpv on Linux under a throttle (`309: stepping … down`, then up after
+2 min); the Mac (after the dylib is rebuilt) logging `309 peak`.

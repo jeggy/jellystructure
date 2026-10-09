@@ -24,8 +24,12 @@ import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.supportsEmbeddedTextSubtitles
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.ravilo.ui.seams.PlayerLadderHints
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.QoeStall
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.RestreamStepper
+import dev.jellystructure.shared.tv.StallRule
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
@@ -322,6 +326,8 @@ class PlayerStore(
      *  resolved against the address the app already talks to, never a host the server guessed. */
     private fun StreamTicket.onThisServer(): StreamTicket {
         currentMediaSourceId = mediaSourceId   // phase 314c — every ticket says which version it plays
+        currentTicket = this                   // 309 (FR-309-8/-9) — what the store's own restreams start from
+        dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.noteTicket(this)
         val base = apiClient.baseUrl.trimEnd('/')
         val withHls = hlsUrl?.takeIf { it.startsWith("/") }?.let { copy(hlsUrl = base + it) } ?: this
         // Phase 314b — a sidecar's URL is a path on this server too.
@@ -466,9 +472,10 @@ class PlayerStore(
         }
     }
 
-    private fun postQoeNow(itemId: String) {
-        val snapshot = qoeSnapshotProvider?.invoke() ?: return
-        exitScope.launch {
+    /** Posts this play's QoE now; the returned job ends when the post has (309: a ladder switch waits for it). */
+    private fun postQoeNow(itemId: String): Job? {
+        val snapshot = qoeSnapshotProvider?.invoke() ?: return null
+        return exitScope.launch {
             apiClient.postPlaybackQoe(
                 PlaybackQoeReport(
                     itemId = itemId,
@@ -612,9 +619,62 @@ class PlayerStore(
                     reportedVariant = variant
                     if (firstFrame) reportedFirstFrame = true
                     reportedStalls = snap?.rebufferCount ?: reportedStalls
-                    postQoeNow(itemId)
+                    val posted = postQoeNow(itemId)
+                    // 309 (FR-309-8) — a direct play that stalls the way that counts moves to the ladder, once.
+                    if (newStall && snap != null) maybeLadderAfterStall(itemId, snap.stalls, posted, positionProvider())
                 }
+                // 309 (FR-309-9) — a player that cannot switch variants itself is stepped by restreams.
+                maybeStepRestream(itemId, positionProvider())
             }
         }
     }
+
+    // ── 309 (FR-309-8/-9): restreams the store starts on its own ──
+
+    /** The ticket the player plays now (every Ready passes [onThisServer]). */
+    private var currentTicket: StreamTicket? = null
+    /** The item whose direct play was already moved to the ladder (never twice for one item). */
+    private var ladderSwitchedFor: String? = null
+    private var stepper = RestreamStepper()
+    private var stepperFor: String? = null
+    /** The device's own `max_video_bitrate` before any stepping cap (restored when the cap is lifted). */
+    private var stepBaseMaxVideo: Int? = null
+
+    private suspend fun maybeLadderAfterStall(itemId: String, stalls: List<QoeStall>, posted: Job?, positionMs: Long) {
+        val t = currentTicket ?: return
+        if (!shouldMoveToLadder(t.directPlay, ladderSwitchedFor == itemId, stalls)) return
+        ladderSwitchedFor = itemId
+        // The server's record has the stall before it negotiates again: the record's cap (FR-309-1, the stalled stream
+        // × 0.8) is what turns this item's next negotiation into a transcode with a ladder.
+        posted?.join()
+        println("309: the direct play of $itemId stalled (${StallRule.counting(stalls).size} counting) — restarting it on the ladder at $positionMs ms")
+        PlayerLadderHints.rearmTracks = true
+        restreamWithSub(itemId, -1, positionMs, null)
+    }
+
+    private fun maybeStepRestream(itemId: String, positionMs: Long) {
+        if (!PlayerLadderHints.restreamStepping) return
+        val t = currentTicket ?: return
+        if (t.directPlay || t.adaptive) return
+        val ahead = PlayerLadderHints.bufferedAheadMs.takeIf { it >= 0 } ?: return
+        val caps = lastCapabilities ?: return
+        if (stepperFor != itemId) { stepper = RestreamStepper(); stepperFor = itemId; stepBaseMaxVideo = caps.maxVideoBitrate }
+        val step = stepper.evaluate(kotlin.time.Clock.System.now().toEpochMilliseconds(), ahead, RestreamStepper.videoBpsOf(t.startVariantBps)) ?: return
+        lastCapabilities = caps.copy(maxVideoBitrate = steppedMaxVideo(stepBaseMaxVideo ?: 0, step.capVideoBps))
+        println("309: stepping $itemId ${if (step.down) "down" else "up"} — cap ${step.capVideoBps / 1000} kb/s, ${ahead} ms buffered")
+        PlayerLadderHints.rearmTracks = true
+        restreamWithSub(itemId, t.burnedSubtitleIndex ?: -1, positionMs, t.audioStreamIndex)
+    }
+}
+
+/** 309 (FR-309-8) — a direct play that stalled the way that counts ([StallRule]) moves to the ladder, once per item. */
+internal fun shouldMoveToLadder(directPlay: Boolean, alreadyMoved: Boolean, stalls: List<QoeStall>): Boolean =
+    directPlay && !alreadyMoved && StallRule.anyCounts(stalls)
+
+/** 309 (FR-309-9) — the `max_video_bitrate` a stepping restream sends: the step's cap under the device's own, or the
+ *  device's own again when the cap is lifted (0). */
+internal fun steppedMaxVideo(deviceMaxVideo: Int, capVideoBps: Long): Int {
+    if (capVideoBps <= 0) return deviceMaxVideo
+    val cap = capVideoBps.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    return if (deviceMaxVideo > 0) minOf(deviceMaxVideo, cap) else cap
 }
