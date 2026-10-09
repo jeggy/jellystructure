@@ -101,7 +101,8 @@ private fun ApplicationScope.RaviloDesktopApp() {
     val bounds = remember { WindowBounds.load() }
     val state = rememberWindowState(position = bounds.position, size = bounds.size)
     fun close() {
-        if (MusicEngine.state.value.playing) {
+        if (dev.jellystructure.ravilo.ui.desktop.DesktopBackground.keepsRunningOnClose(
+                MusicEngine.state.value.playing, dev.jellystructure.ravilo.ui.music.MusicCast.linked.value)) {
             shown = false
             // FR-R337-12 — on Linux the first close while music plays asks the Background portal once.
             dev.jellystructure.ravilo.ui.desktop.DesktopBackground.onCloseWhilePlaying(quit)

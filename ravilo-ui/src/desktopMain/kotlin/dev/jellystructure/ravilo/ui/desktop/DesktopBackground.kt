@@ -14,6 +14,13 @@ import javax.swing.SwingUtilities
 object DesktopBackground {
     private const val KEY = "background_answer"
 
+    /**
+     * Whether closing the window hides it rather than quitting. Found live 2026-10-09 (Mac, R328): the check looked
+     * only at the Mac's own player, so ⌘W while a song played on a speaker quit Ravilo — the cast is ours to control
+     * and to rejoin, so a linked cast (playing or paused) keeps the app running too.
+     */
+    fun keepsRunningOnClose(localPlaying: Boolean, castLinked: Boolean): Boolean = localPlaying || castLinked
+
     fun onCloseWhilePlaying(quit: () -> Unit) {
         if (DesktopPaths.isMac) return
         when (DesktopApp.prefs.get(KEY)) {
