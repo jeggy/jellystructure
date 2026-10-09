@@ -359,3 +359,14 @@ is unchanged. Android and the desktop take the colour and keep their behaviour.
 ## Triage (2026-10-09, against `main` `9ea5da3c`)
 
 - **Code: nothing found missing.** **Owed:** the themes seen on the phone, the TVs and the admin editor.
+
+## Live, 2026-10-09 (Pixel 9 Pro debug 1.50-119 + Soveværelse TV debug, dev stack v1.50-118)
+
+- **Phone — passed:** Settings → Appearance showed *Match the phone's light and dark · On*, *When the phone is light:
+  Daylight*, *When the phone is dark · In use now: Aurora · Midnight · Noir · Graphite*. Each dark pick re-skinned the
+  whole app live (accent, chips, bars, the music session bar); `cmd uimode night no` switched the app to Daylight at
+  once and moved *In use now* to the light row; night back on returned the dark pick.
+- **TV — passed:** the TV lists only the four dark themes with *This TV is always dark*; the phone's Graphite pick
+  showed on the TV (synced through the profile), and picking Aurora on the TV moved the phone's dark pick to Aurora
+  live. Owner's settings restored (follow on · Daylight · Aurora, phone back in night mode).
+- **Not checked:** the admin editor.
