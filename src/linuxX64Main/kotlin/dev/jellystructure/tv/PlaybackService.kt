@@ -581,7 +581,7 @@ class PlaybackService(
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
                 val adopted = device?.let { encoder.adoptPrewarm(it.deviceId, jellyfinId, plan, startSegment, jellyfinPlaySessionId, ticket.expiresAt) }
-                val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId)
+                val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId, startMs = ticket.startPositionMs)
                 val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
                 val startStream = rungBandwidth(plan.rungs[plan.startRung], audioPeak)
                 Logger.info("playback: item=$jellyfinId encoder=ours ${plan.codec}${if (plan.keepsHdr) " HDR" else ""} " +

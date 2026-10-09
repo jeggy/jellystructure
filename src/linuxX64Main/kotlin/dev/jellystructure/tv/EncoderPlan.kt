@@ -204,8 +204,12 @@ internal fun audioBitrate(codec: String, channels: Int): Long = when {
  * no audio), then one `EXT-X-STREAM-INF` per rung, the start rung first (309), every rung in one codec family.
  * Audio NAMEs are R291's `a{position} {label}` so a player maps a rendition back to the ticket's audio position.
  */
-internal fun encoderMaster(plan: EncoderPlan): String {
+internal fun encoderMaster(plan: EncoderPlan, startMs: Long = 0): String {
     val out = StringBuilder("#EXTM3U\n#EXT-X-VERSION:").append(if (plan.mux == EncoderMux.FMP4) 7 else 4).append("\n#EXT-X-INDEPENDENT-SEGMENTS\n")
+    // 313 (found live 2026-10-09) — a play that starts mid-film says where: AVPlayer (Mac, Safari, iPhone) loads from
+    // here instead of reading segment 0 before its seek, so our encoder no longer starts a job at 0:00 first. Players
+    // that seek explicitly (Media3, hls.js with a start position) land on the same place.
+    if (startMs > 0) out.append("#EXT-X-START:TIME-OFFSET=").append(secs(startMs)).append(",PRECISE=YES\n")
     val audioPeak = plan.audio.maxOfOrNull { audioBitrate(it.codec, it.channels) } ?: 0L
     val audioCodec = plan.audio.firstOrNull { it.default }?.let { audioCodecString(it.codec) } ?: plan.audio.firstOrNull()?.let { audioCodecString(it.codec) }
     for (a in plan.audio) {
@@ -295,7 +299,13 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
         if (plan.burnSubtitleOrder != null) {
             // FR-313-6 — the image subtitle composited on the GPU at the top rung's size, before the split (every rung
             // carries it). overlay_cuda takes 8-bit frames only, so a burn-in plan is always H.264 SDR (see [Encoder]).
-            graph.append("[base];[0:s:${plan.burnSubtitleOrder}]scale=${top.width}:${top.height},format=yuva420p,hwupload[sub];[base][sub]overlay_cuda")
+            // Found live 2026-10-09 (Mac, a PGS subtitle): the overlay's output carries no colour tags, so the output's
+            // `-color_* bt709` made ffmpeg 8 insert a software colour conversion after the split — "Impossible to convert
+            // between … 'Parsed_split_5' and 'auto_scale_0' (src: cuda)". The tags are now set on the GPU frames
+            // (`setparams`, metadata only). The subtitle chain is Jellyfin's own (`-canvas_size` before `-i`, a plain
+            // `scale` first, `eof_action=pass:repeatlast=0`), measured on the same film: 2 s segments at ~8× realtime.
+            graph.append("[base];[0:s:${plan.burnSubtitleOrder}]scale,scale=${top.width}:${top.height}:fast_bilinear,format=yuva420p,hwupload[sub];")
+                .append("[base][sub]overlay_cuda=eof_action=pass:repeatlast=0,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
         }
         graph.append(",split=$n")
         for (i in 0 until n) graph.append("[t$i]")
@@ -343,6 +353,8 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
     val seg = if (plan.mux == EncoderMux.FMP4) "s%d.m4s" else "s%d.ts"
     val hw = if (gpu != null) "-init_hw_device cuda=gpu:$gpu -filter_hw_device gpu -hwaccel cuda -hwaccel_device gpu -hwaccel_output_format cuda " else ""
     return "$ffmpeg -nostdin -hide_banner -loglevel error -probesize 5M -analyzeduration 5M " + hw +
+        // FR-313-6 — an image subtitle is drawn on a canvas the size of the picture (Jellyfin passes the same).
+        (if (plan.burnSubtitleOrder != null && plan.source.width > 0 && plan.source.height > 0) "-canvas_size ${plan.source.width}x${plan.source.height} " else "") +
         "-ss ${secs(startMs)} -i ${shq(plan.source.path)} " +
         "-filter_complex ${shq(graph.toString())}" + maps + enc +
         " -sn -dn -map_metadata -1 -map_chapters -1 -copyts -avoid_negative_ts disabled -max_muxing_queue_size 4096" +

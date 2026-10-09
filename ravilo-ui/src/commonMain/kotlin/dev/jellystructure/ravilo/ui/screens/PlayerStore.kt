@@ -86,6 +86,26 @@ internal class FailureLatch {
         return armed
     }
 }
+
+/**
+ * 313 (found live 2026-10-09, Mac) — a stream from our own encoder that never moves: ffmpeg refused the plan, AVPlayer
+ * kept retrying the stream's segments and the viewer saw "Loading…" forever with no engine error to catch. True once
+ * the position has not moved (by more than [toleranceMs]) for [stuckMs] while the viewer wants it to play; a pause, a
+ * move, or [reset] starts the clock again.
+ */
+internal class StuckWatch(private val stuckMs: Long = OUR_STREAM_STUCK_MS, private val toleranceMs: Long = 250) {
+    private var lastPos = -1L
+    private var sinceMs = -1L
+    fun reset() { lastPos = -1L; sinceMs = -1L }
+    fun observe(positionMs: Long, paused: Boolean, nowMs: Long): Boolean {
+        if (paused || lastPos < 0 || kotlin.math.abs(positionMs - lastPos) > toleranceMs) {
+            lastPos = positionMs; sinceMs = nowMs
+            return false
+        }
+        return nowMs - sinceMs >= stuckMs
+    }
+}
+internal const val OUR_STREAM_STUCK_MS = 20_000L
 // R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
 // lost entirely (was 60 ticks = 10 minutes). 309 (FR-309-1) — now two minutes: a stream is proven after two minutes
 // held without a stall, so the server needs a post at least that often (one row per play, upserted).
@@ -190,6 +210,11 @@ class PlayerStore(
     // if the owner tore the store down without calling stopSession() itself — which also makes the two
     // teardown paths order-independent: whichever runs first does the real stop, the other no-ops.
     private var positionProvider: (() -> Long)? = null
+    private var isPausedProvider: (() -> Boolean)? = null   // 313 — the stuck watch reads it
+    /** 313 (found live 2026-10-09) — the item whose stuck stream from our encoder was already restreamed (once). */
+    private var stuckRestreamedFor: String? = null
+    /** 313 — the audio the last restream of this item asked for (a rendition pick is not in the session's ticket). */
+    private var lastRestreamAudio: Int? = null
     private var durationProvider: (() -> Long)? = null
     // R216 (FR-R216-4) — supplied by the caller (PlayerScreen owns the RaviloPlayer instance; the store
     // deliberately doesn't) so QoE reporting can reuse the exact same lambda-injection pattern as
@@ -229,8 +254,10 @@ class PlayerStore(
         failedProvider?.let { this.failedProvider = it }
         failureWatchJob?.cancel()
         DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
+        if (currentItemId != itemId) { stuckRestreamedFor = null; lastRestreamAudio = null }
         currentItemId = itemId
         this.positionProvider = positionProvider
+        this.isPausedProvider = isPausedProvider
         this.durationProvider = durationProvider
         this.qoeSnapshotProvider = qoeSnapshotProvider
         this.startupMsProvider = startupMsProvider
@@ -385,6 +412,7 @@ class PlayerStore(
         lastCapabilities?.let { caps ->
             if (audioPickNeedsHls(audioStreamIndex != null, caps.hlsOnly, switchesAudioInFile())) lastCapabilities = caps.copy(hlsOnly = true)
         }
+        if (itemId == currentItemId) lastRestreamAudio = audioStreamIndex   // 313 — a recovery restream keeps it
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
@@ -393,6 +421,9 @@ class PlayerStore(
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)
             }
+            // 313 (found live 2026-10-09) — the watch ends when the state leaves Ready (this restream's Loading), so a
+            // stream that broke after a restream was never caught: "Loading…" forever. Armed again for the new stream.
+            if (_state.value is PlayerSessionState.Ready) startFailureWatch()
         }
     }
 
@@ -575,13 +606,31 @@ class PlayerStore(
         val failed = failedProvider
         failureWatchJob = scope.launch {
             val latch = FailureLatch()
+            val stuck = StuckWatch()
             while (isActive && _state.value is PlayerSessionState.Ready) {
                 delay(FAILURE_POLL_MS)
-                if (latch.observe(failed())) {
+                // 313 (found live 2026-10-09) — a stream from our own encoder that fails (a refused plan answers 410) or
+                // never moves is restreamed once at the same place with the same picks: the server marks a refused file,
+                // so that restream is Jellyfin's. Failing or stuck again: R237's error, never "Loading…" forever.
+                val t = currentTicket
+                val item = currentItemId
+                val ours = t?.encoder == "ours" && item != null
+                val pos = positionProvider?.invoke()
+                val failedNow = latch.observe(failed())
+                val stuckNow = !failedNow && ours && pos != null &&
+                    stuck.observe(pos, isPausedProvider?.invoke() == true, kotlin.time.Clock.System.now().toEpochMilliseconds())
+                if (!failedNow && !stuckNow) continue
+                if (ours && stuckRestreamedFor != item) {
+                    stuckRestreamedFor = item
+                    println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — restreaming once at ${pos ?: 0}ms")
+                    restreamWithSub(item!!, t!!.burnedSubtitleIndex ?: -1, pos ?: 0L, lastRestreamAudio ?: t.audioStreamIndex)
+                } else if (failedNow) {
                     _state.value = PlayerSessionState.Error("The player failed after the stream started",
                         if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC)
-                    break
+                } else {
+                    _state.value = PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC)
                 }
+                break
             }
         }
     }

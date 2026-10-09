@@ -45,7 +45,10 @@ class Encoder(
      * it); [prewarmSegment] is non-null while it is a prewarm nobody has pressed Play on yet (FR-313-1 / 309 FR-309-6).
      */
     private class Entry(val plan: EncoderPlan, var jellyfinPlaySessionId: String, var expiresAt: Long,
-                        val deviceId: String = "", val itemId: String = "", var prewarmSegment: Int? = null)
+                        val deviceId: String = "", val itemId: String = "", var prewarmSegment: Int? = null,
+                        /** 313 (found live 2026-10-09) — where the play starts: the master says so (`EXT-X-START`) and the
+                         *  init segment starts its job there, so a resumed play never encodes from 0:00 first. */
+                        var startMs: Long = 0)
 
     private val mutex = Mutex()
     private val entries = mutableMapOf<String, Entry>()
@@ -155,12 +158,12 @@ class Encoder(
     }
 
     /** Registers [plan] behind a new stream id (the capability, FR-313-7); the job starts when a player reads it. */
-    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = ""): String {
+    suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = "", startMs: Long = 0): String {
         val id = secureHexId()
         mutex.withLock {
             val now = nowMs()
             entries.entries.removeAll { it.value.expiresAt < now }
-            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId)
+            entries[id] = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceAtLeast(0))
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
         }
         return id
@@ -189,7 +192,7 @@ class Encoder(
             stopFor(key)
         }
         val id = register(plan, key, expiresAt, deviceId, itemId)
-        mutex.withLock { entries[id]?.prewarmSegment = startSegment }
+        mutex.withLock { entries[id]?.let { it.prewarmSegment = startSegment; it.startMs = startSegment * ENCODER_SEGMENT_MS } }
         Logger.info("encoder: prewarm device=$deviceId item=$itemId at segment $startSegment ${plan.codec} rungs=${plan.rungs.size} start=${plan.startRung} (309)", "tv")
         if (kickJobs) scope.launch { jobs.segment(id, plan, ffmpegPath, 0, startSegment) }
         return id
@@ -209,6 +212,7 @@ class Encoder(
             val e = hit.value
             if (!samePlay(e.plan, plan) || kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) > 1) return@withLock null
             e.prewarmSegment = null
+            e.startMs = startSegment * ENCODER_SEGMENT_MS
             e.jellyfinPlaySessionId = jellyfinPlaySessionId
             e.expiresAt = expiresAt
             byPlay[key]?.remove(hit.key)
@@ -276,7 +280,11 @@ class Encoder(
 
     suspend fun owns(id: String): Boolean = entry(id) != null
 
-    suspend fun master(id: String): String? = entry(id)?.let { encoderMaster(it.plan) }
+    suspend fun master(id: String): String? = entry(id)?.let { encoderMaster(it.plan, it.startMs) }
+
+    /** 313 (found live 2026-10-09) — ffmpeg refused this stream's plan: its URLs answer 410 so the player gives up on
+     *  it (and the client's watch restreams, which the server now answers from Jellyfin) instead of retrying a 404. */
+    suspend fun refusedStream(id: String): Boolean = entry(id) != null && jobs.isRefused(id)
 
     /** A variant's playlist: [kind] `v` (rung index) or `a` (audio position). */
     suspend fun playlist(id: String, kind: String, index: Int): String? {
@@ -292,11 +300,13 @@ class Encoder(
         return jobs.segment(id, e.plan, ffmpegPath, v, k)
     }
 
-    suspend fun init(id: String, kind: String, index: Int, nearSegment: Int = 0): String? {
+    suspend fun init(id: String, kind: String, index: Int, nearSegment: Int? = null): String? {
         val e = entry(id) ?: return null
         if (e.plan.mux != EncoderMux.FMP4) return null
         val v = variantOf(e.plan, kind, index) ?: return null
-        return jobs.init(id, e.plan, ffmpegPath, v, nearSegment)
+        // 313 (found live 2026-10-09) — a player reads the init before its first segment: the job starts where the play
+        // starts, not at 0:00 (a resumed play on the Mac and in Safari encoded from 0 first, then again at the seek).
+        return jobs.init(id, e.plan, ffmpegPath, v, nearSegment ?: (e.startMs / ENCODER_SEGMENT_MS).toInt())
     }
 
     fun mux(id: String): EncoderMux? = entries[id]?.plan?.mux
