@@ -22,6 +22,9 @@ fun main() {
     dev.jellystructure.ravilo.ui.seams.playsHlsForAirPlay()
     // R376 (FR-R376-5) — and the containers this browser opens.
     dev.jellystructure.ravilo.ui.seams.supportedContainers()
+    // R376 (FR-R376-S1) — the page's one <video> element, listening for the first click, tap or key, so the play that
+    // follows a click has Safari's sound.
+    dev.jellystructure.ravilo.ui.seams.prepareWebVideo()
     val container = document.getElementById("ComposeTarget") ?: error("index.html has no #ComposeTarget")
     ComposeViewport(
         viewportContainer = container,

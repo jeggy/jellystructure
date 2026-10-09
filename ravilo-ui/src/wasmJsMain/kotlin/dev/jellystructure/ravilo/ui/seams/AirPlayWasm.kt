@@ -40,12 +40,21 @@ actual val platformAirPlay: AirPlay? = WebAirPlay
 
 // `x-webkit-airplay="allow"` is what lets WebKit offer the element to AirPlay at all; the two events are
 // WebKit's own (no standard equivalent carries AirPlay). Wrapped in try: any other engine ignores both.
+// R376 (FR-R376-S1) — the element is the page's one, bound again by every player: the listeners are added once (WebKit
+// sends the current availability when a listener is added, so a later bind replays what they last saw instead).
 private fun jsBindAirPlay(video: HTMLVideoElement, onAvailable: (Boolean) -> Unit, onWireless: (Boolean) -> Unit): Unit = js(
     """{
         try {
+            if (video._rvAirBound) {
+                onAvailable(!!video._rvAirAvailable);
+                onWireless(!!video.webkitCurrentPlaybackTargetIsWireless);
+                return;
+            }
+            video._rvAirBound = true;
             video.setAttribute('x-webkit-airplay', 'allow');
             video.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) {
-                onAvailable(e.availability === 'available');
+                video._rvAirAvailable = e.availability === 'available';
+                onAvailable(video._rvAirAvailable);
             });
             video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function () {
                 onWireless(!!video.webkitCurrentPlaybackTargetIsWireless);

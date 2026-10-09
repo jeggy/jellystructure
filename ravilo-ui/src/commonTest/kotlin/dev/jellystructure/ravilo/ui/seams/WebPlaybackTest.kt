@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** R376 — the web player's decisions (FR-R376-2/-3/-5/-6). */
@@ -203,4 +204,36 @@ class WebPlaybackTest {
         q.beginItem("film"); e.feed("loadstart@3000,waiting@3010,playing@3500")   // an audio restream (R284)
         assertEquals(1, q.rebufferCount)
     }
+
+    // R376 (FR-R376-S1) — sound on the first click in Safari.
+
+    @Test fun aTrustedClickOnTheIdleElementUnlocksIt() {
+        for (ev in listOf("pointerdown", "mousedown", "click", "touchend", "keydown"))
+            assertTrue(WebSoundUnlock.shouldUnlock(ev, trusted = true, hasSource = false), ev)
+    }
+
+    @Test fun aScriptedEventNeverUnlocks() {
+        assertFalse(WebSoundUnlock.shouldUnlock("click", trusted = false, hasSource = false))
+    }
+
+    @Test fun aClickDuringAFilmNeverTouchesTheElement() {
+        assertFalse(WebSoundUnlock.shouldUnlock("click", trusted = true, hasSource = true))
+    }
+
+    @Test fun movingThePointerIsNotAGesture() {
+        assertFalse(WebSoundUnlock.shouldUnlock("pointermove", trusted = true, hasSource = false))
+        assertFalse(WebSoundUnlock.shouldUnlock("scroll", trusted = true, hasSource = false))
+    }
+
+    @Test fun oneElementAcrossTwoPlayers_aStaleReleaseDoesNotResetIt() {
+        val owner = SharedElementOwner()
+        val first = Any(); val second = Any()
+        owner.acquire(first)
+        owner.acquire(second)                 // the next screen's player is created before the last one is disposed
+        assertFalse(owner.release(first))     // the old player's release must not reset the element
+        assertSame(second, owner.current)
+        assertTrue(owner.release(second))     // the owner's own release resets it
+        assertNull(owner.current)
+    }
 }
+
