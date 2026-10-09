@@ -698,3 +698,14 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   `device_stream_record` afterwards.
 - **Note:** the watchdog's stop is written as `reason=watchdog` and later progress is *ignored for already-stopped
   playback* — on a link this slow the restream plays on with no session on the server.
+
+## Live, 2026-10-09 evening (Stue TV, v1.50-138)
+
+- **A Cast Connect play on a TV app with no record is transcoded even when the TV could play the file directly.**
+  The Stue TV debug app (fresh install, no `device_stream_record`) got `takes no record → cap 8000k (309)` for a 4K HEVC
+  HDR film the BRAVIA decodes, so our encoder made an H.264 SDR ladder (first segment 1.3 s, played fine). The
+  speed test (FR-309-3) runs on a detail page, which a Cast Connect start never opens on the TV. **To fix:** the TV app
+  runs the probe when it starts (or on the Cast Connect load) when its measurement is missing or stale, and a TV whose
+  decoders take the file without a record uses FR-309-8's small-or-speed-tested rule with that probe.
+- **309's receiver ABR (FR-309-5):** logs `309 abr: Shaka bounded by the ladder rule` on every load and `309 probe`
+  (4 MB in 460 ms → 72.9 Mbps); its step-down crashed Shaka after a reload — fixed in 04a5b93e (see R291).

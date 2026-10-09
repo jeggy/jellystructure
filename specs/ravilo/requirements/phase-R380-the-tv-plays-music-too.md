@@ -393,3 +393,23 @@ itself was taken back by its owner mid-test, so no phone-side Cast SDK music cas
   shows faintly through the queue panel.
 - **Not run:** *Playing from {device}* (only a Cast Connect LOAD carries `sender_name`; the server road has none, so
   its absence here is by design) — owed with a real phone cast; the three skins on the music page (Aurora seen).
+
+## Live on Stue TV (2026-10-09 evening, debug build 1.50-119 on the TV and the Pixel)
+
+Stue TV's debug app signed in as the owner (password typed from Proton Pass by a helper, never printed); all at volume 0–1.
+
+- **Skins on the TV's Now playing: passed.** Switching the profile's dark theme on the Pixel (Settings ▸ Appearance)
+  re-skinned the TV's Now playing live: Midnight (teal), Noir (black, amber kicker); restored to Aurora.
+- **"Playing from {device}" is NOT shown when the TV app is the target (gap).** With Ravilo open on the TV, the phone's
+  *Play on… ▸ Stue TV* (the merged row) hands the music over **through the server** (`Playback sessions: … start music on
+  <TV> from <Pixel> → session_load`), not as a Cast Connect load, and only a Cast load carries `sender_name`. So the
+  line never appears on this path, which is the common one. **Fix (to spec/build):** `session_load` carries the starting
+  device's name (`playback_session.started_by_device_id` → its display name) and the TV shows it the same way.
+- **Home did NOT stop the music on this path.** FR/owner decision "Home stops the music" held for a Cast load
+  (Soveværelse TV, earlier today) but not for a server `session_load`: after Home the TV's media session kept
+  *PLAYING* in the background (position advancing).
+- **Two sessions after the hand-off.** *Playing everywhere* on the phone listed the song twice, one on the Pixel 9 Pro
+  and one on Stue TV: the phone's own session wasn't ended when the music moved to the TV (or was re-created when Home
+  was pressed on the TV). Both were paused from the phone's sheet.
+- **Tapping a TV in *Play on…* with nothing playing does nothing** (no log line, no hint) — same as the R266 finding from
+  a film page; the music-mode sheet behaves the same.

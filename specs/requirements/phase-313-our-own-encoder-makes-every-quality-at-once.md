@@ -612,3 +612,18 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   failed at once (`NSURLErrorDomain -1002 unsupported URL`). The init and the first segment are valid HEVC Main 10 PQ.
   A failed client stream is restreamed to **our encoder again** (only an ffmpeg refusal marks the file), so the
   restream fails the same way; a client-side failure of our stream should ask for Jellyfin on the restream.
+
+## Cast on our encoder, live 2026-10-09 evening (Stue TV's built-in Chromecast, v1.50-139, dev-only `cast_receivers`)
+
+- **A 4K HDR film cast to the Chromecast web receiver on our encoder (HEVC HDR, 4 rungs, TS) played 16 minutes with
+  0 rebuffers** (69 s → 1030 s of the film; host-side sender, the receiver's own QoE: `rebuffer_count 0`). Shaka
+  climbed 4 rungs to 2160p at 30.2 Mbps and never stepped down; `/transcode/js` held 349–464 MB the whole way (d476880f's
+  pruning). Start: BUFFERING → PLAYING in ~7 s.
+- **An audio switch on the receiver** (Cast channel `audio`) restreamed on our encoder at segment 22 (first segment
+  1.26 s) and resumed at the same position ~6 s later — after 04a5b93e; before it, the same switch crashed Shaka (7999).
+- **The Ravilo TV app (Cast Connect) on our encoder:** a 4K HEVC HDR film as an H.264 SDR ladder, first segment 1.3 s,
+  played — but only because 309 capped a TV with no record at 8 Mbps (see 309's live note); the BRAVIA could play it
+  directly.
+- Both dev-only switches (`cast_receivers`, `receiver_renditions`) are removed again; **casts stay on Jellyfin by
+  default until the owner decides** — the evidence above (21 min on the Køkken hub, 16 min on Stue TV, 0 rebuffers)
+  supports making `cast_receivers` the default.

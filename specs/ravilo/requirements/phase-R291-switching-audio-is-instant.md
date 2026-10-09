@@ -506,3 +506,26 @@ Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`la
   `hls_audio_renditions` (by design until a browser shows a need).
 - **The cast receiver keeps restreaming** (owner, 2026-10-08: until a Shaka error code is captured). Owed: one cast
   with renditions enabled for the receiver on a dev build, to capture that error.
+
+## Receiver live, 2026-10-09 evening (Stue TV's built-in Chromecast, v1.50-138, dev-only `[encoder] receiver_renditions = true`)
+
+The dev-only switch (d7c83721) declares `hls_audio_renditions` for the cast receiver so the R291 master reaches it; a
+host-side sender (pychromecast, our app id, a hand-off minted as the owner's phone) loaded a 4K HDR film with two
+English tracks (AC-3 5.1, TrueHD 7.1). Volume 1.
+
+- **Jellyfin path (HEVC copied, audio re-encoded, R291's composed master): Shaka error 3018 — `TRANSMUXING_FAILED`
+  (category 3, MEDIA), captured on v1.50-139** with a 1080p HEVC film carrying five E-AC-3 tracks (Jellyfin
+  `SegmentContainer=mp4`, 5 renditions): the receiver errored in < 3 s of the load, every attempt. **Cause:** Jellyfin
+  serves the HEVC video as **fMP4** segments, while R291's own audio renditions are **MPEG-TS** (`AudioRenditionJobs`:
+  `-hls_segment_type mpegts`, `s%d.ts`); the receiver's Shaka must transmux the TS audio to sit beside fMP4 video and
+  fails. Our encoder's stream (video and audio both TS) plays; Media3 on Android tolerates the mixed containers, which is
+  why R291 works there. **Fix (not built):** a rendition is written in the same container as the video variant it
+  accompanies — fMP4 (`-hls_segment_type fmp4`, an `EXT-X-MAP` init segment) when Jellyfin's master is `mp4`, TS when it
+  is `ts` — then the receiver can be offered renditions; until then it keeps restreaming (the decision above stands).
+- **Our encoder's path (313, HEVC HDR 4 rungs, 2 audio):** **played** — BUFFERING → PLAYING in ~7 s, smooth.
+- **The audio switch on the receiver (`audio` index 0 over the Cast channel) failed with Shaka 7999**
+  (`TypeError: Cannot read property 'retryParameters' of null`). Cause: **ours**, not the playlist — the receiver
+  restreamed (our encoder, `audio=1`, segment 37, first segment 1.2 s), and 309's ABR wrapper (`ReceiverAbr.kt`) stepped
+  down at "0 ms buffered" right after the reload, handing Shaka a variant of the previous manifest. **Fixed in
+  04a5b93e** (state cleared on stop/new manifest, a 0 ms buffer that never rose doesn't count, only current variants
+  are handed over; `scripts/check-receiver-abr.sh` in CI fails on the old code and passes now).
