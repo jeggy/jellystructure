@@ -93,7 +93,18 @@ internal object CastSenderDesktop : CastSender {
     /** The sheet's row: open a session to [d], launching our app there if it is not running. */
     fun connect(d: CastDevice) { scope.launch { open(d, launch = true) } }
 
-    private suspend fun open(d: CastDevice, launch: Boolean, confirm: suspend (CastSession) -> Boolean = { true }): Boolean {
+    /** Whether the last [open] failed before reaching the device (no TCP/TLS connection), not at the app. */
+    private var lastOpenNoConnection = false
+
+    /**
+     * [failLink] is the link a failure leaves: NONE ends it; RECONNECTING (a retry follows) keeps it, so a drop that is
+     * retried never reads as ended in between — found live 2026-10-09 (Mac, R330): each failed try set NONE, and the
+     * music bridge handed the speaker's queue back to the Mac (R353) while the next try was about to rejoin.
+     */
+    private suspend fun open(
+        d: CastDevice, launch: Boolean, confirm: suspend (CastSession) -> Boolean = { true },
+        failLink: CastLinkState = CastLinkState.NONE,
+    ): Boolean {
         val app = appId ?: return false
         // A device that was told to stop (music moving on to another one) gets the moment it needs to hear it:
         // closing the connection at once could drop the STOP still waiting to be written.
@@ -104,12 +115,17 @@ internal object CastSenderDesktop : CastSender {
         _status.value = null; _volume.value = null; said = null
         _link.value = if (launch) CastLinkState.CONNECTING else CastLinkState.RECONNECTING
         _device.value = d.name
-        val s = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }.getOrNull()
+        val opened = runCatching { CastSession(openCastTransport(d.host, d.port), app, scope).also { it.start() } }
+        val s = opened.getOrNull()
+        lastOpenNoConnection = s == null
         val joined = s != null && (if (launch) s.launchOrJoin() else s.joinIfRunning()) && confirm(s)
-        println("${DesktopLog.stamp()} cast: ${if (launch) "connect" else "rejoin"} ${d.name} [${d.model}] → ${if (s == null) "no connection" else if (joined) "joined" else "not joined (${s.closedReason ?: "no app"})"}")
+        // Why a connection was not made, so the next "no connection" says more than that.
+        val why = opened.exceptionOrNull()?.let { e -> " (${e::class.simpleName}: ${e.message} · ${d.host}:${d.port})" } ?: ""
+        println("${DesktopLog.stamp()} cast: ${if (launch) "connect" else "rejoin"} ${d.name} [${d.model}] → ${if (s == null) "no connection$why" else if (joined) "joined" else "not joined (${s.closedReason ?: "no app"})"}")
         if (s == null || !joined) {
             s?.close("not joined")
-            _link.value = CastLinkState.NONE; _device.value = null
+            _link.value = failLink
+            if (failLink == CastLinkState.NONE) _device.value = null
             return false
         }
         session = s; device = d; said = null
@@ -204,7 +220,7 @@ internal object CastSenderDesktop : CastSender {
             repeat(3) {
                 delay(2_000)
                 val again = CastDiscovery.devices.value.firstOrNull { it.id == d.id } ?: d
-                if (open(again, launch = false)) return
+                if (open(again, launch = false, failLink = CastLinkState.RECONNECTING)) return
             }
         }
         endQuietly()
@@ -236,10 +252,21 @@ internal object CastSenderDesktop : CastSender {
         try {
             val d = withTimeoutOrNull(15_000) { CastDiscovery.devices.first { list -> list.any { it.id == lastId } } }
                 ?.firstOrNull { it.id == lastId } ?: return
-            open(d, launch = false) { s ->
-                val media = withTimeoutOrNull(3_000) { s.media.first { it != null } }
-                media != null && media.playerState != "IDLE"
+            // Found live 2026-10-09 (Mac, the installed 1.50): the one try at start-up made no connection to the speaker
+            // (a second launch rejoined it). A drop is retried three times; start-up now is too, the device read again
+            // from discovery each time (its address may have changed). A device that answers with nothing loaded ends it.
+            var attempt = 1
+            while (session == null) {
+                val again = CastDiscovery.devices.value.firstOrNull { it.id == lastId } ?: d
+                val rejoined = open(again, launch = false, failLink = CastLinkState.RECONNECTING, confirm = { s ->
+                    val media = withTimeoutOrNull(3_000) { s.media.first { it != null } }
+                    media != null && media.playerState != "IDLE"
+                })
+                if (rejoined || pendingLoad != null || _link.value != CastLinkState.RECONNECTING || !startupRejoinRetries(attempt, lastOpenNoConnection)) break
+                attempt++
+                delay(STARTUP_REJOIN_GAP_MS)
             }
+            if (session == null && _link.value == CastLinkState.RECONNECTING) { _link.value = CastLinkState.NONE; _device.value = null }
             if (session != null) send(json.encodeToString(CastCommand.serializer(), CastCommand("status")))
         } finally {
             CastDiscovery.release()
@@ -362,3 +389,11 @@ internal object CastNowPlaying {
         MacNowPlaying.release(target)
     }
 }
+
+/** R330 (found live 2026-10-09) — start-up rejoin tries: as many as a dropped connection gets. */
+internal const val STARTUP_REJOIN_TRIES = 3
+internal const val STARTUP_REJOIN_GAP_MS = 2_000L
+
+/** Whether start-up tries the last device again after try [attempt]: only when no connection was made (a device that
+ *  answered with nothing playing is nothing to rejoin), and at most [STARTUP_REJOIN_TRIES] tries in all. */
+internal fun startupRejoinRetries(attempt: Int, noConnection: Boolean): Boolean = noConnection && attempt < STARTUP_REJOIN_TRIES

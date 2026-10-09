@@ -261,3 +261,16 @@ the two screenless speakers, and Local Network access was already granted.
 
 - **Code: nothing found missing.** **Owed on devices:** acceptance 1–7 from the Mac (the TXT keys on Stue,
   Gæsteværelse, their group, the hub and a TV).
+
+### Found live 2026-10-09 — fixed
+
+- **Start-up did not rejoin the speaker once.** *Defect:* the Mac's log shows the installed 1.50 app's start-up rejoin
+  ending `→ no connection` (the TCP/TLS connection to the speaker failed — the reason was swallowed), and FR-R330-5 tried
+  only once, while a dropped connection is tried three times. The same log shows retries of a dropped connection that
+  failed setting the link to NONE between tries, so the music bridge handed the speaker's queue back to the Mac (R353)
+  while the next try was about to rejoin. *Fix:* start-up tries again on *no connection* (three tries in all, 2 s apart,
+  the device read again from discovery each time; a device that answers with nothing loaded ends it at once); a failed
+  try that will be retried keeps the link RECONNECTING, and only the last ends it; a failed connection now logs its
+  exception and the address tried. **Open:** the same log shows the speaker closing the Mac's connection every 5–50 s
+  (`closed (send failed)`); the test build and the installed app may both have been running — re-test with one Ravilo.
+  **Mac re-test owed:** quit during a speaker cast and start again (rejoins, no hand-back in the log).
