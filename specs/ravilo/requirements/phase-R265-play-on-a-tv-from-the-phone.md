@@ -254,6 +254,14 @@ a screen with `now_playing` for this user ⇒ mini bar with the live position; n
 (FR-R245-5's two outcomes, without an SDK). The connecting bar (FR-R245-3) reads *"Sending to {TV}…"* /
 *"Playing on {TV}"* and retires itself.
 
+**FR-R265-7a · On a title's page the glyph plays that title; elsewhere a tap that cannot start says so** *(found live
+2026-10-09, below)*. The app bar's glyph carries no play context of its own. On a film's page it carries the film, on a
+series page the episode the page's Play button starts (309's prewarm target) — a tap on a free place starts it there,
+from the viewer's resume position, exactly as the player's glyph does. Where the page has no title (Home, a browse
+page) the sheet still lists every place, and a tap on a free one keeps the sheet open and says *Open a film or an
+episode first, then pick where it plays.* (music mode: *Play something first, then pick where it plays.*) — never a
+tap that does nothing. The music-mode sheet never takes the page's title (it starts the queue).
+
 > **Changed by R376 (owner, 2026-10-08):** Safari (Mac and iPhone) no longer takes only HLS. It negotiates like any browser and direct-plays what it can; the moment the viewer picks AirPlay (WebKit reports the picture on a wireless target) a stream that is not HLS restarts as HLS at the current position, with the manifest's subtitles, and a start while already on AirPlay asks for HLS from the beginning. AirPlay keeps working; Safari starts the common case without a Jellyfin job. See R376's *Safari: direct play, HLS only for AirPlay*.
 
 **FR-R265-8 · The web player sends the truth, so AirPlay has something to hand over.** On the web the
@@ -362,3 +370,16 @@ mini bar, remote, sheet and states read only `status`. A commonMain `ScreenSende
 
 **Build order:** last of the five — after 235 (self-hosted players), 236 (routes, pairing, status) and
 with R264 on a real TV to test against.
+
+## Found live 2026-10-09
+
+- **A tap on a free TV from a film's page did nothing** (R266's live run, Pixel 9 Pro debug + Soveværelse TV): the app
+  bar's glyph opened the sheet join-only (no `ScreenPlayContext`), and R370's `startOn` returned silently when it had
+  nothing to start — no start, no close, no word; a viewer reads it as broken. **Fixed 2026-10-09 (FR-R265-7a):**
+  `PagePlayTarget` holds the page's title (`PublishPagePlayTarget` on the film page — the film — and the series page —
+  the Play button's episode; cleared when the page leaves), `CastController.openSheet` falls back to it when the glyph
+  passes nothing (not in music mode, and the player's own context still wins), and a start with nothing to send sets
+  the sheet's hint (`screens.nothing_to_start` / `_music`, en/da/fo — da/fo drafts) instead of returning silently.
+  Tests: `PlayOnPageTargetTest` (the fallback and its limits; the hint on a tap with nothing to start, the sheet
+  staying open; a tap with the page's title closing the sheet to start). **Phone re-test owed:** a film's page → glyph
+  → a free TV starts the film there; Home → glyph → a free TV shows the hint.

@@ -455,6 +455,8 @@
   "wd.sun": "søndag",
   "screens.sending": "Sender til {device}…",
   "screens.playing_on": "Spiller på {device}",
+  "screens.nothing_to_start": "Åbn en film eller en episode først, og vælg så, hvor den skal spille.",
+  "screens.nothing_to_start_music": "Spil noget først, og vælg så, hvor det skal spille.",
   "loading": {
     "text": "Indlæser…",
     "note": "R279 — was accent-stripped (`Indlaeder...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."

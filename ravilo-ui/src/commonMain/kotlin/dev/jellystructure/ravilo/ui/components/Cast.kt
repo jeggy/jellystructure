@@ -247,7 +247,9 @@ class CastController(
     /** [music] — R324 (FR-R324-1): the music-mode sheet, titled *Play on…*, listing the audio routes first. */
     fun openSheet(playContext: ScreenPlayContext? = null, music: Boolean = false) {
         if (dev.jellystructure.ravilo.ui.isTvPlatform) return   // a TV never casts (owner, 2026-10-05; rememberCastIconShown)
-        sheet.value = SheetRequest(playContext, music && musicEnabled)
+        val inMusic = music && musicEnabled
+        // FR-R265-7a — the app bar's glyph passes nothing: on a film's or a series' page the page's title is what a tap starts.
+        sheet.value = SheetRequest(playContext ?: PagePlayTarget.current.value.takeIf { !music }, inMusic)
     }
     fun closeSheet() { sheet.value = null }
 

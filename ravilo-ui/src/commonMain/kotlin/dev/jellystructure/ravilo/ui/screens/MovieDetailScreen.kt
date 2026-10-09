@@ -112,6 +112,7 @@ fun MovieDetailScreen(
     // 309 (FR-309-3/-6) — 2 s on the page: the speed test, then the encode Play would start; leaving stops it.
     val prewarmId = (state as? MovieDetailState.Loaded)?.detail?.card?.id
     LaunchedEffect(prewarmId) { prewarmId?.let { store.prewarm.dwell(it) } }
+    dev.jellystructure.ravilo.ui.components.PublishPagePlayTarget(prewarmId)   // R265 FR-R265-7a — the app bar's cast sheet starts it
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {

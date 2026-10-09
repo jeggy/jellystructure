@@ -137,6 +137,7 @@ fun SeriesDetailScreen(
     val loadedSeries = (state as? SeriesDetailState.Loaded)?.detail
     val prewarmEp = if (loadedSeries != null && overlay.isNotEmpty()) primaryEpisodeId(loadedSeries, overlay) else null
     LaunchedEffect(prewarmEp) { prewarmEp?.let { store.prewarm.dwell(it, seriesId = loadedSeries?.card?.id) } }
+    dev.jellystructure.ravilo.ui.components.PublishPagePlayTarget(prewarmEp)   // R265 FR-R265-7a — the episode Play starts
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
