@@ -391,5 +391,14 @@ itself was taken back by its owner mid-test, so no phone-side Cast SDK music cas
 - **Findings (not fixed):** (1) the panel says *Up next*, not *Up next from {album}*, and lists the song now playing
   first under it; (2) the controls row's last button is clipped to *Queu* at 1920×1080; (3) the Now playing text
   shows faintly through the queue panel.
+- **Found live 2026-10-09 — fixed the same day (FR-R380-5, FR-R380-3):** (1) the panel reads, top to bottom: the songs
+  already played (no heading), **Now playing** over the song playing, then **Up next from {album}** over the rest —
+  the song playing never sits under *Up next* (`queueLines`). A session started through the server carries no
+  `MusicContext`, so when every song still to come is from one album, that album names the queue
+  (`upNextHeading(context, upNext)`; a named context still wins; Recently played and a search stay unnamed);
+  (2) the controls are a `FlowRow` (10 dp gaps, 14 dp cell padding), so a long label wraps to a second line instead
+  of clipping — en fits on one line in the 1920×1080 column; (3) the panel paints the page's ground and then the
+  surface, fully opaque in every skin. Tests: `TvNowPlayingKeysTest` (album fallback, the panel's lines).
+  **TV re-test owed:** ▲ on Now playing from a server-road album session, and the controls row in en/da/fo.
 - **Not run:** *Playing from {device}* (only a Cast Connect LOAD carries `sender_name`; the server road has none, so
   its absence here is by design) — owed with a real phone cast; the three skins on the music page (Aurora seen).

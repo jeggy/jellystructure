@@ -9,6 +9,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -24,7 +26,7 @@ import dev.jellystructure.ravilo.ui.components.DeskIcon
 import dev.jellystructure.ravilo.ui.components.GlyphDirection
 import dev.jellystructure.ravilo.ui.components.TriangleGlyph
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -59,6 +61,7 @@ import dev.jellystructure.ravilo.ui.seams.TvCastChannel
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import dev.jellystructure.shared.tv.MusicTrackItem
 import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.delay
@@ -122,10 +125,33 @@ internal fun lyricsHintKey(lyricsOn: Boolean): String = if (lyricsOn) "tvmusic.l
 /**
  * FR-R380-5 — the heading over the queue panel's songs: *Up next from {album}* when the queue came from somewhere with a
  * name (a cast album, an artist, a playlist), else *Up next*. Recently played and a search have no place to name.
+ * Found live 2026-10-09: a session started through the server carries no context, so the panel said a bare *Up next*
+ * over an album's songs — when every song still to come is from one album, that album names the queue.
  */
-internal fun upNextHeading(context: MusicContext?): Pair<String, Map<String, String>> {
+internal fun upNextHeading(context: MusicContext?, upNext: List<MusicTrackItem> = emptyList()): Pair<String, Map<String, String>> {
     val label = context?.label?.takeIf { it.isNotBlank() && context.kind != "played" && context.kind != "search" }
+        ?: upNext.firstOrNull()?.album?.takeIf { a -> a.isNotBlank() && upNext.all { it.album == a } }
+            ?.takeIf { context?.kind != "played" && context?.kind != "search" }
     return if (label != null) "tvmusic.up_next_from" to mapOf("x" to label) else "music.up_next" to emptyMap()
+}
+
+/** One line of the queue panel: a heading or a song (its queue index). */
+internal sealed interface QueueLine {
+    data object NowHeading : QueueLine
+    data object UpNextHeading : QueueLine
+    data class Song(val index: Int) : QueueLine
+}
+
+/**
+ * FR-R380-5 (found live 2026-10-09) — the panel's lines: the songs already played (no heading), *Now playing* over the
+ * song playing, the *Up next* heading over the rest. The song playing never sits under *Up next*.
+ */
+internal fun queueLines(size: Int, current: Int): List<QueueLine> = buildList {
+    for (i in 0 until size) {
+        if (i == current) add(QueueLine.NowHeading)
+        if (i == current + 1 || (current !in 0 until size && i == 0)) add(QueueLine.UpNextHeading)
+        add(QueueLine.Song(i))
+    }
 }
 
 /** R380 (owner 2026-10-09) — *Playing from {device}* under the kicker: only when the sender named its device. */
@@ -355,14 +381,17 @@ private fun TvLyrics(api: TvApiClient, trackId: String, ink: Color, dim: Color) 
 }
 
 /** FR-R380-3 — ⏮ ⏯ ⏭ · Lyrics · Queue, shown for a few seconds after a key; the one the key did is lit. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TransportRow(playing: Boolean, did: TvMusicAction?, lyricsOn: Boolean, ink: Color, quiet: Color) {
     // Icons, not ⏮ ⏸ ⏭ glyphs: the TV's font drew ⏸ as a colour emoji (Stue TV) and the web has no fallback for them.
+    // Found live 2026-10-09: five cells in one Row ran past the column at 1920×1080 and clipped *Queue* to *Queu*;
+    // a FlowRow wraps a long label (da/fo) to a second line instead of cutting it.
     Column(Modifier.padding(top = 28.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             @Composable fun cell(lit: Boolean, content: @Composable (Color) -> Unit) {
                 Box(Modifier.height(48.dp).clip(RoundedCornerShape(12.dp)).background(if (lit) ink else ink.copy(alpha = 0.10f))
-                    .border(1.dp, ink.copy(alpha = 0.18f), RoundedCornerShape(12.dp)).padding(horizontal = 16.dp),
+                    .border(1.dp, ink.copy(alpha = 0.18f), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center) { content(if (lit) Color.Black else ink) }
             }
             @Composable fun label(text: String, tint: Color) =
@@ -393,17 +422,29 @@ private fun TransportRow(playing: Boolean, did: TvMusicAction?, lyricsOn: Boolea
 private fun QueuePanel(st: MusicPlayerState, selected: Int, modifier: Modifier) {
     val colors = RaviloTheme.colors
     val list = rememberLazyListState()
-    LaunchedEffect(selected) { runCatching { list.animateScrollToItem((selected - 3).coerceAtLeast(0)) } }
-    Column(modifier.fillMaxHeight().width(560.dp).background(colors.surface.copy(alpha = 0.96f)).padding(28.dp)) {
+    val lines = queueLines(st.queue.size, st.index)
+    LaunchedEffect(selected) {
+        val at = lines.indexOf(QueueLine.Song(selected)).coerceAtLeast(0)
+        runCatching { list.animateScrollToItem((at - 3).coerceAtLeast(0)) }
+    }
+    // Found live 2026-10-09: the panel was 96 % opaque and the Now playing title read faintly through it. The page's
+    // own ground first, then the surface, so it is opaque whatever alpha a skin gives its surface.
+    Column(modifier.fillMaxHeight().width(560.dp).background(colors.background).background(colors.surface).padding(28.dp)) {
         Text(str("tvmusic.queue"), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-        if (st.upNext.isNotEmpty()) {
-            val (key, args) = upNextHeading(st.context)
-            Text(str(key, args), color = colors.textSecondary, fontSize = 16.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp))
-        }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            itemsIndexed(st.queue) { i, t ->
+            items(lines) { line ->
+                @Composable fun heading(text: String) = Text(text, color = colors.textSecondary, fontSize = 16.sp, fontFamily = Sora,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                val i = when (line) {
+                    QueueLine.NowHeading -> { heading(str("tvmusic.now_playing")); return@items }
+                    QueueLine.UpNextHeading -> {
+                        val (key, args) = upNextHeading(st.context, st.upNext)
+                        heading(str(key, args)); return@items
+                    }
+                    is QueueLine.Song -> line.index
+                }
+                val t = st.queue[i]
                 val now = i == st.index
                 val focused = i == selected
                 Row(

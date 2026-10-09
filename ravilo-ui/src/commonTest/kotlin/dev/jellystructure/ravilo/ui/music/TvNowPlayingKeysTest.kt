@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.shared.tv.MusicTrackItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -49,5 +50,29 @@ class TvNowPlayingKeysTest {
         assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("played", "Recently played")))
         assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("search", "kite")))
         assertEquals("music.up_next" to emptyMap(), upNextHeading(null))
+    }
+
+    @Test fun `with no context the album every song to come shares names the queue (found live 2026-10-09)`() {
+        val kite = listOf(MusicTrackItem("t2", "Fog Bank", album = "Kite Weather"), MusicTrackItem("t3", "Salt", album = "Kite Weather"))
+        assertEquals("tvmusic.up_next_from" to mapOf("x" to "Kite Weather"), upNextHeading(null, kite))
+        assertEquals("tvmusic.up_next_from" to mapOf("x" to "Kite Weather"), upNextHeading(MusicContext("queue", ""), kite))
+        val mixed = kite + MusicTrackItem("t9", "Shortwave", album = "Signal Found")
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(null, mixed), "songs from two albums: no album to name")
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(null, listOf(MusicTrackItem("t4", "Untitled"))), "no album on the songs")
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("played", "Recently played"), kite), "Recently played stays unnamed")
+        assertEquals("tvmusic.up_next_from" to mapOf("x" to "Harbour Lights"), upNextHeading(MusicContext("artist", "Harbour Lights", "a1"), kite), "a named context wins")
+    }
+
+    @Test fun `the song playing sits under Now playing, never under Up next (found live 2026-10-09)`() {
+        assertEquals(
+            listOf(QueueLine.NowHeading, QueueLine.Song(0), QueueLine.UpNextHeading, QueueLine.Song(1), QueueLine.Song(2)),
+            queueLines(size = 3, current = 0),
+        )
+        assertEquals(
+            listOf(QueueLine.Song(0), QueueLine.NowHeading, QueueLine.Song(1), QueueLine.UpNextHeading, QueueLine.Song(2)),
+            queueLines(size = 3, current = 1),
+            "a song already played keeps its place above, with no heading",
+        )
+        assertEquals(listOf(QueueLine.Song(0), QueueLine.NowHeading, QueueLine.Song(1)), queueLines(size = 2, current = 1), "the last song: no Up next")
     }
 }
