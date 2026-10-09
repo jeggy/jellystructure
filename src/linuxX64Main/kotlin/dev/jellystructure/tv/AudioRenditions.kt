@@ -58,6 +58,8 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
     private class Entry(val jellyfinMasterUrl: String, val renditions: List<Rendition>, val expiresAt: Long, val filePath: String, val durationMs: Long, val ladder: LadderPlan? = null) {
         // The codec the video variant's own audio is in, read from Jellyfin's master when it is first composed.
         var codec: String = "aac"
+        // R291 (FR-R291-12) — the renditions are written in the video's own container.
+        val fmp4: Boolean = segmentsAreFmp4(jellyfinMasterUrl)
     }
 
     private val mutex = Mutex()
@@ -127,15 +129,25 @@ class AudioRenditions(private val fetchPlaylist: suspend (String) -> String?) {
     suspend fun playlist(id: String, position: Int): String? {
         val e = entry(id) ?: return null
         if (e.renditions.getOrNull(position)?.uri == null) return null
-        return renditionPlaylist(e.durationMs)
+        return renditionPlaylist(e.durationMs, e.fmp4)
     }
+
+    /** R291 (FR-R291-12) — one fMP4 rendition's init segment; null for an MPEG-TS stream, an unknown id or the carried track. */
+    suspend fun init(id: String, position: Int): ByteArray? {
+        val e = entry(id)?.takeIf { it.fmp4 } ?: return null
+        val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
+        return jobs.init("$id:$position", RenditionSource(r.sourcePath ?: e.filePath, r.audioOrder, r.channels, e.durationMs, fmp4 = true), e.codec)
+    }
+
+    /** Whether [id]'s renditions are fMP4 (null: unknown id). */
+    suspend fun isFmp4(id: String): Boolean? = entry(id)?.fmp4
 
     /** One segment of one rendition, made on demand; null when unknown or it could not be made in time. */
     suspend fun segment(id: String, position: Int, segment: Int): ByteArray? {
         val e = entry(id) ?: return null
         val r = e.renditions.getOrNull(position)?.takeIf { it.uri != null } ?: return null
         if (segment < 0 || segment * RENDITION_SEGMENT_MS >= e.durationMs) return null
-        return jobs.segment("$id:$position", RenditionSource(r.sourcePath ?: e.filePath, r.audioOrder, r.channels, e.durationMs), e.codec, segment)
+        return jobs.segment("$id:$position", RenditionSource(r.sourcePath ?: e.filePath, r.audioOrder, r.channels, e.durationMs, e.fmp4), e.codec, segment)
     }
 
     /**

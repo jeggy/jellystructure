@@ -71,9 +71,10 @@ data class EncoderConfig(
     @SerialName("work_dir") val workDir: String = "/transcode/js",
     @SerialName("cuda_cache_dir") val cudaCacheDir: String = "/config/encoder/cuda-cache",
     @SerialName("max_disk_mb") val maxDiskMb: Int = 4096,
-    /** 313 (2026-10-09) — a dev-only switch to let our encoder serve the Chromecast web receiver while its cast stall is
-     *  diagnosed. Off by default: casts go to Jellyfin ([CAST_RECEIVER_FALLBACK]). */
-    @SerialName("cast_receivers") val castReceivers: Boolean = false,
+    /** 313 (owner, 2026-10-09 evening) — our encoder serves the Chromecast web receiver too: the cast stall was ours
+     *  (no segment was ever deleted, 996bfe0f) and casts then ran 21 min and 16 min with 0 rebuffers. On by default;
+     *  `false` sends casts back to Jellyfin ([CAST_RECEIVER_FALLBACK]). */
+    @SerialName("cast_receivers") val castReceivers: Boolean = true,
     /** R291 (2026-10-09) — a dev-only switch that declares `hls_audio_renditions` for the Chromecast web receiver, to
      *  capture Shaka's error on a composed master with audio renditions. Off by default: the receiver restreams. */
     @SerialName("receiver_renditions") val receiverRenditions: Boolean = false,

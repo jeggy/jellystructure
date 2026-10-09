@@ -97,6 +97,21 @@ class StreamRecordTest {
         assertEquals(30_000_000, negotiationCap(adaptive = false, take = 30_000_000))
     }
 
+    @Test fun `a TV app with no record plays what its decoder takes and not a guess`() {
+        // Found live 2026-10-09: a Cast Connect start on the BRAVIA with no record was capped at 8 Mbps (a 1080p
+        // transcode of a 4K film it plays directly). The decode ceiling (max_video_bitrate) decides instead.
+        assertNull(negotiationCap(adaptive = true, take = null, tvApp = true))
+        assertEquals(20_000_000, negotiationCap(adaptive = true, take = 20_000_000, tvApp = true), "a record still caps it")
+        assertEquals(NO_RECORD_DIRECT_PLAY_BPS, negotiationCap(adaptive = true, take = null, tvApp = false), "a phone keeps the 8 Mbps start")
+        fun dev(platform: String?, kind: String) = dev.jellystructure.auth.DeviceData("d", "t", "u", "anna", "jt", isAdmin = false, platform = platform, kind = kind)
+        assertTrue(dev("tv", "tv").isTvApp)
+        assertFalse(dev("tv", "cast").isTvApp, "the Cast web receiver is not the TV app")
+        assertFalse(dev("cast", "cast").isTvApp)
+        assertFalse(dev("phone", "phone").isTvApp)
+        assertFalse(dev("mac", "tv").isTvApp)
+        assertFalse(dev(null, "tv").isTvApp, "a device that never said what it is gets no exemption")
+    }
+
     @Test fun `the store keeps one row per device`() {
         val store = StreamRecordStore(db)
         assertNull(store.get("tv"))

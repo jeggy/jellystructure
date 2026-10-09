@@ -422,3 +422,26 @@ Stue TV's debug app signed in as the owner (password typed from Proton Pass by a
   was pressed on the TV). Both were paused from the phone's sheet.
 - **Tapping a TV in *Play on…* with nothing playing does nothing** (no log line, no hint) — same as the R266 finding from
   a film page; the music-mode sheet behaves the same.
+
+### FR-R380-9 — The server road behaves like a Cast LOAD (2026-10-09 evening, from the three findings above)
+
+Music a phone hands to the TV app through the server (*Play on… ▸ Stue TV*, `session_load`) is the common road; it now
+does what a Cast Connect LOAD does:
+
+1. **Playing from {device}.** `session_load` carries `sender_name` (optional, additive), the starting or moving device's
+   own name (its device row: *Pixel 9 Pro*; none from an admin's *Move to…*). The TV app shows it on Now playing exactly
+   as it shows a Cast LOAD's (`TvCastChannel.startServerMusic`); an older server sends none and the line is left out.
+2. **Home stops it.** The TV app marks music the server started there; leaving the screen (Home, the activity
+   stopping) stops it and clears *Playing from* (`TvCastChannel.appLeftScreen()`, from `MainActivity.onStop`), as
+   `receiverStopped()` does for a Cast LOAD — which only ran while the Cast Connect receiver was up. A phone never sets
+   the mark, so a phone's own music keeps playing in the background.
+3. **One session.** When a start of music on another Ravilo app comes from a device that plays music itself, the
+   caller's own live music session ends (`moved`) and the caller is told to stop (`playstate_command` *Stop*: the
+   phone's queue stays, paused), so *Playing everywhere* lists the song once; the caller's late report does not bring
+   its row back. A film started on the TV leaves the phone's music alone. This is done on the server, so the installed
+   phone apps get it too.
+
+**Tests:** `SessionHandOffIntegrationTest` (music handed to a TV app names the sender, ends the phone's session, stops
+it, one live row after the TV reports; a film start leaves the phone's music alone; `handedOver` picks only the
+caller's own music), `ServerMusicOnTvTest` (`sender_name` on the wire and absent from an older server; Home stops
+server-started music and clears the line; nothing to stop otherwise).

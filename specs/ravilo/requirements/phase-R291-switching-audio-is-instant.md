@@ -529,3 +529,31 @@ English tracks (AC-3 5.1, TrueHD 7.1). Volume 1.
   down at "0 ms buffered" right after the reload, handing Shaka a variant of the previous manifest. **Fixed in
   04a5b93e** (state cleared on stop/new manifest, a 0 ms buffer that never rose doesn't count, only current variants
   are handed over; `scripts/check-receiver-abr.sh` in CI fails on the old code and passes now).
+
+### FR-R291-12 — A rendition is written in the video's own container (2026-10-09, from the 3018 above)
+
+A rendition beside Jellyfin's video is written in the same container as that video's segments:
+
+- **The container is read from Jellyfin's transcoding URL** (`SegmentContainer=mp4` or `fmp4` ⇒ fMP4, anything else —
+  or no such parameter, Jellyfin's default — ⇒ MPEG-TS). Phase 253 gives an HEVC-over-HLS client (the Chromecast with
+  Google TV, the Mac) `mp4`; everyone else keeps TS, and their renditions are byte-for-byte what they were.
+- **fMP4 renditions:** the playlist is `EXT-X-VERSION:7` with `#EXT-X-MAP:URI="init.mp4"` before the first segment and
+  `{k}.m4s` segments (same 3.000 s grid, `audio/{pos}/init.mp4` and `audio/{pos}/{k}.m4s` under the same capability
+  id). The job runs ffmpeg with `-hls_segment_type fmp4 -hls_fmp4_init_filename init.mp4 -hls_segment_options
+  use_editlist=0`.
+- **One init for every job.** Without `use_editlist=0` each job's init records where that job started (an edit list),
+  so a seek's job would write an init the player never fetches again. With it, every job's init is byte-identical
+  (measured in the backend container, ffmpeg 5.1); the first one read is kept for the stream and served to every
+  request.
+- **A seek's fragments carry the film's time.** With `use_editlist=0`, ffmpeg 5.1 starts each job's fragment times
+  (`tfdt`, and the `sidx`'s earliest time) at 0 — measured: a job started at 300 s wrote segment 100 with `tfdt` 0. The
+  server adds `startSegment × 3 s` (in the init's own timescale, from its `mdhd`) to each fragment of a job that did
+  not start at 0 as it serves it (`shiftTfdt`); the media bytes are untouched. Measured: init + a shifted segment 100
+  decode at 300.000 s, init + segment 1 of a job from 0 at 3.008 s.
+- **The receiver keeps `receiver_renditions` as a dev switch** until a cast with renditions is seen to switch audio
+  without a Shaka error on Stue TV's Chromecast; it is then turned on for the receiver.
+- **Tests (`AudioRenditionFmp4Test`):** the container read from the URL (mp4/fmp4/ts/none); the fMP4 playlist (version
+  7, the map before the first segment, `.m4s` names) and the TS playlist unchanged; the fMP4 command (fmp4, init name,
+  `use_editlist=0`, `.m4s` files) and the TS command unchanged; `shiftTfdt` moves a 64-bit and a 32-bit `tfdt` and the
+  `sidx`'s time, leaves the media alone and returns the bytes unchanged for a job from 0; `mdhdTimescale` reads
+  version 0 and 1.

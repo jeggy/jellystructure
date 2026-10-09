@@ -652,3 +652,20 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   this play: nothing is marked for anyone else. A server from before the field ignores it (the old behaviour). Tests:
   the wire field's default and an old body; the recovery decision (ours + first failure ⇒ Jellyfin restream; second
   failure ⇒ R237's error).
+
+## Decided by the owner (2026-10-09, late evening): casts use our encoder by default
+
+> Owner: *"Yes, default for casts."*
+
+- **`[encoder] cast_receivers` defaults to `true`** (`EncoderConfig.castReceivers`, `encoderDecision(…, castReceivers =
+  true)`): a cast to the Chromecast web receiver is encoded by us like every other transcode (TS segments, the
+  receiver's ladder). Jellyfin's transcode stays the fallback — every FR-313-12 reason still sends a play there, and
+  `cast_receivers = false` in `config.toml` sends every cast back to Jellyfin (`CAST_RECEIVER_FALLBACK`), the switch
+  kept for the dev team.
+- **The evidence:** a 21-minute cast to the Køkken hub (H.264, 4 rungs, d476880f's segment pruning) and a 16-minute
+  cast to Stue TV's built-in Chromecast (HEVC HDR, 4 rungs, up to 2160p at 30 Mbps), both with **0 rebuffers**, the
+  tmpfs under 470 MB the whole way; an audio switch on the receiver restreamed on our encoder and resumed in ~6 s.
+- **Tests:** `EncoderPlanTest` — with no override a cast is ours (`encoderDecision(…, "cast") == null`, `planFor`
+  answers `ours` with TS segments); `cast_receivers = false` answers `CAST_RECEIVER_FALLBACK`.
+- `receiver_renditions` (R291's audio renditions on the receiver) stays a dev switch until it is verified (R291
+  FR-R291-12).

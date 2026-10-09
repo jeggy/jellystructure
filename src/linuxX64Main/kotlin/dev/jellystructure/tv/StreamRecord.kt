@@ -1,5 +1,6 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.db.Device_stream_record
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.QoeStall
@@ -88,8 +89,18 @@ internal fun probeNeeded(record: StreamRecord?, now: Long, qoeAt: Long?): Boolea
  * is). For a player that adapts: what the device can take, else (no record) [NO_RECORD_DIRECT_PLAY_BPS]. For one that
  * cannot (every installed 1.50 app, mpv): what the device can take, else nothing (re-dev review item 2 — never pin a
  * player that can't climb at a no-record start).
+ *
+ * [tvApp] (found live 2026-10-09: a Cast Connect start in the Ravilo TV app with no record was capped at 8 Mbps and got a
+ * 1080p transcode of a 4K film the BRAVIA plays directly) — the Ravilo app on a TV (not the Cast web receiver, not a
+ * phone or a computer) with no record is not capped by a guess: its own decode ceiling (`max_video_bitrate`, already in
+ * [maxStreamingBitrate], and phase 177's per-codec requirement) decides what it plays directly. A record, once it has
+ * one, caps it like any device.
  */
-internal fun negotiationCap(adaptive: Boolean, take: Long?): Long? = take ?: if (adaptive) NO_RECORD_DIRECT_PLAY_BPS else null
+internal fun negotiationCap(adaptive: Boolean, take: Long?, tvApp: Boolean = false): Long? =
+    take ?: if (adaptive && !tvApp) NO_RECORD_DIRECT_PLAY_BPS else null
+
+/** 309 — the Ravilo app on a TV (Android TV / Google TV): `platform = tv`, and never a Cast receiver's row. */
+internal val DeviceData.isTvApp: Boolean get() = platform == "tv" && kind != "cast"
 
 /** One QoE post as the record reads it. [variantBps]: the stream it is on (BANDWIDTH, or a direct play's file bitrate). */
 internal data class RecordSample(val variantBps: Long?, val stalls: List<QoeStall>, val perItem: Boolean)

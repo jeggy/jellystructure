@@ -100,6 +100,9 @@ data class SessionLoadEnvelope(
     val title: String? = null,
     /** Music: the queue's facts (title, artist, cover …), so the app plays it without asking for each song. */
     val tracks: List<CastTrackItem> = emptyList(),
+    /** R380 (found live 2026-10-09) — the device that started or moved it (*Pixel 9 Pro*), for the TV's *Playing from
+     *  {device}*, as a Cast LOAD's `sender_name` does; null from an older server. */
+    @SerialName("sender_name") val senderName: String? = null,
 )
 
 /**

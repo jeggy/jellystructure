@@ -205,9 +205,18 @@ class SessionStarter(
             val rec = sessions.createStarting(caller, "app", target.deviceId, sessions.placeNameOf(target), kind, items, req.index, startMs, options, caller)
             val tracks = if (kind == SessionKind.MUSIC) req.items.mapNotNull { trackItem(it) } else emptyList()
             val env = SessionLoadEnvelope(sessionId = rec.id, kind = kind, items = req.items, index = req.index, startMs = startMs,
-                shuffle = req.shuffle, repeat = req.repeat, title = items.getOrNull(req.index)?.title, tracks = tracks)
+                shuffle = req.shuffle, repeat = req.repeat, title = items.getOrNull(req.index)?.title, tracks = tracks,
+                senderName = senderNameOf(caller))
             bus.notifyDevice(target.jellyfinUserId, target.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             Logger.info("Playback sessions: ${rec.id} start $kind on ${target.deviceId} from ${caller.deviceId} → session_load", "tv")
+            // R380 (found live 2026-10-09) — music the caller plays itself moves to the place it started it on: its own
+            // session ends and its player stops, so *Playing everywhere* lists the song once (the server road used to
+            // leave the phone's session — and its music — running beside the TV's).
+            handedOver(sessions.all(), caller.deviceId, kind, rec.id).forEach { mine ->
+                sessions.end(mine.id, "moved", by = caller)
+                if (bus.isConnected(caller.deviceId)) bus.notifyPlaystateCommand(mine.ownerUserId, caller.deviceId, "Stop", null)
+                Logger.info("Playback sessions: ${mine.id} on ${caller.deviceId} ended — its music went to ${target.deviceId} (${rec.id})", "tv")
+            }
             return StartResult2.Started(rec, loadHere = false, castDeviceId = null)
         }
         val castId = req.targetId.removePrefix("cast:")
@@ -279,7 +288,8 @@ class SessionStarter(
             val moving = sessions.beginMove(s.id, targetId, sessions.placeNameOf(app.device)) ?: return StartResult2.BadRequest
             val tracks = if (s.kind == SessionKind.MUSIC) ids.mapNotNull { trackItem(it) } else emptyList()
             val env = SessionLoadEnvelope(sessionId = s.id, kind = s.kind, items = ids, index = index, startMs = startMs,
-                shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off", title = s.current?.title, tracks = tracks)
+                shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off", title = s.current?.title, tracks = tracks,
+                senderName = senderNameOf(caller).takeIf { !admin })
             bus.notifyDevice(app.device.jellyfinUserId, app.device.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             sessions.record(s.id, "moving", caller.deviceId, app.device.displayName)
             Logger.info("Playback sessions: ${s.id} move to ${app.device.deviceId} from ${caller.deviceId} → session_load at $startMs ms", "tv")
@@ -356,3 +366,14 @@ class SessionStarter(
     }
 }
 
+/** R380 — the name a TV shows as *Playing from {device}*: the device row's own name, none when it has none. */
+internal fun senderNameOf(caller: DeviceData): String? = caller.displayName.trim().takeIf { it.isNotEmpty() }
+
+/**
+ * R380 (found live 2026-10-09) — the caller's own live music sessions a start of music on another Ravilo app takes over
+ * (the phone's *Play on… ▸ Stue TV* while the phone plays it): music, playing on the caller itself, not [newId].
+ * Anything else (a film, a book, music on a speaker the caller drives) is left alone.
+ */
+internal fun handedOver(all: List<SessionRec>, callerDeviceId: String, kind: String, newId: String): List<SessionRec> =
+    if (kind != SessionKind.MUSIC) emptyList()
+    else all.filter { it.live && it.id != newId && it.targetId == callerDeviceId && it.kind == SessionKind.MUSIC }

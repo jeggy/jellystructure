@@ -189,10 +189,10 @@ class EncoderPlanTest {
         assertContains(encoderDecision(true, true, card, hdr4k.copy(videoCodec = "vc1"), false)!!, "vc1")
         assertContains(encoderDecision(true, true, card, hdr4k.copy(dolbyVisionProfile5 = true), false)!!, "profile 5")
         assertNull(encoderDecision(true, true, card, hdr4k, false))
-        // 2026-10-09 — a cast receiver's transcode stays Jellyfin's until the stall is diagnosed; the TV app (Cast
-        // Connect) plays as a `tv` and keeps our encoder.
-        assertEquals(CAST_RECEIVER_FALLBACK, encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast"))
-        assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast", castReceivers = true))
+        // Owner, 2026-10-09 evening — casts default to our encoder; the switch turned off sends a receiver to Jellyfin.
+        // The TV app (Cast Connect) plays as a `tv` either way.
+        assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast"))
+        assertEquals(CAST_RECEIVER_FALLBACK, encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast", castReceivers = false))
         assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "tv"))
     }
 
@@ -214,8 +214,8 @@ class EncoderPlanTest {
         Track(2, "a:1", TrackKind.AUDIO, "ac3", "dan", null, false, false),
     )
     private val audio = listOf(AudioTrack(1, "eng", "English", "truehd", 8, true), AudioTrack(2, "dan", "Dansk", "ac3", 6, false))
-    private fun encoder(cards: List<EncoderCard> = listOf(EncoderCard(0, "Quadro P4000", null, 0)), enabled: Boolean = true) =
-        Encoder({ EncoderConfig(enabled = enabled, workDir = "/tmp/js-encoder-test") }, cardsOverride = { cards }, ffmpegOverride = { true })
+    private fun encoder(cards: List<EncoderCard> = listOf(EncoderCard(0, "Quadro P4000", null, 0)), enabled: Boolean = true, castReceivers: Boolean = true) =
+        Encoder({ EncoderConfig(enabled = enabled, workDir = "/tmp/js-encoder-test", castReceivers = castReceivers) }, cardsOverride = { cards }, ffmpegOverride = { true })
 
     @Test fun `a BRAVIA-like device gets HEVC HDR rungs and every audio rendition`() = runBlocking {
         val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true, maxAudioChannels = 6)
@@ -248,9 +248,12 @@ class EncoderPlanTest {
         assertTrue(one.tonemaps)
         assertEquals(1, one.audio.size)   // no renditions declared: the carried track only
         val cast = ClientCapabilities(videoCodecs = listOf("h264"), hlsAdaptive = true)
-        // A receiver would get TS; for now (2026-10-09) its transcode is Jellyfin's until the cast stall is diagnosed.
+        // A receiver gets TS, and (owner, 2026-10-09) its transcode is ours by default; turned off, Jellyfin's.
         assertEquals(EncoderMux.TS, encoderMuxFor("cast", null))
-        assertEquals(CAST_RECEIVER_FALLBACK, encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").second)
+        val (castPlan, castWhy) = encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10")
+        assertEquals("ours", castWhy)
+        assertEquals(EncoderMux.TS, castPlan!!.mux)
+        assertEquals(CAST_RECEIVER_FALLBACK, encoder(castReceivers = false).planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").second)
         val (none, why) = encoder().planFor(cast, "phone", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", burnRequested = true)
         assertNull(none)
         assertContains(why, "313d")

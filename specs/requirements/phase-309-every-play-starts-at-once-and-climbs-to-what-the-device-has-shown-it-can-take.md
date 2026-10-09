@@ -709,3 +709,19 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   decoders take the file without a record uses FR-309-8's small-or-speed-tested rule with that probe.
 - **309's receiver ABR (FR-309-5):** logs `309 abr: Shaka bounded by the ladder rule` on every load and `309 probe`
   (4 MB in 460 ms → 72.9 Mbps); its step-down crashed Shaka after a reload — fixed in 04a5b93e (see R291).
+
+### FR-309-14 — The Ravilo TV app with no record plays what its decoder takes (2026-10-09, from the finding above)
+
+- **Owner decision 3's 8 Mbps no-record gate is for phones, computers and the Cast web receiver, not the TV app.** A
+  start on the Ravilo app on a TV (`platform = tv`, never a Cast receiver's row) with no record is negotiated with no
+  throughput cap (`negotiationCap(…, tvApp = true)` → none): its own decode ceiling (`max_video_bitrate` in
+  `MaxStreamingBitrate`, and phase 177's per-codec requirement) decides whether the file plays directly. A 4K HEVC HDR
+  film the BRAVIA decodes direct-plays from the first Cast Connect start. Once the TV has a record (a proof, a
+  measurement, a stall), the record caps it like any device. A transcode it still needs starts on the no-record rung and
+  climbs (FR-309-2 unchanged). Every start path applies it: the start, the restream, the burn-in, the prewarm and R381's
+  prepare.
+- **The TV app runs the speed test when another app starts a play on it** (a Cast Connect LOAD of a film, a
+  `session_load` of a film or an episode) — the detail page where FR-309-3 runs it is skipped. The server answers 204
+  when this TV was measured within 24 h; nothing waits on it.
+- **Tests:** `StreamRecordTest` — a TV app with no record has no cap; a record still caps it; a phone keeps 8 Mbps;
+  `isTvApp` is true only for `platform = tv` and never for a Cast receiver or a device that sent no platform.

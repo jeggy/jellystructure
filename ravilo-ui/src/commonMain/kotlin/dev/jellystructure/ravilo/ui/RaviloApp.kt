@@ -966,6 +966,9 @@ fun RaviloApp(
                         // A film the phone hands over keeps the phone's place (R266 build notes' gap: position_ms was unused).
                         dev.jellystructure.ravilo.ui.music.MusicEngine.stopForVideo()   // FR-R380-2 — a film stops the music
                         dev.jellystructure.ravilo.ui.seams.TvCastChannel.startFilm()
+                        // 309 (found live 2026-10-09) — a cast skips the detail page, where the speed test runs: run it here
+                        // (the server answers 204 when this TV was measured within 24 h; nothing waits on it).
+                        configScope.launch { apiClient.probe() }
                         push(Dest.Player(itemId = play.itemId, title = play.title, kicker = play.kicker, displayName = name, seriesId = play.itemId,
                             startAtMs = play.positionMs.takeIf { it > 0 }))
                     }
@@ -1511,13 +1514,18 @@ fun RaviloApp(
                             if (linked.value) { dev.jellystructure.ravilo.ui.seams.sessionLog("R372: a move here while linked to ${deviceName.value}: leaving it playing"); leaveRelay() }
                             dev.jellystructure.ravilo.ui.music.MusicEngine.loadPaused(env.tracks.map { it.toItem() }, env.index.coerceIn(0, env.tracks.lastIndex), env.startMs, null)
                             dev.jellystructure.ravilo.ui.music.MusicEngine.play()
+                            // R380 (found live 2026-10-09) — *Playing from {device}* and Home stopping it, as for a Cast LOAD.
+                            if (isTvPlatform) dev.jellystructure.ravilo.ui.seams.TvCastChannel.startServerMusic(env.senderName)
                             // R380 (FR-R380-3) — a TV shows what it now plays (it has no listening pages to show it in).
                             if (isTvPlatform && stack.lastOrNull() !is Dest.TvNowPlaying && acceptsRemoteCommand(onScreenNow, true))
                                 push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty()))
                         }
-                        "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) livePlayItem.emit(PlayItemEnvelope(
+                        "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) {
+                            // 309 (found live 2026-10-09) — a start from another app skips the detail page's speed test.
+                            if (isTvPlatform) configScope.launch { apiClient.probe() }
+                            livePlayItem.emit(PlayItemEnvelope(
                             type = "play_item", jellyfinId = id, kind = if (env.kind == "episode") "episode" else "movie", title = env.title, startPositionMs = env.startMs,
-                        )) else println("R370: dropped session_load while off screen")
+                        )) } else println("R370: dropped session_load while off screen")
                     }
                 }
                 // R370 (owner decision 1) — launch the receiver for someone else's session, then leave it playing.

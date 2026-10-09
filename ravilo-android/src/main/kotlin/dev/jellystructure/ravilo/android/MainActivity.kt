@@ -59,6 +59,8 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
+        // R380 (found live 2026-10-09) — Home ends music the server started on this TV too, not only a Cast LOAD's.
+        dev.jellystructure.ravilo.ui.seams.TvCastChannel.appLeftScreen()
         CastConnectReceiver.stop()
         super.onStop()
     }

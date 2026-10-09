@@ -127,9 +127,35 @@ object TvCastChannel {
      *  sender sent no name (an older phone) or nothing is cast. */
     val senderName: StateFlow<String?> = _senderName.asStateFlow()
 
+    /** R380 (found live 2026-10-09) — the music playing here was started through the server (`session_load`), not by a
+     *  Cast LOAD: Home stops it too ([appLeftScreen]). */
+    private var serverMusic = false
+
+    /** What stops the music when the app leaves the screen (a seam for the tests). */
+    internal var stopServerMusic: () -> Unit = { runCatching { MusicEngine.clear() } }
+
+    /** R380 — music another app started here through the server: *Playing from {device}* names [senderName]. */
+    fun startServerMusic(senderName: String?) {
+        serverMusic = true
+        _senderName.value = senderName?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * R380 (owner, 2026-10-08: Home ends the music; found live 2026-10-09 that it didn't on the server road) — the app
+     * left the screen: music the server started here stops, as a Cast LOAD's does in [receiverStopped]. True when it did.
+     */
+    fun appLeftScreen(): Boolean {
+        if (!serverMusic) return false
+        serverMusic = false
+        _senderName.value = null
+        stopServerMusic()
+        return true
+    }
+
     /** R380 (FR-R380-1) — a music LOAD was accepted and the engine holds its queue. */
     fun startMusic(queueId: String?, queueTotal: Int?, queueStart: Int, senderName: String? = null) {
         stopWatch()
+        serverMusic = false
         _senderName.value = senderName
         this.queueId = queueId; this.queueTotal = queueTotal; this.queueStart = queueStart
         waitingParts.removeAll { it.queueId != queueId }

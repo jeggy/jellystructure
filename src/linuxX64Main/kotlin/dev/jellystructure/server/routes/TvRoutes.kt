@@ -1413,6 +1413,21 @@ fun Route.tvRoutes(
         val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondBytes(bytes, ContentType.parse("video/mp2t"))
     }
+    // R291 (FR-R291-12) — a rendition beside fMP4 video is fMP4 too: its init segment and its fragments.
+    get("/tv/stream/{id}/audio/{pos}/init.mp4") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.init(id, pos) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(bytes, ContentType.parse("audio/mp4"))
+    }
+    get("/tv/stream/{id}/audio/{pos}/{seg}.m4s") {
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val pos = call.parameters["pos"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        val seg = call.parameters["seg"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+        if (playbackService.audioRenditions.isFmp4(id) != true) return@get call.respond(HttpStatusCode.NotFound)
+        val bytes = playbackService.audioRenditions.segment(id, pos, seg) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(bytes, ContentType.parse("audio/mp4"))
+    }
 
     // Phase 313d (FR-313-11) — a text subtitle as a WebVTT rendition of our master (clients that take subtitles in HLS):
     // one segment, the whole track, fetched from Jellyfin by this server. Same capability id as the master.

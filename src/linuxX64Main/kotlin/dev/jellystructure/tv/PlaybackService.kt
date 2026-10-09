@@ -964,7 +964,7 @@ class PlaybackService(
         // above it is transcoded (and gets the ladder; an audio-only transcode's picture is re-encoded), one under it
         // direct-plays. No record: a player that climbs takes files up to 8 Mbps directly; one that can't is not capped.
         val take = takeOf(device)
-        val cap = negotiationCap(capabilities.hlsAdaptive, take)
+        val cap = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp)
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = mediaSourceId ?: jellyfinId, audioStreamIndex = copyIndex ?: wantedAudioIndex, throughputCapBps = cap)
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
@@ -1106,7 +1106,7 @@ class PlaybackService(
         // not preloaded (R381's owner decision 2).
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), null))
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps,
-            identity = identity, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device)))   // 309 — the start's own cap
+            identity = identity, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp))   // 309 — the start's own cap
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val direct = source != null && (source.supportsDirectPlay || source.transcodingUrl == null)
         Logger.info("playback prepare: device=${device.deviceId} item=$jellyfinId directPlay=$direct from ${startPositionMs}ms (R381, nothing reported)", "tv")
@@ -1163,7 +1163,7 @@ class PlaybackService(
         }
         val take = takeOf(target)
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, target.jellyfinUserId, jellyfinId, capabilities = caps, identity = identity,
-            audioStreamIndex = wantedAudioIndex, throughputCapBps = negotiationCap(caps.hlsAdaptive, take))
+            audioStreamIndex = wantedAudioIndex, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp))
         val source = playbackInfo?.mediaSources?.firstOrNull() ?: return none("no PlaybackInfo")
         if (source.supportsDirectPlay || source.transcodingUrl == null) return dev.jellystructure.shared.tv.PrewarmResult("direct")
         val master = source.transcodingUrl
@@ -1894,7 +1894,7 @@ class PlaybackService(
         val limits = burnInLimits(capabilities?.let { forPlatformAudio(it, playingAudioCodec(audio, audioStreamIndex)) })
         val measuredBps = measuredThroughputOf(device)   // 308 (FR-308-4)
         val take = takeOf(device)   // 309 (FR-309-1)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities?.hlsAdaptive == true, take))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities?.hlsAdaptive == true, take, device.isTvApp))
         val negotiated = playbackInfo?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { withChannelLimit(if (it.startsWith("http")) it else "$jellyfinBase$it", limits) }
         Logger.info("PlaybackInfo(restream, burn-in): item=$jellyfinId sub=$subtitleStreamIndex audio=${audioStreamIndex ?: "default"} negotiated=${negotiated != null}", "tv")
@@ -1999,7 +1999,7 @@ class PlaybackService(
         // R379 — an audio switch to (or on) an AC-3 track on a device without the platform decoder is re-encoded.
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), audioStreamIndex))
         val take = takeOf(device)   // 309 (FR-309-1)
-        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, take))
+        val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = audioStreamIndex, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, take, device.isTvApp))
         val source = playbackInfo?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         // 2026-09-24 — this path serves an un-burn AND a plain audio switch (R284), and cannot tell them
