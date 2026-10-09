@@ -410,3 +410,11 @@ public func ravilo_player_release(_ h: Int64) {
 public func ravilo_caps_playable(_ mime: UnsafePointer<CChar>) -> Int32 {
     AVURLAsset.isPlayableExtendedMIMEType(String(cString: mime)) ? 1 : 0
 }
+
+/// 1 when AVPlayer will play an HDR variant on this Mac's screen now (`AVPlayer.eligibleForHDRPlayback`). Found live
+/// 2026-10-09 (R329): on an SDR monitor it is false, and AVPlayer drops every HDR variant of a master — an HDR-only
+/// master then fails with -1002. Asked at every start, so the built-in XDR screen claims HDR again.
+@_cdecl("ravilo_caps_hdr_eligible")
+public func ravilo_caps_hdr_eligible() -> Int32 {
+    AVPlayer.eligibleForHDRPlayback ? 1 : 0
+}

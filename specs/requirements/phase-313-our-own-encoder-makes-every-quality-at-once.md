@@ -612,3 +612,13 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   failed at once (`NSURLErrorDomain -1002 unsupported URL`). The init and the first segment are valid HEVC Main 10 PQ.
   A failed client stream is restreamed to **our encoder again** (only an ffmpeg refusal marks the file), so the
   restream fails the same way; a client-side failure of our stream should ask for Jellyfin on the restream.
+
+### Found live 2026-10-09 (evening) — fixed
+
+- **The Mac's HEVC HDR stream: not our playlist.** AVPlayer drops HDR variants on a screen that cannot show HDR
+  (`AVPlayer.eligibleForHDRPlayback` false — the Mac drives a 1080p SDR monitor), so an HDR-only master has no variant
+  left. Our master, variant playlists, init and segments play in AVPlayer when the claim matches the screen (R329's
+  *Found live 2026-10-09 (evening)*). *Fix (client):* the Mac claims HDR only while AVPlayer is eligible. Nothing
+  changes in the playlists, so Media3, hls.js and the Cast receiver read exactly what they read before. *Not done:*
+  an SDR rung beside the HDR ones in the same master (Apple's authoring guidance) — it costs a second tone-mapped
+  encode per play; a screen change in the middle of a film is not covered.

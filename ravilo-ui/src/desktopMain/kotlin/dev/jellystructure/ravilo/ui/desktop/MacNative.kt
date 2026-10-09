@@ -51,6 +51,8 @@ object MacNative {
         fun ravilo_player_copy_frame(h: Long, dst: Pointer?, capacity: Long, dims: IntArray): Int
         fun ravilo_player_release(h: Long)
         fun ravilo_caps_playable(mime: String): Int
+        /** R329 (found live 2026-10-09) — `AVPlayer.eligibleForHDRPlayback`; an older library throws (caller catches). */
+        fun ravilo_caps_hdr_eligible(): Int
 
         // ── R329 — Now Playing and the media keys (NowPlaying.swift), display sleep (Power.swift) ──
         fun ravilo_nowplaying_set_handler(cb: RemoteCallback?)
