@@ -51,9 +51,10 @@ class ScreenNetworkTest {
 
     @Test
     fun twoPrivateIpv4sAreOneHousehold_r378() {
-        assertTrue(isNearby("10.10.10.183", "10.10.11.20"))
+        assertTrue(isNearby("192.168.10.23", "192.168.11.40"))
         assertTrue(isNearby("192.168.1.4", "172.20.0.9"))
-        assertFalse(isNearby("10.10.10.183", "203.0.113.7"))
+        assertTrue(isNearby("10.0.0.5", "192.168.11.40"))
+        assertFalse(isNearby("192.168.10.23", "203.0.113.7"))
         assertFalse(isNearby("172.32.0.1", "10.0.0.1"))   // 172.32 is public
         assertFalse(isNearby("100.64.0.5", "10.0.0.1"))   // CGNAT is not private
         assertFalse(isNearby("10.0.0.256", "10.0.0.1"))

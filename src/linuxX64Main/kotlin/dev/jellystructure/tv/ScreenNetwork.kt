@@ -14,8 +14,8 @@ fun isNearby(callerAddress: String?, deviceAddress: String?): Boolean {
     val b = deviceAddress?.trim()?.ifBlank { null } ?: return false
     if (a == b) return true // exact match — the rule for public IPv4, and a fast path for identical IPv6
     // R378 (found live 2026-10-09): when the router forwards to the server without rewriting the source (the
-    // household's DNAT since 2026-09-30), the server sees each LAN device's own private address — the Pixel at
-    // 10.10.10.183, the TV at 10.10.11.20 — and an exact match never holds inside the house, so no relay was ever
+    // household's DNAT since 2026-09-30), the server sees each LAN device's own private address — a phone at
+    // 192.168.10.23, a TV at 192.168.11.40 (stand-ins) — and an exact match never holds inside the house, so no relay was ever
     // chosen. A private address only reaches the server from inside the household network (a remote viewer arrives
     // with a public address), so two of them are nearby; every other pair keeps the public-address rule below.
     if (isPrivateIpv4(a) && isPrivateIpv4(b)) return true

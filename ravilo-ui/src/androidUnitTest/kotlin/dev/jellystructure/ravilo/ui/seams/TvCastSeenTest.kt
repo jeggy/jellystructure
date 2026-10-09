@@ -7,11 +7,11 @@ import kotlin.test.assertEquals
 
 /** R378 (FR-R378-2) — the reach report an Android TV sends from what its own discovery found. */
 class TvCastSeenTest {
-    private val stueTv = CastDevice("tv-own", "Stue TV", "BRAVIA 4K", "10.10.11.128", 8009, 4101, null)
-    private val stue = CastDevice("b1c2", "Stue", "Google Nest Mini", "10.10.11.40", 8009, 199172, null)
-    private val hub = CastDevice("a9f0", "Køkken", "Google Nest Hub", "10.10.11.41", 8009, 201221, "Spotify")
-    private val group = CastDevice("g-1", "Hele huset", "Google Cast Group", "10.10.11.40", 32187, 199204, null)
-    private val other = CastDevice("c3d4", "Gæsteværelse", "Chromecast", "10.10.11.42", 8009, 201221, null)
+    private val stueTv = CastDevice("tv-own", "Stue TV", "BRAVIA 4K", "192.168.11.28", 8009, 4101, null)
+    private val stue = CastDevice("b1c2", "Stue", "Google Nest Mini", "192.168.11.50", 8009, 199172, null)
+    private val hub = CastDevice("a9f0", "Køkken", "Google Nest Hub", "192.168.11.51", 8009, 201221, "Spotify")
+    private val group = CastDevice("g-1", "Hele huset", "Google Cast Group", "192.168.11.50", 32187, 199204, null)
+    private val other = CastDevice("c3d4", "Gæsteværelse", "Chromecast", "192.168.11.52", 8009, 201221, null)
 
     @Test
     fun `speakers and displays are reported with their Cast ids, in id order`() {
@@ -22,7 +22,7 @@ class TvCastSeenTest {
     @Test
     fun `the TV's own receiver is never reported, by name or by address`() {
         assertEquals(listOf("b1c2"), tvCastSeenOf(listOf(stueTv, stue), "Stue TV", emptySet()) { true }.map { it.castDeviceId })
-        assertEquals(listOf("b1c2"), tvCastSeenOf(listOf(stueTv.copy(name = "BRAVIA"), stue), "Stue TV", setOf("10.10.11.128", "fe80::1%wlan0")) { true }.map { it.castDeviceId })
+        assertEquals(listOf("b1c2"), tvCastSeenOf(listOf(stueTv.copy(name = "BRAVIA"), stue), "Stue TV", setOf("192.168.11.28", "fe80::1%wlan0")) { true }.map { it.castDeviceId })
     }
 
     @Test
@@ -38,6 +38,6 @@ class TvCastSeenTest {
 
     @Test
     fun `a device seen twice is reported once`() {
-        assertEquals(1, tvCastSeenOf(listOf(stue, stue.copy(host = "10.10.11.43")), null, emptySet()) { true }.size)
+        assertEquals(1, tvCastSeenOf(listOf(stue, stue.copy(host = "192.168.11.53")), null, emptySet()) { true }.size)
     }
 }

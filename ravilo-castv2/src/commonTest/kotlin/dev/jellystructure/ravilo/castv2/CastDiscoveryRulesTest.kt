@@ -19,8 +19,8 @@ class CastDiscoveryRulesTest {
 
     @Test
     fun `IPv4 comes first whatever order the addresses arrive in`() {
-        assertEquals("10.10.11.40", preferredCastHost(listOf("fe80::1c2:3%wlan0", "2a01:4f8::7", "10.10.11.40")))
-        assertEquals("10.10.11.40", preferredCastHost(listOf("/10.10.11.40")), "Java's InetAddress.toString() form")
+        assertEquals("192.168.11.50", preferredCastHost(listOf("fe80::1c2:3%wlan0", "2a01:4f8::7", "192.168.11.50")))
+        assertEquals("192.168.11.50", preferredCastHost(listOf("/192.168.11.50")), "Java's InetAddress.toString() form")
     }
 
     @Test
@@ -39,20 +39,20 @@ class CastDiscoveryRulesTest {
         assertFalse(isIpv4Literal("stue.local"))
     }
 
-    private val stueTv = CastDevice("tv-1", "Stue TV", "BRAVIA 4K", "10.10.11.128", 8009, 4101, null)
-    private val speaker = CastDevice("sp-1", "Stue", "Google Nest Mini", "10.10.11.40", 8009, 199172, null)
+    private val stueTv = CastDevice("tv-1", "Stue TV", "BRAVIA 4K", "192.168.11.28", 8009, 4101, null)
+    private val speaker = CastDevice("sp-1", "Stue", "Google Nest Mini", "192.168.11.50", 8009, 199172, null)
 
     @Test
     fun `the TV's own receiver is never listed, by its name or by its address`() {
         assertTrue(isOwnCastDevice(stueTv, "Stue TV", emptySet()), "by the TV's DEVICE_NAME")
         assertTrue(isOwnCastDevice(stueTv, " stue tv ", emptySet()), "names compare trimmed and in any case")
-        assertTrue(isOwnCastDevice(stueTv.copy(name = "Living room"), null, setOf("10.10.11.128")), "renamed: by the address")
+        assertTrue(isOwnCastDevice(stueTv.copy(name = "Living room"), null, setOf("192.168.11.28")), "renamed: by the address")
         assertTrue(isOwnCastDevice(stueTv.copy(host = "fe80::5%eth0"), null, setOf("fe80::5%wlan0")), "an IPv6 address, whatever its scope")
     }
 
     @Test
     fun `another device is listed, even one whose name starts like the TV's`() {
-        assertFalse(isOwnCastDevice(speaker, "Stue TV", setOf("10.10.11.128")))
+        assertFalse(isOwnCastDevice(speaker, "Stue TV", setOf("192.168.11.28")))
         assertFalse(isOwnCastDevice(speaker, null, emptySet()))
         assertFalse(isOwnCastDevice(speaker, "  ", emptySet()), "a blank DEVICE_NAME matches nothing")
     }
