@@ -622,3 +622,9 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   changes in the playlists, so Media3, hls.js and the Cast receiver read exactly what they read before. *Not done:*
   an SDR rung beside the HDR ones in the same master (Apple's authoring guidance) — it costs a second tone-mapped
   encode per play; a screen change in the middle of a film is not covered.
+- **An SDR source with untagged colour is refused by our encoder** (the re-test above). *Fix:* the GPU graph tags the
+  frames with the output's own colours before the `split` on every path that doesn't tone-map — `setparams` bt709 for
+  SDR, bt2020 + PQ/HLG when HDR is kept (a no-op for a tagged source; metadata only, no conversion). The output's
+  `-color_*` flags then match the frames and ffmpeg 8 inserts no software `auto_scale` on CUDA frames. Test: the
+  generated command for an SDR and an HDR-keep plan carries the tags before `split`; the same graph run on the host's
+  jellyfin-ffmpeg + P4000 against an untagged SDR clip encodes (exit 0) where the old one failed.
