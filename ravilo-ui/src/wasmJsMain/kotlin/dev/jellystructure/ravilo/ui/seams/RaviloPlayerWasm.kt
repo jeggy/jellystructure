@@ -120,7 +120,7 @@ actual class RaviloPlayer actual constructor() {
     }
 
     actual fun play() { playVideo(video) }
-    actual fun pause() { video.pause() }
+    actual fun pause() { pauseVideo(video) }
     actual fun seekTo(positionMs: Long) { video.currentTime = positionMs / 1000.0 }
     /** R354 (FR-R354-6) — the video element's own volume. */
     actual fun setVolume(level: Float) { video.volume = level.coerceIn(0f, 1f).toDouble() }
@@ -295,7 +295,9 @@ private fun installSoundUnlock(video: HTMLVideoElement, events: String): Unit = 
     """{
         var unlock = function (ev) {
             if (!ev.isTrusted) return;
-            if (video.getAttribute('src') || video.currentSrc || video._hls) return;
+            // "Holds no film" is the element's own NETWORK_EMPTY, not `currentSrc`: Firefox keeps the last film's
+            // `currentSrc` after the reset (measured 2026-10-09), which would end the unlock after the first film.
+            if (video.getAttribute('src') || video.networkState !== 0 || video._hls) return;
             video._rvQuiet = true;
             video.muted = false;
             try { var p = video.play(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
@@ -314,6 +316,7 @@ private fun prepareForSource(video: HTMLVideoElement): Unit = js(
 /** R376 (FR-R376-S1) — back to idle: paused, no source, no `<track>`s, nothing queued, the default fit, hidden. */
 private fun resetElement(video: HTMLVideoElement): Unit = js(
     """{
+        video._rvWantPlay = false;
         try { video.pause(); } catch (e) {}
         while (video.firstChild) video.removeChild(video.firstChild);
         video.removeAttribute('src');
@@ -363,6 +366,7 @@ private fun drainEvents(video: HTMLVideoElement): String = js(
  */
 private fun playVideo(video: HTMLVideoElement): Unit = js(
     """{
+        video._rvWantPlay = true;
         try {
             var p = video.play();
             if (p && p.catch) p.catch(function (e) {
@@ -385,6 +389,9 @@ private fun playVideo(video: HTMLVideoElement): Unit = js(
     }"""
 )
 
+/** R376 (FR-R376-S1) — a pause is the viewer's: a source swapped in after it stays paused. */
+private fun pauseVideo(video: HTMLVideoElement): Unit = js("{ video._rvWantPlay = false; video.pause(); }")
+
 /**
  * R44: wire the browser Media Session API so OS / keyboard media-transport keys drive the <video>.
  * Handlers operate on the element directly (no WASM↔JS callback bridge); the shared chrome reflects
@@ -395,8 +402,8 @@ private fun wireMediaSession(video: HTMLVideoElement): Unit = js(
         if (typeof navigator !== 'undefined' && navigator.mediaSession) {
             var ms = navigator.mediaSession;
             try {
-                ms.setActionHandler('play', function () { video.play(); });
-                ms.setActionHandler('pause', function () { video.pause(); });
+                ms.setActionHandler('play', function () { video._rvWantPlay = true; video.play(); });
+                ms.setActionHandler('pause', function () { video._rvWantPlay = false; video.pause(); });
                 ms.setActionHandler('seekforward', function () {
                     var d = video.duration; video.currentTime = Math.min(isFinite(d) ? d : 1e9, video.currentTime + 30);
                 });
@@ -438,7 +445,13 @@ private fun clearMediaMetadata(): Unit = js("""{ try { if (navigator.mediaSessio
 private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double): Unit = js(
     """{
         video._rvWantAudio = null;
-        function native(){ video.src = url; if (startSec > 0) { try { video.currentTime = startSec; } catch (e) {} } }
+        // R376 (FR-R376-S1, live test 2026-10-09) — a play() asked for while the source was still being swapped in
+        // (hls.js loading lazily, or attaching after the call returned) is the new source's: the load algorithm
+        // resets `paused`, so the swap plays again itself. A new item's load clears the wish; PlayerScreen's
+        // R290 path plays it once the resolver has spoken, and a restream's `play()` straight after load() sets it.
+        video._rvWantPlay = false;
+        function resume(){ if (!video._rvWantPlay || !video.paused) return; try { var p = video.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {} }
+        function native(){ video.src = url; if (startSec > 0) { try { video.currentTime = startSec; } catch (e) {} } resume(); }
         if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
         if (url.indexOf('.m3u8') === -1) { native(); return; }
         var nativeHls = video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '';
@@ -492,6 +505,7 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double)
                             if (n === name || (typeof n === 'string' && n.indexOf(name + ' ') === 0)) { if (hls.audioTrack !== i) hls.audioTrack = i; return; }
                         }
                     });
+                    hls.once(Hls.Events.MEDIA_ATTACHED, resume);
                     hls.loadSource(url); hls.attachMedia(video);
                 } else { native(); }
             } catch(e) { native(); }

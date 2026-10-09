@@ -472,3 +472,71 @@ gesture happened (a cast handing playback to the browser, a restored session).
 and no pill; the next episode auto-advances with sound; a seek/track switch keeps sound. **Tests:** the click handler
 calls `play()` before any suspension point (a unit test on the web player seam with a fake element recording call
 order); one element across two items.
+
+### Build notes — FR-R376-S1 (2026-10-09, branch `r376-safari-first-click`, not merged, not deployed)
+
+- **One `<video>` for the page's lifetime.** `SharedVideo` in `RaviloPlayerWasm.kt` creates it once (hidden,
+  `playsinline`, `pointer-events:none`) and `prepareWebVideo()` creates it at boot (`ravilo-web` `Main.kt`). Every player
+  takes it over (`SharedElementOwner`); `release()` resets it only if this player still owns it, so a late release of
+  the previous player cannot blank the next item. AirPlay binding is idempotent on the shared element.
+- **The unlock runs in the gesture itself.** A capture-phase `window` listener on `pointerdown · mousedown · pointerup ·
+  mouseup · click · touchend · keydown` (`WebSoundUnlock.gestureEvents`) calls `play()` then `pause()` on the element,
+  unmuted, **synchronously inside every trusted event while the element holds no film**. That way no click handler
+  anywhere in the app has to remember to call it: Play, Resume, a row's play button and *Next episode* are all covered.
+  WebKit lifts the element's gesture restriction for good on the first such call. The element's own play/pause events
+  from the unlock are muted out of the event queue (`_rvQuiet`), and the next real source clears that (`prepareForSource`,
+  which also unmutes and shows the element). "Holds no film" means the element's `networkState` is `NETWORK_EMPTY`, not
+  that `currentSrc` is empty: Firefox keeps the last film's `currentSrc` after the reset (measured).
+- **The muted fallback stays** for a play with no gesture before it (the *Click or press a key for sound* pill).
+- **Fixed on the way (live, Opera):** an audio pick on a direct play restreams to HLS (R284). PlayerScreen calls `play()`
+  straight after `load()`, but on the page's first HLS stream hls.js is still loading (`vendor/hls.min.js`, lazy), so the
+  new source was attached **after** that `play()` and the load algorithm left it paused: the film stopped on the pick,
+  with no error. Now the element remembers a `play()` asked for during the swap (`_rvWantPlay`), and the swap plays
+  itself once the source is attached (hls.js `MEDIA_ATTACHED`, or the native fallback). A new item's `load()` clears the
+  wish, so R290's prepare-then-play is unchanged, and a viewer's pause clears it too. After the fix: playing at the pick's
+  position with sound, 1.76 s after the pick.
+- **Tests** (`WebPlaybackTest`): a trusted click unlocks; a scripted event never does; a click during a film never does;
+  `pointermove`/scroll are not gestures; a stale release does not reset the shared element.
+
+#### Live, every browser on the owner's Mac (2026-10-09, against the dev backend through a local proxy serving this branch's build)
+
+**The click method:** CDP `Input.dispatchMouseEvent` for Chrome, Brave and Opera, and WebDriver BiDi
+`input.performActions` for Firefox. Both are trusted input: `isTrusted` is true, the page gets user activation, and the
+browser's autoplay policy treats them as a real click. A CGEvent click (the coordinator's suggestion) is impossible from
+here: neither the ssh session nor Terminal is trusted for Accessibility (`AXIsProcessTrusted() == false`, checked
+through both), so macOS drops the posted clicks. `safaridriver` needs a one-time admin `safaridriver --enable`.
+
+Each browser ran in its own throwaway profile (`--user-data-dir` / `-profile` under `/tmp`); the owner's Brave windows
+were not touched. The test titles were a 1080p MP4 film, a four-audio MKV film, and a series with 5-minute episodes.
+
+| Browser | Gesture counted | First click | Path | Time to playing | Audio switch | Seek | Auto-advance |
+|---|---|---|---|---|---|---|---|
+| Chrome | yes | sound, no pill | MP4 direct; MKV → HLS, 4 renditions | MP4: first frame 0.26 s, playing 0.59 s; MKV ~2.2 s | in-stream, no restart, sound kept | direct 183 ms, sound kept | next one preloaded at the credits (R381), playing 0.12 s after its load, sound |
+| Brave | yes | sound, no pill | as Chrome | MP4 ~1.1 s (with a resume) · MKV ~2 s | in-stream, sound kept; the picture held ~3 s | direct 113 ms, sound kept | 0.69 s, sound |
+| Opera | yes | sound, no pill | MP4 direct; **MKV direct** (Opera declares it); an audio pick restreams to HLS | MP4 1.1 s | **stopped (paused) on the pick → fixed above**: then 1.76 s, sound. In-stream between HLS renditions: fine | direct 174 ms · HLS 2.27 s, sound kept | 0.24 s, sound |
+| Firefox 157 | yes | sound, no pill | MP4 direct; MKV → HLS, 4 renditions | MP4 1.1 s (with a resume seek) · MKV ~2.2 s | in-stream, no stall (6.4 s played in 6 s), sound kept | direct 141 ms · HLS 2.17 s, sound kept | 0.19 s, sound |
+| Safari | — | **not run** | — | — | — | — | — |
+
+**Safari is owed to the owner.** A real click on Play is the whole point for Safari, and there is no trusted input into
+Safari from here. Owner check: on the Mac (and on the iPhone home-screen app), play a film with a real click: is there
+sound, with no pill? Then let an episode auto-advance and seek once. Either of these lets a later session run it
+remotely: a one-time `sudo safaridriver --enable` (plus *Allow Remote Automation*), or an Accessibility grant for the
+ssh session.
+
+**Found, not ours to fix here:**
+
+- **macOS Local Network privacy blocks Chrome from the household's LAN-resolved hosts.** The Jellyfin host resolves to
+  a 10.x address at home. A Chrome without the *Local Network* grant gets `ERR_ADDRESS_UNREACHABLE` / *Failed to fetch*
+  for every stream URL, with no prompt in a throwaway profile. To the viewer this looks like "the web player can't play
+  anything". The test went through a SOCKS tunnel.
+- **Firefox draws its own "Pop out this video" toggle** over the picture on hover. It is the browser's own control, and
+  no web API hides it.
+- **A Danish-labelled embedded subtitle showed English cues in Firefox** on the four-audio MKV. The file also has an
+  external sidecar. Not diagnosed. The hypothesis is the subtitle stream index being off by one when an external
+  sidecar is listed; worth checking against 301/302's sidecar numbering.
+- **Build gotcha (Kotlin Gradle plugin):** after a change to a `js("…")` string only,
+  `:ravilo-web:compileProductionExecutableKotlinWasmJsOptimize` stayed up to date. The dist then shipped the **old** JS
+  glue (`import-object.mjs`) beside an unchanged `.wasm`; `--rerun` on that task fixed it. A release built
+  incrementally after a JS-only change could ship stale code.
+- **The service worker serves the previous build** until a second reload (R263's *Ravilo updated · Reload* toast). This
+  is expected, but test runs must unregister it first.
