@@ -165,6 +165,7 @@ class EncoderPlanTest {
         // 2026-10-09 — a cast receiver's transcode stays Jellyfin's until the stall is diagnosed; the TV app (Cast
         // Connect) plays as a `tv` and keeps our encoder.
         assertEquals(CAST_RECEIVER_FALLBACK, encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast"))
+        assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "cast", castReceivers = true))
         assertNull(encoderDecision(true, true, card, hdr4k, false, deviceKind = "tv"))
     }
 
@@ -333,5 +334,14 @@ class EncoderPlanTest {
         enc.prewarm(plan, "dev1", "item3", 10, far)
         assertNull(enc.adoptPrewarm("dev1", "item3", plan, 40, "ps3", far))      // the play starts elsewhere: not this job…
         assertEquals(0, enc.cancelPrewarm("dev1", "item3"))                       // …and the prewarm is already stopped
+    }
+
+    // 313 (2026-10-09) — the work folder is bounded: segments far behind the player are deleted, and only once.
+    @Test fun pruneRangeKeepsAMinuteBehind() {
+        assertNull(pruneRange(prunedBelow = 0, furthest = 50, keepBehind = 60))
+        assertEquals(0 until 40, pruneRange(prunedBelow = 0, furthest = 100, keepBehind = 60))
+        assertEquals(40 until 41, pruneRange(prunedBelow = 40, furthest = 101, keepBehind = 60))
+        assertNull(pruneRange(prunedBelow = 41, furthest = 101, keepBehind = 60))
+        assertEquals(300 until 390, pruneRange(prunedBelow = 300, furthest = 400, keepBehind = 10))
     }
 }

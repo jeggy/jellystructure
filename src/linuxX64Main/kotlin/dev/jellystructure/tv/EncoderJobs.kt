@@ -59,6 +59,8 @@ class EncoderJobs(
         @Volatile var furthestRequest = startSegment
         @Volatile var lastRequestAtMs = nowMs()
         @Volatile var firstSegmentMs: Long? = null
+        /** 313 (2026-10-09) — segments below this were deleted behind the player ([prune]); none of them can be served. */
+        @Volatile var prunedBelow = startSegment
         val startedAtMs = nowMs()
         /** Segment [k]'s file in [variant]: every job numbers its files from 0 (see [encoderCommand]). */
         fun file(variant: Int, k: Int): String = "$dir/$variant/s${k - startSegment}.${if (plan.mux == EncoderMux.FMP4) "m4s" else "ts"}"
@@ -152,7 +154,20 @@ class EncoderJobs(
         if (j.paused && j.highest - j.furthestRequest < RESUME_AHEAD && j.pid > 0) { platform.posix.kill(j.pid, SIGCONT); j.paused = false }
     }
 
-    private fun Job.reaches(k: Int): Boolean = !stopped && !exited && k >= startSegment && k <= highest + REACH_AHEAD
+    private fun Job.reaches(k: Int): Boolean = !stopped && !exited && k >= maxOf(startSegment, prunedBelow) && k <= highest + REACH_AHEAD
+
+    /**
+     * 313 (2026-10-09) — deletes segments of every variant more than [keepBehind] segments behind the furthest request.
+     * Found live: nothing was ever deleted, so a 4-rung HEVC ladder (~33 Mbps written) filled the 4 GB tmpfs after
+     * ~16 min of film and a 62-min cast stalled 208 times. A seek back into the deleted range restarts the job
+     * ([reaches] counts [Job.prunedBelow]).
+     */
+    private fun prune(j: Job, furthest: Int, keepBehind: Int) {
+        val range = pruneRange(j.prunedBelow, furthest, keepBehind) ?: return
+        for (k in range) for (v in 0 until j.variants) unlink(j.file(v, k))
+        j.prunedBelow = range.last + 1
+    }
+
 
     /** Segments are written whole (`temp_file`) and every variant advances together: variant 0 tells how far it is. */
     private fun refresh(j: Job) { while (access(j.file(0, j.highest + 1), F_OK) == 0) j.highest++ }
@@ -172,9 +187,17 @@ class EncoderJobs(
                 val buf = allocArray<ByteVar>(512)
                 if (fgets(buf, 512, pipe) != null) job.pid = buf.toKString().trim().toIntOrNull() ?: -1
                 if (job.stopped && job.pid > 0) platform.posix.kill(job.pid, SIGKILL)
+                var lines = 0
                 while (fgets(buf, 512, pipe) != null) {
                     if (!buf.toKString().startsWith("progress=")) continue
                     refresh(job)
+                    // 313 (2026-10-09) — keep the work folder bounded: every few progress lines, delete what is far behind.
+                    if (++lines % 8 == 0) {
+                        mutex.withLock {
+                            prune(job, job.furthestRequest, KEEP_BEHIND)
+                            streams[streamId]?.retired?.forEach { prune(it, job.furthestRequest, KEEP_BEHIND) }
+                        }
+                    }
                     if (!job.paused && !job.stopped && job.highest - job.furthestRequest > PAUSE_AHEAD && job.pid > 0) {
                         job.paused = true
                         platform.posix.kill(job.pid, SIGSTOP)
@@ -270,6 +293,9 @@ class EncoderJobs(
         const val REACH_AHEAD = 10       // a request up to 20 s past what exists waits for this job
         const val KEEP_RETIRED = 2
         const val SEGMENT_WAIT_MS = 15_000L
+        /** 60 s of 2 s segments kept behind the furthest request: with 40 s ahead, one 4-rung HEVC stream holds ~420 MB,
+         *  so the 4 GB work folder fits more streams than [MAX_JOBS]. A seek further back restarts the job (~1–2 s). */
+        const val KEEP_BEHIND = 30
         const val IDLE_MS = 60_000L
     }
 }
@@ -288,4 +314,10 @@ internal fun mkdirs(path: String): Boolean {
         if (access(p, F_OK) != 0) mkdir(p, 0x1C0u)
     }
     return access(path, platform.posix.W_OK) == 0
+}
+
+/** 313 (2026-10-09) — the segments to delete: from [prunedBelow] up to [keepBehind] behind [furthest]; null when none. */
+internal fun pruneRange(prunedBelow: Int, furthest: Int, keepBehind: Int): IntRange? {
+    val below = furthest - keepBehind
+    return if (below <= prunedBelow) null else prunedBelow until below
 }

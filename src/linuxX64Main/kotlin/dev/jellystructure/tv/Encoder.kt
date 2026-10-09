@@ -105,7 +105,7 @@ class Encoder(
             )
         }
         val cards = if (cfg.enabled) cards() else emptyList()
-        encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind)?.let { return null to it }
+        encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)?.let { return null to it }
         source!!
         refused.reason(path, nowMs())?.let { return null to it }
         // 313d (FR-313-6) — a picked image subtitle is burned in by this job (composited once, before the split). One

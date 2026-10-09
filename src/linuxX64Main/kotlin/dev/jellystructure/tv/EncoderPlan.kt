@@ -418,12 +418,14 @@ internal fun encoderDecision(
     enabled: Boolean, ffmpegReady: Boolean, cards: List<EncoderCard>, source: EncoderSource?, isLiveOrAudio: Boolean,
     /** The playing device's kind. A Cast Connect load into the TV app plays as the TV (`tv`), not as a receiver. */
     deviceKind: String = "tv",
+    /** [EncoderConfig.castReceivers] — the dev-only switch that lets a cast receiver through while its stall is diagnosed. */
+    castReceivers: Boolean = false,
 ): String? = when {
     !enabled -> "encoder off"
     isLiveOrAudio -> "live TV or audio"
     // 2026-10-09 — a Chromecast cast served by our encoder stalled 208 times in 62 min (first frame 15.9 s); until that
     // is diagnosed the web receiver (`cast`) is served by Jellyfin. Cast Connect into the TV app is a `tv` play.
-    deviceKind.equals("cast", ignoreCase = true) -> CAST_RECEIVER_FALLBACK
+    deviceKind.equals("cast", ignoreCase = true) && !castReceivers -> CAST_RECEIVER_FALLBACK
     !ffmpegReady -> "no jellyfin-ffmpeg"
     cards.isEmpty() -> "no GPU in the container"
     source == null -> "file not on this server's disk or not scanned"

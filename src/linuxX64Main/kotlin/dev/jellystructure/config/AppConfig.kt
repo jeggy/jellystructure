@@ -71,6 +71,9 @@ data class EncoderConfig(
     @SerialName("work_dir") val workDir: String = "/transcode/js",
     @SerialName("cuda_cache_dir") val cudaCacheDir: String = "/config/encoder/cuda-cache",
     @SerialName("max_disk_mb") val maxDiskMb: Int = 4096,
+    /** 313 (2026-10-09) — a dev-only switch to let our encoder serve the Chromecast web receiver while its cast stall is
+     *  diagnosed. Off by default: casts go to Jellyfin ([CAST_RECEIVER_FALLBACK]). */
+    @SerialName("cast_receivers") val castReceivers: Boolean = false,
 )
 
 /** 304b (FR-304-4) — *Household members can control each other's playing*: off by default; the admin is never limited. */
