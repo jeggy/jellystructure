@@ -1526,7 +1526,10 @@ fun RaviloApp(
                 }.getOrNull()?.let { env ->
                     // R378 (FR-R378-3) — a TV relays with its own Cast v2 sender: its Cast SDK sees no device, and it never casts.
                     val tvRelay = dev.jellystructure.ravilo.ui.seams.platformTvCastRelay()
-                    val sent = tvRelay?.relay(env.castDeviceId, castController.appId, env.load) ?: castController.relayLoad(env.castDeviceId, env.load)
+                    // The TV launches the server's receiver id — the one its discovery asked each device about. A debug build's
+                    // development Cast app (R266, there for Cast Connect into the debug TV app) is unavailable on every speaker:
+                    // found 2026-10-09, Soveværelse TV relaying to the Køkken hub, LAUNCH of the dev app → not launched.
+                    val sent = tvRelay?.relay(env.castDeviceId, castAppId ?: castController.appId, env.load) ?: castController.relayLoad(env.castDeviceId, env.load)
                     if (!sent) println("R370: cannot relay to ${env.castDeviceId}")
                 }
                 // R370 (review item 11) — an open *Play on…* list reads its places again.

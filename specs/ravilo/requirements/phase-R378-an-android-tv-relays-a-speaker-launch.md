@@ -140,3 +140,13 @@ Built on the Android TV build only; a phone, a computer and the web are unchange
   reaches the server from inside the household network, a remote viewer arrives with a public one; every other pair
   keeps the public-address rule (`ScreenNetwork.kt`, `ScreenNetworkTest.twoPrivateIpv4sAreOneHousehold_r378`: a
   private and a public address are not nearby; CGNAT 100.64/10 is not private).
+- **Found: a debug TV build relayed the wrong receiver.** The TV asked each device about the server's receiver id
+  (`134AA282`) but launched with the sender's id, which on a debug build is the development Cast app (`EA91BAE4`, R266's,
+  for Cast Connect into the debug TV app) — `APP_UNAVAILABLE` on the Køkken hub and Gæsteværelse, so the relay ended
+  *the receiver did not start*. **Fix:** the TV relays with the server's id (`RaviloApp.kt`, `cast_relay_load`); a
+  release build is unchanged (both ids are the same there).
+- **Acceptance (relayed launch) — passed after both fixes** (debug 1.50-131, dev stack v1.50-130): a start on the
+  Køkken hub from a requester that cannot see it (the fedora desktop app's sign-in, by API) → *relay 67cf23b9…* (the
+  TV) → TV log *relay on Køkken hub: LOAD sent (1 KB, 0 parts); buffering; left it playing* → the session played
+  (30 s in) and *Stop* from the server ended it. **Small finding:** once the receiver reports, the session's place
+  reads *Chromecast* (the receiver's enrolment name) instead of *Køkken hub*.
