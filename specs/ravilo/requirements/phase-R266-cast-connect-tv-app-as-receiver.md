@@ -499,7 +499,12 @@ Stue TV was withdrawn by the owner mid-session; everything below ran on **Sovev�
   (2) The app-bar cast glyph on a detail page opens the sheet join-only (FR-R265-7): tapping a free TV there does
   nothing at all, with no hint — a viewer reads it as broken. (3) TV sign-in: with the system keyboard up, *Cancel*
   draws over the *Sign in* button.
+  **Fixed 2026-10-09:** (1) — see R369 *Found live 2026-10-09* (the TV app reports its film tracks to the server, and
+  the session remote's *Audio & Subs* reaches the TV's player); (2) — R265 FR-R265-7a (the page's title is what the
+  glyph starts; elsewhere the sheet says why nothing started); (3) — R349 *Found live 2026-10-09* (Cancel is part of
+  the form, under Sign in).
 - **Finding (not fixed):** after standby during a cast, opening Ravilo again (LEANBACK launcher) brought the player
   back and **played on** from the stop's place (1:43) with nobody asking — it should come back paused (or not at all).
+  **Fixed 2026-10-09 in R292 (FR-R292-8a):** a return after the screen went off is a start **paused** at the place.
 - **`scripts/verify-release-apk-on-art.sh` not run:** it uninstalls `dev.jellystructure.ravilo`, and every device here
   (both TVs, the Pixel) carries the Play Store build — run it on CI's emulator only.

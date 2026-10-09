@@ -456,6 +456,8 @@
   "wd.sun": "sunnudag",
   "screens.sending": "Sendir til {device}…",
   "screens.playing_on": "Spælir á {device}",
+  "screens.nothing_to_start": "Lat ein film ella ein part upp fyrst, og vel so, hvar hann skal spælast.",
+  "screens.nothing_to_start_music": "Spæl okkurt fyrst, og vel so, hvar tað skal spælast.",
   "loading": {
     "text": "Heintar…",
     "note": "R279 — was accent-stripped (`Ledur inn...`); replaced with ReceiverCore.kt's own shipped spelling of the same string."

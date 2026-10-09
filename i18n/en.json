@@ -492,6 +492,11 @@
   "wd.sun": "Sunday",
   "screens.sending": "Sending to {device}…",
   "screens.playing_on": "Playing on {device}",
+  "screens.nothing_to_start": {
+    "text": "Open a film or an episode first, then pick where it plays.",
+    "note": "R265 FR-R265-7a (found live 2026-10-09) — under the sheet's places when a free TV is tapped with nothing to start (the app bar's glyph on Home). It used to do nothing at all."
+  },
+  "screens.nothing_to_start_music": "Play something first, then pick where it plays.",
   "loading": "Loading...",
   "error.generic": "Something went wrong",
   "player.unavailable": "Playback is not available in this build",

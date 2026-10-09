@@ -169,33 +169,16 @@ fun ProfilePickerScreen(
                 // MultiTokenStore and switches the active profile to it, so a successful sign-in
                 // here navigates on (same as tapping a tile) rather than just returning to the picker.
                 val loginStore = remember { LoginStore(apiClient) }
-                val cancelFR = remember { FocusRequester() }
-                LaunchedEffect(Unit) { runCatching { cancelFR.requestFocus() } }
-                Box(Modifier.fillMaxSize()) {
-                    LoginScreen(
-                        store = loginStore,
-                        onSignedIn = {
-                            val active = MultiTokenStore.getActive()
-                            if (active != null) onProfileSelected(active) else store.cancelAdd()
-                        },
-                    )
-                    // Always-focusable cancel so the flow is escapable (incl. Back at a cold-start gate)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 48.dp)
-                            .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
-                            .dpadFocusable(
-                                focusRequester = cancelFR,
-                                onSelect = { store.cancelAdd() },
-                                onBack = { store.cancelAdd() },
-                            )
-                            .padding(horizontal = 28.dp, vertical = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(str("profile.cancel"), color = colors.textSecondary, fontSize = 14.sp)
-                    }
-                }
+                // Found live 2026-10-09 — Cancel is part of the form (under Sign in), so it scrolls with it inside what the
+                // system keyboard leaves; as an overlay pinned to the foot it drew over Sign in with the keyboard up.
+                LoginScreen(
+                    store = loginStore,
+                    onSignedIn = {
+                        val active = MultiTokenStore.getActive()
+                        if (active != null) onProfileSelected(active) else store.cancelAdd()
+                    },
+                    onCancel = { store.cancelAdd() },
+                )
             }
         }
     }

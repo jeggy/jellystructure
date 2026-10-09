@@ -122,6 +122,29 @@ class KeyboardFormTest {
         }
     }
 
+    @Test fun `Add user — Cancel sits under Sign in, never over it, at both heights (found live 2026-10-09)`() {
+        var cancelled = 0
+        render(keyboardDown) { LoginScreen(store = LoginStore(client()), onSignedIn = {}, onCancel = { cancelled++ }) }
+        for (h in listOf(keyboardDown, keyboardUp)) {
+            height = h
+            rule.onNodeWithTag(LoginTags.USERNAME).requestFocus(); rule.waitForIdle()
+            press(Key.DirectionDown); focusedAndShown(LoginTags.PASSWORD, label = true)
+            press(Key.DirectionDown); focusedAndShown(LoginTags.SIGN_IN)
+            press(Key.DirectionDown); focusedAndShown(LoginTags.CANCEL)
+            val cancel = rule.onNodeWithTag(LoginTags.CANCEL).fetchSemanticsNode().boundsInRoot
+            val signInNow = rule.onNodeWithTag(LoginTags.SIGN_IN).fetchSemanticsNode().boundsInRoot
+            org.junit.Assert.assertFalse("Cancel $cancel overlaps Sign in $signInNow at $h", cancel.overlaps(signInNow))
+            org.junit.Assert.assertTrue("Cancel is below Sign in at $h", cancel.top >= signInNow.bottom)
+            press(Key.DirectionDown); focusedAndShown(LoginTags.CHANGE_SERVER)
+            press(Key.DirectionUp); focusedAndShown(LoginTags.CANCEL)
+            press(Key.DirectionUp); focusedAndShown(LoginTags.SIGN_IN)
+        }
+        rule.onNodeWithTag(LoginTags.SIGN_IN).requestFocus(); rule.waitForIdle()
+        press(Key.DirectionDown); focusedAndShown(LoginTags.CANCEL)
+        press(Key.Enter)
+        org.junit.Assert.assertEquals(1, cancelled)
+    }
+
     // ── change your password ───────────────────────────────────────────────────────────────────────
 
     @Test fun `D-pad and Next walk the change-password form with the keyboard up`() {

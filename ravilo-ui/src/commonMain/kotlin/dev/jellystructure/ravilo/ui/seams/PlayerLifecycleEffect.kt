@@ -23,6 +23,7 @@ expect fun PlayerLifecycleEffect(
     /** R292 (FR-R292-2) — fires BEFORE the engine is released, with the viewer's play intent: the caller
      *  captures its resume record from the live engine here and stops the session. */
     onBackground: (wasPlaying: Boolean) -> Unit,
-    /** R292 (FR-R292-3) — the engine is gone; the caller starts again from its record. */
-    onForeground: () -> Unit,
+    /** R292 (FR-R292-3) — the engine is gone; the caller starts again from its record. `afterStandby`
+     *  (FR-R292-8a): the screen went off while away — start paused. */
+    onForeground: (afterStandby: Boolean) -> Unit,
 )

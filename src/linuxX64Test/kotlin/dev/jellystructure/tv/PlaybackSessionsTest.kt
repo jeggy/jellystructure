@@ -115,6 +115,32 @@ class PlaybackSessionsTest {
         assertEquals("Song song-2", s.get(id)?.current?.title)
     }
 
+    @Test fun `a film player's tracks-only report keeps the session's place and an unchanged one pushes nothing`() = runBlocking {
+        // R266, found live 2026-10-09: the TV app playing a film the server started reported no tracks, so the session
+        // remote had no Audio & Subs. The film reports its tracks with an empty queue.
+        val s = service()
+        val tv = device("bedroom-tv", kind = "tv")
+        val id = s.onStart(tv, "film-1", 0)
+        val rev = s.get(id)!!.revision
+        val audio = listOf(dev.jellystructure.shared.tv.CastTrack(index = 0, language = "dan", trackId = 200), dev.jellystructure.shared.tv.CastTrack(index = 1, language = "eng", trackId = 201))
+        val subs = listOf(dev.jellystructure.shared.tv.CastTrack(index = 0, language = "dan", trackId = 100))
+        val report = dev.jellystructure.shared.tv.SessionQueueReport(itemId = "film-1", audioTracks = audio, subtitleTracks = subs, audioIndex = 0, subtitleIndex = -1)
+        pushes.clear()
+        s.onQueueReport(tv, report)
+        val rec = s.get(id)!!
+        assertEquals(audio, rec.options.audioTracks)
+        assertEquals(subs, rec.options.subtitleTracks)
+        assertEquals(0, rec.queueIndex)
+        assertEquals(rev, rec.revision, "the tracks arriving is detail, not a move")
+        assertEquals(listOf<SessionChange>(SessionChange.Detail(id)), pushes)
+        pushes.clear()
+        s.onQueueReport(tv, report)
+        assertTrue(pushes.isEmpty(), "the same report again pushes nothing")
+        s.onQueueReport(tv, report.copy(audioIndex = 1))
+        assertEquals(1, s.get(id)!!.options.audioIndex)
+        assertEquals(listOf<SessionChange>(SessionChange.State(id)), pushes, "a pick on the TV is a state change")
+    }
+
     @Test fun `a failed room add is said on the session and the rooms stay`() = runBlocking {
         val s = service()
         val phone = device("pixel")

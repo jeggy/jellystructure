@@ -28,7 +28,7 @@ actual fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
     onBackground: (wasPlaying: Boolean) -> Unit,
-    onForeground: () -> Unit,
+    onForeground: (afterStandby: Boolean) -> Unit,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current.applicationContext
@@ -51,8 +51,8 @@ actual fun PlayerLifecycleEffect(
                     player.setSessionActive(false)
                     player.releaseEngine()
                 }
-                Action.Foreground -> {
-                    currentOnForeground()
+                is Action.Foreground -> {
+                    currentOnForeground(action.afterStandby)
                     player.setSessionActive(true)
                 }
             }

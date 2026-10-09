@@ -819,15 +819,25 @@ class PlaybackSessions(
         var change: SessionChange? = null
         mutex.withLock {
             val cur = findLocked(device, r.itemId, r.sessionId) ?: return@withLock
-            val placeMoved = cur.queueIndex != r.queueIndex || cur.options.shuffle != (r.shuffle ?: cur.options.shuffle) ||
-                cur.options.repeat != (r.repeat ?: cur.options.repeat) || cur.options.audioIndex != r.audioIndex || cur.options.subtitleIndex != r.subtitleIndex
+            // R266 (found live 2026-10-09) — a film player has no queue to report, only its tracks (an empty queue): the
+            // session's own queue, index and revision stand. A report that changes nothing changes nothing (the TV app
+            // re-sends its tracks now and then, in case its first report came before the session existed).
+            val tracksOnly = r.queue.isEmpty()
+            val queueIndex = if (tracksOnly) cur.queueIndex else r.queueIndex
+            val placeMoved = cur.queueIndex != queueIndex || cur.options.shuffle != (r.shuffle ?: cur.options.shuffle) ||
+                cur.options.repeat != (r.repeat ?: cur.options.repeat) ||
+                // The first word of a track index (unknown before) is detail; a pick after it is a move.
+                (cur.options.audioIndex != null && cur.options.audioIndex != r.audioIndex) ||
+                (cur.options.subtitleIndex != null && cur.options.subtitleIndex != r.subtitleIndex)
             val o = cur.options.copy(
-                queueIds = r.queue.ifEmpty { cur.options.queueIds }, queueRev = r.queueRev, queueKnown = true,
+                queueIds = r.queue.ifEmpty { cur.options.queueIds },
+                queueRev = if (tracksOnly) cur.options.queueRev else r.queueRev, queueKnown = if (tracksOnly) cur.options.queueKnown else true,
                 shuffle = r.shuffle ?: cur.options.shuffle, repeat = r.repeat ?: cur.options.repeat,
                 audioTracks = r.audioTracks, subtitleTracks = r.subtitleTracks, audioIndex = r.audioIndex, subtitleIndex = r.subtitleIndex,
                 rooms = r.members ?: cur.options.rooms,
             )
-            val next = cur.copy(queueIndex = r.queueIndex, options = o,
+            if (!placeMoved && o == cur.options) return@withLock
+            val next = cur.copy(queueIndex = queueIndex, options = o,
                 revision = if (placeMoved) cur.revision + 1 else cur.revision, updatedAt = if (placeMoved) now() else cur.updatedAt)
             sessions[next.id] = next
             next.persist()

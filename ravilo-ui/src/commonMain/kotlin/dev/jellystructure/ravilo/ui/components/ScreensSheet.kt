@@ -56,6 +56,34 @@ import kotlinx.datetime.toLocalDateTime
 data class ScreenPlayContext(val itemId: String, val startPositionMs: Long? = null)
 
 /**
+ * R265 (FR-R265-7a, found live 2026-10-09) — the title the page on screen would play: a film's page publishes the film,
+ * a series page the episode its Play button starts (309's prewarm target). The app bar's glyph has no context of its
+ * own, so on a detail page its sheet starts this title on the tapped place instead of opening join-only, where a tap on
+ * a free TV did nothing at all. Cleared when the page leaves; [CastController.openSheet] reads it.
+ */
+object PagePlayTarget {
+    val current = kotlinx.coroutines.flow.MutableStateFlow<ScreenPlayContext?>(null)
+}
+
+/** Publishes [itemId] as the page's play target while the calling page is composed (null publishes nothing). */
+@Composable
+fun PublishPagePlayTarget(itemId: String?) {
+    androidx.compose.runtime.DisposableEffect(itemId) {
+        val ctx = itemId?.let { ScreenPlayContext(it) }
+        if (ctx != null) PagePlayTarget.current.value = ctx
+        onDispose { if (ctx != null && PagePlayTarget.current.value == ctx) PagePlayTarget.current.value = null }
+    }
+}
+
+/** FR-R265-7a — the hint a tap on a free place shows when the sheet has nothing to start there. */
+internal fun nothingToStartKey(music: Boolean): String = if (music) "screens.nothing_to_start_music" else "screens.nothing_to_start"
+
+/** FR-R265-7a — whether the open sheet shows that hint. One sheet is drawn at a time (CastSheetHost). Held here, not as a
+ *  local the sheet's lambdas capture: a new capture there moved R8's lambda merging and grew `PlayerScreen`'s widest
+ *  method past R258's register budget (249 → 255). */
+private val nothingToStartShown = androidx.compose.runtime.mutableStateOf(false)
+
+/**
  * R265 — the three-tier "Play on a TV" sheet (FR-R265-1..5), reusing [HandsetSheet]'s chrome. Tier 1 is
  * absent when empty, never an empty box or a "searching…" state (FR-R265-2); tier 2 is collapsed until the
  * viewer opens it, and this phone remembers that choice (FR-R265-3); the TV used last is pinned to the top
@@ -141,7 +169,8 @@ fun ScreensSheet(
     val serverTargets by dev.jellystructure.ravilo.ui.sessions.PlayOnStore.targets.collectAsState()
     LaunchedEffect(open) { if (open) dev.jellystructure.ravilo.ui.sessions.PlayOnStore.opened() else dev.jellystructure.ravilo.ui.sessions.PlayOnStore.closed() }
     var asking by remember { mutableStateOf<dev.jellystructure.ravilo.ui.sessions.PlayOnRow?>(null) }
-    LaunchedEffect(open) { if (!open) asking = null }
+    // FR-R265-7a (found live 2026-10-09) — a tap on a free place with nothing to start used to do nothing at all.
+    LaunchedEffect(open) { nothingToStartShown.value = false; if (!open) asking = null }
     val musicNow by dev.jellystructure.ravilo.ui.music.MusicPlayback.state.collectAsState()
     /** What to start on a place: this page's title, or the music queue that plays here; null = nothing to start. */
     fun startRequestFor(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, replace: dev.jellystructure.shared.tv.SessionView?): dev.jellystructure.shared.tv.SessionStartRequest? {
@@ -170,7 +199,7 @@ fun ScreensSheet(
             onOpenSession(playingHere)
             return
         }
-        val req = startRequestFor(row, replace) ?: return
+        val req = startRequestFor(row, replace) ?: run { nothingToStartShown.value = true; return }
         onClose()
         dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(req, onStarted = { r -> r.session?.let { onOpenSession(it) } },
             onRefused = { reason -> println("R370: start on ${row.name} refused: $reason") })
@@ -203,6 +232,10 @@ fun ScreensSheet(
                         tiers = dev.jellystructure.ravilo.ui.sessions.playOnTiers(tierRows, if (music) "music" else "film"),
                         asking = asking, title = musicNow.current?.title ?: status?.title.orEmpty(),
                         onTap = ::tapRow, onReplace = { row -> startOn(row, row.busy) }, onCancel = { asking = null },
+                    )
+                    if (nothingToStartShown.value) Text(
+                        str(nothingToStartKey(music)), color = RaviloTheme.colors.textSecondary, fontSize = 14.sp, fontFamily = Sora,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     )
                 },
                 devices = devices, routes = if (tierRows != null) emptyList() else routes, loaded = loaded, lastDevice = ScreensSheetPrefs.lastDevice(), myUserId = cast.userId,

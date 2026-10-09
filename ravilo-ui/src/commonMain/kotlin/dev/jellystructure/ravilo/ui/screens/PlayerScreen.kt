@@ -1540,11 +1540,12 @@ fun PlayerScreen(
             store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
         },
         // R292 (FR-R292-3) — coming back is a START, not a re-attach: a new engine, a fresh ticket cut at the
-        // record's position, R290's one start moment (the latch is re-armed), play only if the intent says so.
-        onForeground = {
+        // record's position, R290's one start moment (the latch is re-armed), play only if the intent says so
+        // — and never after the screen went off (FR-R292-8a, found live 2026-10-09).
+        onForeground = { afterStandby ->
             val r = resume.recordFor(currentItemId)
             val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            bk.playOnLatch = r?.let { resumePlayIntent(it, now) } ?: true
+            bk.playOnLatch = resumePlayOn(r, now, afterStandby)
             bk.returnRecord = r
             bk.reapplyChoicesForItemId = currentItemId
             bk.latchedForItemId = null
