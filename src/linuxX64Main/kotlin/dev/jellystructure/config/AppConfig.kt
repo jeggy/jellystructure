@@ -74,6 +74,9 @@ data class EncoderConfig(
     /** 313 (2026-10-09) — a dev-only switch to let our encoder serve the Chromecast web receiver while its cast stall is
      *  diagnosed. Off by default: casts go to Jellyfin ([CAST_RECEIVER_FALLBACK]). */
     @SerialName("cast_receivers") val castReceivers: Boolean = false,
+    /** R291 (2026-10-09) — a dev-only switch that declares `hls_audio_renditions` for the Chromecast web receiver, to
+     *  capture Shaka's error on a composed master with audio renditions. Off by default: the receiver restreams. */
+    @SerialName("receiver_renditions") val receiverRenditions: Boolean = false,
 )
 
 /** 304b (FR-304-4) — *Household members can control each other's playing*: off by default; the admin is never limited. */

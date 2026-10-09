@@ -324,3 +324,12 @@ private fun sameAudioCodec(a: String?, b: String?): Boolean {
     fun n(c: String) = when (val x = c.lowercase()) { "dca" -> "dts"; "e-ac-3", "ec-3" -> "eac3"; "a_aac", "mp4a" -> "aac"; else -> x }
     return n(a) == n(b)
 }
+
+/** R291 (2026-10-09) — [dev.jellystructure.config.EncoderConfig.receiverRenditions]: a cast receiver is treated as
+ *  declaring audio renditions, for one diagnostic cast. Every other device, and the receiver with the switch off, keep
+ *  what they declared. */
+internal fun withDevReceiverRenditions(
+    deviceKind: String?, capabilities: dev.jellystructure.shared.tv.ClientCapabilities, enabled: Boolean,
+): dev.jellystructure.shared.tv.ClientCapabilities =
+    if (enabled && deviceKind.equals("cast", ignoreCase = true) && !capabilities.hlsAudioRenditions)
+        capabilities.copy(hlsAudioRenditions = true) else capabilities
