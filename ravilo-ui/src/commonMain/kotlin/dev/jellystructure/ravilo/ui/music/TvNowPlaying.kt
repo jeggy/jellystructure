@@ -444,7 +444,7 @@ private fun QueuePanel(st: MusicPlayerState, selected: Int, modifier: Modifier) 
                     }
                     is QueueLine.Song -> line.index
                 }
-                val t = st.queue[i]
+                val t = st.queue.getOrNull(i) ?: return@items
                 val now = i == st.index
                 val focused = i == selected
                 Row(
