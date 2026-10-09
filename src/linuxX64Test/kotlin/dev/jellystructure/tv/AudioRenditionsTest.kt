@@ -156,6 +156,19 @@ class AudioRenditionsTest {
     }
 
     @Test
+    fun `a language named by its other code still matches - fra is fre`() {
+        // 2026-10-09, live: Jellyfin says `fra` (639-2/T) for a track the file tags `fre` (639-2/B); the film went to Jellyfin.
+        val jf = listOf(AudioTrack(index = 4, language = "eng", label = "a", codec = "truehd"), AudioTrack(index = 5, language = "fra", label = "b", codec = "ac3"),
+            AudioTrack(index = 6, language = "deu", label = "c", codec = "ac3"))
+        val file = listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "truehd", "eng"), ft(2, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "fre"),
+            ft(3, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "ger"))
+        assertEquals(listOf(0, 1, 2), fileAudioOrder(jf, file))
+        // Two letters against three still matches; a different language still doesn't.
+        assertEquals(listOf(0), fileAudioOrder(listOf(AudioTrack(index = 2, language = "fr", label = null, codec = "ac3")), listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "fre"))))
+        assertNull(fileAudioOrder(listOf(AudioTrack(index = 2, language = "fra", label = null, codec = "ac3")), listOf(ft(1, dev.jellystructure.model.TrackKind.AUDIO, "ac3", "spa"))))
+    }
+
+    @Test
     fun `register offers no renditions when the file's audio can't be matched`(): Unit = kotlinx.coroutines.runBlocking {
         val r = AudioRenditions { null }
         val later = kotlin.time.Clock.System.now().toEpochMilliseconds() + 60_000

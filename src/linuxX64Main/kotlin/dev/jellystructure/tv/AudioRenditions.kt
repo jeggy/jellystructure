@@ -309,9 +309,12 @@ internal fun fileAudioOrder(jellyfin: List<AudioTrack>, file: List<Track>): List
     for ((i, a) in jellyfin.withIndex()) {
         val f = fileAudio[i]
         if (!sameAudioCodec(a.codec, f.codec)) return null
-        val la = a.language?.let { LanguageResolver.toIso6392(it) }
-        val lf = f.language?.let { LanguageResolver.toIso6392(it) }
-        if (la != null && lf != null && la != lf) return null
+        // Found live 2026-10-09: Jellyfin reports a French track as `fra` (ISO 639-2/T) where the file — and so our scan —
+        // tags it `fre` (639-2/B). Both name French: compare languages, not codes (every film with a French, German,
+        // Dutch, Czech … track fell back to Jellyfin).
+        val la = a.language?.takeIf { it.isNotBlank() }
+        val lf = f.language?.takeIf { it.isNotBlank() }
+        if (la != null && lf != null && !LanguageResolver.sameLanguage(la, lf)) return null
     }
     return jellyfin.indices.toList()
 }
