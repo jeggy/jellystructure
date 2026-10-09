@@ -421,6 +421,7 @@
   "volume.unmute_room": "Unmute {place}",
   "volume.remove_room": "Remove {place}",
   "group.no_reach": "No phone or computer nearby can reach the speakers",
+  "group.needs_phone": "Adding a speaker needs Ravilo open on an Android phone nearby",
   "target.already_playing": "Already playing on {place}",
   "target.play_there": "Play on {place} instead",
   "tv.speakers": "Speakers",

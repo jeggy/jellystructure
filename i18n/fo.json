@@ -403,6 +403,7 @@
   "volume.unmute_room": "Tendra ljóðið í {place}",
   "volume.remove_room": "Tak {place} burtur",
   "group.no_reach": "Eingin telefon ella teldu í nándini fær samband við hátalararnar",
+  "group.needs_phone": "Fyri at leggja ein hátalara afturat má Ravilo vera opið á einari Android-telefon í nándini",
   "target.already_playing": "Spælir longu á {place}",
   "target.play_there": "Spæl á {place} í staðin",
   "tv.speakers": "Hátalarar",
