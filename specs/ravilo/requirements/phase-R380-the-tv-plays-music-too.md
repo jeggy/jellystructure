@@ -379,3 +379,17 @@ name (an older phone) the line is left out. Tests: `CastConnectWireTest` (round 
 has none), `CastLoadSenderTest` (3), `CastConnectMusicTest` (the TV reads it, blank = none), `TvNowPlayingKeysTest`
 (`fromLineArgs`). shared desktop 149 + linuxX64 167, ravilo-ui desktop 614 + Android 750: 0 failures; the backend and
 the web receiver compile. **Owed:** seeing the line on Stue TV from a real phone cast (with the R266 phone test).
+
+## Live, 2026-10-09 (Soveværelse TV debug 1.50-131, dev stack v1.50-130)
+
+A music session started on the TV app through the server (`session_load`, the Pixel's sign-in by API — the Pixel
+itself was taken back by its owner mid-test, so no phone-side Cast SDK music cast was run):
+- **Now playing — passed:** cover, title, artist, album, progress, *Next · {song}*; on the last song no *Next* line.
+- **Hold ▶ seeks — passed** (19.1 s → 31.0 s on one long press). **▼** raises the controls with the hint row
+  *▲ Queue · ▼ Lyrics off*. **▲** opens the queue panel headed *Queue · Up next*.
+- **Queue end — passed (FR-R380-8):** the last song finished, the page closed to Home and the session read *ended*.
+- **Findings (not fixed):** (1) the panel says *Up next*, not *Up next from {album}*, and lists the song now playing
+  first under it; (2) the controls row's last button is clipped to *Queu* at 1920×1080; (3) the Now playing text
+  shows faintly through the queue panel.
+- **Not run:** *Playing from {device}* (only a Cast Connect LOAD carries `sender_name`; the server road has none, so
+  its absence here is by design) — owed with a real phone cast; the three skins on the music page (Aurora seen).
