@@ -1652,7 +1652,7 @@ fun RaviloApp(
         var sameKindAsk by remember { mutableStateOf<dev.jellystructure.ravilo.ui.sessions.SameKindAsk?>(null) }
         fun playOrAsk(kind: String, itemId: String, title: String, here: () -> Unit) {
             val other = dev.jellystructure.ravilo.ui.sessions.sameKindAskFor(dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.state.value.sessions, kind, isTvPlatform)
-            if (other == null || castController.connected) here()
+            if (other == null || castController.connectedForVideo) here()
             else sameKindAsk = dev.jellystructure.ravilo.ui.sessions.SameKindAsk(other, kind, itemId, title, here)
         }
         fun playThere(a: dev.jellystructure.ravilo.ui.sessions.SameKindAsk) {
@@ -2406,7 +2406,7 @@ fun RaviloApp(
                     onPlay = { detail -> playOrAsk("film", detail.card.id, detail.card.title) {
                         // R245 (FR-R245-4) — while a cast session is connected, Play casts; the server
                         // resolves the resume position exactly as it does for a TV.
-                        if (castActive?.connected == true) {
+                        if (castActive?.connectedForVideo == true) {
                             castActive.cast(
                                 itemId = detail.card.id, title = detail.card.title, kicker = null,
                                 artUrl = resolveCastArt(apiClient.baseUrl, detail.card.backdropUrl),
@@ -2448,7 +2448,7 @@ fun RaviloApp(
                     store = store,
                     onBack = { pop() },
                     onPlay = { ctx -> playOrAsk("episode", ctx.episodeId, ctx.episodeTitle) {
-                        if (castActive?.connected == true) {
+                        if (castActive?.connectedForVideo == true) {
                             // R245 (FR-R245-4/14) — the receiver gets the whole season so it can advance by itself.
                             castActive.cast(
                                 itemId = ctx.episodeId, title = ctx.episodeTitle, kicker = ctx.kicker,
@@ -2463,7 +2463,7 @@ fun RaviloApp(
                     // R343 (FR-R343-5/8) — Shuffle: the whole order, here or on the connected TV (which plays the same order).
                     onShuffle = { plan ->
                         val first = plan.first()
-                        if (castActive?.connected == true) {
+                        if (castActive?.connectedForVideo == true) {
                             castActive.cast(
                                 itemId = first.episodeId, title = first.episodeTitle, kicker = first.kicker,
                                 artUrl = resolveCastArt(apiClient.baseUrl, first.episodes.getOrNull(first.currentEpIndex)?.stillUrls?.firstOrNull { it != null }),

@@ -134,6 +134,9 @@ class CastController(
 
     val connected: Boolean get() = sender.link.value == CastLinkState.CONNECTED
 
+    /** R329 (found live 2026-10-09) — connected to a place with a screen: Play casts a film or an episode only then. */
+    val connectedForVideo: Boolean get() = connected && castsVideoTo(routes.value, sender.deviceName.value)
+
     /**
      * FR-R245-4 — cast an item: mint a hand-off code under the phone's session and LOAD it with the
      * position (null = the server resolves the resume point, as for a TV). [lastReceiverId] rides
@@ -730,5 +733,7 @@ fun castConnectedDeviceName(): String? {
     val cast = LocalCast.current ?: return null
     val link by cast.sender.link.collectAsState()
     val device by cast.sender.deviceName.collectAsState()
-    return if (link == CastLinkState.CONNECTED) device else null
+    val routes by cast.routes.collectAsState()
+    // R329 (found live 2026-10-09) — the film detail's Play never says *Play on* an audio-only speaker.
+    return if (link == CastLinkState.CONNECTED && castsVideoTo(routes, device)) device else null
 }
