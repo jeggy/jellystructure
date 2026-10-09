@@ -522,3 +522,17 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
 3. **The receiver reports its stop where it stopped** (312's class): CAF's last `TIME_UPDATE` after the player stops
    carries no media time, which read as 0 and overwrote the place just before the stop was sent. `castPositionAfterUpdate`
    (`:shared`, `CastStopPositionTest`) keeps the last real position over a missing time or an idle reset to 0.
+
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+- **Health:** `encoder enabled true, ffmpeg true, gpu true, cards [Quadro P4000, RTX 2060 SUPER]`.
+- **A start served by our encoder** (a synthetic player with the Pixel's token and phone capabilities, 4K DV7 film):
+  `encoder=ours H264 rungs=1080p@12000k/1080p@8000k/720p@4000k/480p@1500k audio=7 TS card=0`, start route 200 ms, master
+  with four variants and exact `CODECS`/`VIDEO-RANGE`; **first segment 781 ms**; a resume at 10:00 restarted the job at
+  segment 300 — **first segment 994 ms**; a different rung of the same job **0.5 s** per segment, no new encode.
+- **313d burn-in:** a restream with the English SDH PGS subtitle → `encoder=ours … burn-in`, first segment **1.3 s**;
+  frames pulled from the segments show the subtitle drawn in, tone-mapped to SDR.
+- **Cast receivers → Jellyfin** (integration fix 1) is live; its live check needs a cast (not run: the Chromecast stall
+  is still to be diagnosed with an idle disk).
+- The stop watchdog ended each synthetic play within 30 s — correct: the Pixel's app (whose device id the test used)
+  had no events socket open, which the watchdog reads as *app gone*.

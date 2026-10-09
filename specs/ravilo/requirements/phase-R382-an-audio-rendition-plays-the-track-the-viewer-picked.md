@@ -84,3 +84,10 @@ On the confirmed film, under our own encoder (313), the encoder maps the file's 
 `-map 0:a:1`); switching in the picker from *English · 1/2* (TrueHD 7.1) to *English · 2/2* (AC-3 5.1) loaded the
 `a1 AC-3 5.1-EX` rendition at once (its first segment in 18 ms) with no restart. **Verified on Android.** (Not
 re-checked on Jellyfin's own transcode path, where R291's renditions use the same mapping.)
+
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+**A second mapping bug, found live:** a track Jellyfin names `fra` (639-2/T) and the file names `fre` (639-2/B) did not
+match, so the film got no mapping at all (our encoder fell back to Jellyfin with `audio tracks don't match the file
+(R382)`). Fixed in `d7ecba1e`: languages are compared with `sameLanguage`, not by code (`AudioRenditionsTest`). After
+the fix the same film's seven audio tracks map and our encoder serves it.

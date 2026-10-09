@@ -750,8 +750,15 @@ class PlaybackService(
             // Phase 312 (FR-312-3) — read it back once Jellyfin has settled: a stray stop landing just after ours (a stop
             // at 0 resets the place) must not have the last word. Skipped when the item is playing again anywhere.
             val expected = w.userData ?: return
+            val landedAtMs = nowMs()
             kotlinx.coroutines.delay(READ_BACK_DELAY_MS)
             if (playbackTracker.tracked().any { it.jellyfinId == w.jellyfinId }) return
+            // Found live 2026-10-09: a *mark watched* pressed within the delay was undone by this read-back (the stop's
+            // place written over the viewer's). The viewer's own word after the stop wins.
+            if (!readBackStillOurs(landedAtMs, viewerMarkedAt(w.device.jellyfinUserId, w.jellyfinId))) {
+                Logger.info("playback stop: item=${w.jellyfinId} read-back skipped — the viewer marked it since the stop (312)", "tv")
+                return
+            }
             val now = jellyfinClient.getItemDetail(jellyfinBase, token, w.device.jellyfinUserId, w.jellyfinId)?.userData ?: return
             val placeNow = now.playbackPositionTicks / TICKS_PER_MS
             val drifted = (expected.played != null && now.played != expected.played) || kotlin.math.abs(placeNow - expected.positionMs) > READ_BACK_TOLERANCE_MS
@@ -760,6 +767,20 @@ class PlaybackService(
             if (writeStopUserData(jellyfinBase, token, w.device, w.jellyfinId, expected, "read-back")) onStopLanded?.let { hook -> runCatching { hook(w.device, w.jellyfinId) } }
         }
     }
+
+    /** 312 — when each (user, item) was last marked watched/unwatched by the viewer (in memory; the read-back's window is 3 s). */
+    private val viewerMarks = kotlin.concurrent.AtomicReference<Map<Pair<String, String>, Long>>(emptyMap())
+
+    private fun noteViewerMarked(userId: String, jellyfinId: String) {
+        val now = nowMs()
+        while (true) {
+            val old = viewerMarks.value
+            val next = (old + ((userId to jellyfinId) to now)).filterValues { now - it < 60_000L }
+            if (viewerMarks.compareAndSet(old, next)) return
+        }
+    }
+
+    private fun viewerMarkedAt(userId: String, jellyfinId: String): Long? = viewerMarks.value[userId to jellyfinId]
 
     /** Phase 310 (dev review item 7) — the one user-data write after a stop. A failure only logs. */
     private suspend fun writeStopUserData(jellyfinBase: String, token: String, device: DeviceData, jellyfinId: String, u: StopUserData, why: String): Boolean =
@@ -1596,6 +1617,7 @@ class PlaybackService(
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
         requireVisible(device, jellyfinId)
         StartOverHolds.release(device.jellyfinUserId, jellyfinId)   // R343 (FR-R343-13) — the viewer's word wins
+        noteViewerMarked(device.jellyfinUserId, jellyfinId)         // 312 — and a pending stop read-back stands down
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         if (watched) {
@@ -1637,7 +1659,7 @@ class PlaybackService(
         }.filterNot { it.startsWith('/') }.distinct()
         // R343 (FR-R343-13) — a viewer's own tick or untick ends any Start over hold on these episodes (the clear's
         // own call comes before its hold is set).
-        targets.forEach { StartOverHolds.release(uid, it) }
+        targets.forEach { StartOverHolds.release(uid, it); noteViewerMarked(uid, it) }   // 312 — the read-back stands down
 
         coroutineScope {
             targets.map { id ->

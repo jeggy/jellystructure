@@ -472,3 +472,8 @@ gesture happened (a cast handing playback to the browser, a restored session).
 and no pill; the next episode auto-advances with sound; a seek/track switch keeps sound. **Tests:** the click handler
 calls `play()` before any suspension point (a unit test on the web player seam with a fake element recording call
 order); one element across two items.
+
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+Deployed with `ravilo-web` rebuilt from `22a955c8`/`d7ecba1e`. The owner tested Safari on the Mac the same morning:
+**sound, seek and next episode all work**.

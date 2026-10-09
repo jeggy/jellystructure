@@ -101,6 +101,14 @@ internal fun startOverThresholdMs(durationMs: Long): Long = if (durationMs > 0) 
  */
 internal data class StopDecision(val reportMs: Long, val markPlayed: Boolean)
 
+/**
+ * Phase 312 (FR-312-3), found live 2026-10-09 — the read-back after a stop may rewrite the stop's decision only while
+ * the viewer hasn't marked the item since the stop landed: a *mark watched* pressed in the read-back's delay is the
+ * viewer's word, not drift.
+ */
+internal fun readBackStillOurs(stopLandedAtMs: Long, viewerMarkedAtMs: Long?): Boolean =
+    viewerMarkedAtMs == null || viewerMarkedAtMs < stopLandedAtMs
+
 internal fun resolveStop(positionMs: Long, plan: SessionPlan?): StopDecision {
     val duration = plan?.durationMs ?: 0L
     val finished = playbackFinished(positionMs, duration, plan?.creditsStartMs)

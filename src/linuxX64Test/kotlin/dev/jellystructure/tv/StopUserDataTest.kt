@@ -42,4 +42,11 @@ class StopUserDataTest {
 
     @Test fun `a plan rebuilt after a restart does not know the flag and leaves it alone`() =
         assertEquals(StopUserData(null, 1_117_014L, null), stopUserData(1_117_014L, SessionPlan(durationMs = twoHours), false))
+
+    // 312 — found live 2026-10-09: a mark watched pressed within the read-back's delay was undone by the read-back.
+    @Test fun `the read-back stands down when the viewer marked the item after the stop`() {
+        assertTrue(readBackStillOurs(stopLandedAtMs = 1_000L, viewerMarkedAtMs = null))
+        assertTrue(readBackStillOurs(stopLandedAtMs = 1_000L, viewerMarkedAtMs = 900L))    // marked before the stop: ours
+        kotlin.test.assertFalse(readBackStillOurs(stopLandedAtMs = 1_000L, viewerMarkedAtMs = 2_500L)) // marked since: theirs
+    }
 }

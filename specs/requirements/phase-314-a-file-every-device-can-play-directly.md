@@ -575,3 +575,9 @@ in place), **1** stays skipped (renaming doesn't make it eligible). A rename tak
 Every kind is still **off**; nothing was written. The 13 skipped kind-C films wait for the owner's per-film rename
 ticks (owner decision 2026-10-08), which 314a does not offer yet (314b/c). The image carries `dovi_tool` 2.3.4 (two
 Dockerfile fixes on merge: `ca-certificates` in the runtime stage, and the archive member is `./dovi_tool`).
+
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+314b/c deployed (no migration). Not run live: the steps in *Left for main* need a signed-in Ravilo on a device (the
+Pixel locked itself; no debug app is signed in on Stue TV) and kind A applied to a test film — left for the next device
+session. Nothing was applied to any file.

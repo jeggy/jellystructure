@@ -173,3 +173,9 @@ the owner.
   no-Dolby path on a real device (no allowed device lacks a Dolby decoder — unit tests only). The test play's
   play count and last-played date were put back on the owner's account afterwards.
 
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+Backend half deployed (migration 76: QoE `audio_decoder`). The Pixel has platform Dolby decoders, so the narrowing is
+a no-op for it (no `no platform … decoder` line on its plays, as expected). Not verified live: a QoE row carrying
+`audio_decoder` (needs a real play from the R379 client; the Pixel locked before the retest) and the no-Dolby path (no
+allowed device lacks a Dolby decoder — unit tests only).

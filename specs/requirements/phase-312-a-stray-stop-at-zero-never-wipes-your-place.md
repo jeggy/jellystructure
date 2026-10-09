@@ -216,3 +216,11 @@ mark per episode. **Fixed 2026-10-08 (late):** `mark(watched = true)` and `setPl
 zero the position with a user-data write (`zeroPosition` → `setUserData(position 0)`); no `/Sessions/Playing/Stopped` at 0
 is sent any more. `PlayerStore` keeps the items it has marked (`markedWatched`), so advancing at the credits and the stop
 that follows send one mark. Test: `PlaybackStopIntegrationTest` *marking an item watched sends Jellyfin no stop at 0*.
+
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+**Found live and fixed:** the FR-312-3 read-back undid a viewer's own *mark watched* pressed within its 3 s delay — the
+stop's place (11:40) was written back over the viewer's 0:00 (`read back played=true at 0ms, expected played=null at
+700000ms — writing it again`). The read-back now stands down when the viewer marked or unmarked the item after the stop
+landed (`readBackStillOurs`, `StopUserDataTest`); `mark` and `setPlayed` (the routes and R343's clear) note the viewer's
+word. Every watchdog stop in the live test logged its reason (`reason=watchdog`), and no stop at 0 was sent by a stop.

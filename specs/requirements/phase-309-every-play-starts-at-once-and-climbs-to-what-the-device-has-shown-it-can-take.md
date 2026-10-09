@@ -605,3 +605,22 @@ already at 78 never runs 76. Live tests: a Stue TV debug play with no record sta
 time; `GET /api/tv/probe` answers 204 the second time; a detail page held 2 s logs `encoder: prewarm …` and Play logs
 `… prewarmed`; Back logs `prewarm cancelled`; the admin's device row shows *holds …* after a 2-minute play.
 
+## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
+
+Deployed with R379, 313d/e, R376 and 314b/c (`22a955c8`, then `d7ecba1e` with the language fix below). Schema 78:
+`device_stream_record` and QoE's `start_variant_bps`/`encoder` columns present.
+
+- **Speed test (FR-309-3):** `GET /api/tv/probe` answers **204** for a device measured within 24 h (the Pixel, twice);
+  `?force=1` sends **4 194 304 incompressible bytes** (gzip makes them bigger) through Caddy in 169 ms, and
+  `POST /api/tv/probe/result` records it (`probe: … 4194 kB in 169 ms → 198546k (309)`).
+- **Early encode (FR-309-6):** `POST /api/tv/playback/prewarm` for a 4K Dolby Vision 7 film answers **warm**:
+  `encoder: prewarm … H264 rungs=4`, first segment **953 ms**; `…/prewarm/cancel` → `prewarm cancelled … the viewer
+  left the page (309)`. The page-driven call from the app (2 s on the detail page) was not seen live: the Pixel locked
+  itself before the retest and no other signed-in debug app was available (see below).
+- **Found live and fixed (`d7ecba1e`):** every play of a film whose file tags a language by its 639-2/B code (`fre`,
+  `ger`, `dut`, `cze`…) fell back to Jellyfin — Jellyfin reports the 639-2/T code (`fra`, `deu`…) and
+  `fileAudioOrder` compared the codes. It now compares languages (`sameLanguage`). Test in `AudioRenditionsTest`.
+- **Cap and record:** a start logs `takes 247881k (measured 354116k) → cap 247881k (309)`; the device's record exists.
+- **Not verified live:** *no record ⇒ 720p, then one rung at a time* (every household device already has a real
+  measurement, so none starts without a record — covered by `EncoderPlanTest`/`LadderRulesTest`), *holds …* on the
+  admin device row after a 2-minute play (needs a real player's QoE), the client half (309b) on a device.
