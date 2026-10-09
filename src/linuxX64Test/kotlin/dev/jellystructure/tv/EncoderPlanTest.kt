@@ -220,8 +220,10 @@ class EncoderPlanTest {
         assertTrue(one.tonemaps)
         assertEquals(1, one.audio.size)   // no renditions declared: the carried track only
         val cast = ClientCapabilities(videoCodecs = listOf("h264"), hlsAdaptive = true)
-        assertEquals(EncoderMux.TS, encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!.mux)
-        val (none, why) = encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", burnRequested = true)
+        // A receiver would get TS; for now (2026-10-09) its transcode is Jellyfin's until the cast stall is diagnosed.
+        assertEquals(EncoderMux.TS, encoderMuxFor("cast", null))
+        assertEquals(CAST_RECEIVER_FALLBACK, encoder().planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").second)
+        val (none, why) = encoder().planFor(cast, "phone", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10", burnRequested = true)
         assertNull(none)
         assertContains(why, "313d")
         assertEquals("encoder off", encoder(enabled = false).planFor(cast, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").second)
