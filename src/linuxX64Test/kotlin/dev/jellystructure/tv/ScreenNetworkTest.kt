@@ -48,4 +48,14 @@ class ScreenNetworkTest {
     fun tooManyGroupsNeverMatches() {
         assertFalse(isNearby("2001:db8:1:2:3:4:5:6:7", "2001:db8:1:2:3:4:5:6")) // 9 groups, not 8 — refused, not truncated
     }
+
+    @Test
+    fun twoPrivateIpv4sAreOneHousehold_r378() {
+        assertTrue(isNearby("10.10.10.183", "10.10.11.20"))
+        assertTrue(isNearby("192.168.1.4", "172.20.0.9"))
+        assertFalse(isNearby("10.10.10.183", "203.0.113.7"))
+        assertFalse(isNearby("172.32.0.1", "10.0.0.1"))   // 172.32 is public
+        assertFalse(isNearby("100.64.0.5", "10.0.0.1"))   // CGNAT is not private
+        assertFalse(isNearby("10.0.0.256", "10.0.0.1"))
+    }
 }

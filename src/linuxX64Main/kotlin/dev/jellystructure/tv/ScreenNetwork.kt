@@ -12,13 +12,26 @@ package dev.jellystructure.tv
 fun isNearby(callerAddress: String?, deviceAddress: String?): Boolean {
     val a = callerAddress?.trim()?.ifBlank { null } ?: return false
     val b = deviceAddress?.trim()?.ifBlank { null } ?: return false
-    if (a == b) return true // exact match — the whole rule for IPv4, and a fast path for identical IPv6
+    if (a == b) return true // exact match — the rule for public IPv4, and a fast path for identical IPv6
+    // R378 (found live 2026-10-09): when the router forwards to the server without rewriting the source (the
+    // household's DNAT since 2026-09-30), the server sees each LAN device's own private address — the Pixel at
+    // 10.10.10.183, the TV at 10.10.11.20 — and an exact match never holds inside the house, so no relay was ever
+    // chosen. A private address only reaches the server from inside the household network (a remote viewer arrives
+    // with a public address), so two of them are nearby; every other pair keeps the public-address rule below.
+    if (isPrivateIpv4(a) && isPrivateIpv4(b)) return true
     val aIsV6 = ':' in a
     val bIsV6 = ':' in b
     if (aIsV6 != bIsV6 || !aIsV6) return false // mixed families, or two non-identical IPv4s: never nearby
     val aGroups = expandIpv6(a) ?: return false
     val bGroups = expandIpv6(b) ?: return false
     return aGroups.take(4) == bGroups.take(4) // the first 64 bits = 4 of the 8 16-bit groups
+}
+
+/** RFC 1918 — 10/8, 172.16/12, 192.168/16. */
+internal fun isPrivateIpv4(raw: String): Boolean {
+    val o = raw.split('.').takeIf { it.size == 4 }?.map { it.toIntOrNull() ?: return false } ?: return false
+    if (o.any { it !in 0..255 }) return false
+    return o[0] == 10 || (o[0] == 172 && o[1] in 16..31) || (o[0] == 192 && o[1] == 168)
 }
 
 /** Expands a (possibly "::"-compressed, possibly zone-id-suffixed) IPv6 literal to 8 hex groups, or
