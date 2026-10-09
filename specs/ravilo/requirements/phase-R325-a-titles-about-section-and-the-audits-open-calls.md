@@ -137,3 +137,6 @@ Original language · In your library since* for the fixture film, then More Like
   matches when it holds the query's words in order, holds them with the spaces dropped (*namename*), or every query word
   starts one of its words in any order — the plain substring still matches (`SearchQuery`, `SearchQueryTest`). Music
   search is unchanged. **Re-test owed:** the Mac's search for the film's first words.
+
+**Mac re-test (2026-10-09 evening, backend v1.50-130): PASS** — the words before and after the colon of the stand-in
+title (*Web-Slinger Brand* for *Web-Slinger: Brand New Dawn*) find the one film.

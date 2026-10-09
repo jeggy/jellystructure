@@ -583,3 +583,32 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   BUFFERING → PLAYING in 7 s and stayed PLAYING to the end (1242 s, no rebuffer); the tmpfs held 350–415 MB the whole
   way (it had reached 4 GB at ~16 min before); the encoder stopped with the cast. Casts stay on Jellyfin's transcode by
   default (`cast_receivers` off) until the owner turns them on.
+
+## Mac re-test (2026-10-09 evening, backend v1.50-130, Mac test build `v1.50-136-gfcec8bf2`, ad hoc signed, test driver)
+
+- **F2 · a failed or refused stream recovers or ends — passes on the client.** An HDR film whose stream the Mac
+  could not play (below) was restreamed **once**, failed again and ended on R237's *Something went wrong* with
+  **Retry / Back**; no endless *Loading…*; **Esc** left to the title's page. The 410 path of a refusal *during* a
+  restream was not reached: the refusal below happened at the 309 prewarm, so the play itself was answered by
+  Jellyfin from the start.
+- **F1 · a burn-in keeps the place and the audio — passes, through Jellyfin.** On a stand-in SDR film with
+  TrueHD/DTS/AC-3 English + AC-3 Hindi + PGS, playing the remembered DTS English at 4:06, a German PGS pick logged
+  `PlaybackInfo(restream, burn-in) … sub=9 audio=5` (Jellyfin's index 5 = the DTS track, sidecars counted first) and the
+  restream loaded at `start=246684ms`; the picture came back at 4:06 with the German subtitle drawn in and played on.
+  Our encoder's burn-in could not be tried on that file (marked for Jellyfin, below).
+- **New, found live — every SDR source with untagged colour is refused by our encoder.** The Mac (HEVC over HLS) got
+  `HEVC 3 rungs 1080p@8000k/720p@4000k/480p@1500k, 4 audio, FMP4, card 0` at the prewarm; ffmpeg exited 55808
+  (*Error reinitializing filters … -38 Function not implemented*, then *hevc_nvenc: Could not open encoder*), the plan
+  was refused and the file marked for Jellyfin. **Cause, reproduced on the host:** the source's colour tags are
+  `unknown`, and the output's `-color_primaries/-color_trc/-colorspace bt709` make ffmpeg 8 insert a software
+  `auto_scale` after the `split` on CUDA frames — the same failure as F1, on the plain SDR path. The codec doesn't
+  matter: `h264_nvenc` fails the same way (*Impossible to convert between … 'Parsed_split_1' and 'auto_scale_0'*);
+  `setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709` before the `split` makes both encode (4 s test,
+  exit 0). **Fix owed (not done here):** tag the frames with `setparams` on the SDR path too (`encoderCommand`'s
+  non-tone-map branch), and a test that an untagged SDR source gets it. Until then such files fall to Jellyfin for 6 h
+  after their first play.
+- **New, found live — an HEVC HDR stream does not play on the Mac.** See R329's re-test: the server served
+  `encoder=ours HEVC HDR rungs=1068p@12000k/800p@8000k/534p@4000k/356p@1500k … FMP4 card=0 prewarmed`, and AVPlayer
+  failed at once (`NSURLErrorDomain -1002 unsupported URL`). The init and the first segment are valid HEVC Main 10 PQ.
+  A failed client stream is restreamed to **our encoder again** (only an ffmpeg refusal marks the file), so the
+  restream fails the same way; a client-side failure of our stream should ask for Jellyfin on the restream.

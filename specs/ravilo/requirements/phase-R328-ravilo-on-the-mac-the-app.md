@@ -294,3 +294,9 @@ viewer's password. `ravilo_keychain_*` stay in the Swift library for that one mi
   *Fix:* a linked music cast (playing or paused) counts as music playing: the window hides and the app keeps running, as
   for local music (`DesktopBackground.keepsRunningOnClose`; Linux asks its Background portal as before). ⌘Q still quits.
   **Mac re-test owed:** ⌘W during a speaker cast, then the Dock icon brings the window back with the cast live.
+
+**Mac re-test (2026-10-09 evening, test build `v1.50-136-gfcec8bf2`): PASS.** With music cast to Gæsteværelse, ⌘W
+hid the window (`visible=false`) and the app kept running; the speaker played on into the next song (the Mac app
+handed it over). A reopen of the app bundle — what the Dock icon sends — brought the window back (`visible=true`)
+with the bar still on the cast (*{artist} · Gæsteværelse*). ⌘Q from the test driver did not quit (the driver's keys never
+reach macOS's own menu); a Quit Apple event did.

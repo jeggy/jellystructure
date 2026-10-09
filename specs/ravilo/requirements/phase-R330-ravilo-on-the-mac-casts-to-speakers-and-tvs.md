@@ -274,3 +274,13 @@ the two screenless speakers, and Local Network access was already granted.
   exception and the address tried. **Open:** the same log shows the speaker closing the Mac's connection every 5–50 s
   (`closed (send failed)`); the test build and the installed app may both have been running — re-test with one Ravilo.
   **Mac re-test owed:** quit during a speaker cast and start again (rejoins, no hand-back in the log).
+
+**Mac re-test (2026-10-09 evening, test build `v1.50-136-gfcec8bf2`, the installed app not running; the speaker's
+volume was 0 before and stayed 0): PASS.** Music handed to Gæsteværelse (`hand-off of 60 songs … to Gæsteværelse`);
+the app was quit while the speaker played — the speaker played on — and started again: `cast: rejoin Gæsteværelse
+[Nest Wifi point] → joined`, link CONNECTED, the bar back on the cast, **no hand-back** in the log, the song kept its
+place. **The 5–50 s drops did not happen with one Ravilo:** the link held for 3 min 25 s before the quit and 4 min 20 s
+after the relaunch with no `RECONNECTING`, `closed (send failed)` or hand-back line — consistent with the earlier
+drops coming from two Ravilos on one Mac fighting over one speaker session.
+Small finding: the remote for the speaker cast says *No phone or computer nearby can reach the speakers* under *Add a
+speaker…* while the Mac itself is the sender holding that speaker — the line should not show on a sender that can.

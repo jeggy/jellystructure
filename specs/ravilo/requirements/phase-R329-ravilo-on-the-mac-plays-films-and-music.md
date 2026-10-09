@@ -293,3 +293,30 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   is cast only when the link's route has a screen (`castsVideoTo` — a speaker, or a group led by one, does not); otherwise
   Play plays on this device and the button reads Play. The *Play on…* sheet already listed no speaker for a film.
   **Mac re-test owed:** with music on a speaker, a film's Play plays in the window and the music keeps playing there.
+
+## Mac re-test (2026-10-09 evening, backend v1.50-130, test build `v1.50-136-gfcec8bf2` from `main`, ad hoc signed, test driver; the Mac's sound muted throughout)
+
+- **The Swift HDR change compiled** on the first build (`AVPlayerItemVideoOutput` asking for Rec. 709).
+- **HEVC HDR reaches the Mac but does not play — FAIL.** A stand-in 4K HDR10 film: the server log reads
+  `encoder=ours HEVC HDR rungs=1068p@12000k/800p@8000k/534p@4000k/356p@1500k … FMP4 card=0 prewarmed` (the claim works),
+  and AVPlayer fails at once with `NSURLErrorDomain -1002 "unsupported URL"` (underlying CoreMedia -1002); one restream
+  (our encoder again) fails the same way, then *Something went wrong* with Retry / Back. **Not the Swift change:** a
+  plain `AVPlayer` in a 20-line Swift test fails identically on the same master. What was checked: the init segment
+  carries `hvc1` + `colr`; segment 0 is valid HEVC Main 10, PQ, BT.2020, 48 frames. Served from the Mac's own
+  localhost, the same master fails with CoreMedia **-12646** (playlist parse error); without `VIDEO-RANGE=PQ` it gives
+  **-12927**; the HEVC variant playlist alone reaches *ready to play* but its time never leaves 0; the audio playlist
+  alone plays. So the master/variant as AVFoundation reads them is the problem, not the frames (Apple's
+  `mediastreamvalidator` is not installed to say which line). **Every HDR film through our encoder fails on the Mac
+  since the HDR claim (993ee433)** — recommended: withhold the claim (`-Dravilo.hdr=false` as the default, or the
+  server's HEVC-HDR plan for the Mac) until the playlist is fixed and an HDR film plays.
+- **A film is never offered to a speaker — PASS.** With music on Gæsteværelse, a film's button read **Play**; Play asked
+  only about the bedroom TV, which was already playing that viewer's episode (*Already playing on {TV} · Play on {TV}
+  instead / Play on this Mac*) — the speaker was never offered; *Play on this Mac* played the film in the window
+  (remembered DTS English) while the speaker kept playing (`PLAYING`, its own clock moving).
+- **A PGS pick keeps the place and the picked DTS — PASS** (through Jellyfin; 313's re-test has the log lines): 4:06
+  before, 4:06 after, German subtitle drawn in, the DTS track kept.
+- **Esc leaves a failed play — PASS** (R237's screen, Back to the title).
+- **Side findings:** a film left with Esc stayed in *Playing everywhere* as a paused *{film} · MAC-…* row for a few
+  minutes (gone ten minutes later), and the HDR play that failed at once left a paused session at 0:00 in
+  `playback_session`. The installed 1.50.0 app's last log line (15:48 the same day) is `OutOfMemoryError: Java heap space` — R383's
+  measurement should start there.
