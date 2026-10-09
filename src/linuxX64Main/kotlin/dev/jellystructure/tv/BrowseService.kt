@@ -435,7 +435,7 @@ class BrowseService(
  * lowercased title, so a film whose title has a colon after its first words was not found by those words and the next
  * one (*"Name-Name Word"* for *"Name-Name: Word Word Word"*). Now the query and the title are both reduced to their
  * words (any run of characters that are not letters or digits is one space), and a title matches when it holds the
- * query's words in order, when it holds them with the spaces dropped (*spiderman* for *Spider-Man*), or when every
+ * query's words in order, when it holds them with the spaces dropped (*webslinger* for *Web-Slinger*), or when every
  * query word starts one of the title's words in any order. The plain substring still matches as before.
  */
 internal class SearchQuery(query: String) {

@@ -539,7 +539,7 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
 
 ## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver) — two burn-in bugs
 
-1. **The burn-in filter graph is broken for an SDR H.264 source:** picking a German PGS subtitle on The Bad Guys
+1. **The burn-in filter graph is broken for an SDR H.264 source:** picking a German PGS subtitle on a film with several audio tracks
    restreamed through our encoder (`H264 4 rungs … burn-in, card 0`) and ffmpeg failed: *"Impossible to convert between
    the formats supported by the filter 'Parsed_split_5' and the filter 'auto_scale_0' … src: cuda"* (CUDA frames into a
    software filter). The refusal path worked (`ffmpeg refused this plan — no restart; the file goes to Jellyfin`).
