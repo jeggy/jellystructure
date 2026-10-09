@@ -278,3 +278,18 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
 - The film's Play button read **"Play on Gæsteværelse"** while a music cast to that audio-only speaker was active — a film
   shouldn't be offered to a speaker with no screen; *This computer* in the sheet changed nothing; only *Stop casting*
   brought back *Play*.
+
+### Found live 2026-10-09 — fixed
+
+- **HEVC HDR never reached the Mac.** *Defect:* the Mac declared HEVC over HLS (AVFoundation's probe) but **no HDR** —
+  an 8-bit-frame caution from before the spike — so 313's encoder picked H.264 tone-mapped SDR for every HDR film.
+  *Fix:* a Mac whose AVFoundation plays HEVC Main 10 (`hvc1.2.4.L150.B0`, VideoToolbox on Apple silicon) claims HDR10 and
+  HLG, so the encoder serves its HEVC HDR rungs; Dolby Vision stays unclaimed (a profile 8 file rides its HDR10 base).
+  The frames Skia draws are still 8-bit BGRA, so `Player.swift` now asks `AVPlayerItemVideoOutput` for Rec. 709 colour
+  and AVFoundation maps the HDR picture to it. `-Dravilo.hdr=false` turns the claim off. **Mac re-test owed:** an HDR
+  film plays as `HEVC … rungs` in the server log, and the picture looks right (not washed out, not dark).
+- **A film was offered to an audio-only speaker.** *Defect:* while a music cast ran on a speaker, a film's Play read
+  *Play on {speaker}* and sent the film there (the detail asked only "is a cast connected"). *Fix:* a film or an episode
+  is cast only when the link's route has a screen (`castsVideoTo` — a speaker, or a group led by one, does not); otherwise
+  Play plays on this device and the button reads Play. The *Play on…* sheet already listed no speaker for a film.
+  **Mac re-test owed:** with music on a speaker, a film's Play plays in the window and the music keeps playing there.

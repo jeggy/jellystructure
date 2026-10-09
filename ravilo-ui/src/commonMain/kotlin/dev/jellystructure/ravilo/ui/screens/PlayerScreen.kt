@@ -877,9 +877,9 @@ fun PlayerScreen(
             when (subPickAction(sub?.deliveryMethod == "encode", sub?.jellyfinStreamIndex, bk.burnedSubIndex)) {
                 SubPickAction.NONE -> Unit
                 // R56: PGS burn-in — restream with the subtitle baked into the Jellyfin transcode.
-                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs, bk.sessionAudioIndex)
+                SubPickAction.BURN_IN -> store.restreamWithSub(itemId, sub?.jellyfinStreamIndex ?: -1, player.positionMs, restreamAudioIndex(bk.sessionAudioIndex, bk.ticketAudio, selectedAudio))
                 // Off or a text track while one is burned in: only a restream can take it out again.
-                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs, bk.sessionAudioIndex) }
+                SubPickAction.UNBURN -> { bk.rearmResolveOnLoad = true; store.restreamWithSub(itemId, -1, player.positionMs, restreamAudioIndex(bk.sessionAudioIndex, bk.ticketAudio, selectedAudio)) }
                 SubPickAction.SELECT -> {
                     selectedSub = if (group.isOff) -1 else version.flatIndex
                     player.selectSubtitleTrack(selectedSub)

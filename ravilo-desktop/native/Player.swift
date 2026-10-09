@@ -150,8 +150,15 @@ public func ravilo_player_load(_ h: Int64, _ url: UnsafePointer<CChar>, _ mime: 
         it.preferredForwardBufferDuration = 40
     }
     if audioOnly == 0 {
-        let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+        // R329 (found live 2026-10-09) — the Mac now takes HEVC HDR rungs; the frames Skia draws are 8-bit BGRA, so
+        // AVFoundation is asked for Rec. 709 and maps an HDR picture to it (an SDR stream is unchanged).
+        let out = AVPlayerItemVideoOutput(outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
         ])
         it.add(out)
         b.locked { b.output = out }

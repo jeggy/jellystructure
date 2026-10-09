@@ -244,11 +244,11 @@ class BrowseService(
                 .map { it.toMediaCard(lang) }
                 .distinctBy { it.id }
         } else {
-            val q = query.lowercase()
+            val q = SearchQuery(query)
             all.asSequence().filter { item ->
-                item.title.lowercase().contains(q) ||
-                item.originalTitle?.lowercase()?.contains(q) == true ||
-                item.titlesByLang.values.any { it.lowercase().contains(q) }
+                q.matches(item.title) ||
+                item.originalTitle?.let(q::matches) == true ||
+                item.titlesByLang.values.any(q::matches)
             }.sortedByDescending { it.recencyKey() }
                 .take(100)
                 .map { it.toMediaCard(lang) }
@@ -428,4 +428,39 @@ class BrowseService(
                 "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
         )
     }
+}
+
+/**
+ * A title search, punctuation-blind. Found live 2026-10-09 (Mac, R329): the match was a plain substring of the
+ * lowercased title, so a film whose title has a colon after its first words was not found by those words and the next
+ * one (*"Name-Name Word"* for *"Name-Name: Word Word Word"*). Now the query and the title are both reduced to their
+ * words (any run of characters that are not letters or digits is one space), and a title matches when it holds the
+ * query's words in order, when it holds them with the spaces dropped (*spiderman* for *Spider-Man*), or when every
+ * query word starts one of the title's words in any order. The plain substring still matches as before.
+ */
+internal class SearchQuery(query: String) {
+    private val raw = query.trim().lowercase()
+    private val words = searchWords(raw)
+    private val joined = words.joinToString(" ")
+    private val compact = words.joinToString("")
+
+    fun matches(title: String): Boolean {
+        val t = title.lowercase()
+        if (raw.isNotEmpty() && t.contains(raw)) return true
+        if (words.isEmpty()) return false
+        val tw = searchWords(t)
+        if (tw.joinToString(" ").contains(joined)) return true
+        if (compact.length >= 3 && tw.joinToString("").contains(compact)) return true
+        return words.all { w -> tw.any { it.startsWith(w) } }
+    }
+}
+
+private fun searchWords(s: String): List<String> {
+    val out = mutableListOf<String>()
+    val cur = StringBuilder()
+    for (c in s) {
+        if (c.isLetterOrDigit()) cur.append(c) else if (cur.isNotEmpty()) { out += cur.toString(); cur.clear() }
+    }
+    if (cur.isNotEmpty()) out += cur.toString()
+    return out
 }

@@ -70,6 +70,9 @@ class EncoderJobs(
      *  same way, and a player asking again would loop); its segments answer null until the play ends. */
     private class Stream(var current: Job?, val retired: ArrayDeque<Job> = ArrayDeque(), @Volatile var refused: Boolean = false)
 
+    /** 313 (found live 2026-10-09) — ffmpeg refused [streamId]'s plan (its URLs then answer 410, never a retried 404). */
+    suspend fun isRefused(streamId: String): Boolean = mutex.withLock { streams[streamId]?.refused == true }
+
     private val mutex = Mutex()
     private val streams = mutableMapOf<String, Stream>()
     private val dispatcher = newFixedThreadPoolContext(MAX_JOBS + 1, "encoder-jobs")

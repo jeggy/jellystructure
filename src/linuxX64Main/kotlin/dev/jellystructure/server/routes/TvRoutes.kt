@@ -1384,7 +1384,9 @@ fun Route.tvRoutes(
     // R291 (FR-R291-2) — every audio track as an HLS rendition; public, the id is the capability (see AuthPlugin).
     get("/tv/stream/{id}/master.m3u8") {
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
-        // Phase 313 — a stream our own encoder serves.
+        // Phase 313 — a stream our own encoder serves. One ffmpeg refused answers 410 (found live 2026-10-09: a 404 here
+        // was retried every second by AVPlayer, forever; 410 is final, and the player's watch restreams from Jellyfin).
+        if (playbackService.encoder.refusedStream(id)) return@get call.respond(HttpStatusCode.Gone)
         playbackService.encoder.master(id)?.let { return@get call.respondText(it, ContentType.parse("application/vnd.apple.mpegurl")) }
         val text = playbackService.audioRenditions.master(id) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
@@ -1432,6 +1434,7 @@ fun Route.tvRoutes(
         get("/tv/stream/{id}/$kind/{i}/main.m3u8") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val i = call.parameters["i"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.NotFound)
+            if (playbackService.encoder.refusedStream(id)) return@get call.respond(HttpStatusCode.Gone)   // 313 — see master.m3u8
             val text = playbackService.encoder.playlist(id, kind, i) ?: return@get call.respond(HttpStatusCode.NotFound)
             call.respondText(text, ContentType.parse("application/vnd.apple.mpegurl"))
         }
@@ -1443,7 +1446,7 @@ fun Route.tvRoutes(
                 file == "init.mp4" -> playbackService.encoder.init(id, kind, i)
                 file.endsWith(".m4s") || file.endsWith(".ts") -> file.substringBefore('.').toIntOrNull()?.let { playbackService.encoder.segment(id, kind, i, it) }
                 else -> null
-            } ?: return@get call.respond(HttpStatusCode.NotFound)
+            } ?: return@get call.respond(if (playbackService.encoder.refusedStream(id)) HttpStatusCode.Gone else HttpStatusCode.NotFound)
             val type = when {
                 file.endsWith(".ts") -> "video/mp2t"
                 kind == "a" -> "audio/mp4"

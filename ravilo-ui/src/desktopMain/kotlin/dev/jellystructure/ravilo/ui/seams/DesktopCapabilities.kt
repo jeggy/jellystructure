@@ -58,20 +58,26 @@ actual fun warmAudioRendition(index: Int) {}
 actual val platformAirPlay: AirPlay? = null
 
 /**
- * No HDR is claimed. FR-R329-1's frame path hands Skia 8-bit BGRA, so an HDR10, HLG or Dolby Vision stream would
- * reach the screen as whatever AVFoundation's 8-bit conversion makes of it; the server's tone-mapped SDR is the
- * honest answer until the spike shows that conversion is right. `-Dravilo.hdr=true` claims what the probes allow,
- * for that measurement.
+ * R329 — HDR is claimed where the Mac decodes HEVC Main 10 (VideoToolbox on every Apple-silicon Mac), so 313's encoder
+ * serves the HEVC HDR rungs instead of tone-mapping to H.264 SDR. Found live 2026-10-09 (M5 Mac): no HDR was ever
+ * claimed (an 8-bit-frame caution from before the spike), so an HDR film always came as H.264 SDR. The frame path still
+ * hands Skia 8-bit BGRA: `Player.swift` asks AVFoundation for Rec. 709 frames, so AVFoundation (not the server) maps the
+ * HDR picture to the window — a 10-bit HEVC stream at the same bitrate, not a re-encoded 8-bit one. Dolby Vision stays
+ * unclaimed (a profile 8 file rides its HDR10 base). `-Dravilo.hdr=false` turns it off for a measurement.
  */
-actual fun detectHdrSupport(): HdrSupport =
-    // R335 (D5) — mpv tone-maps HDR10 and HLG to the window itself, so the file direct-plays and looks right; a `false`
-    // would make the server transcode it to SDR instead. Dolby Vision profile 8 rides the HDR10 base layer.
-    if (mpv) HdrSupport(hdr10 = true, hlg = true)
-    else if (System.getProperty("ravilo.hdr") == "true" && hevc) HdrSupport(
-        hdr10 = true,
-        hlg = true,
-        dolbyVision = playable("video/mp4; codecs=\"dvh1.08.06\""),
-    ) else HdrSupport.NONE
+actual fun detectHdrSupport(): HdrSupport = macHdrSupport(
+    mpv = mpv,
+    hevc = hevc,
+    main10 = MacNative.lib != null && playable("video/mp4; codecs=\"hvc1.2.4.L150.B0\""),
+    optOut = System.getProperty("ravilo.hdr") == "false",
+)
+
+/** R335 (D5) — mpv tone-maps HDR10 and HLG to the window itself, so the file direct-plays and looks right. */
+internal fun macHdrSupport(mpv: Boolean, hevc: Boolean, main10: Boolean, optOut: Boolean): HdrSupport = when {
+    mpv -> HdrSupport(hdr10 = true, hlg = true)
+    !optOut && hevc && main10 -> HdrSupport(hdr10 = true, hlg = true)
+    else -> HdrSupport.NONE
+}
 
 /** Phase 185's honest *not measured yet*: the desktop never guesses a decoder ceiling (R329 dev review 10). */
 actual fun detectDecoderLimits(): DecoderLimits = DecoderLimits.UNKNOWN

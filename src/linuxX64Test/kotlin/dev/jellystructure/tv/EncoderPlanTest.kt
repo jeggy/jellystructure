@@ -132,11 +132,22 @@ class EncoderPlanTest {
         assertContains(ts, "s%d.ts")
     }
 
+    @Test fun `a play that starts mid-film says where — never from 0 first — found live 2026-10-09`() {
+        assertContains(encoderMaster(plan(), startMs = 1_113_500), "#EXT-X-START:TIME-OFFSET=1113.500,PRECISE=YES\n")
+        assertFalse(encoderMaster(plan(), startMs = 0).contains("EXT-X-START"))
+    }
+
     @Test fun `a burned-in image subtitle is composited once — before the split`() {
         val c = encoderCommand(plan(EncoderCodec.H264, burn = 1, start = 0), startSegment = 0, dir = "/w/x")
         assertEquals(1, Regex("overlay_cuda").findAll(c).count())
         assertTrue(c.indexOf("overlay_cuda") < c.indexOf("split="))
         assertContains(c, "[0:s:1]")
+        // Found live 2026-10-09: the overlay drops the colour tags; without them the output's bt709 flags made ffmpeg 8
+        // insert a software conversion after the split on GPU frames, and every burn-in plan was refused.
+        assertTrue(c.indexOf("setparams=color_primaries=bt709") in c.indexOf("overlay_cuda") until c.indexOf("split="))
+        assertContains(c, "overlay_cuda=eof_action=pass:repeatlast=0")
+        assertContains(c, "-canvas_size ")
+        assertTrue(c.indexOf("-canvas_size") < c.indexOf(" -i "))
     }
 
     @Test fun `the budget fills the P4000 — uses the consumer card within its cap — then gives fewer rungs`() {

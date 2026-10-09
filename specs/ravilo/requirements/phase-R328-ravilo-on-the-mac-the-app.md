@@ -286,3 +286,11 @@ viewer's password. `ravilo_keychain_*` stay in the Swift library for that one mi
   The update line (server newer than the app) couldn't be shown: the test build is newer than the server.
 - The installed 1.50.0 app failed to rejoin the speaker's cast once on launch (`rejoin … → no connection`); a second
   launch rejoined and handed the next song.
+
+### Found live 2026-10-09 — fixed
+
+- **Closing while a cast plays quit the app.** *Defect:* `close()` asked only the Mac's own music engine, so ⌘W (or the
+  close button) with a song on a speaker quit Ravilo — the app that hands the speaker its next song and rejoins it.
+  *Fix:* a linked music cast (playing or paused) counts as music playing: the window hides and the app keeps running, as
+  for local music (`DesktopBackground.keepsRunningOnClose`; Linux asks its Background portal as before). ⌘Q still quits.
+  **Mac re-test owed:** ⌘W during a speaker cast, then the Dock icon brings the window back with the cast live.

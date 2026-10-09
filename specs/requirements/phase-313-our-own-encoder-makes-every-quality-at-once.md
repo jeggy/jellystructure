@@ -547,3 +547,25 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
    encoder's (now empty) master and retries it every second (`NSURLError -1100`), showing "Loading…" forever; Esc didn't
    leave it. The "goes to Jellyfin" fallback only helps the *next* play — the restream itself must be re-answered from
    Jellyfin (or the client told to restream). The restream also started at segment 0 and with `audio=default`.
+
+### Found live 2026-10-09 — fixed
+
+- **F1 · A burn-in's filter graph.** *Defect:* with a picked PGS subtitle the graph overlaid the subtitle with
+  `overlay_cuda` and then split; ffmpeg 8 adds a colour conversion in front of the encoder whenever the output's colour
+  flags (BT.709) do not match the frames' own tags, and the overlaid frames carried none — a software `auto_scale` on
+  CUDA frames, so ffmpeg refused the plan. Without Jellyfin's subtitle chain the overlay also waited on subtitle frames
+  and produced nothing. *Fix:* the subtitle goes through Jellyfin's own chain (`scale,scale=W:H:fast_bilinear,
+  format=yuva420p,hwupload`), `overlay_cuda=eof_action=pass:repeatlast=0`, then `setparams` tags the composited frames
+  BT.709 before the split, and the input gets `-canvas_size` (the PGS canvas = the source size). Checked on a real
+  file with a German PGS track: 2 s segments at ~8× real time. A plan ffmpeg still refuses keeps going to Jellyfin.
+- **F2 · A refused restream left the player dead.** *Defect:* the restream's ticket pointed at our encoder's master;
+  ffmpeg refused, the master stayed empty, and the Mac's AVPlayer retried it every second ("Loading…", Esc could not
+  leave). It also started at segment 0 and asked for `audio=default`, losing a picked DTS track. *Fix:* (a) the master,
+  a variant playlist and a segment of a refused stream answer **410 Gone**, so the player fails at once instead of
+  waiting; (b) the client's failure watch is armed again after a restream, and an our-encoder stream that fails or whose position has
+  not moved for 20 s while playing is restreamed **once** — the refused file is marked, so that restream is Jellyfin's —
+  and a second failure or stall ends in R237's error (Retry / Back), never an endless spinner; (c) the master of a play that starts
+  mid-film carries `#EXT-X-START:TIME-OFFSET=<s>,PRECISE=YES`, the init segment is made at the start segment, and the
+  restream asks for the audio the viewer picked (R291's renditions carry none in the session, so the picked track's
+  index is sent). **Mac re-test owed:** a PGS pick on a film with several audio tracks (picture + subtitle + the picked
+  audio, from the current place), and a forced refusal (playback continues from Jellyfin; Esc leaves).

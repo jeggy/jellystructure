@@ -81,8 +81,19 @@ fun rememberCastIconShown(cast: CastController?, music: Boolean): Boolean {
 }
 
 /** R370 — the Cast device a link named [deviceName] is on: the route of that name (never a group), else the selected one. */
-fun linkedDeviceKeyOf(routes: List<CastRoute>, deviceName: String?): String? =
-    deviceName?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n }?.deviceKey }
+fun linkedDeviceKeyOf(routes: List<CastRoute>, deviceName: String?): String? = linkedRouteOf(routes, deviceName)?.deviceKey
+
+/** The route a link named [deviceName] is on (see [linkedDeviceKeyOf]). */
+fun linkedRouteOf(routes: List<CastRoute>, deviceName: String?): CastRoute? =
+    deviceName?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n } }
         // A speaker group reads *Stue + 1*: its leader is the room named first.
-        ?: deviceName?.takeIf { " + " in it }?.substringBefore(" + ")?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n }?.deviceKey }
-        ?: routes.firstOrNull { it.selected && it.kind != "group" }?.deviceKey
+        ?: deviceName?.takeIf { " + " in it }?.substringBefore(" + ")?.let { n -> routes.firstOrNull { it.kind != "group" && it.name == n } }
+        ?: routes.firstOrNull { it.selected && it.kind != "group" }
+
+/**
+ * R329 (found live 2026-10-09, Mac) — a film or an episode is cast only to a place with a screen. With a music cast on
+ * an audio-only speaker, the film's Play read *Play on {speaker}* and sent the film there; a link on a speaker (or a
+ * group led by one) now leaves video to this device. A link whose route is not known (discovery not run yet) stays
+ * what it was: cast.
+ */
+fun castsVideoTo(routes: List<CastRoute>, deviceName: String?): Boolean = linkedRouteOf(routes, deviceName)?.kind != "speaker"
