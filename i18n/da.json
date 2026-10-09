@@ -403,6 +403,7 @@
   "volume.unmute_room": "Slå lyden til i {place}",
   "volume.remove_room": "Fjern {place}",
   "group.no_reach": "Ingen telefon eller computer i nærheden kan nå højttalerne",
+  "group.needs_phone": "For at tilføje en højttaler skal Ravilo være åben på en Android-telefon i nærheden",
   "target.already_playing": "Spiller allerede på {place}",
   "target.play_there": "Afspil på {place} i stedet",
   "tv.speakers": "Højttalere",

@@ -294,7 +294,13 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
                 .append("setparams=color_primaries=bt2020:color_trc=${if (plan.source.hlg) "arib-std-b67" else "smpte2084"}:colorspace=bt2020nc,")
                 .append("tonemap_cuda=format=nv12:p=bt709:t=bt709:m=bt709:tonemap=bt2390:peak=100:desat=0")
         } else {
-            graph.append(src).append("scale_cuda=w=${top.width}:h=${top.height}:format=$fmt")
+            // Found live 2026-10-09 (evening, Mac): an SDR source with untagged colour (`unknown`) was refused — the
+            // output's `-color_*` flags made ffmpeg 8 insert a software `auto_scale` on CUDA frames after the split
+            // ("Function not implemented", then "Could not open encoder"). The frames now carry the output's own tags
+            // (`setparams`, metadata only; a no-op for a tagged source).
+            graph.append(src).append("scale_cuda=w=${top.width}:h=${top.height}:format=$fmt,")
+                .append(if (plan.keepsHdr) "setparams=color_primaries=bt2020:color_trc=${if (plan.source.hlg) "arib-std-b67" else "smpte2084"}:colorspace=bt2020nc"
+                        else "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
         }
         if (plan.burnSubtitleOrder != null) {
             // FR-313-6 — the image subtitle composited on the GPU at the top rung's size, before the split (every rung

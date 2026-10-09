@@ -72,4 +72,13 @@ class BurnInTicketWireTest {
         assertEquals(-1, back.subtitleStreamIndex)
         assertEquals(true, back.capabilities?.supportsEmbeddedTextSubs)
     }
+
+    // ── 313 (found live 2026-10-09, evening) ────────────────────────────────────────────────────────
+    @Test fun a_recovery_restream_asks_for_jellyfin_and_an_ordinary_one_says_nothing() {
+        val wire = server.encodeToString(PlaybackRestreamRequest.serializer(), PlaybackRestreamRequest("i", -1, 1000, notOurEncoder = true))
+        assertTrue("\"not_our_encoder\":true" in wire)
+        assertTrue(Json.decodeFromString(PlaybackRestreamRequest.serializer(), wire).notOurEncoder)
+        assertFalse("not_our_encoder" in server.encodeToString(PlaybackRestreamRequest.serializer(), PlaybackRestreamRequest("i", -1, 1000)))
+        assertFalse(Json.decodeFromString(PlaybackRestreamRequest.serializer(), """{"item_id":"i","subtitle_stream_index":-1}""").notOurEncoder)
+    }
 }

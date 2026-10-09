@@ -234,7 +234,7 @@ measured in a browser** — the session's headless Chromium has no H.264/AAC, an
 over SSH; the owner's browser is the first measurement. The cast receiver still restreams.
 
 **The receiver, tried and reverted (2026-10-05).** `d42bc2c1` made the Cast receiver declare the capability and
-select the rendition through CAF's `AudioTracksManager`. On the Soveværelse TV's built-in Chromecast (Toy Story,
+select the rendition through CAF's `AudioTracksManager`. On the Soveværelse TV's built-in Chromecast (a stand-in animated film,
 eight audio tracks, cast from the Pixel 9 Pro) the server handed it the composed master (`audio renditions=8`) and the
 load failed at once: the TV's `cast_shell` log shows Shaka adding an `audio/mp4; mp4a.40.2` and a
 `video/mp4; avc1.640029` SourceBuffer, then aborting both within 60 ms (`LOAD_FAILED`, *couldn't play this* on the

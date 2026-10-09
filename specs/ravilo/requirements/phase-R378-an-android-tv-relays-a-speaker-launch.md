@@ -134,7 +134,7 @@ Built on the Android TV build only; a phone, a computer and the web are unchange
   (display), Stue TV (display)* — the TV's **own** receiver (Soveværelse TV) left out. The Køkken Hub's port 8009
   answers again.
 - **Found: no relay was ever chosen inside the house.** The server sees each LAN device's own private address since
-  the household's DNAT (Pixel 10.10.10.183, Soveværelse TV 10.10.11.20), and `isNearby` (236 FR-236-6) needed an
+  the household's DNAT (Pixel 192.168.10.23, Soveværelse TV 192.168.11.40 — stand-ins), and `isNearby` (236 FR-236-6) needed an
   exact IPv4 match, so every Cast row read `no_relay` for a requester without its own discovery (web, Mac).
   **Fix (owner-approved via main, 2026-10-09):** two RFC 1918 IPv4 addresses count as nearby — a private address only
   reaches the server from inside the household network, a remote viewer arrives with a public one; every other pair

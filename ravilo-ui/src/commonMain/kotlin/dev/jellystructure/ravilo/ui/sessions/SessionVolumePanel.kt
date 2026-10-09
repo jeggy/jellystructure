@@ -98,6 +98,17 @@ fun SessionVolumePanel(d: SessionDetail, onMoveToRoom: ((castDeviceId: String) -
     }
 }
 
+/**
+ * Why *Add a speaker…* is greyed, or null when it isn't. R330 (found live 2026-10-09, evening, Mac) — a device that
+ * cannot make a group itself (the Mac: no group controller) said *No phone or computer nearby can reach the speakers*
+ * while it was playing on that very speaker; it now says what would work.
+ */
+internal fun addSpeakerBlockedReason(canAdd: Boolean, groupsHere: Boolean): String? = when {
+    canAdd -> null
+    groupsHere -> "group.no_reach"
+    else -> "group.needs_phone"
+}
+
 /** FR-R371-2 — *Add a speaker…*: the free speakers and displays the server lists; a busy one is listed, not tappable. */
 @Composable
 private fun AddSpeakerRows(d: SessionDetail) {
@@ -113,7 +124,9 @@ private fun AddSpeakerRows(d: SessionDetail) {
         Text("+", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
         Text(str("group.add_speaker"), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
     }
-    if (!canAdd) Text(str("group.no_reach"), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+    addSpeakerBlockedReason(canAdd, dev.jellystructure.ravilo.ui.seams.platformGroupController() != null)?.let {
+        Text(str(it), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
+    }
     if (open && canAdd) candidates.forEach { t ->
         val free = t.busy == null
         Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(start = 28.dp).alpha(if (free) 1f else 0.45f)

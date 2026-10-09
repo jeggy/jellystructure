@@ -284,3 +284,15 @@ after the relaunch with no `RECONNECTING`, `closed (send failed)` or hand-back l
 drops coming from two Ravilos on one Mac fighting over one speaker session.
 Small finding: the remote for the speaker cast says *No phone or computer nearby can reach the speakers* under *Add a
 speaker…* while the Mac itself is the sender holding that speaker — the line should not show on a sender that can.
+
+### Found live 2026-10-09 (evening) — fixed
+
+- **The speaker remote on the Mac said *No phone or computer nearby can reach the speakers* while the Mac itself was
+  playing on that speaker.** The line is shown when the server offers no `add_room`: neither the app holding the speaker
+  can make a group (`group_control`, only Android's Cast SDK has it — the Mac's Cast v2 client has no group controller)
+  nor is a grouping app nearby to relay it. On the Mac the first half is always false, so the old sentence blamed the
+  network for what is the Mac's own limit. *Fix:* on a device that cannot make groups itself the line says what would
+  work — *Adding a speaker needs Ravilo open on an Android phone nearby* (`group.needs_phone`, en/da/fo); the old line
+  stays for a device that can group but finds no road to the speakers. Test: the reason chosen for each case
+  (`addSpeakerBlockedReason`). **Mac re-test owed:** the remote of a speaker cast from the Mac shows the new line; with
+  the Pixel's Ravilo open nearby, *Add a speaker…* is offered instead.

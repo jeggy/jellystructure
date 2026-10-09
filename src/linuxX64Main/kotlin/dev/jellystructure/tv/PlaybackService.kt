@@ -561,6 +561,8 @@ class PlaybackService(
         /** 313d — the picked image subtitle's place among the file's subtitle streams (null: none/unmapped). */
         burnSubtitleOrder: Int? = null,
         burnRequested: Boolean = false,
+        /** 313 (found live 2026-10-09, evening) — the player could not play our stream: Jellyfin's, for this restream. */
+        notOurEncoder: Boolean = false,
     ): StreamTicket {
         val deviceKind = device?.kind ?: "tv"
         val measured = ticket.copy(measuredBandwidthBps = measuredBps,
@@ -572,7 +574,8 @@ class PlaybackService(
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
         if (reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
             val file = localFileOf(jellyfinId)
-            val (plan, why) = if (file == null) null to "file not on this server's disk"
+            val (plan, why) = if (notOurEncoder) null to "the player could not play ours"
+            else if (file == null) null to "file not on this server's disk"
             else encoder.planFor(capabilities, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
@@ -1861,8 +1864,10 @@ class PlaybackService(
         audioStreamIndex: Int? = null,
         /** Phase 314c — the picture version the viewer picked (or the one the stream already plays); null ⇒ the server's choice. */
         mediaSourceId: String? = null,
+        /** 313 (found live 2026-10-09, evening) — the player could not play our encoder's stream: answer with Jellyfin's. */
+        notOurEncoder: Boolean = false,
     ): StreamTicket {
-        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId)
+        if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -1962,7 +1967,8 @@ class PlaybackService(
         ).let { withRenditions(it, capabilities, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, device = device,
             sourceVideoBps = playbackInfo?.mediaSources?.firstOrNull()?.videoBitrate(), measuredBps = measuredBps, take = take,
             // 313d (FR-313-6) — the picked image subtitle's place among the file's own subtitle streams.
-            burnSubtitleOrder = embeddedSubtitleOrder(itemDetail?.mediaStreams.orEmpty(), subtitleStreamIndex), burnRequested = true) }
+            burnSubtitleOrder = embeddedSubtitleOrder(itemDetail?.mediaStreams.orEmpty(), subtitleStreamIndex), burnRequested = true,
+            notOurEncoder = notOurEncoder) }
     }
 
     /**
@@ -1980,6 +1986,7 @@ class PlaybackService(
         capabilities: ClientCapabilities,
         audioStreamIndex: Int?,
         mediaSourceId: String? = null,
+        notOurEncoder: Boolean = false,
     ): StreamTicket {
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
@@ -2031,7 +2038,8 @@ class PlaybackService(
         ).let { withRenditions(it, negotiatedCaps, jellyfinBase, jellyfinId, token, identity, playbackInfo?.playSessionId, abandoned = startResult.stopAlreadyArrived, device = device,
             sourceVideoBps = source?.videoBitrate(), measuredBps = measuredBps, take = take,
             sourceVideoCodec = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.codec,
-            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType) }
+            sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
+            notOurEncoder = notOurEncoder) }
     }
 
     /**

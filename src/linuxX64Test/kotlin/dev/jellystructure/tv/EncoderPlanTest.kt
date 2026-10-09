@@ -132,6 +132,22 @@ class EncoderPlanTest {
         assertContains(ts, "s%d.ts")
     }
 
+    @Test fun `frames are tagged with the output's colours before the split — found live 2026-10-09 evening`() {
+        // An SDR source with untagged colour: without the tags ffmpeg 8 inserted a software auto_scale on CUDA frames.
+        val sdrSrc = hdr4k.copy(hdr = false, width = 1920, height = 1080, videoBps = 10_000_000)
+        for (codec in listOf(EncoderCodec.HEVC, EncoderCodec.H264)) {
+            val c = encoderCommand(plan(codec, src = sdrSrc, start = 0), startSegment = 0, dir = "/w/x")
+            val tag = c.indexOf("setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709")
+            assertTrue(tag in c.indexOf("scale_cuda") until c.indexOf("split="), "$codec: $c")
+            assertContains(c, "-color_primaries bt709 -color_trc bt709 -colorspace bt709")
+        }
+        val keep = encoderCommand(plan(EncoderCodec.HEVC), startSegment = 0, dir = "/w/x")
+        val tag = keep.indexOf("setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc")
+        assertTrue(tag in keep.indexOf("scale_cuda") until keep.indexOf("split="), keep)
+        val hlg = encoderCommand(plan(EncoderCodec.HEVC, src = hdr4k.copy(hlg = true)), startSegment = 0, dir = "/w/x")
+        assertContains(hlg, "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc,split=")
+    }
+
     @Test fun `a play that starts mid-film says where — never from 0 first — found live 2026-10-09`() {
         assertContains(encoderMaster(plan(), startMs = 1_113_500), "#EXT-X-START:TIME-OFFSET=1113.500,PRECISE=YES\n")
         assertFalse(encoderMaster(plan(), startMs = 0).contains("EXT-X-START"))

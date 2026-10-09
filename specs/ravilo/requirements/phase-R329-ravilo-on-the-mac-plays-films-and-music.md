@@ -320,3 +320,18 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   minutes (gone ten minutes later), and the HDR play that failed at once left a paused session at 0:00 in
   `playback_session`. The installed 1.50.0 app's last log line (15:48 the same day) is `OutOfMemoryError: Java heap space` — R383's
   measurement should start there.
+
+### Found live 2026-10-09 (evening) — fixed
+
+- **The Mac claimed HDR on a screen AVPlayer will not play HDR on.** *Cause, found with a bare AVPlayer on the same
+  Mac (muted, an `AVPlayerItemVideoOutput` attached):* the Mac shows its picture on a 1080p SDR monitor, and
+  `AVPlayer.eligibleForHDRPlayback` is **false** there. AVPlayer then drops every `VIDEO-RANGE=PQ` (or HLG) variant of a
+  master; a master that holds only HDR variants has nothing left (`-1002 unsupported URL`; without `VIDEO-RANGE` it
+  reads the PQ frames and fails with `-12927`). The same variant opened on its own (no master) plays, which is why the
+  frames and the playlists looked valid. **Proved:** our own HEVC 8-bit SDR variant in our full master shape (two audio
+  renditions, `hvc1.1.6.L93.B0`, `VIDEO-RANGE=SDR`) plays; a master listing our PQ variant *and* an H.264 SDR variant
+  plays — AVPlayer picks the SDR one. Nothing in the playlists or the segments is wrong. *Fix:* the Mac claims HDR only
+  while AVPlayer says it is eligible (`ravilo_caps_hdr_eligible`, asked at every start, so moving to the built-in XDR
+  screen claims it again); not eligible ⇒ the server tone-maps to H.264 SDR, as before 993ee433. A library from before
+  the call has no symbol and claims no HDR. **Mac re-test owed:** on the external monitor a 4K HDR10 film plays
+  (server log `H264 … SDR`/tone-map); on the built-in screen (lid open, no monitor) it plays as `HEVC HDR`.

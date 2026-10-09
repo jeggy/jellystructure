@@ -36,10 +36,10 @@ Measured on the library 2026-10-05 (best video track per title, current rule vs 
 | 720p → 1080p | 2 | 51 |
 | SD → 720p | 0 | 1 |
 
-The seven films: The Invite (3836 × 2072), Obsession (3236 × 2152), Over Your Dead Body (3836 × 1604), Power Ballad
-(3828 × 1588), Spider-Man: Brand New Day (3832 × 1600), undertone (3836 × 1808), Watcher (3832 × 1912). The episodes
-are mostly 1918 × 802 web releases (Lucky, Pluribus); the 720p→1080p films are The Lighthouse (1292 × 1076, 1.19:1)
-and One Missed Call (1434 × 802).
+The seven films (invented stand-ins for the real titles): Paper Lanterns (3836 × 2072), Saltwater (3236 × 2152), Under the Ice Shelf (3836 × 1604), Neon Chorus
+(3828 × 1588), Skyline Runner (3832 × 1600), lowtide (3836 × 1808), Lookout (3832 × 1912). The episodes
+are mostly 1918 × 802 web releases (stand-ins: *Kettle Bay*, *Northwind*); the 720p→1080p films are The Lamp Room (1292 × 1076, 1.19:1)
+and Missed Signal (1434 × 802).
 
 ## Requirements
 
@@ -72,7 +72,7 @@ also moves in the Quality facet.
    phone and the TV, and in the Focus Detail meta.
 2. *Over Your Dead Body* (3836 × 1604, SDR) shows **4K**.
 3. A real 1080p film (1920 × 1080 or 1920 × 800, SDR) still has no tile badge, and with HDR still shows **HDR**.
-4. Browse ▸ Quality ▸ 4K includes the seven films listed above; ▸ 1080p includes *Lucky* and *Pluribus*.
+4. Browse ▸ Quality ▸ 4K includes the seven films listed above; ▸ 1080p includes *Kettle Bay* and *Northwind*.
 5. `grep -rn '3840' src/linuxX64Main` finds no tier ladder outside `Quality.kt`.
 
 ## Tests

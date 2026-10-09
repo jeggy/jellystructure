@@ -27,6 +27,15 @@ class OurStreamStuckTest {
         assertTrue(w.observe(5_000, paused = false, nowMs = 60_000))
     }
 
+    /** Found live 2026-10-09 (evening, Mac): the player rejected our stream and the restream gave it back again. */
+    @Test fun `our stream's first failure restreams from Jellyfin, the second ends on the error`() {
+        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, restreamedAlready = false, failed = true))
+        assertEquals(StreamRecovery.RESTREAM_FROM_JELLYFIN, streamRecovery(ours = true, restreamedAlready = false, failed = false))
+        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = true, restreamedAlready = true, failed = true))
+        assertEquals(StreamRecovery.NOT_STARTED, streamRecovery(ours = true, restreamedAlready = true, failed = false))
+        assertEquals(StreamRecovery.FAILED, streamRecovery(ours = false, restreamedAlready = false, failed = true))
+    }
+
     @Test fun `a burn-in keeps the audio the viewer picked inside the stream`() {
         val audio = listOf(AudioTrack(1, "eng", "TrueHD"), AudioTrack(2, "eng", "DTS-HD MA"), AudioTrack(4, "hin", "AC-3"))
         // R291 renditions: no carried track — the picked one (position 1, Jellyfin index 2) is sent, not the default.

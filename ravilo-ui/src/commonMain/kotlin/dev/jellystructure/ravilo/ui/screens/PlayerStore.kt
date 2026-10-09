@@ -93,6 +93,20 @@ internal class FailureLatch {
  * the position has not moved (by more than [toleranceMs]) for [stuckMs] while the viewer wants it to play; a pause, a
  * move, or [reset] starts the clock again.
  */
+/** 313 — what the failure watch does with a stream that failed or does not move. */
+internal enum class StreamRecovery { RESTREAM_FROM_JELLYFIN, FAILED, NOT_STARTED }
+
+/**
+ * 313 — our encoder's stream gets one restream, and (found live 2026-10-09, evening) that restream asks for Jellyfin's
+ * stream: a failure on the player's side is not one the server knows about, so asking again gave the same stream back.
+ * Anything else that fails or never moves ends on R237's error.
+ */
+internal fun streamRecovery(ours: Boolean, restreamedAlready: Boolean, failed: Boolean): StreamRecovery = when {
+    ours && !restreamedAlready -> StreamRecovery.RESTREAM_FROM_JELLYFIN
+    failed -> StreamRecovery.FAILED
+    else -> StreamRecovery.NOT_STARTED
+}
+
 internal class StuckWatch(private val stuckMs: Long = OUR_STREAM_STUCK_MS, private val toleranceMs: Long = 250) {
     private var lastPos = -1L
     private var sinceMs = -1L
@@ -215,6 +229,8 @@ class PlayerStore(
     private var stuckRestreamedFor: String? = null
     /** 313 — the audio the last restream of this item asked for (a rendition pick is not in the session's ticket). */
     private var lastRestreamAudio: Int? = null
+    /** 313 (found live 2026-10-09, evening) — the item whose player could not play our stream: its restreams ask for Jellyfin's. */
+    private var notOursFor: String? = null
     private var durationProvider: (() -> Long)? = null
     // R216 (FR-R216-4) — supplied by the caller (PlayerScreen owns the RaviloPlayer instance; the store
     // deliberately doesn't) so QoE reporting can reuse the exact same lambda-injection pattern as
@@ -254,7 +270,7 @@ class PlayerStore(
         failedProvider?.let { this.failedProvider = it }
         failureWatchJob?.cancel()
         DetailPrewarm.playStarted(itemId)   // 309 — the detail page was left for this play: its early encode is ours now
-        if (currentItemId != itemId) { stuckRestreamedFor = null; lastRestreamAudio = null }
+        if (currentItemId != itemId) { stuckRestreamedFor = null; lastRestreamAudio = null; notOursFor = null }
         currentItemId = itemId
         this.positionProvider = positionProvider
         this.isPausedProvider = isPausedProvider
@@ -416,7 +432,8 @@ class PlayerStore(
         scope.launch {
             _state.value = PlayerSessionState.Loading()
             _state.value = runCatching {
-                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex, mediaSourceId).onThisServer())
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs, lastCapabilities, audioStreamIndex, mediaSourceId,
+                    notOurEncoder = itemId == notOursFor).onThisServer())
             }.getOrElse {
                 val f = classifyLoadFailure(it)
                 PlayerSessionState.Error(it.message ?: "", f.kind, f.status)
@@ -610,8 +627,9 @@ class PlayerStore(
             while (isActive && _state.value is PlayerSessionState.Ready) {
                 delay(FAILURE_POLL_MS)
                 // 313 (found live 2026-10-09) — a stream from our own encoder that fails (a refused plan answers 410) or
-                // never moves is restreamed once at the same place with the same picks: the server marks a refused file,
-                // so that restream is Jellyfin's. Failing or stuck again: R237's error, never "Loading…" forever.
+                // never moves is restreamed once at the same place with the same picks, asking for Jellyfin's stream
+                // (found live the same evening: a failure on the player's side was answered with our stream again).
+                // Failing or stuck again: R237's error, never "Loading…" forever.
                 val t = currentTicket
                 val item = currentItemId
                 val ours = t?.encoder == "ours" && item != null
@@ -620,19 +638,30 @@ class PlayerStore(
                 val stuckNow = !failedNow && ours && pos != null &&
                     stuck.observe(pos, isPausedProvider?.invoke() == true, kotlin.time.Clock.System.now().toEpochMilliseconds())
                 if (!failedNow && !stuckNow) continue
-                if (ours && stuckRestreamedFor != item) {
-                    stuckRestreamedFor = item
-                    println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — restreaming once at ${pos ?: 0}ms")
-                    restreamWithSub(item!!, t!!.burnedSubtitleIndex ?: -1, pos ?: 0L, lastRestreamAudio ?: t.audioStreamIndex)
-                } else if (failedNow) {
-                    _state.value = PlayerSessionState.Error("The player failed after the stream started",
-                        if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC)
-                } else {
-                    _state.value = PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC)
+                when (streamRecovery(ours, stuckRestreamedFor == item, failedNow)) {
+                    StreamRecovery.RESTREAM_FROM_JELLYFIN -> {
+                        stuckRestreamedFor = item
+                        notOursFor = item
+                        println("[player] 313: our encoder's stream ${if (failedNow) "failed" else "has not moved for ${OUR_STREAM_STUCK_MS / 1000} s"} — restreaming once from Jellyfin at ${pos ?: 0}ms")
+                        restreamWithSub(item!!, t!!.burnedSubtitleIndex ?: -1, pos ?: 0L, lastRestreamAudio ?: t.audioStreamIndex)
+                    }
+                    StreamRecovery.FAILED -> endOnError(PlayerSessionState.Error("The player failed after the stream started",
+                        if (PlaybackAvailability.unavailable) LoadErrorKind.PLAYBACK_UNAVAILABLE else LoadErrorKind.GENERIC), pos)
+                    StreamRecovery.NOT_STARTED -> endOnError(PlayerSessionState.Error("The stream did not start", LoadErrorKind.GENERIC), pos)
                 }
                 break
             }
         }
+    }
+
+    /**
+     * R372 (found live 2026-10-09, evening, Mac) — a play that ends on R237's error stops its session now: the error
+     * screen stood for minutes with the session *paused · 0:00* in every *Playing everywhere*, and a failure the
+     * watchdog reaped stayed 24 h. The row goes 15 s later; *Retry* starts a new session; leaving sends nothing more.
+     */
+    private fun endOnError(error: PlayerSessionState.Error, positionMs: Long?) {
+        stopSession(positionMs ?: 0L)
+        _state.value = error
     }
 
     private fun startHeartbeat(

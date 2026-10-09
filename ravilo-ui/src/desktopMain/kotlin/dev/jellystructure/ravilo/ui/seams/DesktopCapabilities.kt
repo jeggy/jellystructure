@@ -69,13 +69,22 @@ actual fun detectHdrSupport(): HdrSupport = macHdrSupport(
     mpv = mpv,
     hevc = hevc,
     main10 = MacNative.lib != null && playable("video/mp4; codecs=\"hvc1.2.4.L150.B0\""),
+    eligible = hdrEligible(),
     optOut = System.getProperty("ravilo.hdr") == "false",
 )
 
-/** R335 (D5) — mpv tone-maps HDR10 and HLG to the window itself, so the file direct-plays and looks right. */
-internal fun macHdrSupport(mpv: Boolean, hevc: Boolean, main10: Boolean, optOut: Boolean): HdrSupport = when {
+/** R329 (found live 2026-10-09) — asked at every start: the screen the window is on can change. No answer ⇒ not eligible. */
+private fun hdrEligible(): Boolean = runCatching { MacNative.lib?.ravilo_caps_hdr_eligible() == 1 }.getOrDefault(false)
+
+/**
+ * R335 (D5) — mpv tone-maps HDR10 and HLG to the window itself, so the file direct-plays and looks right.
+ * R329 (found live 2026-10-09, evening) — AVPlayer drops every HDR variant of a master when it is not
+ * [eligible] for HDR on this screen (an SDR monitor), so an HDR-only master would have nothing to play: claim HDR only
+ * while it is.
+ */
+internal fun macHdrSupport(mpv: Boolean, hevc: Boolean, main10: Boolean, eligible: Boolean, optOut: Boolean): HdrSupport = when {
     mpv -> HdrSupport(hdr10 = true, hlg = true)
-    !optOut && hevc && main10 -> HdrSupport(hdr10 = true, hlg = true)
+    !optOut && hevc && main10 && eligible -> HdrSupport(hdr10 = true, hlg = true)
     else -> HdrSupport.NONE
 }
 
