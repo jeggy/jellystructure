@@ -260,3 +260,21 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
 
 - **Code: nothing found missing.** **Owed on the Mac:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS,
   5 (music, the media keys) and FR-R329-1's spike numbers.
+
+## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+
+- **4K HDR film (Spider-Man: Brand New Day):** played in the window through **our encoder** (313): 4 H.264 rungs
+  tone-mapped to SDR, top 800p@12 Mbps, first segment 1061 ms; CPU 23–35 %, RSS 0.9–1.7 GB. **Finding:** the M5 Mac
+  decodes HEVC/HDR but got H.264 SDR — the Mac app doesn't declare HEVC-over-HLS, so it never gets 313's HEVC HDR rungs.
+- **DTS + several audio tracks (The Bad Guys: TrueHD/DTS/AC-3 English + AC-3 Hindi):** Jellyfin audio-only transcode
+  (video copied) with 4 R291 renditions; switching English 1/3 → 2/3 (DTS) used our rendition `-map 0:a:1 -c:a aac
+  -ac 6` from the current segment — **no restart**, picture continued (R382's mapping right).
+- **Subtitles:** an English text version showed at once. **A German PGS (burn-in) failed** — see 313's notes: the restream
+  went to our encoder, ffmpeg refused the filter graph, and the player hung on "Loading…" (NSURLError -1100 every
+  second); Esc didn't leave it; only quitting the app did. The restream also asked for `audio=default`, dropping the DTS
+  pick.
+- **Media keys F7–F9:** not testable remotely (no Accessibility for real key input).
+- **Search:** "Spider-Man Brand" finds nothing; "Brand New Day" finds the film (the colon in the title).
+- The film's Play button read **"Play on Gæsteværelse"** while a music cast to that audio-only speaker was active — a film
+  shouldn't be offered to a speaker with no screen; *This computer* in the sheet changed nothing; only *Stop casting*
+  brought back *Play*.

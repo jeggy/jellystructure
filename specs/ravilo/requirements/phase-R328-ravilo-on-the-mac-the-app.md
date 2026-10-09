@@ -272,3 +272,17 @@ viewer's password. `ravilo_keychain_*` stay in the Swift library for that one mi
   (`onToggleFullScreen` → `setFullScreen`) and the update line (`mac.update_available` in `AppUpdate.kt` and
   Settings ▸ Account). They landed with R337's passes.
 - **Owed: a Mac check** of each (see the test plan sent to main on 2026-10-09).
+
+## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+
+- **⌘1 / ⌘2** switch films ↔ music (the app's own key handling; works).
+- **⌘W / the close rule (D7, FR-R328-9):** with nothing playing, ⌘W quits — as specified. **Bug: with music playing *on a
+  cast* (Gæsteværelse), ⌘W also quits** — `close()` checks only `MusicEngine.state.playing` (the Mac's own engine), not a
+  cast session. The Mac app is the sender that hands the speaker its next song, so quitting stops the music after the
+  current song. Fix: count a playing cast music session as "music is playing".
+- **Not verifiable remotely:** the native menu bar items (View ▸ Enter Full Screen ⌃⌘F, About, Settings…, Minimise)
+  and the Dock reopen — the test driver's keys don't reach macOS's own menu, and ssh has no Accessibility permission for
+  real input. `open` on the running app re-launched it instead of a reopen because the app had quit (see the bug above).
+  The update line (server newer than the app) couldn't be shown: the test build is newer than the server.
+- The installed 1.50.0 app failed to rejoin the speaker's cast once on launch (`rejoin … → no connection`); a second
+  launch rejoined and handed the next song.

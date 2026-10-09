@@ -673,3 +673,10 @@ compiles, `:linuxX64Test`, the release APK (`check-player-dex` 249) and the chec
 throttle) and `309 probe`; a direct play throttled on Android or the web logging `309: the direct play … stalled` and
 continuing on a transcode at the same position; mpv on Linux under a throttle (`309: stepping … down`, then up after
 2 min); the Mac (after the dylib is rebuilt) logging `309 peak`.
+
+## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+
+- The rebuilt `libravilo-mac.dylib` exports `ravilo_player_set_peak_bitrate`; AVPlayer logged `309 peak 18384k (2196 ms
+  buffered)` at the start (the device's record put it at the top rung, so no climb was seen).
+- The Mac's speed test: `probe: … 4194 kB in 341 ms → 98400k`, cap 68.9 Mbps. Leaving a detail page logged
+  `prewarm cancelled … the viewer left the page`.
