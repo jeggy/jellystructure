@@ -255,3 +255,8 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
     `AVPlayerLayer`, or a 10-bit one) and is a phase of its own.
     **Still owed:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS, and 5 (music, the media keys,
     Control Center).
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing found missing.** **Owed on the Mac:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS,
+  5 (music, the media keys) and FR-R329-1's spike numbers.

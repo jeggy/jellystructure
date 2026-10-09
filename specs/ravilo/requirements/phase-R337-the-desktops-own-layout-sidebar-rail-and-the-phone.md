@@ -551,3 +551,7 @@ window), on the window's own close and maximise buttons (as libadwaita's), on a 
 the saved place is on no display, so the window was centred — on nothing, at −640, −376, its header off the
 display that appears when someone connects. With no display at all it opens at 48, 48 (`WindowBounds.load`).
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing found missing.** **Owed:** macOS window properties, glass and the system font on the Mac; on
+  Linux the portal, single instance, CSD drag/resize and the Background ask on a real GNOME desktop.

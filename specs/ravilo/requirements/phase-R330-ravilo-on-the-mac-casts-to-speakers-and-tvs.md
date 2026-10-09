@@ -257,3 +257,7 @@ the two screenless speakers, and Local Network access was already granted.
 - Open: a song handed over at 2:40 ended at once on the TV and the queue moved on (the server logged the stop at the
   song's full length); not yet understood, and not the Mac's alone if it is the receiver's seek.
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing found missing.** **Owed on devices:** acceptance 1–7 from the Mac (the TXT keys on Stue,
+  Gæsteværelse, their group, the hub and a TV).

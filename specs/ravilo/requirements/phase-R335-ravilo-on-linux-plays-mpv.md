@@ -200,3 +200,10 @@ track, 4K HEVC 10-bit — and `Ravilo --mpv-bench` / `--mpv-window` (FR-R335-11)
 9. **Not measured anywhere yet:** hardware decode (`hwdec` reports `no` in the container — CUDA has no driver there,
    VA-API no device), a 4K surface, a real display's frame pacing, HDR tone-mapping's look. Acceptance 2 is the
    owner's Linux desktop with a GPU.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **FR-R335-7 is done** (build note 5 said owed): `LoadErrorKind.PLAYBACK_UNAVAILABLE` → `player.unavailable`
+  (*Playback is not available in this build*), chosen in `PlayerStore` when `PlaybackAvailability.unavailable`.
+- **Owed: a real GPU** — the GPU-window path (b), a 4K display and HDR's look; only on a Linux desktop with a GPU
+  (never Skiko/Xvfb on the dev host; the `~/fedora` container has no GL).

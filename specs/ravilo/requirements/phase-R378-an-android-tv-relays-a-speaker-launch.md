@@ -120,3 +120,9 @@ Built on the Android TV build only; a phone, a computer and the web are unchange
 - **Open question 2** — no preference added: the most recently reporting app wins, as before.
 - **Only the TV can confirm:** that NsdManager on the BRAVIA finds the speakers and the hub (acceptance 1), that the
   TV's own receiver is left out, and acceptance 2–3.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** **Owed on Stue TV:** NsdManager finds the speakers and the hub, the TV's own receiver is
+  left out, and a relayed launch plays (acceptance 1–3). Note: the Køkken Hub's Cast port 8009 did not answer on
+  2026-10-09 (needs a reboot), so test it with the Stue and Gæsteværelse speakers first.

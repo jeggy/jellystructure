@@ -265,3 +265,10 @@ data directory, as the Linux app's always have; a token left in the Keychain by 
 first use and its Keychain item removed. A token is a Ravilo device token, revocable in Users & devices — never the
 viewer's password. `ravilo_keychain_*` stay in the Swift library for that one migration.
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** The four items the build notes still owed are in the code: the menu bar's handlers
+  (`RaviloMenuBar.kt`, wired in `Main.kt`), the Dock reopen (`onReopen`), full screen by the menu
+  (`onToggleFullScreen` → `setFullScreen`) and the update line (`mac.update_available` in `AppUpdate.kt` and
+  Settings ▸ Account). They landed with R337's passes.
+- **Owed: a Mac check** of each (see the test plan sent to main on 2026-10-09).

@@ -352,3 +352,15 @@ The phone could not be driven (not reachable over adb), so the sender was a host
   backend batch), so it must become **74** on the rebase. R381 also edits `PlayerScreen` (QoE counter, prefetch):
   re-run `scripts/check-player-dex.sh` on the merged release APK.
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Built (branch `worktree-agent-ae4b9a6114c15ce4b`):** the ▲ ▼ hint now names what ▼ will do
+  (`lyricsHintKey`: *Lyrics off* while lyrics show); the queue panel has *Up next from {album}* (`upNextHeading`,
+  from the cast queue's context; *Up next* where the queue has no place to name), string `tvmusic.up_next_from`
+  × en/da/fo (drafts). Tests in `TvNowPlayingKeysTest` (6 pass).
+- **Not built: `tvmusic.from_phone` (*Playing from {device}*).** Nothing on the wire tells the TV which device sent
+  the cast (the session view has no starter name, Cast Connect gives only a sender id); it needs a new optional field
+  in the cast LOAD's customData or the session view. Left owed rather than guessed.
+- **Still owed on devices:** a real phone casting (acceptance 1, 3), a book cast (the phone's sender does not send
+  books over Cast — a sender change), hold ◀ ▶, a Stop key, queue end, the three skins, a plain Chromecast; tests 3
+  and 5 (an engine-level command test, the Compose screenshot/focus test).

@@ -497,3 +497,12 @@ Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`la
 - R291's own ffmpeg runner (`AudioRenditionJobs`: first segment in 0.6–0.8 s) is the base for the new encoder: it
   grows from audio renditions to the whole stream (video rungs + audio), in one job per play. Its renditions then come
   from the same process, so a prewarm warms them together (decision 2 above is then moot).
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **The web half of the GAP is covered by R376:** the web player direct-plays and switches audio inside the file
+  where the browser can (Safari, Chrome), and restreams as HLS only where it cannot; measured 2026-10-09 in Chrome,
+  Brave, Opera and Firefox with no stall (R376's per-browser table). The web still does not declare
+  `hls_audio_renditions` (by design until a browser shows a need).
+- **The cast receiver keeps restreaming** (owner, 2026-10-08: until a Shaka error code is captured). Owed: one cast
+  with renditions enabled for the receiver on a dev build, to capture that error.

@@ -155,3 +155,8 @@ container the owner asked for the same evening** (`~/fedora`, outside the repo: 
    R334's CI lints only pushed commits.
 8. **The metainfo's placeholders are `%VERSION%`/`%DATE%`/`%COMMIT%`, not `@…@`:** the manifest's own `sed` that fills them is
    itself rendered, and `s/@VERSION@/@VERSION@/` would have become `s/1.46/1.46/`.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** **Owed:** the two lint findings are the screenshot URL of a commit not yet pushed — they
+  clear once `main` is pushed (the owner's call); HiDPI on a real display.
