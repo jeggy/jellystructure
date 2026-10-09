@@ -680,3 +680,21 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   buffered)` at the start (the device's record put it at the top rung, so no climb was seen).
 - The Mac's speed test: `probe: … 4194 kB in 341 ms → 98400k`, cap 68.9 Mbps. Leaving a detail page logged
   `prewarm cancelled … the viewer left the page`.
+
+## Live, 2026-10-09 (Pixel 9 Pro debug 1.50-119, Køkken hub, dev stack v1.50-130)
+
+- **Prewarm (FR-309-11) — passed:** opening a film's page on the Pixel logged `encoder: prewarm device=… at segment 0
+  H264 rungs=4 (309)` and the play that followed started on the warm job (first segment ~1.2 s).
+- **A Chromecast cast logs `309 abr` — passed:** the Køkken hub's receiver sent *309 abr: Shaka bounded by the ladder
+  rule*; the server's start line read *takes no record → cap 8000k (309)*. No `309 probe` note came in the first
+  8 minutes of that cast.
+- **A stalled direct play moves to the ladder (FR-309-8) — passed:** a direct play on the Pixel (file ≈ 6.6 Mbps)
+  under a server-side `tc` cap of 1.2 Mbit/s to the phone's address (never a proxy on the phone): the server logged
+  *record: device=… stalled on 6653k — holds ×0.8 for 24 h*, the phone logged *309: the direct play of … stalled
+  (1 counting) — restarting it on the ladder at 110511 ms*, and the restream came back as our encoder's ladder capped
+  under the stall (800p@6092k / 532p@4000k / 354p@1500k). At 1.2 Mbit/s even the bottom rung and the API starve, so
+  the stop watchdog ended the play and the phone showed *Couldn't reach the server* — the switch is proven, a smooth
+  continuation at that cap is not possible. The phone's stall cap (a test artifact) was cleared from
+  `device_stream_record` afterwards.
+- **Note:** the watchdog's stop is written as `reason=watchdog` and later progress is *ignored for already-stopped
+  playback* — on a link this slow the restream plays on with no session on the server.
