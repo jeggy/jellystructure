@@ -628,3 +628,12 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   `-color_*` flags then match the frames and ffmpeg 8 inserts no software `auto_scale` on CUDA frames. Test: the
   generated command for an SDR and an HDR-keep plan carries the tags before `split`; the same graph run on the host's
   jellyfin-ffmpeg + P4000 against an untagged SDR clip encodes (exit 0) where the old one failed.
+- **A stream the player could not play was restreamed to our encoder again.** Only an ffmpeg refusal marked a file
+  for Jellyfin, so a failure on the player's side (the Mac's HDR above, or any stream a player rejects) got the same
+  stream back, failed again and ended on R237's error. *Fix:* the recovery restream (failed, or not moving for 20 s)
+  sends `not_our_encoder: true` on `POST /api/tv/playback/restream`; the server then answers with Jellyfin's stream
+  (log `encoder: fallback to Jellyfin — the player could not play ours`) and the client keeps asking for Jellyfin on
+  every later restream of that item (an audio or subtitle pick), until another item plays. Only this device, only
+  this play: nothing is marked for anyone else. A server from before the field ignores it (the old behaviour). Tests:
+  the wire field's default and an old body; the recovery decision (ours + first failure ⇒ Jellyfin restream; second
+  failure ⇒ R237's error).

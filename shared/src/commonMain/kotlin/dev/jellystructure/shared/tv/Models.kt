@@ -1560,6 +1560,9 @@ data class PlaybackRestreamRequest(
     /** Phase 314c — the picture version (a [StreamTicket.versions] id) the restreamed session must play; null keeps
      *  the server's own choice for this device. */
     @SerialName("media_source_id") val mediaSourceId: String? = null,
+    /** 313 (found live 2026-10-09, evening) — the player could not play our encoder's stream: answer with Jellyfin's.
+     *  Only this restream of this device's play; a server from before the field ignores it. */
+    @SerialName("not_our_encoder") val notOurEncoder: Boolean = false,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */
