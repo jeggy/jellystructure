@@ -126,3 +126,10 @@ Built on the Android TV build only; a phone, a computer and the web are unchange
 - **Code: nothing left.** **Owed on Stue TV:** NsdManager finds the speakers and the hub, the TV's own receiver is
   left out, and a relayed launch plays (acceptance 1–3). Note: the Køkken Hub's Cast port 8009 did not answer on
   2026-10-09 (needs a reboot), so test it with the Stue and Gæsteværelse speakers first.
+
+## Live, 2026-10-09 (Soveværelse TV, debug build 1.50-119)
+
+- **Discovery — passed:** logcat `RaviloSessions` *R378: found Gæsteværelse [Nest Wifi point] at 10.10.11.188
+  (speaker)*; the server logged *67cf23b9… sees 4 Cast devices: Gæsteværelse (speaker), Stue (speaker), Køkken hub
+  (display), Stue TV (display)* — the TV's **own** receiver (Soveværelse TV) left out. The Køkken Hub's port 8009
+  answers again.

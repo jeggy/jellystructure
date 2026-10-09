@@ -470,3 +470,32 @@ the phone's own LOAD shape and channel messages); the phone itself could not be 
 - **Code: nothing left that a desk can find** — merged (38ae8c6e), deployed. **Owed on devices:** a cast from a real
   phone (the remote following the TV), acceptance 6, a second cast while one plays, display standby, the admin
   card's line, `verify-release-apk-on-art.sh` on a device, Soveværelse TV.
+
+## Live, 2026-10-09 (Soveværelse TV debug build 1.50-119 + Pixel 9 Pro debug, dev stack v1.50-118)
+
+Stue TV was withdrawn by the owner mid-session; everything below ran on **Soveværelse TV** (BRAVIA 4K VH2, debug app
+`dev.jellystructure.ravilo.debug`, development Cast app) with the Pixel as a real phone.
+
+- **Acceptance 1 — passed, both roads.** (a) Ravilo app *not running* on the TV: the phone's *Play on a TV* →
+  Soveværelse TV went through the Cast SDK; the server logged *Cast Connect: Soveværelse TV … took a cast in the
+  Ravilo app*, the TV app launched and played under the casting viewer from the phone's own place (26.4 s), direct
+  play. The phone opened R245's cast remote (10 s / 30 s, *Audio & Subs*, *Stop casting*). (b) Ravilo app *running*:
+  the row is the merged TV-app row (R380 decision 2), so the start went through the server (R372 move, 2 s back:
+  phone at ~42 s → TV at 40.1 s) and the phone shows the R369 session remote.
+- **Acceptance 4 — passed.** *Audio & Subs* listed the TV player's tracks over the Cast channel (Off · Dansk ·
+  English · Hrvatski · Srpski, *Sound described* lines, Subtitle size, *Applies on Soveværelse TV*); Dansk
+  was applied on the TV within ~3 s (the sidecar VTT loaded, Danish lines on screen).
+- **Play state follows both ways:** TV remote Play/Pause → the phone's mini bar read *Paused on Soveværelse TV*;
+  the mini bar's play → TV state 3. Session remote: pause/play and a seek (to 27:13, our encoder restarted at
+  segment 815, first segment 1.13 s) reached the TV; the phone's clock caught up within ~10 s.
+- **A second film while one plays — passed:** *Play Again* on another film asked *Already playing on Soveværelse
+  TV · Hypnotic* → *Play on Soveværelse TV instead* replaced it (stop written for the first, the second direct-played).
+- **Acceptance 6 — passed:** Back on the TV ended the session; the phone's remote read *Stopped on Soveværelse TV*
+  and the bar dropped the film.
+- **Standby during a cast — passed (silent):** KEYCODE_SLEEP on the TV: the app wrote its stop at 103.8 s, closed its
+  events socket, and the phone's cast mini bar went away with no error.
+- **Findings (not fixed):** (1) the film remote reached through the *server* road (app already running) has no
+  *Audio & Subs* — owner decision 1 of R380 asks for the same remote against anything; only the Cast road has it.
+  (2) The app-bar cast glyph on a detail page opens the sheet join-only (FR-R265-7): tapping a free TV there does
+  nothing at all, with no hint — a viewer reads it as broken. (3) TV sign-in: with the system keyboard up, *Cancel*
+  draws over the *Sign in* button.
