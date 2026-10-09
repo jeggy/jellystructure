@@ -30,4 +30,24 @@ class TvNowPlayingKeysTest {
         assertEquals(TvMusicAction.Queue, tvMusicAction(TvMusicKey.UP, book = false))
         assertEquals(TvMusicAction.Hide, tvMusicAction(TvMusicKey.BACK, book = false))
     }
+
+    @Test fun `the down hint names what down will do`() {
+        assertEquals("tvmusic.lyrics_on", lyricsHintKey(lyricsOn = false))
+        assertEquals("tvmusic.lyrics_off", lyricsHintKey(lyricsOn = true))
+    }
+
+    @Test fun `Playing from names the sender's device only when it sent one`() {
+        assertEquals(mapOf("device" to "Pixel 9 Pro"), fromLineArgs("Pixel 9 Pro"))
+        assertEquals(null, fromLineArgs(null))
+        assertEquals(null, fromLineArgs("   "))
+    }
+
+    @Test fun `the queue heading names the album a cast came from, else just Up next`() {
+        assertEquals("tvmusic.up_next_from" to mapOf("x" to "Kite Weather"), upNextHeading(MusicContext("queue", "Kite Weather")))
+        assertEquals("tvmusic.up_next_from" to mapOf("x" to "Harbour Lights"), upNextHeading(MusicContext("artist", "Harbour Lights", "a1")))
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("queue", "")))
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("played", "Recently played")))
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(MusicContext("search", "kite")))
+        assertEquals("music.up_next" to emptyMap(), upNextHeading(null))
+    }
 }

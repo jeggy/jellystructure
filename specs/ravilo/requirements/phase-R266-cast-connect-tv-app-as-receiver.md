@@ -465,3 +465,8 @@ the phone's own LOAD shape and channel messages); the phone itself could not be 
 - Release build on a device: R8 + `check-player-dex.sh` pass (245 registers), `verify-release-apk-on-art.sh` not run.
 - Soveværelse TV (not tested).
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left that a desk can find** — merged (38ae8c6e), deployed. **Owed on devices:** a cast from a real
+  phone (the remote following the TV), acceptance 6, a second cast while one plays, display standby, the admin
+  card's line, `verify-release-apk-on-art.sh` on a device, Soveværelse TV.

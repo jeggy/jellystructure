@@ -541,3 +541,13 @@ FR-292-15's second action no longer publishes: it is *Queue for LRCLIB* and adds
 queue. Nothing reaches LRCLIB until an admin presses **Publish** on the Dashboard's *Waiting to publish* panel
 (`specs/requirements/phase-307-nothing-goes-to-a-public-database-until-someone-presses-publish.md`). OQ3, the
 first live publish, is 307's acceptance 3.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** Deployed with every dev-stack deploy since 2026-10-01.
+- **Verified on the household's data (read-only, the live database):** `music_recording_facts` holds MusicBrainz
+  facts for **9 169 recordings**, fetched 2026-10-01 → 2026-10-06 by `match_musicbrainz`'s catch-up; 456 carry
+  `live: true`, about 150 a remix or remixer link, 44 an instrumental link. So the *real MusicBrainz run* this
+  phase's build notes owed has happened. `music_version_choice` is empty: nobody has ticked a version by hand yet.
+- **Owed:** the pages against the real library seen in a browser (album chips, Songs' Version facet, the Dashboard
+  row's two buttons drawn); the LRCLIB publish is 307's acceptance 3 (the owner's **Publish** button).

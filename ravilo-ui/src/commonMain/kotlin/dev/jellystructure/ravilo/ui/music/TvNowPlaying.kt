@@ -116,6 +116,22 @@ fun tvMusicAction(key: TvMusicKey, book: Boolean): TvMusicAction = when (key) {
     TvMusicKey.BACK -> TvMusicAction.Hide
 }
 
+/** FR-R380-4 — the ▼ hint under the transport row names what ▼ will do: *Lyrics off* while they show, else *Lyrics on*. */
+internal fun lyricsHintKey(lyricsOn: Boolean): String = if (lyricsOn) "tvmusic.lyrics_off" else "tvmusic.lyrics_on"
+
+/**
+ * FR-R380-5 — the heading over the queue panel's songs: *Up next from {album}* when the queue came from somewhere with a
+ * name (a cast album, an artist, a playlist), else *Up next*. Recently played and a search have no place to name.
+ */
+internal fun upNextHeading(context: MusicContext?): Pair<String, Map<String, String>> {
+    val label = context?.label?.takeIf { it.isNotBlank() && context.kind != "played" && context.kind != "search" }
+    return if (label != null) "tvmusic.up_next_from" to mapOf("x" to label) else "music.up_next" to emptyMap()
+}
+
+/** R380 (owner 2026-10-09) — *Playing from {device}* under the kicker: only when the sender named its device. */
+internal fun fromLineArgs(senderName: String?): Map<String, String>? =
+    senderName?.trim()?.takeIf { it.isNotEmpty() }?.let { mapOf("device" to it) }
+
 /** FR-R380-3 — the transport row shows this long after a key. */
 private const val TRANSPORT_MS = 5_000L
 /** FR-R380-8 — the last song shows as finished this long, then the page closes. */
@@ -166,6 +182,7 @@ fun TvNowPlayingScreen(api: TvApiClient, onHide: () -> Unit) {
     val colors = RaviloTheme.colors
     val st by MusicEngine.state.collectAsState()
     val lyricsOn by TvCastChannel.lyricsOn.collectAsState()
+    val sender by TvCastChannel.senderName.collectAsState()
     var transportUntil by remember { mutableLongStateOf(0L) }
     var shownAction by remember { mutableStateOf<TvMusicAction?>(null) }
     var queueOpen by remember { mutableStateOf(false) }
@@ -253,6 +270,10 @@ fun TvNowPlayingScreen(api: TvApiClient, onHide: () -> Unit) {
             Spacer(Modifier.width(64.dp))
             Column(Modifier.weight(1f)) {
                 Text(str("tvmusic.now_playing").uppercase(), color = colors.accentSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
+                fromLineArgs(sender)?.let { args ->
+                    Text(str("tvmusic.from_phone", args), color = colors.textSecondary, fontSize = 16.sp, fontFamily = Sora,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
                 Spacer(Modifier.height(12.dp))
                 if (book != null) BookFacts(book, colors.text, colors.textSecondary) else if (t != null) SongFacts(t, colors.text, colors.textSecondary)
                 Spacer(Modifier.height(28.dp))
@@ -362,7 +383,7 @@ private fun TransportRow(playing: Boolean, did: TvMusicAction?, lyricsOn: Boolea
             TriangleGlyph(GlyphDirection.UP, quiet, 14.dp)
             Text(str("tvmusic.queue"), color = quiet, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(start = 4.dp, end = 16.dp))
             TriangleGlyph(GlyphDirection.DOWN, quiet, 14.dp)
-            Text(str("tvmusic.lyrics_on"), color = quiet, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(start = 4.dp))
+            Text(str(lyricsHintKey(lyricsOn)), color = quiet, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.padding(start = 4.dp))
         }
     }
 }
@@ -375,6 +396,11 @@ private fun QueuePanel(st: MusicPlayerState, selected: Int, modifier: Modifier) 
     LaunchedEffect(selected) { runCatching { list.animateScrollToItem((selected - 3).coerceAtLeast(0)) } }
     Column(modifier.fillMaxHeight().width(560.dp).background(colors.surface.copy(alpha = 0.96f)).padding(28.dp)) {
         Text(str("tvmusic.queue"), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+        if (st.upNext.isNotEmpty()) {
+            val (key, args) = upNextHeading(st.context)
+            Text(str(key, args), color = colors.textSecondary, fontSize = 16.sp, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp))
+        }
         Spacer(Modifier.height(16.dp))
         LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(st.queue) { i, t ->

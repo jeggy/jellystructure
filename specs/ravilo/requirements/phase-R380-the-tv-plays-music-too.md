@@ -352,3 +352,30 @@ The phone could not be driven (not reachable over adb), so the sender was a host
   backend batch), so it must become **74** on the rebase. R381 also edits `PlayerScreen` (QoE counter, prefetch):
   re-run `scripts/check-player-dex.sh` on the merged release APK.
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Built (branch `worktree-agent-ae4b9a6114c15ce4b`):** the ▲ ▼ hint now names what ▼ will do
+  (`lyricsHintKey`: *Lyrics off* while lyrics show); the queue panel has *Up next from {album}* (`upNextHeading`,
+  from the cast queue's context; *Up next* where the queue has no place to name), string `tvmusic.up_next_from`
+  × en/da/fo (drafts). Tests in `TvNowPlayingKeysTest` (6 pass).
+- **Not built: `tvmusic.from_phone` (*Playing from {device}*).** Nothing on the wire tells the TV which device sent
+  the cast (the session view has no starter name, Cast Connect gives only a sender id); it needs a new optional field
+  in the cast LOAD's customData or the session view. Left owed rather than guessed.
+- **Still owed on devices:** a real phone casting (acceptance 1, 3), a book cast (the phone's sender does not send
+  books over Cast — a sender change), hold ◀ ▶, a Stop key, queue end, the three skins, a plain Chromecast; tests 3
+  and 5 (an engine-level command test, the Compose screenshot/focus test).
+
+## Owner, 2026-10-09: *Playing from {device}*
+
+> Owner: yes — add the field and show it on the TV's Now playing, with a test (never remove anything).
+
+**Built (branch `worktree-agent-ae4b9a6114c15ce4b`):** `CastLoadData.sender_name` (optional, additive) is the sender's
+own device name (`deviceDisplayName()`: *Pixel 9 Pro*, the Mac's Computer Name, *Ravilo Web*); the existing
+`device_name` keeps naming the receiver's device row. `CastController` sets it on every LOAD it sends (and on a moved
+LOAD) through `castLoadFromSender`, which keeps a name the LOAD already carries and drops a blank one.
+`castConnectMusicOf` carries it to `CastConnectMusic.senderName`, `TvCastChannel.startMusic` keeps it (cleared when the
+music ends), and the TV's Now playing shows *Playing from {device}* (`tvmusic.from_phone`) under the kicker; with no
+name (an older phone) the line is left out. Tests: `CastConnectWireTest` (round trip beside `device_name`; an older LOAD
+has none), `CastLoadSenderTest` (3), `CastConnectMusicTest` (the TV reads it, blank = none), `TvNowPlayingKeysTest`
+(`fromLineArgs`). shared desktop 149 + linuxX64 167, ravilo-ui desktop 614 + Android 750: 0 failures; the backend and
+the web receiver compile. **Owed:** seeing the line on Stue TV from a real phone cast (with the R266 phone test).

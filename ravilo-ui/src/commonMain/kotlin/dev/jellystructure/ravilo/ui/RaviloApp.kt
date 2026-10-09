@@ -978,7 +978,7 @@ fun RaviloApp(
                         val want = when (play.repeat) { "all" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ALL; "one" -> dev.jellystructure.ravilo.ui.music.RepeatMode.ONE; else -> dev.jellystructure.ravilo.ui.music.RepeatMode.OFF }
                         repeat(3) { if (engine.state.value.repeat != want) engine.cycleRepeat() }
                         engine.play()
-                        dev.jellystructure.ravilo.ui.seams.TvCastChannel.startMusic(play.queueId, play.queueTotal, play.queueStart)
+                        dev.jellystructure.ravilo.ui.seams.TvCastChannel.startMusic(play.queueId, play.queueTotal, play.queueStart, play.senderName)
                         push(Dest.TvNowPlaying(name))
                     }
                 }

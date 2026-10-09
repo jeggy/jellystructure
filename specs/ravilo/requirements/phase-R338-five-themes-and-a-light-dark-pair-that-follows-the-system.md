@@ -355,3 +355,7 @@ it sets the page's own background (`html`, `body`) and the `theme-color` meta to
 browser or the home-screen app shows around the canvas — the status bar band, the home-indicator band, an overscroll —
 is the page's colour on every theme. The video keeps its own black (`background:#000` on the `<video>`), so the player
 is unchanged. Android and the desktop take the colour and keep their behaviour.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing found missing.** **Owed:** the themes seen on the phone, the TVs and the admin editor.

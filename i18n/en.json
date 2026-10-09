@@ -793,6 +793,7 @@
   "tvmusic.lyrics_on": "Lyrics on",
   "tvmusic.lyrics_off": "Lyrics off",
   "tvmusic.from_phone": "Playing from {device}",
+  "tvmusic.up_next_from": "Up next from {x}",
   "music.up_next": "Up next",
   "music.queue_left": "{n} songs · {t} left",
   "music.clear_queue": "Clear queue",

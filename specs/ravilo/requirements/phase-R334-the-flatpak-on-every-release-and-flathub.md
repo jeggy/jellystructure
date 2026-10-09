@@ -112,3 +112,7 @@ The release notes carry no install paragraph: *"People downloading dmg already k
 same with flatpak, wgt etc."* The workflow attaches the file and leaves the notes alone. Release notes say
 concretely what the release contains — no install steps, no account of what was or was not tested.
 
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** **Owed:** the workflow's first run on the next release after a push (the owner's).
+  **The Flathub half stays the owner's alone** (Flathub forbids AI involvement; no agent touches it).

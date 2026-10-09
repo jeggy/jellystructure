@@ -727,6 +727,7 @@
   "tvmusic.lyrics_on": "Sangtekst til",
   "tvmusic.lyrics_off": "Sangtekst fra",
   "tvmusic.from_phone": "Afspilles fra {device}",
+  "tvmusic.up_next_from": "Næste fra {x}",
   "music.up_next": "Næste",
   "music.queue_left": "{n} sange · {t} tilbage",
   "music.clear_queue": "Ryd kø",

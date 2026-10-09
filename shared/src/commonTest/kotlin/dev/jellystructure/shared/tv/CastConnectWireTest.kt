@@ -21,6 +21,20 @@ class CastConnectWireTest {
     }
 
     @Test
+    fun `the sender's device name rides the LOAD as sender_name beside the receiver's device_name and an older LOAD has none`() {
+        val load = CastLoadData(serverUrl = "https://media.example.test", code = "ABC123", itemId = "i1", title = "A song",
+            deviceName = "Living Room TV", senderName = "Pixel 9 Pro")
+        val text = json.encodeToString(CastLoadData.serializer(), load)
+        assertTrue(""""sender_name":"Pixel 9 Pro"""" in text, text)
+        assertTrue(""""device_name":"Living Room TV"""" in text, "the receiver's own device_name is untouched: $text")
+        val back = json.decodeFromString(CastLoadData.serializer(), text)
+        assertEquals("Pixel 9 Pro", back.senderName)
+        assertEquals("Living Room TV", back.deviceName)
+        val older = """{"server_url":"https://media.example.test","code":"ABC123","item_id":"i1","title":"A song"}"""
+        assertNull(json.decodeFromString(CastLoadData.serializer(), older).senderName)
+    }
+
+    @Test
     fun `a status that only reports a launch is an observation and never a now-playing report`() {
         assertTrue(isLaunchObservationOnly(ScreenStatus(castConnectLaunch = true)))
         assertFalse(isLaunchObservationOnly(ScreenStatus()), "an ordinary idle status is fanned out as before")

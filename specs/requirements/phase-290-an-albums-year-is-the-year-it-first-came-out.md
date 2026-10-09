@@ -130,3 +130,11 @@ year); no Ravilo client change — `MusicAlbumCard.year` already exists and now 
   page and Library → Music read the same resolver (`originalYear()`), not re-checked by hand.
 - **Acceptance 2 and 3 are left to the owner:** *Save → files* rewrites the tags of the household's own FLAC files, and
   *Find match…* re-chooses a pressing; both are by-hand actions on the album's admin page, not something to run unasked.
+
+## Triage (2026-10-09, against `main` `9ea5da3c`)
+
+- **Code: nothing left.** The build notes' *A release group past 25 can lose pressings* is fixed: 305 made
+  `MusicBrainzClient.releasesOf` page through every official pressing (100 a page, up to 40 pages).
+- **Deployed** (every dev-stack deploy since v1.49; acceptance 1 checked on 2026-10-05).
+- **Owed: the owner.** Acceptance 2 and 3 are by-hand actions on the album's admin page (*Save → files* rewrites the
+  household's FLAC tags; *Find match…* re-chooses a pressing), not something to run unasked.

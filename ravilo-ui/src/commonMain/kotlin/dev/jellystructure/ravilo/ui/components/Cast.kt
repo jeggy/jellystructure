@@ -332,11 +332,15 @@ class CastController(
     }
 
     /** R372 — the move's LOAD, once the route connected. */
-    fun moveLoaded(): CastLoadData? = pendingMoveLoad?.let { it.copy(userId = it.userId ?: userId) }.also { pendingMoveLoad = null }
+    fun moveLoaded(): CastLoadData? = pendingMoveLoad?.let { withSender(it) }.also { pendingMoveLoad = null }
 
     /** R266 (dev review item 1) — every LOAD this viewer sends says who is casting, for the Android TV app (Cast
-     *  Connect), which plays under that viewer only if it already holds their token. The web receiver ignores it. */
-    private fun load(data: CastLoadData) = sender.load(data.copy(userId = data.userId ?: userId))
+     *  Connect), which plays under that viewer only if it already holds their token. The web receiver ignores it.
+     *  R380 (owner 2026-10-09) — and from which device, for the TV's *Playing from {device}*. */
+    private fun load(data: CastLoadData) = sender.load(withSender(data))
+
+    private fun withSender(data: CastLoadData): CastLoadData =
+        castLoadFromSender(data, userId, runCatching { dev.jellystructure.ravilo.ui.deviceDisplayName() }.getOrNull())
 
     /**
      * R370 (owner decision 1) — the server asks this app to launch the receiver on [castDeviceId] for someone else's
@@ -421,6 +425,13 @@ class CastController(
         sender.send(json.encodeToString(CastCommand.serializer(), CastCommand(type, index, size)))
     }
 }
+
+/**
+ * R266 / R380 — what every LOAD carries about who casts: the viewer ([userId], kept if the load already names one) and
+ * the sender's own device name ([senderName], kept if already set; a blank name is left out).
+ */
+internal fun castLoadFromSender(data: CastLoadData, userId: String?, senderName: String?): CastLoadData =
+    data.copy(userId = data.userId ?: userId, senderName = data.senderName ?: senderName?.trim()?.takeIf { it.isNotEmpty() })
 
 /**
  * R265 (FR-R265-7) — the one screen the phone reconnects to on start or return: online, something loaded

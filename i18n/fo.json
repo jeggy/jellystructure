@@ -727,6 +727,7 @@
   "tvmusic.lyrics_on": "Sangtekstur á",
   "tvmusic.lyrics_off": "Sangtekstur av",
   "tvmusic.from_phone": "Spælist frá {device}",
+  "tvmusic.up_next_from": "Næst úr {x}",
   "music.up_next": "Næst",
   "music.queue_left": "{n} løg · {t} eftir",
   "music.clear_queue": "Tøm bíðirøð",
