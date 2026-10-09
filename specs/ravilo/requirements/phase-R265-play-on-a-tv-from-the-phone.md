@@ -383,3 +383,15 @@ with R264 on a real TV to test against.
   Tests: `PlayOnPageTargetTest` (the fallback and its limits; the hint on a tap with nothing to start, the sheet
   staying open; a tap with the page's title closing the sheet to start). **Phone re-test owed:** a film's page → glyph
   → a free TV starts the film there; Home → glyph → a free TV shows the hint.
+
+### Live, 2026-10-10 (Pixel 9 Pro debug 1.50-157, Stue TV debug, dev stack v1.50-158)
+
+- **Home → glyph → a free place — passed:** the sheet stays open and reads *Open a film or an episode first, then pick
+  where it plays.*; nothing was started.
+- **A film's page → glyph → Stue TV (busy) → *Play here instead* — partial:** with the TV app in the background the
+  merged row took the Cast route: the TV app opened on Home and the phone's page offered **Play on Stue TV** instead of
+  starting the film; one more tap started it (Cast Connect, direct play). The page's title reaches the server road but
+  not this Cast route. Not fixed here.
+- **The phone's remote with the TV app already open — passed:** *Audio & Subs* and *Stop casting* on the remote.
+- **TV sign-in Cancel with the keyboard open — passed** (Switch profile → Add user → the field opens the system
+  keyboard; Back closes it, ▼ reaches **Cancel**, OK returns to *Who's watching?*).

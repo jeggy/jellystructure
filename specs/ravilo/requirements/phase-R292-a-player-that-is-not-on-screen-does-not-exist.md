@@ -477,3 +477,13 @@ nullable ref with one re-bind function that owns every listener (item 6).
   (standby after `ON_STOP`, the mark spent on one return), `PlayerResumeTest`. **TV re-test owed:** standby during
   a film (cast and local), wake, open Ravilo → the picture at the place, paused; HOME and back within 30 min still
   plays.
+
+### Live, 2026-10-10 (Stue TV debug 1.50-157, dev stack v1.50-158)
+
+- **Standby during a local film — passed:** KEYCODE_SLEEP while the film played (ON_STOP, then SCREEN_OFF), wake → the
+  player at its place, **paused** (media session state 2, the position unchanged over 8 s).
+- **Standby during a Cast Connect film — still comes back playing.** Same keys while a film cast from the Pixel played
+  in the TV app: on wake the app restarted at the client's own place (`cut at 1170370ms`) and **played on**. The Cast
+  SDK delivered a resume intent at wake (`ReceiverMediaUtils: … not a Cast resume session intent`) and the media
+  session is handed to Cast Connect, so the phone's still-connected sender most likely resumed it. Not fixed: the
+  cast path needs the same `afterStandby` rule on the Cast Connect side (ignore the sender's resume after standby).

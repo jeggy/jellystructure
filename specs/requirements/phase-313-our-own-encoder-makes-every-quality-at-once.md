@@ -669,3 +669,16 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   answers `ours` with TS segments); `cast_receivers = false` answers `CAST_RECEIVER_FALLBACK`.
 - `receiver_renditions` (R291's audio renditions on the receiver) stays a dev switch until it is verified (R291
   FR-R291-12).
+
+### Live, 2026-10-10 (Stue TV's built-in Chromecast, dev stack v1.50-158, no override)
+
+- **A default cast is ours:** a 4K HEVC remux above the receiver's record (84 Mbps) cast with no `[encoder]` override →
+  `encoder=ours HEVC HDR rungs=2160p@20000k/1080p@8000k/720p@4000k/480p@1500k … audio=5 TS`, first segment 1.6 s,
+  BUFFERING → PLAYING in ~7 s, played on; an audio switch restreamed on our encoder (segment 16, first segment 1.3 s)
+  and resumed at the same place.
+- **Found (not fixed here): a copy-only cast of a 4K HDR remux stalls on the receiver.** With the Chromecast's record at
+  62 Mbps, a 51.6 Mbps 4K HDR10 remux (TrueHD) is under the cap, so it is not re-encoded: Jellyfin copies the HEVC into
+  fMP4 and re-encodes only the audio — and the receiver sat on its spinner (BUFFERING at 0:00) for 3 minutes while
+  Jellyfin's job had made 3 minutes of segments and paused. A 1080p HEVC copy (4.9 Mbps) played. The receiver reports
+  no decode ceiling (`ceiling=null`), so nothing stopped a 51 Mbps 4K copy. To decide: cap a receiver's copy by a
+  measured ceiling, or send a 4K copy above ~40 Mbps to our encoder.

@@ -445,3 +445,15 @@ does what a Cast Connect LOAD does:
 it, one live row after the TV reports; a film start leaves the phone's music alone; `handedOver` picks only the
 caller's own music), `ServerMusicOnTvTest` (`sender_name` on the wire and absent from an older server; Home stops
 server-started music and clears the line; nothing to stop otherwise).
+
+### Live, 2026-10-10 (Stue TV debug 1.50-157 = 2be7cd26's code, the Pixel 9 Pro debug, dev stack v1.50-158, volume 0–1)
+
+- **FR-R380-9 passed on the real phone:** music playing on the Pixel → *Play on… ▸ Stue TV* (the server road,
+  `session_load`): the TV's Now playing reads **Playing from Pixel 9 Pro**; the server logged *… on 16149… ended — its
+  music went to …*, the phone's player stopped (mini bar paused, its remote showed *Playing on Stue TV*), and *Playing
+  everywhere* listed the song once (the phone's ended row greyed for its linger, then gone).
+- **Home stops it — passed twice:** Home on the TV → the media session went to state 0 at once, the server session read
+  *ended* ~15 s later (the stop hold); same with an album started through the server from the phone's device.
+- **The queue panel and controls (fix-tv-live) passed:** *Now playing* over the song, **Up next from The Now Now** over
+  the rest (an album started through the server, no context), opaque panel; ▼ raises ⏮ ⏯ ⏭ *Lyrics on* *Queue*, nothing
+  clipped, hint *▲ Queue · ▼ Lyrics off*.

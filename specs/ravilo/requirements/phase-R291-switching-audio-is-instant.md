@@ -557,3 +557,17 @@ A rendition beside Jellyfin's video is written in the same container as that vid
   `use_editlist=0`, `.m4s` files) and the TS command unchanged; `shiftTfdt` moves a 64-bit and a 32-bit `tfdt` and the
   `sidx`'s time, leaves the media alone and returns the bytes unchanged for a job from 0; `mdhdTimescale` reads
   version 0 and 1.
+
+### Live, 2026-10-10 (Stue TV's built-in Chromecast, dev stack v1.50-158, `receiver_renditions = true` for this test only, then removed)
+
+- **The fMP4 renditions are served as specified:** a 1080p HEVC film with five E-AC-3 tracks (Jellyfin
+  `SegmentContainer=mp4`, audio re-encoded) got R291's master with four rendition URIs; `audio/0/main.m3u8` reads
+  `EXT-X-VERSION:7`, `EXT-X-MAP:URI="init.mp4"`, `0.m4s` …
+- **But the receiver still fails with Shaka 3018 — before it fetches any rendition** (no rendition job, no init
+  request in the log). So the container mismatch was not the whole cause: Shaka's transmuxer chokes on the master's
+  shape — Jellyfin's variant carries the default audio **muxed** in its fMP4 segments while the group lists separate
+  renditions. Our encoder's masters (video-only variants, every track a rendition) play on the receiver.
+  **`receiver_renditions` stays off** (the receiver restreams for an audio switch: measured on our encoder, the switch
+  resumed at the same place in ~6 s). **Next (not built):** for the receiver, offer renditions only on our encoder's
+  stream — which since 313's owner decision is every cast that re-encodes the picture — or give the Jellyfin-path
+  master a video-only variant; Media3 (Android) keeps today's master.
