@@ -19,7 +19,7 @@ actual fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
     onBackground: (wasPlaying: Boolean) -> Unit,
-    onForeground: () -> Unit,
+    onForeground: (afterStandby: Boolean) -> Unit,
 ) {
     val background by rememberUpdatedState(onBackground)
     val foreground by rememberUpdatedState(onForeground)
@@ -32,7 +32,7 @@ actual fun PlayerLifecycleEffect(
                 background(false)
             } else if (!hidden && away) {
                 away = false
-                foreground()
+                foreground(false)
             }
         }
         onDispose { jsUnwatchVisibility(handle) }

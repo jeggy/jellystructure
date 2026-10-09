@@ -501,5 +501,6 @@ Stue TV was withdrawn by the owner mid-session; everything below ran on **Sovev�
   draws over the *Sign in* button.
 - **Finding (not fixed):** after standby during a cast, opening Ravilo again (LEANBACK launcher) brought the player
   back and **played on** from the stop's place (1:43) with nobody asking — it should come back paused (or not at all).
+  **Fixed 2026-10-09 in R292 (FR-R292-8a):** a return after the screen went off is a start **paused** at the place.
 - **`scripts/verify-release-apk-on-art.sh` not run:** it uninstalls `dev.jellystructure.ravilo`, and every device here
   (both TVs, the Pixel) carries the Play Store build — run it on CI's emulator only.

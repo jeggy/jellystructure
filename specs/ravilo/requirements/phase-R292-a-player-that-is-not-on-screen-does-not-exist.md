@@ -250,6 +250,13 @@ the music, R322 FR-R322-12.)*
   each at most once per transition (a real `ON_STOP` after `SCREEN_OFF` is a no-op). Which events the
   BRAVIA actually sends for standby, HDMI-CEC power-off and an input switch is **recorded in this spec
   from a device trace** before the phase is marked built.
+- **FR-R292-8a — Standby means the viewer left: come back paused** *(found live 2026-10-09, see below)*. When the
+  screen goes off while the player is up or backgrounded (TV standby, a phone's lock), the return — whichever of
+  `ON_START` / `SCREEN_ON` brings it, and whatever order the BRAVIA sends `ON_PAUSE` / `ON_STOP` / `SCREEN_OFF` in —
+  is R290's one start moment **paused** at the recorded place. Open question 2's 30-minute rule still governs a
+  return with no screen-off in between (HOME, an input switch). A background the screen-off itself caused records
+  no play intent, so a restore after the process died (FR-R292-6) comes back paused too. Live TV keeps re-tuning
+  (a channel has no place to hold).
 - **FR-R292-9 — Live TV follows the same rule.** `LiveTvPlayerScreen` gets the same lifecycle: pause on
   `ON_PAUSE`, release on `ON_STOP`/screen-off, and on return re-tune the channel it was on (the channel
   is its resume record). Pressing HOME during Live TV stops the audio.
@@ -455,3 +462,18 @@ against any expect-signature change; the spec's "may treat these calls as no-ops
 request field (item 2), the record captured from the engine under R184's guard (item 3), saved state as
 one serialised string (item 4), all of it outside `PlayerScreen`'s body (item 5), and the engine as a
 nullable ref with one re-bind function that owns every listener (item 6).
+
+## Found live 2026-10-09
+
+- **Standby during a cast came back playing** (R266's live run, Soveværelse TV debug 1.50-119): KEYCODE_SLEEP while a
+  cast film played — the app wrote its stop at 103.8 s and the phone's cast bar went away — then opening Ravilo
+  again from the LEANBACK launcher brought the player back and **played on** from 1:43 with nobody asking. Cause: the
+  return was inside open question 2's 30-minute window and the record's play intent was *playing*; nothing in
+  the gate told a standby from a HOME press. **Fixed 2026-10-09 (FR-R292-8a):** `PlayerLifecycleGate` marks a
+  return after any `SCREEN_OFF` as `Foreground(afterStandby = true)` (in either order — `SCREEN_OFF` after a real
+  `ON_STOP` still marks it), a background caused by `SCREEN_OFF` carries `wasPlaying = false`, and the player's
+  latch is `resumePlayOn(record, now, afterStandby)` — false after standby. `PlayerLifecycleEffect`'s
+  `onForeground` gained the flag (Android passes it, web/desktop pass `false`). Tests: `PlayerLifecycleGateTest`
+  (standby after `ON_STOP`, the mark spent on one return), `PlayerResumeTest`. **TV re-test owed:** standby during
+  a film (cast and local), wake, open Ravilo → the picture at the place, paused; HOME and back within 30 min still
+  plays.

@@ -354,7 +354,7 @@ actual fun PlayerLifecycleEffect(
     player: RaviloPlayer,
     wasPlaying: () -> Boolean,
     onBackground: (wasPlaying: Boolean) -> Unit,
-    onForeground: () -> Unit,
+    onForeground: (afterStandby: Boolean) -> Unit,
 ) {}
 
 private const val FAILURE_VISIBLE_AFTER_MS = 1_000L

@@ -45,4 +45,14 @@ class PlayerResumeTest {
         assertTrue(resumeRestorable(rec, rec.awayAtMs + 11 * 3_600_000))
         assertFalse(resumeRestorable(rec, rec.awayAtMs + 13 * 3_600_000))
     }
+
+    @Test
+    fun `after the screen went off the player comes back paused whatever the record says`() {
+        // R292 FR-R292-8a, found live 2026-10-09: standby during a cast, LEANBACK launcher again 1 min later
+        // played on from 1:43 with nobody asking.
+        assertFalse(resumePlayOn(rec, rec.awayAtMs + 60_000, afterStandby = true))
+        assertFalse(resumePlayOn(null, rec.awayAtMs + 60_000, afterStandby = true), "no record: still paused after standby")
+        assertTrue(resumePlayOn(rec, rec.awayAtMs + 60_000, afterStandby = false), "HOME and back within 30 min still plays")
+        assertTrue(resumePlayOn(null, rec.awayAtMs, afterStandby = false), "no record and no standby: a fresh start plays")
+    }
 }
