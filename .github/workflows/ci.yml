@@ -43,6 +43,8 @@ jobs:
         run: ./scripts/check-cancellation-rethrow.sh
       - name: No raw withTimeoutOrNull creeps back (phase 310)
         run: ./scripts/check-timeouts.sh
+      - name: Cast receiver ABR wrapper (309 / R291)
+        run: ./scripts/check-receiver-abr.sh
       - name: Shared Docker toolchain cache ids
         run: ./scripts/check-docker-cache-ids.sh
       - name: No Jellyfin version branching

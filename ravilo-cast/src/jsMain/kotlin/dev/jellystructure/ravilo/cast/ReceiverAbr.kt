@@ -80,14 +80,19 @@ private const val FACTORY = """(function (decide, note) {
     }
     function tick() {
       var a = ahead(element());
-      if (a >= 0 && enabled && cb && cur && variants.length) {
+      // 2026-10-09 (R291 live): right after a (re)load the buffer reads 0 ms before anything arrived. That is not a
+      // falling buffer, and acting on it switched Shaka to a variant of the previous manifest: error 7999
+      // ("Cannot read property 'retryParameters' of null"). Only a buffer that was positive and fell counts, and only
+      // a variant of the current manifest is ever handed to Shaka.
+      var falling = a > 0 || last > 0;
+      if (a >= 0 && falling && enabled && cb && cur && variants.length && variants.indexOf(cur) >= 0) {
         var max = decide(bands(), cur.bandwidth, a, last);
         if (max >= 0 && cur.bandwidth > max) {
           var b = best(max);
-          if (b && b !== cur) {
+          if (b && b !== cur && variants.indexOf(b) >= 0) {
             note('309 abr: step down ' + cur.bandwidth + ' -> ' + b.bandwidth + ' (' + Math.round(a) + ' ms buffered)');
             cur = b;
-            cb(b, false);
+            try { cb(b, false); } catch (e) { note('309 abr: switch refused: ' + e); }
           }
         }
       }
@@ -103,7 +108,7 @@ private const val FACTORY = """(function (decide, note) {
         return switchCb.apply(null, args);
       });
     };
-    w.setVariants = function (vs) { variants = vs || []; return inner.setVariants.apply(inner, arguments); };
+    w.setVariants = function (vs) { variants = vs || []; if (cur && variants.indexOf(cur) < 0) { cur = null; last = -1; } return inner.setVariants.apply(inner, arguments); };
     if (typeof inner.setMediaElement === 'function') {
       w.setMediaElement = function (el) { media = el; return inner.setMediaElement.apply(inner, arguments); };
     }
@@ -114,7 +119,7 @@ private const val FACTORY = """(function (decide, note) {
     };
     w.enable = function () { enabled = true; if (!timer) timer = setInterval(tick, 2000); return inner.enable.apply(inner, arguments); };
     w.disable = function () { enabled = false; return inner.disable.apply(inner, arguments); };
-    w.stop = function () { if (timer) { clearInterval(timer); timer = null; } enabled = false; return inner.stop.apply(inner, arguments); };
+    w.stop = function () { if (timer) { clearInterval(timer); timer = null; } enabled = false; variants = []; cur = null; last = -1; media = null; return inner.stop.apply(inner, arguments); };
     w.release = function () {
       if (timer) { clearInterval(timer); timer = null; }
       return typeof inner.release === 'function' ? inner.release.apply(inner, arguments) : undefined;
