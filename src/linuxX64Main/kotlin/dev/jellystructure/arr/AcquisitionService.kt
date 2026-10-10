@@ -107,7 +107,7 @@ class AcquisitionService(
 
             val libItem = mediaStore.allItems().firstOrNull { it.tmdbId == tmdbId }
             if (libItem != null) {
-                val rec = AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.id, requestedBy = requestedBy)
+                val rec = AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.jellyfinId ?: libItem.id, requestedBy = requestedBy)
                 store.save(rec, "", null, now); return rec
             }
 
@@ -215,7 +215,7 @@ class AcquisitionService(
         val now = nowMs()
         for (a in actives) {
             val prior = store.get(a.itemKey) ?: continue
-            val libId = a.tmdbId?.let { libByTmdb[it]?.id }
+            val libId = a.tmdbId?.let { tmdb -> libByTmdb[tmdb]?.let { it.jellyfinId ?: it.id } }
             val next = when (a.mediaKind) {
                 MediaKind.MOVIE -> reconcileMovie(prior, a.arrId, radarrQueue, libId)
                 MediaKind.SERIES -> {

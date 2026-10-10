@@ -216,3 +216,18 @@ draft mapping assumed, and a couple of design decisions were made explicitly rat
    Seerr's own response already had it at ~52% (`downloadStatus[0].size`/`sizeLeft`). No reconciler was
    added — this is still a live, per-request derivation, just reading a field that exists but wasn't
    parsed before.
+8. **Bug fix (2026-10-10) — *Watch now* on a title already in the library always failed with "Not available
+   on this profile".** Reported from a household TV: opened a film from Discover → Request, pressed *Watch
+   now*, got the forbidden screen; the same film plays from Home. Cause: when a Request entry is already in
+   the library, `SeerrDiscoverService.acquisitionFor` filled `AcquisitionRecord.itemId` with the library row's
+   own slug id (`MediaItem.id`), not the id every other Ravilo surface hands the client
+   (`jellyfinId ?: id`, as `toMediaCard` does). The client plays/opens `itemId` as-is, so
+   `PlaybackService.requireVisible` looked the slug up by Jellyfin id, found nothing, and failed closed
+   (403 → `error.play.forbidden`); the follow-up stop went to Jellyfin with the slug and was refused (400,
+   retried for minutes by the 312 writer). *Go to series* had the same fault (the series detail resolves by
+   Jellyfin id only). Broken since this phase shipped, for every viewer. `AcquisitionService` (Phase 56)
+   wrote the same slug into its stored records.
+   **Amended requirement:** `AcquisitionRecord.itemId` is always the client-navigable id —
+   `jellyfinId ?: id`, the same id a `MediaCard` carries for that item — wherever it is set
+   (`SeerrDiscoverService.acquisitionFor`, `AcquisitionService.request` and its poll reconcile). No client
+   change; installed apps get the right id from the next fetch.

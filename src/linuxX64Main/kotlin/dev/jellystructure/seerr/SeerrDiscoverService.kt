@@ -355,7 +355,7 @@ class SeerrDiscoverService(
         val itemKey = "tmdb:$tmdbId"
         val libItem = libByTmdb[tmdbId]
         if (libItem != null) {
-            return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.id)
+            return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.jellyfinId ?: libItem.id)  // R171 item 8 — the id a MediaCard carries, never the slug
         }
         val (status, progress, eta) = statusFromMediaInfo(mediaInfo)
         // Phase 139 — the persisted intent (not Seerr's own status, which carries no language) drives
