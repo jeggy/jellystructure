@@ -298,6 +298,10 @@ jobs:
           # Compose Specification's real mechanism for this) -- the old BUILDX_CACHE_FROM/
           # BUILDX_CACHE_TO env vars here were never read by anything and made caching a no-op.
           BUILDX_CACHE_DIR: /tmp/.buildx-cache
+          # Buildx 0.31+ (runner image, 2026-10) refuses bake's local cache_from/cache_to outside the build
+          # context unless granted ("additional privileges requested: pass --allow=fs.read=…"); compose
+          # build has no --allow, so turn the filesystem entitlement check off for this trusted CI cache.
+          BUILDX_BAKE_ENTITLEMENTS_FS: 0
 
       - name: Move Docker cache
         if: always()
