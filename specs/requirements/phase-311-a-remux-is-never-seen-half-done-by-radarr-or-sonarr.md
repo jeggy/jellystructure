@@ -114,7 +114,7 @@ video or audio extension inside a library directory other than through `WorkFile
 1. The folder name: `.jellystructure/` (lean: names the owner) vs a shorter `.js/`. Any leading dot works for all
    three scanners.
 
-## Dev review (2026-10-08, against `main` `97b9e588`)
+## Dev review (2026-10-08, against `main` `bd682d55`)
 
 Read against `TrackCommandBuilder`, `FfmpegRunner` (both `tmpPath`s, `runRemux*`), `MediaJobQueue` (the track-removal
 remux, `tmpFileFor` for the `pkill -f` cancel, the disk preflight), `FileIntegrity`/`FileIntegrityService` (the
@@ -150,7 +150,7 @@ and `PipelineEngine` (the Library cycle). The design holds; five notes, none for
   ends with the `mv`; Radarr's/Sonarr's `DiskScanService` regexes copied in, plus Jellyfin's dot rule; a failed remux
   of a real junk file leaves neither work file nor folder; the sweep rule), `FileIntegrityTest` updated to the new path.
 
-### Live (2026-10-08, dev stack v1.50-51-g285663ef)
+### Live (2026-10-08, dev stack v1.50-51-gf3bc2b22)
 
 - An audio reorder of a single-link 3 GB film (a real ffmpeg remux through the job queue): the work file appeared as
   `<film dir>/.jellystructure/remux_<name>.mkv`, no dot-file beside the video at any point, and the folder was gone when

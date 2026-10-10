@@ -78,7 +78,7 @@ internal fun reencodesVideo(transcodingUrl: String, sourceCodec: String? = null,
     val targets = queryParam(transcodingUrl, "VideoCodec")?.replace("%2C", ",", ignoreCase = true)?.split(',')?.map { it.trim().lowercase() }.orEmpty()
     val src = sourceCodec?.lowercase()?.let { if (it == "h265") "hevc" else it }
     if (src != null && targets.isNotEmpty() && src !in targets) return true
-    // Found on the same Chromecast with The Housemaid (2026-10-06): Dolby Vision 7 with an enhancement layer
+    // Found on the same Chromecast with Saltwater Hall (2026-10-06): Dolby Vision 7 with an enhancement layer
     // (`DOVIWithEL`) under `VideoCodec=hevc,h264` — the source's codec is allowed, its range is not, and Jellyfin
     // tone-maps the picture to H.264 SDR. A source range missing from that codec's `{codec}-rangetype` list re-encodes.
     val ranges = src?.let { queryParam(transcodingUrl, "$it-rangetype") }?.replace("%2C", ",", ignoreCase = true)

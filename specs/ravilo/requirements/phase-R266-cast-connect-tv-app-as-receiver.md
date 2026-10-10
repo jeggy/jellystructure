@@ -227,7 +227,7 @@ and `CastReceiverContext` on the TV build, `customData` → 236's play, a launch
 media-session reconciliation in item 4. Everything else it described is either already shipped by 236 or
 must not be built the way it is written.
 
-## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+## Re-dev review (2026-10-08, against `main` `fde62635`)
 
 Read against branch `r266-cast-connect` (5 commits, built 2026-10-05, **not merged, 42 commits behind `main`**),
 `ravilo-cast/…/Receiver.kt` on `main`, `cast-receiver/index.html`, 308/309/310 as they now stand, Stue TV's codec list
@@ -258,7 +258,7 @@ and it is the largest single one available.** Nine items, three for the owner.
    - Its `69.sqm` (`cast_connect_launch`) collides with `main`'s `69.sqm` (307's publish queue), and `70.sqm` is 308's.
      It becomes the next free number, coordinated with 309's and 310's migrations (each also wants one).
    - `Receiver.kt`, `Cast.kt` and `CastSenderAndroid.kt` changed on `main` since (308's adaptive seed, R245's quiet
-     end `b8c67fab`, R372/R378).
+     end `83b60555`, R372/R378).
 5. **A regression the branch would ship: music to a TV running Ravilo.** With `androidReceiverCompatible` on, a
    music cast to Stue TV launches the TV app, which refuses the queue. Today the web receiver plays it.
    `LaunchOptions` is set once per `CastContext`, so one Application ID can't mean "Cast Connect for films, web for
@@ -266,7 +266,7 @@ and it is the largest single one available.** Nine items, three for the owner.
 6. **The receiver itself, while it remains the path for everything else** (these belong in 309's build, noted here
    because they are cast-path findings):
    - **(a) `useShakaForHls` is never set.** CAF v3 plays HLS with its own MPL player unless
-     `PlaybackConfig.useShakaForHls = true`, and `shakaConfig` (308's ABR targets, 0df9d193's `bufferingGoal 40`) only
+     `PlaybackConfig.useShakaForHls = true`, and `shakaConfig` (308's ABR targets, 5f382716's `bufferingGoal 40`) only
      applies under Shaka.
      - Our signals can't tell the two apart: `BITRATE_CHANGED` and `getStats()` fire for both, so 308's
        "Shaka 4 → 12 → 40" device test did not prove Shaka was playing.
@@ -425,7 +425,7 @@ the held-token verdict, the inbox hand-over/replace/timeout, the debug app-id ru
 
 ## Build notes (2026-10-08)
 
-**Rebased onto `main` `97b9e588`** (branch `worktree-agent-a97c82f5673ccb803`; the R266 commits cherry-picked). The
+**Rebased onto `main` `bd682d55`** (branch `worktree-agent-a97c82f5673ccb803`; the R266 commits cherry-picked). The
 `cast_connect_launch` migration moved **69 → 72** (main had taken 69–71); **`main` has since taken 72 and 73** (R381 and
 the backend batch), so it becomes **74** when this branch is merged. `MusicEditionsStoreTest`'s rewind drops the table.
 
@@ -465,9 +465,9 @@ the phone's own LOAD shape and channel messages); the phone itself could not be 
 - Release build on a device: R8 + `check-player-dex.sh` pass (245 registers), `verify-release-apk-on-art.sh` not run.
 - Soveværelse TV (not tested).
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
-- **Code: nothing left that a desk can find** — merged (38ae8c6e), deployed. **Owed on devices:** a cast from a real
+- **Code: nothing left that a desk can find** — merged (0c33e7a2), deployed. **Owed on devices:** a cast from a real
   phone (the remote following the TV), acceptance 6, a second cast while one plays, display standby, the admin
   card's line, `verify-release-apk-on-art.sh` on a device, Soveværelse TV.
 
@@ -489,7 +489,7 @@ Stue TV was withdrawn by the owner mid-session; everything below ran on **Sovev�
   the mini bar's play → TV state 3. Session remote: pause/play and a seek (to 27:13, our encoder restarted at
   segment 815, first segment 1.13 s) reached the TV; the phone's clock caught up within ~10 s.
 - **A second film while one plays — passed:** *Play Again* on another film asked *Already playing on Soveværelse
-  TV · Hypnotic* → *Play on Soveværelse TV instead* replaced it (stop written for the first, the second direct-played).
+  TV · Low Tide Signal* → *Play on Soveværelse TV instead* replaced it (stop written for the first, the second direct-played).
 - **Acceptance 6 — passed:** Back on the TV ended the session; the phone's remote read *Stopped on Soveværelse TV*
   and the bar dropped the film.
 - **Standby during a cast — passed (silent):** KEYCODE_SLEEP on the TV: the app wrote its stop at 103.8 s, closed its

@@ -141,7 +141,7 @@ with the later browsing phase). Long-press / ⋯ is not offered.
 4. Should the screensaver (ambient mode) be held off while Now playing is open? Lean: yes while the page is open,
    no once it is hidden.
 
-## Dev review (2026-10-08, against `main` `fdd48f10` and `r266-cast-connect` `026410fc`)
+## Dev review (2026-10-08, against `main` `cfbba310` and `r266-cast-connect` `026410fc`)
 
 Read against `r266-cast-connect` (`CastConnectReceiver.kt`, `CastConnect.kt`, `TvPlayerSessionHooks.kt`, the `RaviloApp.kt`
 and `CastSenderAndroid.kt` diffs), and on `main`: `RaviloApp.kt` (the listening layout, the events socket's `plays` and
@@ -246,7 +246,7 @@ the owner.
 
 ## Build notes (2026-10-08)
 
-Built on the R266 branch (`worktree-agent-a97c82f5673ccb803`, rebased from `r266-cast-connect` onto `main` `97b9e588`),
+Built on the R266 branch (`worktree-agent-a97c82f5673ccb803`, rebased from `r266-cast-connect` onto `main` `bd682d55`),
 in the same commits' series as R266's remote work, because the owner's decision 1 makes them one piece: **one
 receiver-side module for Ravilo's Cast channel**, used by the web receiver and the TV app.
 
@@ -352,7 +352,7 @@ The phone could not be driven (not reachable over adb), so the sender was a host
   backend batch), so it must become **74** on the rebase. R381 also edits `PlayerScreen` (QoE counter, prefetch):
   re-run `scripts/check-player-dex.sh` on the merged release APK.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Built (branch `worktree-agent-ae4b9a6114c15ce4b`):** the ▲ ▼ hint now names what ▼ will do
   (`lyricsHintKey`: *Lyrics off* while lyrics show); the queue panel has *Up next from {album}* (`upNextHeading`,
@@ -446,7 +446,7 @@ it, one live row after the TV reports; a film start leaves the phone's music alo
 caller's own music), `ServerMusicOnTvTest` (`sender_name` on the wire and absent from an older server; Home stops
 server-started music and clears the line; nothing to stop otherwise).
 
-### Live, 2026-10-10 (Stue TV debug 1.50-157 = 2be7cd26's code, the Pixel 9 Pro debug, dev stack v1.50-158, volume 0–1)
+### Live, 2026-10-10 (Stue TV debug 1.50-157 = 9ed2b326's code, the Pixel 9 Pro debug, dev stack v1.50-158, volume 0–1)
 
 - **FR-R380-9 passed on the real phone:** music playing on the Pixel → *Play on… ▸ Stue TV* (the server road,
   `session_load`): the TV's Now playing reads **Playing from Pixel 9 Pro**; the server logged *… on 16149… ended — its

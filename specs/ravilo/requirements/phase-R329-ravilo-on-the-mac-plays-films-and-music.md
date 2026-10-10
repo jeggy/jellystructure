@@ -256,12 +256,12 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
     **Still owed:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS, and 5 (music, the media keys,
     Control Center).
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing found missing.** **Owed on the Mac:** acceptance 1 at 4K, 3 (DTS, the rendition switch), 4's PGS,
   5 (music, the media keys) and FR-R329-1's spike numbers.
 
-## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+## Mac live check (2026-10-09, test build `v1.50-117-g3a66ba67` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
 
 - **A 4K HDR film:** played in the window through **our encoder** (313): 4 H.264 rungs
   tone-mapped to SDR, top 800p@12 Mbps, first segment 1061 ms; CPU 23–35 %, RSS 0.9–1.7 GB. **Finding:** the M5 Mac
@@ -294,7 +294,7 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   Play plays on this device and the button reads Play. The *Play on…* sheet already listed no speaker for a film.
   **Mac re-test owed:** with music on a speaker, a film's Play plays in the window and the music keeps playing there.
 
-## Mac re-test (2026-10-09 evening, backend v1.50-130, test build `v1.50-136-gfcec8bf2` from `main`, ad hoc signed, test driver; the Mac's sound muted throughout)
+## Mac re-test (2026-10-09 evening, backend v1.50-130, test build `v1.50-136-ge5b4ec68` from `main`, ad hoc signed, test driver; the Mac's sound muted throughout)
 
 - **The Swift HDR change compiled** on the first build (`AVPlayerItemVideoOutput` asking for Rec. 709).
 - **HEVC HDR reaches the Mac but does not play — FAIL.** A stand-in 4K HDR10 film: the server log reads
@@ -307,7 +307,7 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   **-12927**; the HEVC variant playlist alone reaches *ready to play* but its time never leaves 0; the audio playlist
   alone plays. So the master/variant as AVFoundation reads them is the problem, not the frames (Apple's
   `mediastreamvalidator` is not installed to say which line). **Every HDR film through our encoder fails on the Mac
-  since the HDR claim (993ee433)** — recommended: withhold the claim (`-Dravilo.hdr=false` as the default, or the
+  since the HDR claim (0889c21b)** — recommended: withhold the claim (`-Dravilo.hdr=false` as the default, or the
   server's HEVC-HDR plan for the Mac) until the playlist is fixed and an HDR film plays.
 - **A film is never offered to a speaker — PASS.** With music on Gæsteværelse, a film's button read **Play**; Play asked
   only about the bedroom TV, which was already playing that viewer's episode (*Already playing on {TV} · Play on {TV}
@@ -332,6 +332,6 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   renditions, `hvc1.1.6.L93.B0`, `VIDEO-RANGE=SDR`) plays; a master listing our PQ variant *and* an H.264 SDR variant
   plays — AVPlayer picks the SDR one. Nothing in the playlists or the segments is wrong. *Fix:* the Mac claims HDR only
   while AVPlayer says it is eligible (`ravilo_caps_hdr_eligible`, asked at every start, so moving to the built-in XDR
-  screen claims it again); not eligible ⇒ the server tone-maps to H.264 SDR, as before 993ee433. A library from before
+  screen claims it again); not eligible ⇒ the server tone-maps to H.264 SDR, as before 0889c21b. A library from before
   the call has no symbol and claims no HDR. **Mac re-test owed:** on the external monitor a 4K HDR10 film plays
   (server log `H264 … SDR`/tone-map); on the built-in screen (lid open, no monitor) it plays as `HEVC HDR`.

@@ -254,7 +254,7 @@ The release notes carry no install paragraph: *"People downloading dmg already k
 same with flatpak, wgt etc."* The workflow attaches the file and leaves the notes alone. Release notes say
 concretely what the release contains — no install steps, no account of what was or was not tested.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing left.** **Owed:** the next published release (the owner's to cut) to show the `.dmg` attached and
   acceptance 2 (no prompt on the next release).

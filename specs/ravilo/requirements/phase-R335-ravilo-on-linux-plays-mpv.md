@@ -201,7 +201,7 @@ track, 4K HEVC 10-bit — and `Ravilo --mpv-bench` / `--mpv-window` (FR-R335-11)
    VA-API no device), a 4K surface, a real display's frame pacing, HDR tone-mapping's look. Acceptance 2 is the
    owner's Linux desktop with a GPU.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **FR-R335-7 is done** (build note 5 said owed): `LoadErrorKind.PLAYBACK_UNAVAILABLE` → `player.unavailable`
   (*Playback is not available in this build*), chosen in `PlayerStore` when `PlaybackAvailability.unavailable`.

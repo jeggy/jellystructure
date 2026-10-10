@@ -171,7 +171,7 @@ today.)
   never under 35 s. hls.js and the receiver's Shaka got the same rule (step up only with real headroom; Shaka switches
   at most every 20 s; hls.js keeps a minute ahead).
 - **Chromecast (Stue TV), Dolby Vision films:** `TranscodeReasons` does not always say the picture is re-encoded.
-  *The Housemaid* (DV 7 with an enhancement layer, `DOVIWithEL`) read only `AudioCodecNotSupported,DirectPlayError`
+  *Saltwater Hall* (DV 7 with an enhancement layer, `DOVIWithEL`) read only `AudioCodecNotSupported,DirectPlayError`
   under `VideoCodec=hevc,h264`, yet Jellyfin tone-mapped it to H.264 at the source's 80.9 Mbps with no ladder. The rule
   is now: a re-encoding reason, a burned-in subtitle, a target codec list without the source's codec, **or a source
   `VideoRangeType` missing from that codec's `{codec}-rangetype` list**.
@@ -183,7 +183,7 @@ today.)
 
 ## Acceptance
 
-1. *The Housemaid* on a Chromecast outside the house (or a phone throttled to ~19 Mbps) starts within a few seconds,
+1. *Saltwater Hall* on a Chromecast outside the house (or a phone throttled to ~19 Mbps) starts within a few seconds,
    plays to the end without a single rebuffer, and settles on a 1080p variant ≤ 12 Mbps.
 2. Throttling a phone mid-film from 50 → 5 Mbps steps down within a segment or two with no stall; lifting the throttle
    steps back up within a minute.
@@ -205,7 +205,7 @@ today.)
    ladder ourselves; use it if it already lists variants we can trust.
 3. Shaka on older Chromecasts and multi-variant H.264 — verify on the bedroom TV's Chromecast and a stick.
 
-## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+## Re-dev review (2026-10-08, against `main` `fde62635`)
 
 Read again against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `composeLadderMaster`, `stopFor`),
 `PlaybackService` (`startPlayback`, `withRenditions`, `measuredThroughputOf`), `JellyfinClient.deviceProfile` /
@@ -255,7 +255,7 @@ Read again against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `comp
    ladder addresses the stalls of that minority. Start time is 309's prewarm, and direct play's own short stalls are
    309's re-review, item 3.
 8. **Still owed:** acceptance 1–2 on a release build once one declares `hls_adaptive`, and the receiver re-test after
-   `0df9d193` (40 s buffer goal).
+   `5f382716` (40 s buffer goal).
 
 ## Decided by the owner (2026-10-08, after the streaming re-review)
 

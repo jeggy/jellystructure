@@ -289,7 +289,7 @@ Real gamepads. Acceptance 2–3 on ravilo.jebster.net with a film with eight aud
 
 ### Rebased onto `main` (2026-10-08)
 
-Merged into a fresh branch from `main` `c27301be` (after R381, 316, 315, 311, 309a0, R382, 310/312). Five conflicts:
+Merged into a fresh branch from `main` `83ee8db9` (after R381, 316, 315, 311, 309a0, R382, 310/312). Five conflicts:
 - **hls.js (dev review item 1):** the union — R376's worker (`vendor/hls.worker.js`), `backBufferLength 90`,
   `startPosition`, Managed Media Source, fatal-error recovery and the held audio pick, **plus 308's**
   `maxBufferLength 60`, `maxBufferSize 300 MB`, `abrBandWidthFactor 0.7` / `abrBandWidthUpFactor 0.5`, the measurement
@@ -402,7 +402,7 @@ AirPlay is picked* — changing R265 FR-R265-8 for Safari, keeping AirPlay worki
 - Release APK checks after this change: `check-player-dex` 246 registers (limit 250), and the HTTP-engine, min-SDK and
   Play device-filter checks pass.
 
-## Dev review (2026-10-08, against `main` `4222ac4c`)
+## Dev review (2026-10-08, against `main` `fde62635`)
 
 Read against branch `r376-web-player` (2 commits, built 2026-10-05, **not merged, 35 commits behind `main`**; its own
 copy of this spec says `⚠ Partial` with build notes, so this file on `main` is stale), `RaviloPlayerWasm.kt` on both,
@@ -411,7 +411,7 @@ design holds and the risky gate (FR-R376-1) passed in Chromium. This review is a
 streaming. Six items, two for the owner.
 
 1. **Merging the branch as it is would undo 308 on the web.** The branch rewrote hls.js's construction as
-   `{ enableWorker, backBufferLength: 90, maxBufferLength: 30, startPosition }`. `main`'s (308: `1e10108d`, `2485b1fd`)
+   `{ enableWorker, backBufferLength: 90, maxBufferLength: 30, startPosition }`. `main`'s (308: `1e10108d`, `c485da67`)
    is:
    - `maxBufferLength: 60`, `maxBufferSize: 300 MB`;
    - `abrBandWidthFactor 0.7` / `abrBandWidthUpFactor 0.5`;
@@ -475,7 +475,7 @@ order); one element across two items.
 
 ## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
 
-Deployed with `ravilo-web` rebuilt from `22a955c8`/`d7ecba1e`. The owner tested Safari on the Mac the same morning:
+Deployed with `ravilo-web` rebuilt from `7ba7ec0c`/`73d15191`. The owner tested Safari on the Mac the same morning:
 **sound, seek and next episode all work**.
 
 ### Build notes — FR-R376-S1 (2026-10-09, branch `r376-safari-first-click`, not merged, not deployed)

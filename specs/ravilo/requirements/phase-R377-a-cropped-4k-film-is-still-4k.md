@@ -1,7 +1,7 @@
 # Phase R377 — A cropped 4K film is still 4K
 
 > Owner, 2026-10-05, looking at *Newly Added — Movies* on the phone: *"why does it just say hdr and not 4k?"* —
-> *Spider-Man: Brand New Day* (2160p iT WEB-DL, DV HDR) showed **HDR** while M3GAN 2.0 and Clown in a Cornfield
+> *Glass Harbour* (2160p iT WEB-DL, DV HDR) showed **HDR** while Copper Static and Northbound Lights
 > beside it showed **4K HDR**.
 
 ## Status
@@ -23,7 +23,7 @@ else                     -> "SD"
 ```
 
 A scope film (2.39:1) whose letterbox bars were cropped off and whose sides lost a few pixels to the encoder fails
-both tests: *Spider-Man: Brand New Day* is **3832 × 1600** — 8 px short of 3840, and nowhere near 2160 tall. It
+both tests: *Glass Harbour* is **3832 × 1600** — 8 px short of 3840, and nowhere near 2160 tall. It
 lands in `1080p HDR`, and R325's `qualityBadge()` turns that into a plain **HDR** badge. Jellyfin itself labels the
 same stream *4K HEVC Dolby Vision*. The same off-by-a-few-pixels miss pushes cropped 1080p releases (1918 × 802) down
 to 720p.
@@ -68,9 +68,9 @@ also moves in the Quality facet.
 
 ## Acceptance
 
-1. *Spider-Man: Brand New Day* (3832 × 1600, HDR) shows **4K HDR** on its tile in *Newly Added — Movies*, on the
+1. *Glass Harbour* (3832 × 1600, HDR) shows **4K HDR** on its tile in *Newly Added — Movies*, on the
    phone and the TV, and in the Focus Detail meta.
-2. *Over Your Dead Body* (3836 × 1604, SDR) shows **4K**.
+2. *The Lantern Keeper* (3836 × 1604, SDR) shows **4K**.
 3. A real 1080p film (1920 × 1080 or 1920 × 800, SDR) still has no tile badge, and with HDR still shows **HDR**.
 4. Browse ▸ Quality ▸ 4K includes the seven films listed above; ▸ 1080p includes *Kettle Bay* and *Northwind*.
 5. `grep -rn '3840' src/linuxX64Main` finds no tier ladder outside `Quality.kt`.
@@ -99,4 +99,4 @@ HDR suffix on each tier, and a series picking its largest episode track.
   on each tier, the badge rule and a series taking its largest episode.
 - Open question 2 answered: nothing persists the tier — it is computed from the stored track dimensions on each build
   of the feed, the detail page and the facets.
-- Deployed v1.50-28-g8252aca0 (2026-10-06 05:37). **Acceptance 1 seen on Stue TV:** *Newly Added — Movies* shows *Spider-Man: Brand New Day* as **4K HDR** beside M3GAN 2.0 and Clown in a Cornfield. Acceptance 2–4 and the phone not yet looked at.
+- Deployed v1.50-28-gee533b6f (2026-10-06 05:37). **Acceptance 1 seen on Stue TV:** *Newly Added — Movies* shows *Glass Harbour* as **4K HDR** beside Copper Static and Northbound Lights. Acceptance 2–4 and the phone not yet looked at.

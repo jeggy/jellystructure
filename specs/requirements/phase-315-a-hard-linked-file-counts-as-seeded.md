@@ -71,7 +71,7 @@ file jellystructure edited (its History). List only; the owner decides.
 2. Whether a remux of a hard-linked file should keep writing a new file (breaking the link, doubling space) or be
    refused too; lean: allowed but shown with the space cost.
 
-## Dev review (2026-10-08, against `main` `3ef43336`)
+## Dev review (2026-10-08, against `main` `dbd8ce43`)
 
 1. **The diagnosis holds, measured on the real disks (read-only, `find -xdev -links +1`).** Every one of the **4 341**
    multiply-linked library media files has its other name **outside** the library roots, all of them in cross-seed's

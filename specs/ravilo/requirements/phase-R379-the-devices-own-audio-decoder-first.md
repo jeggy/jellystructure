@@ -8,7 +8,7 @@
 `⚠ Partial` — written and built 2026-10-07 (dev-authored) from the owner's ask; re-dev-reviewed 2026-10-08; the
 owner's decisions built 2026-10-08 (*Build notes (2026-10-08)*), unit-tested; device acceptance partly owed. Android only (`:ravilo-player`, `:ravilo-ui`
 androidMain, `:ravilo-android`); no server, wire, string or config change. Number verified free on `origin/main`
-`938b92b5`'s tree and the local `main` (Ravilo tops at R378).
+`eacc83bb`'s tree and the local `main` (Ravilo tops at R378).
 
 ## What happened
 
@@ -90,7 +90,7 @@ they are; direct play vs transcode is decided exactly as today.
 - Debug builds: `DebugLoadLogger` (tag `R291`) logs `audio decoder <name>` and an error's cause class (acceptance 2).
 - Check: `:ravilo-android:compileDebugKotlin` green. Device acceptance 1–3 owed.
 
-## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+## Re-dev review (2026-10-08, against `main` `fde62635`)
 
 Read against `RaviloRenderers.kt` (`create(context, preferExtensions)`), `RaviloPlayerAndroid.kt`
 (`preferExtensions`, the `onPlayerError` path, `restartPreferringExtensions`), `RaviloPlayerEngine.kt`, the
@@ -163,7 +163,7 @@ the owner.
 - **Tests:** `PlatformAudioTest` (9: an older app unchanged, both decoders unchanged, none ⇒ both out of the direct-play
   and transcode profiles, only the missing one leaves, AC-3 play + HEVC-capable ⇒ fMP4 profile, not capable ⇒ TS, the
   declared-nothing guard, the playing-track choice, 314's AAC copy chosen on a phone without Dolby); `MusicEditionsStoreTest`'s schema rewind drops the new column.
-- **Device check, Pixel 9 Pro (2026-10-09, debug build `1.50-80-gd7fb4d61` from this branch, against the deployed dev
+- **Device check, Pixel 9 Pro (2026-10-09, debug build `1.50-80-g0bd87f0c` from this branch, against the deployed dev
   backend):** a 1962 short film with AC-3 2.0 audio (H.264 480p) direct-played. The app logged
   `R379 platform_audio_decoders=[ac3, eac3]` (the value `PlayerStore` puts on the start request) and the player logged
   `audio decoder c2.dolby.eac3.decoder.ac3` — the platform's Dolby decoder, not FFmpeg: **acceptance 2 holds on the

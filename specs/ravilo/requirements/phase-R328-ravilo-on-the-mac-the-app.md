@@ -265,7 +265,7 @@ data directory, as the Linux app's always have; a token left in the Keychain by 
 first use and its Keychain item removed. A token is a Ravilo device token, revocable in Users & devices — never the
 viewer's password. `ravilo_keychain_*` stay in the Swift library for that one migration.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing left.** The four items the build notes still owed are in the code: the menu bar's handlers
   (`RaviloMenuBar.kt`, wired in `Main.kt`), the Dock reopen (`onReopen`), full screen by the menu
@@ -273,7 +273,7 @@ viewer's password. `ravilo_keychain_*` stay in the Swift library for that one mi
   Settings ▸ Account). They landed with R337's passes.
 - **Owed: a Mac check** of each (see the test plan sent to main on 2026-10-09).
 
-## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+## Mac live check (2026-10-09, test build `v1.50-117-g3a66ba67` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
 
 - **⌘1 / ⌘2** switch films ↔ music (the app's own key handling; works).
 - **⌘W / the close rule (D7, FR-R328-9):** with nothing playing, ⌘W quits — as specified. **Bug: with music playing *on a
@@ -295,7 +295,7 @@ viewer's password. `ravilo_keychain_*` stay in the Swift library for that one mi
   for local music (`DesktopBackground.keepsRunningOnClose`; Linux asks its Background portal as before). ⌘Q still quits.
   **Mac re-test owed:** ⌘W during a speaker cast, then the Dock icon brings the window back with the cast live.
 
-**Mac re-test (2026-10-09 evening, test build `v1.50-136-gfcec8bf2`): PASS.** With music cast to Gæsteværelse, ⌘W
+**Mac re-test (2026-10-09 evening, test build `v1.50-136-ge5b4ec68`): PASS.** With music cast to Gæsteværelse, ⌘W
 hid the window (`visible=false`) and the app kept running; the speaker played on into the next song (the Mac app
 handed it over). A reopen of the app bundle — what the Dock icon sends — brought the window back (`visible=true`)
 with the bar still on the cast (*{artist} · Gæsteværelse*). ⌘Q from the test driver did not quit (the driver's keys never

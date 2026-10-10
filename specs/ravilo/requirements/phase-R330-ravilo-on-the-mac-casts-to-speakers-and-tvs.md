@@ -257,7 +257,7 @@ the two screenless speakers, and Local Network access was already granted.
 - Open: a song handed over at 2:40 ended at once on the TV and the queue moved on (the server logged the stop at the
   song's full length); not yet understood, and not the Mac's alone if it is the receiver's seek.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing found missing.** **Owed on devices:** acceptance 1–7 from the Mac (the TXT keys on Stue,
   Gæsteværelse, their group, the hub and a TV).
@@ -275,7 +275,7 @@ the two screenless speakers, and Local Network access was already granted.
   (`closed (send failed)`); the test build and the installed app may both have been running — re-test with one Ravilo.
   **Mac re-test owed:** quit during a speaker cast and start again (rejoins, no hand-back in the log).
 
-**Mac re-test (2026-10-09 evening, test build `v1.50-136-gfcec8bf2`, the installed app not running; the speaker's
+**Mac re-test (2026-10-09 evening, test build `v1.50-136-ge5b4ec68`, the installed app not running; the speaker's
 volume was 0 before and stayed 0): PASS.** Music handed to Gæsteværelse (`hand-off of 60 songs … to Gæsteværelse`);
 the app was quit while the speaker played — the speaker played on — and started again: `cast: rejoin Gæsteværelse
 [Nest Wifi point] → joined`, link CONNECTED, the bar back on the cast, **no hand-back** in the log, the song kept its

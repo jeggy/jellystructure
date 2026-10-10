@@ -451,7 +451,7 @@ after the table answered them; fold what is left into the "still to measure" lis
 **Net effect.** FR-R291-1 is one shared resolver, two request fields (with R292) and one
 `getPlaybackInfo` argument — buildable now. FR-R291-2 stays gated on four measurements, the new one first.
 
-## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+## Re-dev review (2026-10-08, against `main` `fde62635`)
 
 Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`ladderMaster`, `composeLadderMaster`,
 `renditionAudioCodec`, `stopFor`), `AudioRenditionJobs.kt`, `PlaybackService.withRenditions`,
@@ -498,7 +498,7 @@ Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`la
   grows from audio renditions to the whole stream (video rungs + audio), in one job per play. Its renditions then come
   from the same process, so a prewarm warms them together (decision 2 above is then moot).
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **The web half of the GAP is covered by R376:** the web player direct-plays and switches audio inside the file
   where the browser can (Safari, Chrome), and restreams as HLS only where it cannot; measured 2026-10-09 in Chrome,
@@ -509,7 +509,7 @@ Read again with 308's ladder and 309's plans in place: `AudioRenditions.kt` (`la
 
 ## Receiver live, 2026-10-09 evening (Stue TV's built-in Chromecast, v1.50-138, dev-only `[encoder] receiver_renditions = true`)
 
-The dev-only switch (d7c83721) declares `hls_audio_renditions` for the cast receiver so the R291 master reaches it; a
+The dev-only switch (6c064fcb) declares `hls_audio_renditions` for the cast receiver so the R291 master reaches it; a
 host-side sender (pychromecast, our app id, a hand-off minted as the owner's phone) loaded a 4K HDR film with two
 English tracks (AC-3 5.1, TrueHD 7.1). Volume 1.
 
@@ -527,7 +527,7 @@ English tracks (AC-3 5.1, TrueHD 7.1). Volume 1.
   (`TypeError: Cannot read property 'retryParameters' of null`). Cause: **ours**, not the playlist — the receiver
   restreamed (our encoder, `audio=1`, segment 37, first segment 1.2 s), and 309's ABR wrapper (`ReceiverAbr.kt`) stepped
   down at "0 ms buffered" right after the reload, handing Shaka a variant of the previous manifest. **Fixed in
-  04a5b93e** (state cleared on stop/new manifest, a 0 ms buffer that never rose doesn't count, only current variants
+  635cb97f** (state cleared on stop/new manifest, a 0 ms buffer that never rose doesn't count, only current variants
   are handed over; `scripts/check-receiver-abr.sh` in CI fails on the old code and passes now).
 
 ### FR-R291-12 — A rendition is written in the video's own container (2026-10-09, from the 3018 above)

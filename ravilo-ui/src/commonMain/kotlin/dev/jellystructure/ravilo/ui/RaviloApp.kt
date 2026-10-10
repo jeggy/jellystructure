@@ -3138,7 +3138,7 @@ fun RaviloApp(
                 if (a != null) dev.jellystructure.ravilo.ui.sessions.SameKindAskBody(a,
                     playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
                     // 2026-10-05 — the SAME title elsewhere is not a second film: *there* resumes that session, *here*
-                    // moves it (R372 Play here, 2 s back). Pressing Play on M3GAN paused on the TV at 2:31 started it
+                    // moves it (R372 Play here, 2 s back). Pressing Play on Copper Static paused on the TV at 2:31 started it
                     // again at 0:00 on either side and left the other copy behind.
                     onThere = {
                         if (dev.jellystructure.ravilo.ui.sessions.sameTitle(a)) {

@@ -6,7 +6,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-08 on worktree branches (313a measured, 313b–313e built; the encoder is now on by default), not deployed, no device has played through it yet** (see Build notes and *Build notes — 313d / 313e*). Written 2026-10-08 (dev-authored), against `main` `c9883354`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
+`⚠ Partial` — **built 2026-10-08 on worktree branches (313a measured, 313b–313e built; the encoder is now on by default), not deployed, no device has played through it yet** (see Build notes and *Build notes — 313d / 313e*). Written 2026-10-08 (dev-authored), against `main` `79779ad1`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
 encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and compose files (GPU
 and ffmpeg), the admin's *Playing now*. No app release is needed for the backend half: every adaptive player already
 reads a composed master (308). Builds on **308** (the ladder table, the composed master, the players' ABR), **309**
@@ -245,7 +245,7 @@ channel, and a music or audiobook stream (never this encoder). A job that fails 
 - **313e — make it the default:** on for every transcode; 309's FR-309-6/-7 removed; the Jellyfin path stays as the
   fallback.
 
-## Dev review (2026-10-08, against `main` `fdd48f10`)
+## Dev review (2026-10-08, against `main` `cfbba310`)
 
 Read against `AudioRenditionJobs.kt`, `AudioRenditions.kt`, `VideoLadder.kt`, `PlaybackService` (`withRenditions`,
 `releaseEncodes`, `TICKET_TTL_MS`), `TvRoutes.kt` (`/tv/stream/{id}/…`), `AuthPlugin.kt`, the `Dockerfile`, both
@@ -443,7 +443,7 @@ enabled = true`, and a test play (Stue TV debug app, the Pixel, a Chromecast for
   cache), 5.8 s on the next.
 - **Found 1 — fMP4 doesn't play on Media3:** with fMP4 video + fMP4 audio renditions the player stayed BUFFERING at 0 with
   48 s buffered and never created a decoder (the stream itself decodes cleanly in ffmpeg). Fixed: `encoderMuxFor` gives
-  MPEG-TS to everything except the Mac, iOS and the web (`b43de79f`); with TS the Pixel went READY 7.5 s after Play.
+  MPEG-TS to everything except the Mac, iOS and the web (`bde10a46`); with TS the Pixel went READY 7.5 s after Play.
 - **Found 2 — the P4000 couldn't keep up at preset p4:** a seek restarted the job once (segment 725, as designed), but
   the job then ran at ~0.5× realtime and playback stalled. Measured on the same source, 30 s: decode only 9.2×,
   decode + tone-map 4.8×, + 4 H.264 rungs at **p4 1.1×**, at **p1 8.8×**; the 2060 SUPER at p4 4.4×, p1 6.1×; HEVC Main 10
@@ -537,7 +537,7 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
 - The stop watchdog ended each synthetic play within 30 s — correct: the Pixel's app (whose device id the test used)
   had no events socket open, which the watchdog reads as *app gone*.
 
-## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver) — two burn-in bugs
+## Mac live check (2026-10-09, test build `v1.50-117-g3a66ba67` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver) — two burn-in bugs
 
 1. **The burn-in filter graph is broken for an SDR H.264 source:** picking a German PGS subtitle on a film with several audio tracks
    restreamed through our encoder (`H264 4 rungs … burn-in, card 0`) and ffmpeg failed: *"Impossible to convert between
@@ -575,7 +575,7 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
 - **Cause (ours):** nothing ever deleted a job's segments. Four H.264 rungs plus audio fill the 4 GB tmpfs
   (`/transcode/js`) in about 16 minutes of a film; from then on ffmpeg cannot write, the receiver's next segment never
   comes and the cast stalls for good — the stall the receiver showed at the same point every time.
-- **Fix (d476880f):** the job keeps `KEEP_BEHIND = 30` segments (a minute) behind the furthest one asked for and
+- **Fix (9f4751b8):** the job keeps `KEEP_BEHIND = 30` segments (a minute) behind the furthest one asked for and
   unlinks everything older, for itself and for the stream's retired jobs (every 8 progress lines); a request below the
   pruned point is not "reached" (a seek back restarts the job there). `pruneRangeKeepsAMinuteBehind` tests the range.
 - **Verified with the dev-only override** (`[encoder] cast_receivers = true`, set for this one test and removed
@@ -584,7 +584,7 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   way (it had reached 4 GB at ~16 min before); the encoder stopped with the cast. Casts stay on Jellyfin's transcode by
   default (`cast_receivers` off) until the owner turns them on.
 
-## Mac re-test (2026-10-09 evening, backend v1.50-130, Mac test build `v1.50-136-gfcec8bf2`, ad hoc signed, test driver)
+## Mac re-test (2026-10-09 evening, backend v1.50-130, Mac test build `v1.50-136-ge5b4ec68`, ad hoc signed, test driver)
 
 - **F2 · a failed or refused stream recovers or ends — passes on the client.** An HDR film whose stream the Mac
   could not play (below) was restreamed **once**, failed again and ended on R237's *Something went wrong* with
@@ -617,10 +617,10 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
 
 - **A 4K HDR film cast to the Chromecast web receiver on our encoder (HEVC HDR, 4 rungs, TS) played 16 minutes with
   0 rebuffers** (69 s → 1030 s of the film; host-side sender, the receiver's own QoE: `rebuffer_count 0`). Shaka
-  climbed 4 rungs to 2160p at 30.2 Mbps and never stepped down; `/transcode/js` held 349–464 MB the whole way (d476880f's
+  climbed 4 rungs to 2160p at 30.2 Mbps and never stepped down; `/transcode/js` held 349–464 MB the whole way (9f4751b8's
   pruning). Start: BUFFERING → PLAYING in ~7 s.
 - **An audio switch on the receiver** (Cast channel `audio`) restreamed on our encoder at segment 22 (first segment
-  1.26 s) and resumed at the same position ~6 s later — after 04a5b93e; before it, the same switch crashed Shaka (7999).
+  1.26 s) and resumed at the same position ~6 s later — after 635cb97f; before it, the same switch crashed Shaka (7999).
 - **The Ravilo TV app (Cast Connect) on our encoder:** a 4K HEVC HDR film as an H.264 SDR ladder, first segment 1.3 s,
   played — but only because 309 capped a TV with no record at 8 Mbps (see 309's live note); the BRAVIA could play it
   directly.
@@ -662,7 +662,7 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   receiver's ladder). Jellyfin's transcode stays the fallback — every FR-313-12 reason still sends a play there, and
   `cast_receivers = false` in `config.toml` sends every cast back to Jellyfin (`CAST_RECEIVER_FALLBACK`), the switch
   kept for the dev team.
-- **The evidence:** a 21-minute cast to the Køkken hub (H.264, 4 rungs, d476880f's segment pruning) and a 16-minute
+- **The evidence:** a 21-minute cast to the Køkken hub (H.264, 4 rungs, 9f4751b8's segment pruning) and a 16-minute
   cast to Stue TV's built-in Chromecast (HEVC HDR, 4 rungs, up to 2160p at 30 Mbps), both with **0 rebuffers**, the
   tmpfs under 470 MB the whole way; an audio switch on the receiver restreamed on our encoder and resumed in ~6 s.
 - **Tests:** `EncoderPlanTest` — with no override a cast is ours (`encoderDecision(…, "cast") == null`, `planFor`

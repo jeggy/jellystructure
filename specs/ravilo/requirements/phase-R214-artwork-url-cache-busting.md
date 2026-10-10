@@ -1,11 +1,11 @@
 # R214 — Ravilo's own image cache must not outlive a corrected poster/backdrop
 
-> Reported live: a movie ("Hus") had been auto-matched to the wrong TMDB title (a Spider-Man film) and
+> Reported live: a movie ("Hus") had been auto-matched to the wrong TMDB title (a superhero film) and
 > downloaded that title's poster/backdrop. The match was corrected in jellystructure (Find/fix match +
 > re-pull), and **Phase 176** confirmed the on-disk `poster.jpg`/`fanart.jpg` were correctly replaced —
 > `hus-2026`'s `poster.jpg.src` now records the right TMDB `file_path`, and `RaviloArtworkService`'s own
 > resized-image cache had already regenerated against the new file (its `.ct` sidecar recorded the new
-> byte size and a fresh timestamp). But **Ravilo (TV/phone) kept showing the Spider-Man poster** for this
+> byte size and a fresh timestamp). But **Ravilo (TV/phone) kept showing the superhero poster** for this
 > title well after the backend was confirmed correct.
 
 **Status:** Implemented 2026-08-27 (backend + `ravilo-ui` client). Not yet live-tested against the

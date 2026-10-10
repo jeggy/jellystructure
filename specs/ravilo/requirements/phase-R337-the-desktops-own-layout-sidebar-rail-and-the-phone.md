@@ -551,12 +551,12 @@ window), on the window's own close and maximise buttons (as libadwaita's), on a 
 the saved place is on no display, so the window was centred — on nothing, at −640, −376, its header off the
 display that appears when someone connects. With no display at all it opens at 48, 48 (`WindowBounds.load`).
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing found missing.** **Owed:** macOS window properties, glass and the system font on the Mac; on
   Linux the portal, single instance, CSD drag/resize and the Background ask on a real GNOME desktop.
 
-## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+## Mac live check (2026-10-09, test build `v1.50-117-g3a66ba67` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
 
 - The window draws as designed (sidebar with the Films & series / Music switch, Listen and Home pages, the bar);
   `chrome`: traffic lights at (24,34)/(44,34)/(64,34), full-size content view. Glass and the system font look right in

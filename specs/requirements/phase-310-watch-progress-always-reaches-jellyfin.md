@@ -6,7 +6,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-08 (`5966a6b2`, `2142e2e7`), deployed to the dev stack (v1.50-45 → v1.50-46), live-verified
+`⚠ Partial` — **built 2026-10-08 (`83ae68fe`, `e86d9e80`), deployed to the dev stack (v1.50-45 → v1.50-46), live-verified
 on Stue TV**; the repair (FR-310-7) waits for the owner's *Put them back*. Dev-reviewed 2026-10-07; written 2026-10-07
 (dev-authored). Backend only (`PlaybackWriter`, `PlaybackService`, `OutboundHttp`, the timeout helpers, health,
 Dashboard). See *Build notes*.
@@ -157,7 +157,7 @@ The phase is not done until these exist and pass in CI (`linuxX64Test`):
 A backend restart revives the writer (the 15 queued writes are stale and would be dropped). It needs the owner's go
 (dev-compose deploys/restarts need approval), and it does not undo what Jellyfin already marked.
 
-## Dev review (2026-10-07, against `main` `23600c28`)
+## Dev review (2026-10-07, against `main` `297a2f1d`)
 
 Read against `PlaybackWriter.kt` (and `PlaybackWriterTest.kt`), `PlaybackService` (`JellyfinSink`, `reportProgress`,
 `stopPlayback`, `cachedTokenCheck`, `startPlaybackSession`'s body), `HomeFeedService` (the Continue Watching build and
@@ -273,7 +273,7 @@ items, four for the owner.
 
 ## Build notes (2026-10-08)
 
-**Built** (`5966a6b2`, fix `2142e2e7`), in review item 10's order:
+**Built** (`83ae68fe`, fix `e86d9e80`), in review item 10's order:
 - **Boundary + FR-310-1** — `OutboundHttp.withPermit` runs every call behind `foreignSafe`: a `CancellationException`
   reaching it while the caller's own coroutine is still active becomes `ForeignCancellationException` (a
   `kotlinx.io.IOException`, counted for `/api/health`), and `JellyfinClient`'s GETs retry once on it. The writer
@@ -291,7 +291,7 @@ items, four for the owner.
 - **FR-310-6** (review items 6–7) — the start body sends `PositionTicks` (and keeps `StartPositionTicks`); one
   `setUserData(played, position, lastPlayedDate)` per stop from `stopUserData` (`SeriesReplay.kt`), folding R347's tick
   (whose separate `mark` sent its own stop at 0), R343's unwatched write-back and R375's date; a stop before 5 % keeps no
-  place (Jellyfin's `MinResumePct`); the watched flag is left alone when its state at start is unknown (`2142e2e7`: seen
+  place (Jellyfin's `MinResumePct`); the watched flag is left alone when its state at start is unknown (`e86d9e80`: seen
   live — a play restored after the restart has no start state).
 - **Owner decision 2** — queued STOPs persist in `playback_outbox` (migration **71**), restored on start.
 - **FR-310-7** — the repair: a candidates file next to the database (`playback-repair-candidates.json`, prepared once

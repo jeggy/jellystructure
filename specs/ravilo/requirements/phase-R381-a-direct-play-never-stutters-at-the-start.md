@@ -129,7 +129,7 @@ Each change is its own small commit, with the before and after numbers recorded 
    viewer seeks back out of the credits, and counts nothing as a stall (FR-R381-1's rules apply per item). A direct play
    preloads its file; a transcode asks for the next episode's encode at the same moment (309's early encode / 313's job).
 
-## Dev review (2026-10-08, against `main` `fdd48f10`)
+## Dev review (2026-10-08, against `main` `cfbba310`)
 
 Read against `RaviloPlayerAndroid.kt` (the `qoe*` fields, `qoeListener`, `load()`, `releaseEngine()`,
 `restartPreferringExtensions()`, `qoeSnapshot()`), `PlayerStore.kt` (`startSession`, `postQoeNow`), `PlayerScreen.kt`
@@ -273,10 +273,10 @@ first (309a0/310 may take numbers).
 
 ### Merged, deployed and live-tested (2026-10-08 evening)
 
-- **Merged into `main`** (`f569aeb9`): this phase's migration renumbered 72 → **73** (309a0 took 72); the QoE upsert,
+- **Merged into `main`** (`6d09c1b1`): this phase's migration renumbered 72 → **73** (309a0 took 72); the QoE upsert,
   the shared report model and `MusicEditionsStoreTest`'s rewind carry both phases' columns. Backend `linuxX64Test`,
   `:ravilo-ui` unit tests, the admin and receiver compiles and every check script green. **Deployed** to the dev stack
-  as `v1.50-54-gf569aeb9` (schema 74); public health OK at once.
+  as `v1.50-54-g6d09c1b1` (schema 74); public health OK at once.
 - **R381b live on the Pixel 9 Pro** (debug build, a series the owner had never watched; marks undone afterwards):
   at the credits marker the app called `prepare` for the next episode (backend: `playback prepare: … directPlay=true
   (R381, nothing reported)`), prefetched its head in 0.5–2.8 s, and the next episode loaded from that cache
@@ -296,7 +296,7 @@ first (309a0/310 may take numbers).
   - Every finished episode still sends Jellyfin two `stop write … at=0ms reason=mark-watched direct` (the app's
     mark-watched at the credits → the backend's `mark(watched = true)` → `stopPlaybackSession(0)`). Harmless for a
     finished item (played, position 0), but it is the 0 ms stop pattern 312 set out to remove — see 312.
-- **Test plays left on Soveværelse TV** (before the owner put it off limits): the debug app `1.50-54-gf569aeb9`
+- **Test plays left on Soveværelse TV** (before the owner put it off limits): the debug app `1.50-54-g6d09c1b1`
   stays installed, its **sound is muted** (the test's mute key), and 8 episodes of a kids' series were played on the
   *Test Stream* account (not a household viewer). The device is not to be touched; the owner may want to unmute it.
 - **Not verified live:** R381a on the receiver/desktop/web (not in scope of this build), FR-R381-6 test 4 (Media3

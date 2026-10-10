@@ -587,8 +587,8 @@ class PlaybackSessions(
                     sessions[next.id] = next
                     next.persist()
                     event(next.id, "moved", device.deviceId, next.targetName)
-                    // A device plays one thing per lane (2026-10-05: M3GAN moved from the TV to the Pixel while the Pixel's
-                    // own earlier M3GAN session was still live — the app had been reinstalled — and every progress report
+                    // A device plays one thing per lane (2026-10-05: Copper Static moved from the TV to the Pixel while the Pixel's
+                    // own earlier Copper Static session was still live — the app had been reinstalled — and every progress report
                     // after the move went to that one, leaving the moved session *starting*). What else is live there ends.
                     sessions.values.filter { it.live && it.id != next.id && it.targetId == device.deviceId && it.lane == next.lane }.forEach { other ->
                         endLocked(other.id, "replaced")?.let { changes += SessionChange.List }

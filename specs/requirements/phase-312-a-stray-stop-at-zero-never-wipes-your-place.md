@@ -6,7 +6,7 @@
 
 ## Status
 
-`⚠ Partial` — **built 2026-10-08 with 310 (`5966a6b2`), deployed to the dev stack, live-verified on Stue TV**; the repair
+`⚠ Partial` — **built 2026-10-08 with 310 (`83ae68fe`), deployed to the dev stack, live-verified on Stue TV**; the repair
 waits for the owner's *Put them back*. Dev-reviewed 2026-10-08; written 2026-10-08 (dev-authored). Backend only. See
 *Build notes*.
 
@@ -102,7 +102,7 @@ stop's time. Dry run first, the owner presses Apply. Logs older than Jellyfin's 
 1. FR-312-1's finding decides how big FR-312-2 is; if the second session comes from the stream URL's `ApiKey`,
    check whether Jellyfin 12.1 has a request form that streams without creating a session.
 
-## Dev review (2026-10-08, against `main` `4222ac4c`)
+## Dev review (2026-10-08, against `main` `fde62635`)
 
 Read against `PlaybackService` (`stopPlayback`, `releaseSession` and its seven callers, `mark`, `setPlayed`,
 `JellyfinSink`), `PlaybackWriter`, `JellyfinSessionBridge`, `TvRoutes` (`/tv/playback/stop`), `JellyfinClient`
@@ -175,7 +175,7 @@ probably fixes nothing. Seven items, two for the owner.
 
 ## Build notes (2026-10-08)
 
-**Built** (`5966a6b2`, with 310):
+**Built** (`83ae68fe`, with 310):
 - **FR-312-1** — every stop the backend sends is logged with its reason when queued and when it lands
   (`stop write: item=… at=…ms reason=user|watchdog|abandoned-resend|… queued|landed (312)`); `mark`/`setPlayed`'s direct
   stops at 0 log too; a superseded start's release logs *encodes only, no stop*.

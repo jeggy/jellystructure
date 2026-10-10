@@ -375,7 +375,7 @@ on `Dispatchers.Main`. Before the fix the group kept playing with no controller 
 
 ## Amendment 2026-10-05 (night) — films moved between the phone and a TV
 
-Found moving *M3GAN 2.0* between the Pixel and the Ravilo app on Stue TV:
+Found moving *Copper Static* between the Pixel and the Ravilo app on Stue TV:
 
 - **From the player, a place moves the film:** with no play context, a tap on a Ravilo app in the players *Play on a TV*
   sheet did nothing. The player now passes its film and position, and the film already playing here moves (R372) rather

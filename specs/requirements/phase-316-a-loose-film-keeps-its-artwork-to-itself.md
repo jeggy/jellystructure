@@ -114,7 +114,7 @@ For each film, in order, stopping that film (and reporting why) at the first fai
    folder-named images left).
 4. Saving a new logo for a loose film (before it is moved) writes `<basename>-logo.png`; the library root gains no file.
 
-## Dev review (2026-10-08, against `main` `17b8a08a`)
+## Dev review (2026-10-08, against `main` `87e4c735`)
 
 Read against `ArtworkDownloader.assetFilePath` and its callers (`ClearlogoInk`, `MediaRoutes` artwork routes,
 `RaviloArtworkService` through `assetPath`), 315's `LinkGuard`/`SeedingDamageCheck`/`SeedingSnapshot`, `ArrClient`,

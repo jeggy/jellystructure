@@ -542,7 +542,7 @@ queue. Nothing reaches LRCLIB until an admin presses **Publish** on the Dashboar
 (`specs/requirements/phase-307-nothing-goes-to-a-public-database-until-someone-presses-publish.md`). OQ3, the
 first live publish, is 307's acceptance 3.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing left.** Deployed with every dev-stack deploy since 2026-10-01.
 - **Verified on the household's data (read-only, the live database):** `music_recording_facts` holds MusicBrainz

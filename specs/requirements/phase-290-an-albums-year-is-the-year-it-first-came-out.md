@@ -131,7 +131,7 @@ year); no Ravilo client change — `MusicAlbumCard.year` already exists and now 
 - **Acceptance 2 and 3 are left to the owner:** *Save → files* rewrites the tags of the household's own FLAC files, and
   *Find match…* re-chooses a pressing; both are by-hand actions on the album's admin page, not something to run unasked.
 
-## Triage (2026-10-09, against `main` `9ea5da3c`)
+## Triage (2026-10-09, against `main` `12bffb29`)
 
 - **Code: nothing left.** The build notes' *A release group past 25 can lose pressings* is fixed: 305 made
   `MusicBrainzClient.releasesOf` page through every official pressing (100 a page, up to 40 pages).

@@ -89,5 +89,5 @@ re-checked on Jellyfin's own transcode path, where R291's renditions use the sam
 
 **A second mapping bug, found live:** a track Jellyfin names `fra` (639-2/T) and the file names `fre` (639-2/B) did not
 match, so the film got no mapping at all (our encoder fell back to Jellyfin with `audio tracks don't match the file
-(R382)`). Fixed in `d7ecba1e`: languages are compared with `sameLanguage`, not by code (`AudioRenditionsTest`). After
+(R382)`). Fixed in `73d15191`: languages are compared with `sameLanguage`, not by code (`AudioRenditionsTest`). After
 the fix the same film's seven audio tracks map and our encoder serves it.

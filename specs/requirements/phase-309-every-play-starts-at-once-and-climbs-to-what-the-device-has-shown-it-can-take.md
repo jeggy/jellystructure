@@ -236,7 +236,7 @@ both meter defaults (Media3 picks its guess by network type and country, so the 
    location; lean: key `measured_bps` on (device, link kind), keep `proven_bps` per device, and let the stall rule
    correct the rest.
 
-## Dev review (2026-10-07, against `main` `23600c28`)
+## Dev review (2026-10-07, against `main` `297a2f1d`)
 
 Read against `VideoLadder.kt`, `AudioRenditions.kt` (`ladderMaster`, `stopFor`), `PlaybackService` (`startPlayback`,
 `withRenditions`, `measuredThroughputOf`, `releaseEncodes`), `PlaybackQoeStore` + `PlaybackQoe.sq`, `DetailService` +
@@ -382,7 +382,7 @@ route refusing an unauthenticated request.
    the device has not proven the file's bitrate.
 5. **Speed test size: 4 MB everywhere**, mobile data included (overrides FR-309-3's 1 MB on a metered link).
 
-## Re-dev review (2026-10-08, against `main` `4222ac4c`)
+## Re-dev review (2026-10-08, against `main` `fde62635`)
 
 Read again after the 2026-10-07 Pixel case and FR-309-13, against the same code as the 2026-10-07 review plus the
 tag `v1.50`, `RaviloPlayerAndroid.kt`'s QoE counting, Jellyfin's `encoding.xml`, and 14 days of `playback_qoe`.
@@ -514,7 +514,7 @@ dev stack; the rest of 309 (record, probe, prewarm, the climb rules) is not buil
 - Tests: `VideoLadderTest` (the Pixel's rows give null and no cap; every known guess ignored; < 3 transfers ignored, a
   counted sample trusted whatever its value; a newer counted sample replaces older ones).
 
-### Live — 309a0 (2026-10-08, dev stack v1.50-51-g285663ef)
+### Live — 309a0 (2026-10-08, dev stack v1.50-51-gf3bc2b22)
 
 - Migration 72 ran (schema 73): the three columns exist and no stored `bandwidth_estimate_bps` holds a known guess.
 - A Stue TV debug-app play after the deploy logged `measured 247094k → budget 172966k (308)` (a real HLS
@@ -607,7 +607,7 @@ time; `GET /api/tv/probe` answers 204 the second time; a detail page held 2 s lo
 
 ## Live results after the integration deploy (2026-10-09, v1.50-105 → v1.50-106)
 
-Deployed with R379, 313d/e, R376 and 314b/c (`22a955c8`, then `d7ecba1e` with the language fix below). Schema 78:
+Deployed with R379, 313d/e, R376 and 314b/c (`7ba7ec0c`, then `73d15191` with the language fix below). Schema 78:
 `device_stream_record` and QoE's `start_variant_bps`/`encoder` columns present.
 
 - **Speed test (FR-309-3):** `GET /api/tv/probe` answers **204** for a device measured within 24 h (the Pixel, twice);
@@ -617,7 +617,7 @@ Deployed with R379, 313d/e, R376 and 314b/c (`22a955c8`, then `d7ecba1e` with th
   `encoder: prewarm … H264 rungs=4`, first segment **953 ms**; `…/prewarm/cancel` → `prewarm cancelled … the viewer
   left the page (309)`. The page-driven call from the app (2 s on the detail page) was not seen live: the Pixel locked
   itself before the retest and no other signed-in debug app was available (see below).
-- **Found live and fixed (`d7ecba1e`):** every play of a film whose file tags a language by its 639-2/B code (`fre`,
+- **Found live and fixed (`73d15191`):** every play of a film whose file tags a language by its 639-2/B code (`fre`,
   `ger`, `dut`, `cze`…) fell back to Jellyfin — Jellyfin reports the 639-2/T code (`fra`, `deu`…) and
   `fileAudioOrder` compared the codes. It now compares languages (`sameLanguage`). Test in `AudioRenditionsTest`.
 - **Cap and record:** a start logs `takes 247881k (measured 354116k) → cap 247881k (309)`; the device's record exists.
@@ -674,7 +674,7 @@ throttle) and `309 probe`; a direct play throttled on Android or the web logging
 continuing on a transcode at the same position; mpv on Linux under a throttle (`309: stepping … down`, then up after
 2 min); the Mac (after the dylib is rebuilt) logging `309 peak`.
 
-## Mac live check (2026-10-09, test build `v1.50-117-g5c2fa010` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
+## Mac live check (2026-10-09, test build `v1.50-117-g3a66ba67` built on the owner's new MacBook (M5 Pro, macOS 27.0.1) in `~/ravilo-test`, **signed ad hoc** (the Ravilo signing key isn't on the new Mac); driven with the in-app test driver)
 
 - The rebuilt `libravilo-mac.dylib` exports `ravilo_player_set_peak_bitrate`; AVPlayer logged `309 peak 18384k (2196 ms
   buffered)` at the start (the device's record put it at the top rung, so no climb was seen).
@@ -708,7 +708,7 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
   runs the probe when it starts (or on the Cast Connect load) when its measurement is missing or stale, and a TV whose
   decoders take the file without a record uses FR-309-8's small-or-speed-tested rule with that probe.
 - **309's receiver ABR (FR-309-5):** logs `309 abr: Shaka bounded by the ladder rule` on every load and `309 probe`
-  (4 MB in 460 ms → 72.9 Mbps); its step-down crashed Shaka after a reload — fixed in 04a5b93e (see R291).
+  (4 MB in 460 ms → 72.9 Mbps); its step-down crashed Shaka after a reload — fixed in 635cb97f (see R291).
 
 ### FR-309-14 — The Ravilo TV app with no record plays what its decoder takes (2026-10-09, from the finding above)
 
@@ -739,7 +739,7 @@ continuing on a transcode at the same position; mpv on Linux under a throttle (`
 - **Test:** `StreamRecordTest` — the remux above proves 57–58.5 Mbps, never below what Jellyfin compares; no size or no
   length falls back to the old estimate.
 
-### Live, 2026-10-10 (Stue TV debug 1.50-157 = 2be7cd26's code, dev stack v1.50-158)
+### Live, 2026-10-10 (Stue TV debug 1.50-157 = 9ed2b326's code, dev stack v1.50-158)
 
 - **FR-309-14 passed:** a Cast Connect start of the 4K HDR10 remux on the TV app with no record: `takes no record → cap
   none (309)`, `PlaybackInfo directPlay=true`; the speed test ran with the cast (a measurement of 48 Mbps landed in the

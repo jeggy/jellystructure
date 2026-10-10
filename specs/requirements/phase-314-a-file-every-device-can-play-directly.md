@@ -239,7 +239,7 @@ language** changes no score and cannot start an upgrade or a re-download. Rules 
    detail*). FEL films are converted too, since nothing is lost.
 3. Disk: kind C needs about 0.8 TB of free space on the films' disk; the dry run shows the total before Apply.
 
-## Dev review (2026-10-08, against `main` `fdd48f10`)
+## Dev review (2026-10-08, against `main` `cfbba310`)
 
 Read against `torrent/SeedingGuard.kt` + `SeedingSnapshot.kt`, `media/MediaJobQueue.kt` (guard, lanes, playback
 deferral), `media/Scanner.kt` (`scanMovie`), `media/FfmpegRunner.kt` (`.jstmp_`), `tv/PlaybackService.kt`
