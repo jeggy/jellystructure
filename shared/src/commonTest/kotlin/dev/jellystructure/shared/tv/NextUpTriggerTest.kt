@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** R351 (FR-R351-13) — the receiver's next-up trigger. */
+/** R351 (FR-R351-13) — the receiver's next-up trigger; R384 — with no trusted marker, 1 s before the end. */
 class NextUpTriggerTest {
     private val duration = 2_128_071L   // a 35:28 episode
 
@@ -22,16 +22,18 @@ class NextUpTriggerTest {
         assertEquals(duration - 8_000, nextUpStartMs(duration, duration - 8_000, countdownSecs = 6))
     }
 
-    @Test fun noTrustedMarkerFallsBackTo20sBeforeTheEnd() {
-        assertEquals(duration - 20_000, nextUpStartMs(duration, null, countdownSecs = 6))
+    @Test fun noTrustedMarkerWaitsUntilOneSecondIsLeft() {
+        // R384 (FR-R384-1) — whatever the countdown: the episode plays to its end and the countdown runs on after it.
+        for (secs in listOf(4, 6, 8, 20)) assertEquals(duration - 1_000, nextUpStartMs(duration, null, countdownSecs = secs))
         // A marker in the first half belongs to another stream (the auto-advance fix) and is ignored.
-        assertEquals(duration - 20_000, nextUpStartMs(duration, 60_000L, countdownSecs = 6))
-        // So is one past the end.
-        assertEquals(duration - 20_000, nextUpStartMs(duration, duration + 5_000, countdownSecs = 6))
+        assertEquals(duration - 1_000, nextUpStartMs(duration, 60_000L, countdownSecs = 6))
+        // So is one past the end, and one at 0.
+        assertEquals(duration - 1_000, nextUpStartMs(duration, duration + 5_000, countdownSecs = 6))
+        assertEquals(duration - 1_000, nextUpStartMs(duration, 0L, countdownSecs = 6))
     }
 
-    @Test fun aCountdownLongerThanTheFallbackStillFinishesBeforeTheEnd() {
-        assertEquals(duration - 20_000 - 2_000, nextUpStartMs(duration, null, countdownSecs = 20))
+    @Test fun aOneMinuteEpisodeWithNoMarkerPlaysToItsLastSecond() {
+        assertEquals(59_000L, nextUpStartMs(60_000L, null, countdownSecs = 6))
     }
 
     @Test fun anUnknownDurationShowsNothing() {
@@ -39,7 +41,9 @@ class NextUpTriggerTest {
         assertNull(nextUpStartMs(-1L, null, countdownSecs = 6))
     }
 
-    @Test fun aClipShorterThanTheCountdownStartsAtZero() {
-        assertEquals(0L, nextUpStartMs(5_000L, null, countdownSecs = 6))
+    @Test fun aClipShorterThanOneSecondStartsAtZero() {
+        assertEquals(0L, nextUpStartMs(500L, null, countdownSecs = 6))
+        // A 5 s clip with no marker is no longer pulled back to the countdown: 1 s before its end.
+        assertEquals(4_000L, nextUpStartMs(5_000L, null, countdownSecs = 6))
     }
 }

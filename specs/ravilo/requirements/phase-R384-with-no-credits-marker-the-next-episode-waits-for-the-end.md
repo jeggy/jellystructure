@@ -6,7 +6,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-11 (dev-authored, from the owner's decision above). Not dev-reviewed, not built.
+`Built` 2026-10-11 (not on a device yet, not deployed or released) — written the same day (dev-authored, from the
+owner's decision above). **Owner approved the whole spec 2026-10-11** (*"All sound good"*): the movie card follows the
+same 1 s rule, and open question 1's lean is taken (FR-R384-6).
 Touches the player in the app (`ravilo-ui` `PlayerScreen`, so the TV, phone, desktop and web apps), the Cast receiver
 (`ravilo-cast`) and the receiver-only TV app (`ravilo-screen`), plus the shared rule in `:shared`.
 **Supersedes** R111's 20 s fallback (R182 §D's "existing `NEXTUP_AT_MS`-before-end heuristic") and the *else 20 s
@@ -46,7 +48,9 @@ The episode is played to its last frame. The next one comes `skip_secs` later, n
 `nextUpStartMs(durationMs, creditsStartMs, countdownSecs)` returns `durationMs − 1 000` when there is no trusted marker
 (the new `NEXT_UP_NO_MARKER_MS = 1_000L` replaces `NEXT_UP_FALLBACK_MS`). The countdown clamp
 (`− countdownSecs·1000 − NEXT_UP_END_MARGIN_MS`) applies **only to a trusted marker**. A file shorter than 1 s returns
-0. Every player and receiver asks this one function. None keeps its own 20 s constant.
+0. The no-marker point is this one shared value in every player and receiver; none keeps its own 20 s constant. (The
+Cast receiver asks `nextUpStartMs`; the app's player and the screen app keep their own marker rules, which this phase
+does not change, and use `NEXT_UP_NO_MARKER_MS` for the no-marker case.)
 
 ### FR-R384-2 — The app's player (`PlayerScreen`)
 
@@ -73,6 +77,19 @@ The episode is played to its last frame. The next one comes `skip_secs` later, n
 - The stop report for the finished item is sent at the end as today (position = duration). The countdown does not keep
   the finished session open. Back/Stop during this countdown behave as during any countdown.
 - Skip Credits Off and autoplay off: unchanged (the receiver's current end handling).
+- **A status during the countdown carries its seconds** (`nextupSecs`, `nextTitle`): the player's IDLE after the end
+  makes the receiver send a status, and without them the senders would read the finished media as the end of the cast.
+  Additive on the wire.
+- **The senders** (`mergeCastStatus`, shared by the phone and the Mac): while the receiver's last word is a countdown
+  (a `nextup`, or a status with `nextupSecs`), finished media is **not** *ended* — the card, the mini bar and the remote
+  stay (loaded, the last play state) until the next episode's status or the receiver's *ended*. An installed app older
+  than this shows *ended* under the countdown for those seconds; the next episode still loads.
+- **A cancelled countdown stays cancelled** for that item (found while building): the receiver had no latch, so the
+  next time update after the phone's *Watch credits* put the card straight back. Now the item is latched (cleared by a
+  sender's new play, kept across a restream), and its end is an end (*ended*, idle). A cancel after the end is that end
+  at once.
+- Any new load (a sender's, the next episode, a restream) ends a running countdown, so one running on past a film's end
+  can never load "the next episode" over what a sender started meanwhile.
 
 ### FR-R384-4 — The receiver-only TV app (`ravilo-screen`)
 
@@ -81,6 +98,11 @@ The episode is played to its last frame. The next one comes `skip_secs` later, n
 - `onFinished` with a countdown running lets it finish (holding the last frame) instead of calling `playNext()` at
   once. With no countdown yet, it starts one, the same as FR-R384-3.
 - Built in the same change (plain Kotlin/JS). Its device check waits until Tizen work resumes.
+
+### FR-R384-6 — The preload waits for half way (owner 2026-10-11, was open question 1)
+
+R381's preload of the next episode with no trusted marker starts at `max(duration − 60 s, duration / 2)` instead of
+60 s before the end, so a short episode's own start is not competing with the next one. With a marker: unchanged.
 
 ### FR-R384-5 — Tests
 
@@ -106,14 +128,30 @@ The episode is played to its last frame. The next one comes `skip_secs` later, n
 - Segment detection, and when the scan reaches a new show.
 - The countdown length (`skip_secs`; the screen app's 10 s), autoplay, Skip Credits Off, the stinger case.
 - What counts as *finished* (R347's `playbackFinished`: the marker, else 90 %).
-- R381's preload of the next episode 60 s before the end with no marker. On a 1-minute episode that starts the
-  preload at the first second (see open question 1).
 
 ## Open questions (dev)
 
-1. R381's no-marker preload point (60 s before the end) starts at once on a short episode and competes with the
-   current one's start. Lean: no earlier than half way (`max(duration − 60 s, duration / 2)`). That is a separate
-   change in R381's code path, not this phase.
+1. ~~R381's no-marker preload point~~ — decided by the owner 2026-10-11: FR-R384-6.
 2. Whether the Cast receiver's video element keeps its last frame after `MEDIA_FINISHED` on the Chromecast HD and
    the Google TV streamer, or goes black. Either is acceptable (the card is the point), but a black frame should be
    deliberate, not a flash.
+
+## Build notes (2026-10-11)
+
+- **`:shared`** `NextUpTrigger.kt`: `NEXT_UP_NO_MARKER_MS = 1_000L` replaces `NEXT_UP_FALLBACK_MS`; `nextUpStartMs`
+  clamps to the countdown only for a trusted marker. `NextUpTriggerTest` rewritten for the new rule (6 tests).
+- **`PlayerScreen.kt`**: `NEXTUP_AT_MS` deleted; the early trigger fires at `NEXT_UP_NO_MARKER_MS`; nothing else needed —
+  the countdown (`LaunchedEffect(nextUpVisible)`) does not look at the player's state, the natural-end trigger already
+  starts the card when the last second was missed, and the player keeps its last frame when ended. The preload point is
+  FR-R384-6.
+- **`ravilo-cast` `Receiver.kt`**: `onFinished` keeps (or starts) the countdown on a real end with autoplay and sends
+  the item's stop once; `loadEpisode` does not send a second stop for it; `endNextUp()` is the one way a countdown
+  ends (the load interceptor, a sender's stop, the dashboard's stop, *play now*, cancel); `nextUpCancelledFor` latch;
+  `endedHere()`; status carries `nextupSecs`/`nextTitle` while the countdown runs.
+- **`CastStatusMerge.kt`**: the `counting` rule; one new test in `CastStatusMergeTest` (12 tests).
+- **`ravilo-screen` `Screen.kt`**: `NEXT_UP_TAIL_MS` deleted; `onFinished` keeps (or puts up) the card instead of
+  `playNext()` at once, `playNext` stops a finished title at its length, a cancel after the end ends it (`endHere()`).
+- Verified here: `:shared:desktopTest`, `:ravilo-ui:desktopTest` (all green), `:ravilo-cast:compileKotlinJs`,
+  `:ravilo-screen:compileKotlinJs`, `:ravilo-web:compileKotlinWasmJs`, `:ravilo-ui:compileDebugKotlinAndroid`,
+  `:ravilo-ui:compileKotlinDesktop`. **Not run on any device**; the acceptance list is owed. The screen app's check waits
+  for Tizen work to resume. The Cast receiver ships with the backend image (next deploy); the app with the next release.

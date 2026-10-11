@@ -66,7 +66,11 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
     // known stands. It read as "not playing, at 0:00" — the loading dots and 0:00 / -0:00 while the speaker played on.
     val unknown = media.playerState == null
     val idle = media.playerState == null || media.playerState == "IDLE"
-    val ended = event == "ended" || media.idleFinished
+    // R384 (FR-R384-3) — the receiver's countdown runs on over a finished film: while its last word is a countdown (a
+    // `nextup`, or a status that carries the seconds), the finished media is not the end of the cast — the card, the
+    // mini bar and the remote stay until the next episode loads or the receiver says *ended*.
+    val counting = said?.nextupSecs != null && (said.type == "nextup" || said.type == "status") && event != "ended"
+    val ended = !counting && (event == "ended" || media.idleFinished)
     val subs = said?.subtitleTracks ?: emptyList()
     // R285 — an active CAF text track is the selection; with none active, a burned-in subtitle (which has no CAF
     // track at all) is — and only the receiver can know that. Audio is never a CAF track on an HLS cast.
@@ -102,14 +106,14 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         durationMs = duration,
         // 2026-10-05 — BUFFERING (after a seek, a stall) is neither: the last known stands. It read as *Paused* on
         // the phone's bar while the TV kept playing.
-        playing = if (unknown || media.playerState == "BUFFERING") p.playing else media.playerState == "PLAYING",
+        playing = if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
         buffering = if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
-        loaded = (if (unknown) p.loaded else !idle) || said?.type == "status",
+        loaded = (if (unknown) p.loaded else !idle) || said?.type == "status" || counting,
         ended = ended,
         // R299 — set by the receiver's own word, cleared by the next load's status.
         failed = failedAfter(event, p.failed),
         hasNext = said?.hasNext ?: p.hasNext,
-        nextUpSecs = if (event == "nextup") said?.nextupSecs else if (event == "status" || ended) null else p.nextUpSecs,
+        nextUpSecs = if (event == "nextup" || (event == "status" && counting)) said?.nextupSecs else if (event == "status" || ended) null else p.nextUpSecs,
         nextTitle = said?.nextTitle ?: p.nextTitle,
         busyRetryAfter = if (event == "busy") said?.retryAfter else if (event == "status" || event == "tracks") null else p.busyRetryAfter,
         busySinceMs = if (event == "busy") (said?.sinceMs ?: nowMs) else if (event == "status" || event == "tracks") null else p.busySinceMs,

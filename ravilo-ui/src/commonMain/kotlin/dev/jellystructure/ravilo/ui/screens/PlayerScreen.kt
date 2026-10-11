@@ -148,7 +148,6 @@ private const val CHROME_HIDE_MS = 3_600L
 private val SUBTITLE_FLOOR_INSET = 28.dp
 private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
 private const val EPRAIL_HIDE_MS = 30_000L // R208: auto-close the episode rail after inactivity
-private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
 // R182 — replaces the old hardcoded COUNTDOWN_SECS = 8: the "Skip button countdown" viewer setting
 // (RaviloConfig.skipSecs, one of 4/6/8) now governs both the Skip Intro pill and this next-up/credits
 // countdown. This is only the pre-fetch seed (RaviloConfig's own default) until getConfig() resolves.
@@ -165,7 +164,8 @@ private const val ADVANCE_TIMEOUT_MS = 5_000L
 // used to satisfy the credits check on the very first poll tick, so the next-episode countdown fired
 // at the START of every episode and the player hopped through a whole series in skipSecs-long steps —
 // reported as "it just gets stuck trying to play the next episode over and over". Below half of the
-// duration the marker is ignored and the NEXTUP_AT_MS end-of-file heuristic is used instead.
+// duration the marker is ignored and the no-marker rule is used instead (R384: 1 s before the end,
+// `NEXT_UP_NO_MARKER_MS` in `:shared`; it was R111's 20 s `NEXTUP_AT_MS`).
 // R347 (FR-R347-1) — that trust rule now lives in `:shared` (`trustedCreditsStartMs`), beside the one
 // "finished" rule (`playbackFinished`) the server's stop uses too.
 
@@ -1236,8 +1236,10 @@ fun PlayerScreen(
                 }
 
                 // Credits card trigger (R111/R182 FR-RV-SKIP1-2): the real creditsStartMs when known,
-                // else the existing NEXTUP_AT_MS-before-end heuristic (§D graceful fallback for an
-                // unscanned title). R182 also drops the old "no next episode ⇒ exit immediately, no
+                // else R384 (FR-R384-2) — 1 s before the end (`NEXT_UP_NO_MARKER_MS`; it was 20 s, which on a
+                // 1-minute episode covered the last third and, with autoplay, never played the last ~14 s). The
+                // countdown then runs its full length over the finished picture: nothing below ends or restarts it
+                // when the file ends, and the natural-end trigger starts it if the last second was never seen. R182 also drops the old "no next episode ⇒ exit immediately, no
                 // card at all" special case below — a movie/last-episode now gets the same card, with a
                 // Skip credits action, instead of being silently kicked out at the natural end.
                 // Bug fix (auto-advance retry loop): only a marker that plausibly belongs to THIS stream is
@@ -1246,10 +1248,10 @@ fun PlayerScreen(
                 // rather than declaring the episode finished seconds after it started.
                 val creditsStart = dev.jellystructure.shared.tv.trustedCreditsStartMs(currentSegments.creditsStartMs, durationMs)
                 val creditsReached = if (creditsStart != null) positionMs >= creditsStart
-                    else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
+                    else durationMs > 0 && (durationMs - positionMs) in 1..dev.jellystructure.shared.tv.NEXT_UP_NO_MARKER_MS
                 val advanceAlreadyRequested = bk.advanceRequestedForItemId == currentItemId
                 // R230 (FR-R230-1) — Skip Credits: Off means no mid-playback interruption at all, so this
-                // early trigger (segment creditsStartMs, or the NEXTUP_AT_MS heuristic for an unscanned
+                // early trigger (segment creditsStartMs, or R384's last second for an unscanned
                 // title) is suppressed entirely while Off. The real end of file (below) becomes the only
                 // trigger point in that mode.
                 if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
@@ -1261,7 +1263,9 @@ fun PlayerScreen(
 
                 // R381 (owner, 2026-10-08) — preload the next episode at the credits marker (or 60 s before the end with
                 // no trusted marker), autoplay on or off; a seek back out of the credits drops it again.
-                val prefetchAt = creditsStart ?: (durationMs - NEXT_PREFETCH_BEFORE_END_MS)
+                // R384 (FR-R384-6) — never before half way: on a 1-minute episode "60 s before the end" was its first
+                // second, and the preload competed with the episode's own start.
+                val prefetchAt = creditsStart ?: maxOf(durationMs - NEXT_PREFETCH_BEFORE_END_MS, durationMs / 2)
                 // The live next episode and the live store (rememberUpdatedState), never `resolvedNextEpisodeId` or
                 // `store`: this loop is launched once per player, while an auto-advance swaps in a new episode and a new
                 // PlayerStore (closing the old one, its scope cancelled). Holding the first episode's values, every later

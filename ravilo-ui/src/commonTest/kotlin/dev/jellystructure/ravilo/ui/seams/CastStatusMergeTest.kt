@@ -36,6 +36,23 @@ class CastStatusMergeTest {
     }
 
     @Test
+    fun `a film that finishes under the receiver's countdown is not the end of the cast`() {
+        // R384 (FR-R384-3) — the card went up 1 s before the end; the film finishes; the countdown runs on.
+        val counting = mergeCastStatus(null, CastReceiverMessage(type = "nextup", nextupSecs = 6, nextTitle = "E2"), playing, "nextup", 0)
+        val finished = CastMediaSnapshot(playerState = "IDLE", idleFinished = true, positionMs = 5_400_000, durationMs = 5_400_000)
+        val after = mergeCastStatus(counting, CastReceiverMessage(type = "nextup", nextupSecs = 6, nextTitle = "E2"), finished, null, 1)
+        assertFalse(after.ended); assertTrue(after.loaded); assertTrue(after.playing); assertEquals(6, after.nextUpSecs)
+        // The player's IDLE makes the receiver send a status: it carries the seconds, so the card stays.
+        val status = mergeCastStatus(after, CastReceiverMessage(type = "status", itemId = "e1", nextupSecs = 5), finished, "status", 2)
+        assertFalse(status.ended); assertEquals(5, status.nextUpSecs)
+        // The countdown cancelled after the end: the receiver says ended, and it is.
+        val over = mergeCastStatus(status, CastReceiverMessage(type = "ended", itemId = "e1"), finished, "ended", 3)
+        assertTrue(over.ended); assertNull(over.nextUpSecs)
+        // A status with no countdown on a finished film is the end, as before.
+        assertTrue(mergeCastStatus(status, CastReceiverMessage(type = "status", itemId = "e1"), finished, "status", 4).ended)
+    }
+
+    @Test
     fun `a busy server is remembered until a status or tracks message clears it`() {
         val busy = mergeCastStatus(null, CastReceiverMessage(type = "busy", retryAfter = 30), playing, "busy", 1_000)
         assertEquals(30, busy.busyRetryAfter); assertEquals(1_000, busy.busySinceMs)

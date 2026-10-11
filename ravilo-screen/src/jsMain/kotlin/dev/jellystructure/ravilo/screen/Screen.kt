@@ -8,6 +8,7 @@ import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.NavigateEnvelope
+import dev.jellystructure.shared.tv.NEXT_UP_NO_MARKER_MS
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlayItemEnvelope
 import dev.jellystructure.shared.tv.PlayerCommandEnvelope
@@ -74,7 +75,6 @@ private const val RECONNECT_BASE_MS = 2_000L
 private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
 private const val NEXT_UP_SECS = 10
-private const val NEXT_UP_TAIL_MS = 20_000L
 /** R264 — rows the TV picker shows at once; the window follows the focus. */
 private const val PICKER_ROWS = 9
 
@@ -131,6 +131,8 @@ private class Screen(private val serverUrl: String) {
     private var nextUpShown = false
     private var nextUpCancelled = false
     private var nextUpDeadline = 0L
+    /** R384 (FR-R384-4) — the title played to its end while the countdown runs on over its last frame. */
+    private var finishedUnderNextUp = false
     // The picker: open, which tab, level 2's group (null = level 1), the focused row and the window's top.
     private var pickerOpen = false
     private var pickerTab = PickerTab.SUBTITLES
@@ -291,7 +293,7 @@ private class Screen(private val serverUrl: String) {
         // R264 (FR-R264-3) — from the push: Skip Intro's window, the credits, and the next episode.
         segments = env.segments
         nextId = env.nextId; nextTitle = env.nextTitle; nextKicker = env.nextKicker
-        nextUpCancelled = false
+        nextUpCancelled = false; finishedUnderNextUp = false
         hideSkip(); hideNextUp(); closePicker(); el("overlay").classList.remove("on")
         loaded = false
         el("loading-title").textContent = env.title.orEmpty()
@@ -473,7 +475,8 @@ private class Screen(private val serverUrl: String) {
             val creditsAt = seg?.creditsStartMs?.takeIf { seg.stinger == null }
             val due = when {
                 creditsAt != null -> pos >= creditsAt
-                dur > 0 -> dur - pos <= NEXT_UP_TAIL_MS
+                // R384 (FR-R384-4) — no marker: the last second (it was 20 s); the countdown runs on past the end.
+                dur > 0 -> dur - pos <= NEXT_UP_NO_MARKER_MS
                 else -> false
             }
             if (due && !nextUpShown && !pickerOpen) showNextUp()
@@ -514,8 +517,12 @@ private class Screen(private val serverUrl: String) {
     }
     private fun hideNextUp() { nextUpShown = false; el("nextup").classList.remove("on") }
 
-    /** Back on the card, or the phone's *cancel*: this title plays to its end and the set goes idle. */
-    private fun cancelNextUp() { nextUpCancelled = true; hideNextUp() }
+    /** Back on the card, or the phone's *cancel*: this title plays to its end and the set goes idle. R384 — after the
+     *  end (the countdown ran on over the last frame) that is now. */
+    private fun cancelNextUp() {
+        nextUpCancelled = true; hideNextUp()
+        if (finishedUnderNextUp) { finishedUnderNextUp = false; endHere() }
+    }
 
     /**
      * The next episode, through the backend like any other play: this set asks `POST /api/remote/play` to
@@ -526,7 +533,8 @@ private class Screen(private val serverUrl: String) {
     private fun playNext() {
         val id = nextId ?: return
         val current = itemId
-        val pos = if (loaded) backend.positionMs() else 0L
+        // R384 — a title that finished under the countdown is stopped at its length (the player may say 0 once ended).
+        val pos = if (finishedUnderNextUp) backend.durationMs() else if (loaded) backend.positionMs() else 0L
         hideNextUp(); hideSkip(); nextId = null
         GlobalScope.launch {
             if (current != null) runCatching { api.stopPlayback(current, pos) }
@@ -647,6 +655,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun stopAndIdle() {
+        finishedUnderNextUp = false
         val id = itemId
         val pos = if (loaded) backend.positionMs() else 0L
         if (id != null) GlobalScope.launch { runCatching { api.stopPlayback(id, pos) } }
@@ -656,9 +665,19 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun onFinished() {
-        // R264 (FR-R264-3) — the countdown did not run (credits shorter than it, or no marker) but the
-        // household plays on: the next episode, as if the card had run out.
-        if (nextId != null && !nextUpCancelled && autoplay()) { playNext(); return }
+        // R264 (FR-R264-3) — the household plays on. R384 (FR-R384-4) — the countdown runs its whole length over the last
+        // frame (put up now when the last second was never seen), and playNext() follows it, with the stop at the end;
+        // the end used to play the next episode at once, cutting a countdown that started 1 s before it to one tick.
+        if (nextId != null && !nextUpCancelled && autoplay()) {
+            finishedUnderNextUp = true
+            if (!nextUpShown) showNextUp()
+            return
+        }
+        endHere()
+    }
+
+    /** The title's end with nothing to play after it: stopped at its length, the idle view, *ended* to the phone. */
+    private fun endHere() {
         val id = itemId
         val dur = backend.durationMs()
         if (id != null) GlobalScope.launch { runCatching { api.stopPlayback(id, dur) } }

@@ -140,6 +140,13 @@ private class Receiver {
     private var durationMs = 0L
     private var paused = false
     private var nextUpJob: Job? = null
+    /** R384 (FR-R384-3) — the countdown's seconds left while it runs (said in every status too). */
+    private var nextUpLeft: Int? = null
+    /** R384 (FR-R384-3) — the film played to its end while the countdown runs on over the finished picture. */
+    private var finishedUnderNextUp = false
+    /** R384 (FR-R384-3) — the item whose countdown a sender cancelled (*Watch credits*): it is not put up again, and
+     *  the item's end is an end. Without it the next time update put the card straight back. */
+    private var nextUpCancelledFor: String? = null
     private var busySinceMs: Long? = null
     private var introSkipped = false
     private var subSize = "M"
@@ -520,7 +527,7 @@ private class Receiver {
     private fun onSenderStop() {
         val d = current
         note("stop from a sender (${d?.itemId}): the cast ends")
-        nextUpJob?.cancel(); nextUpJob = null
+        endNextUp()
         stopSession()
         current = null
         pausedBeat?.cancel(); pausedBeat = null
@@ -533,8 +540,7 @@ private class Receiver {
     /** A film stopped from the dashboard: the idle view, and *ended* to the senders — never *failed*. */
     private fun stopFilm() {
         val d = current ?: return
-        nextUpJob?.cancel(); nextUpJob = null
-        el("nextup").classList.remove("on")
+        endNextUp()
         stopSession()
         current = null   // before the player's stop, so its MEDIA_FINISHED finds nothing to call a failure
         runCatching { playerManager.stop() }
@@ -585,6 +591,10 @@ private class Receiver {
         // next episode, a restream) carry no code and have dealt with the item before themselves.
         note("load ${data.itemId} own=${data.code.isEmpty()} tracks=${data.tracks.size} state=${playerManager.getPlayerState()} before=${current?.itemId} open=$sessionOpen")
         if (data.code.isNotEmpty()) replaced(data.itemId)
+        // R384 (FR-R384-3) — a countdown belongs to the item it was for: a new load (a sender's, the next episode, a
+        // restream) ends it, so one that runs on past a film's end cannot load "the next episode" over what came after.
+        endNextUp()
+        if (data.code.isNotEmpty()) nextUpCancelledFor = null   // a sender's play starts afresh; a restream keeps it
         current = data
         introSkipped = false
         isHeadless()
@@ -1167,9 +1177,10 @@ private class Receiver {
             GlobalScope.launch { runCatching { api?.reportProgress(data.itemId, positionMs, paused, vol) } }
         }
         // Next-up card near the end (the receiver owns the countdown; the phone mirrors it). R351 (FR-R351-13) — the
-        // credits marker or 20 s before the end, but never so late that the countdown cannot finish before the end.
+        // credits marker, but never so late that the countdown cannot finish before the end; R384 — with no trusted
+        // marker, 1 s before the end (the countdown then runs on past it, onFinished).
         val nextUpAt = nextUpStartMs(durationMs, ep?.creditsStartMs, config?.skipSecs ?: 6)
-        if (nextUpJob == null && nextUpAt != null && positionMs >= nextUpAt && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) {
+        if (nextUpJob == null && nextUpCancelledFor != data.itemId && nextUpAt != null && positionMs >= nextUpAt && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) {
             note("nextup at ${positionMs}ms of ${durationMs}ms (credits ${ep?.creditsStartMs ?: "none"})")
             startNextUp()
         }
@@ -1286,6 +1297,7 @@ private class Receiver {
         nextUpJob = GlobalScope.launch {
             var left = secs
             while (left > 0) {
+                nextUpLeft = left
                 el("nu-c").textContent = ReceiverStrings.t("receiver.starts_in", left)
                 send(CastReceiverMessage(type = "nextup", nextupSecs = left, nextTitle = next.title, receiverId = receiverId))
                 delay(1_000)
@@ -1296,10 +1308,25 @@ private class Receiver {
         }
     }
 
-    private fun cancelNextUp() {
-        nextUpJob?.cancel(); nextUpJob = null
+    /** The countdown, if one runs, is over: no card, no seconds, nothing left to finish. */
+    private fun endNextUp() {
+        nextUpJob?.cancel(); nextUpJob = null; nextUpLeft = null; finishedUnderNextUp = false
         el("nextup").classList.remove("on")
+    }
+
+    private fun cancelNextUp() {
+        val finished = finishedUnderNextUp
+        if (nextUpJob != null) nextUpCancelledFor = current?.itemId
+        endNextUp()
+        // R384 (FR-R384-3) — cancelled after the film already ended: what its end would have done without a countdown.
+        if (finished) { endedHere(); return }
         send(CastReceiverMessage(type = "status", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
+    }
+
+    /** FR-R245-15 — a film's end with nothing to play after it: *ended* to the senders, and the idle view. */
+    private fun endedHere() {
+        send(CastReceiverMessage(type = "ended", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
+        idle()
     }
 
     private fun loadNext() = loadEpisode(+1)
@@ -1308,8 +1335,9 @@ private class Receiver {
     private fun loadEpisode(step: Int) {
         val d = current ?: return
         val next = d.episodes.getOrNull(d.currentIndex + step) ?: return
-        nextUpJob?.cancel(); nextUpJob = null
-        stopSession()
+        val stopped = finishedUnderNextUp   // R384 — its stop went out at the end; a second one would end the next start
+        endNextUp()
+        if (!stopped) stopSession()
         // R343 — Start over belongs to the sender's first load only; the next episode is an ordinary play.
         val data = d.copy(itemId = next.id, title = next.title, kicker = next.kicker, artUrl = next.stillUrl ?: d.artUrl, positionMs = null, currentIndex = d.currentIndex + step, code = "", startOver = false)
         val req = js("new cast.framework.messages.LoadRequestData()")
@@ -1329,20 +1357,27 @@ private class Receiver {
         // Compared as text: a constant this framework build lacks would be `undefined`, and equal to no reason.
         // The same while a LOAD is being prepared, whatever reason this framework build gives.
         if (endedReason == "INTERRUPTED" || loading > 0) return
-        nextUpJob?.cancel(); nextUpJob = null
-        el("nextup").classList.remove("on")
-        stopSession()
         // R297 (FR-R297-2) — only a real end moves on. An error used to walk the whole queue, ~2 s an episode.
         val reachedEnd = endedReason == null || endedReason == cast.framework.events.EndedReason.END_OF_STREAM
+        // R384 (FR-R384-3) — a film's end with the next episode to autoplay: the countdown runs its whole length over
+        // the finished picture (started here when the last second was never seen), then the next episode. The end
+        // used to cancel it and load the next one at once — with the card 1 s before the end, there was no countdown.
+        if (!music && reachedEnd && nextEpisode() != null && nextUpCancelledFor != current?.itemId && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) {
+            if (!finishedUnderNextUp) stopSession()
+            finishedUnderNextUp = true
+            if (nextUpJob == null) startNextUp()
+            note("finished under the countdown (${nextUpLeft ?: config?.skipSecs ?: 6} s left)")
+            return
+        }
+        endNextUp()
+        stopSession()
         // 286 (FR-286-4) — a song's end: the next by repeat's rule; the queue's end is the idle view.
         if (music) { if (reachedEnd) musicNext(byViewer = false) else failed(); return }
-        if (reachedEnd && nextEpisode() != null && config?.autoplayNext != false && config?.skipCredits != SkipMode.OFF) { loadNext(); return }
         // R299 (FR-R299-1) — a load that failed is not an end. The phone used to read "ended" with no
         // media session as R245's "Lost contact… it may still be playing", every clause of it false.
         if (!reachedEnd) { failed(); return }
         // FR-R245-15 — ended is literally the idle view.
-        send(CastReceiverMessage(type = "ended", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
-        idle()
+        endedHere()
     }
 
     /** R299 (FR-R299-1) — the item could not be played here; the phone says so and offers itself. */
@@ -1412,7 +1447,7 @@ private class Receiver {
             is CastChannelStep.SubSize -> { subSize = step.size; playerManager.setTextTrackStyle(textStyle()); sendStatus() }
             CastChannelStep.EpisodeNext -> loadNext()
             CastChannelStep.NextUpCancel -> cancelNextUp()
-            CastChannelStep.NextUpPlay -> { nextUpJob?.cancel(); nextUpJob = null; el("nextup").classList.remove("on"); loadNext() }
+            CastChannelStep.NextUpPlay -> loadNext()   // loadEpisode ends the countdown (R384: and knows a finished film's stop went out)
             // R285 (FR-R285-4) — an HLS cast carries one audio track and no picture subtitles, so both are a restream.
             is CastChannelStep.Audio -> {
                 val wanted = ticket?.audio?.getOrNull(step.index) ?: return
@@ -1479,6 +1514,9 @@ private class Receiver {
         if (full) { sentRev = queueRev; fullDue = false }
         val msg = CastReceiverMessage(
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
+            // R384 (FR-R384-3) — a status during the countdown says it runs (the player's IDLE after a film's end sends
+            // one): the senders keep the card and do not read the finished media as the end of the cast.
+            nextupSecs = nextUpLeft.takeIf { nextUpJob != null && !music }, nextTitle = nextEpisode()?.title.takeIf { nextUpJob != null && !music },
             hasNext = if (music) nextStep(byViewer = true) != CastNext.End else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.
