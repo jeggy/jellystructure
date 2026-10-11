@@ -234,9 +234,10 @@ class BazarrSteering(
 
     private fun budgetLeft(): Boolean = q.downloadsSince(midnight()).executeAsOne() < mode().dailyDownloadBudget
 
-    /** FR-273-12 — Bazarr's sync, told which reference, how far and whether to fix the speed; then re-checked. */
-    private suspend fun sync(cfg: BazarrConfig, item: MediaItem, t: Target, r: Subtitle_check): Boolean {
-        if (dev.jellystructure.tv.isPlaybackActive()) { later(item.id, r.video_path); return false }
+    /** FR-273-12 — Bazarr's sync, told which reference, how far and whether to fix the speed; then re-checked.
+     *  The loop waits while a TV plays; a press on a fix button goes ahead (302, amended 2026-10-11). */
+    private suspend fun sync(cfg: BazarrConfig, item: MediaItem, t: Target, r: Subtitle_check, manual: Boolean = false): Boolean {
+        if (!manual && dev.jellystructure.tv.isPlaybackActive()) { later(item.id, r.video_path); return false }
         val reference = syncReference(t, r)
         val maxOffset = MAX_OFFSETS.firstOrNull { it > abs(r.shift_ms ?: 0) / 1000 + 10 } ?: MAX_OFFSETS.last()
         val (type, id) = when (t) { is Target.Ep -> "episode" to t.episode.sonarrEpisodeId; is Target.Film -> "movie" to t.movie.radarrId }
@@ -436,9 +437,8 @@ class BazarrSteering(
         putRun(start)
         scope.launch {
             var cur = start
+            // FR-302-4 (amended 2026-10-11) — one at a time, and not held back while a TV plays: the press is the OK.
             for (r in rows) {
-                // FR-302-4 — wait while a TV plays, rather than skipping (a sync reads the whole video).
-                while (dev.jellystructure.tv.isPlaybackActive()) delay(60_000)
                 val fresh = q.checkByPath(r.sidecar_path).executeAsOneOrNull()
                 val ok = fresh != null && FitGroup.of(fresh) == group &&
                     runCatching { fixRow(fresh) }.onFailure { Logger.warn("subtitle fix failed for ${r.sidecar_path.substringAfterLast('/')}: ${it.message}", "subtitles") }.getOrDefault(false)
@@ -463,11 +463,15 @@ class BazarrSteering(
         val target = targetFor(item, r.video_path) ?: return@withLock false
         val ok = when (group.fix) {
             FitGroup.Fix.SYNC -> {
+                // Amended 2026-10-11 — a sync rewrites the file, so "synced already" is any sync of this sidecar since
+                // it was last replaced through Bazarr, not a sync of its current content (which never matches).
                 val syncedAt = q.lastActionAt(r.sidecar_path, SYNC).executeAsOne().at
-                val syncedThis = q.doneOnContent(r.sidecar_path, SYNC, "%hash=${r.content_hash}%").executeAsOne() > 0
+                val replacedAt = listOfNotNull(q.lastActionAt(r.sidecar_path, BLACKLIST).executeAsOne().at,
+                    q.lastActionAt(r.sidecar_path, REMOVE).executeAsOne().at).maxOrNull()
+                val synced = syncedAt != null && (replacedAt == null || syncedAt >= replacedAt)
                 when {
-                    syncedAt != null && r.checked_at <= syncedAt -> false  // the check after the sync has not run yet
-                    !syncedThis && abs(r.shift_ms ?: 0) / 1000 < MAX_OFFSETS.last() -> step(item, r, SYNC, alone = true, manual = true) { sync(cfg, item, target, r) }
+                    synced && r.checked_at <= syncedAt!! -> false  // the check after the sync has not run yet
+                    !synced && abs(r.shift_ms ?: 0) / 1000 < MAX_OFFSETS.last() -> step(item, r, SYNC, alone = true, manual = true) { sync(cfg, item, target, r, manual = true) }
                     else -> replace(cfg, item, target, r, alone = true, manual = true)
                 }
             }

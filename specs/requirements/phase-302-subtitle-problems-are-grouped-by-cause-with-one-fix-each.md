@@ -185,3 +185,27 @@ admin. On a copy of the production database, count the groups. `scripts/check-ph
   replaces and never syncs twice). Subtitle + Bazarr suites 30/30. Backend and admin compile.
 - **Owed:** after a deploy the owner approves, and once 301's re-check has run, the Dashboard on production, and one
   press of a small group (`episode`) watched end to end in Bazarr.
+
+## Amendment 2026-10-11 — a press goes ahead while a TV plays, and a sync that didn't help is replaced
+
+**Bug confirmed** (owner, 2026-10-11: *"I've tried clicking on 'Sync them in Bazarr' but feels like nothing
+happens … tried it right now and also some days ago"*, on *Subtitles early or late by 2 s or more*). On production
+the press reached the server (`Subtitle fix shift pressed: 83 subtitle(s)`, 10:06 UTC), then the run waited.
+FR-302-4 pauses between subtitles while any TV plays, and the living-room TV had been playing almost without a break
+since 05:00. So the run polled once a minute and never started, and the row only said *Fixing now: 0 of 83*. The
+earlier press was lost the same way: the run lives in memory, the container restarted on 10-10, and no subtitle
+action has been recorded since 10-03.
+
+A second defect sat behind it. 75 of the 83 had been synced by Bazarr on 10-03 and the check after still found them
+40–50 s off. `fixRow` decided "synced already" by looking for a sync of the file's *current* content hash. A sync
+rewrites the file, so the hash never matches, and every one of them would have been synced a second time. That
+breaks this spec's own rule (FR-302-4, acceptance 4).
+
+**Amended FR-302-4** (owner decision 2026-10-11: *go ahead, one at a time*):
+
+- A press goes ahead while a TV plays. Subtitles are still done one at a time, never in parallel. A Bazarr sync
+  started by a press is not held back by playback. The automatic loop (FR-273-12) keeps its deferral.
+- *Already synced* means a sync of this sidecar (done or failed) since the file was last replaced through Bazarr
+  (blacklist or remove), whatever the content is now. Once the check after that sync has run and still finds the
+  file off, the press replaces it. Until that check has run, it is skipped for now (unchanged).
+- The confirmation no longer says the run waits while a TV is playing.

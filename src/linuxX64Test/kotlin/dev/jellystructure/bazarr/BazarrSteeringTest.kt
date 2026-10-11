@@ -305,8 +305,9 @@ class BazarrSteeringTest {
         assertTrue(steering.waiting().none { it.sidecar_path == late.sidecar_path }, "the proposal is answered")
         // The check after the sync has not run: nothing yet.
         assertTrue(!steering.fixRow(late))
-        // It ran, and the file is still off: replaced (deleted through Bazarr: it did not come from Bazarr).
-        assertTrue(steering.fixRow(late.copy(checked_at = late.checked_at + 100)))
+        // It ran, and the file is still off: replaced (deleted through Bazarr: it did not come from Bazarr). Bazarr's
+        // sync rewrote the file, so its content is new — that must not read as "never synced" (302, 2026-10-11).
+        assertTrue(steering.fixRow(late.copy(checked_at = late.checked_at + 100, content_hash = late.content_hash + "-synced")))
         assertEquals(1, fake.calls.count { it.startsWith("sync") }, "${fake.calls}")
         assertTrue(fake.calls.contains("delete movie 7 Film.en.srt"), "${fake.calls}")
         assertNull(steering.run(FitGroup.SHIFT.id))

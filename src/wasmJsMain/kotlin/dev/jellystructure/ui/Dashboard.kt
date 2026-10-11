@@ -528,4 +528,4 @@ private fun ovClick(t: Element?, scope: CoroutineScope) {
 
 /** Phase 302 (FR-302-4) — the confirmation before a subtitle group is fixed: what, how many, and how. */
 internal fun confirmSubtitleFix(action: String, count: Int, sentence: String): Boolean =
-    window.confirm("$action — $count ${if (count == 1) "subtitle" else "subtitles"}?\n\n$sentence\n\nThey are done one at a time, and wait while a TV is playing.")
+    window.confirm("$action — $count ${if (count == 1) "subtitle" else "subtitles"}?\n\n$sentence\n\nThey are done one at a time.")
