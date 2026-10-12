@@ -577,9 +577,12 @@ class PlaybackService(
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
         if (reencodesVideo(master, sourceVideoCodec, sourceVideoRange)) {
             val file = localFileOf(jellyfinId)
+            // R291 (FR-R291-13) — a cast receiver is offered renditions on our own master (video-only variants) and
+            // never on Jellyfin's; see withReceiverRenditions. Every other device keeps what it declared.
+            val ourCaps = withReceiverRenditions(deviceKind, capabilities)
             val (plan, why) = if (notOurEncoder) null to "the player could not play ours"
             else if (file == null) null to "file not on this server's disk"
-            else encoder.planFor(capabilities, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
+            else encoder.planFor(ourCaps, deviceKind, file.first, file.second, file.tracks, ticket.audio, ticket.audioStreamIndex,
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform)
@@ -595,8 +598,11 @@ class PlaybackService(
                     "audio=${plan.audio.size} subs=${plan.subtitles.size}${if (plan.burnSubtitleOrder != null) " burn-in" else ""} ${plan.mux} card=${plan.cudaDevice}" +
                     "${if (adopted != null) " prewarmed" else ""} (313/309)", "tv")
                 device?.let { noteServed(it, jellyfinId, "ours", encoderWords(plan)) }
+                // R291 (FR-R291-13) — the receiver's offer is the server's decision, so say when it was made.
+                if (deviceKind.equals("cast", ignoreCase = true) && ourCaps.hlsAudioRenditions && plan.audio.size >= 2)
+                    Logger.info("playback: item=$jellyfinId cast receiver offered ${plan.audio.size} audio renditions on our own encoder (R291)", "tv")
                 return measured.copy(hlsUrl = "/api/tv/stream/$id/master.m3u8",
-                    audioRenditions = capabilities.hlsAudioRenditions && plan.audio.size >= 2, adaptive = plan.rungs.size > 1,
+                    audioRenditions = ourCaps.hlsAudioRenditions && plan.audio.size >= 2, adaptive = plan.rungs.size > 1,
                     encoder = "ours", startVariantBps = startStream.takeIf { plan.rungs.size > 1 },
                     // 309 (FR-309-2) — the player's estimate seeded so its own rule (× 0.7) lands on the start rung.
                     measuredBandwidthBps = if (plan.rungs.size > 1) (startStream / THROUGHPUT_HEADROOM).toLong() else measuredBps)
@@ -622,6 +628,8 @@ class PlaybackService(
             "negotiated=${queryParam(master, "VideoBitrate")} source=$sourceVideoBps ceiling=$ceiling " +
             "url=${master.substringAfter('?').split('&').filterNot { it.substringBefore('=').lowercase() in LOG_REDACTED_QUERY_KEYS }.joinToString("&")} (308)", "tv")
         // The renditions are made from the file on THIS server's disk (see AudioRenditions): none without it.
+        // R291 (FR-R291-13) — the device's own declaration, never withReceiverRenditions: on Jellyfin's master a
+        // variant carries muxed audio beside the group, which Shaka fails outright, so a cast is offered nothing here.
         val file = if (capabilities.hlsAudioRenditions) localFileOf(jellyfinId) else null
         if (file == null && ladder == null) return measured
         val id = audioRenditions.register(
@@ -1176,7 +1184,9 @@ class PlaybackService(
         val subs = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token, embedContainerSubs = false, hlsSubtitles = caps.hlsOnly && caps.hlsSubtitles)
         val ticketLike = StreamTicket(jellyfinBaseUrl = jellyfinBase, accessToken = "", itemId = jellyfinId, container = "mkv", directPlay = false,
             hlsUrl = master, startPositionMs = startPositionMs, subtitles = subs, audio = audio, trickplayUrl = null, expiresAt = nowMs() + TICKET_TTL_MS)
-        val (plan, why) = encoder.planFor(caps, target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
+        // R291 (FR-R291-13) — the same offer the play will make, or the warm plan would differ from the play's and
+        // adoptPrewarm would throw the warm encode away on every cast.
+        val (plan, why) = encoder.planFor(withReceiverRenditions(target.kind, caps), target.kind, file.first, file.second, file.tracks, audio, carriedAudioIndex(master, wantedAudioIndex),
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform)
         plan ?: return none(why)

@@ -337,11 +337,23 @@ private fun sameAudioCodec(a: String?, b: String?): Boolean {
     return n(a) == n(b)
 }
 
-/** R291 (2026-10-09) — [dev.jellystructure.config.EncoderConfig.receiverRenditions]: a cast receiver is treated as
- *  declaring audio renditions, for one diagnostic cast. Every other device, and the receiver with the switch off, keep
- *  what they declared. */
-internal fun withDevReceiverRenditions(
-    deviceKind: String?, capabilities: dev.jellystructure.shared.tv.ClientCapabilities, enabled: Boolean,
+/**
+ * R291 (FR-R291-13, amendment 2026-10-12) — the capabilities **our own encoder** plans with: a cast receiver is
+ * offered audio renditions there, whatever it declared. Our master's variants are video-only and every audio track is
+ * already its own rendition, which is the one shape Shaka takes (the host measurement: beside an `AUDIO` group a
+ * variant carrying muxed audio fails 3014/3018 before a frame). The receiver cannot declare this itself — at
+ * negotiation time it does not know which master it will be handed — so the server decides once the plan is known.
+ *
+ * The **Jellyfin-path** master reads the device's own declaration instead (never this), so a cast that falls back
+ * there keeps R285's restream for an audio pick. Every other device keeps exactly what it declared on both paths:
+ * Media3 and hls.js tolerate the mixed shape.
+ *
+ * Applied to the capabilities handed to [Encoder.planFor] — on a play and on 309's prewarm alike, since the plan is
+ * what `adoptPrewarm` matches on (`positions = if (caps.hlsAudioRenditions) …`: without it the job encodes the
+ * carried track alone and there is no rendition to offer).
+ */
+internal fun withReceiverRenditions(
+    deviceKind: String?, capabilities: dev.jellystructure.shared.tv.ClientCapabilities,
 ): dev.jellystructure.shared.tv.ClientCapabilities =
-    if (enabled && deviceKind.equals("cast", ignoreCase = true) && !capabilities.hlsAudioRenditions)
+    if (deviceKind.equals("cast", ignoreCase = true) && !capabilities.hlsAudioRenditions)
         capabilities.copy(hlsAudioRenditions = true) else capabilities

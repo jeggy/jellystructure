@@ -1,6 +1,5 @@
 package dev.jellystructure.server.routes
 
-import dev.jellystructure.tv.withDevReceiverRenditions
 import dev.jellystructure.tv.forClients
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.server.respondFileChunked
@@ -782,7 +781,9 @@ fun Route.tvRoutes(
     post("/tv/playback/start") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackStartRequest>()
-        call.respond(playbackService.startPlayback(device, req.itemId, withDevReceiverRenditions(device.kind, req.capabilities, configStore.current.encoder.receiverRenditions), req.startPositionMs, req.audioLanguage, req.audioVariant,
+        // R291 (FR-R291-13) — the capabilities are the device's own; a cast receiver's rendition offer is decided
+        // later, where the encoder plan is known (withReceiverRenditions).
+        call.respond(playbackService.startPlayback(device, req.itemId, req.capabilities, req.startPositionMs, req.audioLanguage, req.audioVariant,
             startOver = req.startOver, shuffle = req.shuffle))   // R292 / R291 / R343
     }
 

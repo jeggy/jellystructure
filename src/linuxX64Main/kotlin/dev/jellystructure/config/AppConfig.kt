@@ -96,9 +96,8 @@ data class EncoderConfig(
      *  (no segment was ever deleted, 996bfe0f) and casts then ran 21 min and 16 min with 0 rebuffers. On by default;
      *  `false` sends casts back to Jellyfin ([CAST_RECEIVER_FALLBACK]). */
     @SerialName("cast_receivers") val castReceivers: Boolean = true,
-    /** R291 (2026-10-09) — a dev-only switch that declares `hls_audio_renditions` for the Chromecast web receiver, to
-     *  capture Shaka's error on a composed master with audio renditions. Off by default: the receiver restreams. */
-    @SerialName("receiver_renditions") val receiverRenditions: Boolean = false,
+    // R291 (FR-R291-13, 2026-10-12) — `receiver_renditions` is gone: a cast receiver is offered audio renditions on
+    // our own encoder's stream and never on Jellyfin's, which is a rule, not a switch. An old line is ignored.
 )
 
 /** 304b (FR-304-4) — *Household members can control each other's playing*: off by default; the admin is never limited. */
