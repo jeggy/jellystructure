@@ -446,3 +446,69 @@ while its socket is open, else the receiver); until then they show as two.
 
 **Only devices can confirm:** a relay launch from the web app with the Pixel online (and *Not reachable* once Ravilo is
 closed on it); that the Pixel's `CastDevice.deviceId` and the desktop's mDNS id for the same speaker are equal.
+
+## Amendment 2026-10-12 — a video queue handed over by the server stops at item 1 (DEB-781)
+
+Found on the QA-C acceptance run (DEB-700), Stue TV, a `.debug` build of `main`, **reproduced twice**. A session
+started on a TV app **through the server** with a two-item episode queue plays item 1 to its end and then stops for
+good: the end card reads the **last-item** wording (*End of film*, no next title, no countdown), the player sits at
+the item's full duration, and the next item never loads. The same episode started **from the app's own UI** is
+correct, and is exactly R384's rule — *UP NEXT*, the countdown over the held last frame, the next episode 6 s after
+the end.
+
+So this is neither an R384 regression nor a server fault. The session carries the whole queue
+(`GET /api/tv/playback/sessions/{id}` → `queue_size: 2`, both items, `index 0`) and `SessionLoadEnvelope` puts it on
+the wire in `items` + `index`. The gap is in **this phase's own handler** (`RaviloApp.kt`, the `session_load`
+collector added for review item 8): the `"film", "episode"` branch collapses the envelope to a single id —
+`env.items.getOrNull(env.index) ?: env.items.firstOrNull()` — and builds a `PlayItemEnvelope` carrying only
+`jellyfinId`, `kind`, `title` and `startPositionMs`. `next_id` and `segments` — R264 FR-R264-3, the fields the
+next-up card and *Skip Intro* are driven by — are never set, so the player is correctly showing a last item: as far
+as it was told, it is one. Only the `"music"` branch keeps a queue, through `tracks`.
+
+**FR-R370-7 — a video queue survives the hand-over.** A `session_load` of kind `film` or `episode` opens the player
+knowing what follows it:
+
+- `next_id` is the queue's next entry (`env.items.getOrNull(env.index + 1)`), so the end of a handed-over item shows
+  the same *UP NEXT* card and countdown it shows on the app's own road, and autoplay advances. When the played item
+  is genuinely the queue's last, `next_id` stays absent and the last-item card is the right one.
+- Advancing inside a handed-over queue **keeps the session**: the next item is reported under the same `session_id`,
+  and the queue's `index` moves with it — it is not a new session.
+- `segments` is carried the same way when the server holds the next item's markers. With none, R384's no-marker rule
+  governs the card; that is the case this run met, as the series under test has no `media_segment` rows at all.
+- **The wire does not change.** `items` and `index` are already sent and already read, so this is the mapping and not
+  the protocol: an older client is unaffected and an older server still works.
+
+**FR-R370-8 — the app's own player reads the next-up it is handed, whatever road it arrives on.** Filling `next_id`
+in FR-R370-7 is only half a fix: read on `main`, `PlayItemEnvelope.next_id` / `next_title` / `next_kicker` /
+`segments` (R264 FR-R264-3) are consumed in exactly **one** place in the tree — the receiver, `ravilo-screen`, which
+does autoplay off them. Nothing in `ravilo-ui` reads them at all: the `live_play_item` collector opens
+`Dest.Player(...)` and sets none of `episodes`, `currentEpIndex`, `nextEpId`, `nextEpLabel`, `nextEpTitle`, so
+`nextEpId` is only ever filled from a detail screen, a resume record, or the player's own navigation. So **every**
+server push into the TV app's own player lands without next-up, not just this hand-over: a plain `play_item` already
+carrying `next_id` would read *End of film* the same way.
+
+- `ravilo-ui`'s `play_item`/`session_load` road maps `next_id` → `nextEpId`, `next_title` → `nextEpTitle`,
+  `next_kicker` → `nextEpLabel` and `segments` onto the player's own markers. One mapping, every push road.
+- `shuffled` is carried with them, so a handed-over shuffle says *UP NEXT · SHUFFLED* (R343 FR-R343-8) rather than
+  claiming an order it does not have.
+- A push that carries none of these is unchanged: no next-up entry, last-item card, exactly today's behaviour. This
+  keeps an older server working against a newer app.
+- Again **no wire change** — the fields have shipped since R264 and the receiver already honours them. Only
+  `ravilo-ui` is short.
+
+**Acceptance (devices, on the QA queue — not verified here).** With the series under test (no `media_segment` rows,
+so R384's no-marker path): a two-item `POST /api/tv/playback/sessions` to a TV app plays item 1 to its end, shows
+*UP NEXT* with the second item's title and a countdown over the held last frame, starts item 2 about 6 s after the
+end, and reports item 2 under the **same** `session_id` with `index` moved to 1. A one-item session is unchanged and
+still ends on the last-item card.
+
+**Not decided here.** Two things the same run saw, both left to their own ground:
+
+- The finished session lingered `paused` rather than `ended`, so the following start was refused `busy`. That is
+  R372's ground and FR-R372-8's 4 h / 10 min windows already own it; re-check it after this fix rather than chasing
+  it now, as a player sitting at full duration with nowhere to go is the expected cause.
+- On this road `seriesId` is set to the played item's own id for **every** kind — correct for a film, which is its
+  own bucket, wrong for an episode, whose R181 remembered audio and subtitle choices then bucket under the episode
+  instead of the series. Read from code, not device-verified. Fixing it properly needs an additive `series_id` on
+  the push (the envelope carries `series_name` but no series id), which is R181's call and a wire addition, so it is
+  **out of scope for this amendment** and does not travel with the fix above.
