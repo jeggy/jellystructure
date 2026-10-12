@@ -328,6 +328,17 @@ private sealed class Dest {
         val shuffled: Boolean = false,
         /** R370/R372 — the place a film sent here by another app starts at (see PlayerScreen's `startAtMs`). */
         val startAtMs: Long? = null,
+        /** R370 (FR-R370-7, DEB-781) — the queue a session hand-over gave this play, in play order, and [serverQueueAt]
+         *  — where this entry sits in it; [serverSessionId] is the session it belongs to. Empty on every other road
+         *  (an ordinary play, a rail pick, a shuffle — those carry [episodes] or [shufflePlan] instead). Not saved:
+         *  after a low-memory restore the hand-over's queue ends with the entry, as a shuffle's plan does. */
+        val serverQueue: List<dev.jellystructure.shared.tv.SessionQueueEntry> = emptyList(),
+        val serverQueueAt: Int = 0,
+        val serverSessionId: String? = null,
+        /** R370 (FR-R370-8) — [nextEpId] is a shuffle's next entry, so the card says *UP NEXT · SHUFFLED* (R343
+         *  FR-R343-8). A deliberate sibling of [shuffled], which means something else on this screen: *this entry
+         *  was started from 0:00 and leaves no resume point*. A push carries the card's fact without the start's. */
+        val shuffledNextUp: Boolean = false,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -916,15 +927,36 @@ fun RaviloApp(
                 val displayName = destDisplayName(stack.lastOrNull())
                 when (env.kind) {
                     "series" -> push(Dest.SeriesDetail(env.jellyfinId, displayName))
-                    else -> push(Dest.Player(
-                        itemId = env.jellyfinId,
-                        title = env.title.orEmpty(),
-                        kicker = env.kicker,          // R303 — the push now carries the S·E kicker for an episode
-                        displayName = displayName,
-                        seriesId = env.jellyfinId,   // R181 — a movie is its own remembered bucket
-                        logoUrl = env.logoUrl, logoInk = env.logoInk, seriesName = env.seriesName,   // R303 (FR-R303-2)
-                        startAtMs = env.startPositionMs.takeIf { it > 0 },
-                    ))
+                    else -> {
+                        // R370 (FR-R370-7, DEB-781) — a `session_load` hand-over's queue, claimed by the item it
+                        // opened for. The queue's own next entry stands in for a push that carries no `next_id`.
+                        val handover = dev.jellystructure.ravilo.ui.sessions.ServerQueueHandover.claim(env.jellyfinId)
+                        val queueNext = handover?.queue?.getOrNull(handover.at + 1)
+                        push(Dest.Player(
+                            itemId = env.jellyfinId,
+                            title = env.title.orEmpty(),
+                            // R303 — the push carries the S·E kicker for an episode; a hand-over's comes off the
+                            // session's own queue entry (a `session_load` has no kicker field to carry it in).
+                            kicker = env.kicker ?: handover?.queue?.getOrNull(handover.at)?.subtitle,
+                            // R370 (FR-R370-8) / R264 (FR-R264-3, DEB-781) — the push's own next-up and markers were
+                            // read by the receiver only: every push road into THIS player opened with no next item, so
+                            // a `play_item` carrying `next_id` read *End of film* exactly as the hand-over did. One
+                            // mapping, every push road. The push's `shuffled` lands on [Dest.Player.shuffledNextUp]
+                            // (the card's wording), never on `shuffled` (the start's own rule — see that field).
+                            nextEpId = env.nextId ?: queueNext?.id,
+                            nextEpLabel = env.nextKicker ?: queueNext?.subtitle,
+                            nextEpTitle = env.nextTitle ?: queueNext?.title,
+                            segments = env.segments ?: dev.jellystructure.shared.tv.TvSegmentMarkers(),
+                            displayName = displayName,
+                            seriesId = env.jellyfinId,   // R181 — a movie is its own remembered bucket
+                            logoUrl = env.logoUrl, logoInk = env.logoInk, seriesName = env.seriesName,   // R303 (FR-R303-2)
+                            startAtMs = env.startPositionMs.takeIf { it > 0 },
+                            serverQueue = handover?.queue ?: emptyList(),
+                            serverQueueAt = handover?.at ?: 0,
+                            serverSessionId = handover?.sessionId,
+                            shuffledNextUp = env.shuffled,
+                        ))
+                    }
                 }
             }
         }
@@ -1523,8 +1555,22 @@ fun RaviloApp(
                         "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) {
                             // 309 (found live 2026-10-09) — a start from another app skips the detail page's speed test.
                             if (isTvPlatform) configScope.launch { apiClient.probe() }
+                            // R370 (FR-R370-7, DEB-781) — the whole queue travels with the play, not just the entry
+                            // being started: the hand-over is offered here and claimed by the player that opens below,
+                            // and `next_id` on the push is the queue's next entry (absent when this IS the last one, so
+                            // a genuine last item still gets the last-item card). The titles come from the session's own
+                            // detail — the app resolves nothing itself.
+                            dev.jellystructure.ravilo.ui.sessions.ServerQueueHandover.offer(
+                                env.sessionId,
+                                dev.jellystructure.ravilo.ui.sessions.handoverQueue(apiClient, env.sessionId, env.items.ifEmpty { listOf(id) }),
+                            )
+                            val next = dev.jellystructure.ravilo.ui.sessions.ServerQueueHandover.claim(id)
                             livePlayItem.emit(PlayItemEnvelope(
                             type = "play_item", jellyfinId = id, kind = if (env.kind == "episode") "episode" else "movie", title = env.title, startPositionMs = env.startMs,
+                            nextId = next?.queue?.getOrNull(next.at + 1)?.id,
+                            // R370 (FR-R370-8) — a handed-over shuffle's card says *UP NEXT · SHUFFLED*: the entry
+                            // after this one is the shuffle's, not the next episode in order (R343 FR-R343-8).
+                            shuffled = env.shuffle,
                         )) } else println("R370: dropped session_load while off screen")
                     }
                 }
@@ -2514,8 +2560,19 @@ fun RaviloApp(
                     PlayerStore(apiClient, creditsStartMs = dest.segments.creditsStartMs, startOver = dest.startOver, shuffle = dest.shuffled)
                 }
                 DisposableEffect(store) { onDispose { store.close() } }
+                // R370 (FR-R370-7, DEB-781) — while this player is a handed-over queue's place, its queue report
+                // names the session and the entry, so the session's index follows the play instead of standing at
+                // the item it was started on. Nothing is reported for any other play (the queue stays empty, R266).
+                DisposableEffect(dest.itemId, dest.serverSessionId) {
+                    val sid = dest.serverSessionId
+                    dev.jellystructure.ravilo.ui.screens.SessionVideoTracks.place =
+                        if (sid != null && dest.serverQueue.isNotEmpty())
+                            dev.jellystructure.ravilo.ui.screens.SessionVideoTracks.QueuePlace(sid, dest.serverQueue.map { it.id }, dest.serverQueueAt)
+                        else null
+                    onDispose { dev.jellystructure.ravilo.ui.screens.SessionVideoTracks.place = null }
+                }
                 // R343 (FR-R343-5) — the next-up card says *UP NEXT · SHUFFLED* while a shuffle has a next entry.
-                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null)) {
+                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp)) {
                 PlayerScreen(
                     itemId           = dest.itemId,
                     itemTitle        = dest.title,
@@ -2552,6 +2609,28 @@ fun RaviloApp(
                         )?.let { seriesStore.returnTarget.remember(it) }
                         if (plan != null && planNext != null && planNext.episodeId == nextId) {
                             replaceTop(playerDestFor(planNext, dest.displayName, plan, dest.shuffleAt + 1))
+                            return@navigate
+                        }
+                        // R370 (FR-R370-7, DEB-781) — advancing inside a queue the server handed over: the queue and
+                        // the place in it move with the play, so item 3 is already known while item 2 plays and the
+                        // run reaches the end of the queue instead of stopping after one hand-over. The session is the
+                        // same one throughout (it is not a new session): its id travels with the entry.
+                        val queueNext = dest.serverQueue.getOrNull(dest.serverQueueAt + 1)
+                        if (queueNext != null && queueNext.id == nextId) {
+                            val after = dest.serverQueue.getOrNull(dest.serverQueueAt + 2)
+                            replaceTop(dest.copy(
+                                itemId = nextId,
+                                title = queueNext.title ?: dest.nextEpTitle ?: dest.title,
+                                kicker = queueNext.subtitle ?: dest.nextEpLabel,
+                                nextEpId = after?.id, nextEpLabel = after?.subtitle, nextEpTitle = after?.title,
+                                serverQueueAt = dest.serverQueueAt + 1,
+                                // Phase 150 — a hand-over carries no markers, and the outgoing entry's must NOT be
+                                // inherited (a stale credits marker fires the next-up countdown from 0:00 of the new
+                                // stream). R384's no-marker rule governs the card instead.
+                                segments = dev.jellystructure.shared.tv.TvSegmentMarkers(),
+                                // The hand-over's start position belongs to the entry it was sent for, not to this one.
+                                startAtMs = null,
+                            ))
                             return@navigate
                         }
                         // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or

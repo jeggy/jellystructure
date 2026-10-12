@@ -11,6 +11,7 @@ import dev.jellystructure.ravilo.ui.seams.CastVideoSnapshot
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
+import dev.jellystructure.ravilo.ui.sessions.queueRevOf
 import dev.jellystructure.ravilo.ui.seams.TvCastChannel
 import dev.jellystructure.shared.tv.CastTrack
 import dev.jellystructure.shared.tv.RemotePlayer
@@ -147,11 +148,22 @@ internal fun CastVideoSource.selectSubtitleAt(index: Int) {
 /**
  * R266 (found live 2026-10-09) — the film player's tracks for the playback session it is the place of: the server
  * keeps them on the session ([SessionQueueReport] with no queue — a film has none), and the session remote shows
- * *Audio & Subs* from them. Null while the player has no track lists yet.
+ * *Audio & Subs* from them. Null while the player has no track lists yet and no queue to report.
+ *
+ * R370 (FR-R370-7, DEB-781) — a video player that IS playing a handed-over queue has one, and reports it under the
+ * session's own id, so the session's place moves with the play (the entry advancing is not a new session) and a
+ * remote lists the queue it is actually in. A player with no hand-over reports no queue, exactly as before.
  */
 internal fun sessionTracksReport(itemId: String, l: CastVideoLists?): SessionQueueReport? {
-    if (l == null || (l.audio.isEmpty() && l.subtitles.isEmpty())) return null
-    return SessionQueueReport(itemId = itemId, audioTracks = l.audio, subtitleTracks = l.subtitles, audioIndex = l.selectedAudio, subtitleIndex = l.selectedSub)
+    val place = SessionVideoTracks.place?.takeIf { it.ids.getOrNull(it.at) == itemId }
+    if (l == null || (l.audio.isEmpty() && l.subtitles.isEmpty())) return place?.let {
+        SessionQueueReport(sessionId = it.sessionId, itemId = itemId, queue = it.ids, queueRev = queueRevOf(it.ids), queueIndex = it.at)
+    }
+    return SessionQueueReport(
+        sessionId = place?.sessionId, itemId = itemId,
+        queue = place?.ids ?: emptyList(), queueRev = place?.let { queueRevOf(it.ids) } ?: 0, queueIndex = place?.at ?: 0,
+        audioTracks = l.audio, subtitleTracks = l.subtitles, audioIndex = l.selectedAudio, subtitleIndex = l.selectedSub,
+    )
 }
 
 /**
@@ -162,6 +174,12 @@ internal fun sessionTracksReport(itemId: String, l: CastVideoLists?): SessionQue
  */
 internal object SessionVideoTracks {
     var source: CastVideoSource? = null
+
+    /** R370 (FR-R370-7) — the handed-over queue the composed player is playing, and where in it; null on every
+     *  other road. Set from the player's destination (which carries it), cleared when that player goes. */
+    data class QueuePlace(val sessionId: String, val ids: List<String>, val at: Int)
+    var place: QueuePlace? = null
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private const val CHECK_MS = 2_000L
     private const val RESEND_MS = 30_000L

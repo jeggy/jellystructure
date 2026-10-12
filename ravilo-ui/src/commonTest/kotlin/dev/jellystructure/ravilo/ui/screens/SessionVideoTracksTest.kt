@@ -42,6 +42,31 @@ class SessionVideoTracksTest {
         assertNull(sessionTracksReport("film-1", null), "no lists yet: nothing to say")
     }
 
+    /**
+     * R370 (FR-R370-7, DEB-781) — a player that IS a handed-over queue's place reports the queue and where in it, so
+     * the session's index follows the play instead of standing at the item the hand-over was started on.
+     */
+    @Test fun `a handed-over queue is reported under the session, with the entry's place`() {
+        val ids = listOf("ep-1", "ep-2")
+        SessionVideoTracks.place = SessionVideoTracks.QueuePlace("sess-1", ids, 1)
+        try {
+            val r = assertNotNull(sessionTracksReport("ep-2", lists))
+            assertEquals("sess-1", r.sessionId)
+            assertEquals(ids, r.queue)
+            assertEquals(1, r.queueIndex)
+            assertEquals(listOf("English", "Dansk"), r.audioTracks.map { it.label }, "the tracks still ride it (R266)")
+            // Before the player has any track list the queue is still worth saying.
+            val early = assertNotNull(sessionTracksReport("ep-2", null))
+            assertEquals(1, early.queueIndex)
+            assertEquals(emptyList(), early.audioTracks)
+            // A place that is not this player's says nothing about a queue.
+            assertEquals(emptyList(), assertNotNull(sessionTracksReport("ep-1", lists)).queue)
+            assertNull(sessionTracksReport("ep-1", null))
+        } finally {
+            SessionVideoTracks.place = null
+        }
+    }
+
     @Test fun `a session's set_audio and set_subtitle pick the row the remote showed, Off included`() {
         val picks = mutableListOf<Pair<Int, String?>>()
         val source = CastVideoSource().apply {
