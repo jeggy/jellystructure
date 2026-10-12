@@ -347,14 +347,20 @@ after, nothing left transcoding):
 | **…and with the same `PlaySessionId` but its own `DeviceId`?** | A real audio-only job (a separate output folder): segment 100 in 2.1–2.8 s, AAC only, first PTS 309.957 s — the same +9.957 s offset as 2026-09-24. **But one `DELETE /Videos/ActiveEncodings` for the shared play session stops one job, not both:** counted as `ffmpeg` processes on the host, a single call with the video's device id took the *audio* job and left the video's running; the remaining calls took the rest. So teardown cannot lean on a shared id: each rendition gets **its own `PlaySessionId`** (and the device's own `DeviceId`), the server remembers which it handed out, and phase 180 stops each by its own id. |
 | The video variant's first PTS at segment 100 | **310.300 s** for media time 300.300 s (3.003 s segments): an offset of **+10.000 s**. The audio-only offset measured on 2026-09-24 was +9.957 s at segment 100 (3.000 s segments). The two differ by **43 ms** — two AAC frames at 48 kHz — so a separate audio rendition would lead the picture by ~43 ms: constant, inside common lip-sync tolerance, and correctable by one fixed offset if it shows. |
 
-Still to measure, in a quiet window and before any code:
+Still to measure, in a quiet window and before any code — **all four answered; see the dated sections above**:
 1. The video variant's first PTS at the same segment index. If it is also +9.957 s, Media3's shared
    per-discontinuity `TimestampAdjuster` keeps sound and picture in step. If not, the audio renditions
    are off by the difference, and jellystructure must re-time them (or serve them itself).
+   — **Answered 2026-09-25:** +10.000 s against the audio's +9.957 s, a constant 43 ms.
 2. Whether the video variant can be requested **without** audio, or whether Media3 ignores the muxed
    audio once the variant names an `AUDIO` group.
+   — **Answered 2026-10-12** (*Host measurement*, below): Media3 ignores it, Shaka does not and fails the
+   whole load, so for the receiver the variant must carry no audio of its own.
 3. What Media3 does on the TV and phone when the selected audio rendition changes: a seamless switch,
    or a rebuffer lasting as long as the first segment.
+   — **Answered 2026-09-26:** 310–400 ms warmed on the stue TV, 598–907 ms on the Pixel 9, the picture
+   never stopping (the tables above). Item 4 (an audio job under the video's `PlaySessionId`) was answered
+   2026-09-25 in the table above.
 
 Before any code, measured against the household's Jellyfin (12.1) and written into this spec:
 - whether Jellyfin will emit multiple audio renditions in one HLS transcode, and by which request
@@ -594,15 +600,18 @@ decoder, and because the question is the master's shape and what MSE will take, 
 | **Our encoder's shape** — a video-only variant, every track its own rendition | **PLAYS**, and the rendition switch is in place: 1.37 s → 3.87 s across picking `a1`, the picture never stopped. |
 
 So the shape is the cause, not the container (FR-R291-12's fMP4 renditions were necessary and not sufficient) and not
-the fixture: the same variant plays until an audio group is put beside it. **A variant that names an `AUDIO` group
-must carry no audio of its own** — a player builds a video-only SourceBuffer for it and MSE refuses segments with a
-second track. The Chromecast's own code (3018 `TRANSMUXING_FAILED`) is its Shaka trying to transmux the mismatch away
-first; the desktop's (3014 `MEDIA_SOURCE_OPERATION_FAILED`) is the append failing outright. Same cause.
+the fixture: the same variant plays until an audio group is put beside it. **For Shaka, a variant that names an
+`AUDIO` group must carry no audio of its own** — it opens a video-only SourceBuffer for that variant and MSE refuses
+segments with a second track in them. The Chromecast's own code (3018 `TRANSMUXING_FAILED`) is its Shaka trying to
+transmux the mismatch away first; the desktop's (3014 `MEDIA_SOURCE_OPERATION_FAILED`) is the append failing
+outright. One cause.
 
-**What this closes.** Media3 (Android) tolerates the mixed shape, which is why R291 works there and why this went
-unseen for a fortnight; nothing about Android changes. For a player that goes through MSE — the receiver, and the web
-if it ever declares the capability — renditions are only offerable on a master whose variants are video-only, i.e. on
-our own encoder's stream (313: every cast that re-encodes the picture, since the owner's 2026-10-09 decision).
+**What this does and does not say.** It is a statement about **Shaka**, which is what the Cast receiver runs
+(`useShakaForHls`), not about MSE players in general: Media3 (Android) tolerates the mixed shape, which is why R291
+has worked there since September, and hls.js was measured against the same composed master in Chromium with no
+restart (R376's build notes), so the web is unaffected. Nothing about either changes. For the receiver, renditions
+are only offerable on a master whose variants are video-only — our own encoder's stream (313: every cast that
+re-encodes the picture, since the owner's 2026-10-09 decision).
 
 ### Build (2026-10-12, FR-R291-4) — the receiver switches a rendition in place
 
