@@ -335,3 +335,49 @@ has run it, so FR-R329-1's numbers are owed and the phase is `⚠ Partial` until
   screen claims it again); not eligible ⇒ the server tone-maps to H.264 SDR, as before 0889c21b. A library from before
   the call has no symbol and claims no HDR. **Mac re-test owed:** on the external monitor a 4K HDR10 film plays
   (server log `H264 … SDR`/tone-map); on the built-in screen (lid open, no monitor) it plays as `HEVC HDR`.
+
+## Code audit (2026-10-12, DEB-710, against `main` `6af477dc`)
+
+DEB-710 asked for **music**, **the media keys** and **the spike's 4K numbers** as owed code. Music and the media keys
+are in and compile — the 2026-10-09 triage was right. The 4K numbers are not code and cannot be produced here; what
+this pass adds is the way to read them *off the player* on a Mac, which is why they have stayed unmeasured.
+
+1. **Music (FR-R329-9).** `MusicEngineDesktop.kt` — 593 lines, the Android engine on an audio-only AVPlayer: one
+   Jellyfin session per song, `MusicQueue`, a book's parts/speed/sleep timer/chapters, the early next-part fetch on
+   direct play. `MusicEngine.supported` is true wherever an engine loaded (`MacNative.lib` on a Mac, `Mpv.lib` on
+   Linux), so the listening mode is present — not the `false` stub R328's seam table left behind.
+2. **The media keys (FR-R329-10).** `NowPlaying.swift` installs every `MPRemoteCommandCenter` target — play, pause,
+   toggle, next, previous, `changePlaybackPosition`, skip ±(interval) and stop — and hops to the main queue both
+   ways. Kotlin answers them in two places, so a film and a song both obey: `MusicEngineDesktop.kt:93` (books take the
+   skips as ±30 s, songs as a seek, per R323) and `RaviloPlayerDesktop.kt`'s `MacNowPlaying.Target` for a film.
+   `MacNowPlaying.claim` keeps one owner, so a film that stops cannot clear a song's card.
+3. **FR-R329-1's numbers: what is measured, and what is owed.**
+   - **The audio-rendition switch: measured, and it works** (2026-10-09, §Mac live check) — English 1/3 → 2/3 (DTS)
+     switched from the current segment with no restart and the picture continuing.
+   - **1080p: measured, and it meets the bar** (2026-09-29) — 0 dropped frames, 0 rebuffers over Ethernet. The run was
+     not held to five minutes, so the figure is a spot reading, not the FR's five-minute one.
+   - **4K: never measured, because 4K has never reached the Mac.** Every Mac play so far was served below it — 1080p
+     SDR on 2026-09-29, then 800p H.264 through our encoder on 2026-10-09 (CPU 23–35 %, RSS 0.9–1.7 GB, first segment
+     1061 ms — our encoder's numbers, not AVPlayer's decode at 4K). The HEVC HDR route that would carry 4K fails on an
+     SDR monitor (`eligibleForHDRPlayback` false), which the evening fix answers by claiming HDR only while eligible.
+   - **Nothing further can be measured on this host:** no Mac, no Swift compiler, and the counters live inside
+     AVPlayer. The 4K numbers are owed to a Mac and named so.
+4. **Added so the Mac run can produce them: a `player` read-out in the test driver.** Until now the Mac's numbers came
+   from the server's log and `ps`, neither of which can see a dropped frame; `qoeSnapshot` had the counters but no way
+   out over ssh. `DesktopPlayerProbe` (`ravilo-ui/.../desktop/DesktopPlayerProbe.kt`) holds whichever film player is
+   loaded, and `RaviloPlayer.spikeLine()` answers in one line: engine, **the presentation size AVPlayer is really
+   showing** (how a 4K run is told from a 1080p one), position, how long the picture has been up (the FR's five
+   minutes, read off the player), playing/buffering, **dropped frames**, **stalls**, observed bitrate, the audible
+   options a rendition switch chooses between, and the app's own CPU and heap — heap because the installed 1.50.0 Mac
+   build's last log line was `OutOfMemoryError: Java heap space`. Driver command: `player`. With no film loaded it says
+   *no film loaded* rather than reporting zeros, which would read as a pass without a film having played.
+   Test: `DesktopPlayerProbeTest`. No product behaviour changes — this is a read-out only.
+5. **The HDR claim stays withheld,** as DEB-710 directs. Nothing here marks it proven; the 2026-10-09 evening fix
+   (claim HDR only while `AVPlayer.eligibleForHDRPlayback`) is still owed its Mac re-test on both screens.
+
+**Built and green on Debian** (`JAVA_HOME=~/.jdks/jbr-21.0.11`): `:shared:desktopTest` 166, `:ravilo-i18n:desktopTest`
+24, `:ravilo-ui:desktopTest` 648 (+3 new), `:ravilo-desktop:compileKotlinDesktop` — 0 failures, 0 errors.
+
+**Still owed, and only a Mac can give it:** acceptance 1 at 4K (now readable with `player`), 3's DTS leg, 4's PGS,
+5 (music, the media keys, Control Center — the keys need real input, which ssh has no Accessibility permission for),
+and the two re-tests the evening fixes left. All on the Mac-set QA task (DEB-701), not re-filed here.

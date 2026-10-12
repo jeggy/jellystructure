@@ -120,10 +120,13 @@ them possible later; not asked) · an auto-updater · iCloud sync of settings.
 1. **The owner's four from the research report:** is the native app worth it (the speakers need it); ~~an Apple
    Developer ID~~ — **answered 2026-09-29: no Apple bills, a `.dmg` only** (R331 dev review 1); Apple Silicon only (D2); the
    Cast client written for reuse by the backend (R330, D1).
-2. Should the TV layout get a desktop density by default (smaller tiles at a desk), or keep R174's grid-columns
-   config and let the household set it? Lean: keep the config — no new setting.
-3. Is *Computer Name* the right device name, given that Macs are often named *{person}'s MacBook Air*? It is what
-   the owner sees in Users & devices, and it is renamable in both places.
+2. ~~Should the TV layout get a desktop density by default (smaller tiles at a desk), or keep R174's grid-columns
+   config and let the household set it?~~ **Answered 2026-10-12 (Tróndur, DEB-710 — the spec's own lean, not an owner
+   slot): keep R174's config, no new desktop-density setting.** Already so in the code — see §Code audit item 2.
+   Reversible in config.
+3. ~~Is *Computer Name* the right device name, given that Macs are often named *{person}'s MacBook Air*?~~
+   **Answered 2026-10-12 (Tróndur, DEB-710): the device name is the Computer Name, renamable in both places.**
+   Built on the Mac's half; **the lean's second half does not hold yet** — see §Code audit item 3.
 
 ## Dev notes
 
@@ -300,3 +303,45 @@ hid the window (`visible=false`) and the app kept running; the speaker played on
 handed it over). A reopen of the app bundle — what the Dock icon sends — brought the window back (`visible=true`)
 with the bar still on the cast (*{artist} · Gæsteværelse*). ⌘Q from the test driver did not quit (the driver's keys never
 reach macOS's own menu); a Quit Apple event did.
+
+## Code audit (2026-10-12, DEB-710, against `main` `6af477dc`)
+
+DEB-710 asked for three things as **owed code**: the menu bar's handlers, the Dock reopen and the update line. All
+three are in and compile; the 2026-10-09 triage above was right and the build notes' "still owed" lines are what had
+gone stale. Checked one by one rather than taken from either document:
+
+1. **The three items, where they live.**
+   - Menu-bar handlers: `MacAppHooks.install` sets `setAboutHandler`, `setPreferencesHandler` and `setQuitHandler`
+     (ours cancels the system quit so the stops are reported first), each guarded by `Desktop.isSupported`;
+     `Main.kt:115` installs them. The View and Window menus are `RaviloMenuBar.kt`, drawn only on a Mac
+     (`Main.kt:174`), with Enter/Exit Full Screen at ⌃⌘F → `setFullScreen` (`Main.kt:112`, `:180`).
+   - Dock reopen: `AppReopenedListener` in `MacAppHooks.install`, wired at `Main.kt:119` (`onReopen = { shown = true }`).
+   - The update line: `UpdateCheck` (desktop) asks `/api/health` on first knowing the server and every 24 h after;
+     `AppUpdate`/`AppUpdateLine` (`ravilo-ui/.../components/AppUpdate.kt`) carry the offer, and Settings ▸ Account
+     renders it (`SettingsScreen.kt:576`). Strings `mac.update_available`, `mac.download`, `mac.open_anyway` × en/da/fo.
+2. **Open question 2's lean holds in the code as it stands — nothing to build.** The Browse and both Search grids read
+   R174's server-set `LocalGridColumns` / `LocalPortraitGridColumns` (`BrowseScreen.kt:507`, `SearchScreen.kt:204`,
+   `SeerrSearchScreen.kt:215`, `SeededBrowseScreen.kt:1138`); `RaviloApp.kt:1778` provides them on every platform, the
+   desktop included, and R337's layout families add no column math of their own. No desktop-density setting exists,
+   which is the lean.
+3. **Open question 3's lean is half-built, and the missing half is not this phase's to build.** *Computer Name* is the
+   Mac's device name (`deviceDisplayName()` → `SCDynamicStoreCopyComputerName` through the Swift library), and Users &
+   devices shows it under **Mac** (`RaviloUsers.kt:110`). But **a Ravilo device cannot be renamed in Users & devices**:
+   the name is only ever what the client sends at login or pairing (`LoginScreen.kt:97`, `TvRoutes.kt:370/736`), and no
+   route updates `displayName` afterwards. So the name is renamable in System Settings, not "in both places", and a Mac
+   renamed after it paired keeps its old name on the board. Raised to Tróndur on DEB-710 — admin and backend work
+   (Sjúrður's), not the client's.
+4. **One divergence from DEB-710's brief, in the spec's favour.** The brief says the update line *reuses R263's web
+   update toast*. It does not, by this spec's own design: FR-R328-8 is a line in Settings ▸ Account that links to a
+   `.dmg`, and the seam table (FR-R328-3) lists `rememberUpdateAvailable`/`reloadForUpdate` as **absent** on the
+   desktop because "FR-R328-8 is the Mac's own update line". R263's toast is *Ravilo updated · Reload* and reloads a
+   service-worker page — a different event with a different action. The built line follows the spec; no second shape
+   was invented. Changing it would be a change of intent and is Tróndur's amendment to make.
+
+**Built and green on Debian** (`JAVA_HOME=~/.jdks/jbr-21.0.11`): `:shared:desktopTest` 166, `:ravilo-i18n:desktopTest`
+24, `:ravilo-ui:desktopTest` 648, `:ravilo-desktop:compileKotlinDesktop` — 0 failures, 0 errors.
+
+**Still owed, and only a Mac can give it:** the four live checks the 2026-10-09 triage named — the system menu bar's
+items (About, Settings…, Minimise, View ▸ Enter Full Screen ⌃⌘F), the Dock reopen, and the update line with a server
+newer than the app. The test driver's keys do not reach macOS's own menu, so these need a person at the Mac; they are
+on the Mac-set QA task (DEB-701), not re-filed here.

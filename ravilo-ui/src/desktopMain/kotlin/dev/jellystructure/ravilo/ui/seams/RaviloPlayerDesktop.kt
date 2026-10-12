@@ -73,6 +73,8 @@ actual class RaviloPlayer actual constructor() {
     private var restoredAfterRecreate = 0
     /** When the last [load] happened — see [playbackFailed]. */
     private var loadedAtMs = 0L
+    /** FR-R329-1 — when the picture started, so the spike's "over five minutes" is read off the player, not a clock. */
+    private var firstFrameAtMs = 0L
 
     // Read by the surface every frame.
     internal var cues: List<VttCue> by mutableStateOf(emptyList())
@@ -104,6 +106,8 @@ actual class RaviloPlayer actual constructor() {
         subJob?.cancel()
         cues = emptyList()
         loadedAtMs = System.currentTimeMillis()
+        firstFrameAtMs = 0L
+        dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.attach(this)
         if (!engine.available) { noEngineFailure = true; return }
         noEngineFailure = false
         println("${DesktopLog.stamp()} [player] load ${streamUrl.substringBefore('?')} start=${startPositionMs}ms text subtitles=${textTracks.size} audio=${audio.size}")
@@ -128,6 +132,7 @@ actual class RaviloPlayer actual constructor() {
             var ticks = 0
             while (isActive && engine.loaded) {
                 val s = engine.state
+                if (s.firstFrame && firstFrameAtMs == 0L) firstFrameAtMs = System.currentTimeMillis()
                 // Until the first frame (and whenever it fails or waits), AVFoundation's own account, once a second.
                 if (!s.firstFrame || s.failed || (s.buffering && ticks % 5 == 0)) println("${DesktopLog.stamp()} [player] ${engine.debug()}")
                 ticks++
@@ -190,7 +195,34 @@ actual class RaviloPlayer actual constructor() {
         subJob?.cancel()
         watchJob?.cancel(); watchJob = null
         MacNative.lib?.ravilo_display_keep_awake(0)
+        dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.detach(this)
         engine.release()
+    }
+
+    /**
+     * FR-R329-1 — the spike's numbers in one line, as the player itself has them: what AVPlayer is actually showing
+     * (the presentation size is how a 4K run is told from a 1080p one — every Mac play so far has been served below
+     * 4K), how much it dropped and stalled since the picture started, the bitrate it measured, the audible options a
+     * rendition switch chooses between, and the app's own CPU and heap. Read by the test driver's `player` command.
+     */
+    internal fun spikeLine(): String {
+        if (!engine.available) return "engine=none"
+        val s = engine.state
+        val shown = if (firstFrameAtMs == 0L) "-" else "${(System.currentTimeMillis() - firstFrameAtMs) / 1000}s"
+        return buildString {
+            append("engine=").append(engine.decoderName)
+            append(" size=").append(s.width).append('x').append(s.height)
+            append(" t=").append(s.positionMs / 1000).append('s')
+            append(" shown=").append(shown)
+            append(" playing=").append(s.timeControl == 2)
+            append(" buffering=").append(s.buffering)
+            append(" dropped=").append(s.droppedFrames)
+            append(" stalls=").append(s.stalls)
+            append(" bitrate=").append(s.observedBitrate)
+            append(" cpu=").append(dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.processCpuPercent())
+            append(" heap=").append(dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.heapMb()).append("MB")
+            engine.audioOptions()?.let { append(" audio=[").append(it.trim().replace("\n", " · ")).append(']') }
+        }
     }
 
     actual fun recordRestoredAfterRecreate() { restoredAfterRecreate++ }

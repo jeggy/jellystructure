@@ -200,6 +200,9 @@ internal object TestDriver {
                 " · style=" + dev.jellystructure.ravilo.ui.desktop.DesktopAppearance.iconStyle.value
             // The Mac's own chrome, which no picture of the canvas shows: where the traffic lights are, who takes a click.
             "chrome" -> "ok " + (dev.jellystructure.ravilo.ui.desktop.DesktopWindow.chromeDebug() ?: "none").trim().replace("\n", " | ")
+            // R329 (FR-R329-1) — the spike's numbers, which only the player has: the size it is really showing,
+            // dropped frames and stalls since the picture started, CPU and heap.
+            "player" -> "ok " + dev.jellystructure.ravilo.ui.desktop.DesktopPlayerProbe.line()
             else -> "err unknown command '$verb'"
         }
     }
