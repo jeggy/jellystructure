@@ -75,6 +75,30 @@ class SessionCommandIntegrationTest {
         waitFor("Ben's pause reaches the receiver") { rs.frames("session_command").isNotEmpty() }
     }
 
+    /**
+     * R372 (FR-R372-9, acceptance A4) — the admin's *End* on an offline row removes it at once, with no *Can't reach
+     * {place}*. The place's own ops still answer 409 `unreachable` on the same row at the same moment. This is the
+     * owner's complaint from DEB-757: three rows had been *offline · paused* for hours and nothing could clear them.
+     */
+    @Test fun `the admin's End ends an offline row whose place cannot be reached while pause still answers 409`() = loopback("cmd-end-offline") {
+        val rx = device("rx-1", "u-anna", "cast", name = "Office")
+        val id = sessions.onStart(fresh(rx), "film-1", 60_000)
+        sessions.onProgress(fresh(rx), "film-1", 61_000, paused = false)
+        // The place goes away: no socket was ever opened for it, and the 110 watchdog reaps it.
+        sessions.onReaped(fresh(rx), "film-1")
+        assertTrue(sessions.get(id)!!.offline)
+        // *End* is always drawn, so it must always work.
+        assertTrue("stop" in control.opsOf(sessions.get(id)!!))
+        assertEquals(409, post("/tv/admin/playback/sessions/$id/command", """{"op":"pause"}""", admin = true).status)
+        val r = post("/tv/admin/playback/sessions/$id/command", """{"op":"stop"}""", admin = true)
+        assertEquals(202, r.status, r.body)
+        val ended = sessions.get(id)!!
+        assertEquals(false, ended.live)
+        assertEquals("stopped", ended.endReason)
+        assertEquals("admin", ended.endedBy)
+        delay(50)
+    }
+
     @Test fun `the admin's pause is recorded from the admin and the admin is never a controller`() = loopback("cmd-admin") {
         val rx = device("rx-1", "u-anna", "cast", name = "Office")
         val rs = open(rx, "session_control")

@@ -45,6 +45,12 @@ internal sealed interface CommandRoute {
     data object RelayLoad : CommandRoute
     /** The op is not one this target obeys (absent from its `ops`). */
     data object NotOffered : CommandRoute
+    /**
+     * R372 (FR-R372-9, amendment 2026-10-12) — *End* on a place that cannot be reached: nothing is delivered and the
+     * command still succeeds, because *End* is an instruction about **our own row**, not about the place. The place has
+     * already been force-stopped by the 110 watchdog and its position written, so there is nothing left to say to it.
+     */
+    data object EndOurRow : CommandRoute
     /** No socket, no sender, no relay: `409 { reason: unreachable }`. */
     data object Unreachable : CommandRoute
 }
@@ -67,6 +73,10 @@ internal fun legacyRoute(c: SessionCommandRequest): CommandRoute? = when (c.op) 
  * FR-R369-2 — where [c] goes. [targetSocket] / [targetControl]: the target holds its events socket / declared
  * `session_control`. [senderControl]: the phone that minted the cast's code holds a `session_control` socket.
  * [relayAvailable]: R370's relay app for this place is online.
+ *
+ * R372 (FR-R372-9) — `stop` on an unreachable, offline place is [CommandRoute.EndOurRow]: only the ops that genuinely
+ * need the place (play, pause, seek, volume, *Move to…*) still answer 409 `unreachable`. Before the amendment the
+ * admin's *End* did nothing on exactly the rows the owner wants cleared.
  */
 internal fun commandRoute(
     c: SessionCommandRequest, targetSocket: Boolean, targetControl: Boolean, senderControl: Boolean,
@@ -76,6 +86,7 @@ internal fun commandRoute(
     targetSocket -> legacyRoute(c) ?: CommandRoute.NotOffered
     senderControl -> CommandRoute.ViaSender
     castTarget && targetOffline && c.op == "play" && relayAvailable -> CommandRoute.RelayLoad
+    targetOffline && c.op == "stop" -> CommandRoute.EndOurRow
     else -> CommandRoute.Unreachable
 }
 
@@ -270,6 +281,8 @@ class SessionControl(
             is CommandRoute.LegacyPlayerCommand -> bus.notifyPlayerCommand(s.ownerUserId, s.targetId, route.command, route.argsJson)
             CommandRoute.ViaSender -> bus.notifySessionCommand(s.ownerUserId, minter!!, text)
             CommandRoute.RelayLoad -> if (!relayLoad(s)) return CommandResult.Unreachable
+            // R372 (FR-R372-9) — nothing to deliver: the row itself ends below, and the caller is told it worked.
+            CommandRoute.EndOurRow -> Unit
             CommandRoute.NotOffered -> return CommandResult.NotOffered
             CommandRoute.Unreachable -> return CommandResult.Unreachable
         }

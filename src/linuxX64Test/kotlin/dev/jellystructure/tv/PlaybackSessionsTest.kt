@@ -323,7 +323,12 @@ class PlaybackSessionsTest {
         assertTrue(s.get(id)!!.live)
     }
 
-    @Test fun `the 24 h sweep ends a paused offline session and a paused one`() = runBlocking {
+    /**
+     * R372 (FR-R372-8, owner 2026-10-12) — the two windows, and they are no longer the same: a place that has gone
+     * away keeps its session **10 min**, a pause on a place that is still there keeps it **4 h**. Both were 24 h, and
+     * prod's `idle` had never once fired (DEB-758).
+     */
+    @Test fun `the 10 min offline sweep and the 4 h idle sweep`() = runBlocking {
         val s = service()
         val phone = device("pixel"); val tv = device("living-tv", kind = "tv")
         val off = s.onStart(phone, "film-1", 0)
@@ -331,11 +336,103 @@ class PlaybackSessionsTest {
         s.onReaped(phone, "film-1")
         val paused = s.onStart(tv, "song-1", 0)
         s.onProgress(tv, "song-1", 1_000, paused = true)
-        now += SESSION_PAUSED_KEEP_MS - 1_000; s.tick()
-        assertTrue(s.get(off)!!.live && s.get(paused)!!.live)
+        now += SESSION_OFFLINE_KEEP_MS - 1_000; s.tick()
+        assertTrue(s.get(off)!!.live, "9 min 59 s of offline is not yet the 10 min")
         now += 2_000; s.tick()
         assertEquals("offline", s.get(off)!!.endReason)
+        // The paused place is still there and still reporting: it keeps its own, longer window.
+        assertTrue(s.get(paused)!!.live)
+        now += SESSION_PAUSED_KEEP_MS - SESSION_OFFLINE_KEEP_MS - 2_000; s.tick()
+        assertTrue(s.get(paused)!!.live, "4 h less a second is not yet the 4 h")
+        now += 2_000; s.tick()
         assertEquals("idle", s.get(paused)!!.endReason)
+    }
+
+    /**
+     * R372 (FR-R372-8) — the clock is the offline spell, never `updated_at`. Prod re-armed **27 of 46** offline rows
+     * by reaping them again, and the longest lived **122 h 36 m** (DEB-758).
+     */
+    @Test fun `a second reap of an offline session writes no event and does not move its clock`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 5_000, paused = false)
+        s.onReaped(phone, "film-1")
+        val spellStart = assertNotNull(s.get(id)!!.offlineSince)
+        val rev = s.get(id)!!.revision
+        pushes.clear()
+        now += 5 * 60_000
+        s.onReaped(phone, "film-1")
+        assertEquals(spellStart, s.get(id)!!.offlineSince, "the clock is the spell's first offline, not this reap")
+        assertEquals(rev, s.get(id)!!.revision, "a re-reap is not a change")
+        assertEquals(1, s.timeline(id).count { it.second == "offline" }, "one offline event per spell")
+        assertTrue(pushes.isEmpty())
+        // It ends 10 min after the FIRST offline, so 5 min after the re-reap — not 10.
+        now += 5 * 60_000 + 1_000; s.tick()
+        assertEquals("offline", s.get(id)!!.endReason)
+    }
+
+    /** R372 (FR-R372-8, acceptance A3) — a row 5 min offline survives a restart with its clock intact. */
+    @Test fun `a restart leaves an offline rows clock alone and hands back no tracker entry`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 5_000, paused = false)
+        s.onReaped(phone, "film-1")
+        val spellStart = assertNotNull(s.get(id)!!.offlineSince)
+        now += 5 * 60_000
+
+        val restarted = service()
+        // FR-R372-8 — a dead row is not handed back, so PlaybackService registers no tracker entry for it and the
+        // watchdog cannot reap it again ~90 s later (prod's commonest re-arm).
+        assertTrue(restarted.restore().none { it.id == id })
+        assertEquals(spellStart, restarted.get(id)!!.offlineSince, "read back from the timeline's one offline event")
+        assertFalse(restarted.get(id)!!.reconnecting)
+        now += 5 * 60_000 - 1_000; restarted.tick()
+        assertTrue(restarted.get(id)!!.live, "5 min before the restart and 5 min after is not yet the 10 min")
+        now += 2_000; restarted.tick()
+        assertEquals("offline", restarted.get(id)!!.endReason)
+        assertEquals(1, restarted.timeline(id).count { it.second == "offline" }, "the restart writes no new offline")
+    }
+
+    /** R372 (FR-R372-8) — prod's third re-arm: a queue report bumped the row without even writing an event. */
+    @Test fun `a queue report on an offline row does not extend its 10 min`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "song-1", 0, kindHint = SessionKind.MUSIC)
+        s.onProgress(phone, "song-1", 5_000, paused = false)
+        s.onReaped(phone, "song-1")
+        now += 9 * 60_000
+        // A report that moves the queue's place is a change (it bumps the revision) — but not a new clock.
+        s.onQueueReport(phone, dev.jellystructure.shared.tv.SessionQueueReport(sessionId = id, itemId = "song-1",
+            queue = listOf("song-1", "song-2"), queueIndex = 1))
+        assertTrue(s.get(id)!!.offline)
+        now += 60_000 + 1_000; s.tick()
+        assertEquals("offline", s.get(id)!!.endReason)
+    }
+
+    /**
+     * R372 (FR-R372-8) — a report from the place clears `offline`: the row is paused-with-a-place on the 4 h window,
+     * and a genuine later loss starts a new spell with its own 10 min.
+     */
+    @Test fun `a report clears offline onto the 4 h window and a later loss starts a new spell`() = runBlocking {
+        val s = service()
+        val tv = device("living-tv", kind = "tv")
+        val id = s.onStart(tv, "film-1", 0)
+        s.onProgress(tv, "film-1", 5_000, paused = false)
+        s.onReaped(tv, "film-1")
+        now += 60_000
+        s.onProgress(tv, "film-1", 5_000, paused = true)
+        assertFalse(s.get(id)!!.offline)
+        assertNull(s.get(id)!!.offlineSince)
+        now += SESSION_OFFLINE_KEEP_MS + 1_000; s.tick()
+        assertTrue(s.get(id)!!.live, "the place reported: the 10 min is not the window it is on")
+
+        s.onReaped(tv, "film-1")
+        assertNotNull(s.get(id)!!.offlineSince)
+        assertEquals(2, s.timeline(id).count { it.second == "offline" }, "a new spell writes its own offline")
+        now += SESSION_OFFLINE_KEEP_MS + 1_000; s.tick()
+        assertEquals("offline", s.get(id)!!.endReason)
     }
 
     @Test fun `a move keeps the session id stops the old place and starts the new one`() = runBlocking {
@@ -511,7 +608,7 @@ class PlaybackSessionsTest {
         assertTrue(restarted.timeline(id).any { it.second == "reconnected" })
     }
 
-    @Test fun `a place silent after a restart is paused and offline for 24 h not ended at 2 min`() = runBlocking {
+    @Test fun `a place silent after a restart is paused and offline not ended at 2 min and takes the 10 min`() = runBlocking {
         val s = service()
         val tv = device("living-tv", kind = "tv")
         val id = s.onStart(tv, "film-1", 0)
@@ -526,6 +623,10 @@ class PlaybackSessionsTest {
         assertTrue(r.live)
         assertTrue(r.offline)
         assertEquals(SessionState.PAUSED, r.state)
+        // FR-R372-8 — this is the first `offline` of its spell, so the 10 min runs from here like any silent place.
+        assertEquals(now, r.offlineSince)
+        now += SESSION_OFFLINE_KEEP_MS + 1_000; restarted.tick()
+        assertEquals("offline", restarted.get(id)!!.endReason)
     }
 
     @Test fun `the hourly tick drops events and ended sessions older than seven days`() = runBlocking {

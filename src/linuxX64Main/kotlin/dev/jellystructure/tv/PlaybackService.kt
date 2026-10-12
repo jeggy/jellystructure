@@ -112,16 +112,27 @@ internal class TrackedPlayback(
     val jellyfinPlaySessionId: String? = null,
     /** 286 (FR-286-8) — the ticket was a direct play: for a cast receiver, not a session against the ceiling. */
     val directPlay: Boolean = false,
+    /** R372 (FR-R372-12) — when this entry began, so the socket test can wait the same [STOP_WATCHDOG_MS] the
+     *  heartbeat test does: a play whose events socket is not up yet is not yet evidence of a dead place. */
+    val startedMs: Long = heartbeatMs,
+    /** R372 (FR-R372-12) — this entry was created by a progress report rather than by a start (a report ahead of its
+     *  start, a session re-tracked after a restart, or one the watchdog reaped that its place reported again). A
+     *  report is proof the place is playing, so such an entry is judged by heartbeat alone from then on: a flapping
+     *  socket must not reap a place that is still reporting. */
+    val fromReport: Boolean = false,
 ) {
     /** 306 (FR-306-1) — a progress report moves the position and the heartbeat time and nothing else, so every
      *  field the start recorded (and any field added later — add it here too) survives the first report. */
     fun withProgress(positionMs: Long, heartbeatMs: Long) =
-        TrackedPlayback(device, jellyfinId, positionMs, heartbeatMs, jellyfinPlaySessionId, directPlay)
+        TrackedPlayback(device, jellyfinId, positionMs, heartbeatMs, jellyfinPlaySessionId, directPlay, startedMs, fromReport)
 }
 
 private val repairJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
 private const val STOP_WATCHDOG_MS = 90_000L
+
+/** Phase 312 (FR-312-1) — the `reason` the stop watchdog's own force-stop carries. */
+internal const val STOP_REASON_WATCHDOG = "watchdog"
 
 // Phase 312 (FR-312-3) — how long after our stop's user-data write the backend reads it back, and how far the place
 // Jellyfin holds may differ from ours before it writes it again.
@@ -162,6 +173,13 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     private val pendingStops = HashMap<PlaybackKey, Long>()
     private val pendingStopPositions = HashMap<PlaybackKey, Long>()
 
+    // R372 (FR-R372-12) — key -> when the stop watchdog force-stopped it. [stoppedUntilMs]'s grace exists to stop an
+    // in-flight tick resurrecting the viewer's OWN stop; a watchdog stop is the server's guess that the place is gone,
+    // and a progress report after it is proof that guess was wrong, so such a report resurrects the entry at once
+    // (FR-R372-12's "brings that session back online and back under tracking") instead of being swallowed for a
+    // minute and then re-creating an entry the next tick reaps. Pruned with the grace window in [tracked].
+    private val reapedAtMs = HashMap<PlaybackKey, Long>()
+
     // Non-suspend readers (nowPlaying, called from route handlers) can't take the mutex, so they read an
     // immutable snapshot republished on every mutation instead of iterating the live map.
     @Volatile
@@ -200,7 +218,8 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
             val stopAlreadyArrived = pendingStops.remove(key) != null
             val stoppedAt = pendingStopPositions.remove(key)
             val superseded = active[key]
-            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId, directPlay)
+            reapedAtMs.remove(key)      // R372 (FR-R372-12) — an explicit new start is not a reaped play reporting back
+            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock(), jellyfinPlaySessionId, directPlay, startedMs = clock())
             lastSeen[key] = device to clock()
             publish()
             StartResult(stopAlreadyArrived, superseded, stoppedAt.takeIf { stopAlreadyArrived })
@@ -225,13 +244,19 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     suspend fun heartbeat(device: DeviceData, jellyfinId: String, positionMs: Long): Boolean {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         return mutex.withLock {
-            if ((stoppedUntilMs[key] ?: 0L) > clock()) {
+            // R372 (FR-R372-12) — a report for a play the WATCHDOG stopped comes back under tracking at once: see
+            // [reapedAtMs]. A report for the viewer's own stop is still swallowed by the grace window.
+            val reaped = reapedAtMs.remove(key) != null
+            if (!reaped && (stoppedUntilMs[key] ?: 0L) > clock()) {
                 false
             } else {
+                if (reaped) stoppedUntilMs.remove(key)
                 // 306 — keep what the start recorded (directPlay, the play-session id); no entry (restart, or a
                 // report ahead of its start) stays conservative: directPlay = false counts against the ceiling.
+                // R372 (FR-R372-12) — and such an entry carries fromReport: its existence is owed to a live report,
+                // so the socket test never reaps it (a flapping socket used to reap a reporting place every tick).
                 active[key] = active[key]?.withProgress(positionMs, clock())
-                    ?: TrackedPlayback(device, jellyfinId, positionMs, clock())
+                    ?: TrackedPlayback(device, jellyfinId, positionMs, clock(), startedMs = clock(), fromReport = true)
                 lastSeen[key] = device to clock()
                 publish()
                 true
@@ -249,11 +274,14 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
      * hasn't reached [started] yet is a real race ([R218]'s abandon-during-negotiation case), not proof
      * there was nothing to stop.
      */
-    suspend fun stopped(device: DeviceData, jellyfinId: String, positionMs: Long? = null): String? {
+    suspend fun stopped(device: DeviceData, jellyfinId: String, positionMs: Long? = null,
+                        /** R372 (FR-R372-12) — this stop is the watchdog's, not the viewer's: see [reapedAtMs]. */
+                        reaped: Boolean = false): String? {
         val key = PlaybackKey(device.deviceId, jellyfinId)
         return mutex.withLock {
             val existing = active.remove(key)
             stoppedUntilMs[key] = clock() + STOP_GRACE_MS
+            if (reaped) reapedAtMs[key] = clock() else reapedAtMs.remove(key)
             lastSeen[key] = device to clock()  // Phase 178 — keeps this stop visible to anyActive()'s grace window
             if (existing == null) { pendingStops[key] = clock(); positionMs?.let { pendingStopPositions[key] = it } }
             publish()
@@ -266,6 +294,7 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     suspend fun tracked(): List<TrackedPlayback> = mutex.withLock {
         val now = clock()
         stoppedUntilMs.entries.removeAll { it.value <= now }
+        reapedAtMs.entries.removeAll { (_, at) -> now - at > STOP_GRACE_MS }   // R372 — a place that never reported back
         pendingStops.entries.removeAll { (_, requestedAt) -> now - requestedAt > PENDING_STOP_TTL_MS }
         pendingStopPositions.keys.retainAll(pendingStops.keys)
         lastSeen.entries.removeAll { (_, v) -> now - v.second > PLAYBACK_DEFER_GRACE_MS }
@@ -305,6 +334,24 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
     /** Has [playback] gone [STOP_WATCHDOG_MS] without a heartbeat (app kill / network drop / HDMI-off)? */
     fun isHeartbeatStale(playback: TrackedPlayback): Boolean =
         clock() - playback.heartbeatMs > STOP_WATCHDOG_MS
+
+    /**
+     * R372 (FR-R372-12) — is the socket test held for [playback]? Two cases, both measured on prod on 2026-10-12:
+     *  - a play younger than [STOP_WATCHDOG_MS]: its events socket may not be up yet (the socket test used to wait
+     *    for nothing, and one row was force-stopped 1.2 s after it started);
+     *  - [TrackedPlayback.fromReport]: a progress report put this entry here, which is proof the place is playing,
+     *    so only the heartbeat may end it (a flapping socket logged 112 reaps in one evening).
+     * Either way the heartbeat test still reaps a place that falls silent, 90 s after its last report.
+     */
+    fun inSocketGrace(playback: TrackedPlayback): Boolean =
+        playback.fromReport || clock() - playback.startedMs <= STOP_WATCHDOG_MS
+
+    /** R372 (FR-R372-12) — the watchdog's whole per-entry test, in one place so [PlaybackService.stopWatchdogTick]
+     *  and PlaybackWatchdogTest judge by the same rule. [socketOpen] is the caller's own socket lookup (it suspends,
+     *  and is worth skipping for a kind that holds no socket — see [needsEventsSocket]). */
+    fun shouldReap(playback: TrackedPlayback, socketOpen: Boolean, reconnecting: Boolean): Boolean =
+        shouldForceStop(isHeartbeatStale(playback), needsEventsSocket(playback.device), socketOpen, reconnecting,
+            socketGrace = inSocketGrace(playback))
 
     companion object {
         /** 218 amendment (FR-218-11), extended by Phase 236 (FR-236-8) — which devices the watchdog may
@@ -1312,7 +1359,9 @@ class PlaybackService(
         var cleared = false
         val plan = plansMutex.withLock { plans.remove(key).also { cleared = clearLatched.remove(key) } } ?: factsOf(jellyfinId)?.let { SessionPlan(durationMs = it.durationMs, creditsStartMs = it.creditsStartMs) }
         val decision = resolveStop(positionMs, plan)
-        val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId, positionMs)
+        // R372 (FR-R372-12) — the watchdog's own stop is marked as such: a progress report after it brings the play
+        // straight back under tracking, rather than being swallowed by the post-stop grace.
+        val jellyfinPlaySessionId = playbackTracker.stopped(device, jellyfinId, positionMs, reaped = reason == STOP_REASON_WATCHDOG)
         // R368 (review item 6) — the session is held 15 s for the next song, part or episode.
         runCatching { sessions?.onStop(device, jellyfinId, positionMs, sessionId) }
             .onFailure { Logger.warn("Playback sessions: stop failed: ${it.message}", "tv") }
@@ -1603,16 +1652,18 @@ class PlaybackService(
                 // R368 (review item 12 a) — a session still reconnecting after a restart is judged by heartbeat alone:
                 // its progress may arrive before its events socket comes back.
                 val reconnecting = sessions?.isReconnecting(p.device.deviceId) == true
-                val stale = playbackTracker.isHeartbeatStale(p)
                 val needsSocket = PlaybackTracker.needsEventsSocket(p.device)
-                if (shouldForceStop(stale, needsSocket, !needsSocket || isDeviceConnected(p.device.deviceId), reconnecting)) add(p)
+                // R372 (FR-R372-12) — the socket test now waits too (PlaybackTracker.inSocketGrace); the whole test
+                // lives in shouldReap so the tick and its test cannot drift apart.
+                if (playbackTracker.shouldReap(p, !needsSocket || isDeviceConnected(p.device.deviceId), reconnecting)) add(p)
             }
         }
         for (p in stale) {
             Logger.info("Stop watchdog: force-stopping stale playback item=${p.jellyfinId} device=${p.device.deviceId}", "tv")
-            runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs, reason = "watchdog") }
+            runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs, reason = STOP_REASON_WATCHDOG) }
                 .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
-            // R372 (FR-R372-4, amends FR-R368-2) — the session is left paused and offline for 24 h, not ended.
+            // R372 (FR-R372-4, amends FR-R368-2) — the session is left paused and offline, not ended; FR-R372-8's
+            // 10 min then runs from this first `offline`, and a re-reap of an already-offline row does nothing.
             runCatching { sessions?.onReaped(p.device, p.jellyfinId) }
             // Phase 236 (FR-236-8) — a screen's status is display state, not tied to the Jellyfin stop
             // call's own success; clear it regardless of whether the stop above landed.

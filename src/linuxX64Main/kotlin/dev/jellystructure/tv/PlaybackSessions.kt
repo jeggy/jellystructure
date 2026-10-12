@@ -83,9 +83,17 @@ internal fun targetIcon(platform: String?, kind: String, smallScreen: Boolean = 
     else -> "tv"
 }
 
-/** Review item 12 (a) — the watchdog's test: a reconnecting session is judged by heartbeat alone. */
-internal fun shouldForceStop(heartbeatStale: Boolean, needsSocket: Boolean, socketOpen: Boolean, reconnecting: Boolean): Boolean =
-    heartbeatStale || (!reconnecting && needsSocket && !socketOpen)
+/**
+ * Review item 12 (a) — the watchdog's test: a reconnecting session is judged by heartbeat alone.
+ *
+ * R372 (FR-R372-12, amendment 2026-10-12) — so is one whose socket test is held ([socketGrace]): the heartbeat test
+ * waits 90 s and the socket test used to wait for nothing, so a play started in the second before its events socket
+ * came up was force-stopped on the next 30 s tick (one prod row 1.2 s after it started), and a flapping socket reaped a
+ * place that was still reporting. [PlaybackTracker.inSocketGrace] decides which entries the hold covers.
+ */
+internal fun shouldForceStop(heartbeatStale: Boolean, needsSocket: Boolean, socketOpen: Boolean, reconnecting: Boolean,
+                             socketGrace: Boolean = false): Boolean =
+    heartbeatStale || (!reconnecting && !socketGrace && needsSocket && !socketOpen)
 
 /** Review item 2 — the `features=` an events socket opted into; only the known ones are kept. */
 internal fun parseEventFeatures(raw: String?): Set<String> =
@@ -218,6 +226,13 @@ internal data class SessionRec(
     /** R371 — a room that could not be added, and when (*Couldn't add {room}*). */
     val roomFailed: String? = null,
     val roomFailedAt: Long? = null,
+    /**
+     * R372 (FR-R372-8, amendment 2026-10-12) — when the current offline spell began: the clock the 10 min is measured
+     * from, never [updatedAt]. Set by the first reap of a spell and by nothing else, so a re-reap, a queue report, a
+     * revision bump or a restart cannot extend the window; cleared whenever a report clears [offline]. Not a column:
+     * a restart reads it back from the timeline's last `offline` event (the spell writes exactly one).
+     */
+    val offlineSince: Long? = null,
 ) {
     val live: Boolean get() = endedAt == null
     // The item that plays, by id: a queue report moves [queueIndex] into the app's whole queue while [queue] may hold only the
@@ -306,8 +321,19 @@ internal sealed interface SessionChange {
 
 /** The hold a stop keeps a session for (review item 6). */
 internal const val SESSION_STOP_HOLD_MS = 15_000L
-/** R372 (FR-R372-4, owner decision 1) — a paused (or offline) session ends this long after its last change. */
-internal const val SESSION_PAUSED_KEEP_MS = 24L * 60 * 60_000
+/**
+ * R372 (FR-R372-8, owner decision 2026-10-12) — a session paused on a place that is still there ends this long after
+ * its last change, `end_reason = idle`. It was 24 h until the amendment; prod's measurement (DEB-758) was that `idle`
+ * had never once fired, because an offline row was re-armed by every re-reap.
+ */
+internal const val SESSION_PAUSED_KEEP_MS = 4L * 60 * 60_000
+
+/**
+ * R372 (FR-R372-8) — a session whose place has gone away ends this long after the **first** `offline` of that offline
+ * spell ([SessionRec.offlineSince]), `end_reason = offline`. So a quit app's row is gone within roughly 11½ minutes
+ * (90 s of silence plus this) and a closed browser tab's within about 10.
+ */
+internal const val SESSION_OFFLINE_KEEP_MS = 10L * 60_000
 /** R372 — *Couldn't move to {place}* is said for this long, then the place line goes back to the place (found
  *  2026-10-05: it stayed on the remote for good, minutes after the old place had carried on). */
 internal const val MOVE_FAILED_SHOWN_MS = 8_000L
@@ -500,25 +526,50 @@ class PlaybackSessions(
     // ── boot ──
 
     /**
+     * R372 (FR-R372-8) — when a restored row's offline spell began, read back from its timeline: the spell writes
+     * exactly one `offline` event (a re-reap writes none), so its last one is the spell's start. `updatedAt` is the
+     * fallback for a row whose events the 7-day sweep has taken — never a longer window than the 10 min, only a
+     * shorter one measured from the row's last change.
+     */
+    private fun offlineSpellStart(r: SessionRec): Long =
+        runCatching { db.playbackSessionQueries.eventsFor(r.id).executeAsList().lastOrNull { it.what == "offline" }?.at }
+            .getOrNull() ?: r.updatedAt
+
+    /**
      * FR-R368-4, review item 12 — loads every session that wasn't ended, marked *reconnecting* until its target reports
      * again. Returns them, so the caller rebuilds the tracker (with the current item's play-session id) and R343's
      * plans from `options_json`.
+     *
+     * R372 (FR-R372-8, amendment 2026-10-12) — **a restart does not revive a dead row.** A row that was already
+     * `offline` comes back offline, with the clock of its own offline spell (read back from the timeline's one
+     * `offline` event) and *not* as *reconnecting*; it is left out of the returned list, so the caller registers no
+     * tracker entry for it. Prod's commonest re-arm was exactly this: a restored entry reaped again ~90 s later.
      */
     internal suspend fun restore(): List<SessionRec> = mutex.withLock {
         val t = now()
         val rows = db.playbackSessionQueries.liveOrEndedSince(t - SESSION_ENDED_LINGER_MS).executeAsList().map { it.toRec() }
         val restored = mutableListOf<SessionRec>()
         for (r in rows) {
-            val rec = if (r.live) r.copy(reconnecting = true, reconnectDeadline = t + SESSION_RECONNECT_MS, stopHoldUntil = null,
-                castDeviceId = r.castDeviceId ?: r.options.castDeviceId) else r
+            val rec = when {
+                !r.live -> r
+                r.offline -> r.copy(offlineSince = offlineSpellStart(r), reconnecting = false, reconnectDeadline = null,
+                    stopHoldUntil = null, castDeviceId = r.castDeviceId ?: r.options.castDeviceId)
+                else -> r.copy(reconnecting = true, reconnectDeadline = t + SESSION_RECONNECT_MS, stopHoldUntil = null,
+                    castDeviceId = r.castDeviceId ?: r.options.castDeviceId)
+            }
             if (rec.live && rec.targetKind == "cast") {
                 rec.options.linkHolder?.let { castMinter.getOrPut(rec.targetId) { it } }
                 rec.castDeviceId?.let { receiverCastDevice.getOrPut(rec.targetId) { it } }
             }
             sessions[rec.id] = rec
-            if (rec.live) restored += rec
+            if (rec.live && !rec.offline) restored += rec
         }
         if (restored.isNotEmpty()) Logger.info("Playback sessions: ${restored.size} restored after a restart, reconnecting", "tv")
+        // FR-R372-8 — worth a line of its own: these are the rows a restart used to re-arm, and they now end on the
+        // clock they came back with.
+        sessions.values.count { it.live && it.offline }.takeIf { it > 0 }?.let { n ->
+            Logger.info("Playback sessions: $n offline restored, ending on their own offline clock, not re-tracked (R372)", "tv")
+        }
         restored
     }
 
@@ -581,7 +632,7 @@ class PlaybackSessions(
                         targetName = if (m.castDeviceId != null && m.targetName != m.castDeviceId) m.targetName else placeNameOf(device),
                         castDeviceId = if (cast) receiverCastDevice[device.deviceId] ?: m.castDeviceId ?: cur.castDeviceId else null,
                         itemId = itemId, positionMs = positionMs, positionAt = t, state = SessionState.STARTING, movingTo = null, moveFailed = null,
-                        offline = false, reconnecting = false, stopHoldUntil = null, loadDeadline = null, jellyfinPlaySessionId = jellyfinPlaySessionId,
+                        offline = false, offlineSince = null, reconnecting = false, stopHoldUntil = null, loadDeadline = null, jellyfinPlaySessionId = jellyfinPlaySessionId,
                         options = cur.options.withPlan(plan).copy(directPlay = directPlay, rooms = emptyList()), revision = cur.revision + 1, updatedAt = t,
                     )
                     sessions[next.id] = next
@@ -613,7 +664,7 @@ class PlaybackSessions(
                         positionMs = positionMs, positionAt = t, state = SessionState.STARTING,
                         options = cur.options.withPlan(plan).copy(directPlay = directPlay),
                         revision = cur.revision + 1, jellyfinPlaySessionId = jellyfinPlaySessionId,
-                        reconnecting = false, reconnectDeadline = null, stopHoldUntil = null, offline = false,
+                        reconnecting = false, reconnectDeadline = null, stopHoldUntil = null, offline = false, offlineSince = null,
                         updatedAt = t,
                     )
                     sessions[next.id] = next
@@ -703,7 +754,8 @@ class PlaybackSessions(
             }
             // R372 (found live 2026-10-09, evening) — a paused report of the same item that lands after the stop (it was
             // on the wire when the app cancelled its heartbeat) keeps the stop's hold: it used to clear it and leave the
-            // film paused until the watchdog made it offline for 24 h. A start or a playing report still joins.
+            // film paused until the watchdog made it offline (for 24 h, as the keep then was). A start or a playing
+            // report still joins.
             if (cur.stopHoldUntil != null && paused && cur.itemId == itemId) return@withLock
             val changed = isSessionChange(cur, itemId, positionMs, paused, t) || cur.reconnecting || cur.offline || cur.stopHoldUntil != null
             val state = if (paused) SessionState.PAUSED else SessionState.PLAYING
@@ -713,7 +765,9 @@ class PlaybackSessions(
                 itemId = itemId, queue = queue, positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
                 options = if (volumePercent != null) cur.options.copy(volume = volumePercent, muted = muted) else cur.options,
                 revision = if (changed) cur.revision + 1 else cur.revision,
-                reconnecting = false, reconnectDeadline = null, offline = false, stopHoldUntil = null,
+                // R372 (FR-R372-8) — a report from the place clears `offline` and, with it, the 10 min clock: the
+                // session is paused-with-a-place on the 4 h window, and a genuine later loss starts a new spell.
+                reconnecting = false, reconnectDeadline = null, offline = false, offlineSince = null, stopHoldUntil = null,
                 updatedAt = if (changed) t else cur.updatedAt,
             )
             sessions[next.id] = next
@@ -755,19 +809,24 @@ class PlaybackSessions(
 
     /**
      * R372 (FR-R372-4, review item 5; amends FR-R368-2) — the 110 watchdog stopped Jellyfin's playback on a silent place:
-     * the session is paused where it was and marked offline (*{place} is offline · paused at …*), kept 24 h, with
-     * *Play here* and *Move to…* offered.
+     * the session is paused where it was and marked offline (*{place} is offline · paused at …*), kept
+     * [SESSION_OFFLINE_KEEP_MS], with *Play here* and *Move to…* offered.
+     *
+     * R372 (FR-R372-8, amendment 2026-10-12) — a **re-reap** of a session that is already `offline` does nothing at
+     * all: no second `offline` event, no revision bump, and above all no new clock. Prod re-armed 27 of 46 offline rows
+     * this way, one of them for 122 h (DEB-758).
      */
     suspend fun onReaped(device: DeviceData, itemId: String) {
         val change: SessionChange? = mutex.withLock {
             val cur = sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && (it.itemId == itemId || it.stopHoldUntil != null) } ?: return@withLock null
+            if (cur.offline) return@withLock null
             // R372 (found live 2026-10-09, evening) — a play that never got past 0:00 (it failed) has no place to keep:
-            // it ends, rather than staying *paused · offline* for 24 h.
+            // it ends, rather than staying *paused · offline*.
             if (cur.positionMs <= 0L) return@withLock endLocked(cur.id, "failed")?.let { SessionChange.List }
             event(cur.id, "offline", null, cur.targetName)
             val t = now()
-            val next = cur.copy(state = SessionState.PAUSED, offline = true, stopHoldUntil = null, reconnecting = false, reconnectDeadline = null,
-                revision = cur.revision + 1, updatedAt = t)
+            val next = cur.copy(state = SessionState.PAUSED, offline = true, offlineSince = t, stopHoldUntil = null,
+                reconnecting = false, reconnectDeadline = null, revision = cur.revision + 1, updatedAt = t)
             sessions[next.id] = next
             next.persist()
             SessionChange.State(next.id)
@@ -920,9 +979,13 @@ class PlaybackSessions(
                     sessions[s.id] = n
                     n.persist()
                     changes += SessionChange.State(s.id)
-                } else if (s.live && (s.state == SessionState.PAUSED || s.offline) && s.stopHoldUntil == null && t - s.updatedAt >= SESSION_PAUSED_KEEP_MS) {
-                    // R372 (FR-R372-4) — paused (or offline) for 24 h since the last change: it ends.
-                    endLocked(s.id, if (s.offline) "offline" else "idle")?.let { changes += SessionChange.List }
+                } else if (s.live && s.offline && s.stopHoldUntil == null && t - (s.offlineSince ?: s.updatedAt) >= SESSION_OFFLINE_KEEP_MS) {
+                    // R372 (FR-R372-8) — the place has gone away: 10 min from the START of the offline spell, so a queue
+                    // report, a revision bump or a restart cannot push it out (prod's max row lived 122 h this way).
+                    endLocked(s.id, "offline")?.let { changes += SessionChange.List }
+                } else if (s.live && !s.offline && s.state == SessionState.PAUSED && s.stopHoldUntil == null && t - s.updatedAt >= SESSION_PAUSED_KEEP_MS) {
+                    // R372 (FR-R372-8) — paused on a place that is still there: 4 h after the last change.
+                    endLocked(s.id, "idle")?.let { changes += SessionChange.List }
                 } else if (s.live && s.state == SessionState.STARTING && s.loadDeadline != null && t >= s.loadDeadline) {
                     // R370 (review item 8) — a load that brought no report within 10 s failed.
                     endLocked(s.id, "failed")?.let { changes += SessionChange.List }
@@ -948,11 +1011,13 @@ class PlaybackSessions(
 
     /**
      * FR-R368-4 as amended by R372 (owner decision 3): a restored session whose place never came back is *paused,
-     * offline* at its stored position and kept 24 h like any silent place (it used to end after 2 minutes).
+     * offline* at its stored position and kept like any silent place (it used to end after 2 minutes). FR-R372-8 is
+     * what "kept" now means: this is the first `offline` of its spell, so the 10 min runs from here.
      */
     private fun onSilentAfterRestart(s: SessionRec, t: Long): SessionChange? {
         event(s.id, "offline", null, s.targetName)
-        val n = s.copy(state = SessionState.PAUSED, offline = true, reconnecting = false, reconnectDeadline = null, revision = s.revision + 1, updatedAt = t)
+        val n = s.copy(state = SessionState.PAUSED, offline = true, offlineSince = s.offlineSince ?: t,
+            reconnecting = false, reconnectDeadline = null, revision = s.revision + 1, updatedAt = t)
         sessions[s.id] = n
         n.persist()
         return SessionChange.State(s.id)

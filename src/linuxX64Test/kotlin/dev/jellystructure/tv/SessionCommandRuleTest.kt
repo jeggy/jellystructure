@@ -75,6 +75,27 @@ class SessionCommandRuleTest {
     @Test fun `no socket no sender and no relay app is unreachable`() =
         assertEquals(CommandRoute.Unreachable, commandRoute(SessionCommandRequest(op = "pause"), false, false, false))
 
+    /**
+     * R372 (FR-R372-9, amendment 2026-10-12) — *End* on a place that cannot be reached is an instruction about our own
+     * row: it ends it and answers success. Only the ops that genuinely need the place still answer 409 `unreachable` —
+     * these are exactly the rows the owner could not clear by hand (DEB-757).
+     */
+    @Test fun `End on an unreachable offline place ends our row while the place's own ops stay unreachable`() {
+        assertEquals(CommandRoute.EndOurRow, commandRoute(SessionCommandRequest(op = "stop"), false, false, false, targetOffline = true))
+        for (op in listOf("play", "pause", "seek", "set_volume", "set_mute", "next", "previous")) {
+            assertEquals(CommandRoute.Unreachable,
+                commandRoute(SessionCommandRequest(op = op, positionMs = 5_000, level = 30), false, false, false, targetOffline = true), op)
+        }
+        // The amendment's case is an *offline* row. A place that holds no socket but has not been reaped yet is still
+        // waiting for the watchdog's 90 s, and its stop is still a command to it.
+        assertEquals(CommandRoute.Unreachable, commandRoute(SessionCommandRequest(op = "stop"), false, false, false))
+        // A reachable place is told to stop as it always was; the row's own end is not a substitute for that.
+        assertEquals(CommandRoute.LegacyPlaystate("Stop"),
+            commandRoute(SessionCommandRequest(op = "stop"), targetSocket = true, targetControl = false, senderControl = false))
+        assertEquals(CommandRoute.SessionCommand,
+            commandRoute(SessionCommandRequest(op = "stop"), targetSocket = true, targetControl = true, senderControl = false))
+    }
+
     @Test fun `your own session is controllable`() = assertTrue(controllableBy("u-anna", false, rec(), householdControl = false, nearby = false, canSee = true))
 
     @Test fun `another members is not while the switch is off and is with it on`() {
