@@ -687,6 +687,14 @@ Jellyfin's; a TV, a phone and an unknown kind keep what they declared on both; a
 itself is still refused on the Jellyfin path. Plus `PlatformAudioTest`/`EncoderPlanTest` unchanged — the plan for a
 device that declares the capability is what it was.
 
+**What the cast still has to prove, and the measurement does not.** Our encoder gives a cast **MPEG-TS** segments
+(`encoderMuxFor`: a cast is TS until fMP4 is verified on the receiver, 313), while the host measurement used an fMP4
+fixture — the shape is identical (video-only variants, `AUDIO="aud"`, every track `a/{pos}/main.m3u8`) but Shaka
+reaches an audio-only TS rendition through its own transmuxer. The 2026-10-09 cast ran 16 minutes on exactly this
+master with one rendition in the group, so the shape parses; a **pick** across two TS renditions is what no
+measurement covers yet. If it fails, the error belongs in this spec as data, and the next shape to try is
+`encoderMuxFor` giving a cast fMP4 — not the Jellyfin-path variant.
+
 **Still owed, and on the QA queue:** the one cast of item 2 above — Stue TV's built-in Chromecast, a film on our
 encoder with two or more audio tracks, `R291 rendition a{n} active (…)` on the log channel and `selectedAudio`
 following the pick. That closes FR-R291-4.
