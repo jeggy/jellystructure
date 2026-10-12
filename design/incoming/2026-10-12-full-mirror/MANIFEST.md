@@ -17,6 +17,19 @@ Source project — reported before anything was read, as DEB-792 asked:
 write to, and this project is a plain project. `get_project` on the id the owner pointed at resolves,
 and `ravilo/Ravilo.html` is present — so this is his studio.
 
+## Resolutions — the owner's three answers, 2026-10-13
+
+| asked | answered | done |
+|---|---|---|
+| the image archive has no transport | export the studio to a zip and extract what is needed from it | `design/PROCESS.md` now carries the zip procedure; extraction is its own task |
+| 7 screenshots name a library title | keep them in the studio; never land them | nothing landed; the rule is now a named entry in PROCESS.md's gate, widened to every real-library capture |
+| `app/wf.css` in the studio is stale | write it back | pushed and verified — studio 58312 B `90ae89d7…` = repo, byte for byte |
+
+**The copied files in this directory were pruned when triage closed; only this manifest remains.**
+Nothing in this round was promoted — the repo was already ahead of every file in it — so what sat
+here was thirteen duplicates and one *stale* `wf.css`, which is the exact shape of bytes the nineteen
+wipes were made of. Git history holds the quarantine commit (`97d8f92c`) if they are ever wanted.
+
 ## The three counts
 
 `list_files` returns **paths only** — no size, no hash, no mtime. So identical-vs-differing cannot be
@@ -81,6 +94,9 @@ Two things follow, and both are reported on DEB-792 rather than acted on here:
    fence line; this one is now fenced, in its own commit.
 2. It is a candidate for the write-back path — the studio's copy is otherwise byte-identical, so it
    has not been touched there. Write-back is a **write** to the studio and the owner's call.
+   **Answered yes on 2026-10-13 and pushed**: the precondition was re-proven at push time (studio
+   still 55232 B, `191b9cd3…`), the repo's 58312 B went up by `localPath`, and the read-back hashes
+   equal. The studio is no longer stale in the one file it was stale in.
 
 ## What was dropped at the gate
 
@@ -102,6 +118,10 @@ and the set is captures of the real app on the real library rather than stand-in
 recorded here by count only and are **not** in this commit — this repository is public. The owner's
 call, asked on DEB-792.
 
+**Answered 2026-10-13: keep them in the studio, never land them.** Applied to the whole class, not
+just the 7 filenames — a capture of the real library does not land whatever it is called. The
+filenames are not reproduced here either, which is why this section counts and does not list.
+
 ## Not pulled: the image archive
 
 157 of the 184 new files are images (png/jpg/webp). `get_file` returns file content through
@@ -109,6 +129,10 @@ the agent's context and caps at 256 KiB, so it cannot carry an archive of that s
 image mirror needs a different transport. Path inventory below; bytes still only in the studio. This is
 the one part of "nothing in the studio is lost" that this pass does **not** yet satisfy, and it is the
 second question on DEB-792.
+
+**Answered 2026-10-13: an owner-exported zip, extracted by named path against this inventory.** The
+procedure is in `design/PROCESS.md`; the extraction is a separate task, and it covers the 16 new text
+files below as well — they are pullable but arrive in the same zip for free.
 
 ## Inventory
 
