@@ -161,6 +161,10 @@ private var teardownWired = false
 private var trimSelectedKind: String? = null
 private var trimLastEdge = "b"   // "a" | "b" — which edge , / . nudges next
 private var trimPlayheadMs = 0L
+
+/** Phase 222 amendment (FR-222-9) — where `?at=<ms>` asked the editor to open, until [renderTrim]
+ *  consumes it. One-shot: navigating within the editor afterwards starts at 0:00 as it always did. */
+private var pendingTrimSeekMs: Long? = null
 // Phase 190 — set once the server's stream-mode decision comes back (wireVideo); null until then.
 // "direct" = Static=true, unchanged behaviour. "remux" = a live video-copy/audio-transcode session:
 // not byte-range seekable (confirmed live against Jellyfin 10.11.11 — see SegmentRoutes.kt's doc), so
@@ -205,6 +209,10 @@ fun renderSegments(scope: CoroutineScope, query: Map<String, String>) {
     val filter = query["filter"]
     val episodeKey = query["episode"]
     val episodeNumber = query["episodeNumber"]?.toIntOrNull() ?: 0
+    // Phase 222 amendment (2026-10-12, FR-222-9) — `?at=<ms>` opens the trim view with the playhead
+    // already there, for an evidence list that points at a moment (317's A/V sync windows are the first).
+    // Junk and a missing value are both "from the start": the clamp lives in seekToAbsoluteMs.
+    pendingTrimSeekMs = query["at"]?.toLongOrNull()?.takeIf { it != 0L }
 
     scope.launch {
         when {
@@ -412,6 +420,15 @@ private fun renderTrim(data: SegmentTrimResponse, scope: CoroutineScope) {
         abandonDrag()
     } else if (trimSelectedKind != null && data.segments.none { it.kind == trimSelectedKind }) {
         trimSelectedKind = data.segments.firstOrNull()?.kind
+    }
+    // Phase 222 amendment (FR-222-9) — a time taken off the URL survives the reset above and is applied
+    // ONCE: every other way into the editor means "from the start", and the time belongs to the link, not
+    // to the session. From here it is an ordinary pre-stream playhead, which FR-222-1/2 already honours —
+    // `wireVideo` starts the remux stream there instead of at zero, and `loadedmetadata` restores it for
+    // direct play. Clamped to the file, so a junk or past-the-end link opens rather than refusing.
+    pendingTrimSeekMs?.let { at ->
+        pendingTrimSeekMs = null
+        trimPlayheadMs = at.coerceIn(0L, (data.durationSec * 1000).toLong().coerceAtLeast(0L))
     }
     currentTrimData = data
     currentTrimScope = scope

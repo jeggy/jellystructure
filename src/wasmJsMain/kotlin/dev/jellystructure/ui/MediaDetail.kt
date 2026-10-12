@@ -3432,19 +3432,20 @@ private suspend fun loadAvSync(item: MediaItem) {
         return if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}" else "$m:${s.toString().padStart(2, '0')}"
     }
     fun signed(ms: Long): String = if (ms < 0) "−${-ms} ms" else "+$ms ms"
-    // The only player the admin has is 222/223's segment editor, and its route carries no start time, so a
-    // window's time links to the editor for that file and is read there. Opening it AT the window needs an
-    // `at=` parameter in that editor — raised, not bolted on from here.
-    fun editorHref(path: String): String {
-        if (item.kind != MediaKind.TV_SHOW) return "#/segments?movie=${item.id}"
-        val ep = item.episodes.firstOrNull { it.path == path } ?: return "#/segments?movie=${item.id}"
-        return "#/segments?series=${item.id}&episode=${dev.jellystructure.encodeURIComponent(ep.filename)}&episodeNumber=${ep.episodeNumber ?: 0}"
+    // FR-317-10 — each window's time opens the player THERE. The admin's only player is 222/223's segment
+    // editor; `at=<ms>` is phase 222's own amendment (FR-222-9, 2026-10-12), and the playhead lands on the
+    // keyframe at or before the window's start, which the editor says for itself.
+    fun editorHref(path: String, atMs: Long): String {
+        val at = "&at=$atMs"
+        if (item.kind != MediaKind.TV_SHOW) return "#/segments?movie=${item.id}$at"
+        val ep = item.episodes.firstOrNull { it.path == path } ?: return "#/segments?movie=${item.id}$at"
+        return "#/segments?series=${item.id}&episode=${dev.jellystructure.encodeURIComponent(ep.filename)}&episodeNumber=${ep.episodeNumber ?: 0}$at"
     }
     fun block(f: MediaApi.AvSyncFile): String {
         val evidence = f.windows.joinToString("") { w ->
             val off = w.offsetMs?.let { signed(it) } ?: "no faces"
             """<div class="tiny" style="margin:2px 0;${if (!w.confident) "opacity:.55;" else ""}">
-                 <a href="${editorHref(f.path)}">${at(w.atMs).esc()}</a> — $off
+                 <a href="${editorHref(f.path, w.atMs)}" title="Open the editor there">${at(w.atMs).esc()}</a> — $off
                  <span class="muted">(confidence ${(w.conf * 100).toInt() / 100.0}, ${w.frames} face frames${if (!w.confident) ", not counted" else ""})</span>
                </div>"""
         }
