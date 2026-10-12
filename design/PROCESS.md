@@ -30,11 +30,26 @@ Verified 2026-10-12/13, not recalled:
   design-*system* projects — so a round starts from `get_project` on that id, never from a listing.
   `canEdit` is true, and write-back to a plain project works (below); the type only matters to the
   Design System pane, which we do not use.
-- **`get_file` is a text transport and nothing more.** Content comes back through the agent's context
-  and is capped at 256 KiB, and `list_files` returns paths only — no size, no hash, no mtime. So
-  identical-vs-differing is a byte comparison, not a structural one, and **no image or oversized file
-  can be mirrored by the pull.** Those travel in a zip the owner exports from the studio UI; the pull
-  carries the text surface, which is what the Kotlin gets ported from.
+- **`get_file` carries binaries too — and truncates them silently.** Measured 2026-10-13, after the
+  owner asked whether the fetching could be the designer's job rather than his:
+  - It returns `{content, contentType, isBase64, truncated}`. A PNG or woff2 comes back base64, so
+    **there is no "text only" limit** — the earlier claim in this file was wrong.
+  - The cap is **256 KiB of encoded output, i.e. 192 KiB of file bytes**, and over it the answer is
+    `truncated: true` with the content cut mid-file. `presentation/admin/01-dashboard.png` came back
+    as exactly 196 608 bytes of valid-header, invalid-tail PNG. **Check `truncated` on every pull; a
+    file over 192 KiB cannot be mirrored this way at all** and is the one thing only the owner's
+    export can carry.
+  - `list_files` returns paths only — no size, no hash, no mtime — so a file's size is discovered by
+    pulling it. Identical-vs-differing is a byte comparison, never a structural one.
+- **Never re-transcribe a pulled file.** The harness writes every tool result to disk — large ones to
+  `tool-results/*.txt`, the rest into the session's `*.jsonl` — so the bytes are recovered from there
+  and written out by script, hashed, exactly as received. Re-typing a payload back out through the
+  agent doubles the context cost and risks a silent corruption in an archive copy, which is the worst
+  kind: it looks like a design change.
+- **Hosted fonts are normal in a mockup and forbidden in the live set.** 46 tracked files under
+  `design/` carry a `fonts.googleapis.com` link; **zero** of the twelve do, and the three woff2 exist
+  so that stays true. The gate below means no network reference in a **production** file; a mockup
+  that loads Google Fonts is landed as received.
 - **A share link is a viewer, not a transport.** An unauthenticated fetch of a
   `claude.ai/design/p/<id>?…&via=share` URL returns **403**.
 - **The live set is twelve files, not `design/`.** `build.gradle.kts` (`syncDesignAssets`) copies
@@ -184,13 +199,16 @@ rest — stay complete and keep working there. So:
 
 ### The image archive travels in a zip
 
-`get_file` cannot carry it (above), so the binaries reach the repo this way, settled by the owner
-2026-10-13 on DEB-792:
+**The zip is for what the pull cannot reach, and that is now a short list: files over 192 KiB.**
+Everything smaller the designer fetches herself, one `get_file` at a time, and the owner is asked for
+nothing. Corrected 2026-10-13 after he pushed back on being handed the work — the first answer, that
+images needed him, was wrong.
 
 1. **He exports the studio** from the design UI and drops the zip at
-   `~/design-exports/<YYYY-MM-DD>-studio.zip`. Only he can: the export is a UI action on his login,
-   and `DesignSync` has no export method — the read methods are `list_projects`, `get_project`,
-   `list_files`, `get_file` and that is the whole list.
+   `~/design-exports/<YYYY-MM-DD>-studio.zip` — **only for the oversized files**, and only when some
+   are actually wanted. Only he can: the export is a UI action on his login, and `DesignSync` has no
+   export method — the read methods are `list_projects`, `get_project`, `list_files`, `get_file` and
+   that is the whole list.
 2. **Rannvá extracts named paths only**, against the round's `MANIFEST.md` inventory — never the whole
    archive. The same gate applies to a zip as to a pull: the rejected-by-name list, the real-library
    captures, no `specs/`, no `STATUS.md`, no `CLAUDE.md`, no `scripts/`.
