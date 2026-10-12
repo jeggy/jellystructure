@@ -682,3 +682,42 @@ frame 15.9 s**; cause not found — the qBittorrent force recheck had the films 
   Jellyfin's job had made 3 minutes of segments and paused. A 1080p HEVC copy (4.9 Mbps) played. The receiver reports
   no decode ceiling (`ceiling=null`), so nothing stopped a 51 Mbps 4K copy. To decide: cap a receiver's copy by a
   measured ceiling, or send a 4K copy above ~40 Mbps to our encoder.
+
+## Amendment (2026-10-12) — `[encoder]` is config-file-only, and a Settings save leaves it alone
+
+Found by dev while wiring phase 317's own `[avsync]` block; raised on DEB-319 and answered by the owner the
+same day (*spec before fix, and it is 313's*) — DEB-729.
+
+**The bug.** `PUT /api/config` deserialises the posted JSON into `AppConfig` and then restores, from the stored
+config, every block the Settings form does not carry: `acquisition`, `trackers`, `ingest`, `subtitleCheck`,
+`musicbrainz`, `music`, `audiobooks`, `metadata.ageRatingMap`, the `##KEEP##` secrets and (317) the
+server-owned seed flags. **`encoder` is not in that list**, and the admin's own `AppConfig`
+(`wasmJsMain/.../api/ConfigApi.kt`) has no `encoder` field at all. So the posted JSON omits the block,
+kotlinx fills in `EncoderConfig()`'s defaults, and the save writes those over the operator's values:
+`enabled`, `ffmpeg_dir`, `download_ffmpeg`, `work_dir`, `cuda_cache_dir`, `max_disk_mb`, `cast_receivers`,
+`receiver_renditions`. Any save, from any Settings tab, changing anything.
+
+It has gone unnoticed because `enabled` defaults to `true` (313e) and `cast_receivers` to `true` (the owner's
+2026-10-09 decision): the encoder does not switch off, so nothing visibly breaks. Only a tuned value reverts —
+silently, with no log line, until the next transcode behaves differently. (The card a job runs on is *not*
+affected: there is no `cuda_device` key; placement is `Encoder`'s budget decision.) This is the same class as
+the `age_rating_map` bug the route's own comment describes (fixed 2026-09-04).
+
+### FR-313-15 — Every `[encoder]` value is the config file's, and only the config file's
+
+- **`[encoder]` is not a Settings field.** It is deployment plumbing — a container path, a tmpfs, a disk cap,
+  two dev switches — not a household setting, and FR-285-12 (*Settings holds settings only*) keeps it off the
+  form. Phase 317 chose the other shape for `[avsync]` (a card in Settings ▸ Advanced) because a sidecar's URL
+  and timeout are an operator's to set from the admin; `[encoder]`'s values are set where the container is
+  defined, next to `docker-compose.gpu.yml`'s mounts, or they are wrong.
+- **Therefore `PUT /api/config` restores the whole block from the stored config**, exactly as it does for
+  `acquisition` and `ingest`: `config = config.copy(encoder = stored.encoder)`. A Settings save can never
+  change an `[encoder]` value, because a Settings save never carries one.
+- **A change to `[encoder]` takes effect the way it always has:** edit `config.toml`, restart. Nothing in this
+  amendment adds a write path, and no admin page gains a field.
+
+**Test.** `ConfigSavePreservesBlocksTest` — a stored config with a non-default `[encoder]` (a different
+`work_dir`, `max_disk_mb`, `cast_receivers = false` and `enabled = false`), then a `PUT /api/config` with the
+admin's body shape (no `encoder` key at all): every stored value survives, and the blocks already on the
+restore list (`ingest`, `subtitleCheck`, `acquisition`) survive beside it, so the next block added to
+`AppConfig` without a line here has a test that fails rather than a household value that quietly resets.
