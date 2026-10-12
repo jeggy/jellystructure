@@ -340,3 +340,42 @@ dropped, so a number lower than 7 is correct rather than a fault. Truly finished
 
 **Reporting the result closes the row**, not the press itself: the count applied, and whether any candidate was
 dropped for having been played again.
+
+## Amendment 2026-10-12 — the press had already happened: 7 of 7, on 2026-10-08 (DEB-769)
+
+The amendment above was written on 2026-10-12 as though *Put them back* were still owed. It was not. **Apply ran at
+2026-10-08 11:00:07 UTC**, 46 minutes after that morning's deploy, against the real library, and the backend logged
+each write and then the total:
+
+```
+2026-10-08T11:00:07Z [INFO] playback repair: item=… put back at 710691ms, unwatched (310)   (×7)
+2026-10-08T11:00:07Z [INFO] playback repair: 7 of 7 places put back (310/312)
+```
+
+(`~/jellystructure/backups/backend-log-pre-v1.50-51-g4e0ce274-deploy-20261008-130546.log`.) The candidates file was
+retired by the same call — `playback-repair-candidates.json.applied` sits next to the database — which is why the
+Dashboard row *Watch places to put back* is empty today: an empty row here means **done**, not broken. No later
+session noticed the rename, so the spec, `STATUS.md` and the board all carried "the owner's press is still owed" for
+four days. **A row whose only remaining item is a press is checked against the artefact the press leaves behind
+before it is reported as owed.**
+
+**Plan = result:** all 7 of the dry run's 7 planned, all 7 landed, none dropped. The dry run and the press agreed
+exactly because nothing in the set had been played again in the two days between them.
+
+### Read-back, 2026-10-12 (four days on)
+
+Read from Jellyfin's own `UserData`, per candidate user, no credentials and no writes (a copy of
+`jellyfin_config/data/jellyfin.db`):
+
+| | what Jellyfin holds now | verdict |
+|---|---|---|
+| 4 items | unplayed at exactly the restored position, restored `LastPlayedDate` intact | **held** |
+| 1 item | unplayed, position advanced to 67 %, last played 2026-10-12 — the viewer resumed from the restored place and watched on | **held, and used** |
+| 1 item | played at 0, last played 2026-10-10 — re-played and genuinely finished two days after the repair | **held, then finished** |
+| 1 item | played at 0 — but its `LastPlayedDate` is still the one the repair restored (2026-10-06 21:06:09) and the restored position was 259 595 ms of 301 440 ms (86 %) | **regressed, cause unknown** |
+
+Six of seven did what FR-310-7 promised; one went back to *watched at 0* **without anything playing it** — an
+unchanged `LastPlayedDate` means no play, no viewer mark through a path that dates itself, and no progress report.
+That signature is 310's and 312's own damage, so it is a question about live behaviour after the fix rather than
+about the repair: raised as its own task for the backend seat (read back what wrote it, and whether it can still
+happen on the build prod runs now). **This row's repair is complete; the regression does not reopen it.**

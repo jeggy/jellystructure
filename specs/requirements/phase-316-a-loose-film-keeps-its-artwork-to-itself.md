@@ -221,3 +221,17 @@ and it is the owner's button by design.
 
 Unhold condition: 310's applied result reported and read. Note that the live warning said **3 films**; `planMove`
 re-plans at the press, so that count may differ by then and a difference is not a fault.
+
+## Amendment 2026-10-12 — the hold is lifted; Move is the only press left (DEB-769)
+
+310's repair turns out to have been applied on **2026-10-08 11:00:07 UTC** — 7 of 7, and six of the seven still hold
+four days later (310's 2026-10-12 amendment has the read-back). The unhold condition above is therefore **met**:
+the result exists and has been read. **Move is now the only unpressed owner button of the three.**
+
+The button is live where it matters: 316's commits are ancestors of the build prod is running
+(`v1.51-4-gf27ddae4-dirty`, up since 2026-10-12 10:08), so the Dashboard warning and its overview are reachable now
+without a deploy. The count it shows is whatever `planMove` finds at the press; the recorded **3 films** is the
+2026-10-09 reading, not a promise.
+
+Unchanged by this amendment: the press is the owner's, every write stays behind `LooseFilmPorts`, and the second
+film's Radarr mismatch is still left alone.

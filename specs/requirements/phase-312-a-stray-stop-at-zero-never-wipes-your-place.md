@@ -233,3 +233,24 @@ the repair is the whole remainder — and it is held for one reason only: all th
 is the one whose dry-run output the owner has already seen, which makes it the safest to learn from.
 
 Unhold condition: 310's applied result reported and read. Nothing else gates this.
+
+## Amendment 2026-10-12 — FR-312-5's repair is spent: it ran with 310's press and matched nothing (DEB-769)
+
+The hold above cannot be lifted, because there is nothing left behind it. **310 and 312 share one candidates file
+and one button.** `planRepair` reads every candidate in `playback-repair-candidates.json` whatever its `source`, and
+`applyRepair` retires the whole file afterwards — so when Apply ran on **2026-10-08 11:00:07 UTC** (see 310's
+2026-10-12 amendment) it planned 312's 24 candidates alongside 310's 80, and the log is explicit about the outcome:
+
+```
+playback repair: 7 of 7 places put back (310/312)
+```
+
+All 7 carried `(310)`. **Not one 312 candidate planned**, and that is the right answer rather than a miss. Checked
+against Jellyfin's `UserData` on 2026-10-12, of the 24: most are songs (`planRepair` takes only films and episodes),
+the rest either hold the correct place already or were played again since. The single 312 candidate still showing
+*watched at 0* stopped at 5 901 414 ms of 6 362 336 ms — **93 % in, past the credits** — so R347's `playbackFinished`
+drops it: the viewer did finish it, and Jellyfin's mark is true.
+
+**Nothing in this phase now waits on the owner.** The candidates file is retired; pressing *Put them back* again is
+not possible and would plan nothing if it were. Any future 312 repair needs a freshly generated candidates file and
+its own decision.
