@@ -52,6 +52,9 @@ internal val PIPE_BLOCKS = mapOf(
     // Phase 261 (FR-261-4) — the two file checks, one queue job per due file.
     "verify_files"  to PipeBlockDef("Verify video files",        "Read each file end to end for damage a player would hit mid-film (phase 254).", "#5fbf6a", PIPE_VERIFY_IC),
     "check_track_lengths" to PipeBlockDef("Check track lengths", "Find audio/video tracks that stop before the file does (phase 255).",           "#8fa8e8", PIPE_LENGTHS_IC),
+    // Phase 273 (FR-273-24, amendment 2026-10-12) — the third file check. Its short name is "Subtitles fit",
+    // not "Subtitles": `prewarm_subtitles` above already owns that one in the skipped-steps summary.
+    "check_subtitles" to PipeBlockDef("Check subtitles", "Check each sidecar subtitle against its own video and flag the ones that do not fit (phase 273).", "#8fa8e8", PIPE_LENGTHS_IC),
     // Phase 317 (FR-317-8) — the fourth file check, on its own lane: the sidecar follows the lips against
     // the speech. Queues nothing at all while [avsync] is off.
     "check_av_sync" to PipeBlockDef("Check A/V sync", "Measure whether the sound runs ahead of (or behind) the picture — needs the avsync sidecar (phase 317).", "#6fd0c8", PIPE_LENGTHS_IC),
@@ -75,7 +78,7 @@ internal val PIPE_BLOCKS = mapOf(
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
 internal val FILE_CHECK_STEPS = setOf("verify_files", "check_track_lengths")
-internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","check_av_sync" to "A/V sync","build_recommendations" to "For you","build_suggestions" to "Suggestions","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","compare_songs" to "♪ Same songs","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
+internal val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","prewarm_subtitles" to "Subtitles","verify_files" to "Verify","check_track_lengths" to "Lengths","check_subtitles" to "Subtitles fit","check_av_sync" to "A/V sync","build_recommendations" to "For you","build_suggestions" to "Suggestions","scan_music" to "♪ Music","scan_audiobooks" to "Audiobooks","match_musicbrainz" to "♪ MusicBrainz","compare_songs" to "♪ Same songs","fetch_music_artwork" to "♪ Art","fetch_lyrics" to "♪ Lyrics","write_music_nfo" to "♪ NFO","notify" to "Notify","wait" to "Wait")
 
 /**
  * Phase 154 (FR-PIPE1-1..5) — pre-run dialog. Lists the steps that will actually run and lets the operator
