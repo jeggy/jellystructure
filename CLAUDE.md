@@ -48,6 +48,12 @@ is added there and that is the whole styling step. No Tailwind, no PostCSS. The 
 the DOM through `kotlinx.browser` and renders **server-pushed state only** — no derived or optimistic
 state in the frontend.
 
+**Design arrives by a person, never by a pipeline.** Nothing outside this repository writes this
+repository: a design round is received, read and committed by someone who looked at the diff.
+[`design/PROCESS.md`](design/PROCESS.md) is how a design becomes code in both directions — the
+designer briefing the tool, and the owner designing and handing a round over. Read it before
+touching anything under `design/`.
+
 ## Building locally
 
 See [`README.md`](README.md#building-from-source) for the task list. Two local gotchas it does not

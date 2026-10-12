@@ -1,3 +1,17 @@
+# Sync receipt, through 2026-10-04 — HISTORICAL RECORD, FROZEN
+
+> **This file is a closed log. Nothing in it describes how design reaches this repo today.**
+>
+> It is the retired "updated designs" sync's own receipt. That sync stopped on **2026-10-12** when
+> the design project's GitHub link was removed; this file stopped being written to then.
+>
+> What in it is false now: the two-way pull/export pipeline (there is no export, and the design
+> project cannot read this repo), the `specs/` and `STATUS.md` mirrors (both deleted from the design
+> project on 2026-10-12), and **every phase number** — its newest "next free" line is long since
+> taken. Numbers come from [`STATUS.md`](../STATUS.md) and the board, never from prose.
+>
+> For the process that is actually in use, read [`PROCESS.md`](PROCESS.md).
+
 repo: jeggy/jellystructure
 branch: main
 path: specs/   (plus root STATUS.md — both mirrored read-only from the repo); presentation/ (full mirror, ours to build on); design/ (our export — now confirmed to flow BOTH ways, see 2026-09-15)
