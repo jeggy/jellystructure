@@ -20,6 +20,7 @@ ALLOWED=(
   "src/linuxX64Main/kotlin/dev/jellystructure/music/MusicWebClients.kt"     # its requests run inside OutboundHttp.withPermit
   "src/linuxX64Main/kotlin/dev/jellystructure/music/ProviderKeyChecks.kt"   # its key checks run inside OutboundHttp.withPermit
   "src/linuxX64Main/kotlin/dev/jellystructure/OutboundHttp.kt"              # the boundary itself (mentions the pattern in its doc)
+  "src/linuxX64Main/kotlin/dev/jellystructure/media/AvSyncService.kt"       # /health and /stat run inside OutboundHttp.withPermit
 )
 
 hits=$(grep -rnE '(is (kotlinx\.coroutines\.)?CancellationException\)?[^;]*throw|catch \(e: (kotlinx\.coroutines\.)?CancellationException\) \{ *throw)' \
