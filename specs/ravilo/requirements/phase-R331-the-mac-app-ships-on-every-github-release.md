@@ -335,3 +335,36 @@ So: `continue-on-error: ${{ github.event_name == 'push' }}`.
 
 The path filter is unchanged, so on anything that touches no Mac-shaped file the job still short-circuits in seconds
 and the blocking/advisory distinction never arises.
+
+## Amendment (2026-10-12): acceptance 2 is not provable on the MacBook as it stands, and the install path has a trap
+
+From the Mac walk (DEB-721) and DEB-756.
+
+**Acceptance 2's prompt half cannot be observed on that Mac.** `spctl --status` reads **`assessments disabled`**, so
+Gatekeeper refuses nothing there: neither the first *Open Anyway* nor its absence on the second release is a visible
+event, and a pass on that Mac would prove nothing about any other. Acceptance 2 is therefore split:
+
+- **2a — the mechanism, proved structurally and ✓ as of 2026-10-12.** `ravilo-mac-1.50.dmg` and `ravilo-mac-1.51.dmg`
+  carry an identical designated requirement (same bundle identifier, same certificate leaf — `CN = Ravilo`, SHA-1
+  `5B3EAC32D6564F942C33101D4D07FDB31E0D9274`), which is exactly what a Gatekeeper rule written by *Open Anyway* matches
+  on. This is what FR-R331-3 claims and it holds.
+- **2b — the observation, owed and gated on the owner.** Seeing the one prompt and then no prompt needs
+  `sudo spctl --master-enable` on that Mac and a re-walk of the v1.50 → v1.51 pair. The owner's call; asked on
+  DEB-756. Until then acceptance 2 is **not** claimed as walked, and no later note may read it as met.
+
+The sign-in and Local Network halves of acceptance 2 are unaffected by `spctl` and stay as written.
+
+**And the install path the acceptance assumes is not the one everyone takes.** Acceptance 2 says *"install
+`ravilo-mac-1.50.dmg` on a Mac"*, and the walk found that **how** it is installed decides whether the app works at
+all: a quarantined `Ravilo.app` that Finder did not move is App-Translocated, runs from
+`/private/var/folders/…/AppTranslocation/<uuid>/d/Ravilo.app`, and reaches nothing on a LAN-resolved server because
+the household's Local Network consent is bound to the copy in `/Applications`. So:
+
+- Acceptance 2 (and acceptance 1's device half) means **dragged to `/Applications` with Finder**, run from there.
+  Anything else is testing a different app, in TCC's eyes and in Gatekeeper's.
+- `xattr -dr com.apple.quarantine /Applications/Ravilo.app`, offered in FR-R331-6 as a shortcut past *Open Anyway*, is
+  also what prevents translocation. That is worth knowing and is recorded here.
+- **FR-R331-6 stays withdrawn** (owner, 2026-09-30): the release notes gain nothing, here or ever, unless the owner
+  moves it. The place the viewer is told to drag the app to Applications is **in the app**, under the update line that
+  already carries the *Open Anyway* sentence — written as **R385 FR-R385-6**, with the rest of what a translocated Mac
+  should say in **R385**.
