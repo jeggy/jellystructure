@@ -1,0 +1,484 @@
+/* Ravilo — the phone (frame + screens, was the inline <style>). Lifted out of "Ravilo Mobile.html" on 2026-10-04 so the one Ravilo file (Ravilo.html ?surface=phone)
+   can load it. THIS is the maintained copy now; "Ravilo Mobile.html" keeps its old inline copy as a frozen snapshot until it is deleted. */
+:root{
+    --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+    --line:rgba(var(--fg),.09); --line-2:rgba(var(--fg),.16); --card:#161a28; --card-2:#1b2031;
+    --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+    --good:#2dd49a; --ease:cubic-bezier(.22,.61,.36,1);
+    --fg:255,255,255; --bg-rgb:10,12,19;
+  }
+  html[data-skin="midnight"]{ --bg-rgb:4,16,26; }
+  html[data-skin="noir"]{ --bg-rgb:8,8,7; }
+  /* Graphite (dark) and Daylight (light) — owner 2026-09-30: the desktop's "System" pair made into two real themes */
+  html[data-skin="graphite"]{ --bg:#1c1c1f; --bg-2:#242428; --ink:#f2f2f4; --ink-soft:#b4b4bb; --ink-dim:#85858d; --line:rgba(var(--fg),.08); --line-2:rgba(var(--fg),.14); --card:#2a2a2e; --card-2:#323237; --accent:#4f8ef0; --accent-2:#6fb0f5; --grad:linear-gradient(120deg,#4f8ef0,#4f8ef0); --chip:rgba(var(--fg),.1); --bg-rgb:28,28,31; }
+  html[data-skin="daylight"]{ --bg:#fbfbfd; --bg-2:#f1f2f6; --ink:#15171f; --ink-soft:#4a4f63; --ink-dim:#6d7286; --line:rgba(16,18,30,.09); --line-2:rgba(16,18,30,.16); --card:#f1f2f6; --card-2:#e8eaf0; --accent:#5b4ee0; --accent-2:#0f73c2; --grad:linear-gradient(120deg,#6a5cf0,#1f8fdc); --chip:rgba(16,18,30,.07); --fg:16,18,30; --bg-rgb:251,251,253; --ring:#5b4ee0; --ring-glow:rgba(91,78,224,.3); }
+  /* Surfaces that sit on artwork or video stay dark in a light theme: the hero card and the film player. */
+  html[data-appearance="light"] .hcard, html[data-appearance="light"] .mp{ --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#d0d4e2; --ink-dim:#a3a9c0; --line:rgba(255,255,255,.12); --line-2:rgba(255,255,255,.2); --card:#161a28; --chip:rgba(255,255,255,.16); --fg:255,255,255; --bg-rgb:10,12,19; color:#f3f4fb; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; background:#05060a; font-family:'Sora',sans-serif; overflow:hidden;}
+  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding-bottom:210px;}
+
+  /* Pixel 9 — 412×915 portrait */
+  .phone{ width:412px; height:915px; border-radius:46px; background:#05060a;
+    box-shadow:0 0 0 11px #15171d, 0 0 0 13px #2a2d36, 0 40px 110px rgba(0,0,0,.7); position:relative; }
+  .screen{ position:absolute; inset:0; border-radius:46px; overflow:hidden; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  .punch{ position:absolute; top:13px; left:50%; transform:translateX(-50%); width:11px; height:11px; border-radius:50%; background:#000; z-index:60; }
+
+  /* ---- iPhone 16 frame (added 2026-09-16 for the mobile player + casting round; the brief asks
+     for an iPhone frame beside the Pixel. Rather than fork the whole id-bound render layer for a
+     second frame, the same screens render in either bezel — Dynamic Island and home indicator
+     instead of the punch-hole, 393×852, and the taller iOS status bar. The picker is mockup-only
+     preview chrome, same class of thing as the TV mockup's SKIN and FOCUS pickers. ---- */
+  .phone.ios{ width:393px; height:852px; border-radius:52px;
+    box-shadow:0 0 0 11px #0d0e12, 0 0 0 13px #35383f, 0 40px 110px rgba(0,0,0,.7); }
+  .phone.ios .screen{ border-radius:52px; }
+  .phone.ios .punch{ display:none; }
+  .island{ display:none; position:absolute; top:11px; left:50%; transform:translateX(-50%); width:118px; height:35px; border-radius:20px; background:#000; z-index:60; }
+  .phone.ios .island{ display:block; }
+  .homeind{ display:none; position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:140px; height:5px; border-radius:3px; background:var(--ink); opacity:.9; z-index:62; }
+  .phone.ios .homeind{ display:block; }
+  .phone.ios .statusbar{ height:54px; align-items:flex-end; padding:0 30px 6px 34px; }
+  .phone.ios .scroll{ padding-bottom:112px; }
+  .devpick{ position:absolute; bottom:-72px; left:0; right:0; display:flex; justify-content:center; gap:6px; }
+  .devpick b{ align-self:center; font-size:10px; letter-spacing:1.4px; color:#54596b; font-family:'Space Grotesk',sans-serif; margin-right:4px; }
+  .devpick button{ border:1px solid rgba(var(--fg),.12); background:rgba(var(--fg),.05); color:#8b91a8;
+    font-family:'Sora',sans-serif; font-size:12px; font-weight:600; padding:6px 14px; border-radius:9px; cursor:pointer; white-space:nowrap; }
+  .devpick button.on{ background:#f3f4fb; color:#0a0c13; border-color:transparent; }
+  /* mockup-only, clearly fenced: the product has no such control. It exists so two
+     states that are otherwise unreachable in a mockup — R237's failed start, and the
+     rotate button that only appears when the SYSTEM has portrait locked — stay
+     visible in the design. Same class of thing as app/activity.html's stop-note toggle. */
+  .devpick.prev{ top:calc(100% + 76px); bottom:auto; left:-10px; right:-10px; flex-wrap:wrap; row-gap:6px; }
+  .devpick.prev button{ white-space:nowrap; padding:5px 11px; font-size:11.5px; }
+  .devpick.prev b{ color:#4a4f60; }
+
+  /* The status bar is positioned and opaque, and paints a 1px outset below itself: at the
+     mockup's fractional scale the boundary with the sticky app bar lands on a half pixel, and a
+     hairline of scrolling content showed through it. z-index sits above the app bar (41) and
+     below the player overlay (80), which still covers it for immersive playback. */
+  .statusbar{ position:relative; z-index:60; background:var(--bg); box-shadow:0 1px 0 0 var(--bg);
+    height:34px; flex:none; display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px 0 26px; font-size:13px; font-weight:600; color:var(--ink); }
+  .statusbar .ic{ display:flex; gap:5px; align-items:center; opacity:.95; }
+  .statusbar svg{ display:block; }
+
+  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:104px; }
+  .scroll::-webkit-scrollbar{ display:none; }
+
+  /* app bar. The background is SOLID, not a fade: with a gradient that reached
+     transparent, poster art scrolled up behind the wordmark and the icon row, and
+     a sliver of the hero showed between the app bar and the tab strip. Both
+     sticky bars are opaque and stack flush — 56px + 48px — so nothing passes
+     between them. */
+  .appbar{ position:sticky; top:0; z-index:41; display:flex; align-items:center; gap:14px; padding:8px 18px 10px;
+    background:var(--bg); }
+  .brand{ display:flex; align-items:center; gap:8px; flex:none; }
+  .brand .mark{ width:22px; height:22px; flex:none; }
+  .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.02em; color:var(--ink); }
+  .appbar .sp{ flex:1; }
+  .iconbtn{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(var(--fg),.07); color:var(--ink); border:none; cursor:pointer; }
+  .iconbtn:active{ background:rgba(var(--fg),.15); }
+  .avatar{ width:34px; height:34px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; font-family:'Space Grotesk',sans-serif; }
+
+  /* chip rows. Only Discover's own five-segment strip uses these now — the app's four pages
+     moved to the bottom bar (R267, direction B), so nothing is pinned under the app bar any
+     more, and the guillotine fade that used to sit below the old page strip went with it. */
+  .tabs{ display:flex; gap:8px; padding:6px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
+  .tabs::-webkit-scrollbar{ display:none; }
+  .tab{ flex:none; padding:7px 15px; border-radius:999px; font-size:14px; font-weight:600; color:var(--ink-soft); background:rgba(var(--fg),.06); cursor:pointer; white-space:nowrap; transition:.18s var(--ease); }
+  .tab.on{ background:var(--ink); color:#0a0c13; }
+
+  /* ---- bottom navigation (R267 · direction B · "pill") ----------------------------------
+     The four pages live at the bottom of a phone, where the thumb is: Home · Movies · Series ·
+     Discover, never a fifth (My List is in the avatar menu per R170, Search is an icon per R52).
+     Selected is carried by a SHAPE, not by two shades of grey — touch has no focus ring and no
+     hover to help — and the shape is Ravilo's own gradient, sliding between items so the bar
+     reads as one object rather than four states. Opaque, so nothing scrolls under it and the cast
+     mini bar docks against a straight edge. R278 (built 2026-09-20): present on EVERY page —
+     pushed lists, My List, Settings and Your profile included, lighting the page beneath —
+     and absent only where the picture is (player, remote), on one title's detail, and before a
+     profile exists. R274: 74 dp tall — 10 above the 36 dp pill, 8 under the label. */
+  .bnav{ position:absolute; left:0; right:0; bottom:0; z-index:36; padding-top:10px;
+    background:var(--bg-2); border-top:1px solid var(--line); }
+  .bnav .brow{ position:relative; display:flex; align-items:flex-end; }
+  .bnind{ position:absolute; top:0; left:0; width:56px; height:36px; border-radius:18px; background:var(--grad);
+    transition:transform .18s var(--ease); pointer-events:none; }
+  .bn{ flex:1; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; background:none; border:0; padding:0 0 8px; cursor:pointer; color:var(--ink-dim);
+    font-family:'Sora',sans-serif; -webkit-tap-highlight-color:transparent; }
+  /* five items on a 393–411 dp phone: the pill takes 56 dp and still sits inside its own item */
+  .bnind{ width:56px; }
+  .bn .p{ width:56px; height:36px; display:flex; align-items:center; justify-content:center; }
+  .avatar.sm{ width:28px; height:28px; font-size:11px; }
+
+  /* R267 FR-R267-5c — the Library page's type filter lives in the top row, left of the cast button,
+     and ONLY while the Library page is showing (TV2 Play's "Kategorier" position, without its mistake:
+     the slot is empty on every other page, so no page carries a filter that does not apply to it). */
+  .libslot{ position:relative; display:flex; align-items:center; }
+  .libslot:empty{ display:none; }
+  .libpill{ display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 10px 0 14px; border-radius:19px;
+    background:rgba(var(--fg),.09); border:1px solid var(--line); color:var(--ink); font-family:'Sora',sans-serif;
+    font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .libpill svg{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; transition:transform .18s var(--ease); }
+  .libslot.open .libpill svg{ transform:rotate(180deg); }
+  .libmeta{ padding:2px 18px 12px; font-size:12px; color:var(--ink-dim); }
+  .libmenu{ position:absolute; right:0; top:44px; z-index:50; min-width:196px; padding:6px; border-radius:14px;
+    background:var(--bg-2); border:1px solid var(--line); box-shadow:0 18px 40px rgba(0,0,0,.55); display:none; }
+  .libslot.open .libmenu{ display:block; }
+  .libmenu button{ display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:0 12px; border:0;
+    border-radius:10px; background:none; color:var(--ink); font-family:'Sora',sans-serif; font-size:14.5px; cursor:pointer; text-align:left; }
+  .libmenu button:active{ background:rgba(var(--fg),.07); }
+  .libmenu button .tk{ margin-left:auto; color:var(--accent-2); opacity:0; }
+  .libmenu button.on .tk{ opacity:1; }
+  .libmenu button .ct{ color:var(--ink-dim); font-size:12px; }
+  .bn svg{ width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+    transition:stroke .18s var(--ease); }
+  /* 11.5px sits below the 13px floor R234/R244 set for body copy — a deliberate exception for
+     four permanent, icon-paired, one-word labels, and the only one in the phone design. */
+  .bn b{ font-size:11.5px; line-height:16px; font-weight:600; letter-spacing:.01em; transition:color .18s var(--ease); }
+  .bn.on{ color:#fff; }
+  .bn.on b{ color:var(--ink); }
+  .bnsafe{ height:22px; }
+  .phone.ios .bnsafe{ height:30px; }
+  /* R267: the cast mini bar docks directly ON TOP of the nav rather than over the content — the
+     two move as one block and the mini bar keeps the tap target it has today (R245 FR-R245-6).
+     Only while the nav is actually on screen: on a pushed screen (detail, player, remote, account)
+     there is no nav to clear, so the bar returns to its own inset (FR-R267-8). */
+  .rc-mini.abovenav{ bottom:104px; }
+  .phone.ios .rc-mini.abovenav{ bottom:112px; }
+  /* R267 — Search is a page on the phone, not an icon: the field sits at the top of its own page
+     and the library filters live beneath it. Re-tapping the Search item focuses this field. */
+  .srch{ padding:4px 18px 12px; }
+  .srch .fld{ display:flex; align-items:center; gap:10px; height:46px; padding:0 14px; border-radius:23px;
+    background:rgba(var(--fg),.07); border:1px solid var(--line); }
+  .srch .fld svg{ width:18px; height:18px; flex:none; fill:none; stroke:var(--ink-dim); stroke-width:2.2; stroke-linecap:round; }
+  .srch .fld input{ flex:1; min-width:0; background:none; border:0; outline:none; color:var(--ink);
+    font-family:'Sora',sans-serif; font-size:15px; }
+  .srch .fld input::placeholder{ color:var(--ink-dim); }
+  .srchmeta{ padding:0 18px 10px; font-size:12px; color:var(--ink-dim); }
+  /* R277 FR-R277-3 — Clear is a real control, drawn only while there is something to clear.
+     It empties the field and never grabs focus: only the field and the bar's Search item do. */
+  .srch .clr{ flex:none; height:46px; margin-right:-14px; padding:0 14px; border:0; background:none; color:var(--accent-2);
+    font-family:'Sora',sans-serif; font-size:13.5px; font-weight:600; cursor:pointer; }
+  .srch .clr[hidden]{ display:none; }
+
+  /* R268 — Discover's own five-chip strip, inside the page rather than pinned: it scrolls (five
+     chips never fit a portrait phone), the first chip is flush with the gutter, and no label is
+     shrunk or ellipsised to make them fit — the strip gets longer, not denser. */
+  .discsegs{ position:static; top:auto; z-index:auto; padding:2px 18px 14px; }
+
+  /* hero carousel */
+  .hero{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:0; scrollbar-width:none; }
+  .hero::-webkit-scrollbar{ display:none; }
+  .hslide{ flex:none; width:376px; margin:0 18px; scroll-snap-align:center; }
+  .hcard{ position:relative; height:470px; border-radius:20px; overflow:hidden; background-size:cover; background-position:center; }
+  .hcard .scrim{ position:absolute; inset:0; background:linear-gradient(0deg, rgba(8,10,16,.96) 6%, rgba(8,10,16,.55) 38%, rgba(8,10,16,.08) 70%); }
+  .hcard .body{ position:absolute; left:0; right:0; bottom:0; padding:20px 20px 22px; }
+  .hbadge{ position:absolute; top:14px; left:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:11px; letter-spacing:.04em; padding:4px 9px; border-radius:7px; background:rgba(8,10,16,.6); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); color:#fff; }
+  .htag{ font-size:12px; font-weight:600; color:var(--accent-2); letter-spacing:.04em; text-transform:uppercase; margin-bottom:6px; }
+  .htitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; line-height:1.02; letter-spacing:-.01em; }
+  .hmeta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; font-size:12.5px; color:var(--ink-soft); }
+  .hmeta .pg{ border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
+  .hbtns{ display:flex; gap:10px; margin-top:15px; }
+  .btn{ flex:1; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; gap:7px; font-weight:600; font-size:15px; cursor:pointer; border:none; }
+  .btn.play{ background:var(--ink); color:#0a0c13; }
+  .btn.ghost{ background:rgba(var(--fg),.13); color:var(--ink); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  .btn:active{ transform:scale(.97); }
+  .hdots{ display:flex; gap:6px; justify-content:center; padding:12px 0 2px; }
+  .hdots i{ width:6px; height:6px; border-radius:50%; background:rgba(var(--fg),.25); transition:.2s; }
+  .hdots i.on{ width:18px; border-radius:3px; background:var(--accent); }
+
+  /* rows */
+  .row{ margin-top:24px; }
+  .row h3{ font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:600; padding:0 18px 11px; display:flex; align-items:center; gap:7px; }
+  .row h3 .more{ margin-left:auto; font-family:'Sora',sans-serif; font-size:12px; font-weight:500; color:var(--ink-dim); }
+  .track{ display:flex; gap:11px; overflow-x:auto; padding:0 18px 2px; scrollbar-width:none; }
+  .track::-webkit-scrollbar{ display:none; }
+  .tile{ flex:none; width:118px; cursor:pointer; }
+  .poster{ width:118px; height:177px; border-radius:12px; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center; }
+  .poster .ini{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:rgba(var(--fg),.9); }
+  .poster .pb{ position:absolute; top:7px; right:7px; font-size:9.5px; font-weight:700; font-family:'Space Grotesk',sans-serif; padding:2px 6px; border-radius:5px; background:rgba(8,10,16,.66); color:#fff; }
+  .tile:active .poster{ outline:2px solid var(--accent); }
+  .tlabel{ font-size:12.5px; font-weight:500; margin-top:7px; line-height:1.25; }
+  .tsub{ font-size:11px; color:var(--ink-dim); margin-top:1px; }
+
+  /* Discover → library taxonomies (Studios / Networks / Genres). Phone half of the TV
+     wall: same counts, same resolver (R.taxonomy), two-up because the tiles are taps. */
+  .txmeta{ padding:6px 18px 12px; font-size:12px; color:var(--ink-dim); }
+  .txmeta b{ color:var(--ink-soft); font-weight:600; }
+  .txwall{ display:grid; grid-template-columns:1fr 1fr; gap:11px; padding:0 18px; }
+  .txwall.gen{ grid-template-columns:1fr 1fr 1fr; }
+  .txc{ cursor:pointer; }
+  .txcard{ height:78px; border-radius:13px; border:1px solid var(--line); background:rgba(var(--fg),.055);
+    display:flex; align-items:center; justify-content:center; padding:0 12px; overflow:hidden; }
+  .txwall.gen .txcard{ height:58px; }
+  /* R308: every Studios and Networks tile on the light plate, a no-logo name in the plate's dark ink */
+  .txwall:not(.gen) .txcard{ background:#E8EAF0; border-color:transparent; }
+  .txwall:not(.gen) .txwm{ color:#1B1E2B; }
+  .txwall:not(.gen) .txc:active .txcard{ background:#dfe2ea; border-color:var(--accent); }
+  .txlogo.reink{ filter:brightness(0) invert(9%) sepia(12%) saturate(1400%) hue-rotate(195deg); }
+  /* Library as built: R187's facet bar over the grid */
+  .lbfbar{ display:flex; gap:8px; overflow-x:auto; padding:0 18px 12px; scrollbar-width:none; }
+  .lbfbar::-webkit-scrollbar{ display:none; }
+  .lbf{ flex:none; height:36px; padding:0 13px; border-radius:18px; border:1px solid var(--line); background:rgba(var(--fg),.05); color:var(--ink); font:500 13px Sora,sans-serif; display:flex; align-items:center; gap:5px; cursor:pointer; }
+  .lbf svg{ width:14px; height:14px; fill:none; stroke:var(--ink-dim); stroke-width:2; }
+  .lbf .lb{ color:var(--ink-dim); margin-right:3px; }
+  /* phone Settings */
+  .ph-skins{ display:flex; gap:8px; }
+  .ph-skins button{ flex:1; height:44px; border-radius:12px; border:1px solid var(--line); background:rgba(var(--fg),.04); color:var(--ink); font:600 14px Sora,sans-serif; cursor:pointer; }
+  .ph-skins.wrap{ flex-wrap:wrap; }
+  .ph-skins.wrap button{ flex:1 1 30%; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .thsw{ width:16px; height:16px; border-radius:50%; flex:none; box-shadow:0 0 0 1px rgba(var(--fg),.2); }
+  .thsw[data-th="aurora"]{ background:linear-gradient(135deg,#0a0c13 50%,#7b6ef0 50%); } .thsw[data-th="midnight"]{ background:linear-gradient(135deg,#04101a 50%,#19d6c6 50%); }
+  .thsw[data-th="noir"]{ background:linear-gradient(135deg,#080807 50%,#f5b542 50%); } .thsw[data-th="graphite"]{ background:linear-gradient(135deg,#1c1c1f 50%,#4f8ef0 50%); }
+  .thsw[data-th="daylight"]{ background:linear-gradient(135deg,#fbfbfd 50%,#6a5cf0 50%); }
+  .thslot{ margin-top:14px; } .thslot b{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-dim); margin:0 2px 8px; }
+  .thsub{ display:block; font-size:12px; color:var(--ink-dim); margin-top:3px; font-weight:400; }
+  .ph-skins button.on{ border-color:var(--accent); background:color-mix(in oklab, var(--accent) 16%, transparent); }
+  .ph-sw{ margin-left:auto; width:44px; height:26px; border-radius:13px; background:rgba(var(--fg),.18); position:relative; flex:none; }
+  .ph-sw::after{ content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .ph-sw.on{ background:var(--accent); }
+  .ph-sw.on::after{ transform:translateX(18px); }
+  .txc:active .txcard{ border-color:var(--accent); background:rgba(var(--fg),.1); }
+  .txwm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; line-height:1.08; text-align:center; letter-spacing:-.3px; text-wrap:balance; }
+  .txwall.gen .txwm{ font-size:13.5px; }
+  .txlogo{ max-width:78%; max-height:56%; object-fit:contain; }
+  .txcap{ display:flex; align-items:baseline; gap:6px; margin-top:6px; }
+  .txnm{ flex:1 1 auto; min-width:0; font-size:12.5px; font-weight:600; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .txct{ flex:none; font-size:11px; color:var(--ink-dim); white-space:nowrap; }
+  .txback{ display:inline-flex; align-items:center; min-height:44px; padding:0 4px; margin:0 18px; white-space:nowrap; font-size:13.5px; font-weight:600; color:var(--ink-soft); cursor:pointer; }
+  .txgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:13px 11px; padding:0 18px; }
+  .txgrid .tile{ width:auto; }
+  .txgrid .poster{ width:100%; height:auto; aspect-ratio:2/3; }
+
+  /* studios rail */
+  .studios{ display:flex; gap:10px; overflow-x:auto; padding:0 18px; scrollbar-width:none; }
+  .studios::-webkit-scrollbar{ display:none; }
+  .studio{ flex:none; width:96px; height:60px; border-radius:13px; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:800; color:#fff; font-size:16px; cursor:pointer; box-shadow:inset 0 0 0 1px rgba(var(--fg),.08); }
+  .studio small{ font-size:10px; vertical-align:super; }
+
+  /* top 10 list */
+  .t10{ padding:4px 18px 0; }
+  .t10row{ display:flex; align-items:center; gap:2px; padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .t10num{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:46px; width:54px; flex:none; text-align:center; line-height:1; background:linear-gradient(180deg,var(--ink),var(--ink-dim)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .t10p{ width:58px; height:80px; border-radius:9px; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; color:rgba(var(--fg),.9); font-size:18px; }
+  .t10b{ flex:1; min-width:0; padding-left:12px; }
+  .t10b .nm{ font-weight:600; font-size:15px; }
+  .t10b .mt{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .t10b .st{ font-size:11px; margin-top:5px; display:inline-flex; align-items:center; gap:5px; }
+  .st .dot{ width:7px; height:7px; border-radius:50%; }
+  .st.avail{ color:var(--good); } .st.avail .dot{ background:var(--good); }
+  .st.fetch{ color:var(--accent-2); } .st.fetch .dot{ background:var(--accent-2); }
+  .st.none{ color:var(--ink-dim); } .st.none .dot{ background:var(--ink-dim); }
+
+  /* R221 — genre chips on the phone detail. No D-pad here, so the row wraps freely and
+     there is no cap; the chips are already a comfortable tap target. */
+  .dgenres{ display:flex; gap:7px; flex-wrap:wrap; margin:12px 0 0; }
+  .dgen{ height:34px; padding:0 15px; border-radius:17px; display:inline-flex; align-items:center; font-size:13px; font-weight:500;
+    color:var(--ink); background:rgba(var(--fg),.09); border:1px solid rgba(var(--fg),.09); }
+  .dgen.lead{ background:color-mix(in oklch, var(--accent) 22%, transparent); border-color:color-mix(in oklch, var(--accent) 45%, transparent); font-weight:600; }
+
+  /* R239 amendment (2026-09-13, FR-R239-7) — audio/subtitle flag strip, phone scale. Mirrors the TV's
+     merged R134 line (Audio flags · Subtitles flags), placed the same way relative to Play: above the
+     synopsis and above the action row, so neither moves depending on whether a title has flags. */
+  .dflags{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:14px 0 0; }
+  .dflags .fgroup{ display:flex; align-items:center; gap:8px; }
+  .dflags .flabel{ font-size:10px; font-weight:600; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink-dim); }
+  .dflags .frow{ display:flex; align-items:center; gap:6px; }
+  .dflags .fi{ width:22px; height:16px; border-radius:3px; box-shadow:0 0 0 1px rgba(var(--fg),.18); flex:none; }
+  .dflags .fmore{ font-size:12px; font-weight:600; color:var(--ink); padding:2px 8px; border-radius:20px; background:rgba(var(--fg),.09); line-height:1.4; }
+  .dflags .fdiv{ width:1px; align-self:stretch; min-height:16px; background:var(--line); }
+
+  /* R222 — the per-device slow-start line, above the buttons. Same sentence as TV, wrapping freely. */
+  .dslow{ display:flex; gap:9px; align-items:flex-start; margin:15px 0 0; font-size:12.5px; line-height:1.55; color:var(--ink-soft); }
+  .dslow i{ flex:none; width:3px; align-self:stretch; border-radius:2px; background:#f5b542; }
+  .dslow b{ font-weight:600; color:#f0c07a; }
+  [data-skin="noir"] .dslow i{ background:var(--ink); }
+  [data-skin="noir"] .dslow b{ color:var(--ink); font-weight:700; }
+  .meslow{ margin-top:6px; padding-left:8px; border-left:3px solid #f5b542; font-size:11.5px; line-height:1.45; color:var(--ink-soft); }
+  .meslow b{ font-weight:600; color:#f0c07a; }
+  [data-skin="noir"] .meslow{ border-left-color:var(--ink); }
+  [data-skin="noir"] .meslow b{ color:var(--ink); font-weight:700; }
+
+  /* detail screen */
+  .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
+  .detail.on{ transform:translateX(0); }
+  .dscroll{ flex:1; overflow-y:auto; scrollbar-width:none; }
+  .dscroll::-webkit-scrollbar{ display:none; }
+  .dhero{ height:340px; position:relative; background-size:cover; background-position:center; }
+  .dhero .scrim{ position:absolute; inset:0; background:linear-gradient(0deg, var(--bg) 3%, rgba(var(--bg-rgb),.5) 45%, rgba(var(--bg-rgb),.1) 100%); }
+  .dback{ position:absolute; top:14px; left:14px; z-index:5; width:38px; height:38px; border-radius:50%; background:rgba(8,10,16,.55); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; color:#fff; border:none; cursor:pointer; }
+  .dbody{ padding:0 20px 30px; margin-top:-58px; position:relative; }
+  .dtitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:27px; line-height:1.05; }
+  .dmeta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; font-size:12.5px; color:var(--ink-soft); }
+  .dmeta .pg{ border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
+  .dbtns{ display:flex; gap:10px; margin-top:16px; }
+  .dsyn{ margin-top:16px; font-size:14px; line-height:1.6; color:var(--ink-soft); }
+  /* Direction F — the same facts as the TV's About section, stacked two-up. Reading
+     surface only; the phone's tap targets are unaffected. */
+  .aboutp{ margin-top:22px; }
+  .aboutp .g{ display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; margin-top:12px; }
+  .aboutp .k{ font-size:10px; font-weight:600; letter-spacing:1.6px; text-transform:uppercase; color:var(--ink-dim); }
+  .aboutp .v{ font-size:14px; color:var(--ink); margin-top:3px; font-weight:500; }
+  .seclbl{ font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; margin:22px 0 11px; }
+  /* R343 — Shuffle on the Episodes header, Reset progress under it once the series is finished */
+  .seclbl.mrow{ display:flex; align-items:center; gap:8px; }
+  .mshuf{ margin-left:auto; height:36px; padding:0 14px; border-radius:18px; display:inline-flex; align-items:center; gap:6px; font:600 13px 'Sora',sans-serif; background:rgba(var(--fg),.12); color:var(--ink); border:none; cursor:pointer; }
+  .mshuf svg,.mreset svg{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2.3; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .mdone{ display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; margin:-6px 0 8px; font-size:13px; color:var(--ink-soft); }
+  .mdone .l{ display:inline-flex; align-items:center; gap:7px; }
+  .mdone .ck,.methumb .mwk{ width:18px; height:18px; border-radius:50%; background:#2dd49a; color:#06281c; font-size:10px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+  .methumb .mwk{ position:absolute; right:5px; bottom:5px; }
+  .mreset{ display:inline-flex; align-items:center; gap:6px; background:none; border:none; padding:0 2px; min-height:44px; font:600 13px 'Sora',sans-serif; color:var(--accent-2); cursor:pointer; text-align:right; }
+  [data-skin="noir"] .mreset{ color:var(--ink); }
+  .mreset.armed{ color:var(--ink); }
+
+  /* Multi-episode files — combined triptych card (Option B) */
+  .melist{ display:flex; flex-direction:column; gap:14px; }
+  .mecombo{ border:1px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(var(--fg),.03); }
+  .mestill{ position:relative; aspect-ratio:16/9; }
+  .mestill .trip, .mestill .trip .tp{ position:absolute; inset:0; }
+  .mestill .trip .tp1{ clip-path:polygon(0 0,37% 0,29% 100%,0 100%); }
+  .mestill .trip .tp2{ clip-path:polygon(37% 0,69% 0,61% 100%,29% 100%); }
+  .mestill .trip .tp3{ clip-path:polygon(69% 0,100% 0,100% 100%,61% 100%); }
+  .mestill .seam{ position:absolute; top:-8%; height:116%; width:2.5px; background:rgba(var(--fg),.9); box-shadow:0 0 0 1px rgba(0,0,0,.5); z-index:4; }
+  .mestill .seam1{ left:33%; transform:rotate(8.1deg); }
+  .mestill .seam2{ left:65%; transform:rotate(8.1deg); }
+  .mestill .tnum{ position:absolute; top:6px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.85); z-index:5; }
+  .mestill .tnum1{ left:10px; } .mestill .tnum2{ left:45%; } .mestill .tnum3{ right:10px; }
+  .mestill .merng{ position:absolute; left:10px; bottom:9px; z-index:6; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.8); background:rgba(var(--bg-rgb),.55); padding:2px 9px; border-radius:20px; }
+  .mebody{ padding:11px 13px 13px; }
+  .met{ font-size:15px; font-weight:600; }
+  .merows{ margin-top:7px; }
+  .merow{ display:flex; gap:10px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .merow:last-child{ border-bottom:none; }
+  .merow .n{ font-family:'JetBrains Mono',ui-monospace,monospace; color:var(--accent); width:26px; flex:none; }
+  .merow .t{ color:var(--ink-soft); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .merow .d{ color:var(--ink-dim); font-size:11px; }
+  .mefile{ margin-top:9px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:var(--accent); }
+  .merow-single{ display:flex; gap:11px; align-items:center; padding:11px 13px; border:1px solid var(--line); border-radius:14px; }
+  .methumb{ width:104px; height:59px; border-radius:8px; flex:none; position:relative; overflow:hidden; }
+  .methumb .mn{ position:absolute; left:7px; top:3px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:#fff; text-shadow:0 1px 5px rgba(0,0,0,.7); }
+  .memeta2{ flex:1; min-width:0; }
+  .memeta2 .mt2{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .memeta2 .md2{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
+
+  /* ---- profile sheet + account screens (R234) ----
+     Photo upload is a phone/web-only surface by decision: the TV renders a photo but never
+     offers to change one. Hit targets are 46px+ here and the type never drops below 13px,
+     because this whole tree is touch-first — the TV's own version of the password form
+     lives in ravilo-app.js and reuses R175's on-screen keyboard instead. */
+  .sheet-scrim{ position:absolute; inset:0; background:rgba(6,8,14,.62); opacity:0; pointer-events:none; transition:opacity .18s; z-index:40; }
+  .sheet-scrim.on{ opacity:1; pointer-events:auto; }
+  .psheet{ position:absolute; left:0; right:0; bottom:0; z-index:41; background:var(--bg-2); border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0; padding:8px 0 calc(10px + env(safe-area-inset-bottom)); transform:translateY(100%); transition:transform .22s cubic-bezier(.2,.8,.2,1); }
+  .psheet.on{ transform:none; }
+  .psheet .grab{ width:38px; height:4px; border-radius:4px; background:rgba(var(--fg),.22); margin:6px auto 12px; }
+  .psheet .ph-head{ display:flex; align-items:center; gap:12px; padding:0 18px 14px; }
+  .psheet .ph-av{ width:46px; height:46px; border-radius:50%; flex:none; background:var(--grad); display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:#fff; }
+  .psheet .ph-av.has-photo{ color:transparent; overflow:hidden; }
+  .av-img{ width:100%; height:100%; border-radius:inherit; object-fit:cover; display:block; }
+  .psheet .ph-nm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; }
+  .psheet .ph-sub{ font-size:12px; color:var(--ink-dim); margin-top:1px; }
+  .psheet .prow{ display:flex; align-items:center; gap:12px; min-height:50px; padding:0 18px; font-size:15px; color:var(--ink); background:none; border:none; width:100%; text-align:left; cursor:pointer; }
+  .psheet .prow:active{ background:rgba(var(--fg),.06); }
+  .psheet .prow .pic{ width:22px; text-align:center; color:var(--ink-soft); font-size:15px; }
+  .psheet .prow.danger{ color:#f5667a; }
+
+  /* ---- Profile is a PAGE (the fifth tab), not a menu ----------------------------------------
+     The TV's avatar dropdown is right for a remote — a short column of focus stops over the page —
+     and wrong on a phone, where it floated, clipped under the bar and closed on scroll. On a phone
+     everything that dropdown held is one page: who you are, your list, your account, and signing
+     out — the last one behind a confirmation, because it is the only thing here that cannot be
+     undone from this phone alone. */
+  .bn.on .avatar{ box-shadow:0 0 0 2px var(--bg), 0 0 0 3.5px #fff; }
+  .pft{ padding:0 18px; }
+  .pft-id{ display:flex; align-items:center; gap:16px; padding:18px 0 4px; }
+  .pft-av{ position:relative; width:76px; height:76px; border-radius:50%; flex:none; border:none; padding:0; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; color:#fff; }
+  .pft-av.has-photo{ color:transparent; }
+  .pft-av .av-img{ border-radius:50%; }
+  .pft-av .ed{ position:absolute; right:-3px; bottom:-3px; width:28px; height:28px; border-radius:50%; background:var(--card-2); border:2px solid var(--bg);
+    display:flex; align-items:center; justify-content:center; color:var(--ink); }
+  .pft-av .ed svg{ width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-nm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:25px; letter-spacing:-.01em; line-height:1.1; }
+  .pft-sub{ font-size:13px; color:var(--ink-dim); margin-top:5px; }
+  .pft-empty{ margin:0 18px; padding:16px; border-radius:14px; border:1px dashed var(--line-2); font-size:13.5px; line-height:1.5; color:var(--ink-soft); }
+  .pft-grp{ border:1px solid var(--line); border-radius:14px; background:rgba(var(--fg),.04); overflow:hidden; }
+  .pft-row{ display:flex; align-items:center; gap:13px; width:100%; min-height:58px; padding:8px 14px; background:none; border:0; border-top:1px solid var(--line);
+    color:var(--ink); font-family:'Sora',sans-serif; font-size:15px; text-align:left; cursor:pointer; }
+  .pft-row:first-child{ border-top:0; }
+  .pft-row:active{ background:rgba(var(--fg),.06); }
+  .pft-out .ic{ width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-row .ic{ width:22px; height:22px; flex:none; fill:none; stroke:var(--ink-soft); stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-row .rsub{ font-size:12.5px; color:var(--ink-dim); margin-top:2px; }
+  .pft-row .chev{ margin-left:auto; flex:none; width:18px; height:18px; fill:none; stroke:var(--ink-dim); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .pft-out{ display:flex; align-items:center; justify-content:center; gap:9px; width:100%; min-height:54px; margin-top:22px; border-radius:14px;
+    border:1px solid rgba(245,102,122,.38); background:rgba(245,102,122,.06); color:#f5667a; font-family:'Sora',sans-serif; font-size:15px; font-weight:600; cursor:pointer; }
+  .pft-ver{ text-align:center; font-size:12.5px; line-height:1.6; color:var(--ink-dim); margin:18px 0 0; }
+  .pft-ver b{ color:var(--ink-soft); font-weight:600; font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .pft-foot{ height:34px; }
+  /* sign-out confirmation — the one bottom sheet left on this page */
+  .psheet .so{ padding:2px 20px 8px; }
+  .psheet .so h4{ font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; margin:0 0 8px; }
+  .psheet .so p{ font-size:14px; line-height:1.55; color:var(--ink-soft); margin:0 0 18px; }
+  .psheet .so .acts{ display:grid; gap:10px; }
+  .psheet .so button{ min-height:52px; border-radius:14px; font-family:'Sora',sans-serif; font-size:15px; font-weight:600; cursor:pointer; }
+  .psheet .so .go{ background:#f5667a; color:#1a0509; border:0; }
+  .psheet .so .no{ background:none; color:var(--ink); border:1px solid var(--line-2); }
+  .ph-toast{ position:absolute; left:50%; bottom:120px; transform:translateX(-50%); z-index:60; padding:11px 16px; border-radius:12px; background:var(--card-2);
+    border:1px solid var(--line-2); font-size:13.5px; color:var(--ink); white-space:nowrap; box-shadow:0 10px 30px rgba(0,0,0,.4); }
+
+  /* account screens share the detail panel's slide-in, so Back feels the same everywhere */
+  .acct{ position:absolute; inset:34px 0 0; z-index:45; background:var(--bg); transform:translateX(100%); transition:transform .24s cubic-bezier(.2,.8,.2,1); overflow-y:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .acct::-webkit-scrollbar{ display:none; }
+  .acct.on{ transform:none; }
+  /* R278 — an account screen is pushed over a page and keeps the bar: it runs to the bottom edge,
+     sits UNDER the bar (z 45 vs 46, both above the app bar's 41), and pads its own foot by the
+     bar's height, so no gap can open. The profile sheet sits above both (47/48). */
+  .acct{ z-index:45; }
+  .bnav{ z-index:46; }
+  .sheet-scrim{ z-index:47; }
+  .psheet{ z-index:48; }
+  .acct-body{ padding-bottom:120px; }
+  .acct-bar{ position:sticky; top:0; display:flex; align-items:center; gap:6px; height:52px; padding:0 8px; background:linear-gradient(180deg,var(--bg) 70%,transparent); z-index:2; }
+  .acct-bar button{ width:44px; height:44px; border-radius:50%; border:none; background:none; color:var(--ink); font-size:26px; line-height:1; cursor:pointer; }
+  .acct-bar h2{ font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; }
+  .acct-body{ padding:4px 18px calc(28px + env(safe-area-inset-bottom)); }
+  .acct-sec{ font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:20px 0 10px; }
+
+  .pf-photo{ display:flex; flex-direction:column; align-items:center; gap:14px; padding:10px 0 4px; }
+  .pf-av{ width:132px; height:132px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:46px; color:#fff; position:relative; }
+  .pf-av.has-photo{ color:transparent; overflow:hidden; }
+  .pf-av.drop{ outline:2px dashed var(--accent); outline-offset:5px; }
+  .pf-nm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; }
+  .pf-sub{ font-size:13px; color:var(--ink-dim); text-align:center; max-width:280px; line-height:1.5; margin-top:-8px; }
+  .pf-btns{ display:flex; flex-direction:column; gap:10px; width:100%; margin-top:6px; }
+  .pf-btn{ display:flex; align-items:center; justify-content:center; gap:9px; min-height:48px; border-radius:13px; font-size:15px; font-weight:600;
+    font-family:'Sora',sans-serif; cursor:pointer; border:1px solid var(--line); background:rgba(var(--fg),.05); color:var(--ink); }
+  .pf-btn.primary{ background:var(--grad); border-color:transparent; color:#fff; }
+  .pf-btn.danger{ color:#f5667a; border-color:rgba(245,102,122,.4); background:rgba(245,102,122,.08); }
+  .pf-btn:active{ transform:scale(.985); }
+  .pf-drop{ font-size:12px; color:var(--ink-dim); text-align:center; }
+  .pf-note{ display:flex; align-items:center; gap:8px; border-radius:12px; padding:11px 13px; font-size:13.5px; line-height:1.45; margin-top:14px; }
+  .pf-note.ok{ background:rgba(45,212,154,.12); border:1px solid rgba(45,212,154,.4); color:#2dd49a; }
+  .pf-note.bad{ background:rgba(245,102,122,.12); border:1px solid rgba(245,102,122,.4); color:#f5667a; }
+
+  .fld{ margin-bottom:14px; }
+  .fld label{ display:block; font-size:12.5px; color:var(--ink-soft); margin-bottom:6px; }
+  .fld input{ width:100%; height:48px; border-radius:12px; background:var(--bg-2); border:1px solid var(--line); color:var(--ink);
+    font-family:'Sora',sans-serif; font-size:16px; padding:0 14px; }
+  .fld input:focus{ outline:none; border-color:var(--accent); }
+  .acct-row{ display:flex; align-items:center; gap:12px; width:100%; min-height:54px; padding:0 14px; border-radius:13px; border:1px solid var(--line);
+    background:rgba(var(--fg),.04); color:var(--ink); font-family:'Sora',sans-serif; font-size:15px; text-align:left; cursor:pointer; }
+  .acct-row .rsub{ font-size:12px; color:var(--ink-dim); margin-top:2px; }
+  .acct-row .chev{ margin-left:auto; color:var(--ink-dim); font-size:19px; }
+
+  .label{ position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#54596b; font-size:12px; font-family:'Space Grotesk',sans-serif; letter-spacing:.05em; }
+  html.rv-window #fit{ padding:0; }
+  html.rv-window .phone{ width:100vw !important; height:100vh !important; border-radius:0 !important; box-shadow:none !important; border:0 !important; transform:none !important; }
+  html.rv-window .screen{ border-radius:0; }
+  html.rv-window .punch, html.rv-window .island, html.rv-window .homeind, html.rv-window .statusbar, html.rv-window .label, html.rv-window .devpick{ display:none !important; }
+  html.rv-window .bnsafe{ height:6px; }

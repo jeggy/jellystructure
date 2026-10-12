@@ -1,0 +1,4 @@
+/* Inside the shell (html.rv-embed) each surface's own preview pickers are hidden — the fence mirrors them. */
+html.rv-embed #chrome,html.rv-embed .devpick,html.rv-embed .dx-fence{display:none!important}
+html.rv-embed.rv-phone #fit{padding-bottom:44px}
+html.rv-embed.rv-desktop .dx-stage{top:0!important}
