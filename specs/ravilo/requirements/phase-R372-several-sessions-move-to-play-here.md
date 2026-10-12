@@ -478,9 +478,11 @@ closes the class:
   **not** evidence that playback ended (R293 drops the socket on purpose when an app goes off screen, and a minimised
   desktop keeps its film), and is read exactly as today.
 - **The client:** the browser sends its stop on `pagehide` and on `visibilitychange → hidden` through a transport that
-  survives the page — `navigator.sendBeacon`, or `fetch(…, { keepalive: true })`. `sendBeacon` cannot set headers, so
-  the device token rides the query string, the precedent FR-R293-7 already set for the browser's socket handshake; it
-  is never logged. This is an addition to the wire, so no installed client is affected.
+  survives the page. **`fetch(…, { keepalive: true })` is the one to use**, because it still carries the device token
+  in its header exactly as every other call does. `navigator.sendBeacon` is the fallback only if `keepalive` proves
+  unreliable in a browser we support; it cannot set headers, so the token would have to ride the query string — the
+  precedent FR-R293-7 already set for this same client's socket handshake (`WS_TOKEN_IN_QUERY`), and it is never
+  logged. Either way this is an addition to the wire, so no installed client is affected.
 
 **FR-R372-12 — the watchdog does not force-stop a play that is alive.** Two cases found in the same prod window, both
 of which stop a viewer's film under them:
