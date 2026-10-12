@@ -645,3 +645,48 @@ The receiver's half of the GAP, built; the offer's gate is the server's and is n
 2. **One cast, on a device:** Stue TV's built-in Chromecast, with the above in place — a film on our encoder with two
    or more audio tracks, pick another track, and the picture must not stop. The log channel's `R291 rendition a{n}
    active (…)` line is the evidence, and `selectedAudio` in the status must follow the pick.
+
+## Amendment, 2026-10-12 — FR-R291-13: a cast receiver is offered renditions only on our own encoder's stream
+
+Written before the Kotlin, from the host measurement above (*a variant beside an audio group has to be video-only*)
+and the receiver build beside it. This is the server half of FR-R291-4's gate: the first option of the two the
+measurement leaves open — the extra Jellyfin job with `-an` is **not** taken, because it costs a second transcode
+per stream where this costs nothing.
+
+**The rule.** For a device of kind `cast`, the server decides the offer instead of the device:
+
+- **On our own encoder's stream** (`encoder == "ours"` — 313's own master, whose variants are video-only and whose
+  every audio track is already its own rendition), a cast is offered renditions exactly as Android is: the plan
+  encodes every audio track and the ticket says `audio_renditions: true` when there are two or more. Since 313's
+  owner decision (`[encoder] cast_receivers` defaults true) that is every cast that re-encodes the picture, so this
+  is the normal case.
+- **On the Jellyfin-path master** (the fallback: `encoder == "jellyfin"`, a variant carrying muxed audio), a cast is
+  offered **no** renditions whatever it declared — the shape Shaka fails on (3014/3018, never a frame). The audio
+  pick there stays R285's restream, which works and is what ships today.
+- **Every other device keeps exactly what it declared.** Android (Media3) and the web (hls.js/Safari, R376) are
+  untouched on both masters: the mixed shape is theirs to tolerate and they do.
+- **The receiver still declares nothing** (DEB-709's build note): at negotiation time it cannot know which master it
+  will be handed. Only the server knows, and it decides after the encoder plan is made.
+
+**What this replaces.** `withDevReceiverRenditions` treated **any** cast as declaring `hls_audio_renditions` while
+`[encoder] receiver_renditions` was on — including on the Jellyfin-path master, which is the one shape that cannot
+work. The gate moves from the route (before negotiation) to the point in `withRenditions` where the encoder plan is
+known, and **`[encoder] receiver_renditions` is removed**: there is no longer a question for a dev switch to answer.
+A `receiver_renditions` line left in a `config.toml` is ignored (the TOML reader ignores unknown names), and nothing
+on the wire changes — `audio_renditions` is the same ticket field it has always been.
+
+**Where the gate has to sit.** Our encoder's plan is made from the capabilities (`Encoder.planFor`: `positions = if
+(caps.hlsAudioRenditions) audio.indices else listOf(carried)`), so a cast whose capabilities say nothing gets a job
+that encodes the carried track alone and there is no rendition to offer. The gate is therefore applied to the
+capabilities handed to `planFor` — on the play (`withRenditions`) **and** on 309's prewarm (`prewarmPlayback`), or
+the warm job's plan would differ from the play's and `adoptPrewarm` would throw away a warm encode on every cast.
+The Jellyfin path reads the device's own declaration, unchanged.
+
+**Verification (host, no device).** `ReceiverRenditionsTest`: a cast gets renditions on our encoder and not on
+Jellyfin's; a TV, a phone and an unknown kind keep what they declared on both; a cast that declared the capability
+itself is still refused on the Jellyfin path. Plus `PlatformAudioTest`/`EncoderPlanTest` unchanged — the plan for a
+device that declares the capability is what it was.
+
+**Still owed, and on the QA queue:** the one cast of item 2 above — Stue TV's built-in Chromecast, a film on our
+encoder with two or more audio tracks, `R291 rendition a{n} active (…)` on the log channel and `selectedAudio`
+following the pick. That closes FR-R291-4.
