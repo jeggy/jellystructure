@@ -164,6 +164,16 @@ check "$WF" "Users & devices: version history rows (.vh-r)" ".vh-r {"
 # Phase 256 — the unstable-connection and releases-behind lines on a device row (server-decided).
 check "$WF" "Users & devices: unstable-connection line (.usr-cap.unstable)" ".usr-cap.unstable"
 check "$WF" "Users & devices: releases-behind line (.usr-cap.behind)" ".usr-cap.behind"
+# Phase 304 (R368) — Users & devices ▸ *Playing now*: the session table was hand-ported into the served
+# wf.css from ravilo-users.html and amended 2026-10-12 (FR-304-8/9). The first full mirror of the design
+# project (DEB-792, 2026-10-12) found the studio's wf.css is this repo's minus exactly this block, and
+# nothing in the repo would have noticed it going missing — so it is fenced here.
+check "$WF" "Playing now: session rows (.ses-tbl)" ".ses-tbl td { vertical-align: middle; }"
+check "$WF" "Playing now: what-is-playing cell (.ses-what)" ".ses-what {"
+check "$WF" "Playing now: progress bar (.ses-pg)" ".ses-pg {"
+check "$WF" "Playing now: *Ended today* fold, FR-304-8 (.ses-fold)" ".ses-tbl tr.usr-hd.ses-fold td { cursor: pointer;"
+check "$WF" "Playing now: expanded-row controls (.ses-ctl)" ".ses-ctl {"
+check "$WF" "Playing now: per-session picker (.ses-sel)" ".ses-sel {"
 # Phase 260 — the empty-queues panel on Activity ▸ Jobs & workers lives in the served wf.css.
 check "$WF" "Jobs & workers: empty-queues panel (.qe)" ".qe {"
 check "$WF" "Jobs & workers: empty-queues option row (.qe-opt)" ".qe-opt {"
