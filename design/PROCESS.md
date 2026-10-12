@@ -194,8 +194,16 @@ rest — stay complete and keep working there. So:
 2. **Rannvá extracts named paths only**, against the round's `MANIFEST.md` inventory — never the whole
    archive. The same gate applies to a zip as to a pull: the rejected-by-name list, the real-library
    captures, no `specs/`, no `STATUS.md`, no `CLAUDE.md`, no `scripts/`.
-3. **The zip itself is never committed.** It is a transport, it holds the held-back captures, and it
-   lives outside the repo.
+3. **Every image is looked at before it lands.** The named-path list decides what comes *out of the
+   zip*; it cannot decide what gets committed, because the rule that governs images is a rule about
+   content. A MANIFEST built from `list_files` knows filenames and nothing else, so it can only flag
+   the captures that name a title — the rest are indistinguishable from mockups until someone opens
+   them. Extract to a scratch directory outside the repo, open each one, and land only those that
+   show stand-in data. Report the split by count. **An image that cannot be told apart stays out**:
+   the cost of holding a mockup back is one more round, and the cost of landing a capture is a public
+   repository naming what the household owns.
+4. **The zip itself is never committed.** It is a transport, it holds the held-back captures, and it
+   lives outside the repo. The scratch directory it was extracted into goes with it.
 
 ## Write-back: the only path from this repo to the studio
 

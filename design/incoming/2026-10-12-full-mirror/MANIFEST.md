@@ -131,8 +131,30 @@ the one part of "nothing in the studio is lost" that this pass does **not** yet 
 second question on DEB-792.
 
 **Answered 2026-10-13: an owner-exported zip, extracted by named path against this inventory.** The
-procedure is in `design/PROCESS.md`; the extraction is a separate task, and it covers the 16 new text
-files below as well — they are pullable but arrive in the same zip for free.
+procedure is in `design/PROCESS.md`; the extraction is a separate task (DEB-809), and it covers the
+16 new text files below as well — they are pullable but arrive in the same zip for free.
+
+### The named-path list does not decide what lands (DEB-809)
+
+Recorded before the zip arrived, because it changes what the extraction is. The inventory below was
+built from `list_files`, which returns **paths and nothing else**. The gate that governs these 157
+images is the owner's 2026-10-13 rule, and that rule is about **what is in the picture**, not what
+the file is called. A filename can therefore only ever catch the careless cases — the 7 already
+withheld above. So the list below says what comes *out of the zip*; a look at each image says what
+gets committed. Where they sit now, by class:
+
+| class | count | what the names suggest, pending a look |
+|---|---|---|
+| `presentation/admin/**` | 7 | the real admin app — dashboard, library, activity, language tracks. Captures, near-certainly of the real library |
+| `presentation/screenshots/**` | 50 | the real Ravilo TV app, named for real channels and for whole-library screens (`movies-grid`, `my-list`, `search-results`). Same class as the 7 already withheld, minus a title in the filename |
+| `screenshots/**` | 88 | mixed, and the only class where the names genuinely split: logo and component studies (`01-barna-logos`, `ravilo-stinger-card`) alongside what read as real-app captures (`01-mobile-library`, `lib-music`, `01-set-lib`) |
+| `uploads/**` | 12 | pastes and two artwork files whose names are poster hashes — artwork for a specific title identifies that title as surely as its name does |
+
+**So the expected yield of this round is well under 157, and most of `presentation/**` is expected to
+stay out.** That is the rule working, not the round failing: the deck those captures were made for is
+the owner's to publish, and the studio keeps them. Nothing here is decided — each number moves to a
+verdict only once the image has been opened — but the extraction is not a mechanical unzip, and
+estimating it as one is how a capture would reach a public repository.
 
 ## Inventory
 
