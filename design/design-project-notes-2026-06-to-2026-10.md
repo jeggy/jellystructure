@@ -1,0 +1,1727 @@
+# Design project notes, 2026-06-12 → 2026-10-04 — HISTORICAL RECORD, FROZEN
+
+> **This file is a closed log. Nothing in it describes how the repo works today.**
+>
+> It is the design project's own `CLAUDE.md`, which used to be exported into the repo root by the
+> "updated designs" sync. That sync was retired on **2026-10-12** when the design project's GitHub
+> link was removed, so this file stopped being written to and was moved here, out of the root, where
+> nobody can mistake it for current state.
+>
+> **It is kept for one reason: it is the only narrative record of why the designs look the way they
+> do** — which directions were drawn, which the owner picked, and which were explicitly rejected.
+> Read it for that. Read it for nothing else.
+>
+> What in it is now false:
+>
+> - **Every phase number.** Its newest entry says "Next free: 306 / R374". Phase numbers come from
+>   [`STATUS.md`](../STATUS.md) and the board, never from prose — and `STATUS.md` was already past
+>   those numbers when this file was frozen. Taking a number from this file collides with shipped work.
+> - **Every phase status.** `Planned` / `pending export` / `Built` claims below are frozen at
+>   2026-10-04 and many were already stale when written; design-side status always lagged code.
+>   `STATUS.md` is the single source of truth.
+> - **The whole two-way sync.** The "pull (repo → here)" / "export (here → repo)" procedure, the
+>   `specs/` mirror at the design project's root, and the export-safety warnings all describe a
+>   pipeline that no longer exists. There is no export. Nothing in this repo is overwritten by a
+>   design sync any more.
+>
+> Current dev-side orientation is in the root [`CLAUDE.md`](../CLAUDE.md) and
+> [`README.md`](../README.md).
+
+---
+
+## Original content below, unedited
+
+This Cosmos project holds the **HTML/CSS design mockups** for **jellystructure**
+(`app/`), the **Ravilo** TV companion (`ravilo/`), plus low-fi wireframes
+(`wireframes/`). These mirror the `design/` folder of the repo
+**github.com/jeggy/jellystructure**.
+
+## How this project syncs with the repo (2-way)
+GitHub is the **source of truth**; we layer designs on top of it.
+
+- **Pull (repo → here):** the canonical specs live in the repo under `specs/`. This
+  project keeps an exact mirror of `specs/` at its root, plus `CLAUDE.md`. Re-pull
+  with the GitHub tools (ref `main`) whenever the specs move.
+- **Export (here → repo):** export the whole project; `specs/` and `CLAUDE.md` go to the
+  **repo root**, and *everything else* (`app/`, `ravilo/`, `flags/`,
+  `wireframes/`, `flags.css`, `scraps/`, `uploads/`, the standalone logo HTML…) goes
+  under the repo's **`design/`** folder. Then commit + push.
+  **⚠ The export must LEAVE ALONE:** the repo's **`STATUS.md`** (code-owned — a 2026-07-04
+  export overwrote it with our stale mirror and reverted ~14 phases; the dev team restored it
+  and asked us to never ship it again), **`specs/research-reports/`** (code-owned; re-add
+  nothing, delete nothing), and **`scripts/`**. Never delete repo-side spec files our mirror
+  lacks — re-pull first instead. After a push the dev team runs `scripts/check-phases.sh` and
+  `scripts/check-mobile-css.sh`; keep both green.
+- **`STATUS.md` here is a read-only mirror** (single source of truth for phase status lives at
+  the repo root, maintained by the dev team). **Re-pull it (ref `main`) whenever you need
+  current status** — never edit locally, never export it.
+
+### Spec layout (mirrored at `specs/`)
+- `specs/constitution.md` — non-negotiable architecture, language-resolution
+  algorithm, config shape, visual system. **Wins on conflict.**
+- `specs/plan.md` — source layout, data models, API routes, UI pages, WS protocol.
+- `specs/requirements/phase-NN-*.md` — one flat file per admin phase (content only;
+  status lives in `STATUS.md`, mirrored at this project's root).
+- `specs/ravilo/` — Ravilo's own tree: `constitution.md`, `plan.md`,
+  `requirements/phase-R*.md`, plus `SYNC-AUDIT-2026-06.md`.
+- `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
+
+## Canvas readability rule (owner, 2026-10-01)
+Direction canvases sit on the host's **light-gray** backdrop. Any text placed directly on it (labels, captions,
+notes, tags, rules) must be **dark ink** (≈ #12141b body, #262a35 secondary; never light grays). Light text only
+inside dark frames or dark cards. `ravilo/mobile-directions.css` carries the fixed furniture — reuse it.
+Older canvases with their own light `.lbl`/`.cap` (Focus Detail ×2, Decode Ceiling Warning, Media Detail Genres)
+still need the same sweep.
+
+## Where the work stands (read the repo `STATUS.md` for the live table)
+- **2026-10-04 (spec) — music editions spec'd: admin `phase-305-an-albums-official-tracklist-extras-singles-and-one-copy-of-every-song.md` + Ravilo `phase-R373-the-official-album-extras-b-sides-and-one-copy-of-every-song-in-ravilo.md`. Next free: 306 / R374.** Both `Planned`, not dev-reviewed, pending export (verified free on `main` `fdbc126`). 305: own tables (`music_album_official`, `music_track_extra`, `music_single_home`, `music_fingerprint`, `music_same_song`; groups computed), official = the tracklist most official releases share (albums/live/soundtracks only), owner pick kept, extras with `first_release`, single homing ladder (MB *single from* → via remix → A-side title ≤ 2 y → you), a song = trusted recording ∪ fingerprint (only for untrusted copies) ∪ your say, *not the same* wins, two trusted recordings that sound alike = a suggestion; shown copy = **better file** (tie → album · extra · single · compilation/box · live), song stats summed; facts never spread (292 Q7); admin Tracks/Songs/panel/Dashboard/artist as built. R373: wire fields (`official/extras/edition/singles/bsides`, `extra`, `copies`, `home_album`, folded lists), album page with split Play ▾ / Shuffle ▾ (per album, per device), Bonus rules, **chips just left of the length in Ravilo rows (owner 10-04; admin keeps them after the title)**, Also on, artist note. Pending export: **R368–R372 · 304 · 305 · R373**.
+- **2026-10-04 (sync 2) — pulled `main` (tree `fdbc126`). ⚠ Second collision: `main` took R361–R367** (dev, the TV D-pad sweep on the BRAVIA: **R361** back to a title that is gone lands on its neighbour · **R362** Movies/Series never strand the D-pad · **R363** Skip Intro you can reach · **R364** My List shows what you just added · **R365** ten small findings · **R366** Discover opens on Coming Soon · **R367** Discover rows stop bouncing; report `research-reports/tv-dpad-sweep-2026-10-04.md`). **Our playback-sessions specs are now R368 · R369 · R370 · R371 · R372 + admin 304** (files, FR ids, mockup comments; three stale copies of the first renumber deleted). *Every entry below that says R361–R365 for sessions means R368–R372.* **Next free: 305 / R373** (editions specs take these). No dev edits to `design/`. **Drawn from main's specs:** **R366** `SEG_ORDER` = Coming Soon · Networks · Studios · Genres · Request in `ravilo-app.js` + `Ravilo Mobile.html` (the spec asks for it) · **R363** in `ravilo-player.js/.css`: Up from bar / Audio & Subs / Next reaches the pill, the pill takes focus only when it appears on its own, waking hidden controls in the intro (OK or any key while the pill was last focused) focuses the pill instead of pausing, Down from the pill → bar, no countdown fill in Prompt mode (`.auto` keeps it). R361/R362/R364/R365/R367 are behaviour fixes in Kotlin — nothing to draw.
+- **2026-10-04 (latest) — music editions built into Ravilo, phone + desktop**, on one shared module **`ravilo/mobile/ravilo-editions.js`** (`window.RaviloEditions`, re-* on the phone, `dx-ed*` on the desktop; both mockups now load `../app/editions.js` between `versions.js` and `ravilo-versions.js`; localStorage `ravilo-ed-play` = the ▾ pick per album). **Album page** (Kite Weather, Signal Found): header *11 songs · 48 min + 1 extra*, split **Play album ▾ / Shuffle ▾** (menu: *Play album* · *Play album + extras* = album, extras, then the B-sides; the pick is remembered per album and relabels the button), official rows numbered, *Extras · {edition}* divider, unnumbered extras (no Bonus on their own page), **Singles & B-sides** cards + fold row *13 B-sides · Show* (rows say *from … (single)*), *More from* drops singles that live here; a single's own page says *Single from Kite Weather*. **Lists fold copies** (Songs, search, artist top songs, desktop Songs; the better file stands, Q5) and carry **Bonus** after the version chips (`RaviloVersions.title` / `chipsB`; Now playing's line + queue rows too; mini bar none). Phone ⋯ menu: *Also on N releases* → each opens its release. Artist page: homed singles leave *Singles & EPs* + a note with links. Strings `ed.*` × en/da/fo (drafts) in `ravilo-i18n.js`; the desktop is English like the rest of it. **Next:** spec **305 / R373**.
+- **2026-10-04 (later) — music editions built into the admin** on one module **`app/editions.js`** (+ `editions.css`, `ed-*`, `window.Editions`; loads after `versions.js` on album/artist/library/metadata, after `dashboard-data.js` on index; localStorage `js-ed-off · js-ed-home · js-ed-apart · js-ed-join · js-ed-sugg · js-ed-every`). Stand-ins it adds: Kite Weather 11 + *Lantern Swing* (FLAC 24/96), Signal Found 14 + 12 extras, singles `kw-northern-line · kw-fog-bank · kw-salt · kw-low-tide · kw-tidewater` (13 B-sides) + `sf-shortwave` (FLAC 16 — its A-side is the shown copy, Q5) + stand-alone `hl-small-hours-radio`, copies on Tide Tables / Nordic Nights / Summer Hits. `versions.js`'s remix + instrumental moved to `sf-shortwave-2` / `kw-tidewater-5` (VS keys too; Ravilo's `ravilo-versions.js` + the Song Versions canvas follow). **album.html**: *11 songs + 1 extra* (length = official), *Official album … as on 14 of 20 releases · Change…* (pressings modal, *Use as the official album*, *chosen by you · Back to automatic*), held line, divider + unnumbered extras with *first on …*, gap fence (*held edition: lacks an official song*), Singles & B-sides table (Linked chip, Move to… incl. No album / Back to automatic, B-sides fold), a single's own page says *Single from …*; unmatched = plain list. **Library → Songs**: folded, *also on N releases* → copies panel (shown copy = better file, why chips, *Not the same song*, *Same song as…* picker), **Show every copy** switch, Bonus chip after version chips. **artist.html**: singles with a home leave Singles & EPs + a note. **Dashboard** row `m-same` (*Songs that may be the same · 3 pairs*, info) → *Listen and decide* modal (Yes / No / Later; the count follows). Then Ravilo phone/desktop, then spec 305 / R373.
+- **2026-10-04 (sync) — pulled `main` (tree `76f351b`); our sessions specs renumbered; music editions round 1 drawn. Next free: 305 / R366.** Pulled `STATUS.md`, R338 + 273 (edited), the research README, and new: **303** (dev: *a title's Checks card lists only the steps done to it*), **R360** (dev+owner: *no cast icon when there is nothing to cast to* — glyph only when the sheet has a device; *Add a TV* removed), the brief `specs/design-brief-music-editions-and-duplicates-2026-10-03.md` + report `music-editions-extras-and-duplicates-2026-10-03.md`. No dev edits to `design/` since 10-02 (blob-hash diff). **⚠ Collision:** `main` took 303 and R360, so our playback-sessions specs are now **R361 · R362 · R363 · R364 · R365 + admin 304** (files, titles, FR ids and every mockup comment moved; *every older entry below that says R360–R364 / 303 for sessions means R361–R365 / 304*). R361 now **amends FR-R360-1**: a *Playing everywhere* row counts toward the glyph's list. **R360 built into `Ravilo Mobile.html`:** *Add a TV* gone from the sheet; PREVIEW *Nothing to cast to · R360* hides every cast glyph (refuses while a cast is on, FR-R360-2). `Play on a TV - Directions.html` and `speakers-directions.js` still draw *Add a TV* (historical canvases, left). **Music editions round 1: `app/Music Editions - Directions.html`** (+ `editions-directions.js`; brief's own stand-ins drawn in the canvas only — Harbour Lights' *Kite Weather* 2006 + *Signal Found* 2003, which `music-data.js` files under Petra Lind / Velvet Static: reconcile before building in). §D1 three directions for *Singles & B-sides* on the phone album page (**A cards + one fold row *13 B-sides · Play B-sides · Show* (lean)** · B grouped under each single · C B-sides first, singles as chips); then in A: Signal Found 14 + 12 extras with the ▾ menu open, Q4's *+1* variant + B-sides opened, the Mac album page; §D2 admin Tracks (official line *as on 14 of 20 releases · Change…*, extras with *first on …*, singles with *Linked* + Move to…, the pressing list, a gap above the divider); §D3 artist Singles & EPs 49 → 6; §D4–D5 Ravilo Songs, ⋯ *Also on*, Now playing/queue/mini bar, admin Songs folded + *Show every copy*, side panel (copies + why + *Not the same song* + *Same song as…*), Dashboard *Songs that may be the same · 3* + *Listen and decide*; §D6 ten states; Bonus chip = no hue, after the version chips, never folded into +N. **Owner picked the same day:** D1 **A** · Q1 yes · Q2 yes · **Q3 YES (against the lean): *Play album + extras* also plays the B-sides** (after the extras, in single order) — so *Play B-sides* is dropped (my reading; no new string) · Q4 no number · **Q5 the better file first, wherever it is from** (tie → album · extra · single · compilation/box set · live) · Q6 lean · Q7 folded · stand-ins **moved to Harbour Lights in `music-data.js`** (Kite Weather 2006 ×11, Signal Found 2003 album ×14; Petra Lind keeps *Paper Kites* on Summer Hits 2004; `versions.js`'s Signal Found track 4 remix renamed *Shortwave Hearts …*). Canvas panel now reads *Decided*. **Next:** build into the admin (`album.html` Tracks + Change…, Songs folded, side panel, artist, Dashboard), then Ravilo phone/desktop, then spec **305 / R366**.- **2026-10-04 — playback sessions built into the full mockups** on one shared stand-in store **`ravilo/sessions-live.js`** (`window.RavSess`; localStorage `ravilo-sessions`, touch `ravilo-sess-touch:<device>`, household switch `ravilo-sess-ctl`; a change in one tab shows in the others = the mockup's server events). Household: Eyð's *Glass Birds* on **Stue + Kontor** (from MacBook), Eyð's *Sommeren ’92* paused on **Stovan** at 48:10, Olivar's *Lundin og vinir · S02E05* on **Barnarúmið**. **Phone** (`Ravilo Mobile.html` + `mobile/ravilo-sessions.js/.css`, `ses-*`; here = Pixel 9): cast glyph count, *Playing everywhere* on top of the Play on… sheet (both modes), busy rows always ask (*Play … here instead / Cancel*), others' greyed unless the switch is on, the session bar (touched-last rule, +N, music/books only), the remote sheet (place line, seek, transport, Volume + rooms, Add a speaker…, Move to…, Play here, Stop with a confirm on someone else's); PREVIEW *Sessions · start again* + *Members control each other's*. `ravilo-speakers.js`: Kontor + Badeværelse added, **Add a speaker…** + Volume/per-room on the phone's own cast (`P.rooms`). **Desktop** (`ravilo-desktop.js`, `sx-*` in `ravilo-desktop.css`; here = MacBook): toolbar glyph count → popover (Playing everywhere + Play on… with the inline ask), session capsule/GNOME bar, the remote popover (same parts), Move to… / Add a speaker lists; `desktop-kit.js` gained `laptop · phone · speaker` icons. **Admin** (`app/ravilo-users.html` → *Playing now* card): rows with ⏯ ⏭ End, click for the full remote (seek, queue/episodes jump, Move to…, Add a speaker…, audio/subtitles, Volume + rooms, remove a room) + the 7-day timeline, *Ended today*, the household switch in the card header (303 FR-303-4 updated). **Not built: the TV** (R364's target + D-pad volume panel; Home row is round 2).
+- **2026-10-03 — playback sessions spec'd: R360 · R361 · R362 · R363 · R364 + admin 303 (renumbered 10-04 → R361–R365 + 304). Next free: 304 / R365.** All `Planned`, not dev-reviewed, **pending export**. Numbers taken from the 10-02 sync (`main` tree `3a17405`); GitHub was offline when written — **re-check `main` before export**. **Owner answered the open calls 10-04** (recorded under *Decided by the owner* in each spec): bar = **always the one you touched last** · busy place / same kind elsewhere = **always ask, never *Add*, never remembered** · admin = **full remote** · others' sessions visible, no controls (switch) · paused ends 24 h · offline pauses 24 h · every session survives a restart · one tap adds a room · *Hele huset* removed from `mobile/ravilo-speakers.js`. Order (report §5): **R360** `playback_session` table + `SessionView` wire + *Playing everywhere* in the cast glyph's sheet/popover (direction A) + bar which-session rule & +N · **R361** commands via the server (revision/409, receiver channel from backend, controllers) · **R362** one `/api/tv/targets` list of single places in four tiers, busy place asks (*Play here instead* / *Add* / *Cancel*) · **R363** **no cast-everywhere button / no groups to pick (owner 10-03): start on one place, then *Add a speaker…* from the remote** + *Volume* (never *All speakers*) / per-room volume · **R364** several sessions, *Move to…* (−2 s for speech), *Play here*, paused ends after 24 h, offline place pauses, 16 states, TV as target · **303** admin Sessions tab + timeline (7 days) + household switch *members can control each other's* (off). Not spec'd: the TV Home row *Playing in other rooms* (round 2).
+- **2026-10-02 (later) — playback sessions, round 1 drawn (brief `specs/ravilo/design-brief-playback-sessions-2026-10-02.md`). No spec until the owner picks; next free 303 / R360.** Two canvases on one kit: `ravilo/Playback Sessions - Directions.html` (part 1: §A vocabulary, §B1 *Playing everywhere* ×3 — **A the cast glyph's sheet + desktop popover (lean)** · B the bar stack + Playing-tab strip · C a Rooms page —, then in A: §B2 the bar as a remote (+N chip, which-session rule), §B3 one *Play on…* list (five tiers), §B4 *Make a group…*, §B5 remote (place line, Move to…, Play here, Stop), §B6 join-or-new moments, §B7 move states, §B1 on mac/GNOME, §C Q0–Q8 with leans) and `ravilo/Playback Sessions - Desktop, TV & Admin.html` (part 2: §B4a master + per-room volume on mac capsule / GNOME bar / desktop Playing page / web player + states, §B8 desktop, §B9 TV target · Home row (round 2) · D-pad volume panel, §B10 admin Sessions tab + Activity timeline, §B11 16-state strip, §D 28 strings en/da/fo drafts). Files: `sessions-directions.css` (`ps-*`), `sessions-kit.js` (`window.PSK`), `sessions-phone.js`, `sessions-desk.js`, `sessions-rest.js` (`window.PS_PART` 1|2 picks the sections). Stand-ins: Eyð's *Cannery Lights* on Stue + Gæsteværelse, *Vinterfærgen* on her Pixel 9, *Sommeren ’92* paused on Soveværelse TV; Olivar's *Lundin og vinir* on the Køkken hub; Kontor speaker; saved group *Hele huset*. Found: "Playing" is already a tab/page; the bar needs a which-session rule; paused sessions hold their place (lean: end after 24 h). ⚠ The canvases are heavy for the screenshot tool — avoid `content-visibility`, `backdrop-filter`, big `filter:blur` and infinite animations on them.
+- **2026-10-02 — synced `main` (tree `3a17405`). Next free: 303 / R360.** Our 291 · 292 · R341–R344 are on `main` and built (nothing pending export). Pulled 293–302 + R345–R359 (dev-authored) and adopted two dev mockup edits (`app/dashboard-data.js` 302's subtitle-by-cause rows; `app/versions.css` 11 px chips). **New brief waiting:** `specs/ravilo/design-brief-playback-sessions-2026-10-02.md` — server-side playback sessions, *Playing everywhere* list, *Move to…*, several at once, across phone/desktop/TV/admin; round 1 wanted, no spec yet (the brief's "R356" is stale).
+- **2026-10-01 (spec) — song versions spec'd: admin `phase-292-a-songs-version-live-remix-instrumental.md` + Ravilo `phase-R344-a-songs-version-in-ravilo-the-badges.md`. Next free: 293 / R345.** Both `Planned`, not dev-reviewed, pending export (verified free on `main` `ef52889`). 292: one set per MusicBrainz recording (`music_recording_version`, `trk:` key when unmatched), automatic = MB ∪ title, `user` rows on/removed never touched by a scan, Session ⇒ Live, no-words pieces never get lyrics, chips (A) fold at three, side panel, *Set version…*, Version facet Only/Hide (`vi`/`vx`/`artist`/`lyr`), Metadata → Versions, artist doorway, Dashboard *Lyrics on an instrumental* (two by-hand actions). R344: `versions` on every song + `version_types` colours on the bootstrap, read-only chips, phone two + N / desktop three + N / Playing all, none on mini bar · lock screen · TV; Shuffle filter = later phase. Brief §G Q1 marked answered; R337's Dev notes now name `Ravilo Desktop.html`. Pending export: **291 · 292 · R341 · R342 · R343 · R344**.
+- **2026-10-01 (latest) — new maintained mockup `ravilo/Ravilo Desktop.html`** (beside `Ravilo TV.html` / `Ravilo Mobile.html`), on `desktop/ravilo-desktop.js` + `.css` (`dx-*`), reusing `desktop-kit.js` (icons) + `desktop-directions.css` (window chrome). A **design-only fence** above the window (never in the app): **Platform macOS · Linux** (owner: call it *Linux*, not Flatpak), **Window** Large 1280 · Expanded 1000 · Medium 720 (rail) · Compact 400 (= `Ravilo Mobile.html?frame=window`, unchanged), **Theme** ×5. localStorage `ravilo-desk`; URL `?os=mac|linux&size=&skin=&mode=films|music`. Live: the switch (⌘/Ctrl+1/2), every sidebar page in both modes (films: Home · Discover · My List · Films · Series · a title page → the film player in the window, which pauses music; music on `app/music-data.js`: Listen · Playing with synced lyrics · Queue panel (pushes ≥ 1200, over below) · Artists · Albums · Songs · Genres · Playlists (empty, later) · Audiobooks → book page; album + artist pages), the bar (mac capsule / GNOME docked; films mode only while music plays + Q10), Search, Profile (R304: My List · Theme · App language · Sign out sheet), mac menu bar (View · Playback), GNOME ☰ primary menu, ⌃⌘S / F9 sidebar, Space play/pause, song-version chips (A). Not drawn: R343 Reset/Shuffle on the desktop series page, Settings windows (still in `Desktop - D1.html`), Play on… sheet (toast).
+- **2026-10-01 (late night) — owner picked song-versions Q1 = A (words), and wants the badges in Ravilo too.** Admin: `versions.js` locks `dir = 'a'`, the Q1 switch is gone (`qHTML()` returns ''), canvas marks A *picked*. **Ravilo phone** (`Ravilo Mobile.html` now loads `../app/versions.js` + new `mobile/ravilo-versions.js` = `window.RaviloVersions`): read-only chips in the household's colours after the title on every song row (Listen's Recently played, Songs, Search, artist Top songs), album track rows and queue rows — **two chips then +N** on a phone row (admin folds at three) — and **all of them** at the start of Now playing's artist · album line. `rv-*` in `ravilo-music.css`; strings `ver.*` × en/da/fo (short names; da/fo drafts) in `ravilo-i18n.js`; *Live at the Harbour* heads Recently added. Not drawn: TV (no music mode), the desktop's own Expanded pages, the mini bar, the artist *Shuffle without Live and Remix* filter (brief §E — next). No spec until told.
+- **2026-10-01 (night) — song versions, round 1 drawn (brief `specs/design-brief-music-song-versions-2026-10-01.md`). No spec until the owner picks.** Canvas `app/Song Versions - Directions.html` (Q1, the badge: **A words (lean)** · B coloured letter marks · C one phrase; then the shared side panel ×4 states, the Version facet, the Dashboard row, the artist doorway). Built into the mockups on one module `app/versions.js` + `app/versions.css` (`vr-*`; `window.Versions`; localStorage `js-ver-q1` direction · `js-ver-ovr` your ticks keyed by recording · `js-ver-col` colours/meanings): **album** Tracks badges + `＋ Version` on hover, the row number becomes a checkbox → *Set version…* (Leave/Add/Remove ×9), the side panel (sources *from MusicBrainz · from the title · set by you · removed by you · with Session*, *Back to automatic*, the copies note, Instrumental's *version of*, *No words — MusicBrainz* in the lyrics column, a warn mark on lyrics beside an instrumental), header summary (*Live · all 3 songs*); **Library → Songs** badges, the **Version** facet (Only / Hide per type + *No version*), the filter in words (*Songs by Harbour Lights · without Live, Remix*), `?vi= &vx= &artist= &lyr=`; **Metadata → Versions** tab (swatch cycles colour, meaning editable, household counts, *by you*); **artist** doorway line (counts + *songs without Live and Remix →*); **Dashboard** row `m-instlyr` (10 songs, *Remove the lyrics* + *Tell LRCLIB it is instrumental*, `act2` in `dashboard.js`). Stand-ins added by `versions.js` (admin pages only): albums *Live at the Harbour* (2011), *Tide Tables 1999–2012* (box set), *Nordic Nights Vol. 2*, plus tracks on *Signal Found*, *Kite Weather*, *Kvøld*. The Q1 switch sits at the foot of album / Songs / Metadata → Versions.
+- **2026-10-01 (evening) — synced `main` (42 commits, tree `ef52889`). Next free: 292 / R344.** Pulled `STATUS.md` + 19 spec files (no `design/` changes). **⚠ `main` took admin 290** (*an album's year is the year it first came out*, dev-authored) — **our admin-icon spec is renumbered to 291** (`phase-291-the-admin-icon-has-a-bigger-glyph.md`; R341 updated). Pending export: **291 · R341 · R342 · R343**. **New brief waiting for us:** `specs/design-brief-music-song-versions-2026-10-01.md` — nine version types (Live, Remix, Instrumental, Edit …) on songs in `album.html` / `library.html` / `metadata.html` / `index.html`; owner answered §G, round-1 directions wanted on the **badge (Q1)**; no spec until the designs. Also new: 288 · 289 (built), STATUS rows R337/R338 ⚠ Partial, R339/R340 ✓ Built.
+- **2026-10-01 (spec) — R343 written: `specs/ravilo/requirements/phase-R343-reset-progress-and-shuffle-on-a-series.md`. Next free: 291 / R344.** `Planned`, not dev-reviewed, **pending export** (R343 verified free on `main` tree `f88c706e`). Beyond the mockup it specifies the **follow-on pointer** (finished ⇒ Resume if started, else the episode after the last one played *in order*, wrapping to S01E01), a server-kept per-viewer in-order pointer that shuffled plays (`shuffle: true`) don't move, specials/missing episodes excluded, a multi-episode file = one shuffle entry, picking from the rail leaves shuffle. Open: one `reset-progress` route (lean), casting a shuffle (episode only), desktop shape, Home's Next Up using the same pointer.
+- **2026-10-01 (latest) — owner picked direction B for Start over / Shuffle; built into `Ravilo TV.html` + `Ravilo Mobile.html`.** New stand-in `Lundin og vinir` (3 × 13 × 11 min, all watched; first tile of the **Family** row; `SERIES_EP` in `ravilo-data.js`). **TV** (`ravilo-app.js`, `.rs-chip`/`.spill-sh`/`.spill-sep`/`.dnext-ck` in `ravilo.css`): finished ⇒ the page opens on Season 1, Play is *Play · S01E01* (no more last-episode fallback), the pill reads *All 39 episodes watched*, and the Episodes header gains **Reset progress** (it becomes a focus row; two presses — the first arms it with *Press again · all 39 back to unwatched* for 4 s). **Shuffle** is the last season pill after a divider, on any series of 9+ episodes (owner): the whole series in random order, kicker *Shuffle*, next-up *Next · shuffled · S01E11*, no resume point, stops after the last. **Phone:** Shuffle chip on the Episodes header, *All N episodes watched · Reset progress* (two taps) under it, ✓ on watched thumbs, the player opens with *Shuffle · SxxEyy* and *Next · shuffled*. Strings `shuffle · shuffle_next · all_watched · reset_progress · reset_confirm · reset_done` × en/da/fo (drafts) in `ravilo-i18n.js`. Q1 = keep ticks, follow on; Q4–Q7 = leans. Canvas tags updated. Prospective **R343** (verify free on `main`); **no spec until told.**
+- **2026-10-01 (later) — owner ask: Start over + Shuffle on a series (kids rewatch). Round 1 drawn: `ravilo/Start over & Shuffle - Directions.html`** (+ `rewatch-directions.js`; stand-in kids' show *Lundin og vinir*, 3 × 13 × 11 min, viewer Olivar). Found: a finished series today plays the **last** episode (`seriesProgressFrom` falls back to `length-1`) and opens on the last season. **A (lean)** the primary becomes *Start over · S01E01* when finished + a focus-only hint, Shuffle is one circle after Play that shows its label on focus · **B** both in the Episodes section (Reset chip in the header, Shuffle pill after the seasons) · **C** one ⋯ menu. Q1–Q7 with leans (clear ticks on start · commit at 5 % · whole series · shuffle leaves no resume point · stop after all · every series 9+ eps). Prospective **R343**; **no spec until told; not built into `Ravilo TV.html` / `Ravilo Mobile.html`.**
+- **2026-10-01: icons spec'd as 290 (→ renumbered 291 the same evening) · R341 · R342. Next free: 291 / R343.** All three are `Planned`, not dev-reviewed, and pending export. The numbers were checked free on `main` tree `f88c706e`; admin's 288 and 289 were already taken there. **Owner decisions:** keep the gradient (R0 and A0; the flat options were explored and declined, see `App Icons - Flat Directions.html`). **R341:** the jellyfish is about 66 % of the tile on Mac, iPhone and Linux, and stays at today's size on Android and everything else. The Ravilo favicon is the **bare** jellyfish in its gradient, redrawn for 16 px with three tentacles. The in-app logo is unchanged (theme gradient). **290:** the admin glyph goes to `translate(13 13) scale(.74)` (59 % of the tile, up from 51 %) and the admin keeps its tile, favicon included. Applied to `app/app-shell.js` `BRAND()` and `app/login.html`. **R342:** the Mac Dock icon follows the mode with **M7b** (a gradient ring and a white ♪ bottom right, cut out of the jellyfish). It follows the mode only, whatever is playing; audiobooks get the same ♪; the mode is remembered (opens in it, and the closed Dock shows it through a Dock tile plug-in); every macOS 26 style is drawn; Finder and Launchpad follow only if that's safe; Mac only. Canvas: `ravilo/Desktop - Music App Icon.html`. **Not re-rendered yet:** the real `.icns`, apple-touch, Flatpak icon and `favicon.svg`/`.ico` assets.
+- **2026-09-30 (after the export) — pulled R337–R340's dev reviews; R337 Q12 + Q13 applied. Next free: 288 / R341.** **Q13:** the desktop's music sidebar (and the Medium rail) lists the phone's Browse chips in order — Artists · Albums · Songs · **Genres · Playlists** · Audiobooks (rail: *Books*) — `NAV.music`/`NAV.both` in `desktop-kit.js`; D1's decided table has Q12/Q13. **Q12:** one viewer on a computer, no *Switch profile* (nothing drawn had one). **R338:** receivers keep their fixed look. **⚠ Taken from `main` (the 09-30 export had reverted them):** `flags/4x3/ct.svg` + `.fi-ct`, the stand-ins in `app/seeding.js` and the three canvases (Metadata Language Override, Same-Language picker, Decode Ceiling Warning), 287's split rules in `app/music.css`, R332's *Mark as not finished* (`ravilo-books.js`, `ab.mark_unfinished`). **Never export older copies of these.**
+- **2026-09-30 (end) — TV: one Sign out with a choice; spec'd R340. Next free: 288 / R341.** Built in `Ravilo TV.html`: the profile menu is Switch · My List · Settings · Sign out (**Add user** only on Switch's ＋ tile, **Unpair** gone); Sign out's dialog has two radio rows *Only {name}* (default) / *Everyone on this TV* (= unpair + forget the server → server setup); Settings' Unpair section removed. `so_*` strings × en/da/fo, `.so-*` in `ravilo.css`. `Planned`, pending export.
+- **2026-09-30 (last) — synced + spec'd: R337 · R338 · R339. Next free: 288 / R340 → now R341** (R336 is reserved by R335 for MPRIS + Inhibit). Pulled 26 spec files: the dev side built **the Mac app (R328–R331) and the Flatpak (R333–R335, `net.jebster.Ravilo`, mpv)**; R328 D3 had the desktop on the TV layout — **R337 supersedes it** (owner's D1, compact = phone, min window 360 × 600). **R338** themes (overlay fields `theme_follow/light/dark` beside `skin`, R162's writer tags, live push). **R339** (built): Browse chips Artists · Albums · Songs · Genres · Playlists · Audiobooks, Artists on arrival; Profile in music mode: no ring round the photo, the pill stays. All `Planned`, pending export.
+- **2026-09-30 (latest) — themes: five, and a light + dark pair that follows the system (owner; IntelliJ's Sync with OS).** Round 2's System palettes became real themes **Graphite** (dark, neutral, one blue #4f8ef0) and **Daylight** (Ravilo's first light theme). List everywhere: Aurora · Midnight · Noir · Graphite · Daylight. Setting: *Match the system/phone's light and dark* + one light pick + one dark pick, switching live. **Built on the phone** (`Ravilo Mobile.html`: `window.RaviloTheme` in `<head>`, localStorage `ravilo-theme`, `?appearance=light|dark`, `?sheet=settings`, PREVIEW *Phone goes light ⇄ dark*; white fills in the inline style, `ravilo-music.css` and `ravilo-mobile-player.css` tokenised to `rgba(var(--fg),a)`, `--bg-rgb` for page-colour alphas; the hero card and the film player (`.mp`) keep dark tokens in light). Desktop D1 canvas §T redrawn (mac Settings two-row swatches, GNOME combo rows). Q8–Q11 = all leans. **Kept on the viewer's profile, across devices (owner)** — follow + light pick + dark pick + single pick sync (like `ui_language`); only light/dark state is per device; the TV (no appearance) shows the dark pick. Defaults: new install follows (Daylight/Aurora); existing viewer = follow off, single = first device opened after update; **devices with no light/dark (TV, receiver, web in a desktop browser) are dark-only (owner): always the dark pick; their Theme row lists the four dark themes and writes `theme_dark`** (`theme.dark_only`, R338 D6). String `theme.synced`. **TV `ravilo.css` not tokenised yet.**
+- **2026-09-30 (later) — owner picked D1; round 2 drawn: `ravilo/Desktop - D1.html`** (+ `desktop-d1.js`; builders moved to `desktop-kit.js` = `window.DK`, shared with round 1). **Three view families:** TV (web = TV for now) · Desktop (macOS + GNOME, more later) · Mobile (also every desktop window < 600 dp). **Size classes = Compose's:** Compact < 600 = **the phone, embedded live** (`Ravilo Mobile.html?frame=window` — new: no bezel/status bar, `&skin=`, `&mode=video|music`, `&tab=`), Medium 600–839 = **rail (lean, Q8)**, Expanded 840–1199 = D1 sidebar + queue **over** content, Large ≥ 1200 = queue side panel pushes. **Answers:** Q1 D1 · Q2 bar in films mode only while music plays (Q10 grace lean) · Q3 three skins + **System** (`sys-mac-light/dark`, `sys-gn-light/dark` in `desktop-directions.css`; white fills tokenised as `rgba(var(--fg),a)`) · Q4 system font (Q9 = my reading) · Q5 side panel / overlay between / phone page compact · Q6 platform shape · Q7 keeps playing. Open: Q8–Q11 (Q11: System on the phone too — lean yes). **No spec until told.**
+- **2026-09-30 — the desktop app (macOS + Linux/Flatpak) round 1 drawn: `ravilo/Desktop - Directions.html`** (+ `desktop-directions.js/.css`, `dk`-free class names, 1200×760 frames, aurora). Native geometry/behaviour (macOS 26 inset glass sidebar + traffic lights; libadwaita split view, header bars, AdwToggleGroup, close on the right), Ravilo's palette and content type. **D1 the switch heads the sidebar (lean)** · D2 switch centred in the title bar, pages across the top · D3 no switch, Watch + Listen in one sidebar. Shared: Playing page, film in the window (music pauses), narrow collapse, film player on mac, platform places (View menu ⌘1/⌘2, Control Center, MPRIS, Background portal), keyboard table, 9 `desk.*` strings. Q1–Q7 with leans on the canvas. **No spec until the owner picks.**
+- **2026-09-28 (latest) — the session is spec'd: 284 · 285 · 286 · 287 · R324 · R325 · R326, plus 274 FR-274-10a. Next free: 288 / R327.** All `Planned`, not dev-reviewed, **pending export** (numbers verified on `main` `c07a2be4`: admin topped at 283, Ravilo at R323). **284** the file is the record (tags in the files; Files tab, five moments, copy-write-verify-swap, drift by facts, macOS leftovers removed by every scan) · **285** the Dashboard as one overview (Direction 2, counts are the things with the problem, zero is silence, no intro rows, *Since your last visit* per admin, Settings holds settings only, **the dock removed**) · **286** speakers — receiver side (step 5a, headless on audio-only, receiver-owned queue, Now playing on a display with the TV remote's keys, lyrics on displays, a speaker counts a session only while transcoding) · **R324** speakers — phone side (*Play on…*, busy speaker asks first, hand-off, ⋯ volume/lyrics/stop, swipe-down only hides) · **274 FR-274-10a** Download asks first (always a dialog, Seerr's profiles, no free space, the note kept locally) · **R325** the About section + the audit's three calls (4K/HDR badge, Cast or crew facet, genres in search) · **R326** the listening mode as settled (bio in place, bar on every music page, *Switch to…*, Continue listening on Listen, no Mix, speed/sleep books only, …) · **287** admin music/audiobook calls (Artists first, one media lane, Audnexus for a pasted ASIN, Split preview, no notifications). STATUS.md rows are the dev team's to add.
+- **2026-09-28 (late) — the audit's "built, never drawn" list is drawn IN PLACE** (the separate canvas was deleted on the owner's ask). **Phone** (`Ravilo Mobile.html` + `mobile/ravilo-web-states.js`, `ws-*` in `ravilo-mobile-player.css`; five new PREVIEW buttons): R263 install card on Home (iPhone two steps · Android Install · Not now), *Ravilo updated · Reload* toast, the iOS-below-18.2 notice; R212 stale line on Home; R280 LoadErrorState cycling REAUTH/FORBIDDEN/GONE/UNREACHABLE on any tab (Home's UNREACHABLE keeps Sign out); the Library Sort is now a **sheet** with Recommended first (no direction) and direction in words (R317/R318); the play button says *Resume S01E01–E03* for a multi-episode file (R309); portrait captions sized to the picture, S/M/L 10.5/13/16 px (R300). **TV** (`Ravilo TV.html` STATE picker + `ravilo-states.js`, `st-*` in `ravilo.css`): the stale line and the four errors; browse sort gains **Recommended** as default (`ravilo-browse.js`); detail play/resume labels use the file's range (`fEnd` in `ravilo-app.js`); 12 en strings (`stale_line`, `err_*`, `sort_recommended`, `sort_rec_sub` — da/fo from the shipped table). 236's screens table is in `app/ravilo-users.html#screens`. ⚠ **Pre-existing de-anonymisation risk found:** `ravilo-data.js`, `app/series-johnnybravo.html`, the two *Multi-Episode Files* canvases and several specs use a real cartoon's title, episode names and a scene-release file name (`Johnny.Bravo…ROCKETRACCOON.mkv`) — run `check-deanonymization.sh` before exporting and sweep them to stand-ins if it flags them.
+- **2026-09-28 (late night) — owner asks on the phone's music mode.** An artist's bio **expands in place** (max-height transition, *More ⇄ Less*, `music.less` × 3) — no sheet. **The bottom bar is on every music page** (album, artist, book, Now playing): `.phone.mu-on` lifts `.bnav` above `.mu-det`/`.mu-now`, both stop at `--bnh`; the mini bar sits above the bar; a tab pressed on a detail closes the stack; `openNow()` goes to the Playing tab when the bar has one. **The mode row says *Switch to films & series* / *Switch to music*** (no "Back"; en/da/fo). **Owner: no specs until told.** About: **owner 2026-09-28 — keep the whole About section** (TV + phone, synopsis + every fact); spec it with the next batch. **Last owner calls (same night):** music **shares the media lane** (Activity's music-lane fence removed) · **no Mix row** in round 1 · playlists **later** (round 1 plays albums/artists/songs/books) · music in the web app **later, own phase** · speed **audiobooks only**, films 1× · sleep timer **audiobooks only** · a finished book **stops** (Finished + Start over) · an artist's music videos = the **Videos row** on the artist page · **no notifications** (the Dashboard is enough) · the TV remote: **OK/Enter and Play/Pause toggle, a Stop key stops**, Back only hides (canvas E8 updated). Nothing left open for the owner; specs wait for their go. **Every decided question panel is removed from the mockups** (MusicQ, TagsQ, Suggestions' Download panel, the phone's review panel beside `Ravilo Mobile.html`): each `mount`/`paintPanel` returns early, the decided values stay as the defaults.
+- **2026-09-28 (night) — the next owner round answered.** **Audit §2.2 tile badge: only 4K / HDR** (TV `tileQ()` in `ravilo-app.js`, phone `.pb`; hero + detail meta unchanged; one stand-in made *HDR*). **§2.5 Cast or crew facet: yes** and **search matches genres: yes, as their own result group** — both already drawn, now decided. **§2.1 About: NOT settled** — I described it wrongly on the form (as an app-info screen); it is the detail page's About section (synopsis + facts), so the owner's answer doesn't apply and it goes back to them. **279** last-played from Jellyfin · **R322** gaps accepted silently, restart restores the whole queue paused · **281** Audnexus only for a pasted ASIN (field + *Look up* on the book's Details; Settings row says so) and *Split into two books…* opens a two-column drag preview · **R323** the book hairline is now a small whole-book scrubber and the book player gains a chapter strip under the transport (`ab.whole_book` × 3). All recorded in the specs' open questions.
+- **2026-09-28 (evening) — owner answers applied.** **Tags (284): every §8 lean taken** (panel now reads *decided*). **Suggestions §8:** Q2 **always a dialog**, Q4 **no free space**, Q1/Q3/Q5 leans. **Speakers:** all settled (Q2 dismiss-only, Q8 D-pad, Q9 lyrics; *Play on…* as the music-mode sheet title). **Phone music:** Continue listening is a row at the top of Listen when a book is in progress (R323 FR-R323-2); Now playing's queue button is dropped when the bar has a Queue tab. **Library → Music** now reads **Artists · Albums · Songs**, Artists the default. **Dashboard §F decided (same evening):** Q1 **Direction 2** (severity first, domain chips) · Q3 hidden · Q4 3 + more · **Q5 This server on the Dashboard, and Settings holds settings only** — the advisor cards in Settings (server-wide + per library + the swap line in the memory budget) are now one indicator each (*N findings · see the Dashboard →*, `.set-find`) · Q7 replaces · Q8 folded · Q9 split · Q10 dock gone. **Q2 (owner, later): a row counts the things with the problem** (1 065 tracks, not 48 series; the titles go in the sentence; the headline sums the same). **Q6: a missing intro is not a jellystructure problem** — the *No intro or credits found* and *Waiting for intro detection* rows are gone. The §F question panel is removed from the Dashboard mockup (all decided). Lean added earlier (a row that stops playback is critical) stands. localStorage `js-dash-q-v2`. **Still open:** the 09-27 audit calls (About, tile quality badge, Cast-or-crew facet, search-matches-genres — owner: later). Translations are the implementer's. **Next:** write 284 / 285 (after the Dashboard picks) / 286 / R324, build speakers into `Ravilo Mobile.html`, export.
+- **2026-09-28 (later) — sync + four owner asks, all four drawn as round 1. Nothing spec'd yet; 284 / 285 / 286 / R324 verified free on `main` (admin tops at 283, Ravilo at R323).** Pulled 91 spec files + STATUS.md; adopted 5 dev-side mockup edits (`music.css`, `settings.html`, `suggestions.html` → new `suggestions.css`, `ravilo-data.js`).
+  - **(4) Download asks first** (`app/suggestions.*`): a confirm sheet (dialog wide / sheet narrow) with Seerr's Radarr profiles, *Seerr's default* marked, Server only with 2+ Radarrs (4K), folder under More only with 2+ folders, the note kept locally (Seerr has no note field), seven previewable states, §8 Q1–Q5 live.
+  - **(2) The Dashboard as one overview** (`app/index.html` on `dashboard-data.js` / `dashboard.js` / `dashboard.css`): eight groups, one row grammar (severity · label + sentence · titles count · *one click here / open the item / change elsewhere / for information*), Directions 1/2/3 as Q1 (lean 1), §E + scan states in a fence, §F Q1–Q9 live, Q10 = the dock (decided). Added lean: a row that stops playback is *critical*. **The attention dock is removed** from `app-shell.js` (queue, `openAttentionDock`, ⌘K entries, n/p/o keys) and `app.css`; the sidebar count links to the Dashboard.
+  - **(1) Tags in the files** (`app/files-tab.js`: FilesTab + TagsQ, localStorage `js-tags-q`): a **Files** tab on Album and Book (Picard's pending-changes grid, ten states via a fence — books eight), the shared split Save (*Save everything* · Save → NFO/cover · **Save → files** · Sync; Q10 lean) on Album/Artist/Book, Tracks-tab glyphs (✓ · ≠ · ∅ → the row in Files), *Write tags into music files* + two sub-choices on the Music providers card (`js-mu-tagwrite`, default per Q1 lean on), Library *Write tags…* bulk with skip counts, Activity `write_tags` step + summary line, Dashboard rows (no ids · macOS leftovers). §8's ten questions as a panel on Album/Book. MusicQ's H7 removed (the owner reversed 277).
+  - **(3) Speakers** — round 1 is a canvas, `ravilo/Speakers - Directions.html` (+ `speakers-directions.js`, built from `app/music-data.js`): the sheet ×5 (idle/busy/group · join · video mode without speakers · iPhone footnote · sending), Now playing as the remote ×3 skins + ⋯ volume/Stop casting + volume keys + lyrics + Queue mirrored, mini bar (· Stue, stacked under a film, swipe-down stops), reconnect's two outcomes, the display receiver (TV 1920×1080 ×3 skins, hub 1024×600 ×3, ended = idle), strings, §8 Q1–Q9 with leans. **Not built into `Ravilo Mobile.html`** until picks. **BUILT 2026-09-28 (night)** as `ravilo/mobile/ravilo-speakers.js` (+ `spk-*` in `ravilo-music.css`; hooks: `RaviloSpeakers.afterMini/afterMenu` in the music player): *Play on…* sheet in music mode (top-bar button, Now playing's glyph and device chip), busy speaker tappable with *Stop Spotify and play here?* (owner), hand-off keeps position, ⋯ gets volume slider + Lyrics on {display} + Play on this phone + Stop casting, +/− keys drive the speaker's volume (HUD), mini bar *· Stue*, swipe-down hides the bar only with a *Still playing on Stue · Stop* toast, iPhone lists no speakers + footnote. Strings `cast_take_over(_sub) · cast_play_on` added. Also: *Since your last visit* = since this admin last opened the Dashboard (mine); macOS leftovers **removed automatically by every scan** (Dashboard row gone, Activity line); a stopping-playback row is **critical** (owner). About: owner reviewing the designs (shown: `Focus Detail - Directions.html` §F). Next: draw the seven audit-owed items, then specs 284/285/286/R324 + 274 amendment, one export. **Owner answered §8 the same evening:** Q1/Q3/Q4/Q5 leans; **Q2 swipe-down only dismisses the bar** (toast *Still playing on Stue* · Stop); **Q8 the TV's own remote works** (D-pad: OK play/pause · ◀▶ prev/next · hold seek · ▼ lyrics · Back hides, never stops; hub = tap); **Q9 lyrics on displays in round 1** (synced only, per-display toggle, off at first); Q6/Q7 "best experience" → no backend probe (first cast flips the card) and the iPhone footnote stays. Canvas redrawn (C3, E8–E11, decided table); 4 more strings (`cast_still_playing · cast_stop_room · cast_lyrics_on · cast_sheet_music`). Next: build into `Ravilo Mobile.html` + write 286 / R324. Admin drawn in place: Chromecast card step **5a** + registered-state line (both states), a *Stue · audio only* row in Users &amp; devices, Dashboard Services lines. Strings `cast_speaker · cast_group · cast_busy_with · cast_speakers_ios` × en/da/fo in `ravilo-i18n.js` (`cast.play_on_phone` reuses R299's `cast_play_here`). **Flagged:** the sheet title *Play on a TV* is wrong with speakers — lean *Play on…* in music mode, a fifth string.
+- **2026-09-28 — the music + audiobooks round is spec'd: 275–281 · R321–R323. Next free: 282 / R324.** All `Planned`, not dev-reviewed, **pending export** (numbers verified free on `main` `f8bdaab4`; the research's ladder 274–280 / R320–R324 moved up one because 274/R320 went to Seerr suggestions). Admin: **275** music library (tables, `scan_music`, ACL, NFO-saver advisor, health) · **276** MusicBrainz (paced client, ladder + AcoustID, Find match…, lock/clear, genres, the providers card) · **277** covers, artist images, `album.nfo`/`artist.nfo`, lyrics, drift, artist Videos · **278** the admin UI (Music kind, Album, Artist, Convert…, Settings/Activity/Dashboard/Metadata/dock) · **279** `/api/tv/music/**` · **280** audiobooks library (folder = book, parts, our progress store, flags) · **281** a book's facts (files → admin → suggestions, Parts/Chapters/Listeners, tag-writing switch, author page, the phone's book paths). Ravilo: **R321** listening mode (switch, the owner's *Listen · Browse(+Search) · Playing · Queue* bar, pages) · **R322** the player (service, Playing tab, last-played-paused, lyrics, queue, mini bar, lock screen) · **R323** audiobooks (shelf as a Browse chip, book page, book player with speed/sleep/chapters/bookmarks). Every unanswered round-1 question is recorded with its lean. **Open for the owner:** Continue listening is two taps deep under the chosen bar (lean: a Listen row, R323 FR-R323-2, not drawn); the Queue tab duplicates Now playing's queue button (lean: drop the button). Web app and playlist editing/mixes are later phases, unnumbered.
+- **2026-09-27 (music round 1 · part 2 audiobooks) — synced `main` (5 files: both briefs gained §M, new `research-reports/audiobooks-library-and-player-2026-09-27.md`, the music report's §6.7) and drew part 2 into the main mockups. Still no spec; next free 275 / R321 (verify first).**
+  - **Admin:** `audiobook-data.js` (the household's one book: 14 MP3 parts, part 6 missing, no cover/narrator; plus 3 preview-only extras); Library **Audiobooks** kind (`audiobook-library.js`, Books · Authors · Series-when-present, facets, one/many/empty); new **`audiobook.html`** (+`audiobook.js`: Details editor with the Suggestions rail — four empty cards first —, Parts with the 5-minute line and the gap row, drag reorder, Chapters, Artwork, Listeners, History, no NFO tab) and **`author.html`**; Settings card renamed **Metadata providers** (+ iTunes · Google Books · Open Library · Audnexus rows, the *Write tags into audiobook files* switch, localStorage `js-ab-tagwrite`) and a **Bøger** library card; Dashboard tile + four attention entries; two dock entries. §M6's four questions joined the shared panel (`music-qs.js`).
+  - **Phone:** `mobile/ravilo-books.js` — the bar lean is now Home · Library · Search · **Audiobooks** (J2 option *a′* keeps Playlists fourth; Playlists is a Library chip under *a*); the mode card reads *Music & audiobooks*; the shelf (Continue listening card with ring + *left*, All books, Authors/Series chips only in "many"), the Book page, the **book Now playing** (chapter seek + book hairline, ±30 s with long-press, speed chip — the only speed in the app —, sleep, chapters/bookmarks sheet, finished, failure), the book mini bar (−30 s · play/pause), Settings ▸ *Listening*. §M7 + book states in the review panel. Strings §M6 × en/da/fo.
+  - **Owner, same evening — the music bar is (c) with Now playing in the middle:** *Listen · Browse · **Playing** · Queue · Profile* (J2 `cnp`, the default; `ravilo-music-q` migrates once via `v4`) — **Search merged into Browse** (the field sits above Browse's chips; a query swaps the chips' content for results; re-tapping Browse focuses the field), so Playing is centred. The six-item *… · Search · Queue* is kept as `cnp6`. The **Playing** tab is the Now-playing screen as a page with the bar under it (no close chevron, no swipe-down); nothing playing ⇒ the last-played song loaded **paused** where it was left; the mini bar opens that tab. Audiobooks and Playlists are Browse chips in this layout. The intermediate *Home · Library(+Search) · Now playing · Audiobooks* (`np`, Search merged into Library) is kept as an option.
+  - Artist **Videos** row (phase 2) was already drawn on both sides.
+- **2026-09-27 (music round 1) — pulled the two music design briefs + the research report; round 1 drawn into the main mockups. No spec yet; next free still 275 / R321 (verify on `main` first).**
+  - **Admin (`app/`):** shared stand-in data `music-data.js` (60 tracks · 30 albums · 23 artists · 38 WMA, all fictional, "after the first run": 27 matched · 2 need you · 1 unmatched · 4 without a cover); `music.css` (`mu-*`); Library gains a **Music** kind (`music-library.js`: Albums · Artists · Songs, facets, bulk actions, 4 fenced states; `?kind=music`); new **`album.html`** (+`album.js`: pagebar, match chip, Find match… panel with candidates/releases/AcoustID, Tracks with gaps, Artwork, Genres, NFO, History; fence links one album per state) and **`artist.html`** (+`artist.js`); Settings → Musik library card with the `--bad` NFO-saver finding + a **Music providers** card; Activity steps/pacing/summary/optional music lane; Dashboard Music tile + four attention entries; Metadata **Music genres**; Users & devices *Music: yes/no*; five triage entries in `app-shell.js`.
+  - **§H's seven questions** are one shared panel (`music-qs.js`, localStorage `js-music-q`) at the foot of every music page; picks switch the pages live, leans marked.
+  - **Phone (`ravilo/Ravilo Mobile.html`):** music mode in `mobile/ravilo-music.js` (switch · bar · Home/Library/Album/Artist/Search/Playlists) + `mobile/ravilo-music-player.js` (Now playing ×3 directions, lyrics, queue sheet with drag/swipe, ⋯ menu, mini bar incl. stacked-under-cast and on video pages, landscape) + `mobile/ravilo-music.css`; host hooks are one-liners marked in the host (`window.RaviloHost`). **§J's seven questions + unreachable states** live in a review panel beside the phone (localStorage `ravilo-music-q`, mode in `ravilo-mode`). Strings §I × en/da/fo in `ravilo-i18n.js`. The phone Library's "Music" (music **videos**) now says *Music videos*. Settings → Theme now actually reskins (Midnight/Noir tokens were missing on this frame).
+- **2026-09-27 (latest) — the owner answered the seven questions; specs written: **274** (admin) + **R320** (the Ravilo row). Next free: 275 / R321.** Both `Planned`, not dev-reviewed, **pending export** (numbers verified free on `main` `e437def3`).
+  - **Decisions:** Q1 the admin's own Seerr user (viewer in the note) · Q2 *Download* · Q3 20 of 50 + *Show more* · **Q4 yes — No thanks also writes Seerr's blacklist**, Undo/Bring back remove it, the build skips anything on the blacklist whoever put it there, and every Request feed filters it server-side (FR-274-16) · Q5 names · **Q6 yes** — series weigh the clusters (a tenth of a film per finished episode, capped at three films per series), never candidates · **Q7 clusters generated by AI every build** — a new AI job *Suggestion clusters* (`[ai.clusters]`, own limit, 272's queue), a pure validator, **shares counted by the server not the model**, the fixed six as the deterministic fallback, and the page says which it shows.
+  - **Mockup updated:** the questions panel is now *Decided* with a clusters preview (AI · AI off · Limit reached · Bad answer); AI-named clusters (*Folk and coastal horror* …); a *Grouped by AI this build* line; the blacklist sentence under the reasons; Dismissed lists a title *Blacklisted in Seerr* directly.
+- **2026-09-27 (later) — sync + round 1 drawn: *Suggested films from Seerr*.** Pulled `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` (the only spec-side change on `main` since the earlier pull) and `STATUS.md`. **No spec written yet** — the brief takes the next free admin number (274) once the round-1 picks come back.
+  - **New: `app/suggestions.html`** (+ `suggestions-data.js`, `suggestions.js`), a page of its own — **moved (owner, same day) to the top of the sidebar, between Library and Activity** (FR-274-8a) — absent without Seerr. Header (built-when · *N shown of 50* · *Dismissed (n)* · *Rebuild now*), a *built from 112 finished films* strip naming each viewer's share (Olivar: *nothing finished yet*), six buckets in volume order headed by their evidence (*the household finished 36 horror films*), tiles with the **because** line, a *2 viewers* chip, the franchise note, age rating, and every state: **Requested → Approved → Downloading → In the library**. **No thanks** opens a reason picker on the tile (four reasons, each saying what it does to the next build; *Other* adds a note), removes it with a 6 s *Undo*; the **Dismissed** view has *Bring back*. PREVIEW fence: *Seerr unreachable* (banner, Download disabled with its reason), *First build*, *No history yet*, *Nothing new*. **Q1–Q5 drawn as marked options (lean marked) that switch the page live**; Q6/Q7 recorded.
+  - **Dashboard card** in `app/index.html` (*16 films waiting · 3 new since Tuesday*). **Ravilo config ▸ Request:** *Suggested for you* in the Add-row catalogue (*From this viewer's watching*, no parameter) and in the feed list with the schematic-preview note.
+  - **Viewer side: confirmed nothing new is needed.** The feed is one more Request row (`ravilo-data.js` `suggested`, first in Eyð's lists), rendered by the existing tile and request detail on the TV and phone. One new string, `rq_suggested` (*Suggested for you* · *Forslag til dig* · *Uppskot til tín* — da/fo drafts).
+- **2026-09-27 — sync: our four came back built, `main` added 261–273 / R305–R319, and the mockups were brought in
+  line with the design-vs-implementation audit. Next free: 274 / R320.**
+  - **Pulled (by blob hash):** 27 admin specs (14 edited incl. our 259/260 dev-reviewed, 13 new: 261–273), 32 Ravilo (17
+    edited incl. R303/R304, 15 new: R305–R319), `STATUS.md`, the research README and the new
+    `research-reports/ravilo-design-vs-implementation-audit-2026-09-27.md`. Repo-side mockup edits adopted:
+    `app/wf.css` (259/260/256's served CSS), `app/ravilo-users.html` (256's unstable line, Bedroom TV behind),
+    `app/ravilo-config.html` (R314: focus detail is TVs only), `livetv-data.js` ×2 (title sweep: *Mesterholdet*).
+  - **The audit's owner decisions, applied to the design:** (1) the shipped `i18n/*.json` wins and a mismatch is
+    accepted — but `STR.en` held 22 Faroese values from our 09-24 pull; restored to English and moved to `STR.fo`;
+    (2) **no drawn keyboard anywhere** — TV search, sign-in and change password now show a fenced *the TV's own keyboard*
+    band (the receiver app already did); (3) the **phone Library is R187's browse grid** (facet bar + grid, titled
+    *Library*); (4) the **phone Profile keeps a Settings row** (Theme + Playback) and App language loses *this phone
+    only* (answers R304 OQ1: `ui_language` is per viewer); (5) episodes are **`S01E05` everywhere**, ranges
+    `S01E01–E03` (`epCode()` in `ravilo-app.js`).
+  - **Also fixed from the audit:** no *Jellyfin* in any viewer string (sign-in, toasts, the Settings account line);
+    the seek is wordless (a small spinner by the timestamp, R218 moment D); next-up at 20 s; the chart-era kicker,
+    trend badges, Season *Mark all* and the dead `openOverlay()` removed; the phone *Request* tab is Seerr feed rows,
+    not a numbered Top 10; the phone subtitle sheet speaks R180's plain words (*Signs only*, *Sound described*); the
+    phone rail is three items (Episodes only where there is no Next).
+  - **Built-and-never-drawn, now drawn:** R308 (every Studios/Networks tile on the `#E8EAF0` plate, TV + phone),
+    R310 (an empty wall has no chip; `?emptywalls=` previews it, and *nothing at all* opens with one sentence),
+    browse sort as field + direction in words with **Size** (R317), R291's *Now showing* badge and switch hint,
+    R191's per-profile **Sign out** (menu + Settings, with confirmation), TV Settings ▸ **Playback** toggles.
+  - **Still owed (not drawn):** the web install card / update toast / favicon in `Ravilo Mobile.html` (only in
+    *Play on a TV - Directions* §A), R280's page errors, R300 portrait captions, R309 range labels, R318's
+    *Recommended* sort, the stale-content banner, 236 §D's screens table. **Needs an owner call:** the About section
+    (never spec'd — spec it or delete it), the tile quality badge, a viewer *Cast or crew* facet, whether search
+    matches genres.
+  - ⚠ The repo's root `CLAUDE.md` differs from ours by hash; ours was kept (it is design-owned and exported by us) —
+    check it has no dev-side edits before the next export.
+- **2026-09-25 — four owner asks drawn into the full mockups, then spec'd: 259 · 260 · R303 · R304. Next free: 261 / R305.**
+  - **Specs (all `Planned`, not dev-reviewed, pending export; numbers verified free on `main` the same day):**
+    **259** device version history · **260** empty a job queue · **R303** the player says what is playing, top
+    right · **R304** Profile is a page on the phone. **⚠ R304 open question 1:** the mockup says App language is
+    *this phone only*, but shipped R161/R162 `ui_language` is **per viewer** — lean: reuse it and drop the phrase.
+    **260 open question 1:** does the next scan re-enqueue what was emptied?
+  - **Owner answers (same day):** keep **all** version history; keep the *latest · N behind* chip and the dev-build
+    footnote, **drop** the *went back* flag and the per-device *releases behind* warning; a **dark-ink logo sits on a
+    light plate** (supersedes "counts as no logo" below); phone logo stays top-right; a running whole-season job
+    **finishes the season**; **no undo** on emptying; Profile stays a page, **no Switch profile**, and gains **App
+    language** (en/da/fo, this phone only, menus not audio/subtitles). **No mention of Jellyfin anywhere a viewer can
+    read it** in Ravilo (the profile says *Admin*, sign-out says *your name and password*).
+  - **Device version history** (`app/ravilo-users.html`): every device row says *Ravilo 1.38 · TV · since today 08:14*
+    and a *N versions ▾* toggle opens a timeline — version, first-seen → next, how long, and a note (*skipped 1.37*,
+    *dev build*, *went back from 1.38*, *already on it when history began*). Dated when a request first carried the
+    version, never install time. Kitchen TV carries 256 FR-256-5's *behind* line; pagebar chip *latest Ravilo 1.38 · 1
+    device behind*. Answers 224's open question 4 (a new table, not a column).
+  - **Logo in the player** (`ravilo-player.js/.css`, `ravilo-app.js`, `Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`,
+    `Ravilo Receiver App.html`): top-right while the chrome is up; a series shows the **series** logo; no logo ⇒ series
+    shows its name in text, a film shows nothing; a dark-ink logo (232) counts as no logo. The bottom kicker no longer
+    repeats the series name. Phone: left of the cast glyph; gives way to the AirPlay chip.
+  - **Empty queues** (`app/activity.html` → Jobs &amp; workers): *Empty queues…* in the Queues card plus *Empty* per lane,
+    one confirmation panel for both (checkbox per queue, count, and **what keeps running**), waiting jobs only, a
+    *Recent* entry per emptied queue. `?view=jobs` opens the tab. Pool chip + tab badge now sum the lanes (50 / 52).
+  - **Profile is a page on the phone** (`Ravilo Mobile.html`, `?tab=profile`): the fifth tab takes the pill (white ring
+    on the lit avatar); photo + name, **My List** row (stand-in data — the phone had no My List and the old sheet sent
+    it to Discover), Account (App language · password; the photo row was removed — tap the photo), **Sign out behind a confirmation sheet**, and *Ravilo 1.38 · signed
+    in to …*. The old menu sheet and the Settings screen are gone (Settings held only those two rows).
+- **2026-09-24 (latest) — sync: `main` ran from R270 to R302 and 237 to 258 in six days; the mockups caught up.**
+  **Next free: 259 / R303.** Upstream history was rewritten, so drift was found by tree scan + byte-size diff.
+  - **Our drafts came back built:** R263 ✓, R264/R265/R267/R269/R270 ⚠ Partial, R268 ✓, 237 ⚠ (Cast Connect moved
+    to R266, deliberately *not* built). R269 shipped on **Samsung's own keyboard**, not R175's; R270's viewer name is
+    resolved server-side and falls back to *In use*; last-seen is whole calendar days.
+  - **The phone as shipped, now in `Ravilo Mobile.html`:** R274 (74 dp bar, 36 dp pill, 28 dp glyphs, the keyboard
+    covers the bar), R277 (Search never raises the keyboard on arrival; re-tapping Search does, every time; Clear
+    works), R278 (the bar on every page except player/remote, a title's detail, and before a profile — account
+    screens stop above it), R299 (*{device} couldn't play this* · *Play on this phone*, not *Lost contact*). R298
+    (no focus visuals on a phone) and R301 (skip-arrow direction) needed nothing — the mockup was already right.
+  - **Repo-side title sweep adopted:** no real show or film titles anywhere in the mockups any more (fictional
+    stand-ins; keep it that way). R288 rewrote Faroese in the shipped table — *ambætari* not *servari*, *seriur*,
+    a TV is a *sjónvarp* — and `ravilo-i18n.js` took 41 of those strings; **the shipped `i18n/*.json` wins.**
+  - **Admin:** 254/255's three file-health types added to `index.html`'s attention list and `library.html`'s chips.
+    Unbuilt and still ours: §A install card (R263 built it from prose; design sign-off open), 236 §D screens table,
+    web-app icons sheet, R300's portrait caption size (not drawn), 257's dashboard-says-what-the-advisor-says.
+- **2026-09-18 — the picks came in, the phone build landed, and the TV receiver app got its own
+  file.** Ravilo drafts now run to **R270**; **next free: 238 / R271**.
+  - **Owner picks:** AirPlay is the **footnote** (*"AirPlay (phone must stay on)"*, not a full row — against
+    my lean, so the full sentence moves to the connecting bar the moment a session starts, plus the admin's
+    help text); a busy TV **names its viewer** (*Busy · Eydun is watching*, and *Offline · last seen Tuesday*
+    keeps its weekday); the receiver's server is changed by a **three-second hold on *Back***; and an
+    unreachable server makes the code screen **wait and say so**, never show a stale code.
+  - **Built into `ravilo/Ravilo Mobile.html` + `mobile/ravilo-mobile-player.css`** (new `sc-*` layer): the
+    **three-tier sheet** behind the one cast glyph — *On this network* (absent when empty, no spinner
+    anywhere), a **collapsible *All your TVs (n)*** that remembers its state, the four row states (ready ·
+    playing-mine-and-tappable · busy-dimmed-and-not · offline-dimmed), the **Chromecast row only in the
+    Android frame**, the **AirPlay footnote only in the iPhone frame**, ***Add a TV*** with a native
+    6-character input (one error string for unknown/expired/used, success returns the sheet with the TV
+    outlined), and **AirPlay-active**: the phone's own player *is* the remote — connected glyph, the TV's
+    name beside it, **no mini bar, no R245 remote**. The bar now says *Sending to …* → *Playing on …*.
+    This **replaces** the old frame that stood in for the platform's Cast dialog (FR-R245-2, superseded).
+  - **New file: `ravilo/Ravilo Receiver App.html`** — the maintained mockup for the receiver-only TV app,
+    deliberately **not** an extension of `Ravilo Receiver.html` (that one is the Chromecast's screen, served
+    by the backend, so it never asks for a server and has no remote pointed at it). 18 states behind three
+    pickers × 3 skins × 3 languages × caption size: the five **server-setup** states (incl. the hold-*Back*
+    return), idle-with-code, idle-waiting, R218's loading and buffering, playing with captions, chrome up,
+    paused, the **two-level picker with Subtitle size**, Skip Intro, next-up, phase 182's *server busy* and
+    R237's failure. `?state=&skin=&lang=` all work.
+  - **Specs written:** **R269** (the receiver needs a server first — updated with both owner decisions and
+    pointed at the new mockup) and **R270** (*AirPlay is a footnote, and a busy TV names its viewer*), which
+    **supersedes `main`'s R265 FR-R265-4 row shape** and confirms FR-R265-2's busy/offline wording. Both
+    `Planned`, not dev-reviewed, **pending export**.
+  - Still unbuilt and needing no pick: §A (the install card, the unsupported-device notice, the update
+    toast, the standalone frames), §D's screens table in `app/settings.html`, and `Ravilo - Web App
+    Icons.html`.
+- **2026-09-18 — two owner notes on the round-1 receiver frames: the missing server step, and no
+  dimmed idle.** Ravilo drafts now run to **R269**; **next free: 238 / R270**.
+  - **R269 — the receiver needs a server before it can pair** (`phase-R269-receiver-needs-a-server-first.md`,
+    `Planned`, not dev-reviewed). The owner caught a real hole in `main`'s R264: the app enrols with 218's
+    hand-off code and idle *always* shows a pairing code — but a code is **minted server-side**, and nothing
+    says where the address comes from. `ravilo-cast` never needed it (**it is served by the backend, so its
+    origin *is* the server**); a sideloaded Tizen `.wgt` is a local file with **no origin at all**.
+    R269 adds **one screen, seen once** — R225/R226's `ServerSetupScreen` with R175's keyboard, re-drawn in
+    DOM — plus the ordering rule **server → code → pair**, the inferred scheme (no http/https toggle), the
+    typed text kept on failure, **two states that currently read the same and must not** (*no address* vs
+    *configured but unreachable*), the server's address as a quiet line under the TV's name on idle, a
+    hold-*Back*-three-seconds way back (no menu — this app has no navigation), **no mDNS/discovery**, and the
+    TV's own UI language as the pre-server default. Supersedes **FR-R264-2**'s "always shows its code" and
+    **FR-R264-6**'s single no-server sentence.
+  - **Drawn: §C0 in `ravilo/Play on a TV - Directions.html`** — four TV frames (first boot · typing with
+    *https:// tilføjes* · trying · wrong address), the fencing panel (why this one screen is allowed on an
+    app with no navigation), the rejected-discovery note, and **two questions with leans**: how a household
+    changes the server later (**lean: a three-second hold on idle**; from the phone is impossible — it reaches
+    the TV *through* the server being replaced) and whether the code screen waits or shows a stale code
+    (**lean: wait, and say so** — a code that cannot be redeemed fails on the phone, pointing at the wrong
+    device). Seven new strings × en/da/fo.
+  - **⚠ Scratched: R264's open question 2 (dimming idle to 20 % after ten minutes).** Owner decision — the
+    idle screen stays lit. The frame and its note are gone from the canvas; the slot now draws **C1c: idle
+    naming its server** (Noir). Recorded in R269's dev notes, since R264 is dev-authored.
+- **2026-09-18 — sync: `main` took FOUR of the numbers our drafts held, and handed us a new design
+  brief. Round 1 drawn: play on a TV.** Admin now tops at **236**, Ravilo at **R265**; **next free: 238 / R269**.
+  - **Renumbered (fourth time this shape has happened; the dev tracker always wins):** our **235 → 237**
+    (Chromecast publish + Cast Connect + listing) · **R263 → R266** (Cast Connect, the TV app as receiver) ·
+    **R264 → R267** (the phone's top row + bottom bar) · **R265 → R268** (Discover's tab order and scrolling).
+    Files renamed, every in-file FR reference rewritten, and the mockups' own comments moved with them
+    (`Ravilo Mobile.html`, `Bottom Nav - Directions.html`, `ravilo-app.js`, `ravilo.css`). All four still
+    `Planned`, not dev-reviewed, **pending export**. ⚠ **Entries below this one say R264/R265 meaning our own
+    drafts — those are R267/R268 now.**
+  - **What `main` put there instead:** **235** (serve the web app like an app — CSP, caching, headers), **236**
+    (*screens*: the backend drives a TV for a phone — `/api/remote/**`, `ScreenStatus`, the `nearby` rule, a 409
+    naming the user who is watching), **R263** (the web app installs — PWA, icons, the iOS 18.2 floor),
+    **R264** (a **receiver-only** Tizen app, no navigation, **supersedes R189** and deletes `ravilo-tizen`),
+    **R265** (play on a TV from the phone — one glyph, three tiers, AirPlay kept with a caveat).
+  - **New brief — and it is ours to answer:** `specs/ravilo/design-brief-screens-and-web-install-2026-09-18.md`.
+    The owner's most important use case, stated plainly: *an iPhone installs the PWA and streams to the Samsung
+    TV*. **Two reversals of the 2026-09-16 brief:** AirPlay's "never draw it" is **withdrawn** (draw it as the
+    third tier, with a persistent notice that the phone must stay on), and R245's "the device picker is the
+    platform's dialog" is **superseded** — the picker is **Ravilo's own bottom sheet**. The remote, the mini
+    bar, the subtitles sheet and the receiver's ten screens are reused **as drawn**.
+  - **Drawn: `ravilo/Play on a TV - Directions.html`** (canvas): the sheet's **ten states** across Pixel 9 and
+    iPhone 16 plus a Noir pass; the **two round-1 questions** as marked options — (1) the AirPlay tier's weight,
+    a full row with the notice as its second line vs a footnote link (**lean: the full row** — the caveat has to
+    be readable at the moment of choosing) and (2) whether a busy TV names *who* is watching (**lean: yes**, and
+    *Offline · last seen Tuesday* follows the same decision); the **AirPlay-active player**, where the phone's
+    own player **is** the remote (no mini bar, no R245 remote — anything else would be a lie); the connecting
+    bar's two moments (*Sending to…* → *Playing on…*) and the **reconnect case that shows nothing at all**; the
+    receiver's **idle-with-code** (96 px tabular glyphs bottom-right, the TV's name bottom-left, no artwork)
+    with its **no-server** and **dimmed-after-ten-minutes** variants; the **player on the TV** (chrome, the
+    two-level audio & subtitles picker with **Subtitle size**, Skip Intro, next-up); the **TV-remote-pauses →
+    phone-shows-paused** pair drawn side by side; **§D's screens table** for `app/settings.html` (kind ·
+    platform · paired-user chips · now playing · last seen · **revoke per user**, plus the one-sentence
+    "same internet address" help text); and **17 new strings × en/da/fo**.
+  - **⚠ Flagged for the owner:** our **R266** (Cast Connect) and `main`'s **R264 + 236** answer the same wish —
+    *a TV that runs Ravilo plays it itself and keeps playing when the phone is closed* — by two different roads
+    (Google's cast hand-off vs the backend). They are complementary (Cast Connect covers the
+    Chromecast-built-in TV; 236/R264 covers the Samsung set and any phone with no Cast SDK), but the **hand-off
+    payload and the enrolment path should be one mechanism, not two**; if 236 lands first, R266 shrinks to a
+    sender flag, a launch intent and `receiver_kind`. Recorded at the top of R266 itself.
+  - **Ready to build the moment the owner says go (no pick needed):** §A into `Ravilo Mobile.html` — the
+    unsupported-device notice (iPhone below iOS 18.2), the **install card** (iPhone's Share → Add to Home
+    Screen; Android's one *Install* button), the *Ravilo updated · Reload* toast, and the two **standalone**
+    frames; §C1 into `Ravilo Receiver.html`; §D into `app/settings.html`; and a new `Ravilo - Web App Icons.html`
+    (192/512 `any`, 512 maskable judged under circle/squircle/rounded-square, 96 monochrome, 180 apple-touch).
+  - **Two things only a device can answer**, named in the specs rather than guessed: whether a backgrounded
+    standalone iOS web app keeps an AirPlay session alive (decides the notice's wording, not its existence),
+    and whether the RU7440 can layer HTML chrome over AVPlay (decides who draws the receiver's picker).
+- **2026-09-18 — the phone's pages moved to a bottom bar, and R267 (then numbered R264) was rewritten around it.**
+  Drew `ravilo/Bottom Nav - Directions.html`: the baseline, **four directions** on Pixel 9 frames (A ink
+  + weight · **B the selected icon in Ravilo's gradient pill** · C a floating blurred capsule · D one
+  label on the active item), the comparison, and the three frames where a bottom bar meets the app —
+  the cast mini bar docking above it, Discover keeping its own five chips, the player with no bar.
+  - **Owner said *decide for me*, so:** **B · pill**; the 13 sp label floor bends to **11.5 sp** for
+    these four labels only (the one exception in the phone design); tap-on-active **scrolls to top**,
+    with **Discover keeping R170's step-to-next-segment**; the pill **slides** (~180 ms); the brand
+    **stays** in the top row; **handset only** (R256's seam — a narrow browser window is not a phone);
+    the mini bar **docks above** the nav; **no hide-on-scroll**.
+  - **Why not the other three, recorded:** A leans on two shades of grey, and a phone has no focus ring
+    or hover to help; C puts ink over a scrolling poster wall (the trap the casting round rejected
+    direction 1 for) and leaves the mini bar nothing to dock against; D cannot name *Discover*, which is
+    the one page a glyph does not carry.
+  - **R264 rewritten and renamed** (`phase-R264-phone-navigation-top-row-and-bottom-bar.md`): row one's
+    FRs stand (brand · cast · search · avatar, **no clock**), the page row becomes the bottom bar, and
+    new FRs cover the sliding pill, opacity + absence on pushed screens, the mini-bar stack,
+    tap-on-active, always-visible, Discover's chips, and geometry from one place. **Built into
+    `ravilo/Ravilo Mobile.html`** (`.bnav`/`.bn`/`.bnind`; the old second row and its fade are gone).
+- **2026-09-18 (later) — Discover's tabs reordered and made scrollable (R265), and our two drafts
+  renumbered a second time as `main` raced ahead.** Pulled **R260** (the player's Back is the phone's
+  Back), **R261** (fullscreen only while playing) and **R262** (Discover is one page with five tabs) —
+  which took the numbers our own drafts held, so **Cast Connect is now R263** (R254 → R260 → R263) and
+  **the phone's two-row top bar is R264** (R261 → R264). Admin still tops at 234, so **235** stands.
+  - **R265 — Discover's tabs lead with the library, and the strip scrolls** (`Planned`). Order is
+    **Networks · Studios · Genres · Coming Soon · Request**, declared once as a list that gating
+    *filters* and never re-orders — so entry is always **Networks**, gated or not, and a household with
+    no Seerr/*arr simply sees three chips. The strip scrolls everywhere: touch on the phone (five chips
+    never fit portrait), and on a TV the D-pad carries the focused chip into view with `scrollRowTo`'s
+    tween. Supersedes **R243 FR-R243-1's order only**; pairs with R262. Next free: **R266**.
+  - **Built into both mockups:** `ravilo/ravilo-app.js` + `ravilo/ravilo.css` for the TV (declared
+    `SEG_ORDER`, `.discseg` as a scroller with the Seerr pill pinned right, the focus-scroll helper
+    extended to the strip, Discover's nav entry opening `discTabs()[0]`), and `ravilo/Ravilo Mobile.html`
+    for the phone (five gated chips, scrollable, plus **two views the phone never had**: *Coming Soon*
+    from `R.upcomingByDay()`/`R.overdue`, and *Request* from the discover feed).
+  - **R264 — the phone's top bar is two rows** (`Planned`, written the same day): identity and actions
+    above (brand · cast if available · search · avatar, **no clock** — the platform draws one in the
+    status bar directly above), pages below (Home · Movies · Series · Discover), gated on R256's
+    `isHandset` seam so the TV and the web app keep the single row and their clock. Written because
+    `LocalCompact` "fixes" a phone by making the whole bar scroll sideways, which pushes the brand, the
+    cast button and the avatar off-screen at rest.
+- **2026-09-18 (sync) — our 225/226/227/R253 came back canonical + dev-reviewed; 12 new dev specs pulled
+  (all `✓ Built`, none touching a design mockup); a double numbering collision resolved by renumbering our
+  side.** `github_compare` against the last recorded tree found 170 files / 47 commits changed.
+  - **225/226/227/R253 are canonical, dev-reviewed against `main` `8873cea7`, `✓ Built`.** One real design
+    correction: there is **no client-side trim to 10** — a row's default `limit` is **30**, not the 10 the
+    design assumed — and the shipped row-order **editor is Kotlin** (`Workbench.kt`), not
+    `app/ravilo-builders.js`, which is not in the served bundle and stays our reference implementation.
+  - **⚠ Our unpushed 2026-09-18 drafts (228 Chromecast-publish/Cast-Connect, R254 Cast Connect on the TV)
+    collided with numbers the dev team had independently taken the same day for unrelated phases** — admin
+    228 is a Kotlin/Native GC-leak fix, Ravilo R254 restricts J to TV platforms. **Renumbered: 228 → 235**
+    (`specs/requirements/phase-235-chromecast-publish-cast-connect-and-listing.md`), **R254 → R260**
+    (`specs/ravilo/requirements/phase-R260-cast-connect-tv-app-as-receiver.md`). Both still `Planned`, not
+    dev-reviewed, **pending export** — `app/settings.html`'s eight-step/three-group Cast-Connect card is
+    local-only and unchanged by this sync (the canonical 226/227 build has no publish extension to conflict
+    with; ours is a superset). Next free: **236 / R261**.
+  - **12 new dev-authored specs, all `✓ Built` 2026-09-17, none needing a design surface:** admin **229**
+    (a stop no longer drops Continue Watching off Home for 5 minutes), **230** (the playstate refresher
+    fetched everything every 20s — 94 requests/user; now paced), **231** (nothing publishes before CI
+    passes — CI never ran a unit test; a release-only crash shipped twice), **232** (which ink a logo is
+    drawn in, judged once server-side; extended same evening to title clearlogos), **233** (a credits
+    marker starting inside the intro — one position rule), **234** (an edit reporting success over a
+    corrupted file); Ravilo **R254** (J is TV-only — collides with our own draft, see above), **R255** (the
+    backdrop scrim **shipped as one flat 0.75 opacity layer, not a gradient** — owner rejected the gradient
+    on the stue TV the same day), **R256** (a TV was rendering the phone's player — `LocalHandset`'s 600dp
+    threshold caught a 540dp-short-side TV), **R257** (a TV sweep: focus after selecting a taxonomy tile,
+    dark logos on dark cards, no hero tint, a heading under the app bar, swapped skip-arrow glyphs),
+    **R258** (a scrub preview surviving an episode switch — whose first fix attempt itself crashed the TV
+    by tripping ART's register-count verifier), **R259** (the rest of the sweep, incl. **walls going 6-up
+    on a TV**, superseding R243's mockup-derived 4/5-up). Plus two research reports on Kotlin/Native GC
+    pacing and MKV payload corruption.
+- **2026-09-18 (earlier, superseded above) — Chromecast to "fully working": 228 / R254 written, the card redrawn. Next unassigned:
+  229 / R255.** The owner walked Google's console past 226's five steps and hit the wall: **publishing is refused**
+  without Sender Details, Listing Details (Category · Countries · Title · one-line Description) and a 512² Icon — and
+  the household has **both kinds of TV**: a Chromecast with no Ravilo on it, and the stue TV running the Ravilo app,
+  which must open **Ravilo itself** when cast to (owner: *support both*; reverses the 2026-09-16 "Cast Connect not
+  drawn" note).
+  - **`app/settings.html` → Chromecast card:** `#cc-steps` is now **eight steps in three labelled groups**, each
+    header stating its consequence so the admin can see where to stop — *Register the receiver* (1–5; step 3 keeps
+    226's two rows and says Intent to Join URI / Website URL stay empty; step 5 is test devices, names the Cast
+    **software** serial under Settings › Device Preferences › Google Cast — not the printed one, changes on factory
+    reset — and ends *this is enough for a household*), *A TV that runs Ravilo opens Ravilo itself · Cast Connect*
+    (6 — the Android TV package name row, same `dev.jellystructure.ravilo`, plus the note that a **sideloaded**
+    Ravilo needs the TV as a test device and publishing does not change that), *Publish · optional* (7–8 — every
+    Listing field verbatim in Google's order: Category *TV & Movies* and Countries as *choose*, no Copy; Title,
+    Description and da/fo drafts with Copy; **Icon → Download**, which the mockup genuinely renders as a 512² PNG
+    from `ravilo-mark.svg` on `#000B25`). Countries are **not** derived from the Metadata tab's age-rating regions
+    (`DK · US · GB` is a rating cascade, not a residence). Registered state gained *Living room TV opens Ravilo itself
+    when cast to*.
+  - **228** (`phase-228-chromecast-publish-cast-connect-and-listing.md`, supersedes FR-226-1/-3): the eight steps,
+    `GET /cast/icon-512.png` as a build-time static in 218's bundle (works with `public_url` unset — fetched from the
+    admin's own session), the listing describes Ravilo not the library, description strings live in the admin's
+    table not `ravilo-i18n.js`. Open: the console's exact label for the Android TV field; square vs the asset pack's
+    pre-rounded `ic_launcher-512.png` (lean square); whether publish state affects the sideload check (lean no).
+  - **R254** (`phase-R254-cast-connect-tv-app-as-receiver.md`): `androidReceiverCompatible` on the sender; launch
+    intent + `CastReceiverContext` on the TV build; a load request is a **Ravilo play request by hand-off code, never
+    a Jellyfin URL**, so 180/R216/ACL/kids gating see a normal play; one remote drives both receivers; enrolment
+    reports `receiver_kind`; web-receiver fallback is silent, not an error; **zero new i18n keys**. Open: a cast-only
+    `MediaSessionCompat` vs R193; payload in `customData`; whether a Cast Connect play counts against 218's ceiling
+    (lean no — it is not a transcode).
+- **2026-09-17 — sync: everything from 2026-09-16 shipped in a day; per-row ORDER drawn, built into the
+  row editor, and spec'd as 225 / R253; the Chromecast registration card now names its fields (226) and the
+  public address became one field of its own (227). Next unassigned numbers: 228 / R254.**
+  - **227 — One public address, configured once** (supersedes FR-218-5's storage location + FR-218-4's *Your
+    receiver address* field). 218's dev review had put `public_url` inside the `chromecast` block; an
+    installation with Chromecast off had nowhere to put it. Now **one field in Settings → Connections**
+    (origin only, no trailing slash, no path), `public_url` at the root of `AppConfig`, a silent migration
+    from the nested key, and every external URL derived in one place — 226's *Receiver Application URL* row,
+    the reachability probe, `RaviloConfig.cast.receiver_url` — **never** from a request's `Host` header. The
+    Chromecast card's address field is deleted, so the string is rendered exactly once; unset is a
+    first-class state (*Set your public address above first*, no Copy, switch still operable). Built into
+    `app/settings.html`; 165's reach address should adopt the key when it is next opened.
+  - **226 — Chromecast registration: name the fields, give the values** (supersedes **FR-218-6 only**; 218 is
+    `✓ Built`). The card summarised the Google registration; the admin is reading *Google's* form, which asks for
+    two fields by name. Now five steps in `app/settings.html`: the console as a real link
+    (`cast.google.com/publish`) with the one-time US$5 fee, *Add New Application → Custom Receiver*, then one
+    copyable block per field carrying the console's **exact label** — **Receiver Application URL** = `public_url` +
+    `/cast/` (trailing slash, https only, the same string the card's address field shows) and **Package Name** =
+    `dev.jellystructure.ravilo` (a build constant from `ravilo-android/build.gradle.kts:15`; `.debug` noted) —
+    plus *everything else can stay as it is*, the Application ID appearing on save (the old hint said "after
+    step 1"), and test-device-or-publish with the serial-number hint. No config, route or behaviour change;
+    FR-218-7's honest verification untouched. Three questions left for dev in the spec (Google's labels may be
+    redrawn; whether Package Name is strictly required for a plain sender; what a Wasm sender with no package
+    name shows).
+  - **All six of yesterday's phases are `✓ Built`** (216 · 217 · 218 · R243 · R244 · R245 — implemented 2026-09-16;
+    canonical specs with dev-review addenda pulled over our drafts), and the dev team wrote and built **thirteen
+    more the same day**: admin 219–224, Ravilo R246–R252 (see `github.md`'s sync entry for the one-liners). Of
+    these only **221** (per-target webhook outcomes in Settings → Notifications) is an admin surface we do not
+    draw yet. `design/claude-console/` is finally gone upstream.
+  - **Repo-side edits to our mockups pulled back** (the mirror is two-way, and local was behind on all of them):
+    `app/segments.js`/`.css` (222/223's seek, drag, slide and snap built into the editor mockup dev-side),
+    `app/wf.css`, `app/app.css` + a **new `app/fonts/`** (the admin now self-hosts Sora, Space Grotesk and
+    JetBrains Mono), `app/library.html`, `ravilo/ravilo-app.js`, `ravilo/ravilo.css` (R249/R250).
+  - **New research report mirrored:** `specs/research-reports/stue-tv-test-sweep-2026-09-16.md` — an on-device
+    sweep; its F1 (a remembered subtitle never reaching the next episode, R241 notwithstanding — the `dan`
+    embedded vs `da` sidecar split is a perfect proxy for "the subtitle lives in a separate file") became R246.
+  - **Drawn: `app/Row Sorting - Directions.html`** (canvas; data + honest sorting in `row-sorting-directions.js`).
+    The brief: control how a single content row lines up — alphabetical, release year, date added, each way, or a
+    **custom order with a fallback** so the row keeps working as it grows; default stays what runs today. From the
+    code: `HomeFeedService` sorts every filter row `compareByDescending(recencyKey).thenBy(title)` and cuts at
+    `ROW_ITEM_LIMIT = 30`; `RowConfig` has no sort field; R187's See-all page has its own recency/title/year facet.
+    - **One new section in the row editor — Order:** `Date added · Title · Release year · Hand-picked first` plus a
+      direction button; the Matches panel renders in the chosen order and numbers the tiles; the count line says
+      where the 30 cap falls ("first 30 in this order, the rest on See all"). System rows get no Order section.
+    - **Three hand-pick directions** on one axis — what the control looks like: **1 Pinned list** (numbered list
+      + search, then-by row), **2 Arrange the row** (**recommended** — a horizontal strip that *is* the row; a
+      dashed **seam** separates hand-picks from the automatic remainder and its label is the fallback control;
+      drag across the seam to pin/release), **3 Number the grid** (click matches to number them; fastest, worst
+      for reordering).
+    - **States drawn:** a hand-pick that no longer matches (kept, marked, skipped on the TV — never deleted behind
+      your back); the same row inside a collection (pins outside the collection just don't appear — hand-picks
+      belong to the row, not the collection); the row-list summary line in words ("title A → Z", "5 hand-picked,
+      then newest first" — never asc/desc); and the TV row itself: **the viewer sees an order, never a reason** —
+      no pin glyph, no caption, **no new string in any language**; the server sorts, the TV renders.
+    - **⚠ Flagged for the owner:** the brief says the default is *added date (asc)* "just like now" — what runs now
+      is **newest first**. Every frame keeps today's behaviour; if oldest-first was meant it is one flip.
+    - **Ten decisions left open with a lean** (which UI → 2; default → newest first; key+direction not six options;
+      title sort via Jellyfin's `SortName`; stale pins kept-and-skipped; no pin ceiling but warn past 30; See all
+      opens in the row's order → the only client change, R253; pins resolve against the scoped set; GENRE rows get
+      Order too; config `sort {by, descending}` + ordered `pinned[]`, absent = today's order byte-for-byte).
+    - **Owner picked direction 2 the same day → BUILT into `app/ravilo-builders.js` / `.css` / `ravilo-config.html`:**
+      the Order section (four-way seg + direction button in words), the Matches panel numbered and re-ordered live,
+      the strip with the dashed seam (drag across to pin/release, drag within to reorder, click a dimmed tile to pin,
+      ✕ to release, a *Pin a title…* search), the *Then the rest by* fallback row, the stale-pin note, the past-30
+      note, the collection-scope hint, the toast on leaving hand-pick mode, and the row-list summary in words. Three
+      seeded rows in `ravilo-config.html` show the three summary shapes (`data-sort` / `data-pinned`).
+    - **Specs written 2026-09-17, both `Planned`, neither dev-reviewed:** **225**
+      (`phase-225-row-order-sort-and-hand-picked-prefix.md` — `RowSort? sort` + `List<String> pinned` on
+      `RowConfig`, absent = today's order byte-for-byte; one server resolver replacing seven hard-coded comparators;
+      title via Jellyfin's `SortName`; stale pins kept-and-skipped; pins scoped per collection; system rows exempt
+      and rejected; `Row` gains `sort_by`/`sort_descending`, never the pin list) and **R253**
+      (`phase-R253-see-all-opens-in-row-order.md` — See all's *initial* Sort = the row's key, `BrowseCard.sort_name`,
+      two new reverse Sort options as the only new strings, pins never reach the client, nothing changes on the row).
+    - **Owner answered the five open questions the same day (folded into both specs + the editor):** default is
+      **newest first**; See all never puts pins first; **genre rows don't exist** (every non-system row is a workbench
+      filter — `GENRE` is legacy); pins only from matches; **the row's shown count is per-row config**
+      (`RowConfig.limit`, 3–30, default **10** = what the viewer sees today) **and caps the hand-picks** — a *Show N
+      titles* stepper in the Order section, − disabled at the pin count, picking disabled at the ceiling. New open
+      question for dev: where the TV's trim to 10 lives, since the server sends 30.
+- **2026-09-16 — the picks are BUILT into the design files, and three specs are written:
+  R244 · 218 · R245.** *(All three `✓ Built` 2026-09-16 — see the entry above.)*
+  - **Built into `ravilo/Ravilo Mobile.html`** (with a new served stylesheet `ravilo/mobile/ravilo-mobile-player.css`,
+    linked *before* the inline `<style>` so the file's own frame rules still win, and every class prefixed
+    `mp-` / `rc-` so nothing can collide with the TV's `ravilo-player.css` — the 187 lesson applied up front):
+    - **The phone media player**, direction 2 · Thumb rail. Working: tap-to-toggle with a **3 000 ms**
+      auto-hide (held open by a sheet or a drag, suspended while locked), centred −10 s / ▶ / +30 s,
+      drag-to-scrub with a time bubble, **double-tap to seek with accumulating repeats**, lock with the
+      hold-to-unlock note, the R218 cold start behind its 400 ms debounce, the Skip-intro pill, the
+      next-up card, the R180/R195 **two-level picker as a bottom sheet** with **Subtitle size** S/M/L
+      applied live behind it, the season sheet, and the R237 failure sheet.
+    - **Casting**: a server-pushed cast button on the app bar (absent, never greyed), the device sheet on
+      its own layer (labelled as the *platform's* dialog, which we do not redesign), the connecting bar,
+      the **mini bar** that never dismisses while a cast runs, and the **full-screen remote** — direction
+      2 · Now playing — with play/pause, −10 s / +30 s, seek, *Next episode*, *Stop casting* and
+      **Subtitles &amp; audio opening the same sheet component the local player opens**, applied on the TV.
+      Casting from inside the player hands the position over and swaps straight to the remote.
+    - **Two states a mockup cannot otherwise reach** get a clearly-fenced **PREVIEW** control beneath the
+      phone (the precedent is `app/activity.html`'s stop-note toggle): **Failed start · R237**, and
+      **System portrait lock**, which is the only condition under which FR-R244-7's rotate button appears.
+      Also fixed on the way: a window-level `pointermove` from the remote's seek bar was hijacking drags on
+      the player's bar and sending the position to the end (zero-width rect ⇒ division by zero), and the
+      double-tap window now lives on the element so repeats reliably accumulate 30 → 60 → 90.
+  - **New file `ravilo/Ravilo Receiver.html`** — the Chromecast's own screen at 1920×1080: all **tenen
+    states** behind a mockup-only STATE picker, × three skins × three languages, with a captions-size
+    picker. Idle is the lit mark and one sentence; *ended* is literally the idle view, because that is the
+    decision.
+  - **`app/settings.html` → Connections gained the Chromecast card** in all three states behind a fenced
+    preview control, in wf.css's own idiom. Classes prefixed `cc-` — deliberately **not** `adv-*`, which
+    an ad blocker's filter list hides outright. Google is named on this card and nowhere else.
+  - **`ravilo/ravilo-i18n.js`** gained the player and casting strings in **en · da · fo** (13 player + 15
+    cast keys; `cast_applies_on` was the one string the build needed that the canvas tables missed).
+    Danish and Faroese are drafts and the shipped table wins wherever a string already exists.
+  - **Three specs written 2026-09-16, all `Planned`, none dev-reviewed.** Numbers verified against `main`
+    the same day (admin through 217, Ravilo through R243), and taken **contiguously from free** rather than
+    reserving the research report's proposed gaps — reserving numbers for phases nobody has written is how
+    186→187 and R230→R234 happened:
+    - **R244 — the player on a phone** (`phase-R244-phone-player-chrome.md`). The handset chrome gated on
+      `LocalHandset`, the rail's orientation rule, auto-hide, double-tap seek, brightness/volume swipes
+      (**brightness needs a new seam — there is no brightness API in the codebase**), pinch fit/fill,
+      portrait playback and the rotate-only-when-locked rule, lock, scrubbing without thumbnails, the
+      picker as **one component with two destinations**, the season sheet, safe areas, haptics, and the
+      Live TV player — the one screen with zero phone handling today.
+    - **218 — Chromecast: serve the receiver, and make registering it part of the product**
+      (`phase-218-chromecast-receiver-and-registration.md`). `/cast/` as one more static bundle, a
+      `chromecast` config block (off by default), **off means absent not greyed**, the three-state Settings
+      card, a reachability check the backend performs **by fetching its own `/cast/` through the public
+      URL**, the guided Google registration, the honest "only a real cast can confirm this" rule, the
+      session ceiling → phase 182's 503, receiver enrolment by hand-off code, and the
+      *Chromecast via Ravilo* Jellyfin identity that makes dashboard pause/seek free via phase 110.
+    - **R245 — casting: the receiver, the sender, and the remote in your hand**
+      (`phase-R245-cast-sender-receiver-and-remote.md`). The sender, the mini bar, the remote and its seven
+      states plus the subtitles sheet, **re-connect with its two outcomes — one of which is silence**, the
+      Cast SDK notification (landscape still, not poster), and the receiver's ten non-interactive screens.
+  - **Why Jellyfin's own Cast receiver is rejected as the product** (recorded in 218): it talks to Jellyfin
+    directly, so the playback tracker, phase 180 teardown, R216 QoE, `requireVisible()`, the per-user ACL,
+    kids gating and R183 pacing all see nothing — the same architecturally-unreachable class as the
+    Wholphin finding — and it needs the phone to hold a durable Jellyfin token, which 141/175 prevent.
+  - **Still open, and named in the specs rather than guessed:** the generation of the parents' stick (if
+    1st gen, whether a CAF v3 receiver launches at all must be tested first), the concurrent-encode number,
+    the brightness seam on the Wasm build, and the Danish/Faroese drafts.
+- **2026-09-16 (later) — the round-1 picks are in, and playback Speed is removed from the design.**
+  Both canvases and both print copies now read as **decisions, not options** — the nine-row panels are
+  retitled *Decided* and carry one answer each.
+  - **Chosen for the player:** **direction 2 · Thumb rail**, auto-hide **3 000 ms** (held open while a
+    sheet or a drag is live, suspended while locked), **follow the sensor** with a rotate button only when
+    the system has portrait locked, **both** brightness and volume swipes, **Subtitle size** as a row
+    inside the picker sheet, haptics on skip/lock/seek-release, the mobile-data quality row drawn next,
+    and phase 111's *Play on Stue TV* drawn beside the cast button in round 2.
+  - **Chosen for casting:** **remote 2 · Now playing**, the card in **Settings → Connections**, session
+    ceiling pre-filled **2**, the mini bar **never dismisses while casting**, *Next episode* **skips
+    straight to it**, casting from inside the local player **swaps straight to the remote**, receiver idle
+    stays **mark + one sentence**, and *ended* offers **two actions**.
+  - **⚠ Playback speed is gone from the design entirely** (owner decision). Not a rail item, not a sheet,
+    not a *More* entry, and **no new seam member** — which also deletes a Wasm actual and a future iOS
+    actual from the work. The rail is now **three** items (Subtitles · Next · Lock), the Speed sheet frame
+    and its state label are removed, the §A1 state list has no state 7, and `pl_speed` /
+    `pl_speed_normal` come off the string list — **thirteen** new player strings, not fifteen.
+  - **New frame, because the ask was explicit:** the casting remote with **Subtitles &amp; audio open**
+    (state 8). It is the *same* R180/R195 two-level picker the local player uses — one component, two
+    destinations — with the choice applied on the TV and one line saying so, and the same S/M/L
+    **Subtitle size** row. So pause/play, −10 s / +30 s, seek and subtitles are all one tap from the
+    remote, with no trip back into the app.
+  - Both `-print.html` copies were re-stamped against their sources' new versions.
+- **2026-09-16 — ROUND 1 DIRECTIONS for the phone: the mobile media player and casting to a Chromecast.
+  Drawn only — nothing built into the main mockups, no spec written or edited. Next unassigned numbers:
+  218 / R244** (the research report's proposed 216/R243 and 217 were taken the same day by the Discover
+  taxonomy pair and the Towo removal, so its whole ladder shifts by one — recorded on both canvases).
+  - **Three new repo documents pulled and mirrored** (all dated 2026-09-16, all repo-authored):
+    `specs/ravilo/design-brief-mobile-player-and-cast-2026-09-16.md` (the brief this round answers),
+    `specs/research-reports/ravilo-mobile-player-chromecast-ios-2026-09-16.md` (the investigation) and
+    `specs/research-reports/ios-build-host-macbook-setup-2026-09-16.md` (no design work in it).
+  - **The problem, in one line:** `PlayerScreen` renders the **TV chrome verbatim on a phone** — 48 dp
+    gutters, D-pad pills with focus rings, forced sensor-landscape, no gestures, no safe-area reads — and
+    `design/ravilo/Ravilo Mobile.html` had no player screen at all. Every phone bug fixed so far (R227,
+    R229, R195's missing touch dismissal) was found by someone using the phone, never by a pass.
+  - **`ravilo/Mobile Player - Directions.html`** (canvas + 8-page landscape print copy). Three directions
+    on one axis — **where the secondary controls live**: **1 Grounded** (the TV's bottom block, made
+    touchable; cheapest, worst reach), **2 Thumb rail** (**recommended** — transport centred on the
+    picture, four secondary controls as a right-edge column that folds into a row in portrait), **3
+    Sheet-first** (least chrome, but two taps to subtitles, which is the wrong thing to deepen in a
+    trilingual house). All **twelve states of brief §A1** drawn for direction 2, plus two the brief does
+    not list: the **Live TV player** (the one screen with *zero* phone handling in the code) and an
+    **iOS safe-area** set. Skins: Midnight + Noir. Fifteen new strings × en/da/fo tabled.
+  - **`ravilo/Casting - Directions.html`** (canvas + 8-page landscape print copy). The §B1 flow as nine
+    phone frames incl. **both re-connect outcomes**; two remote directions — **1 Cinema** (full-bleed
+    backdrop) vs **2 Now playing** (**recommended**: 16:9 art card on a solid ground, device chip as the
+    header *and* the control); the mini bar (§B3); the Cast notification (§B4); the receiver's **ten TV
+    screens** (§C) at 1920×1080; and the **Settings → Chromecast card** (§F) in `app/settings.html`'s
+    idiom in all three states. Fourteen new strings × en/da/fo.
+  - **The one architectural fact that shaped nearly every casting frame:** the receiver is **its own
+    Ravilo device**, so the TV keeps playing if the phone dies, the remote **rebuilds from the receiver**
+    on app start rather than from anything the phone remembered, and **re-connect has two outcomes — one
+    of which is silence** (finished or gone ⇒ no bar, no toast, no error; the viewer casts again with one
+    tap). The cast button is **server-pushed and absent, never greyed**.
+  - **Why *Now playing* over *Cinema*:** ink on a solid surface always clears 4.5:1 and a scrimmed
+    backdrop does not — and most of this library has no backdrop, so Cinema's best case is its rarest
+    case. Same trap as Focus Detail round 2's direction H. It also degrades to a wordmark tile with no
+    redraw, the rule R243's taxonomy walls already follow.
+  - **Rules held on every frame:** 46 px targets · 13 px type floor (so the skip buttons read **10 s** /
+    **30 s** as labels under the arrow, never an 11 px numeral inside it); R180's no-delivery-cues rule;
+    R218's waiting states and R237's failure copy **reused verbatim**; R180/R195's two-level picker as a
+    bottom sheet with **Subtitle size** as its only addition; safe-area insets on both platforms;
+    **Google named only on the admin card**, because the admin pays Google.
+  - **Deliberately not drawn:** background audio, PiP, a local mini-player, offline downloads, thumbnail
+    scrub previews (`trickplayUrl` is always null), a lock-screen card for *local* playback (R193 stands),
+    our own device picker (the dialog is the platform's), an on-screen cast volume slider, Cast Connect,
+    tablets — and **AirPlay, ever** (dropped by owner decision 2026-09-16).
+  - **The only edit to a built mockup, per the brief's instruction:** `ravilo/Ravilo Mobile.html` gained
+    an **iPhone 16 frame** — a device picker beneath the phone (mockup-only chrome, same class as the TV's
+    SKIN/FOCUS pickers, `?dev=ios` also works) swaps the Pixel 9 bezel for 393×852 with a Dynamic Island,
+    a home indicator and the taller iOS status bar, so **every existing screen renders in both**. A second
+    side-by-side frame would have meant forking the whole id-bound render layer; say the word if you want
+    that instead. Nothing else in that file or `mobile/ravilo-mobile.css` was touched.
+  - **New shared file:** `ravilo/mobile-directions.css` — device frames, phone player chrome, bottom
+    sheets, the remote, the mini bar and the receiver, shared by both canvases and both print copies.
+  - **Eighteen decisions are left open on purpose, as marked options with my lean** (nine per canvas):
+    the chrome direction, auto-hide delay, portrait playback, brightness/volume swipes, subtitle-size
+    placement, speed, haptics, the mobile-data row, "Play on Stue TV"; and the remote, the card's Settings
+    home, the pre-filled session ceiling, mini-bar dismissal, what *Next episode* does, casting from
+    inside the player, the receiver idle screen, what *ended* offers, and whether §D round 2 draws phase
+    111's affordance beside the cast button.
+  - **Still open and unanswerable here:** the **generation of the parents' Chromecast stick** (if 1st gen,
+    whether a CAF v3 receiver launches on it at all must be tested before the phase is committed to), the
+    concurrent-encode number to pre-fill, and the Danish/Faroese drafts for the new strings — the shipped
+    `ravilo-i18n.js` wins wherever a string already exists.
+  - **⚠ Found while checking the sync: `design/claude-console/` is still on `main`** (3 files). The Towo
+    removal deleted it locally on 2026-09-16 but that deletion did not reach the repo, while
+    `design/app/towo*.html` and `towo.css` did. **The next export must delete it.**
+  - **Brief §D — Home, Detail, Browse, Search, Discover, Live TV guide, login/profile, Settings
+    additions — is the second round and waits on the picks from this one.** *(Picks now in — see the
+    entry above.)*
+- **2026-09-15 (later) — Ravilo's Discover page gained three library-taxonomy tabs; both specs written
+  2026-09-16 as 216 / R243. All three specs (216, 217, R243) are now confirmed ON `main`.**
+  - **Discover is no longer only the request/calendar surface.** Its segment bar now reads
+    `Coming Soon · Request · Studios · Networks · Genres`; the three new tabs index the library the
+    viewer already has, so they are ungated (Coming Soon and Request stay config-gated) and the
+    Discover nav item no longer hides when neither Seerr nor Sonarr is configured.
+  - **The viewer-side of jellystructure's Metadata page**, same idea as `app/metadata.html`: a wall of
+    logo tiles, each with its item count. 4-up for studios/networks, 5-up for genres; Select opens the
+    **existing browse grid** seeded to that value (genres reuse R221's genre seed), so there is no third
+    kind of list. Counts are **scoped to the profile** — a kids profile counts a smaller library (no
+    rating ⇒ 18, so unrated titles are never counted for it) and says so under the header.
+  - **Studio vs network is not a new field:** `aboutFor()` already answers `network` + `isNetwork`
+    (series → broadcaster, film → studio), the same flag the media detail labels its fact from. A value
+    naming two (`RÚV · Dansk TV`) is counted under each, as the admin page counts them. New resolvers
+    `R.taxonomy` / `R.taxonomySummary` / `R.taxoValues` / `R.normAge` / `R.libraryFor` live in
+    `ravilo-data.js` so the TV wall, the phone wall and the filtered grid cannot state different numbers;
+    `ravilo-browse.js`'s local `normAge` now delegates to `R.normAge`.
+  - **Only a few brands ship a logo file** (TMDB has no network search — the admin page's own note), so a
+    tile without artwork sets the **name as a wordmark** and its caption carries only the count; a logo
+    tile carries the name beneath. There is deliberately **no "no logo" badge** on the viewer side.
+  - **A film's company was drawn from the broadcaster pool**, so the Studios wall would have been all
+    broadcasters: `aboutFor()` now resolves films from `A_STUDIOS` and series from `A_NETS` (both pools
+    widened). This changes the *Studio* fact on some film detail pages — one resolver, so it changes
+    everywhere at once.
+  - **Built:** `ravilo/ravilo-data.js`, `ravilo-app.js` (`discTabs`/`renderTaxonomy`/`taxoTile`),
+    `ravilo.css`, `ravilo-browse.js`, `ravilo-i18n.js` (10 strings × en/da/fo), `Ravilo Mobile.html`
+    (three phone tabs, 2-up wall, filtered grid). Two pre-existing defects fixed on the way: a long
+    browse crumb wrapped against the `h1`'s width, and a short browse result stretched its posters to
+    fill six columns (now capped at the 6-up column width).
+  - **Specs written 2026-09-16, both `Planned`, neither dev-reviewed.** Numbers verified against `main`
+    the same day (admin through 215, Ravilo through R242 — no collision, unlike 186→187 / R230→R234).
+    - **216 — the library indexed by studio, network and genre**
+      (`specs/requirements/phase-216-library-taxonomy-index.md`). One endpoint
+      `GET /api/tv/taxonomy?kind=…`, counted **server-side per (user, visibility scope)** because the
+      client holds one page of one feed and any count it derived would be a count of what it happens to
+      have loaded. The grid and the tile run **one seed**, so the acceptance test is arithmetic: every
+      tile's count equals its grid's result count. Zero-count values never ship; `logoUrl` is present only
+      where a logo was really captured (no placeholder, no sentinel, no on-demand fetch); values are
+      normalised before grouping so `HBO Nordic` and `HBO  nordic` can't both be counted. Cache keyed on
+      `(user, visibility scope)` and never narrower — R233 FR-R233-5's rule restated, same trap.
+    - **R243 — browse the library by studio, network and genre**
+      (`specs/ravilo/requirements/phase-R243-browse-by-studio-network-genre.md`). The three tabs, the
+      two tile variants and the caption rule (a wordmark tile does not repeat its name; **no "no logo"
+      badge, ever** — on the admin page a missing logo is a work item, on the viewer's TV it is not),
+      the scoped-profile header line, Select → the existing browse grid, tab-keeps-focus, ten strings ×
+      en/da/fo, and the phone half. Explicitly **no focus-detail behaviour here** (202/R240 is Home rows).
+  - **Open questions carried into the specs rather than guessed:** whether a household should be able to
+    switch the tabs off (they ship ungated); precomputed-at-scan vs per-request counts; whether the real
+    library has enough mis-filed film companies to need a repair sweep; count-descending vs A–Z; and the
+    phone's now seven-chip tab strip.
+- **2026-09-15 — full sync: our whole 2026-09-12→15 pass is now ON `main` (specs + mockups), and the
+  repo came back AHEAD of us on the design files.** Next unassigned numbers: **216 / R243**.
+  - **Everything we drew last session was exported and is now canonical.** 202 and R240 both have
+    `STATUS.md` rows and `✓ Built` code; `design/app/media.html`, `series.html`, `activity.html`,
+    `settings.html`, `segments.js` and `index.html` are byte-identical to our local copies, and the
+    187/R234 corrections (preset colours dropped, "Your photo") survived upstream intact.
+  - **Repo-side edits to OUR mockups pulled back in (the design mirror now flows both ways).**
+    `ravilo-focus.js`, `ravilo.css`, `ravilo-app.js`, `ravilo-data.js`, `Ravilo Mobile.html`,
+    `Ravilo TV.html`, `ravilo-player.js`, `ravilo-browse.js`, plus `app/wf.css` (+12 KB — the
+    mockup-only classes finally moved into the served stylesheet), `app/detail.css` and
+    `app/ravilo-config.html`. Local copies were behind on every one and have been overwritten.
+  - **J now ships ON.** R240's open question 1 — invariant 11's reflow cost — **closed 2026-09-13** by a
+    sweep-and-trace pass on the stue BRAVIA: 46 real settled row-opens, **2.8–3.2 % janky frames, 0
+    missed vsync**, the dwell absorbing rapid navigation at 0.35 % jank. `focusDetailRowOpen` default
+    flipped `false → true` (202 / R240 / `ravilo-focus.js` / `ravilo-config.html` all updated). Four J
+    bugs were found and fixed live on the way there, all one root cause: **measuring the panel to decide
+    where to scroll is circular** — a `LazyRow` never places an off-viewport item, so the panel was
+    unmeasurable exactly when it most needed scrolling in. The panel's width is now derived per tile
+    variant (482/627/591 dp), not a hardcoded 620.
+  - **The 600 ms ceiling we put on the focus delay is gone repo-side** — any non-negative int is valid
+    (0 and 10000 both), only junk falls back to 170. Our local `Ravilo TV.html` still clamped; pulled over.
+  - **R242 — J's own backdrop (new, `✓ Built` 2026-09-14, built into our mockups dev-side).** While a row
+    is open the focused title's backdrop fills the whole screen, scrimmed, fading in on open and out on
+    close; a lateral hop crossfades and never blanks. **No new payload** — `MediaCard.backdropUrl` already
+    rides every Home card, and the spec argues explicitly that 202's "no artwork" non-goal was about
+    `FocusDetailFacts`, not `MediaCard`. L is untouched, facts-only. `.jbg`/`.jbg-img`/`.jbg-scrim` +
+    `showBg`/`hideBg`/`bgLayer` + a `backdropFor` seam are in our files now.
+  - **13 new admin specs (203–215) and two Ravilo (R241, R242), all `✓ Built`.** 203–211 are backend-only
+    (cold health cache, reader-blocking library writes, Ravilo reads waiting on Jellyfin, collection
+    fan-out, three separate `prewarm_subtitles` defects, thirteen undocumented Jellyfin routes, sidecar
+    bulk-reorder no-op, `PlaystateCache` never fetching an episode id). **R241**: a remembered subtitle
+    didn't survive to the next episode when the language was tagged at a different ISO-639 granularity —
+    client-only.
+  - **⚠ FOUR SHIPPED ADMIN SURFACES WERE NOT IN OUR MOCKUPS — all four DRAWN 2026-09-15.** All were
+    design-authored with the owner repo-side on **2026-09-15**, built the same day, and their spec files
+    still carry a stale `Status: Planned` header — **`STATUS.md` says `✓ Built` and it wins**:
+    - **212 — Jellyfin settings advisor** (Settings → Libraries). Read-only, suggest-only, per library,
+      and **silent where the live value already matches** — two of the owner's own three optimisations
+      were already correct, so a surface reciting best practice would have been 2/3 noise on day one.
+      Every finding carries Jellyfin's **exact on-screen label** pulled from that server's own string
+      table, not the API property name. Headline finding is the **I/O scheduler**: background ffmpeg has
+      run under `ionice -c3` since Phase 109 to "protect API/playback", but both media devices run
+      `mq-deadline`, **which ignores ionice entirely** — the mitigation has never once taken effect.
+    - **215 — memory budget calculator** (Settings → Advanced). One number in (RAM you'll allow),
+      copy-pasteable changes out across Jellyfin settings, both `docker-compose.yml` files and host
+      sysctls. Rules worth drawing to: **show the arithmetic**; **page cache is neither free nor spare
+      memory** and must never be offered as capacity; a tmpfs cap is always paired with "Delete segments";
+      and it **refuses to emit anything** rather than emit an over-commit with a warning above it.
+    - **214 — stopping background work.** "Pause" → **"Stop scan"**, un-ghosted, on Activity *and*
+      Dashboard; a new **"Stop this step"** beside Activity's step chips; and when a cancel returns
+      `subtitlesStillRunning`, one exact sentence saying what could not be stopped (shown nowhere when
+      zero). No confirmation dialog, no in-app restart button — both deliberate.
+    - **213 — one shared job-queue pool.** `behavior.segment_workers` is **replaced** by
+      `behavior.job_workers` (1–3, default 2) driving three named FIFO queues; `/api/health` gained a
+      `job_queues` block. The Settings control and any Activity surfacing of the lanes need redrawing.
+  - **All four drawn, 2026-09-15 (pending export):**
+    - **214** — `app/activity.html`: the pagebar's `Pause`+`Stop` pair became one un-ghosted **Stop
+      scan**; a new **Steps** card shows the run's nine steps with the executing one marked and a
+      **Stop this step** beside them (the two `enqueues` steps are annotated as such, since 213 turned
+      them into lanes); FR-214-3's exact sentence renders on either stop and **not at all at zero** — a
+      fenced preview control switches the count so the zero case stays visible in the design.
+      `app/index.html` gained the Dashboard's matching **Stop scan**.
+    - **213** — `app/activity.html`'s Jobs & workers view: the old "Media worker · concurrency 1" card
+      is now a **Job workers** card (shared pool, `job_workers = 2`, capped at 3) over a **Queues** card
+      with all three lanes, their occupancy dots and queued counts — the `subtitles` lane showing its
+      playback deferral and last failure reason, and a line saying why its cost is invisible to the
+      Capacity gates. `app/settings.html` gained the **Job workers** control beside Scan workers (with
+      the "not the same thing as scan workers" hint) and `job_workers = 2` in the live TOML.
+    - **212** — `app/settings.html`: a **Jellyfin settings advisor** card pinned above Library mapping
+      carrying the server-wide findings, plus per-library findings inside each library's own mapping
+      card. The silence rule is drawn as much as the findings: nothing renders for the transcode path or
+      config/cache isolation, and **4K Movies renders an explicit "no findings"** because a skipped
+      library has no `local_path`, so storage is unknown and unknown suppresses rather than guesses.
+      Findings carry Jellyfin's exact on-screen labels, the nav path, the command, the trade-off, and
+      the "does not survive a reboot" warning; the I/O-scheduler finding leads. A fenced preview toggle
+      shows the **Couldn't reach Jellyfin** state, which replaces the list rather than emptying it.
+    - **215** — `app/settings.html` → Advanced: a **Memory budget** card. One number in (presets
+      16/32/64/96 plus a field), the arithmetic shown line by line — with the safety reserve naming
+      itself an assumption — and copy-pasteable output for both compose files, the tmpfs cap paired
+      inseparably with "Delete segments", and the sysctl. Over-budget produces **the refusal and nothing
+      else**. Page cache is never offered as capacity, and the neighbour case is answered by memory kind.
+  - **The incident behind 212/213/214/215, worth keeping in one place:** a viewer 30 minutes into *The
+    Godfather* (19.3 Mbps HEVC DV, inside every ceiling) stalled every ~10 s — **10 concurrent Jellyfin
+    ffmpeg subtitle extractions**, each linearly reading a 20–80 GB remux, pushed the disk to 80.8 %
+    utilisation. The owner then found **there was no UI to cancel it**, restarted the entire backend, and
+    playback was *still* broken. 213 bounds the work, 214 is how you stop it, 212/215 are the standing
+    advisory surfaces — and 212 is explicitly **not** a fix for the incident.
+  - **\u26a0 One repo-side CSS defect came in with the pull, fixed locally with a fallback and owed back on
+    export.** `ravilo.css`'s `.prof .pic.add` uses `var(--line-2)` with no fallback and **`--line-2` is
+    never declared**, so the shorthand is invalid and the \"Add user\" profile tile loses its border
+    entirely. The sibling rule `.fpop .opt .box` already carries a `rgba(255,255,255,.22)` fallback \u2014 we
+    matched it. Same class of thing as 187's `.usr-av`/`.usr-cap`: **declare the token upstream or keep
+    the fallback**, but don't lose it on the next export.
+  - **⚠ A finding worth sending back to the dev team: `adv-*` CSS class names get eaten by ad
+    blockers.** Our first draft of 212 used `.adv-label`, and it rendered **invisible** — a cosmetic
+    filter list matches that class name and hides it with a user-origin `!important`, which beats even
+    an inline `style="display:inline"`. Every sibling (`.adv-kind`, `.adv-now`, `.adv-body`) rendered
+    fine, so it presents as one mysteriously blank element rather than an obviously broken page. Ours
+    are now `jfa-*`. **The shipped Kotlin frontend's `advisorFindingHtml` (212 §8, reused by 215) needs
+    the same check** — any operator running uBlock/AdGuard would silently lose those labels.
+  - **Counters re-derived:** `STATUS.md` = **404** rows (**204** admin + **200** Ravilo), no duplicates;
+    **194** documents under `specs/`; highest **215 / R242**. (The unused numbers — admin 59–69, 77 and
+    Ravilo R88–R132 — are all historical, below where our mirror begins.) Deck counters updated.
+- **2026-09-12 (later) — full sync: 19 new dev specs mirrored, our 202 / R240 keep their numbers, and
+  187 / R234 came back BUILT.** Superseded above — next unassigned numbers were **203 / R241**.
+  - **Nothing to renumber, for once.** `main` tops out at **201** and **R239** — no `phase-202-*`, no
+    `phase-R240-*`, and no `STATUS.md` row for either — so the focus-detail pair stands as written.
+    (Contrast R196→R208, 179→180, and the 2026-09-04 pair 186→187 / R230→R234.)
+  - **Our profile-photo pair shipped.** **187** (backend, built 2026-09-05: both write routes, the
+    change-keyed avatar URL, admin read-only photo) and **R234** (built 2026-09-05, **live-verified on
+    stue TV** — and a real pre-existing Settings D-pad focus-chain bug found and fixed in the same pass)
+    are both `✓ Built`. The canonical specs (32 KB / 23 KB against our 12 KB drafts) replaced our local
+    copies. **FR-187-1's live probe closed every open question:** all three Jellyfin operations exist,
+    **none at the assumed path**, and Jellyfin's own OpenAPI is **wrong about the image body** (raw binary
+    → 500; base64-with-MIME → 204). Wrong password answers **403**, not 401.
+  - **⚠ Two places where our mockups now LEAD the spec and must change before either ships:**
+    (1) **preset colours are dropped** (owner decision on 187 OQ3, 2026-09-05 — the deterministic initials
+    gradient stands), so `ravilo/ravilo-data.js`'s `AV_PRESETS`/`colorFor`/`setColor` and the Your profile
+    sheet in `ravilo/Ravilo Mobile.html` still draw a control the spec has deleted (R234 FR-R234-3: three
+    ways in — Choose · Take · Remove — plus the web-only drop target, and `photo_presets` comes out of the
+    string table); (2) the Settings row labelled **"Photo and name"** promises renaming, which 187 puts out
+    of scope — relabel it or wire the name. Also recorded dev-side: `.usr-av`/`.has-photo`/`.av-img` (187)
+    and `.usr-cap` (185) only ever existed in our mockup's inline `<style>` and had never reached a served
+    stylesheet; both are now in `wf.css` and fenced by `check-mobile-css.sh`.
+  - **19 new dev-authored specs pulled** — admin **188–201**, Ravilo **R235–R239** — every one `✓ Built`
+    except **R239** (`⚠ Partial`). Highlights: **188** a capped scan overwrote each series' episode list
+    with its sample (135 of 184 shows stuck at 8 episodes); **194** one stale pooled connection marked a
+    good Jellyfin token dead for 10 minutes and blocked playback household-wide (`runCatching{…}` +
+    `getOrDefault(false)` collapsing a 401, a 5xx and a thrown connect error into one verdict); **195** the
+    failed-ingest retry set re-fired itself into saturation — 1 994 background gate saturations in a day
+    moved the backlog by three items; **196** `last_checked` was stamped by *every* write, so Sonarr's own
+    "this show is airing" enrichment reset the clock that would have made it be examined; **197** CI was
+    red for four days across 18 commits and two published releases over a screenshot racing a scan;
+    **199** the JS-tag preserve guard read the wrong predecessor, so a slug rename silently dropped every
+    operator tag (355 of 516 items carry one, two of which gate kids visibility); **200** 83 % of movies
+    had a subtitle file on disk that the catalog could not see while the player picker showed it — the
+    product contradicting itself; **201** `mkvpropedit` moves `Tracks` past the first `Cluster` and
+    ExoPlayer then buffers forever — **164 production files unplayable in Ravilo, playable in Jellyfin**
+    (and *not* repaired yet: FR-201-5's route exists, deliberately un-run against production data).
+    Ravilo: **R235** never auto-select a signs-only subtitle (7.1 % of subtitled units affected), **R236**
+    Down from the Home hero could stop working entirely (the bridge now targets the row, not lazy item 0 —
+    the code R240 is written against), **R237** 15 s of spinner retrying a deterministic 409, **R238** the
+    collapsed language row captioned the viewer's selection with the badges of the exact track R235 exists
+    to avoid, **R239** the flag strip said "no subtitles" when it meant "no flag for those subtitles".
+  - **Our design backlog out of this sync — nine items, ALL DRAWN 2026-09-12** (200, 201, 192, 193, 196,
+    189/190, 191 admin-side; R237, R239 Ravilo-side. The one thing still open is checking EN *"Couldn't
+    reach the server"* and DA *"Indlæser…"* against the shipped string tables):
+    - **201 FR-201-10/11/12** — an **MKV track layout** health card on `app/activity.html` (broken count +
+      affected titles, absent entirely at zero) and a **Fix now** banner on `app/media.html` /
+      `app/series.html`, both reading the same sweep, the banner scoped to that title's own paths.
+    - **200 FR-200-5** — a **SUBTITLES** flag strip beside Audio in the `media.html`/`series.html` pagebar
+      and a read-only **Sidecar subtitles** group in Tracks & subtitles (no drag, order or default — a
+      sidecar has no container flag to set). Already shipped dev-side; our mockups don't have it.
+    - **192 FR-192-5/6** — the artwork picker must show a logo **as a logo**: `16/9` + `object-fit:cover`
+      crops a 5:1 wordmark to its middle third (simulated: `"DF TH"`, `"RA DOS T"`), so it needs the real
+      aspect, a transparency backing for dark ink, and the new nothing-to-show copy. Plus a Dashboard
+      **artwork repair** button for FR-192-2's corrupt-file sweep.
+    - **193 FR-193-4** — the Jellyfin-behind banner's copy: elapsed time instead of *"usually clears
+      itself within a few seconds"* (a claim no mechanism supported), **Sync Jellyfin** offered inline,
+      and no banner at all while a scan is running.
+    - **196 FR-196-3/5** — `last_checked` is now **`last_examined_at`**; admin labels reading "last
+      checked" should follow, and a skipped item needs to be explicable rather than `504 item(s) not due`.
+    - **189 FR-189-2/5 + 190 FR-190-3** — segment editor: the ± stepper becomes a **1 s** coarse step with
+      tenths in the readout (40 ms against whole-second timecodes meant 25 clicks before anything moved), a
+      locked marker **toasts** instead of doing nothing, and `#seg-vid-tag2` can no longer hard-code
+      *"direct play · no transcode"* — audio may now be transcoded to AAC while video stays copy (46.4 % of
+      first audio tracks are eac3/ac3/dts/truehd, which no mainstream browser decodes: the editor had a
+      picture of the sound and not the sound).
+    - **191 FR-191-5** — the metadata-language mismatch card + inline re-pull button on the media detail.
+    - **R239 FR-R239-7** — the honest counting rules (`+N` counts every language, mapped or not; a wholly
+      unmapped group still renders its label) are explicitly asked of our mockups too. Note FR-R239-3's
+      12 missing flag assets are **not** built on either side.
+    - **R237 FR-R237-2/5** — per-cause failed-start copy (nine strings × en/da/fo, naming no product,
+      protocol or status code) and **one** *"Still trying…"* line added to R218's cold-start treatment at
+      ~5 s. Our player mockup and `ravilo/Player Loading and Buffering - Directions.html` still show only
+      R218's three moments plus R220's frame E.
+    Everything else (188, 194, 195, 197, 198, 199, R235, R236, R238) is backend- or Compose-only.
+  - **Counters re-derived from the fresh mirror:** `STATUS.md` is **387** rows (**190** admin + **197**
+    Ravilo), up from 359 — and **every** number 130–201 and R180–R239 now has exactly one row, no gaps and
+    no duplicates, so the repo-side STATUS gap flagged on 2026-09-04 (R227–R232, 186) is **closed**.
+    **179** documents under `specs/` (177 on `main` + our two unpushed drafts). Highest **202 / R240**,
+    next free **203 / R241**. The presentation deck's counters were updated to match.
+- **2026-09-12 — the reveal delay is now household config, and both halves are finally spec'd:
+  admin **202** + Ravilo **R240**.** Next unassigned numbers: **203 / R241**.
+  - **The 170 ms dwell became a setting.** Jellystructure → Preferences → **Focus detail** has a third
+    control, *Wait before it appears* (0–600 ms, step 10, default 170), and it governs **whichever
+    direction is on** — J's row does not open and L's line does not appear until the D-pad has been still
+    that long. Two rules the build has to keep: at **0** the reveal is not deferred by a zero-length timer
+    at all, and **while the delay runs, nothing is stated** — L hides rather than leaving the previous
+    title's facts up, since the one thing this surface must never do is describe a title that is no longer
+    focused (the 88px band stays reserved, so the page doesn't move while the text clears).
+  - Also: the admin card **no longer reloads the live preview** on a change (`ravilo-focus.js` applies
+    config live, and reloading threw away the focused tile the change is meant to be judged on), and the
+    TV mockup's FOCUS picker gained a small `ms` field plus `?dwell=`.
+  - **Specs written 2026-09-12, both `Planned`, neither dev-reviewed.** Numbers verified against `main`
+    the same day: the dev team has taken admin **188–201** and Ravilo **R235–R239** since our last sync,
+    so the pair is **202 / R240** — no collision. (The mirror was ~14 specs behind at that moment; it was
+    re-pulled in full later the same day — see the sync entry above.)
+    - **202 — one resolved mode, one delay, one payload**
+      (`specs/requirements/phase-202-focus-detail-config-and-payload.md`). Three `RaviloConfig` fields
+      (`focusDetailLine` / `focusDetailRowOpen` / `focusDetailDelayMs`), per Jellyfin user per
+      constitution §3. **The one place the spec deliberately overrules the mockup: the server resolves
+      the mode** — the payload carries `focusDetail: "none"|"line"|"rowOpen"`, not the two booleans, so no
+      client re-implements supersession; the booleans stay admin-side only so the card can say *"On ·
+      superseded"*. Delay clamped 0–600 server-side, junk reads back as 170. Payload carries **facts, not
+      sentences** (the client formats against its own en/da/fo table — render-never-compute governs
+      decisions, not translation), ~0.9 KB/title, no image URL.
+    - **R240 — what a highlighted title says before you open it**
+      (`specs/ravilo/requirements/phase-R240-focus-detail-on-home-rows.md`). L + J, the inertness rules,
+      and **J's four motion requirements written as requirements rather than notes** (animate from an
+      explicit width, reserve the opened band and never lower it, one vertical target computed after the
+      growth, collapse-and-catch-up cancel) — because a build that implements the layout without them
+      reproduces exactly the "too jumpy" / "jumping in" versions the owner rejected. Cites **R236**
+      FR-R236-5 explicitly: J inserts and removes a `LazyRow` child on every settled focus move, which is
+      the lazy-item-`FocusRequester` topology five phases have now been spent on, so nothing J draws may
+      carry a requester or be reachable by `focusRestorer()`.
+  - **Open questions carried into the specs rather than guessed:** the reflow measurement on the stue
+    BRAVIA (still why J ships off — the delay and the held band remove the *repeated* cost, so what is
+    left to measure is a single open); whether `focusRestorer()` survives a row whose children change
+    size (R236's own open question 2, now with a sibling appearing in the row); whether reduced motion
+    should fall back to L rather than to an instant open; the feed-vs-per-title payload path (J's dwell
+    makes the per-focus fetch less bad than it was); and whether `rowOpen` should key on device rather
+    than user, since J's cost is a property of the BRAVIA, not of the viewer.
+- **2026-09-11 — focus detail is now switchable and correct inside `ravilo/Ravilo TV.html`.**
+  L and J were already wired into the main TV mockup on 2026-09-06; what was missing was being able
+  to *see* them there. Three changes, no new design decisions:
+  - **The setting is live, not read-once.** `ravilo-focus.js` returns an `apply(cfg)` and listens for
+    both the cross-tab `storage` event on `js-ravilo-focusdetail` and a same-page `ravilo:focuscfg`
+    event, so flipping **Jellystructure → Preferences → Focus detail** in `app/ravilo-config.html`
+    updates an open TV immediately and re-renders the focused tile through the normal focus path.
+    Turning L off now also removes the reserved 88px and the `fd-line` hooks (the padding is what
+    makes L not an overlay, so it stays while L is *configured*, not merely while something is focused).
+  - **A FOCUS picker in the TV preview chrome** (Off / Line · L / Row · J, plus an `ms` field for the
+    delay), plus `?focus=` and `?dwell=`.
+    It does not shadow the admin switch — it writes the same key, so flipping either is the same act.
+    Mockup affordance, same class of thing as the SKIN picker; the admin card stays product-only.
+  - **J's reveal is fixed, in the app's focus code where it belongs.** `focusEl()` now renders the
+    focus detail *first*, then computes **one** vertical target: `max(rowTop − 150, row foot + 40 −
+    screen)`. So the grown row is measured before the page is parked, there is no second scroll racing
+    the first (R232's hazard), and the page never scrolls back up. `onFocus()` reports which direction
+    rendered (`'row'`/`'line'`/`null`) — that is the only reason the rendering module returns anything.
+  - **Same day, J's motion calmed (owner: "too jumpy when navigating").** Three rules, no change to
+    what J looks like once it is open: (1) **a 170 ms dwell** before the row opens — holding Right now
+    sweeps a plain row instead of opening and collapsing one per keypress (round 1's direction E as a
+    rule rather than a look); (2) **the row band holds its opened height** for as long as focus stays
+    in that row (`min-height` on the `.track`, released on leaving), so lateral moves move nothing
+    below them, and the row grows exactly once; (3) **a collapse is now animated and followed on the
+    same clock** — the earlier fix suppressed the tile's width tween and snapped the track instantly,
+    which removed the lurch but was itself the "jumping in" the owner then reported; the panel now
+    narrows out while the scroll tween subtracts the width it gives back. The reveal
+    now runs from `openRow()` via an `o.reveal(node)` callback, i.e. after the dwell and after the
+    growth; `focusEl()` still folds the same target in for a row that is already holding its height.
+  - **Same day, the opening was made to animate rather than appear — and then actually animate.**
+    The panel opens by widening (`jp-open` 0→820 on `.jpanel`, `overflow:hidden`, text in a fixed-width
+    `.jp-body` so nothing reflows mid-tween) and **closes by narrowing** (`jp-close`, the node leaving
+    the DOM only once it has closed), so the posters to its right slide aside and slide home instead of
+    teleporting either way. Four things had to be true before any of that read as motion:
+    (1) **the tile needed an explicit `flex-basis` to interpolate from** — the base rule was `flex:none`
+    (basis `auto`), and `auto`→`300px` is a *discrete* jump no duration can smooth, which is why the
+    poster kept snapping into its big card however long the tween was; the base is now `flex:0 0 210px`
+    and both `width` and `flex-basis` are transitioned.
+    (2) **the row band reserves the OPENED height up front and is never lowered** — `holdOpened()`
+    measures the row with the tile forced to its final width (transition suppressed, restored in the
+    same tick), then a monotonic `max` ramp over ~300 ms picks up any later growth, backstopped by a
+    timer for throttled tabs. Sampling alone was either too early (mid-tween, so the band pumps later)
+    or too late (so it drops back first); the earlier sync-then-settle pair did both.
+    (3) **the track's horizontal catch-up runs on the same clock as the CSS** — native smooth scrolling
+    has its own duration and finished at a different moment than the width tween, which is what made
+    growth and slide read as two movements; it is now a rAF tween on the same cubic easing, and
+    `.track`'s own `scroll-behavior:smooth` is suspended for its duration or it fights it.
+    (4) **the collapse's reclaimed width is subtracted from that scroll target** (`FD.hShift`) when the
+    closing panel is left of the newly focused tile — the collapse and the catch-up then cancel, which
+    is what removes the ~900px lurch, without freezing either animation as the previous attempt did.
+    Both open animations carry **no fill mode**, which is a style choice, not a safety net: a paused
+    animation clock parks an element on its *first* keyframe regardless of fill, so a frozen timeline
+    shows the panel at width 0. **This preview iframe does pause the animation clock and throttle
+    timers** (`document.visibilityState: "hidden"`, `document.timeline.currentTime: 0`), so J's motion
+    cannot be judged or timed here at all — call `getAnimations().forEach(a => a.finish())` before
+    measuring anything about the open. Probed after this pass: the row band traces a flat 546px across
+    a lateral move, and no stray panel survives a collapse.
+  - **Still unmeasured, still why J ships off:** the reflow cost of growing a row on every focus move
+    on the stue BRAVIA (invariant 11). Nothing here changes that, and the switch default is unchanged.
+    Preview caveat unchanged: `.screen-scroll` scrolls smoothly and smooth scrolling is inert in the
+    preview iframe, so vertical reveal cannot be judged by eye here — probe the computed target instead.
+- **2026-09-06 — focus detail resolved: L ships on, J ships off behind a switch. Both built.
+  No spec yet (owner: mockups first). Next unassigned numbers still 188 / R235.**
+  - **Round 2 rejected the popover.** `ravilo/Focus Detail - Round 2 Directions.html` (canvas) drew six
+    non-overlay directions on the axis *where the information lives*: **G** a permanent info band
+    replacing the hero carousel, **K** the tile's own caption expands, **H** full-bleed cinema takeover,
+    **I** a fixed detail pane beside a narrower row list, **J** the row opens, **L** an 88px status line at
+    the foot. A comparison table scored all six on overlay / synopsis / rows-stay-put / needs-artwork.
+    An 8-page landscape print copy exists at `ravilo/Focus Detail - Round 2 Directions-print.html`
+    (doc-page, stamped with its source version — regenerate it from a fresh read if the canvas changes).
+  - **Owner picked L as the default and J as the next-gen option**, J disabled by default behind a
+    Jellystructure switch. My recommendation had been G; recorded here because the owner's reasoning is
+    better on one axis — L is the only direction that cannot regress anything, and J is the only one that
+    feels good under the thumb, so shipping the floor and gating the ceiling avoids betting on the band.
+  - **Round 1's A/B/C/D are retired**, not just switched off: the plate, the hero mirror, the tile-unfold
+    and the ambience wash are gone from `ravilo-focus.js` and `ravilo.css`, and `fd_mirror_tag` is out of
+    `ravilo-i18n.js`. **That also took artwork back out of the payload** — B and D needed a backdrop per
+    focused title, so `fieldsFor()` no longer carries `backdrop`/`logo`/`grad`/`tagline` and the admin
+    estimate drops from ~1.1 KB to **~0.9 KB per title, no image fetch**. `synFor`/`artFor` in
+    `ravilo-data.js` stay — the detail hero and the phone still use them.
+  - **Built:** `ravilo/ravilo-focus.js` (rewritten — two booleans, `{line, rowOpen}`, round-1 keys ignored
+    on read), `ravilo.css` (`.fdline` + `.jopen`/`.jpanel`, shared `.fd-*` primitives, Noir override for
+    the line and the primary genre chip), `ravilo-app.js` (`fieldsFor` trimmed, hero-mirror code deleted),
+    `ravilo-i18n.js`, and `app/ravilo-config.html` — **Preferences → Focus detail** now has two real
+    product switches and *no* mockup-only switches; when the row-opens switch is on, the line's state
+    reads “On · superseded” rather than silently disagreeing with the screen.
+  - **J supersedes L when both are on** — the open row already states every fact the line does.
+  - **Three things a spec must say, and one preview caveat:**
+    (1) whether the text rides a fattened `/api/tv/home` or a per-title fetch on focus — still the dev
+    team's call, flagged in the admin card rather than decided;
+    (2) **J changes the row's height and its tiles' positions on every focus move** — the reflow
+    invariant 11 exists to protect, unmeasured on the stue BRAVIA, which is exactly why it ships off;
+    (3) **J needs the reveal rule re-run after the row grows** — the open tile is ~160px taller than what
+    `focusEl()` measured, so on the first content row (the one deliberately parked under the hero) it runs
+    past the bottom of the screen. Deliberately *not* patched inside the rendering module: that is
+    navigation behaviour, it belongs in the app's focus code, and it has to be sequenced after the growth
+    rather than raced against it (R232's hazard).
+    Preview caveat: `.screen-scroll` uses `scroll-behavior: smooth`, and smooth scrolling is inert in this
+    preview iframe — so vertical row reveal looks broken here for *every* row, feature or not. Set
+    `scrollBehavior='auto'` before asserting on scroll position when probing.
+  - **The mockup's own preview chrome had to yield.** `#chrome` (D-pad legend + skin picker) is
+    `position:fixed; bottom:22px`, outside `#stage`, and it covered the line's right half — hiding
+    where-you-left-off and the whole genre list. `ravilo-focus.js` now also puts `.fd-line` on `<body>`
+    so `body.fd-line #chrome { bottom: 122px }` can lift it; mockup affordance yields to product surface.
+    Worth remembering for any future bottom-anchored treatment: a DOM probe of the line's own rect says
+    nothing about what is painted on top of it.
+- **2026-09-05 (later) — round 2: five NON-overlay directions drawn. Owner rejected the popover.**
+  Design doc: `ravilo/Focus Detail - Round 2 Directions.html` (canvas). Same fields, no floating panel —
+  the axis is *where the information lives*: **G** a permanent 380px info band replacing the hero carousel
+  (recommended), **K** the focused tile's own caption expands in place (quietest, but clamps the synopsis
+  to 3 short lines at 340px), **H** full-bleed cinema takeover with the row dimmed to a foot strip (best
+  looking, hard dependency on artwork, slowest browse), **I** a fixed 772px detail pane beside a narrower
+  row list (most information, but a redesign of Home — touches rail, browse, search), **L** an 88px status
+  line at the foot (facts only, no synopsis; the honest floor). A comparison table scores all six
+  (incl. J, the row-opens variant) on overlay / synopsis / rows-stay-put / needs-artwork.
+  - **The plate (A) is now OFF by default** in `ravilo-focus.js` and `app/ravilo-config.html` — still
+    switchable under Preferences → Focus detail so the built version can be compared. All directions read
+    the same `fieldsFor()` output, so choosing one is a rendering change, not a data one.
+  - **Awaiting the owner's pick before building.** My recommendation on the file: **G**, with **K** as the
+    fallback if the band reads too heavy; **H** only if real artwork is coming; **I** only as a deliberate
+    browse redesign.
+- **2026-09-05 — Ravilo focus detail: 6 directions drawn, owner picked 5, all built into the mockups.
+  No spec yet (owner: mockups first). Next unassigned numbers still 188 / R235.**
+  - Design doc: `ravilo/Focus Detail - Directions.html` (canvas) — **A** info plate, **B** hero mirrors the
+    focused tile, **C** the tile unfolds, **D** ambience wash, **E** the dwell ladder (a rule, not a look),
+    **F** an About section on the detail page. Recorded as rejected: **trailer autoplay on focus** (a
+    transcode session per focus move — straight into 183's and R231's territory) and putting R222's
+    slow-to-start note at row level. Drawing the plate at true scale is what surfaced its placement rule:
+    below the tile, else beside it — on the 6-up browse grid a 380px plate fits neither above nor below.
+  - **Owner answers:** build A+B+C+D+F; **Home rows only**; **one on/off switch**; reveal **immediately**;
+    artwork strip **held** (a focusable image that does nothing on Select is a dead end); payload question
+    **left open as the dev team's call**; plate fields left to us — shipped with description, all genres,
+    runtime, age rating, IMDb, audio/subtitle flags and where-you-left-off; no studio/director/cast (those
+    belong in About).
+  - **Built:** new `ravilo/ravilo-focus.js` (the whole treatment; `fieldsFor()` in `ravilo-app.js` resolves
+    one object per item so the module only renders — render-never-compute, the 185/R222 discipline),
+    `ravilo.css` (plate/unfold/ambience/About + Noir overrides: half art, no wash, no chip tint per R221),
+    `ravilo-app.js` (`heroMirror`/`heroRestore`, About section, hooks in `focusEl`/`go`),
+    `ravilo-data.js` (`aboutFor`, plus **`synFor`/`artFor`** — row items are built by `T()` and carried no
+    description or artwork at all, so A/B/D initially rendered their fallback on every title; the two
+    resolvers follow the `genresFor`/`imdbFor` pattern, answering first from the copy the file already
+    states for hero and Discover entries, then from a per-title table. 96 of 100 row items now carry a
+    synopsis; **Glasberget, Kaffepause and Tang & Tang are deliberately left without one** so the plate's
+    "no description yet" state is the rare honest case it was drawn as. Only Big Buck Bunny has real
+    artwork in this project, so `artFor` resolves its backdrop/logo and every fictional title falls back
+    to its gradient — the same stand-in the tiles already use),
+    `ravilo-i18n.js` (16 strings × en/da/fo), `Ravilo TV.html`,
+    `Ravilo Mobile.html` (About on the phone detail), and `app/ravilo-config.html` — the single product
+    switch under **Preferences → Focus detail**, plus a clearly-fenced set of *mockup-only* switches
+    (A-vs-C, hero mirror, ambience) so the directions stay comparable in the live preview.
+  - **Two answers we can't give ourselves, and the spec must say so:** whether the plate's text rides a
+    fattened `/api/tv/home` or a per-title fetch on focus (R210–R213 spent four phases on cold start), and
+    whether **C** survives a focus sweep on the stue BRAVIA — a width animation on the focused child of a
+    lazy row is exactly the workload invariant 11 exists for. **C is built but not recommended**; it also
+    overruns the next row's heading, being taller than the row.
+  - **R233's FR-R233-7 was applied earlier the same day** (scope segmented controls out of
+    `app/ravilo-builders.js`, both row descriptions unconditional) — the mockup is now *ahead* of the code
+    on a Planned, un-dev-reviewed phase. Worth saying out loud when R233 goes to review.
+- **2026-09-04 sync — 5 specs pulled, and our two unpushed drafts renumbered: they are now 187 / R234.**
+  Next unassigned numbers: **188 / R235.**
+  - **Two collisions, both resolved by renumbering ours** (the dev team pushed first): repo **186** is
+    `phase-186-request-intent-lifecycle-cleanup.md` (a request must be able to end — the Discover
+    "In progress" rail can never drop a row; two titles had to be removed by hand across Radarr, Seerr
+    and the live SQLite DB; Planned), and repo **R230** is
+    `phase-R230-fully-disable-skip-intro-credits.md` (Skip Credits' **Off** has been inert since R182 —
+    the resolved setting was read into client state and never consulted, so the credits card interrupted
+    every title regardless; Implemented 2026-09-03, `PlayerScreen.kt` only). Our profile-photo pair
+    became **187** and **R234**; FR ids inside both specs and the R230 comments in
+    `app/ravilo-users.html`, `ravilo/ravilo-app.js` and `ravilo/Ravilo Mobile.html` were renumbered with
+    them, and each spec carries a renumbering note. Same shape as R196 → R208 and 179 → 180.
+  - **R231 is now mirrored** under `specs/` — the item flagged as unmirrored yesterday. Its spec adds one
+    line worth keeping for the talk: this is the same failure shape as R202 — *shipped code not matching
+    its own documented invariant* — caught by re-reading the owning phase's spec against the code.
+  - **R232 — series detail & player D-pad polish** (✓ Built 2026-09-04, live-tested on stue TV against
+    Fjollerne, not dev-reviewed). Player Right past the last transport control teleported focus to the
+    top-bar Back button; Down from the hero landed the season row clipped under the overlay AppBar; and
+    the first Down press only *looked* like it focused a season pill — the scroll and the focus request
+    ran as concurrent coroutines and R84's async playstate overlay ate the 30-frame retry budget, so real
+    focus stayed on the hero with no visual cue. Now sequenced (await the scroll, then request focus).
+    **No mockup change** — focus behaviour, not layout.
+  - **R233 — a system row shows what is available where it is shown** (Planned, design-authored
+    2026-09-04 with the owner). Standing inside Thriller / Gyser, Continue Watching led with *Two and a
+    Half Uncles*, *Fjollerne* and *Lort Sker* while Newly Added directly below it was correctly filtered —
+    two system rows on one page disagreeing about what page they were on. Partially reverses R202 and
+    R219 §5: both system rows are always scoped to the surface they render on, in **both** row-list
+    modes, and the per-channel `scope` field is retired (no live channel sets it). Guard requirement
+    **FR-R233-5** keeps the canonical list library-wide and cached per `(user, visibility scope)` —
+    filtering is a view, never a re-derivation, and `channelId` must never enter the cache key.
+    **⚠ Our one outstanding design item:** FR-R233-7 asks for the `scope` segmented controls to come out
+    of `app/ravilo-builders.js` (`:364` new-channel template, `:534`, `:540`, `:736`) with the two row
+    descriptions made unconditional ("In-progress titles from this collection" / "Newest titles in this
+    collection"). **Not applied** — R233 is Planned and not dev-reviewed; apply on acceptance, then run
+    `scripts/check-mobile-css.sh` and `scripts/check-css-scoping.sh`.
+  - **Presentation counters re-derived from the fresh mirror:** 359 phases unchanged (STATUS.md now has
+    exactly 359 rows — 174 admin + 185 Ravilo), documents 154 → **158**, highest numbers 187 / R234,
+    next free 188 / R235.
+  - **Repo-side STATUS gap widened (code-owned, not ours):** no rows for R227–R232 or admin 186 though
+    their spec files read Implemented / ✓ Built; R233 does have one. `scripts/check-phases.sh` will flag
+    it — mention it to the dev team rather than editing the mirror.
+- **2026-09-03 (latest) — R231 (Continue Watching cache poisoning) fixed dev-side and folded into the
+  presentation. Next unassigned numbers: 187 / R232.**
+  - **R231 — `specs/ravilo/requirements/phase-R231-continue-watching-timeout-cache-poisoning.md`**, spec
+    written first per convention, committed `e8a11120`. DanskTV showed no Continue Watching row; config,
+    server response (15 items on re-check, every device) and `ChannelScreen.kt` rendering were all fine —
+    which is what pointed at the cache. **R219's spec already stated the invariant** ("on a Jellyfin
+    timeout the row is omitted entirely rather than shipped half-built, and the SWR cache serves the
+    previous good value"); the shipped code did only the first half. `buildCanonicalContinueList` returned
+    `emptyList()` when its 6 s `CONTINUE_TIMEOUT_MS` was hit and that empty list went unconditionally into
+    the 5-minute SWR cache shared by Home, every channel's Continue row and See-all — one slow round trip
+    blanked Continue Watching everywhere for up to 5 minutes. Fix: return type is now
+    `List<ContinueEntry>?` — `null` = build failed (timeout, or the pre-existing blank-Jellyfin-URL config
+    gap) and is **never** written to the cache; the caller falls back to the prior cached value even past
+    its TTL, since stale-but-real beats wrongly-empty. Empty still means "genuinely nothing to show" and
+    caches normally. Only a cold cache shows empty, and it self-heals on the next request.
+    **Verification is partial and flagged as such:** `compileKotlinLinuxX64` clean; `linuxX64Test`
+    inconclusive from scratch (sandbox killed `--rerun-tasks` twice, unrelated Android reconfiguration),
+    UP-TO-DATE on a non-forced run; **not device-tested**, no deploy granted.
+  - **No mockup change** — backend-only, and the client already renders any non-empty row it receives.
+  - **Presentation updated:** new slide **15a** "The spec said it. The code did half of it." sits right
+    after the R202→R219 chain, making the case study a two-parter — part one is a comment that lied, part
+    two is a spec that was right and a shipped implementation that did half of it, found by re-reading the
+    spec rather than the code. Counters bumped: 358 → **359** phases, 153 → **154** documents (cover,
+    household and spec-before-code slides).
+  - **The R231 spec file is now mirrored** (pulled in the 2026-09-04 sync).
+- **2026-09-03 (later) — profile photo + password change designed and built into the mockups; no spec
+  yet.** Owner picks: photo lives on a **"Your profile" screen** off the avatar menu (phone/web only),
+  password lives in **Settings → Account** (every platform, own password only, current + new + repeat).
+  Photo sources: gallery, camera, preset colours, remove; drag-and-drop on web only (`pointer:fine`).
+  **TV renders a photo but offers nothing about changing one** — no copy, no entry point, per R216's
+  no-settings invariant. Avatars stay circles; the profile-grid *picker card* keeps its rounded square
+  and just fills with the photo. Admin gets the photo read-only in each user row.
+  - **One stored fact, one representation** (the 185/R222 discipline): the photo is written only by
+    phone/web and read by every surface — `ravilo-data.js`'s new `avatars` helper (`photoFor`/`setPhoto`/
+    `clearPhoto`/`colorFor`/`avatarFace`) is the single painter, so the TV appbar, profile menu, profile
+    grid, Settings row and `app/ravilo-users.html` can't crop or fall back differently. Rendered as an
+    `<img class="av-img">` filling its circle rather than a `background-image`, so one `object-fit` rule
+    governs every size.
+  - **Built in:** `ravilo/ravilo-data.js`, `ravilo/ravilo.css`, `ravilo/ravilo-app.js` (Account section +
+    a password panel reusing R175's on-screen keyboard, with Tab/Backspace/printable-key support for a
+    real keyboard), `ravilo/ravilo-i18n.js` (18 strings × en/da/fo), `ravilo/Ravilo Mobile.html` (the
+    phone **mockup** had no profile menu or Settings screen at all — both built: bottom sheet, Your
+    profile, Settings → Account → change password, 46px+ targets, 13px type floor; note the shipped app
+    *does* have both, per R227/R229 — the gap was in our design files, not the product),
+    `app/ravilo-users.html`.
+  - **Both specs written 2026-09-03, `Planned`, neither dev-reviewed — renumbered 2026-09-04 to **187 +
+    R234** (were 186 + R230, both taken by the dev team first). Next unassigned numbers: 188 / R235.**
+    - **187 — let a viewer change their own photo and their own password**
+      (`specs/requirements/phase-187-account-photo-and-password.md`). **The research finding that reshaped
+      both specs: the photo's READ path already ships in full and nobody had noticed.** R65 wired it —
+      `TvRoutes.kt:302` sets `avatarUrl = RaviloImageUrl.avatar(jellyfinUserId)` on login, `:328` per
+      profile in the picker; `RaviloArtworkService.kt:126` proxies
+      `GET /Users/{id}/Images/Primary?fillHeight=160`; `AppBar.kt:299` renders it via `RemoteImage`,
+      initials as fallback. **A photo set in Jellyfin's own web UI already appears on the TV and phone
+      today.** So the storage question is already answered by R65's own choice — Jellyfin's user Primary
+      image, no new jellystructure store (FR-187-5) — and this phase is only the two write paths
+      (`POST`/`DELETE /api/tv/account/photo`, `POST /api/tv/account/password`), both session-scoped so no
+      route shape can name another user's account. Two teeth: **FR-187-1** probes all three Jellyfin
+      endpoints against 10.11.11 *before* any code, per phase 163's 405 lesson (the image body shape is
+      the real risk — base64-with-header vs multipart changes R234's contract too); **FR-187-7** is
+      R214's exact bug pre-empted — `RaviloImageUrl.avatar()` has no version component and the proxy
+      caches to disk, so a replaced photo would serve stale bytes. Also: rate-limit via the existing
+      `LoginRateLimiter` (FR-187-4 — same credential-proxy exposure Phase 167 made internet-facing),
+      server-side re-encode + centre-crop to square (FR-187-6, which is *why* there's no crop UI), and
+      admin photo strictly read-only (FR-187-9 — an operator clearing someone's photo is moderation, which
+      needs its own thinking about notice and recourse).
+    - **R234 — your photo, and your password, without leaving Ravilo**
+      (`specs/ravilo/requirements/phase-R234-profile-photo-and-password.md`). Your profile is
+      **phone/web only, gated on platform not screen size** (a phone in landscape is still a phone; a
+      10-foot UI is still a TV) — FR-R234-2 keeps the TV silent, no row and no "change this on your
+      phone" hint, since a TV screen explaining where a setting lives is still a TV screen talking about
+      settings. Settings → **Account** is every platform, because a password isn't a preference — which is
+      exactly why the photo and the password ended up on different screens. TV reuses R175's keyboard
+      verbatim incl. its physical-keyboard courtesy; phone/web use native inputs so password managers
+      work. A wrong current password clears only that field and keeps the two new ones. Rejected copy
+      recorded: **"Your Jellyfin password"** (live-corrected mid-pass — the viewer doesn't need to know
+      what the server is called), "Upload avatar", and the TV hint line.
+  - **Blocked / open, and honestly flagged rather than guessed:** (1) do all three Jellyfin endpoints
+    exist and behave on **10.11.11** — unprobed; (2) **does changing a password invalidate existing
+    tokens** — the single answer that most changes R234's flow, and with Phase 141's per-`(device, user)`
+    identity one household change may sign out three TVs; (3) **where would a preset colour live** — the
+    mockup's colour row is new stored state with no home in Jellyfin's user record, so it's either
+    dropped, given a jellystructure column, or stored as a generated image (probably wrong); (4) whether
+    `JellyfinPolicy` carries a "may not change own password" flag worth honouring. Name editing stays out
+    of scope — the row is labelled "Photo and name" but only the photo is wired, so relabel or wire both
+    before shipping.
+- **2026-09-03 sync — both decode-ceiling specs shipped, on-device confirmation resolved the copy
+  question, 181/182/183 all built with real measurements, 7 new Ravilo bug/deploy specs landed.**
+  Next unassigned numbers: **186 / R230** *(true at the time; both were taken by the dev team — as of
+  2026-09-04 the next free numbers are 188 / R235)*.
+  - **185 + R222 are ✓ Built (2026-09-02).** One real deviation: the decoder ceiling persists as **two**
+    columns (`decode_max_bitrate_hevc`/`_h264`, one shared timestamp) rather than one — found
+    live-necessary the same session, since R183/R216 force an AVC transcode target, so a single column
+    would silently record the AVC ceiling while an HEVC file's note needs the HEVC one. The client-side
+    start timer (`PlayerScreen`/`PlayerStore`, commonMain) also landed 2026-09-02, so `basis: "measured"`
+    is reachable in practice, not just implemented-but-dead. **Open question 1 is answered, on-device,
+    for good:** R216 has been live on the stue TV since **2026-08-30** — 105 `playback_qoe` rows carry its
+    fields, heavy 2026-09-01 sessions show `direct_play=0` (transcode fallback firing) and
+    `dropped_frames=0` throughout. The *Till Daybreak* stutter that started this whole thread was a
+    **Wholphin** session, architecturally unreachable by any of this. Through Ravilo the file re-encodes
+    and starts slowly — it does not stutter — so `slow_lead`/`slow_tail_measured`/`slow_tail_expected` are
+    the right copy, translation unblocked. `basis: "measured"` is still unreached on any real device
+    today: it needs 3 completed starts of the same file on the same device, and there's been no device
+    access since the timer shipped.
+  - **181 (library convergence) — ✓ Built 2026-09-02.** FR-181-1/1a/2/4/5 all shipped (id set-difference
+    sweep against Jellyfin's full item list, a reverse-diff writing to History instead of auto-deleting,
+    activity-based freshness overriding premiere-year bucketing, the dead `JellyfinLibraryListener`
+    deleted outright, a narrow persistent dirty-set). FR-181-3 (per-series count reconciliation)
+    deliberately **not built** — FR-181-1's sweep already runs at the fastest cadence a count check would,
+    making a second mechanism catch a strict subset for no benefit.
+  - **182 (scan isolation) — ✓ Built, §A+§B, live-measured 2026-09-02** (dev-restart authorized).
+    `/api/tv/series/{id}` held steady under a concurrent scan; **`/api/tv/home` degraded ~120× at p50**
+    — root cause is `HomeFeedService`'s own cache invalidating on almost every request because
+    `libraryVersion` (correctly, per 182's own fix) bumps on every single item write during a scan. **New
+    candidate follow-up, not fixed here:** a home-feed cache keyed on a coarser signal than per-item
+    `libraryVersion`.
+  - **183 (outbound pacing) — ✓ Built, all FRs, incl. the DB-level rate-limit marking and the Outbound
+    pacing card, built 2026-09-02.** Live test against the exact reported series (2777, 505 episodes)
+    never hit a single 429. **New candidate follow-up, not fixed here:** `POST /api/media/{id}/sync` on
+    that same series reliably self-saturates the 4-permit **interactive** `ProcessGate` reserve (not the
+    background one) via a completely unbounded ffprobe fan-out in `syncSeriesEpisodes` — 183 bounded the
+    TMDB fetch in that same loop but never the ffprobe call beside it. Household playback was unaffected
+    throughout both attempts.
+  - **7 new Ravilo specs, none touching a design mockup** (all Compose-only or CI/deploy): **R223**
+    (season-picker focus + rapid-Up scroll-stranding, ✓ Built, deployed to both TVs, not re-verified
+    on-device), **R224** (merges Ravilo TV + phone into one universal Play Store listing/APK, ✓ Built),
+    **R225** (login-screen server indicator + `DEFAULT_SERVER_URL` env var for `ravilo-web` only,
+    Planned), **R226** (drops the http/https toggle on server setup, infers `https://` unless typed
+    otherwise, Planned), **R227** (system Back now closes the profile menu on mobile — it wasn't reachable
+    at all before, ✓ Built), **R228** (a channel that resolves to zero heroes/rows for this specific
+    viewer no longer renders as a tile anywhere, ✓ Built), **R229** (Settings screen adopts `LocalCompact`
+    padding + a weighted toggle-row pill, fixing single-character-per-line wrapping on phone, ✓ Built).
+    Also: **R213**'s Baseline Profile generation completed 2026-09-02 (root cause of the earlier blocker
+    was a stale `androidx.benchmark` pin, fixed by a version bump); **R217** stays superseded/closed by
+    **R219**; R216's last open question (on-device verification) is answered by 185's finding above.
+  - **No design/mockup work is outstanding from this sync** — every new spec is backend/Compose-only.
+- **2026-08-31 sync — both our 2026-08-28 specs shipped, and 5 new dev-authored specs landed.**
+  Next unassigned numbers: **184 / R221**.
+  - **R218 (player loading & buffering) is `Implemented`** — built the day it was spec'd, Android/Compose
+    only, **on-device verified 2026-08-29** (stue TV, Offboarding S2E4 resume). **Phase 180 (session
+    teardown) is `✓ Done`** — the Jellyfin stop call was confirmed against 10.11.11's OpenAPI before any
+    code was written (the open question we flagged), and verified live against a real forced 4K/DV/HDR
+    NVENC transcode.
+  - **R219 — Continue Watching, one canonical list** (`Implemented`, design-authored with the owner
+    2026-08-30, supersedes R217). One merged list per (user, visibility scope); Home rows, channel rows
+    and See-all are filtered/capped **views** over it. Every Jellyfin fetch pages to `TotalRecordCount` —
+    a `Limit` may never act as a cap (that one error caused four separate bugs); the card and the order
+    are decided by **timestamp, never by which endpoint an entry came from**; See-all mirrors its row's
+    own configured scope, not the page it was opened from. Row cap 30 → **20**. **No UI change** — nothing
+    for us to draw.
+  - **R220 — black picture, perfect audio, after Home/TV-standby** (`✓ Built 2026-08-31`, not dev-reviewed,
+    not reproduced on-device). Frame-count detector plus a 4-rung recovery ladder (re-attach surface →
+    seek flush → recreate `SurfaceView` → re-prepare item). **Touches our R218 design:** none of R218's
+    three moments fire here (the player reports playing, not buffering, first frame already rendered), and
+    FR-R220-5 says a recovery outliving the 400 ms debounce should show R218's **existing STALL**
+    presentation — no new copy, no new visual language. The build note admits that signal is **not wired**
+    (its open question 7), so a viewer can still sit on a frozen black frame for ~4.5 s with no chrome
+    change. **Drawn here 2026-08-31** as frame **E** on
+    `ravilo/Player Loading and Buffering - Directions.html` — R218's stall treatment verbatim, new trigger.
+  - **181 — converge on Jellyfin's library, don't predict it** (FR-181-2 built; the rest `Planned`).
+    Fjollerne S11E07 sat in Jellyfin for 15 h unnoticed: premiere-year freshness bucketing files a
+    currently-airing 2005 show as monthly archive (9 of 16 provably-airing series were starved — now fixed
+    via `sonarrNextAiringDate`), nothing ever compares our item set against Jellyfin's, and the
+    Jellyfin-based realtime ingest has delivered **nothing, ever** since phase 165 (the WS listener
+    subscribes to no message type and `LibraryChanged` is never sent — dead code reporting itself
+    healthy). Remaining: an **id set-difference** sweep as the backstop (`DateCreated` is the file's mtime
+    and 50% of files carry junk mtimes, so no timestamp watermark is sound), per-series count
+    reconciliation, and a persistent dirty-set.
+  - **182 — a scan must never stop the server** (`✓ Built 2026-08-31`, not live-verified). The whole
+    4-thread scan pool wedged uncancellably for 21 minutes while `/api/tv/**` starved behind one global
+    64-permit outbound semaphore — indistinguishable from the server being down. Shipped: locks/atomics
+    on the scan write path, per-item deadlines, a cancel that actually cancels, and
+    **INTERACTIVE/BACKGROUND partitioning** of `OutboundHttp` (16 reserved) and `ProcessGate` (4 reserved)
+    with bounded acquires → 503 + `Retry-After`. **Design item: FR-182-9's Activity-page banner is not
+    built** — `GET /api/health` now reports both gates per class, but there is no surface. Needs a
+    plain-language banner on `app/activity.html`: "Ravilo requests are queuing behind background work".
+  - **183 — pace outbound requests by rate, not concurrency** (`✓ Built 2026-08-31`, not live-measured).
+    A 300-episode series fanned out ~1 500–2 000 TMDB requests from a single worker slot, retrying on a
+    flat jitter-free 3 s that made every 429'd batch re-converge; an exhausted retry then wrote null
+    title/overview and stamped the item as freshly checked. Shipped: a TMDB token bucket with AIMD on 429,
+    `Retry-After` + jittered exponential backoff, an episode fan-out gate derived from `scan_workers`, and
+    skipping details/credits we already hold. FR-183-6's per-run aggregate is **drawn here 2026-08-31** — an **Outbound pacing** card (rate now,
+    the limiter's current ceiling, refusals in the last minute, per host) plus FR-183-5's run-summary line
+    "12 fields not fetched: TMDB rate limit", on `app/activity.html`.
+  - **This sync's design items, resolved 2026-08-31:** the **Outbound pacing** card and frame **E** are
+    drawn; the **Capacity** card stays as read-only reporting; FR-182-9's banner was **dropped** (see
+    above). Everything else is backend/platform. Nothing exported to the repo yet.
+- **2026-09-02 — research pulled, design pass done, no spec yet.** New repo report
+  `specs/research-reports/ravilo-per-device-decode-ceiling-warning-2026-09-02.md`: *Till Daybreak (2025)*, an
+  82 Mbps 4K DV/HDR10+ REMUX, stuttered on stue TV (decoder rated 60 Mbps) and was abandoned — third
+  stutter on that TV in three weeks. The owner wants a per-device "this might not play well" warning on the
+  Ravilo detail page. The report finds the measuring half already shipped (**177 + R216**) but three
+  blockers: the failing session was **Wholphin** (third-party client, architecturally unreachable), nothing
+  persists the ceiling at rest, and the ask reverses **R216**'s "no user-visible setting, ever" plus **R180
+  FR-RV-ASP1-2**. Design: `ravilo/Decode Ceiling Warning - Directions.html` — **A + B′ recommended**
+  (persist the ceiling and show it on `app/ravilo-users.html` as "picture it can take"; one plain line above
+  Play in Ravilo). **Reframe that drives it:** with 177/R216 live the file doesn't stutter, it re-encodes and
+  takes ~20 s to start, so the copy is an expectation not a warning — *"Slow to start on Stue TV. Give it a
+  moment after you press play."* Badge inputs are the recorded ceiling × the file's bitrate on 177's own 0.9
+  predicate and nothing else (QoE/link never feed it, so it can't flicker); per **file** so it rides episode
+  rows not the series hero, one badge per Phase 149 combined row; Noir drops the amber tint per R221's
+  precedent; no action, not focusable, not dismissible. **C (confirm gate) and D (real numbers) drawn and
+  rejected.** Blocked on three answers before a spec: where the file bitrate comes from (`Track` has no
+  bitrate field), whether other OEM decoders report honest ceilings, and whether the R216 build is actually
+  installed on the stue TV. Prospective **185** (admin) / **R222** (Ravilo).
+  **Owner decision same day — the note is backend-computed and history-informed, and B′ is now built into
+  the mockups.** The client gets one resolved `playbackNote { device, basis, seconds }` per file per device
+  on the detail payload and renders a sentence or nothing — no thresholds, bitrates or ceilings cross into
+  Ravilo (R180's rule and the constitution's *server-pushed state only*). Split responsibility keeps the
+  flicker out: **the ceiling decides whether the note shows** (deterministic, 177's own 0.9 predicate),
+  **that device's own history decides how sure** — `basis:"measured"` yields *"Slow to start on Stue TV.
+  The last few times it took about 20 seconds."* (median over that device's recent starts of that file,
+  5 s steps, re-derived only on session completion), `basis:"expected"` yields *"…Give it a moment after
+  you press play."* History may **never** toggle the note on or off, only choose the sentence. Built into
+  `ravilo-data.js` (`playbackNoteFor`), `ravilo-app.js` (`playNoteHTML`, above `.dactions`), `ravilo.css`
+  (`.dplaynote` + Noir ink/weight override), `ravilo-i18n.js` (3 strings × en/da/fo) and
+  `Ravilo Mobile.html`. **Admin half (A) drawn 2026-09-02** — `app/ravilo-users.html` shows the persisted
+  ceiling as a **second line inside each device row** ("picture it can take · up to 60 Mbps · measured
+  yesterday"), not a sixth column, because that table is shared with the Admin web sessions and Recently
+  watched sections; two honest unknown states (`not measured yet` = no Ravilo session since the update,
+  `not measured` = browser never reports), and `.usr-cap` styles. Device names now agree across both
+  mockups (Bedroom TV · Chromecast HD is the constrained one, Pixel 8 the phone).
+  **Owner answers 2026-09-02:** start-timing history does **not** exist and will be built backend-side;
+  the file bitrate should come from jellystructure and will be added if `Track` lacks it — so both are in
+  scope for **185** rather than blockers. **Both specs written 2026-09-02, `Planned`, neither dev-reviewed
+  — next unassigned numbers are now 186 / R223.**
+  - **185 — remember what each device can take, and how long it actually took**
+    (`specs/requirements/phase-185-device-decode-ceiling-and-start-history.md`). Three small gaps that
+    together make the sentence impossible: the R216 ceiling is computed inside one `PlaybackInfo` call and
+    thrown away, `Track` has no video bitrate, and nothing times a start. Adds `decode_max_bitrate` /
+    `decode_codec` / `decode_measured_at` on `ravilo_device`, `video_bitrate` on `Track` (from Jellyfin's
+    `MediaStreams[].BitRate` via Phase 175's unified ingest, backfilled on next scan), an append-only
+    `playback_start_sample` written **only on session completion**, and the resolved `playbackNote` on the
+    detail payload. **FR-185-6: one predicate, two consumers** — the note fires on exactly 177's
+    0.9 × ceiling comparison. **FR-185-7: history chooses the sentence, never toggles the note** —
+    `measured` needs **≥3** samples, `seconds` is their median rounded to 5 s, re-derived only on session
+    completion so two page views can't disagree. Two permanent unknown states, and `NULL` ceiling ⇒ no
+    note ever. Admin half is FR-185-8.
+  - **R222 — one plain line: "slow to start on this TV"**
+    (`specs/ravilo/requirements/phase-R222-slow-to-start-note.md`). Render-never-compute; absent field ⇒
+    nothing renders, no reserved space, no layout shift. Three strings (`slow_lead`,
+    `slow_tail_measured`, `slow_tail_expected`) × en/da/fo, with the three rejected copy candidates
+    recorded so they aren't re-proposed. Above `.dactions`, never the meta row; Play must not move;
+    episode rows not the series hero; not focusable, no action, no dismissal; Noir drops the tint.
+  - **Still open (both specs):** whether the R216 build is actually installed on the living-room TV — if
+    it isn't, the transcode fallback isn't live there either, the file genuinely stutters, and "slow to
+    start" is a false sentence. Also: whether other OEM decoders report honest ceilings, per-codec vs
+    per-device keying of the ceiling, and retention N for start samples.
+- **2026-09-01 — two design-authored specs written, both `Planned`, neither dev-reviewed.**
+  Next unassigned numbers: **185 / R222**.
+  - **184 — choose the TMDB metadata language for a single title** (`specs/requirements/phase-184-choose-metadata-language.md`).
+    열배's Korean first audio track makes the resolver fetch Korean metadata — correct by the rules,
+    wrong for this house. Adds a nullable `metadataLanguage` consulted **above** the resolver (the
+    cascade is not modified and its trace stays on screen, dimmed, after a choice), a picker offering
+    only what TMDB actually holds for the title with per-language coverage (title · overview · poster
+    count), artwork following the same pick via `include_image_language=<chosen>,null`, and a lock with
+    the Phase 151/174 preserve shape so no scan can undo it. **Deliberately no new empty-field warnings
+    or states** (owner decision — a first draft flagged missing fields and it invented a state the rest
+    of the page doesn't have). Per title only: no rules, no per-library default, no global preference,
+    no Ravilo work. Design: `app/Metadata Language Override - Directions.html` (Direction A chosen; B and
+    C recorded as rejected) — **built into `app/media.html` + `app/detail.css` 2026-09-01**.
+  - **R221 — every genre on a media detail** (`specs/ravilo/requirements/phase-R221-all-genres-media-detail.md`).
+    The detail hero shows one genre; the library stores a set. Genres get their own labelled row built
+    from the AUDIO/SUBTITLES flag-strip pattern, in TMDB's order with the primary one accent-tinted,
+    capped at four visible plus a focusable `+N`, **never wrapping on TV**. Each chip opens the R187
+    browse page seeded to that genre — the same contract R190 gave cast faces — with Back restoring
+    focus to the chip. Row sits above the synopsis so Play doesn't move. Design:
+    `ravilo/Media Detail Genres - Directions.html` (Direction B chosen with C's primacy tint; A and C
+    rejected) — **built into the Ravilo mockups 2026-09-01** (`ravilo.css`, `ravilo-app.js`,
+    `ravilo-browse.js`, `ravilo-i18n.js`, `Ravilo Mobile.html`, plus a canonical per-title genre list in
+    `ravilo-data.js`). Noir's amber accent did read as a warning, so its primary chip is marked by weight
+    and ink rather than tint. **Biggest open question: whether the Ravilo payload carries the full genre list or
+    flattens it — that decides whether this is a UI phase or a backend one.**
+- **2026-08-27 sync — 15 new dev-authored specs (admin 169–176, Ravilo R208–R214), all shipped, plus three
+  amended specs that change *our* mockups.** Next unassigned numbers: **177 / R215**. Counts now:
+  158 admin rows + 164 Ravilo rows = **322 numbered phases**; 46 + 53 phase files + 14 research reports;
+  328 Kotlin files; 10 Gradle modules (new: `ravilo-android-benchmark`, `ravilo-web`, `web-static-server`).
+  - **Phase 163 (our segment editor) is `✓ Done` — and its §E "publish to Jellyfin" was dropped entirely.**
+    The 2026-08-13 dev review probed this house's Jellyfin **10.11.11** live: `GET /MediaSegments/{itemId}`
+    is the only MediaSegments operation in its whole OpenAPI document, `POST` returns **405**, and Jellyfin
+    takes segments only from server plugins implementing `IMediaSegmentProvider`. Jellyfin *read-in* as a
+    candidate source stays (returns empty until such a plugin exists; none is installed).
+    **`app/segments.js` updated 2026-08-27** — the Publish button, the "in Jellyfin" column and the
+    `pub` state are gone; the sheet's last column is now **Confirmed** (checked-by-me · locked-by-me ·
+    a guess), the header chip counts what still waits on you, and the primary action is
+    "Take me to what needs me". The deck's segments slide tells the same story. Build notes: `media_segment`
+    table replaced the flat blob, `manuallyConfirmed` back-filled onto **`locked`** (not `checked_at`),
+    multi-episode files (`partCount > 1`) are permanently unsupported and read "not supported yet".
+  - **Admin 169–176, all `✓ Done`:** **169** parallelises `syncSeriesEpisodes`'s per-episode probes to match
+    `scanSeries`. **170** gives `detect_segments` its own process-slot pool (`SegmentProcessGate`), makes
+    `force=true` respect marker **source precedence**, and logs segment writes to a title's own History.
+    **171** fixes music-video artwork paths (`<basename>-poster.jpg` per file, since an artist folder holds
+    several) and lets a music video match TMDB like anything else. **172 — filter support everywhere:**
+    `"musicvideos"` is now a third value at every binary Movie/Series type-filter site — **updated here in
+    `app/library.html`'s top-right picker and `app/ravilo-builders.js`'s Include segment**. **173** — the
+    Artwork tab now shows the **asset actually on disk**, not only TMDB candidates (a music video routinely
+    has zero); **drawn in `app/media.html` as a "Currently in use" block**. **174 — Clear a wrong TMDB
+    match:** clears id + every TMDB-written field + the poster/backdrop **files**, then **locks** the item so
+    the next `pull_tmdb` can't re-apply it; **drawn in `app/media.html`** (pagebar `Clear TMDB match`,
+    per-asset `Clear`, and the Re-pull ▾ → From TMDB item greying out when locked). **175** unifies plain
+    scan / pipeline / webhook ingest onto one engine and makes the freshness cooldown apply to the manual
+    Scan button for the first time (567s → 11–60s for the equivalent window); `SCAN_ON_START` now runs the
+    full configured pipeline. **176** guarantees an on-disk poster can never disagree with the current match.
+  - **Ravilo R208–R214:** **R208** is our episode-rail 30s auto-hide, **renumbered from R196** repo-side
+    (the dev tracker had already spent R196) — the stale local `phase-R196-episode-rail-autohide.md` is
+    deleted. **R209** external text subs were dropped and PGS double-delivered (161's follow-on).
+    **R210–R213 are the 2026-08-26/27 startup-performance cluster:** CIO kept for the WebSocket only with
+    `ktor-client-android` for REST (routes around a live "loads forever" bug), session-store caching +
+    FontFamily churn, a bounded-size **client-side Home-feed + display-settings cache** (no more shimmer
+    or wrong-skin flash on cold start), and a generated Baseline Profile (**R213 is the only `Planned` row**
+    — infra built, generation blocked). **R214** — Ravilo's image cache outliving a corrected poster.
+  - **No design work is outstanding from this sync** beyond the four mockup updates above; everything else
+    is backend/platform.
+- (shipped — see the 2026-08-31 entry above) **2026-08-28 — two design-authored specs written for the player wait states (both `Planned`, not yet
+  dev-reviewed).** Triggered by `specs/research-reports/ravilo-player-buffering-loading-states-2026-08-28.md`,
+  which catalogued **four waiting moments** and found only one of them drawn.
+  - **`phase-R218-player-loading-buffering-states.md` (client)** — moment A (session negotiation) unchanged;
+    **B (cold start)** gets **Direction B "Grounded"**: black, three-dot brand pulse, title context
+    (series · episode title · S/E), indeterminate sweep, the existing `"Loading…"` string; **C (stall)**
+    keeps the frozen frame and **raises the transport chrome by itself**, spinner standing in the play
+    button's place, so the viewer keeps their position — no centre overlay, no text; **D (seek)** is
+    lightest: a spinner inside the scrub tile only. **~400 ms debounce on all three** (a direct play must
+    never flash), deepen at **60 s** without changing a word, **one already-translated string**, and
+    **no escape hatch** — Back is always available, never prompted, and ends the session.
+    Binding constraint: **R180 FR-RV-ASP1-2**, nothing may vary by delivery method.
+  - **`phase-180-playback-session-teardown.md` (backend)** — leaving must actually stop the work.
+    `stopPlayback` (`tv/PlaybackService.kt:357`) reports the stop but nothing releases an in-flight
+    transcode, so Back during a 20 s spin-up leaves NVENC encoding for nobody — invisible background I/O
+    that Phase 178's `anyActive()` can't even see. Teardown keyed on the existing per-item
+    `playSessionId` (`:218`), converging the client stop, the Phase 110 watchdog and session-supersede
+    on one routine, plus a **queued stop** for the abandon-during-negotiation race. **Open first:** confirm
+    an active-encoding stop actually exists in Jellyfin **10.11.11**'s OpenAPI before building — phase 163's
+    405 is the standing reminder.
+  - Design file: `ravilo/Player Loading and Buffering - Directions.html` (canvas; A/B/C cold-start
+    directions, chosen stall + seek frames, two phone frames, and a panel answering the report's seven
+    open questions). **Direction C "Title card" rejected**, **A "Quiet"** kept as the fallback if copy
+    ever fails locale review. Next unassigned numbers now **181 / R219**. (Our teardown spec was **renumbered 179 → 180** on 2026-08-28: the dev team took **179** the same evening for `phase-179-subtitle-sideload-transcode-stall.md` — R183/161's deferred half, reactivated because phase 177 made the highest-bitrate tier transcode far more often; ✓ Implemented. Same collision shape as R196 → R208.)
+- **2026-08-20 sync — large pull, 26 new spec files + a new `presentation/` directory we're taking
+  over.** Next unassigned numbers: **169 / R208**.
+  - **New admin specs (164–168, all `Planned`, dev-authored):** **164** takes `detect_segments` off
+    the pipeline's critical path into a de-duplicated two-lane job queue (extends the Phase 109 media
+    job queue rather than a second system). **165** replaces the *arr webhook ingest with Jellyfin's
+    own Webhook plugin (id-based, fires only once Jellyfin has matched the item — no more 5-min path
+    poll); a live delivery failure found mid-implementation added a real end-to-end delivery probe
+    (FR-165-7/8) instead of a self-loop test. **166** makes the pipeline schedule any valid cron
+    (Daily/Weekly/Every N hours/Custom), shared-parser validated on both save and while typing, with a
+    15-min safety floor. **167** ships Docker packaging for internet exposure: `.dockerignore`,
+    `fpcalc` in the runtime image, self-hosted fonts (fixes a real CSP break), a new plain-Kotlin
+    `ravilo-web` static-server image, and versioned (`MAJOR.MINOR`, starting `1.0`) GHCR publishing
+    gated on a GitHub Release — shipped 2026-08-17 with three rounds of real CI/runtime bugs found and
+    fixed (a skiko-wasm race, dead Docker layer caching, CI runner OOM/disk). **168** adds filename-only
+    Music Video library support (new `MediaKind.MUSIC_VIDEO`, no TMDB ever, no new UI surface — folded
+    into the existing "all kinds" views since Movies/Series tabs are slated for removal later anyway).
+  - **New Ravilo specs (R196–R207)** — mostly bug fixes from a live screenshot-capture session on
+    2026-08-14/18: **R196** is a numbering collision (episode-rail 30s auto-hide, *and* a dev-found
+    regression where R195 broke the entire remembered audio/subtitle tier via a stale Compose closure
+    — both kept as R196, disambiguated by filename). **R197** reverses an R195 decision: picking a
+    version in the picker's level 2 now closes the picker (was deliberately stay-open; felt broken).
+    **R198** re-sorts Continue Watching by actual `LastPlayedDate` instead of trusting Jellyfin's own
+    sort. **R199** falls back to jellystructure's own scanned episode number when Jellyfin's filename
+    parse fails (found immediately after deploying R198). **R200/R201** fix the same underlying focus-
+    bridge failure shape (a `FocusRequester` never attached because its target composable was off-
+    screen/torn down) — R200 in content-row back-return restore (could permanently strand Down-nav,
+    only an app restart recovered), R201 in the season picker (Fjollerne's 11-season, fully-watched case
+    auto-selected the last season, which the picker never scrolled itself to reach). **R202** is the
+    project's own case-study bug: a misleading code comment attributed an inherit-mode channel's missing
+    Continue Watching row to R59; the user pushed back, `git log -S` traced it to an R05 leftover R143
+    mislabeled — now fixed, and written up in `presentation-context.md` as the talk's centerpiece.
+    **R203–R207** are small triage fixes (Faroese label typo, My List's missing heading, Loading-text
+    not centered, a blank/mic-icon picker row for an unmapped language, and generation-guard + Retry
+    hardening on the detail-screen Loading state) — two other triaged items turned out NOT to be bugs
+    on closer inspection (TV Guide row-height/blank-row claim, Back-inside-a-channel behavior) and are
+    recorded as such rather than silently dropped.
+  - **New `presentation/` directory — we will be taking this over.** Mirrored in full:
+    `presentation-context.md` (raw material for a talk on the project + its spec-driven method — the
+    R202 story is its centerpiece) and `observed-issues-2026-08-18.md` (the triage log behind
+    R203–R207), plus `presentation/screenshots/` (57 real 1920×1080 PNGs captured over adb from the
+    live Android TV — home, channels, browse/filter, detail, the audio/subtitle picker, Discover, Live
+    TV, settings). Not yet built into anything here — next step when we pick this up is turning
+    `presentation-context.md`'s suggested structure into an actual HTML deck.
+  - **New research reports pulled:** `internet-exposure-docker-packaging-2026-08-17.md` (phase-167's
+    investigation), `music-video-support-investigation-2026-08-17.md` (phase-168's).
+  - **STATUS.md mirror refreshed** (551 lines now; read-only here per CLAUDE.md).
+- **All admin phases through 151 and Ravilo through R183 are ✓ Done** in code (per repo
+  `STATUS.md`, ref `main`, synced 2026-07-31). Everything we designed has now shipped:
+  **149/R179** (multi-episode files/combined card), **R180/R181** (flag-forward Audio &
+  Subtitles picker + default/remembered tracks), and **150/R182** (intro & credits segment
+  detection + Skip Intro / Skip Credits, implemented 2026-07-13 incl. cross-episode Chromaprint
+  fingerprinting once `fpcalc` landed on the backend).
+- **New since our last sync — 8 dev-authored specs pulled (not design work):**
+  - **151** — manually-selected images never auto-overwritten (closes the Phase-133 hole on the
+    Sync / Re-pull `updateOne` path; extends the lock to clearlogo, season posters, episode stills). ✓ Done.
+  - **152** — scanner falls back to filename `(season, episode)` when Jellyfin has no `IndexNumber`. Implemented.
+  - **153** — scheduled scan actively repairs an unmatched episode's numbering (writes corrective
+    episode NFO + triggers Jellyfin refresh). Implemented.
+  - **154** — pre-run dialog to untick slow pipeline steps (e.g. `detect_segments`) **for one run only**,
+    nothing written to config. Implemented.
+  - **R183** — Dolby Vision playback + decodable transcode fallback (extends R56/R173; DV was R173's
+    non-goal and every DV title was force-transcoded to an undecodable Baseline/L4.1 4K stream). ✓ Done.
+  - **R184** — auto-advance no longer starts the next episode minutes in (stale position leak). Implemented.
+  - **R185** — Continue Watching hides fully-watched titles (Jellyfin `Played`/`PlaybackPositionTicks`
+    desync, 62/115 rows corrupted live). Implemented.
+  - **R186** — Continue Watching fetch window widened past the global top-20 so channel rows (e.g. DanskTV)
+    aren't starved. Implemented.
+- Recent landings: Live TV (147 + R177), Seerr pivot (136/137 + R170/R171), request-language
+  steering (139 + R172), Workbench query blocks (140), HDR tone-map fix (R173), grid-columns
+  config (R174), cover-as-video (144), event-driven pipeline (145).
+- **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
+  admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
+  *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
+- (superseded — see the 2026-08-27 entry above) Next unassigned numbers were 164 / R196; `phase-163-segment-editor.md`
+  was then design-authored and `Planned`. (2026-08-13 sync: **Phase 162 / Towo shipped** — dev-reviewed and
+  built in full 2026-08-11 with three dev-review addenda, verified live against a real Claude account. Only
+  spec change repo-side this sync; nothing else new. The build is backend-owned settings, not localStorage,
+  and added fields our mockups don't have yet — see the Towo entry below.) (2026-08-10 sync #2: **R195 shipped** — dev-reviewed and built
+  the same day; and new **161** — stop double-delivering embedded text subtitles on direct play, ✓ Done —
+  which was found *because* R195's two-level picker made the duplication visible as two identical
+  "English" rows. Earlier that day: dev took 158/159/160 and R192/R193/R194 — the
+  MediaSession trio: R192 release-on-background, R193 rich metadata TV-only, R194 season-poster artwork,
+  all Implemented; 158 IMDb ratings dataset, 159 segment-detection accuracy, 160 scanner Jellyfin
+  numbering fallback, all Implemented. Our same-language subtitle-picker spec was renumbered
+  **R192 → R195**.)
+- (previous sync) 155 (age-rating normalization) and R187 (browse page)
+  **shipped in code** (Implemented, pulled from repo `main` 2026-08-02). New dev specs pulled this sync:
+  156 (Seerr per-user request attribution, Implemented), R188 (Upcoming-calendar per-device
+  visibility, Implemented), R189 (Samsung Tizen TV client, M1+M2 build-verified). R190 =
+  filter-by-person + Seerr overflow row + admin workbench Cast-or-crew facet (design-authored, was
+  drafted as R188 but the dev team took R188/R189 — renumbered to R190). **Now `Implemented`
+  (2026-08-02): the dev team adopted our design, dev-reviewed it, and built §A–§D + i18n end to end
+  across backend, admin WASM workbench, ravilo-ui/Compose and ravilo-tizen — compile-clean, not yet
+  live-tested; one deliberate Tizen omission (§C Seerr overflow row, since Discover is out of the
+  Tizen build). Pulled the canonical Implemented spec over our stale `Planned` draft 2026-08-07.**
+- **Same-language subtitle picker — `phase-R195-same-language-subtitle-picker.md` (✓ Done / Implemented
+  2026-08-10; design-authored 2026-08-09, dev-reviewed and built the same day, not yet on-device tested).**
+  Shipped as designed, with three notes: no `flag_br`/`flag_tw` assets yet (text-only fallback, never a
+  wrong flag); **audio got the same two-level treatment** (was a §2 non-goal); a null-language cluster
+  needed `groupDisplayName()` to fall back to the dominant kind word; and every picker row gained real
+  tap/touch handling for the first time (shipped R180 was D-pad-only). Bazarr `hi`-flag plumbing deferred.
+  Follow-on: **161** (below). Original brief: R180 assumed one row per language = one choice; the live library says
+  otherwise (46.5% of movies / 47.5% of series have a file with 2+ same-language subtitle tracks;
+  251 file-instances are identical on every stored field; worst case 32 unnamed tracks in one file).
+  Picker becomes **two levels**: level 1 is one row per language, flag beside the native name, with
+  a count + **›** arrow only when the language holds several versions — **no arrow means OK selects
+  it outright** (the absence of the arrow is the whole cue; no extra badge). Level 2 lists the
+  versions with the **flag shown once in the header bar**, never repeated per row, each version
+  carrying a one-sentence plain-language line instead of a raw track title; a version shows its own
+  flag **only** when its region differs from the header (🇧🇷 on 🇵🇹). Indistinguishable tracks are
+  numbered under an **Unnamed** group — copy never says "disc". Backend prerequisites: detect SDH
+  (title text + Bazarr `hi`), a region **synonym table** (never substring matching), suppress
+  release-provenance duplicates, and **remember the variant, not the language** (fixes R181's
+  always-picks-SDH-then-loses-it bug). Exploration: `ravilo/Audio & Subtitles Picker - Same-Language
+  Directions.html` (Direction A chosen; B and C recorded as rejected). Not yet dev-reviewed — open
+  question is whether R180's "nothing hidden or merged" invariant yields for provenance merging.
+- **Bazarr subtitle integration — design-authored `phase-157-bazarr-subtitles.md` (`Planned`, 2026-08-07).**
+  Optional Bazarr connection so subtitles never need Bazarr's own UI. Principle: **JS stores nothing**
+  — reads Bazarr live and issues commands; Bazarr keeps owning providers, scoring and language
+  profiles (mirrored read-only). Surfaces: Settings → Download tools **Bazarr** card (`[bazarr]` TOML,
+  path-matched like *arr); a new sidebar **Subtitles** page (`app/subtitles.html` — live queue, wanted
+  list, history, providers, read-only profiles) + a dashboard summary card; per-title Bazarr sections
+  on the movie **Tracks & subtitles** tab (renamed from "Tracks & order") and the series **Seasons &
+  episodes** tab. Actions driven through Bazarr: manual search/download, auto-search, sync-to-audio,
+  upgrade, delete, full scan. Not yet dev-reviewed — open question is the exact Bazarr command API +
+  how a JS item resolves to a Bazarr radarrId/sonarrId (confirm live before build).
+- **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
+  repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
+  admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
+
+## Design constraints to respect
+- `design/app/` + `design/ravilo/` mockups are the **visual target** for the
+  Kotlin/WASM admin frontend and the **Compose Multiplatform** Ravilo app
+  (Android TV · phone · web). Real frontend styling is **Tailwind** (admin, scanned
+  from Kotlin) / Compose tokens (Ravilo); our CSS-variable system is the *visual* spec.
+- Admin frontend is **DOM-based** (kotlinx.browser) — no Canvas, no Compose for Web.
+- **Frontend renders server-pushed state only** — no derived/optimistic state.
+
+## Admin visual system
+- Dark-primary with a three-way **Light / Dark / System** picker (default System).
+  Single **Aurora** direction (cinematic, glassy, gradient); theme persisted in
+  localStorage `js-theme` by `app/app-shell.js`. Purple→blue accent. Phase 58 retuned
+  the dark surfaces ("Soft Charcoal").
+- Type: **Space Grotesk** (display) · **Sora** (UI) · **JetBrains Mono** (code/IDs).
+- Tokens: `--ok` resolved/success · `--warn` dirty/mixed · `--bad` error.
+- Shared `app/wf.css` (tokens + components) + `app/app.css` (shell) + per-page
+  `app/detail.css` (media/series) and `app/metadata.css`. `app/app-shell.js`
+  injects the sidebar, mobile drawer, ambient scan dock, floating **Triage dock**,
+  and ⌘K command palette.
+
+## Admin screen set (current)
+- **Towo — removed from this project 2026-09-16, and spec'd for removal from the product as 217.**
+  Every `towo*.html` mockup, `app/towo.css`, the
+  Settings → Towo tab, the `js-towo` feature flag, the sidebar Towo group and its nav icons, and the
+  `claude-console/` directions are **deleted**. The Claude Code control plane is out of the design set;
+  nothing in `app/` references it. `specs/requirements/phase-162-towo-agent-control-plane.md` and the
+  `STATUS.md` row for 162 are **repo-owned read-only mirrors and were deliberately left alone** — retiring
+  the phase itself is the dev team’s call, and our export must never re-add the deleted mockups.
+  **`specs/requirements/phase-217-remove-towo.md` (written 2026-09-16, `Planned`, not dev-reviewed)** is
+  the product-side removal: UI deleted rather than gated (and a stale `js-towo` key cannot resurrect it),
+  routes deleted rather than stubbed, the auto-continue scheduler unregistered **first**, transcripts
+  exported once then the tables dropped in one forward migration, and every runner **uninstalled rather
+  than orphaned** in a reconnect loop. 162's spec and `STATUS.md` row are deliberately **kept** — marked
+  `Removed`, pointing at 217 — because the record of a shipped phase is worth more than a tidy directory.
+  Next unassigned numbers: **218 / R244**.
+- **Intro & credits editor** (`segments.html` + `segments.js` + `segments.css`, Phase 163 design) — one
+  fullscreen tool, no sidebar, opened from a season / episode row / **movie detail** and returning there.
+  Reached via a dedicated **Intro & credits** tab — its own tab, not a card in Overview or a link in a
+  toolbar — on both `media.html` (→ `segments.html?movie=<slug>`, straight into the trim view with a
+  films-to-check rail) and every series page (→ the season sheet).
+  **Season sheet** (front door): every episode on one aligned timeline so an outlier sticks out, season
+  stats incl. **what the season agrees on** (median intro), multi-select bulk apply/lock/re-detect,
+  drawer with player per row. **Trim view** (behind it): Jellyfin playback in the admin (direct play or
+  nothing — never transcode for this), timeline with draggable handles, **waveform + evidence lane**
+  (black frames, silences, the fingerprint's matched span, chapter marks, Jellyfin's own segments),
+  per-marker rows with steppers/loop-the-cut/**per-marker lock**, review-queue rail, keyboard
+  (`I`/`O`/`,`/`.`/`L`/`↵`). Five kinds: recap · intro · next time · credits · after-credits.
+  Jellyfin is a **source only** — its own segments read in as one candidate; **publishing was dropped**
+  in the 2026-08-13 dev review (Jellyfin 10.11.11: `POST /MediaSegments` → 405, plugins only). What a human
+  confirms (checked or locked) is still the thing that matters — it just never leaves jellystructure.
+  Locks are per marker and `detect_segments` never overwrites them (phase-151's guarantee, extended).
+  Exploration: `Segment Editor - Directions.html` (A+C shipped as one tool; **Direction B rejected** —
+  its CSS is kept in `segments.css` under an exploration-only comment so the directions file still renders).
+- **Subtitles** (`subtitles.html`, Phase 157 design) — global **Bazarr** overview (**no left-nav item**;
+  reached from the dashboard summary card): live queue/tasks, wanted list (filter by kind + language),
+  download/sync/
+  upgrade/remove history, provider health, read-only language profiles. Companion: a dashboard summary
+  card + per-title Bazarr sections on `media.html` (Tracks & subtitles tab) and `series.html` (Seasons
+  & episodes). Bazarr connection lives in Settings → Download tools. JS persists no subtitle state.
+- **Dashboard** (`index.html`) · **Library** (`library.html` — audio-track filter,
+  multi-axis filters, multi-language search, infinite scroll, shared filter
+  workbench) · **Activity** (`activity.html`).
+- **Metadata** (`metadata.html`) — Studios · Networks · Genres · Tags (JS-tag color
+  **swatches** + dotted chips, Phase 82) · **Age ratings** (design-complete 2026-07-31, no spec
+  yet): maps every raw certification (G, TV-MA, “Från 15 år”, Btl…) to a normalized age 0–18 —
+  ladder summary, per-cert stepper (write-through pulse), unmapped-cert triage (NR/Btl → treated
+  as 18 in filters/kids gating — never shown as an 18+ badge — and listed when no range is set).
+  Feeds Ravilo’s Maturity filter, which shows only numbers
+  (`0+ · 7+ · 13+…`, `normAge()` in `ravilo-browse.js`). **Spec: `phase-155-age-rating-normalization.md`
+  (shipped/Implemented in code, synced 2026-08-02).**
+- **Settings** (`settings.html`) — URL-addressable **tabs** (Phase 55): Connections ·
+  Libraries · Metadata · **Download tools** (Radarr/Sonarr + Seerr + **Bazarr** subtitles + cross-seed) ·
+  Notifications · Advanced · **Users & devices** (Phase 143 design: per-user Ravilo
+  devices + admin web sessions, revoke / sign-out-everywhere).
+- **Live TV** (`livetv.html`, Phase 147) — surfaces Jellyfin's Live TV into Ravilo: master
+  enable toggle, connection/status badge + Test connection + Refresh from Jellyfin, a channel
+  lineup (show/hide · number · logo · order · category, keyed by Jellyfin **channel id**),
+  lineup-change diffing (new→hidden · removed→unavailable), and EPG source + refresh cadence.
+  **Read-only** against Jellyfin (never touches the tuner). Lives in the sidebar's **Ravilo**
+  group (Phase 148 nav restructure, which renamed "Apps" → **Ravilo** and split the config editor).
+- **Movie detail** (`media.html`) / **Series detail** (`series.html`) — the single
+  editing surface. **Write-through** editing (Phases 71/74): edits commit to disk
+  immediately; the split button is **Save → NFO / Sync Jellyfin / Save & Sync** (the
+  old staged "Save changes" + amber dirty borders are gone). Tabs: Tracks & order /
+  Seasons & episodes · **Artwork** (manager + lightbox, Phases 47/48/71/81) ·
+  **Cast & crew** (Phases 75/76/79/80; `Season Episode Cast.html`, `series-cast.js`) ·
+  NFO raw viewer (Phase 44) · History. Pagebar shows **audio-language flags** (Phase
+  87, via `flags/` + `flags.css`), TMDB-id edit, external links, drift banner,
+  Jellyfin field-lock banner, **★ Feature in Ravilo**. **Login** (`login.html`).
+  **Multi-episode files** (Phase 149, design-complete / awaiting code): Seasons & episodes
+  renders **one combined row per file** (`S01E01–E03` · combined runtime · "3 in 1 file" badge ·
+  triptych thumbnail, expandable to per-episode chapter offsets), and the Artwork tab picks
+  stills **per episode** with a file switcher — target `series-johnnybravo.html`.
+
+## Ravilo companion app (`ravilo/`)
+- **Ravilo TV** (`ravilo/Ravilo TV.html` → `ravilo-app.js` + `ravilo.css`) — the TV UI:
+  Home (hero carousel, channel rail, content rows), Movies/Series/My List grids,
+  Search, Movie/Series **detail** (merged audio+subtitle flag line R75/R78/R134, cast &
+  crew R81), **Discover** (profile-hub nav R170; Coming Soon + Seerr **Request** tab
+  R171), Player. The in-player **Audio &amp; Subtitles** picker is **flag-forward** (Direction 2):
+  a flat list where a country flag + plain native language name anchor every track, with
+  jargon-free badges only — **Default · Surround 5.1 / Stereo · Signs only** (forced) ·
+  **Sound described** (SDH) · **Describes action** (audio-description) · **Commentary** — no
+  codec names and no delivery-method cues (`ravilo-player.js` `renderPicker`/`PL_KIND`/`plFlag`/
+  `plBadges` + `ravilo-player.css`; track data in `ravilo-app.js` `tracksFor()`; exploration in
+  `Audio &amp; Subtitles Picker.html`). **R195 (Planned) makes it two-level** — languages first,
+  versions inside — see the phase list above. **Browse page** (**shipped/Implemented in code**, spec
+  `specs/ravilo/requirements/phase-R187-browse-page.md`; admin half `phase-155`, also shipped):
+  Movies/Series nav + an end-of-row **→ See all** tile (rows with &gt;8
+  items, incl. Continue Watching + channel-scoped rows) open a shared browse page
+  (`ravilo-browse.js`, Direction A: top facet bar → checklist popover). A **cast/crew face** on a media detail is now a link into this page seeded to that person's
+  filmography (R190, `phase-R190-people-filter.md`, Planned): the browse facets narrow within it, and
+  when Seerr is enabled a single **⚡ Seerr overflow row** ("More with {name} · request on Seerr")
+  sits below all library results, opening the normal Seerr request flow (Back returns to the person
+  page). The same person filter is a **Cast or crew** facet (People group) in the admin
+  workbench (`ravilo-builders.js`, R190 §D). Facets Genre · Type ·
+  Maturity · Year · Watched · Audio · Channel · Quality — multi-select OR within a facet, AND
+  across facets, stacking on the row seed (breadcrumb + "Úr …" subtitle, no seed chip); popover
+  values sort by count desc then A–Z. **Maturity is a D-pad range picker**, not a checklist:
+  From / Up-to rows over the normalized age ladder (◂ ▸ adjusts, OK confirms, ladder viz
+  highlights the span) expressing ≤7, 7–12, 15+, 4–14 — any integer bounds 0–18; chip shows the range
+  label ("≤ 7", "7–12", "15+"). No/unmapped rating ⇒ treated as 18 (never badged). Sort defaults to Recently added (A–Z · Z–A · Year ·
+  Maturity · IMDb). Popover owns the D-pad via capture keys (langPicker pattern); exploration in
+  `Ravilo Browse - Filter UI Directions.html`. **Live TV** (`Ravilo Live TV.html` → `livetv-app.jsx` · `livetv.css` ·
+  `livetv-data.js`, R177) is woven into Home — an **“On now”** row → full EPG guide, channel
+  zapping + number entry, Now/Next overlay, and a live player; **never a top-nav tab**
+  (placement configured in `ravilo-config.html`, Phase 147 §F). Three skins
+  (Aurora/Midnight/Noir). `ravilo-i18n.js`
+  (en/da/fo). `Ravilo Mobile.html` + `mobile/` = the Android **phone** target (R60).
+  Series detail groups **multi-episode files** into one combined **triptych** card (R179,
+  Option B, design-complete) on both TV and phone — the phone detail gains an Episodes section.
+- **Ravilo config editor** (`app/ravilo-config.html`) — the Jellystructure-side editor
+  for a viewer's TV layout. Has: **Global vs per-user scope switcher** (R51), Home
+  hero carousel (single global height 40–100% + auto-advance, R58), Channels &
+  collections, Content rows (system rows = Continue + Newly Added, R54/R61),
+  **Top 10 / Discover** lists (R50), Behaviour (skin, tile shape, ui-lang),
+  **Pair-a-TV** modal + **sticky** action navbar (R57), live preview iframe. TV sign-in
+  is now the R175 **username/password login** (pairing code removed from the TV mockup).
+- **Shared filter workbench** powers filters everywhere: `app/ravilo-builders.js`
+  (+ `ravilo-builders.css`) exposes `window.RaviloBuilders` and is loaded by **both**
+  `ravilo-config.html` and `library.html` (R32). Facets = **Studio · Network · Genre ·
+  Tag · Age rating · Audio track · Cast or crew** (People group, R190 §D) plus the contextual
+  Ravilo-layout facets (Hero, Content row). Library ↔ Ravilo
+  round-trip: `⚙ Add filter` opens the builder; `Save filter as… → Channel / Content
+  row`; per-poster `★ Save as hero item`.
+- **Brand (R62):** the Ravilo **brand** mark/asset pack recolors to a
+  **Jellyfin-inspired palette** — gradient `#AA5CC3 → #00A4DC` on `#000B25` navy,
+  "lit-mark" treatment (`ravilo/assets/brand/*.svg` masters → `assets/android/**` +
+  `store/**`; `Ravilo - Android TV Assets.html`). The **in-app Aurora UI accent**
+  (focus rings/buttons in `ravilo.css`, still purple `#7b6ef0`) is a **separate token
+  set and is intentionally unchanged** by R62.
+
+## Config shape
+`[[libraries]]` are auto-discovered from the Jellyfin API (no static `[paths]`).
+Optional `[qbittorrent]` (cross-seed guard), `[radarr]`/`[sonarr]` (read-only
+root-folder import + best-effort rescan), and per-user Ravilo layout/discover blocks.

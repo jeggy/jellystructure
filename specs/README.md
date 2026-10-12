@@ -20,4 +20,6 @@ both products (admin numeric + Ravilo `R…`). A spec's file location or body no
 3. [`plan.md`](plan.md) — where the relevant code lives.
 4. [`constitution.md`](constitution.md) — the rules that constrain any change.
 
-Project overview and build commands live in the repo-root [`CLAUDE.md`](../CLAUDE.md).
+Project overview and build commands live in the repo-root [`README.md`](../README.md); the rules for
+working in this repo — including that phase numbers come from `STATUS.md` and never from prose — are
+in [`CLAUDE.md`](../CLAUDE.md).
