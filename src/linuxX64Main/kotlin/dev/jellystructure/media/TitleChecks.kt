@@ -260,18 +260,19 @@ class TitleChecks(
         // left a stopped sidecar reading *not yet · next run · 3 not measured*: an invitation to wait for a
         // check that cannot happen.
         val on = step.enabled && service != null && service.enabled() && service.readyNow()
-        val rows = FileCheckSchedule.units(item).map { unit ->
+        val measured = FileCheckSchedule.units(item).map { unit ->
             val row = service?.rowFor(unit.path)
             val stamp = FileIntegrityService.stampOf(unit.path)
             val current = row != null && stamp != null && row.size == stamp.size && row.mtime == stamp.mtime
             val reading = if (current) service!!.readingFor(unit.path, mapOf(unit.path to row!!), runtimeS = service.knownRuntimeS(item, unit.path)) else null
             val queued = FileCheckSchedule.dedupeKey(FileCheckSchedule.AVSYNC_JOB, unit.path) in active
-            FileCheckRowDto(
+            reading to FileCheckRowDto(
                 path = unit.path, name = unit.path.substringAfterLast('/'), season = unit.season, episodeTag = unit.episodeTag,
                 state = when {
                     reading == null -> "unchecked"
                     reading.isFinding -> "finding"
-                    reading.state == AvSyncState.UNKNOWN -> "unchecked"     // never "clean": nothing was measured
+                    // Never "clean": the file may well have been measured (FR-317-20), but nothing was read.
+                    reading.state == AvSyncState.UNKNOWN -> "unchecked"
                     else -> "clean"
                 },
                 checkedAt = row?.checked_at?.takeIf { current },
@@ -286,9 +287,15 @@ class TitleChecks(
                 detail = if (current) service!!.findingSummary(row!!) else null,
             )
         }
+        val rows = measured.map { it.second }
         val checked = rows.mapNotNull { it.checkedAt }
         val findings = rows.count { it.state == "finding" }
         val unchecked = rows.count { it.state == "unchecked" }
+        // FR-317-20 (amendment 2026-10-13) — the step's own two lines come from the readings, not from the
+        // rows' `state`: `unchecked` covers a file with no current result AND a file that WAS measured and
+        // came out `unknown`, and only the first is waiting for a run. `outcome` keeps counting both, so an
+        // unreadable file still leaves the title *partial* and never *clean* (FR-317-7).
+        val line = avSyncStepLine(measured.map { it.first }, on = on, queued = rows.any { it.nextDue == "queued" })
         return StepCheckDto(
             step = step.step, label = label, enabled = on,
             lastAt = checked.maxOrNull(), last = checked.maxOrNull()?.let { dayText(it * 1000, nowMs) } ?: "not yet",
@@ -298,16 +305,8 @@ class TitleChecks(
                 unchecked > 0 -> "partial"
                 else -> "clean"
             },
-            detail = listOfNotNull(
-                findings.takeIf { it > 0 }?.let { "$it out of step with the picture" },
-                unchecked.takeIf { it > 0 }?.let { "$it not measured" },
-            ).joinToString(" · ").ifEmpty { null },
-            nextDue = when {
-                !on -> "off"
-                rows.any { it.nextDue == "queued" } -> "queued"
-                unchecked > 0 -> "next run"
-                else -> "when a file changes"
-            },
+            detail = line.detail,
+            nextDue = line.nextDue,
             action = "check_avsync",
             files = rows,
         )
@@ -326,7 +325,54 @@ class TitleChecks(
         }
     }
 
+    /** FR-317-20 — the A/V sync step line's own two strings, as [avSyncStepLine] decides them. */
+    data class AvSyncStepLine(val detail: String?, val nextDue: String)
+
     companion object {
+        /**
+         * FR-317-20 (amendment 2026-10-13) — the A/V sync STEP's `detail` and `next_due`, from the
+         * per-file readings in card order (null = this file has no current result).
+         *
+         * The rule it fixes: *next run* counts only files with no current result. A file that was
+         * measured is settled however it came out — a finding, clean, skipped (FR-317-5) or nothing
+         * readable (`unknown` with no reason, which a real film does produce) — because the step's
+         * `recheck_unchanged` is false, so no run touches it again until the file or the model changes.
+         * Counting a measured `unknown` under *next run* left the step line promising a check that
+         * cannot happen while the file's own row already read *when the file changes*: two lines on one
+         * card disagreeing, the same defect FR-317-16 fixed for a stopped sidecar by a second door.
+         *
+         * The detail splits the same two apart, and invents no wording: *N not measured yet* for the
+         * files with no result, and for a settled `unknown` the sentence the verdict already carries
+         * ([AvSyncReading.why] — *"no window read clearly enough to measure"*, or [AvSyncReason.label]'s
+         * *"skipped — …"*), which FR-317-10 already prints on the file's own line. Distinct, so ten
+         * skipped episodes say it once.
+         *
+         * Pure and its own function so the rule is testable without a sidecar, a database or a file on
+         * disk — none of which the thing under test is about.
+         */
+        fun avSyncStepLine(readings: List<AvSyncReading?>, on: Boolean = true, queued: Boolean = false): AvSyncStepLine {
+            val findings = readings.count { it?.isFinding == true }
+            val unmeasured = readings.count { it == null }
+            val settled = readings.filterNotNull()
+                .filter { it.state == AvSyncState.UNKNOWN }
+                .mapNotNull { it.why }
+                .distinct()
+            return AvSyncStepLine(
+                detail = (
+                    listOfNotNull(
+                        findings.takeIf { it > 0 }?.let { "$it out of step with the picture" },
+                        unmeasured.takeIf { it > 0 }?.let { "$it not measured yet" },
+                    ) + settled
+                    ).joinToString(" · ").ifEmpty { null },
+                nextDue = when {
+                    !on -> "off"
+                    queued -> "queued"
+                    unmeasured > 0 -> "next run"
+                    else -> "when a file changes"
+                },
+            )
+        }
+
         /** Phase 303 (FR-303-1/2) — the steps a title's Checks card lists: `scan_files` first, then every step done TO a
          *  title, in pipeline order. Whole-library steps ([dev.jellystructure.config.WholeLibrarySteps]: the music steps,
          *  recommendations, suggestions) and the control steps `wait`/`notify` are never listed, on or off. */
