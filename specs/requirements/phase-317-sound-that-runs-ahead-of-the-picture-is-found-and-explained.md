@@ -305,3 +305,128 @@ MP4 ordering, a negative delay), track choice (original / untagged / dub-only), 
 for the new type and lane. A contract test against a fake sidecar (404, 422, 503, a measured answer). Against the real
 sidecar: the reported broadcast and its fixed copy, a dialogue film known to be in sync, a cartoon, an AV1 file, a 4K
 HDR remux, a dubbed film. `scripts/check-phases.sh`, `scripts/check-deanonymization.sh`, `scripts/check-workfiles.sh`.
+
+## Amendment (2026-10-12) — the four admin gaps the browser found, and the two rules they turned up
+
+From DEB-722's browser walk of the built phase on an isolated `-p e2e` stack (backend from `main` `171a151b`;
+prod untouched, nothing deployed) — findings routed through DEB-742. **The backend is right in every one of
+these; what is missing is the admin.** Amended before the Kotlin, per the repo rule.
+
+Two of the seven findings came up as spec-interpretation questions rather than build gaps, and both are settled
+here (FR-317-16, FR-317-17) rather than sent to the owner: neither is viewer-visible and neither contradicts
+[`constitution.md`](../constitution.md). One of the two turns out not to be a question at all — FR-317-13 had
+already decided it, and only the code disagreed.
+
+### FR-317-14 — The `avsync` lane is on the Jobs panel, and the panel stops saying *three*
+
+`GET /api/jobs` already returns `{lane: "avsync", configuredWorkers: 1}` beside media/segments/subtitles
+(`MediaJobQueue.kt:442-445`, which correctly reports **its own one worker**, not the shared pool's number).
+`ui/Activity.kt` contains no occurrence of `avsync` at all: three hardcoded lane blocks
+(`#jobs-worker-line-media|-segments|-subtitles`) and nothing that reads a fourth. FR-317-8's Jobs surface was
+not built. So:
+
+- **A fourth lane card**, *A/V sync*, beside the three — same shape, reading the fourth lane from the same
+  response. It shows **1 worker**, the lane's own, and never the pool size; the queue depth and the estimate
+  (*~2 h 45 min at 8 s a file*) are FR-317-8's wording.
+- **The per-file group row carries its own lane.** The line already reads correctly — *Check A/V sync · 1
+  waiting · 1 running · 17 done today · 7 findings* — but is badged `segments`, because `laneBadge("segments")`
+  is hardcoded on every group row (`Activity.kt:733`) and `JobGroup` has no lane. **Add a lane field to
+  `JobGroup`** — additive, nothing retyped or removed (the wire rule) — filled from
+  `FileCheckSchedule.laneFor(type)`, and badge the row from it. Today the Running card beside it says `avsync`
+  while the group row says `segments`: two badges for one job, disagreeing on screen.
+- **The explanatory paragraph** (`Activity.kt:162`) stops claiming *"Three queues share one worker pool"* and
+  *"how many of the three queues can be busy at once"*. It describes the shared pool as the pool of the three it
+  governs, and names `avsync` as the fourth lane **outside** it, with one dedicated worker, gated on the
+  sidecar — which is the whole reason FR-317-8 gave it a lane of its own. A reader of that paragraph must not
+  come away thinking the sweep is competing for a shared worker, because it is not.
+
+### FR-317-15 — The measured track's mark survives the tab being opened
+
+FR-317-10's mark (*160 ms early*) never renders. The API supplies it — `audio_stream_index: 3`,
+`audio_mark: "160 ms early"` — and the rows carry matching `data-stream`/`data-file`, but `loadAvSync`
+(`MediaDetail.kt:3411-3422`) walks `.trk[data-stream=…]` **at page load**, when the Tracks & subtitles tab has
+not been opened and the `.trk` count is 0. Nothing re-applies it afterwards. Measured in a browser: 3 rows,
+0 marks. It is unreachable by construction, not mistimed by a race.
+
+**The fix is 255's, which solved exactly this:** a store the row renderer reads, not a mutation of rows that do
+not exist. `TrackCoverageMarks.byFile` is set by `loadTrackCoverage` and emitted by the row renderer
+(`TrackEditor.kt:438`); 317 gets the same pair — the A/V marks stored per file and stream index when the banner
+loads, and the Tracks row renderer emitting the mark for the row it is building, whenever that is. The
+page-load pass stays (it costs nothing and covers a tab already open on a re-render); it is no longer the only
+path.
+
+### FR-317-16 — *off* is said wherever the check cannot run
+
+**Not a spec question.** FR-317-13 already says it — *"any root it can't see turns the check off (no rows, Checks
+card off) until it can"* — acceptance 4 already tests it, and `TitleChecks.avSyncStep`'s own KDoc already claims
+it (*"the whole line reads off while the sidecar is not reachable (FR-317-13)"*). Only the code disagrees:
+`on = step.enabled && service.enabled()`, and `AvSyncService.enabled()` is the config flag alone
+(`AvSyncService.kt:181`). So with the sidecar stopped, or a library root it cannot see, the walk read *not yet ·
+next run · 3 not measured* — an invitation to wait for a check that cannot happen. The acceptance text is **not**
+amended; the Checks card is fixed to match it. It is also the kinder of the two readings, and the one the
+Settings card beside it already gives.
+
+- **`avSyncStep` consults readiness, not the flag** — switched on **and** the sidecar answered **and** every
+  library root visible, i.e. the condition `avSyncWorkerLoop` already evaluates.
+- **It must not cost an HTTP round-trip per title page.** `ready()` is `suspend` and `/stat`s a file per library
+  root; `avSyncStep` runs on every Checks card render. So **`AvSyncService` keeps its last readiness answer**
+  beside `lastModel` — a value and the moment it was taken — refreshed by the places FR-317-13 already names
+  (start, a Settings save) and by `avSyncWorkerLoop`'s existing 30/60 s heartbeat, which today keeps that same
+  answer in a local variable. `avSyncStep` reads the cached value and stays non-suspending. Unknown-yet (nothing
+  has asked `/health` since boot) reads as **not ready**: the lane is not claiming either.
+- **The Settings card's *off* line is rendered where it can be seen.** `AvSyncService.settings()`'s *"Off —
+  nothing is measured and nothing is counted."* is unreachable today because `#avsync-status` is nested inside
+  the `display:none` `#avsync-on` block (`Settings.kt:726,737`). Move the status line **out** of that block
+  rather than deleting the branch: the status line is the one place that says *why* nothing is happening, and a
+  card whose switch is off should not go silent on the question. (Nobody is misinformed today — the hint above
+  the toggle carries the same sentence — so this one is cosmetic and may land last.)
+
+### FR-317-17 — A second triple whenever the first pass has no steady answer
+
+FR-317-7 needs `DRIFT_MIN_WINDOWS = 4` confident windows for `drift`. FR-317-8 asks for the second triple only
+*"when fewer than two of them read clearly"* (`AvSyncService.kt:484`). Each holds on its own; together they make
+`drift` unreachable for a **well-measured** file: three windows, all confident, disagreeing — the exact signature
+of a steady drift — can only ever come out `unknown`. Measured both ways in DEB-722: three confident disagreeing
+windows gave *"the readings disagree — they are neither one steady offset nor a drift"*, and the only route to
+`drift` was to make the first pass inconclusive so a second triple was fetched (6 windows, 4 confident → `drift`,
+rendered correctly: *+115 ms at 0:30, +286 ms at 1:45*, no command, *replace the file*). Acceptance 6 hands the
+verdict five windows directly, so no unit test can see this.
+
+`unknown` is **not** the intended answer for a confident disagreement. A drifting film is one of the two findings
+this phase exists to report, and `unknown` is never counted and never shown (FR-317-7) — so a steadily drifting
+film would vanish silently, which is worse than the false quiet FR-317-16 fixes. The trigger gets a second arm:
+
+- **A second triple is requested when the first pass yields neither `in_sync` nor `offset`** — i.e. fewer than
+  two confident windows (as today) **or** the confident windows are not steady. One extra pass only; there is no
+  third, and six windows that still disagree are `unknown` with FR-317-7's sentence unchanged.
+- **`DRIFT_MIN_WINDOWS` stays 4.** The dev review's item 10 set it deliberately against calling noise a drift;
+  this amendment reaches four windows by measuring more of the file, never by lowering the bar.
+- **The sweep's cost.** Only files whose readings disagree pay — in-sync material reads −1…0 and is steady on the
+  first pass, so the common case is untouched. At ~8.2 s a file and ~4 s a second triple, acceptance 7's
+  ≥ 400 files/hour survives a disagreement rate well above anything the sample suggests; if the sweep's measured
+  rate drops under 400 because of this, that is a finding for the owner, not a reason to lower the bar.
+
+### Tests
+
+- `AvSyncVerdictTest`: three confident windows that disagree → `unknown` **with no second pass available**
+  (unchanged), and the same three plus a second triple on a line → `drift` — the case acceptance 6 could not see.
+- The second-pass trigger itself, against the fake sidecar: a first pass of three confident-but-not-steady
+  windows **requests the second triple** (today it does not); a steady first pass **does not**; six disagreeing
+  windows end `unknown` and no third request is made.
+- `TitleChecks`: with readiness false and the switch on, the A/V sync line reads `off` and no row reads
+  *next run* — acceptance 4, which currently passes on Settings and fails on the Checks card.
+- The admin has no test harness for the Jobs panel or the Tracks rows; FR-317-14 and FR-317-15 go back on the QA
+  queue as a re-walk of DEB-722's items 1, 2, 3, 4 — a fourth card, one badge agreeing with the Running card
+  beside it, and a mark that appears when the Tracks tab is opened.
+
+### Acceptance (added)
+
+10. Activity ▸ Jobs & workers with the sweep running: **four** lane cards; the *A/V sync* card says 1 worker; the
+    per-file group row and the Running card beside it both read `avsync`; the paragraph above them does not say
+    *three*.
+11. A flagged file's title page: open *Tracks & subtitles* **after** the page has settled — the measured audio
+    row carries its mark.
+12. The switch on and the sidecar stopped: the Checks card reads *A/V sync · off*, no row says *next run*, and
+    Settings says which — acceptance 4, in full.
+13. A file whose first three windows are confident and disagree: a second triple is requested, and four confident
+    windows on a line are reported as `drift`.
