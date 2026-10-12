@@ -30,6 +30,31 @@ object EventsCloseCause {
             else -> "server error $name"
         }
     }
+
+    /**
+     * R372 (FR-R372-11, amendment 2026-10-12) — was this socket's end *abrupt*, i.e. the place going away rather
+     * than the app letting its socket go?
+     *
+     * For a place that holds its events socket for exactly as long as it exists — a browser tab above all (DEB-759
+     * §4: `AppOnScreen` is `true` for the web client, so the socket lives as long as the tab) — an abrupt end with a
+     * session still open is evidence the place is gone, and the session goes `offline` at once onto FR-R372-8's
+     * 10 min. The one end that is **not** evidence is a clean close carrying R293's [BACKGROUND_CLOSE_REASON]: that
+     * is `connectEvents`' own `closeWhen` firing because the app went off screen (FR-R293-1), and a minimised
+     * desktop deliberately keeps its film. A [replaced] socket says nothing about the place either — a newer socket
+     * of the same device already holds the slot, and the device reads as connected.
+     *
+     * Everything else is abrupt: an error (a reset, a broken pipe, an EOF), a ping timeout, a bare close frame with
+     * no reason (a browser tab's own 1001), or a clean close whose reason is some other word.
+     */
+    fun isAbrupt(closeReason: CloseReason?, error: Throwable?, replaced: Boolean): Boolean = when {
+        replaced -> false
+        error != null -> true
+        closeReason == null -> true
+        else -> !closeReason.message.equals(BACKGROUND_CLOSE_REASON, ignoreCase = true)
+    }
+
+    /** R293 (FR-R293-1) — the close reason `TvApiClient.connectEvents` sends when the app goes off screen on purpose. */
+    const val BACKGROUND_CLOSE_REASON = "background"
 }
 
 /**

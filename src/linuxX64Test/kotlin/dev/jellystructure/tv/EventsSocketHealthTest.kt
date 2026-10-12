@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import io.ktor.websocket.CloseReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -17,6 +18,30 @@ class EventsSocketHealthTest {
         assertEquals("replaced", EventsCloseCause.classify(CloseReason(CloseReason.Codes.NORMAL, ""), null, true))
         assertEquals("reset", EventsCloseCause.classify(null, RuntimeException("recv: ECONNRESET on ws://host/api/tv/events?token=SECRET"), false))
         assertEquals("server error IllegalStateException", EventsCloseCause.classify(null, IllegalStateException("something with a token=SECRET"), false))
+    }
+
+    /**
+     * R372 (FR-R372-11) — the one close that is not evidence the place is gone is R293's deliberate `background`
+     * drop. Everything else an events socket can end with is: a place that holds its socket for as long as it
+     * exists (a browser tab above all) has gone away, and its session goes `offline` at once.
+     */
+    @Test
+    fun `only a clean background close is not an abrupt end`() {
+        val background = CloseReason(CloseReason.Codes.NORMAL, "background")
+        assertFalse(EventsCloseCause.isAbrupt(background, null, replaced = false))
+        assertFalse(EventsCloseCause.isAbrupt(CloseReason(CloseReason.Codes.NORMAL, "BACKGROUND"), null, false))   // the word, any case
+        // A newer socket of the same device holds the slot: this close says nothing about the place at all.
+        assertFalse(EventsCloseCause.isAbrupt(null, RuntimeException("ECONNRESET"), replaced = true))
+        assertFalse(EventsCloseCause.isAbrupt(background, null, replaced = true))
+
+        assertTrue(EventsCloseCause.isAbrupt(null, null, false))                                      // eof, no close frame
+        assertTrue(EventsCloseCause.isAbrupt(CloseReason(CloseReason.Codes.GOING_AWAY, ""), null, false))   // a browser tab's own 1001
+        assertTrue(EventsCloseCause.isAbrupt(CloseReason(CloseReason.Codes.NORMAL, ""), null, false))        // clean, but reasonless
+        assertTrue(EventsCloseCause.isAbrupt(CloseReason(CloseReason.Codes.NORMAL, "idle"), null, false))    // the receiver's own word
+        assertTrue(EventsCloseCause.isAbrupt(CloseReason(CloseReason.Codes.INTERNAL_ERROR, "Ping timeout"), null, false))
+        assertTrue(EventsCloseCause.isAbrupt(null, RuntimeException("recv: ECONNRESET"), false))
+        // A close frame is only read when there was no error; an error always wins (classify reads it the same way).
+        assertTrue(EventsCloseCause.isAbrupt(background, RuntimeException("broken pipe"), false))
     }
 
     @Test

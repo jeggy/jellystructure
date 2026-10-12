@@ -527,3 +527,54 @@ A6. A play started on a device whose socket comes up a second later keeps playin
 The four device claims from DEB-759's plan (film end on phone / Mac / browser / TV; a web tab closed versus switched
 away; a Mac ⌘Q versus Force Quit; a phone swipe-away for video and then for music), each watched in the admin's
 *Playing now*, plus A1–A4 timed against a clock. Low or muted volume throughout, restored afterwards.
+
+### Build notes 2026-10-12 — the server half of the amendment
+
+Built in two commits because the three server requirements share one file each way; the order was forced, not chosen.
+
+**FR-R372-8 / FR-R372-9, and FR-R372-12 riding along** (DEB-768, DEB-771). `SESSION_OFFLINE_KEEP_MS` = 10 min measured
+from `SessionRec.offlineSince` (the first `offline` of a spell, read back after a restart from the timeline's one
+`offline` event), `SESSION_PAUSED_KEEP_MS` = 4 h, as two sweep branches rather than one; a re-reap of an already-offline
+row returns at once, writing no event and moving no clock; `restore()` brings an offline row back offline rather than
+*reconnecting* and leaves it out of the list it returns, so no tracker entry is registered for it (prod's commonest
+re-arm); `stop` on an offline place routes to `CommandRoute.EndOurRow`, which delivers nothing and ends the row
+`stopped`, while every other op still answers 409 `unreachable`. FR-R372-12 could not be a separate commit: it shares
+`shouldForceStop` and the tracker with the above. The socket test now takes the same 90 s grace from a start that the
+heartbeat test has (`TrackedPlayback.startedMs`), an entry a progress report created is judged by heartbeat alone
+(`fromReport`), and the watchdog's own force-stop is marked as such (`stopped(reaped = true)`) so the place's next
+report comes straight back under tracking instead of being swallowed by the 60 s post-stop grace and then re-creating
+an entry the following tick reaps.
+
+**FR-R372-11, the server half** (DEB-771). `EventsCloseCause.isAbrupt(closeReason, error, replaced)` is the
+discriminator, beside the classifier that already had the same three inputs: a clean close carrying R293's
+`background` is not abrupt (nor is a `replaced` slot, where a newer socket of the same device holds it); an error, an
+EOF, a ping timeout, a bare close frame and a clean close with any other word are. `Server.kt`'s close path passes the
+closing device through `stopWatchdogTick(…, socketEndedAbruptlyFor = …)`, and for that one device `shouldReap` goes
+past FR-R372-12's grace.
+
+That override is not tidiness — **FR-R372-12 on its own regresses A1.** Today's read-at-once on a socket close is an
+accident of the socket test having no grace at all, so with the grace in and nothing else, a browser tab closed two
+seconds into a film sat at *playing* for 90 s, and a `fromReport` entry never read as gone at all. A tab closed well
+into a film was still read at once (`startedMs` an hour old), which is why the regression is narrow and worth writing
+down rather than assuming.
+
+`isDeviceConnected` is still consulted on the abrupt path, so a reconnect or a replaced socket stops the reap; a
+session still *reconnecting* after a restart stays judged by heartbeat alone (R368 review item 12 a), unchanged.
+
+**Deliberately not touched.** `LiveTvService.stopWatchdogTick` mirrors the old test for the tuner-stream lifecycle and
+is outside this amendment. `cast` and `screen` kinds stay exempt from the socket test entirely (FR-218-11, FR-236-8),
+even though FR-R372-11's prose names the Cast receiver among the places that hold their socket: the exemption exists
+because the socket test once read as *disconnected* 11 s into every cast and force-stopped it. Pulling the receiver
+into the socket test is a separate decision, not this one.
+
+**Tests.** `PlaybackWatchdogTest` (8 — the 1.2 s row, every tick inside the 90 s, a closed socket still ending the play
+past the grace, a silent play still reaped by its heartbeat, the flap coming back under tracking and surviving 20
+further ticks, the viewer's own stop still swallowed, a new start judged by its socket again, reconnecting unchanged,
+and the clean-`background`-versus-abrupt close both ways round); `EventsSocketHealthTest` (`isAbrupt` over every close
+shape, including an error beating a `background` close frame); `PlaybackSessionsTest`, `SessionCommandRuleTest` and
+`SessionCommandIntegrationTest` from the first commit. No wire change in either commit, so `WireCompatTest` is
+unaffected and no installed client needs a build.
+
+**Not built here:** FR-R372-10 and FR-R372-11's client half (the browser's `pagehide` stop) are the clients' — DEB-774.
+A1–A6 need a clock, a real place and the admin page, so none of them is proved by these commits; they are DEB-775 on
+the QA queue. Nothing is deployed: prod runs neither commit.

@@ -832,7 +832,15 @@ fun startServer(
                         if (!replaced) runCatching { sessionBridge.disconnectAfterGrace(device.deviceId) }
                         // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
                         // than waiting out the 90s heartbeat timeout.
-                        runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                        // R372 (FR-R372-11) — which of the two this close is decides whether that still holds under
+                        // FR-R372-12's socket grace: an ABRUPT end (a reset, an EOF, a ping timeout, a browser tab's
+                        // own close frame) is the place going away and is read at once; a clean close carrying R293's
+                        // `background` is the app letting its socket go off screen on purpose and is not evidence
+                        // that playback ended, so the grace stands and a minimised desktop keeps its film.
+                        val abrupt = dev.jellystructure.tv.EventsCloseCause.isAbrupt(closeReason, closeError, replaced)
+                        runCatching {
+                            playbackService.stopWatchdogTick(device.deviceId.takeIf { abrupt }) { deviceId -> tvEventBus.isConnected(deviceId) }
+                        }
                         // Phase 147 — same immediate-close behavior for an open live-TV stream.
                         runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                     }

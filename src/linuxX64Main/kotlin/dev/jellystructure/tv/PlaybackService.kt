@@ -348,10 +348,17 @@ internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
 
     /** R372 (FR-R372-12) — the watchdog's whole per-entry test, in one place so [PlaybackService.stopWatchdogTick]
      *  and PlaybackWatchdogTest judge by the same rule. [socketOpen] is the caller's own socket lookup (it suspends,
-     *  and is worth skipping for a kind that holds no socket — see [needsEventsSocket]). */
-    fun shouldReap(playback: TrackedPlayback, socketOpen: Boolean, reconnecting: Boolean): Boolean =
+     *  and is worth skipping for a kind that holds no socket — see [needsEventsSocket]).
+     *
+     *  R372 (FR-R372-11) — [socketEndedAbruptly] is this device's events socket having just *ended abruptly*
+     *  ([EventsCloseCause.isAbrupt]), which is evidence the place itself is gone rather than a guess from silence.
+     *  It therefore goes past [inSocketGrace]'s two holds: a browser tab closed two seconds into a film is gone, and
+     *  so is one whose entry a progress report happened to create. Nothing else overrides the grace — a clean
+     *  R293 `background` close never reaches here as abrupt, so a minimised desktop keeps its film. */
+    fun shouldReap(playback: TrackedPlayback, socketOpen: Boolean, reconnecting: Boolean,
+                   socketEndedAbruptly: Boolean = false): Boolean =
         shouldForceStop(isHeartbeatStale(playback), needsEventsSocket(playback.device), socketOpen, reconnecting,
-            socketGrace = inSocketGrace(playback))
+            socketGrace = !socketEndedAbruptly && inSocketGrace(playback))
 
     companion object {
         /** 218 amendment (FR-218-11), extended by Phase 236 (FR-236-8) — which devices the watchdog may
@@ -1640,8 +1647,17 @@ class PlaybackService(
     /** Phase 110 (FR B.2) — force-stops any playback whose last heartbeat is older than
      *  [STOP_WATCHDOG_MS] (an app kill / dropped network / HDMI-off never sent an explicit stop), and
      *  anything for a device whose TV-events socket has disconnected (checked via [isDeviceConnected]).
-     *  Called on a periodic tick from Main.kt; also callable immediately on a TV disconnect. */
-    suspend fun stopWatchdogTick(isDeviceConnected: suspend (String) -> Boolean) {
+     *  Called on a periodic tick from Main.kt; also callable immediately on a TV disconnect.
+     *
+     *  R372 (FR-R372-11) — [socketEndedAbruptlyFor] is the device whose events socket handler is closing *abruptly*
+     *  as it makes this call (the socket-close path in Server.kt, classified by [EventsCloseCause.isAbrupt]). For
+     *  that one device the socket test goes past FR-R372-12's grace, because an abrupt end is evidence the place is
+     *  gone rather than a guess from silence: a browser tab closed two seconds into a film is read at once instead
+     *  of hanging on as *playing* for 90 s. Null on the periodic tick and on a clean R293 `background` close, where
+     *  the grace stands and a minimised desktop keeps its film. [isDeviceConnected] is still consulted either way,
+     *  so a newer socket of the same device (a reconnect, a `replaced` slot) stops the reap. It stays the LAST
+     *  parameter so the periodic caller keeps its trailing lambda. */
+    suspend fun stopWatchdogTick(socketEndedAbruptlyFor: String? = null, isDeviceConnected: suspend (String) -> Boolean) {
         // Snapshot first: isDeviceConnected suspends, and stopPlayback below takes the tracker's own
         // (non-reentrant) mutex.
         val tracked = playbackTracker.tracked()
@@ -1654,8 +1670,10 @@ class PlaybackService(
                 val reconnecting = sessions?.isReconnecting(p.device.deviceId) == true
                 val needsSocket = PlaybackTracker.needsEventsSocket(p.device)
                 // R372 (FR-R372-12) — the socket test now waits too (PlaybackTracker.inSocketGrace); the whole test
-                // lives in shouldReap so the tick and its test cannot drift apart.
-                if (playbackTracker.shouldReap(p, !needsSocket || isDeviceConnected(p.device.deviceId), reconnecting)) add(p)
+                // lives in shouldReap so the tick and its test cannot drift apart. (FR-R372-11) — and an abrupt end
+                // of THIS device's socket goes past that wait.
+                if (playbackTracker.shouldReap(p, !needsSocket || isDeviceConnected(p.device.deviceId), reconnecting,
+                        socketEndedAbruptly = socketEndedAbruptlyFor == p.device.deviceId)) add(p)
             }
         }
         for (p in stale) {

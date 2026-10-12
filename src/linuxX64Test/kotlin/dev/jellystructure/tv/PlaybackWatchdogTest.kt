@@ -141,6 +141,43 @@ class PlaybackWatchdogTest {
         assertTrue(reapedWithSocketDown(t))
     }
 
+    /**
+     * R372 (FR-R372-11) — the socket-close path in Server.kt, both ways round, on exactly the case FR-R372-12's
+     * grace would otherwise swallow: a play two seconds old whose place is a browser tab.
+     *
+     * A tab holds its events socket for as long as it exists (DEB-759 §4: `AppOnScreen` is `true` for the web
+     * client), so an abrupt end is the place going away and is read at once — acceptance A1's row reads *offline ·
+     * paused* within ~10 s instead of sitting at *playing* for 90 s. R293's deliberate `background` close is the
+     * opposite: the app let its socket go off screen on purpose, and a minimised desktop keeps its film.
+     */
+    @Test
+    fun aCleanBackgroundCloseDoesNotReapButAnAbruptOneDoes() = runBlocking {
+        val t = tracker()
+        val web = device("tab-1", kind = "web")   // judged by its socket (needsEventsSocket) — not cast, not screen
+        t.started(web, "movie", 0L)
+        now += 2_000
+        val p = t.tracked().single()
+
+        // The close that is NOT evidence: R293's own `background`, so Server.kt passes no abrupt device and the
+        // grace stands. (Which close is which is EventsCloseCause.isAbrupt — see EventsSocketHealthTest.)
+        assertFalse(t.shouldReap(p, socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
+        // The close that is: the tab was closed.
+        assertTrue(t.shouldReap(p, socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
+
+        // An abrupt end also goes past the other hold, a fromReport entry — a play the watchdog reaped once and
+        // whose place reported back would otherwise never be read as gone again.
+        t.stopped(web, "movie", 2_000L, reaped = true)
+        now += 10_000
+        assertTrue(t.heartbeat(web, "movie", 12_000L))
+        val back = t.tracked().single()
+        assertFalse(t.shouldReap(back, socketOpen = false, reconnecting = false, socketEndedAbruptly = false))
+        assertTrue(t.shouldReap(back, socketOpen = false, reconnecting = false, socketEndedAbruptly = true))
+
+        // And an abrupt close is never read against a device that is connected after all: Server.kt still consults
+        // isDeviceConnected, so a reconnect or a `replaced` slot (a newer socket of the same device) stops the reap.
+        assertFalse(t.shouldReap(back, socketOpen = true, reconnecting = false, socketEndedAbruptly = true))
+    }
+
     @Test
     fun aReconnectingSessionIsUnaffected() = runBlocking {
         val t = tracker()
