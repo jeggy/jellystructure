@@ -213,6 +213,9 @@ class MediaJobQueue(
             if (service == null || !service.enabled()) { ready = false; delay(10_000); continue }
             if (epochSeconds() * 1000L >= readyUntilMs) {
                 val wasReady = ready
+                // FR-317-16 — `ready()` records its answer in the service, so the Checks card reads the
+                // same one THIS heartbeat took (it cannot ask for itself: `ready()` is suspend and `/stat`s
+                // a file per library root, and the card renders on every title page).
                 ready = service.ready(configStore.current)
                 readyUntilMs = epochSeconds() * 1000L + if (ready) 60_000L else 30_000L
                 if (ready != wasReady) Logger.info("av sync lane: ${if (ready) "the sidecar is ready — claiming" else "the sidecar is not ready — holding"}", "jobs")
@@ -393,6 +396,8 @@ class MediaJobQueue(
                     FileCheckSchedule.AVSYNC_JOB -> "Check A/V sync"
                     else -> "Check track lengths"
                 },
+                // FR-317-14 — the lane comes from the job type, as the enqueue does.
+                lane = FileCheckSchedule.laneFor(type),
                 waiting = counts[type to "queued"] ?: 0,
                 running = queries.listByTypeRunning(type).executeAsList().map { toSnapshot(it) },
                 doneToday = counts[type to "done"] ?: 0,
@@ -1444,6 +1449,10 @@ private fun Boolean.toLong(): Long = if (this) 1L else 0L
 data class JobGroup(
     val type: String,
     val label: String,
+    /** Phase 317 (FR-317-14) — the lane this group's rows ride, from [FileCheckSchedule.laneFor]. Added so
+     *  the group row badges itself instead of saying `segments` for every type; the Running card beside it
+     *  reads the row's own lane and the two disagreed on screen for the `avsync` group. */
+    val lane: String = "segments",
     val waiting: Int,
     val running: List<MediaJobSnapshot>,
     @kotlinx.serialization.SerialName("done_today") val doneToday: Int,

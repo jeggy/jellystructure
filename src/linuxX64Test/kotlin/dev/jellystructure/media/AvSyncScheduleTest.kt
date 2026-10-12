@@ -29,6 +29,24 @@ class AvSyncScheduleTest {
     }
 
     @Test
+    fun `the Jobs group line carries its own lane — additive on the wire`() {
+        // FR-317-14 — the group row badged itself `segments` for every type, so one avsync job showed two
+        // disagreeing badges (the Running card beside it reads the row's real lane).
+        val group = JobGroup(
+            type = FileCheckSchedule.AVSYNC_JOB, label = "Check A/V sync",
+            lane = FileCheckSchedule.laneFor(FileCheckSchedule.AVSYNC_JOB),
+            waiting = 1, running = emptyList(), doneToday = 0, failedToday = 0, findingsToday = 0,
+        )
+        assertEquals(FileCheckSchedule.AVSYNC_LANE, group.lane)
+        // The wire rule: the field is additive, so a payload without it still reads as what every group
+        // was badged before — an installed admin page and an older server stay in step.
+        val old = """{"type":"verify_file","label":"Verify files","waiting":2,"running":[],"done_today":1,"failed_today":0,"findings_today":0}"""
+        val decoded = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString(JobGroup.serializer(), old)
+        assertEquals("segments", decoded.lane)
+        assertEquals(2, decoded.waiting)
+    }
+
+    @Test
     fun `the shared pool never draws from the avsync lane — and Empty queue still knows it`() {
         assertFalse(FileCheckSchedule.AVSYNC_LANE in MediaJobQueue.SHARED_POOL_LANES)
         assertTrue(FileCheckSchedule.AVSYNC_LANE in MediaJobQueue.QUEUE_NAMES)

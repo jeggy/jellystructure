@@ -159,7 +159,10 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         <div id="view-jobs" style="display:none;">
           <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
             <span style="flex:none;">ℹ</span>
-            <div class="tiny" style="line-height:1.6;">Three queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> and the per-file <b>checks</b> (whole-file verification, track lengths — one job per file) through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size really just decides how many of the three queues can be busy at once.</div>
+            <!-- Phase 317 (FR-317-14) — the pool governs THREE of the four lanes; `avsync` is outside it
+                 with a worker of its own. Nobody reading this may come away thinking the A/V sync sweep
+                 competes for a shared worker, because it does not (FR-317-8, dev review item 2). -->
+            <div class="tiny" style="line-height:1.6;">Three of these four queues share one worker pool (Settings ▸ Job workers). Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — go through the <b>media</b> queue; <b>intro &amp; credits detection</b> and the per-file <b>checks</b> (whole-file verification, track lengths, sidecar subtitles — one job per file) through <b>segments</b>; <b>subtitle pre-warming</b> (a full read of the source file, in Jellyfin's own process) through <b>subtitles</b>. Each queue only ever runs one job at a time no matter how many workers are configured — that's what keeps a re-order safe from racing another edit on the same file — so the pool size decides how many of <i>those three</i> can be busy at once. <b>A/V sync is the fourth lane, and it is outside that pool</b>: one dedicated worker, one file at a time, claiming only while the <span class="mono">avsync</span> sidecar answers and every library root is visible to it. It never takes a worker from the three above — a 22-hour sweep on a shared one would hold it for the whole sweep and starve intro &amp; credits detection.</div>
           </div>
           <div class="card" style="margin-bottom:14px;">
             <div class="row center" style="gap:10px;flex-wrap:wrap;"><h4 style="margin:0;">Queues</h4><span class="spacer"></span><span class="muted tiny">occupancy · one worker per queue, maximum</span><span class="btn sm ghost" id="qe-open-all" style="display:none;">Empty queues…</span></div>
@@ -179,6 +182,9 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-segments"><span class="muted tiny">Loading…</span></div>
               <hr class="dash" style="margin:10px 0;">
               <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-subtitles"><span class="muted tiny">Loading…</span></div>
+              <hr class="dash" style="margin:10px 0;">
+              <!-- Phase 317 (FR-317-8/-14) — the fourth lane, outside the shared pool: its own worker. -->
+              <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line-avsync"><span class="muted tiny">Loading…</span></div>
             </div>
           </div>
           <!-- Phase 272 (FR-272-8..15) — AI work: what waits, what is out at Anthropic, and the last five batches. -->
@@ -729,7 +735,7 @@ private fun jobGroupHtml(g: dev.jellystructure.api.JobGroup): String {
     }</div>"""
     return """<div class="jobrow jq-group" data-group="${g.type}" style="cursor:pointer;">
          <span class="jq-pos">${if (open) "▾" else "▸"}</span>
-         <div class="jq-main"><div class="jq-title">${laneBadge("segments")} <b>${g.label.esc()}</b> · ${parts.joinToString(" · ")}</div>
+         <div class="jq-main"><div class="jq-title">${laneBadge(g.lane)} <b>${g.label.esc()}</b> · ${parts.joinToString(" · ")}</div>
            <div class="jq-sub">one job per file · ${if (open) "click to fold" else "click to list them"} · a restart keeps the count: only the running file starts over</div></div>
          <span class="badge">${fmtCount(g.waiting + g.running.size)} jobs</span>
        </div>$rows"""
@@ -761,7 +767,9 @@ private fun laneBadge(lane: String): String = """<span class="badge" style="back
 private var lastJobsSummary: dev.jellystructure.api.JobsSummary? = null
 
 private fun laneHuman(lane: String): String = when (lane) {
-    "segments" -> "file checks & intro/credits detection"; "subtitles" -> "subtitle pre-warm"; else -> "media edits"
+    "segments" -> "file checks & intro/credits detection"; "subtitles" -> "subtitle pre-warm"
+    "avsync" -> "A/V sync measurement"                     // Phase 317 (FR-317-14)
+    else -> "media edits"
 }
 
 /** Phase 260 (FR-260-4) — the "Empty" button on a lane with something waiting (hidden at 0). */
@@ -793,7 +801,9 @@ private fun openEmptyPanel(container: Element, only: String?) {
     val panel = container.querySelector("#qe") as? HTMLElement ?: return
     val list = container.querySelector("#qe-list") as? HTMLElement ?: return
     (container.querySelector("#qe-title") as? HTMLElement)?.textContent = if (only != null) "Empty the $only queue?" else "Empty queues"
-    list.innerHTML = listOf("media", "segments", "subtitles").filter { only == null || it == only }.joinToString("") { lane ->
+    // Phase 317 (FR-317-14) — `avsync` is a queue like the others here: the route accepts it
+    // (MediaJobQueue.QUEUE_NAMES) and the lane card's own Empty button opens this panel for it.
+    list.innerHTML = listOf("media", "segments", "subtitles", "avsync").filter { only == null || it == only }.joinToString("") { lane ->
         val n = s.lanes.firstOrNull { it.lane == lane }?.queuedCount ?: 0
         val keep = s.running.firstOrNull { it.lane == lane }?.let { "keeps running: <b>${jobTypeLabel(it.type).esc()} · ${it.label.esc()}</b>" } ?: "nothing running"
         val off = n == 0
@@ -1069,6 +1079,25 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
         <span class="chip"><b>${subtitles?.queuedCount ?: 0}</b> queued</span>
         <span class="chip ok" style="background:var(--ok-soft);">${subtitles?.doneToday ?: 0} done today</span>
         ${laneEmptyButton("subtitles", subtitles?.queuedCount ?: 0)}${laneEmptiedNote(s, "subtitles")}"""
+
+    // Phase 317 (FR-317-8/-14) — the fourth lane. Its worker count is the lane's OWN (the server reports 1
+    // here, never the pool's size: there is one worker and showing 2–3 would promise a parallelism that
+    // cannot happen), and the depth carries FR-317-8's estimate at 8 s a file.
+    val avsync = s.lanes.firstOrNull { it.lane == "avsync" }
+    val avsyncRunning = (avsync?.runningCount ?: 0) > 0
+    val avsyncWorkers = avsync?.configuredWorkers ?: 1
+    val avsyncQueued = avsync?.queuedCount ?: 0
+    (container.querySelector("#jobs-worker-line-avsync") as? HTMLElement)?.innerHTML = """
+        <span class="wk-dot ${if (avsyncRunning) "busy" else "idle"}"></span><b>A/V sync</b>
+        <span class="muted tiny">(queue: avsync)</span>
+        <span class="badge ${if (avsyncRunning) "warn" else ""}">${if (avsyncRunning) "busy" else "idle"}</span>
+        <span class="muted tiny">$avsyncWorkers ${if (avsyncWorkers == 1) "worker" else "workers"} of its own, outside the shared pool · one file at a time on the <span class="mono">avsync</span> sidecar's GPU · claims nothing while the sidecar is unreachable or a library root is missing · pauses while a TV is playing when <i>Defer scans while a TV is watching</i> is on</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>${avsync?.runningCount ?: 0}</b> running</span>
+        <span class="chip"><b>${fmtCount(avsyncQueued)}</b> queued</span>
+        ${if (avsyncQueued > 0) """<span class="chip">~${formatRemaining(avsyncQueued * 8_000.0)} at 8 s a file</span>""" else ""}
+        <span class="chip ok" style="background:var(--ok-soft);">${avsync?.doneToday ?: 0} done today</span>
+        ${laneEmptyButton("avsync", avsyncQueued)}${laneEmptiedNote(s, "avsync")}"""
 
     val runningCard = container.querySelector("#jobs-running-card") as? HTMLElement
     if (s.running.isNotEmpty()) {

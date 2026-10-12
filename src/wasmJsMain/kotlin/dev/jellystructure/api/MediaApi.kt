@@ -136,7 +136,11 @@ data class JobsSummary(
 /** Phase 261 (FR-261-2) — mirrors dev.jellystructure.media.JobGroup: *Verify files · 2,261 waiting · 41 done today · 1 finding*. */
 @Serializable
 data class JobGroup(
-    val type: String, val label: String, val waiting: Int = 0, val running: List<MediaJobSnapshot> = emptyList(),
+    val type: String, val label: String,
+    /** Phase 317 (FR-317-14) — the lane the group's rows ride, so the row badges itself. Defaults to
+     *  `segments`, which is what every group was badged before the field existed. */
+    val lane: String = "segments",
+    val waiting: Int = 0, val running: List<MediaJobSnapshot> = emptyList(),
     @SerialName("done_today") val doneToday: Int = 0, @SerialName("failed_today") val failedToday: Int = 0,
     @SerialName("findings_today") val findingsToday: Int = 0,
 )
