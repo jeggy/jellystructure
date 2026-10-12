@@ -85,6 +85,8 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "file_damage" to "Damaged video files",   // Phase 254
     "track_ends_early" to "Audio or video stops before the file ends",   // Phase 255
     "duration_header_wrong" to "File claims to be longer than it is",   // Phase 255
+    "av_offset" to "Sound and picture out of step",   // Phase 317
+    "av_drift" to "Sound slowly drifts from the picture",   // Phase 317
 )
 private var libSearch: String? = null
 private var libSort: String? = null

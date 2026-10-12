@@ -16,6 +16,7 @@ import dev.jellystructure.api.ReceiverCheck
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
+import dev.jellystructure.api.AvSyncConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.BazarrConfig
@@ -712,6 +713,30 @@ ${aiSectionHtml()}
                 <span class="hint">Disk cache for Ravilo TV artwork (the image proxy). <strong>0 = unlimited.</strong> Once over the cap the oldest images are evicted. Applies live — no restart.</span>
               </div>
               <hr class="dash">
+              <!-- Phase 317 (FR-317-13) — Settings holds settings only (285 FR-285-12): the switch, the
+                   address, and ONE status line the server writes. No counts, no sweep button. -->
+              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">A/V sync</div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <span style="font-size:.9rem">Measure whether the sound is in step with the picture</span>
+                  <div class="hint" style="margin-top:2px">Needs the <span class="mono">avsync</span> sidecar (<span class="mono">docker-compose.avsync.yml</span>) and a GPU. It follows the lips against the speech — nothing in a file's own header can find this. Off means nothing is measured and nothing is counted.</div>
+                </div>
+                <span id="avsync-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+              <div id="avsync-on" style="display:none;margin-top:10px">
+                <div class="field">
+                  <label>Sidecar address</label>
+                  <input id="avsync-url" class="input" type="url" placeholder="http://avsync:8000" style="width:100%">
+                  <span class="hint">On the compose network. Every library root must be mounted there at the same path as here — the status line below says so when one is missing.</span>
+                </div>
+                <div class="field">
+                  <label>Timeout per file (seconds)</label>
+                  <input id="avsync-timeout" class="input" type="number" min="5" max="3600" style="width:110px">
+                  <span class="hint">One file is three 45-second windows, about 8 seconds on a free card.</span>
+                </div>
+                <div id="avsync-status" class="tiny muted">Checking…</div>
+              </div>
+              <hr class="dash">
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>
               <p class="hint" style="margin:0 0 10px">Enter how much of this host's memory the media stack (jellystructure + Jellyfin) may use, and get back exact changes — a Jellyfin <code>mem_limit</code>, a <code>/dev/shm</code> cap, a swappiness setting. Suggest-only: nothing here writes to Jellyfin, edits a compose file, or runs a sysctl. Page cache is never counted as spare capacity.</p>
               <div class="field">
@@ -893,6 +918,8 @@ private var ccEnabled = false
 private var ccMaxSessions = 2
 private var ccShowSteps = true
 private var bazarrEnabled = false
+// Phase 317 (FR-317-13) — the A/V sync sidecar (Settings → Advanced); the url/timeout live in their inputs.
+private var avSyncEnabled = false
 private var bazarrAutoSearch = false
 private var bazarrShowHistory = true
 // Phase 139 — request-language intents (rebuilt into the DOM on every change; simple list, no
@@ -993,6 +1020,12 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("scan-threads", scanThreads.toString())
     setInputValue("scan-episode-cap", scanEpisodeCap.toString())
     setInputValue("tv-image-cache", tvImageCacheMb.toString())
+    // Phase 317 (FR-317-13)
+    avSyncEnabled = config.avsync.enabled
+    updateToggle("avsync-enabled-toggle", avSyncEnabled)
+    setInputValue("avsync-url", config.avsync.url)
+    setInputValue("avsync-timeout", config.avsync.timeoutS.toString())
+    (document.getElementById("avsync-on") as? HTMLElement)?.style?.display = if (avSyncEnabled) "block" else "none"
     updateRestartBanner()
     deferWhilePlaying = config.scan.deferWhilePlaying
     updateToggle("defer-while-playing-toggle", deferWhilePlaying)
@@ -1253,6 +1286,18 @@ private fun attachListeners(scope: CoroutineScope) {
         refreshTomlPreview(readForm())
     }
     document.getElementById("notif-webhook")?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    // Phase 317 (FR-317-13) — the switch and the address; the status line is re-asked whenever either moves.
+    document.getElementById("avsync-enabled-toggle")?.addEventListener("click") {
+        avSyncEnabled = !avSyncEnabled
+        updateToggle("avsync-enabled-toggle", avSyncEnabled)
+        (document.getElementById("avsync-on") as? HTMLElement)?.style?.display = if (avSyncEnabled) "block" else "none"
+        refreshTomlPreview(readForm())
+        if (avSyncEnabled) scope.launch { loadAvSyncStatus() }
+    }
+    for (id in listOf("avsync-url", "avsync-timeout")) {
+        document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    }
+    if (avSyncEnabled) scope.launch { loadAvSyncStatus() }
     // Phase 221 (FR-221-2) — the test is delivered by the SERVER (the machine that will deliver the real
     // ones), not by this browser: status code or connect error and elapsed ms, inline.
     document.getElementById("notif-test-btn")?.addEventListener("click") {
@@ -1764,6 +1809,12 @@ private fun readForm(): AppConfig = AppConfig(
         notifyOnDrift = notifDrift,
         notifyOnCrash = notifCrash,
     ),
+    // Phase 317 (FR-317-13) — carried on the global Save, like every other block on this form.
+    avsync = AvSyncConfig(
+        enabled = avSyncEnabled,
+        url = getInputValue("avsync-url").ifBlank { "http://avsync:8000" },
+        timeoutS = getInputValue("avsync-timeout").toIntOrNull()?.coerceIn(5, 3600) ?: 180,
+    ),
     libraries = libraryMappings.toList(),
     qbittorrent = if (qbEnabled) QBittorrentConfig(
         enabled = true,
@@ -1868,6 +1919,13 @@ private fun buildToml(c: AppConfig): String = buildString {
         if (step.step == "notify") appendLine("on = \"${step.on}\"")
         if (step.step == "wait") appendLine("minutes = ${step.minutes}")
         if (step.step == "build_recommendations" || step.step == "build_suggestions") appendLine("rebuild_every = \"${step.rebuildEvery}\"")  // Phases 269, 274
+    }
+    if (c.avsync.enabled) {   // Phase 317 (FR-317-13)
+        appendLine()
+        appendLine("[avsync]")
+        appendLine("enabled = true")
+        appendLine("""url = "${c.avsync.url}"""")
+        appendLine("timeout_s = ${c.avsync.timeoutS}")
     }
     if (c.behavior.notificationsWebhook.isNotBlank()) {
         appendLine()
@@ -2042,6 +2100,18 @@ private fun wireSeerr(scope: CoroutineScope) {
         if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
         else { inp.type = "password"; btn?.textContent = "Show" }
     }
+}
+
+/**
+ * Phase 317 (FR-317-13) — the A/V sync card's one status line. Every word is the server's: it is the only
+ * party that can reach the sidecar, and the mount check is a `/stat` per library root through it.
+ */
+private suspend fun loadAvSyncStatus() {
+    val el = document.getElementById("avsync-status") as? HTMLElement ?: return
+    val s = MediaApi.avSyncSettings()
+    if (s == null) { el.innerHTML = """<span class="muted">Couldn't ask the server.</span>"""; return }
+    val cls = if (s.reachable) "ok" else "bad"
+    el.innerHTML = """<span class="badge $cls tiny">${if (s.reachable) "Ready" else "Not measuring"}</span> ${s.status.esc()}"""
 }
 
 // Phase 157 — wire the Bazarr card. Same shape as wireSeerr (no rescan/root-folder — Bazarr isn't a

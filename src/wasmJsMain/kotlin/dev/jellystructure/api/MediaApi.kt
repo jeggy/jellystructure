@@ -1018,6 +1018,72 @@ object MediaApi {
         httpClient.get("/api/media/$id/health/tracks").body<TrackCoverageStatus>()
     }.getOrNull()
 
+    // ── Phase 317 (FR-317-10) — this title's A/V sync. Every word is the server's; the page prints it. ──
+
+    @Serializable
+    data class AvSyncWindow(
+        @SerialName("at_ms") val atMs: Long = 0,
+        @SerialName("offset_ms") val offsetMs: Long? = null,
+        val conf: Double = 0.0,
+        val frames: Int = 0,
+        val confident: Boolean = false,
+    )
+
+    @Serializable
+    data class AvSyncFile(
+        val path: String,
+        val state: String,                 // "offset" | "drift" | "unknown" (in_sync files are only counted)
+        @SerialName("offset_ms") val offsetMs: Long? = null,
+        @SerialName("drift_from_ms") val driftFromMs: Long? = null,
+        @SerialName("drift_to_ms") val driftToMs: Long? = null,
+        @SerialName("drift_from_ms_at") val driftFromMsAt: Long? = null,
+        @SerialName("drift_to_ms_at") val driftToMsAt: Long? = null,
+        val reason: String? = null,
+        @SerialName("reason_label") val reasonLabel: String? = null,
+        @SerialName("checked_at") val checkedAt: Long? = null,
+        val season: Int? = null,
+        val audio: String? = null,
+        @SerialName("audio_stream_index") val audioStreamIndex: Int? = null,
+        @SerialName("audio_mark") val audioMark: String? = null,
+        val what: String? = null,
+        val experience: String? = null,
+        val who: String? = null,
+        val suggestion: String? = null,
+        val command: String? = null,
+        val shifted: List<String> = emptyList(),
+        val left: List<String> = emptyList(),
+        val windows: List<AvSyncWindow> = emptyList(),
+    )
+
+    @Serializable
+    data class AvSyncStatus(
+        val enabled: Boolean = false,
+        val total: Int = 0,
+        @SerialName("in_sync") val inSync: Int = 0,
+        val unchecked: Int = 0,
+        val unknown: Int = 0,
+        @SerialName("zero_frames") val zeroFrames: Int = 0,
+        val files: List<AvSyncFile> = emptyList(),
+    )
+
+    suspend fun avSyncStatus(id: String): AvSyncStatus? = runCatching {
+        httpClient.get("/api/media/$id/health/avsync").body<AvSyncStatus>()
+    }.getOrNull()
+
+    @Serializable
+    data class AvSyncSettings(
+        val enabled: Boolean = false,
+        val reachable: Boolean = false,
+        val status: String = "",
+        val model: String = "",
+        @SerialName("unseen_roots") val unseenRoots: List<String> = emptyList(),
+    )
+
+    /** FR-317-13 — the Settings card's one status line, decided by the server. */
+    suspend fun avSyncSettings(): AvSyncSettings? = runCatching {
+        httpClient.get("/api/config/avsync/status").body<AvSyncSettings>()
+    }.getOrNull()
+
     @Serializable
     private data class IntegrityRepairReq(val mediaId: String, val paths: List<String>, val lossy: Boolean)
 

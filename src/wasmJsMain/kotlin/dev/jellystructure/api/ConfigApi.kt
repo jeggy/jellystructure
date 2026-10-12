@@ -179,6 +179,16 @@ data class AppConfig(
     @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
     // Phase 270 — the AI tab. The key arrives as the `##KEEP##` sentinel when one is saved (never the key).
     val ai: AiConfig = AiConfig(),
+    // Phase 317 (FR-317-13) — the A/V sync sidecar (Settings → Advanced), carried on the global Save.
+    @SerialName("avsync") val avsync: AvSyncConfig = AvSyncConfig(),
+)
+
+/** Phase 317 (FR-317-13) — mirrors the backend's `AvSyncConfig`. */
+@Serializable
+data class AvSyncConfig(
+    val enabled: Boolean = false,
+    val url: String = "http://avsync:8000",
+    @SerialName("timeout_s") val timeoutS: Int = 180,
 )
 
 /** Phase 270 — mirrors the backend's `AiConfig` (FR-270-1/2). */

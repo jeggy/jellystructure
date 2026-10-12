@@ -869,6 +869,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <div id="mkv-banner" style="display:none;margin-bottom:14px"></div>
         <div id="integrity-banner" style="display:none;margin-bottom:14px"></div>
         <div id="coverage-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="avsync-banner" style="display:none;margin-bottom:14px"></div>
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -1176,6 +1177,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadMkvHealth(item, scope) }
     scope.launch { loadFileIntegrity(item, scope) }
     scope.launch { loadTrackCoverage(item) }   // Phase 255
+    scope.launch { loadAvSync(item) }   // Phase 317
     scope.launch { loadChecksCard(item, scope) }   // Phase 261
     scope.launch { loadSubtitleVerdicts(item, scope) }   // Phase 273
     scope.launch { loadFileFixTitleCard(item.id, scope) }   // Phase 314c
@@ -3325,9 +3327,11 @@ private suspend fun loadChecksCard(item: MediaItem, scope: CoroutineScope) {
                     "check_verify" -> MediaApi.checkFileIntegrity(item.id, check = "verify", force = true)
                     "check_lengths" -> MediaApi.checkFileIntegrity(item.id, check = "lengths", force = true)
                     "check_subtitles" -> MediaApi.checkFileIntegrity(item.id, check = "subtitles", force = true)
+                    "check_avsync" -> MediaApi.checkFileIntegrity(item.id, check = "avsync", force = true)   // Phase 317
                 }
                 loadChecksCard(item, scope)
                 if (action == "check_subtitles") loadSubtitleVerdicts(item, scope)
+                if (action == "check_avsync") loadAvSync(item)
             }
         }
     }
@@ -3385,6 +3389,96 @@ private suspend fun loadTrackCoverage(item: MediaItem) {
       <div style="flex:1;min-width:200px;">
         <b style="font-size:.9rem;">${headline.esc()}.</b>
         <div class="tiny muted" style="margin-top:4px;">Measured from the file's own packets, not its header. After a fix the file changes, the next sweep re-checks it, and this clears itself.</div>
+        $body
+      </div>
+    </div>"""
+    banner.style.display = "block"
+}
+
+/**
+ * Phase 317 (FR-317-10) — the A/V sync banner, beside 255's. Every word comes from the server, including
+ * the command: the page chooses no threshold, computes no offset and names no fix of its own.
+ *
+ * `unknown` files never reach the banner (FR-317-7: never shown as clean, never shown as a problem) — the
+ * Checks card's file list carries their one quiet line instead.
+ */
+private suspend fun loadAvSync(item: MediaItem) {
+    val banner = document.getElementById("avsync-banner") as? HTMLElement ?: return
+    val status = MediaApi.avSyncStatus(item.id) ?: run { banner.style.display = "none"; return }
+    val flagged = status.files.filter { it.state == "offset" || it.state == "drift" }
+    // FR-317-10 — the measured audio track's row gets a mark (*160 ms early*), like 255's short-track mark.
+    // Matched on the stream index the row itself carries, never on a list position (255's dev review item 5).
+    for (f in flagged) {
+        val mark = f.audioMark ?: continue
+        val stream = f.audioStreamIndex ?: continue
+        val rows = document.querySelectorAll(""".trk[data-stream="$stream"]""")
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            if (row.getAttribute("data-file") != f.path || row.querySelector(".trk-avsync") != null) continue
+            row.querySelector(".trk-mid")?.let { mid ->
+                (mid as HTMLElement).innerHTML += """ <span class="trk-avsync badge warn tiny">${mark.esc()}</span>"""
+            }
+        }
+    }
+    if (flagged.isEmpty()) { banner.style.display = "none"; return }
+
+    fun label(path: String): String {
+        val name = path.substringAfterLast('/')
+        return Regex("S\\d+E\\d+(?:-?E\\d+)*", RegexOption.IGNORE_CASE).find(name)?.value?.uppercase() ?: name
+    }
+    fun at(ms: Long): String {
+        val total = ms / 1000
+        val h = total / 3600; val m = (total % 3600) / 60; val s = total % 60
+        return if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}" else "$m:${s.toString().padStart(2, '0')}"
+    }
+    fun signed(ms: Long): String = if (ms < 0) "−${-ms} ms" else "+$ms ms"
+    // The only player the admin has is 222/223's segment editor, and its route carries no start time, so a
+    // window's time links to the editor for that file and is read there. Opening it AT the window needs an
+    // `at=` parameter in that editor — raised, not bolted on from here.
+    fun editorHref(path: String): String {
+        if (item.kind != MediaKind.TV_SHOW) return "#/segments?movie=${item.id}"
+        val ep = item.episodes.firstOrNull { it.path == path } ?: return "#/segments?movie=${item.id}"
+        return "#/segments?series=${item.id}&episode=${dev.jellystructure.encodeURIComponent(ep.filename)}&episodeNumber=${ep.episodeNumber ?: 0}"
+    }
+    fun block(f: MediaApi.AvSyncFile): String {
+        val evidence = f.windows.joinToString("") { w ->
+            val off = w.offsetMs?.let { signed(it) } ?: "no faces"
+            """<div class="tiny" style="margin:2px 0;${if (!w.confident) "opacity:.55;" else ""}">
+                 <a href="${editorHref(f.path)}">${at(w.atMs).esc()}</a> — $off
+                 <span class="muted">(confidence ${(w.conf * 100).toInt() / 100.0}, ${w.frames} face frames${if (!w.confident) ", not counted" else ""})</span>
+               </div>"""
+        }
+        return """<div style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:4px;">
+             <b style="font-size:.84rem;">${(f.what ?: "").esc()}</b>
+             <div class="tiny" style="margin-top:3px;line-height:1.6;">
+               <span class="muted">What a viewer gets:</span> ${(f.experience ?: "").esc()}<br>
+               <span class="muted">Who is affected:</span> ${(f.who ?: "").esc()}<br>
+               <span class="muted">Suggested fix:</span> ${(f.suggestion ?: "").esc()}
+             </div>
+             ${f.command?.let { permCopyBlock(it, null) } ?: ""}
+             ${if (f.windows.isEmpty()) "" else """<details style="margin-top:6px;"><summary class="tiny" style="cursor:pointer;">The measurements this is based on</summary>$evidence</details>"""}
+           </div>"""
+    }
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+    val offsets = flagged.count { it.state == "offset" }
+    val drifts = flagged.count { it.state == "drift" }
+    val headline = buildList {
+        if (offsets > 0) add(if (isTvShow) "$offsets episode${if (offsets != 1) "s" else ""} ha${if (offsets != 1) "ve" else "s"} sound out of step with the picture" else "The sound is out of step with the picture")
+        if (drifts > 0) add(if (isTvShow) "$drifts episode${if (drifts != 1) "s" else ""} drift${if (drifts == 1) "s" else ""} out of step" else "The sound drifts away from the picture")
+    }.joinToString(" · ")
+    val body = if (isTvShow) {
+        flagged.groupBy { it.season }.entries.sortedBy { it.key ?: -1 }.joinToString("") { (season, files) ->
+            """<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:.8rem;"><b>${season?.let { "S${it.toString().padStart(2, '0')}" } ?: "Specials"}: ${files.size} episode${if (files.size != 1) "s" else ""}</b></summary>
+               ${files.sortedBy { it.path }.joinToString("") { f -> """<div style="margin:6px 0 0 8px;"><b class="tiny">${label(f.path).esc()}</b>${block(f)}</div>""" }}
+               </details>"""
+        }
+    } else flagged.joinToString("") { block(it) }
+    banner.innerHTML = """
+    <div style="background:var(--surface-2,transparent);border:1px solid var(--warn);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <span class="badge warn" style="flex:none;margin-top:1px;">⚠ A/V sync</span>
+      <div style="flex:1;min-width:200px;">
+        <b style="font-size:.9rem;">${headline.esc()}.</b>
+        <div class="tiny muted" style="margin-top:4px;">Measured by following the lips against the speech, in frames of 40 ms, and read against what the rest of the library reads. After a fix the file changes, it is measured again, and this clears itself.</div>
         $body
       </div>
     </div>"""
