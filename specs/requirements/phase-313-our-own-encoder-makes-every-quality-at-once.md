@@ -705,11 +705,11 @@ the `age_rating_map` bug the route's own comment describes (fixed 2026-09-04).
 
 ### FR-313-15 — Every `[encoder]` value is the config file's, and only the config file's
 
-- **`[encoder]` is not a Settings field.** It is deployment plumbing — a container path, a tmpfs, a disk cap,
-  two dev switches — not a household setting, and FR-285-12 (*Settings holds settings only*) keeps it off the
-  form. Phase 317 chose the other shape for `[avsync]` (a card in Settings ▸ Advanced) because a sidecar's URL
-  and timeout are an operator's to set from the admin; `[encoder]`'s values are set where the container is
-  defined, next to `docker-compose.gpu.yml`'s mounts, or they are wrong.
+- **`[encoder]` is not a Settings field.** It is deployment plumbing — where jellyfin-ffmpeg lives, a tmpfs, a
+  disk cap, and the encoder's own switches — not a household setting, and FR-285-12 (*Settings holds settings
+  only*) keeps it off the form. Phase 317 chose the other shape for `[avsync]` (a card in Settings ▸ Advanced)
+  because a sidecar's URL and timeout are an operator's to set from the admin; `[encoder]`'s values are set
+  where the container is defined, next to `docker-compose.gpu.yml`'s mounts, or they are wrong.
 - **Therefore `PUT /api/config` restores the whole block from the stored config**, exactly as it does for
   `acquisition` and `ingest`: `config = config.copy(encoder = stored.encoder)`. A Settings save can never
   change an `[encoder]` value, because a Settings save never carries one.
