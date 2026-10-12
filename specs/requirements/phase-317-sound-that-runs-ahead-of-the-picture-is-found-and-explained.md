@@ -294,8 +294,12 @@ batch shapes.
    a linear +1 → +6 over five windows → `drift`; one confident window → `unknown`.
 7. The sweep on the household server: ≥ 400 files/hour on GPU 1 with nothing playing; it stops for playback; GPU 0's
    transcodes are untouched; GPU 1 stays under 4.5 GB beside an idle Immich; segment detection keeps running.
+   — **restated as 7a/7b/7c by the 2026-10-13 amendment (FR-317-19): the rate's denominator is library files, and the
+   per-file card cost is the clause measurable without the library.**
 8. A film with a Nordic dub and the original track: the original is measured; the dub comes back in step (`corr ≥ 0.6`,
    lag ≤ 1) and is shifted with it — or, if not, is named and left.
+   — **restated as 8a/8b/8c by the 2026-10-13 amendment (FR-317-18): the measurement and the rendering are met
+   separately; the two coinciding on one real file has no case in today's library.**
 9. *Film T*: `offset`, audio early — and the owner hears it before it is called a finding.
 
 ## Verification plan
@@ -430,3 +434,147 @@ film would vanish silently, which is worse than the false quiet FR-317-16 fixes.
     Settings says which — acceptance 4, in full.
 13. A file whose first three windows are confident and disagree: a second triple is requested, and four confident
     windows on a line are reported as `drift`.
+
+## Amendment (2026-10-13) — acceptance 7 and 8 restated against real material, and a third *next run* that cannot come (DEB-810)
+
+From the measurement of real library files through prod's sidecar with the backend's own window plan
+(evidence in DEB-722's thread; ids and paths deliberately not repeated here). **Neither of the two
+acceptance findings is a code defect** — both are numbers this spec asserts that the library, as it stands,
+does not produce. Both are **settled here rather than sent to the owner**: neither is viewer-visible, neither
+contradicts [`constitution.md`](../constitution.md), and both numbers are dev-authored — the owner's three
+decisions of 2026-10-10 were *sweep every file*, *skip Animation*, *GPU is dev's call*, and neither 400 nor
+acceptance 8's wording is among them. The same evidence turned up one real admin gap, FR-317-20, which is a
+fix and not a question.
+
+### What real material proved (no change asked for)
+
+- **`decode: nvdec` on both codec paths**, including a 2160p HEVC DV/HDR `smpte2084` file — the tonemap path
+  keeps hardware decode. This retires the earlier e2e note that read `cpu`: that was the `rawvideo` fixtures.
+- **FR-317-8's seeding is right on a real config.** Prod's live `config.toml` carries `[[scan.pipeline]]
+  step = "check_av_sync"`, `enabled = true`, `scope = "missing"`, seeded after `check_subtitles`, with
+  `avsync_step_seeded = true`. The once-only seeding did what it promised.
+- **FR-317-17 earns itself on the first real file.** The reported broadcast's first triple yields one
+  confident window → `unknown` → the second triple brings it to three and the `+160 ms` answer. Without the
+  12-10 amendment's second arm this file would have come out unmeasured.
+- **FR-317-11's measurement, on real dubs.** Eight real Nordic dub tracks across two films: every one
+  `lag_frames 0`, `corr 0.630–0.773`, all above `IN_STEP_CORR = 0.6` → the rule says *they move with the
+  original*, which is the correct answer for both files, neither of which needs moving.
+
+### FR-317-18 — Acceptance 8 is three clauses, and only one of them is the library's to grant
+
+Acceptance 8 as written wants one real film that is **out of step** *and* **carries a Nordic dub**, so that the
+*Suggested fix* can name the tracks that move together. Measured, both candidates, with the backend's own
+window plan:
+
+- the **primary dub film** (1080p, original + four dubs) — 6 windows across both triples, **0 confident**
+  (face frames 62–451, conf 0.155–1.430) → `unknown`, *"no window read clearly enough to measure"*. Live
+  action by eye; the model could not read it anywhere.
+- the **backup dub film** (2160p HEVC DV/HDR, same track layout) — first triple 2 of 3 confident, median
+  **+1 frame = +40 ms** → `in_sync`, and `wantsMoreWindows` is false, so the code correctly stops there.
+
+So neither renders a banner, and the acceptance has nothing to render in. Svabo's candidate notes say why
+there may be no better one: the library's multi-track NORDiC films are nearly all **Animation**, which the
+owner's decision skips, and the live-action remainder is animal-led or has no third track.
+
+**The conjunction was never what was under test** — two separable rules were, and they are proven separately:
+
+8a. **The measurement** — on a real multi-track film the original-language track is the one measured, and
+    every other audio track gets its `corr`/`lag_frames` and is classified by FR-317-11's rule. **Met** on
+    eight real dub tracks (above), including `mkv_audio_ids` read from a real `mkvmerge -J`.
+8b. **The rendering** — the advice names which tracks move with the measured one and which is left, one
+    `--sync <mkvmerge id>:<ms>` per moved track. **Met** on the e2e three-track case, which produced the full
+    *"moves 2 tracks together / swe is left as it is"* wording and `--sync` arguments carrying mkvmerge ids.
+    This half is pure code over stored JSON (`AvSyncAdvice`, commonMain): a synthetic file exercises it
+    exactly as a real one would, which is why acceptance 5 already puts it on one.
+8c. **8a and 8b on one file** — a dubbed live-action film that is itself `offset` or `drift`. **Not
+    satisfiable from today's library, and not a defect.** It stands as a standing watch, not a gap: the first
+    real dubbed film the sweep returns `offset` or `drift` for gets this walk. If the sweep finishes and finds
+    none, 8c closes as *no case in the library*, with the sweep's own counts as the evidence — not as a
+    failure, and not left reading as one.
+
+A real film can also come out **wholly unreadable** (the primary dub film: 6 windows, 0 confident), and
+FR-317-17's second triple does not rescue it. That is the correct answer under FR-317-7 — `unknown`, never
+counted as clean — and it must not be read as *in step*. Where it is said is FR-317-20.
+
+### FR-317-19 — Acceptance 7's rate names its denominator, and gains a clause that is measurable today
+
+Measured sidecar compute, one file at a time on an otherwise idle GPU 1, real files, 3 × 45 s windows: **9.91 ·
+13.43 · 17.78 · 20.17 seconds** per triple (1080p h264 broadcast two triples, the 1080p dub film, the 2160p
+DV/HDR film). Call it 10–20 s, ~15 s in the middle ⇒ **~180–360 measured files/hour**, before the backend's own
+`ffprobe` per file and `mkvmerge -J` per matroska. Acceptance 7 asks for ≥ 400/hour, which is 8.25 s a file.
+
+The ≥ 400 came from the research report's `--one-file` bench (14 files, 115 s, **8.2 s** a file, 3.9 GB VRAM
+⇒ ~440/h ⇒ ~22 h), and that bench and this measurement are not timing the same work — which is the whole
+discrepancy:
+
+- **content, not code**: the detector's cost follows the face track, and the bench's own sample is not the
+  library's mix (62–451 face frames on one of these files against four figures on another);
+- **per run against per request**: the bench's process set up once and answered fourteen times; the built
+  sidecar answers one HTTP request per file;
+- **and the denominators differ.** ~440/h counted *measured* files. Acceptance 7's sentence is about *the
+  sweep*, whose denominator is **library** files — and the skips (animation, `too_short`,
+  `no_original_track`) are written straight to `file_av_sync` and never reach the card, while a file that
+  answers on its first triple never pays for a second. Both of those cut the file count, not the per-file cost.
+
+The number is therefore not wrong so much as **undenominated**. Restated, with the measurable part separated
+from the part only the sweep can settle:
+
+7a. **Per-file card cost** — a 3 × 45 s triple costs **≤ 25 s of GPU 1** on an idle card, for 1080p and for
+    2160p, hardware-decoded on both codec paths. **Met**: 9.91–20.17 s on four real files, `decode: nvdec`
+    throughout. This is the clause that is falsifiable without the library, and it is the one a regression in
+    the sidecar would break.
+7b. **The sweep's rate is a rate over library files, skips included**, and ≥ 400/hour stays the target the
+    ~22 h estimate came from — **settled by the sweep and by nothing else**, because both of its unknowns are
+    properties of the library rather than of the code. At ~15 s a measured file, ≥ 400 library files/hour needs
+    roughly **two files in five to be skipped**; the sweep reports both numbers directly (`reason` rows against
+    measured rows in `file_av_sync`), so its first hour answers it. A measured rate under 400 is **a finding
+    for the owner, not a build defect** — the rule the 12-10 amendment already set for FR-317-17's extra pass.
+7c. **Unchanged, and still the pass/fail part**: the sweep stops for playback; GPU 0's transcodes are
+    untouched; GPU 1 stays under 4.5 GB beside an idle Immich; segment detection keeps running.
+
+**If the owner wants 400 rather than an answer about 400**, the route is not a tune: FR-317-8 gives the lane
+one worker deliberately, and the research report's two-in-flight (5.4 s a file, 87 % SM) is already in
+*Later (317b)* — at a **6.5 GB** VRAM peak, which breaches 7c's own 4.5 GB ceiling beside Immich. That makes
+concurrency an owner trade rather than dev's call, and it is recorded here as a 317b candidate with its
+number, not decided.
+
+### FR-317-20 — A file that was measured and could not be read does not say *next run*
+
+The unreadable real film above has no `reason` (one is set only when **nothing was measured** — FR-317-5), so
+it is a current row whose verdict is `unknown`. In `TitleChecks.avSyncStep` such a row's `state` is
+`"unchecked"` (correctly — never *clean*), and `unchecked > 0` makes the **step's** `nextDue` read *next run*
+(`TitleChecks.kt:303-307`), while the row's own line already reads *when the file changes* — which is the
+truth, since `recheckUnchanged = false` means no next run will touch it. Two lines on one card, disagreeing,
+and the card's version is the one that invites a wait for a check that cannot happen. This is the same defect
+FR-317-16 fixed for a stopped sidecar, arriving by a second door; a skipped cartoon reaches it too, so it is
+not confined to unreadable films. Derived from the built code against a now-proven real case, not yet seen in
+a browser — the re-walk below confirms it.
+
+- **The step's *next run* counts only rows with no current result.** A row that has been measured — whether
+  it came out a finding, clean, skipped, or unreadable — is settled; with no unmeasured row left the line
+  reads *when a file changes*, as the per-file rows already do.
+- **The card's detail distinguishes the two.** *N not measured* today covers both *not measured yet* and
+  *measured, nothing readable*. Split it: **not measured yet** for rows with no result, and for the settled
+  ones the words the verdict already carries — `AvSyncVerdict.why`'s *"no window read clearly enough to
+  measure"* (`AvSync.kt:187`) and `AvSyncSkip`'s *"skipped — …"* (`AvSync.kt:61-63`), which FR-317-10 already
+  puts on the file's own quiet line. Nothing new is written and no new wording is invented.
+- **`outcome` is untouched**: a title with an unreadable file stays *partial*, never *clean* (FR-317-7).
+
+### Tests (added)
+
+- `TitleChecks`: a file with a current `unknown` row and no `reason` → the step reads *when a file changes*,
+  not *next run*, and the detail says the window-confidence sentence rather than *not measured*; a file with
+  `reason = animation` → the same, with the skip sentence; a file with **no** row → *next run*, unchanged.
+- No new sidecar or verdict test: FR-317-18 and FR-317-19 change no behaviour. 7a is a measurement, recorded
+  above; 7b and 8c are the sweep's and the library's to answer.
+
+### Acceptance (restated and added)
+
+- **7 is replaced by 7a/7b/7c above.** 7a is met; 7b awaits the sweep (the owner's call to start); 7c is
+  unchanged and unverified.
+- **8 is replaced by 8a/8b/8c above.** 8a and 8b are met; 8c is library-blocked and stands as a watch.
+
+14. A title whose only file was measured and could not be read: the Checks card's A/V sync line reads *when a
+    file changes* — never *next run* — says in the card's own words that no window read clearly enough, and
+    the title is not counted clean.
+15. A cartoon title, the sweep having skipped it: the same line, with *skipped — animation* and no *next run*.
