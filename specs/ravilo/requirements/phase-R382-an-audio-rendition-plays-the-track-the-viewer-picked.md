@@ -91,3 +91,71 @@ re-checked on Jellyfin's own transcode path, where R291's renditions use the sam
 match, so the film got no mapping at all (our encoder fell back to Jellyfin with `audio tracks don't match the file
 (R382)`). Fixed in `73d15191`: languages are compared with `sameLanguage`, not by code (`AudioRenditionsTest`). After
 the fix the same film's seven audio tracks map and our encoder serves it.
+
+## Amendment, 2026-10-12 — acceptance 1 fails on the phone: the row and the stream are off by one
+
+> Reported by QA on the Pixel 9 Pro (`dev.jellystructure.ravilo.debug`, `1.51-18-g171a151b-debug`, against prod) while
+> running acceptance 1. **The backend half of R382 is not implicated**: both switches took effect, decoded, and
+> continued without a restream, and the old `-map 0:5` breakage is gone. The defect is on the **client**, at the point
+> the viewer picks — so the Kotlin for this amendment is in `ravilo-ui`, not in `tv/AudioRenditions.kt`.
+
+### What was seen
+
+On a title with 6 embedded audio tracks and 7 external SRTs, the player's own list is
+`English | Danish | Finnish | Norwegian | Swedish | English` and the picker shows five rows
+(`English (2 versions) | Dansk | Suomi | Norsk | Svenska`). Tapping **Norsk** decoded `'Swedish'`; tapping **Dansk**
+decoded `'Finnish'` — each one track later. The sheet showed Norsk ticked and the Norwegian flag on the Audio chip
+while Swedish was decoding, so the tap landed on the intended row and **the UI and the player disagree**.
+
+On a second title (the FR-R382-1 film, two `eng` tracks) the two rows are simply swapped: the row labelled
+`Default · Surround 7.1` plays AC-3 5.1, the row labelled `Surround 5.1` plays TrueHD Atmos 7.1, and the
+`Now showing` badge names the wrong one of the two in both directions.
+
+### What the numbers say
+
+Flattening the five groups in group order gives `[0, 5, 1, 2, 3, 4]`. The track each tap actually played is the one
+at the tapped version's **position in that flattened order**, not the one at its `flatIndex`:
+Dansk is flattened position 2 → track 2 (Finnish); Norsk is flattened position 4 → track 4 (Swedish). A language with
+two versions therefore shifts every row below it. On the two-`eng` title, where one group holds both tracks, the same
+confusion presents as a straight swap. **First place to look:** `PlayerScreen.kt` `foldedAudioGroups`
+(`:4288`–`:4291`) and the contract of the `build` lambda it is given — whether a `PickerVersion.flatIndex` coming back
+from R195's grouping is a position in the list that was passed in, a position in the flattened group order, or the
+track's own `PlayerAudioTrack.index`. The remap `visible[v.flatIndex].index` is only correct for the first of those
+three. `shownAudio` and `playableAudio` (314b) read the same index and would inherit the error.
+
+### FR-R382-5 — A pick addresses the track, not a place in a list
+
+Choosing a version in the audio picker plays **that version's own track** in the list the player reported, on every
+shape: one language with several versions, several languages, a 314b copy folded onto its source's row, and a
+single-audio session where the ticket's list stands in for the player's (`sessionAudioTracks`, R284). The index the
+player is given is derived from the version's identity, not from its position among the rows or among the flattened
+groups. A language group with two or more versions must not shift the rows below it.
+
+### FR-R382-6 — `Now showing` names what is decoding
+
+The picker's selected tick, the summary row's badges, the Audio chip's flag and the `Now showing` badge are all
+derived from the **same** index as the stream the player is decoding, so no two of them can disagree. This is R238's
+rule (`activeVersionOf`) applied to audio: with several versions in a group the badges belong to the one that is
+playing.
+
+### FR-R382-7 — Tests
+
+1. The reported shape — 6 tracks `en, da, fi, no, sv, en` grouped into five rows: every version's chosen index is its
+   own track, and in particular the `Norsk` row selects the Norwegian track, not the Swedish one.
+2. Two same-language tracks in one group: each version selects its own track, and `Now showing` marks the one that is
+   decoding, in both directions.
+3. A 314b copy folded onto its source's row, in a list where the copy is **not** last: the fold does not shift any
+   other row's chosen index.
+4. A regression test over the whole list: for every version of every group, the index handed to the player round-trips
+   back to that same version through the display derivation (`shownAudio` ∘ pick = identity on the row).
+
+### Acceptance (amended)
+
+1. On the reported 6-track title, on the phone: tapping each of the five rows (and both versions of the two-version
+   row) decodes that row's language — `Norsk` plays Norwegian — and the sheet, the chip and `Now showing` agree with
+   the stream in the log, each way and back.
+
+### Out of scope, filed separately
+
+The same QA session found a playback session left `state='playing'` with `ended_at = NULL` on prod, which makes the
+app offer *"Already playing on Ravilo Web"* on every later play. That is the 310/312 writer's business, not R382's.
