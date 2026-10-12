@@ -65,6 +65,9 @@ fun main(args: Array<String>) {
     if (System.getProperty("ravilo.video") == "gpu") System.setProperty("compose.interop.blending", "true")
     args.indexOf("--mpv-window").takeIf { it >= 0 }?.let { dev.jellystructure.ravilo.ui.desktop.MpvBench.window(args.drop(it + 1)); exitProcess(0) }
     DesktopLog.install()
+    // R372 (FR-R372-11's desktop companion, amendment 2026-10-12) — ⌘Q is no longer the only end that reports: a
+    // log-out, a shutdown or a plain SIGTERM runs the same two steps (DesktopShutdown.installShutdownHook), once.
+    DesktopShutdown.installShutdownHook()
     // R337 (dev review 12) — one Ravilo per Linux session: a second launch shows the running one's window and leaves.
     if (!dev.jellystructure.ravilo.ui.desktop.SingleInstance.claim()) exitProcess(0)
     println("${DesktopLog.stamp()} Ravilo ${dev.jellystructure.shared.raviloVersion()} starting · Mac library: ${if (dev.jellystructure.ravilo.ui.desktop.MacNative.lib != null) "loaded" else "absent (${dev.jellystructure.ravilo.ui.desktop.MacNative.loadError})"}")

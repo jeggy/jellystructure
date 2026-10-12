@@ -66,6 +66,13 @@ actual object MusicEngine {
     actual val state: StateFlow<MusicPlayerState> = _state
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * R372 (FR-R372-11's music companion, amendment 2026-10-12) — the stop of the song being left, on a scope of its
+     * own and off the main thread. `RaviloMusicService.onTaskRemoved` clears the engine and calls `stopSelf()` on the
+     * very next line, so a stop launched onto the UI scope was one roll of the dice against process death; this gets
+     * the bounded 3-attempt backoff the video stop has had since phase 180 (`PlayerStore.stopSession`).
+     */
+    private val exitScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val q = MusicQueue()
     private var context: MusicContext? = null
     private var repeat = RepeatMode.OFF
@@ -332,10 +339,16 @@ actual object MusicEngine {
         tickJob?.cancel()
         val c = client()
         val b = book
-        scope.launch {
+        // FR-R372-11's music companion — on [exitScope], with the video stop's bounded retry: see its own doc, and
+        // phase 180's ("a single failed attempt permanently orphans whatever Jellyfin is doing for this session").
+        exitScope.launch {
             // R323 — the book's own place first (ours), then the part's Jellyfin session ends.
             if (b != null) runCatching { c?.audiobookProgress(b.id, b.part, pos, true) }
-            runCatching { c?.stopPlayback(id, pos) }
+            var delayMs = 1_000L
+            for (attempt in 0 until 3) {
+                if (runCatching { c?.stopPlayback(id, pos) }.isSuccess) break
+                if (attempt < 2) { delay(delayMs); delayMs *= 2 }
+            }
         }
     }
 

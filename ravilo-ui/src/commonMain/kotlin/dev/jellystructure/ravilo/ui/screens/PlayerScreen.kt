@@ -339,6 +339,8 @@ private class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var advanceRequestedForItemId by mutableStateOf<String?>(null)
     /** R381 — the item whose next episode was prepared and prefetched (at most once per item). */
     var prefetchedForItemId: String? = null
+    /** R372 (FR-R372-10) — the end-of-play decision, latched per item (see [EndOfPlayWatch]). */
+    val endOfPlay = EndOfPlayWatch()
     // R290 — the start latch, per item (see PlayerStart.kt): the item whose latch has opened; whether
     // R218's 400 ms have passed since the press (before that the start is plain black); a `play()` held
     // back until the latch (FR-R290-4: a discarded stream is prepared, never played); a restream the
@@ -432,6 +434,10 @@ fun PlayerScreen(
     // remember(dest.itemId)) and closes the old one.
     val currentStore by rememberUpdatedState(store)
     val currentNextEpisodeId by rememberUpdatedState(nextEpisodeId)
+    // R372 (FR-R372-10) — the same staleness: "is there anything to advance to" is `advanceNext`'s own test (a next
+    // episode AND a host that can navigate to it), and the poll loop must read this composition's host, not the one
+    // the loop was launched with.
+    val currentNavigateToEpisode by rememberUpdatedState(onNavigateToEpisode)
     // R181/R180 — same staleness risk as itemId/nextEpisodeId above: these are read inside the poll
     // loop's resolution/remember logic, which must see the current recomposition's value.
     val currentSeriesId by rememberUpdatedState(seriesId)
@@ -1309,6 +1315,25 @@ fun PlayerScreen(
                     } else {
                         nextUpVisible = true; nuFocus = NuFocus.PLAY
                     }
+                }
+
+                // R372 (FR-R372-10, amendment 2026-10-12) — the item ran out and there is nothing to advance to: the
+                // session ends here and the heartbeat stops. Deliberately NOT guarded on `nextUpVisible` the way the
+                // branch above is: with the credits card already up from the early trigger, the end of the file was
+                // never acted on at all, and the 10 s heartbeat went on posting `paused` at the end position for as
+                // long as the app lived (three rows in the owner's 2026-10-12 *Playing now*). The card is left exactly
+                // where it is — the spec says it may stay — and the picture with it (see PlayerStore.endOfPlay, which
+                // keeps the store's state rather than going Idle).
+                if (bk.endOfPlay.observe(
+                        itemId = currentItemId,
+                        loaded = playerLoadedForCurrentItem,
+                        ended = player.isEnded,
+                        // advanceNext's own test, with the live values (see currentNavigateToEpisode).
+                        hasNext = nextForPrefetch != null && currentNavigateToEpisode != null,
+                        advanceRequested = advanceAlreadyRequested,
+                    )
+                ) {
+                    currentStore.endOfPlay(positionMs, durationMs)
                 }
 
                 // R182 (FR-RV-SKIP1-1) — Skip Intro pill. Entering [introStartMs, introEndMs) for the

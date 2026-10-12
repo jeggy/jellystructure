@@ -34,6 +34,27 @@ private const val PLAYSTATE_ID_BATCH = 100
 /** R293 (FR-R293-6) — the header the previous sockets' ends travel in; phase 256 reads it. */
 const val EVENTS_PREV_HEADER = "X-Ravilo-Events-Prev"
 
+/**
+ * R372 (FR-R372-11, amendment 2026-10-12) — one request as plain data, for the one caller that cannot use Ktor: a
+ * browser tab that is going away has to issue its stop inside the unload event itself, through
+ * `fetch(…, { keepalive: true })`, because a request left in flight is aborted with the page. The headers are the ones
+ * [TvApiClient] sends on every other call, the device token among them — nothing rides the query string.
+ */
+class PlainPost(val url: String, val headers: Map<String, String>, val body: String)
+
+/**
+ * R372 (FR-R372-11) — the headers `TvApiClient.auth()` would have set, as plain data: JSON, R252's two identity
+ * headers, and the device token as a `Bearer` in `Authorization` (absent before the device is paired, exactly as
+ * [TvApiClient.auth] leaves it out). The token is never a query parameter here, so there is nothing a proxy or an
+ * access log could keep.
+ */
+internal fun plainPostHeaders(version: String, platform: String, token: String?): Map<String, String> = buildMap {
+    put(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+    put(RaviloHeaders.VERSION, version)
+    put(RaviloHeaders.PLATFORM, platform)
+    token?.takeIf { it.isNotBlank() }?.let { put(HttpHeaders.Authorization, "Bearer $it") }
+}
+
 class TvApiClient(
     client: HttpClient,
     val baseUrl: String,
@@ -253,6 +274,14 @@ class TvApiClient(
             jsonBody(json.encodeToString(PlaybackStopRequest(itemId, positionMs, startupMs)))
         }.assertSuccess()
     }
+
+    /** R372 (FR-R372-11) — the very same stop as plain data, for a page that is going away and must post it through a
+     *  transport that outlives it (see [PlainPost]). Same route, same body, same headers — [auth]'s, built here. */
+    fun stopPlaybackPost(itemId: String, positionMs: Long, startupMs: Long? = null): PlainPost = PlainPost(
+        url = "$baseUrl/api/tv/playback/stop",
+        headers = plainPostHeaders(raviloVersion(), platform, deviceToken()),
+        body = json.encodeToString(PlaybackStopRequest(itemId, positionMs, startupMs)),
+    )
 
     /** R216/Phase 177 (FR-R216-4) — fire-and-forget playback-quality report. Never throws: a failed post
      *  must not affect playback (the phase's own invariant) — the caller doesn't need to runCatching this

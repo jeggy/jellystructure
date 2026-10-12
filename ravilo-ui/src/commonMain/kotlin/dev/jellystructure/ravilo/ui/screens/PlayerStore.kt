@@ -120,6 +120,37 @@ internal class StuckWatch(private val stuckMs: Long = OUR_STREAM_STUCK_MS, priva
     }
 }
 internal const val OUR_STREAM_STUCK_MS = 20_000L
+
+/**
+ * R372 (FR-R372-10, amendment 2026-10-12) — the engine has run out and there is nothing to advance to (a film, a last
+ * episode, the end of a queue), so this play's session ends at that moment.
+ *
+ * [hasNext] is the live next episode, never the one captured when the poll loop started (R381's prefetch hit exactly
+ * that, found on the Pixel 2026-10-08): an episode with a next one is unchanged — it stops at its own playhead on the
+ * advance, and must not be ended here. [advanceRequested] is the same latch the card's triggers read, so an advance
+ * already asked for is left alone.
+ */
+internal fun endsPlayNow(loaded: Boolean, ended: Boolean, hasNext: Boolean, advanceRequested: Boolean): Boolean =
+    loaded && ended && !hasNext && !advanceRequested
+
+/**
+ * R372 (FR-R372-10) — [endsPlayNow] latched per item. The poll loop asks four times a second and the credits card is
+ * often already up from the early trigger, so without a latch the end of a film would post its stop on every tick; and
+ * the latch is keyed by item, so an advance (or a return to the same item) arms it again.
+ */
+internal class EndOfPlayWatch {
+    private var seenFor: String? = null
+    private var endedFor: String? = null
+
+    fun observe(itemId: String?, loaded: Boolean, ended: Boolean, hasNext: Boolean, advanceRequested: Boolean): Boolean {
+        if (itemId == null) return false
+        if (seenFor != itemId) { seenFor = itemId; endedFor = null }
+        if (endedFor == itemId) return false
+        if (!endsPlayNow(loaded, ended, hasNext, advanceRequested)) return false
+        endedFor = itemId
+        return true
+    }
+}
 // R216 (FR-R216-4) — "a long-session interval" for QoE reporting so an abandoned/crashed session isn't
 // lost entirely (was 60 ticks = 10 minutes). 309 (FR-309-1) — now two minutes: a stream is proven after two minutes
 // held without a stall, so the server needs a post at least that often (one row per play, upserted).
@@ -465,6 +496,13 @@ class PlayerStore(
         // own doc), not an error to work around.
         val startupMs = startupMsProvider?.invoke()
         startupMsProvider = null
+        // R372 (FR-R372-11, amendment 2026-10-12) — the page this stop belongs to is unloading: post it here and now,
+        // inside the browser's own event, through a transport that outlives the page (see [UnloadStop]). The coroutine
+        // below is not a second attempt that might also land — the browser abandons it with the page, which is the
+        // whole bug: a tab closed mid-film sat *paused* at its last heartbeat until the watchdog found it. False on
+        // every other platform (no transport installed), where this stop is byte-for-byte the one it always was.
+        val sentOnUnload = dev.jellystructure.ravilo.ui.seams.UnloadStop.unloading &&
+            dev.jellystructure.ravilo.ui.seams.UnloadStop.post(apiClient.stopPlaybackPost(itemId, positionMs, startupMs))
         // R328 (FR-R328-9) — tracked, so a desktop that quits waits for the stop to reach the server.
         dev.jellystructure.ravilo.ui.TeardownWork.track(exitScope.launch {
             // Phase 180 — found live 2026-08-29 on real stue TV hardware: a single failed attempt here
@@ -476,7 +514,7 @@ class PlayerStore(
             // never blocks a user action" invariant) — just no longer a single roll of the dice on one
             // transient network hiccup (this TV has documented WiFi flakiness).
             var delayMs = 1_000L
-            for (attempt in 0 until 3) {
+            if (!sentOnUnload) for (attempt in 0 until 3) {
                 if (runCatching { apiClient.stopPlayback(itemId, positionMs, startupMs) }.isSuccess) break
                 if (attempt < 2) { delay(delayMs); delayMs *= 2 }
             }
@@ -489,6 +527,27 @@ class PlayerStore(
             }
         })
         _state.value = PlayerSessionState.Idle
+    }
+
+    /**
+     * R372 (FR-R372-10, amendment 2026-10-12) — the engine reached the end of this item and there is nothing to advance
+     * to: the session ends here, instead of the 10 s heartbeat posting `paused` at the end position for as long as the
+     * app lives (three of the owner's *Playing now* rows on 2026-10-12 were exactly that).
+     *
+     * The same [stopSession] as every other end — the bounded stop retry, the final QoE post, R347's ≥90 %/credits
+     * mark-played — so leaving the credits card afterwards posts nothing more (`currentItemId` is already cleared,
+     * which is what makes [close] a no-op then). What it deliberately does *not* do is leave the store
+     * [PlayerSessionState.Idle]: FR-R372-10 says the card may stay on screen, and Idle would disable the transport
+     * and change `VideoShutter` under a viewer who is still looking at it. The picture and its chrome are untouched;
+     * only the heartbeat is gone.
+     *
+     * The decision is [EndOfPlayWatch]'s, not this method's, so it is taken once per item in the poll loop.
+     */
+    fun endOfPlay(positionMs: Long, durationMs: Long) {
+        if (currentItemId == null) return
+        val before = _state.value
+        stopSession(positionMs, durationMs)
+        _state.value = before
     }
 
     /** R216 (FR-R216-4) — fire-and-forget; a failed/slow report must never affect playback, so this runs

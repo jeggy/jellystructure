@@ -578,3 +578,80 @@ unaffected and no installed client needs a build.
 **Not built here:** FR-R372-10 and FR-R372-11's client half (the browser's `pagehide` stop) are the clients' — DEB-774.
 A1–A6 need a clock, a real place and the admin page, so none of them is proved by these commits; they are DEB-775 on
 the QA queue. Nothing is deployed: prod runs neither commit.
+
+### Build notes 2026-10-13 — the client half of the amendment (DEB-774)
+
+Written and built through the evening of 2026-10-12; the commit crosses midnight, so this half is dated 2026-10-13
+and the server half above 2026-10-12.
+
+One commit, `commonMain` first: FR-R372-10 is one decision shared by all five clients, and the three platform pieces
+hang off it.
+
+**FR-R372-10 — a play that runs out ends its session.** The gap was where DEB-759 said it was, and it was a guard:
+the natural-end branch of the poll loop (`PlayerScreen.kt`) is `!nextUpVisible && !nextUpDismissed`, so with the
+credits card already up from the early trigger the end of the file was **never acted on at all** — and
+`startHeartbeat`'s loop went on posting `progress(position = the end, isPaused = true)` every 10 s for the life of the
+app. `EndOfPlayWatch` (beside `StuckWatch` in `PlayerStore.kt`, over the pure `endsPlayNow`) takes the decision once
+per item, deliberately **not** guarded on the card: loaded for this item · the engine ended · nothing to advance to ·
+no advance already asked for. "Nothing to advance to" is `advanceNext`'s own test — a next episode *and* a host that
+can navigate to it — read off the live values (`currentNextEpisodeId`, a new `currentNavigateToEpisode`), never the
+ones the poll loop captured when it started: that is R381's prefetch bug in a new place (the Pixel, 2026-10-08).
+
+`PlayerStore.endOfPlay` is the existing `stopSession` — the bounded 3-attempt stop retry, the final QoE post, R347's
+≥90 %/credits mark-played — with **the store's state put back afterwards instead of left `Idle`**. The spec says the
+card may stay on screen, so the picture and its chrome have to stay with it, and `Idle` would disable the transport
+(`enabled = … sessionState is Ready`) and change `VideoShutter` under a viewer still looking at the card. No second
+stop comes free rather than by a new guard: `stopSession` clears `currentItemId` up front, so `close()` on the way out
+of the card finds nothing to post. An episode with a next one is untouched (`hasNext`), and so is the `SkipMode.OFF`
+path, which already exits through `skipCredits()`.
+
+**A scrub back out of the end is not covered, and cannot be from here.** After *Watch credits* the chrome is up and
+the viewer can scrub backwards into a real play — and with the session ended, that play reports nothing. Restarting
+the client's heartbeat would be **inert**, which is worth writing down: the route drops a progress tick for an item
+that already reported a stop (`PlaybackService.reportProgress` → `PlaybackTracker.heartbeat`), and
+`PlaybackSessions.onProgress` refuses to create a session for a (device, item) that has an ended row. A genuine
+resume therefore needs a fresh `startPlayback` — a re-negotiation and a visible reload — which is past this
+amendment's text and is a decision for the owner, not a few lines smuggled in here. Jellyfin's position and watched
+state are already written by the stop at the end of the film, so what is lost is the report of a re-watched tail.
+
+**FR-R372-11, the client half — the browser.** `wasmJsMain`'s `PlayerLifecycleEffect` listened to `visibilitychange`
+only, and its stop was a Ktor `Js` fetch the browser aborts with the page. It now listens to `pagehide` too — the one
+event a closing tab is guaranteed to fire — and both events run the stop inside `UnloadStop.whileUnloading`, so
+`PlayerStore.stopSession` posts it **synchronously, in the event**, through `fetch(…, { keepalive: true })`:
+`TvApiClient.stopPlaybackPost` builds the same route, the same body and `auth()`'s own headers as plain data
+(`PlainPost`), so the device token stays in `Authorization` and nothing rides the query string. `sendBeacon` was not
+needed and is not built. One stop either way — the first event latches `away`, and `stopSession` clears its item
+before anything else can post. The PiP/AirPlay exemption stays on `visibilitychange` and is not applied to
+`pagehide`: a page that is going away takes its AirPlay stream with it.
+
+Both events going through the keepalive transport is what the spec asks for, and it has one cost worth stating: a
+keepalive post is fire-and-forget (there is no answer to wait for once the page is gone), so a plain tab-switch stop
+no longer gets the 3-attempt retry it had. A stop lost that way is exactly the case FR-R372-11's server half closes
+from the socket. The transport is null on every other platform, where `UnloadStop.post` answers false and the stop is
+byte-for-byte the one it always was.
+
+**Desktop (Mac, Linux).** `DesktopShutdown.installShutdownHook()`, installed in `main()`, runs the same two steps ⌘Q
+takes — two seconds for `TeardownWork`, then every registered step — on a log-out, a session shutdown, `SIGTERM` or
+`SIGINT`. `runAll` got a run-once latch in the same change, without which the hook would re-post every step after an
+ordinary ⌘Q had already sent them. A Force Quit (`SIGKILL`) has no hook and stays the server's.
+
+**Android music.** `closeSong()`'s stop moves off the engine's `Dispatchers.Main.immediate` scope onto its own
+`exitScope`, with the video stop's bounded 1 s/2 s/4 s retry: `RaviloMusicService.onTaskRemoved` calls `stopSelf()` on
+the next line, so it was one roll of the dice against process death.
+
+**Cast receiver and Tizen: untouched**, as the amendment says.
+
+**Tests.** `EndOfPlayTest` (**U**, new — the film that runs out, the episode with a next one, an advance already
+asked for, one stop however many ticks see the end, the next item arming it again); `UnloadStopTest` (**U**, new —
+no transport means the ordinary stop runs, the browser's takes the request whole, a transport that refuses or throws
+falls back, `unloading` set only inside the handler and cleared on a throw); `UnloadStopWireTest` (`shared`
+`commonTest`, new — the unload stop's headers are `auth()`'s, the token is in a header and never in the URL, and an
+unpaired device sends no `Authorization`); `DesktopShutdownOnceTest` (**desktopTest**, new — the steps run once
+however many ends ask for them).
+
+**Wire:** additive only — a new non-suspending builder beside `stopPlayback`, posting the existing route with the
+existing body. No field added, retyped or removed, so an installed APK is unaffected and `WireCompatTest` is too.
+
+**Not proved here.** A5 is a timed watch of the admin's *Playing now* on a real device, and so are the browser-tab,
+⌘Q-versus-SIGTERM and swipe-away claims: all of them are DEB-775 on the QA queue, with no device touched from this
+seat. Nothing is deployed.
