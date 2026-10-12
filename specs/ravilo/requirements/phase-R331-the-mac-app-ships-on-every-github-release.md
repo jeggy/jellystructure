@@ -348,9 +348,12 @@ event, and a pass on that Mac would prove nothing about any other. Acceptance 2 
   carry an identical designated requirement (same bundle identifier, same certificate leaf — `CN = Ravilo`, SHA-1
   `5B3EAC32D6564F942C33101D4D07FDB31E0D9274`), which is exactly what a Gatekeeper rule written by *Open Anyway* matches
   on. This is what FR-R331-3 claims and it holds.
-- **2b — the observation, owed and gated on the owner.** Seeing the one prompt and then no prompt needs
-  `sudo spctl --master-enable` on that Mac and a re-walk of the v1.50 → v1.51 pair. The owner's call; asked on
-  DEB-756. Until then acceptance 2 is **not** claimed as walked, and no later note may read it as met.
+- **2b — the observation, owed; the Gatekeeper grant is now given.** Seeing the one prompt and then no prompt needs
+  `sudo spctl --master-enable` on that Mac and a re-walk of the v1.50 → v1.51 pair. **Owner, 2026-10-12 (asked on
+  DEB-756): granted for one walk — enable assessments, walk, then `sudo spctl --master-disable` to put the Mac back.**
+  The restore is part of the test and is not optional: this Mac's normal state is `assessments disabled`
+  (`reference-macbook-gatekeeper-off-and-translocation`), and leaving it enabled changes how every other app on it
+  behaves. Until the walk happens acceptance 2 is **not** claimed, and no later note may read it as met.
 
 The sign-in and Local Network halves of acceptance 2 are unaffected by `spctl` and stay as written.
 

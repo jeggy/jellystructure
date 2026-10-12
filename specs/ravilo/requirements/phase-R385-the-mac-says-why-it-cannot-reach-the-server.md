@@ -46,9 +46,12 @@ viewer's Mac calls them, so the copy calls them that — the precedent is R331's
 Anyway* and the pane for the same reason. The constitution's rule the copy still obeys: name what the viewer must do,
 never the component that failed. No "TCC", no "translocation", no "bundle" in any string.
 
-**D4 — The release notes are not touched.** FR-R331-6 was withdrawn by the owner on 2026-09-30 (*"people downloading
-dmg already know how to install a dmg"*) and stays withdrawn. The install sentence this phase adds goes **in the app**,
-under the update line that already carries the *Open Anyway* sentence.
+**D4 — The release notes are not touched, and neither is the download page.** FR-R331-6 was withdrawn by the owner on
+2026-09-30 (*"people downloading dmg already know how to install a dmg"*) and stays withdrawn. The install sentence
+this phase adds goes **in the app**, under the update line that already carries the *Open Anyway* sentence.
+**Owner, 2026-10-12 (asked on DEB-756): the site's download page is not to say it either — "the in-app line is enough;
+leave the site alone".** So FR-R385-6 is the only place the drag is written, and no change to `gamlihandil`'s download
+copy belongs to this phase or to any other without the owner reopening it.
 
 ## Requirements
 
@@ -146,9 +149,13 @@ able to translocate at all (see open question 2).
 1. Is there any public way on macOS 27 to read whether Local Network consent was granted? **Lean no** — if one exists,
    FR-R385-3's `IN_PLACE` + `LAN` row should state the fact instead of inferring it, and FR-R385-4's body can stop
    hedging.
-2. **Does the owner's MacBook translocate at all?** `spctl --status` reads `assessments disabled` there (DEB-721), and
-   App Translocation is a Gatekeeper behaviour. Acceptance 1 and 3 may need `sudo spctl --master-enable` first — the
-   owner's call, asked on DEB-756.
+2. ~~**Does the owner's MacBook translocate at all?**~~ **Answered by the owner 2026-10-12 (DEB-756): yes, Gatekeeper
+   may be enabled for one walk and must be put back.** `spctl --status` reads `assessments disabled` there (DEB-721)
+   and App Translocation is a Gatekeeper behaviour, so acceptance 1 and 3 could not be observed as the Mac stands. The
+   grant is: `sudo spctl --master-enable` before the walk, the walk, then `sudo spctl --master-disable` again — one
+   walk, not a standing change, and the restore is part of the test, not a follow-up. It clears R331 acceptance 2b in
+   the same sitting (R331's 2026-10-12 amendment). If translocation still does not happen with assessments enabled,
+   that is a finding to write down, not a reason to force the path by hand.
 3. Should the install-state message also appear in the *Play on…* sheet in place of R330's Local Network line when the
    cause is translocation? **Lean no** — one full-screen explanation is enough, and the sheet's line is still true.
 
