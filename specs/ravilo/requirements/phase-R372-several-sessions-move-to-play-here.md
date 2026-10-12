@@ -25,7 +25,8 @@ current one ticked:
 **FR-R372-3 — *Play here*.** On a session not playing on this device, *Play here* (⋯, or the session's row in
 *Playing everywhere*) is a *Move to…* to **this device**. On the phone it's the existing R299 `cast_play_here`.
 
-**FR-R372-4 — How a session ends.**
+**FR-R372-4 — How a session ends.** **The two windows below are superseded by FR-R372-8 (amendment
+2026-10-12): 4 h for a pause on a place that is still there, 10 min for a place that has gone offline.**
 
 - **Paused:** ends **24 h** after the last change. The resume point is the one Jellyfin already has.
 - **Stopped** by anyone: ends right away everywhere, and its rows fade out after 60 s (FR-R368-7).
@@ -406,3 +407,121 @@ From the server's session timeline and the Mac's log of the same evening:
   or a playing report still joins, as a song boundary or an auto-advance needs).
 - Tests: `PlaybackSessionsTest` — a reap at 0:00 ends the session `failed`; a paused report inside the hold leaves it to
   end `stopped`; a playing one still keeps it; `OurStreamStuckTest` covers the recovery decision the stop hangs on.
+
+## Amendment 2026-10-12 — a dead session does not live for hours (owner decision; DEB-757)
+
+From the owner's *Playing now* screenshot: a header reading **4 playing** over one real play and three rows that had
+been *offline · paused* for hours. The investigations (DEB-758, the server; DEB-759, the clients) found that none of
+the three is a crash, and that the 24 h of FR-R372-4 is not what prod actually does.
+
+**What was measured on prod** (7-day window, 205 sessions, 46 of which went offline at least once):
+
+- The keep is **24 h since the last change**, and a re-reap of an already-offline place *is* a change — so **27 of the
+  46 were re-armed** and the row's life is unbounded. First `offline` → end: median 23 m, p90 12 h 52 m, **max 122 h
+  36 m**. Exactly **one** session in the window ever ended through the keep; `idle` has never fired at all.
+- Three re-arm mechanisms: a server restart re-registers a tracker entry for an already-offline row and reaps it again
+  ~90 s later; a late progress heartbeat re-creates a tracked entry that is socket-less and is reaped on the next
+  30 s tick; a queue report bumps the row without even writing a timeline event.
+- The admin's *End* **cannot end exactly these rows** — the command route answers 409 `unreachable` before it reaches
+  the end, so the button the page offers does nothing. There is currently no way to clear one by hand.
+- On the client side there is one *commonMain* gap that produces this row shape on every platform at once: at the true
+  end of a film or a last episode there is nothing to advance to, the credits card simply waits for input, and the
+  10 s heartbeat keeps reporting **paused at the end position** for as long as the app lives. A closed browser tab
+  reports nothing at all (no `pagehide`, no `sendBeacon`, and a plain `fetch` dies with the page).
+
+**FR-R372-8 — how long a session outlives its place** (replaces the two 24 h windows in FR-R372-4 and owner
+decision 1 of 2026-10-04):
+
+- **Paused, and the place is still there** (it still reports, or still holds its events socket): ends **4 h** after
+  the last change, `end_reason = idle`.
+- **The place has gone away** (`offline = true`): ends **10 min** after the **first** `offline` of that offline spell,
+  `end_reason = offline`. Detection is unchanged (socket close, or no report for 90 s), so a quit app's row is gone
+  within roughly 11½ minutes and a closed browser tab's within about 10.
+- **A re-reap does not restart the clock.** While a session is already `offline`, a further reap writes no new
+  `offline` event, makes no second force-stop, and does not move the 10 min. The window is measured from the start of
+  the offline spell, never from `updated_at` — so a queue report, a revision bump or a restart cannot extend it.
+- **A restart does not revive a dead row.** A restored session that is already `offline` gets no tracker entry: it
+  keeps its original clock and ends on it. FR-R368-4's restored-and-silent case (owner, 2026-10-04: *paused, offline*)
+  keeps that state and takes the 10 min.
+- **A report from the place still clears `offline`** (existing behaviour) and the session becomes paused-with-a-place
+  on the 4 h window. A genuine later loss starts a new offline spell; FR-R372-12 keeps a flapping socket from
+  manufacturing them.
+- No wire change: `offline`, `idle` and the `end_reason` values already exist, and an installed client needs no new
+  build. An offline row keeps counting in R368's glyph badge and the bar's *+N* — it simply stops doing so within
+  ~11 min instead of days.
+
+**What the shorter window costs, and why it is accepted.** Ending a session writes nothing to Jellyfin: the resume
+point was already written when the watchdog force-stopped the place, and prod's `playback_outbox` is empty, so no such
+write is outstanding. What goes with the row at 10 min is R372's own affordance — *Play here* and *Move to…* from that
+row — and, for an item Jellyfin keeps no resume point for (audio, a position under Jellyfin's own minimum, or an item
+Jellyfin has already marked played), the row's `position_ms` is the only copy of that position. For music R322's *last
+played, paused* carries it. The owner weighed this on 2026-10-12 and chose the shorter window.
+
+**FR-R372-9 — *End* ends a row whose place cannot be reached.** *End* on a session is an instruction about **our own
+row**, not a command to the place. When the place is unreachable (`offline`, no socket, no sender control), *End* ends
+the session (`stopped`) and answers success; it does not need to deliver anything, because the place has already been
+force-stopped and its position written. Only the commands that genuinely need the place (play, pause, seek, volume,
+*Move to…*) may answer 409 `unreachable`. The admin's wording for *End* (phase 304) stays true for both cases.
+
+**FR-R372-10 — a play that runs out ends its session.** When the engine reaches the end of the item and there is
+nothing to advance to (a film, a last episode, the end of a queue), the app ends the session at that moment — the
+*played out* line of FR-R372-4 — and stops its heartbeat. The credits or *Skip credits* card may stay on screen; what
+must not happen is the app reporting **paused at the end position** every 10 s until someone presses Back. An episode
+with a next one is unchanged (the outgoing store already stops at its own playhead).
+
+**FR-R372-11 — a browser tab that goes away ends its session.** Two halves, and the server half is the one that
+closes the class:
+
+- **The server:** for a place that holds its events socket for as long as it exists — a browser tab, the Cast
+  receiver, the screen app — an **abrupt** socket end with a session still open is read as *the place is gone*: the
+  session goes `offline` at once and takes FR-R372-8's 10 min. A **clean** close carrying R293's `background` reason is
+  **not** evidence that playback ended (R293 drops the socket on purpose when an app goes off screen, and a minimised
+  desktop keeps its film), and is read exactly as today.
+- **The client:** the browser sends its stop on `pagehide` and on `visibilitychange → hidden` through a transport that
+  survives the page — `navigator.sendBeacon`, or `fetch(…, { keepalive: true })`. `sendBeacon` cannot set headers, so
+  the device token rides the query string, the precedent FR-R293-7 already set for the browser's socket handshake; it
+  is never logged. This is an addition to the wire, so no installed client is affected.
+
+**FR-R372-12 — the watchdog does not force-stop a play that is alive.** Two cases found in the same prod window, both
+of which stop a viewer's film under them:
+
+- **A just-started session has no socket grace.** The heartbeat test waits 90 s; the socket test does not, so a play
+  started in the second before its socket is up is force-stopped on the next tick — one prod row was reaped **1.2 s**
+  after it started. The socket test gets the same 90 s grace from the session's start.
+- **A flapping socket must not reap a reporting place.** One prod session logged **112 `offline` and 89 `back_online`
+  events in 6 h 23 m**, minimum gap 30 s: each late heartbeat re-created a socket-less tracked entry that the next tick
+  reaped, force-stopping Jellyfin under someone who was watching. A progress report for a session the watchdog has
+  reaped brings that session **back online** (and back under tracking) instead of creating an entry that is reaped
+  immediately. While reports keep arriving, there is no force-stop.
+
+### Acceptance (this amendment)
+
+A1. A browser tab playing something is closed. Within ~10 s the row reads *offline · paused*; **10 minutes later it is
+gone** from *Playing now* and from *Playing everywhere*, with `end_reason = offline`.
+A2. A film is paused on a TV that is still on and still reporting. The row survives a restart and the next 3 h, and is
+gone after **4 h** (`end_reason = idle`). Jellyfin's resume point is unchanged.
+A3. A row that has been *offline · paused* for 5 minutes survives a backend restart with its clock intact: it ends
+~5 minutes later, not 10, and no new `offline` event is written.
+A4. *End* on an offline row in the admin's *Playing now* removes it at once. No *Can't reach {place}*.
+A5. A film is watched to its very end on the phone and left on the credits card. The session ends at the end of the
+film; the row does not sit at *paused* at the end position.
+A6. A play started on a device whose socket comes up a second later keeps playing; it is not force-stopped.
+
+### Tests
+
+- `PlaybackSessionsTest` — the 10 min offline sweep; the 4 h idle sweep; a second reap of an offline session writes no
+  event and does not move the clock; a restart leaves an offline row's clock alone and registers no tracker entry; a
+  queue report on an offline row does not extend it; a report clears `offline` and puts the session on the 4 h window.
+- `SessionCommandsTest` — *End* on an unreachable, offline session ends it (`stopped`); play/pause/seek/volume/move
+  still answer 409 `unreachable`.
+- `PlaybackWatchdogTest` — no force-stop inside 90 s of a start when the socket is not yet up; a heartbeat for a reaped
+  session brings it back online and is not reaped on the next tick.
+- Client: the player ends its session when the engine runs out with nothing to advance to (and the credits card stays);
+  the browser posts its stop on `pagehide` with a page-surviving transport.
+- `WireCompatTest` stays green: nothing is removed or retyped.
+
+### On the QA queue
+
+The four device claims from DEB-759's plan (film end on phone / Mac / browser / TV; a web tab closed versus switched
+away; a Mac ⌘Q versus Force Quit; a phone swipe-away for video and then for music), each watched in the admin's
+*Playing now*, plus A1–A4 timed against a clock. Low or muted volume throughout, restored afterwards.
