@@ -156,7 +156,36 @@ second question on DEB-792.
 procedure is in `design/PROCESS.md`; the extraction is a separate task (DEB-809), and it covers the
 16 new text files below as well — they are pullable but arrive in the same zip for free.
 
+### All 157 images were decided three weeks before this round (DEB-809, 2026-10-13)
+
+**The images are not owed. They are excluded, by a standing decision of this repository.**
+
+`design/presentation/`, `design/uploads/` and `design/screenshots/` were **purged from all history**
+on 2026-09-23 in `689677e9` — "scrub real library titles, domain, IPs and trackers from the tree" —
+and `.gitignore:76-78` has held them out ever since under a comment that names this exact scenario:
+
+> Purged from all history on 2026-09-23 (real library posters/titles in captures). **A design-tool
+> export must not bring them back** — see `scripts/check-deanonymization.sh`.
+
+**All 157 of the 157 new images are inside those three directories.** Not most, not the
+`presentation/**` 57 — every one. So "nothing in the studio is lost" was never going to cover them,
+the zip was never going to be needed for them, and the pixel-by-pixel review this manifest planned
+was reasoning about a question the repo had already closed. The studio keeps all 157; it is the
+archive for this class, and we delete nothing there.
+
+The three `presentation/**` text files fall inside the same fence. `presentation-context.md` had to
+be dropped on its own merits anyway — five real titles in prose. The other two, the deck
+`Jellystructure &amp; Ravilo - Spec-Driven Development.html` and `deck-stage.js`, plus `scratchpad.md`,
+carry no title and no capture, but they live under `presentation/` and landing them means either
+force-adding into a deliberately ignored tree or re-homing them outside it. **Both are the owner's
+call, not the designer's** — he ordered the scrub — so they are asked, not acted on.
+
+What that leaves of this round: **12 files landed**, all under `design/ravilo/`.
+
 ### The named-path list does not decide what lands (DEB-809)
+
+*Superseded by the section above for all 157 images — kept because the reasoning still governs any
+future round that proposes to land a capture.*
 
 Recorded before the zip arrived, because it changes what the extraction is. The inventory below was
 built from `list_files`, which returns **paths and nothing else**. The gate that governs these 157
@@ -165,12 +194,12 @@ the file is called. A filename can therefore only ever catch the careless cases 
 withheld above. So the list below says what comes *out of the zip*; a look at each image says what
 gets committed. Where they sit now, by class:
 
-| class | count | what the names suggest, pending a look |
+| class | count | verdict |
 |---|---|---|
-| `presentation/admin/**` | 7 | the real admin app — dashboard, library, activity, language tracks. Captures, near-certainly of the real library |
-| `presentation/screenshots/**` | 50 | the real Ravilo TV app, named for real channels and for whole-library screens (`movies-grid`, `my-list`, `search-results`). Same class as the 7 already withheld, minus a title in the filename |
-| `screenshots/**` | 88 | mixed, and the only class where the names genuinely split: logo and component studies (`01-barna-logos`, `ravilo-stinger-card`) alongside what read as real-app captures (`01-mobile-library`, `lib-music`, `01-set-lib`) |
-| `uploads/**` | 12 | pastes and two artwork files whose names are poster hashes — artwork for a specific title identifies that title as surely as its name does |
+| `presentation/admin/**` | 7 | **out, settled 2026-10-13** — `presentation-context.md` says the deck's captures are the real app on the live library, and the deck's own captions confirm it (214 flagged items, the library grid, a track table). No pixels needed |
+| `presentation/screenshots/**` | 50 | **out, settled 2026-10-13** — same sentence, same class as the 7 already withheld, minus a title in the filename |
+| `screenshots/**` | 88 | **pending a look** — the only class where the names genuinely split: logo and component studies (`01-barna-logos`, `ravilo-stinger-card`) alongside what read as real-app captures (`01-mobile-library`, `lib-music`, `01-set-lib`). Same vintage as the 116 `scraps/**` the repo already carries |
+| `uploads/**` | 12 | **pending a look** — pastes, and two artwork files whose names are poster hashes; artwork for a specific title identifies that title as surely as its name does |
 
 **So the expected yield of this round is well under 157, and most of `presentation/**` is expected to
 stay out.** That is the rule working, not the round failing: the deck those captures were made for is
@@ -179,6 +208,31 @@ verdict only once the image has been opened — but the extraction is not a mech
 estimating it as one is how a capture would reach a public repository.
 
 ## Inventory
+
+### New — text and code: all 16 pulled, 12 landed, 1 dropped, 3 asked (DEB-809, 2026-10-13)
+
+All sixteen came back through `get_file` with `truncated: false` — **none of them needed the
+export.** Bytes were lifted out of the harness's own transcript and hashed on the way in rather than
+retyped, because a silent corruption in an archive copy reads later as a design change.
+
+**Landed (12)**, all under `design/ravilo/` — `Ravilo.html`, the six `platform/*`, and the five
+`mobile/ravilo-phone*`. Gate clean: no title, no capture, no network reference, no IP literal or
+secret; the stand-in data is the usual Big Buck Bunny set.
+
+**Dropped (1): `presentation/presentation-context.md`.** It names five real library titles in prose
+and reproduces the filenames of all seven captures already withheld for naming a title. A title in
+prose is exactly what `scripts/check-deanonymization.sh` exists to stop reaching a public repo —
+though note it would *not* have caught these: the fence matches hashed n-grams of values someone has
+already scrubbed, and these five were never in its list. **A human reading the file is the only
+thing that stopped it**, which is the invariant doing its job rather than a gap in it.
+
+**Asked (3):** the deck, `deck-stage.js` and `scratchpad.md` — see the section above. They are clean
+of titles but live inside the purged `presentation/` tree.
+
+It is the dropped file that settled the images *as a matter of evidence*, before the gitignore
+settled them as a matter of policy. Of its own screenshot inventory: *"All shots are 1920×1080 PNG,
+captured over adb from a real Android TV running the release build against the live library. Real
+titles, real watch progress, real EPG data. Nothing staged."*
 
 ### New — text and code, pullable and new design content (16)
 

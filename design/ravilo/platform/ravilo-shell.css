@@ -1,0 +1,36 @@
+/* Ravilo.html — the shell's fence + stage (design only, never in the app). Same vocabulary as the desktop's old fence. */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#121318;overflow:hidden;font-family:'Sora',sans-serif}
+a{color:#9d93ff}a:hover{color:#c7c0ff}
+.rv1{display:flex;flex-direction:column;height:100vh}
+.rv1-fence{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 16px;background:#0e0f12;border-bottom:1px dashed rgba(255,255,255,.2);font-size:12.5px;color:#c9ccd8}
+.rv1-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;min-width:0}
+.rv1-row.sub:empty{display:none}
+.rv1-row.sub{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;padding-bottom:2px}
+.rv1-row.sub .grp,.rv1-row.sub .rv1-seg,.rv1-row.sub .rv1-chips{flex-wrap:nowrap;flex:none}
+.rv1-row.sub .rv1-warn{flex:none;white-space:nowrap}
+.rv1-fence .tag{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0e0f12;background:#f5c84b;padding:3px 8px;border-radius:5px}
+.rv1-fence .grp{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.rv1-fence .grp>span{color:#aeb2c2;font-weight:600}
+.rv1-seg{display:flex;flex-wrap:wrap;padding:2px;border-radius:8px;background:rgba(255,255,255,.08);gap:2px}
+.rv1-seg button,.rv1-chips button{border:0;background:none;color:#c9ccd8;font:600 12.5px 'Sora',sans-serif;padding:5px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.rv1-seg button:hover:not(:disabled),.rv1-chips button:hover{color:#fff}
+.rv1-seg button.on{background:#f3f4fb;color:#0e0f12}
+.rv1-seg button:disabled{opacity:.4;cursor:not-allowed}
+.rv1-seg button small{font-weight:500;opacity:.7;margin-left:4px}
+.rv1-chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.rv1-chips button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);font-size:12px;padding:4px 10px}
+.rv1-chips button.on{background:#f3f4fb;color:#0e0f12;border-color:transparent}
+.rv1-sw{display:flex;gap:6px}
+.rv1-sw button{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.rv1-sw button.on{border-color:#f5c84b}
+.rv1-num{display:flex;align-items:center;gap:4px;color:#aeb2c2}
+.rv1-num input{width:64px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#f3f4fb;font:600 12.5px 'JetBrains Mono',monospace;padding:0 6px}
+.rv1-fence .note{margin-left:auto;color:#aeb2c2;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+@media (max-width:1100px){.rv1-fence .note{display:none}.rv1-fence .solo{margin-left:auto}}
+@media (max-width:760px){.rv1-fence .tag{display:none}}
+.rv1-fence .solo{font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
+.rv1-warn{color:#f5c84b;font-size:12px}
+.rv1-stage{flex:1;min-height:0;position:relative;background:radial-gradient(120% 90% at 30% 10%,#2a2d38,#121318 70%)}
+.rv1-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
