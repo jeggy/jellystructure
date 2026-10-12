@@ -321,3 +321,22 @@ and the admin's `compileKotlinWasmJs` pass.
 by Jellyfin's guess, the owner's 2 h 42 min episode at 45:52 among them); none from the second outage (only songs played).
 
 **Left:** the owner's *Put them back*; the Ktor upstream report (`../ktor-curl-cancel-repro`).
+
+## Decided by the owner (2026-10-12) — FR-310-7 goes ahead, alone
+
+Asked as one of four decisions on DEB-668: 310's repair, 312's repair and 316's artwork move all stood waiting for
+the owner's press, and all three write to the real library. The answer was **310 alone first, with its result shown
+before the other two** — so FR-310-7 is approved and 312's and 316's presses stay held until the result of this one
+has been read (see each of their own rows).
+
+**The press is still the owner's**, as FR-310-7 has always said: the Dashboard row *Watch places to put back* →
+Apply (`POST /api/dashboard/playback-repair/apply`), after which `playback-repair-candidates.json` is renamed
+`.applied`. Nothing in this repository presses it and no agent does.
+
+**What to expect**, from the dry run already recorded above: **7** films and episodes from the first outage, each
+currently *watched* by Jellyfin's guess, set back to unplayed at our saved position with `LastPlayedDate` restored.
+`planRepair` re-plans against Jellyfin's state at the moment of the press — an item played again since the dry run is
+dropped, so a number lower than 7 is correct rather than a fault. Truly finished plays are left alone.
+
+**Reporting the result closes the row**, not the press itself: the count applied, and whether any candidate was
+dropped for having been played again.

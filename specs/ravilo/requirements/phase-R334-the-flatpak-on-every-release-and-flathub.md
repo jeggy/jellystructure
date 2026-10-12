@@ -116,3 +116,25 @@ concretely what the release contains — no install steps, no account of what wa
 
 - **Code: nothing left.** **Owed:** the workflow's first run on the next release after a push (the owner's).
   **The Flathub half stays the owner's alone** (Flathub forbids AI involvement; no agent touches it).
+
+## Confirmed by the owner (2026-10-12) — the Flathub half is dropped, not deferred
+
+Asked on DEB-668: *"R334 still requires a Flathub submission, which is withdrawn on the Flathub AI policy. Amend the
+spec to drop the Flathub half and keep the Flatpak as a GitHub-release artifact only?"* Answer: **drop the Flathub
+half, keep the release artifact.**
+
+This settles a reading the spec left open. Since 2026-09-30 the Flathub steps were marked *withdrawn* (D3, D5,
+FR-R334-4, acceptance 4, §The owner's steps) — but "withdrawn" could be read as *paused pending a policy change*, and
+on that reading the phase carried a requirement that could never be met and the row could never go green. It is now
+settled as **permanently out of scope for this phase**: Ravilo ships as a `.flatpak` on every GitHub release and is
+not listed on Flathub. Linux users install the file from the release; they will not find Ravilo in a software
+centre's catalogue, and that is the accepted cost.
+
+If the owner ever wants a Flathub listing it is **a new phase and the owner's own hand-work** — a manifest written by
+hand, a submission opened and answered by the owner, the AI-written application disclosed. Nothing in this repository
+and no agent touches it, and the manifest here must never be copied into a Flathub pull request.
+
+**What remains for this row, and all that remains:** the workflow's first run on the next release. `main` was pushed
+2026-10-12 (`6c386d6a`), which clears the "these commits must reach `main`" precondition in §Build notes, and R333's
+own lint gate fell the same day. The row may go `✓ Built` on that first successful run alone — acceptance 1–3, with 4
+struck.

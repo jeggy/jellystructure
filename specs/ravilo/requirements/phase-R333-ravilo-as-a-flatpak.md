@@ -160,3 +160,15 @@ container the owner asked for the same evening** (`~/fedora`, outside the repo: 
 
 - **Code: nothing left.** **Owed:** the two lint findings are the screenshot URL of a commit not yet pushed — they
   clear once `main` is pushed (the owner's call); HiDPI on a real display.
+
+## `main` pushed (2026-10-12) — the lint gate is cleared
+
+The owner answered the DEB-668 card with **push now, cut v1.52 after the QA device sweep**, and `main` was pushed to
+`origin` the same day (`d37f1a7a..6c386d6a`, 8 commits). The triage note above said the two lint findings *"are the
+screenshot URL of a commit not yet pushed — they clear once `main` is pushed"*. That condition is now met, so the
+findings are expected to clear on the next lint run; **they have not yet been re-run**, and this amendment records the
+precondition falling rather than the result.
+
+**Still owed:** the lint re-run showing both findings gone, and HiDPI on a real display (a device test — no device on
+the board has a HiDPI Linux display, so that half may stand as a limitation rather than an owed test; decide it when
+the lint re-run lands).

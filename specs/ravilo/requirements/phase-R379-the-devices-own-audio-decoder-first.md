@@ -179,3 +179,23 @@ Backend half deployed (migration 76: QoE `audio_decoder`). The Pixel has platfor
 a no-op for it (no `no platform … decoder` line on its plays, as expected). Not verified live: a QoE row carrying
 `audio_decoder` (needs a real play from the R379 client; the Pixel locked before the retest) and the no-Dolby path (no
 allowed device lacks a Dolby decoder — unit tests only).
+
+## The no-Dolby path is a standing limitation, not an owed test (2026-10-12)
+
+Recorded while building DEB-668's first queue, where this had been queued as a device test it can never pass. The
+live note above already says it: *"no allowed device lacks a Dolby decoder"*. Confirming it as a conclusion rather
+than a gap —
+
+- The household Pixel 9 Pro reports `[ac3, eac3]` and decodes AC-3 with `c2.dolby.eac3.decoder.ac3`, so this phase's
+  narrowing is a measured no-op on it.
+- **No device on the QA board lacks a platform AC-3/E-AC-3 decoder.** There is therefore no device set on which
+  acceptance for the no-Dolby path can be claimed, and it has been removed from the QA queue rather than left on it
+  for a seat to discover.
+
+So the no-Dolby half rests on `PlatformAudioTest` (9/9) and the negotiation unit tests, and it stays that way until a
+device without a platform Dolby decoder enters the house — the phase that first needs one re-opens this. The one item
+still genuinely owed on a device is **a QoE row carrying `audio_decoder` from a real play**, which the Pixel can
+prove; that is what the Pixel-set QA task covers.
+
+This mirrors R335, whose GPU/4K/HDR path is unprovable for the same kind of reason. Two of the 29 `⚠ Partial` rows
+are limited by hardware we do not own, and saying so beats keeping a test on a queue nobody can run.

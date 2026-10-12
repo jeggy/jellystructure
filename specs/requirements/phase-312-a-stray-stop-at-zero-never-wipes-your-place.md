@@ -224,3 +224,12 @@ stop's place (11:40) was written back over the viewer's 0:00 (`read back played=
 700000ms — writing it again`). The read-back now stands down when the viewer marked or unmarked the item after the stop
 landed (`readBackStillOurs`, `StopUserDataTest`); `mark` and `setPlayed` (the routes and R343's clear) note the viewer's
 word. Every watchdog stop in the live test logged its reason (`reason=watchdog`), and no stop at 0 was sent by a stop.
+
+## Held by the owner (2026-10-12) — the repair waits behind 310's
+
+Asked on DEB-668 alongside 310's and 316's. The owner chose **310 alone first, its result shown before the other
+two**, so this phase's repair is **approved in principle but not yet to be pressed**. There is no code left here —
+the repair is the whole remainder — and it is held for one reason only: all three write to the real library, and 310's
+is the one whose dry-run output the owner has already seen, which makes it the safest to learn from.
+
+Unhold condition: 310's applied result reported and read. Nothing else gates this.

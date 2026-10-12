@@ -212,3 +212,12 @@ calls no qBittorrent write.
 
 The Dashboard shows the warning **"3 films have no folder of their own"** (wording fixed on merge). **Move** was not
 pressed (the owner's button).
+
+## Held by the owner (2026-10-12) — Move waits behind 310's repair
+
+Asked on DEB-668 alongside 310's and 312's repairs. The owner chose **310 alone first, its result shown before the
+other two**, so **Move** stays unpressed. As with 312 there is no code left — the move itself is the whole remainder,
+and it is the owner's button by design.
+
+Unhold condition: 310's applied result reported and read. Note that the live warning said **3 films**; `planMove`
+re-plans at the press, so that count may differ by then and a difference is not a fault.
