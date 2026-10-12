@@ -43,10 +43,10 @@ structural diff gives, and what the byte pull then settled:
 | **same path in both** | **433** |
 | **studio-only (new)** | **184** |
 | **repo-only** | **3** |
-| of the 433: byte-compared this pass | 13 (the production surface) |
-| → identical | **12** |
+| of the 433: byte-compared this pass | 13 (the production surface) + 2 sampled on 10-13 |
+| → identical | **14** |
 | → differing | **1** (`app/wf.css`) |
-| of the 433: bytes not yet compared | 420 (mockups + 144 binaries) |
+| of the 433: bytes not yet compared | 418 (mockups + 144 binaries) |
 
 The 3 repo-only files are repo-authored and expected: `PROCESS.md`,
 `design-project-notes-2026-06-to-2026-10.md`, `github.md`. **The studio is missing nothing we have
@@ -73,8 +73,30 @@ inside it. All thirteen text files were pulled and diffed byte for byte:
 | `flags.css` | identical (6268 B) |
 | **`app/wf.css`** | **differs — repo 58312 B, studio 55232 B** |
 
-`app/fonts/**` (3 woff2) and `flags/**` (101 svg) are in the production surface too and are
-path-identical; their bytes were not pulled this pass.
+### The other 104 production files — sampled 2026-10-13, and the rest rides the zip
+
+`app/fonts/**` (3 woff2) and `flags/**` (**100** svg under `4x3/` plus `README.md` — the earlier
+"101 svg" counted the README as a flag) are in the production surface too. All 104 are
+path-identical, and the bytes of two were compared:
+
+| file | verdict |
+|---|---|
+| `flags/4x3/id.svg` | identical (189 B) — the smallest of the hundred |
+| `flags/README.md` | identical (1292 B) |
+
+Sampled rather than swept, deliberately:
+
+- **The realistic failure here is deletion, not drift.** `fonts/**` and `flags/**` have been *deleted*
+  by a sync twice; neither has ever been edited on either side, and the flags are a vendored MIT set
+  (`lipis/flag-icons`) with the same provenance in both places. Deletion is a **path** difference, and
+  the path diff above already covers all 104.
+- **A byte sweep would cost more than it can prove.** The hundred SVGs are 835 KB in total and the
+  largest single file is 183 KB; `get_file` returns content through the agent's context, so proving
+  "no drift" one file at a time costs roughly a quarter of a million tokens for a result the zip gives
+  for nothing. The three woff2 are binary, which is the wrong shape for this transport entirely.
+- So the **whole remaining production surface is byte-compared from the owner's export** (DEB-809),
+  not from 104 pulls. That is a second reason the zip matters, independent of the images: it is the
+  only affordable way to prove the live set has not drifted anywhere.
 
 ### `app/wf.css` — one hunk, and it is ours
 

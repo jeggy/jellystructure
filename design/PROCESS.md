@@ -204,6 +204,12 @@ rest — stay complete and keep working there. So:
    repository naming what the household owns.
 4. **The zip itself is never committed.** It is a transport, it holds the held-back captures, and it
    lives outside the repo. The scratch directory it was extracted into goes with it.
+5. **While it is open, byte-compare the rest of the production surface** — `app/fonts/**` (3 woff2)
+   and `flags/**` (100 svg + `README.md`). The pull cannot: 835 KB of SVG with a 183 KB worst case
+   through the agent's context, and the fonts are binary. A zip compares all 104 for nothing. On
+   2026-10-13 two were sampled by pull (`flags/4x3/id.svg`, `flags/README.md` — both identical) and
+   the rest were left to the export, because **the realistic failure in a vendored set is deletion,
+   which is a path difference the structural diff already covers.** Drift there would be new.
 
 ## Write-back: the only path from this repo to the studio
 
