@@ -581,3 +581,30 @@ Dockerfile fixes on merge: `ca-certificates` in the runtime stage, and the archi
 314b/c deployed (no migration). Not run live: the steps in *Left for main* need a signed-in Ravilo on a device (the
 Pixel locked itself; no debug app is signed in on Stue TV) and kind A applied to a test film — left for the next device
 session. Nothing was applied to any file.
+
+## Decided by the owner (2026-10-12) — *Left for main*'s writes are authorised (DEB-789)
+
+QA stopped before step 2 rather than choose a test title, which was right: every one of the five steps writes to a
+library file, and `media-safety` escalates that instead of executing it. The owner answered on 2026-10-12. Nothing
+had been applied to any file up to that point.
+
+1. **The film that gets the appended track is chosen by a rule, not named.** The owner declined to nominate one and
+   gave the test instead: at least **25 000 IMDb votes**, in the library **over two months**, and **currently
+   available in one of our indexers in Radarr** — a film that could be replaced if the worst happened. Two gates
+   follow from the phase itself and are part of the rule: the existing file carries **no edition**
+   (`media-safety` §2 — a re-grab must not be able to replace a special cut), and the row is an
+   **inside-the-file** kind A row, so the file is neither seeded nor hard-linked. Tie-break: **the smallest file
+   that passes.** The indexer check is a search and nothing else — no grab, no upgrade, no torrent touched.
+2. **The seeded `.mka` subject is QA's to pick** from the backend's own eligible list, and recorded. No existing
+   file is opened: the job writes one new sidecar beside it and step 5 deletes that file, so no title needs weighing.
+3. **Steps 3 and 4 are approved** on the **smallest rename-needed DV7 film the guard clears** — the pool is the
+   **12** that a rename makes eligible, not the 13 with a mismatched name (the 13th stays skipped because renaming
+   does not make it eligible). Recorded likewise.
+4. **The walk undoes itself**: the appended track remuxed out, the `.mka` and the version file deleted, so the
+   library ends where it started. **The rename stands** — the matching name is the intended end state, and 316's
+   mover is what puts it there. Step 5's own acceptance is therefore also the cleanup.
+
+The permitted writes are exactly those four plus the undo, on exactly those three films; a guard refusal is a pass to
+be recorded, not an obstacle to route around; and no library title enters this repository (`DEB-793` carries them).
+Step 4 keeps one prerequisite the owner's answer cannot clear — a debug Ravilo signed in on a TV that decodes
+dual-layer DV, which there was not on 2026-10-09.
