@@ -28,6 +28,10 @@ private val pnJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = tru
 private var pnSocket: WebSocket? = null
 private var pnList: AdminSessionList? = null
 private val pnOpen = mutableSetOf<String>()
+// FR-304-8 — *Ended today* is a fold, closed on every load. The choice to open it lasts the visit only, kept here
+// beside `pnOpen` and nowhere else: not on the server, not in the browser (the owner asked for collapsed by default,
+// not for the last choice remembered).
+private var pnEndedOpen = false
 // 304b — each open row's remote detail (the queue, the ops), and the row whose *End* is waiting for its confirm.
 private val pnDetails = mutableMapOf<String, dev.jellystructure.shared.tv.SessionDetail>()
 private var pnEndArmed: String? = null
@@ -46,6 +50,7 @@ internal fun playingNowHtml(): String = """
 """.trimIndent()
 
 internal fun loadPlayingNow(scope: CoroutineScope) {
+    pnEndedOpen = false   // FR-304-8 — the fold is closed every time the page is opened, never remembered.
     scope.launch {
         val list = runCatching { httpClient.get("/api/tv/admin/playback/sessions").body<AdminSessionList>() }.getOrNull()
         if (list != null) { pnList = list; paintPlayingNow(scope) }
@@ -230,6 +235,16 @@ internal fun pnPlayWords(r: dev.jellystructure.model.AdminSessionRow): String = 
     pnVariantWords(r.variantBps, r.variantHeight, r.variantStepsDown, r.variantStepsUp, r.variantStartBps),
 ).filter { it.isNotEmpty() }.joinToString(" · ")
 
+/** FR-304-9 — the count beside *Playing now*: what is playing, and the rest after a `·`. An offline session is
+ *  paused (*offline* is a flag beside the state, never a state — R368 review item 12), so it is never counted as
+ *  playing whatever state it carries. Nothing live says nothing. */
+internal fun pnCountWords(live: List<AdminSessionRow>): String {
+    if (live.isEmpty()) return ""
+    val playing = live.count { it.state == "playing" && !it.offline }
+    val paused = live.size - playing
+    return "$playing playing" + if (paused > 0) " · $paused paused" else ""
+}
+
 private fun pnEventWord(what: String, detail: String?): String = when (what) {
     "started" -> "Started"
     "paused" -> "Paused"
@@ -276,7 +291,7 @@ private fun paintPlayingNow(scope: CoroutineScope) {
     val serverNow = list.serverNowMs.takeIf { it > 0 } ?: now
     val live = list.sessions.filter { it.endedAt == null }
     val ended = list.sessions.filter { it.endedAt != null }
-    (document.getElementById("ses-count") as? HTMLElement)?.textContent = if (live.isEmpty()) "" else "${live.size} playing"
+    (document.getElementById("ses-count") as? HTMLElement)?.textContent = pnCountWords(live)
     if (list.sessions.isEmpty()) {
         el.innerHTML = """<tr><td class="ud-empty muted">Nothing is playing anywhere.</td></tr>"""
         return
@@ -284,7 +299,16 @@ private fun paintPlayingNow(scope: CoroutineScope) {
     val head = """<tr class="usr-hd"><td>Person</td><td>What</td><td>Place</td><td>State</td><td>Position</td><td>Running</td></tr>"""
     el.innerHTML = head +
         (if (live.isEmpty()) """<tr><td colspan="6" class="ud-empty muted">Nothing is playing anywhere.</td></tr>""" else live.joinToString("") { pnRow(it, now, serverNow) }) +
-        (if (ended.isNotEmpty()) """<tr class="usr-hd"><td colspan="6">Ended today</td></tr>""" + ended.joinToString("") { pnRow(it, now, serverNow) } else "")
+        // FR-304-8 — the fold: the header row says how many ended, and stays clickable across its full width.
+        (if (ended.isEmpty()) "" else
+            """<tr class="usr-hd ses-fold" data-ses-fold="1"><td colspan="6"><span class="ses-fg">${if (pnEndedOpen) "▾" else "▸"}</span> Ended today · ${ended.size}</td></tr>""" +
+                (if (pnEndedOpen) ended.joinToString("") { pnRow(it, now, serverNow) } else ""))
+    el.querySelectorAll("[data-ses-fold]").let { hs ->
+        for (i in 0 until hs.length) (hs.item(i) as? HTMLElement)?.addEventListener("click", { _ ->
+            pnEndedOpen = !pnEndedOpen
+            paintPlayingNow(scope)
+        })
+    }
     el.querySelectorAll("tr.ses-r").let { rows ->
         for (i in 0 until rows.length) {
             val row = rows.item(i) as? HTMLElement ?: continue

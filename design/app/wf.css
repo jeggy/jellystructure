@@ -819,6 +819,11 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .ses-tbl tr.ses-r { cursor: pointer; }
 .ses-tbl tr.ses-r:hover td { background: rgba(127,127,127,.06); }
 .ses-tbl tr.usr-hd td { font-size: .62rem; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; color: var(--ink-dim); padding-top: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+/* 304 (FR-304-8) — *Ended today* is a fold on its own header row: the ▸/▾ pair the job queue already draws
+   (.jq-pos), here inline in a header cell, clickable across the row's full width. */
+.ses-tbl tr.usr-hd.ses-fold td { cursor: pointer; user-select: none; }
+.ses-tbl tr.usr-hd.ses-fold:hover td { color: var(--ink-soft); }
+.ses-tbl tr.usr-hd.ses-fold .ses-fg { display: inline-block; width: 11px; font-size: .7rem; }
 .ses-tbl .ses-art { width: 36px; height: 36px; border-radius: 7px; flex: none; display: inline-block; vertical-align: middle; }
 .ses-tbl .ses-art.w { width: 52px; height: 30px; border-radius: 5px; }
 .ses-what { display: flex; align-items: center; gap: 12px; min-width: 0; }
