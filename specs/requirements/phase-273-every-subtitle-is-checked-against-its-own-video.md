@@ -675,3 +675,33 @@ map, the build is recorded here.
 **Still open, all needing the owner:** deploy, then acceptance 1 (the *Only report* run on production, read-only),
 then the switch to *Fix it*; the demo-Jellyfin check in item 8; and a Pixel 9 check in HLS mode that a hidden
 sidecar is not in the picker (dev review item 2).
+
+## Amendment (2026-10-12) — the step has a name in the *Run pipeline* dialog
+
+Found by dev while adding phase 317's `check_av_sync` entries to the same two maps, and reported with
+DEB-729 (the owner's *spec before fix* on DEB-319 covers it).
+
+**The gap.** FR-273-8 put `check_subtitles` in the operator's pipeline, but the admin's pre-run dialog has a
+hand-maintained table of every step's label, one-line description, colour and icon (`PIPE_BLOCKS`), and a short
+label for the "skipped …" line of a run's summary (`PIPE_SHORT`), both in
+`wasmJsMain/.../ui/PipelineRunDialog.kt`. **`check_subtitles` is in neither.** The dialog falls back to the raw
+step key, so the row the operator ticks reads `check_subtitles` with no description, no colour and no icon,
+beside *Verify video files* and *Check track lengths* which read as sentences — and unticking it puts
+`check_subtitles` in the run summary. Every other step of 261's family has had an entry since it shipped; this
+one was simply missed when the step was added.
+
+### FR-273-24 — `check_subtitles` is a named row in the pre-run dialog
+
+- `PIPE_BLOCKS["check_subtitles"]` gives the step the name **Check subtitles** and a description in the shape
+  the file checks use (what is read, and that it is this phase's): *"Check each sidecar subtitle against its own
+  video and flag the ones that do not fit (phase 273)."*
+- `PIPE_SHORT["check_subtitles"]` gives it **Subtitles fit** — not *Subtitles*, which `prewarm_subtitles`
+  already owns, so the run summary's skipped list stays readable.
+- Its colour and icon are the file checks', not `prewarm_subtitles`': the operator reads the dialog as a column
+  of what each step costs, and this step is a per-file check.
+- **No behaviour changes.** The step, its cadence, its queueing and its own switch (the Bazarr card's
+  `PUT /api/subtitles/settings`) are untouched; the dialog never drove any of them. This is the label the step
+  should have shipped with.
+
+Not folded into FR-273-8 above: the step's own requirement shipped and is live, and `STATUS.md` is where a
+phase's state lives. A later evidence list or step added to 261's family is the same two lines of upkeep.
