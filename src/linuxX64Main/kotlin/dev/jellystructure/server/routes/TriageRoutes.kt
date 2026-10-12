@@ -391,7 +391,9 @@ private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
  */
 internal suspend fun triageCountFor(store: MediaStore, configStore: ConfigStore, segmentStore: MediaSegmentStore, music: dev.jellystructure.media.MusicPipeline?): TriageCount {
     // Phase 254 — a deep check's finding changes the count without touching the library version.
-    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
+    // Phase 317 — and the A/V sync revision, which bumps on every measured file: the library's zero moves
+    // with the sweep, so a verdict can change without any file changing.
+    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${dev.jellystructure.media.AvSyncFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
     triageCountCache?.let { (v, c) -> if (v == ver) return c }
     val all = store.allItems()
     val types = mediaTriageTypes(all, configStore, segmentStore)
@@ -513,6 +515,25 @@ private fun mediaTriageTypes(all: List<MediaItem>, configStore: ConfigStore, seg
                 dev.jellystructure.media.TrackCoverageFlags.TYPE_DURATION_HEADER_WRONG, "File claims to be longer than it is",
                 "Everything in these files ends before the length the file reports. Players show the wrong length, and a player that marks watched at 90 % never gets there, so the episode never leaves Continue Watching.",
                 all.sumOf { TriageDetection.trackCoverageCount(it, wrong) }, all.count { TriageDetection.trackCoverageCount(it, wrong) > 0 },
+            )
+        },
+        // Phase 317 (FR-317-9) — two types, because the fixes are different things: one lossless remux
+        // against a different copy of the file. Omitted entirely while the check is off or unknown, and
+        // `unknown` files are in neither (FR-317-7: never counted as clean, never counted as a finding).
+        dev.jellystructure.media.AvSyncFlags.flaggedOrNull()?.let { flagged ->
+            val offset = flagged.filterValues { it.state == dev.jellystructure.media.AvSyncState.OFFSET }.keys
+            TriageTypeCount(
+                dev.jellystructure.media.AvSyncFlags.TYPE_AV_OFFSET, "Sound and picture out of step",
+                "In these files the speech is heard before the lips move (or after) by the same amount all the way through. One lossless remux fixes it — open the title for the measured amount and the exact command.",
+                all.sumOf { TriageDetection.avSyncCount(it, offset) }, all.count { TriageDetection.avSyncCount(it, offset) > 0 },
+            )
+        },
+        dev.jellystructure.media.AvSyncFlags.flaggedOrNull()?.let { flagged ->
+            val drift = flagged.filterValues { it.state == dev.jellystructure.media.AvSyncState.DRIFT }.keys
+            TriageTypeCount(
+                dev.jellystructure.media.AvSyncFlags.TYPE_AV_DRIFT, "Sound slowly drifts from the picture",
+                "These files start in step and end out of step, so a single shift cannot fix them — a different copy can. Open the title for how far it drifts and where.",
+                all.sumOf { TriageDetection.avSyncCount(it, drift) }, all.count { TriageDetection.avSyncCount(it, drift) > 0 },
             )
         },
     )

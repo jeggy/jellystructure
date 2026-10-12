@@ -71,6 +71,9 @@ class DashboardService(
         "file_damage" to Spec(null, CRITICAL, "open", "Damaged video files", "Parts that can’t be read, in {titles}. A clean copy may still seed in qBittorrent.", "file"),
         "track_ends_early" to Spec(null, CRITICAL, "open", "Audio or video stops before the file ends", "Viewers hear silence or see black from that point.", "file"),
         "duration_header_wrong" to Spec(null, WARNING, "open", "File claims to be longer than it is", "It never reaches 90 %, so it is never marked watched.", "file"),
+        // Phase 317 (FR-317-9) — warnings, not critical: neither stops playback (285 FR-285-3).
+        "av_offset" to Spec(null, WARNING, "open", "Sound and picture out of step", "Across {titles}: speech is heard before the lips move (or after). One lossless remux fixes it.", "file"),
+        "av_drift" to Spec(null, WARNING, "open", "Sound slowly drifts from the picture", "Across {titles}: a single shift can’t fix it; a different copy can.", "file"),
         "music_shared_album" to Spec("music", WARNING, "open", "One album in several folders", "Often a band’s singles whose files all name one compilation."),
         "music_folder_disagrees" to Spec("music", WARNING, "open", "Folder and songs disagree", "The folder’s name and the songs’ tags name different things."),
         "music_needs_match" to Spec("music", WARNING, "open", "Albums need a match", "MusicBrainz found several candidates and none clearly won, or found nothing.", action = "Find match…"),
@@ -277,6 +280,10 @@ class DashboardService(
         val flagged = if (key == "track_ends_early" || key == "duration_header_wrong") dev.jellystructure.media.TrackCoverageFlags.flaggedOrNull() else null
         val early = flagged?.filterValues { dev.jellystructure.media.TrackCoverageFlags.endsEarly(it) }?.keys
         val wrong = flagged?.filterValues { dev.jellystructure.media.TrackCoverageFlags.headerWrong(it) }?.keys
+        // Phase 317 (FR-317-9) — the same predicates the Library's `filter=av_offset|av_drift` uses.
+        val avSync = if (key == "av_offset" || key == "av_drift") dev.jellystructure.media.AvSyncFlags.flaggedOrNull() else null
+        val avOffset = avSync?.filterValues { it.state == dev.jellystructure.media.AvSyncState.OFFSET }?.keys
+        val avDrift = avSync?.filterValues { it.state == dev.jellystructure.media.AvSyncState.DRIFT }?.keys
         val hit: (MediaItem) -> Boolean = when (key) {
             "untagged" -> { it -> TriageDetection.untaggedCount(it) > 0 }
             "cascade_mismatch" -> { it -> TriageDetection.hasCascadeMismatch(it) }
@@ -294,6 +301,8 @@ class DashboardService(
             "file_damage" -> { it -> damaged != null && TriageDetection.fileDamageCount(it, damaged) > 0 }
             "track_ends_early" -> { it -> early != null && TriageDetection.trackCoverageCount(it, early) > 0 }
             "duration_header_wrong" -> { it -> wrong != null && TriageDetection.trackCoverageCount(it, wrong) > 0 }
+            "av_offset" -> { it -> avOffset != null && TriageDetection.avSyncCount(it, avOffset) > 0 }
+            "av_drift" -> { it -> avDrift != null && TriageDetection.avSyncCount(it, avDrift) > 0 }
             else -> { _ -> false }
         }
         return pool.asSequence().filter(hit).map { it.title }.filter { it.isNotBlank() }.take(3).toList()

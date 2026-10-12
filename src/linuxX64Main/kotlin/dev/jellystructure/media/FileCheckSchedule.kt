@@ -31,18 +31,33 @@ object FileCheckSchedule {
     const val LENGTHS_JOB = "check_track_lengths"
     /** Phase 273 (FR-273-8) — one video's sidecar subtitles, checked against it. */
     const val SUBTITLES_JOB = "check_subtitles"
-    val JOB_TYPES = listOf(VERIFY_JOB, LENGTHS_JOB, SUBTITLES_JOB)
+    /** Phase 317 (FR-317-8) — is this file's sound in step with its picture. */
+    const val AVSYNC_JOB = "check_av_sync"
+    val JOB_TYPES = listOf(VERIFY_JOB, LENGTHS_JOB, SUBTITLES_JOB, AVSYNC_JOB)
     fun jobTypeFor(step: String): String? = when (step) {
         FileCheckSteps.VERIFY -> VERIFY_JOB
         FileCheckSteps.LENGTHS -> LENGTHS_JOB
         FileCheckSteps.SUBTITLES -> SUBTITLES_JOB
+        FileCheckSteps.AVSYNC -> AVSYNC_JOB
         else -> null
     }
     fun dedupeKey(jobType: String, path: String): String = when (jobType) {
         VERIFY_JOB -> "verify:"
         SUBTITLES_JOB -> "subs:"
+        AVSYNC_JOB -> "avsync:"
         else -> "lengths:"
     } + path
+
+    /**
+     * Phase 317 (dev review item 3) — which lane a per-file check rides. The first three share the
+     * `segments` lane and the shared worker pool; `check_av_sync` has a lane and a worker of its OWN
+     * (FR-317-8): a 22-hour sweep on a shared worker would hold it for the whole sweep and starve segment
+     * detection, and its cost is a GPU and the disks, not the backend's process gates.
+     *
+     * This replaces the hard-coded `"segments"` [MediaJobQueue.enqueueFileCheck] used to insert.
+     */
+    fun laneFor(jobType: String): String = if (jobType == AVSYNC_JOB) AVSYNC_LANE else "segments"
+    const val AVSYNC_LANE = "avsync"
 
     /** FR-261-7 — null when the file is not due. A changed file is always due; a stored finding is never
      *  re-derived by the cadence (it stands until the file changes or the operator re-runs it). */
@@ -72,6 +87,6 @@ object FileCheckSchedule {
 
     /** FR-261-1 — *Verify · Title · S01E04*. */
     fun label(jobType: String, unit: FileUnit): String =
-        when (jobType) { VERIFY_JOB -> "Verify"; SUBTITLES_JOB -> "Subtitles"; else -> "Track lengths" } +
+        when (jobType) { VERIFY_JOB -> "Verify"; SUBTITLES_JOB -> "Subtitles"; AVSYNC_JOB -> "A/V sync"; else -> "Track lengths" } +
             " · ${unit.item.title}" + (unit.episodeTag?.let { " · $it" } ?: "")
 }

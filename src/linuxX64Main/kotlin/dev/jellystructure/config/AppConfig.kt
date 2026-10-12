@@ -50,7 +50,28 @@ data class AppConfig(
     val ravilo: RaviloHouseholdConfig = RaviloHouseholdConfig(),
     // Phase 313 — our own encoder (every quality from one ffmpeg per play); Jellyfin's transcode is the fallback.
     val encoder: EncoderConfig = EncoderConfig(),
+    // Phase 317 — the A/V sync measurer. Off by default; off means the check stores nothing and counts nothing.
+    @SerialName("avsync") val avsync: AvSyncConfig = AvSyncConfig(),
 )
+
+/**
+ * Phase 317 (FR-317-13) — the A/V sync sidecar's connection. Off by default, and off means ABSENT: no lane
+ * worker, no rows, no Triage counts, the Checks card reads *off* (FR-317-13).
+ *
+ * [url] is the sidecar on the compose network ([docker-compose.avsync.yml]); [timeoutS] is per `POST /measure`,
+ * which measures three 45 s windows of one file — ~8 s when the card is free, minutes behind a cold CUDA
+ * context and a spinning disk, so the default is generous rather than tight. Calls go through
+ * `OutboundHttp.withPermit` in the BACKGROUND class.
+ */
+@Serializable
+data class AvSyncConfig(
+    val enabled: Boolean = false,
+    val url: String = "http://avsync:8000",
+    @SerialName("timeout_s") val timeoutS: Int = 180,
+) {
+    fun baseUrl(): String = url.trim().trimEnd('/')
+    fun effectiveTimeoutMs(): Long = (if (timeoutS in 5..3600) timeoutS else 180) * 1000L
+}
 
 /**
  * Phase 313 — our own encoder. [enabled] makes it serve every transcode it can (FR-313-12 falls back to Jellyfin
@@ -205,6 +226,9 @@ data class ScanConfig(
     // Phase 275 — WHICH music steps have been added to an existing pipeline (not a boolean: 276/277 add steps
     // of their own later, and each must be seeded exactly once). Server-owned like the flags above.
     @SerialName("music_steps_seeded") val musicStepsSeeded: List<String> = emptyList(),
+    // Phase 317 (FR-317-8) — `check_av_sync` joins an existing pipeline ONCE; a step the operator removes
+    // stays removed. Server-owned like the flags above.
+    @SerialName("avsync_step_seeded") val avSyncStepSeeded: Boolean = false,
 )
 
 /**
@@ -317,6 +341,9 @@ object FileCheckSteps {
     /** Phase 273 — does each sidecar subtitle belong to its video (FR-273-8). Not in [ALL]: that list is 261's
      *  one-time seed; this step has its own ([seedSubtitles]). */
     const val SUBTITLES = "check_subtitles"
+    /** Phase 317 — is the sound in step with the picture (FR-317-8). Not in [ALL], like [SUBTITLES]: it has
+     *  its own seed ([seedAvSync]) and its own lane. */
+    const val AVSYNC = "check_av_sync"
     val ALL = listOf(VERIFY, LENGTHS)
 
     fun defaultStep(step: String, enabled: Boolean = true): PipelineStep = when (step) {
@@ -326,6 +353,10 @@ object FileCheckSteps {
         // file is re-judged from two stored cue tracks and never decoded again.
         SUBTITLES -> PipelineStep(step = SUBTITLES, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "weekly", refresh1To5y = "weekly", refreshOlder = "weekly")
+        // FR-317-8: `recheckUnchanged = false` — a result stands until the file changes or the sidecar's
+        // model changes. There is nothing a cadence could find in an unchanged file that ~8 s of a GPU
+        // did not find the first time, and a 9 600-file sweep is not a thing to repeat on a timer.
+        AVSYNC -> PipelineStep(step = AVSYNC, enabled = enabled, recheckUnchanged = false)
         else -> PipelineStep(step = LENGTHS, enabled = enabled, recheckUnchanged = true,
             refreshThisYear = "yearly", refresh1To5y = "2years", refreshOlder = "5years")
     }
@@ -338,6 +369,17 @@ object FileCheckSteps {
         var at = if (prewarm >= 0) prewarm + 1 else pipeline.size
         if (prewarm < 0) while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
         return pipeline.subList(0, at) + defaultStep(SUBTITLES) + pipeline.subList(at, pipeline.size)
+    }
+
+    /** Phase 317 (FR-317-8) — `check_av_sync` placed after `check_subtitles` where that step is there, else
+     *  ahead of the trailing wait/notify steps. [seedSubtitles]' shape; an empty pipeline stays empty
+     *  (the built-in default carries the step itself). */
+    fun seedAvSync(pipeline: List<PipelineStep>): List<PipelineStep> {
+        if (pipeline.isEmpty() || pipeline.any { it.step == AVSYNC }) return pipeline
+        val subs = pipeline.indexOfFirst { it.step == SUBTITLES }
+        var at = if (subs >= 0) subs + 1 else pipeline.size
+        if (subs < 0) while (at > 1 && pipeline[at - 1].step in setOf("wait", "notify")) at--
+        return pipeline.subList(0, at) + defaultStep(AVSYNC) + pipeline.subList(at, pipeline.size)
     }
 
     /** The one-time seed: both steps added (enabled per the retired `behavior.verify_files`) ahead of any

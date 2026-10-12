@@ -373,8 +373,11 @@ fun main() = runBlocking {
     val subtitleReferences = dev.jellystructure.subtitles.SubtitleReferences(db, jellyfinClient, configStore)
     val subtitleChecks = dev.jellystructure.subtitles.SubtitleCheckService(db, mediaStore, configStore, subtitleReferences, mediaHistory)
     dev.jellystructure.subtitles.SubtitleVerdicts.reportOnly = { configStore.current.subtitleCheck.reportOnly }
+    // Phase 317 — sound that runs ahead of (or behind) the picture, measured by the sidecar on GPU 1.
+    val avSync = dev.jellystructure.media.AvSyncService(db, fileIntegrity, configStore, mediaStore, mediaHistory)
+    dev.jellystructure.media.AvSyncFlags.service = avSync
     subtitleChecks.init()
-    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks)
+    val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope, mediaSegmentStore, fingerprintService, artworkService = imageProxyService, fileIntegrity = fileIntegrity, trackCoverage = trackCoverage, stepRuns = stepRuns, subtitleChecks = subtitleChecks, avSync = avSync)
     // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
     // Phase 284 — the one tag writer: albums, converted songs and books all go through it (and Lidarr, read-only, beside it).
     val lidarrClient = dev.jellystructure.arr.LidarrClient()

@@ -155,4 +155,8 @@ object TriageDetection {
     /** Phase 255 (FR-255-7) — files whose coverage check found a short track (`track_ends_early`) or a
      *  wrong header (`duration_header_wrong`); [flagged] is the matching path set. Same shape again. */
     fun trackCoverageCount(item: MediaItem, flagged: Set<String>): Int = mkvLayoutBrokenCount(item, flagged)
+
+    /** Phase 317 (FR-317-9) — files the A/V sync check found out of step (`av_offset`) or drifting
+     *  (`av_drift`); [flagged] is the matching path set. The same shape, for the same reason. */
+    fun avSyncCount(item: MediaItem, flagged: Set<String>): Int = mkvLayoutBrokenCount(item, flagged)
 }

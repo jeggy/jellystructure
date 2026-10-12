@@ -60,6 +60,7 @@ class TitleChecks(
     private val integrity: FileIntegrityService?,
     private val coverage: TrackCoverageService?,
     private val subtitles: dev.jellystructure.subtitles.SubtitleCheckService? = null,
+    private val avSync: AvSyncService? = null,
 ) {
     fun forItem(item: MediaItem, config: AppConfig): TitleChecksDto {
         val nowMs = store.nowMs()
@@ -95,6 +96,7 @@ class TitleChecks(
                 )
                 FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS -> fileStep(item, step, label, active, nowMs, currentYear)
                 FileCheckSteps.SUBTITLES -> subtitleStep(item, step, label, active, nowMs)
+                FileCheckSteps.AVSYNC -> avSyncStep(item, step, label, active, nowMs)
                 else -> StepCheckDto(
                     step = step.step, label = label, enabled = step.enabled,
                     lastAt = run?.ran_at, last = run?.ran_at?.let { dayText(it * 1000, nowMs) } ?: "not yet",
@@ -243,6 +245,68 @@ class TitleChecks(
         )
     }
 
+    /**
+     * Phase 317 (FR-317-10) — the A/V sync line. Its own method rather than [fileStep]'s because the state
+     * is not a stored boolean: the verdict is computed on read from the library's zero, `unknown` is a
+     * state of its own (never counted as clean, FR-317-7), and the whole line reads *off* while the sidecar
+     * is not reachable (FR-317-13) instead of pretending every file is unchecked.
+     */
+    private fun avSyncStep(item: MediaItem, step: PipelineStep, label: String, active: Set<String>, nowMs: Long): StepCheckDto {
+        val service = avSync
+        val on = step.enabled && service?.enabled() == true
+        val rows = FileCheckSchedule.units(item).map { unit ->
+            val row = service?.rowFor(unit.path)
+            val stamp = FileIntegrityService.stampOf(unit.path)
+            val current = row != null && stamp != null && row.size == stamp.size && row.mtime == stamp.mtime
+            val reading = if (current) service!!.readingFor(unit.path, mapOf(unit.path to row!!), runtimeS = service.knownRuntimeS(item, unit.path)) else null
+            val queued = FileCheckSchedule.dedupeKey(FileCheckSchedule.AVSYNC_JOB, unit.path) in active
+            FileCheckRowDto(
+                path = unit.path, name = unit.path.substringAfterLast('/'), season = unit.season, episodeTag = unit.episodeTag,
+                state = when {
+                    reading == null -> "unchecked"
+                    reading.isFinding -> "finding"
+                    reading.state == AvSyncState.UNKNOWN -> "unchecked"     // never "clean": nothing was measured
+                    else -> "clean"
+                },
+                checkedAt = row?.checked_at?.takeIf { current },
+                checked = if (current) dayText(row!!.checked_at * 1000, nowMs) else "not yet",
+                nextDue = when {
+                    queued -> "queued"
+                    !on -> "off"
+                    stamp == null -> "file missing"
+                    reading == null -> "next run"
+                    else -> "when the file changes"
+                },
+                detail = if (current) service!!.findingSummary(row!!) else null,
+            )
+        }
+        val checked = rows.mapNotNull { it.checkedAt }
+        val findings = rows.count { it.state == "finding" }
+        val unchecked = rows.count { it.state == "unchecked" }
+        return StepCheckDto(
+            step = step.step, label = label, enabled = on,
+            lastAt = checked.maxOrNull(), last = checked.maxOrNull()?.let { dayText(it * 1000, nowMs) } ?: "not yet",
+            outcome = when {
+                rows.isEmpty() || checked.isEmpty() -> null
+                findings > 0 -> "finding"
+                unchecked > 0 -> "partial"
+                else -> "clean"
+            },
+            detail = listOfNotNull(
+                findings.takeIf { it > 0 }?.let { "$it out of step with the picture" },
+                unchecked.takeIf { it > 0 }?.let { "$it not measured" },
+            ).joinToString(" · ").ifEmpty { null },
+            nextDue = when {
+                !on -> "off"
+                rows.any { it.nextDue == "queued" } -> "queued"
+                unchecked > 0 -> "next run"
+                else -> "when a file changes"
+            },
+            action = "check_avsync",
+            files = rows,
+        )
+    }
+
     private fun storedFor(jobType: String, path: String): Pair<StoredFileCheck?, String?> = when (jobType) {
         FileCheckSchedule.VERIFY_JOB -> {
             val r = integrity?.rowsFor(path)
@@ -275,6 +339,7 @@ class TitleChecks(
             "rescan_arr" to "Radarr / Sonarr rescan", "detect_drift" to "Drift", "sync_imdb_ratings" to "IMDb rating",
             "prewarm_subtitles" to "Subtitle pre-warm", FileCheckSteps.VERIFY to "Verify files", FileCheckSteps.LENGTHS to "Track lengths",
             FileCheckSteps.SUBTITLES to "Subtitles fit the video",
+            FileCheckSteps.AVSYNC to "Sound in step with the picture",
         )
 
         /** FR-261-10 — only actions a title already has; the page maps each key to the call it already makes. */

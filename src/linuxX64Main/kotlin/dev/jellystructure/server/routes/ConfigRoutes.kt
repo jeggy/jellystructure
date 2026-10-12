@@ -174,6 +174,12 @@ fun Route.configureConfigRoutes(
         val svc = castService ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respond(svc.status(dev.jellystructure.tv.activePlaybackDevices()))
     }
+    // Phase 317 (FR-317-13) — the A/V sync card's one status line: the sidecar's `/health`, then one
+    // `/stat` per library root. Every word comes from here; the page prints it.
+    get("/config/avsync/status") {
+        val svc = dev.jellystructure.media.AvSyncFlags.service ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(svc.settings(configStore.current))
+    }
     get("/config") {
         call.respond(ConfigResponse(maskSecrets(configStore.current), effectiveScanThreads))
     }
@@ -196,7 +202,9 @@ fun Route.configureConfigRoutes(
         val stored = configStore.current
         // Blank secrets arrive as the "##KEEP##" sentinel — preserve the stored value rather than wipe it.
         // Phase 261 — the file-check seed marker is server-owned; the Settings model does not carry it.
-        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded, recommendationsStepSeeded = stored.scan.recommendationsStepSeeded, subtitleCheckSeeded = stored.scan.subtitleCheckSeeded, musicStepsSeeded = stored.scan.musicStepsSeeded))
+        // Phase 317 — `avSyncStepSeeded` is server-owned too: without it here, every Settings save would
+        // forget the seed and the next boot would put a step the operator removed straight back.
+        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded, recommendationsStepSeeded = stored.scan.recommendationsStepSeeded, subtitleCheckSeeded = stored.scan.subtitleCheckSeeded, musicStepsSeeded = stored.scan.musicStepsSeeded, avSyncStepSeeded = stored.scan.avSyncStepSeeded))
         if (received.apiKeys.jellyfinToken == "##KEEP##") {
             config = config.copy(apiKeys = config.apiKeys.copy(jellyfinToken = stored.apiKeys.jellyfinToken))
         }

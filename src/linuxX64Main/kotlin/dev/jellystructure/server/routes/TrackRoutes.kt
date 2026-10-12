@@ -783,6 +783,16 @@ fun Route.trackRoutes(
         call.respond(service.statusFor(item))
     }
 
+    // Phase 317 (FR-317-10) — this title's A/V sync, per file: the verdict computed on read from the
+    // library's zero, with every word the banner shows and the command to fix it. Stored results + one
+    // `stat` per file; never reads a media file on the request path (the mkvmerge ids were read at check time).
+    get("/media/{mediaId}/health/avsync") {
+        val mediaId = call.parameters["mediaId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val item = store.resolve(mediaId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val service = dev.jellystructure.media.AvSyncFlags.service ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        call.respond(service.statusFor(item))
+    }
+
     // Phase 254 (FR-254-6) — an operator's "Check now", per file since Phase 261 (FR-261-1): each check takes
     // the files it has no current result for (every file with ?force=true), first in the segments lane and
     // never playback-deferred; a waiting cadence row for the same file is raised rather than duplicated.
@@ -795,6 +805,9 @@ fun Route.trackRoutes(
             "verify" -> listOf(dev.jellystructure.media.FileCheckSchedule.VERIFY_JOB)
             "lengths" -> listOf(dev.jellystructure.media.FileCheckSchedule.LENGTHS_JOB)
             "subtitles" -> listOf(dev.jellystructure.media.FileCheckSchedule.SUBTITLES_JOB)
+            // Phase 317 (FR-317-8) — the Checks card's fourth ↻. Queues the title's files FIRST in the
+            // `avsync` lane and never deferred, like the other three in theirs.
+            "avsync" -> listOf(dev.jellystructure.media.FileCheckSchedule.AVSYNC_JOB)
             else -> dev.jellystructure.media.FileCheckSchedule.JOB_TYPES
         }
         val r = mediaJobQueue.enqueueTitleChecks(item, force = call.request.queryParameters["force"] == "true", jobTypes = types)

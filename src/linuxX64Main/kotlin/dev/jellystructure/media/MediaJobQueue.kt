@@ -108,6 +108,8 @@ class MediaJobQueue(
     private val trackCoverage: TrackCoverageService? = null,
     // Phase 273 (FR-273-8) — the third per-file check; null in tests and contexts that build no subtitle check.
     private val subtitleChecks: dev.jellystructure.subtitles.SubtitleCheckService? = null,
+    // Phase 317 (FR-317-8) — the fourth, on its own lane and its own worker.
+    private val avSync: AvSyncService? = null,
     // Phase 261 (FR-261-9) — the enqueue-only steps' per-title record, written when their job finishes.
     val stepRuns: StepRunStore? = null,
 ) {
@@ -187,6 +189,39 @@ class MediaJobQueue(
         // never request-serving; tags this coroutine and everything launched under it so
         // OutboundHttp/ProcessGate reserve interactive capacity it can never consume.
         appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { poolSupervisorLoop() }
+        // Phase 317 (FR-317-8) — one worker of its own for the `avsync` lane, outside the shared pool.
+        appScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { avSyncWorkerLoop() }
+    }
+
+    /**
+     * Phase 317 (FR-317-8, dev review item 2) — the `avsync` lane's own single worker.
+     *
+     * Why not the shared pool: its rows are ~8 s of a GPU and three 45 s reads of a spinning disk each,
+     * and there are ~9 600 of them. On a shared worker that is one of three held for 22 hours, with
+     * segment detection and the subtitle pre-warm behind it. Here it costs the backend one sleeping
+     * coroutine and the card the owner set aside for it.
+     *
+     * It claims nothing unless the check is switched on AND the sidecar answers `/health` AND every
+     * library root is visible to it (FR-317-13) — re-asked on a slow heartbeat, so switching the sidecar
+     * off stops the sweep without a restart, and starting it resumes it.
+     */
+    private suspend fun avSyncWorkerLoop() {
+        var readyUntilMs = 0L
+        var ready = false
+        while (true) {
+            val service = avSync
+            if (service == null || !service.enabled()) { ready = false; delay(10_000); continue }
+            if (epochSeconds() * 1000L >= readyUntilMs) {
+                val wasReady = ready
+                ready = service.ready(configStore.current)
+                readyUntilMs = epochSeconds() * 1000L + if (ready) 60_000L else 30_000L
+                if (ready != wasReady) Logger.info("av sync lane: ${if (ready) "the sidecar is ready — claiming" else "the sidecar is not ready — holding"}", "jobs")
+            }
+            if (!ready) { delay(5_000); continue }
+            val row = claimMutex.withLock { claimNext(listOf(FileCheckSchedule.AVSYNC_LANE)) }
+            if (row == null) { delay(5_000); continue }
+            runClaimed(row)
+        }
     }
 
     fun isBusy(): Boolean = bulkRunning || occupiedQueues.isNotEmpty()
@@ -355,6 +390,7 @@ class MediaJobQueue(
                 label = when (type) {
                     FileCheckSchedule.VERIFY_JOB -> "Verify files"
                     FileCheckSchedule.SUBTITLES_JOB -> "Check subtitles"
+                    FileCheckSchedule.AVSYNC_JOB -> "Check A/V sync"
                     else -> "Check track lengths"
                 },
                 waiting = counts[type to "queued"] ?: 0,
@@ -365,6 +401,9 @@ class MediaJobQueue(
                     when (type) {
                         FileCheckSchedule.VERIFY_JOB -> db.fileIntegrityQueries.countFindingsSince(since).executeAsOne().toInt()
                         FileCheckSchedule.SUBTITLES_JOB -> db.subtitleCheckQueries.problemsSince(since).executeAsOne().toInt()
+                        // Phase 317 — the verdict needs the library's zero, so it cannot be a SQL count: the
+                        // rows checked today are read and asked.
+                        FileCheckSchedule.AVSYNC_JOB -> avSync?.findingsSince(since) ?: 0
                         else -> db.fileTrackCoverageQueries.countFindingsSince(since).executeAsOne().toInt()
                     }
                 }.getOrDefault(0),
@@ -400,7 +439,10 @@ class MediaJobQueue(
             doneToday = doneToday[lane] ?: 0,
             configuredWorkers = shared,
         )
-        return listOf(summary("media"), summary("segments"), summary("subtitles"))
+        // Phase 317 — `avsync` reports ONE configured worker, not the shared pool's number: it has one of
+        // its own, and showing the pool's 2–3 there would promise a parallelism that cannot happen.
+        return listOf(summary("media"), summary("segments"), summary("subtitles")) +
+            summary(FileCheckSchedule.AVSYNC_LANE).copy(configuredWorkers = 1)
     }
 
     /** Phase 213 (FR-213-7) — surfaced on `GET /api/health` as `job_queues`. */
@@ -492,13 +534,13 @@ class MediaJobQueue(
      *  candidates by `created_at` — comparing age honestly rather than iterating queues in a fixed order,
      *  so a queue with a steady trickle of new jobs can't starve one holding a single old job (open
      *  question 6 in the phase-213 spec). */
-    private suspend fun claimNext(): Media_job? {
+    private suspend fun claimNext(lanes: List<String> = SHARED_POOL_LANES): Media_job? {
         val candidates = mutableListOf<Media_job>()
         // Phase 261 (FR-261-2, dev review item 3) — ONE candidate per lane, read through the claim index:
         // the lane's next row, or while a TV plays (and the household defers, 262) its next row that does
         // not wait. Was: every waiting row of every lane, each one's params JSON-parsed, on every claim.
         val holding = deferNow()
-        for (lane in QUEUE_NAMES) {
+        for (lane in lanes) {
             if (lane in occupiedQueues) continue
             if (lane == "media" && bulkRunning) continue
             val next = if (holding) queries.nextQueuedNotDeferred(lane).executeAsOneOrNull() else queries.nextQueued(lane).executeAsOneOrNull()
@@ -577,6 +619,8 @@ class MediaJobQueue(
                 "media" -> runMediaJob(row)
                 "segments" -> runSegmentsJobBody(row)
                 "subtitles" -> runSubtitlesJob(row)
+                // Phase 317 (FR-317-8) — its own lane, its own worker; the body is the same per-file check.
+                FileCheckSchedule.AVSYNC_LANE -> runFileCheck(row, isCancelled = { row.id in cooperativeCancelledIds })
                 else -> Failure("Unknown queue '${row.lane}'")
             }
         } catch (e: Exception) {
@@ -804,6 +848,22 @@ class MediaJobQueue(
                 val service = subtitleChecks ?: return Failure("Subtitle check not available")
                 service.runJob(row.media_id, path) ?: return Failure("Media item no longer exists")
             }
+            // Phase 317 (FR-317-8) — the measurement is a sidecar call: a 503 is "it is busy", which is a
+            // requeue in place and not a failure, so the row keeps its FIFO position and its history stays clean.
+            FileCheckSchedule.AVSYNC_JOB -> {
+                val service = avSync ?: return Failure("A/V sync service not available")
+                val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
+                val result = service.check(item, path)
+                result.exceptionOrNull()?.let { e ->
+                    if (e is AvSyncService.AvSyncBusy) {
+                        // Nothing else on this lane may run meanwhile — it is one worker and one GPU — so
+                        // waiting here, rather than spinning through a requeue, is what "busy" should cost.
+                        delay(e.retryAfterS.coerceIn(1, 120) * 1000L)
+                        return Requeue(inPlace = true, reason = "the sidecar was measuring another file")
+                    }
+                    return Failure(e.message ?: "the A/V sync measurement failed")
+                }
+            }
             else -> {
                 val service = trackCoverage ?: return Failure("Track coverage service not available")
                 service.check(path) ?: return Failure("ffprobe could not read the file")
@@ -820,6 +880,10 @@ class MediaJobQueue(
         FileCheckSchedule.LENGTHS_JOB -> trackCoverage?.rowsByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, r.findings != "[]") }
         // Phase 273 — due-ness is the subtitle check's own (a new sidecar is due though the video is not changed).
         FileCheckSchedule.SUBTITLES_JOB -> subtitleChecks?.let { emptyMap() }
+        // Phase 317 — `hasFinding` is deliberately false for every row: with `recheckUnchanged = false`
+        // the cadence never reaches a current result anyway, and a row that stored a reason or a reading
+        // is equally "done" (FR-317-8).
+        FileCheckSchedule.AVSYNC_JOB -> avSync?.rowsCurrentByPath()?.mapValues { (_, r) -> StoredFileCheck(r.size, r.mtime, r.checked_at, false) }
         else -> null
     }
 
@@ -835,7 +899,10 @@ class MediaJobQueue(
         val inserted = runCatching {
             queries.insert(
                 "mj-${genId()}", jobType, unit.item.id, FileCheckSchedule.label(jobType, unit), params, "queued",
-                if (priority >= FileCheckSchedule.PRIORITY_OPERATOR) "admin" else "pipeline", epochSeconds(), 1L, "segments", key, defer.toLong(), priority,
+                if (priority >= FileCheckSchedule.PRIORITY_OPERATOR) "admin" else "pipeline", epochSeconds(), 1L,
+                // Phase 317 (dev review item 3) — the lane comes from the job type: this was hard-coded
+                // `"segments"`, which would have put the sweep on the shared pool it must stay off.
+                FileCheckSchedule.laneFor(jobType), key, defer.toLong(), priority,
             )
         }.isSuccess
         if (inserted) return FileEnqueue.INSERTED
@@ -856,6 +923,9 @@ class MediaJobQueue(
      */
     fun enqueueDueFileChecks(step: PipelineStep, items: List<MediaItem>, shouldStop: () -> Boolean = { false }): FileCheckPass {
         val jobType = FileCheckSchedule.jobTypeFor(step.step) ?: return FileCheckPass(0, 0, 0, false)
+        // Phase 317 (FR-317-13) — off means ABSENT: no rows at all, not even the skip rows, so a pipeline
+        // run with the sidecar switched off leaves the table exactly as it was.
+        if (jobType == FileCheckSchedule.AVSYNC_JOB && avSync?.enabled() != true) return FileCheckPass(0, 0, 0, false)
         val stored = storedChecks(jobType) ?: return FileCheckPass(0, 0, 0, false)
         if (jobType == FileCheckSchedule.SUBTITLES_JOB) return enqueueDueSubtitleChecks(items, shouldStop)
         val nowMs = store.nowMs()
@@ -870,6 +940,16 @@ class MediaJobQueue(
         var fresh = 0; var cadence = 0; var already = 0
         for ((unit, why, _) in due) {
             if (shouldStop()) return FileCheckPass(fresh, cadence, already, true)
+            // Phase 317 (FR-317-8) — animation, a file under two minutes, a file with no original-language
+            // track among several: written straight to the table with its reason, in this pass, with no
+            // request. The GPU never sees them and they are never counted as clean either.
+            if (jobType == FileCheckSchedule.AVSYNC_JOB) {
+                val service = avSync
+                if (service != null) {
+                    val reason = service.skipReason(unit.item, unit.path, service.knownRuntimeS(unit.item, unit.path))
+                    if (reason != null) { service.storeSkip(unit.path, reason); already++; continue }
+                }
+            }
             val priority = if (why == FileCheckDue.NO_RESULT) FileCheckSchedule.PRIORITY_NEW else FileCheckSchedule.PRIORITY_CADENCE
             when (enqueueFileCheck(jobType, unit, priority, defer = true)) {
                 FileEnqueue.INSERTED -> if (why == FileCheckDue.NO_RESULT) fresh++ else cadence++
@@ -904,7 +984,7 @@ class MediaJobQueue(
 
     /** Phase 261 (FR-261-10) — the title page's Checks card, from this queue's own collaborators. */
     fun titleChecks(item: MediaItem, config: dev.jellystructure.config.AppConfig): TitleChecksDto =
-        TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage, subtitleChecks).forItem(item, config)
+        TitleChecks(db, store, stepRuns, fileIntegrity, trackCoverage, subtitleChecks, avSync).forItem(item, config)
 
     /** Phase 261 — Check now's answer: how many files it looked at, rows it queued, waiting rows it raised. */
     @kotlinx.serialization.Serializable
@@ -1340,8 +1420,14 @@ class MediaJobQueue(
         fun waitsForPlayback(rowDefers: Boolean, householdDefers: Boolean, playing: Boolean): Boolean =
             deferDecision(rowDefers, householdDefers) && playing
 
-        /** The three queue names — Phase 260's route validates against THIS list, not a copy. */
-        val QUEUE_NAMES = listOf("media", "segments", "subtitles")
+        /** Every queue name — Phase 260's route validates against THIS list, not a copy.
+         *
+         *  Phase 317 (dev review item 2) added `avsync`, which is NOT one of [SHARED_POOL_LANES]: it has a
+         *  worker of its own ([avSyncWorkerLoop]). The shared pool must never claim from it, or a 22-hour
+         *  sweep would hold one of three shared workers for the whole sweep and starve segment detection. */
+        val QUEUE_NAMES = listOf("media", "segments", "subtitles", FileCheckSchedule.AVSYNC_LANE)
+        /** The lanes the shared worker pool (213) draws from. */
+        val SHARED_POOL_LANES = listOf("media", "segments", "subtitles")
         /** Phase 261 (FR-261-1) — job types migration 53 cancelled; kept in Recent until pruned, never retried. */
         val RETIRED_TYPES = setOf("file_integrity_sweep", "track_coverage_sweep", "file_integrity_title")
         /** Phase 260 (FR-260-6) — the synthetic Recent record's type. */

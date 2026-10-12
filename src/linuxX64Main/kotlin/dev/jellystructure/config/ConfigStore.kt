@@ -39,7 +39,7 @@ class ConfigStore(private val filePath: String) {
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
-        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps(); seedSuggestionsStep() }
+        else { fixAgeRatingMapKeys(); adoptNestedPublicUrl(); seedFileCheckSteps(); seedRecommendationsStep(); seedSubtitleCheck(); seedMusicSteps(); seedSuggestionsStep(); seedAvSyncStep() }
     }
 
     /** Phase 275 — each music step joins the operator's pipeline once (see [MusicSteps.seed]). */
@@ -121,6 +121,19 @@ class ConfigStore(private val filePath: String) {
         Logger.info("Config: subtitles are checked against their video now — ${FileCheckSteps.SUBTITLES} " +
             (if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added") +
             ", starting on Only report", "config")
+    }
+
+    /** Phase 317 (FR-317-8) — `check_av_sync` joins an existing pipeline once. The step is inert until
+     *  `[avsync] enabled`, so seeding it changes nothing on an install that never switches the sidecar on. */
+    private suspend fun seedAvSyncStep() {
+        val scan = _config.scan
+        if (scan.avSyncStepSeeded) return
+        val seeded = FileCheckSteps.seedAvSync(scan.pipeline)
+        _config = _config.copy(scan = scan.copy(pipeline = seeded, avSyncStepSeeded = true))
+        persist()
+        Logger.info("Config: the sound is checked against the picture now — ${FileCheckSteps.AVSYNC} " +
+            (if (seeded.size == scan.pipeline.size) "(already in the pipeline, or the built-in default)" else "added") +
+            ", inert until [avsync] enabled", "config")
     }
 
     /** Phase 227 (FR-227-2) — 218's dev review had put `public_url` inside `[chromecast]`. Carry the

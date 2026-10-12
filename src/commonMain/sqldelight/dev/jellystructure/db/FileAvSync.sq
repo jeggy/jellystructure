@@ -1,0 +1,54 @@
+-- Phase 317 (FR-317-5) — one row per video file the A/V sync check has looked at. Raw, like
+-- file_track_coverage: the sidecar's own windows are stored and the VERDICT IS COMPUTED ON READ
+-- (FR-317-6/-7), because zero is the library's moving median and a stored state would go stale across
+-- thousands of rows the first time it moved by a frame.
+--
+-- A row is CURRENT only while the file's size and mtime still equal the ones stored here (254's rule), and
+-- only while `model` still equals the sidecar's — a pipeline bump makes every result due again (FR-317-7).
+--
+-- `reason` is set ONLY when nothing was measured (animation · too_short · no_original_track · no_faces):
+-- such a file is `unknown`, which is never counted or shown as clean. `windows` and `others` are the
+-- sidecar's JSON verbatim. `mkv_audio_ids` maps each `0:a:N` to its mkvmerge track id, read once here at
+-- check time, so the advice never reads a media file on the request path (255's rule).
+CREATE TABLE file_av_sync (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    audio TEXT,
+    reason TEXT,
+    windows TEXT NOT NULL,
+    others TEXT NOT NULL,
+    mkv_audio_ids TEXT
+);
+
+put:
+INSERT OR REPLACE INTO file_av_sync(path, size, mtime, checked_at, model, audio, reason, windows, others, mkv_audio_ids)
+VALUES (:path, :size, :mtime, :checked_at, :model, :audio, :reason, :windows, :others, :mkv_audio_ids);
+
+all:
+SELECT * FROM file_av_sync;
+
+byPath:
+SELECT * FROM file_av_sync WHERE path = :path;
+
+remove:
+DELETE FROM file_av_sync WHERE path = :path;
+
+-- FR-317-5 — only the rows that measured something: what the verdict, the Triage counts and the library
+-- zero are all computed from. A row with a `reason` measured nothing and is never one of them.
+measured:
+SELECT * FROM file_av_sync WHERE reason IS NULL AND model = :model;
+
+-- FR-317-6 — the library's zero reads every stored window of every measured file. Kept as its own query
+-- so it is one scan of one column pair, not a decode of every row's object graph.
+measuredWindows:
+SELECT windows FROM file_av_sync WHERE reason IS NULL AND model = :model;
+
+-- Phase 261 (dev review item 1) — the Jobs view's "N findings today" is read from the results, not the job
+-- rows (a check succeeds whether or not the sound is out of step). The verdict itself cannot be expressed
+-- in SQL (it needs the library zero), so this counts the files checked today that measured anything at
+-- all; MediaJobQueue.groups() narrows it to the ones that are findings.
+checkedSince:
+SELECT * FROM file_av_sync WHERE checked_at >= :since AND reason IS NULL;

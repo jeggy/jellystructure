@@ -568,6 +568,14 @@ class MediaStore(
                     val flagged = TrackCoverageFlags.flaggedOrNull().orEmpty().filterValues { TrackCoverageFlags.headerWrong(it) }.keys
                     items = items.filter { TriageDetection.trackCoverageCount(it, flagged) > 0 }
                 }
+                AvSyncFlags.TYPE_AV_OFFSET -> {  // Phase 317 (FR-317-9)
+                    val flagged = AvSyncFlags.flaggedOrNull().orEmpty().filterValues { it.state == AvSyncState.OFFSET }.keys
+                    items = items.filter { TriageDetection.avSyncCount(it, flagged) > 0 }
+                }
+                AvSyncFlags.TYPE_AV_DRIFT -> {  // Phase 317 (FR-317-9)
+                    val flagged = AvSyncFlags.flaggedOrNull().orEmpty().filterValues { it.state == AvSyncState.DRIFT }.keys
+                    items = items.filter { TriageDetection.avSyncCount(it, flagged) > 0 }
+                }
             }
             items
         }.let { items ->

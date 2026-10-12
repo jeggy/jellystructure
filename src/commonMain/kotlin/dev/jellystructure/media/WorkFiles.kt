@@ -25,6 +25,8 @@ object WorkFiles {
         // Phase 314 — a file every device can play directly.
         FILE_FIX("filefix_"), ADDED_AUDIO("addaudio_", "mka"), SIDECAR("sidecar_", "mka"),
         DV_HEVC("dvhevc_", "hevc"), DV_TIMESTAMPS("dvts_", "txt"), DV_TAGS("dvtags_", "xml"), DV_VERSION("dvversion_"),
+        // Phase 317 (FR-317-11) — the audio shift's output, and the global-tags XML that records the shift in it.
+        AV_SHIFT("avshift_"), AV_TAGS("avtags_", "xml"),
     }
 
     /** The library file's directory. */

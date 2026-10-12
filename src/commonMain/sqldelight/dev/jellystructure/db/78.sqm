@@ -1,0 +1,14 @@
+-- 317 (FR-317-5) — the per-file A/V sync result. Must stay byte-for-byte in sync with FileAvSync.sq's
+-- CREATE TABLE (the SQLDelight-migration rule). 77 is 309/313's: this one is 78.
+CREATE TABLE file_av_sync (
+    path TEXT NOT NULL PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    audio TEXT,
+    reason TEXT,
+    windows TEXT NOT NULL,
+    others TEXT NOT NULL,
+    mkv_audio_ids TEXT
+);

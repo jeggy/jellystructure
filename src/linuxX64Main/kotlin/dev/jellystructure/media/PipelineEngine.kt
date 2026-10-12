@@ -169,6 +169,7 @@ private fun rawPipeline(cfg: AppConfig): List<PipelineStep> =
             // Phase 261 (FR-261-4) — the built-in pipeline checks files too, on their own cadence.
             FileCheckSteps.ALL.forEach { add(FileCheckSteps.defaultStep(it)) }
             add(FileCheckSteps.defaultStep(FileCheckSteps.SUBTITLES))  // Phase 273
+            add(FileCheckSteps.defaultStep(FileCheckSteps.AVSYNC))  // Phase 317 — inert until [avsync] enabled
             add(PipelineStep(step = dev.jellystructure.config.RecommendationsStep.STEP))  // Phase 269
             add(PipelineStep(step = dev.jellystructure.config.SuggestionsStep.STEP))  // Phase 274
             add(PipelineStep(step = dev.jellystructure.config.MusicSteps.MATCH))  // Phase 276
@@ -725,7 +726,7 @@ suspend fun runPipeline(
                 }
                 Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")
             }
-            FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS, FileCheckSteps.SUBTITLES -> {
+            FileCheckSteps.VERIFY, FileCheckSteps.LENGTHS, FileCheckSteps.SUBTITLES, FileCheckSteps.AVSYNC -> {
                 // Phase 261 (FR-261-3/8, dev review item 5) — enqueue-only, like detect_segments: one row per due
                 // file on the segments queue. A Library run reads the WHOLE library, not the scan's freshness-
                 // filtered working set (a file's cadence is its own); a SingleItem run — realtime ingest of a
@@ -737,6 +738,7 @@ suspend fun runPipeline(
                 val noun = when (step.step) {
                     FileCheckSteps.VERIFY -> "verification"
                     FileCheckSteps.SUBTITLES -> "a subtitle check"
+                    FileCheckSteps.AVSYNC -> "an A/V sync check"
                     else -> "a track-length check"
                 }
                 val summary = "${pass.queued} file${if (pass.queued == 1) "" else "s"} queued for $noun" +
