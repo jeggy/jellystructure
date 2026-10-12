@@ -253,7 +253,13 @@ class TitleChecks(
      */
     private fun avSyncStep(item: MediaItem, step: PipelineStep, label: String, active: Set<String>, nowMs: Long): StepCheckDto {
         val service = avSync
-        val on = step.enabled && service?.enabled() == true
+        // FR-317-16 (amendment 2026-10-12) — *off* wherever the check cannot run, which is the switch AND
+        // the sidecar answering AND every library root visible to it: the condition the lane's own worker
+        // claims on. Read from [AvSyncService.readyNow] — the cached answer — so this stays non-suspending
+        // and costs no `/health` and no `/stat` per library root on a title page. Before, `enabled()` alone
+        // left a stopped sidecar reading *not yet · next run · 3 not measured*: an invitation to wait for a
+        // check that cannot happen.
+        val on = step.enabled && service != null && service.enabled() && service.readyNow()
         val rows = FileCheckSchedule.units(item).map { unit ->
             val row = service?.rowFor(unit.path)
             val stamp = FileIntegrityService.stampOf(unit.path)

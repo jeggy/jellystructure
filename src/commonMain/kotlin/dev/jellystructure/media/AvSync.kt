@@ -131,6 +131,20 @@ object AvSyncVerdict {
     fun isConfident(w: AvSyncWindow): Boolean = w.offsetFrames != null && w.conf >= CONF_MIN && w.frames >= FRAMES_MIN
 
     /**
+     * FR-317-17 (amendment 2026-10-12) — is another triple of windows worth asking for? Yes whenever the
+     * pass so far yields **neither** [AvSyncState.IN_SYNC] **nor** [AvSyncState.OFFSET]: too few confident
+     * windows to measure anything (the original rule), or confident windows that disagree.
+     *
+     * Why the second arm: `drift` needs [DRIFT_MIN_WINDOWS] confident windows on a line, and three windows
+     * can never reach four — so three confident windows that disagree, which is exactly the signature of a
+     * steady drift, could only ever come out `unknown`, and `unknown` is never counted and never shown
+     * (FR-317-7). A drifting film would have vanished silently. The bar is never lowered to meet the
+     * windows; more of the file is measured until there are enough of them.
+     */
+    fun wantsMoreWindows(sofar: AvSyncReading): Boolean =
+        sofar.state != AvSyncState.IN_SYNC && sofar.state != AvSyncState.OFFSET
+
+    /**
      * FR-317-6 — the library's zero: the conf-weighted median [offsetFrames] of every confident window
      * stored, or [DEFAULT_ZERO_FRAMES] until [ZERO_MIN_WINDOWS] of them exist. Takes the windows as
      * (offsetFrames, conf) pairs so the caller can stream them out of SQLite without building objects.

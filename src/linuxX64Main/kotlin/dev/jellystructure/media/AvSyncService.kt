@@ -168,7 +168,8 @@ class AvSyncService(
     private val windowsSer = ListSerializer(AvSyncWindow.serializer())
     private val othersSer = ListSerializer(AvSyncOther.serializer())
 
-    /** FR-317-8 — three windows, then three more when fewer than two of them read clearly. */
+    /** FR-317-8, FR-317-17 — three windows, then three more when the first three give neither a steady
+     *  offset nor an in-sync reading (too few confident, or confident and disagreeing). */
     private val firstWindows = listOf(0.20, 0.50, 0.80)
     private val secondWindows = listOf(0.35, 0.65, 0.90)
     private val windowSeconds = 45.0
@@ -184,6 +185,33 @@ class AvSyncService(
      *  (FR-317-7). Null until `/health` has answered once. */
     private var lastModel: String? = null
     val model: String? get() = lastModel
+
+    /** FR-317-16 (amendment 2026-10-12) — [ready]'s last answer and the moment it was taken, kept here
+     *  beside [lastModel]. 0 = never asked. */
+    private var readyAnswer = false
+    private var readyAnsweredAtSec = 0L
+
+    /**
+     * FR-317-16 — the lane's own readiness condition, non-suspending, for the callers that render it on
+     * every page (the Checks card's `avsync` line). [ready] itself is `suspend` and `/stat`s a file per
+     * library root, so a card that asked it directly would cost a round trip per title page.
+     *
+     * Never asked yet reads as **not ready**, and so does an answer older than [READY_MAX_AGE_S]: the
+     * lane's worker re-asks every 30–60 s while it is running, so an older answer means nobody is
+     * maintaining it and the card must not claim a readiness on its behalf. The lane is not claiming
+     * either, which is the whole point — one condition, read by the worker and by the card.
+     */
+    fun readyNow(nowSec: Long = nowEpochSec()): Boolean =
+        readyAnswer && readyAnsweredAtSec > 0 && nowSec - readyAnsweredAtSec <= READY_MAX_AGE_S
+
+    /** When [readyNow]'s answer was taken (epoch seconds); 0 = nothing has asked since boot. */
+    val readyAnsweredAt: Long get() = readyAnsweredAtSec
+
+    /** Records what [ready] (or [settings], which decides the same thing) just found. */
+    private fun noteReady(answer: Boolean) {
+        readyAnswer = answer
+        readyAnsweredAtSec = nowEpochSec()
+    }
 
     // ── the sidecar ─────────────────────────────────────────────────────────────────────────────
 
@@ -258,8 +286,16 @@ class AvSyncService(
         return samplesCache
     }
 
-    /** FR-317-13 — the Settings card's own line, computed by the server so the page renders text only. */
-    suspend fun settings(cfg: AppConfig = configStore.current): AvSyncSettingsDto {
+    /**
+     * FR-317-13 — the Settings card's own line, computed by the server so the page renders text only.
+     *
+     * FR-317-16 — [AvSyncSettingsDto.reachable] is the same condition as [ready], so the answer is recorded
+     * for [readyNow] on the way out: the Settings card is asked on a Settings save and on every visit to the
+     * page, which is two of the three refresh points FR-317-13 names.
+     */
+    suspend fun settings(cfg: AppConfig = configStore.current): AvSyncSettingsDto = settingsAnswer(cfg).also { noteReady(it.reachable) }
+
+    private suspend fun settingsAnswer(cfg: AppConfig): AvSyncSettingsDto {
         if (!cfg.avsync.enabled) return AvSyncSettingsDto(false, false, "Off — nothing is measured and nothing is counted.")
         val h = health() ?: return AvSyncSettingsDto(true, false, "Not reachable at ${config.baseUrl()} — the sidecar is not running, or this is not its address.")
         if (!h.ok) return AvSyncSettingsDto(true, false, "Reachable, but it has no GPU: ${h.gpu}", h.model)
@@ -275,8 +311,11 @@ class AvSyncService(
         return AvSyncSettingsDto(true, true, "Measuring on ${h.gpu} · model ${h.model}", h.model)
     }
 
-    /** FR-317-13 — is the check able to run right now? The lane's worker asks this before it claims. */
-    suspend fun ready(cfg: AppConfig = configStore.current): Boolean {
+    /** FR-317-13 — is the check able to run right now? The lane's worker asks this before it claims, and
+     *  FR-317-16's [readyNow] hands the same answer to the Checks card without asking again. */
+    suspend fun ready(cfg: AppConfig = configStore.current): Boolean = readyAnswerFor(cfg).also { noteReady(it) }
+
+    private suspend fun readyAnswerFor(cfg: AppConfig): Boolean {
         if (!cfg.avsync.enabled) return false
         val h = health() ?: return false
         if (!h.ok) return false
@@ -481,9 +520,11 @@ class AvSyncService(
         val mkvIds = if (path.substringAfterLast('.').lowercase() == "mkv") readMkvAudioIds(path) else emptyMap()
 
         var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse { return Result.failure(it) }
-        if (windows.windows.count { AvSyncVerdict.isConfident(it) } < 2) {
-            // FR-317-8 — three more windows elsewhere in the file before giving up: a film whose 20/50/80
-            // all land on a landscape is common, and the second triple costs another ~8 s of one card.
+        if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {
+            // FR-317-8 / FR-317-17 — three more windows elsewhere in the file before giving up: a film whose
+            // 20/50/80 all land on a landscape is common, and so is one whose three confident windows
+            // disagree — a drift needs four of them on a line, which three windows can never reach. One
+            // extra pass only (there is no third), at ~4 s of one card, and only for a file with no answer.
             val more = measure(path, audio, others, runtimeS, secondWindows).getOrNull()
             if (more != null) windows = MeasureResponse(windows.windows + more.windows, more.others.ifEmpty { windows.others }, more.decode, windows.seconds + more.seconds)
         }
@@ -533,6 +574,11 @@ class AvSyncService(
 
         /** The reasons the backend decides by itself, without ever asking the sidecar (FR-317-8). */
         val SKIP_REASONS = setOf(AvSyncReason.ANIMATION, AvSyncReason.TOO_SHORT, AvSyncReason.NO_ORIGINAL_TRACK)
+
+        /** FR-317-16 — how long [readyNow] will stand by a recorded answer. Five times the lane worker's
+         *  own 60 s heartbeat: comfortably longer than a slow `/health` + a `/stat` per root, short enough
+         *  that a lane that has stopped asking stops claiming readiness within minutes. */
+        const val READY_MAX_AGE_S = 300L
 
         /** `mkvmerge -J` → `0:a:N` → the track's own `id`. Pure, so the mapping is tested rather than eyeballed. */
         fun parseMkvAudioIds(output: String): Map<String, Int> {

@@ -126,6 +126,52 @@ class AvSyncVerdictTest {
         assertTrue(r.why!!.contains("disagree"))
     }
 
+    // ── FR-317-17 (amendment 2026-10-12) — the second triple's trigger ──
+
+    /** The 20/50/80 % windows of a 90-minute film, drifting +1 → +6 frames across it. */
+    private val driftFirstTriple = listOf(w(1080.0, 1, 3.0, 800), w(2700.0, 4, 3.0, 800), w(4320.0, 6, 3.0, 800))
+
+    /** Its 35/65/90 % windows, on the same line. */
+    private val driftSecondTriple = listOf(w(1890.0, 2, 3.0, 800), w(3510.0, 5, 3.0, 800), w(4860.0, 7, 3.0, 800))
+
+    @Test
+    fun `three confident windows that disagree are unknown — a drift cannot be reached in three`() {
+        // Unchanged, and the reason FR-317-17 exists: DRIFT_MIN_WINDOWS is 4, so the exact signature of a
+        // steady drift measured in three windows can only ever come out `unknown` — never counted, never
+        // shown. The answer is more windows, never a lower bar.
+        val r = AvSyncVerdict.of(driftFirstTriple, zeroFrames = -1)
+        assertEquals(AvSyncState.UNKNOWN, r.state)
+        assertEquals(3, r.confidentWindows)
+        assertTrue(r.why!!.contains("disagree"))
+        assertTrue(AvSyncVerdict.wantsMoreWindows(r), "a second triple must be asked for")
+    }
+
+    @Test
+    fun `the same three plus a second triple on the line are a drift`() {
+        val r = AvSyncVerdict.of(driftFirstTriple + driftSecondTriple, zeroFrames = -1)
+        assertEquals(AvSyncState.DRIFT, r.state)
+        assertEquals(6, r.confidentWindows)
+        assertEquals(1080.0, r.driftFromS)
+        assertEquals(4860.0, r.driftToS)
+        assertTrue((r.driftToMs ?: 0) - (r.driftFromMs ?: 0) >= AvSyncVerdict.DRIFT_MIN_FRAMES * AvSyncVerdict.MS_PER_FRAME)
+        assertEquals(4, AvSyncVerdict.DRIFT_MIN_WINDOWS, "the dev review's bar against calling noise a drift")
+    }
+
+    @Test
+    fun `more windows are wanted for anything that is neither in_sync nor offset`() {
+        fun steady(frames: Int) = (1..4).map { w(it * 1000.0, frames, 3.0, 800) }
+        assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(steady(0), zeroFrames = -1)))      // in_sync
+        assertFalse(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(steady(4), zeroFrames = -1)))      // offset
+        // Too few confident (the original rule), no face at all, and a confident disagreement.
+        assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(listOf(w(600.0, 4, 3.0, 800), w(1800.0, 1, 0.4, 900)), zeroFrames = -1)))
+        assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(listOf(AvSyncWindow(startS = 600.0)), zeroFrames = -1)))
+        assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(driftFirstTriple, zeroFrames = -1)))
+        // A drift wants them too. It cannot come out of three windows today, so [AvSyncService.check]
+        // never sees this case; written as the rule reads rather than as a list of states, so a change to
+        // DRIFT_MIN_WINDOWS cannot quietly turn it into something else.
+        assertTrue(AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(driftFirstTriple + driftSecondTriple, zeroFrames = -1)))
+    }
+
     @Test
     fun `the thresholds are asymmetric - early is noticed sooner than late`() {
         fun steady(frames: Int) = (1..4).map { w(it * 1000.0, frames, 3.0, 800) }

@@ -734,8 +734,12 @@ ${aiSectionHtml()}
                   <input id="avsync-timeout" class="input" type="number" min="5" max="3600" style="width:110px">
                   <span class="hint">One file is three 45-second windows, about 8 seconds on a free card.</span>
                 </div>
-                <div id="avsync-status" class="tiny muted">Checking…</div>
               </div>
+              <!-- Phase 317 (FR-317-16, amendment 2026-10-12) — OUTSIDE #avsync-on: the status line is the
+                   one place that says WHY nothing is being measured, so a card whose switch is off must not
+                   go silent on the question. Nested in the hidden block, the server's "Off — nothing is
+                   measured and nothing is counted." was unreachable. -->
+              <div id="avsync-status" class="tiny muted" style="margin-top:10px">Checking…</div>
               <hr class="dash">
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>
               <p class="hint" style="margin:0 0 10px">Enter how much of this host's memory the media stack (jellystructure + Jellyfin) may use, and get back exact changes — a Jellyfin <code>mem_limit</code>, a <code>/dev/shm</code> cap, a swappiness setting. Suggest-only: nothing here writes to Jellyfin, edits a compose file, or runs a sysctl. Page cache is never counted as spare capacity.</p>
@@ -1292,12 +1296,14 @@ private fun attachListeners(scope: CoroutineScope) {
         updateToggle("avsync-enabled-toggle", avSyncEnabled)
         (document.getElementById("avsync-on") as? HTMLElement)?.style?.display = if (avSyncEnabled) "block" else "none"
         refreshTomlPreview(readForm())
-        if (avSyncEnabled) scope.launch { loadAvSyncStatus() }
+        // FR-317-16 — asked in both directions and whatever the switch now reads: the line describes the
+        // SAVED config (the only one the server can act on), and *off* is a thing it has to be able to say.
+        scope.launch { loadAvSyncStatus() }
     }
     for (id in listOf("avsync-url", "avsync-timeout")) {
         document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
     }
-    if (avSyncEnabled) scope.launch { loadAvSyncStatus() }
+    scope.launch { loadAvSyncStatus() }
     // Phase 221 (FR-221-2) — the test is delivered by the SERVER (the machine that will deliver the real
     // ones), not by this browser: status code or connect error and elapsed ms, inline.
     document.getElementById("notif-test-btn")?.addEventListener("click") {
@@ -1344,6 +1350,10 @@ private fun attachListeners(scope: CoroutineScope) {
                 updateSaveEnabledForSchedule()
             }
             if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
+            // Phase 317 (FR-317-16) — the A/V sync line describes the SAVED config, so it is re-asked here
+            // rather than left describing the one before the save (switching the check off, or correcting
+            // the sidecar's address, changes what that line says).
+            if (ok) loadAvSyncStatus()
         }
     }
 
@@ -2110,8 +2120,14 @@ private suspend fun loadAvSyncStatus() {
     val el = document.getElementById("avsync-status") as? HTMLElement ?: return
     val s = MediaApi.avSyncSettings()
     if (s == null) { el.innerHTML = """<span class="muted">Couldn't ask the server.</span>"""; return }
-    val cls = if (s.reachable) "ok" else "bad"
-    el.innerHTML = """<span class="badge $cls tiny">${if (s.reachable) "Ready" else "Not measuring"}</span> ${s.status.esc()}"""
+    // FR-317-16 — the line now renders with the switch off too, and a switched-off check is not a failure:
+    // a plain badge there, the red one kept for a sidecar that cannot do the work it was asked to do.
+    val badge = when {
+        s.reachable -> """<span class="badge ok tiny">Ready</span>"""
+        !s.enabled -> """<span class="badge tiny">Off</span>"""
+        else -> """<span class="badge bad tiny">Not measuring</span>"""
+    }
+    el.innerHTML = """$badge ${s.status.esc()}"""
 }
 
 // Phase 157 — wire the Bazarr card. Same shape as wireSeerr (no rescan/root-folder — Bazarr isn't a
