@@ -5,7 +5,12 @@
 
 ## Status
 
-`⚠ Partial` — **2026-09-26 evening: on for Android (TV and phone), on jellystructure's own renditions.** Pixel 9
+`⚠ Partial` — **2026-10-12: FR-R291-3's last measurement is in (host-side, no device): a variant beside an `AUDIO`
+group must carry no audio of its own, which is why the receiver fails the Jellyfin-path master and plays our
+encoder's. The receiver's client half of FR-R291-4 is built (an audio pick is a rendition selection through CAF,
+with the restream as its named fallback); the offer's gate is a backend slice, filed. The web half of the GAP is
+R376's (in-file switch, HLS only where needed, measured 2026-10-09 in four browsers).**
+**2026-09-26 evening: on for Android (TV and phone), on jellystructure's own renditions.** Pixel 9
 598–907 ms a switch, stue TV 310–400 ms warmed / 1.46 s cold, back to the carried track instantly, the picture
 never stops (see *Build + device measurement, 2026-09-26 evening*). ⚠ GAP: the web player and the cast
 receiver still restream (FR-R291-4). Earlier the same day:
@@ -571,3 +576,63 @@ A rendition beside Jellyfin's video is written in the same container as that vid
   resumed at the same place in ~6 s). **Next (not built):** for the receiver, offer renditions only on our encoder's
   stream — which since 313's owner decision is every cast that re-encodes the picture — or give the Jellyfin-path
   master a video-only variant; Media3 (Android) keeps today's master.
+
+### Host measurement (2026-10-12, FR-R291-3 item 2) — a variant beside an audio group has to be video-only
+
+The one measurement FR-R291-3 still listed — *whether the video variant can be requested **without** audio* — is also
+the receiver's blocker, and it did not need a device. The four master **shapes** were reproduced in a desktop Chromium
+against the same engine family the receiver runs (shaka-player 4.16.52; CAF's own bundled Shaka is 4.15.x), over a
+synthetic fMP4 fixture on the same 3.000 s grid — H.264 + AAC from `lavfi`, because this Chromium has no HEVC or AC-3
+decoder, and because the question is the master's shape and what MSE will take, not the codecs.
+`scripts/receiver/master-shape-measure.mjs` builds the fixture and runs it:
+
+| Master shape | Result |
+|---|---|
+| **Jellyfin's variant (muxed audio, `CODECS="avc1…,mp4a.40.2"`) + an `aud` group** — today's composed master | **FAILS.** `readyState` 0, never a frame; Shaka error **3014** (category 3, MEDIA), twice, from the load. |
+| The same variant and group, `CODECS` naming the **video alone** | **FAILS**, identically (3014). The segments still carry the audio. |
+| The same variant with **no audio group at all** — what the receiver is handed today | **PLAYS**, 1.36 s in. |
+| **Our encoder's shape** — a video-only variant, every track its own rendition | **PLAYS**, and the rendition switch is in place: 1.37 s → 3.87 s across picking `a1`, the picture never stopped. |
+
+So the shape is the cause, not the container (FR-R291-12's fMP4 renditions were necessary and not sufficient) and not
+the fixture: the same variant plays until an audio group is put beside it. **A variant that names an `AUDIO` group
+must carry no audio of its own** — a player builds a video-only SourceBuffer for it and MSE refuses segments with a
+second track. The Chromecast's own code (3018 `TRANSMUXING_FAILED`) is its Shaka trying to transmux the mismatch away
+first; the desktop's (3014 `MEDIA_SOURCE_OPERATION_FAILED`) is the append failing outright. Same cause.
+
+**What this closes.** Media3 (Android) tolerates the mixed shape, which is why R291 works there and why this went
+unseen for a fortnight; nothing about Android changes. For a player that goes through MSE — the receiver, and the web
+if it ever declares the capability — renditions are only offerable on a master whose variants are video-only, i.e. on
+our own encoder's stream (313: every cast that re-encodes the picture, since the owner's 2026-10-09 decision).
+
+### Build (2026-10-12, FR-R291-4) — the receiver switches a rendition in place
+
+The receiver's half of the GAP, built; the offer's gate is the server's and is not.
+
+- **`receiverAudioPick(ticket, index, selectedPosition)` in `:shared`** (beside R285's `receiverSubPick`, where a unit
+  test can reach it — the receiver modules are browser-only JS with no test runner): a stream whose ticket says
+  `audio_renditions` switches **in place**, every other stream keeps R285's restream, and the track that already plays
+  is left alone. `renditionPosition(name)` reads the position out of the backend's own
+  `a{position} {label}` naming — the same reading the web player's `selectRendition` makes of hls.js's and Safari's
+  lists. `ReceiverAudioPickTest` (8 tests).
+- **`Receiver.kt`:** `onAudioPick` carries it out through CAF's `AudioTracksManager` (`getTracks()` lists what Shaka
+  parsed from the master; `setActiveById`). The position made active is remembered and is what the status reports —
+  an in-place switch leaves the ticket's `audio_stream_index` on the muxed carried track, so the ticket alone would
+  report the wrong row in the sender's picker, and a second pick would read as "already playing". FR-R291-5 holds by
+  construction: nothing is reloaded, so a burned-in subtitle and the drawn text track both stay as they are.
+- **FR-R291-4's rule, kept:** a rendition this framework build does not list — no `AudioTracksManager`, or Shaka parsed
+  no `EXT-X-MEDIA` for it — falls back to R285's restream with the reason on the log channel (`R291 no rendition
+  a{n} among […]`), never silently.
+- **The receiver still does not declare `hls_audio_renditions`,** and the comment in `capabilities()` says why: it
+  cannot know at negotiation time which master it will be handed, and on the Jellyfin-path master the load fails
+  outright (above). The offer has to come from the server, which does know.
+- `:ravilo-cast:compileKotlinJs` and `:shared:linuxX64Test` green. Not device-tested: a cast is owed (below).
+
+**Owed, and not this phase's client half:**
+1. **A backend slice:** for a cast receiver, offer renditions only on our own encoder's stream — the `encoder == "ours"`
+   master, whose variants are already video-only — which replaces the dev-only `receiver_renditions` switch's
+   "any cast" condition (`withDevReceiverRenditions`). Alternatively give the Jellyfin-path master a video-only
+   variant, which the measurement above says is the only other shape that can work; Media3 keeps today's master
+   either way. Filed for the backend seat.
+2. **One cast, on a device:** Stue TV's built-in Chromecast, with the above in place — a film on our encoder with two
+   or more audio tracks, pick another track, and the picture must not stop. The log channel's `R291 rendition a{n}
+   active (…)` line is the evidence, and `selectedAudio` in the status must follow the pick.

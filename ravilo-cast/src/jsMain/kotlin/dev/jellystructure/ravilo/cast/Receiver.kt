@@ -26,8 +26,11 @@ import dev.jellystructure.shared.tv.castQueueIfFits
 import dev.jellystructure.shared.tv.castQueueReply
 import dev.jellystructure.shared.tv.TrackLyrics
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.ReceiverAudioPick
 import dev.jellystructure.shared.tv.ReceiverSubPick
+import dev.jellystructure.shared.tv.receiverAudioPick
 import dev.jellystructure.shared.tv.receiverSelectedAudio
+import dev.jellystructure.shared.tv.renditionPosition
 import dev.jellystructure.shared.tv.receiverSelectedSub
 import dev.jellystructure.shared.tv.receiverSubPick
 import dev.jellystructure.shared.tv.receiverSubtitles
@@ -135,6 +138,10 @@ private class Receiver {
     // R285 (FR-R285-4) — a track change that needs a new stream: set by onCommand, consumed by the
     // very next LOAD the receiver issues to itself. (burn-in index or -1, audio index, then-show text position)
     private var pendingRestream: Triple<Int, Int?, Int>? = null
+    // R291 (FR-R291-4) — the audio rendition made active in place on this stream, as a position in the ticket's
+    // audio list; -1 until one is (and after every load), when the stream's own carried track is what plays.
+    // An in-place switch leaves the ticket's `audio_stream_index` on the muxed track, so this is the only record.
+    private var activeRendition = -1
     private var lastProgressAt = 0L
     private var positionMs = 0L
     private var durationMs = 0L
@@ -625,6 +632,8 @@ private class Receiver {
             } ?: return null
         } else negotiate(api, data.itemId) ?: return null   // busy/noserver screens already showing
         ticket = t
+        // R291 (FR-R291-4) — a new stream's audio is the one it carries until a rendition is made active on it.
+        activeRendition = -1
         sessionOpen = true
         startQoe(data.itemId, t)
         // R351 (FR-R351-5) — what this device was given, readable from the sender's log without a second test.
@@ -748,6 +757,13 @@ private class Receiver {
             maxH264Level = d.maxLevel,
             maxVideoBitrate = d.maxBitrate,
             maxH264Bitrate = d.maxBitrate,
+            // R291 (FR-R291-4) — `hlsAudioRenditions` is deliberately NOT declared here, although [onAudioPick] now
+            // makes the switch. The receiver cannot know at negotiation time which master it will be handed, and on
+            // the Jellyfin-path master (a variant carrying its own muxed audio beside the `aud` group) Shaka fails
+            // the whole load with 3018 TRANSMUXING_FAILED before it fetches any rendition — measured on Stue TV's
+            // Chromecast 2026-10-09 and again 2026-10-10 with fMP4 renditions. Our encoder's master (video-only
+            // variants, every track a rendition) plays. So the offer has to be made by the server, which knows:
+            // renditions for a receiver only on our own encoder's stream (the backend's `receiver_renditions`).
             linkKind = "unknown",
         )
     }
@@ -843,6 +859,7 @@ private class Receiver {
         val startAt = data.positionMs
         val ticket = negotiate(api, t.id) { api.playMusic(t.id, audioCapabilities(), startAt?.takeIf { it > 0 }) } ?: return null
         this.ticket = ticket
+        activeRendition = -1   // R291 — a song's stream carries one track; nothing is active in place
         sessionOpen = true
         val messages = cast.framework.messages
         val url = absolute(ticket.hlsUrl) ?: ticket.hlsUrl.orEmpty()
@@ -1448,12 +1465,9 @@ private class Receiver {
             CastChannelStep.EpisodeNext -> loadNext()
             CastChannelStep.NextUpCancel -> cancelNextUp()
             CastChannelStep.NextUpPlay -> loadNext()   // loadEpisode ends the countdown (R384: and knows a finished film's stop went out)
-            // R285 (FR-R285-4) — an HLS cast carries one audio track and no picture subtitles, so both are a restream.
-            is CastChannelStep.Audio -> {
-                val wanted = ticket?.audio?.getOrNull(step.index) ?: return
-                if (wanted.index == ticket?.audioStreamIndex) return
-                reload(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = activeTextPosition())
-            }
+            // R285 (FR-R285-4) / R291 (FR-R291-4) — a stream whose master lists every track as a rendition switches
+            // in place; one that does not (and every picture subtitle) is still a restream.
+            is CastChannelStep.Audio -> onAudioPick(step.index)
             is CastChannelStep.Subtitle -> when (val pick = receiverSubPick(ticket, step.index)) {
                 ReceiverSubPick.Nothing -> Unit
                 is ReceiverSubPick.Burn -> reload(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1)
@@ -1463,6 +1477,57 @@ private class Receiver {
             }
         }
     }
+
+    /**
+     * R291 (FR-R291-4) — "audio [index]" from a sender. On a stream whose master lists every track as a rendition
+     * (`audio_renditions`, this server's own `composeMaster`) the pick is a rendition selection: the picture keeps
+     * playing, nothing is negotiated, and a burned-in subtitle stays burned in (FR-R291-5) because nothing reloads.
+     * On every other stream it is R285's restream, exactly as before.
+     *
+     * FR-R291-4's rule — a platform that cannot falls back to the restream and says so, never silently: a rendition
+     * this framework build does not list (no `AudioTracksManager`, or Shaka parsed no `EXT-X-MEDIA` for it) is
+     * reloaded instead, with the reason on the log channel.
+     */
+    private fun onAudioPick(index: Int) {
+        val t = ticket
+        when (val pick = receiverAudioPick(t, index, selectedAudioPosition())) {
+            ReceiverAudioPick.Nothing -> Unit
+            is ReceiverAudioPick.Rendition ->
+                if (selectRendition(pick.position)) { activeRendition = pick.position; sendStatus() }
+                else t?.audio?.getOrNull(index)?.let { reload(t.burnedSubtitleIndex ?: -1, it.index, thenShow = activeTextPosition()) }
+            is ReceiverAudioPick.Restream -> reload(t?.burnedSubtitleIndex ?: -1, pick.streamIndex, thenShow = activeTextPosition())
+        }
+    }
+
+    /**
+     * R291 (FR-R291-2) — make the rendition named `a{position}` (or `a{position} {label}`) active through CAF's own
+     * `AudioTracksManager`, which lists what Shaka parsed from the composed master. False when there is no such
+     * track, so [onAudioPick] restreams instead.
+     */
+    private fun selectRendition(position: Int): Boolean = runCatching {
+        val manager = playerManager.getAudioTracksManager()
+        val tracks = manager?.getTracks()
+        val names = mutableListOf<String>()
+        var hit: dynamic = null
+        for (i in 0 until ((tracks?.length as? Int) ?: 0)) {
+            val track = tracks[i]
+            val name = track.name as? String
+            names += name ?: ""
+            if (hit == null && renditionPosition(name) == position) hit = track
+        }
+        if (hit == null) {
+            note("R291 no rendition a$position among [${names.joinToString(", ")}]: restreaming")
+            false
+        } else {
+            manager.setActiveById(hit.trackId)
+            note("R291 rendition a$position active (${hit.name})")
+            true
+        }
+    }.getOrElse { note("R291 no AudioTracksManager here (${it.message}): restreaming"); false }
+
+    /** R291 (FR-R291-4) — the position in the ticket's audio list that is playing: the rendition made active in
+     *  place if there is one, else the track this stream carries muxed (R285). */
+    private fun selectedAudioPosition(): Int = activeRendition.takeIf { it >= 0 } ?: receiverSelectedAudio(ticket)
 
     /** Position (in receiverSubtitles) of the CAF text track showing now; -1 = none. Ids are 100 + position. */
     private fun activeTextPosition(): Int = runCatching {
@@ -1520,7 +1585,9 @@ private class Receiver {
             hasNext = if (music) nextStep(byViewer = true) != CastNext.End else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.
-            selectedAudio = receiverSelectedAudio(t), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
+            // R291 (FR-R291-4) — on a stream with renditions what plays is the rendition made active, which the
+            // ticket's own `audio_stream_index` (the muxed track) cannot say.
+            selectedAudio = selectedAudioPosition(), selectedSub = receiverSelectedSub(t, activeTextPosition()), subSize = subSize, receiverId = receiverId,
             transcoding = t?.let { !it.directPlay },
             // 286 (dev review 10) — the music snapshot the phone mirrors (R324 FR-R324-4).
             queue = d.tracks.takeIf { full }, queueIndex = (d.queueStart + d.currentIndex).takeIf { music }, repeat = d.repeat.takeIf { music }, shuffle = d.shuffle.takeIf { music },

@@ -87,3 +87,49 @@ fun receiverSelectedSub(ticket: StreamTicket?, selectedText: Int): Int {
 /** R285 (FR-R285-2) — position in [StreamTicket.audio] of the track a single-audio stream carries; 0 when unknown. */
 fun receiverSelectedAudio(ticket: StreamTicket?): Int =
     ticket?.audioStreamIndex?.let { c -> ticket.audio.indexOfFirst { it.index == c }.takeIf { it >= 0 } } ?: 0
+
+/** R291 (FR-R291-4) — what a receiver must do for "audio [index]". */
+sealed interface ReceiverAudioPick {
+    /** Already the audio that plays: do nothing (and do not reload). */
+    data object Nothing : ReceiverAudioPick
+    /**
+     * R291 (FR-R291-2) — the stream's master lists every track as a rendition ([StreamTicket.audioRenditions]):
+     * make the rendition at [position] active in place. The picture keeps playing, and a burned-in subtitle
+     * stays burned in (FR-R291-5) because nothing is reloaded.
+     */
+    data class Rendition(val position: Int) : ReceiverAudioPick
+    /** R285 (FR-R285-4) — restream with Jellyfin's [streamIndex]: the only path on a stream with one audio track. */
+    data class Restream(val streamIndex: Int) : ReceiverAudioPick
+}
+
+/**
+ * R291 (FR-R291-4) — a receiver's audio pick: a rendition switch where the stream has renditions, R285's restream
+ * where it has not. [selectedPosition] is the position playing now — [receiverSelectedAudio] at the start of a
+ * stream, and the last rendition made active after that, since an in-place switch leaves
+ * [StreamTicket.audioStreamIndex] (the muxed, carried track) as it was.
+ *
+ * The caller still has to find that rendition in its own player's track list, by [renditionPosition] of the name;
+ * a rendition the player does not list falls back to [ReceiverAudioPick.Restream] there (FR-R291-4: never silently).
+ */
+fun receiverAudioPick(ticket: StreamTicket?, index: Int, selectedPosition: Int): ReceiverAudioPick {
+    val t = ticket ?: return ReceiverAudioPick.Nothing
+    val wanted = t.audio.getOrNull(index) ?: return ReceiverAudioPick.Nothing
+    if (index == selectedPosition) return ReceiverAudioPick.Nothing
+    return if (t.audioRenditions) ReceiverAudioPick.Rendition(index) else ReceiverAudioPick.Restream(wanted.index)
+}
+
+/**
+ * R291 (FR-R291-2) — the position behind an audio rendition's name. The backend's `composeMaster` names every
+ * rendition `a{position}` or `a{position} {label}` (unique, since a player merges renditions that share a NAME),
+ * which is the key a player maps back to the ticket's audio list — the same reading the web player's
+ * `selectRendition` makes of hls.js's and Safari's lists. Null for anything else, including a name that merely
+ * starts with an `a` ("abc", "a1b", "audio").
+ */
+fun renditionPosition(name: String?): Int? {
+    val n = name?.takeIf { it.startsWith("a") } ?: return null
+    val digits = n.drop(1).takeWhile { it.isDigit() }
+    if (digits.isEmpty()) return null
+    val rest = n.drop(1 + digits.length)
+    if (rest.isNotEmpty() && !rest.startsWith(" ")) return null
+    return digits.toIntOrNull()
+}
