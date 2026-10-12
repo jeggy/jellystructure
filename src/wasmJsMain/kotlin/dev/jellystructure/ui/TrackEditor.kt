@@ -41,6 +41,23 @@ object TrackCoverageMarks {
     }
 }
 
+/**
+ * Phase 317 (FR-317-15) — the measured audio track's A/V sync mark per file and stream index
+ * (*160 ms early*), set by the detail page once `/avsync` answers.
+ *
+ * 255's [TrackCoverageMarks] shape, and for the same reason: the Tracks & subtitles tab's `.trk` rows do
+ * not exist until the tab is opened, so the row renderer asks the store for its own mark instead of the
+ * banner reaching into rows that are not there. Reaching in at page load alone left the mark unreachable
+ * by construction — three rows, zero marks, measured in a browser (DEB-722).
+ */
+object AvSyncMarks {
+    var byFile: Map<String, Map<Int, String>> = emptyMap()
+    fun html(filePath: String, streamIndex: Int): String {
+        val mark = byFile[filePath]?.get(streamIndex) ?: return ""
+        return """ <span class="trk-avsync badge warn tiny">${mark.esc()}</span>"""
+    }
+}
+
 /** Phase 273 (FR-273-20) — each sidecar's verdict chips by file name, set by the detail page once
  *  `/subtitles/checks` answers, so a sidecar row rendered later still carries them. */
 object SidecarVerdictMarks {
@@ -436,6 +453,7 @@ fun wireUnifiedTrackEditor(
                   $langCell
                   $metaCell
                   ${TrackCoverageMarks.html(filePath, t.streamIndex)}
+                  ${AvSyncMarks.html(filePath, t.streamIndex)}
                 </span>
                 <span class="trk-right">$forcedCell $starBtn</span>
               </div>

@@ -3404,20 +3404,27 @@ private suspend fun loadTrackCoverage(item: MediaItem) {
  */
 private suspend fun loadAvSync(item: MediaItem) {
     val banner = document.getElementById("avsync-banner") as? HTMLElement ?: return
-    val status = MediaApi.avSyncStatus(item.id) ?: run { banner.style.display = "none"; return }
+    val status = MediaApi.avSyncStatus(item.id) ?: run { AvSyncMarks.byFile = emptyMap(); banner.style.display = "none"; return }
     val flagged = status.files.filter { it.state == "offset" || it.state == "drift" }
-    // FR-317-10 — the measured audio track's row gets a mark (*160 ms early*), like 255's short-track mark.
-    // Matched on the stream index the row itself carries, never on a list position (255's dev review item 5).
+    // FR-317-10/-15 — the measured audio track's row gets a mark (*160 ms early*), like 255's short-track
+    // mark: a store the Tracks row renderer reads (FR-317-15), because those rows do not exist until the
+    // Tracks & subtitles tab is opened — which is usually after this has run. Matched on the stream index
+    // the row itself carries, never on a list position (255's dev review item 5).
+    AvSyncMarks.byFile = flagged.mapNotNull { f ->
+        val mark = f.audioMark ?: return@mapNotNull null
+        val stream = f.audioStreamIndex ?: return@mapNotNull null
+        f.path to mapOf(stream to mark)
+    }.toMap()
+    // The page-load pass stays as well: it costs nothing and covers a Tracks tab that is already open on a
+    // re-render (the ↻ on the Checks card, which calls this again). One source for the mark's own markup.
     for (f in flagged) {
-        val mark = f.audioMark ?: continue
         val stream = f.audioStreamIndex ?: continue
+        if (f.audioMark == null) continue
         val rows = document.querySelectorAll(""".trk[data-stream="$stream"]""")
         for (i in 0 until rows.length) {
             val row = rows.item(i) as? HTMLElement ?: continue
             if (row.getAttribute("data-file") != f.path || row.querySelector(".trk-avsync") != null) continue
-            row.querySelector(".trk-mid")?.let { mid ->
-                (mid as HTMLElement).innerHTML += """ <span class="trk-avsync badge warn tiny">${mark.esc()}</span>"""
-            }
+            row.querySelector(".trk-mid")?.let { mid -> (mid as HTMLElement).innerHTML += AvSyncMarks.html(f.path, stream) }
         }
     }
     if (flagged.isEmpty()) { banner.style.display = "none"; return }
