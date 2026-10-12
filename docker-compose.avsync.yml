@@ -1,0 +1,56 @@
+# Phase 317 (FR-317-1) — the A/V sync sidecar. Use this file ON TOP of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.avsync.yml up -d
+#
+# and switch the check on in config.toml:
+#
+#   [avsync]
+#   enabled = true
+#   url = "http://avsync:8000"
+#
+# Without this file jellystructure starts as before: the check reports *off*, stores nothing and counts
+# nothing (FR-317-13). The image is ~6 GB (PyTorch + the CUDA runtime), so it is opt-in by overlay and the
+# base compose never pulls it.
+#
+# Requires the NVIDIA driver and the NVIDIA Container Toolkit on the host — the same setup Jellyfin's own
+# hardware transcoding uses.
+#
+# TWO THINGS ARE DELIBERATE HERE AND BREAK THE CHECK IF CHANGED:
+#
+#  1. The card is reserved BY DEVICE ID, not `count: all` (owner decision 3, 2026-10-10): the household's
+#     device 1 is the card that does not transcode. Device 0 carries every Jellyfin transcode and phase
+#     313's encoder; a 22-hour sweep there would compete with live playback for the same card.
+#  2. `video` is in the capabilities. Without it NVDEC is not admitted to the container and every decode
+#     silently falls back to the CPU — a ~20× slowdown that reports no error anywhere.
+#
+# And the mount: the sidecar opens the paths jellystructure sends it VERBATIM, so every library root must
+# be visible here at the SAME container path jellystructure sees. This repo's compose mounts one root at
+# /media; a deployment whose jellystructure mounts /mnt/media and /mnt/series must mount both of those
+# here, at those names. `POST /stat` is how the backend proves it (FR-317-13) instead of sweeping into
+# thousands of 404s.
+services:
+  avsync:
+    build:
+      context: .
+      dockerfile: avsync/Dockerfile
+    image: ghcr.io/jeggy/jellystructure-avsync:latest
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ${MEDIA_PATH:-./media}:/media:ro
+    environment:
+      AVSYNC_PORT: 8000
+      # The measured limits (FR-317-2): one GPU worker inside a 2 GB cap — the card is shared, and the
+      # decoders' own CUDA contexts put the real peak at ~3.9 GB of the 8 GB card.
+      AVSYNC_VRAM_GB: "2"
+      AVSYNC_DECODERS: "3"
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu, compute, utility, video]
+    restart: unless-stopped
+    networks:
+      - jellystructure

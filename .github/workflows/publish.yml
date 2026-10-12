@@ -89,6 +89,11 @@ jobs:
             dockerfile: Dockerfile
           - image: ravilo-web
             dockerfile: ravilo-web/Dockerfile
+          # Phase 317 (FR-317-1, dev review item 13) — the A/V sync sidecar. Context is the repo root, like
+          # the others: its Dockerfile copies `avsync/*.py`. It has no Gradle/Konan cache mounts, so
+          # scripts/check-docker-cache-ids.sh's list is unchanged.
+          - image: jellystructure-avsync
+            dockerfile: avsync/Dockerfile
     steps:
       - uses: actions/checkout@v4
         with:
