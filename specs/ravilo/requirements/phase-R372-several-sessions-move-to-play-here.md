@@ -611,8 +611,9 @@ the client's heartbeat would be **inert**, which is worth writing down: the rout
 that already reported a stop (`PlaybackService.reportProgress` → `PlaybackTracker.heartbeat`), and
 `PlaybackSessions.onProgress` refuses to create a session for a (device, item) that has an ended row. A genuine
 resume therefore needs a fresh `startPlayback` — a re-negotiation and a visible reload — which is past this
-amendment's text and is a decision for the owner, not a few lines smuggled in here. Jellyfin's position and watched
-state are already written by the stop at the end of the film, so what is lost is the report of a re-watched tail.
+amendment's text and is a decision for the owner, not a few lines smuggled in here (**DEB-808**). Jellyfin's position
+and watched state are already written by the stop at the end of the film, so what is lost is the report of a
+re-watched tail.
 
 **FR-R372-11, the client half — the browser.** `wasmJsMain`'s `PlayerLifecycleEffect` listened to `visibilitychange`
 only, and its stop was a Ktor `Js` fetch the browser aborts with the page. It now listens to `pagehide` too — the one
