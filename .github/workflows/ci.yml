@@ -328,12 +328,16 @@ jobs:
           retention-days: 3
 
   # ── R331 (FR-R331-7) — the Mac app built on a Mac between releases: the Swift library and the bundle, unsigned,
-  #    then its own --self-test. Only when something Mac-shaped changed. Until the Mac app first ships (R331 D1) a
-  #    broken Mac build is reported here but never holds up a release of everything else.
+  #    then its own --self-test. Only when something Mac-shaped changed.
+  #    2026-10-12: the Mac app has shipped on four releases (v1.48–v1.51), so FR-R331-7's "continue-on-error until the
+  #    Mac app first ships" is spent — but only partly. A Mac break must stop a RELEASE (publish.yml would otherwise
+  #    attach every other platform's file and silently leave the .dmg out) and must stop a PULL REQUEST (the cheapest
+  #    place to see it), while a push to main stays advisory: that pipeline also publishes the backend image prod runs
+  #    on, and a Compose/Swift break on a Mac must not hold that back. See R331 §Walked (2026-10-12).
   macos:
     runs-on: macos-15
     timeout-minutes: 45
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@v4
         with:

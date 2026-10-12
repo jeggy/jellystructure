@@ -258,3 +258,80 @@ concretely what the release contains — no install steps, no account of what wa
 
 - **Code: nothing left.** **Owed:** the next published release (the owner's to cut) to show the `.dmg` attached and
   acceptance 2 (no prompt on the next release).
+
+## Walked (2026-10-12) — acceptance 1 (CI half), 3, 4 and 5; the Mac half named
+
+D1 moved on 2026-09-30 with *"the first one after this commit is the test."* Three releases have since passed it,
+and the evidence is on GitHub, not in prose:
+
+| Release | `publish.yml` run | `mac / build` | `mac / ci` | `ci / macos` | asset |
+|---|---|---|---|---|---|
+| v1.49 (2026-10-02) | `37060019108` | success | skipped | success | `ravilo-mac-1.49.dmg` · 91 385 641 B |
+| v1.50 (2026-10-05) | `37338091341` | success | skipped | success | `ravilo-mac-1.50.dmg` · 91 569 678 B |
+| v1.51 (2026-10-10) | `38040744575` | success (3 m 24 s) | skipped | success | `ravilo-mac-1.51.dmg` · 92 658 145 B |
+
+**Acceptance 3 ✓.** Each of those three releases carries `ravilo-android-<N>.apk`, `ravilo-tizen-<N>.wgt` and
+`ravilo-mac-<N>.dmg` (plus R334's Flatpak), and each `.dmg` was built and attached by `publish.yml`'s `mac` job on the
+published release — not by hand. v1.47 and v1.48 were the hand-uploaded pair; the `workflow_dispatch` runs stop at
+2026-09-30, one minute after v1.48's release.
+
+**Acceptance 1, the CI half ✓** — `workflow_dispatch` on an existing tag, run `38294271606`, 2026-10-12, 4 m 02 s,
+`version=1.51` with `skip_ci=true`, checked out at v1.51 (`d37f1a7a`). All thirteen steps green:
+
+- signing certificate `CN = Ravilo, O = jellystructure`, SHA-1 `5B3EAC32D6564F942C33101D4D07FDB31E0D9274`;
+- `libravilo-mac.dylib` found at `Contents/app/resources/`;
+- `codesign --verify --deep --strict`: *valid on disk*, *satisfies its Designated Requirement*;
+  `Identifier=dev.jellystructure.ravilo`, `Authority=Ravilo`, `TeamIdentifier=not set`;
+- the self-test (FR-R331-4) printed `Ravilo 1.51 · library ABI 4 · 14 Dock pictures · data …/Application Support/Ravilo
+  writable · OK` — *library ABI 4* is the Swift library loading through JNI, so the self-test does prove the `.dylib`,
+  not just its presence;
+- `ravilo-mac-1.51.dmg` made, signed, uploaded as the run artifact `ravilo-mac-dmg`;
+- **Attach to the GitHub Release: skipped**, as FR-R331-5 requires of a dispatch. No release was touched.
+
+The device half of acceptance 1 (opens, signs in, plays, casts) is owed from the Mac.
+
+**Open question 3 answered: 92 246 731 B — 88.0 MiB.** Up from 86 MB on 2026-09-29, growing roughly 0.5 MB a release,
+comfortably inside the ~100 MB the question expected. Note the `.dmg` is *not* byte-identical between the release build
+and a dispatch build of the same tag (92 658 145 B vs 92 246 731 B): UDZO compression and jpackage's embedded
+timestamps are not reproducible. Size is a sanity check, never an identity check.
+
+**Acceptance 5 ✓ as guard logic, deliberately not on a runner.** The *The signing secrets are there* step is pure
+bash, so it was run verbatim off the workflow with the environment emptied: both secrets absent → one error naming
+**both** (`MACOS_SIGNING_P12_BASE64 MACOS_SIGNING_P12_PASSWORD`), exit 1, before anything slow; either one absent →
+the error names exactly that one, exit 1; both present → exit 0 and the keychain path exported. What is *not* done, on
+purpose, is deleting the two repository secrets to see it on `macos-15`: the `.p12` and its password are the one
+certificate the household's Gatekeeper and Local Network approvals hang off, and pulling them to prove a `[ -n … ]`
+test is a bad trade. That is the owner's to do if they ever want it seen on a runner.
+
+**Acceptance 4 — the job fails, but at a different guard than the acceptance names.** Removing the Swift library makes
+the *Build the Swift library and the app* step fail first — `::error::libravilo-mac.dylib is not in the bundle (R328
+FR-R328-4)`, exit 1 — so FR-R331-4's self-test is never reached. Proven with the same two lines run off the workflow
+against a bundle with and without the file. The acceptance is met in substance (no library ⇒ no `.dmg`, no upload) and
+its wording is wrong about which check catches it. Reaching the self-test with the library gone would need the file
+deleted *between* the two steps, which only exists as a deliberately broken branch; not worth a push to a public
+repository. The self-test's own ability to catch it is instead shown positively by *library ABI 4* above.
+
+**Acceptance 2 does not need v1.52.** It reads *two consecutive releases*, and two already exist: install
+`ravilo-mac-1.50.dmg` on a Mac that has never seen the app (one *Open Anyway*), then `ravilo-mac-1.51.dmg` must open
+with no prompt at all, keep the sign-in (R328 D5's own 0600 file, per the 2026-09-30 correction) and keep the Local
+Network permission. Both are signed by the same certificate, so the designated requirement is identical and the
+promise is testable today. Owed from the Mac; it is **not** gated on the owner cutting a release.
+
+## FR-R331-7 amended (2026-10-12): `continue-on-error` narrowed, not removed
+
+The build note made `ci.yml`'s `macos` job `continue-on-error` *"until the Mac app first ships: the Swift library has
+never been compiled, and `ci.yml` gates every release."* The first half is spent — the app has shipped on v1.48–v1.51
+and `ci / macos` has been **green on every run visible today**, pushes and releases alike. The second half still
+stands, and is the reason this is a narrowing rather than a deletion: `ci.yml` gates `publish.yml`'s push pipeline too,
+and that pipeline publishes the backend image prod runs on. A Compose or Swift break on a Mac must not hold back a
+backend image.
+
+So: `continue-on-error: ${{ github.event_name == 'push' }}`.
+
+- **pull request → blocking.** The cheapest place to see a Mac break.
+- **published release → blocking.** Otherwise `publish.yml` attaches every other platform's file and leaves the
+  `.dmg` out, which is exactly the silent loss acceptance 3 is about.
+- **push to main → advisory, as before.** The backend image keeps flowing; the break is reported.
+
+The path filter is unchanged, so on anything that touches no Mac-shaped file the job still short-circuits in seconds
+and the blocking/advisory distinction never arises.
