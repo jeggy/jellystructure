@@ -11,17 +11,16 @@ longer encodes status — only this file does.
   [`specs/ravilo/requirements/`](specs/ravilo/requirements/) (Ravilo). Architecture is in
   [`specs/constitution.md`](specs/constitution.md) + [`specs/plan.md`](specs/plan.md) (admin) and
   the matching files under [`specs/ravilo/`](specs/ravilo/).
-- **The "updated designs" sync overwrites everything under `specs/` AND `design/` AND `CLAUDE.md`,
-  but never touches this `STATUS.md` or `scripts/`.** (CLAUDE.md is design-project-owned, so it gets
-  re-reverted on each sync until the design export is updated — keep status here, not there.) After
-  every sync run `scripts/check-phases.sh` — it flags any spec file with no row here (newly added →
-  add a row) and any row whose spec file is gone (deleted by the sync → investigate). That is the
-  "never forget a phase" guarantee.
+- **The "updated designs" sync ran until 2026-10-12 and no longer runs.** While it existed it
+  overwrote everything under `specs/` and `design/` and reverted [`CLAUDE.md`](CLAUDE.md) on every
+  run; nothing in this repository is design-project-owned any more, and `CLAUDE.md` is now a
+  dev-side file maintained here. Status still lives only in this file. Dated records of what that
+  sync clobbered are kept below — read them as history, not as a rule.
+- **Run `scripts/check-phases.sh` after any bulk change to `specs/`.** It flags any spec file with
+  no row here (newly added → add a row) and any row whose spec file is gone (deleted →
+  investigate). That is the "never forget a phase" guarantee.
 - **Research reports live in [`specs/research-reports/`](specs/research-reports/)** (dated deep-dives
-  behind a decision/future phase; see its README). ⚠ Because they sit under `specs/`, the "updated
-  designs" sync can overwrite or delete them — until the design export is taught to leave
-  `specs/research-reports/` alone, treat these as **code-owned**: keep the source of truth in this
-  repo and re-add anything the sync strips (same recurring issue as the cast / Settings-tab CSS).
+  behind a decision/future phase; see its README).
 
 ## Current focus
 
@@ -131,9 +130,10 @@ The 2026-06-25 done-ness audit found 7 falsely-Done phases and all 7 are now gen
 toggle, R17 lazy hls.js/JASSUB, R18 Kids flag, R56 PlaybackInfo negotiation). Phases 41/42/46 stay
 ✓ Done — their staged-changes/command-preview UX was deliberately superseded by Phase 71.
 
-> **Recurring sync regression:** each "updated designs" sync strips the Phase 75/76/79 cast CSS from
-> `design/app/wf.css` and reverts `CLAUDE.md`. Both are restored in the repo but **must be fixed in
-> the design-project source** to stop the loop (the cast tab renders unstyled without the CSS).
+> **Recurring sync regression — closed 2026-10-12 with the sync itself.** Every "updated designs"
+> sync run stripped the Phase 75/76/79 cast CSS from `design/app/wf.css` and reverted `CLAUDE.md`;
+> both were restored in the repo each time, and the fix-at-the-source item is moot now that no sync
+> runs. Kept as the record of why that CSS lives where it does.
 
 Non-blocking follow-ups (not bugs): Phase 78 scan-time people-cache pre-warm (the `Semaphore(8)`
 already hard-caps the crash); R60 portrait polish via responsive `RaviloDimens` (the phone app
