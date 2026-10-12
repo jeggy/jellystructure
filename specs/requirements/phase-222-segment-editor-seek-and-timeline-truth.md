@@ -412,3 +412,47 @@ with `Space` bound to play/pause (closes F10, F11).
   undeployed); 45 creates `segment_waveform`. The boot backfill will read every one of the ~8 850 files
   once — on the segments lane, cancellable from Activity, and the same cost the old editor paid *per
   open*.
+
+## Amendment (2026-10-12) — the editor can be opened at a time: `?at=<ms>`
+
+Asked for by the owner on phase 317 (DEB-319, 2026-10-12), answering a gap this phase left: **the
+editor can be opened, but it cannot be opened *somewhere*.** Phase 317's A/V sync banner lists each
+measured window with its time and its offset, and FR-317-10 asks each of those times to be *"a link
+that opens the player there"* — a link that lands at 0:00 makes the operator scrub for the moment the
+server already measured. The same gap is in front of every other evidence list that will ever want to
+point at a moment (255's `endsMs`, 254's first damage, 273's cue offsets).
+
+### FR-222-9 — `?at=<ms>` opens the trim view with the playhead already there
+
+`/segments` accepts `at=<milliseconds>` beside the existing `movie` / `series`+`episode`+`episodeNumber`
+parameters. The trim view opens with the playhead at that time, the ruler drawn there, and the stream
+starting there rather than at zero.
+
+**It reuses the seek this phase already built, and changes nothing in the stream state machine.**
+FR-222-1/2's own code already handles "the operator asked for a time before the stream shape was
+known": `wireVideo`'s response handler goes straight to `trimPlayheadMs` for a remux stream instead of
+loading the start and reloading, and `loadedmetadata` restores it for a direct-play one. So the whole
+of this requirement is **to let that one field survive the open** — `renderTrim` clears it to `0` for a
+new title (correctly: every other entry to the editor means "from the start"), so a time taken off the
+URL is applied immediately after that reset and consumed once.
+
+Consequences this keeps, deliberately:
+
+- **A bad or absent `at` is "from the start", never an error.** Junk, a negative, a time past the
+  file's own duration: clamped by `seekToAbsoluteMs`' existing `coerceIn(0, duration)` rule, exactly as
+  a timeline click past the end already is. The editor never refuses to open over a URL.
+- **The keyframe rule is unchanged** (FR-222-2): the picture starts at the keyframe at or before the
+  request and the playhead reports *where the picture is*, not what was asked for. A link to 20:00 may
+  land at 19:5x and say so. An evidence list that wants the exact frame is asking for something stream
+  copy cannot give.
+- **It is one-shot.** Navigating within the editor afterwards (Save & next, the rail, a season sheet)
+  does not re-apply it; the time belongs to the link, not to the session.
+- **No new API, no server change.** `at` never reaches the backend: `SegmentApi.streamInfo` is already
+  called with a `startMs`, and this only decides which one.
+
+Acceptance: `#/segments?movie=<id>&at=1200000` opens with the playhead at 20:00 and the first frame at
+19:5x–20:00; `…&at=-5` and `…&at=99999999` both open at the start and at the end respectively, with no
+error; `…&at=` and a missing `at` open at 0:00 as before; clicking *Save & next film* after an `at`
+open starts the next title at 0:00.
+
+**Status is in `STATUS.md`,** as for everything else here.
