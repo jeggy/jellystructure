@@ -1,9 +1,11 @@
 package dev.jellystructure.ravilo.castv2
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.launch
@@ -25,12 +27,31 @@ actual suspend fun openCastTransport(host: String, port: Int, timeoutMs: Long): 
     val context = SSLContext.getInstance("TLS")
     context.init(null, arrayOf<TrustManager>(AcceptDeviceCertificate), SecureRandom())
     val raw = java.net.Socket()
-    raw.connect(InetSocketAddress(host, port), timeoutMs.toInt())
-    raw.tcpNoDelay = true
-    val socket = context.socketFactory.createSocket(raw, host, port, true) as SSLSocket
-    socket.soTimeout = 0
-    socket.startHandshake()
-    TlsCastTransport(socket)
+    // Amendment 2026-10-12 — the handshake gets the same bound as the connect. A device that accepts TCP on 8009 and
+    // then answers nothing (an overloaded or half-asleep Chromecast) used to hold this call for as long as it held the
+    // socket, with `soTimeout = 0` set before the handshake; every rejoin ladder waits for this call to come back, so
+    // the link sat at RECONNECTING and no later try ever ran. Reads after the handshake are unbounded again — the
+    // protocol is quiet between a device's own reports.
+    val transport = try {
+        raw.connect(InetSocketAddress(host, port), timeoutMs.toInt())
+        raw.tcpNoDelay = true
+        raw.soTimeout = timeoutMs.toInt()
+        val socket = context.socketFactory.createSocket(raw, host, port, true) as SSLSocket
+        socket.startHandshake()
+        socket.soTimeout = 0
+        TlsCastTransport(socket)
+    } catch (e: Throwable) {
+        runCatching { raw.close() }   // a failed open leaves nothing behind
+        throw e
+    }
+    // The caller may have given up while a stalled device was still shaking hands (`CastAvailability.ask` wraps this
+    // in a timeout, and cancellation cannot interrupt a blocking handshake): close what was built rather than hand
+    // back a socket and a reader thread nobody will ever close.
+    if (!isActive) {
+        transport.close()
+        throw CancellationException("the cast transport to $host:$port was no longer wanted")
+    }
+    transport
 }
 
 private object AcceptDeviceCertificate : X509TrustManager {

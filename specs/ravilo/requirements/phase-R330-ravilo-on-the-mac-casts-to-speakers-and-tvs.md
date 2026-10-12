@@ -285,6 +285,87 @@ drops coming from two Ravilos on one Mac fighting over one speaker session.
 Small finding: the remote for the speaker cast says *No phone or computer nearby can reach the speakers* under *Add a
 speaker…* while the Mac itself is the sender holding that speaker — the line should not show on a sender that can.
 
+### Amendment 2026-10-12 — the Swift half, the two known bugs, and acceptance as a checklist
+
+**1. The Swift half compiles, and has already run against real devices.** The 2026-09-29 build note's *"the Swift
+Bonjour has not been compiled"* is stale from 2026-09-30 onward, and nothing in R330 waits on a Mac compile:
+
+- the Mac test build runs `:ravilo-desktop:buildMacNative` by name, which is `xcrun swiftc -emit-library -O
+  -whole-module-optimization` over **all** of `native/*.swift` as one module (R330's `Network` framework among the
+  frameworks listed in `ravilo-desktop/build.gradle.kts`). A compile error there fails the build — so a Mac build that
+  exists is a compile that passed;
+- `Bonjour.swift` was last changed in `cc6a4bec` (2026-10-05, IPv4 first). The Mac test build
+  `v1.50-136-ge5b4ec68` (2026-10-09 evening) **contains** `cc6a4bec`, and that run read the browser's own snapshot:
+  `cast: rejoin Gæsteværelse [Nest Wifi point] → joined` — the `[model]` in that line is the `md` TXT key only
+  `ravilo_bonjour_snapshot` carries on a Mac.
+
+So FR-R330-2's Swift half is compiled **and** exercised. The only native source not known-compiled is R329's
+`Player.swift` at `73e9b9db` (2026-10-09 21:55, later than that build) — R329's to prove, not R330's.
+
+**2. ⌘W during a speaker cast — covered.** `DesktopBackground.keepsRunningOnClose(localPlaying, castLinked)` is the
+rule and `CloseWhileCastingTest` is the test (R328's fix of 2026-10-09; the Mac re-test of the same evening passed:
+the window hides, the music plays on, a reopen brings it back). **One gap, not changed here:** the window's close
+reads `MusicCast.linked`, which is music only — ⌘W while a **film** casts to a TV still quits Ravilo, and the viewer
+loses the remote mid-film (the TV plays on, and FR-R330-5 rejoins it on the next start). Whether the window should
+also stay for a film cast is R328 D7's policy, so it is the owner's call, not this phase's.
+
+**3. A retried drop must never hang — one unbounded step found and bounded.** *Defect:* `openCastTransport` (JVM)
+bounded the TCP connect with `timeoutMs` but then set `soTimeout = 0` **before** `startHandshake()`, so a device that
+accepts TCP on 8009 and never answers the TLS handshake — an overloaded or half-asleep Chromecast — blocked that open
+for as long as the device held the socket. Every other step of a rejoin is bounded (connect 5 s, each request 10 s,
+`launchOrJoin`'s poll 10 × 2 s), so this was the one place where a try could stall: the start-up ladder
+(FR-R330-5, three tries) and the drop ladder (`onClosed`, three tries) both wait for `open` to come back, and the link
+sits at `RECONNECTING` meanwhile — the bar reads *reconnecting* for ever and no later try runs. A second cost:
+`CastAvailability.ask` wraps its open in `withTimeoutOrNull(8 s)`, which cannot cancel a blocking handshake, so a
+stalled device leaked a socket and an IO thread per ask.
+
+*Fix:* the handshake is bounded by the same `timeoutMs` (`soTimeout` set for the handshake, then back to 0 so reads
+after it stay unbounded, as the protocol needs); a failure closes the socket instead of dropping it; and an open whose
+caller has already given up closes what it built rather than returning an orphan. Every rejoin ladder is now bounded:
+a worst case of 3 × (5 s connect + 5 s handshake + 10 s join + 2 s gap) ≈ 66 s to reach `NONE`, and no step waits on a
+device for ever. Test: `CastTransportTimeoutTest` in `:ravilo-castv2`'s `jvmTest` — a loopback `ServerSocket` that
+accepts and answers nothing; the open fails inside its timeout rather than hanging, and the stalled device sees the
+socket closed (its read reaches EOF). The test runs on Linux; no Mac and no device.
+
+**4. R383 (*Ravilo on the Mac stays light*).** Nothing here contradicts it, and the leak above was of R383's own kind
+(a thread and a socket per stalled ask), so closing it makes R383's measurement a little cleaner. R383 will also meet
+R330's one timer — `CastDiscovery` polls `ravilo_bonjour_snapshot` once a second — which is already reference-counted
+to the sheet being on screen and the start-up rejoin (FR-R330-2), not a standing wakeup.
+
+**5. Acceptance 1–7, as the Mac claim's checklist.** The protocol work is complete against the fake device
+(`:ravilo-castv2:jvmTest` 33 tests, `:ravilo-ui:desktopTest` 648, all green on 2026-10-12 at `b9ab513c`); what is
+left needs real devices and is written out below, to be run in one Mac claim.
+
+### Acceptance checklist for the Mac claim (written 2026-10-12, not attempted from here)
+
+**Devices needed in the one claim:** the owner's MacBook (`jogols@10.10.11.211`), the **Stue** and **Gæsteværelse**
+speakers and their group, the **Køkken Hub**, and **one TV** (Stue TV; Soveværelse TV only if its board tickbox says
+so that day). The Pixel 9 is needed for step 8 alone.
+
+**Before anything:** build and sign on the Mac as `reference-mac-test-build-and-driver` says
+(`:ravilo-desktop:buildMacNative :ravilo-desktop:createDistributable`, then the temporary-keychain signing — unsigned
+it is a different app to macOS and TCC's Local Network grant does not follow it). **Only one Ravilo may run**: kill
+every `Ravilo.app/Contents/MacOS/Ravilo` first — two senders fighting over one speaker session is what produced the
+5–50 s drops of 2026-10-09. Start it with `RAVILO_TESTDRIVER=/tmp/ravilo-td2`, send `cmd VOLUME_DOWN` ×11 at once (the
+app's volume is not remembered), and take a `shot` before every click batch — rows move between builds, and a wrong
+row in *Play on…* woke a TV once. Keep the Mac's log: `~/Library/Logs/Ravilo/` (the cast path writes `cast:` lines on
+connect, load and close).
+
+| # | Acceptance | What to do, and what passes |
+|---|---|---|
+| 1 | The sheet's rows (FR-R330-2, D2) | In music mode open *Play on…*: Stue · Gæsteværelse · their group · the hub · the TVs, and nothing else. Switch to a film and open it again: only the hub and the TVs, no speaker, and no line saying why (FR-R324-1). **Also record the TXT keys** of each of the five devices — still owed from the 2026-09-29 build note: the driver's `cast` command now prints the browser's raw snapshot lines, `id · fn · md · ca · rs · host · port` (2026-10-12). Of dev review 1's six keys, `st` is **not** carried: nothing in the app reads it, `rs` carries the running app's name the rules need, and adding it is a Swift change nobody can compile off a Mac — so five keys and this note are the record, unless the owner wants the sixth. Record too whether each *speaker* answered `GET_APP_AVAILABILITY` the way the displays did (open question 1). |
+| 2 | An album moves to a speaker and back | Start an album on the Mac, then *Play on…* → Stue: it keeps its position; the Queue tab edits **the speaker's** queue (add and remove one song, and see the speaker follow); *Play on this Mac* brings it back where it was. |
+| 3 | A busy device (FR-R330-4) | With Spotify playing on Gæsteværelse, its row reads *Busy · Spotify*, a tap asks *Stop Spotify and play here?* first, and taking over replaces it. (If no Spotify is to hand, any other sender's app does; record which.) |
+| 4 | Volume and the media keys (D3) | The ⋯ slider moves **Stue's** own volume (check the speaker, not the Mac's, and leave it where it was). The keyboard's play/pause and next keys go to the speaker (FR-R330-7, Now Playing). The Mac's own volume keys stay the Mac's. |
+| 5 | Quit and reopen while it plays (FR-R330-5) | With Stue playing, quit Ravilo, wait, start it again: the mini bar comes back on the speaker's current song, the log says `rejoin … → joined`, and **no hand-back line** appears (R353). Then do it once more with the speaker **unplugged at the moment of the start** — the three tries must end at *no connection* and the bar must go quiet, not sit at *reconnecting* (the 2026-10-12 bound, item 3). |
+| 6 | A film to a TV (FR-R330-6) | Cast a film to Stue TV; R245's remote drives it (play, pause, seek, a subtitle and an audio pick), and the mini bar shows it. |
+| 7 | Local Network refused (FR-R330-8) | In System Settings → Privacy & Security → Local Network, turn **Ravilo** off; open the sheet: one line *Ravilo needs Local Network access to find speakers and TVs* · *Open Settings*, and the button opens that pane. **Turn it back on afterwards.** |
+| 8 | The speaker remote's two lines (2026-10-09 evening fix) | While the Mac holds a speaker cast, open the remote: under *Add a speaker…* it must read *Adding a speaker needs Ravilo open on an Android phone nearby* — **never** *No phone or computer nearby can reach the speakers*. With the Pixel 9's Ravilo open nearby, *Add a speaker…* is offered instead. |
+
+Two more worth a line each if they appear: the 2026-09-30 open question — a song handed over at 2:40 that ended at
+once on a TV, the server logging the stop at the song's full length (not known to be the Mac's) — and whether the link
+holds for a quarter of an hour with one Ravilo and no `closed (send failed)`.
+
 ### Found live 2026-10-09 (evening) — fixed
 
 - **The speaker remote on the Mac said *No phone or computer nearby can reach the speakers* while the Mac itself was

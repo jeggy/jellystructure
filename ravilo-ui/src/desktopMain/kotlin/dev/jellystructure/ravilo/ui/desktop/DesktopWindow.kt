@@ -113,11 +113,15 @@ object DesktopWindow {
         CastDiscovery.acquire()
         try {
             Thread.sleep(3_500)
-            val raw = MacNative.lib?.let { MacNative.take(it.ravilo_bonjour_snapshot()) }?.lineSequence()?.firstOrNull() ?: "jmdns"
+            // Amendment 2026-10-12 — the whole snapshot, not only its state line: FR-R330-2 owes the record the TXT
+            // keys each device publishes, and only the raw lines carry them (`id · fn · md · ca · rs · host · port`;
+            // `st` is not in the snapshot — nothing reads it, and `rs` carries what the rules need).
+            val raw = MacNative.lib?.let { MacNative.take(it.ravilo_bonjour_snapshot()) } ?: "jmdns"
             val app = CastSenderDesktop.appIdForDebug()
-            raw + " app=" + app + " | " + CastDiscovery.devices.value.joinToString(" | ") { d ->
-                "${d.name} [${d.model}] ${d.host}:${d.port} ours=${app?.let { a -> CastAvailability.known(d, a) }}"
-            }
+            raw.lines().filter { it.isNotBlank() }.joinToString(" | ") + " app=" + app + " | " +
+                CastDiscovery.devices.value.joinToString(" | ") { d ->
+                    "${d.name} [${d.model}] ${d.host}:${d.port} ours=${app?.let { a -> CastAvailability.known(d, a) }}"
+                }
         } finally { CastDiscovery.release() }
     }.getOrElse { "failed: ${it.message}" }
 }
