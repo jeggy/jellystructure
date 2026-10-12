@@ -251,3 +251,41 @@ from R369's controller table. R371's volume and R372's *Move to…* are added by
 **2026-10-05:** R372's *Move to…* in the admin remote (a select of the owner's places that can play it + *Move*; a
 refused move is said on the row); the loopback `SessionCommandIntegrationTest` covers *an admin pause is recorded from
 the admin* and *the admin is never a controller row*, and `SessionMoveIntegrationTest` the admin's targets and move.
+
+## Amendment (2026-10-12) — the household switch survives a Settings save
+
+Found by dev while fixing 313's FR-313-15 (`[encoder]`, DEB-729), by auditing every block of `AppConfig` against
+the admin's own model and `PUT /api/config`'s restore list. `[ravilo]` is the last block left in that state —
+DEB-731. Amended before the fix, per the repo rule.
+
+**The bug.** `PUT /api/config` deserialises the posted body into `AppConfig` and then restores, from the stored
+config, every block the Settings form does not carry. **`ravilo` is not on that list**, and the admin's own
+`AppConfig` (`wasmJsMain/.../api/ConfigApi.kt`) has no `ravilo` field, so a Settings save posts no value for it,
+kotlinx fills in `RaviloHouseholdConfig()`'s defaults, and `household_control` is written back to `false`.
+
+That is worse than `[encoder]`'s shape, where the defaults happen to be harmless. FR-304-4's switch has its own
+write path — `SessionWiring.kt` writes `ravilo.householdControl` straight through `ConfigStore` from `PUT
+/api/tv/admin/playback/household-control` — and `SessionCommands.controllableBy` and `SessionPublisher` read it
+live. So the household turns the switch **on**, saves anything on Settings from any tab, and a member who could
+pause another's playback silently cannot any more: no log line, nothing on screen, and the switch itself reads
+back off. It is the `age_rating_map` bug's exact shape (fixed 2026-09-04).
+
+Prod loses nothing today: its `config.toml` carries no `household_control` line at all, i.e. the default. This
+bites the first time the switch is used and Settings is then saved.
+
+### FR-304-7 — `[ravilo]` is restored on a Settings save, and the switch stays where it is
+
+- **The household switch is not a Settings field and does not become one.** It belongs in the Sessions card's
+  header where FR-304-4 put it — beside the sessions it governs — and FR-285-12 (*Settings holds settings only*)
+  keeps it off the form. This is the same choice as FR-313-15's, for the same reason, and it is the whole of the
+  decision: the alternative (carry `ravilo` in the Settings form) would move a control the owner already placed.
+- **Therefore `PUT /api/config` restores the block from the stored config**, beside `encoder`:
+  `config = config.copy(ravilo = stored.ravilo)`. A Settings save can never change a `[ravilo]` value, because a
+  Settings save never carries one.
+- **FR-304-4's own write path is unchanged.** `PUT /api/tv/admin/playback/household-control` stays the only way the
+  switch moves, and a change still re-sends every opted-in socket's list so `controllable` flips.
+
+**Test.** `ConfigSavePreservesBlocksTest` (new in DEB-729) gains `ravilo`: a stored config with
+`household_control = true`, a `PUT /api/config` with the admin's body shape (no `ravilo` key), and the switch
+still reads `true` afterwards — with the blocks already on the restore list surviving beside it, so the next block
+added to `AppConfig` without a line in the route fails a test rather than quietly resetting a household value.
