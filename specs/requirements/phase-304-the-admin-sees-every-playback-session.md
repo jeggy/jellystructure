@@ -289,3 +289,45 @@ bites the first time the switch is used and Settings is then saved.
 `household_control = true`, a `PUT /api/config` with the admin's body shape (no `ravilo` key), and the switch
 still reads `true` afterwards — with the blocks already on the restore list surviving beside it, so the next block
 added to `AppConfig` without a line in the route fails a test rather than quietly resetting a household value.
+
+## Amendment (2026-10-12) — *Ended today* folds, and the count says what is playing
+
+Owner, from a screenshot of *Playing now* on prod (DEB-757): *Ended today* is to be **collapsed by default**, and
+openable when wanted. The same screenshot shows the header reading **4 playing** over one playing row and three
+reading *{place} is offline · paused*, so the count's word is wrong whatever else changes.
+
+The screenshot's larger complaint — *"a lot of sessions are just hanging for hours and hours after they are
+finished"* — is **not** settled here. That is R372's 24 h keep for a paused-or-offline session
+(`SESSION_PAUSED_KEEP_MS`, owner decision 1 on R372), and changing it is viewer-visible, because the same rows carry
+*Playing everywhere* in the apps. It is under investigation in DEB-758 (backend) and DEB-759 (the clients), and gets
+its own dated amendment once those report and the owner has answered. **Neither FR below moves a session's life by
+one millisecond** — they change only what the admin's page draws over the sessions it is given.
+
+### FR-304-8 — *Ended today* is a fold, closed when the page opens
+
+- The *Ended today* header row (today a plain `tr.usr-hd` label, `PlayingNow.kt:287`) becomes the admin's existing
+  disclosure: **`▸ Ended today · N`** closed, **`▾ Ended today · N`** open, the same `▸`/`▾` pair `Activity.kt`
+  already uses for a job's rows. `N` is how many ended rows there are, so the count is readable without opening it.
+- **Closed is the state on every load.** The choice to open it lasts the visit, kept client-side exactly as the
+  expanded-session set `pnOpen` is, and is *not* stored on the server or in the browser: the owner asked for
+  collapsed by default, not for the last choice remembered.
+- The header row stays in the table and stays clickable across its full width. With no ended rows there is no
+  header at all, as today.
+- A session that ends while the page is open is drawn into the fold without opening it; the `N` goes up. The
+  60-second linger of an ended row in the live list (`SESSION_ENDED_LINGER_MS`) is unchanged — it still shows above,
+  faded, and then moves into the fold.
+- Nothing about FR-304-3 changes: *Ended today* still means since local midnight in the server's zone, and a row
+  inside the fold still opens its remote-and-timeline detail on a click.
+
+### FR-304-9 — the count beside *Playing now* counts what is playing
+
+- `ses-count` today is `live.size` — every session that has not ended, including every *offline · paused* one. In
+  the owner's screenshot that reads **4 playing** when one thing was playing.
+- It becomes **`{n} playing`** over the sessions whose state is `playing`, and when any live session is not playing
+  it adds the rest after a `·`: **`1 playing · 3 paused`**. An offline session is counted as paused — *offline* is a
+  flag beside the state, never a state (R368 review item 12), and the row itself already says which.
+- With nothing live the count is empty, as today.
+
+**Tests.** `ravilo-users-sessions.spec.ts` gains: ended rows are not visible on load while the header reads
+`▸ Ended today · 2`; a click shows them and the glyph turns `▾`; a reload closes it again; and with one playing and
+two offline-paused sessions the count reads `1 playing · 2 paused`. No backend test — no backend change.
