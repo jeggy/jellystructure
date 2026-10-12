@@ -14,8 +14,9 @@ object CastPlatform {
     /** FR-R330-8 — discovery was refused Local Network access: the sheet says so once, under its rows. */
     val localNetworkDenied: StateFlow<Boolean> = _localNetworkDenied.asStateFlow()
 
-    /** Opens the system's own place to allow it; null where there is none (then the line offers no button). */
-    var openLocalNetworkSettings: (() -> Unit)? = null
+    // The way to the system's own place to allow it was a second `openLocalNetworkSettings` here until R385, which
+    // offers the same button on a failed load and at sign-in — before any cast sender exists to set it. One seam
+    // now: `MacDiagnosis.openLocalNetworkSettings`, set at startup.
 
     /** R330 open question 2 — *Play on this Mac* on the Mac; *Play on this phone* everywhere else. */
     var playHereKey: String = "cast.play_here"

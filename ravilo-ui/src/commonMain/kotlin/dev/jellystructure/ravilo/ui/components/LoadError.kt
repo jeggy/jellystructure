@@ -29,7 +29,11 @@ import dev.jellystructure.shared.tv.TvApiError
  */
 enum class LoadErrorKind { REAUTH, FORBIDDEN, GONE, UNREACHABLE, GENERIC,
     /** R335 (FR-R335-7) — this build has no player engine at all (a Linux without libmpv); not a fault of the stream. */
-    PLAYBACK_UNAVAILABLE }
+    PLAYBACK_UNAVAILABLE,
+    /** R385 (FR-R385-3) — a Mac running from a copy macOS will not let reach the household's network (`MacDiagnosis`). */
+    MAC_INSTALL_PLACE,
+    /** R385 (FR-R385-3) — a Mac in place, a server on this network, and nothing answering: the one explanation left. */
+    MAC_LOCAL_NETWORK }
 
 /** R335 — set by a platform whose player has no engine, so a failed start says so instead of *Something went wrong*. */
 object PlaybackAvailability { var unavailable: Boolean = false }
@@ -56,9 +60,8 @@ data class FailureClass(
  */
 fun classifyLoadFailure(t: Throwable?): FailureClass {
     // No HTTP response at all: the transport blip this retry loop was originally written for
-    // (an auto-advance across a momentary network drop). Still retryable, exactly as before.
-    val http = t as? TvApiError.Http
-        ?: return FailureClass(retryable = true, LoadErrorKind.UNREACHABLE, status = null, retryAfterMs = null)
+    // (an auto-advance across a momentary network drop) — unless the Mac can name the reason (R385).
+    val http = t as? TvApiError.Http ?: return answerlessFailure()
     val retryAfterMs = http.retryAfterSeconds?.takeIf { it in 0..60 }?.let { it * 1_000L }
     return when {
         // R280 — this device's session no longer works; signing in again is what fixes it. Not
@@ -73,6 +76,20 @@ fun classifyLoadFailure(t: Throwable?): FailureClass {
         http.status in 400..499 -> FailureClass(false, LoadErrorKind.GENERIC, http.status, null)
         else -> FailureClass(true, LoadErrorKind.UNREACHABLE, http.status, retryAfterMs)
     }
+}
+
+/**
+ * R385 (FR-R385-3) — a failure that got no answer at all, which is the only shape either Mac cause refines: an HTTP
+ * reply of any status proves the socket, so a reply is never one of them. Off the Mac, and on a Mac whose server is
+ * not on this network, this is exactly what it has always been — the transport blip, worth another go.
+ */
+private fun answerlessFailure(): FailureClass {
+    val refined = MacDiagnosis.refinedUnreachable()
+        ?: return FailureClass(retryable = true, LoadErrorKind.UNREACHABLE, status = null, retryAfterMs = null)
+    // FR-R385-4 — granting the permission is exactly a thing that changes the answer, so that one stays retryable
+    // (and the retry loop goes on working across the grant). Moving the app is not something a retry can do.
+    val retryable = refined == LoadErrorKind.MAC_LOCAL_NETWORK
+    return FailureClass(retryable = retryable, refined, status = null, retryAfterMs = null)
 }
 
 /** R280 (FR-R280-2) — the cause alone. Stores that only need to say *what*, not *whether to retry*. */
@@ -91,13 +108,25 @@ fun loadErrorTitleKey(kind: LoadErrorKind): String = when (kind) {
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
     LoadErrorKind.GENERIC -> "error.generic"
     LoadErrorKind.PLAYBACK_UNAVAILABLE -> "player.unavailable"
+    // R385 (FR-R385-4) — the heading names what the viewer must do, never what failed (D3).
+    LoadErrorKind.MAC_INSTALL_PLACE -> "mac.install_place.title"
+    LoadErrorKind.MAC_LOCAL_NETWORK -> "mac.local_network_blocked.title"
 }
 
-/** R280 (FR-R280-5) — the sentence under the heading, or null where there is no honest next step. */
-fun loadErrorBodyKey(kind: LoadErrorKind): String? = when (kind) {
+/**
+ * R280 (FR-R280-5) — the sentence under the heading, or null where there is no honest next step.
+ *
+ * R385 — [install] is the one cause whose sentence depends on a second fact: a copy macOS made is *a temporary copy*,
+ * one the viewer opened inside the mounted image is *the disk image*. It defaults to what the app knows about itself,
+ * and is a parameter so the mapping is testable without touching a global.
+ */
+fun loadErrorBodyKey(kind: LoadErrorKind, install: MacInstallState? = MacDiagnosis.installState): String? = when (kind) {
     LoadErrorKind.REAUTH -> "error.load.reauth.body"
     LoadErrorKind.FORBIDDEN -> "error.load.forbidden.body"
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+    LoadErrorKind.MAC_INSTALL_PLACE ->
+        if (install == MacInstallState.ON_VOLUME) "mac.install_place.body_volume" else "mac.install_place.body_translocated"
+    LoadErrorKind.MAC_LOCAL_NETWORK -> "mac.local_network_blocked.body"
     // GONE has no next step, and GENERIC has no honest sentence beyond its heading.
     LoadErrorKind.GONE, LoadErrorKind.GENERIC, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
 }
@@ -108,7 +137,10 @@ fun loadErrorBodyKey(kind: LoadErrorKind): String? = when (kind) {
  * hands: it is why 401 leaving GENERIC matters, since GENERIC is one of the two that offer it.
  */
 fun loadErrorOffersRetry(kind: LoadErrorKind): Boolean =
-    kind == LoadErrorKind.UNREACHABLE || kind == LoadErrorKind.GENERIC
+    kind == LoadErrorKind.UNREACHABLE || kind == LoadErrorKind.GENERIC ||
+        // R385 (FR-R385-4) — turning the permission on is a thing that changes the answer. Moving the app is not,
+        // so MAC_INSTALL_PLACE offers Quit and nothing else: a Retry there is R237's mistake with a nicer heading.
+        kind == LoadErrorKind.MAC_LOCAL_NETWORK
 
 /**
  * R280 (FR-R280-3) — one error surface for every failed screen load.
@@ -143,11 +175,17 @@ fun LoadErrorState(
     // resolves it; a deterministic 403/404 offers the way out rather than a button that re-asks.
     val showRetry = onRetry != null && loadErrorOffersRetry(kind)
     val showSignIn = onSignIn != null && kind == LoadErrorKind.REAUTH
+    // R385 (FR-R385-4) — the Mac's two causes bring their own button from the platform: **Quit Ravilo** alone for the
+    // one nothing in the app can change, **Open Settings** above the Retry for the one a permission fixes.
+    val onQuit = if (kind == LoadErrorKind.MAC_INSTALL_PLACE) MacDiagnosis.quit else null
+    val onOpenSettings = if (kind == LoadErrorKind.MAC_LOCAL_NETWORK) MacDiagnosis.openLocalNetworkSettings else null
     // Never a dead end: with no cause-appropriate action, Back is drawn so focus has somewhere to land.
-    val showBack = onBack != null && !showRetry && !showSignIn
+    val showBack = onBack != null && !showRetry && !showSignIn && onQuit == null
 
     val primaryFR = remember { FocusRequester() }
     val secondaryFR = remember { FocusRequester() }
+    // The Mac's Retry under its Open Settings: its own requester, so Home's `extraAction` keeps [secondaryFR].
+    val macRetryFR = remember { FocusRequester() }
     LaunchedEffect(kind) { runCatching { primaryFR.requestFocus() } }
     // The chain has to close both ways. The first cut of this drew Home's Sign out with an Up back to
     // Retry and gave Retry no Down — so the second action was reachable only by never leaving it.
@@ -163,12 +201,26 @@ fun LoadErrorState(
                 Spacer(Modifier.height(12.dp))
                 Text(str(body), color = colors.textSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
             }
-            if (showRetry || showSignIn || showBack) {
+            // FR-R385-4 — the Mac's Retry is the second button, so Open Settings leads and the chain closes onto it.
+            val macRetry = onOpenSettings != null && showRetry
+            if (showRetry || showSignIn || showBack || onQuit != null || onOpenSettings != null) {
                 Spacer(Modifier.height(24.dp))
                 when {
                     showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onDown = onDown, onSelect = onSignIn)
+                    onQuit != null -> RaviloButton(str("mac.menu_quit"), focusRequester = primaryFR, onDown = onDown, onSelect = onQuit)
+                    onOpenSettings != null -> RaviloButton(
+                        str("mac.open_settings"), focusRequester = primaryFR, onSelect = onOpenSettings,
+                        onDown = if (macRetry) ({ runCatching { macRetryFR.requestFocus() }; Unit }) else onDown,
+                    )
                     showRetry -> RaviloButton(str("action.retry"), focusRequester = primaryFR, onDown = onDown, onSelect = onRetry)
                     else -> RaviloButton(str("action.back"), focusRequester = primaryFR, onDown = onDown, onSelect = onBack)
+                }
+                if (macRetry) {
+                    Spacer(Modifier.height(12.dp))
+                    RaviloButton(
+                        str("action.retry"), focusRequester = macRetryFR, onSelect = onRetry, onDown = onDown,
+                        onUp = { runCatching { primaryFR.requestFocus() }; Unit },
+                    )
                 }
             }
             if (extraAction != null) {

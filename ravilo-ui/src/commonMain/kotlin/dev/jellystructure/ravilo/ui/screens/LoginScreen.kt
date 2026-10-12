@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +46,11 @@ import dev.jellystructure.ravilo.ui.TokenStore
 import dev.jellystructure.ravilo.ui.deviceDisplayName
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.components.InstallCardIfEligible
+import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.MacDiagnosis
+import dev.jellystructure.ravilo.ui.components.handCursor
+import dev.jellystructure.ravilo.ui.components.loadErrorBodyKey
+import dev.jellystructure.ravilo.ui.components.loadErrorTitleKey
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.reportTextFieldFocus
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -220,7 +226,32 @@ fun LoginScreen(
 
                     if (s is LoginState.Errored) {
                         Spacer(Modifier.height(14.dp))
-                        Text(
+                        // R385 (FR-R385-5) — this is one of the three places the Mac showed "try again" for a state no
+                        // number of tries could change. Where the app can name the cause, it says that instead; the
+                        // form itself is untouched, so what the viewer typed is still there either way.
+                        val mac = if (s.kind == LoginErrorKind.UNREACHABLE) MacDiagnosis.refinedUnreachable() else null
+                        if (mac != null) {
+                            Text(
+                                str(loadErrorTitleKey(mac)), color = colors.badgeNew, fontSize = 14.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                            loadErrorBodyKey(mac)?.let { key ->
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    str(key), color = colors.textSecondary, fontSize = 13.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                            }
+                            // The way to the pane, as a line rather than a focusable: the sign-in form's D-pad chain is
+                            // explicit (R349) and this surface is a Mac, where a click needs no focus.
+                            if (mac == LoadErrorKind.MAC_LOCAL_NETWORK) MacDiagnosis.openLocalNetworkSettings?.let { open ->
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    str("mac.open_settings"), color = colors.accent, fontSize = 13.sp,
+                                    modifier = Modifier.handCursor().clickable(onClick = open),
+                                )
+                            }
+                        } else Text(
                             when (s.kind) {
                                 LoginErrorKind.REQUIRED -> str("login.error_required")
                                 LoginErrorKind.INVALID -> str("login.error_invalid")

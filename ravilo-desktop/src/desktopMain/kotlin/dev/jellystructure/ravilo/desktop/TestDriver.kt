@@ -44,6 +44,8 @@ import javax.swing.SwingUtilities
  * - `quiet` (`quiet off`) — the app plays at nothing; the volume the person set stays shown and remembered.
  * - `cast` — what speaker discovery sees (3 s).
  * - `size <w> <h>` · `front` · `info` · `chrome` (the Mac's traffic lights and title-area hit test, from AppKit).
+ *   `info` carries R385's two facts — `install=IN_PLACE|TRANSLOCATED|ON_VOLUME host=LAN|PUBLIC|UNKNOWN` — which is
+ *   what a Mac walk records instead of reading the bundle's path by hand (`install=n/a` on Linux).
  *
  * `w2` before a command points it at the Settings window while that is open (`w2 shot settings`, `w2 click 300 40`).
  *
@@ -81,7 +83,9 @@ internal object TestDriver {
                     }
                 }
             }, "ravilo-test-driver").apply { isDaemon = true; start() }
-            println("${DesktopLog.stamp()} test driver: listening on $sock")
+            // R385 (FR-R385-7) — where macOS is running this app from, in the log the moment the driver is up (the
+            // host's class is resolved a beat later, so `info` is where the pair is read; see the doc comment).
+            println("${DesktopLog.stamp()} test driver: listening on $sock · ${dev.jellystructure.ravilo.ui.components.MacDiagnosis.describe()}")
         }.onFailure { println("${DesktopLog.stamp()} test driver: not started (${it.message})") }
     }
 
@@ -192,7 +196,9 @@ internal object TestDriver {
             "front" -> onEdt { window.toFront(); window.requestFocus(); target.requestFocus(); "ok" }
             "info" -> onEdt {
                 "ok window=${window.width}x${window.height} canvas=${layer.width}x${layer.height} scale=${layer.contentScale} " +
-                    "focused=${window.isFocused} visible=${window.isVisible} at=${window.x},${window.y} idle=${idleSeconds()}"
+                    "focused=${window.isFocused} visible=${window.isVisible} at=${window.x},${window.y} idle=${idleSeconds()} " +
+                    // R385 (FR-R385-7) — the two facts behind what an unreachable server is told to the viewer.
+                    dev.jellystructure.ravilo.ui.components.MacDiagnosis.describe()
             }
             "cast" -> "ok " + dev.jellystructure.ravilo.ui.desktop.DesktopWindow.castDebug()
             // R342 — the image the app hands the Dock (no picture of the window shows it): `dock /tmp/dock.png`.

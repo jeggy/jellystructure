@@ -72,7 +72,11 @@ fun main(args: Array<String>) {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
     System.setProperty("apple.awt.application.name", "Ravilo")
     System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
-    UpdateCheck.start(CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    val background = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    UpdateCheck.start(background)
+    // R385 (FR-R385-1/-2) — where macOS is running this app from, and whether its server is on this network. Read
+    // here, said nowhere: only a failed request with no answer ever shows either of them (D1).
+    dev.jellystructure.ravilo.ui.desktop.MacInstall.start(background)
     application { RaviloDesktopApp() }
 }
 
@@ -118,6 +122,9 @@ private fun ApplicationScope.RaviloDesktopApp() {
             onQuit = quit,
             onReopen = { shown = true },
         )
+        // R385 (FR-R385-4) — **Quit Ravilo** on the install-state message is this quit: the stops are reported first
+        // (FR-R328-9), exactly as ⌘Q and the menu item do it.
+        dev.jellystructure.ravilo.ui.components.MacDiagnosis.quit = quit
         // R342 — AWT (and so NSApp) is up: the running Dock icon starts following the mode and the icon style.
         dev.jellystructure.ravilo.ui.desktop.DesktopDock.start()
     }

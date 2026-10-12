@@ -312,7 +312,7 @@ private fun ScreensSheetBody(
             val lanDenied by dev.jellystructure.ravilo.ui.seams.CastPlatform.localNetworkDenied.collectAsState()
             if (lanDenied) {
                 Text(str("mac.local_network"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
-                dev.jellystructure.ravilo.ui.seams.CastPlatform.openLocalNetworkSettings?.let { open ->
+                MacDiagnosis.openLocalNetworkSettings?.let { open ->
                     SimpleRow(icon = {}, label = str("mac.open_settings"), onClick = open)
                 }
             }

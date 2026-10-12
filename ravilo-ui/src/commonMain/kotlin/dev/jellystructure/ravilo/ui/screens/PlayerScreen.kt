@@ -8,6 +8,9 @@ import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorBodyKey
+import dev.jellystructure.ravilo.ui.components.loadErrorOffersRetry
+import dev.jellystructure.ravilo.ui.components.loadErrorTitleKey
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import dev.jellystructure.ravilo.ui.components.flagFor
 import androidx.compose.animation.AnimatedVisibility
@@ -4497,18 +4500,24 @@ private fun PlayerSessionErrorOverlay(
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
         LoadErrorKind.GENERIC -> "error.generic"
         LoadErrorKind.PLAYBACK_UNAVAILABLE -> "player.unavailable"   // R335 (FR-R335-7)
+        // R385 — a start that got no answer at all reaches here too, and on a Mac its cause can be named. Not one of
+        // FR-R385-5's three surfaces, but the same two keys: saying "check the connection" here and the truth two
+        // screens away would be the drift this phase is about.
+        LoadErrorKind.MAC_INSTALL_PLACE, LoadErrorKind.MAC_LOCAL_NETWORK -> loadErrorTitleKey(error.kind)
     }
     val errBody = when (error.kind) {
         LoadErrorKind.REAUTH -> "error.play.reauth.body"
         LoadErrorKind.FORBIDDEN -> "error.play.forbidden.body"
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
+        LoadErrorKind.MAC_INSTALL_PLACE, LoadErrorKind.MAC_LOCAL_NETWORK -> loadErrorBodyKey(error.kind)
         // GONE has no next step, and GENERIC has no honest sentence to offer beyond its heading.
         LoadErrorKind.GONE, LoadErrorKind.GENERIC, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
     }
     // FR-R237-3 — Retry stays only where trying again can plausibly change the answer. Offering it for
     // a verdict that is deterministic for ten minutes is the same mistake as the retry loop, moved into
     // the viewer's hands. REAUTH gets the action that actually resolves it; 403/404 get Back alone.
-    val showRetry = error.kind == LoadErrorKind.UNREACHABLE || error.kind == LoadErrorKind.GENERIC
+    // R385 — the one rule, shared with R280's surface: identical for every kind that was here before.
+    val showRetry = loadErrorOffersRetry(error.kind)
     val showSignIn = error.kind == LoadErrorKind.REAUTH && onReauthRequired != null
     val retryFR = remember { FocusRequester() }
     val backFR = remember { FocusRequester() }

@@ -5,8 +5,9 @@
 
 ## Status
 
-`Planned` — written 2026-10-12 (PO-authored from DEB-756). Not dev-reviewed, not built. The Mac app (R328–R331, R337)
-and the shared error classifier R237/R280 wrote.
+`✓ Built` 2026-10-12 (see Build notes; acceptance 1–6 are a Mac walk and are not claimed here). Written 2026-10-12
+(PO-authored from DEB-756). Not dev-reviewed. The Mac app (R328–R331, R337) and the shared error classifier R237/R280
+wrote.
 
 ## What was seen
 
@@ -144,11 +145,96 @@ able to translocate at all (see open question 2).
 7. A unit test covers FR-R385-3's table and FR-R385-4's mapping — install state × host class × failure shape →
    heading, body and buttons — and that every key it names exists in all three tables (R280's test precedent).
 
+## Build notes (2026-10-12)
+
+**Built** — Kotlin only, no Swift and no native call, so the self-test's `library ABI 4` line is untouched (FR-R385-1).
+
+- `ravilo-ui/.../components/MacDiagnosis.kt` (new) — `MacInstallState` (IN_PLACE · TRANSLOCATED · ON_VOLUME),
+  `ServerHostClass` (LAN · PUBLIC · UNKNOWN) and `MacDiagnosis`, the object a platform sets and `ravilo-ui` reads,
+  shaped like R335's `PlaybackAvailability`. FR-R385-3's table is the pure `macRefinedUnreachable(install, host)`:
+  null when `installState` is null (every platform but the Mac), null for any host that is not `LAN`,
+  `MAC_LOCAL_NETWORK` for `IN_PLACE`, `MAC_INSTALL_PLACE` otherwise. `UNKNOWN` sits in `PUBLIC`'s row.
+- `LoadError.kt` — the two kinds, and the refinement inside the one `classifyLoadFailure` branch that already means
+  *no HTTP response at all* (`answerlessFailure()`). That placement is what makes FR-R385-3's last line structural
+  rather than a rule to remember: a reply of any status never reaches it. `retryable` follows the buttons — false for
+  the install cause, so R237's auto-retry ladder stops too; true for the permission, so the loop keeps working across
+  the grant. `loadErrorTitleKey` maps both; `loadErrorBodyKey` takes the install state as a defaulted parameter, since
+  that is the one sentence that depends on a second fact (a copy macOS made, or the mounted image).
+- **FR-R385-5 came free at two of its three places**: every store funnels through `loadErrorKindOf` →
+  `LoadErrorState` (R280's doing, and R345's for the music pages), so neither needed a line. **Sign-in** was done by
+  hand: `LoginScreen`'s one-line *Couldn't reach the server — try again* becomes the heading and the sentence, with a
+  clickable *Open Settings* line under the permission cause — a line and not a focusable, so R349's explicit D-pad
+  chain through the form is untouched, and this surface is a Mac, where a click needs no focus. The form itself is
+  unchanged, so what the viewer typed survives either way. **Deliberate call:** *Sign in* is still there under the
+  install-cause copy. It is the form's own button, not a Retry on an error surface, and taking it away would leave a
+  sign-in screen that cannot be used at all. **Server setup needed nothing**: it never reaches the server — it saves
+  the address and hands over to sign-in, which is where the failure has always appeared, so both halves of
+  FR-R385-5's first bullet are the one change.
+- `LoadErrorState` draws what each cause allows: **Quit Ravilo** alone (`mac.menu_quit`, wired to `Main.kt`'s own
+  `quit`, so FR-R328-9's stops are reported before the process ends), or **Open Settings** above **Retry**. The Mac's
+  Retry has its own `FocusRequester`, so Home's `extraAction` keeps the one it already used.
+- **A fourth surface the spec did not name**: the player's failed-start card (`PlayerSessionErrorOverlay`, R237)
+  renders a `LoadErrorKind`, so these two can now reach it. It uses the same two keys and `loadErrorOffersRetry`
+  instead of its own copy of the retry rule (identical for every kind that was there before) — no new string, no new
+  button. Saying *check the connection* there while another screen says the truth is the drift this phase is about.
+- `ravilo-ui/.../desktop/MacInstall.kt` (new) — the two readings. `jpackage.app-path`, then
+  `compose.application.resources.dir`; `/AppTranslocation/` is asked before `/Volumes/`. The host comes out of the
+  configured base URL (IPv6 brackets handled) and is resolved on `Dispatchers.IO`: `LAN` if **any** answer is private
+  — `isLoopbackAddress` / `isLinkLocalAddress` / `isSiteLocalAddress` / `isAnyLocalAddress`, plus `100.64/10` and
+  IPv6 `fc00::/7`, which no JDK predicate knows. `start(scope)` is shaped like `UpdateCheck.start`: it follows the
+  configured server and asks again every quarter of an hour while the answer is `UNKNOWN`. Called from `Main.kt`.
+- R330's `CastPlatform.openLocalNetworkSettings` is **folded into `MacDiagnosis.openLocalNetworkSettings`** — one
+  seam, set at startup instead of when the cast sender is first remembered, because sign-in offers the same button
+  long before any sender exists. FR-R330-8's line in the sheet reads the new one; `CastDesktop` also calls
+  `MacInstall.install()` (idempotent), so a sender can never find the seam unset.
+- FR-R385-7 — `MacDiagnosis.describe()` → `install=… host=…`, in the driver's *listening on* line and on **`info`**,
+  which is what a connecting client actually reads (the host is resolved a beat after the socket is up, so the startup
+  line can honestly still say `host=UNKNOWN`). `install=n/a` on Linux.
+- FR-R385-6/-8 — `mac.open_anyway` rewritten and the five new keys in `i18n/en.json`, `da.json` and `fo.json` (da/fo
+  drafts). macOS has no Faroese, so the Faroese table names the viewer's own macOS labels in English, as it already
+  did for *Open Anyway*.
+
+**Tested (acceptance 7).** `:ravilo-ui:desktopTest` green on Linux.
+
+- `ravilo-ui/src/commonTest/.../MacDiagnosisTest.kt` — FR-R385-3's eight rows; `UNKNOWN` as `PUBLIC`; nothing refined
+  off the Mac; an answerless failure becoming each cause; **no HTTP status whatsoever becoming either** (401, 403,
+  404, 409, 429, 500, 503, 418); Retry on the permission and never on the install, asserted on `retryable` as well as
+  on the button; the heading and body mapping including `ON_VOLUME`'s own sentence; every key in all three tables;
+  D3's banned words (*transloc*, *tcc*, *bundle*, *quarantin*) absent from all six strings in all three languages;
+  and FR-R385-6's drag-before-Gatekeeper order.
+- `ravilo-ui/src/desktopTest/.../MacInstallTest.kt` — the real translocated path from the walk, `/Volumes/…`,
+  `/Applications/…`, a null path (run from Gradle), and a viewer's own folder called `Volumes` or
+  `AppTranslocationNotes` (neither is a state); the host out of four URL shapes; every private range the FR names and
+  five routable addresses; an unresolvable name as `UNKNOWN`.
+
+**Not claimed here.** Acceptance 1–6 are the Mac walk — nothing was installed, launched or driven from this seat.
+
+**One limit for that walk to watch.** The `LAN` reading needs the host to resolve. A unicast DNS lookup is made by
+macOS's own resolver daemon rather than by the app's socket, so it is expected to answer even while the app's own
+connections are being refused — but a server named with `.local` (mDNS) would have the lookup itself blocked, the
+class would read `UNKNOWN`, and the app would deliberately fall back to the plain *Couldn't reach the server*. The
+household's host is a real DNS name, so acceptance 1 and 3 should show `host=LAN` on the driver's `info`. If they show
+`UNKNOWN`, that is the finding to write down.
+
 ## Open questions
 
-1. Is there any public way on macOS 27 to read whether Local Network consent was granted? **Lean no** — if one exists,
-   FR-R385-3's `IN_PLACE` + `LAN` row should state the fact instead of inferring it, and FR-R385-4's body can stop
-   hedging.
+1. ~~Is there any public way on macOS 27 to read whether Local Network consent was granted?~~ **Answered while
+   building, 2026-10-12: no. The lean was right, and the hedge stays.** Three separate facts, none of them ours:
+   - Apple's own answer is that **there is no API that returns whether the current process has local network access**,
+     and none to pre-flight the prompt — stated by DTS on the developer forums and unchanged across the Sequoia →
+     Tahoe → 27 run of releases.
+   - On macOS the consent is **not held by TCC** at all, so there is no authorisation-status call to make and no
+     *undetermined* state to read back (`tccutil reset` does not clear it either).
+   - The one home-made probe people reach for does not work here: `NWBrowser` reports **`.ready` whatever the privacy
+     state is**, and sends no update when the setting is turned on or off.
+
+   So FR-R385-3's `IN_PLACE` + `LAN` row stays an **inference**, which is exactly why D2 orders it after the state the
+   app can prove, and FR-R385-4's body keeps saying *where the setting is* instead of claiming what it currently says.
+   Read again if Apple ships an authorisation-status call for it.
+   (Sources: [Apple DTS, *Network privacy permission check*](https://developer.apple.com/forums/thread/650648) ·
+   [*Local Network Access Permission*](https://developer.apple.com/forums/thread/759955) ·
+   [*First update to NWBrowser is always ready, irrespective of Local Networking privacy status*](https://developer.apple.com/forums/thread/770563) ·
+   [Nonstrict, *Request and check local network permission*](https://nonstrict.eu/blog/2024/request-and-check-for-local-network-permission/).)
 2. ~~**Does the owner's MacBook translocate at all?**~~ **Answered by the owner 2026-10-12 (DEB-756): yes, Gatekeeper
    may be enabled for one walk and must be put back.** `spctl --status` reads `assessments disabled` there (DEB-721)
    and App Translocation is a Gatekeeper behaviour, so acceptance 1 and 3 could not be observed as the Mac stands. The

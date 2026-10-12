@@ -22,9 +22,9 @@ actual fun rememberCastSender(api: TvApiClient): ActiveCastSender {
     remember {
         // R337 — "this Mac" only on a Mac; Linux said it too until R337 (dev review 14).
         CastPlatform.playHereKey = if (DesktopPaths.isMac) "cast.play_here_mac" else "cast.play_here_desk"
-        if (DesktopPaths.isMac) CastPlatform.openLocalNetworkSettings = {
-            runCatching { ProcessBuilder("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork").start() }
-        }
+        // R385 — the way to the Local Network pane is `MacInstall`'s now (it is wanted at sign-in too, long before
+        // this). Idempotent, and asked here as well so a sender never finds the seam unset.
+        dev.jellystructure.ravilo.ui.desktop.MacInstall.install()
     }
     val screen = remember(api) { ScreenSender(api) }
     return remember(screen) { ActiveCastSender(chromecast = CastSenderDesktop, screen = screen) }
