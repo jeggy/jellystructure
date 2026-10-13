@@ -1290,3 +1290,132 @@ Read against the live configuration, read-only, no write: `local_path = /mnt/med
 the amendment. So **acceptance 12 holds as specced** — a root at `/mnt/media/jellyfin/movies` translates onto
 Radarr's own root and is refused — and `[file_fix]` carries no `dv_versions_root`, so the kind's switch is still
 shut and the first thing the owner's step 3 will meet, before step 4, is acceptance 11's refusal naming step 4.
+
+## Amendment 2026-10-13 (seventh) — the four configuration steps are five: the deploy is step 0 (DEB-898, DEB-925)
+
+Steps 1, 2 and 4 of the sixth amendment's table went through on prod today. **Step 3 could not be done at all, and
+the reason is a defect in that table rather than in the work**: it never said the build has to be running.
+
+### What landed, and what did not
+
+| # | | |
+| - | - | - |
+| 0 | **missing from the table** | FR-314-15 has to be the running image, not just `main` |
+| 1 | **done** 07:47Z (DEB-924) | `/mnt/media/jellyfin/versions` → `/media/versions`, verified rw by uid 1000 inside the container |
+| 2 | **done** 08:00Z (DEB-925) | a `movies` library on `/media/versions`, `ItemId c4ebdc1a04600fa395ca5f8214ece353`, **no scan** |
+| 3 | **blocked** | the field does not exist in the deployed admin |
+| 4 | **done** 08:07Z (DEB-925) | `local_path = /mnt/media/jellyfin/versions`, `jellyfin_path = /media/versions`, `skip = true` |
+
+### Step 0 — check the phase is in the running image before configuring anything it shipped
+
+Prod ran **`v1.51-58-gf9029c3b`**, **62 commits** behind `main`, and `b354d55f` was not an ancestor of it
+(`git merge-base --is-ancestor b354d55f f9029c3b` → false, confirmed twice independently). Three symptoms, none of
+which looks like a missing deploy from the admin UI:
+
+1. `GET /api/config` on the running backend has **no `file_fix` key at all**.
+2. `getElementById('dv-versions-root')` on the live Advanced tab → **null**. There is no field to type into.
+3. `f9029c3b`'s own tree still has `dvVersionPath(originalPath)` — the **pre-amendment** signature that writes the
+   version *beside the original*, which is DEB-868's `movieFileId 0` unlink. `jellyfinViewOf`,
+   `versionsLibraryIdOf` and `VersionsLibraryViewers.kt` are not in it.
+
+**What makes this worth a rule rather than a footnote: three of the four steps succeed anyway.** Step 1 is a change
+to the host, and steps 2 and 4 are surfaces the *old* build already has — a Jellyfin library and a library mapping
+both long predate this phase. So the configuration appears to be going in, and the one step that cannot go in reads
+as a permissions or a path problem. **Before configuring anything a phase shipped, check
+`git merge-base --is-ancestor <the phase's commit> <the version off /api/health>`.** It is one command and it is the
+difference between a two-minute step and an hour of looking for a field.
+
+### Step 1's price, measured — and mispriced in both directions
+
+The sixth amendment priced step 1 at 6 to ~12 minutes of stalled Caddy reconfiguration, correcting an earlier
+*"a few seconds"*. The measured cost on the night was **~11 seconds**: the race did not fire, controls never
+dropped, there were no ordered-handler errors and `caddy` never restarted. Both numbers were wrong in the same way —
+**the race is probabilistic, so neither a few seconds nor twelve minutes is the price; the exposure is.** Keep the
+one-container rule and the quiet-hour rule for that reason, and do not read 11 seconds as a reason to drop either.
+
+### FR-314-16's mapping claim does not hold in the UI yet (DEB-937)
+
+The sixth amendment called the `local_path` mapping *"a step rather than a trap"*. It is still a trap: a library with
+`skip = true` renders its `local_path` input with **`pointer-events:none`**, so step 4 as written cannot be typed at
+all. It was done on the page's own path — untick Skip, type, re-tick Skip, one Save — and the stored config is
+correct. The claim stands as the intent and not as a description until DEB-937 lands.
+
+### Consequence for QA: DEB-870 is not runnable on the deployed build
+
+DEB-870 (QA-E step 4, the Dolby Vision version per device) was described as runnable once these steps were in. It is
+not. Kind C on the deployed build is the **old placement** — a version written beside the original — so running it
+today would either exercise behaviour this phase has replaced or walk into the DEB-868 unlink the versions library
+exists to prevent. It needs the same step 0 that step 3 needs, and no TV grant should be spent on it before that.
+
+### Also found while configuring (DEB-936)
+
+A Settings save writes `false` over `scan.suggestions_step_seeded`: `ConfigRoutes.kt` restores five of the six
+`*Seeded` flags from `stored` and misses that one — the same family as DEB-729 and DEB-731, and **still true on
+`main`**. Cost is one idempotent re-seed at the next backend start, so nothing a viewer sees. Recorded here because
+it was found by **diffing the written `config.toml` against a copy taken before the Save**, which is the clearance
+method that works; reasoning about which blocks the admin models is what missed it.
+
+## Amendment 2026-10-13 (seventh) — a skipped library's paths have to be typeable, because `skip` does not govern them (DEB-937)
+
+Written before any Kotlin, found doing the owner's step 4 on prod (DEB-925). FR-314-15 requires one library to
+carry a `local_path` **while staying `skip = true`** — *"`skip` governs titles, not paths"* — and FR-314-16 made
+that mapping a step of the owner's configuration so it would be *"a step rather than a trap"*. The Libraries card
+does not let that combination be typed, so the step is not performable in the order it is written. This corrects
+FR-314-16's own usability claim; it is not new behaviour.
+
+**Why the correction is written here.** The Libraries card has no numbered phase of its own: it arrived with the
+`[[libraries]]` config in `0eef30a0` (2026-06-12), before this repo numbered its requirements, and **298** owns only
+the reconciler that writes rows into it (it decides what is *added as skipped*, not what a skipped row lets you
+edit). FR-314-16 is the requirement that claims the mapping step can be done, so the claim is corrected where it is
+made — and the rule below is written as the card's rule, for whatever next needs a mapped-but-skipped library, not
+as a special case for the versions one.
+
+### What the card does today
+
+`buildLibraryCardHtml` renders a skipped row's three inputs — *Jellyfin path*, *Local path* and *Fallback lang* —
+with inline `pointer-events:none`, and dims the whole card to `opacity:.5`. The fields are neither `disabled` nor
+`readonly`, so this is **presentation standing in for a rule**: nothing refuses the value, the field simply cannot
+be reached with a pointer. Clicking *Local path* on a skipped row focuses nothing, and step 4 stops there.
+
+Everything behind the field already accepts the combination. `readForm()` carries `local_path` on a skipped row,
+the TOML preview renders it, and the write path wants it: `jellyfinViewOrNull` filters on
+`localPath.isNotBlank() && jellyfinPath.isNotBlank()` and never reads `skip`. So the fix is the admin UI catching up
+with what both sides already do, and **no wire field, config key, DTO or backend rule changes**.
+
+The workaround that exists — untick *Skip*, type the path, re-tick *Skip*, one global Save — lands the right config
+(it is what DEB-925 did, through the page's own listeners) and is not good enough: its middle state un-skips a
+library on a prod form, which is the trap FR-314-16 set out to remove.
+
+### FR-314-17 — `skip` greys out the controls it governs, and the paths are not among them
+
+- **Both path fields stay editable on a skipped row**, full strength, with no `pointer-events` trick: *Jellyfin path*
+  and *Local path* are the mapping, and a skipped library still needs the mapping read (FR-314-15). The *Match
+  prefix* line stays at full strength with them, because it is those two fields' own feedback.
+- **The per-library fallback language is `disabled` when the row is skipped** — the attribute, not a style, so the
+  rule is the rule — and it is dimmed. It is a titles setting, and `skip` is exactly "no titles from this library".
+  The books and music cards' metadata-provider rows dim with it for the same reason.
+- **Skip's visible signal stops being the whole card dimmed**, because a dimmed card is what made every field on the
+  row read as inert. What says it instead: the ticked *Skip* box, the collapsed *Skipped libraries (N)* block the row
+  sits in, the absent *Scan* / *Push all to Jellyfin* buttons (already suppressed), the dimmed fallback row, and one
+  line of text on a skipped row naming the rule — *titles from this library are left alone; its paths are still
+  read*. A card that states the rule beats a card that mimes it.
+- **The skipped block stays one collapsed `<details>`, and the versions library is not pulled out of it.** A row
+  cannot be recognised as the versions library before its `local_path` is typed — that field *is* step 4 — so any
+  "lift the interesting one out" rule would have nothing to key on at the moment it is needed. The operator reaching
+  step 4 is following a step that already names the card, and a second place to look for a library row costs more
+  than the one click it would save.
+- **Nothing is granted that was not grantable before.** A skipped row could always carry a `local_path` through the
+  three-step workaround; this makes the one-step version possible and removes the un-skipped middle state.
+
+### Acceptance (added)
+
+13. On Settings ▸ Libraries, inside *Skipped libraries (N)*, a skipped library's *Local path* and *Jellyfin path*
+    take focus and accept typing with *Skip* left ticked, and the one global Save persists that row as `skip = true`
+    with the typed `local_path`. The same row's fallback-language field cannot be edited. No row leaves or enters the
+    skipped block in the process.
+
+### Tests (added)
+
+There is no `wasmJsTest` source set in this repository, so this requirement gets no unit test; the verification is
+`compileKotlinWasmJs` plus acceptance 13 walked against a locally built admin on a throwaway config — never prod's,
+because the acceptance ends in a Save.
