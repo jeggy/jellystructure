@@ -346,6 +346,13 @@ So: `continue-on-error: ${{ github.event_name == 'push' }}`.
 The path filter is unchanged, so on anything that touches no Mac-shaped file the job still short-circuits in seconds
 and the blocking/advisory distinction never arises.
 
+**Approved as written (Tróndur, 2026-10-13, DEB-890)**, with the third option — a blocking push path — refused for a
+reason worth keeping: *a macOS runner flake must not be able to hold the backend image back for a client job that no
+release depends on*. The two gates that decide anything are already blocking, the pull request that lands a change
+and the release that ships it, so making the push path blocking buys no coverage and costs availability on the one
+pipeline prod depends on. This was written and pushed as a dev-authored narrowing on 2026-10-12 and flagged for the
+decision rather than assumed; the decision is now on the record and the line does not need revisiting.
+
 ## Amendment (2026-10-12): acceptance 2 is not provable on the MacBook as it stands, and the install path has a trap
 
 From the Mac walk (DEB-721) and DEB-756.
