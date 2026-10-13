@@ -4,13 +4,17 @@
 > around 1:09:00 and forward"* — then: *"build a warning and show this type of issue on the dashboard … and when
 > opening the details page it would show it as well, with the suggested command to fix it."*
 
-## Status
+## Scope
 
-`Planned` — **ready to build.** Written 2026-10-10 (dev-authored investigation) against `main` `d37f1a7a`; owner
-decisions the same day (§Decisions); **dev-reviewed 2026-10-10 against `main` `d37f1a7a`** (§Dev review — every
-site this phase touches, and the six gaps the first draft left, closed in the FRs below). Number verified free
-(admin specs top at 316). The measurement is prototyped and measured in `avsync/` and
-`specs/research-reports/av-sync-measurement-on-the-gpu-2026-10-10.md`; nothing is wired into the backend.
+Written 2026-10-10 from a dev-authored investigation against `main` `d37f1a7a`; owner decisions the same day
+(§Decisions); **dev-reviewed 2026-10-10 against the same commit** (§Dev review — every site this phase touches,
+and the six gaps the first draft left, closed in the FRs below). The measurement is prototyped and measured in
+`avsync/` and `specs/research-reports/av-sync-measurement-on-the-gpu-2026-10-10.md`.
+
+The phase owns the measurement, its storage, and the words that explain a finding. It does **not** own the
+container's locale: [phase 318](phase-318-the-container-speaks-ascii-and-every-mkvtoolnix-call-pays-for-it.md)
+took that over on 2026-10-13, after it turned out to be the cause of the truncation this spec's 2026-10-13
+amendment was written about.
 
 Modelled on phase 255 (a persisted per-file check → Triage row → the title page's banner with what / who / fix /
 command → a ↻ in 261's Checks card). The new thing is the **measurement**: it cannot be done from container metadata
@@ -780,3 +784,108 @@ expected, leave no rows, and re-queue themselves.**
 18. A flagged file whose second audio track is excluded by correlation: the sentence names the correlation
     against its bar and **does not quote a lag**; one excluded by lag alone names the lag and **does not quote
     a correlation**.
+
+## Amendment (2026-10-13, second of the day) — who truncates is the C locale, and an error document is not an empty file (DEB-848)
+
+The amendment above left one question open and said it was not a gate: **who truncates `mkvmerge -J`** —
+mkvmerge at exit 0, or `captureShell`'s `fgets(4096)`. It was put on the QA queue as a two-command check
+(DEB-843). The answer came back **neither**, and it is wider than this phase: the backend container carries no
+`LANG` and no `LC_*`, so every process it spawns runs in the C locale, and MKVToolNix in the C locale cannot
+handle a non-ASCII path or a non-ASCII string it must emit. That is now
+[**phase 318**](phase-318-the-container-speaks-ascii-and-every-mkvtoolnix-call-pays-for-it.md), which carries
+the environment variable, the measured blast radius across every MKVToolNix call site, and the evidence. This
+amendment carries only what is 317's.
+
+### What the answer changes here, and what it does not
+
+- **`3 844` was never evidence of a buffer.** The cut falls at the first non-ASCII byte of the first string
+  mkvmerge emits that carries one — in that file, a subtitle track's `track_name` on track 6. It is not
+  4 096-aligned because it has nothing to do with 4 096. **`captureShell` is cleared**; so is the suspicion
+  that mkvmerge emits short documents at exit 0 for its own reasons.
+- **Phase 255 is cleared too, and should not be re-measured.** The 10-13 amendment's worry — *"if the answer
+  is `captureShell` then the blast radius includes phase 255's track coverage"* — does not land: 255's three
+  probes are `ffprobe`, and `ffprobe` is proven immune in the same locale on the same file (318's table).
+  `captureShell` is shared; MKVToolNix is not.
+- **The 92 non-ASCII-path files are not a parser problem at all.** `mkvmerge -J` on such a path returns a
+  ~115-byte *valid JSON error document* at **exit 2** — there is no `tracks` array and no truncation, because
+  there was never an identification. **No change to `parseMkvAudioIds` can reach those files**; only 318's
+  locale can, and it reaches all 135.
+
+### FR-317-21 stands exactly as written, and is still built
+
+The routing question DEB-848 put to the PO was whether FR-317-21 still lands, given it only covers the
+smaller class. **It does, unchanged**, and the reasoning is recorded so it is not re-litigated:
+
+- it is a **safety property, not a workaround for this bug**. *"An id is either read in full from a complete
+  track object, or not read at all"* is the right rule whatever made a document short — a killed process, a
+  full pipe, a future mkvmerge change — and the version it replaces throws away a whole good prefix for a bad
+  tail, which is wrong on its own terms;
+- it and 318 reach **different files**: 318 is the only thing that reaches the 92, FR-317-21 is the only thing
+  that reaches a document that arrives short for any other reason, and neither substitutes for the other;
+- after 318, the C-locale truncation stops happening, so **FR-317-21 becomes a belt on a fixed brace** — which
+  is the correct posture after a fault that was silent for an unknown number of months.
+
+Two corrections to its own prose, which was written before the cause was known:
+
+- *"This recovers both ids on the real file, and `--sync 1:120` with it"* was true **because the locale was
+  wrong**. After 318 that file returns a complete 23 125-byte document and the ids are read whole, so
+  acceptance 16 is satisfied by 318 rather than by the new parse. Acceptance 16 already allowed for both
+  outcomes and needs no restating; this says which one it will be.
+- the test fixture must **not** be trimmed out of the real file. A truncated document is reproducible on
+  demand under `LC_ALL=C`, and 318's synthetic pair produces one that carries no library string at all — that
+  is the fixture to capture, in this public repository.
+
+### FR-317-26 — An identification that failed is not a file with nothing in it
+
+FR-317-21 preserves today's behaviour for output with no `tracks` array: an empty map. That is **safe** and it
+is **mute**, and the ~115-byte error document lands exactly there. A refusal to identify and a container that
+genuinely has no tracks then look identical in the data, in the logs and on the page.
+
+`parseMkvAudioIds`, or the caller around it, tells the two apart: **a document whose `errors` array is
+non-empty is a failed identification**, never an empty one. The map is still empty — nothing is inferred —
+but the failure is reported as a failure, and FR-317-23's `WARN` carries mkvmerge's **own first `errors[]`
+line** so the next reader is told *"could not be opened for reading"* instead of being left to guess. The
+distinction is pure and testable: `{"errors":[…],"warnings":[]}` → failed; `{"tracks":[]}` → an empty
+container; not JSON at all → failed.
+
+### FR-317-23's exit-status clause is dropped, and the error line takes its place
+
+FR-317-23 asked the `WARN` to carry *"the path, the byte count of what came back, and the exit status"*. **The
+exit status cannot be had where that `WARN` is written**: `captureShell` (`TrackCoverageService.kt:240-247`)
+discards `pclose`'s return value, and the call pipes `2>/dev/null` — so neither the status nor stderr reaches
+Kotlin. The two ways out are to make `captureShell` return a status, which changes a function phases 255 and
+the work-file sweep also call for one caller's benefit, or to use what is already in the document.
+
+**Decision: the `WARN` carries the path, the byte count, and the first `errors[]` line where there is one.**
+It is strictly more useful than `exit=2` — it names *why* mkvmerge refused — it needs no change to a shared
+function, and the byte count stays, because that single number is what distinguishes a refusal (~115 bytes)
+from a truncation (anything larger) at a glance. `2>/dev/null` stays: letting stderr into the pipe would
+corrupt the JSON it is being parsed from.
+
+### The sweep is held until 318 lands
+
+317's library sweep has not been started, and the ordering is worth a factor of nine: measured after 318, the
+~1 247 non-ASCII-path matroska files are identified correctly the first time and the recovery set stays at the
+**135 rows that exist today**; measured before it, every one of them stores a `NULL` id map and the recovery
+set becomes the whole sweep again. The reasoning and the recovery mechanism are 318's (FR-318-3, FR-318-4);
+FR-317-23's rule that the lane gains **no** permanent re-probe pass is unchanged, because a one-off recovery
+of a known finite set is not a standing mechanism.
+
+### Tests (added)
+
+- `parseMkvAudioIds`: the **115-byte `errors` document from 318's synthetic non-ASCII-path run** → an empty
+  map **and** a failed identification, not an empty container; `{"tracks":[]}` → an empty map and **not** a
+  failure; a document carrying both `errors` and a usable `tracks` prefix → the ids are still read (mkvmerge
+  warns about plenty of files it identifies perfectly well).
+- The `WARN`'s wording is asserted on the error document's first line, not on an exit status.
+- No new fixture from a library file, and no migration.
+
+### Acceptance (restated and added)
+
+- **17 is restated**: the `WARN` carries the path, the byte count and mkvmerge's first error line — **not** an
+  exit status. The rest of 17 is unchanged.
+
+19. A matroska file at a non-ASCII path, on a backend **without** `LANG` set: the Checks card shows the
+    no-command sentence rather than silence, and one `WARN` naming the path, ~115 bytes and *"could not be
+    opened for reading"*. The same file on a backend **with** `LANG=C.UTF-8`: a `--sync` command in a Copy
+    block. The second half is 318's acceptance 6 seen from this phase's page.
