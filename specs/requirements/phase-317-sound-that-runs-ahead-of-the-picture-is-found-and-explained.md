@@ -1184,6 +1184,27 @@ unexplained failures stays known, and so nobody closes 317's failure list believ
 23. Across a sweep, no job fails with *"Unexpected special floating-point value"*. The two rows that did on
     2026-10-13 are the baseline.
 
+### As built (2026-10-13, DEB-915) — the backend goes first
+
+Built as specified. One fact the build turned up, recorded here because it is a deployment order and nothing
+in the code can enforce it: **the backend half must be live before the sidecar half.** The two halves are not
+symmetrical.
+
+- The **backend alone**, against today's sidecar image, changes nothing: a bare `NaN` is still refused, with
+  the same message and the same failed job. No regression, no window of broken behaviour.
+- The **sidecar alone**, against today's backend, turns two failures into a failure for every file that has a
+  non-finite number: `conf: null` arriving at a parser without `coerceInputValues` is *"Unexpected 'null'
+  value for non-nullable type"*, which is the same job failure wearing a different sentence.
+
+A `null` in that field is therefore the one thing in this phase that is **not** backwards compatible with an
+older reader, which is why the flag beside it (`nonfinite`) is additive and defaulted and the `null` itself is
+only ever sent for a value that had no answer to send.
+
+Also as built: `nonfinite` is a reason the row stores for a file **whose measurement contained a non-finite
+number at all**, not only for one that had no other answer — the row reads `UNKNOWN`, and a file with two
+clean windows beside one non-finite window is not reported as in step on the strength of the two. It is not in
+`SKIP_REASONS`, so a `PIPELINE_VERSION` bump measures such a file again.
+
 ## Amendment (2026-10-13, sixth of the day) — a busy retry re-pays the whole pre-measure probe (FR-317-31, DEB-912)
 
 FR-317-29 bounded how *long* a busy retry can go on. This bounds what each one **costs**. The finding is
