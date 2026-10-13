@@ -1,5 +1,9 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.arr.RadarrProvenance
+import dev.jellystructure.arr.provenanceGaps
+import kotlinx.coroutines.delay
+
 /**
  * Phase 316 (FR-316-4) — moves one loose film into its own folder, in the spec's order, with every outside effect behind
  * [LooseFilmPorts] so the order and the failure rules are tested with fakes (FR-316-5 test 4).
@@ -14,6 +18,8 @@ package dev.jellystructure.media
  * 4b. Phase 314 (FR-314-13) — after an in-place rename, the film's images and NFO are written back if Radarr's extras
  *    cleanup took them with the `moviefile` row for the vanished path. Here, not after step 7: steps 5 and 7 wait on
  *    Jellyfin and Radarr for up to two minutes and a minute, and the folder must not be bare for that long.
+ * 4c. Phase 314 (FR-314-14) — the provenance Radarr rebuilds from the new filename (quality, languages, edition,
+ *    release group, scene name, indexer flags), read before step 2 and written onto the row Radarr creates after it.
  * 5. Jellyfin: told exactly which paths changed, the new item found by path, each user's data written back where the new
  *    item lacks it.
  * 6. Our own data: the media record gets the new path (and id); rows keyed by the old Jellyfin id move to the new one.
@@ -43,6 +49,12 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
         }
         val userData = film.jellyfinId?.let { runCatching { ports.readUserData(it) }.getOrNull() }.orEmpty()
         step("check", true, "Nobody is playing it; ${userData.size} ${if (userData.size == 1) "viewer has" else "viewers have"} watch data")
+
+        // Phase 314 (FR-314-14) — read before a single file moves: the row this comes off is the one Radarr drops when
+        // the path under it changes, and the row it builds instead comes from a fresh parse of the new filename. Only
+        // where Radarr owns this very file (step 4's UPDATE); any other plan leaves Radarr alone, here too.
+        val radarrId = film.radarrId.takeIf { film.radarr == RadarrPlan.UPDATE }
+        val provenance = radarrId?.let { runCatching { ports.readProvenance(it) }.getOrNull() }
 
         // ── 2 — move ──
         val planned = film.files.filter { it.target != null && !(inPlace && it.target == it.name) }
@@ -105,6 +117,34 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
             step("artwork", true, if (back.isEmpty()) "Its images and NFO are in the folder" else "Put ${back.joinToString(", ")} back")
         }
 
+        // ── 4c — the provenance Radarr rebuilds from the new filename (FR-314-14) ──
+        //
+        // A name taken from the folder carries no quality, group or source tokens, so the row Radarr re-imports comes
+        // back with a remux labelled a WEB-DL and its group, scene name and edition emptied (DEB-881, measured on prod
+        // 2026-10-13). Unlike FR-314-12's `movieFileId`, Radarr takes these back — and what it does not take is said
+        // out loud against the film, because provenance lost quietly is the defect.
+        if (provenance != null && radarrId != null) {
+            val carried = provenance.carried()
+            if (carried.isEmpty()) step("provenance", true, "Radarr's file record has no quality or release to carry")
+            else {
+                val carry = runCatching { ports.carryProvenance(radarrId, provenance, newVideo.substringAfterLast('/')) }
+                    .getOrElse { ProvenanceCarry(null, carried) }
+                val gaps = carry.notRestored
+                // `media-safety` §2's field: a film that had an edition and comes back without one is the shape a
+                // blind replacement starts from, so it is named for what it is.
+                val degraded = if ("edition" in gaps) " — the rename degraded the record" else ""
+                if (gaps.isEmpty()) step("provenance", true,
+                    if (carry.kept) "Radarr kept the film's ${carried.joinToString(", ")}"
+                    else "Put the film's ${carried.joinToString(", ")} back on Radarr's new file record")
+                else {
+                    step("provenance", false,
+                        if (carry.movieFileId == null) "Radarr hasn't rebuilt its file record — ${gaps.joinToString(", ")} not put back$degraded"
+                        else "Radarr didn't take ${gaps.joinToString(", ")}$degraded")
+                    problems += "Radarr's file record lost ${gaps.joinToString(", ")}$degraded"
+                }
+            }
+        }
+
         // ── 5 — Jellyfin ──
         ports.jellyfinNotify(film.key, film.targetFolder)
         val newId = ports.findJellyfinItem(newVideo)
@@ -151,6 +191,49 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
     }
 }
 
+/** FR-314-14 — what became of one film's provenance across Radarr's drop and re-create. */
+data class ProvenanceCarry(
+    /** The row the values went onto; null when Radarr had not rebuilt one by the last pass. */
+    val movieFileId: Int?,
+    /** Carried fields that do not read back on that row — everything, when no row appeared at all. */
+    val notRestored: List<String>,
+    /** True when the record already carried everything and nothing had to be written. */
+    val kept: Boolean = false,
+)
+
+/**
+ * FR-314-14 — the wait for the row Radarr rebuilds, and the write onto it. Shared so the rule is one piece of code
+ * and testable without a Radarr: [read] is the movie's `moviefile` row as it stands, [write] the PUT-then-read-back.
+ *
+ * Radarr re-imports asynchronously, so the row for [newVideoName] can be two passes away — and the row that is there
+ * on the first pass may still be the one Radarr is about to drop. Hence two rules:
+ * - a row is only the rebuilt one once its **file name** is the new one (an id is no good: the old row keeps its id
+ *   until Radarr deletes it, and FR-314-12's `movieFileId 0` moment reads as no row at all);
+ * - a row with the name and the **same id** is only taken as "Radarr kept it" on the last pass, never on the first:
+ *   concluding that early is how the loss would go quiet again.
+ *
+ * Nothing is written when the row already carries everything. When no row ever appears, every carried field is
+ * returned as not restored — the caller reports it.
+ */
+internal suspend fun carryProvenanceAcrossRename(
+    prov: RadarrProvenance,
+    newVideoName: String,
+    passes: Int,
+    settleMs: Long,
+    read: suspend () -> RadarrProvenance?,
+    write: suspend (Int, RadarrProvenance) -> RadarrProvenance?,
+): ProvenanceCarry {
+    repeat(passes) { pass ->
+        if (pass > 0) delay(settleMs)
+        val now = read() ?: return@repeat
+        if (now.fileName != newVideoName) return@repeat
+        if (now.movieFileId == prov.movieFileId && pass < passes - 1) return@repeat
+        if (provenanceGaps(prov, now).isEmpty()) return ProvenanceCarry(now.movieFileId, emptyList(), kept = true)
+        return ProvenanceCarry(now.movieFileId, provenanceGaps(prov, write(now.movieFileId, prov)))
+    }
+    return ProvenanceCarry(null, provenanceGaps(prov, null))
+}
+
 /** One viewer's Jellyfin data for an item, as far as the move carries it over. */
 data class ViewerData(val played: Boolean, val positionTicks: Long, val isFavorite: Boolean, val playCount: Int, val lastPlayedDate: String?) {
     fun isEmpty() = !played && positionTicks == 0L && !isFavorite && playCount == 0
@@ -179,6 +262,16 @@ interface LooseFilmPorts {
      * half a minute.
      */
     suspend fun reassertAssets(film: LooseFilm, videoPath: String): List<String>
+    /**
+     * FR-314-14 — the provenance on Radarr's `moviefile` row for the movie **as it stands now**, before anything is
+     * renamed; null when there is none to carry or Radarr can't be read.
+     */
+    suspend fun readProvenance(movieId: Int): RadarrProvenance?
+    /**
+     * FR-314-14 — puts [prov] back onto the row Radarr rebuilds for the file now called [newVideoName]. That row
+     * appears asynchronously during Radarr's rescan, so this waits for it; what it returns is reported either way.
+     */
+    suspend fun carryProvenance(movieId: Int, prov: RadarrProvenance, newVideoName: String): ProvenanceCarry
     suspend fun radarrRefresh(movieId: Int): Boolean
     /** Radarr's file for the movie, as a local path (waits for an asynchronous refresh). */
     suspend fun radarrFilePath(movieId: Int): String?

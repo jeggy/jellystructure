@@ -1,8 +1,10 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.arr.RadarrProvenance
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -131,6 +133,9 @@ class LooseFilmsTest {
         var newItemData: ViewerData? = null,
         /** Phase 314 (FR-314-13) — what the folder had lost by the time the write path looked. */
         var assetsPutBack: List<String> = listOf("poster.jpg", "movie.nfo"),
+        /** Phase 314 (FR-314-14) — what Radarr's record carried before the rename, and what the carry-over achieved. */
+        var provenance: RadarrProvenance? = remuxRecord(),
+        var carry: ProvenanceCarry = ProvenanceCarry(655, emptyList()),
     ) : LooseFilmPorts {
         val calls = ArrayList<String>()
         val renamed = ArrayList<Pair<String, String>>()
@@ -151,6 +156,9 @@ class LooseFilmsTest {
         override suspend fun radarrUpdatePath(movieId: Int, localFolder: String) = true.also { calls += "radarrUpdatePath:$localFolder" }
         override suspend fun radarrRefresh(movieId: Int) = true.also { calls += "radarrRefresh" }
         override suspend fun reassertAssets(film: LooseFilm, videoPath: String) = assetsPutBack.also { calls += "reassertAssets:$videoPath" }
+        override suspend fun readProvenance(movieId: Int) = provenance.also { calls += "readProvenance:$movieId" }
+        override suspend fun carryProvenance(movieId: Int, prov: RadarrProvenance, newVideoName: String) =
+            carry.also { calls += "carryProvenance:$newVideoName" }
         override suspend fun radarrFilePath(movieId: Int) = "/lib/films/Some Film (2023)/Some.Film.2023.1080p.mkv"
         override suspend fun readUserData(jellyfinId: String) = mapOf("u1" to ViewerData(true, 0, true, 2, "2026-01-01"), "u2" to ViewerData(false, 0, false, 0, null)).also { calls += "readUserData" }
         override suspend fun readUserDataFor(userId: String, jellyfinId: String) = newItemData
@@ -284,4 +292,74 @@ class LooseFilmsTest {
         assertEquals("partial", out.state)
         assertTrue(fake.calls.none { it.startsWith("remap") })
     }
+
+    // ── Phase 314 (FR-314-14) test 11 — the provenance Radarr rebuilds from the new filename ──
+
+    @Test fun `the provenance is read before anything moves and put back on the record Radarr rebuilds`() = runBlocking {
+        val fake = Fake()
+        val out = LooseFilmMover(fake).move(renameFilm())
+        assertTrue(out.state != "failed", out.error)
+        val i = { s: String -> fake.calls.indexOfFirst { it.startsWith(s) } }
+        // Read off the row Radarr is about to drop — before a single file is renamed — and written back after the
+        // Radarr step, which is what makes Radarr rebuild the row in the first place.
+        assertTrue(i("readProvenance:7") in 0 until i("rename"), fake.calls.toString())
+        assertTrue(i("radarrRefresh") < i("carryProvenance") && i("carryProvenance") < i("jellyfinNotify"), fake.calls.toString())
+        assertTrue("carryProvenance:Some Film (2023).mkv" in fake.calls, fake.calls.toString())
+        val provenance = out.steps.single { it.step == "provenance" }
+        assertTrue(provenance.ok)
+        assertEquals("Put the film's quality, languages, edition, release group, scene name, indexer flags back on Radarr's new file record", provenance.detail)
+    }
+
+    @Test fun `a record Radarr never rebuilds is reported against the film and the move is partial`() = runBlocking {
+        val fake = Fake(carry = ProvenanceCarry(null, listOf("quality", "release group")))
+        val out = LooseFilmMover(fake).move(renameFilm())
+        val provenance = out.steps.single { it.step == "provenance" }
+        assertTrue(!provenance.ok)
+        assertEquals("Radarr hasn't rebuilt its file record — quality, release group not put back", provenance.detail)
+        assertEquals("partial", out.state)
+        assertTrue(out.error!!.contains("Radarr's file record lost quality, release group"), out.error)
+    }
+
+    @Test fun `an edition that cannot be put back is reported as having degraded the record`() = runBlocking {
+        val fake = Fake(carry = ProvenanceCarry(655, listOf("edition")))
+        val out = LooseFilmMover(fake).move(renameFilm())
+        assertEquals("Radarr didn't take edition — the rename degraded the record", out.steps.single { it.step == "provenance" }.detail)
+        assertEquals("partial", out.state)
+        assertTrue(out.error!!.contains("degraded the record"), out.error)
+    }
+
+    @Test fun `a record Radarr kept is said to have been kept and nothing is called lost`() = runBlocking {
+        val fake = Fake(carry = ProvenanceCarry(430, emptyList(), kept = true))
+        val out = LooseFilmMover(fake).move(renameFilm())
+        assertEquals("Radarr kept the film's quality, languages, edition, release group, scene name, indexer flags", out.steps.single { it.step == "provenance" }.detail)
+        assertEquals("moved", out.state, out.error)
+    }
+
+    @Test fun `a record with no quality or release on it costs the rename no write`() = runBlocking {
+        val fake = Fake(provenance = RadarrProvenance(430, dvVideo))
+        val out = LooseFilmMover(fake).move(renameFilm())
+        assertEquals("Radarr's file record has no quality or release to carry", out.steps.single { it.step == "provenance" }.detail)
+        assertTrue(fake.calls.none { it.startsWith("carryProvenance") })
+        assertEquals("moved", out.state, out.error)
+    }
+
+    @Test fun `a film Radarr maps to another file has no provenance read or written`() = runBlocking {
+        val fake = Fake()
+        val out = LooseFilmMover(fake).move(looseFilm(radarr = RadarrPlan.OTHER_FILE))
+        assertTrue(fake.calls.none { it.startsWith("readProvenance") || it.startsWith("carryProvenance") })
+        assertTrue(out.steps.none { it.step == "provenance" })
+        assertEquals("moved", out.state, out.error)
+    }
 }
+
+/** FR-314-14 — a UHD BluRay remux's record as it stands before a rename (DEB-881's measured field set). */
+private fun remuxRecord() = RadarrProvenance(
+    movieFileId = 430,
+    fileName = "Some.Film.2023.2160p.UHD.BluRay.REMUX.mkv",
+    quality = Json.parseToJsonElement("""{"quality":{"id":31,"name":"Bluray-2160p Remux"},"revision":{"version":1}}"""),
+    languages = Json.parseToJsonElement("""[{"id":1,"name":"English"}]"""),
+    edition = "Director's Cut",
+    releaseGroup = "SomeGroup",
+    sceneName = "Some.Film.2023.2160p.UHD.BluRay.REMUX-SomeGroup",
+    indexerFlags = 2,
+)

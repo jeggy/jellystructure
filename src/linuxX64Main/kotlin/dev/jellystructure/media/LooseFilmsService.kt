@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.arr.ArrClient
+import dev.jellystructure.arr.RadarrProvenance
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
@@ -318,6 +319,22 @@ class LooseFilmsService(
         override suspend fun reassertAssets(film: LooseFilm, videoPath: String): List<String> {
             val id = film.mediaId ?: return emptyList()
             return filmAssets.reassert(id, videoPath)
+        }
+
+        override suspend fun readProvenance(movieId: Int): RadarrProvenance? {
+            val r = cfg.radarr ?: return null
+            return arr.movieFileProvenance(r.url, r.apiKey, movieId)
+        }
+
+        override suspend fun carryProvenance(movieId: Int, prov: RadarrProvenance, newVideoName: String): ProvenanceCarry {
+            val r = cfg.radarr ?: return ProvenanceCarry(null, prov.carried())
+            // FR-314-13's three passes fifteen seconds apart, for FR-314-14's reason: it is the same asynchronous
+            // re-import being waited out, and a second pair of numbers for it would only drift from this one.
+            return carryProvenanceAcrossRename(
+                prov, newVideoName, FilmAssets.PASSES, FilmAssets.SETTLE_MS,
+                read = { arr.movieFileProvenance(r.url, r.apiKey, movieId) },
+                write = { id, p -> arr.applyMovieFileProvenance(r.url, r.apiKey, id, p) },
+            )
         }
 
         override suspend fun radarrRefresh(movieId: Int): Boolean {

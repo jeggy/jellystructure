@@ -14,7 +14,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -524,11 +526,140 @@ class ArrClient {
                 RadarrFileRow(id, path)
             }
     }.getOrElse { emptyList() }
+
+    // ---- FR-314-14 (DEB-881): the provenance a rename costs the `moviefile` row ----
+
+    /**
+     * The provenance on the `moviefile` row the movie points at **now** — read before a rename, and read again after
+     * it to find the row Radarr rebuilt. Null when the movie has no row (Radarr's *Wanted/Missing*, or FR-314-12's
+     * `movieFileId 0`) or when Radarr can't be read; the two are not told apart here, and a caller that has to tell
+     * them apart reports instead (there is nothing to write onto a row that isn't there).
+     */
+    suspend fun movieFileProvenance(url: String, apiKey: String, movieId: Int): RadarrProvenance? = runCatching {
+        val fileId = movieFileIdOf(url, apiKey, movieId)?.takeIf { it > 0 } ?: return null
+        provenanceOf(httpGet(base(url) + "/moviefile/$fileId") { header("X-Api-Key", apiKey) }.body<JsonObject>())
+    }.getOrNull()
+
+    /**
+     * Writes [prov]'s values onto `moviefile` [movieFileId] and returns that row as it reads back afterwards (null
+     * when the write or the re-read failed). The caller compares the read-back rather than trusting the response.
+     *
+     * Read out of Radarr's own `MovieFileController` on 2026-10-13 (`SetMovieFile`, `[RestPutById]`), because the
+     * shape of that handler decides this method's:
+     * - it is a **whole-resource PUT, not a patch** — `quality`, `languages`, `edition` and `indexerFlags` are
+     *   assigned from the body unconditionally, so a body that omits one *empties* it. The row is therefore fetched
+     *   first and only the carried fields are overlaid on it.
+     * - `releaseGroup` and `sceneName` are assigned only when the body's value is non-null, and `sceneName` only when
+     *   Radarr's own `SceneChecker.IsSceneTitle` accepts it (dotted, no spaces, and parseable into a release group and
+     *   a known quality). A name it rejects is dropped **silently**, which is the whole reason for the read-back.
+     * - it answers `202 Accepted`, not `200`.
+     */
+    suspend fun applyMovieFileProvenance(url: String, apiKey: String, movieFileId: Int, prov: RadarrProvenance): RadarrProvenance? = runCatching {
+        val row = httpGet(base(url) + "/moviefile/$movieFileId") { header("X-Api-Key", apiKey) }.body<JsonObject>()
+        val resp = httpPut(base(url) + "/moviefile/$movieFileId") {
+            header("X-Api-Key", apiKey)
+            contentType(ContentType.Application.Json)
+            setBody(withProvenance(row, prov).toString())
+        }
+        if (resp.status != HttpStatusCode.OK && resp.status != HttpStatusCode.Accepted) return null
+        provenanceOf(httpGet(base(url) + "/moviefile/$movieFileId") { header("X-Api-Key", apiKey) }.body<JsonObject>())
+    }.getOrNull()
 }
 
 /** FR-314-12 — one of Radarr's `moviefile` rows: its id and the path Radarr has for it (mapped to Radarr's view of
  *  the library, so it is compared by file name and never whole). */
 data class RadarrFileRow(val id: Int, val path: String)
+
+/**
+ * FR-314-14 (DEB-881) — the provenance on one `moviefile` row: what Radarr rebuilds from the filename when a rename
+ * makes it drop the row and re-import the file, and what `PUT /moviefile/{id}` can put back.
+ *
+ * `quality` and `languages` stay as Radarr's own JSON. They are its models (`QualityModel`, `List<Language>`), we
+ * never compose one, and carrying them verbatim is the only way to be sure a remux goes back as the same remux.
+ */
+data class RadarrProvenance(
+    val movieFileId: Int,
+    /** The row's **file name** — not its path: Radarr's view of the library is mapped and a name is not. This is how
+     *  the carry-over tells the row Radarr built from the new name from the one it is about to drop. */
+    val fileName: String,
+    val quality: JsonElement? = null,
+    val languages: JsonElement? = null,
+    val edition: String? = null,
+    val releaseGroup: String? = null,
+    val sceneName: String? = null,
+    val indexerFlags: Int? = null,
+) {
+    /** What there is to carry, by the name the owner reads on the row. A field with nothing in it is not provenance:
+     *  it is never written back, and never counted as lost. */
+    fun carried(): List<String> = buildList {
+        if (radarrQualityId(quality) != null) add("quality")
+        if (radarrLanguageIds(languages).isNotEmpty()) add("languages")
+        if (!edition.isNullOrBlank()) add("edition")
+        if (!releaseGroup.isNullOrBlank()) add("release group")
+        if (!sceneName.isNullOrBlank()) add("scene name")
+        if ((indexerFlags ?: 0) != 0) add("indexer flags")
+    }
+}
+
+/** A `QualityModel`'s quality id — what two qualities are compared by (Radarr re-serialises the rest). */
+internal fun radarrQualityId(q: JsonElement?): Int? =
+    ((q as? JsonObject)?.get("quality") as? JsonObject)?.get("id")?.jsonPrimitive?.intOrNull
+
+internal fun radarrLanguageIds(l: JsonElement?): List<Int> =
+    (l as? JsonArray)?.mapNotNull { (it as? JsonObject)?.get("id")?.jsonPrimitive?.intOrNull }.orEmpty()
+
+/** FR-314-14 — the provenance in one `moviefile` resource, or null when it carries no id. */
+internal fun provenanceOf(row: JsonObject): RadarrProvenance? {
+    val id = row["id"]?.jsonPrimitive?.intOrNull ?: return null
+    val path = row["path"]?.jsonPrimitive?.contentOrNull ?: row["relativePath"]?.jsonPrimitive?.contentOrNull ?: ""
+    return RadarrProvenance(
+        movieFileId = id,
+        fileName = path.substringAfterLast('/'),
+        quality = row["quality"],
+        languages = row["languages"],
+        edition = row["edition"]?.jsonPrimitive?.contentOrNull,
+        releaseGroup = row["releaseGroup"]?.jsonPrimitive?.contentOrNull,
+        sceneName = row["sceneName"]?.jsonPrimitive?.contentOrNull,
+        indexerFlags = row["indexerFlags"]?.jsonPrimitive?.intOrNull,
+    )
+}
+
+/**
+ * FR-314-14 — the body for `PUT /moviefile/{id}`: [row] exactly as Radarr has it now, with [prov]'s carried fields
+ * overlaid. Nothing else is touched, nothing is invented, and a field [prov] has nothing in is left as the row has it
+ * (the handler assigns `quality`, `languages`, `edition` and `indexerFlags` from the body unconditionally, so the
+ * row's own values have to ride along).
+ */
+internal fun withProvenance(row: JsonObject, prov: RadarrProvenance): JsonObject {
+    val carried = prov.carried()
+    val out = LinkedHashMap<String, JsonElement>(row)
+    if ("quality" in carried) prov.quality?.let { out["quality"] = it }
+    if ("languages" in carried) prov.languages?.let { out["languages"] = it }
+    if ("edition" in carried) out["edition"] = JsonPrimitive(prov.edition)
+    if ("release group" in carried) out["releaseGroup"] = JsonPrimitive(prov.releaseGroup)
+    if ("scene name" in carried) out["sceneName"] = JsonPrimitive(prov.sceneName)
+    if ("indexer flags" in carried) out["indexerFlags"] = JsonPrimitive(prov.indexerFlags)
+    return JsonObject(out)
+}
+
+/**
+ * FR-314-14 — which of [wanted]'s carried fields are not on [got]. A null [got] (no row at all, or a write that
+ * didn't go through) means none of them are: that is reported, never passed over.
+ */
+internal fun provenanceGaps(wanted: RadarrProvenance, got: RadarrProvenance?): List<String> {
+    val carried = wanted.carried()
+    if (got == null) return carried
+    return carried.filter { field ->
+        when (field) {
+            "quality" -> radarrQualityId(got.quality) != radarrQualityId(wanted.quality)
+            "languages" -> radarrLanguageIds(got.languages).toSet() != radarrLanguageIds(wanted.languages).toSet()
+            "edition" -> got.edition != wanted.edition
+            "release group" -> got.releaseGroup != wanted.releaseGroup
+            "scene name" -> got.sceneName != wanted.sceneName
+            else -> (got.indexerFlags ?: 0) != (wanted.indexerFlags ?: 0)
+        }
+    }
+}
 
 /** Phase 316 — what the move needs from one Radarr movie. */
 data class RadarrMovieInfo(val id: Int, val path: String, val filePath: String?)
