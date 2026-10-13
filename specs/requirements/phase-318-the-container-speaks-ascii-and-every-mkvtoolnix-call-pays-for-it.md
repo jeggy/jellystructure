@@ -258,6 +258,20 @@ Nothing else in FR-318-2 moves: one `WARN` on the `integrity` channel at startup
 built from **one consequence sentence in one place**, so the two surfaces cannot drift apart — the same
 reasoning as FR-244-8's advisor/health pairing.
 
+**Built and measured from the shipped Kotlin, not only from C** (`6fd6f39e`). The linked `linuxX64Test` binary
+run by hand under three stripped environments — which is how to see what this read answers before the container
+exists, and it needs no container, no deploy and no library:
+
+| environment | `CharacterEncoding.effectiveCodeset()` | verdict | test result |
+|---|---|---|---|
+| `LC_ALL=C` | `ANSI_X3.4-1968` | **red** | 5 passed |
+| `LC_ALL=C.UTF-8` | `UTF-8` | green | 5 passed |
+| `LANG=xx_YY.UTF-8` (no such locale) | `''` (`newlocale` → `NULL`) | **red** | 5 passed |
+
+The three rows are the Tests section's three cases reached through the real read rather than a literal, and the
+middle one is what acceptance 4 will see once the container is recreated. **Acceptance 4 is therefore down to
+the container alone** — the logic beneath it is proven here.
+
 ## Amendment (2026-10-13) — prod is not built from this repo's compose file, the sweep did not wait, and "measured" needed defining (DEB-848)
 
 Three corrections from the hour after the phase was written, two of which change the ask that goes to the
