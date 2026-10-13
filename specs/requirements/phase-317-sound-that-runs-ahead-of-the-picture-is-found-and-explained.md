@@ -1945,7 +1945,7 @@ recheck would bring it back.
     not**: the requirement is that the library can say what it knows about every file, not that every file
     is measurable on this card.
 
-## Amendment (2026-10-14, first of the day) — the detector is **not** batch-invariant, so FR-317-34's neutrality is a property of the *partition* and a ceiling is what keeps it (FR-317-37, DEB-988)
+## Amendment (2026-10-13, thirteenth of the day) — the detector is **not** batch-invariant, so FR-317-34's neutrality is a property of the *partition* and a ceiling is what keeps it (FR-317-37, DEB-988)
 
 Built the night it was specified — `d1ac87b1` backend, `66f7a63a` sidecar, `PIPELINE_VERSION` unmoved,
 nothing deployed — and one measured finding changed the shape of FR-317-35 enough to be owed a requirement
