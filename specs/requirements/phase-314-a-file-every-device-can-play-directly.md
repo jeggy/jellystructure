@@ -966,3 +966,99 @@ on that path** — verified byte-identical `stat` across the import.
 
 Unchanged by this amendment: the original file is never modified, the per-film rename ticks stay the owner's, FR-314-12
 is still the kind C switch gate, and no library title enters this repository.
+
+## Amendment 2026-10-13 (fifth, deciding the open question) — kind C's version lives in a versions library, merged (DEB-875)
+
+**The open question of the second amendment is closed: shape A.** Asked on DEB-875 with both shapes repriced, the
+owner answered *"Just do whatever is best, i trust you"* (2026-10-13 06:02Z), so the pick is a dev decision taken
+under that delegation and recorded here as one. Two steps stay the owner's and are named below, because they are
+config on his server and not code: **creating the Jellyfin library** and **setting its root in Settings**.
+
+### Why A, now that both sides are measured
+
+The third amendment answered the survival question. Finishing the costing added three facts, measured the same way —
+a throwaway `jellyfin/jellyfin:12.1`, synthetic files, no prod read and no title:
+
+- **A new Jellyfin user gets library access by default.** A user created through `POST /Users/New` comes back with
+  `Policy.EnableAllFolders: true` and `EnabledFolders: []`, and a fresh user with those defaults **plays the merged
+  version** (`PlaybackInfo` returns the source, `SupportsDirectPlay: true`). So the half of the permission cost that
+  is *correctness* — the version being playable at all — needs no write to anybody's account in the common case. What
+  a fresh user does get is the duplicate: `Configuration.MyMediaExcludes` defaults to `[]` and `GET /UserViews`
+  lists the versions library on their home screen.
+- **The whole write path needs no library scan.** `POST /Library/Media/Updated` with the single created path makes
+  Jellyfin resolve that one file into an item — measured at **under a minute**, with no scan task run at all — and the
+  item is then resolvable by path and mergeable. That matters because prod sets `scan_interval_hours = 0` and never
+  scans itself: a shape that needed a library scan per version would have needed an admin session per version too.
+- **Playback is per viewer, not per server.** `PlaybackService` negotiates with `tvTokenForClient(...)` and
+  `device.jellyfinUserId` — the signed-in viewer's own Jellyfin user and token, for both `getItemDetail` and
+  `getPlaybackInfo`. So the permission finding reaches Ravilo and is not confined to Jellyfin's own clients, which is
+  why the rule below is written in terms of what a *viewer* sees and not what the admin token can read.
+
+Against that, B retires the kind for the 17 films it exists for and buys nothing. A closes the DEB-868 defect by
+construction rather than by racing Radarr's scan, makes *Remove* leave the film whole, and — the item that decides it
+— **removes the in-place rename from kind C**, taking the per-film rename ticks, DEB-869's artwork window and
+FR-314-14's provenance loss out of the kind entirely. The residual cost is one display preference per user and a
+library the owner creates once.
+
+### FR-314-15 — where a kind C version lives, and how it is grouped
+
+- **Placement.** A kind C version is written to `<dv_versions_root>/<film folder name>/<film folder name> - Dolby
+  Vision.mkv`, where `dv_versions_root` is a new `[file_fix]` config value. `dvVersionPath` takes the root; it is the
+  only place the path is decided and stays so.
+- **The root must be outside every Radarr root folder, and the write proves it.** Before the first version is written
+  the path is checked against Radarr's own `/api/v3/rootfolder` list, and a root inside one of them **refuses the job
+  and says why** rather than writing a file Radarr will adopt. The whole shape rests on Radarr never scanning that
+  path, so it is a precondition, not a comment.
+- **Grouping is Jellyfin's merge, not the folder.** After the version lands: `POST /Library/Media/Updated` with that
+  one path (`UpdateType: Created`) — **never a library scan** — then the item is resolved **by path** from the versions
+  library and `POST /Videos/MergeVersions` joins it to the film. The item appears asynchronously, so the step waits for
+  it (the three-passes shape FR-314-13 already uses is fine, as is picking it up on the next pass) and **reports
+  against the title** if it never appears.
+- **The merge is asserted, never remembered.** The desired state is "the film's Jellyfin item has a source whose path
+  is our version"; a pass that finds our file on disk and no such source **re-merges**. Jellyfin derives an item id
+  from the path, so this is idempotent and needs nothing stored: a version that is removed and rewritten, or an item
+  Jellyfin re-created, converges on the next pass with no bookkeeping to go stale.
+- **Taking it back deletes the file and nothing else.** *Remove* deletes our version and reports it with
+  `UpdateType: Deleted`; Jellyfin drops the alternate item and the film keeps its own file, its path and its watch
+  data (measured). **`DELETE /Videos/{id}/AlternateSources` is never called** — it drops *every* alternate of that
+  film, not ours.
+- **The versions library is not one of our libraries.** It stays `skip = true` in the config
+  `LibraryReconciler` writes, and the root above is what the write path uses. Mapped, its files would be titles of
+  their own to the sweep, loose films, the advisor and the webhook path.
+- **What a viewer sees is asserted; what a viewer may see is not.** For every Jellyfin user, jellystructure asserts
+  the versions library into `MyMediaExcludes` and `LatestItemsExcludes` (`POST /Users/{id}/Configuration`) so no
+  home screen gains a second library of duplicate films. That is a display preference, reversible, and it is the only
+  thing we write on a user's account. **`EnabledFolders` is never widened.** A restricted account that omits the
+  versions library is **reported in the admin UI** — those viewers' devices will be served the original and not the
+  version — because widening a permission the owner set is the owner's call, not ours.
+- **`namedAfterFolder` stops gating kind C.** A merge does not care what the original is called, so the kind no longer
+  needs a rename and `needs_rename` leaves kind C: all 17 films become eligible as they are. The rename stays a 316
+  feature with its own reasons and its own ticks (and FR-314-14 still applies to it there).
+- **FR-314-12's reporting stays.** It costs nothing now that Radarr has no file of ours to find, and it is the canary
+  if the root is ever moved inside a Radarr root folder.
+- **The switch gate moves and stays shut until both halves are done**: this requirement built and tested, **and** the
+  owner has created the Jellyfin library and set `dv_versions_root`. Neither alone turns kind C on.
+
+### Acceptance (added)
+
+9. Kind C applied to one unseeded DV7 film with the versions root configured: the version is written outside every
+   Radarr root folder, the film shows in Jellyfin as **one** title with two versions within two minutes and **no
+   library scan is run**, a viewer on a default account plays the version on a device that cannot decode the original,
+   and Radarr's `movieFileId` for that film is **unchanged** across the write and across a `RescanMovie` issued by
+   hand. After *Remove*, the film still has its own file and its watch data.
+10. No viewer's home screen lists the versions library, and a restricted account that cannot see it is named in the
+    admin UI rather than silently granted access.
+
+### Tests (added)
+
+12. The write path builds the version path from the configured root; refuses the job when that root is inside a Radarr
+    root folder; reports the one created path instead of triggering a scan; resolves the item by path and merges it;
+    re-merges when the file is present and the merged source is not; and on *Remove* deletes the file and reports the
+    deletion without ever calling `AlternateSources`.
+13. The user pass asserts the versions library into `MyMediaExcludes`/`LatestItemsExcludes` for every user, writes no
+    other field of a user's account, never adds the library to an `EnabledFolders` list, and reports a restricted
+    account that omits it.
+
+Unchanged by this amendment: the original is never modified by kind C, no library title enters this repository, and
+the version keeps the name `<folder> - Dolby Vision.mkv`, so `chooseMediaSource`/`isDvVersion` and the clients' picker
+need no change (`MediaSource.Type` reads `Grouping` instead of `Default` and nothing deserialises `Type`).
