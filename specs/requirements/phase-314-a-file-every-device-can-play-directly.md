@@ -1640,11 +1640,17 @@ The order is **deploy → switch (`enabled = 1`, `auto_new = 0`) → one Apply o
 DEB-870 tests the film that Apply picks rather than rebuilding its old subject. FR-314-19 does not gate any of it.
 Acceptance 11 and 12 are met; acceptance 9 closes with the one Apply; acceptance 10 closes with FR-314-19.
 
-### FR-314-19 as built (2026-10-13, DEB-986)
+### FR-314-19 as built (2026-10-13, DEB-986 — the code is inside commit `68ae6244`)
 
 The report is one `note` on the kind C card, under its counts: *"N accounts cannot see the film versions library:
 …"*, then what that costs them and that widening it is the owner's in Jellyfin. Nothing at all when the list is
 empty — the normal case is nobody shut out, and a zero there would read as a finding.
+
+**Where to find it in the history.** This work is not in a commit of its own: it was staged in the shared checkout
+when a concurrent seat committed, and `68ae6244` — titled for 304's `STATUS.md` row (DEB-731) — carries all eight
+files. Nothing is lost or mixed in the *content*, the two changes touch disjoint files, and it is recorded here
+rather than rewritten, because `main` is public and other seats were committing on it in the same minute. Written
+down because a reader looking for FR-314-19 by subject line will not find one.
 
 Three decisions worth writing down, because each of them is a thing the row could have been and is not:
 
