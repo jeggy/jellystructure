@@ -325,3 +325,46 @@ makes the count of outstanding requests legible, which was the missing number to
 - Regression: Phase 210's honest-reporting behaviour under cancellation, and Phase 207's
   "every lookup failed" WARN, must both still hold. Phase 164's segments lane behaviour (dedup, per-
   episode progress, cooperative cancel) must be unchanged by the worker-count restructuring.
+
+## Amendment (2026-10-13) — a queue reports how long its running job has been running (DEB-897)
+
+FR-213-7 made the *outstanding* work legible — per-queue queued counts, pool occupancy, the subtitle
+lane's deferral and last failure. It left one state unreportable, and on 2026-10-13 that state cost four
+hours: **a queue whose running job cannot finish looks exactly like a queue that is working.**
+
+Phase 317's `avsync` lane held one row for over four hours against a wedged sidecar. `job_queues` answered
+`running: 1` the whole time, the Jobs panel drew a draining queue, and the only way to know was to compare
+the newest result row's timestamp against the clock by hand. The incident and its two other fixes are in
+[phase 317](phase-317-sound-that-runs-ahead-of-the-picture-is-found-and-explained.md)'s 2026-10-13 fourth
+amendment (FR-317-27/28/29); this is the part that is not 317's, because **any** lane can hold a row that
+never returns and the block that would say so is this phase's.
+
+### FR-213-8 — `job_queues` carries the age of each queue's running row
+
+- Per lane, **whole seconds since the running row's `started_at`**, and nothing when that lane has no
+  running row. One number, read from the row the lane already has — no new table, no timer, no bookkeeping
+  that can drift from the row.
+- **Additive on the wire**, like every other key in this block: new fields only, nothing removed and
+  nothing retyped, so a reader that does not know about them is unaffected (the wire rule in
+  [`CLAUDE.md`](../../CLAUDE.md) covers `/api/health` too — it is read by more than the admin).
+- **No threshold, no `stalled` flag, and no change to the top-level `ok`.** What counts as too long differs
+  by three orders of magnitude between lanes — a `segments_season` row legitimately runs for hours, an A/V
+  sync measurement is ~8 seconds — so a single boolean would be either useless or wrong, and flipping
+  `/api/health`'s verdict is prod-visible and the owner's call. The number is the deliverable: it makes
+  *"nothing has completed on this lane since 02:39"* answerable in one request instead of by a join against
+  result tables. Each lane's own give-up rule stays where that lane's knowledge is — FR-317-29 is the first
+  one written.
+- The `avsync` lane keeps FR-213-1's exception from phase 317: it reports **one** configured worker, its
+  own, not the shared pool's count.
+
+### Tests (added)
+
+- A lane with a running row reports a rising age; the same lane with nothing running reports none; a lane
+  that has only queued rows reports none while its count stays non-zero.
+- The existing `job_queues` assertions still pass unchanged against the extended shape — that is the point
+  of the additive rule.
+
+### Verification (added)
+
+- `GET /api/health` with one `segments_season` job running names a plausible age for `segments` and nothing
+  for the three other lanes. No deploy and no device: the local verify stack covers this.

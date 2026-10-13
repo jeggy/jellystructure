@@ -938,3 +938,149 @@ not be read as 8c failing. 8c closes on the advice, not on the shell line.
 
 None. This amendment changes no behaviour and no Kotlin — it corrects an acceptance ruling against a
 measurement that already existed. FR-317-11's rule, FR-317-25's wording and FR-317-15's mark are unchanged.
+
+## Amendment (2026-10-13, fourth of the day) — a decode that never returns stops the sweep, and nothing says so (DEB-897)
+
+The sweep ran for the first time on 2026-10-13 and **died at 02:39:19Z with 4 079 files still queued**, while
+the Jobs panel and `/api/health` both went on reporting `running: 1` for the `avsync` lane. It was found four
+hours later, by someone watching the sweep for an unrelated verification (DEB-722), and not by anything this
+phase built. Three bounds are missing — one in the sidecar, one in the lane, one in what the backend says
+about itself — and **any one of them would have turned a four-hour silent stall into a visible failure**.
+
+### What was found
+
+Two `ffmpeg -hwaccel cuda` decoders inside `jellystructure-avsync`, both started 04:39:20, in interruptible
+sleep at **0 % CPU** for over four hours, holding **1 820 MiB of GPU 1** with the card at 0 % utilisation.
+They are one `/measure` call's prefetch (`AVSYNC_DECODERS` window fetches run at once, three by default), and
+that call never returned. Downstream of it:
+
+- the single-flight `lock` in `server.py` is **still held**, so `/health` answers `"busy": true` and **every
+  `/measure` answers `503`, for as long as the process lives**;
+- `job mj-1791844302-987` (`check_av_sync`) has been cycling *re-queued → resumes* ever since — ~14 cycles
+  every five minutes, at **24.9 % of a core**, forever;
+- the lane's one dedicated worker is pinned on that row, so **none of the other 4 079 rows can be claimed**;
+- and nothing anywhere says *failed*: no `file_av_sync` row with a reason, no Dashboard finding, no unhealthy
+  status, and a lane that reports itself as working.
+
+**One file that cannot be decoded therefore stops the whole library, silently and permanently.** That is the
+fault; the particular file matters much less than the three missing bounds.
+
+### The mechanism, read in the code — and one correction to the report
+
+- **`decode_video` can wait forever.** `avsync/measure.py:129-137` spawns ffmpeg with both pipes at
+  `bufsize=0`, reads **stdout only** until the frame buffer is full or EOF, and only then reads stderr.
+  There is no timeout on `readinto`, none on `p.wait()`, and none on `fu.result()` in `measure()`
+  (`measure.py:363`) — and `ThreadPoolExecutor`'s `with` block joins its threads on the way out, so even an
+  exception cannot get the handler thread out while a decoder is stuck. The **leading candidate** for *why*
+  these two stopped is the stderr pipe: ffmpeg blocking on a full stderr buffer while we block on stdout is a
+  mutual wait that matches both processes being asleep at 0 % CPU with the card idle, and `-v error` keeps
+  stderr small right up until a stream starts emitting an error per frame. A GPU-side wedge on a card that
+  has already thrown **10 CUDA OOMs** is the other candidate. Whichever it is, the deadlock is in *our* code
+  rather than ffmpeg's, and the fix below does not depend on which.
+- **A client timeout cancels nothing.** `[avsync] timeout_s = 180` bounds the backend's Ktor request
+  (`AvSyncService.kt:335`). When it fires, the connection closes and **`measure()` goes on running**,
+  holding the lock. The 180 s bound is therefore a bound on the *caller*, never on the work, and the sidecar
+  has no bound of its own at all.
+- **The report's "no backoff" is not quite right, and the real defect is worse.** There *is* a wait:
+  `MediaJobQueue.kt:863-867` sleeps `retry_after_s` (20 s, clamped 1–120) before re-queueing in place, which
+  is what the observed ~21 s cycle is. So it is not a hot spin on the HTTP call. What is missing is a
+  **give-up**: the retry is unbounded, and 25 % of a core consumed by one re-queue every 21 s is far more
+  than the claim path should cost — that number wants attributing (the scheduler's per-pass read over ~4 954
+  files is the first place to look) and is not itself the fault. **The fault is that the loop has no end.**
+
+### FR-317-27 — The sidecar's `/measure` is bounded, and the lock never outlives the work
+
+No decode may wait indefinitely, and no answer may be withheld indefinitely.
+
+- **Every ffmpeg the sidecar spawns is killed if it stops producing.** `decode_video` and `decode_audio` get
+  a **no-output watchdog**: if nothing has been read for `AVSYNC_DECODE_STALL_S` (default **60 s**, env, like
+  `AVSYNC_DECODERS`), the process is killed — the **whole process group**, `SIGKILL` after a `SIGTERM` grace
+  — and the fetch raises.
+- **`stderr` is drained concurrently with `stdout`**, or redirected to a temporary file, so that the two
+  pipes can never wait on each other. This is required whatever the watchdog does: a watchdog that fires
+  every time on a file that would otherwise have measured fine is a regression, not a fix.
+- **The whole call is bounded too.** `/measure` carries a ceiling of `AVSYNC_MEASURE_MAX_S` (default
+  **900 s** — a file is ~8 s and the worst measured file is far under a minute, so this is a backstop, not a
+  schedule). On expiry every child is killed, every decoder thread is abandoned, and the route answers.
+- **A watchdog kill is answered, as a failure, with its reason.** `500` with
+  `{"error": "decode stalled after 60s on window 1620.0s"}` — not `422`: `422` means *this file cannot be
+  decoded* and already carries a settled meaning in FR-317-16/FR-317-20's wording, while a stall is a fault
+  of the run. The backend stores no reading for the file and the row **fails**, visibly.
+- **The lock is released in every one of those paths.** It is held by the handler and released in `finally`
+  today; the requirement is that no path can reach that `finally` later than the ceiling above.
+
+### FR-317-28 — `/health` says how long it has been busy, so busy and wedged are told apart
+
+`/health`'s `busy` boolean cannot distinguish *measuring the file in front of me* from *wedged since
+04:39*. It gains two additive fields, and nothing is removed or retyped:
+
+- **`busy_for_s`** — whole seconds since the current measurement acquired the lock, `0` when idle;
+- **`current_path_basename`** — the basename only, never the full path, so an admin status line can say
+  *measuring* without this phase starting to print library filenames where it did not before.
+
+The backend reads `busy_for_s` where it has it and treats **absent as unknown** (an older sidecar image
+against a newer backend is the normal deployment order here), falling back to FR-317-29's count rule.
+
+### FR-317-29 — A lane that is refused forever fails the row and says which
+
+`503` stops meaning *come straight back* without end.
+
+- **The wait keeps `retry_after_s`** (FR-317-8's rule is right: the lane is the queue, and waiting in place
+  is what busy should cost). What is added is a **cap**: after **`AVSYNC_BUSY_GIVE_UP` consecutive busy
+  answers for the same job — 30, roughly 10 minutes at the sidecar's 20 s — the row **fails** with *"the
+  sidecar never became free (busy 10 min)"*. It is a `Failure`, so it lands in the job history and the
+  Dashboard's existing failure surface, and the lane moves to the next row.
+- **Where `busy_for_s` is available it decides sooner.** A `busy_for_s` greater than
+  `AVSYNC_MEASURE_MAX_S` is a wedged sidecar by definition, and the row fails immediately rather than
+  waiting out the count.
+- **The give-up does not disable the lane.** The next row is attempted, and it will meet the same wedged
+  sidecar and fail too — quickly, loudly, and in a way an operator can read, which is the whole point. A
+  rule that stops the lane after *n* consecutive give-ups is **deliberately not specified here**: a lane
+  that turns itself off is a second silent state, and this amendment is about removing one.
+- **A failed row is due again**, by FR-317-8's existing rule (no stored result ⇒ `NO_RESULT`), so a sweep
+  re-run after a restart picks the file up. **It may well wedge on the same input**, which is FR-317-27's
+  job to bound, not this one's.
+
+### What is not changed, and one trade settled
+
+- **317b's "two files in flight" stays at one.** The note on DEB-722 is right and this amendment settles it:
+  this hang happened with **one** measurement in flight on a card that has thrown 10 CUDA OOMs, and two
+  would have been six stuck decoders and twice the VRAM. Until FR-317-27 is built and a sweep has completed
+  under it, the concurrency stays at one; *"Later (317b)"* keeps the item and gains this as its condition.
+- **No new `[avsync]` config key, and no change to the admin's Settings surface.** The three new bounds are
+  sidecar environment variables beside `AVSYNC_DECODERS`, and the backend's cap is a constant. `timeout_s`
+  keeps exactly its current meaning.
+- **`/api/health`'s top-level `ok` is not flipped by a stalled lane.** Something outside the household may
+  be reading it; changing what *unhealthy* means is the owner's call, not this amendment's. The lane's age
+  is reported as a number — that is **phase 213**'s `job_queues` block and is amended there (FR-213-8).
+- **The operational clear is not ours.** `docker restart jellystructure-avsync` frees the lock and the lane;
+  it is a prod service restart, so it goes to the owner. The evidence above is captured, and the sidecar's
+  log from 02:00Z should be captured *before* the restart so the earlier 02:39→04:39 gap can still be read.
+
+### Tests (added)
+
+- **A decoder that produces nothing is killed and answered.** A fake `ffmpeg` on `PATH` that writes one
+  frame and then sleeps: `/measure` returns `500` with the stall reason inside
+  `AVSYNC_DECODE_STALL_S + a margin`, the child is gone (not a zombie, not an orphan in another process
+  group), and a following `/measure` **succeeds** — the lock was released.
+- **A noisy stderr does not deadlock.** A fake `ffmpeg` that writes well over a pipe's worth of stderr while
+  streaming valid frames measures normally, with no watchdog kill. This is the regression test for the
+  leading candidate cause, and it fails against today's code.
+- **The ceiling fires.** `AVSYNC_MEASURE_MAX_S` set small against a slow fake: the route answers, the lock
+  is free, no decoder is left running.
+- **`/health` while busy** carries `busy_for_s` rising and a basename, and `busy_for_s == 0` when idle.
+- **The lane gives up.** A sidecar stub answering `503` forever: the job fails after the cap with *"the
+  sidecar never became free"*, the next row is claimed, and the failed path has **no** `file_av_sync` row.
+  With `busy_for_s` over the ceiling in `/health`, it fails on the first answer instead of the thirtieth.
+- No migration, no fixture from a library file.
+
+### Acceptance (added)
+
+20. A `/measure` whose decoder hangs is answered as a failure within a minute or so, the sidecar's next
+    `/measure` is served, and the file's job shows as **failed** in the job history with the stall reason —
+    proven on the fake decoder in tests, and not requiring the real card.
+21. With the sidecar wedged (or stopped mid-measurement), the `avsync` lane fails rows and advances rather
+    than cycling one row: in a 15-minute window the job history shows failures and `running` moves, and the
+    backend's CPU share for the lane is indistinguishable from idle.
+22. A sweep restarted after a give-up re-queues every failed file (no stored result ⇒ due), and a file that
+    wedges twice fails twice rather than stalling the sweep once.
