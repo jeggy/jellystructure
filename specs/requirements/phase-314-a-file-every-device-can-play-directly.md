@@ -1215,6 +1215,40 @@ Step 1's path is a suggestion and only steps 3 and 4 have to agree with whatever
 long as it is mounted into both containers, no Radarr or Sonarr root folder holds it in Jellyfin's view, and steps 3
 and 4 name the same folder on their own side of the mapping.
 
+### What step 1 actually costs — corrected 2026-10-13 (DEB-898)
+
+The cost was first written here, and told to the owner, as *a few seconds of Jellyfin downtime*. That is wrong, and
+the correction matters because it is the only viewer-visible part of the configuration.
+
+**The Jellyfin container carries `caddy` labels** (`jellyfin.jebster.net`, `jellyfin.xn--damkjr-tua.fo`), so
+recreating it makes caddy-docker-proxy rebuild its configuration — and the household's Caddy is still **v2.11.4**,
+the version carrying the unreleased data race `caddyserver/caddy#7994`. Measured on this host on 2026-10-06, a
+*single* `up -d --no-deps` of one labelled service left its site unreachable for **6, ~11 and ~12 minutes** on three
+separate occasions (and a multi-container burst took every site down for 8 minutes on 2026-09-28).
+
+**That window is not confined to Jellyfin's own web UI.** `api_keys.jellyfin_url` is `https://jellyfin.jebster.net`,
+which resolves to the LAN address by split horizon and is proxied by the same Caddy — so while the reconfiguration
+is stalled, jellystructure cannot reach Jellyfin at all, and **every Ravilo client's playback negotiation fails**.
+The symptom to expect is the one DEB-816's outage left on record: a log full of `Connection failed for request`
+against Jellyfin while `http://127.0.0.1:8096/health` answers 200. Suspect the proxy, not Jellyfin.
+
+**So step 1 is scheduled, never opportunistic**, and two rules follow:
+
+- **Recreate exactly one container**, from `/home/jeggy/jellyfin`: `docker compose up -d --no-deps jellyfin`. That
+  compose file holds a second Jellyfin service, so a bare `up -d` would recreate two containers and reproduce the
+  2026-09-28 burst. Never `down`.
+- **Pick an hour nobody is watching.** Over the 30 days to 2026-10-13, `playback_session` records **zero** Ravilo
+  sessions in the 03:00 and 05:00 hours (Atlantic/Faroe) and one in the 04:00 hour, against 23 apiece at 20:00 and
+  21:00. `playback_session` sees Ravilo only, not viewers on Jellyfin's own apps, so this is the best available
+  signal rather than a guarantee — and prod serves users beyond the household, whose hours are not known.
+
+**The route that avoids the window altogether, and why it is not the default.** `/media/channels` is already mounted
+into the Jellyfin container and is the one mounted path that is not a library root, so a versions library at
+`/media/channels/versions` would need no compose change and no recreate — zero downtime. It is not recommended: that
+folder is the live-TV tuner directory (the `*.m3u` playlists and the XMLTV guides), and a films-versions library
+living inside it is a permanent structural lie, in the config forever, for whoever next touches live TV. A one-time
+scheduled window is the cheaper of the two costs. Recorded here because it is a real option and the owner's to take.
+
 ### Acceptance (added)
 
 11. With `dv_versions_root` set to a path no library mapping covers, a kind C job **refuses before writing anything**
