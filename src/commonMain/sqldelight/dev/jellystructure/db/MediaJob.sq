@@ -176,6 +176,32 @@ SELECT state, COUNT(*) AS n FROM media_job WHERE state IN ('queued', 'running') 
 countByLaneState:
 SELECT lane, state, COUNT(*) AS n FROM media_job WHERE state IN ('queued', 'running') GROUP BY lane, state;
 
+-- Phase 213's 2026-10-13 amendment (FR-213-8) — the age of each lane's running row, for `job_queues`:
+-- a lane whose running job cannot finish read exactly like a lane that was working, and on 2026-10-13
+-- that cost four hours (DEB-897). The OLDEST `started_at` per lane is that row's — a lane holds one row
+-- at a time by FR-213-1, and where a restart has somehow left two the older one is the one worth saying.
+-- Read from the row itself: no new table, no timer, nothing that can drift from what is actually running.
+-- The SECONDARY number, per the same day's second amendment: `markRunning` re-stamps `started_at` on
+-- every claim, so a row that re-queues itself in place reads 0–21 s however long it has been cycling.
+oldestRunningStartedAtByLane:
+SELECT lane, MIN(started_at) AS started_at FROM media_job WHERE state = 'running' AND started_at IS NOT NULL GROUP BY lane;
+
+-- FR-213-8 restated (the second 2026-10-13 amendment) — the PRIMARY number: when each lane last finished
+-- anything. `now − max(finished_at)` is honest under a re-stamp, because a row that cycles completes
+-- nothing, and it answers the sentence the amendment names as the deliverable — "nothing has completed on
+-- this lane since 02:39". A failure counts: it is the lane moving, which is what this measures.
+-- Two exclusions, both of them rows that record an operator's action rather than work done: the
+-- `queue_emptied` marker (inserted straight to 'done' with a `finished_at`) and the rows that emptying
+-- cancelled (`error = 'emptied'`) — `listRecentExcept` leaves the latter out for the same reason. Without
+-- them, emptying a wedged lane would read as "it just completed something", which is the opposite of true.
+-- A lane whose last completion has been pruned (14 days, `deleteOld`) reports none, like one that has
+-- never completed anything.
+lastCompletionByLane:
+SELECT lane, MAX(finished_at) AS finished_at FROM media_job
+WHERE finished_at IS NOT NULL AND state IN ('done', 'failed', 'cancelled') AND type != 'queue_emptied'
+  AND (state != 'cancelled' OR error IS NULL OR error != 'emptied')
+GROUP BY lane;
+
 countDoneToday:
 SELECT COUNT(*) FROM media_job WHERE state IN ('done', 'failed') AND finished_at >= :since;
 

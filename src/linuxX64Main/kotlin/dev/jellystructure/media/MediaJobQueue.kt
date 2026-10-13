@@ -74,17 +74,95 @@ data class JobQueueHealth(
     val subtitlesQueued: Int,
     val subtitlesDeferredByPlayback: Boolean,
     val subtitlesLastFailure: String?,
+    // Phase 213's 2026-10-13 amendment (FR-213-8, as restated the same day) — per lane, when it last
+    // finished anything and how long its running row has been held. Additive, like every other key in this
+    // block: a reader that does not know the new fields is unaffected, which `/api/health` needs because
+    // more than the admin reads it. No threshold and no `stalled` flag — what counts as too long differs by
+    // three orders of magnitude between a `segments_season` (hours, legitimately) and an A/V sync
+    // measurement (~8 s) — and the top-level `ok` is deliberately not flipped by any of these: that is
+    // prod-visible and the owner's call.
+    //
+    // `*_completed_ago_s` is the primary one. It answers the sentence the amendment names as the
+    // deliverable — "nothing has completed on this lane since 02:39" — in one request instead of a
+    // hand-join against each check's result table, and it is honest under an in-place re-queue, because a
+    // row that cycles completes nothing. Null = this lane has completed nothing within the 14 days
+    // `pruneOld` keeps.
+    val mediaCompletedAgoS: Int? = null,
+    val segmentsCompletedAgoS: Int? = null,
+    val subtitlesCompletedAgoS: Int? = null,
+    val avsyncCompletedAgoS: Int? = null,
+    // `*_running_for_s` is the secondary one: right for the case it reads right — one long job, a
+    // `segments_season` legitimately running for hours — and near zero for a row that re-queues itself in
+    // place, because `markRunning` re-stamps `started_at` on every claim. Both are kept; neither is enough
+    // alone. Null where that lane has nothing running.
+    val mediaRunningForS: Int? = null,
+    val segmentsRunningForS: Int? = null,
+    val subtitlesRunningForS: Int? = null,
+    val avsyncRunningForS: Int? = null,
+    // Phase 317 gave the queue a fourth lane and never gave it a count. "4 079 queued, nothing completed
+    // for 4 h 34 min" is the whole of DEB-897 in one reading, and before this neither half of it was here.
+    val avsyncQueued: Int = 0,
 ) {
     fun toJson(): String =
         """{"configured_workers":$configuredWorkers,"active_workers":$activeWorkers,""" +
             """"media_queued":$mediaQueued,"segments_queued":$segmentsQueued,"subtitles_queued":$subtitlesQueued,""" +
             """"subtitles_deferred_by_playback":$subtitlesDeferredByPlayback,""" +
-            """"subtitles_last_failure":${subtitlesLastFailure?.let { "\"" + it.replace("\"", "'").replace("\n", " ") + "\"" } ?: "null"}}"""
+            """"subtitles_last_failure":${subtitlesLastFailure?.let { "\"" + it.replace("\"", "'").replace("\n", " ") + "\"" } ?: "null"},""" +
+            """"avsync_queued":$avsyncQueued,""" +
+            """"media_completed_ago_s":${mediaCompletedAgoS ?: "null"},"segments_completed_ago_s":${segmentsCompletedAgoS ?: "null"},""" +
+            """"subtitles_completed_ago_s":${subtitlesCompletedAgoS ?: "null"},"avsync_completed_ago_s":${avsyncCompletedAgoS ?: "null"},""" +
+            """"media_running_for_s":${mediaRunningForS ?: "null"},"segments_running_for_s":${segmentsRunningForS ?: "null"},""" +
+            """"subtitles_running_for_s":${subtitlesRunningForS ?: "null"},"avsync_running_for_s":${avsyncRunningForS ?: "null"}}"""
 }
 
 /** Phase 222 (FR-222-6) — one envelope byte per second of audio: 2 700 bytes for a 45-minute episode,
  *  fine enough for the ±60 s strip the operator judges a boundary on. */
 private const val WAVEFORM_BUCKET_MS = 1_000L
+
+/**
+ * Phase 317's 2026-10-13 fourth amendment (FR-317-29) — when a lane that is answered `503` for ever stops
+ * waiting and fails the row it is holding.
+ *
+ * Its own object, and pure, because the whole of DEB-897 was that this decision did not exist anywhere:
+ * one row re-queued itself in place every ~21 s for four hours against a sidecar whose lock a hung decode
+ * had latched, pinning the lane's one worker so none of the other 4 079 rows could be claimed — and
+ * failing nothing, anywhere. The wait itself is right (FR-317-8: the lane *is* the queue, and waiting in
+ * place is what busy should cost). What is added here is an end to it.
+ */
+internal object AvSyncBusyGiveUp {
+    /** Consecutive busy answers for the same row before it fails — roughly ten minutes at the sidecar's
+     *  own 20 s `retry_after_s`. A constant and not a config key: FR-317-29 settles that the new bounds
+     *  are the sidecar's environment and the backend's cap is a number in the code. */
+    const val AFTER = 30
+
+    /** The sidecar's `AVSYNC_MEASURE_MAX_S` default (FR-317-27), mirrored: a `busy_for_s` past it cannot
+     *  be a measurement still in progress, because the sidecar's own ceiling would have ended it. Mirrored
+     *  rather than read, because `/health` reports how long it has been busy and not what its ceiling is.
+     *  An operator who raises that env past this makes us give up on a run the sidecar would still have
+     *  finished; one who lowers it only makes us more patient than we need to be. A measurement is ~8 s,
+     *  so either way this is a backstop and never a schedule. */
+    const val WEDGED_AFTER_S = 900
+
+    /**
+     * Why this row must fail now, or null to wait out another `retry_after_s`.
+     *
+     * [busyForS] is FR-317-28's `/health` field and **absent means unknown**, never zero: an older sidecar
+     * image against a newer backend is the normal deployment order here, and then the count is all we
+     * have. Where it is there and past [WEDGED_AFTER_S] the sidecar is wedged by definition, and the first
+     * answer is enough — there is nothing a thirty-answer wait could still learn.
+     */
+    fun reason(consecutive: Int, waitedS: Long, busyForS: Int?): String? = when {
+        busyForS != null && busyForS > WEDGED_AFTER_S ->
+            "the sidecar never became free — it has been busy for ${busyForS / 60} min, past the " +
+                "${WEDGED_AFTER_S / 60} min one measurement may take, so it is wedged rather than working"
+        consecutive >= AFTER -> "the sidecar never became free (busy ${spell(waitedS)})"
+        else -> null
+    }
+
+    /** Minutes once there are two of them; seconds below that, so a cap reached faster than the sidecar's
+     *  own cadence (a test, or a `retry_after_s` of 1) still reads as the truth rather than as "0 min". */
+    private fun spell(waitedS: Long): String = if (waitedS >= 120) "${(waitedS + 30) / 60} min" else "$waitedS s"
+}
 
 class MediaJobQueue(
     private val db: JellystructureDb,
@@ -458,6 +536,16 @@ class MediaJobQueue(
             queries.countQueuedNotDeferredByLane("subtitles").executeAsOne() == 0L &&
             deferNow()
         val lastFailure = queries.lastFailure("subtitles").executeAsOneOrNull()?.error
+        // FR-213-8 — two grouped reads, turned into ages per lane against one clock reading. A lane with
+        // only queued rows is absent from both maps and so reports neither number, while its count stays
+        // whatever it is: queued work is not a running row and must not read as one.
+        val now = epochSeconds()
+        val runningSince = queries.oldestRunningStartedAtByLane().executeAsList()
+            .mapNotNull { r -> r.started_at?.let { r.lane to it } }.toMap()
+        val completedAt = queries.lastCompletionByLane().executeAsList()
+            .mapNotNull { r -> r.finished_at?.let { r.lane to it } }.toMap()
+        fun ageOf(lane: String): Int? = runningSince[lane]?.let { (now - it).coerceAtLeast(0L).toInt() }
+        fun completedAgoOf(lane: String): Int? = completedAt[lane]?.let { (now - it).coerceAtLeast(0L).toInt() }
         return JobQueueHealth(
             configuredWorkers = poolTargetWorkers.value,
             activeWorkers = poolActiveWorkers.value,
@@ -466,6 +554,15 @@ class MediaJobQueue(
             subtitlesQueued = counts["subtitles" to "queued"] ?: 0,
             subtitlesDeferredByPlayback = deferredByPlayback,
             subtitlesLastFailure = lastFailure,
+            mediaCompletedAgoS = completedAgoOf("media"),
+            segmentsCompletedAgoS = completedAgoOf("segments"),
+            subtitlesCompletedAgoS = completedAgoOf("subtitles"),
+            avsyncCompletedAgoS = completedAgoOf(FileCheckSchedule.AVSYNC_LANE),
+            mediaRunningForS = ageOf("media"),
+            segmentsRunningForS = ageOf("segments"),
+            subtitlesRunningForS = ageOf("subtitles"),
+            avsyncRunningForS = ageOf(FileCheckSchedule.AVSYNC_LANE),
+            avsyncQueued = counts[FileCheckSchedule.AVSYNC_LANE to "queued"] ?: 0,
         )
     }
 
@@ -662,6 +759,9 @@ class MediaJobQueue(
         }
 
         recordStepRun(row, outcome)
+        // FR-317-29 — the busy run belongs to a row that is still going round; anything terminal (and a
+        // cancel from outside this lane's own branch is one) ends it, so the count can never be inherited.
+        if (!(outcome is Requeue && outcome.inPlace)) avSyncBusyRun -= row.id
         if (row.lane == "media") { runningJobId = null; cancelRunning = false }
         cooperativeCancelledIds = cooperativeCancelledIds - row.id
         claimMutex.withLock { occupiedQueues -= row.lane }
@@ -860,12 +960,7 @@ class MediaJobQueue(
                 val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
                 val result = service.check(item, path)
                 result.exceptionOrNull()?.let { e ->
-                    if (e is AvSyncService.AvSyncBusy) {
-                        // Nothing else on this lane may run meanwhile — it is one worker and one GPU — so
-                        // waiting here, rather than spinning through a requeue, is what "busy" should cost.
-                        delay(e.retryAfterS.coerceIn(1, 120) * 1000L)
-                        return Requeue(inPlace = true, reason = "the sidecar was measuring another file")
-                    }
+                    if (e is AvSyncService.AvSyncBusy) return avSyncBusyAnswer(row, service, e)
                     return Failure(e.message ?: "the A/V sync measurement failed")
                 }
             }
@@ -877,6 +972,44 @@ class MediaJobQueue(
         queries.updateProgress(100.0, null, 1L, null, row.id)
         return Success
     }
+
+    /**
+     * FR-317-29 — one busy answer from the sidecar: wait out another `retry_after_s` in place, or give up
+     * on this row.
+     *
+     * The give-up is a [Failure] and not a [Cancelled] on purpose: the row lands in the job history and in
+     * the Dashboard's existing failure surface, which is the whole repair — four hours of this stored
+     * nothing anywhere. It stores no reading either, so FR-317-8's `NO_RESULT` rule makes the file due
+     * again on a later sweep; it may well wedge the sidecar a second time, which is FR-317-27's job to
+     * bound and not this one's. **The lane is not turned off**: the next row is claimed, meets the same
+     * wedged sidecar and fails too — quickly and legibly. A rule that stops the lane after *n* give-ups is
+     * deliberately not built (FR-317-29): a lane that switches itself off is a second silent state, and
+     * this amendment exists to remove one.
+     */
+    private suspend fun avSyncBusyAnswer(row: Media_job, service: AvSyncService, busy: AvSyncService.AvSyncBusy): Outcome {
+        val now = epochSeconds()
+        val (previous, since) = avSyncBusyRun[row.id] ?: (0 to now)
+        val consecutive = previous + 1
+        // FR-317-28 — asked on the busy answer itself, the only moment it can decide anything: one cheap
+        // GET per 20 s wait, to a sidecar that has just refused a measurement and so is answering fast.
+        val busyForS = service.busyForS()
+        AvSyncBusyGiveUp.reason(consecutive, now - since, busyForS)?.let { reason ->
+            Logger.warn("av sync: giving up on ${row.id} after $consecutive busy answer(s)${busyForS?.let { " (busy_for_s=$it)" } ?: ""} — $reason", "jobs")
+            return Failure(reason)
+        }
+        avSyncBusyRun[row.id] = consecutive to since
+        // Nothing else on this lane may run meanwhile — it is one worker and one GPU — so waiting here,
+        // rather than spinning through a requeue, is what "busy" should cost.
+        delay(busy.retryAfterS.coerceIn(1, 120) * 1000L)
+        return Requeue(inPlace = true, reason = "the sidecar was measuring another file ($consecutive/${AvSyncBusyGiveUp.AFTER})")
+    }
+
+    /** FR-317-29 — per `avsync` row: how many busy answers in a row, and when the first of that run came.
+     *  Reached only from [avSyncWorkerLoop]'s single coroutine (that lane has one worker, and only an
+     *  `avsync` row reaches the branch that writes this), so a plain map is enough; [runClaimed] drops the
+     *  entry on every terminal outcome, which is the only way a row leaves this state. In memory and not a
+     *  column: a restart has freed the lane anyway, and the count means nothing across one. */
+    private val avSyncBusyRun = mutableMapOf<String, Pair<Int, Long>>()
 
     /** What each check has stored, per path, in [StoredFileCheck]'s terms — null when the check's service
      *  is not wired (a test/bootstrap context). */

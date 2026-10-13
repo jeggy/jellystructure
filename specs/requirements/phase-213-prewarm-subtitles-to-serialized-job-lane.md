@@ -369,22 +369,9 @@ never returns and the block that would say so is this phase's.
 - `GET /api/health` with one `segments_season` job running names a plausible age for `segments` and nothing
   for the three other lanes. No deploy and no device: the local verify stack covers this.
 
-### FR-213-8 as built (2026-10-13, DEB-902) — the age is since the *current claim*
-
-The four keys are `media_running_for_s`, `segments_running_for_s`, `subtitles_running_for_s` and
-`avsync_running_for_s`, each null where that lane has no running row, off one `GROUP BY` over the
-oldest `started_at` per lane (`MediaJob.sq`'s `oldestRunningStartedAtByLane`).
-
-**And a limit found while building it, measured on the incident's own row:** an in-place requeue
-(FR-213-3) takes the row all the way back through `queued` — `requeueOne` clears `started_at`, and the
-next claim's `markRunning` writes a fresh one. So this number is *seconds since the row was last claimed*,
-not seconds since the lane first picked the work up. On 2026-10-13 at 07:13Z, four hours into DEB-897,
-the wedged row read `started_at` 23 seconds old while `max(file_av_sync.checked_at)` still stood at
-02:39Z — so `avsync_running_for_s` would have answered ~20 throughout the very incident that asked for it.
-FR-317-29's give-up bounds that lane at ten minutes now, but the `subtitles` lane's playback deferral
-re-queues in place the same way. The alternatives (stop clearing `started_at`, which is prod-visible on
-the Jobs page; or a second key measured from `created_at`, which for that row would have read 8.7 h, most
-of it honest queue waiting) are on DEB-902 for the owner; this paragraph is what is true of the build.
+*(The `started_at` anchor this first amendment names cannot see the fault it was written for; the
+re-statement below, written the same day from the same measurement, is what is built. See
+**FR-213-8 as built** at the end of this file.)*
 
 ## Amendment (2026-10-13, second of the day) — `started_at` is re-stamped on every claim, so FR-213-8 anchors on completion (DEB-897)
 
@@ -431,3 +418,29 @@ that asks the question.
 - A lane that has completed something recently reports a small age; a lane that has never completed anything
   reports none rather than an epoch-sized number.
 - `avsync_queued` tracks the lane's queued count; the existing `job_queues` assertions pass unchanged.
+
+### FR-213-8 as built (2026-10-13, DEB-902)
+
+Nine keys, all additive, nothing removed or retyped, and the top-level `ok` untouched:
+
+- `avsync_queued` — the fourth lane's count, read from the `countByLaneState` roll-up that already answered
+  the other three;
+- `media_completed_ago_s`, `segments_completed_ago_s`, `subtitles_completed_ago_s`,
+  `avsync_completed_ago_s` — the primary number, `now − max(finished_at)` per lane
+  (`MediaJob.sq`'s `lastCompletionByLane`), null where the lane has completed nothing;
+- `media_running_for_s`, `segments_running_for_s`, `subtitles_running_for_s`, `avsync_running_for_s` — the
+  secondary one, `now − min(started_at)` over the lane's running rows (`oldestRunningStartedAtByLane`),
+  null where nothing runs.
+
+Two decisions the restatement leaves to the build, both in the SQL and both chosen so a wedged lane cannot
+be made to look productive:
+
+- **A failure counts as a completion.** A lane that fails rows is moving, which is exactly what this
+  number measures — and it is what FR-317-29's give-up makes the wedged lane do.
+- **Emptying a lane does not.** `emptyQueues` writes a `finished_at` on every row it cancels
+  (`error = 'emptied'`) and inserts a `queue_emptied` marker already in `done`; counting either would mean
+  that clearing a stuck lane reset its clock to zero, so both are excluded — the same two exclusions
+  `listRecentExcept` already makes for the Recent list.
+
+A lane idle longer than `pruneOld`'s 14 days reports none, like one that has never finished anything: the
+rows it would have been read from are gone.

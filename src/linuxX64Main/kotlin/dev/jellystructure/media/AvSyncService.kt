@@ -59,6 +59,10 @@ data class AvSyncHealthDto(
     @SerialName("vram_total_gb") val vramTotalGb: Double = 0.0,
     val model: String = "",
     val busy: Boolean = false,
+    /** FR-317-28 (the 2026-10-13 fourth amendment) — whole seconds since the current measurement took the
+     *  sidecar's lock, `0` when idle. **Absent is unknown, never zero**: an older sidecar image against a
+     *  newer backend is the normal deployment order here, and a `null` there must not read as *idle*. */
+    @SerialName("busy_for_s") val busyForS: Int? = null,
 )
 
 /** FR-317-2 — the sidecar's `/stat`: the mount check's whole answer. */
@@ -231,6 +235,11 @@ class AvSyncService(
         if (e is CancellationException) throw e
         null
     }?.also { if (it.model.isNotBlank()) lastModel = it.model }
+
+    /** FR-317-28 — how long the sidecar has been busy, or null when it did not answer at all or is too old
+     *  an image to say. Null is *unknown* in both cases, which is what FR-317-29's caller treats it as: it
+     *  falls back to counting answers rather than deciding on a number it does not have. */
+    suspend fun busyForS(): Int? = health()?.busyForS
 
     /** FR-317-2 — `/stat`: can the sidecar see this path at all? Null when the sidecar did not answer,
      *  which is a different thing from "the file is not there" and is never treated as the latter. */
