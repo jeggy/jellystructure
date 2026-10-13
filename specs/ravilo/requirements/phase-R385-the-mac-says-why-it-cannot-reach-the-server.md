@@ -5,7 +5,8 @@
 
 ## Status
 
-`✓ Built` 2026-10-12 (see Build notes; acceptance 1–6 are a Mac walk and are not claimed here). Written 2026-10-12
+`✓ Built` 2026-10-12 (see Build notes; acceptance 1–6 are a Mac walk, partially done — see Walk notes, 2026-10-13 —
+and the row in `STATUS.md` is the status). Written 2026-10-12
 (PO-authored from DEB-756). Not dev-reviewed. The Mac app (R328–R331, R337) and the shared error classifier R237/R280
 wrote.
 
@@ -130,8 +131,13 @@ From the Mac, with the official `.dmg` — a QA walk, not a dev claim. Acceptanc
 able to translocate at all (see open question 2).
 
 1. **The bug.** Download the `.dmg`, mount it, double-click Ravilo **inside the image**: the first failed call shows
-   *Move Ravilo to your Applications folder* with **Quit Ravilo** and **no Retry**, and says nothing about the network
-   or the connection.
+   *Move Ravilo to your Applications folder* with **Quit Ravilo** and **no Retry**, and **does not blame the viewer's
+   connection or ask them to check it**.
+   *(Amended 2026-10-13, DEB-763: this clause read "says nothing about the network or the connection", which
+   contradicts FR-R385-4's own approved body — the sentence names the home network on purpose, because
+   "which can't reach your home network" is the reason that makes the drag worth doing. The clause was shorthand for
+   R237's mistake, not a ban on the word; the shipped string is correct and stays, the acceptance line moves. No
+   viewer-visible change, so this is not an owner call.)*
 2. **The control.** The same build dragged to `/Applications` and de-quarantined: the library loads, and no install
    message appears anywhere in the app.
 3. **The permission.** From `/Applications`, turn **Ravilo** off in System Settings → Privacy & Security → Local
@@ -139,8 +145,18 @@ able to translocate at all (see open question 2).
    turning it back on **Retry** loads the library. **Turn it back on afterwards.**
 4. **No false positive.** With the server configured to a host that resolves to a public address and the backend
    stopped, the plain *Couldn't reach the server* with *Retry* appears, unchanged from today.
+   *(Amended 2026-10-13, DEB-763: **"and the backend stopped" is struck** — `macRefinedUnreachable` keys on
+   `host != LAN` alone, so any public-resolving address with nothing answering is the same control. Walked with
+   `192.0.2.1:9999` — TEST-NET-1, reserved, routes nowhere — so no third party is contacted and **prod is never
+   stopped for this step**. An unresolvable name covers the `UNKNOWN` row the same way.)*
 5. **No false positive, the other way.** A translocated copy pointed at a public-resolving server that is up signs in
    and plays, with no install message (D1).
+   *(Note, 2026-10-13, DEB-763: this step cannot be self-served from inside the house. Every household name is
+   split-horizon — all of them resolve to the `10/8` address from the LAN — and the WAN address does not answer from
+   the LAN (no NAT loopback; the same root cause as the two Wi-Fi points that could not cast on 2026-09-30). The owner
+   supplies the address (answered on this card 2026-10-12). Before reading the step as valid, confirm the driver
+   prints `host=PUBLIC` for it: a `100.64/10` or `fc00::/7` address classifies as `LAN` under FR-R385-2 and would test
+   the opposite of what the step means.)*
 6. The update line in Settings ▸ Account reads FR-R385-6's sentence, in en, da and fo.
 7. A unit test covers FR-R385-3's table and FR-R385-4's mapping — install state × host class × failure shape →
    heading, body and buttons — and that every key it names exists in all three tables (R280's test precedent).
@@ -215,6 +231,68 @@ connections are being refused — but a server named with `.local` (mDNS) would 
 class would read `UNKNOWN`, and the app would deliberately fall back to the plain *Couldn't reach the server*. The
 household's host is a real DNS name, so acceptance 1 and 3 should show `host=LAN` on the driver's `info`. If they show
 `UNKNOWN`, that is the finding to write down.
+
+## Walk notes (2026-10-13, DEB-763 — partial: 1, 2 and 4 passed, 3, 5 and 6 owed)
+
+The first Mac walk ran 22:19Z–22:37Z on 2026-10-12 and was **cut off mid-walk**, not finished: the run ended on a
+provider quota limit at 22:37:49Z, the owner withdrew the MacBook's board tick at 23:31:27Z, and the three board rows
+were released at 01:05:30Z with the Mac left holding the test build (that residue is its own card, DEB-839 — **the
+next walk's step 1**, and the next walk re-reads the Mac rather than trusting the 22:37Z snapshot). MacBook Pro,
+macOS 27.0.1 arm64. `spctl --status` read **assessments disabled throughout**: open question 2's granted
+`--master-enable` / `--master-disable` pair was **never used, so the grant is unspent** and the Gatekeeper half of the
+walk is untouched, not failed.
+
+**What the build was, and why it was not the official `.dmg` this section's Acceptance asks for.** R385 is built but
+not released, and no official `.dmg` carries it. The walk built from committed `main` `f48243d5` (R385's `7573d8c0`
+is an ancestor) and had to version it **deliberately behind the latest release** — `-Pravilo.macPackageVersion=1.49.0
+-Pjellystructure.version=1.49`. That is a precondition nobody had written down: `mac.open_anyway` is drawn only inside
+`AppUpdateLine`, which exists only when a *newer* release than the running build is on GitHub, so **a build from
+today's `main` cannot show acceptance 6's sentence at all**. The build is **ad-hoc signed** — the signing key and
+certificate (`~/ravilo-signing.key`/`.crt`, and any "Ravilo" identity in the keychain) are **gone from that Mac**, so
+a local build cannot carry a release's designated requirement. Consequences, recorded rather than glossed: acceptance
+1, 2, 4 and 6 do not read a signature and are unaffected; acceptance 3 gets **its own Local Network row** because an
+ad-hoc bundle is a different app to TCC; acceptance 5 and R331 acceptance 2b want a genuinely signed bundle and the
+official `.dmg`s respectively.
+
+| # | Driver line (FR-R385-7) | What the screen showed | Verdict |
+|---|---|---|---|
+| 1 | `install=ON_VOLUME host=LAN` | *Move Ravilo to your Applications folder* · the `body_volume` sentence · **Quit Ravilo** alone · **no Retry** | **✓ the `ON_VOLUME` leg** |
+| 2 | `install=IN_PLACE host=LAN` | the library loaded in full, both Films & series and Music, no install message anywhere; the existing session survived the app swap | **✓** |
+| 4 | `install=IN_PLACE host=PUBLIC` | the plain *Couldn't reach the server* · *Check the connection and try again.* · **Retry** | **✓** (`192.0.2.1:9999`) |
+
+**The `LAN` hedge is resolved.** The *One limit for that walk to watch* above expected `host=LAN` and warned that a
+`.local` name would read `UNKNOWN`. The household's host resolves private from inside the house, and the driver
+printed `host=LAN` for it — so the hedge is confirmed good rather than assumed, and acceptance 1 and 3 can fire at
+all.
+
+**Acceptance 1's `TRANSLOCATED` leg is still owed.** Only `ON_VOLUME` was walked, and the two legs are not the same
+test: they share the heading and the buttons but differ in body key, and translocation needs Gatekeeper on **and** a
+quarantine flag the file must have acquired from a browser (`scp` and `curl` set none; setting one by hand is the
+forcing this phase's open question 2 forbids).
+
+**Acceptance 6's string half is proven, its on-screen half is not.** All five new keys plus the rewritten
+`mac.open_anyway` exist in en · da · fo, with FR-R385-6's drag-before-Gatekeeper order intact and the Faroese table
+naming macOS's own labels in English per D3 — checked off the repo. What is owed is Settings ▸ Account **rendering**
+it in the three languages. The walk could not get there: the test driver's `OPEN_SETTINGS` answers `ok` but does not
+navigate (the desktop collector ignores it unless a viewer is signed in and the top of the stack is not
+Settings/Player/LiveTv), and the sidebar's *Settings* sits ~40 px from **Sign out**, which is not a click to take
+unattended on the owner's signed-in Mac.
+
+**A race for the next walk to watch, not to retry past.** `MacInstall.start()` is launched one line before
+`application { }` and resolves the host on `Dispatchers.IO`; until it answers, `serverHostClass` is `UNKNOWN`, which
+takes `PUBLIC`'s row and refines nothing. Acceptance 1 says *the first failed call*, so if a library call loses the
+race the first message is the plain one and only the next says *Move Ravilo…*. It did not bite on the `ON_VOLUME` leg
+— a cached unicast lookup beats a connection attempt comfortably — but the first message goes in the record verbatim
+and **Retry is not pressed to reach the expected text**.
+
+**Two mechanics that cost the first walk an hour, for the next one.** The owner's official `.dmg` was already mounted
+at `/Volumes/Ravilo`, so `hdiutil attach` put the test image at `/Volumes/Ravilo 1` and the first three launches ran
+**his release**, which has no R385 code — mount with an explicit `-volname` and confirm with `--self-test` before
+reading anything on screen. And the driver cannot be started over SSH by environment variable (`open --env` does not
+propagate it, `launchctl setenv` does not reach a LaunchServices-started app, a direct binary launch dies with
+`HeadlessException`): append `java-options=-Dravilo.testdriver=<dir>` to `Contents/app/Ravilo.cfg`, re-sign ad-hoc,
+`open -g`. Its startup line then carries FR-R385-7's evidence for free, and its `quiet` mode silences without moving
+the owner's volume.
 
 ## Open questions
 
