@@ -2042,3 +2042,58 @@ measured at.
 - **A deploy.** Backend half first, as this phase has always required; the sidecar rides with DEB-950's
   image if that deploy has not built yet and its own if it has. The model string does not move, so the
   eleventh amendment's `lastModel` hazard cannot arise, and nothing is re-measured on account of any of it.
+
+## Amendment (2026-10-13, fourteenth of the day) — the eleventh amendment's hazard fired on prod during the `/2` deploy, and the one-GET remedy is what cleared it (DEB-959)
+
+No code moves. The eleventh amendment predicted that a backend recreated *before* the sidecar swap would
+re-learn the **old** model string and then stamp the new sidecar's readings with it. The deploy ran in that
+order, the prediction held, and the remedy worked — all of it measurable afterwards, which is the only reason
+it is worth writing down.
+
+### The timeline, read off the containers and the table at 2026-10-13 23:51Z
+
+| when | what | evidence |
+|---|---|---|
+| 22:11:47.771Z | backend recreated to `v1.51-145-gfa567030` | `docker inspect .State.StartedAt`, **unchanged since** |
+| 22:12:10 → 22:15:32Z | **11 rows written under `/1`** by the fresh process | it asked the still-`/1` sidecar and learned `/1`, as predicted |
+| 22:14:19.205Z | sidecar recreated at `…/2` | `StartedAt`; **138 `check_av_sync` jobs failed in 29 s** on `Connection failed … avsync:8000`, each storing no row |
+| 22:15:12, 22:15:32Z | **2 rows measured by the `/2` sidecar and stamped `/1`** | the mislabelling, in production |
+| 22:15:51Z | first `/2` row — **with no container restart in between** | so the string was re-learned *in-process* |
+
+The last line is the proof that matters: the backend's `StartedAt` is still 22:11:47.771Z, so nothing restarted
+it, and `health()` reached from `GET /api/config/avsync/status` (or the Settings card, which is the same call)
+is the **only** path that can change `lastModel` in a live process. The eleventh amendment's remedy is
+therefore not a proposal — it is what made this deploy take effect.
+
+**The two mislabelled rows are self-healing here and only here.** Both are `reason IS NULL` Matroska rows
+carrying an id map, i.e. non-skip, so the `/2` model invalidates them and this pass re-measures them. A row
+that the pass does *not* invalidate — anything in `SKIP_REASONS` — would have kept the wrong string
+permanently, and nothing downstream would ever have said so.
+
+### What acceptance 27 is actually measuring, now that the pass is real
+
+The `/1` sweep ran all of 2026-10-13, so the invalidated set is far larger than the 1 318 booked at 09:33Z:
+
+| at 2026-10-13 23:51Z | rows |
+|---|---|
+| `/1`, non-skip — **what this pass must drain** | **3 799** |
+| `/1`, skips (`animation`/`too_short`/`no_original_track`) — spared by `SKIP_REASONS`, never re-measured | 4 605 |
+| `/2`, measured since 22:15:51Z | 310 |
+| `check_av_sync` `queued` / `running` | 4 676 / 1 |
+
+At the 200 rows/hour measured over the last hour that is **~23 h, finishing ≈ 2026-10-14 23:00Z**.
+
+**So acceptance 27's end state is not "no `/1` row" — it is `/1` holding exactly the 4 605 skip rows and
+nothing else.** The old string does not disappear from the table and must not be expected to; the clause has
+always said *non-skip*, and this is what that costs in practice.
+
+### Acceptance 28, early read on the first 310 rows
+
+Of the 310 non-skip rows measured at `/2`: 264 Matroska, and the restated query returns **0**. Non-ASCII
+Matroska rows are **8 of 8** mapped, ASCII **256 of 256**. And **46 non-Matroska rows carry a `NULL` id map** —
+rows the *original* wording of acceptance 28 would be counting as failures at this moment, which is the ninth
+amendment's correction vindicated on live data rather than on a prediction.
+
+No tensor-shape failure, no bare `NaN` and no CUDA OOM has occurred since the swap; the 138 connection errors
+from the sidecar's own recreate are the only post-swap failures, and those files stored no row, so the hourly
+scan re-queues them.
