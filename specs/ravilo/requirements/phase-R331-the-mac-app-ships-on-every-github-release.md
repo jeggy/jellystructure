@@ -3,12 +3,22 @@
 > Owner, 2026-09-29: *"So when fully implemented, the dmg file will be attached to the github release, just like
 > android and Tizen."*
 
-## Status
+## Scope
 
-`⚠ Partial` — **the workflow runs: signed, self-tested and installed on a real Mac 2026-09-29; `publish.yml`'s `macos:` job waits for R328–R330** (§Build notes). Written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) —
-build from it; **owner, 2026-09-29: no Apple bills, and (same day) one signing identity of our own, kept in CI's secrets, so
-the household approves the app once, not once per update.** Number verified free. **Last of four**
-(R328 → R329 → R330 → **R331**).
+Written 2026-09-29 (dev-authored). **Dev-reviewed 2026-09-29** against `main` `4c67e49f` (§Dev review) — build from
+it; **owner, 2026-09-29: no Apple bills, and (same day) one signing identity of our own, kept in CI's secrets, so the
+household approves the app once, not once per update.** Number verified free. **Last of four**
+(R328 → R329 → R330 → **R331**). The workflow was signed, self-tested and installed on a real Mac on 2026-09-29, the
+day it was written.
+
+Touches CI and nothing in the app: `.github/workflows/deploy-macos.yml` (new that day), `ci.yml`'s `macos` job and
+`publish.yml`'s `mac` job. **Supersedes** nothing; it is the release half of R328's app.
+
+This block named `publish.yml`'s `macos:` job as *waiting for R328–R330* until 2026-10-13. That was D1, and **the
+owner moved it on 2026-09-30** (§D1 moved) — the job has attached the `.dmg` to every release since v1.49. The
+sentence outlived the decision by two weeks and was read as current by work planned off it, which is why it is gone
+rather than corrected in place: the status of this phase is [`STATUS.md`](../../../STATUS.md)'s R331 row and nothing
+here.
 
 **Mirrors** R264's `deploy-tizen-tv.yml`, which signs and attaches `ravilo-tizen-<N>.wgt`, and the Android release
 build that attaches `ravilo-android-<N>.apk` (named `ravilo-<N>-release.apk` until 2026-09-30). v1.44 carries both. **Builds on** phase 231: a release publishes only if
@@ -371,3 +381,44 @@ the household's Local Network consent is bound to the copy in `/Applications`. S
   moves it. The place the viewer is told to drag the app to Applications is **in the app**, under the update line that
   already carries the *Open Anyway* sentence — written as **R385 FR-R385-6**, with the rest of what a translocated Mac
   should say in **R385**.
+
+## Amendment (2026-10-13): what the Mac walk did prove, and the three sentences left in acceptance 2
+
+The 2026-10-12 amendment above split acceptance 2 and recorded why its prompt half is unobservable on that Mac. What
+it did not record is that **the rest of acceptance 2 was walked on hardware the same day and passed**, so a later
+re-walk owes the prompt and not the pair. From DEB-721 (walked on the MacBook, macOS 27.0.1 `26A434`, arm64,
+2026-10-12 20:30Z); the `.dmg` files were the published v1.50 and v1.51 assets, verified byte-identical to the copies
+the owner's browser had already downloaded.
+
+**Acceptance 2's sign-in half ✓ on hardware.** Three installs over the top (1.51 → 1.50 → 1.51) left the app's own
+token file **never rewritten** — `-rw-------`, dated 2026-10-06, which is the sign-in the *first* of those installs
+made. The account screen read signed in to the household server throughout. This is R328 D5's 2026-09-30 amendment
+working as intended, and it is the half that the Keychain would have broken by asking for the login password.
+
+**Acceptance 2's Local Network half ✓ on hardware.** After the v1.51 install the app's discovery listed all five of
+the household's LAN cast targets, which cannot happen without the consent grant — so nothing was asked again.
+
+**And that same result settles a question the 2026-10-12 amendment leaves open.** That walk installed with
+`hdiutil attach` + `cp -R`, not a Finder drag, after setting a browser-shaped `com.apple.quarantine` flag by hand to
+match how a download arrives. A quarantined copy Finder did not move is the translocation case, and a translocated
+copy **cannot** see a LAN target — so the discovery pass is positive evidence that this copy ran **in place**, from
+`/Applications`. The two results above therefore hold for the in-place path acceptance 2 means, and are not an
+artefact of the install method.
+
+**So acceptance 2b, restated — one observation, not a re-walk.** With `sudo spctl --master-enable` (the owner's
+one-walk grant, still unspent as of 2026-10-13): drag v1.50's `Ravilo.app` to `/Applications` **with Finder**, open
+it, expect exactly one *Open Anyway*; drag v1.51's over it and expect **no prompt at all**. Both `.dmg`s are already on
+that Mac carrying a real browser quarantine flag, so there is nothing to download. The evidence is `ps -o lstart`
+process start times — blocked for the first, immediate for the second — because a system dialog cannot be
+screenshotted. Then `sudo spctl --master-disable`. The sign-in and Local-Network halves need not be redone.
+
+**Acceptance 1's device half is now one step: a film plays.** Everything else it names is covered — the `.dmg` opens,
+the app runs, it is signed in, it reaches the server, and it sees its cast targets (that last is R330's acceptance,
+not this one's, but the discovery above is the part acceptance 1 asks for). The play needs the library and the backend
+as well as the Mac, which is why it is the one piece that could not ride a Mac-only claim.
+
+**Two things observed and deliberately not filed here.** ⌘W terminated the whole app from a music screen with nothing
+playing — R330's known ⌘W-quits behaviour showing up outside a cast, which is already the owner's call, and not an
+R331 defect. And the app's own version line read **`1.51`**, the tag, while jpackage's bundle version reads `1.51.0`;
+both are correct and the pair is `deploy-macos.yml`'s two version properties doing what §Walked's wiring note says
+they do.
