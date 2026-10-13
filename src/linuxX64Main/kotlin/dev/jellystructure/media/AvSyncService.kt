@@ -429,6 +429,16 @@ class AvSyncService(
                 404 -> throw AvSyncRefused("the sidecar cannot see $path — check its mounts")
                 422 -> throw AvSyncRefused("the sidecar could not decode it: ${errorOf(body)}")
                 503 -> throw AvSyncBusy(retryAfterOf(body))
+                // FR-317-36 — a 500 may carry an additive `error_kind`. `vram` means the card could not
+                // hold one frame of this file's geometry: nothing was measured, but that is a thing to
+                // write down rather than a failure to repeat every hour, so the caller stores a row. A 500
+                // WITHOUT the key is every other fault and the old sidecar both, and behaves exactly as it
+                // always has — no row, the lane's error sentence.
+                500 -> if (errorKindOf(body) == AvSyncReason.VRAM) {
+                    throw AvSyncVramExhausted(errorOf(body))
+                } else {
+                    throw AvSyncRefused("the sidecar answered 500: ${errorOf(body)}")
+                }
                 else -> throw AvSyncRefused("the sidecar answered ${r.status.value}: ${errorOf(body)}")
             }
         }
@@ -437,8 +447,14 @@ class AvSyncService(
     class AvSyncRefused(message: String) : Exception(message)
     class AvSyncBusy(val retryAfterS: Int) : Exception("the sidecar is already measuring a file")
 
+    /** FR-317-36 — the sidecar's `error_kind: "vram"`: this file was not measured and a row says so. */
+    class AvSyncVramExhausted(message: String) : Exception(message)
+
     private fun errorOf(body: String): String =
         runCatching { json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull() ?: body.take(200)
+
+    private fun errorKindOf(body: String): String? =
+        runCatching { json.parseToJsonElement(body).jsonObject["error_kind"]?.jsonPrimitive?.content }.getOrNull()
 
     private fun retryAfterOf(body: String): Int =
         runCatching { json.parseToJsonElement(body).jsonObject["retry_after_s"]?.jsonPrimitive?.content?.toInt() }.getOrNull() ?: 20
@@ -581,10 +597,30 @@ class AvSyncService(
         return minutes?.takeIf { it > 0 }?.let { it * 60.0 }
     }
 
-    /** FR-317-5 — a skip, written straight to the table with its reason: no request, and never "clean". */
-    fun storeSkip(path: String, reason: String) {
-        val stamp = FileIntegrityService.stampOf(path) ?: return
+    /** FR-317-5 — a skip, written straight to the table with its reason: no request, and never "clean".
+     *  False when the file is no longer on disk, which is the one case there is nothing to stamp. */
+    fun storeSkip(path: String, reason: String): Boolean {
+        val stamp = FileIntegrityService.stampOf(path) ?: return false
         q.put(path, stamp.size, stamp.mtime, nowEpochSec(), lastModel ?: PENDING_MODEL, null, reason, "[]", "[]", null)
+        return true
+    }
+
+    /**
+     * FR-317-36 — the sidecar could not hold one frame of this file on the card, so a row says so.
+     *
+     * Written like a skip because that is what it looks like on the table — no windows, because there are
+     * none — but [AvSyncReason.VRAM] is deliberately not one of [SKIP_REASONS]: a bigger budget or a
+     * cheaper pipeline makes the file measurable, and a model bump must ask again. The row is the whole
+     * point of the requirement: without it the file stays `missing` and the hourly scan re-queues it to
+     * fail again for ever (DEB-979).
+     */
+    private suspend fun storeVramRow(path: String, runtimeS: Double?, e: AvSyncVramExhausted): Result<AvSyncReading> {
+        Logger.warn(
+            "av sync: the measuring card could not hold a frame of $path — stored as ${AvSyncReason.VRAM}: ${e.message}",
+            "integrity",
+        )
+        if (!storeSkip(path, AvSyncReason.VRAM)) return Result.failure(AvSyncRefused("the file is no longer on disk"))
+        return Result.success(AvSyncVerdict.of(emptyList(), zeroFrames(), runtimeS, AvSyncReason.VRAM))
     }
 
     /**
@@ -633,7 +669,13 @@ class AvSyncService(
             emptyMap()
         }
 
-        var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse { return Result.failure(it) }
+        var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse {
+            // FR-317-36 — the one failure that stores a row instead of failing the job. Only the first
+            // triple: a `vram` refusal of FR-317-17's second triple leaves the first triple's windows
+            // standing, which is an answer, and `measure` there is read with `getOrNull` already.
+            if (it is AvSyncVramExhausted) return storeVramRow(path, runtimeS, it)
+            return Result.failure(it)
+        }
         if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {
             // FR-317-8 / FR-317-17 — three more windows elsewhere in the file before giving up: a film whose
             // 20/50/80 all land on a landscape is common, and so is one whose three confident windows

@@ -93,6 +93,17 @@ object AvSyncReason {
      *  windows beside one refused window keeps its verdict. */
     const val SHORT_AUDIO = "short_audio"
 
+    /** FR-317-36 — the measuring card could not hold a single frame of this file at its configured
+     *  budget, so nothing was measured. Like [NONFINITE] and [SHORT_AUDIO] it is deliberately NOT one of
+     *  [dev.jellystructure.media.AvSyncService.SKIP_REASONS]: nothing was *decided* about the file, and a
+     *  bigger budget or a cheaper pipeline makes it measurable, so a new pipeline version asks again.
+     *
+     *  It exists because the alternative is silence. Before FR-317-36 such a file stored no row at all,
+     *  which left it `missing` — and the hourly scan re-queued it to fail again, every hour, for ever
+     *  (DEB-979 found a 200-episode series doing exactly that). A row says what is known about the file,
+     *  which is the requirement; that it is measurable on this card is not. */
+    const val VRAM = "vram"
+
     /** The one quiet line the Checks card shows for a skipped file (FR-317-10). */
     fun label(reason: String): String = when (reason) {
         ANIMATION -> "skipped — animation has no lips to follow"
@@ -101,6 +112,7 @@ object AvSyncReason {
         NO_FACES -> "no faces to measure — nothing on screen the model can read lips from"
         NONFINITE -> "not measured — the measurement produced a number that is not a number"
         SHORT_AUDIO -> "not measured — part of the audio did not decode, so there were no words under the lips"
+        VRAM -> "not measured — a frame of this file did not fit in the measuring card's memory"
         else -> "skipped"
     }
 }
