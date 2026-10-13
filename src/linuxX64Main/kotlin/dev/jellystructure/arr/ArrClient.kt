@@ -501,7 +501,34 @@ class ArrClient {
     /** FR-316-4 step 4 — `RefreshMovie` for one movie, so Radarr finds its file in the new folder. */
     suspend fun refreshMovie(url: String, apiKey: String, movieId: Int): Boolean =
         command(url, apiKey, """{"name":"RefreshMovie","movieIds":[$movieId]}""")
+
+    // ---- FR-314-12 (DEB-868): which file Radarr thinks a film is ----
+
+    /**
+     * The `moviefile` row the movie is pointing at: `0` when it has none (Radarr's *Wanted/Missing*), null when the
+     * movie can't be read. Read-only — Radarr's API has no way to set this back, which is the whole of the amendment
+     * of 2026-10-13: `PUT /movie` applies the body through `Movie.ApplyChanges` and that never touches `MovieFileId`.
+     */
+    suspend fun movieFileIdOf(url: String, apiKey: String, movieId: Int): Int? = runCatching {
+        httpGet(base(url) + "/movie/$movieId") { header("X-Api-Key", apiKey) }
+            .body<JsonObject>()["movieFileId"]?.jsonPrimitive?.intOrNull
+    }.getOrNull()
+
+    /** Every `moviefile` row Radarr holds for the movie, whether or not the movie points at one (an orphaned row is
+     *  exactly the state FR-314-12 reports on). */
+    suspend fun movieFilesOf(url: String, apiKey: String, movieId: Int): List<RadarrFileRow> = runCatching {
+        httpGet(base(url) + "/moviefile") { header("X-Api-Key", apiKey); parameter("movieId", movieId) }
+            .body<List<JsonObject>>().mapNotNull { f ->
+                val id = f["id"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                val path = f["path"]?.jsonPrimitive?.contentOrNull ?: f["relativePath"]?.jsonPrimitive?.contentOrNull ?: ""
+                RadarrFileRow(id, path)
+            }
+    }.getOrElse { emptyList() }
 }
+
+/** FR-314-12 — one of Radarr's `moviefile` rows: its id and the path Radarr has for it (mapped to Radarr's view of
+ *  the library, so it is compared by file name and never whole). */
+data class RadarrFileRow(val id: Int, val path: String)
 
 /** Phase 316 — what the move needs from one Radarr movie. */
 data class RadarrMovieInfo(val id: Int, val path: String, val filePath: String?)

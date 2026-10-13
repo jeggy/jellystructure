@@ -117,13 +117,26 @@ class FileFixServiceTest {
         db = db, store = store, config = { error("unused") }, history = history,
         seeding = { seedingAnswer() },
         radarrParse = { title -> if (title.endsWith(" - Dolby Vision")) radarrCopy else ArrParseResult("Remux-2160p", 0) },
-        afterWrite = {}, reassertAssets = { item -> reasserted += item.id; emptyList() },
+        afterWrite = { item, nudgeArr -> afterWrites += item.id to nudgeArr }, reassertAssets = { item -> reasserted += item.id; emptyList() },
         playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
-        renameOriginal = renamer,
+        renameOriginal = renamer, radarrLink = radarrLink,
     )
 
     /** Phase 314 (FR-314-13) — the titles whose images and NFO the write path wrote back itself. */
     private val reasserted = ArrayList<String>()
+
+    /** Phase 314 (FR-314-12) — every post-write sync and whether it asked for a Radarr/Sonarr rescan. */
+    private val afterWrites = ArrayList<Pair<String, Boolean>>()
+
+    /** FR-314-12 — a Radarr that has a film, a link to one of its `moviefile` rows, and the rows themselves. */
+    inner class FakeRadarrLink : RadarrLink {
+        var fileId: Int = 652
+        val rows = arrayListOf(dev.jellystructure.arr.RadarrFileRow(652, "/films/Other (2021)/Other (2021) - Remux-2160p.mkv"))
+        override suspend fun read(item: dev.jellystructure.model.MediaItem) = RadarrMovieLink(676, fileId)
+        override suspend fun files(movieId: Int) = rows.toList()
+    }
+
+    private var radarrLink: RadarrLink? = null
 
     @BeforeTest fun setUp() = runBlocking {
         platform.posix.mkdir(dir, 0x1ffu)
@@ -254,6 +267,47 @@ class FileFixServiceTest {
         assertEquals(listOf("other", "other"), reasserted, "after the version is written and after it is removed")
         assertIs<FixOutcome.Done>(s.runJob(film, "a", { false }))
         assertEquals(listOf("other", "other"), reasserted, "kind A leaves the film's own files and Radarr's row alone")
+    }
+
+    /**
+     * FR-314-12 test 9 (revised 2026-10-13) — Radarr is never asked to rescan a folder holding a kind C version, on
+     * the write or on *Remove*, and what Radarr's own scan did to the film's file link is recorded against the title
+     * either side of it. Radarr's API cannot put the link back (spec amendment 2026-10-13, second), so what the
+     * history says is the whole of the measure. Kinds A and B keep their nudge.
+     */
+    @Test fun `kind C asks Radarr for no rescan - and what Radarr did to the film's file is recorded either side of Remove`() = runBlocking {
+        val link = FakeRadarrLink()
+        radarrLink = link
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        val ourVersionTag = { p: String -> shell.probes[p] = dv81.replace("\"duration\": \"100.000000\"}", "\"duration\": \"100.000000\", \"tags\": {\"JELLYSTRUCTURE_DV\": \"8.1-from-7\"}}") }
+        // 1 — the version is written. Jellyfin is told, Radarr is not, and Radarr is still on the original.
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertEquals(listOf("other" to false), afterWrites)
+        assertTrue(history.forItem("other").none { it.detail.contains("Radarr") }, "the link is the original: nothing to say")
+        // 2 — Radarr's own scan (its daily RefreshMovie, or a refresh someone pressed) takes the version for the film.
+        link.rows += dev.jellystructure.arr.RadarrFileRow(999, "/films/Other (2021)/Other (2021) - Dolby Vision.mkv")
+        link.fileId = 999
+        ourVersionTag(version)
+        s.removeTitle(FixKind.DOLBY_VISION, "other")
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertEquals(listOf("other" to false, "other" to false), afterWrites, "neither the write nor the Remove nudges Radarr")
+        assertTrue(history.forItem("other").any { it.detail.contains("took jellystructure's version") && it.detail.contains("row 999") },
+            history.forItem("other").joinToString { it.detail })
+        // 3 — Radarr catches up on its own: the version it was pointing at is gone, and it leaves the film unlinked
+        //     with its own row still naming the original. DEB-868's second half, reported on the next kind C write.
+        link.rows.removeAll { it.id == 999 }
+        link.fileId = 0
+        assertEquals(1, s.applyTitle(FixKind.DOLBY_VISION, "other"))
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(history.forItem("other").any { it.detail.contains("movieFileId 0") && it.detail.contains("row 652") },
+            history.forItem("other").joinToString { it.detail })
+        assertTrue(history.forItem("other").any { it.detail.contains("Radarr's own UI") }, "it says who can repair it")
+        // 4 — kinds A and B are untouched: their file's identity doesn't change, so Radarr still learns of the write.
+        assertIs<FixOutcome.Done>(s.runJob(film, "a", { false }))
+        assertEquals("film" to true, afterWrites.last())
+        assertTrue(history.forItem("film").none { it.detail.contains("Radarr") }, "kind A asks Radarr nothing about its link")
     }
 
     @Test fun `kind C stops when Radarr could take the copy for an upgrade - or doesn't answer`() = runBlocking {

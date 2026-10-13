@@ -412,11 +412,22 @@ fun main() = runBlocking {
             val r = configStore.current.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
             if (r == null) dev.jellystructure.arr.ArrParseResult(null, 0) else arrClient.parseRelease(r.url, r.apiKey, title)
         },
-        afterWrite = { item ->
+        afterWrite = { item, nudgeArr ->
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank())
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-            arrRescan.nudge(item)
+            if (nudgeArr) arrRescan.nudge(item)   // FR-314-12 — never for a kind C version (DEB-868)
+        },
+        // Phase 314 (FR-314-12) — read-only: what Radarr has the film's file as, around a kind C write and its Remove.
+        radarrLink = object : dev.jellystructure.filefix.RadarrLink {
+            private fun radarr() = configStore.current.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
+            override suspend fun read(item: dev.jellystructure.model.MediaItem): dev.jellystructure.filefix.RadarrMovieLink? {
+                val r = radarr() ?: return null
+                val movieId = arrClient.findMovieId(r.url, r.apiKey, item.tmdbId ?: return null) ?: return null
+                return dev.jellystructure.filefix.RadarrMovieLink(movieId, arrClient.movieFileIdOf(r.url, r.apiKey, movieId) ?: return null)
+            }
+            override suspend fun files(movieId: Int): List<dev.jellystructure.arr.RadarrFileRow> =
+                radarr()?.let { arrClient.movieFilesOf(it.url, it.apiKey, movieId) } ?: emptyList()
         },
         // Phase 314 (FR-314-13) — the version write and its Remove put the film's images and NFO back themselves.
         reassertAssets = { item -> filmAssets.reassert(item.id) },

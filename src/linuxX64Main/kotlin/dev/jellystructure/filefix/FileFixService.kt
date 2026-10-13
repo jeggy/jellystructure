@@ -49,8 +49,14 @@ class FileFixService(
     private val seeding: suspend (String) -> SeedingCheckResult,
     /** Radarr's reading of a release name; null when Radarr isn't set up (then the check is skipped). */
     private val radarrParse: (suspend (String) -> ArrParseResult?)?,
-    /** After a write: tell Jellyfin to re-read the title, and nudge Radarr/Sonarr (284's post-write sync). */
-    private val afterWrite: suspend (MediaItem) -> Unit,
+    /**
+     * After a write: tell Jellyfin to re-read the title, and — only when `nudgeArr` — nudge Radarr/Sonarr (284's
+     * post-write sync). FR-314-12: a kind C version is ours and it is not a release, so Radarr is never asked to
+     * rescan a folder holding one; its scan would take the version for the film's file (DEB-868).
+     */
+    private val afterWrite: suspend (item: MediaItem, nudgeArr: Boolean) -> Unit,
+    /** FR-314-12 — what Radarr has the film's file as, read around a kind C write; null where Radarr isn't wired. */
+    private val radarrLink: RadarrLink? = null,
     /**
      * FR-314-13 — after a kind C version is written or removed, whatever of the film's images and NFO is not in its
      * folder is written back on the spot. Radarr deletes the extras it had adopted when a `moviefile` row changes
@@ -457,10 +463,14 @@ class FileFixService(
         q.setState("removed", did.joinToString("; "), 0, now(), path, kind.id)
         probeCache.remove(path)
         runCatching { planOne(FixTarget(item, path, item.kind == MediaKind.MOVIE, item.title)) }
-        runCatching { afterWrite(item) }
+        // FR-314-12 — a deleted version is no business of Radarr's either: the half of DEB-868's damage that left the
+        // film at `movieFileId 0` happened on this path, when our nudge sent Radarr to look at a folder it had just
+        // adopted a file from.
+        runCatching { afterWrite(item, kind != FixKind.DOLBY_VISION) }
         // FR-314-13 — a deleted version is a `moviefile` row changing under Radarr, which takes the film's adopted
         // extras with it. Kind C only: A and B leave the film's own files and Radarr's row where they were.
         if (kind == FixKind.DOLBY_VISION) runCatching { reassertAssets(item) }
+        if (kind == FixKind.DOLBY_VISION) reportRadarrLink(item, path)
         Logger.info("file fix: ${kind.label} removed for $path (${did.joinToString("; ")}) (314)", "jobs")
         return FixOutcome.Done
     }
@@ -516,7 +526,7 @@ class FileFixService(
             q.setState("done", verdict.tracks.joinToString(" · ") { it.describe() }, readBytes, now(), path, kind.id)
         }
         probeCache.remove(path)
-        runCatching { afterWrite(item) }
+        runCatching { afterWrite(item, true) }   // FR-314-12 — kinds A and B keep their nudge: the file's identity doesn't change
         Logger.info("file fix: ${kind.label} done for $path (${if (seeded) "sidecar" else "in the file"}) (314)", "jobs")
         return FixOutcome.Done
     }
@@ -565,10 +575,27 @@ class FileFixService(
         if (!shell.run(FileFixCommands.moveIntoPlace(work, target, path)).ok) return FixOutcome.Failed("could not place the version")
         history.record(item.id, "file_fix", "Dolby Vision the TVs play: a profile 8.1 version beside the original · ${target.substringAfterLast('/')}")
         q.setState("done", "the Dolby Vision 8.1 version is beside it", size * 3, now(), path, FixKind.DOLBY_VISION.id)
-        runCatching { afterWrite(item) }
-        runCatching { reassertAssets(item) }   // FR-314-13 — after the nudge, not instead of it
+        // FR-314-12 — Jellyfin is told, Radarr is not: its rescan takes the version for the film's file, and nothing
+        // jellystructure can call puts that back (DEB-868).
+        runCatching { afterWrite(item, false) }
+        runCatching { reassertAssets(item) }   // FR-314-13 — after the Jellyfin refresh, not instead of it
+        reportRadarrLink(item, path)
         Logger.info("file fix: Dolby Vision 8.1 version written for $path (314)", "jobs")
         return FixOutcome.Done
+    }
+
+    /**
+     * FR-314-12 — after a kind C version is written or removed, read what Radarr has the film's file as and record
+     * anything that is not the original: the link moved to our version, or it went to 0 with the film's own
+     * `moviefile` row still naming the original (DEB-868's two halves).
+     *
+     * It reports rather than repairs because Radarr's API cannot re-point a movie at a file at all — see
+     * [RadarrLink]. Best-effort throughout: an unreachable Radarr never fails a job that has already succeeded.
+     */
+    private suspend fun reportRadarrLink(item: MediaItem, path: String) {
+        val drift = runCatching { radarrLinkDrift(radarrLink, item, path, dvVersionPath(path)) }.getOrNull() ?: return
+        history.record(item.id, "file_fix", "$drift. Jellystructure can't put that back — it takes Radarr's own UI (DEB-868).")
+        Logger.warn("file fix: $drift — for $path (314, FR-314-12)", "jobs")
     }
 
     companion object {
