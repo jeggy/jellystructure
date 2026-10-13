@@ -717,3 +717,74 @@ build, and it is not a reason to hold FR-314-12.
 
 Unchanged by this amendment: the original is never modified by kind C, the per-film rename ticks stay the owner's, and
 no library title enters this repository.
+
+## Amendment 2026-10-13 (second, building FR-314-12) — Radarr has no API that puts `movieFileId` back (DEB-868)
+
+Building the three rules above measured two of them out of reach. Everything below is read from Radarr's and Jellyfin's
+own source on `develop`/`master`, and it agrees with what DEB-868 measured on prod by hand; where the two meet, the
+measurement is cited.
+
+**Rule 1 — a name Radarr's import will not take — is closed, not deferred.** Radarr's `MediaFileExtensions` holds 47
+video extensions, Jellyfin's `NamingOptions.VideoFileExtensions` 53. Only ten are Jellyfin's and not Radarr's:
+`.001 .3g2 .amv .f4v .m2t .mpe .mts .mxf .rec .tp`. Every one of them describes the file as something it is not — the
+version is Matroska — and Jellyfin resolves the container partly off the extension when ffprobe answers the ambiguous
+`matroska,webm`, so an exotic extension puts at risk exactly the direct play the kind exists to buy. Kind A's `.mka`
+escapes this because an audio sidecar is a different kind of object to Jellyfin; a **version** has to be a video file
+Jellyfin resolves in the film's own folder, and every video file Jellyfin resolves there is one Radarr's scan imports.
+The folder routes Radarr skips (`plex versions`, a dotted folder, an `extras` subfolder) are routes Jellyfin does not
+group a version from. The grouping is the acceptance and it cannot be kept while hiding the file by its name.
+
+**Rule 3 — re-assert `movieFileId` — has no API to call.** `PUT /api/v3/movie/{id}` cannot set it: the controller
+applies the body through `Movie.ApplyChanges`, which assigns `Path`, `QualityProfileId`, `Monitored`,
+`MinimumAvailability`, `RootFolderPath`, `Tags` and `AddOptions` and nothing else, and `MovieFileId` is not in
+`MovieResource.ToModel` at all. `PUT /api/v3/moviefile/{id}` writes quality, languages, edition, release group and
+scene name only. `DELETE /api/v3/moviefile/{id}` runs through `MediaFileDeletionService` — **it deletes the file from
+disk**, and this Radarr's recycle bin is off. A manual import is the one remaining route and it imports as a new
+download, which moves or renames the file; that is why DEB-868 left the unlinked film to the owner's UI. Nothing
+jellystructure can call puts the link back. (The same reading clears **316's mover**: `updateMoviePath` cannot zero
+the link either, because `ApplyChanges` never touches it.)
+
+**Rule 2 — no nudge for kind C — is built, and it is a delay rather than a prevention.** `RescanMovie` on a folder
+holding a version imports it because `DiskScanService.Scan` feeds the folder's **unmapped** files to the import
+decision and `ImportApprovedMovie.Import(decisions, newDownload: false)` points the movie at what it imports — the
+version is unmapped, the original is not. The same `Scan` runs from Radarr's own daily `RefreshMovie`
+(`rescanAfterRefresh` is on by default) and from any refresh a person presses, so suppressing our nudge removes the
+trigger we own and leaves Radarr's. The same mechanism explains the measured non-self-healing: after *Remove* the
+original is *mapped*, so it is not in the scan's file list and nothing re-links it.
+
+### FR-314-12 as built (2026-10-13, superseding the three rules above)
+
+- **No Radarr rescan for a kind C version**, neither after it is written nor after *Remove*. Kinds A and B keep their
+  nudge; the in-place rename keeps the mover's own Radarr refresh (316's ports, `LooseFilmsService.renameToFolder`),
+  which is a path change Radarr must learn.
+- Around both moments the write path **reads Radarr's link and says what it finds**: the link moved to our version, or
+  it is 0 while the film's own `moviefile` row still names the original. What it finds goes in the title's history and
+  the log, with the row id, so the owner can act. *Repaired* could not be built; **reported** is what the API allows,
+  and the repair is a person in Radarr's UI. Rows are matched on the file name, never the full path — Radarr's view of
+  the library is mapped (`LooseFilmsService.toJellyfinView`).
+- **The switch gate stands and widens.** Kind C stays off for the library: with adoption only delayed and no repair to
+  call, switching the kind on hands the owner 17 films to re-link by hand. What closes this is a placement decision,
+  not another patch — below.
+
+### Open question — where a version can live that Jellyfin groups and Radarr never scans
+
+Owner/Tróndur's call; neither shape is built, and neither is in 314 until it is answered.
+
+- **A versions library.** The version lands under a second path Jellyfin scans and Radarr's root folder does not hold,
+  and jellystructure merges the two items with Jellyfin's own `POST /Videos/MergeVersions`. Jellyfin groups by that
+  merge rather than by the folder, so Radarr never sees a file to import. Costs: a Jellyfin library path the owner
+  configures, and merge bookkeeping that survives a rescan.
+- **Kind C stays off for Radarr-managed films.** The 17 are all Radarr's, so this is in practice "do not ship kind C",
+  and it should be said plainly rather than left as a switch nobody may press.
+
+### Acceptance 6 (revised)
+
+6. Kind C applied to one unseeded DV7 film with Radarr watching: **jellystructure asks Radarr for no rescan** on the
+   write or on *Remove*, and whatever Radarr's own scan then does to `movieFileId` is in the title's history within
+   one job. The film still being linked afterwards is not something this phase can promise — see the open question.
+
+### Test 9 (revised)
+
+9. The kind C write path issues no Radarr rescan on the write or on *Remove*; kinds A and B still nudge; a link Radarr
+   has moved to our version, and a `movieFileId` of 0 against a `moviefile` row still naming the original, are both
+   recorded against the title; an unchanged link records nothing.
