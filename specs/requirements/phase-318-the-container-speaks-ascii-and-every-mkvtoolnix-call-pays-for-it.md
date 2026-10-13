@@ -229,9 +229,19 @@ So the read is done on a locale object that is built, asked and thrown away:
 newlocale(LC_ALL_MASK, "", null)  →  nl_langinfo_l(CODESET, it)  →  freelocale(it)
 ```
 
-Same precedence chain (`LC_ALL` → `LC_CTYPE` → `LANG`), same answer, no global state touched. Confirmed on this
-host: `UTF-8` under `LANG=C.UTF-8`, `ANSI_X3.4-1968` with the variable removed — the same two strings the
-reproduction table reports. This is the letter of FR-318-2 bending to its own last bullet: *the check reports;
+Same precedence chain (`LC_ALL` → `LC_CTYPE` → `LANG`), same answer, no global state touched. Measured with the
+three calls in C, each run from an environment stripped of `LANG`, `LC_ALL` and `LC_CTYPE`:
+
+| environment | `nl_langinfo_l(CODESET, …)` | the process's own `LC_CTYPE` after the read |
+|---|---|---|
+| `LC_ALL=C` | `ANSI_X3.4-1968` | `C` |
+| `LC_ALL=C.UTF-8` | `UTF-8` | `C` |
+| `LANG=C.UTF-8` | `UTF-8` | `C` |
+| `LANG=xx_YY.UTF-8` (no such locale) | **`newlocale` → `NULL`** | `C` |
+
+The first two strings are the ones the reproduction table reports, so the mechanism answers the same question
+it does — and the right-hand column is the point: the process's locale is still `C` *after* the read, which a
+`setlocale(LC_ALL, "")` could not say. This is the letter of FR-318-2 bending to its own last bullet: *the check reports;
 it does not repair.* Adopting the environment is a far smaller repair than forcing UTF-8, but it is still the
 process reaching into its own environment, and there is no reason to reach.
 
