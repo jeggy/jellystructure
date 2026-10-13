@@ -208,3 +208,42 @@ that `captureShell` discards.
   string. No comma in a backtick test name — `linuxX64` rejects it.
 - Nothing in the measurement, the schema or the advice changes, so there is no migration and no
   sidecar test.
+
+## Amendment (2026-10-13) — the codeset is read on a throwaway locale, never on the process's own (DEB-856)
+
+Written while implementing FR-318-2. The requirement names the read as `nl_langinfo(CODESET)` *after the usual
+`setlocale(LC_ALL, "")`*, and the **question** is exactly right — it is the effective charset that matters, not
+the variable chain that produced it. The **mechanism** is not, and this records the substitution, because the
+reason for it is the argument FR-318-2 already makes two bullets further down.
+
+`setlocale(LC_ALL, "")` answers the question by **mutating this process's global locale for the rest of its
+life**. That reaches every locale-sensitive libc call the backend makes — numeric formatting first among them,
+where a locale with `,` for a decimal separator is the difference between a valid JSON body and an invalid one.
+And it buys nothing: the fault this phase exists to surface is in **child** processes, and a child inherits the
+*environment*, never our `setlocale` state. MKVToolNix calls `setlocale(LC_ALL, "")` for itself, out of the same
+environment, whatever this process did to its own.
+
+So the read is done on a locale object that is built, asked and thrown away:
+
+```
+newlocale(LC_ALL_MASK, "", null)  →  nl_langinfo_l(CODESET, it)  →  freelocale(it)
+```
+
+Same precedence chain (`LC_ALL` → `LC_CTYPE` → `LANG`), same answer, no global state touched. Confirmed on this
+host: `UTF-8` under `LANG=C.UTF-8`, `ANSI_X3.4-1968` with the variable removed — the same two strings the
+reproduction table reports. This is the letter of FR-318-2 bending to its own last bullet: *the check reports;
+it does not repair.* Adopting the environment is a far smaller repair than forcing UTF-8, but it is still the
+process reaching into its own environment, and there is no reason to reach.
+
+**One answer FR-318-2 had no case for**, surfaced only by writing the call: `newlocale` returns `NULL` when the
+environment *names* a locale the system cannot provide — `LANG=fo_FO.UTF-8` in an image that carries only `C`
+and `C.utf8` is the realistic way to get there, and `setlocale` would fail the same way and leave the C locale
+standing. That reaches the pure function as the **empty string** the Tests section already demands a case for,
+and it settles what that case must say: the sentence names *no* encoding and reads that the encoding could not
+be determined. It is red either way — a process whose locale request failed cannot open a non-ASCII path, and
+a check that cannot tell you the encoding is not a check that may pass.
+
+Nothing else in FR-318-2 moves: one `WARN` on the `integrity` channel at startup, one health check beside
+`mkvpropedit`'s and in its shape, no config key, no repair. The health check's `detail` and the `WARN` line are
+built from **one consequence sentence in one place**, so the two surfaces cannot drift apart — the same
+reasoning as FR-244-8's advisor/health pairing.
