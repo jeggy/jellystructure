@@ -578,3 +578,205 @@ a browser — the re-walk below confirms it.
     file changes* — never *next run* — says in the card's own words that no window read clearly enough, and
     the title is not counted clean.
 15. A cartoon title, the sweep having skipped it: the same line, with *skipped — animation* and no *next run*.
+
+## Amendment (2026-10-13) — advice that is told what it cannot do, and never half a command (DEB-833)
+
+From the second browser walk of the admin on prod (`v1.51-58-gf9029c3b`, DEB-722 → DEB-833; the four gaps of
+the 10-12 amendment all confirmed fixed). One real file reads `offset` **+120 ms**, renders its whole banner —
+headline, *What a viewer gets*, *Who is affected*, *Suggested fix: delay the audio by 120 ms* — and then shows
+**no command and no Copy block at all, and nothing saying why**. Evidence and the verified chain are in
+DEB-833; ids and paths deliberately not repeated here.
+
+The chain's first link is **right and stays**: `AvSyncAdvice.command` refuses a matroska `--sync` without
+mkvmerge's own ids, *"without mkvmerge's own ids a --sync would move the wrong track"*. The defect is
+everything downstream of that refusal — the ids were **present and complete** in output that was thrown away,
+the throw-away was silent, and the page went quiet exactly where it is hardest to be quiet.
+
+Four decisions, all **settled here rather than sent to the owner**: none is viewer-visible (the admin is the
+household's own), none contradicts [`constitution.md`](../constitution.md), and the owner's three decisions of
+2026-10-10 were *sweep every file*, *skip Animation*, *GPU is dev's call* — wording of advice is not among
+them. FR-317-24's and FR-317-25's sentences are therefore the PO's, as asked for on DEB-833.
+
+### What the evidence establishes (and the one thing it does not)
+
+`mkvmerge -J` on that file exits `0`, writes empty stderr, and returns **3844 bytes of JSON cut mid-string
+inside a subtitle track's `track_name`** — reproduced twice. `parseMkvAudioIds` does a whole-document
+`Json.parseToJsonElement`, so the malformed tail discards the whole document; three successive
+`runCatching{…}.getOrNull()` / `.getOrDefault(emptyList())` swallow it; `mkv_audio_ids` is stored `null`.
+**Both audio ids were complete in those 3844 bytes** — the cut falls hundreds of lines later on track 6, a
+subtitle — and the file needed `0:a:0 → 1`, which was sitting in the discarded output.
+
+**Not established: who truncates.** Either `mkvmerge` emits a short document at exit 0, or our own capture
+does. `captureShell` (`TrackCoverageService.kt:240-247`) reads `fgets(buf, 4096)` and appends
+`buf.toKString()` — a pipeline that cannot carry a NUL byte and mangles a multi-byte character split across
+the 4096-byte boundary, and 3844 is near enough a buffer to be worth excluding. **This is not a gate on any
+of the four fixes below**: each is correct whichever answer comes back. It goes on the QA queue as a
+two-command check (`mkvmerge -J <file> | wc -c` against the same output redirected to a file, exit code and
+stderr captured), because if the answer is `captureShell` then the blast radius includes phase 255's track
+coverage and every `FileFixCommands` read, and that is a finding of its own and not 317's.
+
+**Ruled out as a shortcut, explicitly:** ffprobe's stream index must **never** stand in for an mkvmerge track
+id. On this very file the audio ordinal is `0:a:0` and the mkvmerge id is `1`; the two agree here only because
+one video track precedes it, and mkvmerge numbers tracks it accepted, in its own order. Substituting one for
+the other is precisely the mis-attribution the refusal exists to prevent.
+
+### FR-317-21 — The id parse reads a truncated document as far as it is whole, and no further
+
+`parseMkvAudioIds` stops being whole-document. It walks `tracks` in order and takes the ids of **complete
+track objects only**, stopping at the first object it cannot read in full and returning what it has:
+
+- an id is **either read in full from a complete track object, or not read at all** — the safety property the
+  refusal depends on is unchanged, and nothing is inferred past the cut;
+- the `0:a:N` ordinal stays correct by construction, because audio ordinals count audio tracks in document
+  order **from the start**: a prefix of the track array yields a prefix of the ordinals. An incomplete object
+  must not advance `n` — and because the walk stops there, no later track exists to be mis-numbered;
+- the result is a **possibly short, never wrong** map. A map shorter than the file's audio track count is a
+  normal outcome and FR-317-22 is what makes it safe;
+- the existing behaviour is preserved where it was already right: output that is not JSON at all, or has no
+  `tracks` array, still yields an empty map.
+
+This recovers both ids on the real file, and `--sync 1:120` with it. Implementation is free to tolerate the
+tail however it likes (incremental decode, or trimming to the last complete object and re-parsing) as long as
+the three properties above hold; the function stays pure and in the `companion object`, so the decision is
+tested rather than eyeballed.
+
+While the line is open: the probe is run only for `.mkv` (`AvSyncService.kt:520`) while `command` accepts
+`mkv`/`mka`/`mks`. Harmless today — an `.mka`/`.mks` carries no video, so no window ever reads a face and no
+such file is ever flagged — but the two lists should read from one place rather than drift apart.
+
+### FR-317-22 — A command is whole or it is absent; it is never partial
+
+`command` currently drops unknown ids (`mapNotNull { it.mkvId }`) and refuses only if **every** id is missing.
+With FR-317-21 making short maps ordinary, that becomes the dangerous branch: a file whose first two ids were
+recovered and whose third was past the cut would get prose saying *"it moves 3 tracks together"* and a shell
+command moving two — one page saying two different things, which `AvSyncAdvice`'s own contract forbids
+(*"so a page can never say one thing in prose and another in the shell"*).
+
+**The rule: if any track the prose says moves has no mkvmerge id, there is no command.** The refusal widens
+from *no ids at all* to *fewer ids than moved tracks*, and FR-317-24 says why on the page. Half a fix applied
+to a file is worse than no fix offered, and a `--sync` that silently leaves a dub behind re-creates the
+problem one track over.
+
+The mp4 branch is unaffected: it maps by ffmpeg specifier and needs no mkvmerge id.
+
+### FR-317-23 — A failed id probe leaves a trace, and the two silences are told apart
+
+Today the failure is invisible in the logs and indistinguishable in the data from a container that has no
+command form at all.
+
+- **One `WARN`, on the integrity channel, when the probe returns nothing usable for a matroska file**, naming
+  the path, the **byte count of what came back**, and the exit status — the byte count because that single
+  number is what would have answered the *who truncates* question above without a container shell, and the
+  next occurrence should not need one either.
+- **No new column and no migration.** The marker is already derivable and is defined here so that both ends
+  read it the same way: for a matroska row that has been **measured**, `mkv_audio_ids IS NULL` means *the
+  probe ran and could not be read* — the probe is attempted on the same write path for every `.mkv`, so there
+  is no third state to confuse it with. A non-matroska row's null means nothing and is never read.
+- **The retry is the one that already exists.** `recheckUnchanged = false` means no sweep will revisit the
+  file, and the lane must **not** gain a re-probe pass: the GPU measurement is the expensive part and it
+  succeeded. The Checks card's existing ↻ (force) re-runs the whole check including the probe, and FR-317-24's
+  sentence tells the operator that this is the retry.
+
+### FR-317-24 — Where there is no command, the banner says why, in one sentence
+
+FR-317-11 promises *"the exact command where one exists"* and names the words for the unsupported container
+(*"MKV and MP4 only — remux it to MKV first"*) — **those words are in this spec and in no Kotlin**; the
+no-command branch renders nothing at all. A phase whose whole purpose is explaining a problem in words must
+not go silent precisely where the fix is hardest.
+
+The server carries the reason — the admin renders server text only (no derived state in the frontend) — in a
+**new, additive** DTO field `no_command_reason` on `AvSyncFile`, nullable, beside `command`. Nothing is
+removed or retyped: an installed reader that does not know the field is unaffected, and the admin is the only
+reader. It is populated from `AvSyncFix`, which gains one nullable `noCommandReason` built in the same place
+as the command, so prose and command cannot disagree. The admin renders it where `permCopyBlock` would have
+gone, in the banner's own quiet style, never as a second warning badge.
+
+Two cases are live, and they get these words:
+
+- **A container neither mkvmerge nor an mp4 stream copy fits** —
+  *"No one-line fix for this container: the shift can be written into MKV and MP4 only. Remux it to MKV first
+  and this check will offer the command."*
+- **A matroska file whose own track numbers could not be read** (FR-317-21 recovered none, or FR-317-22
+  recovered too few) —
+  *"No command yet: this file's own track numbers could not be read, and a shift without them could move the
+  wrong track. Re-run the check with ↻ above; if it keeps failing, the file's header is what to look at."*
+
+Two cases are deliberately **not** given a line:
+
+- **`drift`** — its `suggestion` already explains the absence in full (*"a single shift cannot fix a drift …
+  replace the file"*). A second sentence saying there is no command would be the same sentence twice.
+- **A zero shift** — `command` refuses `delayMs == 0`, and that branch is **unreachable from a banner**:
+  `OFFSET` needs a median of `≥ EARLY_FRAMES (2)` or `≤ LATE_FRAMES (−4)` frames, so a flagged offset is never
+  0 ms. No wording is invented for a state that cannot be rendered; if a later change makes it reachable, it
+  arrives as a finding, not as dead prose.
+
+### FR-317-25 — A left-out track names the reason it was actually left, and no other number
+
+Live on prod: *"Untagged EAC3 (0:a:1) is not in step with the main audio (+0 ms of it, correlation 0.546) and
+is left as it is."* It leads with a lag that reads as **perfectly in step** and then excludes the track anyway.
+The lag is not the reason — `corr 0.546` is, against `IN_STEP_CORR = 0.6` — and a lag measured at 0.546
+correlation is not a measurement at all. A reader stumbles, and the stumble is the page's fault.
+
+**The rule: say the test the track failed, and do not print a number that was not the reason.** One clause per
+left track, by which arm of `inStep` failed:
+
+- **correlation below the bar** (whatever the lag) — *"<label> could not be matched against the main audio
+  (correlation 0.55, below 0.6), so it is left as it is: it is different audio, not a delayed copy of it."*
+  The lag is **not shown**;
+- **in step by correlation but out of step by itself** (`corr ≥ 0.6`, `|lag_frames| > 1`) — *"<label> is itself
+  +120 ms out of step with the main audio, so it is left as it is: one shift cannot put both right."* The
+  correlation is **not shown** — it passed;
+- **nothing comparable** (`lag_frames` null) — *"<label> could not be compared with the main audio, so it is
+  left as it is."*
+
+Correlation is printed to **two decimals** and always against its bar (*below 0.6*), so the number means
+something to a reader who has never seen the constant. The clauses still join with `"; "` and the first
+character still uppercases — the shape of the sentence is unchanged, only which facts it chooses.
+
+### The readiness window costs a handful of job rows, and that is left alone (no change asked for)
+
+Stopping the sidecar mid-sweep to reach acceptance 4's red branch, the lane kept claiming for up to
+`READY_MAX_AGE_S = 300` and **5 jobs failed** on `CURLE_COULDNT_CONNECT` before *"av sync lane: the sidecar is
+not ready — holding"*. That is FR-317-16 working as designed: readiness is a cached answer with a stated
+staleness, and the alternative — a `/health` per claim — is a round trip per file for a condition that changes
+once a month. The failed claims store no row, so `scope = "missing"` re-queues them on the next run; the
+sweep self-heals.
+
+**Decision: neither the window nor the log line changes.** Narrowing the window buys a handful of `[WARN] job
+… failed` lines back at the cost of a request per file; softening the line hides a real connect failure, which
+is the one thing the lane's log must not do. Recorded here so the next reader of those warnings finds the
+answer instead of re-investigating: **during a sidecar blip, up to a few minutes of `avsync` job failures are
+expected, leave no rows, and re-queue themselves.**
+
+### Tests (added)
+
+- `parseMkvAudioIds` (pure, `linuxX64Test` beside the three existing cases): the **real 3844-byte truncated
+  document**, trimmed of anything identifying, as a fixture → both audio ids, correctly ordinalled; a document
+  cut **inside** an audio track object → that track's id absent and the walk stopped, never a guessed id; a
+  document cut after the first audio track → one id; unchanged: not-JSON → empty, no `tracks` → empty, `tracks:
+  []` → empty.
+- `AvSyncAdvice.command`: three moved tracks and two recovered ids → **null**, not a two-`--sync` command
+  (FR-317-22); three moved and three recovered → three `--sync` arguments, unchanged; an mp4 with no mkvmerge
+  ids at all → the command is still built (the mp4 branch needs none).
+- `AvSyncAdvice.advise`: a matroska file with too few ids → `command == null` **and** `noCommandReason` is the
+  track-numbers sentence; an `.avi` → the container sentence; a `drift` row → `command == null` and
+  `noCommandReason == null`; an offset with every id → both unchanged from today.
+- `AvSyncAdvice` left-track wording (FR-317-25): `corr 0.546, lag 0` → the correlation clause, **no `+0 ms`
+  anywhere in the string**; `corr 0.80, lag 3` → the lag clause, **no correlation in the string**; `lagFrames
+  == null` → the third clause; `corr 0.546` renders as `0.55`.
+- No sidecar test and no migration: nothing changes in the measurement or the schema.
+- The banner's rendering of `no_command_reason` has no admin harness, as with FR-317-14/15 — it goes on the QA
+  re-walk as acceptance 16 below.
+
+### Acceptance (added)
+
+16. The `offset` matroska file from this walk, re-checked: the banner renders a `--sync` command in a Copy
+    block. (If the truncation is still there, FR-317-21 recovered the ids from the prefix; if it has gone, the
+    ids were read whole — either way a command.)
+17. A matroska file whose track numbers genuinely cannot be read: **no command**, and one sentence saying the
+    track numbers could not be read and that ↻ is the retry — never a bare silence, and never a `--sync` that
+    moves fewer tracks than the prose names. One `WARN` on the integrity channel carrying the path, the byte
+    count and the exit status.
+18. A flagged file whose second audio track is excluded by correlation: the sentence names the correlation
+    against its bar and **does not quote a lag**; one excluded by lag alone names the lag and **does not quote
+    a correlation**.
