@@ -257,3 +257,130 @@ Nothing else in FR-318-2 moves: one `WARN` on the `integrity` channel at startup
 `mkvpropedit`'s and in its shape, no config key, no repair. The health check's `detail` and the `WARN` line are
 built from **one consequence sentence in one place**, so the two surfaces cannot drift apart — the same
 reasoning as FR-244-8's advisor/health pairing.
+
+## Amendment (2026-10-13) — prod is not built from this repo's compose file, the sweep did not wait, and "measured" needed defining (DEB-848)
+
+Three corrections from the hour after the phase was written, two of which change the ask that goes to the
+owner and one of which explains why two seats counted the same thing and got different answers. **FR-318-1's
+two lines are committed** (`3f5fea79`, DEB-855) and are not in question; what was wrong is a sentence about
+what they reach.
+
+### FR-318-1's "a recreate picks it up with no rebuild" is false for prod as it stands
+
+The requirement says the compose line *"lets the fix reach a running deployment by recreating the container
+from the image it already has."* True in general. **Not true of prod**, because prod is not created from this
+repository's `docker-compose.yml`. Raised by Viti on DEB-855 and verified here independently off the live
+container's own compose labels:
+
+```
+com.docker.compose.project.config_files =
+  /home/jeggy/jellystructure/dev-docker-compose.yml,
+  /home/jeggy/jellystructure/deb754-clean-src.yml,
+  /home/jeggy/jellystructure/deb754-avsync.yml
+working_dir = /home/jeggy/jellystructure      service = backend
+```
+
+None of those three files is this repository's, **and none of them carries `LANG` or any `LC_*`**. Nor does the
+running container's `Config.Env`, nor the image it runs (`jellystructure-backend:latest`, built before
+`3f5fea79`). `/proc/1/environ` holds `PATH` plus exactly the variables that compose file sets — which is also
+the proof that the `environment:` block is the lever. **So a bare `up -d --no-build` today is a no-op for this
+bug**, and the repo's committed compose line reaches the dev and test stacks only.
+
+Two routes exist, and **both are the owner's**, because one touches a file outside this repository and the
+other rebuilds a live service:
+
+1. **No rebuild, seconds.** One line — `LANG: C.UTF-8` — into the `backend.environment` block of
+   `/home/jeggy/jellystructure/dev-docker-compose.yml`, which is already in mapping form and drops it in
+   beside `CORS_ALLOWED_ORIGINS`; then `up -d --no-build backend`. **That file is outside this repository, so
+   no agent may edit it without being told to.**
+2. **Rebuild.** Build the backend image from `3f5fea79` with the three `-f` files and `up -d backend` — the
+   durable half, at the cost of a full Kotlin/Native release build.
+
+**Decision (PO): 1 now, 2 at the next natural rebuild**, and the owner is asked for 1. Route 1 restores the
+admin's track writes across ~30 % of the library in seconds; route 2 stops the fix depending on a compose file
+remembering. Either way it recreates **`backend` only** — `avsync` stays up, pinned at `:deb319` with no
+`build:` stanza, and rebuilding it is ~10 GB for nothing.
+
+**FR-318-1 is not rewritten**: the `Dockerfile` line is still the durable half and the repo compose line is
+still right for every stack built from this repository. What is corrected is the claim that it reaches *this*
+deployment.
+
+### FR-318-4's premise is gone: the sweep is already running
+
+FR-318-4 reads *"317's library sweep has **not** been started; it is the owner's call"*, and builds a
+factor-of-nine ordering argument on it. **That premise expired.** Read off a read-only snapshot of the prod DB
+at 01:42:43Z:
+
+- **every one of `file_av_sync`'s 5 317 rows was written in the last six hours** — the sweep started ~19:40Z
+  and is running hard;
+- it is **still measuring matroska right now**: 4 262 `.mkv` rows, 75 of them written in the last 15 minutes,
+  the newest at the instant of the snapshot;
+- `non-ASCII path` + `ids present` is **exactly 0** — now at 96 of 96 measured non-ASCII-path rows under the
+  strict definition below, which is the third independent confirmation of that row and the first off a
+  snapshot taken by this seat.
+
+So the question is no longer *which order*; it is **how much longer it runs unfixed.** The recovery set grows
+by roughly **85 files an hour** (87 of the 207 rows measured in the hour before the snapshot lost their ids —
+a 42 % loss rate over that hour, worse than the 30.1 % path share because non-ASCII names cluster by
+directory, so the sweep hits them in runs). Each one is a forced re-check of 10–25 s of GPU later.
+
+**The ordering decision is replaced by a pause decision**, and it goes to the owner with route 1 above: the
+cheap fix takes seconds, so the honest ask is *apply it now* rather than *pause the sweep*. Pausing is only
+worth asking for if route 1 is declined.
+
+### "Measured" was undefined, and that is why two seats got 27 and 45
+
+FR-317-23 defines the probe-failed marker as `mkv_audio_ids IS NULL` **"for a matroska row that has been
+measured"** — and never says which rows those are. Two readings of the same table, minutes apart, gave
+different counts:
+
+| definition of *measured* | ASCII NULL | non-ASCII NULL | recovery set |
+|---|---|---|---|
+| `reason IS NULL` only (a clean measurement) | 27 | 96 | **123** |
+| `reason IS NULL` **or** `reason = 'no_faces'` | 45 | 118 | **165** |
+
+**The second is correct, and the spec now says so.** The probe is attempted on the same write path for every
+`.mkv`, before any window is read, so a `no_faces` row *did* run the probe — it is a file that was read and
+measured and whose windows were not confident enough, not a file that was skipped. A `reason = 'animation'`
+row is the one that never probes, and it is correctly excluded (3 646 of the 4 262 `.mkv` rows so far, which
+is why the measured population is a small fraction of the library and the eventual recovery set is nothing
+like the 1 247 non-ASCII paths the phase opened with).
+
+**Every count in this phase and in DEB-857's acceptance 6 uses the second definition:**
+`reason IS NULL OR reason = 'no_faces'`. At 01:42:43Z that is **165 rows**, still climbing. The figure of 135
+in §What is wrong is the 2026-10-12 reading and is left as the historical record.
+
+### The measured cost, from real findings rather than path counts
+
+Sjúrður's figure off the sweep's own output (DEB-722), which is better evidence than any share of paths: of
+the **18 files flagged so far, 4 carry no runnable command, and 3 of those 4 are the non-ASCII-path class.**
+So ~22 % of real findings reach the operator with advice and nothing to run, and **the environment variable
+buys 3 of the 4 while the parser change buys 1.** That ratio is the one to weigh the two fixes by, and it is
+the sentence to put in front of the owner — not 30.1 %.
+
+### Svabo's question answered: tolerant parsing is FR-317-21, not a new row
+
+DEB-858 closed the last loose end — **all 45 ASCII-path NULL rows are truncation; there is no second cause**
+(45 truncation, 0 error documents, 0 identical-and-complete; in every one the `LC_ALL=C` output is a strict
+byte prefix of the `C.UTF-8` output, cut exactly on the document's first non-ASCII byte). It also measured
+that **a tolerant parse recovers 32 of the 45 on its own**: they cut at a `track_name` with every audio track
+already complete in the prefix. The other 13 cut at the container `title` at 297–386 bytes, before any track,
+and are beyond any parser.
+
+That 32-of-45 **is FR-317-21, exactly as written and already routed on DEB-842** — a prefix walk that takes
+complete track objects only yields those 32 and declines those 13. So the answer to *"318 or its own row?"* is
+**neither: it is built, it is 317's, and it needs no new number.** The measurement is worth having because it
+puts a figure on a requirement that was argued from principle: FR-317-21 is a safety property first, and it is
+also worth 32 real files.
+
+One detail from that census belongs in any future parser work: one file cuts at **U+00A0, a no-break space** —
+invisible in any listing a person would eyeball, so this class must never be triaged by eye.
+
+### Acceptance (restated)
+
+- **3 is restated**: `/proc/1/environ` of the running backend contains `LANG=C.UTF-8` **after whichever of
+  route 1 or route 2 the owner takes** — not after a bare `up -d --no-build`, which changes nothing while the
+  variable is absent from the three compose files prod actually uses.
+- **6 is restated**: the recovery set is counted with `reason IS NULL OR reason = 'no_faces'`, and the figure
+  to clear is whatever that query returns at the time — **165 at 01:42:43Z on 2026-10-13**, growing ~85/h
+  until the fix lands.
