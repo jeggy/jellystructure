@@ -490,6 +490,24 @@ capability/handler set equality above.
 
 **Out of scope here:** nothing about the Cast road changes — the phone's sender still does not send audiobooks over
 Cast, which stays R323's to decide. Acceptance 4 is re-run on the **server** road once this is built.
+
+**What is not covered automatically, and why** (the delivery process of 2026-10-14): the arms, the kind vocabulary, the
+book's place in book time and the loud refusal are all held by `SessionLoadArmsTest` (`:ravilo-ui:desktopTest`,
+`:ravilo-ui:testDebugUnitTest`) and `BookSessionLoadTest` (`:linuxX64Test`), including the set equality FR-R380-11 asks
+for. What no test on a build host can reach is the **sound**: that the book is audible on the TV from the place the
+envelope named, that FR-R380-4's ◀ ▶ move the listening by ∓30 s under a real remote's key events, and that the TV's
+Now playing draws the chapter and both progress lines on a 10-foot screen. That is a device's word, on the queue with
+the TV named — not a test that could be written and is not.
+
+**Built 2026-10-14 (DEB-919).** Two readings of the wire were wrong and both are fixed here, because without them the
+arm would have had nothing to load: QA's `kind: "book"` is the **`plays=` token**, not a session kind, and the server
+took it verbatim into a session in the **video** lane (`sessionLane`), so even an app with a book arm could not have
+played it — `sessionKindOf` now reads it as `audiobook` and refuses a kind this server does not know with a 400 instead
+of answering 200 and letting the load watchdog end the row `failed` 10 s later. And a book's place is two numbers in two
+index spaces: a live book row's `position_ms` is the position in the **part** it plays (281's heartbeat), while a book
+plays from **book time**, so `session_load` carries `book_id` and `book_ms` (additive; a start's `start_ms` for a book
+is book time, a move's is converted from the part by `bookTimeOf`). The move gate is now the kind, not *audio-ish*: a
+session is only moved to a place whose `plays=` covers its kind.
 - **The queue panel and controls (fix-tv-live) passed:** *Now playing* over the song, **Up next from {album}** over
   the rest (an album started through the server, no context), opaque panel; ▼ raises ⏮ ⏯ ⏭ *Lyrics on* *Queue*, nothing
   clipped, hint *▲ Queue · ▼ Lyrics off*.
