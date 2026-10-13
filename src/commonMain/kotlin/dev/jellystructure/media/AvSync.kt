@@ -34,6 +34,19 @@ data class AvSyncWindow(
      *  Additive and defaulted — a row stored before the flag existed reads `false`, which is what every
      *  such row was. */
     @SerialName("nonfinite") val nonFinite: Boolean = false,
+    /** FR-317-32 (the 2026-10-13 seventh amendment) — the window's decoded audio did not reach the video
+     *  frames it would have been compared against, so it was **refused**: no detection, no lip features,
+     *  and the window reports exactly as one with no face track does. ffmpeg does not pad a dropped audio
+     *  packet, so a gap mid-window shifts everything after it and the lips would have been measured
+     *  against speech from elsewhere in the file. Additive and defaulted, like [nonFinite]. */
+    @SerialName("audio_short") val audioShort: Boolean = false,
+    /** FR-317-32 — how many 25 fps frames of video this window's audio features fell short of, past the
+     *  six-frame construction gap that every healthy window has. Signed and never clamped, and reported on
+     *  **every** window, refused or not: a clean window stores a 0 or a ±1, so the healthy distribution is
+     *  readable out of `file_av_sync` and the bar can be re-drawn from evidence rather than from a guess.
+     *  0 for every row stored before the field existed, which is what a row with no measurement of it can
+     *  honestly say. */
+    @SerialName("audio_short_frames") val audioShortFrames: Int = 0,
 )
 
 /** One face track inside a window: the evidence the title page folds open. */
@@ -72,6 +85,14 @@ object AvSyncReason {
      *  pipeline version measures it again, where `animation` or `too_short` would stand for ever. */
     const val NONFINITE = "nonfinite"
 
+    /** FR-317-32 — every window of this file was refused: part of its audio did not decode, and lips are
+     *  never compared against audio that is not there. Like [NONFINITE] it is deliberately NOT one of
+     *  [dev.jellystructure.media.AvSyncService.SKIP_REASONS] — nothing was decided about the file, so a new
+     *  pipeline version measures it again. Unlike [NONFINITE] it is never passed to [AvSyncVerdict.of]'s
+     *  `reason` parameter: a refused window is *there is nothing to measure here*, so a file with two clean
+     *  windows beside one refused window keeps its verdict. */
+    const val SHORT_AUDIO = "short_audio"
+
     /** The one quiet line the Checks card shows for a skipped file (FR-317-10). */
     fun label(reason: String): String = when (reason) {
         ANIMATION -> "skipped — animation has no lips to follow"
@@ -79,6 +100,7 @@ object AvSyncReason {
         NO_ORIGINAL_TRACK -> "skipped — no track in the original language; a dub has no lips to follow"
         NO_FACES -> "no faces to measure — nothing on screen the model can read lips from"
         NONFINITE -> "not measured — the measurement produced a number that is not a number"
+        SHORT_AUDIO -> "not measured — part of the audio did not decode, so there were no words under the lips"
         else -> "skipped"
     }
 }
@@ -161,6 +183,21 @@ object AvSyncVerdict {
         windows.any { w -> w.nonFinite || w.faces.any { it.nonFinite } } || others.any { it.nonFinite }
 
     /**
+     * FR-317-32 — was any window refused because its audio did not reach its picture? Unlike
+     * [hasNonFinite] this is **never** turned into [of]'s `reason` parameter: a refused window is *there is
+     * nothing to measure here*, exactly as a window with no face track is, so a file with two clean windows
+     * beside one refused window keeps its `offset`. The refused windows are simply never confident,
+     * FR-317-17's second triple then asks three more places in the file, and only a file whose damage is
+     * everywhere reaches `unknown` and says [AvSyncReason.SHORT_AUDIO].
+     */
+    fun hasShortAudio(windows: List<AvSyncWindow>): Boolean = windows.any { it.audioShort }
+
+    /** FR-317-32 — the worst shortfall among the refused windows, for the one line [check] logs on the
+     *  `integrity` channel whatever the verdict. Null when nothing was refused. */
+    fun worstAudioShortFrames(windows: List<AvSyncWindow>): Int? =
+        windows.filter { it.audioShort }.maxOfOrNull { it.audioShortFrames }
+
+    /**
      * FR-317-17 (amendment 2026-10-12) — is another triple of windows worth asking for? Yes whenever the
      * pass so far yields **neither** [AvSyncState.IN_SYNC] **nor** [AvSyncState.OFFSET]: too few confident
      * windows to measure anything (the original rule), or confident windows that disagree.
@@ -215,15 +252,25 @@ object AvSyncVerdict {
             // model found a face and read it, and what it read was not a number. Said plainly, it is the
             // difference between *nothing to measure* and *the measurement failed*.
             val nonFinite = hasNonFinite(windows)
+            // FR-317-32 — and `no_faces` would be the same lie about a window the model was never shown:
+            // it was refused before any detection ran, because its audio had not reached its picture.
+            // `nonfinite` stays the headline where both appear — after this change a non-finite number is
+            // by definition not explained by short audio, so it is the one that is news.
+            val shortAudio = !nonFinite && hasShortAudio(windows)
             return AvSyncReading(
                 AvSyncState.UNKNOWN, confidentWindows = confident.size,
                 reason = when {
                     nonFinite -> AvSyncReason.NONFINITE
+                    shortAudio -> AvSyncReason.SHORT_AUDIO
                     windows.isEmpty() -> null
                     else -> AvSyncReason.NO_FACES
                 },
-                why = if (nonFinite) AvSyncReason.label(AvSyncReason.NONFINITE)
-                else if (confident.isEmpty()) "no window read clearly enough to measure" else "only one window read clearly enough to measure",
+                why = when {
+                    nonFinite -> AvSyncReason.label(AvSyncReason.NONFINITE)
+                    shortAudio -> AvSyncReason.label(AvSyncReason.SHORT_AUDIO)
+                    confident.isEmpty() -> "no window read clearly enough to measure"
+                    else -> "only one window read clearly enough to measure"
+                },
             )
         }
         val rel = confident.map { (it.offsetFrames!! - zeroFrames) to it.conf }

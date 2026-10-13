@@ -654,6 +654,18 @@ class AvSyncService(
         // the file again.
         val nonFinite = AvSyncVerdict.hasNonFinite(windows.windows, windows.others)
         if (nonFinite) Logger.warn("av sync: a non-finite number in the measurement of $path — stored as ${AvSyncReason.NONFINITE}", "integrity")
+        // FR-317-32 — one line whatever the verdict, including when the verdict survives: a file with two
+        // clean windows beside one refused window keeps its `offset`, and the refusal would otherwise leave
+        // no trace anyone reads. The stored `audio_short_frames` and this line are the whole audit trail.
+        // Deliberately NOT passed to `AvSyncVerdict.of` as a reason: a refused window is *there is nothing
+        // to measure here*, which never overrides what the healthy windows of the same file measured.
+        AvSyncVerdict.worstAudioShortFrames(windows.windows)?.let { worst ->
+            Logger.warn(
+                "av sync: part of the audio did not decode in $path — the worst window was $worst frames short of its picture, " +
+                    "and every such window was refused rather than measured",
+                "integrity",
+            )
+        }
         val reading = AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, if (nonFinite) AvSyncReason.NONFINITE else null)
         val reason = if (reading.state == AvSyncState.UNKNOWN) reading.reason else null
         q.put(
