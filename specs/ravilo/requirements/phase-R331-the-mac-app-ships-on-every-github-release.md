@@ -429,3 +429,41 @@ playing — R330's known ⌘W-quits behaviour showing up outside a cast, which i
 R331 defect. And the app's own version line read **`1.51`**, the tag, while jpackage's bundle version reads `1.51.0`;
 both are correct and the pair is `deploy-macos.yml`'s two version properties doing what §Walked's wiring note says
 they do.
+
+## Amendment (2026-10-13): 2b can fail, and what it would mean — plus the order it has to be walked in
+
+Everything above treats 2b as a formality waiting for a Gatekeeper switch. It is not. It is the **only** test of
+FR-R331-3's actual claim, and it has two legitimate outcomes.
+
+**What is still assumed.** FR-R331-3 says *Open Anyway* is once per Mac, not once per update. 2a proved the two
+releases carry an identical designated requirement — but that only decides the question **if** a user approval is
+keyed to the signing identity. If macOS instead keys it to the individual bundle (its cdhash, or the quarantine
+attribute on that one copy), then a newly downloaded v1.51 is a new subject, it prompts too, and FR-R331-3 is simply
+wrong. **Nobody has observed either outcome.** The household Mac has `assessments disabled`, so its silent v1.51
+launch on 2026-10-11 is not evidence either way, and the `XProtect suppress first launch warning: true` line in that
+log is the quarantine resolver talking, not an approval being reused. So 2b is a real experiment, and the walker
+should record which of these happened rather than looking for the expected one:
+
+- **No prompt on v1.51** — FR-R331-3 holds as written, and the one-certificate decision bought what it promised.
+- **A second prompt on v1.51** — FR-R331-3's claim is false, and so is the sentence in §Scope about the household
+  approving the app once rather than once per update. **The fix is then the claim, not the certificate.** The owner's
+  2026-09-29 *no Apple bills* decision is not reopened by this: notarisation is the thing that would remove the
+  prompt, it costs a paid Apple account, and it is out of scope (§Out of scope). What changes instead is this spec,
+  and the in-app copy that leans on it — R385's FR-R385-6 update-line sentence tells the viewer about the drag and
+  the *Open Anyway*, so it is the surface that would need to stop implying once-ever. Write it down and hand it to the
+  owner as information; do not treat a failed 2b as a reason to buy anything.
+
+**And the two pieces of advice already in this file conflict, so the order matters.** The 2026-10-12 amendment notes
+that `xattr -dr com.apple.quarantine` is what prevents App Translocation — useful for acceptance 1's device half. But
+a copy with no quarantine flag is a copy Gatekeeper never assesses, so clearing it **voids 2b**. The sequence that
+satisfies both:
+
+1. **2b first**, with the quarantine flag intact on both `.dmg`s, each app **dragged to `/Applications` with
+   Finder** — the Finder drag is what avoids translocation *without* clearing the flag, which is why 2b cannot be
+   walked with `cp -R`.
+2. Only afterwards, if a later step needs translocation gone, clear the flag.
+
+Evidence for both launches is `ps -o lstart` process start times, because a system dialog cannot be screenshotted, and
+a note of **how** the first approval was given — System Settings ▸ Privacy & Security ▸ *Open Anyway* and nothing
+else. An approval given any other way (`spctl --add`, clearing the flag) tests a different mechanism and does not
+count.
