@@ -127,6 +127,34 @@ class FileFixRulesTest {
         assertEquals("/m/Film (2020)/Film (2020) - Dolby Vision.mkv", dvVersionPath("/m/Film (2020)/Film (2020) Remux.mkv"))
     }
 
+    @Test fun `FR-314-15 - the version's path comes from the versions root — and a root overlapping an arr root is refused`() {
+        val original = "/m/films/Film (2020)/Film.2020.Remux.mkv"
+        assertEquals("/m/films/Film (2020)/Film (2020) - Dolby Vision.mkv", dvVersionPath(original), "no root: beside the original")
+        assertEquals("/m/versions/Film (2020)/Film (2020) - Dolby Vision.mkv", dvVersionPath(original, "/m/versions"))
+        assertEquals("/m/versions/Film (2020)/Film (2020) - Dolby Vision.mkv", dvVersionPath(original, "/m/versions/"), "a trailing slash is the same root")
+        assertEquals(dvVersionPath(original), dvVersionPath(original, "  "), "a blank root is no root")
+        // The name is the same either way, so the picker's `isDvVersion` reads both placements.
+        assertTrue(dvVersionPath(original, "/m/versions").endsWith(" - $DV_VERSION_LABEL.mkv"))
+        // Inside, containing, and equal to an arr root are all refused; a sibling whose name merely starts the same is not.
+        assertEquals("/m/films", versionsRootOverlapsArrRoot("/m/films/versions", listOf("/tv", "/m/films")))
+        assertEquals("/m/films", versionsRootOverlapsArrRoot("/m/films", listOf("/m/films")))
+        assertEquals("/m/films/uhd", versionsRootOverlapsArrRoot("/m", listOf("/m/films/uhd")))
+        assertNull(versionsRootOverlapsArrRoot("/m/films-versions", listOf("/m/films", "/tv")))
+        assertNull(versionsRootOverlapsArrRoot("/m/versions", emptyList()))
+    }
+
+    @Test fun `FR-314-15 - with a versions root the rename stops being a precondition`() {
+        val scene = "/m/films/Film (2020)/Film.2020.2160p.mkv"
+        val f = facts(dvClip, scene)
+        assertFalse(namedAfterFolder(scene))
+        assertEquals("skip", planDolbyVision(f, isFilm = true, otherVideosInFolder = listOf(scene)).action, "beside the original, Jellyfin needs the folder's name")
+        val root = "/m/versions"
+        assertEquals("add", planDolbyVision(f, true, listOf(scene), root).action, "a merge groups whatever the original is called")
+        assertEquals("done", planDolbyVision(f, true, listOf(scene), root, versionExists = true).action)
+        // The folder's other videos stop mattering too: the version is not in that folder any more.
+        assertEquals("add", planDolbyVision(f, true, listOf(scene, "/m/films/Film (2020)/Someone.Elses.File.mkv"), root).action)
+    }
+
     // ── 2. Command lines ──────────────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `the encode maps the file's own audio stream into a work file - never default - tagged`() {

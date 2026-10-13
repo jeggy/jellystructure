@@ -17,6 +17,7 @@ import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.AvSyncConfig
+import dev.jellystructure.api.FileFixConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.BazarrConfig
@@ -741,6 +742,15 @@ ${aiSectionHtml()}
                    measured and nothing is counted." was unreachable. -->
               <div id="avsync-status" class="tiny muted" style="margin-top:10px">Checking…</div>
               <hr class="dash">
+              <!-- Phase 314 (FR-314-15, DEB-875) — the Dolby Vision version's home. Settings holds the setting
+                   only: the kind's own switch lives on the Libraries card, and this is the path it needs. -->
+              <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Dolby Vision versions</div>
+              <div class="field">
+                <label>Versions library folder</label>
+                <input id="dv-versions-root" class="input" type="text" placeholder="/media/versions" style="width:100%">
+                <span class="hint">Where a Dolby Vision 8.1 version is written. It must be a folder <strong>Jellyfin scans as its own library</strong> and <strong>Radarr's root folder does not hold</strong> — Jellyfin groups the version with the film itself, and Radarr never sees a file to import. Left empty, the kind cannot run: beside the original, Radarr takes the version for the film's own file and nothing can put that back. Every viewer's home screen keeps that library hidden automatically; an account that cannot see it is named in the log, never granted access.</span>
+              </div>
+              <hr class="dash">
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>
               <p class="hint" style="margin:0 0 10px">Enter how much of this host's memory the media stack (jellystructure + Jellyfin) may use, and get back exact changes — a Jellyfin <code>mem_limit</code>, a <code>/dev/shm</code> cap, a swappiness setting. Suggest-only: nothing here writes to Jellyfin, edits a compose file, or runs a sysctl. Page cache is never counted as spare capacity.</p>
               <div class="field">
@@ -1034,6 +1044,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("avsync-enabled-toggle", avSyncEnabled)
     setInputValue("avsync-url", config.avsync.url)
     setInputValue("avsync-timeout", config.avsync.timeoutS.toString())
+    setInputValue("dv-versions-root", config.fileFix.dvVersionsRoot)
     (document.getElementById("avsync-on") as? HTMLElement)?.style?.display = if (avSyncEnabled) "block" else "none"
     updateRestartBanner()
     deferWhilePlaying = config.scan.deferWhilePlaying
@@ -1830,6 +1841,9 @@ private fun readForm(): AppConfig = AppConfig(
         url = getInputValue("avsync-url").ifBlank { "http://avsync:8000" },
         timeoutS = getInputValue("avsync-timeout").toIntOrNull()?.coerceIn(5, 3600) ?: 180,
     ),
+    // Phase 314 (FR-314-15) — carried on the same global Save; trimmed, because the path is compared to
+    // Radarr's root folders and a stray space would make a root that looks clear and is not.
+    fileFix = FileFixConfig(dvVersionsRoot = getInputValue("dv-versions-root").trim()),
     libraries = libraryMappings.toList(),
     qbittorrent = if (qbEnabled) QBittorrentConfig(
         enabled = true,

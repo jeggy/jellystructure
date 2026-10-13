@@ -181,6 +181,14 @@ data class AppConfig(
     val ai: AiConfig = AiConfig(),
     // Phase 317 (FR-317-13) — the A/V sync sidecar (Settings → Advanced), carried on the global Save.
     @SerialName("avsync") val avsync: AvSyncConfig = AvSyncConfig(),
+    // Phase 314 (FR-314-15) — where a kind C Dolby Vision version lives (Settings → Advanced).
+    @SerialName("file_fix") val fileFix: FileFixConfig = FileFixConfig(),
+)
+
+/** Phase 314 (FR-314-15, DEB-875) — mirrors the backend's `FileFixConfig`: the versions library's root. */
+@Serializable
+data class FileFixConfig(
+    @SerialName("dv_versions_root") val dvVersionsRoot: String = "",
 )
 
 /** Phase 317 (FR-317-13) — mirrors the backend's `AvSyncConfig`. */

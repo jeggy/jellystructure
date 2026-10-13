@@ -48,6 +48,16 @@ object FileFixCommands {
         "{ chown --reference=${q(reference)} ${q(work)} 2>/dev/null; chmod --reference=${q(reference)} ${q(work)} 2>/dev/null; true; } && " +
             "mv -f ${q(work)} ${q(target)}"
 
+    /**
+     * FR-314-15 — the version's folder under the versions root, which does not exist the first time a film gets one
+     * (the root holds a folder per film). Owner and mode come from [reference], the film's own folder, so the result
+     * matches the library rather than the backend's umask. `mkdir -p` is idempotent: a second version re-uses it.
+     */
+    fun makeVersionFolder(target: String, reference: String): String {
+        val dir = target.substringBeforeLast('/')
+        return "mkdir -p ${q(dir)} && { chown --reference=${q(reference)} ${q(dir)} 2>/dev/null; chmod --reference=${q(reference)} ${q(dir)} 2>/dev/null; true; }"
+    }
+
     /** One ffprobe of the file as [parseProbe] reads it: streams (with side data and dispositions) and the format. */
     fun probe(path: String): String = "ffprobe -v error -print_format json -show_streams -show_format ${q(path)}"
 

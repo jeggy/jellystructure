@@ -404,6 +404,9 @@ fun main() = runBlocking {
         c.tagWriter = tagWriter
         mediaJobQueue.audioConverter = { owner, paths, onFile, cancelled -> c.run(owner, paths, onFile, cancelled) }
     }
+    // Phase 314 (FR-314-15) — the versions library's viewers: it stays off every home screen, and an account
+    // that cannot see it is named for the owner. Rate-limited to once an hour inside the class.
+    val versionsLibraryVisibility = dev.jellystructure.filefix.VersionsLibraryVisibility(jellyfinClient, ::nowEpochSec)
     // Phase 314 — a file every device can play directly: the dry run, Apply, one job at a time on the media lane.
     val fileFix = dev.jellystructure.filefix.FileFixService(
         db = db, store = mediaStore, config = { configStore.current }, history = mediaHistory,
@@ -438,6 +441,75 @@ fun main() = runBlocking {
         today = { dev.jellystructure.filefix.isoDateUtc(nowEpochSec()) },
         // Phase 314c — a Dolby Vision 7 original renamed after its folder, by 316's mover (in place).
         renameOriginal = { path -> looseFilms.renameToFolder(path) },
+        // Phase 314 (FR-314-15, DEB-875) — the version lives in the versions library, and Jellyfin groups it with the
+        // film by an explicit merge. Asserted, never remembered: the item is looked up by path first (so a version
+        // written months ago is still mergeable), and only a path Jellyfin does not know yet is reported and waited
+        // for. No library scan is triggered anywhere on this path — prod sets `scan_interval_hours = 0`.
+        groupVersion = { item, versionPath ->
+            val cfg = configStore.current
+            val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+            val token = cfg.apiKeys.jellyfinToken
+            val filmId = item.jellyfinId
+            val root = cfg.fileFix.versionsRoot()
+            val jfPath = dev.jellystructure.filefix.jellyfinViewOf(versionPath, cfg.libraries)
+            val libraryId = root?.let { r ->
+                dev.jellystructure.filefix.versionsLibraryIdOf(
+                    jellyfinClient.getLibraries(base, token),
+                    dev.jellystructure.filefix.jellyfinViewOf(r, cfg.libraries),
+                )
+            }
+            suspend fun findVersionItem(): String? =
+                libraryId?.let { jellyfinClient.itemsOfLibrary(base, token, it).firstOrNull { i -> i.path == jfPath }?.id }
+                    ?: jellyfinClient.findRecentItemByPath(base, token, jfPath)?.id
+            when {
+                base.isBlank() || filmId.isNullOrBlank() ->
+                    dev.jellystructure.filefix.VersionGrouping(false, "Jellyfin is not configured for this film")
+                libraryId == null ->
+                    dev.jellystructure.filefix.VersionGrouping(false, "no Jellyfin library holds $jfPath — add the versions root as a library in Jellyfin")
+                else -> {
+                    var versionId = findVersionItem()
+                    if (versionId == null) {
+                        // Measured on 12.1 (DEB-875): reporting the one created path resolves it into an item in
+                        // under a minute, with no scan. Two minutes of patience, then it is reported and retried.
+                        jellyfinClient.notifyMediaUpdated(base, token, listOf(jfPath to "Created"))
+                        repeat(8) {
+                            if (versionId == null) {
+                                kotlinx.coroutines.delay(15_000)
+                                versionId = findVersionItem()
+                            }
+                        }
+                    }
+                    val id = versionId
+                    when {
+                        id == null -> dev.jellystructure.filefix.VersionGrouping(false, "Jellyfin has not resolved $jfPath into an item yet")
+                        // Idempotent: the film is always the first id, so it stays the title the library shows, and a
+                        // pair that is already merged is merged again to the same state.
+                        jellyfinClient.mergeVersions(base, token, listOf(filmId, id)) ->
+                            dev.jellystructure.filefix.VersionGrouping(true, "grouped with the film as a version")
+                        else -> dev.jellystructure.filefix.VersionGrouping(false, "Jellyfin refused the merge")
+                    }
+                }
+            }
+        },
+        // FR-314-15 — a deleted version is reported as deleted and Jellyfin drops the alternate itself.
+        ungroupVersion = { versionPath ->
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.notifyMediaUpdated(cfg.apiKeys.jellyfinUrl.trimEnd('/'), cfg.apiKeys.jellyfinToken,
+                    listOf(dev.jellystructure.filefix.jellyfinViewOf(versionPath, cfg.libraries) to "Deleted"))
+            }
+            Unit
+        },
+        // FR-314-15 — the refusal's input: a versions root inside one of these would have Radarr adopt the version.
+        arrRootFolders = {
+            val cfg = configStore.current
+            listOfNotNull(cfg.radarr, cfg.sonarr).filter { it.enabled && it.url.isNotBlank() }
+                .flatMap { runCatching { arrClient.rootFolders(it.url, it.apiKey) }.getOrDefault(emptyList()) }
+        },
+        // FR-314-15 — the versions library stays off every viewer's home screen, and an account that cannot see it at
+        // all is reported rather than granted. Display preferences only: `EnabledFolders` is the owner's. At most
+        // once an hour, because it is asserted after every grouping and a grouping happens on every pass.
+        assertViewerVisibility = { versionsLibraryVisibility.assertNow(configStore.current) },
     )
     dev.jellystructure.filefix.FileFixService.current = fileFix
     mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }

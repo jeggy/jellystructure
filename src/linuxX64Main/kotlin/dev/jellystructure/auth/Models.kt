@@ -74,6 +74,21 @@ data class JellyfinUser(
     @SerialName("Policy") val policy: JellyfinPolicy,
     // Phase 187 (FR-187-7) — the change-keyed avatar cache-busting id; null when the user has no photo.
     @SerialName("PrimaryImageTag") val primaryImageTag: String? = null,
+    // Phase 314 (FR-314-15) — the viewer's own display preferences, for the versions library's excludes. Nullable
+    // for the phase-242 reason: an absent `Configuration` and an empty one are different facts.
+    @SerialName("Configuration") val configuration: JellyfinUserConfiguration? = null,
+)
+
+/**
+ * Phase 314 (FR-314-15, DEB-875) — the two display lists that keep the versions library off a viewer's home screen.
+ * Measured on 12.1: both default to `[]` on a new user, so a user who appears later sees that library until the pass
+ * puts it back. They are **display** preferences, not permissions — `EnableAllFolders`/`EnabledFolders` are never
+ * written by us.
+ */
+@Serializable
+data class JellyfinUserConfiguration(
+    @SerialName("MyMediaExcludes") val myMediaExcludes: List<String> = emptyList(),
+    @SerialName("LatestItemsExcludes") val latestItemsExcludes: List<String> = emptyList(),
 )
 
 @Serializable

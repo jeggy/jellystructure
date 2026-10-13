@@ -52,7 +52,31 @@ data class AppConfig(
     val encoder: EncoderConfig = EncoderConfig(),
     // Phase 317 — the A/V sync measurer. Off by default; off means the check stores nothing and counts nothing.
     @SerialName("avsync") val avsync: AvSyncConfig = AvSyncConfig(),
+    // Phase 314 (FR-314-15) — where a kind C Dolby Vision version lives. Blank means nowhere, and nowhere keeps the
+    // kind's switch shut: the only other placement is beside the original, which is the DEB-868 defect.
+    @SerialName("file_fix") val fileFix: FileFixConfig = FileFixConfig(),
 )
+
+/**
+ * Phase 314 (FR-314-15, DEB-875) — the one piece of kind C that is config rather than a switch: the root of the
+ * **versions library**, a path Jellyfin scans and no Radarr/Sonarr root folder holds. A kind C version is written to
+ * `<root>/<film folder>/<film folder> - Dolby Vision.mkv` and merged onto the film with Jellyfin's own
+ * `POST /Videos/MergeVersions`, so Radarr never sees a file to import.
+ *
+ * Blank is the default and means the kind cannot run: beside-the-original is the placement that cost DEB-868 (Radarr
+ * adopts the version as the movie's file, and *Remove* then leaves the film in Wanted/Missing with no API to re-link
+ * it). The owner creates the Jellyfin library and sets this; neither half alone turns kind C on.
+ *
+ * This is **not** a mapped library: it stays `skip = true` in [AppConfig.libraries], because mapped, its files would
+ * be titles of their own to the sweep, loose films, the advisor and the webhook path.
+ */
+@Serializable
+data class FileFixConfig(
+    @SerialName("dv_versions_root") val dvVersionsRoot: String = "",
+) {
+    /** The configured root, or null when there is none — null is what every FR-314-15 rule branches on. */
+    fun versionsRoot(): String? = dvVersionsRoot.trim().trimEnd('/').takeIf { it.isNotEmpty() }
+}
 
 /**
  * Phase 317 (FR-317-13) — the A/V sync sidecar's connection. Off by default, and off means ABSENT: no lane

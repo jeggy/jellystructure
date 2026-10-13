@@ -113,14 +113,38 @@ class FileFixServiceTest {
 
     private var renamer: (suspend (String) -> dev.jellystructure.model.FileFixRenameResult)? = null
 
+    /**
+     * FR-314-15 — the config the service reads. Only `[file_fix]` matters here: blank `dv_versions_root` is the
+     * beside-the-original placement every test below the FR-314-15 ones expects.
+     */
+    private var appConfig = dev.jellystructure.config.AppConfig()
+
+    /** FR-314-15 — (film id, version path) per grouping the service asked for, and what the fake answered. */
+    private val grouped = ArrayList<Pair<String, String>>()
+    private var groupAnswer: () -> VersionGrouping = { VersionGrouping(true, "grouped with the film as a version") }
+
+    /** FR-314-15 — the version paths the service reported as gone. */
+    private val ungrouped = ArrayList<String>()
+
+    /** FR-314-15 — what Radarr/Sonarr have as root folders, for the overlap refusal. */
+    private var arrRoots: List<String> = listOf("/films")
+
     private fun service() = FileFixService(
-        db = db, store = store, config = { error("unused") }, history = history,
+        db = db, store = store, config = { appConfig }, history = history,
         seeding = { seedingAnswer() },
         radarrParse = { title -> if (title.endsWith(" - Dolby Vision")) radarrCopy else ArrParseResult("Remux-2160p", 0) },
         afterWrite = { item, nudgeArr -> afterWrites += item.id to nudgeArr }, reassertAssets = { item -> reasserted += item.id; emptyList() },
         playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
         renameOriginal = renamer, radarrLink = radarrLink,
+        groupVersion = { item, versionPath -> grouped += item.id to versionPath; groupAnswer() },
+        ungroupVersion = { versionPath -> ungrouped += versionPath },
+        arrRootFolders = { arrRoots },
     )
+
+    /** FR-314-15 — the versions root this suite writes into, as the owner would configure it. */
+    private fun withVersionsRoot(root: String = "$dir/versions") {
+        appConfig = appConfig.copy(fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = root))
+    }
 
     /** Phase 314 (FR-314-13) — the titles whose images and NFO the write path wrote back itself. */
     private val reasserted = ArrayList<String>()
@@ -436,5 +460,76 @@ class FileFixServiceTest {
         assertTrue(version !in shell.files)
         assertTrue(dvFilm in shell.files, "the original stays")
         assertEquals("removed", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+    }
+
+    // ── FR-314-15 (DEB-875) — the version lives in the versions library, grouped by a merge ──────────────────────
+
+    @Test fun `with a versions root the version is written there and grouped with the film - and Remove reports it gone`() = runBlocking {
+        withVersionsRoot()
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        assertEquals("would_add", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+        assertTrue(row(dvFilm, FixKind.DOLBY_VISION)!!.detail.contains("in the versions library"), row(dvFilm, FixKind.DOLBY_VISION)!!.detail)
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(version in shell.files, "the version is under the root, not beside the original: ${shell.files.keys}")
+        assertTrue("$dir/Other (2021)/Other (2021) - Dolby Vision.mkv" !in shell.files, "nothing is written beside the original")
+        assertTrue(dvFilm in shell.files, "the original is untouched")
+        assertTrue(shell.ran.any { it.startsWith("mkdir -p") && it.contains("$dir/versions/Other (2021)") }, "the film's folder under the root is made")
+        assertEquals(listOf("other" to version), grouped, "the version is grouped with the film")
+        // Jellyfin is told; Radarr is not asked to rescan anything (FR-314-12 still).
+        assertEquals(listOf("other" to false), afterWrites)
+        assertTrue(shell.ran.none { it.contains("/Library/Refresh") }, "no library scan anywhere on this path")
+        // Remove: the file goes and Jellyfin is told the path is gone — the film keeps its own file.
+        shell.probes[version] = dv81.replace("\"duration\": \"100.000000\"}", "\"duration\": \"100.000000\", \"tags\": {\"JELLYSTRUCTURE_DV\": \"8.1-from-7\"}}")
+        s.removeTitle(FixKind.DOLBY_VISION, "other")
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(version !in shell.files)
+        assertEquals(listOf(version), ungrouped, "the deletion is reported, and nothing unmerges a film's other versions")
+        assertTrue(dvFilm in shell.files, "the original stays")
+    }
+
+    @Test fun `a versions root inside a Radarr root folder refuses the job rather than writing a file Radarr will adopt`() = runBlocking {
+        withVersionsRoot("/films/versions")
+        arrRoots = listOf("/films")
+        val s = service()
+        s.buildPlan()
+        val outcome = s.runJob(dvFilm, "c", { false })
+        assertIs<FixOutcome.Failed>(outcome)
+        assertTrue(outcome.reason.contains("/films"), outcome.reason)
+        assertTrue(shell.files.keys.none { it.contains("Dolby Vision") }, "nothing was written")
+        assertTrue(grouped.isEmpty())
+    }
+
+    @Test fun `a version Jellyfin has not resolved yet is reported and asserted again on the next pass`() = runBlocking {
+        withVersionsRoot()
+        groupAnswer = { VersionGrouping(false, "Jellyfin has not resolved it into an item yet") }
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }), "an ungrouped version is still a written version")
+        assertTrue(history.forItem("other").any { it.detail.contains("has not grouped it with the film yet") },
+            history.forItem("other").joinToString { it.detail })
+        assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+        // The next dry run finds the file on disk and asserts the merge again — nothing is remembered between passes.
+        grouped.clear()
+        groupAnswer = { VersionGrouping(true, "grouped with the film as a version") }
+        s.buildPlan()
+        assertEquals(listOf("other" to version), grouped)
+        assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+    }
+
+    @Test fun `with a versions root no film waits for a rename - and without one it still does`() = runBlocking {
+        // A scene-named original in its own folder: Jellyfin's folder grouping would not group a version beside it.
+        val scene = "$dir/Third (2022)/Third.2022.2160p.DV.mkv"
+        shell.files[scene] = 40_000_000; shell.probes[scene] = dv7
+        store.addOrUpdate(MediaItem(id = "third", title = "Third", year = 2022, kind = MediaKind.MOVIE, path = scene, tmdbId = null,
+            originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList()))
+        renamer = { dev.jellystructure.model.FileFixRenameResult(scene, state = "failed", detail = "not asked") }
+        service().buildPlan()
+        assertEquals("needs_rename", row(scene, FixKind.DOLBY_VISION)?.state, "beside the original, grouping needs the rename")
+        withVersionsRoot()
+        service().buildPlan()
+        assertEquals("would_add", row(scene, FixKind.DOLBY_VISION)?.state, "a merged version groups whatever the original is called")
     }
 }

@@ -830,6 +830,67 @@ class JellyfinClient {
         r.status.value in 200..299
     }.getOrDefault(false)
 
+    /**
+     * Phase 314 (FR-314-15, DEB-875) — keep the versions library off one viewer's home screen: add [libraryId] to
+     * their `MyMediaExcludes` and `LatestItemsExcludes`. Returns true when the account already said this or now does.
+     *
+     * **The whole `Configuration` object is read and put back with only those two lists changed.** Posting a typed
+     * model would silently reset every display preference this build does not model — subtitle mode, audio language,
+     * the home-screen layout — on somebody else's account. A permission is never touched: `EnableAllFolders` and
+     * `EnabledFolders` are the owner's, and a viewer who cannot see the library is reported instead (FR-314-15).
+     */
+    suspend fun addUserDisplayExcludes(baseUrl: String, token: String, userId: String, libraryId: String): Boolean = runCatching {
+        val base = baseUrl.trimEnd('/')
+        val user = httpGet("$base/Users/${userId.encodeURLParameter()}") { jellyfinAuth(token) }
+            .bodyOrNull<kotlinx.serialization.json.JsonObject>("addUserDisplayExcludes") ?: return@runCatching false
+        val config = user["Configuration"] as? kotlinx.serialization.json.JsonObject ?: return@runCatching false
+        fun strings(key: String): List<String> =
+            (config[key] as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { e -> (e as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content } ?: emptyList()
+        val my = strings("MyMediaExcludes")
+        val latest = strings("LatestItemsExcludes")
+        if (libraryId in my && libraryId in latest) return@runCatching true   // already said; no write
+        val updated = kotlinx.serialization.json.JsonObject(
+            config + mapOf(
+                "MyMediaExcludes" to kotlinx.serialization.json.JsonArray((my + libraryId).distinct().map { kotlinx.serialization.json.JsonPrimitive(it) }),
+                "LatestItemsExcludes" to kotlinx.serialization.json.JsonArray((latest + libraryId).distinct().map { kotlinx.serialization.json.JsonPrimitive(it) }),
+            )
+        )
+        val r = httpPost("$base/Users/${userId.encodeURLParameter()}/Configuration") {
+            jellyfinAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(updated.toString())
+        }
+        r.status.value in 200..299
+    }.getOrElse { Logger.warn("Jellyfin addUserDisplayExcludes failed: ${it.message}"); false }
+
+    /**
+     * Phase 314 (FR-314-15, DEB-875) — every item of one library, with its path. Unlike [findRecentItemByPath] this
+     * is not bounded to the most recent additions, so it resolves a version written months ago — which is what makes
+     * the merge assertable on any later pass rather than only just after the write.
+     */
+    suspend fun itemsOfLibrary(baseUrl: String, token: String, parentId: String, includeItemTypes: String = "Movie"): List<JellyfinItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items?ParentId=${parentId.encodeURLParameter()}&Recursive=true&IncludeItemTypes=$includeItemTypes&Fields=Path"
+        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("itemsOfLibrary")?.items ?: emptyList()
+    }.getOrElse { Logger.warn("Jellyfin itemsOfLibrary failed: ${it.message}"); emptyList() }
+
+    /**
+     * Phase 314 (FR-314-15, DEB-875) — group a kind C version with its film: Jellyfin's own
+     * `POST /Videos/MergeVersions?Ids=<primary>,<alternate>`. The first id stays the film the library shows; the
+     * others become its alternate versions, whatever library they live in.
+     *
+     * Measured on 12.1 (DEB-875): the link lives in the DB and survives `/Library/Refresh`, the `RefreshLibrary`
+     * task, a `FullRefresh` with `ReplaceAllMetadata` on either item, a recursive refresh of both library roots and a
+     * restart. It is **asserted, never remembered** — a merge that is missing is simply made again, and since
+     * Jellyfin derives an item id from the path, that is idempotent with nothing stored.
+     */
+    suspend fun mergeVersions(baseUrl: String, token: String, itemIds: List<String>): Boolean = runCatching {
+        if (itemIds.size < 2) return@runCatching false
+        val url = baseUrl.trimEnd('/') + "/Videos/MergeVersions?Ids=" + itemIds.joinToString(",") { it.encodeURLParameter() }
+        httpPost(url) { jellyfinAuth(token) }.status.value in 200..299
+    }.getOrElse { Logger.warn("Jellyfin mergeVersions failed: ${it.message}"); false }
+
     suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/Refresh"
         val response = httpPost(url) { jellyfinAuth(token) }

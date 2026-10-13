@@ -197,13 +197,57 @@ fun planAudio(kind: FixKind, facts: FileFacts): Verdict {
     }
 }
 
-/** The Jellyfin version name of a film's profile-8.1 copy: `<folder> - Dolby Vision.mkv` beside the original. */
+/** The Jellyfin version name of a film's profile-8.1 copy: `<folder> - Dolby Vision.mkv`. */
 const val DV_VERSION_LABEL = "Dolby Vision"
 
-fun dvVersionPath(originalPath: String): String {
+/**
+ * FR-314-15 (DEB-875) — where a kind C version lives. With a [versionsRoot] configured the version goes to
+ * `<root>/<film folder>/<film folder> - Dolby Vision.mkv`, in a Jellyfin library Radarr's root folder does not hold,
+ * and Jellyfin groups it with the film by an explicit `MergeVersions` rather than by the folder.
+ *
+ * With **no** root the old beside-the-original path stands, unchanged — and that placement is the DEB-868 defect
+ * (Radarr's own scan adopts the version as the movie's file and *Remove* then leaves the film unlinked), which is why
+ * FR-314-15 keeps the kind's switch shut until a root is configured. The name is the same either way, so
+ * `isDvVersion`, `chooseMediaSource` and the clients' picker do not care which placement is in force.
+ */
+fun dvVersionPath(originalPath: String, versionsRoot: String? = null): String {
     val dir = originalPath.substringBeforeLast('/')
     val folder = dir.substringAfterLast('/')
-    return "$dir/$folder - $DV_VERSION_LABEL.mkv"
+    val name = "$folder - $DV_VERSION_LABEL.mkv"
+    val root = trimPath(versionsRoot) ?: return "$dir/$name"
+    return "$root/$folder/$name"
+}
+
+/**
+ * FR-314-15 — the versions root must not overlap a Radarr/Sonarr root folder, in either direction, and the write
+ * refuses the job when it does. Inside one, Radarr's own `DiskScanService.Scan` adopts our version as the movie's
+ * file (DEB-868) — the defect the placement exists to remove. Containing one, the versions library would hold the
+ * whole film library a second time and every film would show twice.
+ *
+ * Compared on whole path segments, so `/mnt/media/films-versions` is **not** inside `/mnt/media/films`. Returns the
+ * offending arr root, or null when the root is clear.
+ */
+fun versionsRootOverlapsArrRoot(versionsRoot: String, arrRoots: List<String>): String? {
+    val root = trimPath(versionsRoot) ?: return null
+    return arrRoots.firstOrNull { candidate ->
+        val a = trimPath(candidate) ?: return@firstOrNull false
+        root == a || root.startsWith("$a/") || a.startsWith("$root/")
+    }
+}
+
+private fun trimPath(p: String?): String? = p?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
+
+/**
+ * FR-314-15 — a local path as Jellyfin sees it. jellystructure, Jellyfin and Bazarr mount the media under different
+ * roots (phase 273), so a version's path is translated before Jellyfin is told about it or asked to resolve it. The
+ * mapping is the library list's own `localPath` → `jellyfinPath` pair, which the versions library carries like any
+ * other library — `skip = true` is about titles, not about paths. Unmapped, the path comes back as it is, which is
+ * right when both sides mount it the same way.
+ */
+fun jellyfinViewOf(local: String, libraries: List<dev.jellystructure.config.LibraryMapping>): String {
+    val lib = libraries.filter { it.localPath.isNotBlank() && it.jellyfinPath.isNotBlank() }
+        .firstOrNull { local == it.localPath.trimEnd('/') || local.startsWith(it.localPath.trimEnd('/') + "/") } ?: return local
+    return lib.jellyfinPath.trimEnd('/') + local.removePrefix(lib.localPath.trimEnd('/'))
 }
 
 /**
@@ -271,20 +315,39 @@ fun renamedToFolder(originalPath: String): String? {
 /** Jellyfin's `CheckMultiVersionRegex` (`[0-9]{2}[0-9]+[ip]`) and its bracket form, for a tail like `2160p`. */
 private val MULTI_VERSION_TAIL = Regex("""^(\[[^]]*]|[0-9]{2}[0-9]+[ip])""", RegexOption.IGNORE_CASE)
 
-/** FR-314-1 kind C: a film whose picture is Dolby Vision profile 7 (with its enhancement layer). */
-fun planDolbyVision(facts: FileFacts, isFilm: Boolean, otherVideosInFolder: List<String>): Verdict {
+/**
+ * FR-314-1 kind C: a film whose picture is Dolby Vision profile 7 (with its enhancement layer).
+ *
+ * FR-314-15 — with a [versionsRoot] configured the version does not live in the film's folder, so **Jellyfin's folder
+ * grouping stops mattering and the rename stops being a precondition**: the two `namedAfterFolder` gates below (and
+ * with them `needs_rename` for this kind) apply only to the old beside-the-original placement. [versionExists] is
+ * whether the version is already at `dvVersionPath(path, versionsRoot)` — the caller stats it, because with a root
+ * the target is not in [otherVideosInFolder] any more.
+ */
+fun planDolbyVision(
+    facts: FileFacts,
+    isFilm: Boolean,
+    otherVideosInFolder: List<String>,
+    versionsRoot: String? = null,
+    versionExists: Boolean = false,
+): Verdict {
     val k = FixKind.DOLBY_VISION
     if (facts.isOurDvVersion) return Verdict(k, "skip", reason = "this is our profile 8.1 version")
     val v = facts.video ?: return Verdict(k, "skip", reason = "no video")
     if (normCodec(v.codec) != "hevc" || v.dvProfile != 7) return Verdict(k, "skip", reason = "not Dolby Vision profile 7")
     if (!isFilm) return Verdict(k, "skip", reason = "episodes: films only in this phase")
     if (facts.container != "matroska") return Verdict(k, "skip", reason = "MP4 and other containers: MKV only in this phase")
-    val target = dvVersionPath(facts.path)
+    val target = dvVersionPath(facts.path, versionsRoot)
+    val reason = if (v.dvElPresent) "profile 7 with its enhancement layer · the original stays as it is" else "profile 7 · the original stays as it is"
+    if (versionsRoot != null) {
+        if (versionExists) return Verdict(k, "done")
+        return Verdict(k, "add", reason = reason)
+    }
     if (otherVideosInFolder.any { it == target }) return Verdict(k, "done")
     if (!namedAfterFolder(facts.path)) return Verdict(k, "skip", reason = "the file isn't named after its folder, so Jellyfin would show the copy as a second film")
     val others = otherVideosInFolder.filter { it != facts.path && it != target }
     if (others.any { !namedAfterFolder(it) }) return Verdict(k, "skip", reason = "another video in the folder isn't named after it, so Jellyfin would not group the versions")
-    return Verdict(k, "add", reason = if (v.dvElPresent) "profile 7 with its enhancement layer · the original stays as it is" else "profile 7 · the original stays as it is")
+    return Verdict(k, "add", reason = reason)
 }
 
 // ── Verification (FR-314-3 step 4) ────────────────────────────────────────────────────────────────────────────────

@@ -33,6 +33,13 @@ sealed class FixOutcome {
 data class FixTarget(val item: MediaItem, val path: String, val isFilm: Boolean, val label: String)
 
 /**
+ * FR-314-15 — what grouping a kind C version did, in the words the title's history uses. [merged] false with a
+ * [detail] is the honest outcome when Jellyfin never resolved the path into an item: the file is written and good,
+ * the grouping is not done, and the next dry run tries again rather than anyone assuming it worked.
+ */
+data class VersionGrouping(val merged: Boolean, val detail: String)
+
+/**
  * Phase 314 — a file every device can play directly: the dry run (FR-314-2), Apply, the queue tick that hands one file at
  * a time to the media lane within the nightly read cap (FR-314-10), and the job body per kind (FR-314-3/-6, kind C).
  *
@@ -72,6 +79,28 @@ class FileFixService(
     private val today: () -> String,
     /** Phase 314c — renames a Dolby Vision 7 original after its folder (316's mover, in place); null where not wired. */
     private val renameOriginal: (suspend (String) -> dev.jellystructure.model.FileFixRenameResult)? = null,
+    /**
+     * FR-314-15 (DEB-875) — makes Jellyfin group a version that lives in the versions library with its film: report
+     * the one created path, resolve the item it becomes, merge it onto the film. **Asserted, never remembered** — it
+     * is called after a write and again from the dry run while the file is there, and a merge that already holds is a
+     * no-op. Null where it isn't wired (tests, and an installation with no versions root).
+     */
+    private val groupVersion: (suspend (item: MediaItem, versionPath: String) -> VersionGrouping)? = null,
+    /**
+     * FR-314-15 — tells Jellyfin our version is gone, so it drops the alternate item and leaves the film its own file
+     * and its watch data (measured, DEB-875). Never `DELETE /Videos/{id}/AlternateSources`: that drops a film's
+     * *every* alternate, not ours.
+     */
+    private val ungroupVersion: (suspend (versionPath: String) -> Unit)? = null,
+    /** FR-314-15 — Radarr's and Sonarr's root folders, for the overlap refusal. Empty where the arrs aren't wired. */
+    private val arrRootFolders: (suspend () -> List<String>)? = null,
+    /**
+     * FR-314-15 — keeps the versions library off every viewer's home screen (their own `MyMediaExcludes` and
+     * `LatestItemsExcludes`, the only thing we write on a viewer's account) and reports any restricted account that
+     * cannot see it. Called after a version is grouped, which is both when a write lands and on every later pass, so
+     * a viewer who appears later is covered; the wiring rate-limits it.
+     */
+    private val assertViewerVisibility: (suspend () -> Unit)? = null,
 ) {
     private val q get() = db.fileFixQueries
 
@@ -269,11 +298,19 @@ class FileFixService(
             upsertPlanned(t.path, kind.id, t.item.id, t.label, if (joined) "pending" else state, detail, v.estBytes, st.first, st.second, now())
         }
         val folderVideos = if (facts.video?.dvProfile == 7) videosInFolder(t.path) else emptyList()
-        val dv = planDolbyVision(facts, t.isFilm, folderVideos)
+        // FR-314-15 — with a versions root the version does not live in the film's folder, so the target is stat'ed
+        // rather than looked for among the folder's videos.
+        val root = versionsRoot()
+        val versionPath = dvVersionPath(t.path, root)
+        val versionThere = root != null && facts.video?.dvProfile == 7 && shell.exists(versionPath)
+        val dv = planDolbyVision(facts, t.isFilm, folderVideos, root, versionThere)
+        val where = if (root != null) "in the versions library" else "beside it"
         // Phase 314c (owner, 2026-10-08: rename, asked per film) — a film that would get its version once its file is
         // named after its folder is listed as `needs_rename`: the owner ticks it, the rename runs, then the version.
+        // FR-314-15 — only for the beside-the-original placement: a merged version groups whatever the original is
+        // called, so with a root configured no film waits on a rename and `needs_rename` leaves this kind.
         val renamedTo = renamedToFolder(t.path)
-        if (dv.action == "skip" && renamedTo != null && !namedAfterFolder(t.path) &&
+        if (root == null && dv.action == "skip" && renamedTo != null && !namedAfterFolder(t.path) &&
             planDolbyVision(facts.copy(path = renamedTo), t.isFilm, folderVideos.map { if (it == t.path) renamedTo else it }).action == "add"
         ) {
             upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "needs_rename",
@@ -283,10 +320,29 @@ class FileFixService(
         }
         when (dv.action) {
             "add" -> upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "would_add",
-                "+ a Dolby Vision 8.1 version beside it (${dv.reason}) · ~${st.first / 1_000_000_000} GB", st.first, st.first, st.second, now())
-            "done" -> upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "done", "the Dolby Vision 8.1 version is beside it", 0, st.first, st.second, now())
+                "+ a Dolby Vision 8.1 version $where (${dv.reason}) · ~${st.first / 1_000_000_000} GB", st.first, st.first, st.second, now())
+            "done" -> {
+                upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "done", "the Dolby Vision 8.1 version is $where", 0, st.first, st.second, now())
+                // FR-314-15 — the merge is asserted, not remembered: a version that is on disk and not grouped (a
+                // library rescan that re-created the item, a merge that never landed) is merged again here, and a
+                // merge that already holds costs one read.
+                if (versionThere) groupAndKeepHidden(t.item, versionPath)
+            }
             else -> if (facts.video?.dvProfile == 7) upsertPlanned(t.path, FixKind.DOLBY_VISION.id, t.item.id, t.label, "skipped", dv.reason ?: "skipped", 0, st.first, st.second, now())
         }
+    }
+
+    /** FR-314-15 — the versions library's root, or null when the owner has not configured one. */
+    private fun versionsRoot(): String? = config().fileFix.versionsRoot()
+
+    /**
+     * FR-314-15 — group the version with its film and, once it is grouped, keep that library out of every viewer's
+     * way. Null when grouping isn't wired. Never throws: the file is written and good whatever Jellyfin answers.
+     */
+    private suspend fun groupAndKeepHidden(item: MediaItem, versionPath: String): VersionGrouping? {
+        val grouped = runCatching { groupVersion?.invoke(item, versionPath) }.getOrNull() ?: return null
+        if (grouped.merged) runCatching { assertViewerVisibility?.invoke() }
+        return grouped
     }
 
     // ── The card ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -424,13 +480,20 @@ class FileFixService(
     private suspend fun runRemove(item: MediaItem, path: String, kind: FixKind, stop: () -> Boolean): FixOutcome {
         val did = ArrayList<String>()
         if (kind == FixKind.DOLBY_VISION) {
-            val version = dvVersionPath(path)
-            if (!shell.exists(version)) return FixOutcome.Skipped("no Dolby Vision version beside it")
+            // FR-314-15 — wherever the version was placed, including a version written under the old
+            // beside-the-original placement on an installation that has since configured a root.
+            val root = versionsRoot()
+            val version = listOfNotNull(dvVersionPath(path, root), dvVersionPath(path).takeIf { root != null })
+                .firstOrNull { shell.exists(it) }
+                ?: return FixOutcome.Skipped("no Dolby Vision version to take away")
             val p = shell.run(FileFixCommands.probe(version)).takeIf { it.ok }?.output ?: return FixOutcome.Failed("the version file can't be read; left alone")
-            if (!hasOurDvTag(p)) return FixOutcome.Failed("the file beside it isn't jellystructure's version; left alone")
+            if (!hasOurDvTag(p)) return FixOutcome.Failed("that file isn't jellystructure's version; left alone")
             shell.remove(version)
             if (shell.exists(version)) return FixOutcome.Failed("the version file couldn't be deleted")
             did += "deleted ${version.substringAfterLast('/')}"
+            // FR-314-15 — Jellyfin drops the alternate item from the deletion of the path; the film keeps its own
+            // file and its watch data (measured, DEB-875). Never `AlternateSources`: it unmerges every alternate.
+            runCatching { ungroupVersion?.invoke(version) }
         } else {
             val token = if (kind == FixKind.STEREO) "Stereo" else "Surround"
             val dir = path.substringBeforeLast('/')
@@ -535,10 +598,20 @@ class FileFixService(
     private suspend fun runDolbyVision(item: MediaItem, path: String, stop: () -> Boolean, progress: (Double) -> Unit): FixOutcome {
         if (!shell.exists(doviTool)) return FixOutcome.Failed("dovi_tool is not installed in this image")
         val before = probe(path) ?: return FixOutcome.Failed("ffprobe could not read the file")
-        val verdict = planDolbyVision(before.facts, item.kind == MediaKind.MOVIE, videosInFolder(path))
-        if (verdict.action != "add") return FixOutcome.Skipped(if (verdict.action == "done") "the version is already beside it" else verdict.reason ?: "not eligible")
+        // FR-314-15 — where the version goes, and the refusal that keeps the placement meaningful: inside a Radarr
+        // root folder, Radarr's own scan would adopt it as the movie's file and no API of ours could put the link
+        // back (DEB-868). Checked per job, because a root folder can be added to Radarr after the root is set.
+        val root = versionsRoot()
+        if (root != null) {
+            val roots = runCatching { arrRootFolders?.invoke() }.getOrNull()
+            if (roots != null) versionsRootOverlapsArrRoot(root, roots)?.let {
+                return FixOutcome.Failed("the versions root $root overlaps the media root $it — Radarr would take the version for the film's file (DEB-868); point it somewhere Radarr does not scan")
+            }
+        }
+        val target = dvVersionPath(path, root)
+        val verdict = planDolbyVision(before.facts, item.kind == MediaKind.MOVIE, videosInFolder(path), root, shell.exists(target))
+        if (verdict.action != "add") return FixOutcome.Skipped(if (verdict.action == "done") "the version is already there" else verdict.reason ?: "not eligible")
         if (before.streams.firstOrNull()?.type != "video") return FixOutcome.Skipped("the picture isn't the file's first track")
-        val target = dvVersionPath(path)
         // Owner, 2026-10-08 (review item 7) — Radarr must never take the copy for an upgrade and delete the original.
         radarrParse?.let { parse ->
             val copy = parse(target.substringAfterLast('/').substringBeforeLast('.'))
@@ -572,13 +645,28 @@ class FileFixService(
         val framesAfter = shell.run(FileFixCommands.frameCount(work)).output.trim().trimEnd(',').toLongOrNull()
         verifyDvVersion(before.streams, framesBefore, after.streams, framesAfter, after.facts.video)?.let { return FixOutcome.Failed("verification: $it") }
         if (shell.exists(target)) return FixOutcome.Skipped("a file named ${target.substringAfterLast('/')} is already there")
+        // FR-314-15 — the versions root holds a folder per film, and this film's does not exist the first time.
+        if (root != null && !shell.run(FileFixCommands.makeVersionFolder(target, path.substringBeforeLast('/'))).ok) {
+            return FixOutcome.Failed("could not make the version's folder under $root")
+        }
         if (!shell.run(FileFixCommands.moveIntoPlace(work, target, path)).ok) return FixOutcome.Failed("could not place the version")
-        history.record(item.id, "file_fix", "Dolby Vision the TVs play: a profile 8.1 version beside the original · ${target.substringAfterLast('/')}")
-        q.setState("done", "the Dolby Vision 8.1 version is beside it", size * 3, now(), path, FixKind.DOLBY_VISION.id)
+        val where = if (root != null) "in the versions library" else "beside the original"
+        history.record(item.id, "file_fix", "Dolby Vision the TVs play: a profile 8.1 version $where · ${target.substringAfterLast('/')}")
+        q.setState("done", "the Dolby Vision 8.1 version is ${if (root != null) "in the versions library" else "beside it"}", size * 3, now(), path, FixKind.DOLBY_VISION.id)
         // FR-314-12 — Jellyfin is told, Radarr is not: its rescan takes the version for the film's file, and nothing
         // jellystructure can call puts that back (DEB-868).
         runCatching { afterWrite(item, false) }
         runCatching { reassertAssets(item) }   // FR-314-13 — after the Jellyfin refresh, not instead of it
+        // FR-314-15 — the version is a film of its own to Jellyfin until it is merged onto this one. Grouping is
+        // reported either way: the file is written and good even when Jellyfin has not resolved it yet, and the next
+        // dry run asserts the merge rather than anyone assuming it happened.
+        if (root != null) {
+            val grouped = groupAndKeepHidden(item, target)
+            if (grouped != null && !grouped.merged) {
+                history.record(item.id, "file_fix", "The version is written, but Jellyfin has not grouped it with the film yet: ${grouped.detail}. The next pass tries again.")
+                Logger.warn("file fix: version written but not grouped for $path — ${grouped.detail} (314, FR-314-15)", "jobs")
+            }
+        }
         reportRadarrLink(item, path)
         Logger.info("file fix: Dolby Vision 8.1 version written for $path (314)", "jobs")
         return FixOutcome.Done
@@ -593,7 +681,9 @@ class FileFixService(
      * [RadarrLink]. Best-effort throughout: an unreachable Radarr never fails a job that has already succeeded.
      */
     private suspend fun reportRadarrLink(item: MediaItem, path: String) {
-        val drift = runCatching { radarrLinkDrift(radarrLink, item, path, dvVersionPath(path)) }.getOrNull() ?: return
+        // FR-314-15 — with a versions root Radarr has no file of ours in its view at all, so this read costs nothing
+        // and becomes the canary: a link that still moves means the root is somewhere Radarr scans.
+        val drift = runCatching { radarrLinkDrift(radarrLink, item, path, dvVersionPath(path, versionsRoot())) }.getOrNull() ?: return
         history.record(item.id, "file_fix", "$drift. Jellystructure can't put that back — it takes Radarr's own UI (DEB-868).")
         Logger.warn("file fix: $drift — for $path (314, FR-314-12)", "jobs")
     }
