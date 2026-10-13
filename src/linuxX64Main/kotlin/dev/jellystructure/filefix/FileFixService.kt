@@ -101,6 +101,12 @@ class FileFixService(
      * a viewer who appears later is covered; the wiring rate-limits it.
      */
     private val assertViewerVisibility: (suspend () -> Unit)? = null,
+    /**
+     * FR-314-19 (DEB-986) — acceptance 10's surface: the accounts [assertViewerVisibility]'s pass last found cannot
+     * see the versions library, for the kind C card. The same pass that writes the log line, read rather than
+     * re-run — no Jellyfin call of its own and nothing stored — so it is empty until that pass has run.
+     */
+    private val restrictedViewers: () -> List<String> = { emptyList() },
 ) {
     private val q get() = db.fileFixQueries
 
@@ -397,6 +403,9 @@ class FileFixService(
                 counts = counts,
                 eligibleBytes = rows.filter { it.state == "would_add" || it.state == "sidecar" }.sumOf { it.bytes ?: 0L },
                 staleNote = staleNote(k, root, counts),
+                // FR-314-19 — only kind C puts a file in the versions library, so only kind C's card can be the place
+                // an account shut out of it is named.
+                restrictedViewers = if (k == FixKind.DOLBY_VISION) restrictedViewers() else emptyList(),
             )
         }
         return FileFixOverview(kinds, planStatus, readCapBytes(), q.readBytesSince(now() - 86_400).executeAsOne())

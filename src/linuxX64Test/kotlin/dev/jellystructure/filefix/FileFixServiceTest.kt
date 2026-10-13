@@ -139,7 +139,11 @@ class FileFixServiceTest {
         groupVersion = { item, versionPath -> grouped += item.id to versionPath; groupAnswer() },
         ungroupVersion = { versionPath -> ungrouped += versionPath },
         arrRootFolders = { arrRoots },
+        restrictedViewers = { restrictedViewers },
     )
+
+    /** FR-314-19 — what the FR-314-15 pass last found: the accounts that cannot see the versions library. */
+    private var restrictedViewers: List<String> = emptyList()
 
     /**
      * FR-314-15 — the versions root this suite writes into, as the owner would configure it.
@@ -633,5 +637,29 @@ class FileFixServiceTest {
         assertEquals(DV_SKIP_OTHER_VIDEO_NOT_NAMED, row(dvFilm, FixKind.DOLBY_VISION)?.detail)
         withVersionsRoot()
         assertTrue(service().overview().kinds.single { it.kind == "c" }.staleNote!!.contains("1 of the"))
+    }
+
+    /**
+     * Test 17 (FR-314-19, DEB-986) — acceptance 10 and 16: the restricted accounts the FR-314-15 pass found are on
+     * the kind C card, not only in a log line. Asserted on the view model the card renders, so what is tested is the
+     * thing the owner reads rather than a string in the journal.
+     *
+     * The owner answered *report, never grant* on 2026-10-13 (DEB-949), so those accounts stay on the original
+     * deliberately and indefinitely — which is exactly why none of this is allowed to be write-shaped: the overview
+     * reads the pass's finding and never asks Jellyfin anything of its own.
+     */
+    @Test fun `the kind C card names the accounts that cannot see the versions library - and nothing when there are none`() = runBlocking {
+        withVersionsRoot()
+        service().buildPlan()
+
+        // No such account: the card says nothing at all. A zero would read as a finding.
+        assertEquals(emptyList<String>(), service().overview().kinds.single { it.kind == "c" }.restrictedViewers)
+
+        restrictedViewers = listOf("viewer-kid", "viewer-guest")
+        val kinds = service().overview().kinds
+        assertEquals(listOf("viewer-kid", "viewer-guest"), kinds.single { it.kind == "c" }.restrictedViewers)
+        // Only kind C writes into the versions library, so only its card can carry the report.
+        assertEquals(emptyList<String>(), kinds.single { it.kind == "a" }.restrictedViewers)
+        assertEquals(emptyList<String>(), kinds.single { it.kind == "b" }.restrictedViewers)
     }
 }

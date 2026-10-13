@@ -62,6 +62,20 @@ private fun gb(bytes: Long): String = when {
     else -> "${bytes / 1_000_000} MB"
 }
 
+/**
+ * FR-314-19 (DEB-986) — acceptance 10: the accounts that cannot see the versions library, named where the switch is.
+ * Nothing at all when there are none — a zero would read as a finding, and *no account is shut out* is the normal case.
+ *
+ * It is a **report, not a control**: no button here widens anybody's access. Who may see a library is the owner's, set
+ * in Jellyfin, and neither this row nor the pass behind it writes a permission.
+ */
+private fun restrictedNote(names: List<String>): String {
+    if (names.isEmpty()) return ""
+    val who = names.joinToString(", ") { it.esc() }
+    val lead = if (names.size == 1) "One account cannot see the film versions library" else "${names.size} accounts cannot see the film versions library"
+    return """<div class="note blue tiny" style="margin-top:6px">$lead: <b>$who</b>. Their devices get the original rather than the added version, so a film may still have to be converted for them. Letting them see that library is yours to do in Jellyfin — nothing here changes who may see what.</div>"""
+}
+
 private fun renderFileFix(o: FileFixOverview) {
     val p = o.plan
     el("ff-status")?.innerHTML = when {
@@ -95,6 +109,7 @@ private fun renderFileFix(o: FileFixOverview) {
                  if (k.staleNote != null) """<div class="note warn tiny" style="margin-top:6px">${k.staleNote.esc()}</div>"""
                  else """<div class="tiny" style="margin-top:4px">${parts.joinToString(" · ")}${if (k.eligibleBytes > 0) " · ~${gb(k.eligibleBytes)} to write" else ""}</div>"""
              }
+             ${restrictedNote(k.restrictedViewers)}
              <label class="tiny muted row center" style="gap:6px;margin-top:6px"><input type="checkbox" class="ff-auto" data-k="${k.kind}"${if (k.autoNew) " checked" else ""}${if (!k.enabled) " disabled" else ""}>Apply automatically to new files</label>
              <div class="ff-rows" id="ff-rows-${k.kind}" style="display:none;margin-top:8px"></div>
            </div>"""

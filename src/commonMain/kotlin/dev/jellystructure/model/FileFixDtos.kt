@@ -26,6 +26,13 @@ data class FileFixKindSummary(
      * of** the counts: a number nothing stands behind is worse than no number, because the switch is decided off it.
      */
     @SerialName("stale_note") val staleNote: String? = null,
+    /**
+     * FR-314-19 (DEB-986) — the Jellyfin accounts that cannot see the versions library, as the FR-314-15 pass last
+     * found them. Kind C only, and empty for every other kind and until a pass has run. A **report, not a control**:
+     * the card names them and offers nothing that widens a permission, because FR-314-15 does not grant and neither
+     * does this. Empty means the card says nothing, not that it shows a zero.
+     */
+    @SerialName("restricted_viewers") val restrictedViewers: List<String> = emptyList(),
 )
 
 @Serializable

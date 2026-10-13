@@ -1639,3 +1639,34 @@ writes the log line today; no new Jellyfin call, no stored state.
 The order is **deploy → switch (`enabled = 1`, `auto_new = 0`) → one Apply on one unseeded film → DEB-870**, and
 DEB-870 tests the film that Apply picks rather than rebuilding its old subject. FR-314-19 does not gate any of it.
 Acceptance 11 and 12 are met; acceptance 9 closes with the one Apply; acceptance 10 closes with FR-314-19.
+
+### FR-314-19 as built (2026-10-13, DEB-986)
+
+The report is one `note` on the kind C card, under its counts: *"N accounts cannot see the film versions library:
+…"*, then what that costs them and that widening it is the owner's in Jellyfin. Nothing at all when the list is
+empty — the normal case is nobody shut out, and a zero there would read as a finding.
+
+Three decisions worth writing down, because each of them is a thing the row could have been and is not:
+
+- **It reads the pass, it does not re-run it.** `VersionsLibraryVisibility` now remembers the names its last
+  completed pass found (`restricted`), `FileFixService.overview()` reads that for kind C only, and
+  `FileFixKindSummary.restricted_viewers` carries it to the card. The card polls every two seconds while a dry run
+  is going; the pass talks to Jellyfin twice (`/Library/VirtualFolders`, `/Users`). Those two facts cannot both live
+  in the request path, which is why the amendment says *no new Jellyfin call* and why this is a read of a field.
+- **Therefore it is empty until a pass has run**, and a pass runs when a version is grouped — i.e. once kind C has
+  written its first one. That is later than the switch, and it is still the right moment: before a version exists,
+  no account is getting an original *instead of* anything. What the row must never do is claim *nobody is shut out*
+  when the truth is *nobody has looked*, and it does not: empty renders nothing, never a zero and never a reassurance.
+- **A pass that finds none clears the field**, as does a root or a library that has gone away, so a permission the
+  owner widens in Jellyfin takes the row away by itself on the next pass. Nothing is stored in SQLite: the field is
+  in memory, a restart empties it, and the next grouping fills it again.
+
+There is no control of any kind on this row. FR-314-15 does not grant and neither does this; a widening control
+would be the owner's decision on its own card, not a side effect of a report.
+
+Test 17 is `FileFixServiceTest."the kind C card names the accounts that cannot see the versions library - and
+nothing when there are none"` — on the view model the card renders, and asserting that kinds A and B carry nothing,
+since only kind C puts a file in that library. The one line the suite cannot reach is the assignment inside the
+pass itself: `JellyfinClient` is concrete over the shared outbound pool, so a pass that answers cannot be faked
+without a live Jellyfin. What it assigns is `plan.restricted`, which
+`VersionsLibraryViewersTest` already covers as a pure function.

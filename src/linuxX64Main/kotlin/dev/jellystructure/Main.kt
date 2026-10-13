@@ -510,6 +510,9 @@ fun main() = runBlocking {
         // all is reported rather than granted. Display preferences only: `EnabledFolders` is the owner's. At most
         // once an hour, because it is asserted after every grouping and a grouping happens on every pass.
         assertViewerVisibility = { versionsLibraryVisibility.assertNow(configStore.current) },
+        // FR-314-19 (DEB-986) — acceptance 10: what that pass last found, on the kind C card. Read, never re-run —
+        // the card polls and the pass talks to Jellyfin; and a report only, offering nothing that widens a permission.
+        restrictedViewers = { versionsLibraryVisibility.restricted },
     )
     dev.jellystructure.filefix.FileFixService.current = fileFix
     mediaJobQueue.fileFixer = { path, kind, cancelled, progress -> fileFix.runJob(path, kind, cancelled, progress) }

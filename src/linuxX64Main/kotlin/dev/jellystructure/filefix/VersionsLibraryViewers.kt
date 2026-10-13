@@ -74,8 +74,20 @@ class VersionsLibraryVisibility(
 ) {
     private var lastRunAt = 0L
 
+    /**
+     * FR-314-19 (DEB-986) — the accounts the last completed pass found cannot see the versions library, in the order
+     * Jellyfin lists them. The admin card reads this: the log line alone is not a surface, and the decision to leave
+     * those accounts on the original is deliberate and indefinite, so it has to be visible where the switch is.
+     *
+     * Written by the pass and nowhere else — no stored state and no Jellyfin call of its own, which is why it is
+     * empty until a pass has run (a pass runs when a version is grouped, i.e. once kind C has written one). A pass
+     * that finds none clears it, so a permission the owner widens in Jellyfin takes the row away on the next pass.
+     */
+    var restricted: List<String> = emptyList()
+        private set
+
     suspend fun assertNow(cfg: dev.jellystructure.config.AppConfig) {
-        val root = cfg.fileFix.versionsRoot() ?: return
+        val root = cfg.fileFix.versionsRoot() ?: return run { restricted = emptyList() }
         val base = cfg.apiKeys.jellyfinUrl.trim().trimEnd('/').takeIf { it.isNotEmpty() } ?: return
         val token = cfg.apiKeys.jellyfinToken
         val at = now()
@@ -83,6 +95,7 @@ class VersionsLibraryVisibility(
         lastRunAt = at
         val libraryId = versionsLibraryIdOf(jellyfin.getLibraries(base, token), jellyfinViewOf(root, cfg.libraries))
         if (libraryId == null) {
+            restricted = emptyList()   // no library to be shut out of: whatever a previous pass found no longer holds
             dev.jellystructure.log.Logger.warn("file fix: no Jellyfin library holds the versions root $root — a version written there is not grouped with its film (314, FR-314-15)", "jobs")
             return
         }
@@ -95,6 +108,7 @@ class VersionsLibraryVisibility(
             )
         }
         val plan = planVersionsLibraryVisibility(viewers, libraryId)
+        restricted = plan.restricted.map { it.name }   // FR-314-19 — before the early return: "none" is a result too
         if (plan.nothingToDo) return
         var written = 0
         for (v in plan.toExclude) if (jellyfin.addUserDisplayExcludes(base, token, v.id, libraryId)) written++
