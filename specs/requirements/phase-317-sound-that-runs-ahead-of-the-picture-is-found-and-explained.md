@@ -1555,3 +1555,83 @@ the bump's re-measure are the same work done twice, with 318's `LANG` fix (DEB-9
     not a finding.
 28. That pass is what refills the `NULL` `mkv_audio_ids` on non-skip rows: afterwards, every row the pass
     measured carries a map, and a non-ASCII path is not over-represented among any that do not.
+
+## Amendment (2026-10-13, ninth of the day) — acceptance 28 fails on a perfect fix as worded: the id-map test is a Matroska test (DEB-959)
+
+No code moves here either, and no requirement changes. The eighth amendment added acceptance 28 one paragraph
+after the sentence that makes it safe, and dropped the word that carries it. **A `NULL` `mkv_audio_ids` on a
+non-Matroska row is correct, not damage** — `mkvmerge -J` is never run on an `.mp4`, so no map was ever owed —
+and read literally across *all* non-skip rows, both halves of acceptance 28 fail after a flawless pass. Høgni
+found it from DEB-905 before the pass ran; the numbers below are a second reading taken four minutes later,
+and they agree exactly.
+
+318's acceptance 6 never had the defect: it says *"no **measured matroska** row at a non-ASCII path"*, and the
+10-13 DEB-848 amendment there defines that population as `reason IS NULL OR reason = 'no_faces'`. Acceptance 28
+is the same test seen from this phase's page and must name the same population.
+
+### Both halves, measured on prod at 2026-10-13 09:45Z
+
+A WAL-complete read-only copy (`.db` plus `-wal` and `-shm`; a copy without the sidecars reads frozen at an
+older revision, which looks exactly like a pass that did nothing). 5 965 rows, 1 360 of them non-skip, the
+`/1` lane still advancing — so these counts drift upward and are quoted with their clock, not as constants.
+
+| extension | non-skip rows | has an id map | **no map** |
+|---|---|---|---|
+| `.mkv` | 1 217 | 1 022 | **195** |
+| `.mp4` | 140 | **0** | 140 |
+| `.avi` | 3 | **0** | 3 |
+
+**Not one of the 143 non-Matroska rows has ever carried a map, and none ever will.** So a naive count after the
+pass drains returns 143 "failures" that are correct by design, and the first half of acceptance 28 can never be
+met as worded.
+
+The second half is the dangerous one, because it is the half that looks like evidence:
+
+| set | non-ASCII share |
+|---|---|
+| all 1 360 non-skip rows — the naive baseline | 21.3 % |
+| the 143 non-Matroska leftovers | **59.4 %** |
+| the 195 Matroska recovery set | 72.3 % |
+| **all 1 217 non-skip Matroska rows — the right baseline** | **16.8 %** |
+
+A perfect pass that leaves only the 143 therefore reads as 59.4 % against a 21.3 % baseline — a 2.8× skew and a
+confident-looking *"non-ASCII paths are still losing their id maps"*. It is nothing of the kind: non-ASCII
+filenames cluster by directory in this library and the `.mp4`/`.avi` material happens to be heavily Nordic.
+
+### Acceptance (restated)
+
+- **28 is restated.** After the pass, this query returns **0**:
+
+      select count(*) from file_av_sync
+       where reason not in ('animation','too_short','no_original_track')
+         and path like '%.mkv'
+         and mkv_audio_ids is null;
+
+  and the over-representation clause is evaluated **on non-skip Matroska rows only**, against that
+  population's own non-ASCII share (16.8 % at 09:45Z) rather than the whole table's. A non-Matroska row
+  without an id map is not a counter-example to anything and is not counted.
+
+- **28 expects 0, not *n* − 2.** The two files behind the original locale error — the non-Matroska container
+  wearing an `.mkv` extension, and the 4 096-byte stub — fail to **measure**; a failed job stores no row
+  (FR-317-8), so they surface as a failed job or an absent row, never as a measured row with a null map. A
+  failed measure must not be filed as a missing id map, nor the reverse. The `avsync` lane holds 20 such
+  failed jobs at 09:45Z against 1 379 done.
+
+### What the live `/1` sweep already says about the outcome
+
+The lane has been measuring since the backend's `LANG` fix reached prod at 08:34Z (DEB-928), which makes the
+rows it has written since then a free pre-test of acceptance 28 — one that costs no GPU and does not wait on
+the deploy:
+
+| Matroska rows, last checked | rows | carry an id map |
+|---|---|---|
+| non-ASCII path, **after** 08:34Z | 56 | **56** |
+| non-ASCII path, before it | 149 | 8 |
+| ASCII path, after 08:34Z (the control) | 181 | 181 |
+| ASCII path, before it | 831 | 777 |
+
+Every non-ASCII Matroska row re-measured since the fix carries a map. That is the strongest statement
+available before the pass runs, and it also shows the restated test has real teeth rather than being trivially
+satisfiable: the skew it looks for is exactly the bug's fingerprint — 72.3 % non-ASCII among the 195 unmapped
+rows against 6.3 % among the 1 022 already mapped. If the pass leaves non-ASCII Matroska rows unmapped, that
+is a genuine finding; the 143 were never one.
