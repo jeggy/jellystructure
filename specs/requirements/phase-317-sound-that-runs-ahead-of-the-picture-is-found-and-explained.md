@@ -1944,3 +1944,101 @@ recheck would bring it back.
     `unknown` with reason `vram`. **A `vram` row is an acceptable outcome of this phase and a silent 500 is
     not**: the requirement is that the library can say what it knows about every file, not that every file
     is measurable on this card.
+
+## Amendment (2026-10-14, first of the day) — the detector is **not** batch-invariant, so FR-317-34's neutrality is a property of the *partition* and a ceiling is what keeps it (FR-317-37, DEB-988)
+
+Built the night it was specified — `d1ac87b1` backend, `66f7a63a` sidecar, `PIPELINE_VERSION` unmoved,
+nothing deployed — and one measured finding changed the shape of FR-317-35 enough to be owed a requirement
+rather than a comment.
+
+**The twelfth amendment's neutrality argument was wrong in one of its three limbs.** It said `detect` is
+"per image", so a chunk size cannot move a number. **That is true of the tensors and false of the
+arithmetic.** Measured in a throwaway GPU container on 2026-10-13, 24 synthetic frames at 640 × 490, one
+batch against several: `loc` differs by ~2 × 10⁻³ and `conf` by ~1 × 10⁻⁴ between batch sizes, and it
+survives turning the autocast off (~2 × 10⁻⁵ in fp32) — so it is **cuDNN choosing a convolution algorithm
+per call**, with the batch among the inputs to that choice, and not fp16 rounding. `shots` (`interpolate`,
+per image) and `crops` (`roi_align`, per ROI) are bit-identical at every chunk size tried, including a chunk
+of one.
+
+**Why 10⁻⁴ is not negligible here.** A `loc` deviation of 2 × 10⁻³ through `decode(loc, priors, [0.1, 0.2])`
+moves a box by about a hundredth of a pixel and changes no reading by itself. But `detect` thresholds
+confidence at `conf > 0.9` — a hard bar — so a prior sitting within 10⁻⁴ of it crosses, a box appears or
+disappears, the track it belonged to changes length, and `frames` and `conf` change with it. Across ~5 000
+files that is not a bet to take against acceptance 30.
+
+### FR-317-37 — A chunk is never larger than the chunk that produced a stored row
+
+The byte target for each of the three chunked stages is **the footprint its tuned frame count held at
+`CHUNK_REFERENCE` = 640 × 360** — the geometry every 16:9 source in this library decodes to, and therefore
+the geometry every stored row was measured at. Three consequences, and the third is the requirement:
+
+1. At 640 × 360 the arithmetic returns **exactly 128, 12 and 16**, by construction and under test, so the
+   partition of a window is the one every stored row was produced with.
+2. A **taller** frame buys fewer frames for the same bytes. That is the whole of DEB-979's defect, and such
+   a file has no stored row to disagree with — every one of them failed.
+3. A **cheaper** frame must not buy more. `detect` therefore carries a hard ceiling in frames
+   (`CHUNK_CEILING = 12`): a 2.40:1 film decodes to 640 × 266 and would otherwise be handed a larger batch
+   than its own stored row was measured with, which is precisely how to move a number on a file that is
+   fine today. **Smaller is safe, larger is not** — and the asymmetry is the requirement, not the constant.
+
+This bends the twelfth amendment's words *"never from the constants 128 / 12 / 16"*. The constants survive
+as **the bytes they held at one named geometry**, which is the honest form of what that sentence was
+reaching for; FR-317-34 is the senior requirement and the one being protected. `shots` and `crops` carry no
+ceiling, because they have nothing to protect.
+
+### One bounded non-determinism, accepted here rather than discovered later
+
+`chunked` **halves the chunk and retries the whole pass** on an OOM (every step is a pure function of its
+own slice, so a retry recomputes rather than repairs). So a file measured while the card is squeezed — a
+neighbour holding more than usual — can be partitioned smaller than the same file measured with room, and
+for `detect` the selection margin above then applies. **Accepted**, because the alternative is refusing the
+window and storing nothing: the magnitude is a prior within 10⁻⁴ of 0.9, a verdict needs two confident
+windows and a steady median (FR-317-7), and a row is worth more than a guarantee of bit-identity under
+pressure. What it costs is a promise this phase should not make: **a re-measure is not byte-identical in
+general** — only that nothing in this change moves a number at the geometry and the budget today's rows were
+measured at.
+
+### What it bought, measured before any deploy
+
+- At 720 × 552 — the 111 episodes — the 1.058 GB window never reaches the card, `shots` holds 445 MB (94
+  frames) and `detect` 8 frames: **≈650 MB peak against ≈1.54 GB**, inside the 2.0 GB cap.
+- One census file at 640 × 480 that the **pre-change** code OOMs on at prod's own 2 GB budget — in
+  `lip_feats`, the same line as the lane's failures — is measured by the post-change code with a **757 MB
+  peak**, faces in all three windows. Its readings are low-confidence, so it will likely store `unknown`
+  rather than a verdict, which is acceptance 31's point exactly: **a row either way**.
+- The 1080p film of acceptance 30 is **27 % faster** (21.17 s → 15.52 s): the host-to-device copy of a
+  1 125-frame window is gone.
+- **The 700 × 394 title is the proof that FR-317-34 alone was load-bearing.** It decodes to 640 × 360, gets
+  the same partition it always would have, and still lost 9 files — to the resident window and the
+  allocator it fragmented, not to the chunk sizes.
+
+### Acceptance (restated and added)
+
+- **30 is restated as what it can actually prove.** Its subject is **the pre-change code against the
+  post-change code on the same file**, run sequentially at the same budget — not the new code against a
+  stored row, because a stored row is a `/1` row with FR-317-32's bump standing between them. Produced
+  2026-10-13 22:0xZ: one already-measured 1080p film, three window starts, identical **window-for-window
+  and face-for-face** — `offset_frames` −3/0/−1, `conf` 5.396/5.080/4.446, `frames` 669/1 085/818, every
+  face — and incidentally identical to its stored `/1` row as well, which says FR-317-32 moved nothing on a
+  healthy file either.
+- **32 is added, and it is the durable guard**: at `CHUNK_REFERENCE` the plan returns exactly 128, 12 and
+  16, and `detect`'s chunk never exceeds 12 at **any** geometry. A unit property, so a later optimisation
+  that raises a batch for throughput fails a test instead of quietly re-measuring the library into
+  disagreement with itself.
+- **31's subject is the count of files with no row, not the count of `vram` rows.** The lane's unrowed OOM
+  files had grown from the census's 122 to **138** by 2026-10-13 22:1xZ (136 of them in one series
+  directory) as the sweep continued. They stay `missing`, so the `:30` scan re-queues them within the hour
+  of the sidecar landing, and the number to watch go to zero is the files with no row.
+
+### Deliberately not specified
+
+- **Raising `AVSYNC_CHUNK_HEADROOM`** (0.6). It is a margin on an over-estimate, not a tuned constant; if a
+  file refuses at the one-frame floor, FR-317-35's 500 now carries the geometry, the frame count, the
+  per-frame estimate and the peak, and that is what to read before touching it.
+- **Making `detect` deterministic** with `torch.backends.cudnn.deterministic`. It would change readings on
+  **every** file rather than none — a `PIPELINE_VERSION` bump and a library-wide re-measure — to remove a
+  10⁻⁴ effect that the ceiling already keeps out of every file with a stored row.
+- **Any change to the 0.9 confidence bar, `RES`, `FPS`, the window length, `DET_SCALE` or `MIN_TRACK`.**
+- **A deploy.** Backend half first, as this phase has always required; the sidecar rides with DEB-950's
+  image if that deploy has not built yet and its own if it has. The model string does not move, so the
+  eleventh amendment's `lastModel` hazard cannot arise, and nothing is re-measured on account of any of it.
