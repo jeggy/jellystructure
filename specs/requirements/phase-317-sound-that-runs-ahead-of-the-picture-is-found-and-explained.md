@@ -1697,3 +1697,75 @@ thing that was wrong was *who* starts the pass.
 A backend-side auto-enqueue on model change is still not specified, and now for a stronger reason: the
 scheduler already is one. A requirement for it would describe existing behaviour and invite a second
 mechanism beside it.
+
+## Amendment (2026-10-13, eleventh of the day) — the model string is *learned*, not derived: a sidecar swap under a running backend invalidates nothing and mislabels what it then measures (DEB-959)
+
+The tenth amendment is right that the scheduler starts the pass, and it finishes the sentence the eighth
+started. What neither says is **when the running backend finds out that the sidecar's model string has
+changed** — and the answer decides whether the bump does anything at all. Read out of prod's own running
+commit `80552895`, not out of `main`.
+
+### `lastModel` is one in-memory variable with exactly two writers
+
+`AvSyncService.lastModel` is a `private var`, per process, **null at boot** — nothing persists it and nothing
+reads it from the table. Two paths set it, both through `health()`'s
+`?.also { if (it.model.isNotBlank()) lastModel = it.model }` (`:305` at prod's commit):
+
+1. **`GET /api/config/avsync/status`** → `settings()` → `settingsAnswer()` → `health()`, **unconditionally**.
+   This is the Settings card's own refresh, which FR-317-16 already describes; the side effect on `lastModel`
+   is what matters here.
+2. **`checkOnce`'s `if (lastModel == null) health()`** (`:601`) — lazy, and **gated on null**.
+
+Nothing else teaches it: not `Main.kt`, which constructs the service and wires it into the queue (`:386-389`)
+without probing; not `PipelineEngine`; not `MediaJobQueue`; not DEB-923's watchdog; not `/api/health/full`.
+And `rowsCurrentByPath()` (`:449`) filters `m == null || it.model == m || reason in SKIP_REASONS`, with
+`MediaJobQueue.storedChecks()` building the `AVSYNC_JOB` map from it — so **while `lastModel` is null, every
+stored row reads as current** and the scheduled run has nothing to re-measure.
+
+### Three consequences, in the order they would bite
+
+1. **With the deploy order this phase already requires — backend half first, sidecar second (`65ceb2f1`,
+   FR-317-30's `conf: null` is not readable by an older parser) — the bump is inert unless something
+   re-teaches the string.** The recreated backend comes up with `lastModel = null`, the `avsync` lane resumes
+   on the thousands of `queued` rows that survive a recreate, and within a minute `checkOnce` asks the
+   **still-`/1`** sidecar and learns `/1` again. The sidecar is then swapped to `/2` and **nothing asks a
+   second time**, because the only unattended probe is gated on null. From that moment: no row is invalidated,
+   the `:30` run enqueues nothing new, acceptance 27 cannot become true — **and every row the `/2` sidecar
+   measures is stored under `/1`** (`lastModel` is what the write uses), so the new pipeline's readings are
+   mislabelled as the old one's and are afterwards indistinguishable from genuine `/1` rows. That is worse
+   than a bump that did nothing.
+2. **Re-teaching it costs one request and no deploy window.** Because path 1 is unconditional, a single
+   authenticated `GET /api/config/avsync/status` once the `/2` sidecar is up updates the running process, and
+   the next `:30` run then sees the `/1` rows as stale. Opening the Settings page does the same thing. A
+   second backend recreate also would, at 11 s of downtime instead of one GET.
+3. **A lane emptied at deploy time is the one state where nothing teaches it at all.** `checkOnce` only runs
+   when there is a job; with an empty queue and every non-skip row current under `/1`, the string is never
+   learned, nothing is invalidated, and the scheduled run finds nothing to enqueue — a stable, silent
+   standstill until someone opens Settings. The library's ~3 600 never-measured files make this moot today,
+   and it is one more reason the withdrawn "empty the lane before the bump" step was worse than useless.
+
+Measured while writing this, 2026-10-13 11:47Z: the sidecar answers `ok: true` on an RTX 2060 SUPER at
+`model syncnet_v2+s3fd@907c0b5/1` with `busy: true`, and the lane is advancing. So consequence 1's premise is
+today's actual state, not a hypothetical.
+
+### Acceptance (restated)
+
+- **27 is restated a second time.** Its subject is **the first scheduled run after the backend has learned the
+  new model string**, and the verification runs in that order:
+  1. the sidecar's own `/health` reports the `/2` string (`docker exec`, not the tag — a tag is rebuilt in
+     place);
+  2. the **backend** agrees, read off `GET /api/config/avsync/status`'s `model` — which is also what teaches
+     it, so this step is the remedy and the check at once;
+  3. the next `:30` run enqueues, and `max(file_av_sync.checked_at)` advances (never the lane counters,
+     DEB-918/923);
+  4. `select distinct model from file_av_sync` drains to the one new string plus the untouched skips.
+
+  **A reading of "1 318 rows still under `/1`" taken before step 2 is not a failed bump — it is a bump that
+  has not begun.** Acceptance 28, as the ninth amendment restated it, is unaffected.
+
+### Left as a question, not specified here
+
+Whether `health()` should be re-probed on a cadence (or `lastModel` invalidated on a sidecar reconnect) so
+that a swap cannot go unnoticed by a long-lived process is a design question for whoever owns FR-317-7, not
+something to settle in an operator's amendment. The runbook step in consequence 2 closes today's risk without
+new code.
