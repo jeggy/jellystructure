@@ -4,21 +4,24 @@
 > fix files at the source — **"Yes, opt-in per kind"**: built as jobs switched on per kind (a compatible audio track,
 > Dolby Vision 7), **with a dry-run list first; the originals stay in the file**.
 
-## Status
+## Scope
 
-`⚠ Partial` — **314b/c built 2026-10-08 on branch `worktree-agent-a75a1e096454ab621`** (on top of 314a, merged to
-`main`), not merged, not deployed, not tried on a device: the picker's one row for a source and its copy, sidecar
-`.mka` direct play on Android, the Dolby Vision version per device with a Picture tab, the per-film rename ticks, the
-Tracks-tab card and Remove (see *Build notes (314b/c)*). Left: the live checks on devices, hls.js/receiver sidecar
-renditions only through R382's ladder, 313's encoder with a sidecar. **314a built 2026-10-08** on branch
-`worktree-agent-a5d8835a82b48c051`: the three kinds' dry run, jobs, card, Dashboard rows and the backend's copy
-choice. Before that: `Planned` —
-written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach
-reports of the same day (option D), and a read-only count over Jellyfin's database, the library's files (link counts)
-and qBittorrent. Dev-reviewed 2026-10-08 (section at the end). Backend (a new job kind on the media lane, the track resolver), admin
-(Settings, the dry-run list, the Tracks tab, Activity, Dashboard), Ravilo (the picker hides a compatible copy).
-Builds on **284** (the file is the record), **311** (work files in `<dir>/.jellystructure/`), **213** (job lanes),
-**R291** (the backend chooses the audio stream), **R195**/**R241** (remembered tracks), **R379** (no-AC3 phones).
+Written 2026-10-08 (dev-authored) from the owner's decision above, the streaming evidence and approach reports of the
+same day (option D), and a read-only count over Jellyfin's database, the library's files (link counts) and
+qBittorrent. Dev-reviewed 2026-10-08 (section at the end).
+
+The phase divides into three parts, and the division is durable — the *Build notes* sections below are each written
+against one of them:
+
+- **314a** — the three kinds' dry run, the jobs, the Settings card, the Dashboard rows and the backend's copy choice.
+- **314b/c** — the picker's one row for a source and its added copy, sidecar `.mka` direct play on Android, the Dolby
+  Vision version chosen per device with a Picture tab, the per-film rename ticks, the Tracks-tab card and *Remove*.
+
+Touches the backend (a new job kind on the media lane, the track resolver), the admin (Settings, the dry-run list, the
+Tracks tab, Activity, Dashboard) and Ravilo (the picker hides a compatible copy). Builds on **284** (the file is the
+record), **311** (work files in `<dir>/.jellystructure/`), **213** (job lanes), **R291** (the backend chooses the
+audio stream), **R195**/**R241** (remembered tracks), **R379** (no-AC3 phones). Sidecar renditions reach hls.js and
+the receiver only through **R382**'s ladder, and a sidecar with **313**'s own encoder is out of this phase.
 
 ## What happens today (2026-10-08)
 
@@ -608,3 +611,109 @@ The permitted writes are exactly those four plus the undo, on exactly those thre
 be recorded, not an obstacle to route around; and no library title enters this repository (`DEB-793` carries them).
 Step 4 keeps one prerequisite the owner's answer cannot clear — a debug Ravilo signed in on a TV that decodes
 dual-layer DV, which there was not on 2026-10-09.
+
+## Amendment 2026-10-13 — kind C's write path tells Radarr things that hurt it (DEB-868, DEB-869)
+
+The authorised walk above ran on prod on 2026-10-13 (DEB-793 step 3) and found two defects in kind C. Both come from
+the **rescan** path. **FR-314-9 is not wrong** — it reasoned about Radarr's *scoring*, and the scoring reasoning still
+holds: the version's name parses to no quality and started no upgrade. What FR-314-9 never covered is that
+jellystructure itself nudges Radarr to rescan after the write, and a rescan does not need a score to do damage.
+
+### What was measured
+
+**DEB-868 — the version becomes the movie's file, and *Remove* then unlinks the film.** Three facts, all from the
+ticket:
+
+1. `rescan_after_write = true` makes the write path issue `RescanMovie` after a kind C version lands
+   (`ArrRescanService.nudge`). Radarr's rescan **adopts the version as the movie's file** — confirmed by the size in
+   its own log line, which is the version's size and not the original's.
+2. `radarrUnsafe()` (`FileFixService.kt`, owner review item 7, 2026-10-08) asks Radarr's `/parse` whether the
+   version's *name* would score as a better release, and passed here — correctly. The hazard is not the name.
+3. *Remove* then deletes the version; Radarr logs `movieFileDeleted {reason: MissingFromDisk}` for the **version's**
+   size and leaves the movie at `movieFileId 0` — `hasFile false`, still monitored, still available, in
+   **Wanted/Missing**, with the real file on disk and still owned by its own `moviefile` row. It does **not**
+   self-heal: `RescanMovie` and `RefreshMovie` were both issued by hand, both completed, and neither changed it.
+
+A monitored, available film sitting in Wanted/Missing is a re-grab of a film the library already has waiting to
+happen, and Radarr's recycle bin is off here. **How long it waits was measured afterwards and is slower than the
+first read of the ticket suggests** (DEB-868 comment, 03:21Z): this Radarr has **no scheduled missing-movie search at
+all**, `RssSync` runs every 30 min and only takes what is in the feeds at that moment, and `minimumAge` is 60 min — so
+the film sits there indefinitely rather than being replaced on a timer, and the trigger is a human pressing *Search*
+or a matching release happening to surface. That makes this a correctness bug with a slow fuse, to be fixed before the
+kind is switched on and not patched in a hurry. The kind C pool is 17 films, so a single pass over it is 17 of these.
+
+**DEB-869 — the rename empties the folder of artwork for up to an hour.** The in-place rename is clean in itself
+(`rename(2)`, inode preserved, sidecars renamed, nothing else touched by the mover). But Radarr reacts to the old path
+vanishing with `movieFileDeleted {reason: MissingFromDisk}` and takes the five files it had adopted as extras with it:
+poster, fanart, clearlogo, the `.src` and `movie.nfo` all disappear from the folder. jellystructure's hourly `:30`
+pass rewrites them, and the measured run got off lightly only because the rename happened five minutes before the
+half-hour. **A rename at `:31` leaves the film with no poster, no backdrop and no logo for 59 minutes**, which a
+viewer browsing the library sees. This is the same mechanism as the known *"a Radarr upgrade wipes jellystructure's
+poster/fanart/logo/NFO"* behaviour; what is new is that **the DV7 rename triggers it too**.
+
+What was measured as **not** affected, and stays that way: the `.mkv` itself (inode, size, mtime and link count
+identical before, after the version, and after *Remove*), the torrent hard-linking it, and Jellyfin's watch data.
+
+### FR-314-12 — a kind C version never becomes the movie's file
+
+- **The write path issues no Radarr rescan for a kind C version**, neither after writing it nor after deleting it. The
+  version is ours and it is not a release; Radarr has no business adopting it. The nudge **stays** for kinds A and B,
+  where the file's identity does not change, and for the in-place rename, where the path does change and Radarr must
+  learn it.
+- A nudge cannot be the only thing suppressed, because Radarr rescans for its own reasons too (its scheduled scan, a
+  refresh someone presses, the hourly pass). So the write path also **records the movie's `movieFileId` before the
+  write and re-asserts it afterwards** — after the version is written, and again after *Remove*. A `movieFileId` of 0
+  on a film whose own `moviefile` row still points at a file that is on disk is **repaired, not reported**: nothing
+  about that state is ambiguous.
+- Preferred over both, if it holds: **name the version so Radarr's import cannot take it in the first place** — an
+  extension outside Radarr's `MediaFileExtensions`, exactly as kind A's `.mka` sidecar already is (FR-314-6, test 6).
+  That removes the race instead of racing it. Whoever builds this checks whether Jellyfin still groups the version
+  with the original under such a name; if it does not, fall back to the two rules above, because **Jellyfin grouping
+  the version is the acceptance and Radarr's quiet is the constraint**, not the other way round.
+- **No kind C switch is turned on for the library until this is built and a test covers it.** The owner's per-film
+  rename ticks are not the gate here; this is.
+
+### FR-314-13 — a rename or a version write never leaves a film without its artwork
+
+- After an in-place rename, and after a kind C version is written or removed, the write path **re-asserts the film's
+  images and NFO itself** rather than leaving them to the hourly pass.
+- The mover already owns an image backup-and-restore path (`ports.backup` / `ports.delete`), and the gap is narrow:
+  `planRenameToFolder` returns only the video-named files, so the five adopted extras were never in the mover's plan
+  and its `target == null` branch never saw them. Either the plan grows to cover them or the artwork writer is
+  re-triggered on the folder; both are acceptable, and the second is the smaller change.
+- The acceptance is read at the **folder**, not at the clock — see acceptance 7.
+
+### Radarr's `dateAdded` is a consequence to know about, not a defect to fix here
+
+Also DEB-869: the rename makes Radarr drop and re-create the `moviefile` row, so `dateAdded` moves to the rename date
+and the film reads as newly acquired for two months afterwards. That is Radarr's model of a file that moved, and
+jellystructure cannot preserve a field across a drop and re-create it does not perform. What follows and **is** in
+scope is a reading rule: **nothing of ours may read Radarr's `movieFile.dateAdded` as "how long has this been in the
+library"**. DEB-793's step-0.5 pick rule reads exactly that field for exactly that meaning, and so would any
+age-based rule or recently-added view keyed on it. Recorded here so the next reader of that field knows before it
+costs a measurement rather than after. No code change in 314 follows from this paragraph.
+
+### The film left unlinked by the measured run is the owner's to repair
+
+The subject film is still at `movieFileId 0` on prod. Re-linking it needs Radarr's own UI — a Manual Import renames
+and moves files, which `media-safety` makes the owner's call and not an agent's — or it is unmonitored until then.
+Escalated on DEB-793; DEB-868 carries the identifiers. It is not QA's, it is not a fix this amendment asks anyone to
+build, and it is not a reason to hold FR-314-12.
+
+### Acceptance (added)
+
+6. Kind C applied to one unseeded DV7 film with Radarr watching: after the version is written, the movie's
+   `movieFileId` still points at the **original**; after *Remove*, the movie still has its file (`hasFile true`, not
+   in Wanted/Missing). Both hold across a `RescanMovie` issued by hand at any point in between.
+7. An in-place DV7 rename of a film whose folder carries artwork: **within 60 s** the folder has its poster, backdrop,
+   logo and NFO, at any time of the hour — in particular when the rename happens just after the `:30` pass.
+
+### Tests (added)
+
+9. The kind C write path issues no Radarr rescan; it re-asserts `movieFileId` after the version is written and after
+   *Remove*; and a `movieFileId` of 0 against a live `moviefile` row pointing at an on-disk file is repaired. Kinds A
+   and B and the rename still nudge.
+10. The in-place rename re-asserts images and NFO without waiting for the hourly pass.
+
+Unchanged by this amendment: the original is never modified by kind C, the per-film rename ticks stay the owner's, and
+no library title enters this repository.
