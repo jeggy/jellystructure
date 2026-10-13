@@ -1183,3 +1183,86 @@ unexplained failures stays known, and so nobody closes 317's failure list believ
 
 23. Across a sweep, no job fails with *"Unexpected special floating-point value"*. The two rows that did on
     2026-10-13 are the baseline.
+
+## Amendment (2026-10-13, sixth of the day) — a busy retry re-pays the whole pre-measure probe (FR-317-31, DEB-912)
+
+FR-317-29 bounded how *long* a busy retry can go on. This bounds what each one **costs**. The finding is
+DEB-912's, filed out of DEB-902 because that issue asked for DEB-897's 24.9 % of a core to be attributed and
+explicitly asked that no performance change be folded into that build. It is attributed here, and the fix is
+specified here, so the Kotlin has a requirement to point at.
+
+**It is not the scheduler's per-pass read over the library.** An in-place requeue runs no scheduler pass at
+all — the claim is one indexed `nextQueued` SELECT per cycle. What the cycle re-pays is `AvSyncService.check()`
+itself, every attempt, *before* it ever reaches `/measure` and learns the sidecar is busy:
+
+- `FfmpegRunner.probeDurationSeconds(path)` — one `ffprobe`, reading the header of a large file;
+- `readMkvAudioIds(path)` → `mkvmerge -J` through `SegmentProcessGate` — a second process and an
+  identification parse, conditional on Matroska. The wedged row's file is an `.mkv` (prod
+  `media_job.params`), so both were paid on every one of the ~690 cycles: about 1 400 process spawns over
+  four hours, for a call refused with a `503` milliseconds later. That is the shape of the measured 24.9 %.
+
+Nothing in the measurement itself is wrong, and nothing about the give-up changes. The waste is paid by
+**every ordinary busy retry too**, not only by a wedged sidecar — a sweep that happens to queue two files
+behind one long measurement pays it in miniature. Since FR-317-29 the blast radius is ten minutes rather
+than forever, which is why this is a separate, lower-urgency requirement and not an amendment to that one.
+
+### FR-317-31 — A retry re-sends only `/measure`
+
+The two pre-measure probes are **asked once per file per claim run, not once per attempt**. `check()` keeps
+the answers for the file it is working on, keyed by the path and the stamp it already takes (`before`: size
+and mtime), and an in-place requeue of the same row re-uses them:
+
+- what is kept is exactly the two **process** answers — `probeDurationSeconds`'s own return (`null`
+  included: *asked and got nothing* is an answer, and must not be re-asked) and `readMkvAudioIds`'s map (an
+  **empty** map included, which FR-317-22 and FR-317-26 both give meaning to). Nothing else: `runtimeS`'s
+  `knownRuntimeS` fallback, `skipReason`, `chooseAudio` and `audioTracks` all read the `MediaItem` already in
+  memory and spawn nothing, so they stay where they are and are re-evaluated freely.
+- the key is **path + size + mtime**. A file rewritten between attempts misses the cache and is probed
+  again, which is the same stamp rule 255 and FR-317-8 already enforce two lines later — so a kept answer can
+  never describe a different file than the one being measured. A hit on a *later* sweep, for a file whose
+  stamp has not moved, is correct by that same rule and is allowed.
+- **one entry is enough and the store is in memory.** The `avsync` lane has exactly one worker (317b stays
+  at one in flight, hardened by the fifth amendment), so at most one file is in flight; a second path
+  replaces the entry. No column, no migration, no config key — the same shape as FR-317-29's
+  `avSyncBusyRun`, and like it, worthless across a restart and dropped there without ceremony.
+- the decision is a **pure type** with its own unit tests (hit, stamp-changed miss, different-path miss,
+  *asked and empty* counting as a hit), so it is not provable only through a 12-minute native run against
+  real media.
+
+Two consequences worth stating, because both are improvements and neither is the point of the change:
+`readMkvAudioIds`'s FR-317-23 `WARN` is logged **once** per claim run rather than thirty times, and the
+one worker sits in `avSyncBusyAnswer`'s `delay()` at approximately no CPU while it waits.
+
+### The other per-file lanes do not have this defect — no requirement
+
+DEB-912 asked that the question be put to them at the same time. It was, and the answer is structural:
+`avsync` is the **only** lane that turns a transient refusal into a requeue. `verify`, `subtitles` and
+`tracks` each turn a service that could not read the file into a `Failure` and the row terminates
+(`MediaJobQueue.runClaimed`'s `when (row.type)`), so there is no second attempt to re-pay a probe on. This
+is recorded rather than required, so nobody re-derives it; if another lane is ever given a retry, FR-317-31
+is the rule it inherits.
+
+### Deliberately not specified
+
+- **A readiness pre-flight** — asking `/health` at the top of `check()` and refusing before probing. It
+  reaches the same cost, but it puts the skip decisions *behind* a sidecar gate: an Animation or
+  short-runtime file, which costs the sidecar nothing, would wait out the ten minutes and then fail where
+  today it stores its skip and is finished. Keeping the answers is free of that.
+- **Persisting the probe in `media_job.params`** — a second source of truth about a file, and a migration
+  for a cache.
+- **Any change to the give-up count, the `retry_after_s` wait or `/health`'s shape.** FR-317-27 to
+  FR-317-29 stand as written.
+
+### Tests (added)
+
+- The memo type directly: a hit on an unchanged stamp, a miss when size or mtime moves, a miss on another
+  path, and an *asked and empty* mkv-id map reading as a hit rather than a re-ask.
+- The lane: a row answered `503` twice in a row runs the two probe commands **once**, and the second
+  attempt sends `/measure` and nothing else. A fake process runner, a hand-written sidecar response; **no
+  library file is needed, and none is to be used.**
+
+### Acceptance (added)
+
+24. With the sidecar busy (and only busy, not wedged), an `avsync` row that retries to its FR-317-29 give-up
+    spawns **two** processes for that file in total, not two per attempt — and the lane's worker shows no
+    measurable CPU across the wait. The 24.9 % of a core measured on 2026-10-13 is the baseline.
