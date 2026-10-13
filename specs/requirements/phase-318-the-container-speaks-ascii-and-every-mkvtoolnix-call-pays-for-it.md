@@ -21,6 +21,39 @@ were specified correctly and are not amended.
 Number allocated from [`STATUS.md`](../../STATUS.md) on 2026-10-13: the admin table's highest row was
 317, so 318 was the next free one.
 
+## Decisions (owner, 2026-10-13)
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | How should `LANG=C.UTF-8` reach prod, given the repo's compose file is not the one prod uses? | **Route 1 — the one-line edit now, the rebuild at the next natural one.** `LANG: C.UTF-8` into the `backend.environment` block of `/home/jeggy/jellystructure/dev-docker-compose.yml`, then `up -d --no-build backend`. **This is explicit permission to edit a file outside this repository**, which the standing rule otherwise forbids; it is scoped to that one line in that one file and does not generalise. |
+| 2 | Has a track write from the admin ever failed on a file you knew was fine? | **"Yes — more than once."** |
+| 3 | May QA prove the fix with one real track write? | **Yes, on any file QA picks** — the owner does not need to name one. |
+
+### Answer 2 changes what this phase is
+
+The phase was written as a fault that was *silent*. It was silent to us, and it was **not** silent to
+the household: the owner has hit the admin's refusal to write a track more than once, presenting as
+*"is not a Matroska file"* about a file that was perfectly good. Four things follow, and they are the
+reason this answer is recorded in the spec rather than only on the board:
+
+- **318 is not a latent defect found by inspection. It is a reported defect whose cause took until
+  2026-10-13 to find** — and the reason it went untraced for that long is that the tool's own error
+  message named the wrong thing. Nobody looks for a locale when a file is called *not a Matroska
+  file*.
+- It settles the judgement that **`mkvpropedit` is the heavier half of the blast radius**, not 317's
+  missing command. 317's symptom is advice without a command on an admin page; this one is a button
+  that does not work and misreports why, on roughly a third of the library.
+- **FR-318-2 earns its place twice over.** A health check reading *the encoding is not UTF-8, so
+  MKVToolNix cannot open a path outside ASCII* would have turned repeated unexplained write failures
+  into one diagnosis, months ago. That requirement is no longer belt-and-braces; it is the thing that
+  would have caught this.
+- A rule worth carrying past this phase: **a tool's own message about the cause is not evidence of
+  the cause.** Where we surface a child process's error verbatim, it can be confidently wrong.
+
+Nothing needs repairing from those failures. Every MKVToolNix writer fails closed, so each one was a
+write that did not happen rather than a file left damaged, and each becomes available again the moment
+the locale is right.
+
 ## What is wrong, measured
 
 `/proc/1/environ` of the live backend (`/app/jellystructure`) carries **only `PATH`**. The runtime
