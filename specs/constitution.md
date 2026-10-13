@@ -238,6 +238,48 @@ A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media b
 
 ---
 
+## Delivery Process (2026-10-14)
+
+Owner directive, DEB-994. This section binds how work lands; it does not describe architecture.
+
+### One engineering seat owns the whole stack
+There is a single engineering seat (Sjúrður) and it owns **every line of product code** — the
+Kotlin/Native backend, the Kotlin/WASM admin UI, and the whole Compose Multiplatform client family
+(`ravilo-*`: Android TV, phone, web, macOS, Linux, Chromecast receiver, Tizen). There is no
+separate client seat and no split ownership of the wire: a protocol change is written on the server
+**and** in every client in one change, under one spec amendment. A DTO may never drift between the
+two halves.
+
+### Every change lands with tests in CI
+A phase or fix is not implemented until it has automated tests **running in CI**. A test that only
+runs on the engineer's machine does not count. Wire new tests into the existing jobs rather than a
+new private path:
+
+- Backend / Kotlin Native — `:linuxX64Test`
+- Shared, i18n, UI, cast protocol — `:shared:desktopTest`, `:ravilo-i18n:desktopTest`,
+  `:ravilo-ui:desktopTest`, `:ravilo-castv2:jvmTest`
+- Android — `:ravilo-ui:testDebugUnitTest`, `:ravilo-player:testDebugUnitTest`
+- Full-stack behaviour — Playwright in Docker (see Testing Strategy above)
+
+Where the behaviour genuinely cannot be covered automatically — real-device playback, D-pad focus on
+a TV, release-only R8/ART failures, Chromecast on hardware — the **spec amendment must say why**, and
+the uncovered behaviour moves to the QA ticket below. "Hard to test" is not such a reason.
+
+### Definition of done
+A development task closes only when all three are true:
+
+1. The code is committed on `main` with an explicit pathspec.
+2. CI is green, including the tests added for this change.
+3. A **new QA ticket exists** for the work — created by the engineer as the last step, **assigned to
+   no seat**, carrying a written test plan that names every device it needs so one QA seat can claim
+   the whole set in one go.
+
+The QA ticket is the handoff, not a formality: QA pulls it off the queue, runs it, and files findings
+back as board tasks. The development task may be marked done once that ticket is filed — a red CI
+run or a missing QA ticket means the task is not done.
+
+---
+
 ## Key Invariants (do not break)
 
 1. **Track flags are never changed automatically** — only via explicit user action in the UI.
