@@ -4,15 +4,6 @@
 > **"TV music mode first"**, chosen over the review's lean (a second, music-only Cast app that keeps sending music to the
 > web receiver). R266 does not ship until a TV running Ravilo can play a music cast in its own app.
 
-## Status
-
-`⚠ Partial` — written 2026-10-08 (dev-authored) from the owner's decision above and R266's re-dev review (item 5,
-2026-10-08). **Dev-reviewed 2026-10-08** (see the end). **Built 2026-10-08 on the R266 branch, together with R266, not
-merged** (see *Build notes*). Live-tested on Stue TV with the debug build and a host-side Cast Connect sender; **not yet
-cast from a real phone**. Ravilo (TV build of `ravilo-android` + `ravilo-ui`), with a small backend part (one TV row in
-*Play on…*). Designs: none for a TV music mode yet; the shapes followed are
-286's *Now playing on a display* (FR-286-5/-6) and the phone's Playing page (R322).
-
 ## Why
 
 - R266 turns Cast Connect on (`androidReceiverCompatible`). A cast to a TV that runs Ravilo then **launches the Ravilo
@@ -27,6 +18,13 @@ cast from a real phone**. Ravilo (TV build of `ravilo-android` + `ravilo-ui`), w
   (`RaviloApp.kt`: `listeningLayout = handset || desktop`; the launch path checks `!isTvPlatform`).
 
 ## Scope (decided here)
+
+Written 2026-10-08 (dev-authored) from the owner's decision above and R266's re-dev review (item 5, 2026-10-08);
+dev-reviewed the same day (see the end). It touches **Ravilo** — the TV build of `ravilo-android` plus `ravilo-ui` —
+with a small backend part (one TV row in *Play on…*). It was built on the R266 branch, together with R266, and **R380
+must land with or before R266's merge** (see *Open questions* 1). No design round exists for a TV music mode: the
+shapes followed are 286's *Now playing on a display* (FR-286-5/-6) and the phone's Playing page (R322). Status, and
+what is still owed on devices, live in `STATUS.md`.
 
 This phase makes the TV **play what is cast to it** and shows it well. **It does not add music browsing on the TV**
 (no Listen or Browse pages, no music mode switch in the TV app's own navigation): that is a separate, later phase.
@@ -454,6 +452,44 @@ server-started music and clears the line; nothing to stop otherwise).
   everywhere* listed the song once (the phone's ended row greyed for its linger, then gone).
 - **Home stops it — passed twice:** Home on the TV → the media session went to state 0 at once, the server session read
   *ended* ~15 s later (the stop hold); same with an album started through the server from the phone's device.
-- **The queue panel and controls (fix-tv-live) passed:** *Now playing* over the song, **Up next from The Now Now** over
+
+## Amendment, 2026-10-13 — the TV is offered as a book place and drops every book (DEB-919)
+
+Found on devices (QA-D, DEB-788, Stue TV, `.debug` of `main` `6e7c7ce7`), and it is not only QA's problem: the TV
+advertises `book = true` on `GET /api/tv/playback/targets`, so **any viewer who picks the TV in *Play on…* for an
+audiobook** — from the phone, the web app or the admin's *Move to…* — gets a dead session and a blank screen. Two
+`POST /api/tv/playback/sessions` with `kind: "book"` answered 200 and then read `state=ended`, `end_reason=failed`
+~11 s later with `position_ms` unmoved, twice, the second on a fully idle TV. Nothing crashes; the load is dropped.
+
+The cause is a capability that outran its handler. `RaviloApp.kt` declares
+`plays = playsQuery(video = true, music = MusicEngine.supported, book = MusicEngine.supported)` — correct, FR-R380-1
+and this phase's scope both say audiobooks are in — but the TV's `session_load` handler branches on `"music"` and on
+`"film", "episode"` only, with no `"book"` arm and **no `else`**, so a `book` envelope falls out of the `when`.
+
+This is why **acceptance 4 has no working road at all**: the Cast road was already recorded as absent in the dev review
+(*"a book cast: built (book facts, ∓30 s), not cast — the phone's sender does not send audiobooks over Cast today"*),
+and the server road, which FR-R380-9 calls the common one, fails. The ◀ ▶ ∓30 s key map of FR-R380-4 has therefore
+never been exercised on a device.
+
+**FR-R380-11 — A `book` envelope plays on the TV, and no envelope is ever dropped in silence.** The TV app's
+`session_load` handler takes `kind = "book"` and hands the book to `BookPlayback` and the TV's Now playing with the
+book's own controls — the chapter, the chapter's progress and the whole book's, speed if not 1×, ◀ ▶ as ∓30 s — exactly
+as FR-R380-3 and FR-R380-4 already specify for a book. The `when` gains an **`else` that refuses loudly**: an unknown
+kind is reported back on the session as a failure naming the kind, rather than left to the server's watchdog to end as
+`failed` eleven seconds later. The advertised capability and the handled set are the same set, and a test holds that:
+every kind `playsQuery` can report `true` has an arm, so a future capability cannot outrun its handler again.
+
+**FR-R380-12 — A book session's queue row carries its own facts.** `queue_json` for a book carries title, subtitle and
+artwork as a music session's does; today it carries `{"id": …}` alone, so the book shows as a nameless entry in
+*Playing now* for as long as it lasts. Additive on the wire (R372's reader tolerates the fields' absence from an older
+sender), so no installed client is affected.
+
+**Tests:** the key-map test of *Tests* 2 extended to the book arm on a real `session_load` envelope (fake engine); a
+`session_load` of each advertised kind reaches the engine and an unknown kind is refused with the kind named; the
+capability/handler set equality above.
+
+**Out of scope here:** nothing about the Cast road changes — the phone's sender still does not send audiobooks over
+Cast, which stays R323's to decide. Acceptance 4 is re-run on the **server** road once this is built.
+- **The queue panel and controls (fix-tv-live) passed:** *Now playing* over the song, **Up next from {album}** over
   the rest (an album started through the server, no context), opaque panel; ▼ raises ⏮ ⏯ ⏭ *Lyrics on* *Queue*, nothing
   clipped, hint *▲ Queue · ▼ Lyrics off*.
