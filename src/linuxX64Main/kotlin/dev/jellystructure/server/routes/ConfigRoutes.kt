@@ -204,7 +204,10 @@ fun Route.configureConfigRoutes(
         // Phase 261 — the file-check seed marker is server-owned; the Settings model does not carry it.
         // Phase 317 — `avSyncStepSeeded` is server-owned too: without it here, every Settings save would
         // forget the seed and the next boot would put a step the operator removed straight back.
-        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded, recommendationsStepSeeded = stored.scan.recommendationsStepSeeded, subtitleCheckSeeded = stored.scan.subtitleCheckSeeded, musicStepsSeeded = stored.scan.musicStepsSeeded, avSyncStepSeeded = stored.scan.avSyncStepSeeded))
+        // Phase 274 (FR-274-17, amendment 2026-10-13 — DEB-936) — `suggestionsStepSeeded` was the one marker
+        // missing from this list, so every save cleared it. Every seed marker in ScanConfig belongs here:
+        // the admin's ScanConfig carries `pipeline` and `defer_while_playing` and nothing else.
+        var config = received.copy(scan = received.scan.copy(fileCheckStepsSeeded = stored.scan.fileCheckStepsSeeded, recommendationsStepSeeded = stored.scan.recommendationsStepSeeded, suggestionsStepSeeded = stored.scan.suggestionsStepSeeded, subtitleCheckSeeded = stored.scan.subtitleCheckSeeded, musicStepsSeeded = stored.scan.musicStepsSeeded, avSyncStepSeeded = stored.scan.avSyncStepSeeded))
         if (received.apiKeys.jellyfinToken == "##KEEP##") {
             config = config.copy(apiKeys = config.apiKeys.copy(jellyfinToken = stored.apiKeys.jellyfinToken))
         }

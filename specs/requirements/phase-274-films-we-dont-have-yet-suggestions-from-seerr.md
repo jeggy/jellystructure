@@ -7,13 +7,13 @@
 > (or some other button text) and pick a reason: not interested · already seen it · too old · other."*
 > After the first trial: *"look at the amount of stuff — one viewer has seen a lot of horror / thriller."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **deployed** (dev compose; build notes at the end) — **plus FR-274-10a (*Download asks first*),
-`✓ Built` 2026-09-29 (commit `3de0ffe1`, §Build notes — FR-274-10a), written 2026-09-28, dev-reviewed 2026-09-28 (§Dev review — FR-274-10a)** — written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the
-round-1 mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered
-the brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Numbering verified against `main`
-`e437def3` the same day: admin taken through **273**, Ravilo through **R319**. The viewer half is **R320**.
+Written 2026-09-27 from `specs/ravilo/design-brief-suggested-movies-from-seerr-2026-09-27.md` and the round-1
+mockup `design/app/suggestions.html` (+ `suggestions-data.js`, `suggestions.js`), after the owner answered the
+brief's seven questions the same day (§ *Decisions*). **Dev-reviewed 2026-09-28 against `main` `728f22ea`**
+(§ *Dev review*). FR-274-10a (*Download asks first*) was written 2026-09-28 and dev-reviewed the same day
+(§ *Dev review — FR-274-10a*); its build notes are at the end. The viewer half is **R320**.
 
 Builds on **269** (the taste signals and the pipeline step pattern), **270/272** (the AI job, its limit and its
 queue), **136/137** (the Seerr connection and the Request feeds), **156/186** (requests attributed and followed
@@ -402,3 +402,46 @@ optional body (`SuggestionsRoutes.kt`, `SuggestionService.kt`, `SeerrDiscoverSer
 mockup are the dialog's: loading, one profile, several, two servers, no folder choice, Seerr unreachable (Download
 disabled with its reason), and sent. Not deployed and not tried against the household's Seerr: the owner withdrew
 backend-restart permission on 2026-09-29.
+
+## Amendment (2026-10-13) — a Settings save keeps `suggestions_step_seeded`
+
+Measured on production, not read out of the source: 2026-10-13 08:07Z a single admin Settings save (the one
+DEB-925 made to mount a library folder) was diffed against the `config.toml` it replaced, and the whole diff was
+the intended `[[libraries]]` block **and** `suggestions_step_seeded = true → false`. DEB-936.
+
+**The bug.** FR-274-7's seed marker is server-owned, exactly as 261's and 269's are: `PUT /api/config` restores
+the flags the admin's own `AppConfig` (`wasmJsMain/.../api/ConfigApi.kt`) does not model from the stored config.
+Its `ScanConfig` carries `pipeline` and `defer_while_playing` and nothing else, so all six seed markers arrive
+as kotlinx's `false`. The route restored five of the six — `file_check_steps_seeded`,
+`recommendations_step_seeded`, `subtitle_check_seeded`, `music_steps_seeded`, `avsync_step_seeded` — and not
+`suggestions_step_seeded`. Every save from every tab cleared it, with no log line. Same class as DEB-729
+(`[encoder]`) and the 2026-09-04 `age_rating_map` bug the route's own comment describes.
+
+**What it costs.** `seedSuggestionsStep()` is a once-at-startup migration and `SuggestionsStep.seed` is
+add-if-absent, so the flag at `false` buys one idempotent re-seed and one spurious log line on the next backend
+start, which then writes `true` back. No duplicate step and nothing a viewer sees **while `build_suggestions` is
+in the pipeline**. The real cost is the one FR-274-7 exists to prevent: an operator who deliberately removes
+`build_suggestions` and then saves anything in Settings gets the step put back on the next restart. That is the
+surprise, and it is why this is a fix and not a note.
+
+### FR-274-17 — The seed marker survives a Settings save, and so does every other one
+
+- **`PUT /api/config` restores `scan.suggestions_step_seeded` from the stored config**, beside the five flags
+  already there: one field in the existing `received.scan.copy(...)`. No admin page gains a field — the marker
+  stays server-owned, and FR-274-7's "a step the operator removes stays removed" holds across a save as well as
+  across a restart.
+- **The whole family is covered by one test, not one case per flag added later.** The guard is that a seed
+  marker added to `ScanConfig` by a future phase without a restore line fails a test rather than quietly
+  resetting on the next save — which is how this one survived two phases' worth of reading.
+
+**Audit done in the same pass** (the bug was found by diffing a real save, not by reading, so reading had
+already missed it). Backend `AppConfig` against the admin's, field by field: the omitted top-level blocks are
+`acquisition`, `trackers`, `ingest`, `subtitleCheck`, `musicbrainz`, `music`, `audiobooks`, `encoder` and
+`ravilo`; the omitted nested fields are `metadata.ageRatingMap`, the three `apiKeys` provider keys, and
+`ScanConfig`'s six seed markers. All are restored by the route after this change **except `ravilo`**, which is
+DEB-731's open bug and is left to it. `ScanConfig` is now fully accounted for: `pipeline` and
+`defer_while_playing` are the form's, the six markers are the server's.
+
+**Test.** `ConfigSavePreservesBlocksTest` gains a case that stores all six markers set (and `music_steps_seeded`
+non-empty), posts the admin's body shape, and asserts every one survives. It fails on `main` before the fix with
+`suggestions_step_seeded` alone wrong, which is the measurement reproduced in a test.

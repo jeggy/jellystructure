@@ -3,6 +3,7 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.config.AcquisitionConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.EncoderConfig
+import dev.jellystructure.config.MusicSteps
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -100,6 +101,49 @@ class ConfigSavePreservesBlocksTest {
             assertEquals(listOf("report", 7), listOf(c.subtitleCheck.action, c.subtitleCheck.dailyDownloadBudget))
             assertEquals(AcquisitionConfig(enabled = true, pollSeconds = 42), c.acquisition)
             assertEquals(tuned, c.encoder)
+        },
+    )
+
+    /**
+     * Phase 274 (FR-274-17, amendment 2026-10-13 — DEB-936) — the same class one level down. `ScanConfig`'s
+     * seed markers are server-owned ("a step the operator removes stays removed"), and the admin's own
+     * `ScanConfig` carries `pipeline` and `defer_while_playing` and nothing else, so every marker arrives as
+     * kotlinx's `false`/empty. `suggestions_step_seeded` was the one missing from the route's restore list, so
+     * every save from every tab cleared it — measured on production 2026-10-13 by diffing one real save.
+     *
+     * Asserted as the whole family and reported by TOML key, so a marker a later phase adds to `ScanConfig`
+     * without a line in the route fails here by name instead of quietly re-seeding on the next boot. Before
+     * the fix this reads `[suggestions_step_seeded]`.
+     */
+    @Test
+    fun a_settings_save_keeps_every_server_owned_seed_marker() = savedOverA(
+        before = { store ->
+            runBlocking {
+                store.update(
+                    store.current.copy(
+                        scan = store.current.scan.copy(
+                            fileCheckStepsSeeded = true,
+                            recommendationsStepSeeded = true,
+                            suggestionsStepSeeded = true,
+                            subtitleCheckSeeded = true,
+                            musicStepsSeeded = listOf(MusicSteps.SCAN, MusicSteps.MATCH),
+                            avSyncStepSeeded = true,
+                        )
+                    )
+                )
+            }
+        },
+        then = { store ->
+            val scan = store.current.scan
+            val cleared = buildList {
+                if (!scan.fileCheckStepsSeeded) add("file_check_steps_seeded")
+                if (!scan.recommendationsStepSeeded) add("recommendations_step_seeded")
+                if (!scan.suggestionsStepSeeded) add("suggestions_step_seeded")
+                if (!scan.subtitleCheckSeeded) add("subtitle_check_seeded")
+                if (scan.musicStepsSeeded != listOf(MusicSteps.SCAN, MusicSteps.MATCH)) add("music_steps_seeded")
+                if (!scan.avSyncStepSeeded) add("avsync_step_seeded")
+            }
+            assertEquals(emptyList<String>(), cleared, "a Settings save carries no seed marker — the route must restore each from the stored config")
         },
     )
 }
