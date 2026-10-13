@@ -1054,6 +1054,8 @@ object MediaApi {
         val who: String? = null,
         val suggestion: String? = null,
         val command: String? = null,
+        /** FR-317-24 — the server's own sentence for why there is no command; rendered as it arrives. */
+        @SerialName("no_command_reason") val noCommandReason: String? = null,
         val shifted: List<String> = emptyList(),
         val left: List<String> = emptyList(),
         val windows: List<AvSyncWindow> = emptyList(),

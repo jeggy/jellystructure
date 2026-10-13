@@ -254,7 +254,8 @@ data class AvSyncTrack(
 
 /** FR-317-11 — the suggestion for one flagged file: prose, the exact command where one exists, and which
  *  tracks the command moves ([shifted]) against the ones it deliberately leaves ([left], each with the
- *  reason it was left). */
+ *  reason it was left). Where there is no command and a banner can be rendered, [noCommandReason] is the
+ *  one sentence that says why (FR-317-24) — built here, beside the command, so the two cannot disagree. */
 data class AvSyncFix(
     val what: String,
     val experience: String,
@@ -263,6 +264,7 @@ data class AvSyncFix(
     val command: String?,
     val shifted: List<String> = emptyList(),
     val left: List<String> = emptyList(),
+    val noCommandReason: String? = null,
 )
 
 /**
@@ -278,6 +280,26 @@ object AvSyncAdvice {
 
     /** The tag both commands write, so a shift can be recognised (and 317b's Undo read) from the file itself. */
     const val TAG = "JELLYSTRUCTURE_AV_SHIFT"
+
+    /** The containers a shift can be written into — one list each, read by both the command below and the
+     *  check-time id probe ([dev.jellystructure.media.AvSyncService.readMkvAudioIds]), so the two cannot
+     *  drift apart (FR-317-21). An `.mka`/`.mks` carries no video and is never flagged, but it is a
+     *  container `--sync` fits, and the probe and the command must agree about that. */
+    val MATROSKA_EXTENSIONS = setOf("mkv", "mka", "mks")
+    val MP4_EXTENSIONS = setOf("mp4", "m4v", "mov")
+
+    fun isMatroska(path: String): Boolean = extensionOf(path) in MATROSKA_EXTENSIONS
+
+    private fun extensionOf(path: String) = path.substringAfterLast('.').lowercase()
+
+    /** FR-317-24 — the two sentences a banner shows where there is no command. */
+    const val NO_COMMAND_CONTAINER =
+        "No one-line fix for this container: the shift can be written into MKV and MP4 only. " +
+            "Remux it to MKV first and this check will offer the command."
+    const val NO_COMMAND_NO_IDS =
+        "No command yet: this file's own track numbers could not be read, and a shift without them could " +
+            "move the wrong track. Re-run the check with ↻ above; if it keeps failing, the file's header is " +
+            "what to look at."
 
     private fun q(s: String) = "'${s.replace("'", "'\\''")}'"
 
@@ -309,10 +331,20 @@ object AvSyncAdvice {
         val experience = if (early) "The words are heard before the lips move — most visible in close-ups and dialogue."
         else "The lips move before the words are heard — most visible in close-ups and dialogue."
         val move = if (early) "Delay the audio by $absMs ms" else "Pull the audio $absMs ms earlier"
+        // FR-317-25 — one clause per left track, naming the arm of `inStep` it actually failed and no other
+        // number: a lag measured at 0.55 correlation is not a measurement, and quoting it reads as *in step*
+        // right before the sentence excludes the track. The null-lag arm comes first, because a track with
+        // nothing in common has a correlation of 0.0 and would otherwise never reach its own clause.
         val leftWords = left.map { t ->
-            "${t.label} is not in step with the main audio (" +
-                (t.lagFrames?.let { "${AvSyncVerdict.signedMs(it * AvSyncVerdict.MS_PER_FRAME)} of it" } ?: "nothing in common with it") +
-                "${if (t.corr < IN_STEP_CORR) ", correlation ${t.corr}" else ""}) and is left as it is"
+            when {
+                t.lagFrames == null -> "${t.label} could not be compared with the main audio, so it is left as it is"
+                t.corr < IN_STEP_CORR ->
+                    "${t.label} could not be matched against the main audio (correlation ${twoDecimals(t.corr)}, " +
+                        "below $IN_STEP_CORR), so it is left as it is: it is different audio, not a delayed copy of it"
+                else ->
+                    "${t.label} is itself ${AvSyncVerdict.signedMs(t.lagFrames * AvSyncVerdict.MS_PER_FRAME)} out of step " +
+                        "with the main audio, so it is left as it is: one shift cannot put both right"
+            }
         }
         val suggestion = buildString {
             append("$move — a remux, no re-encode: the picture and the sound are unchanged, only their timing. ")
@@ -321,7 +353,35 @@ object AvSyncAdvice {
             append("The new file is written in the hidden ${WorkFiles.DIR} folder beside this one and renamed over it, so a torrent copy keeps seeding and Radarr/Sonarr never see a half-written file.")
         }
         val command = command(path, delayMs, listOf(measured) + others, shifted.map { it.specifier }.toSet())
-        return AvSyncFix(what, experience, who, suggestion, command, shifted.map { it.label }, left.map { it.label })
+        return AvSyncFix(
+            what, experience, who, suggestion, command, shifted.map { it.label }, left.map { it.label },
+            noCommandReason = if (command == null) noCommandReason(path, delayMs) else null,
+        )
+    }
+
+    /**
+     * FR-317-24 — why there is no command, for the branches a banner can actually render.
+     *
+     * A zero shift gets no sentence: `command` refuses it, but a flagged `OFFSET` is never 0 ms
+     * (`EARLY_FRAMES`/`LATE_FRAMES`), so the state cannot be rendered and no wording is invented for it.
+     * An mp4 always has a command, so its null is the same unreachable branch. A `drift` never reaches
+     * here — its own `suggestion` explains the absence in full, and a second sentence would say it twice.
+     */
+    fun noCommandReason(path: String, delayMs: Long): String? {
+        if (delayMs == 0L) return null
+        val ext = extensionOf(path)
+        return when {
+            ext in MATROSKA_EXTENSIONS -> NO_COMMAND_NO_IDS
+            ext in MP4_EXTENSIONS -> null
+            else -> NO_COMMAND_CONTAINER
+        }
+    }
+
+    /** A correlation as a reader can weigh it against the bar: two decimals, built by hand so no locale
+     *  can turn the point into a comma. */
+    fun twoDecimals(v: Double): String {
+        val hundredths = kotlin.math.round(kotlin.math.abs(v) * 100).toLong()
+        return "${if (v < 0) "−" else ""}${hundredths / 100}.${(hundredths % 100).toString().padStart(2, '0')}"
     }
 
     /** FR-317-11 — the command, or null for a container neither mkvmerge nor a stream-copy mp4 remux fits.
@@ -331,17 +391,22 @@ object AvSyncAdvice {
         if (delayMs == 0L) return null
         val work = WorkFiles.pathFor(path, WorkFiles.Kind.AV_SHIFT)
         val prepare = WorkFiles.prepareCommand(path)
-        return when (path.substringAfterLast('.').lowercase()) {
-            "mkv", "mka", "mks" -> {
-                val ids = allAudio.filter { it.specifier in shiftedSpecs }.mapNotNull { it.mkvId }
-                if (ids.isEmpty()) return null                 // without mkvmerge's own ids a --sync would move the wrong track
+        val ext = extensionOf(path)
+        return when {
+            ext in MATROSKA_EXTENSIONS -> {
+                val moved = allAudio.filter { it.specifier in shiftedSpecs }
+                val ids = moved.mapNotNull { it.mkvId }
+                // FR-317-22 — whole or absent. Without mkvmerge's own ids a `--sync` would move the wrong
+                // track; with only some of them it would move fewer tracks than the prose above says it
+                // moves, leaving a dub behind at the old timing and the page saying two different things.
+                if (ids.isEmpty() || ids.size != moved.size) return null
                 val tags = WorkFiles.pathFor(path, WorkFiles.Kind.AV_TAGS)
                 val syncs = ids.joinToString(" ") { "--sync $it:$delayMs" }
                 "$prepare && printf '<Tags><Tag><Simple><Name>$TAG</Name><String>$delayMs</String></Simple></Tag></Tags>' > ${q(tags)}" +
                     " && nice -n 19 ionice -c3 mkvmerge -q -o ${q(work)} --global-tags ${q(tags)} $syncs ${q(path)}" +
                     " && mv ${q(work)} ${q(path)} && rm ${q(tags)}"
             }
-            "mp4", "m4v", "mov" -> {
+            ext in MP4_EXTENSIONS -> {
                 // The shifted streams come from input 1 (the one `-itsoffset` moved), the rest from input 0, every
                 // audio stream in its original order — so a player's track list is unchanged by the fix.
                 val maps = allAudio.map { it.specifier }.distinct().sortedBy { it.substringAfterLast(':').toIntOrNull() ?: 0 }

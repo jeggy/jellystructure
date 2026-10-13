@@ -32,7 +32,7 @@ class AvSyncAdviceTest {
         assertEquals(listOf(measured.label, dub.label), fix.shifted)
         assertEquals(listOf(commentary.label), fix.left)
         assertTrue(fix.suggestion.contains("Commentary"), fix.suggestion)
-        assertTrue(fix.suggestion.contains("not in step"), fix.suggestion)
+        assertTrue(fix.suggestion.contains("could not be matched against the main audio"), fix.suggestion)
         // The shift is recorded in the file itself, so it can be recognised later (and 317b can undo it).
         assertTrue(cmd.contains("JELLYSTRUCTURE_AV_SHIFT"), cmd)
         // 311/FR-317-12 — the new file is written in the hidden folder and renamed over the original.
@@ -85,12 +85,51 @@ class AvSyncAdviceTest {
     fun `other containers get no command — and say why`() {
         val fix = AvSyncAdvice.advise(offset160, "/m/a.avi", t("0:a:0", "audio"))
         assertNull(fix.command)
+        // FR-317-24 — the words FR-317-11 promised and no Kotlin carried until now.
+        val reason = fix.noCommandReason!!
+        assertEquals(AvSyncAdvice.NO_COMMAND_CONTAINER, reason)
+        assertTrue(reason.contains("Remux it to MKV first"), reason)
     }
 
     @Test
     fun `an MKV with no mkvmerge ids read gets no command rather than a guess`() {
         // Without the ids `--sync` would move whichever track mkvmerge numbers 1 — never a guess.
-        assertNull(AvSyncAdvice.advise(offset160, "/m/a.mkv", t("0:a:0", "audio", mkvId = null)).command)
+        val fix = AvSyncAdvice.advise(offset160, "/m/a.mkv", t("0:a:0", "audio", mkvId = null))
+        assertNull(fix.command)
+        val reason = fix.noCommandReason!!
+        assertEquals(AvSyncAdvice.NO_COMMAND_NO_IDS, reason)
+        assertTrue(reason.contains("Re-run the check with ↻"), reason)
+    }
+
+    @Test
+    fun `an MKV with too few ids gets no command at all — never a shift that moves fewer tracks than the prose`() {
+        // FR-317-22: the measured track and a dub in step with it both move, but the dub's id was past the
+        // cut. Two --sync arguments under prose saying three tracks move is the one thing the contract
+        // forbids, so there is no command — and the page says why.
+        val measured = t("0:a:0", "\"fao\" EAC3", mkvId = 1)
+        val dub = t("0:a:1", "\"dan\" AAC", mkvId = null, lag = 0, corr = 0.91)
+        val second = t("0:a:2", "\"nor\" AAC", mkvId = 4, lag = 0, corr = 0.88)
+        val fix = AvSyncAdvice.advise(offset160, "/m/a.mkv", measured, listOf(dub, second))
+        assertEquals(3, fix.shifted.size)
+        assertNull(fix.command)
+        assertEquals(AvSyncAdvice.NO_COMMAND_NO_IDS, fix.noCommandReason)
+
+        // Every id present: three --sync arguments, unchanged from before this rule.
+        val whole = AvSyncAdvice.advise(offset160, "/m/a.mkv", measured, listOf(dub.copy(mkvId = 2), second))
+        val cmd = whole.command
+        assertTrue(cmd!!.contains("--sync 1:160"), cmd)
+        assertTrue(cmd.contains("--sync 2:160"), cmd)
+        assertTrue(cmd.contains("--sync 4:160"), cmd)
+        assertNull(whole.noCommandReason)
+    }
+
+    @Test
+    fun `an mp4 needs no mkvmerge id and still gets its command`() {
+        // The mp4 branch maps by ffmpeg specifier, so FR-317-22's rule must not reach it.
+        val fix = AvSyncAdvice.advise(offset160, "/m/a.mp4", t("0:a:0", "audio"), listOf(t("0:a:1", "dub", lag = 0, corr = 0.9)))
+        val cmd = fix.command
+        assertTrue(cmd!!.contains("-itsoffset 0.160"), cmd)
+        assertNull(fix.noCommandReason)
     }
 
     @Test
@@ -98,9 +137,68 @@ class AvSyncAdviceTest {
         val drift = AvSyncReading(AvSyncState.DRIFT, driftFromMs = 40, driftToMs = 420, driftFromS = 1200.0, driftToS = 6000.0, confidentWindows = 5)
         val fix = AvSyncAdvice.advise(drift, "/m/a.mkv", t("0:a:0", "audio", mkvId = 1))
         assertNull(fix.command)
+        // FR-317-24 — and no sentence either: the suggestion already explains the absence in full, and the
+        // same thing said twice is worse than said once.
+        assertNull(fix.noCommandReason)
         assertTrue(fix.what.contains("+40 ms"), fix.what)
         assertTrue(fix.what.contains("+420 ms"), fix.what)
         assertTrue(fix.suggestion.contains("Replace the file"), fix.suggestion)
+    }
+
+    // ── FR-317-25: a left track names the test it failed and quotes no other number ──────────────
+
+    @Test
+    fun `a track left on correlation names the correlation against its bar and quotes no lag`() {
+        // The live line this replaces read "+0 ms of it, correlation 0.546" — a lag that reads as perfectly
+        // in step, in front of a sentence excluding the track.
+        val fix = AvSyncAdvice.advise(
+            offset160, "/m/a.mkv", t("0:a:0", "main", mkvId = 1),
+            listOf(t("0:a:1", "Untagged EAC3 (0:a:1)", mkvId = 2, lag = 0, corr = 0.546)),
+        )
+        assertTrue(fix.suggestion.contains("correlation 0.55, below 0.6"), fix.suggestion)
+        assertTrue(fix.suggestion.contains("different audio, not a delayed copy of it"), fix.suggestion)
+        assertFalse(fix.suggestion.contains("+0 ms"), fix.suggestion)
+        assertFalse(fix.suggestion.contains("0.546"), fix.suggestion)
+    }
+
+    @Test
+    fun `a track left on its own lag names the lag and quotes no correlation`() {
+        val fix = AvSyncAdvice.advise(
+            offset160, "/m/a.mkv", t("0:a:0", "main", mkvId = 1),
+            listOf(t("0:a:1", "dub", mkvId = 2, lag = 3, corr = 0.80)),
+        )
+        assertTrue(fix.suggestion.contains("is itself +120 ms out of step"), fix.suggestion)
+        assertTrue(fix.suggestion.contains("one shift cannot put both right"), fix.suggestion)
+        assertFalse(fix.suggestion.contains("correlation"), fix.suggestion)
+        assertFalse(fix.suggestion.contains("0.8"), fix.suggestion)
+    }
+
+    @Test
+    fun `a track with nothing in common says only that it could not be compared`() {
+        val fix = AvSyncAdvice.advise(
+            offset160, "/m/a.mkv", t("0:a:0", "main", mkvId = 1),
+            listOf(t("0:a:1", "silent", mkvId = 2, lag = null, corr = 0.0)),
+        )
+        // The clause joins first, so its own first character is the one the sentence uppercases.
+        assertTrue(fix.suggestion.contains("Silent could not be compared with the main audio"), fix.suggestion)
+        assertFalse(fix.suggestion.contains("correlation"), fix.suggestion)
+        assertFalse(fix.suggestion.contains(" ms of it"), fix.suggestion)
+    }
+
+    @Test
+    fun `a correlation is two decimals and never a locale's comma`() {
+        assertEquals("0.55", AvSyncAdvice.twoDecimals(0.546))
+        assertEquals("0.60", AvSyncAdvice.twoDecimals(0.6))
+        assertEquals("0.00", AvSyncAdvice.twoDecimals(0.0))
+        assertEquals("1.00", AvSyncAdvice.twoDecimals(0.999))
+    }
+
+    @Test
+    fun `the containers a shift fits are one list — the probe and the command cannot drift apart`() {
+        assertTrue(AvSyncAdvice.isMatroska("/m/a.mkv"))
+        assertTrue(AvSyncAdvice.isMatroska("/m/a.MKA"))
+        assertFalse(AvSyncAdvice.isMatroska("/m/a.mp4"))
+        assertEquals(AvSyncAdvice.MATROSKA_EXTENSIONS, setOf("mkv", "mka", "mks"))
     }
 
     @Test

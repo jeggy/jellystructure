@@ -25,6 +25,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -109,6 +110,9 @@ data class AvSyncFileDto(
     val who: String? = null,
     val suggestion: String? = null,
     val command: String? = null,
+    /** FR-317-24 — the one sentence that says why there is no command, where there is none to give.
+     *  Additive and nullable: a reader that does not know the field is unaffected. */
+    @SerialName("no_command_reason") val noCommandReason: String? = null,
     val shifted: List<String> = emptyList(),
     val left: List<String> = emptyList(),
     val windows: List<AvSyncWindowDto> = emptyList(),
@@ -517,7 +521,7 @@ class AvSyncService(
         val others = audioTracks(item, path).map { it.specifier }.filter { it != audio }
         // FR-317-5 — the mkvmerge ids are read ONCE here, at check time, so the advice (and the command on
         // the title page) never reads a media file on the request path.
-        val mkvIds = if (path.substringAfterLast('.').lowercase() == "mkv") readMkvAudioIds(path) else emptyMap()
+        val mkvIds = if (AvSyncAdvice.isMatroska(path)) readMkvAudioIds(path) else emptyMap()
 
         var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse { return Result.failure(it) }
         if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {
@@ -563,8 +567,10 @@ class AvSyncService(
     /** `mkvmerge -J` → each `0:a:N`'s own mkvmerge track id (FR-317-5). The n-th audio track in the JSON is
      *  the n-th in ffmpeg's `0:a:<n>`, the same assumption [dev.jellystructure.filefix.parseTrackUids] makes. */
     suspend fun readMkvAudioIds(path: String): Map<String, Int> {
-        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { captureShell(FileFixCommands.identify(path) + " 2>/dev/null") } ?: return emptyMap()
-        return parseMkvAudioIds(out)
+        val out = dev.jellystructure.ops.SegmentProcessGate.withPermit { captureShell(FileFixCommands.identify(path) + " 2>/dev/null") } ?: ""
+        val ident = parseMkvIdentification(out)
+        if (ident.ids.isEmpty()) Logger.warn(probeFailureWarning(path, out.encodeToByteArray().size, ident), "integrity")
+        return ident.ids
     }
 
     companion object {
@@ -581,17 +587,112 @@ class AvSyncService(
         const val READY_MAX_AGE_S = 300L
 
         /** `mkvmerge -J` → `0:a:N` → the track's own `id`. Pure, so the mapping is tested rather than eyeballed. */
-        fun parseMkvAudioIds(output: String): Map<String, Int> {
-            val root = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull() ?: return emptyMap()
-            val tracks = runCatching { root["tracks"]!!.jsonArray.map { it.jsonObject } }.getOrNull() ?: return emptyMap()
+        fun parseMkvAudioIds(output: String): Map<String, Int> = parseMkvIdentification(output).ids
+
+        /**
+         * FR-317-21 / FR-317-26 — the whole answer: the ids, and whether the identification happened.
+         *
+         * A whole document is read whole. A document that is **not** whole is read as far as it is: the
+         * `tracks` array is walked in order and only ids of complete track objects are taken, stopping at
+         * the first object that cannot be read in full. An id is therefore either read in full or not read
+         * at all, an incomplete object never advances the `0:a:N` ordinal (and because the walk stops there,
+         * no later track exists to be mis-numbered), and the map is possibly short, never wrong.
+         *
+         * Why this matters at all: a document can arrive short for reasons that have nothing to do with the
+         * C locale of phase 318 — a killed process, a full pipe — and throwing away a whole good prefix for
+         * a bad tail is wrong on its own terms.
+         */
+        fun parseMkvIdentification(output: String): MkvIdentification {
+            val root = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull()
+            if (root != null) {
+                val errors = runCatching {
+                    root["errors"]!!.jsonArray.map { it.jsonPrimitive.content }
+                }.getOrDefault(emptyList()).map { it.trim() }.filter { it.isNotEmpty() }
+                val tracks = runCatching { root["tracks"]!!.jsonArray.map { it.jsonObject } }.getOrNull()
+                // Both at once is ordinary: mkvmerge reports plenty about a file it identifies perfectly
+                // well, so the ids are read whatever the errors array says.
+                return MkvIdentification(audioIdsOf(tracks ?: emptyList()), errors.isNotEmpty(), errors.firstOrNull())
+            }
+            // Not whole. Nothing to report but what the prefix carries — and no `errors` array to read,
+            // since the document could not be parsed to find one.
+            val ids = audioIdsOf(wholeTrackObjects(output))
+            return MkvIdentification(ids, failed = ids.isEmpty(), truncated = output.contains("\"tracks\""))
+        }
+
+        /**
+         * FR-317-23 — the one line a failed id probe leaves on the integrity channel. Pure, so the wording
+         * is tested rather than eyeballed.
+         *
+         * [bytes] is not decoration: that single number separates a refusal to identify (~115 bytes of
+         * `errors`) from a document that arrived short, at a glance and without a container shell. The
+         * **exit status** cannot be had here — the call pipes `2>/dev/null` and `captureShell` discards
+         * `pclose`'s answer — so mkvmerge's own first error line stands in its place, which also names
+         * *why* it refused (FR-317-26, amendment of 2026-10-13).
+         */
+        fun probeFailureWarning(path: String, bytes: Int, ident: MkvIdentification): String {
+            val why = ident.error?.let { "mkvmerge says: $it" }
+                ?: when {
+                    ident.truncated -> "and the document stops part-way through its own track list"
+                    ident.failed -> "and nothing in them that could be read as an identification"
+                    else -> "and no audio track named in them"
+                }
+            return "av sync: this file's own mkvmerge track numbers could not be read — $bytes bytes back, $why. " +
+                "No fix command can be offered for it until the probe succeeds (↻ on the Checks card is the retry): $path"
+        }
+
+        /** The audio ids of [tracks] in document order, stopping at the first object that cannot be read
+         *  in full — an unreadable `type` or `id` ends the walk rather than advancing the ordinal past it. */
+        private fun audioIdsOf(tracks: List<JsonObject>): Map<String, Int> {
             var n = 0
             val out = LinkedHashMap<String, Int>()
             for (t in tracks) {
-                if (runCatching { t["type"]!!.jsonPrimitive.content }.getOrNull() != "audio") continue
-                runCatching { t["id"]!!.jsonPrimitive.content.toInt() }.getOrNull()?.let { out["0:a:$n"] = it }
+                val type = runCatching { t["type"]!!.jsonPrimitive.content }.getOrNull() ?: break
+                if (type != "audio") continue
+                val id = runCatching { t["id"]!!.jsonPrimitive.content.toInt() }.getOrNull() ?: break
+                out["0:a:$n"] = id
                 n++
             }
             return out
+        }
+
+        /** The complete objects of a truncated document's `tracks` array, in order, up to the first one the
+         *  text does not finish. Each is parsed on its own, so a tail that is not JSON costs only itself. */
+        private fun wholeTrackObjects(output: String): List<JsonObject> {
+            val key = output.indexOf("\"tracks\"")
+            if (key < 0) return emptyList()
+            var i = output.indexOf('[', key)
+            if (i < 0) return emptyList()
+            i++
+            val out = ArrayList<JsonObject>()
+            while (i < output.length) {
+                while (i < output.length && (output[i].isWhitespace() || output[i] == ',')) i++
+                // A `]` (the array ended) or a cut: either way there is no further whole object.
+                if (i >= output.length || output[i] != '{') break
+                val end = endOfObject(output, i) ?: break
+                val obj = runCatching { Json.parseToJsonElement(output.substring(i, end + 1)).jsonObject }.getOrNull() ?: break
+                out.add(obj)
+                i = end + 1
+            }
+            return out
+        }
+
+        /** The index of the `}` that closes the object starting at [from], or null if the text ends first. */
+        private fun endOfObject(s: String, from: Int): Int? {
+            var depth = 0
+            var inString = false
+            var escaped = false
+            for (i in from until s.length) {
+                val c = s[i]
+                when {
+                    escaped -> escaped = false
+                    inString && c == '\\' -> escaped = true
+                    c == '"' -> inString = !inString
+                    inString -> {}
+                    c == '{' || c == '[' -> depth++
+                    c == '}' || c == ']' -> if (--depth == 0) return i
+                }
+            }
+            return null
         }
     }
 
@@ -653,7 +754,7 @@ class AvSyncService(
                 audioMark = reading.offsetMs?.takeIf { reading.state == AvSyncState.OFFSET }
                     ?.let { "${if (it < 0) -it else it} ms ${if (it > 0) "early" else "late"}" },
                 what = fix?.what, experience = fix?.experience, who = fix?.who,
-                suggestion = fix?.suggestion, command = fix?.command,
+                suggestion = fix?.suggestion, command = fix?.command, noCommandReason = fix?.noCommandReason,
                 shifted = fix?.shifted ?: emptyList(), left = fix?.left ?: emptyList(),
                 windows = windowsOf(row).sortedBy { it.startS }.map { w ->
                     AvSyncWindowDto(
@@ -679,3 +780,21 @@ class AvSyncService(
 /** One `0:a:N` → mkvmerge track id pair, as stored in `file_av_sync.mkv_audio_ids`. */
 @Serializable
 data class MkvAudioId(val audio: String, val id: Int)
+
+/**
+ * FR-317-21 / FR-317-26 — what one `mkvmerge -J` run yielded.
+ *
+ * [ids] is possibly short, never wrong. [failed] says the identification itself did not happen —
+ * a document whose `errors` array is non-empty, or output that is not JSON at all — as against a
+ * container that genuinely has nothing to report, which is an empty map and no failure. [error] is
+ * mkvmerge's own first `errors[]` line where there is one, which is what the `WARN` carries in place
+ * of an exit status that cannot be had here (FR-317-23, as amended 2026-10-13).
+ */
+data class MkvIdentification(
+    val ids: Map<String, Int>,
+    val failed: Boolean,
+    val error: String? = null,
+    /** The document was not whole and was read as far as it went — which is what the `WARN` says instead
+     *  of claiming there was nothing in it to read. */
+    val truncated: Boolean = false,
+)

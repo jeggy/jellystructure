@@ -3456,6 +3456,11 @@ private suspend fun loadAvSync(item: MediaItem) {
                  <span class="muted">(confidence ${(w.conf * 100).toInt() / 100.0}, ${w.frames} face frames${if (!w.confident) ", not counted" else ""})</span>
                </div>"""
         }
+        // The command where there is one — and where there is none, FR-317-24's one sentence saying why, in
+        // the banner's own quiet style and never as a second warning badge. The words are the server's.
+        val fix = f.command?.let { permCopyBlock(it, null) }
+            ?: f.noCommandReason?.let { """<div class="tiny muted" style="margin-top:6px;line-height:1.5;">${it.esc()}</div>""" }
+            ?: ""
         return """<div style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:4px;">
              <b style="font-size:.84rem;">${(f.what ?: "").esc()}</b>
              <div class="tiny" style="margin-top:3px;line-height:1.6;">
@@ -3463,7 +3468,7 @@ private suspend fun loadAvSync(item: MediaItem) {
                <span class="muted">Who is affected:</span> ${(f.who ?: "").esc()}<br>
                <span class="muted">Suggested fix:</span> ${(f.suggestion ?: "").esc()}
              </div>
-             ${f.command?.let { permCopyBlock(it, null) } ?: ""}
+             $fix
              ${if (f.windows.isEmpty()) "" else """<details style="margin-top:6px;"><summary class="tiny" style="cursor:pointer;">The measurements this is based on</summary>$evidence</details>"""}
            </div>"""
     }

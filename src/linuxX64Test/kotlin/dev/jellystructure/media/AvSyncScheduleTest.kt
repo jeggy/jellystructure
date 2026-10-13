@@ -5,6 +5,7 @@ import dev.jellystructure.config.PipelineStep
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -102,5 +103,88 @@ class AvSyncScheduleTest {
         assertEquals(mapOf("0:a:0" to 1, "0:a:1" to 3), AvSyncService.parseMkvAudioIds(out))
         assertEquals(emptyMap(), AvSyncService.parseMkvAudioIds("not json"))
         assertEquals(emptyMap(), AvSyncService.parseMkvAudioIds("""{"tracks":[]}"""))
+    }
+
+    // ── FR-317-21 / FR-317-26: a document that arrives short, and one that is a refusal ──────────
+
+    @Test
+    fun `a document cut inside the second audio track yields the first id and never the second`() {
+        val ident = AvSyncService.parseMkvIdentification(MkvIdentificationFixtures.CUT_INSIDE_THE_SECOND_AUDIO_TRACK)
+        // The prefix is read as far as it is whole: track 1 is a complete object, track 2 is cut
+        // mid-`track_name`. `0:a:1` must be absent rather than guessed, and the ordinal of the id that WAS
+        // read must be the one it would have had in the whole document.
+        assertEquals(mapOf("0:a:0" to 1), ident.ids)
+        // A short document is not a failed identification: mkvmerge did identify the file.
+        assertFalse(ident.failed)
+        assertTrue(ident.truncated)
+        assertNull(ident.error)
+    }
+
+    @Test
+    fun `a document cut inside the only audio track yields nothing rather than the video's id`() {
+        val ident = AvSyncService.parseMkvIdentification(MkvIdentificationFixtures.CUT_INSIDE_THE_FIRST_AUDIO_TRACK)
+        assertEquals(emptyMap(), ident.ids)
+        assertTrue(ident.failed)        // nothing usable came back at all
+    }
+
+    @Test
+    fun `an errors document is a failed identification and not an empty container`() {
+        val failed = AvSyncService.parseMkvIdentification(MkvIdentificationFixtures.ERROR_DOCUMENT_FROM_A_NON_ASCII_PATH)
+        assertEquals(emptyMap(), failed.ids)
+        assertTrue(failed.failed)
+        // The WARN quotes mkvmerge's own first line, trailing newline and all trimmed off.
+        assertEquals("The file 'f' could not be opened for reading: open file error.", failed.error)
+
+        val empty = AvSyncService.parseMkvIdentification("""{"errors":[],"warnings":[],"tracks":[]}""")
+        assertEquals(emptyMap(), empty.ids)
+        assertFalse(empty.failed)       // a container with nothing in it is not a refusal to look
+        assertNull(empty.error)
+
+        val notJson = AvSyncService.parseMkvIdentification("not json")
+        assertTrue(notJson.failed)
+        assertNull(notJson.error)       // there is no errors array to quote
+    }
+
+    @Test
+    fun `the WARN carries the path the byte count and mkvmerge's own first error line`() {
+        val doc = MkvIdentificationFixtures.ERROR_DOCUMENT_FROM_A_NON_ASCII_PATH
+        val warn = AvSyncService.probeFailureWarning("/mnt/media/x/a.mkv", doc.encodeToByteArray().size, AvSyncService.parseMkvIdentification(doc))
+        assertTrue(warn.contains("111 bytes back"), warn)
+        assertTrue(warn.contains("could not be opened for reading"), warn)
+        assertTrue(warn.contains("/mnt/media/x/a.mkv"), warn)
+        // The exit status is deliberately absent: it cannot be had where this line is written.
+        assertFalse(warn.contains("exit"), warn)
+
+        // A document that arrived short has no error line to quote, and says so rather than inventing one.
+        val short = MkvIdentificationFixtures.CUT_INSIDE_THE_FIRST_AUDIO_TRACK
+        val shortWarn = AvSyncService.probeFailureWarning("/mnt/media/x/b.mkv", short.encodeToByteArray().size, AvSyncService.parseMkvIdentification(short))
+        assertTrue(shortWarn.contains("2110 bytes back"), shortWarn)
+        assertTrue(shortWarn.contains("stops part-way through its own track list"), shortWarn)
+        assertFalse(shortWarn.contains("mkvmerge says"), shortWarn)
+    }
+
+    @Test
+    fun `a document with both errors and a usable track array still gives its ids`() {
+        // mkvmerge reports plenty about files it identifies perfectly well.
+        val ident = AvSyncService.parseMkvIdentification(
+            """{"errors":["something to say about it"],"warnings":[],
+                "tracks":[{"id":0,"type":"video","properties":{}},{"id":1,"type":"audio","properties":{}}]}""",
+        )
+        assertEquals(mapOf("0:a:0" to 1), ident.ids)
+        assertEquals("something to say about it", ident.error)
+    }
+
+    @Test
+    fun `an audio track with no readable id stops the walk rather than advancing the ordinal`() {
+        val out = """
+            {"tracks":[
+              {"id":0,"type":"video","properties":{}},
+              {"type":"audio","properties":{"language":"fao"}},
+              {"id":3,"type":"audio","properties":{"language":"dan"}}
+            ]}
+        """.trimIndent()
+        // `0:a:0` has no id, so `0:a:1` cannot be known to be the second audio track either: the map is
+        // empty, never `{"0:a:1" to 3}`.
+        assertEquals(emptyMap(), AvSyncService.parseMkvAudioIds(out))
     }
 }
