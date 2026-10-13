@@ -1427,3 +1427,64 @@ library on a prod form, which is the trap FR-314-16 set out to remove.
 There is no `wasmJsTest` source set in this repository, so this requirement gets no unit test; the verification is
 `compileKotlinWasmJs` plus acceptance 13 walked against a locally built admin on a throwaway config — never prod's,
 because the acceptance ends in a Save.
+
+## Amendment 2026-10-13 (ninth) — a stored verdict is only as good as the configuration it was computed under (DEB-946)
+
+All five steps are in: prod runs `v1.51-120-g80552895` (which carries both `b354d55f` and `ac3b37e4`),
+`[file_fix] dv_versions_root = "/mnt/media/jellyfin/versions"`, the `Versioner` library is mapped and `skip = true`.
+The kind's switch is off, and **the card the owner would read to decide it is wrong in the understating direction.**
+
+### What it says, and what is true
+
+Kind C's card reads `needs_rename: 13`, `would_add: 3`. Under the live configuration the real figure is **~16
+eligible, none needing a rename** — FR-314-15's own *"all 17 films become eligible as they are"*. So the card
+describes a switch that would act on **3** films when it would act on about **16**.
+
+Neither number is a computation gone wrong. `needs_rename` is written in exactly one place,
+`FileFixService.kt:314`, and that branch is guarded by **`root == null`** — which cannot be true any more. Those 13
+rows are verdicts **stored before the root existed**, and nothing recomputes them: a row's state is written by the
+dry run, and prod sets `scan_interval_hours = 0` and never plans on its own
+(see *Prod defers nothing*). The rows are not stale by accident; there is no mechanism that would ever refresh them.
+
+### FR-314-18 — a configuration change that alters the planning rules invalidates the verdicts it computed
+
+- **Changing `dv_versions_root` invalidates kind C's stored rows.** Setting, clearing or moving the root changes
+  which films are eligible and what the job would do to each, so the verdicts computed under the old value are not
+  evidence about the new one. On that write, kind C's planned rows are cleared or marked as predating the current
+  configuration; the kind's card must not present a count computed under rules that no longer apply.
+- **A card that cannot vouch for its numbers says so.** Where rows predate the live configuration and no re-plan has
+  run since, the card says that in place of a reassuring total — *"these counts predate the current versions root;
+  run the dry run"* — rather than printing 3 as though it were measured today. **The switch decision is taken off
+  this card, so the card carrying an unqualified stale number is the defect, not a cosmetic nit.**
+- **The kind's own blurb is computed, not hardcoded.** `FileFixService.kt:706` states *"Writes a Dolby Vision 8.1
+  version **beside** a profile 7 film"* as a constant. That is the superseded placement and the exact shape that
+  caused DEB-868, printed at the top of the card while the same pass computes `"in the versions library"` for each
+  row's detail twenty lines earlier. The blurb reads the configured placement like the detail does.
+- **No scan, no probe, no file.** None of this reads a media file or writes one; it is state the admin already holds.
+
+### The rule this is an instance of
+
+**A stored verdict is only as good as the configuration it was computed under**, and on an installation that never
+re-plans by itself there is nothing to correct it. Any phase that stores a decision per title and lets the owner
+change the rules behind it owes either an invalidation on that write or a visible "computed under older rules" mark.
+Phase 314 is where it bit because the planning rules are configuration and the switch is a one-way action on 206 GB
+of library, but the shape is not specific to kind C.
+
+### Acceptance (added)
+
+13. With planned kind C rows on disk, changing `dv_versions_root` leaves no row presenting a verdict computed under
+    the old value: either the rows are gone or the card says they predate the configuration. The kind's blurb names
+    the placement the live configuration implies, never *"beside"* while a root is set.
+
+### Tests (added)
+
+15. A `needs_rename` row written with no root does not survive a root being configured as a bare count on the card;
+    and the kind's blurb is derived from the configured root rather than a constant.
+
+### Sequencing — the dry run comes before the switch decision
+
+The recompute is `POST /api/file-fix/plan`: all kinds, background-gated, **writes rows only** — no media file is
+touched, no Apply is run, Jellyfin is not called. It is the designed mechanism and the original 314 decision was
+*dry run first* in any case. So the order for turning kind C on is: **recompute → read the real counts → the switch
+decision → an Apply on one film (acceptance 9) → DEB-870**. Deciding the switch off today's card would be deciding
+off a fifth of the real reach, which is the one thing this amendment exists to prevent.
