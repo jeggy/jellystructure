@@ -1635,3 +1635,65 @@ available before the pass runs, and it also shows the restated test has real tee
 satisfiable: the skew it looks for is exactly the bug's fingerprint — 72.3 % non-ASCII among the 195 unmapped
 rows against 6.3 % among the 1 022 already mapped. If the pass leaves non-ASCII Matroska rows unmapped, that
 is a genuine finding; the 143 were never one.
+
+## Amendment (2026-10-13, tenth of the day) — the eighth amendment's premise is wrong: prod sweeps itself every hour, and the pass the bump makes due has no owner because it needs none (DEB-955)
+
+My error, found by checking the thing the eighth amendment asserted. It says *"`scan_interval_hours = 0`
+there, so nothing restarts a sweep but a person"*, and that is **false**. `scan_interval_hours` is only the
+**legacy** fallback: `Main.kt`'s scheduler reads `cfg.scanSchedule` first and reaches the interval branch
+only when that is blank (`Main.kt:722-737`). Prod's live config, read at 2026-10-13 11:05Z:
+
+```toml
+scan_schedule = "30 */1 * * *"        # line 2 — every hour at :30, local wall clock
+
+[[scan.pipeline]]
+    step = "check_av_sync"
+    enabled = true
+    scope = "missing"
+```
+
+So prod runs the **whole pipeline, including the A/V-sync check at `scope = missing`, every hour**. Three
+independent readings of the same thing: `scan_state` holds `scan-1791887400` — started **10:30:00Z** exactly,
+`COMPLETE` 10:39:05Z; `item_step_run` over the last 24 h clusters in minutes **:30–:35 across thirteen
+different hours**; and the `check_av_sync` enqueues fall in exactly two large clusters (10-12 22:31Z, 4 968
+rows; 10-13 10:35Z, 3 548 rows) with handfuls of 6–9 rows at 23:32Z and 02:33Z in between — the hourly runs
+*were* firing all along and adding only the newly-dirty files, because the lane still held the rest and the
+queue dedupes. That is why hourly runs were invisible in the lane and why "the sweep was hand-started at
+22:31Z" needs no human in it at all.
+
+### What the halt actually bought: 31 minutes
+
+DEB-958 emptied the waiting lane at **10:04:08Z** (`removed.avsync = 3 572`, one running job kept, exactly as
+FR-260-1 says). The **10:30Z scheduled run re-enqueued 3 548 of them at 10:35:48Z**, and at 11:01Z the lane is
+advancing again — 99 rows measured since 10:00Z, 6 107 rows stored, 1 502 of them non-skip. Nothing was lost
+or damaged; the halt simply expired.
+
+### The order, restated
+
+1. **The halt is withdrawn, and the lane is not emptied again.** An empty is a ≤60-minute palliative here.
+   The only durable stops are a write to the owner's `scan_schedule` or `enabled = false` on the step, and
+   both are a bigger intervention in his configuration than the GPU they save — which is **measured at ~195
+   files/h**, about an hour of the post-bump pass per hour of waiting, on a card the owner holds anyway.
+2. **The eighth amendment's fallback clause is void.** There is nothing to "resume under `/1` by 2026-10-14
+   09:30Z": the `/1` sweep never stopped and cannot be stopped from the queue.
+3. **Acceptance 27 stands; its subject changes.** The pass that clears the older-model rows is the **next
+   scheduled run**, within 60 minutes of the sidecar landing — not an operator's trigger. DEB-959 is a
+   verification card, not the trigger, and whoever deploys should expect FR-317-6's zero to rebuild (the
+   seventh amendment's first-hour window) on its own, with no one having asked for it.
+4. **The seventh amendment was right, and for a better reason than it gave.** *"The reason to bump now, with
+   the sweep being restarted anyway"* holds without needing DEB-918 in it: the restart is hourly and
+   automatic.
+
+### What survives from the eighth amendment
+
+Everything that was read rather than assumed: the invalidation arithmetic (`SKIP_REASONS` spares 4 605 rows
+and makes every measured row due), the id-map containment (all non-skip `NULL` `mkv_audio_ids` sit inside the
+invalidated set, so a forced per-title refill is redundant), acceptance 27 and acceptance 28 as the ninth
+amendment restated it, and the decision that DEB-905's separate refill is withdrawn. The only load-bearing
+thing that was wrong was *who* starts the pass.
+
+### Deliberately not specified, restated
+
+A backend-side auto-enqueue on model change is still not specified, and now for a stronger reason: the
+scheduler already is one. A requirement for it would describe existing behaviour and invite a second
+mechanism beside it.
