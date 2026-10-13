@@ -1769,3 +1769,178 @@ Whether `health()` should be re-probed on a cadence (or `lastModel` invalidated 
 that a swap cannot go unnoticed by a long-lived process is a design question for whoever owns FR-317-7, not
 something to settle in an operator's amendment. The runbook step in consequence 2 closes today's risk without
 new code.
+
+## Amendment (2026-10-13, twelfth of the day) — the VRAM budget is a frame *count* and the decode target is a fixed *width*, so a 4:3-ish SD file is the most expensive frame in the library (FR-317-34, FR-317-35, FR-317-36, DEB-979)
+
+Sjúrður's census of the `avsync` lane's failures, DEB-979: of 150 failed rows **129 are
+`OutOfMemoryError: CUDA out of memory`** — against 5 connect, 5 tensor-shape, 4 `conf: NaN`, 4 FR-317-29
+give-ups and 3 one-offs. Those 129 jobs are **122 distinct files in only 4 titles**, and 120 of the 122 come
+from two **standard-definition** series: 111 files of a 200-episode series at **720 × 552**, and 9 of 18 at
+**700 × 394**. A 1080p series contributes one file and a film one. Only 7 files OOM'd twice, so this is 122
+separate failures and not a retry loop.
+
+**That inverts the hypothesis this phase had been carrying** — acceptance 7c's VRAM question, and the
+4K/DV/HDR tonemap path as the obvious suspect. The report says so itself and offers the detection batch as
+the mechanism. The batch is where the allocation *fails*; it is not what *varies*. Read in `measure.py` at
+`main`, and at `d87d096e` — the revision whose `measure.py` is actually baked into the running container.
+
+### The arithmetic, in the sidecar's own lines
+
+`:619` — `W = RES; H = int(round(p['h'] * W / p['w'] / 2) * 2)`, with `RES = 640`. **The width is fixed and
+the height keeps the aspect**, so the bytes per frame are proportional to **1/aspect**: the squarer the
+source, the taller the decoded frame, and *small* has nothing to do with it.
+
+| source | decoded | px/frame | the window on the card (`:660`) | `shots`' 128-frame float copy (`:350`) | peak before detection |
+|---|---|---|---|---|---|
+| 1920 × 1080 | 640 × 360 | 230 400 | 0.778 GB | 354 MB | ≈ 1.13 GB |
+| **720 × 552** | **640 × 490** | **313 600** | **1.058 GB** | **482 MB** | **≈ 1.54 GB** |
+| 700 × 394 | 640 × 360 | 230 400 | 0.778 GB | 354 MB | ≈ 1.13 GB |
+
+Against a **hard 2.0 GB per-process cap** — `VRAM_GB = 2` (`:39`) through
+`set_per_process_memory_fraction` (`:109`), deliberately, because the card is shared with Immich. A 45 s
+window is 1 125 frames at `FPS = 25`, and `:660` moves **all of it** to the card at once; `shots` then makes
+a 128-frame float32 copy of part of it, and S3FD's activations for `detect`'s batch of 12 land on top of
+that. **At 640 × 490 three quarters of the budget is spent before the detector is reached**; at 640 × 360 it
+is a little over half. The `DECODERS = 3` prefetch is not implicated — those are CPU tensors, never on the
+card.
+
+So the report's conclusion survives its own mechanism: **every allocation in this pipeline is sized by a
+frame count — 1 125, 128, 12, 16 — while the cost of a frame is set by a scale that holds the width
+constant.** Nothing in the sidecar knows how many bytes it is about to ask for.
+
+### The second mechanism, which is why a 16:9 SD title OOM'd at all
+
+700 × 394 decodes to the **same geometry and the same cost as 1080p**, so geometry cannot explain its 9
+files. **No failure path hands the card back.** `torch.cuda.empty_cache()` is called only on the success
+path, between windows (`:699`); `measure()`'s `except BaseException` (`:700`) kills the children and
+re-raises, and `server.py:92` turns that into the 500. The caching allocator's reserved, fragmented segments
+therefore survive an OOM inside a **long-lived** process, and the next file asks for its contiguous ~1 GB
+inside a 2 GB budget that is no longer clean. Stated as a hypothesis, like the report's own, and it explains
+both that title and **111 of the 129 landing inside one hour** at least as well as the sweep's walk order
+does. FR-317-36 fixes it whether or not it was load-bearing, because handing the card back on the way out is
+correct regardless.
+
+### What the pending sidecar deploy will not do
+
+DEB-950's image is queued and DEB-979 asks, rightly, whether it changes this. **It does not**, and that is
+settled from the lines rather than left to a measurement: the baked `2bcbf336fcee636e5c015a7ad5fcd655` is
+`d87d096e`'s copy, and `RES = 640`, `W = RES`, `fr_cpu.to(dev)`, the 128/12/16 chunk sizes, `VRAM_GB = 2`
+and the absent `empty_cache` are **byte-identical at `787af7fa`**. FR-317-32's only touch nearby skips the
+`to(dev)` for a window it *refuses*, and these files are not refused — they reach detection. Deploy DEB-950
+for its own reasons.
+
+### FR-317-34 — The card never holds a whole window
+
+The decoded window **stays the CPU tensor it already is**. `shots`, `detect` and `crops` move only the slice
+they are about to compute on and release it; nothing holds a view of the whole window on the device, and the
+peak is set by the chunk rather than by the window's length or its geometry.
+
+**This moves no number, and that is the point of choosing it.** Each of those three already computes
+chunk-by-chunk and concatenates — `shots` takes its differences *after* the concatenation, `detect` is
+per-image, `crops` and `lip_feats` are per-piece — so the same uint8 bytes meet the same operators in the
+same order and every reading is bit-identical. **`PIPELINE_VERSION` therefore does not move, no stored row
+is invalidated, and nothing is re-measured on account of this fix.**
+
+The alternative is rejected for exactly that reason: scaling to a **pixel-area** budget instead of a fixed
+width (an `RES` that targets W·H) would give the same relief in one line, and would change the detector's
+input on **every file in the library** — a bump, and all ~5 000 non-skip rows due again, for a defect that
+costs 122.
+
+### FR-317-35 — Every GPU chunk is budgeted in bytes, and a refusal says what would not fit
+
+Each chunk size is **derived from `VRAM_GB` and the frame's own byte size** — W·H·3 for the uint8 slice,
+W·H·3·4 for a float32 copy — and never from the constants 128, 12 and 16, which are a frame count that
+happened to fit one geometry. The floor is **one frame**: if a single frame's working set does not fit, no
+chunking will, and that is the only case left to report.
+
+An OOM that survives the floor answers with a 500 whose message **names the decoded W × H, the window's
+frame count, the chunk that failed and `torch.cuda.max_memory_allocated()`**. Today's message is
+`OutOfMemoryError: CUDA out of memory` and nothing else: finding the shape above cost a join from
+`media_job.error` against the stored track JSON of four titles. One line would have said it.
+
+### FR-317-36 — The card is handed back on every exit, and a file that still cannot be measured is written down
+
+Two parts, and the second is what the owner is missing today.
+
+1. **`torch.cuda.empty_cache()` on every exit path**, failure included, so one file's OOM cannot be the next
+   file's. It belongs beside the lock release in `server.py`'s `finally`, which is the one place every
+   outcome passes through.
+2. **A file that still OOMs stores a row.** The sidecar's 500 body carries an additive
+   `error_kind: "vram"` (an older backend ignores an unknown key and behaves exactly as it does today), and
+   the backend stores `reason = vram` — `UNKNOWN`, with a sentence on the Checks card, and **not** a member
+   of `SKIP_REASONS`, so a new pipeline version makes the file due again. FR-317-30's `nonfinite` pattern,
+   for the same reason: nothing was *decided* about this file.
+
+**Why a stored row is the requirement and not merely nice.** Today a 200-episode series is neither flagged
+nor clean nor skipped: `check()` returns `Result.failure`, **no row is written**, the job carries the
+error — and because the file has no row it is still `missing`, so the hourly `:30` scan (the tenth
+amendment) re-queues all 111 episodes to fail again, every hour, for ever. Phase 317 has nothing to say
+about that series and nothing tells the owner so. A `vram` row says it in one line and stops the lane
+re-paying for it.
+
+**The ordering inside this amendment is not free.** Part 2 must land **with or after** FR-317-34/35, never
+before: a `vram` row is no longer `missing`, so a row stored ahead of the budget fix would strand its file
+where the hourly sweep can no longer reach it, and only a `PIPELINE_VERSION` bump or FR-317-23's ↻ per-title
+recheck would bring it back.
+
+### The order, decided (Tróndur, 2026-10-13)
+
+1. **This amendment first** — the house rule, and the only part that was ever blocked on anything.
+2. **Both halves built together**, Sjúrður: the sidecar's Python (34, 35, 36.1, 36.2's `error_kind`) and the
+   backend's reason string (36.2's `vram`, its label, its exclusion from `SKIP_REASONS`). No Kotlin beyond
+   that.
+3. **Backend to prod before the sidecar**, the standing order of this phase. It is belt and braces here —
+   `error_kind` is additive and an old backend simply fails the row as it does today — but the order costs
+   nothing.
+4. **It rides in DEB-950's unshipped image if it is ready in time**, and follows in its own image if it is
+   not. Either way there is **no second re-measure**: `PIPELINE_VERSION` does not move for 34–36, so the
+   eleventh amendment's hazard — a swap under a running backend mislabelling rows under a stale `lastModel`
+   — cannot arise, *because the model string does not move either*.
+5. **The 122 files need no pass of their own.** They have no row, so they are `missing`, and the `:30` scan
+   enqueues them within the hour of the sidecar landing. Nothing for an operator to run.
+
+### Deliberately not specified
+
+- **Raising `AVSYNC_VRAM_GB`.** It would move the cliff rather than remove it, the card is shared with
+  Immich and a re-budget is the owner's call, and with 34/35 the peak drops far below today's 2 GB — so
+  there is nothing to ask him for.
+- **Changing `RES`, `FPS`, the 45 s window or the three window fractions.** Each changes what is measured;
+  this amendment deliberately changes only *how it is held*.
+- **Per-chunk VRAM telemetry in `file_av_sync`.** The 500's one line (FR-317-35) is the diagnostic; a stored
+  column would be a new field on the wire for an operator's convenience.
+- **A pre-flight that refuses a geometry outright.** With a byte budget there is no geometry to refuse, and
+  a bar drawn today would be wrong the moment the budget moves.
+
+### Tests (added)
+
+- **The chunk arithmetic as a pure function** (no CUDA, no card): a byte budget and a frame size give a chunk
+  count; the floor is one frame; the three census geometries — 1920 × 1080, 720 × 552, 700 × 394 — give the
+  per-frame byte counts in the table above, which is also the regression that would catch a return to a
+  frame-count constant.
+- **Numerical neutrality, the test FR-317-34 lives or dies by**: `shots`, `detect` and `crops` over one
+  synthetic ~300-frame window produce **identical** output at two different chunk sizes, and identical to
+  the whole-window path they replace. Synthetic frames, **no library file**.
+- **A forced OOM**: with `AVSYNC_VRAM_GB` set below one frame's working set, the floor retry raises, the
+  response is a 500 carrying `error_kind: "vram"`, and its message names the geometry, the frame count and
+  `max_memory_allocated()`.
+- **`empty_cache` is called on the failure path** — asserted with a counter, since the whole of 36.1 is that
+  it is called where nothing returns.
+- `linuxX64Test`, on hand-written response documents: a 500 with `error_kind: "vram"` stores a row with
+  `reason = vram` under the sidecar's model and reads `UNKNOWN` with its label; `vram` is **not** in
+  `SKIP_REASONS`, so a model bump makes the row due; and **a 500 without `error_kind` behaves exactly as
+  today** — no row, the lane's error sentence — which is the old-sidecar case and must not regress.
+
+### Acceptance (added)
+
+29. One episode of the 200-episode series in DEB-979's census comes back with a **stored row** from the
+    deployed sidecar, and the sidecar's own log line for that file reports a peak under the configured
+    budget. One file, not the series: the series follows from the sweep.
+30. **FR-317-34 moved no number.** One file already measured under the current pipeline version is
+    re-measured after the change and its stored windows are identical window-for-window and face-for-face —
+    `offset_frames`, `conf`, `frames` and `audio_short_frames` all unchanged. A single differing field means
+    the fix was not neutral and `PIPELINE_VERSION` owes a bump.
+31. Across a full sweep after the deploy, `media_job` rows on the `avsync` lane carrying
+    `OutOfMemoryError` stop appearing, and the 122 files of the census each hold a row — a verdict, or
+    `unknown` with reason `vram`. **A `vram` row is an acceptable outcome of this phase and a silent 500 is
+    not**: the requirement is that the library can say what it knows about every file, not that every file
+    is measurable on this card.
