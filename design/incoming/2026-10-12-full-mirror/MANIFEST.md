@@ -46,7 +46,7 @@ structural diff gives, and what the byte pull then settled:
 | of the 433: byte-compared this pass | 13 (the production surface) + 2 sampled on 10-13 |
 | → identical | **14** |
 | → differing | **1** (`app/wf.css`) |
-| of the 433: bytes not yet compared | 418 (mockups + 144 binaries) |
+| of the 433: bytes not yet compared | 418 (mockups + 144 binaries) — **all compared 2026-10-13 off the owner's export; see below** |
 
 The 3 repo-only files are repo-authored and expected: `PROCESS.md`,
 `design-project-notes-2026-06-to-2026-10.md`, `github.md`. **The studio is missing nothing we have
@@ -155,6 +155,37 @@ second question on DEB-792.
 **Answered 2026-10-13: an owner-exported zip, extracted by named path against this inventory.** The
 procedure is in `design/PROCESS.md`; the extraction is a separate task (DEB-809), and it covers the
 16 new text files below as well — they are pullable but arrive in the same zip for free.
+
+### The whole tree is byte-compared now — the export closed the 420 (DEB-809, 2026-10-13)
+
+The owner exported the studio to `~/design-exports/2026-10-13-studio.zip` (617 files, matching
+`list_files` exactly). Extracted to scratch outside the repo, compared, and deleted with the run;
+the zip is not committed and never will be. **This is what the export was actually for** — not the
+images, which were never eligible. It made free the byte sweep a pull could not afford.
+
+**All 445 tracked files under `design/` compared: 439 byte-identical, 6 differing.** That closes the
+420 this manifest had left unverified, and it closes the 104 `app/fonts/**` + `flags/**` production
+files that `design/PROCESS.md` step 5 deferred.
+
+| differing | verdict |
+|---|---|
+| `.thumbnail` | generated artefact, not design content — ignored |
+| `flags/4x3/ct.svg` | **trailing newline only**, content identical; the repo's copy is the correct one. The 104-file production sweep is otherwise clean, so no flag or font has drifted |
+| `ravilo/mobile/ravilo-music.js` | studio ahead by one additive line — taken |
+| `ravilo/desktop/ravilo-desktop.js` | studio ahead, 8 hunks, no R-number in any repo-only line — taken |
+| `ravilo/ravilo-app.js` | **mixed** — studio ahead on the `navTo`/`view`/`catalog` export, repo ahead on the R366 comment. Hand-edited: a wholesale copy would have reverted R366 and been wipe #20 |
+| `ravilo/ravilo.css` | **repo ahead** — R374 (owner 2026-10-04, the hero draws no focus ring); the studio still has the ring. Nothing to land; a write-back candidate like `wf.css`, and the owner's call |
+
+Three of those were not cosmetic: the archive was **internally broken** after `ef58ee36`. The newly
+landed `platform/tv-boot.js` calls `app.navTo`/`view`/`catalog` and `mobile/ravilo-phone-state.js`
+calls `RM.CHIPS()`; neither existed in the repo's older copies. Landing half of a refactor is its own
+failure mode, and only a byte sweep of files the round was not otherwise touching would have caught
+it. Fixed in `50931946`.
+
+**Five files reported "repo-only" on the first pass were a false alarm** — `git ls-files` quotes
+non-ASCII paths, so `Føroyskt …` came back as `"F\303\270royskt …"` and matched nothing on disk.
+Re-checked with `core.quotePath=false`: all five byte-identical. Use `-z` or that flag when diffing a
+tree with Faroese filenames.
 
 ### All 157 images were decided three weeks before this round (DEB-809, 2026-10-13)
 
