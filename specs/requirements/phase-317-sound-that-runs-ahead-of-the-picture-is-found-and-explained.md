@@ -1084,3 +1084,102 @@ against a newer backend is the normal deployment order here), falling back to FR
     backend's CPU share for the lane is indistinguishable from idle.
 22. A sweep restarted after a give-up re-queues every failed file (no stored result ⇒ due), and a file that
     wedges twice fails twice rather than stalling the sweep once.
+
+### FR-317-29 as built (2026-10-13, DEB-902) — the one number the backend cannot be told
+
+The cap and the `busy_for_s` short cut are built as written, in `AvSyncBusyGiveUp` (pure, so both of its
+ways to decide are tested without ten minutes of wall clock) and `MediaJobQueue.avSyncBusyAnswer`. Two
+facts worth keeping:
+
+- **`AVSYNC_MEASURE_MAX_S` is mirrored in the backend as a constant, not read.** FR-317-28 gives `/health`
+  how long the sidecar has been busy, not what its own ceiling is, so the backend compares `busy_for_s`
+  against its own `AvSyncBusyGiveUp.WEDGED_AFTER_S = 900` — FR-317-27's default. Raising the sidecar's env
+  past that would make the lane give up on a run the sidecar would still have finished; lowering it only
+  makes the lane more patient than it needs to be. With a measurement at ~8 s, both are backstops. If that
+  trade is ever load-bearing, the fix is for `/health` to report the ceiling beside the elapsed time.
+- **`busy_for_s` is asked on the busy answer itself**, one `/health` GET per `retry_after_s` wait, to a
+  sidecar that has just refused a measurement and so answers immediately. It is not polled otherwise, and
+  an absent field falls back to the count — which is the normal case against an older sidecar image.
+
+## Amendment (2026-10-13, fifth of the day) — the sweep's own failure rows explain the hang, and there was never a second stall (DEB-897)
+
+The fourth amendment was written from the live processes and the code. The lane's own rows, read out of the
+production database at 07:13:54Z while the wedge was still held, settle three things it left open and add one
+requirement. **Nothing in FR-317-27, FR-317-28 or FR-317-29 changes**; this is the evidence behind them, and
+it is worth having on the record because two of the three answers contradict what the report believed.
+
+### The 2 h gap was a timezone, not an event
+
+DEB-897 closed with *"the hung decoders started 04:39:20, two hours after the last successful row at
+02:39:19Z — so there may be a second, earlier stall I have not accounted for."* There is none. The lane reads:
+
+| row | state | started | finished | error |
+|---|---|---|---|---|
+| `mj-…-985` | done | 02:38:39Z | **02:39:19Z** | — |
+| `mj-…-986` | **failed** | 02:39:19Z | 02:42:21Z | `Request timeout has expired [url=http://avsync:8000/measure]` |
+| `mj-…-987` | running | 10-12 22:31:42Z (created) | — | cycling ever since |
+
+`ps` prints **local time** (CEST, UTC+2) and the database and the logs print UTC: the decoders' `04:39:20`
+**is** `02:39:20Z`, one second after `-986` began. So the wedging measurement is `-986`, it began the instant
+the last good row finished, and the gap closes to zero. **No earlier stall is to be looked for**, and nothing
+is lost by restarting before reading the sidecar's own log.
+
+### The failure the report could not find does exist — on the row before the one that spun
+
+*"No `failed` row, no finding, no unhealthy status"* was true of `-987` and false of the lane: `-986`
+**failed at 02:42:21Z**, at exactly `[avsync] timeout_s`'s 180 s, with Ktor's timeout message. That is the
+clearest possible confirmation of the fourth amendment's second finding — the client timeout fired, the
+connection closed, the row failed honestly, **and `measure()` went on holding the lock** — and it refines the
+diagnosis: the invisible part is not that nothing failed, it is that the *next* row then spun for ever
+against the lock the failed row left behind. FR-317-29 is aimed correctly.
+
+### The card was already in trouble 22 minutes before the hang
+
+Of the lane's 20 failures, **11 are `OutOfMemoryError: CUDA out of memory`, clustered 02:17:00–02:18:59Z** —
+the 10 OOMs the report mentions, plus one at 22:51:50Z the evening before. The wedge followed 20 minutes
+later on the same card. Two consequences:
+
+- **a GPU-side wedge rises relative to the stderr-pipe deadlock** as the cause of this particular hang. It
+  does not displace it — a mutual pipe wait remains a real defect in our code on its own terms — so
+  FR-317-27 keeps **both** the concurrent `stderr` drain and the watchdog, and the drain is not to be dropped
+  because the watchdog alone makes a test pass;
+- **317b's one-in-flight ruling hardens from a judgement to a measurement.** A card that OOMs eleven times
+  in two minutes at one measurement has no headroom for two.
+
+### FR-317-30 — The sidecar's JSON never carries `NaN` or `Infinity`
+
+Two of the 20 failures are the backend refusing the sidecar's own answer:
+*"Unexpected JSON token at offset 1576: Unexpected special floating-point value"* (00:50:03Z and 01:07:26Z).
+Python's `json.dumps` emits bare `NaN` and `Infinity` for those floats; **`NaN` is not JSON**, and
+`kotlinx.serialization` is right to reject it. A file that measured — the decode ran, the GPU time was
+spent — is thrown away at the last step, and it reads as a parse bug in the backend rather than as the
+sidecar handing out something indefensible.
+
+- Every float the sidecar serialises is **finite or `null`**. A non-finite `corr`, `offset_frames` or
+  `conf` becomes `null` at the point of serialisation, which the backend's existing nullable fields already
+  read as *no answer* — and *no answer* is what a `NaN` correlation means.
+- **The backend's parser is not loosened.** Accepting `NaN` would mean storing one, and a stored `NaN`
+  propagates into the verdict arithmetic where it compares false against every bar in FR-317-7.
+- Where a window's correlation is non-finite, the `reason` the row stores says so, so the file is not
+  silently counted as measured.
+
+### The two tensor-shape failures are a watch, not a requirement
+
+*"RuntimeError: The size of tensor a (2) must …"* (00:50:26Z) and *"… a (23) must …"* (01:05:26Z) are the
+remaining two failures. **No requirement is written for them here**: they are a real defect, they are rare
+(2 in 969 measured files), and the honest next step is the input that produced them rather than a guess at
+the shape mismatch — both rows are identifiable from the lane's history. They are recorded so the count of
+unexplained failures stays known, and so nobody closes 317's failure list believing it is empty.
+
+### Tests (added)
+
+- A sidecar response carrying `NaN` for a window's `conf` and `Infinity` for an `others[].corr`: the sidecar
+  emits `null` for both, the backend stores the row, and the file is not counted as cleanly measured. The
+  fixture is a hand-written response document — **no library file is needed**, and none is to be used.
+- The backend's parser still **rejects** a literal `NaN` from any other source: that behaviour is deliberate
+  and is asserted, not relaxed.
+
+### Acceptance (added)
+
+23. Across a sweep, no job fails with *"Unexpected special floating-point value"*. The two rows that did on
+    2026-10-13 are the baseline.

@@ -368,3 +368,66 @@ never returns and the block that would say so is this phase's.
 
 - `GET /api/health` with one `segments_season` job running names a plausible age for `segments` and nothing
   for the three other lanes. No deploy and no device: the local verify stack covers this.
+
+### FR-213-8 as built (2026-10-13, DEB-902) — the age is since the *current claim*
+
+The four keys are `media_running_for_s`, `segments_running_for_s`, `subtitles_running_for_s` and
+`avsync_running_for_s`, each null where that lane has no running row, off one `GROUP BY` over the
+oldest `started_at` per lane (`MediaJob.sq`'s `oldestRunningStartedAtByLane`).
+
+**And a limit found while building it, measured on the incident's own row:** an in-place requeue
+(FR-213-3) takes the row all the way back through `queued` — `requeueOne` clears `started_at`, and the
+next claim's `markRunning` writes a fresh one. So this number is *seconds since the row was last claimed*,
+not seconds since the lane first picked the work up. On 2026-10-13 at 07:13Z, four hours into DEB-897,
+the wedged row read `started_at` 23 seconds old while `max(file_av_sync.checked_at)` still stood at
+02:39Z — so `avsync_running_for_s` would have answered ~20 throughout the very incident that asked for it.
+FR-317-29's give-up bounds that lane at ten minutes now, but the `subtitles` lane's playback deferral
+re-queues in place the same way. The alternatives (stop clearing `started_at`, which is prod-visible on
+the Jobs page; or a second key measured from `created_at`, which for that row would have read 8.7 h, most
+of it honest queue waiting) are on DEB-902 for the owner; this paragraph is what is true of the build.
+
+## Amendment (2026-10-13, second of the day) — `started_at` is re-stamped on every claim, so FR-213-8 anchors on completion (DEB-897)
+
+FR-213-8, written this morning, asked for *"whole seconds since the running row's `started_at`"*. **That number
+cannot see the fault it was written for**, and the live row proves it rather than an argument:
+
+```
+mj-1791844302-987  check_av_sync  created 10-12 22:31:42Z  started_at 07:13:53Z  pct 0.0
+```
+
+That is the `avsync` row that had been wedged since 02:39:19Z, read at 07:13:54Z. `markRunning`
+(`MediaJob.sq:135`) sets `started_at = :started_at` on **every** claim, and an in-place re-queue returns the
+row to `queued` (`MediaJobQueue.kt:714-719`), so each ~21 s busy cycle re-stamps it. An age taken from
+`started_at` would have read **0–21 seconds** for four and a half hours of deadlock — not merely imprecise,
+but zero signal in precisely the case the requirement exists for, and indistinguishable from a healthy lane.
+
+### FR-213-8, restated
+
+- **Per lane, the age of its last completion** — `now − max(finished_at)` across the lane's terminal rows.
+  This answers the sentence the first amendment named as the deliverable and could not in fact answer:
+  *"nothing has completed on this lane since 02:39"*. It needs **no** change to the re-queue path, and it is
+  honest under a re-stamp, because a row that cycles completes nothing.
+- **The running-row age stays, as the secondary number.** It is correct for the case it does read correctly —
+  one long job, a `segments_season` running legitimately for hours — and it costs nothing to keep both.
+- **The lane's queued count is part of the same reading, and `avsync` has none.** `job_queues` carries
+  `media_queued`, `segments_queued` and `subtitles_queued`; the fourth lane, added by phase 317, was never
+  given one. Add `avsync_queued`. The pair *"4 079 queued, nothing completed for 4 h 34 min"* is the entire
+  finding in one request, and before this amendment **neither half of it was on `/api/health`**.
+- Unchanged from the first amendment: additive only, no threshold, no `stalled` flag, no change to the
+  top-level `ok`.
+
+### What was considered and refused
+
+**Making `started_at` survive an in-place re-queue.** It is one line and it is wrong: the column is read by
+the Jobs panel and by every other lane's rows, and a subtitle row deferred for a two-hour film would then
+report a two-hour age. That is one lane's observability bought with another phase's meaning. The re-stamp is
+correct behaviour for what `started_at` means — *this attempt began now* — and the fix belongs on the side
+that asks the question.
+
+### Tests (restated)
+
+- A lane cycling one row in place reports a **rising last-completion age** while its running-row age stays
+  near zero — the regression test for this amendment, and the shape of the DEB-897 deadlock exactly.
+- A lane that has completed something recently reports a small age; a lane that has never completed anything
+  reports none rather than an epoch-sized number.
+- `avsync_queued` tracks the lane's queued count; the existing `job_queues` assertions pass unchanged.
