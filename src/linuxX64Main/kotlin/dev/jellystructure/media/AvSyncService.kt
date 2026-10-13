@@ -241,6 +241,18 @@ class AvSyncService(
 ) {
     private val q get() = db.fileAvSyncQueries
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /**
+     * FR-317-30 — the `/measure` answer only. `coerceInputValues` lets an explicit `null` on a number that
+     * has a default take that default: the sidecar sends `null` where a float came back non-finite, and
+     * `conf: 0.0` / `corr: 0.0` is what *no answer* already means to every bar in FR-317-7 and FR-317-11.
+     *
+     * What this deliberately does NOT do is accept a `NaN`: `allowSpecialFloatingPointValues` stays off
+     * here and everywhere. A stored `NaN` compares false against every one of those bars, so a file would
+     * pass them all and be counted as measured and in step — which is why the backend refusing the
+     * document was the right behaviour, and why the fix belongs in what the sidecar writes.
+     */
+    private val measureJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val windowsSer = ListSerializer(AvSyncWindow.serializer())
     private val othersSer = ListSerializer(AvSyncOther.serializer())
 
@@ -413,7 +425,7 @@ class AvSyncService(
             }
             val body = r.bodyAsText()
             when (r.status.value) {
-                200 -> json.decodeFromString(MeasureResponse.serializer(), body)
+                200 -> measureJson.decodeFromString(MeasureResponse.serializer(), body)
                 404 -> throw AvSyncRefused("the sidecar cannot see $path — check its mounts")
                 422 -> throw AvSyncRefused("the sidecar could not decode it: ${errorOf(body)}")
                 503 -> throw AvSyncBusy(retryAfterOf(body))
@@ -634,7 +646,15 @@ class AvSyncService(
         if (after.size != before.size || after.mtime != before.mtime) {
             return Result.failure(AvSyncRefused("the file changed while it was being measured — it will be measured again"))
         }
-        val reading = AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null)
+        // FR-317-30 — a measurement with a non-finite number in it is not a measured file: the row stores
+        // the reason, which makes every later read of it `UNKNOWN` (AvSyncVerdict.of), so such a file is
+        // never counted among the clean readings and never shown as in step on the strength of a number
+        // the model could not produce. The windows are still stored as they came back — the evidence of
+        // what happened is the point — and the reason is not a skip, so the next pipeline version measures
+        // the file again.
+        val nonFinite = AvSyncVerdict.hasNonFinite(windows.windows, windows.others)
+        if (nonFinite) Logger.warn("av sync: a non-finite number in the measurement of $path — stored as ${AvSyncReason.NONFINITE}", "integrity")
+        val reading = AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, if (nonFinite) AvSyncReason.NONFINITE else null)
         val reason = if (reading.state == AvSyncState.UNKNOWN) reading.reason else null
         q.put(
             path, after.size, after.mtime, nowEpochSec(), lastModel ?: PENDING_MODEL, audio, reason,

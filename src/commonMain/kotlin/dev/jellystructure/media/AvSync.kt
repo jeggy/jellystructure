@@ -28,6 +28,12 @@ data class AvSyncWindow(
     val conf: Double = 0.0,
     val frames: Int = 0,
     val faces: List<AvSyncFace> = emptyList(),
+    /** FR-317-30 (the 2026-10-13 fifth amendment) — one of this window's own numbers came back non-finite
+     *  and the sidecar sent `null` in its place, rather than the `NaN` that is not JSON. **A window with no
+     *  face track is not this**: that one reports `offset_frames: null` too and is nobody's fault.
+     *  Additive and defaulted — a row stored before the flag existed reads `false`, which is what every
+     *  such row was. */
+    @SerialName("nonfinite") val nonFinite: Boolean = false,
 )
 
 /** One face track inside a window: the evidence the title page folds open. */
@@ -37,6 +43,8 @@ data class AvSyncFace(
     val frames: Int = 0,
     @SerialName("offset_frames") val offsetFrames: Int = 0,
     val conf: Double = 0.0,
+    /** FR-317-30 — as [AvSyncWindow.nonFinite], for this one face track's own reading. */
+    @SerialName("nonfinite") val nonFinite: Boolean = false,
 )
 
 /** FR-317-4 — one of the file's OTHER audio streams, matched to the measured one by its loudness envelope.
@@ -47,6 +55,9 @@ data class AvSyncOther(
     val audio: String,
     @SerialName("lag_frames") val lagFrames: Int? = null,
     val corr: Double = 0.0,
+    /** FR-317-30 — this stream's correlation came back non-finite; `corr` is the 0.0 a coerced `null`
+     *  leaves, which is below [AvSyncAdvice.IN_STEP_CORR] and so is never read as *in step*. */
+    @SerialName("nonfinite") val nonFinite: Boolean = false,
 )
 
 /** FR-317-5 — why nothing was measured. A file with a reason is `unknown`, never "clean". */
@@ -56,12 +67,18 @@ object AvSyncReason {
     const val NO_ORIGINAL_TRACK = "no_original_track"
     const val NO_FACES = "no_faces"
 
+    /** FR-317-30 — a number in the measurement came back non-finite. Deliberately NOT one of
+     *  [dev.jellystructure.media.AvSyncService.SKIP_REASONS]: nothing was decided about this file, so a new
+     *  pipeline version measures it again, where `animation` or `too_short` would stand for ever. */
+    const val NONFINITE = "nonfinite"
+
     /** The one quiet line the Checks card shows for a skipped file (FR-317-10). */
     fun label(reason: String): String = when (reason) {
         ANIMATION -> "skipped — animation has no lips to follow"
         TOO_SHORT -> "skipped — shorter than two minutes"
         NO_ORIGINAL_TRACK -> "skipped — no track in the original language; a dub has no lips to follow"
         NO_FACES -> "no faces to measure — nothing on screen the model can read lips from"
+        NONFINITE -> "not measured — the measurement produced a number that is not a number"
         else -> "skipped"
     }
 }
@@ -128,7 +145,20 @@ object AvSyncVerdict {
      *  construction. */
     const val MIN_RUNTIME_S = 120.0
 
-    fun isConfident(w: AvSyncWindow): Boolean = w.offsetFrames != null && w.conf >= CONF_MIN && w.frames >= FRAMES_MIN
+    fun isConfident(w: AvSyncWindow): Boolean =
+        w.offsetFrames != null && !w.nonFinite && w.conf >= CONF_MIN && w.frames >= FRAMES_MIN
+
+    /**
+     * FR-317-30 — did any number in this measurement come back non-finite? A `NaN` correlation is *no
+     * answer*, and a file whose answer rests on one is not a measured file: the row stores
+     * [AvSyncReason.NONFINITE] and reads `UNKNOWN`, rather than being counted among the clean readings on
+     * the strength of a number the model could not produce.
+     *
+     * The rule lives here, with the other rules, so the job that stores the row and anything that later
+     * re-reads it cannot disagree about it.
+     */
+    fun hasNonFinite(windows: List<AvSyncWindow>, others: List<AvSyncOther> = emptyList()): Boolean =
+        windows.any { w -> w.nonFinite || w.faces.any { it.nonFinite } } || others.any { it.nonFinite }
 
     /**
      * FR-317-17 (amendment 2026-10-12) — is another triple of windows worth asking for? Yes whenever the
@@ -181,10 +211,19 @@ object AvSyncVerdict {
         }
         val confident = windows.filter { isConfident(it) }.sortedBy { it.startS }
         if (confident.size < 2) {
+            // FR-317-30 — `no_faces` would be a lie about a window whose number came back non-finite: the
+            // model found a face and read it, and what it read was not a number. Said plainly, it is the
+            // difference between *nothing to measure* and *the measurement failed*.
+            val nonFinite = hasNonFinite(windows)
             return AvSyncReading(
                 AvSyncState.UNKNOWN, confidentWindows = confident.size,
-                reason = if (windows.isEmpty()) null else AvSyncReason.NO_FACES,
-                why = if (confident.isEmpty()) "no window read clearly enough to measure" else "only one window read clearly enough to measure",
+                reason = when {
+                    nonFinite -> AvSyncReason.NONFINITE
+                    windows.isEmpty() -> null
+                    else -> AvSyncReason.NO_FACES
+                },
+                why = if (nonFinite) AvSyncReason.label(AvSyncReason.NONFINITE)
+                else if (confident.isEmpty()) "no window read clearly enough to measure" else "only one window read clearly enough to measure",
             )
         }
         val rel = confident.map { (it.offsetFrames!! - zeroFrames) to it.conf }

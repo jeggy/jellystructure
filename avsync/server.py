@@ -38,7 +38,11 @@ class Handler(BaseHTTPRequestHandler):
         print(f'avsync {self.command} {self.path} — {fmt % args}', flush=True)
 
     def send_json(self, code, body):
-        raw = json.dumps(body).encode()
+        # FR-317-30 — the ONE place a document becomes bytes, so no route can emit a bare `NaN` or
+        # `Infinity`: [measure.jsonable] turns a non-finite float into `null` and marks the object it sat
+        # in, and `allow_nan=False` is the guard that this stays true. Anything that ever gets past the
+        # sanitiser raises here — a 500 the caller can read — instead of writing JSON nobody can parse.
+        raw = json.dumps(measure.jsonable(body), allow_nan=False).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(raw)))

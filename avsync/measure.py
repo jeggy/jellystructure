@@ -16,7 +16,7 @@ distance curve), `window.frames` (face frames behind it).
 See specs/requirements/phase-317-sound-that-runs-ahead-of-the-picture-is-found-and-explained.md (FR-317-2,
 FR-317-3, FR-317-4) and specs/research-reports/av-sync-measurement-on-the-gpu-2026-10-10.md.
 """
-import argparse, json, os, subprocess, sys, threading, time
+import argparse, json, math, os, subprocess, sys, threading, time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from signal import SIGKILL, SIGTERM            # by name: `signal` below is scipy's, and it shadows this one
@@ -480,6 +480,38 @@ def envelope_lag(ref_envs, other_envs, bucket_ms=ENV_BUCKET_MS):
     return int(round((k - max_lag) * bucket_ms / 1000 * FPS)), round(float(total[k]), 3)
 
 
+# ── what leaves this process (FR-317-30) ─────────────────────────────────────────────────────────
+
+def jsonable(obj):
+    """Every float that leaves here is finite or `null`, and the object that held a non-finite one says so.
+
+    `json.dumps` writes bare `NaN` and `Infinity` for non-finite floats. **Neither is JSON**, and the
+    backend's parser is right to refuse them: on 2026-10-13 two files were decoded, measured, the GPU time
+    spent — and thrown away at the very last step with *"Unexpected special floating-point value"*
+    (DEB-915). A `conf` or a `corr` that came back `NaN` is *no answer*, which is what `null` already means
+    to every reader of these documents.
+
+    `nonfinite: true` is set on the object a replacement happened in, so *no answer* stays distinguishable
+    from *nothing to answer about*: a window with no face track reports `offset_frames: null` too, and that
+    one is not a fault. It is additive — a reader that does not know the key ignores it.
+    """
+    if obj is None or isinstance(obj, (str, bool)): return obj
+    if hasattr(obj, '__index__'): return int(obj)      # ints, numpy's included: an index is never non-finite
+    if isinstance(obj, dict):
+        out, bad = {}, False
+        for k, v in obj.items():
+            out[k] = jsonable(v)
+            if out[k] is None and v is not None: bad = True
+        if bad: out['nonfinite'] = True
+        return out
+    if isinstance(obj, (list, tuple)): return [jsonable(v) for v in obj]
+    try:
+        f = float(obj)
+    except (TypeError, ValueError):
+        return obj                                     # not a number at all: not ours to rewrite
+    return f if math.isfinite(f) else None
+
+
 # ── one file, measured (FR-317-2's `POST /measure`) ──────────────────────────────────────────────
 
 def stat(path):
@@ -617,7 +649,9 @@ def main(argv=None):
         dur = probe(path)['dur']
         starts = [dur * float(x) / 100 for x in a.starts.split(',')] if a.pct else list(map(float, a.starts.split(',')))
         r = measure(path, a.audio, others, [dict(start_s=s, dur_s=a.dur) for s in starts])
-        print(json.dumps(dict(file=path, **r)), flush=True)
+        # FR-317-30 — `allow_nan=False` here too: the CLI's JSONL is read back by the research scripts, and
+        # a line with a bare `NaN` in it is a line no strict parser can take either.
+        print(json.dumps(jsonable(dict(file=path, **r)), allow_nan=False), flush=True)
     print(json.dumps(dict(files=len(paths), wall_s=round(time.time() - wall, 2))))
 
 
