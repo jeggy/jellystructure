@@ -1572,3 +1572,70 @@ to `pending` only for a kind that is both enabled and auto-new, and every kind i
   and kind B 13 → 12, three files having become seeded since the last plan.
 - **Cost, for whoever schedules the next one: ~23 minutes at ~7 files/s with a cold `probeCache`** (the container
   had been recreated at 08:34Z). A warm re-run is seconds.
+
+## Amendment 2026-10-13 (tenth) — the owner's answers on the kind C switch, and the hold that is a configuration fact (DEB-949)
+
+The switch question this phase has carried since DEB-868 is answered. Asked on DEB-949 as three questions against
+the measured figures above, the owner answered at **2026-10-13 21:27:41Z**, taking the recommendation on all three:
+
+1. **Kind C goes on, applied to exactly one film, with the other 16 held** until DEB-870's per-device Dolby Vision
+   test has passed. 46–88 GB committed rather than 1.100 TB before any device has confirmed a version plays.
+2. **`8574493d` (FR-314-18) is deployed before the switch.** Not for the counts — the recompute fixed those — but
+   because prod's kind sentence still names *"beside a profile 7 film"*, the superseded placement that caused
+   DEB-868, and that is the sentence read while deciding.
+3. **The three restricted accounts are reported, never granted.** FR-314-15's reporting stays exactly as built; no
+   account's `EnabledFolders` is widened.
+
+### The hold is `auto_new = 0`, and that is the whole mechanism
+
+*"One film, hold the other 16"* is not a habit anybody has to remember — it is a stored setting, and it is also the
+one way to lose the hold by accident. Kind C's switch lives in the DB (`POST /file-fix/{kind}/setting`), and
+`planOne` promotes a `would_add` to `pending` only when a kind is **both** `enabled` and `auto_new`. Prod sweeps
+itself hourly (`scan_schedule = "30 */1 * * *"`), so:
+
+- **`enabled = 1`, `auto_new = 0`** — the switch is on, nothing queues itself, and the only thing that writes a
+  version is an explicit Apply. This is the owner's answer as configuration.
+- **`enabled = 1`, `auto_new = 1`** would start **all 17 films / 1.100 TB** at the next `:30`. It is one field away
+  from the answered decision, and nothing in the UI warns that it is.
+
+Acceptance 9's Apply is therefore one title — `POST /api/file-fix/c/title/{id}` — and never the kind-wide Apply,
+which for kind C is all 17 films in one press.
+
+### What the deploy carries, since the mechanism ships `main` and not one commit
+
+The owner approved deploying `8574493d`; the dev-compose route deploys the tip of `main`, which at the time of the
+answer is **six code commits** ahead of prod's `v1.51-120-g80552895` — `8574493d` (FR-314-18), `1664a1ec`
+(FR-314-17, a skipped library's paths typeable), `923fd817` (FR-274-17, a Settings save keeps
+`suggestions_step_seeded`), and the three 317 commits `83be648f` (FR-317-30), `787af7fa` and `9728729d`
+(FR-317-32/33). All six are merged, tested and in the safe direction, and the 317 ones are the **backend** halves
+that FR-317-30's as-built note requires to be live *before* the sidecar half — so this deploy advances that
+ordering rather than breaking it. Recorded here because "deploy `8574493d`" and "deploy `main`" are not the same
+act, and the difference should be written down rather than discovered.
+
+### FR-314-19 — a report nobody reads is not a report
+
+The owner's answer to question 3 makes acceptance 10's surface the remaining gap rather than a nice-to-have: three
+accounts will quietly get the original instead of the version, deliberately and indefinitely, and the only record
+of it is a log line. A decision to leave something unimproved has to be visible where the switch is.
+
+The restricted-account report appears **in the admin UI**, on the kind C card or beside it: the count of accounts
+that cannot see the versions library, and which they are. It is a report, not a control — it offers no button that
+widens a permission, because FR-314-15 does not grant and neither does this. It reads from the same pass that
+writes the log line today; no new Jellyfin call, no stored state.
+
+### Acceptance (added)
+
+16. With kind C enabled and at least one account whose `EnableAllFolders` is false and whose `EnabledFolders` omits
+    the versions library, the admin UI names that account where the kind C card is, not only in the log. With no
+    such account, the UI says nothing rather than showing a zero.
+
+### Tests (added)
+
+17. The restricted-account report renders the accounts the pass found, and renders nothing when the pass found
+    none — asserted on the view model, not on a log string.
+
+### What this leaves on the phase
+
+The order is **deploy → switch (`enabled = 1`, `auto_new = 0`) → one Apply on one unseeded film → DEB-870**, and
+DEB-870 tests the film that Apply picks rather than rebuilding its old subject. FR-314-19 does not gate any of it.
+Acceptance 11 and 12 are met; acceptance 9 closes with the one Apply; acceptance 10 closes with FR-314-19.
