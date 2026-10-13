@@ -1152,3 +1152,80 @@ Two things the rules above did not say, found in building them, and one thing le
   and nobody has run them: the kind's switch is off and the library does not exist yet. The restricted-account report
   is a log line, where acceptance 10 asks for it in the admin UI — a row on the file-fix card is the next piece of work
   on this requirement and is not in `b354d55f`.
+
+## Amendment 2026-10-13 (sixth) — the owner's three configuration steps are four, and the overlap refusal compares two namespaces (DEB-898)
+
+Written before any Kotlin. FR-314-15 ships a switch gate whose owner half was described as three steps
+(create the library, set the root, fill in the `local_path`). Writing those steps out for the owner needed the
+actual paths, and reading them off the running host turned up one step that was missing and one rule that
+cannot fire as built. Neither is a defect in what `b354d55f` *decided* — the placement, the merge and the
+*Remove* behaviour all stand — and nothing here changes what a viewer sees.
+
+### What was read (read-only; no write, no deploy, no library file touched)
+
+- **Jellyfin bind-mounts each library folder individually.** `docker inspect jellyfin` lists one mount per
+  library — `/mnt/media/jellyfin/<folder>` → `/media/<folder>`, and the series library from `/mnt/series/jellyfin`
+  → `/media/series`. There is no parent mount under which a **new** host folder would appear inside the Jellyfin
+  container, so a versions folder created on the host is invisible to Jellyfin until a mount is added and the
+  container is recreated.
+- **The backend has no such problem.** `jellystructure` mounts `/mnt/media` and `/mnt/series` whole, so a new
+  folder under either is writable with no change to anything.
+- **The arrs report their root folders in their own view.** `GET /api/v3/rootfolder`: Radarr `/media/movies`,
+  Sonarr `/media/series`. That is the same namespace Jellyfin uses and **not** the one the backend writes in.
+- **The two views differ on this host, so "both sides mount it the same way" is not available.** The live library
+  mappings pair `jellyfin_path = /media/movies/` with `local_path = /mnt/media/jellyfin/movies/`, and every other
+  mapped library has the same shape.
+
+### FR-314-16 — the configuration named in the right namespace, and a guard that can fire
+
+- **`dv_versions_root` is the path the *backend* writes, i.e. the `local_path` namespace.** `dvVersionPath` builds
+  the target from it and `shell` writes there; `jellyfinViewOf` translates afterwards. That is correct as built and
+  stays. What is wrong is the field's own hint in Settings ▸ Advanced, which calls it "a folder **Jellyfin scans as
+  its own library**" — Jellyfin's name for that folder is the other side of the mapping, and on this host the two
+  are never equal. The hint is corrected to name the backend's view and to say that Jellyfin's name for the same
+  folder goes on the Libraries card. Text only; no behaviour changes.
+- **A root that no library mapping covers refuses the job, and says which mapping is missing.** Today
+  `jellyfinViewOf` falls back to the path unchanged when nothing matches, so a forgotten `local_path` does not fail
+  at the root — it fails two minutes after a version has already been written, as "the item never appeared" against
+  the title, with nothing naming the cause. The refusal moves to the front, beside the overlap check, and names the
+  versions library's missing `local_path`. This is what makes the owner's mapping step a step rather than a trap.
+- **The overlap refusal compares in one namespace: Jellyfin's.** `versionsRootOverlapsArrRoot` is handed
+  `jellyfinViewOf(root, libraries)`, not `root`. As built it compares a `/mnt/...` root against `/media/...` arr
+  roots, which can never overlap — so the guard the fifth amendment called *a precondition, not a comment* cannot
+  fire at all, including on the exact mistake it exists to prevent: `/mnt/media/jellyfin/movies` **is** Radarr's
+  `/media/movies`, and a root set there would be accepted today and then adopted by Radarr's own scan (DEB-868).
+  With the translation it fires on the real overlap, and the refusal above guarantees there is always a translation
+  to compare.
+- **A mount is a container recreate, so the owner's configuration is four steps and they are ordered.** The bind
+  mount into Jellyfin comes first — steps 2 to 4 cannot be done ahead of it, because Jellyfin's *Add library* browses
+  the container's own filesystem and the admin field would otherwise take a path Jellyfin will never resolve. The
+  recreate is a brief Jellyfin restart on a prod that serves users beyond the household, which is why the whole gate
+  is the owner's and not ours.
+
+### The owner's four steps (DEB-898), with the paths this host needs
+
+| # | Where | What |
+| - | ----- | ---- |
+| 1 | the host's compose file for Jellyfin (outside this repo) | add `/mnt/media/jellyfin/versions:/media/versions`, create the host folder, recreate the Jellyfin container |
+| 2 | Jellyfin ▸ Dashboard ▸ Libraries | add a **Movies** library on `/media/versions` |
+| 3 | admin ▸ Settings ▸ Advanced ▸ *Versions library folder* | `/mnt/media/jellyfin/versions` — the **backend's** path — then the one global Save |
+| 4 | admin ▸ Settings ▸ Libraries | on the new library's row, `local_path = /mnt/media/jellyfin/versions`, left `skip = true` |
+
+Step 1's path is a suggestion and only steps 3 and 4 have to agree with whatever is chosen: any folder works as
+long as it is mounted into both containers, no Radarr or Sonarr root folder holds it in Jellyfin's view, and steps 3
+and 4 name the same folder on their own side of the mapping.
+
+### Acceptance (added)
+
+11. With `dv_versions_root` set to a path no library mapping covers, a kind C job **refuses before writing anything**
+    and names the versions library's missing `local_path`. It does not write a version and then report a missing
+    Jellyfin item.
+12. With a versions root whose Jellyfin view is inside Radarr's own root folder, the job refuses with the overlap
+    message. Checkable against the live configuration without writing a file: `/mnt/media/jellyfin/movies` translates
+    to `/media/movies`, which is Radarr's root.
+
+### Tests (added)
+
+14. `versionsRootOverlapsArrRoot` is fed the **translated** root: a root whose Jellyfin view is an arr root folder
+    overlaps and is refused; `/mnt/media/jellyfin/versions` → `/media/versions` against the same arr roots does not;
+    and a root that no mapping translates is refused by the rule above rather than compared raw.
