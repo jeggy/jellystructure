@@ -1642,11 +1642,19 @@ internal fun advisorFindingHtml(f: dev.jellystructure.api.AdvisorFinding): Strin
     """.trimIndent()
 }
 
+/** Phase 314 (FR-314-17) — `skip` greys out the controls it governs, and the paths are not among them.
+ *  A skipped library still needs its `local_path` → `jellyfin_path` mapping read: FR-314-15's versions
+ *  library is mapped **while** `skip = true`, and the write path's `jellyfinViewOrNull` never looks at
+ *  `skip`. So the two path fields stay editable at full strength and the inline `pointer-events:none`
+ *  is gone — it hid them from a pointer without any rule refusing the value, which made the owner's
+ *  own step 4 untypeable (DEB-937). What `skip` really governs — the per-library fallback language and
+ *  the metadata-provider rows — is dimmed (`.lib-skip-gov`) and, for the input, genuinely `disabled`. */
 private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
     val skipped = lib.skip
     val typeLabel = lib.collectionType.ifEmpty { "?" }
+    val govDisabled = if (skipped) "disabled" else ""
     return """
-    <div style="border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px;${if (skipped) "opacity:.5" else ""}">
+    <div class="lib-card${if (skipped) " skipped" else ""}" style="border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <strong style="font-size:.9rem;flex:1">${lib.name}</strong>
         <span class="badge" style="font-size:.72rem;padding:1px 7px;background:var(--fill-2)">$typeLabel</span>
@@ -1659,33 +1667,38 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Jellyfin path</span>
         <input id="lib-jellyfin-path-$i" class="input" type="text" placeholder="/media/movies/"
-          value="${lib.jellyfinPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+          value="${lib.jellyfinPath}" style="flex:1">
       </div>
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Local path</span>
         <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
-          value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+          value="${lib.localPath}" style="flex:1">
       </div>
-      ${if (lib.collectionType.equals("books", ignoreCase = true)) """
+      ${if (skipped) """
       <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0"></span>
+        <span class="tiny muted">Skipped: titles from this library are left alone — its paths are still read, so a library jellystructure writes into keeps its mapping here.</span>
+      </div>""" else ""}
+      ${if (lib.collectionType.equals("books", ignoreCase = true)) """
+      <div class="lib-skip-gov" style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
         <span style="font-size:.78rem">The files, then you · Suggestions: <a href="#/settings?tab=connections" title="The Metadata providers card (Audiobooks)">iTunes · Open Library · Audnexus · Google Books</a>
           <span style="color:var(--ink-soft)">— Jellyfin makes one item per file; here the folder is the book.</span></span>
       </div>
-      <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+      <div class="lib-skip-gov" style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Audiobooks</span>
         <span class="tiny muted mono lib-ab-count" data-lib-id="${lib.jellyfinId}">…</span>
       </div>""" else if (lib.collectionType.equals("music", ignoreCase = true)) """
-      <div style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
+      <div class="lib-skip-gov" style="display:flex;gap:6px;align-items:baseline;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Metadata</span>
         <span style="font-size:.78rem"><a href="#/settings?tab=connections" title="The Metadata providers card (Music)">MusicBrainz · Covers: Cover Art Archive · Artist images: fanart.tv · Lyrics: LRCLIB</a>
           <span style="color:var(--ink-soft)">— music has no language cascade. Not the Music videos library.</span></span>
       </div>""" else """
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <div class="lib-skip-gov" style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
         <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
-          value="${lib.fallbackLanguage ?: ""}" maxlength="10"
-          style="width:110px;${if (skipped) "pointer-events:none" else ""}">
+          value="${lib.fallbackLanguage ?: ""}" maxlength="10" $govDisabled
+          style="width:110px">
         <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
       </div>"""}
       <div style="display:flex;gap:6px;align-items:center;margin-top:2px">

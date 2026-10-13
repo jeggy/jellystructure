@@ -889,3 +889,13 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .cc-num { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden; width: 132px; }
 .cc-num b { width: 40px; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-3); font-size: 1rem; font-weight: 600; cursor: pointer; user-select: none; }
 .cc-num span { flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; background: var(--fill-2); font-family: 'JetBrains Mono', monospace; font-size: .95rem; font-weight: 600; }
+
+/* ── Phase 314 (FR-314-17) — Settings ▸ Libraries, a skipped library's card (lib-, page-local).
+   `skip` governs titles, not paths: FR-314-15's versions library carries a `local_path` while it stays
+   `skip = true`, so the two path fields are left fully editable and only what skip really governs is
+   dimmed. The card itself is deliberately NOT dimmed any more — a card at opacity:.5 is what made every
+   field on the row read as inert, including the ones that are not, and opacity on the card cannot be
+   undone on a child. The fallback-language input carries `disabled` — the rule itself — and the language
+   picker's own styles carry the look, because the picker hides that input behind a div of its own.
+   Fenced by scripts/check-mobile-css.sh. */
+.lib-card.skipped .lib-skip-gov { opacity: .5; }

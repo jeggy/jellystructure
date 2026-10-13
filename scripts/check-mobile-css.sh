@@ -183,6 +183,10 @@ check "$WF" "Chromecast card steps (.cc-step)" \
   ".cc-step { display: grid; grid-template-columns: 28px 1fr;"
 check "$WF" "Chromecast card status dots (.cc-dot)" \
   ".cc-dot { width: 8px; height: 8px; border-radius: 50%;"
+# Phase 314 (FR-314-17) — a skipped library's card dims only what `skip` governs and leaves its two
+# path fields editable; without these rules the dim disappears and a disabled field looks typeable.
+check "$WF" "Skipped library card: only the governed rows dim (.lib-skip-gov)" \
+  ".lib-card.skipped .lib-skip-gov { opacity: .5; }"
 
 # Phase 223 — the segment editor's drag engine keeps its rules in the served segments.css; a sync that
 # drops them leaves touch users with 11 px handles, no bubble and an inert zoom strip.

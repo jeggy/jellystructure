@@ -1355,13 +1355,14 @@ A Settings save writes `false` over `scan.suggestions_step_seeded`: `ConfigRoute
 it was found by **diffing the written `config.toml` against a copy taken before the Save**, which is the clearance
 method that works; reasoning about which blocks the admin models is what missed it.
 
-## Amendment 2026-10-13 (seventh) — a skipped library's paths have to be typeable, because `skip` does not govern them (DEB-937)
+## Amendment 2026-10-13 (eighth) — a skipped library's paths have to be typeable, because `skip` does not govern them (DEB-937)
 
-Written before any Kotlin, found doing the owner's step 4 on prod (DEB-925). FR-314-15 requires one library to
-carry a `local_path` **while staying `skip = true`** — *"`skip` governs titles, not paths"* — and FR-314-16 made
-that mapping a step of the owner's configuration so it would be *"a step rather than a trap"*. The Libraries card
-does not let that combination be typed, so the step is not performable in the order it is written. This corrects
-FR-314-16's own usability claim; it is not new behaviour.
+Written before any Kotlin, found doing the owner's step 4 on prod (DEB-925) and recorded in the seventh amendment as
+the one thing that keeps FR-314-16's mapping claim an intent rather than a description. FR-314-15 requires one
+library to carry a `local_path` **while staying `skip = true`** — *"`skip` governs titles, not paths"* — and
+FR-314-16 made that mapping a step of the owner's configuration so it would be *"a step rather than a trap"*. The
+Libraries card does not let that combination be typed, so the step is not performable in the order it is written.
+This corrects FR-314-16's own usability claim; it is not new behaviour.
 
 **Why the correction is written here.** The Libraries card has no numbered phase of its own: it arrived with the
 `[[libraries]]` config in `0eef30a0` (2026-06-12), before this repo numbered its requirements, and **298** owns only
@@ -1394,6 +1395,13 @@ library on a prod form, which is the trap FR-314-16 set out to remove.
 - **The per-library fallback language is `disabled` when the row is skipped** — the attribute, not a style, so the
   rule is the rule — and it is dimmed. It is a titles setting, and `skip` is exactly "no titles from this library".
   The books and music cards' metadata-provider rows dim with it for the same reason.
+- **`disabled` has to reach the language picker, or it is decoration too.** `installLanguagePicker` hides the real
+  input (`display:none`) behind a `div` of its own that takes every click and writes the pick through to the hidden
+  field — so a `disabled` input the picker has wrapped is disabled in name only. The picker honours it: a disabled
+  input gets a display that is `aria-disabled`, out of the tab order, `cursor:not-allowed`, and opens nothing.
+  (This is also what the old `pointer-events:none` was really doing on that field — it was copied onto the picker's
+  display with the rest of the input's inline style, which is why removing it without this would have *loosened* a
+  skipped row rather than only freeing its paths.)
 - **Skip's visible signal stops being the whole card dimmed**, because a dimmed card is what made every field on the
   row read as inert. What says it instead: the ticked *Skip* box, the collapsed *Skipped libraries (N)* block the row
   sits in, the absent *Scan* / *Push all to Jellyfin* buttons (already suppressed), the dimmed fallback row, and one
@@ -1411,8 +1419,8 @@ library on a prod form, which is the trap FR-314-16 set out to remove.
 
 13. On Settings ▸ Libraries, inside *Skipped libraries (N)*, a skipped library's *Local path* and *Jellyfin path*
     take focus and accept typing with *Skip* left ticked, and the one global Save persists that row as `skip = true`
-    with the typed `local_path`. The same row's fallback-language field cannot be edited. No row leaves or enters the
-    skipped block in the process.
+    with the typed `local_path`. The same row's fallback-language picker does not open and no language can be set on
+    it, while an unskipped row's picker still does. No row leaves or enters the skipped block in the process.
 
 ### Tests (added)
 

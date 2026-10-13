@@ -298,6 +298,16 @@ fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? 
     display.className = "$origClass lp-display"
     display.setAttribute("style", "${displayStyle};width:100%;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;")
     display.tabIndex = 0
+    // Phase 314 (FR-314-17) — the picker hides the real input and takes every interaction itself, so a
+    // `disabled` input would be disabled in name only: the display would still open the dropdown and a
+    // pick would write straight through to the hidden field. A disabled input gets a display that says
+    // so and opens nothing (the open paths below return early), which is what makes `disabled` the rule
+    // rather than decoration on a skipped library's row.
+    if (inputEl.disabled) {
+        display.classList.add("lp-disabled")
+        display.setAttribute("aria-disabled", "true")
+        display.tabIndex = -1
+    }
 
     // Dropdown is appended to <body> so it is never clipped by overflow:hidden ancestors.
     // It is positioned with position:fixed using getBoundingClientRect coordinates on open.
@@ -391,6 +401,7 @@ fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? 
     }
 
     fun openDropdown() {
+        if (inputEl.disabled) return
         openPickerDropdown?.style?.display = "none"
         renderList("")
         searchEl.value = ""
@@ -400,6 +411,7 @@ fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? 
     }
 
     display.addEventListener("click") {
+        if (inputEl.disabled) return@addEventListener
         if (dropdown.style.display == "none") openDropdown()
         else { dropdown.style.display = "none"; openPickerDropdown = null }
     }
@@ -435,6 +447,7 @@ internal fun injectPickerStyles() {
     style.textContent = """
         .lp-wrap { position: relative; display: inline-block; vertical-align: middle; }
         .lp-display { display: flex !important; align-items: center; }
+        .lp-display.lp-disabled { cursor: not-allowed; }
         .lp-dropdown {
             position: fixed;
             background: var(--fill);
