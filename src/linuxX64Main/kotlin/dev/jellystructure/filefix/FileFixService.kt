@@ -603,9 +603,14 @@ class FileFixService(
         // back (DEB-868). Checked per job, because a root folder can be added to Radarr after the root is set.
         val root = versionsRoot()
         if (root != null) {
+            // FR-314-16 (DEB-898) — the root is the backend's path and the arrs name theirs in Jellyfin's view, so
+            // the overlap is compared on the translation. No mapping, no translation: refused here, naming the
+            // library row to fill in, rather than two minutes later as "the item never appeared".
+            val jfRoot = jellyfinViewOrNull(root, config().libraries)
+                ?: return FixOutcome.Failed("no library mapping covers the versions root $root — fill in that library's local_path on Settings ▸ Libraries so Jellyfin's name for the folder is known; nothing was written")
             val roots = runCatching { arrRootFolders?.invoke() }.getOrNull()
-            if (roots != null) versionsRootOverlapsArrRoot(root, roots)?.let {
-                return FixOutcome.Failed("the versions root $root overlaps the media root $it — Radarr would take the version for the film's file (DEB-868); point it somewhere Radarr does not scan")
+            if (roots != null) versionsRootOverlapsArrRoot(jfRoot, roots)?.let {
+                return FixOutcome.Failed("the versions root $root is $jfRoot to Jellyfin, which the media root $it holds — Radarr would take the version for the film's file (DEB-868); point it somewhere Radarr does not scan")
             }
         }
         val target = dvVersionPath(path, root)

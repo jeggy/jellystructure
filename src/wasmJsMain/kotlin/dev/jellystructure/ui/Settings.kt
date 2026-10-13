@@ -747,8 +747,8 @@ ${aiSectionHtml()}
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Dolby Vision versions</div>
               <div class="field">
                 <label>Versions library folder</label>
-                <input id="dv-versions-root" class="input" type="text" placeholder="/media/versions" style="width:100%">
-                <span class="hint">Where a Dolby Vision 8.1 version is written. It must be a folder <strong>Jellyfin scans as its own library</strong> and <strong>Radarr's root folder does not hold</strong> — Jellyfin groups the version with the film itself, and Radarr never sees a file to import. Left empty, the kind cannot run: beside the original, Radarr takes the version for the film's own file and nothing can put that back. Every viewer's home screen keeps that library hidden automatically; an account that cannot see it is named in the log, never granted access.</span>
+                <input id="dv-versions-root" class="input" type="text" placeholder="/mnt/media/jellyfin/versions" style="width:100%">
+                <span class="hint">Where a Dolby Vision 8.1 version is written, <strong>as this server sees it</strong> — the same path as a library's <em>local path</em>, not the name Jellyfin uses. Jellyfin's name for the same folder goes on the <strong>Libraries</strong> card, on that library's row: without it the version cannot be grouped and the kind refuses to run. The folder must be its own Jellyfin library, and <strong>no Radarr or Sonarr root folder may hold it</strong> in Jellyfin's view — Jellyfin groups the version with the film itself, and Radarr never sees a file to import. Left empty, the kind cannot run: beside the original, Radarr takes the version for the film's own file and nothing can put that back. Every viewer's home screen keeps that library hidden automatically; an account that cannot see it is named in the log, never granted access.</span>
               </div>
               <hr class="dash">
               <div style="font-size:.83rem;font-weight:500;margin:14px 0 8px;color:var(--ink-soft)">Memory budget calculator (Phase 215)</div>

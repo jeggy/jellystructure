@@ -141,9 +141,20 @@ class FileFixServiceTest {
         arrRootFolders = { arrRoots },
     )
 
-    /** FR-314-15 — the versions root this suite writes into, as the owner would configure it. */
-    private fun withVersionsRoot(root: String = "$dir/versions") {
-        appConfig = appConfig.copy(fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = root))
+    /**
+     * FR-314-15 — the versions root this suite writes into, as the owner would configure it.
+     *
+     * FR-314-16 (DEB-898) — with the library mapping that carries Jellyfin's name for the same folder. A root no
+     * mapping covers refuses the job before anything is written, so the owner's two admin steps are one call here
+     * exactly as they are two steps on the host. [jellyfinPath] is Jellyfin's side of that mapping.
+     */
+    private fun withVersionsRoot(root: String = "$dir/versions", jellyfinPath: String = "/media/versions") {
+        appConfig = appConfig.copy(
+            fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = root),
+            libraries = listOf(dev.jellystructure.config.LibraryMapping(
+                jellyfinId = "versions-lib", name = "library-versions", collectionType = "movies",
+                jellyfinPath = jellyfinPath, localPath = root, skip = true)),
+        )
     }
 
     /** Phase 314 (FR-314-13) — the titles whose images and NFO the write path wrote back itself. */
@@ -490,7 +501,9 @@ class FileFixServiceTest {
     }
 
     @Test fun `a versions root inside a Radarr root folder refuses the job rather than writing a file Radarr will adopt`() = runBlocking {
-        withVersionsRoot("/films/versions")
+        // FR-314-16 — the overlap is in Jellyfin's namespace: the backend writes `/mnt/films/versions` and that is
+        // `/films/versions` to Jellyfin and to Radarr, whose root folder is `/films`. Compared raw it never fires.
+        withVersionsRoot("/mnt/films/versions", jellyfinPath = "/films/versions")
         arrRoots = listOf("/films")
         val s = service()
         s.buildPlan()
@@ -499,6 +512,18 @@ class FileFixServiceTest {
         assertTrue(outcome.reason.contains("/films"), outcome.reason)
         assertTrue(shell.files.keys.none { it.contains("Dolby Vision") }, "nothing was written")
         assertTrue(grouped.isEmpty())
+    }
+
+    /** FR-314-16 acceptance 11 (DEB-898) — the forgotten `local_path` fails at the root and names itself. */
+    @Test fun `a versions root no library mapping covers refuses the job up front and names the missing local path`() = runBlocking {
+        appConfig = appConfig.copy(fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = "$dir/versions"))
+        val s = service()
+        s.buildPlan()
+        val outcome = s.runJob(dvFilm, "c", { false })
+        assertIs<FixOutcome.Failed>(outcome)
+        assertTrue(outcome.reason.contains("local_path"), outcome.reason)
+        assertTrue(shell.files.keys.none { it.contains("Dolby Vision") }, "nothing was written")
+        assertTrue(grouped.isEmpty(), "and Jellyfin was never told about a path it has never heard of")
     }
 
     @Test fun `a version Jellyfin has not resolved yet is reported and asserted again on the next pass`() = runBlocking {

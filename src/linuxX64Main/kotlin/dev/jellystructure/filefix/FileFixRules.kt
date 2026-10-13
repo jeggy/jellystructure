@@ -224,7 +224,14 @@ fun dvVersionPath(originalPath: String, versionsRoot: String? = null): String {
  * file (DEB-868) — the defect the placement exists to remove. Containing one, the versions library would hold the
  * whole film library a second time and every film would show twice.
  *
- * Compared on whole path segments, so `/mnt/media/films-versions` is **not** inside `/mnt/media/films`. Returns the
+ * FR-314-16 (DEB-898) — **both sides are Jellyfin's namespace.** The arrs report their root folders in their own
+ * view (`/media/movies`, `/media/series`), which is Jellyfin's and not the one the backend writes in, so
+ * [versionsRoot] is the root as [jellyfinViewOf] translates it. Handed the backend's `/mnt/...` path instead, the
+ * two can never overlap and the guard cannot fire — including on `/mnt/media/jellyfin/movies`, which **is** Radarr's
+ * `/media/movies`. [jellyfinViewOrNull] returning null is refused before this is reached, so there is always a
+ * translation to compare.
+ *
+ * Compared on whole path segments, so `/media/films-versions` is **not** inside `/media/films`. Returns the
  * offending arr root, or null when the root is clear.
  */
 fun versionsRootOverlapsArrRoot(versionsRoot: String, arrRoots: List<String>): String? {
@@ -243,10 +250,22 @@ private fun trimPath(p: String?): String? = p?.trim()?.trimEnd('/')?.takeIf { it
  * mapping is the library list's own `localPath` → `jellyfinPath` pair, which the versions library carries like any
  * other library — `skip = true` is about titles, not about paths. Unmapped, the path comes back as it is, which is
  * right when both sides mount it the same way.
+ *
+ * Where being unmapped is itself the error — the versions root, whose translation two other rules depend on —
+ * use [jellyfinViewOrNull] and refuse, rather than carrying an untranslated path forward (FR-314-16, DEB-898).
  */
-fun jellyfinViewOf(local: String, libraries: List<dev.jellystructure.config.LibraryMapping>): String {
+fun jellyfinViewOf(local: String, libraries: List<dev.jellystructure.config.LibraryMapping>): String =
+    jellyfinViewOrNull(local, libraries) ?: local
+
+/**
+ * FR-314-16 (DEB-898) — [jellyfinViewOf], but null when no library mapping covers [local] instead of the path
+ * unchanged. The versions root needs this: a forgotten `local_path` otherwise fails two minutes into the job, as
+ * "the item never appeared" against the title with nothing naming the cause, after a version has already been
+ * written — and it leaves [versionsRootOverlapsArrRoot] comparing namespaces that can never overlap.
+ */
+fun jellyfinViewOrNull(local: String, libraries: List<dev.jellystructure.config.LibraryMapping>): String? {
     val lib = libraries.filter { it.localPath.isNotBlank() && it.jellyfinPath.isNotBlank() }
-        .firstOrNull { local == it.localPath.trimEnd('/') || local.startsWith(it.localPath.trimEnd('/') + "/") } ?: return local
+        .firstOrNull { local == it.localPath.trimEnd('/') || local.startsWith(it.localPath.trimEnd('/') + "/") } ?: return null
     return lib.jellyfinPath.trimEnd('/') + local.removePrefix(lib.localPath.trimEnd('/'))
 }
 

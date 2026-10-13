@@ -70,4 +70,32 @@ class VersionsLibraryViewersTest {
         assertEquals("/somewhere/else.mkv", jellyfinViewOf("/somewhere/else.mkv", libs))
         assertEquals("/x.mkv", jellyfinViewOf("/x.mkv", emptyList()))
     }
+
+    /**
+     * FR-314-16 test 14 (DEB-898) — the live namespaces: the backend writes under `/mnt/media/jellyfin`; Jellyfin
+     * and the arrs both name the same folders under `/media`. The overlap guard only means something on the
+     * translated root — and a root with no translation is refused before it is compared at all.
+     */
+    @Test fun `FR-314-16 - the overlap guard is fed the translated root and an unmapped root has no translation`() {
+        fun mapping(id: String, jf: String, local: String) = dev.jellystructure.config.LibraryMapping(
+            jellyfinId = id, name = "library-$id", collectionType = "movies", jellyfinPath = jf, localPath = local, skip = true)
+        val libs = listOf(mapping("m", "/media/movies/", "/mnt/media/jellyfin/movies/"), mapping("v", "/media/versions", "/mnt/media/jellyfin/versions"))
+        val arrRoots = listOf("/media/movies", "/media/series")   // as `GET /api/v3/rootfolder` reports them
+
+        // Acceptance 12 — the mistake the guard exists to prevent is Radarr's own root under the backend's name.
+        val inside = "/mnt/media/jellyfin/movies"
+        assertNull(versionsRootOverlapsArrRoot(inside, arrRoots), "raw it cannot fire: the two namespaces never meet")
+        assertEquals("/media/movies", versionsRootOverlapsArrRoot(jellyfinViewOrNull(inside, libs)!!, arrRoots), "translated it does")
+
+        // The root the owner's step 3 names translates clear of both arr roots.
+        val ok = "/mnt/media/jellyfin/versions"
+        assertEquals("/media/versions", jellyfinViewOrNull(ok, libs))
+        assertNull(versionsRootOverlapsArrRoot(jellyfinViewOrNull(ok, libs)!!, arrRoots))
+
+        // Acceptance 11 — no mapping covers it: refused up front rather than compared raw or written and then lost.
+        assertNull(jellyfinViewOrNull("/mnt/media/jellyfin/elsewhere", libs), "no library row holds it")
+        val unfilled = listOf(libs[0], mapping("v", "/media/versions", ""))
+        assertNull(jellyfinViewOrNull(ok, unfilled), "a library row whose local_path is still empty is the same thing")
+        assertEquals(ok, jellyfinViewOf(ok, unfilled), "jellyfinViewOf keeps its fallback for every other caller")
+    }
 }
