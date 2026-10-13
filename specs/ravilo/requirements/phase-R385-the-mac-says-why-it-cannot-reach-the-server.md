@@ -3,12 +3,12 @@
 > QA, 2026-10-12 (DEB-756, found on the Mac walk DEB-721): *"A translocated Ravilo cannot reach the backend at all, and
 > the only thing the user sees is **Couldn't reach the server** · Check the connection and try again · Retry."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-12 (see Build notes; acceptance 1–6 are a Mac walk, partially done — see Walk notes, 2026-10-13 —
-and the row in `STATUS.md` is the status). Written 2026-10-12
-(PO-authored from DEB-756). Not dev-reviewed. The Mac app (R328–R331, R337) and the shared error classifier R237/R280
-wrote.
+Written 2026-10-12 (PO-authored from DEB-756, itself found on the Mac walk DEB-721). Not dev-reviewed.
+Builds on the Mac app (R328–R331, R337) and the shared error classifier R237/R280, and touches no Swift and no
+native call. The Build notes (2026-10-12) and Walk notes (2026-10-13) below record what landed and what the walk
+proved; the row in `STATUS.md` is the status.
 
 ## What was seen
 
@@ -329,5 +329,8 @@ the owner's volume.
 
 ## Routing
 
-Páll (the Ravilo clients). The Mac halves of R328–R331 are owed from a Mac walk already; acceptance 1–6 here belong on
-the same walk rather than a trip of their own.
+Sjúrður. He holds every line of product code — backend, admin and the Ravilo clients alike — since the team went to
+four seats on 2026-10-13 (owner decision DEB-987; the routing rules were patched in DEB-989). The separate
+client-engineer seat this phase was originally routed to closed that day, so any code still owed here is his.
+The Mac halves of R328–R331 are owed from a Mac walk already; acceptance 1–6 here belong on the same walk rather than
+a trip of their own, and that walk goes on the QA queue naming its devices and no seat.

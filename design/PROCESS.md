@@ -60,7 +60,7 @@ Verified 2026-10-12/13, not recalled:
   The other ~420 tracked files under `design/` are mockups that break nothing at runtime.
 - **A new CSS file is two edits, not one.** It must join both the `syncDesignAssets` include list and
   the `<link>` set in `src/wasmJsMain/resources/index.html`, or the page ships unstyled.
-- **`design/ravilo/` is reference only.** No Gradle task consumes it; Páll reimplements it in Compose.
+- **`design/ravilo/` is reference only.** No Gradle task consumes it; Sjúrður reimplements it in Compose.
 - **The fences are detectors, not preventers.** `scripts/check-mobile-css.sh`,
   `check-css-scoping.sh`, `check-deanonymization.sh` and `check-phases.sh` are what made the last
   recurrences cheap. `check-deanonymization.sh` skips only `/vendor/`, `node_modules/` and
@@ -118,8 +118,9 @@ Works today; the only machine in the loop is the owner's clipboard.
    of the nineteen wipes was a wholesale overwrite of a file that had hand fixes in it.
 7. **Then spec, then number, then build.** Rannvá writes the spec or the dated amendment; the number
    comes from `STATUS.md` and the board **at adoption, not at triage** — a number allocated while the
-   owner is still deciding is a collision waiting to happen. Tróndur routes: Sjúrður for backend and
-   admin, Páll for the clients, the test plan onto the QA queue without naming a seat.
+   owner is still deciding is a collision waiting to happen. Tróndur routes: Sjúrður for every line of
+   product code — backend, admin and the Ravilo clients alike — and the test plan onto the QA queue
+   without naming a seat.
 
 ### What a round must come home with
 
