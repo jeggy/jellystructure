@@ -1487,3 +1487,71 @@ that limit is here rather than in a guess at a second check.
 26. `file_av_sync` can be asked which files had a window refused and by how much, and the answer for a
     library of healthy files is none. Every stored window from a healthy file carries an
     `audio_short_frames` of 0 or ±1.
+
+## Amendment (2026-10-13, eighth of the day) — a `PIPELINE_VERSION` bump is half a change: the pass that follows it has to be somebody's (DEB-955)
+
+No code moves here. The seventh amendment decided the bump to `/2` and stated its cost correctly; what it
+assumed, and what this phase never wrote down, is **who runs the pass that the bump makes due**. Høgni found
+the gap from the other end — a live sweep spending GPU on rows the pending deploy discards — and the
+sequencing below is the answer, decided rather than discovered.
+
+### The gap, in the seventh amendment's own words
+
+*"a bump marks rows due; it **starts nothing**"* is right, and *"it is the reason to bump now, with the
+sweep being restarted after DEB-918 anyway"* is where the reasoning leans on something that is not true of
+prod: **`scan_interval_hours = 0` there, so nothing restarts a sweep but a person.** A bump therefore has
+two halves — the sidecar lands, and an operator runs a pass at `scope=missing` — and only the first half had
+an owner. With just the first half, the library's measured A/V-sync picture reads as unchecked and stays
+that way: `rowsCurrentByPath()`/`isCurrent()` drop every row from an older `model`, which is FR-317-7 and
+FR-317-8 working exactly as specified.
+
+### What is at stake, measured on prod at 2026-10-13 09:33Z
+
+`file_av_sync` carries 5 923 rows under exactly one model string, `syncnet_v2+s3fd@907c0b5/1`:
+
+| | rows | survives the bump to `/2` |
+|---|---|---|
+| `animation` 4 566, `too_short` 28, `no_original_track` 11 — FR-317-8's skips | 4 605 | yes |
+| `reason IS NULL` — measured | 836 | no |
+| `no_faces` — measured, no face found | 482 | no |
+| **made due by the bump** | **1 318** | |
+
+And the hand-started sweep of 2026-10-12 22:31Z is still advancing: **3 672 `check_av_sync` rows waiting**
+in the `avsync` lane at ~195 files/h, with the skip population long since drained (it resolved in the first
+five minutes), so what is left is ~19 h of GPU writing rows under `/1` that `/2` will discard. Post-bump the
+pass has the same ~4 990 files to measure whether or not those 19 h are spent first, which is what makes the
+waiting half of that lane pure waste rather than a head start.
+
+One number settles the id-map question with it: of the rows whose `mkv_audio_ids` is still `NULL`, **338 sit
+on a non-skip row (177 measured, 161 `no_faces`) and every one of them is inside the 1 318** — the remaining
+4 605 are skips, which never ran `mkvmerge` and never needed a map. So the forced refill of those maps and
+the bump's re-measure are the same work done twice, with 318's `LANG` fix (DEB-928) live under both.
+
+### The order, decided (Tróndur, 2026-10-13, DEB-955)
+
+1. **The waiting part of the `avsync` lane is emptied before the bump** (DEB-958), with FR-260-1's own control
+   (`POST /api/jobs/empty`, `{"queues":["avsync"]}`) — the running job finishes, a waiting job has touched no
+   file, and nothing stored is lost. This is reversible by a single `scope=missing` pass, which is also why
+   it is not an owner decision: 317's readings are admin-facing (the Checks card, the flagged list), no
+   viewer sees a difference, and these jobs already stand aside for playback (`defer_while_playing`).
+2. **The pass that follows the bump is a card of its own** (DEB-959), held on the deploy and carrying the id-map
+   evidence 318's acceptance 6 wanted. A bump without that card booked is not deployed.
+3. **If the bump does not land, the sweep resumes under `/1`** — the same one-line pass, no re-enqueue by
+   hand, decided at 2026-10-14 09:30Z so the library does not sit unmeasured on an owner-gated deploy.
+
+### Deliberately not specified
+
+- **The backend enqueuing its own re-measure when the model string changes.** It would close the gap in code
+  rather than in a runbook, and it is tempting for exactly that reason, but it contradicts FR-317-8's
+  enqueue-only design and would have a deploy start several hours of GPU work with nobody watching — the
+  opposite of what `scan_interval_hours = 0` is for on prod. The pass stays a person's, and the requirement
+  below is what makes it one.
+
+### Acceptance (added)
+
+27. After a `PIPELINE_VERSION` bump reaches prod, a pass at `scope=missing` is run and `file_av_sync` holds
+    no non-skip row under an older model string. During the pass the library's zero rebuilds as the seventh
+    amendment describes — the first hour's verdicts are computed against FR-317-6's `−1` default, and that is
+    not a finding.
+28. That pass is what refills the `NULL` `mkv_audio_ids` on non-skip rows: afterwards, every row the pass
+    measured carries a map, and a non-ASCII path is not over-represented among any that do not.
