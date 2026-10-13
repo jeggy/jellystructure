@@ -236,8 +236,12 @@ household's host is a real DNS name, so acceptance 1 and 3 should show `host=LAN
 
 The first Mac walk ran 22:19Z–22:37Z on 2026-10-12 and was **cut off mid-walk**, not finished: the run ended on a
 provider quota limit at 22:37:49Z, the owner withdrew the MacBook's board tick at 23:31:27Z, and the three board rows
-were released at 01:05:30Z with the Mac left holding the test build (that residue is its own card, DEB-839 — **the
-next walk's step 1**, and the next walk re-reads the Mac rather than trusting the 22:37Z snapshot). MacBook Pro,
+were released at 01:05:30Z with the Mac left holding the test build (that residue is **DEB-763's own step 1** — it
+was briefly a separate card, DEB-839, folded back in and cancelled the same night once the owner put the restore on
+the same wake as the walk; and the next walk re-reads the Mac rather than trusting the 22:37Z snapshot). The residue
+is not inert: prod's `ravilo_device` row for that Mac read `app_version 1.51` at 22:23Z and **`1.49` with
+`last_seen` 2026-10-13 01:16:13Z**, so the test build has been launched and has talked to prod since. That row is
+also the restore's proof — it should read `1.51` again, and it can be read without going near the Mac. MacBook Pro,
 macOS 27.0.1 arm64. `spctl --status` read **assessments disabled throughout**: open question 2's granted
 `--master-enable` / `--master-disable` pair was **never used, so the grant is unspent** and the Gatekeeper half of the
 walk is untouched, not failed.
