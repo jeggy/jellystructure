@@ -1538,3 +1538,37 @@ Three things worth keeping, one of them a limit.
   this requirement's. One thing does repair them piecemeal: the rename refusal replans each film it refuses, so a
   tick-everything-and-press-rename — which is what the stale card invited and what would have renamed 13 library
   files — now corrects all thirteen rows and touches nothing.
+
+### The recompute as run (2026-10-13 09:37:44Z → 10:00:47Z, DEB-956)
+
+Step 1 of *Sequencing* above has been taken, so the numbers the switch is decided against are measured rather than
+predicted. `POST /api/file-fix/plan`, all kinds, 9 834 files, no per-file failure. Rows only, verified after the
+fact: the versions root is still empty, `df` on `/mnt/media` is unchanged to the byte, nothing is `pending` or
+`running`, no Apply, no rename, no deploy. It structurally could not queue work — `planOne` promotes a `would_add`
+to `pending` only for a kind that is both enabled and auto-new, and every kind is off.
+
+| kind C | verdicts from before the root | after the recompute |
+|---|---|---|
+| `would_add` | 3 | **17** |
+| `needs_rename` | 13 | **0** |
+| `skipped` (folder naming) | 1 | **0** |
+| `eligible_bytes` | 206 546 128 370 | **1 100 068 788 012** |
+
+- **17 films, 1.100 TB** (1.0005 TiB) — FR-314-15's *"all 17 films become eligible as they are"*, now measured
+  rather than argued. The 18th row stays `removed` through a dry run and is not among the 17, and `needs_rename` is
+  0 across the whole `file_fix` table, not only kind C.
+- **Per film: 45.9 GB smallest, 65.7 GB median, 88.5 GB largest.** `est_bytes` is the original's size, so a version
+  is budgeted as a full copy and acceptance 9 on *one* film costs 46–88 GB. There is no cheap outlier to pick.
+- **Headroom does not constrain the decision.** The versions root shares `/dev/sda1` (`/mnt/media`) with the movies
+  library, so a version is a second full copy on the same disk rather than a spill onto another: 5.26 TB free, and a
+  full pass would leave 4.16 TB (61 % → ~69 % used).
+- **`countPreRootDvVerdicts` reads 0** for all three kinds, so deploying `8574493d` will find nothing to gate: no
+  stale sentence in place of the counts, no Apply disabled by staleness, and the rename refusal with nothing left to
+  refuse. The repair the as-built note above left to the dry run is done.
+- **The blurb half of DEB-946 is still on prod**, and the recompute cannot reach it: the kind's sentence is a
+  constant reading *"beside a profile 7 film"* while every row under it reads *"in the versions library"*. Only the
+  deploy fixes that, which is why it is recommended before the switch rather than after it.
+- An all-kinds recompute moved the other two kinds slightly, in the safe direction: kind A `would_add` 2 342 → 2 339
+  and kind B 13 → 12, three files having become seeded since the last plan.
+- **Cost, for whoever schedules the next one: ~23 minutes at ~7 files/s with a cold `probeCache`** (the container
+  had been recreated at 08:34Z). A warm re-run is seconds.
