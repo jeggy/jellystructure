@@ -367,8 +367,11 @@ fun main() = runBlocking {
     // Phase 254 — deep checks + replace-from-source repairs. One instance: the queue runs the jobs,
     // Triage/Library/the detail routes read it through FileDamage.
     val fileIntegrity = dev.jellystructure.media.FileIntegrityService(db, seedingSnapshot)
+    // Phase 314 (FR-314-13) — the images and NFO Radarr deletes when a `moviefile` row changes under it, written back
+    // by the write path itself instead of by the next hourly pass (DEB-869).
+    val filmAssets = dev.jellystructure.media.FilmAssets(mediaStore, artworkDownloader) { configStore.current }
     // Phase 316 — films with no folder of their own: the Dashboard warning and the owner's Apply.
-    val looseFilms = dev.jellystructure.media.LooseFilmsService(configStore, mediaStore, jellyfinClient, arrClient, qbClient, seedingSnapshot, mediaHistory, db)
+    val looseFilms = dev.jellystructure.media.LooseFilmsService(configStore, mediaStore, jellyfinClient, arrClient, qbClient, seedingSnapshot, mediaHistory, db, filmAssets)
     dev.jellystructure.media.FileDamage.service = fileIntegrity
     // Phase 255 — a track that stops before the file does: the tail probe, its table, and the two Triage types.
     val trackCoverage = dev.jellystructure.media.TrackCoverageService(db, fileIntegrity)
@@ -415,6 +418,8 @@ fun main() = runBlocking {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
             arrRescan.nudge(item)
         },
+        // Phase 314 (FR-314-13) — the version write and its Remove put the film's images and NFO back themselves.
+        reassertAssets = { item -> filmAssets.reassert(item.id) },
         playbackActive = {
             dev.jellystructure.media.MediaJobQueue.waitsForPlayback(true, configStore.current.scan.deferWhilePlaying, dev.jellystructure.tv.isPlaybackActive())
         },

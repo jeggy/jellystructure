@@ -129,6 +129,8 @@ class LooseFilmsTest {
         var failRenameOf: String? = null,
         var newId: String? = "new",
         var newItemData: ViewerData? = null,
+        /** Phase 314 (FR-314-13) — what the folder had lost by the time the write path looked. */
+        var assetsPutBack: List<String> = listOf("poster.jpg", "movie.nfo"),
     ) : LooseFilmPorts {
         val calls = ArrayList<String>()
         val renamed = ArrayList<Pair<String, String>>()
@@ -148,6 +150,7 @@ class LooseFilmsTest {
         override suspend fun recheck(hash: String) = true.also { calls += "recheck:$hash" }
         override suspend fun radarrUpdatePath(movieId: Int, localFolder: String) = true.also { calls += "radarrUpdatePath:$localFolder" }
         override suspend fun radarrRefresh(movieId: Int) = true.also { calls += "radarrRefresh" }
+        override suspend fun reassertAssets(film: LooseFilm, videoPath: String) = assetsPutBack.also { calls += "reassertAssets:$videoPath" }
         override suspend fun radarrFilePath(movieId: Int) = "/lib/films/Some Film (2023)/Some.Film.2023.1080p.mkv"
         override suspend fun readUserData(jellyfinId: String) = mapOf("u1" to ViewerData(true, 0, true, 2, "2026-01-01"), "u2" to ViewerData(false, 0, false, 0, null)).also { calls += "readUserData" }
         override suspend fun readUserDataFor(userId: String, jellyfinId: String) = newItemData
@@ -245,6 +248,28 @@ class LooseFilmsTest {
         assertTrue("setLocation:h1" !in fake.calls, "a hard-link seed is untouched: the inode is the same")
         assertTrue("radarrRefresh" in fake.calls && "jellyfinNotify" in fake.calls && "updateMedia:new" in fake.calls)
         assertEquals("$dvDir/Some Film (2023).mkv", out.key)
+    }
+
+    // ── Phase 314 (FR-314-13) test 10 — the artwork Radarr takes with the old path ──
+
+    @Test fun `a rename in place puts the images and NFO back itself - before it waits for Jellyfin`() = runBlocking {
+        val fake = Fake()
+        val out = LooseFilmMover(fake).move(renameFilm())
+        assertTrue("reassertAssets:$dvDir/Some Film (2023).mkv" in fake.calls, fake.calls.toString())
+        // After Radarr has been told (it is Radarr's extras cleanup that takes them) and before step 5: steps 5 and 7
+        // wait minutes on Jellyfin and Radarr, and the folder may not be bare for that long.
+        val i = { s: String -> fake.calls.indexOfFirst { it.startsWith(s) } }
+        assertTrue(i("radarrRefresh") < i("reassertAssets") && i("reassertAssets") < i("jellyfinNotify"), fake.calls.toString())
+        assertEquals("Put poster.jpg, movie.nfo back", out.steps.single { it.step == "artwork" }.detail)
+    }
+
+    @Test fun `a whole folder costs the rename nothing - and a move into a new folder carries its own images`() = runBlocking {
+        val whole = Fake(assetsPutBack = emptyList())
+        val renamed = LooseFilmMover(whole).move(renameFilm())
+        assertEquals("Its images and NFO are in the folder", renamed.steps.single { it.step == "artwork" }.detail)
+        val moved = Fake()
+        LooseFilmMover(moved).move(looseFilm())
+        assertTrue(moved.calls.none { it.startsWith("reassertAssets") }, "FR-316-1's plan moves the images with the film")
     }
 
     @Test fun `a rename in place stops when the new name is taken`() = runBlocking {

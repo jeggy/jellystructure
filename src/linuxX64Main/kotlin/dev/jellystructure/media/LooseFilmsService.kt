@@ -42,6 +42,8 @@ class LooseFilmsService(
     private val snapshot: SeedingSnapshot,
     private val history: MediaHistory,
     private val db: JellystructureDb,
+    /** Phase 314 (FR-314-13) — the images and NFO an in-place rename makes Radarr delete, written back on the spot. */
+    private val filmAssets: FilmAssets,
 ) {
     private val lock = dev.jellystructure.ops.SpinLock()
     private var last: LooseFilmsResult? = null
@@ -311,6 +313,11 @@ class LooseFilmsService(
         override suspend fun radarrUpdatePath(movieId: Int, localFolder: String): Boolean {
             val r = cfg.radarr ?: return false
             return arr.updateMoviePath(r.url, r.apiKey, movieId, toJellyfinView(localFolder, cfg))
+        }
+
+        override suspend fun reassertAssets(film: LooseFilm, videoPath: String): List<String> {
+            val id = film.mediaId ?: return emptyList()
+            return filmAssets.reassert(id, videoPath)
         }
 
         override suspend fun radarrRefresh(movieId: Int): Boolean {

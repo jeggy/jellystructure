@@ -51,6 +51,13 @@ class FileFixService(
     private val radarrParse: (suspend (String) -> ArrParseResult?)?,
     /** After a write: tell Jellyfin to re-read the title, and nudge Radarr/Sonarr (284's post-write sync). */
     private val afterWrite: suspend (MediaItem) -> Unit,
+    /**
+     * FR-314-13 — after a kind C version is written or removed, whatever of the film's images and NFO is not in its
+     * folder is written back on the spot. Radarr deletes the extras it had adopted when a `moviefile` row changes
+     * under it (DEB-869), and the hourly pass is up to an hour away. Returns the filenames it put back; the default
+     * is the no-op for tests and anywhere it isn't wired.
+     */
+    private val reassertAssets: suspend (MediaItem) -> List<String> = { emptyList() },
     /** Is anything playing that this job must yield to (the job queue's own rule)? */
     private val playbackActive: () -> Boolean,
     private val shell: FileFixShell = PosixFileFixShell,
@@ -451,6 +458,9 @@ class FileFixService(
         probeCache.remove(path)
         runCatching { planOne(FixTarget(item, path, item.kind == MediaKind.MOVIE, item.title)) }
         runCatching { afterWrite(item) }
+        // FR-314-13 — a deleted version is a `moviefile` row changing under Radarr, which takes the film's adopted
+        // extras with it. Kind C only: A and B leave the film's own files and Radarr's row where they were.
+        if (kind == FixKind.DOLBY_VISION) runCatching { reassertAssets(item) }
         Logger.info("file fix: ${kind.label} removed for $path (${did.joinToString("; ")}) (314)", "jobs")
         return FixOutcome.Done
     }
@@ -556,6 +566,7 @@ class FileFixService(
         history.record(item.id, "file_fix", "Dolby Vision the TVs play: a profile 8.1 version beside the original · ${target.substringAfterLast('/')}")
         q.setState("done", "the Dolby Vision 8.1 version is beside it", size * 3, now(), path, FixKind.DOLBY_VISION.id)
         runCatching { afterWrite(item) }
+        runCatching { reassertAssets(item) }   // FR-314-13 — after the nudge, not instead of it
         Logger.info("file fix: Dolby Vision 8.1 version written for $path (314)", "jobs")
         return FixOutcome.Done
     }

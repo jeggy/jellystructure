@@ -11,6 +11,9 @@ package dev.jellystructure.media
  *    and only removed once the copy is there.
  * 3. qBittorrent: only a torrent whose own data path is the library file is pointed at the new folder and rechecked.
  * 4. Radarr: only when [LooseFilm.radarr] is [RadarrPlan.UPDATE] — path updated with `moveFiles=false`, then refreshed.
+ * 4b. Phase 314 (FR-314-13) — after an in-place rename, the film's images and NFO are written back if Radarr's extras
+ *    cleanup took them with the `moviefile` row for the vanished path. Here, not after step 7: steps 5 and 7 wait on
+ *    Jellyfin and Radarr for up to two minutes and a minute, and the folder must not be bare for that long.
  * 5. Jellyfin: told exactly which paths changed, the new item found by path, each user's data written back where the new
  *    item lacks it.
  * 6. Our own data: the media record gets the new path (and id); rows keyed by the old Jellyfin id move to the new one.
@@ -92,6 +95,16 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
             else -> step("radarr", true, "Radarr isn't set up")
         }
 
+        // ── 4b — the artwork Radarr takes with the old path (FR-314-13) ──
+        //
+        // Only for a rename in place: a move into a new folder carries the film's images in its own plan (FR-316-1),
+        // and this is the case where Radarr sees a path vanish under a `moviefile` row and deletes the poster, fanart,
+        // clearlogo and `movie.nfo` it had adopted as that movie's extras (DEB-869, measured on prod 2026-10-13).
+        if (inPlace) {
+            val back = runCatching { ports.reassertAssets(film, newVideo) }.getOrDefault(emptyList())
+            step("artwork", true, if (back.isEmpty()) "Its images and NFO are in the folder" else "Put ${back.joinToString(", ")} back")
+        }
+
         // ── 5 — Jellyfin ──
         ports.jellyfinNotify(film.key, film.targetFolder)
         val newId = ports.findJellyfinItem(newVideo)
@@ -159,6 +172,13 @@ interface LooseFilmPorts {
     suspend fun setLocation(hash: String, localFolder: String): Boolean
     suspend fun recheck(hash: String): Boolean
     suspend fun radarrUpdatePath(movieId: Int, localFolder: String): Boolean
+    /**
+     * FR-314-13 — writes back whatever of the film's images and NFO is not in its folder, for [videoPath] (the name the
+     * rename has just given it, which the media row may not carry yet). Returns the filenames it put back; a whole
+     * folder costs four `stat` calls and returns empty. Repeats behind Radarr's asynchronous delete, so it can take
+     * half a minute.
+     */
+    suspend fun reassertAssets(film: LooseFilm, videoPath: String): List<String>
     suspend fun radarrRefresh(movieId: Int): Boolean
     /** Radarr's file for the movie, as a local path (waits for an asynchronous refresh). */
     suspend fun radarrFilePath(movieId: Int): String?

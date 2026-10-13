@@ -117,9 +117,13 @@ class FileFixServiceTest {
         db = db, store = store, config = { error("unused") }, history = history,
         seeding = { seedingAnswer() },
         radarrParse = { title -> if (title.endsWith(" - Dolby Vision")) radarrCopy else ArrParseResult("Remux-2160p", 0) },
-        afterWrite = {}, playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
+        afterWrite = {}, reassertAssets = { item -> reasserted += item.id; emptyList() },
+        playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
         renameOriginal = renamer,
     )
+
+    /** Phase 314 (FR-314-13) — the titles whose images and NFO the write path wrote back itself. */
+    private val reasserted = ArrayList<String>()
 
     @BeforeTest fun setUp() = runBlocking {
         platform.posix.mkdir(dir, 0x1ffu)
@@ -234,6 +238,22 @@ class FileFixServiceTest {
         assertTrue(move.endsWith("'$dir/Other (2021)/Other (2021) - Dolby Vision.mkv'"), move)
         assertTrue(shell.ran.none { it.contains("mv -f") && it.endsWith("'$dvFilm'") })
         assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+    }
+
+    /** FR-314-13 test 10 — Radarr deletes the extras it adopted when a `moviefile` row changes under it (DEB-869), so
+     *  the write path puts the film's images and NFO back itself. Kind C only: A and B change neither. */
+    @Test fun `a kind C version written and removed puts the film's images and NFO back - kind A does not`() = runBlocking {
+        val s = service()
+        s.buildPlan()
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertEquals(listOf("other"), reasserted)
+        val version = "$dir/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        shell.probes[version] = dv81.replace("\"duration\": \"100.000000\"}", "\"duration\": \"100.000000\", \"tags\": {\"JELLYSTRUCTURE_DV\": \"8.1-from-7\"}}")
+        s.removeTitle(FixKind.DOLBY_VISION, "other")
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertEquals(listOf("other", "other"), reasserted, "after the version is written and after it is removed")
+        assertIs<FixOutcome.Done>(s.runJob(film, "a", { false }))
+        assertEquals(listOf("other", "other"), reasserted, "kind A leaves the film's own files and Radarr's row alone")
     }
 
     @Test fun `kind C stops when Radarr could take the copy for an upgrade - or doesn't answer`() = runBlocking {
