@@ -3,10 +3,11 @@
 > Live report, 2026-09-06: *"I tried to play some media on soveværelse TV this morning, but it didn't
 > start fast enough, so I stopped."*
 
-## Status
-`✓ Built` 2026-09-06 — all six FRs. Design-authored the same day, not dev-reviewed, not live-verified.
-Root-caused from production logs, the production database, and a live token probe against Jellyfin.
-Companion client-side phase: **R237** (the ~15 s spinner that hid this from the viewer).
+## Scope
+All six FRs. Root-caused from production logs, the production database, and a live token probe against
+Jellyfin. Companion client-side phase: **R237** (the ~15 s spinner that hid this from the viewer).
+FR-194-6 is the phase that owns the shared `OutboundHttp` client's retry policy, and it is the only one
+of the six that reaches beyond the token path — see the 2026-10-13 amendment.
 
 **The same failure recurred on stue TV at 07:38:58Z the morning this was built**, which is what
 triggered the implementation: `TV: paired user token rejected by Jellyfin (401) for user 7450a8c6…
@@ -287,3 +288,107 @@ four round trips — FR-194-5 counts *verdicts*, not requests.
 4. The 07:51:55 check ran ~5 s *before* the TV's WebSocket connected, so something other than the play
    request triggered it. Worth identifying which route probes the token on device wake-up — if it is a
    cheap background call, it is deciding playback availability for the whole household as a side effect.
+
+## Amendment (2026-10-13) — FR-194-6's retry was never the narrow one its own comment describes (DEB-914)
+
+FR-194-6 says, and `OutboundHttp.kt`'s comment above the plugin repeats, that the retry is *"idempotent
+methods only, and only when the call threw — a request that reached the server and got an answer is never
+retried, so Phase 183's 429/AIMD pacing and the 503 + `Retry-After` contract are untouched."*
+
+**That is not what is installed, and has not been since 2026-09-06.** Every outbound 5xx answer, on every
+method, is re-sent once, 200 ms later.
+
+### What the mechanism actually is
+
+Read out of `ktor-client-core` 3.6.0 (`HttpRequestRetry.kt`, sources jar, verified 2026-10-13), not
+inferred:
+
+- `HttpRequestRetryConfig`'s own `init` block is `retryOnExceptionOrServerErrors(3); exponentialDelay()`
+  (`:75-78`). `retryOnExceptionOrServerErrors` sets **both** predicates — `shouldRetry`, via
+  `retryOnServerErrors` → `retryIf { _, response -> response.status.value in 500..599 }` (`:155-159`),
+  and `shouldRetryOnException`.
+- `OutboundHttp`'s block replaces `shouldRetryOnException` (through `retryOnExceptionIf`) and lowers
+  `maxRetries` to 1. It never touches `shouldRetry`, so the default survives at the lowered count.
+- `IDEMPOTENT_METHODS` is therefore applied to the exception path only. The response path — the one the
+  comment claims does not exist — admits POST, PUT, PATCH and DELETE.
+
+Measured, not read: a stand-in sidecar answering `503` to `/measure` receives **two POSTs per
+`AvSyncService.check()`**, 200 ms apart. `AvSyncBusyGiveUpTest.a sidecar that is never free refuses the
+measurement and stores nothing` asserts that 2 today, with this issue named in the comment, so the fix
+shows up as a test failure rather than as a silent halving of the sidecar's traffic.
+
+### What it costs
+
+- **Non-idempotent writes are replayed.** `IDEMPOTENT_METHODS` exists precisely to stop a POST being
+  re-sent; it is not consulted on the path that re-sends it. A POST to Jellyfin or to an *arr that does
+  its work and *then* answers 500 gets a second one.
+- **The 503 + `Retry-After` contract is inverted.** A 503 means *come back in n seconds*; we come back in
+  200 ms and only then honour the wait at the caller's level. Phase 317's busy contract (FR-317-29) and
+  Phase 183's pacing are the two places that contract was promised.
+- Phase 183's 429/AIMD half of the claim **is** true — 429 is not 5xx, so `shouldRetry` never fires on it.
+
+### FR-194-7 — The shared client retries a thrown connection failure and nothing else
+
+The retry becomes what FR-194-6 was specified, reviewed and recorded as. No new capability.
+
+`install(HttpRequestRetry)` clears **both** inherited predicates before stating its own, so a future ktor
+upgrade that changes the `init` default cannot widen our policy again:
+
+```kotlin
+install(HttpRequestRetry) {
+    noRetry()                       // ktor's own init installed retryOnExceptionOrServerErrors(3)
+    maxRetries = 1                  // AFTER noRetry(), which sets maxRetries = 0
+    retryOnExceptionIf { request, cause -> request.method in IDEMPOTENT_METHODS && cause.isConnectionLayerFailure() }
+    delayMillis { 200 }
+}
+```
+
+**The ordering is load-bearing.** `noRetry()` is `maxRetries = 0; shouldRetry = false; shouldRetryOnException
+= false` (`:85-89`), so `maxRetries = 1` must come after it or the connection-layer retry FR-194-6 was built
+for silently disappears too — trading one wrong behaviour for another. `retryIf { _, _ -> false }` beside
+the existing lines is an acceptable alternative with the same effect and no ordering trap; the explicit
+`noRetry()` is preferred because it names the intent and survives a reader who does not know the default.
+
+The comment above the plugin keeps its explanation of *why* the connection-layer retry exists and gains one
+sentence on why the clear is there. A comment that describes an invariant the code does not hold is the
+actual defect here; both halves get fixed together.
+
+**A 5xx is not retried by the shared client for anyone.** Where a caller genuinely wants one, it asks for it
+at the call site, where the method, the idempotency and the `Retry-After` are all in view — Phase 183 owns
+pacing, Phase 195 owns the ingest backoff. No compensating retry is to be added anywhere else as part of
+this fix; if one is found to be needed, that is its own phase with its own evidence.
+
+### Decision (Tróndur, 2026-10-13) — restore the invariant; do not keep the wider retry
+
+DEB-914 raises, fairly, that today's doubled traffic is at least *consistent* and that something may have
+come to depend on the second attempt. The invariant wins anyway, for two reasons: a replayed POST is a
+correctness bug whose blast radius is every write the backend makes outbound, and nothing can be said to
+depend deliberately on a retry that no spec, comment or review ever described. Anything that turns out to
+depend on it accidentally is a caller that needs an explicit retry, and the test suite is where that should
+surface, not production.
+
+This is not viewer-visible and does not reach the constitution, so it is not an owner call. It does change
+behaviour on every outbound call the backend makes, so it is **not** a drive-by inside another phase's
+commit: it lands on its own, with its own tests, and FR-317-29's busy counting is checked in the same pass.
+
+### Tests (added)
+
+- The shared client's policy, asserted directly against a stand-in server, four cases: a **GET** answered
+  `500` is sent **once**; a **POST** answered `503` is sent **once**; a **GET** that throws a
+  connection-layer failure is sent **twice**; a **POST** that throws the same failure is sent **once**.
+  The third is FR-194-6's reason for existing and must not regress with the rest.
+- `AvSyncBusyGiveUpTest.a sidecar that is never free refuses the measurement and stores nothing` flips its
+  assertion from `2` to `1` and drops the DEB-914 comment. The lane's own arithmetic is unchanged — one
+  `AvSyncBusy` per `check()` either way — which is the point: the only thing that changes is how much
+  traffic the sidecar sees.
+- No test asserts the ktor default. If a later ktor version drops `retryOnExceptionOrServerErrors(3)` from
+  `init`, `noRetry()` is still correct and these four cases still pass.
+
+### Acceptance (added)
+
+6. A stand-in server answering `500` to a GET and `503` to a POST receives exactly one request of each per
+   call. A stand-in that refuses the connection receives two attempts for a GET and one for a POST.
+7. `AvSyncBusyGiveUpTest` is green with `1`, and the 317 lane's give-up count is unchanged — thirty busy
+   answers still take thirty waits of `retry_after_s`, not fifteen.
+8. `linuxX64Test` green as a whole; no other test needed a number changed. A test elsewhere that *did*
+   silently depend on the doubled traffic is a finding to report on DEB-914, not to paper over.
