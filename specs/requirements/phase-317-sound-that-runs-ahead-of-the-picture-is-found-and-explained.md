@@ -303,7 +303,10 @@ batch shapes.
 8. A film with a Nordic dub and the original track: the original is measured; the dub comes back in step (`corr ≥ 0.6`,
    lag ≤ 1) and is shifted with it — or, if not, is named and left.
    — **restated as 8a/8b/8c by the 2026-10-13 amendment (FR-317-18): the measurement and the rendering are met
-   separately; the two coinciding on one real file has no case in today's library.**
+   separately; the two coinciding on one real file was ruled to have no case in today's library.**
+   — **met whole by the 2026-10-13 amendment, third of the day (DEB-812): the case did exist. One real
+   non-animation two-track film reads `offset` +120 ms and renders both branches — the measured track moved,
+   the other named, left and given its reason. 8c is not a watch, and the sweep owes it nothing.**
 9. *Film T*: `offset`, audio early — and the owner hears it before it is called a finding.
 
 ## Verification plan
@@ -889,3 +892,49 @@ of a known finite set is not a standing mechanism.
     no-command sentence rather than silence, and one `WARN` naming the path, ~115 bytes and *"could not be
     opened for reading"*. The same file on a backend **with** `LANG=C.UTF-8`: a `--sync` command in a Copy
     block. The second half is 318's acceptance 6 seen from this phase's page.
+
+## Amendment (2026-10-13, third of the day) — 8c is met: the library did have the case (DEB-812)
+
+The 10-13 amendment above (FR-317-18) ruled acceptance **8c** *"not satisfiable from today's library"* and left
+it as a standing watch on the first dubbed film the sweep flags. **That ruling is wrong, and it was already
+wrong when it was written** — the file that closes 8c is the same file the DEB-833 amendment is about, measured
+in the second browser walk on prod (`v1.51-58-gf9029c3b`) an hour earlier. FR-317-18 was reasoning from Svabo's
+two-candidate shortlist; the walk had widened the search to eight candidates and found a ninth answer.
+
+**The case.** Jellyfin id `7b6266539e4bbe415fbbb05aa1cf02d9` — non-animation, matroska, **two** audio tracks
+(one language-tagged, one untagged, both EAC3), reading `offset`, `offset_ms: 120`, `audio_mark: "120 ms early"`.
+Out of step *and* multi-track: the conjunction 8a and 8b never met. No title here; the id is the reference
+(this repository is public).
+
+**8a and 8b coinciding on it, read in a browser:**
+
+- the *Suggested fix* moves the measured track and names it — `"dan" EAC3 (0:a:0)`;
+- the other track is **named, left, and given its reason** — *"Untagged EAC3 (0:a:1) is not in step with the
+  main audio (+0 ms of it, correlation 0.546) and is left as it is"* — which is FR-317-11's *left as it is*
+  branch on real material, the half the e2e three-track case could only simulate;
+- the measured track's row on *Tracks & subtitles* carries the `120 ms early` mark and the untagged row carries
+  none (FR-317-15, verified separately on DEB-722).
+
+**Both arms of FR-317-11 are now proven on real audio, not one.** The eight Nordic dub tracks of FR-317-18
+(`lag_frames 0`, `corr 0.630–0.773`) are the *moves with the original* arm; this file is the *left behind* arm.
+Worth recording because the deciding factor here is **correlation, not lag**: the excluded track's lag is `0`
+frames, so by lag alone it would have moved. It is excluded on `corr 0.546` against the `0.6` bar — a thin
+margin, and the reason FR-317-25 insists a left-out track names the arm of `inStep` it actually failed.
+
+**What this does not depend on.** This file renders no command and no Copy block, because its `mkvmerge -J`
+came back truncated and `mkv_audio_ids` is null — that is DEB-833 and, via DEB-848, the container's C locale in
+phase **318**. It is independent of 8c: the *wording* 8c is about is fully rendered, and a missing command must
+not be read as 8c failing. 8c closes on the advice, not on the shell line.
+
+**Consequences for the acceptance record:**
+
+- **8c is met.** It is **not** a watch, and it does **not** close as *no case in the library* — that branch of
+  FR-317-18 is spent and must not be exercised.
+- With 8a and 8b already met, **acceptance 8 is met whole**.
+- **The sweep owes 8c nothing.** 7b still waits on it; 8c no longer does. Nothing here asks for the sweep to
+  start, and nothing here is the owner's call.
+
+### Tests (added)
+
+None. This amendment changes no behaviour and no Kotlin — it corrects an acceptance ruling against a
+measurement that already existed. FR-317-11's rule, FR-317-25's wording and FR-317-15's mark are unchanged.
