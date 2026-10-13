@@ -3,13 +3,16 @@
 > Owner, 2026-10-08, from a screenshot of Jellyfin's dashboard: *"Something is wrong here. That backdrop and logo
 > should not be together, they are two different ones."* A film playing on Stue TV showed another film's logo.
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-10-08** (branch `worktree-agent-a20570a9bfe5edf8c`, not merged, not deployed); dev-reviewed
-2026-10-08. Unit-tested and checked read-only against the real films root, Radarr and qBittorrent; **the move itself has
-not run on the real library** — that is the owner's Apply once it is deployed (see *Build notes*). Written 2026-10-08
-(dev-authored) from a read-only investigation. Backend (`media/ArtworkDownloader.kt`'s `assetFilePath`, every artwork
-writer and reader) and the admin's Dashboard.
+Written 2026-10-08 (dev-authored) from the owner's observation above and a read-only investigation of the films root,
+Radarr and qBittorrent; dev-reviewed the same day (section at the end). Touches the backend
+(`media/ArtworkDownloader.kt`'s `assetFilePath`, every artwork writer and reader, and `media/LooseFilmMover.kt`) and
+the admin's Dashboard.
+
+**The move against the real library is the owner's press by design** — *Move the ticked films*, not a step any agent
+completes. That is a property of the phase and not a status: see FR-316-4 and the amendments below. Where the phase
+stands at any moment is `STATUS.md`'s row and nowhere else.
 
 ## What happened
 
@@ -236,3 +239,34 @@ on 2026-10-13 — and never from a version pinned in prose.) The count it shows 
 
 Unchanged by this amendment: the press is the owner's, every write stays behind `LooseFilmPorts`, and the second
 film's Radarr mismatch is still left alone.
+
+## Amendment 2026-10-13 — the mover's rename costs Radarr the film's provenance too (DEB-881)
+
+Measured on prod on 2026-10-13 against 314c's DV7 rename, which uses **this phase's mover**
+(`LooseFilmMover` / `planRenameToFolder`). The finding, the numbers and the fix are written once, in
+[314's fourth amendment of 2026-10-13](phase-314-a-file-every-device-can-play-directly.md) as **FR-314-14**; this
+section exists so nobody builds the mover's half from 314 alone and so the next reader of this file is not surprised.
+
+**What it means here.** Radarr reacts to a rename by dropping its `moviefile` row and re-importing the renamed file,
+and it rebuilds the row from a **fresh parse of the new filename**. A name taken from the folder carries no quality,
+group or source tokens, so the row comes back with its quality downgraded (a BluRay remux read as a WEB-DL), and with
+`releaseGroup`, `sceneName` and `edition` emptied. **FR-316-4's move produces exactly that kind of name** — FR-316-1
+is about artwork names, but step 1's rename gives the video file the basename it derives from the film, not the
+release — so the loss is this mover's to carry, whichever caller asked for the rename.
+
+### FR-316-6 — the mover carries provenance across every rename it performs
+
+The mover implements **FR-314-14** once, at the rename step, for all of its callers: read the film's `moviefile`
+provenance before the rename, `PUT` it back onto the row Radarr creates afterwards, report rather than drop silently
+when the new row never appears, and never invent or upgrade a value it did not read. The acceptance and test are
+FR-314-14's acceptance 8 and test 11; they are not restated here.
+
+This is additive to FR-316-4's order — the provenance read goes before step 1's rename and the write-back after the
+Radarr step — and it changes none of its existing rules: the renames stay same-filesystem and undone on failure,
+qBittorrent is repointed only where it seeds the library path, Radarr's path is still updated with `moveFiles=false`,
+and the second film's Radarr mismatch is still left alone.
+
+**It does not hold *Move the ticked films*.** The press remains the owner's and remains unheld: three films, with
+`upgradeAllowed: false` on this library's quality profile, so the lost labels cannot start a replacement today (the
+reasoning is in FR-314-14). Pressing Move before FR-316-6 is built costs provenance on the films it moves and nothing
+else; the fix is worth building either way, because the hazard arrives the moment any movie profile turns upgrades on.

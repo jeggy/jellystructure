@@ -878,3 +878,91 @@ a new thing we own on other people's accounts and it belongs in the price.
 
 Unchanged: the original is never modified by kind C, no kind C switch goes on until this is answered, and no library
 title enters this repository.
+
+## Amendment 2026-10-13 (fourth) — a rename costs Radarr the film's provenance, and this one Radarr can give back (DEB-881)
+
+Measured on prod on 2026-10-13, while carrying out the owner's re-link of the film the authorised walk left unlinked.
+It is a **third** defect of the same rename, and it is distinct from both above: FR-314-12 is about the film's *link*,
+FR-314-13 about its *artwork*, and this one about its *record*. Neither of the two built fixes touches it.
+
+### What was measured
+
+The in-place DV7 rename makes Radarr drop its `moviefile` row and re-import the renamed file — the same
+drop-and-re-create that FR-314-13 and the `dateAdded` note above already describe. The new row is built from a
+**fresh parse of the new filename**, and the new filename is the folder's name, which by design carries no quality,
+group or source tokens. Comparing the row Radarr deleted with the one it created a second later, on a film whose
+existing file was a UHD BluRay remux:
+
+| field | before the rename | after |
+|---|---|---|
+| `quality` | Bluray/Remux-2160p | **WEBDL-2160p** |
+| `releaseGroup` | the release's group | **null** |
+| `indexerFlags` | freeleech | **0** |
+| `sceneName` | the full release name | **null** |
+
+**Why this is a correctness defect and not a cosmetic one.** A remux recorded as a WEB-DL is exactly the state
+`media-safety` §2 exists to prevent — a Radarr "upgrade" that replaces a better file with a worse one, blind to what
+it is replacing. The same parse that loses the quality loses `edition`, and `edition` is the one field §2 names as the
+check before any replacement.
+
+**Why it is not biting today, said so nobody over-reacts.** This library's movies sit on quality profile 1, *Any*,
+with `upgradeAllowed: false` (cutoff id 20), checked before the severity was called. Radarr therefore never hunts an
+upgrade for these films and cannot act on the wrong label. So **today this is a provenance loss, not a data-loss
+route**: the library forgets that a file came from a particular group as a freeleech BluRay remux. It becomes a real
+hazard the moment any movie profile turns upgrades on, and it will hit **every** film kind C renames and everything
+316's mover renames, because both produce the same token-free filename.
+
+**What tells this apart from FR-314-12 is that an API exists.** FR-314-12 concluded, correctly, that Radarr has no API
+that puts `movieFileId` back. These fields are the opposite case: `PUT /api/v3/moviefile/{id}` applies **quality,
+languages, edition, release group and scene name** — close to exactly the set that is lost. So the provenance can be
+read before the rename and written back onto whatever row Radarr creates afterwards.
+
+**Not blocked on the placement decision.** Shape A of the open question (a merged versions library) would take the
+in-place rename out of kind C entirely, which removes kind C as a *trigger* — but 316's mover renames either way, and
+that press is live and unheld. FR-314-14 is therefore worth building before the owner answers DEB-875, and it is not
+a reason to hold either.
+
+### FR-314-14 — a rename carries the film's provenance across Radarr's drop and re-create
+
+- **Before** an in-place rename (316's mover's rename step, and kind C's if it keeps one), the write path **reads the
+  movie's current `moviefile` row and keeps its provenance**: `quality`, `languages`, `edition`, `releaseGroup`,
+  `sceneName`, and `indexerFlags` if Radarr's own `MovieFileController` applies it — whoever builds this reads that
+  controller rather than trusting this list, and records in the build notes which fields it actually accepts.
+- **After** the rename, once Radarr has created the replacement row, the write path `PUT`s those values onto it. The
+  new `movieFileId` appears **asynchronously** during Radarr's rescan, so the carry-over waits for it rather than
+  assuming it: the same three-passes-15-s-apart shape FR-314-13 already uses is acceptable, and so is doing it on the
+  next pass. If the row has not appeared by the last pass, the values are **reported against the title and not
+  dropped silently** — this is provenance, and losing it quietly is the defect.
+- **`edition` is not optional and not best-effort.** A film that had an edition and comes back without one is the
+  `media-safety` §2 shape; if the carry-over cannot restore `edition`, the rename is reported as having degraded the
+  record, in those words.
+- It writes **only** these fields, and only values it read from the row Radarr deleted. It never invents a quality,
+  never upgrades one, and never touches `movieFileId`, the path, or the file.
+- **What stays lost, and is not worked around here:** `dateAdded` (not in the `PUT`'s set — see the note above, and
+  the reading rule that nothing of ours treats it as "how long has this been in the library"). If
+  `indexerFlags` turns out not to be in the set either, it joins that sentence rather than growing a second
+  mechanism.
+
+### Also observed, for whoever touches the mover
+
+A Radarr **Manual Import** deletes the previous `moviefile` row too, and therefore wipes the folder's artwork exactly
+as a rename does — a **third** trigger for FR-314-13's mechanism, beyond the rename and the version write. An import
+is an operator action rather than a product action, so it is very likely outside 314; it is recorded here so the next
+person who sees `movieFileDeleted` in Radarr's history beside a large file does not panic. **The file is not deleted
+on that path** — verified byte-identical `stat` across the import.
+
+### Acceptance (added)
+
+8. An in-place rename of a film whose `moviefile` row carries a quality, a release group, a scene name and (where it
+   has one) an edition: after the rename, Radarr's row for that film carries **the same** values, and the quality is
+   not a lower source than before. Read from Radarr's API, against the row Radarr created — not from our own records.
+
+### Tests (added)
+
+11. The rename path reads the provenance before the rename and applies it to the row Radarr creates after it,
+    including when that row appears only on a later pass; it writes no field it did not read; a film with an
+    `edition` that cannot be restored is reported rather than passed; and a rename against a fake Radarr that never
+    creates a replacement row reports instead of looping.
+
+Unchanged by this amendment: the original file is never modified, the per-film rename ticks stay the owner's, FR-314-12
+is still the kind C switch gate, and no library title enters this repository.
