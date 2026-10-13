@@ -1446,6 +1446,18 @@ rows are verdicts **stored before the root existed**, and nothing recomputes the
 dry run, and prod sets `scan_interval_hours = 0` and never plans on its own
 (see *Prod defers nothing*). The rows are not stale by accident; there is no mechanism that would ever refresh them.
 
+**And one write path acts on those verdicts rather than re-deriving them** — found building this, 2026-10-13, and
+the reason the amendment is not only about what the card says. The two paths that write re-plan first:
+`runDolbyVision` recomputes `planDolbyVision` under the current root before it touches anything, and Apply cannot
+reach a `needs_rename` row at all (`markPendingForKind` takes `would_add` and `sidecar`). `renameAndQueue` is the
+exception: its only gate is the **stored** `row.state != "needs_rename"`, so the owner's per-film tick on the stale
+card **renames library files that the live configuration needs no rename for** — on prod today, 13 of them. Each is
+a `moviefile` row deleted and re-created under Radarr: FR-314-14's provenance carry-over and FR-314-13's artwork
+re-assert both run and both are built, so nothing is lost that they do not put back, and it is still a write to the
+library whose only justification was a rule that no longer applies. It is the same class as the pre-write re-check
+kinds A and B already do (*"the guard again: a file can become seeded after the dry run"*), applied to the one gate
+that was left reading the row.
+
 ### FR-314-18 — a configuration change that alters the planning rules invalidates the verdicts it computed
 
 - **Changing `dv_versions_root` invalidates kind C's stored rows.** Setting, clearing or moving the root changes
@@ -1460,7 +1472,14 @@ dry run, and prod sets `scan_interval_hours = 0` and never plans on its own
   version **beside** a profile 7 film"* as a constant. That is the superseded placement and the exact shape that
   caused DEB-868, printed at the top of the card while the same pass computes `"in the versions library"` for each
   row's detail twenty lines earlier. The blurb reads the configured placement like the detail does.
+- **A write path never trusts a stored verdict about a rule the configuration can change.** The rename gate
+  re-derives its own precondition before it renames anything: with a root configured there is no such thing as a
+  film waiting on a rename, so the tick is **refused, nothing is renamed, and the row is planned again in the same
+  call** — so the refusal both protects the file and corrects the count that offered the button. The refusal says
+  which it is, in the owner's words (*the versions library groups the film whatever its file is called, so no rename
+  is needed; this film is now listed as one to add*), rather than the existing catch-all *not waiting for a rename*.
 - **No scan, no probe, no file.** None of this reads a media file or writes one; it is state the admin already holds.
+  The rename refusal is the one path that would have written, and it is the path that stops writing.
 
 ### The rule this is an instance of
 
@@ -1472,14 +1491,19 @@ of library, but the shape is not specific to kind C.
 
 ### Acceptance (added)
 
-13. With planned kind C rows on disk, changing `dv_versions_root` leaves no row presenting a verdict computed under
+14. With planned kind C rows on disk, changing `dv_versions_root` leaves no row presenting a verdict computed under
     the old value: either the rows are gone or the card says they predate the configuration. The kind's blurb names
     the placement the live configuration implies, never *"beside"* while a root is set.
+15. With a root configured and a `needs_rename` row still on disk, ticking that film and pressing the rename button
+    **renames no file** — the library file keeps its name, Radarr's `movieFileId` for it is unchanged — and the row
+    reads as one to add when the card comes back.
 
 ### Tests (added)
 
 15. A `needs_rename` row written with no root does not survive a root being configured as a bare count on the card;
     and the kind's blurb is derived from the configured root rather than a constant.
+16. `renameAndQueue` on a `needs_rename` row with a root configured calls the renamer **not at all**, answers with
+    the reason, and leaves the row planned as `would_add`; with no root configured the same row still renames.
 
 ### Sequencing — the dry run comes before the switch decision
 
