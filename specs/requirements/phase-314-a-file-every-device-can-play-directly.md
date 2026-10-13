@@ -967,6 +967,76 @@ on that path** — verified byte-identical `stat` across the import.
 Unchanged by this amendment: the original file is never modified, the per-film rename ticks stay the owner's, FR-314-12
 is still the kind C switch gate, and no library title enters this repository.
 
+### Build notes (2026-10-13, FR-314-14 and FR-316-6 — DEB-881)
+
+**Radarr's handler, read rather than trusted.** `MovieFileController.SetMovieFile` — `[RestPutById]`, i.e.
+`PUT /api/v3/moviefile/{id}` — read on 2026-10-13 at `src/Radarr.Api.V3/MovieFiles/MovieFileController.cs`. Prod runs
+Radarr v6.2.1 (`lscr.io/linuxserver/radarr:latest`); GitHub carries no tag for that build, so the handler was read on
+`develop` and on `master`, which serve the same file today, and the measured before/after in DEB-881 is the check that
+it is the handler this Radarr runs. What it applies:
+
+| field | how the handler applies it |
+|---|---|
+| `quality` | assigned from the body **unconditionally** |
+| `languages` | assigned unconditionally |
+| `edition` | assigned unconditionally |
+| `indexerFlags` | assigned unconditionally (cast to the `IndexerFlags` enum) |
+| `releaseGroup` | only when the body's value is non-null |
+| `sceneName` | only when non-null **and** Radarr's own `SceneChecker.IsSceneTitle` accepts it |
+
+**`indexerFlags` is in the set** — that was the amendment's open question. It does not join `dateAdded`'s *stays lost*
+sentence, and no second mechanism was grown for it: the measured `G_Freeleech` → `0` is repairable by the same `PUT`.
+`dateAdded` is confirmed absent from the handler and stays lost.
+
+Three properties of that handler shaped the code:
+
+1. It is a **whole-resource PUT, not a patch**. A body that omits `quality`, `languages`, `edition` or `indexerFlags`
+   *empties* them. So the write path `GET`s the row Radarr has built and overlays **only** the carried fields on it
+   (`withProvenance`) — the same shape FR-316-4's `updateMoviePath` already uses for the movie.
+2. `sceneName` can be **dropped silently**: `IsSceneTitle` wants a dotted name with no spaces that parses into a
+   release group and a known quality, and the handler answers `202 Accepted` whether it took the name or not. So the
+   carry-over never trusts the response — it re-reads the row and compares (`provenanceGaps`), and a field that did
+   not come back is reported as not restored. The film DEB-881 measured has a scene name that parses, so it is
+   expected back; a loose p2p name may not be, and that case now reports instead of looking clean.
+3. The success status is `202`, not `200`.
+
+**What was built.** `ArrClient.movieFileProvenance` (read), `ArrClient.applyMovieFileProvenance` (write, re-read),
+`RadarrProvenance` with `carried()`/`withProvenance`/`provenanceGaps` as pure functions, two new `LooseFilmPorts`
+methods (`readProvenance`, `carryProvenance`) and a `provenance` step on the mover between its artwork step (4b) and
+its Jellyfin step. The read happens **before step 2**, off the row Radarr is about to drop; the write-back after the
+Radarr step, which is what makes Radarr drop it. A gap puts the move in `partial` with `Radarr's file record lost …`
+on the row and in the film's History — the owner sees it without reading a log.
+
+**Where the wait lives, and how the rebuilt row is recognised.** `carryProvenanceAcrossRename` reuses
+`FilmAssets.PASSES`/`SETTLE_MS` (FR-314-13's three passes 15 s apart) rather than growing a second pair of numbers for
+the same asynchronous re-import. A row counts as the rebuilt one only once its **file name** is the new one — an id is
+no good, because the row Radarr is about to drop keeps its id until it drops it, and FR-314-12's `movieFileId 0`
+moment reads as no row at all. A row that has the new name and the *same* id is only taken as "Radarr kept it" on the
+last pass, never on the first: concluding that early is exactly how the loss would go quiet again. Worst case the step
+costs 30 s after 4b's 30 s, and before step 5's two minutes.
+
+**One judgement call, for the spec's next reader.** FR-316-6 is built as its rule — *every rename the mover performs*
+— and not as its example. The 316 half of this amendment says FR-316-4's move "gives the video file the basename it
+derives from the film"; in `main` it does not. `planLooseFilm` keeps the video's own name (`LooseFile(video, "video",
+video)`) and only the *artwork* takes folder names; it is `planRenameToFolder` (314c) that renames the video, which is
+also the path DEB-881 measured. So the carry-over runs for **every** move where Radarr owns this film's file (step 4's
+`UPDATE`), in place or into a new folder, because both make Radarr drop the row and re-import. Where the filename does
+not change the record usually comes back whole, and the step says so ("Radarr kept the film's …") without writing
+anything.
+
+**Not verified against a live Radarr, and why that is not a gap in the build.** No write was made to the household's
+Radarr. Acceptance 8 is a read at Radarr's API *after a real rename*, and the rename is the owner's — 314c's per-film
+tick or 316's *Move the ticked films*. The field set above is from the handler's source; the loss it repairs is
+DEB-881's measured before/after.
+
+**Tests.** 6 on the mover's reporting in `LooseFilmsTest` (the read before any rename; the write-back on the rebuilt
+row; a row that never appears reported and the move `partial`; an unrestorable `edition` reported as having degraded
+the record; a record Radarr kept; a film Radarr maps to another file, where nothing is read or written) and 9 in a new
+`RadarrProvenanceTest` on the field work and the wait (the carried set; the overlay touching nothing else, `dateAdded`
+included; a field with nothing in it never written; the gaps, including a refused `sceneName` and quality compared by
+id; the row found on a later pass; a Radarr that never rebuilds it reporting instead of looping; a kept record left
+alone; a row rebuilt under some other name never mistaken for this one).
+
 ## Amendment 2026-10-13 (fifth, deciding the open question) — kind C's version lives in a versions library, merged (DEB-875)
 
 **The open question of the second amendment is closed: shape A.** Asked on DEB-875 with both shapes repriced, the
