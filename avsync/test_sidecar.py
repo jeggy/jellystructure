@@ -306,5 +306,59 @@ class Group(SidecarCase):
         self.assertIn(p.returncode, (-signal.SIGTERM, -signal.SIGKILL), p.returncode)
 
 
+class CardHandedBack(SidecarCase):
+    """FR-317-35/FR-317-36 — what a `/measure` that ran out of VRAM answers, and what it releases on the
+    way out. The failure is injected into the GPU half, which is stubbed here anyway: what is under test
+    is the handler's two exits and the `finally` they share, not the card."""
+
+    def setUp(self):
+        super().setUp()
+        self.mode('frames')
+        self.detect, self.freed = measure.detect, []
+        measure.torch.cuda.empty_cache = lambda *a, **k: self.freed.append(1)
+
+    def tearDown(self):
+        measure.detect = self.detect
+        measure.torch.cuda.empty_cache = lambda *a, **k: None
+
+    def failing(self, e):
+        def detect(*a, **k): raise e
+        measure.detect = detect
+        return self.post('/measure', dict(path=self.media, windows=self.windows(dur=3.0)))
+
+    def test_a_vram_refusal_answers_500_with_error_kind_vram(self):
+        floor = measure.VramExhausted(
+            'out of VRAM in detect at the one-frame floor: decoded 640×490, a 1125-frame window, '
+            '225 frames to process, 29.4 MB estimated for one frame, budget 2.00 GB, peak 1904 MB allocated')
+        code, body = self.failing(floor)
+        self.assertEqual(code, 500, body)
+        self.assertEqual(body['error_kind'], 'vram')
+        self.assertIn('one-frame floor', body['error'])
+        self.assertIn('640×490', body['error'])
+        self.assertGreaterEqual(len(self.freed), 1, 'the card is handed back on the failure path')
+
+    def test_an_oom_outside_a_budgeted_chunk_says_vram_too(self):
+        """A model load, a lip batch, anything that did not come up through [measure.chunked]: still the
+        card refusing this file, so still a row rather than an hourly retry."""
+        code, body = self.failing(measure.OOM('CUDA out of memory. Tried to allocate 572.00 MiB'))
+        self.assertEqual(code, 500, body)
+        self.assertEqual(body['error_kind'], 'vram')
+        self.assertGreaterEqual(len(self.freed), 1)
+
+    def test_any_other_failure_keeps_todays_body_exactly(self):
+        """The old-sidecar case in reverse, and the one that must not regress: a 500 with no `error_kind`
+        is what every other fault answers, and the backend's lane fails the row as it does today."""
+        code, body = self.failing(RuntimeError('the shapes do not match'))
+        self.assertEqual(code, 500, body)
+        self.assertNotIn('error_kind', body)
+        self.assertEqual(body['error'], 'RuntimeError: the shapes do not match')
+        self.assertGreaterEqual(len(self.freed), 1, 'the card is handed back whatever the failure was')
+
+    def test_a_measurement_that_succeeds_hands_the_card_back_as_well(self):
+        code, body = self.post('/measure', dict(path=self.media, windows=self.windows(dur=3.0)))
+        self.assertEqual(code, 200, body)
+        self.assertGreaterEqual(len(self.freed), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

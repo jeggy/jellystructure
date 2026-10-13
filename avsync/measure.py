@@ -39,6 +39,32 @@ MODEL = f'syncnet_v2+s3fd@{SYNCNET_COMMIT}/{PIPELINE_VERSION}'
 VRAM_GB = float(os.environ.get('AVSYNC_VRAM_GB', '2'))
 DECODERS = int(os.environ.get('AVSYNC_DECODERS', '3'))
 
+# FR-317-35 — how much of what is left of that cap one chunk may hold. The rest is the allocator's own
+# block rounding, the fragmentation of a process that has already run a few hundred windows, and whatever
+# an operator holds that is not per-frame (a track's crops, a window's audio features). It is a safety
+# margin on an estimate, not a measured constant: the estimate is in [chunk_frame_bytes].
+CHUNK_HEADROOM = float(os.environ.get('AVSYNC_CHUNK_HEADROOM', '0.6'))
+
+# FR-317-35 — the three chunk sizes were written as frame counts and tuned at one geometry: 640 × 360,
+# what every 16:9 source in the library decodes to. They are kept here as the geometry they were tuned at
+# and the frames they held THERE, and what is carried forward is the **byte** footprint that pair gives —
+# so a taller frame buys fewer frames for the same bytes, which is the whole of DEB-979's defect.
+CHUNK_REFERENCE = (640, 360)
+CHUNK_REFERENCE_FRAMES = dict(shots=128, detect=12, crops=16)
+
+# `detect` alone also keeps a ceiling in FRAMES, and it is the one concession in this amendment to
+# something other than bytes. S3FD is a convolutional network and cuDNN chooses its algorithm per call,
+# the batch among the inputs to that choice: the same frames at a different batch come back differing by
+# ~2 × 10⁻³ in `loc` and ~1 × 10⁻⁴ in `conf` — measured on the RTX 2060 SUPER on 2026-10-13, in fp32 as
+# well as under the autocast, so it is algorithm selection and not fp16 rounding. A box that moves by a
+# hundredth of a pixel changes no reading, but a prior whose confidence sits within 10⁻⁴ of the 0.9
+# threshold would cross it, and FR-317-34 is the requirement that NO number moves. So a chunk may be
+# SMALLER than the 12 frames every stored row was measured at — a taller frame makes it so, and such a
+# file has no stored row to disagree with — and it is never larger.
+# `shots` (`interpolate`, per image) and `crops` (`roi_align`, per ROI) are bit-identical at every chunk
+# size, measured the same day in `test_vram_budget.py`, and carry no ceiling.
+CHUNK_CEILING = dict(detect=12)
+
 # FR-317-27, after DEB-897: two prefetched decoders slept at 0 % CPU for four hours holding the lock and the
 # card, and the sweep stopped. Nothing here may wait indefinitely — a child that stops producing is killed,
 # and the whole call has a backstop ceiling. Both ≤ 0 disable the bound.
@@ -80,6 +106,26 @@ class DecodeStalled(Exception):
 
 class MeasureTimeout(Exception):
     """The whole call passed [MEASURE_MAX_S] and every child was killed → HTTP 500 (FR-317-27)."""
+
+
+class VramExhausted(Exception):
+    """FR-317-35 — a chunk of **one frame** did not fit the configured budget, so no chunking will. HTTP
+    500 with `error_kind: "vram"`, which the backend stores as `reason = vram` (FR-317-36): this file
+    cannot be measured on this card at this budget, and that is a thing the library can say rather than a
+    failure it repeats every hour. `str(e)` names the decoded geometry, the window's frame count, the
+    chunk that failed and the peak — everything DEB-979's census had to reconstruct from a SQL join."""
+
+
+# `torch.cuda.OutOfMemoryError` since torch 1.13; the fallback keeps `except` legal on an older wheel, and
+# [is_oom] is what decides, never the class alone.
+OOM = getattr(torch.cuda, 'OutOfMemoryError', None) or RuntimeError
+
+
+def is_oom(e):
+    """Is this the card refusing an allocation? The class when the wheel has one, and the message when it
+    does not — `set_per_process_memory_fraction` raises the same text as a genuinely full card does."""
+    if OOM is not RuntimeError: return isinstance(e, OOM)
+    return isinstance(e, RuntimeError) and 'out of memory' in str(e).lower()
 
 
 # ── models ──────────────────────────────────────────────────────────────────────────────────────
@@ -344,24 +390,160 @@ def last_line(text):
     return lines[-1] if lines else ''
 
 
+# ── the byte budget (FR-317-34, FR-317-35) ──────────────────────────────────────────────────────
+
+def decode_size(w, h, res=RES):
+    """The geometry a source of [w] × [h] is decoded at: **the width is fixed** and the height keeps the
+    aspect, so the bytes in a frame are proportional to 1/aspect and a 4:3-ish SD file is the most
+    expensive frame in the library (DEB-979). Pure, and the only place that arithmetic lives, so the
+    census geometries are testable without a file."""
+    W = res
+    return W, int(round(h * W / w / 2) * 2)
+
+
+def frame_bytes(W, H):
+    """One decoded frame on the card, in bytes: as the uint8 BGR tensor it is moved as, and as the float32
+    copy every operator below computes on."""
+    px = W * H * 3
+    return px, px * 4
+
+
+def chunk_frame_bytes(W, H, op):
+    """What one frame of a chunk needs on the card for [op], in bytes.
+
+    Every term is a tensor this file allocates by name: the uint8 slice that is moved, the float32 copies
+    made of it, and the operator's own output. `detect`'s last term is S3FD's activations, which scale with
+    the **detector's** input ([DET_SCALE] of the frame, so a quarter of its pixels) and are dominated by
+    the two 64-channel convolutions of the first VGG block that are alive at once under `no_grad`, in
+    fp16 under the autocast — 64 × 2 × 2 bytes a detector pixel — plus the same again for the rest of the
+    network's pyramid and heads, which is where the measured peak lands.
+
+    This is an estimate, deliberately an over-estimate, and [CHUNK_HEADROOM] is the margin on it. What
+    matters is what it is a function OF: the frame's own bytes, never a frame count (FR-317-35)."""
+    u8, f32 = frame_bytes(W, H)
+    if op == 'shots':
+        # `fr[a:b].to(dev)` → `.permute().float()` → a 36 × 64 float32 reduction kept for the `cat`.
+        return u8 + f32 + 36 * 64 * 3 * 4
+    if op == 'detect':
+        det_px = (int(W * DET_SCALE) // 2 * 2) * (int(H * DET_SCALE) // 2 * 2)
+        # the gather, its float32 copy, the channel-swapped second copy, the scaled input, and S3FD itself
+        return u8 + 2 * f32 + det_px * 3 * 4 + det_px * 2 * (64 * 2 * 2)
+    if op == 'crops':
+        # the gather, its float32 copy, and one 224² BGR crop per frame as float32 and then as half
+        return u8 + f32 + 3 * 224 * 224 * (4 + 2)
+    raise ValueError(f'no byte estimate for {op}')
+
+
+def chunk_budget_bytes():
+    """Bytes one chunk may hold: the per-process cap, less what this process is already holding (the two
+    networks' weights, a window's audio features, a track's crops), times [CHUNK_HEADROOM].
+
+    Against the cap and never against the device's free memory: the cap is what
+    `set_per_process_memory_fraction` will actually enforce on us, and the card's own free memory belongs
+    to Immich as much as to this process."""
+    held = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+    return max(0.0, VRAM_GB * 1e9 - held) * CHUNK_HEADROOM
+
+
+def chunk_frames(budget_bytes, per_frame_bytes):
+    """How many frames of [per_frame_bytes] fit in [budget_bytes] — **the floor is one frame**: if a single
+    frame's working set does not fit, no chunking will, and that is the one case left to report.
+
+    Pure, and the whole of what replaced the constants 128, 12 and 16 (FR-317-35)."""
+    if per_frame_bytes <= 0: return 1
+    return max(1, int(budget_bytes // per_frame_bytes))
+
+
+def chunk_plan(W, H, op):
+    """`(frames, bytes per frame)` for one chunk of [op] over a [W] × [H] window.
+
+    Two bounds and a floor, and only the first of them is a frame count:
+
+    * the **bytes** one chunk of [op] held at [CHUNK_REFERENCE] — carried forward as bytes, so a taller
+      frame gets fewer frames rather than the same count at a higher cost;
+    * what the per-process cap can spare right now ([chunk_budget_bytes]), which is what makes the
+      refusal a byte question and not a geometry question;
+    * [CHUNK_CEILING], for `detect` only and for the reason written beside it.
+
+    At [CHUNK_REFERENCE] itself this returns exactly 128, 12 and 16 by construction — which is how
+    FR-317-34 moves no number for the 16:9 library that has stored rows today."""
+    per = chunk_frame_bytes(W, H, op)
+    target = CHUNK_REFERENCE_FRAMES[op] * chunk_frame_bytes(*CHUNK_REFERENCE, op)
+    n = chunk_frames(min(target, chunk_budget_bytes()), per)
+    return min(n, CHUNK_CEILING.get(op, n)), per
+
+
+def card_peak():
+    """`max_memory_allocated` since [measure] last reset it, or 0 where there is no card."""
+    try:
+        return torch.cuda.max_memory_allocated() if torch.cuda.is_available() else 0
+    except Exception:
+        return 0
+
+
+def release_card():
+    """FR-317-36 — hand the card's cached blocks back. Called from the one place every outcome of a
+    `/measure` passes through (`server.py`'s `finally`), because an exception leaves whatever the failed
+    window allocated sitting in torch's caching allocator, and the per-process cap counts it: that is how
+    one file's OOM became the next file's. `empty_cache` is a no-op before CUDA is initialised, so this
+    costs nothing on the paths that never reached the card."""
+    torch.cuda.empty_cache()
+
+
+def chunked(n, step, op, W, H, window_frames):
+    """Run [step](a, b) over 0…[n] in chunks of [chunk_plan]'s size, and collect what it returns.
+
+    On an OOM the chunk is **halved and the whole pass retried** — every [step] here is a pure function of
+    its own slice, so a retry recomputes rather than repairs — and when one frame will not fit,
+    [VramExhausted] carries the geometry, the window's frame count, the chunk that failed and the peak
+    (FR-317-35). The retry is the cheap half of this: it costs a few hundred milliseconds of recompute on
+    a file that would otherwise have no row at all."""
+    size, per_frame_bytes = chunk_plan(W, H, op)
+    while True:
+        try:
+            return [step(i, min(i + size, n)) for i in range(0, n, size)]
+        except OOM as e:
+            if not is_oom(e): raise
+            peak = card_peak()
+            release_card()
+            if size <= 1:
+                raise VramExhausted(
+                    f'out of VRAM in {op} at the one-frame floor: decoded {W}×{H}, a {window_frames}-frame '
+                    f'window, {n} frames to process, {per_frame_bytes / 1e6:.1f} MB estimated for one frame, '
+                    f'budget {VRAM_GB:.2f} GB, peak {peak / 1e6:.0f} MB allocated'
+                ) from None
+            size = max(1, size // 2)
+
+
 # ── faces ───────────────────────────────────────────────────────────────────────────────────────
 
 def shots(fr, cut=30.):
-    small = torch.cat([F.interpolate(fr[i:i + 128].permute(0, 3, 1, 2).float(), size=(36, 64), mode='area')
-                       for i in range(0, fr.shape[0], 128)])
+    """Shot boundaries of the window. [fr] is the decoded window as the **CPU** tensor it was read into:
+    each chunk is moved to the card, reduced to 36 × 64 and released, so the card never holds the whole
+    window (FR-317-34). The differences are taken after the concatenation exactly as they were, so the
+    chunk size moves no number."""
+    H, W = fr.shape[1], fr.shape[2]
+    small = torch.cat(chunked(
+        fr.shape[0],
+        lambda a, b: F.interpolate(fr[a:b].to(dev).permute(0, 3, 1, 2).float(), size=(36, 64), mode='area'),
+        'shots', W, H, fr.shape[0]))
     d = (small[1:] - small[:-1]).abs().mean(dim=(1, 2, 3))
     b = [0] + (torch.nonzero(d > cut).flatten() + 1).tolist() + [fr.shape[0]]
     return [(b[i], b[i + 1]) for i in range(len(b) - 1)]
 
 
 @torch.no_grad()
-def detect(fr, idx, W, H, batch=12):
+def detect(fr, idx, W, H):
+    """Faces in the frames [idx] of the CPU window [fr] — one dict of boxes per frame index. Only the
+    slice being detected on is moved to the card (FR-317-34), and the batch is [chunk_plan]'s: 12 frames
+    wherever 12 frames' bytes fit, and fewer where they do not (FR-317-35, [CHUNK_CEILING])."""
     det, _, RGB_MEAN, decode = models()
-    out, dw, dh = {}, int(W * DET_SCALE) // 2 * 2, int(H * DET_SCALE) // 2 * 2
+    dw, dh = int(W * DET_SCALE) // 2 * 2, int(H * DET_SCALE) // 2 * 2
     scale = torch.tensor([W, H, W, H], device=dev)
-    for i in range(0, len(idx), batch):
-        bi = idx[i:i + batch]
-        x = fr[bi].permute(0, 3, 1, 2).float()[:, [2, 1, 0]]
+
+    def step(i, end):
+        out, bi = {}, idx[i:end]
+        x = fr[bi].to(dev).permute(0, 3, 1, 2).float()[:, [2, 1, 0]]
         x = F.interpolate(x, size=(dh, dw), mode='bilinear', align_corners=False) - RGB_MEAN
         with torch.autocast('cuda', dtype=torch.float16, enabled=fp16):
             loc, conf, priors = det(x)
@@ -373,7 +555,10 @@ def detect(fr, idx, W, H, batch=12):
             bx = decode(loc[j][m], pr[m], [0.1, 0.2]) * scale
             keep = torchvision.ops.nms(bx, conf[j][m], 0.1)
             out[f] = bx[keep].cpu().numpy().tolist()
-    return out
+        return out
+
+    parts = chunked(len(idx), step, 'detect', W, H, fr.shape[0])
+    return {f: boxes for part in parts for f, boxes in part.items()}
 
 
 def same_face(b, p):        # sparse detections move too far for IoU > 0.5: centre within half a face, size ×1.5
@@ -406,15 +591,22 @@ def tracks(dets, s0, s1, W):                      # syncnet_python's track_shot,
 
 @torch.no_grad()
 def crops(fr, fi, bb, cs=0.4):                    # syncnet_python's crop geometry, via roi_align on the GPU
+    """One 224² face crop per frame of the track. [fr] is the CPU window: a chunk's frames are moved,
+    cropped and released (FR-317-34), and the chunk holds the bytes 16 frames held at 640 × 360 rather
+    than 16 frames of whatever this file's geometry costs (FR-317-35) — the full-frame float copy was
+    always the big allocation here, and now it is the one that is sized."""
+    H, W = fr.shape[1], fr.shape[2]
     s = signal.medfilt(np.maximum(bb[:, 3] - bb[:, 1], bb[:, 2] - bb[:, 0]) / 2, 13)
     y = signal.medfilt((bb[:, 1] + bb[:, 3]) / 2, 13); x = signal.medfilt((bb[:, 0] + bb[:, 2]) / 2, 13)
     boxes = np.stack([np.arange(len(fi)), x - s * (1 + cs), y - s, x + s * (1 + cs), y + s * (1 + 2 * cs)], 1)
-    res = []
-    for i in range(0, len(fi), 16):                # small chunks: a full-frame float copy is the big allocation here
-        img = fr[fi[i:i + 16]].permute(0, 3, 1, 2).float() - 110.    # the original pads with grey 110
-        b = torch.tensor(boxes[i:i + 16], device=dev, dtype=torch.float32); b[:, 0] -= i
-        res.append((torchvision.ops.roi_align(img, b, (224, 224), 1.0, 2, aligned=True) + 110.).half())
-    return torch.cat(res)                         # T × 3 (BGR) × 224 × 224
+
+    def step(i, end):
+        img = fr[fi[i:end]].to(dev).permute(0, 3, 1, 2).float() - 110.    # the original pads with grey 110
+        b = torch.tensor(boxes[i:end], device=dev, dtype=torch.float32); b[:, 0] -= i
+        return (torchvision.ops.roi_align(img, b, (224, 224), 1.0, 2, aligned=True) + 110.).half()
+
+    return torch.cat(chunked(len(fi), step, 'crops', W, H, fr.shape[0]))
+                                                  # T × 3 (BGR) × 224 × 224
 
 
 # ── SyncNet ─────────────────────────────────────────────────────────────────────────────────────
@@ -614,9 +806,13 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
     unreached — that is what held the lock for four hours on DEB-897."""
     if not os.path.exists(path): raise FileNotFoundError(path)
     t0 = time.time()
+    # FR-317-35/-36 — the peak this call reports is this call's: `max_memory_allocated` is cumulative for
+    # the life of the process otherwise, and a number that includes every file since boot says nothing
+    # about the one that failed.
+    if torch.cuda.is_available(): torch.cuda.reset_peak_memory_stats()
     run = Run(max_s)
     p = probe(path, run)
-    W = RES; H = int(round(p['h'] * W / p['w'] / 2) * 2)
+    W, H = decode_size(p['w'], p['h'])
     gpu = p['codec'] != 'av1'                     # no AV1 in Pascal/Turing NVDEC: dav1d on the CPU
     wins = [(float(w['start_s']), float(w.get('dur_s', 45))) for w in windows]
     wins = [(max(0.0, s), d) for s, d in wins if p['dur'] <= 0 or s < p['dur']]
@@ -657,11 +853,13 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             v = fr_cpu.shape[0]
             short_frames = v - audio_feature_count(pcm.size) - AUDIO_FEATURE_LAG
             short = short_frames > AUDIO_SHORT_TOL
-            fr = fr_cpu.to(dev) if not short else None
+            # FR-317-34 — the window is NOT moved to the card. It stays the CPU tensor it was decoded into
+            # and `shots`, `detect` and `crops` each move only the slice they are about to compute on, so
+            # the peak is set by the chunk rather than by 1 125 frames of whatever geometry this file has.
             curve, frames, faces = None, 0, []
             if not short:
-                dets = detect(fr, list(range(0, v, DETECT_EVERY)), W, H)
-                trs = [t for s0, s1 in shots(fr) for t in tracks(dets, s0, s1, W)]
+                dets = detect(fr_cpu, list(range(0, v, DETECT_EVERY)), W, H)
+                trs = [t for s0, s1 in shots(fr_cpu) for t in tracks(dets, s0, s1, W)]
                 af = audio_feats(pcm)
                 for fi, bb in trs:
                     # FR-317-33's backstop, read off the lengths before the crops are built: `lip_feats`
@@ -670,7 +868,7 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
                     if min(len(fi) - 4, af.shape[0] - int(fi[0])) <= 0:
                         short = True
                         continue
-                    md, n = distance_curve(lip_feats(crops(fr, fi, bb)), af, int(fi[0]))
+                    md, n = distance_curve(lip_feats(crops(fr_cpu, fi, bb)), af, int(fi[0]))
                     if md is None:                # the same backstop, from the one place that owns the clamp
                         short = True
                         continue
@@ -696,7 +894,7 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             for i, pcm_other in enumerate(extra):
                 other_short = short or v - audio_feature_count(pcm_other.size) - AUDIO_FEATURE_LAG > AUDIO_SHORT_TOL
                 other_envs[i].append(None if other_short else envelope(pcm_other))
-            del fr, fr_cpu; torch.cuda.empty_cache()     # hand the card back between windows
+            del fr_cpu; release_card()                   # hand the card back between windows
     except BaseException:
         # Any failure ends the run: the windows still being prefetched are nobody's answer now, and a
         # decoder left running would hold the card until it finished by itself.
@@ -707,6 +905,11 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
     for i, spec in enumerate(others):
         lag, corr = (0, 1.0) if spec == audio else envelope_lag(ref_envs, other_envs[i])
         others_out.append(dict(audio=spec, lag_frames=lag, corr=corr))
+    # FR-317-35's acceptance 29 reads this line: what the chunking actually peaked at, against the budget
+    # it was sized from. No path and no title — `server.py` already logs the request, and this file is
+    # read in a public repository's prod logs.
+    print(f'avsync {len(out)} window(s) at {W}×{H} — peak {card_peak() / 1e6:.0f} MB of a '
+          f'{VRAM_GB:.2f} GB budget', flush=True)
     return dict(windows=out, others=others_out, decode='nvdec' if nvdec else 'cpu',
                 seconds=round(time.time() - t0, 2))
 

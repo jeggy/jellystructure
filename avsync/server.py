@@ -9,7 +9,8 @@ compose network, like every other sidecar in this stack).
     POST /measure {path, audio, others, windows:[{start_s, dur_s}]}
                            → 200 {windows, others, decode, seconds}
                              404 the path is not visible here · 422 undecodable (ffmpeg's last line)
-                             500 a decoder stalled, or the call passed its ceiling (FR-317-27)
+                             500 a decoder stalled, or the call passed its ceiling (FR-317-27), or the
+                                 card could not hold one frame — `error_kind: "vram"` (FR-317-35)
                              503 {retry_after_s} a measurement is already running
 
 **One measurement at a time**: the GPU worker is single (FR-317-2's measured limits), so a second
@@ -89,11 +90,26 @@ class Handler(BaseHTTPRequestHandler):
             # deliberately not 422, which already means *this file cannot be decoded*.
             print(f'avsync {e}', flush=True)
             self.send_json(500, dict(error=str(e)))
+        except measure.VramExhausted as e:
+            # FR-317-35/FR-317-36 — the card could not hold one frame of this file's geometry at this
+            # budget. Still a 500, because nothing was measured, but `error_kind` tells the backend it may
+            # store a row saying so instead of failing the job every hour for ever. The key is ADDITIVE: a
+            # backend that does not know it reads the 500 exactly as it does today.
+            print(f'avsync {e}', flush=True)
+            self.send_json(500, dict(error=str(e), error_kind='vram'))
         except Exception as e:                    # a GPU OOM, a torch error: say it, stay up
             traceback.print_exc()
-            self.send_json(500, dict(error=f'{type(e).__name__}: {e}'))
+            body = dict(error=f'{type(e).__name__}: {e}')
+            # An OOM that did not come up through a budgeted chunk — a model load, a lip batch — is still
+            # the card refusing this file, and still something the library should be able to say.
+            if measure.is_oom(e): body['error_kind'] = 'vram'
+            self.send_json(500, body)
         finally:
             measure.busy_done()
+            # FR-317-36 — the one place every outcome of a `/measure` passes through, which is why the
+            # card is handed back here: `measure()`'s own `except` re-raises, and whatever the failed
+            # window left in torch's caching allocator counted against the next file's budget.
+            measure.release_card()
             lock.release()
 
 
