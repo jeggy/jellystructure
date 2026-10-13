@@ -4,11 +4,10 @@
 > but it is."* — then: *"if there is no marker then the next episode countdown should only start when there are
 > 1 second left. This also means it will count while it's finished."*
 
-## Status
+## Scope
 
-`Built` 2026-10-11 (not on a device yet, not deployed or released) — written the same day (dev-authored, from the
-owner's decision above). **Owner approved the whole spec 2026-10-11** (*"All sound good"*): the movie card follows the
-same 1 s rule, and open question 1's lean is taken (FR-R384-6).
+Written 2026-10-11 (dev-authored, from the owner's decision above). **Owner approved the whole spec 2026-10-11**
+(*"All sound good"*): the movie card follows the same 1 s rule, and open question 1's lean is taken (FR-R384-6).
 Touches the player in the app (`ravilo-ui` `PlayerScreen`, so the TV, phone, desktop and web apps), the Cast receiver
 (`ravilo-cast`) and the receiver-only TV app (`ravilo-screen`), plus the shared rule in `:shared`.
 **Supersedes** R111's 20 s fallback (R182 §D's "existing `NEXTUP_AT_MS`-before-end heuristic") and the *else 20 s

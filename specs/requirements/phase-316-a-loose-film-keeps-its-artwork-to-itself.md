@@ -228,9 +228,10 @@ re-plans at the press, so that count may differ by then and a difference is not 
 four days later (310's 2026-10-12 amendment has the read-back). The unhold condition above is therefore **met**:
 the result exists and has been read. **Move is now the only unpressed owner button of the three.**
 
-The button is live where it matters: 316's commits are ancestors of the build prod is running
-(`v1.51-4-gf27ddae4-dirty`, up since 2026-10-12 10:08), so the Dashboard warning and its overview are reachable now
-without a deploy. The count it shows is whatever `planMove` finds at the press; the recorded **3 films** is the
+The button is live where it matters: 316's commits are ancestors of the build prod is running, so the Dashboard
+warning and its overview are reachable now without a deploy. (This paragraph named `v1.51-4-gf27ddae4-dirty` until
+2026-10-13; prod had moved twice by then. Read the running version off `/api/health` — it was `v1.51-58-gf9029c3b`
+on 2026-10-13 — and never from a version pinned in prose.) The count it shows is whatever `planMove` finds at the press; the recorded **3 films** is the
 2026-10-09 reading, not a promise.
 
 Unchanged by this amendment: the press is the owner's, every write stays behind `LooseFilmPorts`, and the second
