@@ -583,6 +583,13 @@ fun startServer(
                     // mkvpropedit
                     val mkv = runShell("which mkvpropedit 2>/dev/null")?.trim()
                     checks.add(HealthCheck("mkvpropedit", !mkv.isNullOrBlank(), if (!mkv.isNullOrBlank()) mkv else "not found in PATH"))
+                    // Phase 318 (FR-318-2) — beside the mkvpropedit check deliberately: mkvpropedit on
+                    // PATH is necessary and not sufficient. Under the C locale it is installed, found,
+                    // runs, and still refuses every matroska file whose path leaves ASCII — which the
+                    // check above cannot tell you and this one can. Same sentence as the startup WARN,
+                    // from CharacterEncoding.verdict, so the two surfaces cannot disagree.
+                    val enc = dev.jellystructure.ops.CharacterEncoding.check()
+                    checks.add(HealthCheck(dev.jellystructure.ops.CharacterEncoding.CHECK_NAME, enc.ok, enc.detail))
                     // ffprobe
                     val ffp = runShell("which ffprobe 2>/dev/null")?.trim()
                     checks.add(HealthCheck("ffprobe", !ffp.isNullOrBlank(), if (!ffp.isNullOrBlank()) ffp else "not found in PATH"))

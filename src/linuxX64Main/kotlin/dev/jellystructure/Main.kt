@@ -208,6 +208,12 @@ fun main() = runBlocking {
 
     Logger.info("Starting jellystructure on port $port")
     Logger.info("Serving frontend from $frontendDir")
+    // Phase 318 (FR-318-2) — one line at startup when the effective charset is not UTF-8, on the
+    // integrity channel because that is what it is about: in the C locale every MKVToolNix child this
+    // process spawns mishandles a non-ASCII path, and nothing downstream can tell a truncated
+    // identification document from a short one. Green says nothing; this phase exists because the
+    // red case said nothing either, for months.
+    dev.jellystructure.ops.CharacterEncoding.check().warning?.let { Logger.warn(it, "integrity") }
 
     val raviloDeviceService = RaviloDeviceService(db)
     val tvEventBus = dev.jellystructure.tv.TvEventBus(rootScope)

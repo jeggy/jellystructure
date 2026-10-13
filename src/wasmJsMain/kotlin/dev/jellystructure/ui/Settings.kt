@@ -826,6 +826,11 @@ private val HEALTH_CHECK_SECTION = mapOf(
     "Disk space" to "sect-scanning",
     "mkvpropedit" to "sect-scanning",
     "ffprobe" to "sect-scanning",
+    // Phase 318 (FR-318-2) — the name is CharacterEncoding.CHECK_NAME. Owned by the same section as
+    // mkvpropedit because it is the reason mkvpropedit can be found, run, and still refuse a third of
+    // the library. Without this row the check renders in the list and bubbles no badge, which is the
+    // exact failure mode the phase exists to end.
+    "Character encoding" to "sect-scanning",
     "Radarr" to "sect-arr",
     "Sonarr" to "sect-arr",
 )
