@@ -1132,3 +1132,23 @@ library the owner creates once.
 Unchanged by this amendment: the original is never modified by kind C, no library title enters this repository, and
 the version keeps the name `<folder> - Dolby Vision.mkv`, so `chooseMediaSource`/`isDvVersion` and the clients' picker
 need no change (`MediaSource.Type` reads `Grouping` instead of `Default` and nothing deserialises `Type`).
+
+### FR-314-15 as built (2026-10-13, commit `b354d55f`)
+
+Two things the rules above did not say, found in building them, and one thing left owed.
+
+- **The versions library needs its `local_path` filled in on the Libraries card**, while staying `skip = true`.
+  jellystructure, Jellyfin and Bazarr mount the media under different roots (phase 273), so the version's path is
+  translated before Jellyfin is told about it or asked to resolve it, and that translation is the library list's own
+  `local_path` → `jellyfin_path` pair. Unmapped, the path is used as it is — right when both sides mount it the same
+  way and silently wrong otherwise, so the mapping is part of the owner's configuration step rather than an extra.
+  `skip` governs titles, not paths: skipped keeps the sweep, loose films, the advisor and the webhook path out of that
+  library, which is what we want, and leaves the mapping readable, which is what the write path needs.
+- **A viewer's `Configuration` is read and put back whole**, with only `MyMediaExcludes` and `LatestItemsExcludes`
+  changed. Posting a typed model would silently reset every display preference this build does not model — subtitle
+  mode, audio language, the home-screen layout — on somebody else's account. That is the difference between owning two
+  fields and owning a viewer's settings, and the rule is the former.
+- **Owed, and not claimed as done.** Acceptance 9 and 10 are live reads against prod Jellyfin with a root configured,
+  and nobody has run them: the kind's switch is off and the library does not exist yet. The restricted-account report
+  is a log line, where acceptance 10 asks for it in the admin UI — a row on the file-fix card is the next piece of work
+  on this requirement and is not in `b354d55f`.
