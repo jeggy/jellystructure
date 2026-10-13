@@ -30,6 +30,16 @@ other than `STATUS.md` is allowed to claim what is free.
 shipped gets a **dated amendment inside that phase's existing spec**, written before the Kotlin.
 `STATUS.md` is the only place a status lives — not the spec body, not a comment.
 
+**A spec body that still carries a `## Status` heading is fixed the next time that spec is touched,
+never in a sweep.** Roughly half the spec tree predates the rule above. When you open one of those
+files for any other reason, give it the R384 treatment in the same commit (see `9ce47099`): drop the
+status sentence, keep the durable facts — what the phase touches, what it supersedes, who approved
+what — under a `## Scope` heading. Those blocks are not purely status, so it is a judgement call per
+file and never a `sed`, and a tree-wide commit in a public repository is unreviewable.
+`scripts/check-phases.sh` deliberately does not check for this: a guard that fails on files nobody
+can fix in one pass is a guard nobody keeps green, and that is worse than no guard. If it is ever
+enforced mechanically, that comes after the count has drained, not before.
+
 **[`specs/constitution.md`](specs/constitution.md) wins on conflict.** A change that contradicts it
 goes to the owner as a question; it does not quietly go into the file.
 
