@@ -1287,3 +1287,199 @@ is the rule it inherits.
 24. With the sidecar busy (and only busy, not wedged), an `avsync` row that retries to its FR-317-29 give-up
     spawns **two** processes for that file in total, not two per attempt — and the lane's worker shows no
     measurable CPU across the wait. The 24.9 % of a core measured on 2026-10-13 is the baseline.
+
+## Amendment (2026-10-13, seventh of the day) — lips are never compared against audio that is not there (FR-317-32, FR-317-33, DEB-939)
+
+The fifth amendment left the sweep's two tensor-shape failures as *"a watch, not a requirement"*, on the
+grounds that the honest next step was the input rather than a guess at the shape mismatch. **The input was
+then read** (DEB-915, reported on DEB-939), and it closes the watch: all four of the lane's unexplained
+failures — both *"Unexpected special floating-point value"* rows and both *"The size of tensor a (N) must
+match the size of tensor b (0)"* rows — are **one defect with one cause**, and that cause also produces a
+reading that is wrong without failing at all. The requirement is written here, and the four questions DEB-939
+put to this seat are answered in it. **Nothing has been built for it yet.**
+
+### The defect, and the part of the report that is not the defect
+
+`distance_curve`'s window is
+
+```python
+n = min(lf.shape[0], af.shape[0] - f0)
+```
+
+where `f0` is the face track's first frame inside the window. Two cases reach the lane's failure list:
+`n == 0` makes every slice empty, `d.mean(0)` over an empty dimension is `NaN`, and the window's `conf` is
+`NaN` — the two special-floating-point failures, now survivable through FR-317-30 but still thrown away.
+`n < 0` keeps `lf_len + n` lip rows against an empty audio slice, and PyTorch says so.
+
+**One correction to the report, and it matters.** DEB-939 reads the line as indexing *audio* features by a
+*video* frame index, as if the units were mixed. They are not. The video is decoded at exactly `fps=25` and
+`audio_feats` steps the MFCC by 4 columns of 10 ms, so `af[i]` and lip feature `i` are the same 40 ms of the
+same window by construction, and `F.pad(af, (0, 0, VSHIFT, VSHIFT))` is what makes the ±15-frame shifts
+legal at the edges. `min(lf_len, af_len − f0)` is the **correct** upper clamp. The defect is that it is
+unbounded **below**, and that it silently assumes `af` reaches as far as the frames it is clamped against.
+Anyone who "fixes the indexing" here moves every reading in the library for nothing.
+
+### Why the audio runs out, and the reading that is wrong without failing
+
+Both tensor-failure jobs have a damaged first audio track; one decodes 2 287 s of a 2 841 s stream behind AAC
+*"Number of bands (41) exceeds limit (40)"*. `decode_audio` asks ffmpeg for `-t dur` of PCM and gets whatever
+survives: 36–45 s per 45 s window, 40–229 frames short of the video. **ffmpeg does not pad a dropped
+packet** — the surviving samples are handed over end to end — so a gap mid-window does not merely shorten
+the audio, it **shifts everything after it**. Frame *k*'s lips are then measured against speech from
+*k* + the gap, which is not a measurement of that file's sync at all, and today **nothing in the row tells
+such a window apart from a real one**. The two crashes are only the cases where the shift happened to land on
+an empty slice; the quiet cases are the ones worth fixing. `file_track_coverage` cannot catch them either —
+255 measures where a track *ends*, and both files read `content_end_ms ≈ header_ms` with no findings.
+
+**The construction gap is not this.** A healthy 45 s window decodes 1 125 video frames against
+`mfcc_frames // 4 − 5` = 1 119 audio features: six short, every time, by arithmetic. So the last ~0.24 s of
+**every** window is already a tail with no audio under it, the clamp already truncates it, and that is
+correct behaviour that must survive untouched. Any bar drawn here has to separate six from forty.
+
+### FR-317-32 — A window is measured only where the audio reaches the picture
+
+Per window, before any face work:
+
+- `v` = the video frames decoded (`fr.shape[0]`, exactly 25/s), `a` = the audio features that PCM will
+  produce. `a` is derived **arithmetically from the sample count**, not by running the model:
+  `numframes = 1 + ceil((N − 400) / 160)` for `N ≥ 400` (`python_speech_features`' own winlen/winstep at
+  16 kHz, 1 below that), then `// 4 − 5`. A unit test pins the arithmetic against
+  `python_speech_features.mfcc(pcm, 16000).shape[0] // 4 − 5` so the two cannot drift; it is CPU-only and
+  needs no card.
+- the window carries two additive fields: **`audio_short_frames`** = `v − a − AUDIO_FEATURE_LAG` (signed,
+  **never clamped**, `AUDIO_FEATURE_LAG = 6`, the construction gap above, named in `measure.py` with the
+  arithmetic beside it) and **`audio_short`**, true when `audio_short_frames > AUDIO_SHORT_TOL`
+  (`= 2` — one codec packet of 1 024 samples at the `-ss` seek is 1.6 frames, and nothing healthy is worse).
+- **a window with `audio_short` is refused**: it is reported exactly as a window with no face track is
+  (`offset_frames: null`, `conf: 0.0`, `frames: 0`, `faces: []`) with the two new fields set, and **no
+  detection, no crops and no lip features are computed for it.** That is where the GPU is saved, and it costs
+  nothing, because the audio was decoded either way.
+- **`audio_short_frames` is reported on every window, refused or not.** A clean window stores a 0 or a ±1,
+  so the healthy distribution of `v − a` is readable out of `file_av_sync` without a new build: if `2` ever
+  turns out to be the wrong bar, the evidence to re-draw it is already stored. This is the whole reason the
+  field is not a bare boolean.
+- a refused window contributes `None` to **every** envelope list — the measured track's and each
+  `others` entry's — so FR-317-4's zip stays aligned and the window casts no vote in the cross-correlation
+  either. An `others` stream that is itself short in a window contributes `None` for that stream in that
+  window alone.
+
+**The bar is against the decoded video, not against the requested duration.** DEB-939 proposed
+`25 · dur − 5`. That bar refuses two healthy things: a window clamped at the end of the file (FR-317-8 clamps
+`durS`, but a container whose runtime overstates the stream still asks for audio that was never there) and
+any file whose real length is under its header's. In both, video and audio come back short **together**, the
+clamp does its job, and there is nothing wrong with the reading. `v − a` is invariant to all of it.
+
+### FR-317-33 — `n` is bounded, and nothing else about the clamp moves
+
+- `distance_curve` is never called with `n <= 0`: a face track with no audio under it is **not measured** —
+  no curve, no weight, no `faces[]` entry.
+- **This is a backstop, not the fix, and that is the answer to DEB-939's second question.** It kills both
+  crash classes and leaves every silent wrong answer in place, which is why FR-317-32 exists. Inside a window
+  FR-317-32 accepted it is **unreachable**: `v − a ≤ 8`, a track piece is ≥ 30 frames so `f0 ≤ v − 30`, hence
+  `a − f0 ≥ 22 > 0`. If it is ever reached, the window is refused by the same path as a short-audio window,
+  with `audio_short: true` and an `audio_short_frames` **at or below the bar** — a signature no healthy row
+  can wear, and the bug report writes itself.
+- **No minimum-`n` filter is introduced.** A face track that ends at the last frame of a healthy window
+  legitimately reaches `n = 24`, and FR-317-7 already weights it by its length against a 250-frame
+  confidence bar, so it cannot move a verdict. A floor would drop the last second of every window's evidence
+  across the whole library to buy nothing.
+
+### What the row says, and what it does not override
+
+A new reason **`short_audio`** (`AvSyncReason.SHORT_AUDIO`), label *"not measured — part of the audio did
+not decode, so there were no words under the lips"*. Like `nonfinite` it is **not** in `SKIP_REASONS`: a
+pipeline version measures such a file again. Unlike `nonfinite` it is **not** passed to
+`AvSyncVerdict.of`'s `reason` parameter and so **never overrides a verdict**:
+
+- it is decided inside the `confident.size < 2` branch, after `nonfinite` and before `no_faces` — `no_faces`
+  would be the same lie about a window the model was never shown as it would be about a `NaN` (and the same
+  lie DEB-836 filed about an unreadable file);
+- **a file with two clean windows beside one refused window keeps its verdict.** A refused window is *there
+  is nothing to measure here*, which is what a window with no face already is — not *the measurement
+  failed*. The refused windows are simply never confident, FR-317-17's second triple then asks three more
+  places in the file for exactly this reason, and a file whose damage is local gets a real answer out of its
+  healthy parts. A file whose damage is everywhere reaches `unknown` and says `short_audio`;
+- `nonfinite` stays the headline where both appear. After this change a non-finite number is **by definition
+  not explained by short audio**, so it is the one that is news.
+- `check()` logs one `WARN` on the `integrity` channel naming the path and the worst `audio_short_frames`
+  **whatever the verdict**, including when the verdict survives. That log plus the stored fields are the
+  audit trail DEB-939 correctly says does not exist today.
+
+### `PIPELINE_VERSION` goes to 2 with the fix
+
+DEB-939's fourth question. Yes, in the same change: `MODEL` becomes `syncnet_v2+s3fd@907c0b5/2`, and by
+FR-317-2/FR-317-8 every stored row is due again. The reasoning and the cost, both small:
+
+- the readings that moved are exactly the ones we cannot identify without re-measuring. A file that crashed
+  stored no row at all; a file that was quietly misaligned stored a row that looks like every other. Nothing
+  in `file_integrity` resolves it either — only one of the two known files carries a `damage_count`.
+- a bump marks rows due; it **starts nothing**. FR-317-8's pass is enqueue-only, so the re-measure happens
+  when a pass is next run, on the `avsync` lane's own worker, parked while a TV plays.
+- **the library's zero resets for about the first hour.** `zeroFrames()` reads `measuredWindows(model)`, so
+  at the new model there are none and FR-317-6's `−1` default stands until 200 confident windows exist
+  again — a few dozen files. Verdicts computed in that gap are computed against `−1` rather than the
+  library's measured zero, which can flip a borderline `offset` either way on the Dashboard for that hour.
+  Stated because someone will find it; it is FR-317-6 working as specified, and it is the reason to bump
+  **now**, with the sweep being restarted after DEB-918 anyway, rather than as its own event later.
+
+### Deployment order — the sidecar may go first this time
+
+The opposite of FR-317-30's. `measureJson` has `ignoreUnknownKeys = true`, and a refused window is expressed
+in fields today's backend already reads (`offset_frames: null`, `frames: 0`), so **the sidecar alone against
+today's backend is correct**, degrading only to `no_faces` where it would have said `short_audio`, which is
+not a skip and is re-measured by the bump regardless. The backend alone against today's sidecar is also
+correct and simply never sees the flag. Neither half has a broken window, so this one deploys in either
+order — but `PIPELINE_VERSION` lives in the sidecar, so the re-measure begins when **it** lands.
+
+### Deliberately not specified
+
+- **A whole-stream `ffmpeg -map 0:a:N -f null` pre-flight** — DEB-939's third question, and the answer is
+  no. It reads the entire file to answer a question FR-317-32 answers for free from audio it has already
+  decoded, on the same `check()` path FR-317-31 just took two header reads off, and against 255's rule that
+  the advice path never reads a media file. The GPU saving DEB-939 wanted is real and is taken — a refused
+  window skips detection and lip features — it is simply taken per window instead of per file.
+- **Skipping a file because `file_integrity.damage_count > 0`.** Damage need not touch the audio, let alone
+  the three measured windows, and a skip would lose real findings on files that measure cleanly.
+- **Naming that damage in the quiet line.** *"part of the audio did not decode"* is what this phase measured
+  itself; attributing it to 255's damage count means joining two services' findings on a render path for one
+  sentence. It belongs to whoever next touches that banner, and the reason string is the hook.
+- **`-af aresample=async=1:first_pts=0`**, which would pad a gap with silence and keep the timeline
+  anchored. It makes a damaged window measurable against silence rather than refused, it changes the first
+  samples of **every** healthy window, and it hides the damage instead of reporting it.
+- Any change to FR-317-30, FR-317-7's bars, or the clamp's upper half.
+
+### The one case this does not catch
+
+A decode that comes back the **right length** but is internally shifted — a damage mode that adds samples
+where it drops them. `v − a` cannot see it, no case of it has been observed, and the honest place to record
+that limit is here rather than in a guess at a second check.
+
+### Tests (added)
+
+- The feature-count arithmetic against `python_speech_features.mfcc` on synthetic PCM (CPU, no card): exact
+  at 45 s, at a 10 s window, at one sample, and at `N < 400`.
+- `distance_curve`'s bound directly: `n == 0` and `n < 0` both return *not measured* rather than a `NaN`
+  curve or a tensor-shape raise, driven by lengths alone — the shape both 2026-10-13 failures were
+  reproduced from. **No library file is needed, and none is to be used.**
+- A refused window end to end in the sidecar: a window whose PCM is 36 s against 45 s of video reports
+  `audio_short: true`, `audio_short_frames ≈ 219`, `frames: 0`, `offset_frames: null`, an empty `faces`, and
+  **the detector is never called** (asserted by a stub, since that is the GPU saving).
+- A healthy window reports `audio_short: false` and an `audio_short_frames` of 0 or ±1 — the regression
+  that would otherwise refuse the whole library.
+- `linuxX64Test` on hand-written response documents: a row with one refused window beside two confident ones
+  keeps its `offset` verdict and stores **no** reason while logging the warning; a row whose every window is
+  refused reads `UNKNOWN` with reason `short_audio` and **not** `no_faces`; a row with a refused window and a
+  non-finite number elsewhere reads `nonfinite`; `short_audio` is not in `SKIP_REASONS`, so a model bump
+  makes such a row due.
+- The `others` zip: a refused window drops that window from the measured track's and every other stream's
+  envelope list together, and a stream short in one window alone still reports a lag from the rest.
+
+### Acceptance (added)
+
+25. Across a sweep, no job fails with *"must match the size of tensor"* or *"Unexpected special
+    floating-point value"*. The four rows that did on 2026-10-13 are the baseline, and the two files behind
+    them (jobs `mj-1791844302-556` and `-625`) each come back with a stored row: a verdict from their
+    healthy windows, or `unknown` with reason `short_audio`.
+26. `file_av_sync` can be asked which files had a window refused and by how much, and the answer for a
+    library of healthy files is none. Every stored window from a healthy file carries an
+    `audio_short_frames` of 0 or ±1.
