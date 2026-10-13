@@ -156,6 +156,62 @@ private data class MeasureResponse(
 )
 
 /**
+ * Phase 317's 2026-10-13 sixth amendment (FR-317-31) — the two **process** answers
+ * [AvSyncService.check]'s pre-measure probe pays for, kept for the one file the `avsync` lane has in
+ * flight, so that an in-place requeue after a `503` re-sends only `/measure`.
+ *
+ * Its own type, and pure, because the decision is the whole of DEB-912: each of DEB-897's ~690 busy
+ * cycles spawned an `ffprobe` and an `mkvmerge -J` over the header of a large file *before* reaching the
+ * call that refused it milliseconds later — about 1 400 spawns in four hours, and the shape of the
+ * measured 24.9 % of a core.
+ *
+ * Two rules it exists to hold:
+ *
+ * - **Asked and got nothing is an answer.** A `null` runtime and an *empty* id map are kept and never
+ *   re-asked — [Kept] is the only reason there is a box here. FR-317-22 and FR-317-26 each give the
+ *   empty map its own meaning, and those are exactly the files whose probe costs the most.
+ * - **The key is path + size + mtime.** A file rewritten between attempts misses and is probed again,
+ *   which is the stamp rule 255 and FR-317-8 enforce two lines later anyway — so a kept answer can never
+ *   describe a different file than the one being measured.
+ *
+ * One entry is enough: the lane has one worker, so at most one file is in flight and a second path
+ * replaces it. In memory, like FR-317-29's `avSyncBusyRun`, and as worthless across a restart.
+ */
+internal class AvSyncProbeMemo {
+    /** Which file, and as it was when the probes were asked. */
+    data class Stamp(val path: String, val size: Long, val mtime: Long)
+
+    /** A kept answer. Without the box, *asked and got nothing* would be indistinguishable from *not
+     *  asked* and the memo would miss on every such file. */
+    data class Kept<out T>(val value: T)
+
+    private var at: Stamp? = null
+    private var runtime: Kept<Double?>? = null
+    private var ids: Kept<Map<String, Int>>? = null
+
+    /** `ffprobe`'s own answer for [stamp], or null when this file has not been asked under this stamp. */
+    fun runtimeS(stamp: Stamp): Kept<Double?>? = runtime?.takeIf { at == stamp }
+
+    /** `mkvmerge -J`'s own answer for [stamp], or null when it has not been asked under this stamp. */
+    fun mkvIds(stamp: Stamp): Kept<Map<String, Int>>? = ids?.takeIf { at == stamp }
+
+    fun keepRuntimeS(stamp: Stamp, answer: Double?): Kept<Double?> =
+        Kept(answer).also { adopt(stamp); runtime = it }
+
+    fun keepMkvIds(stamp: Stamp, answer: Map<String, Int>): Kept<Map<String, Int>> =
+        Kept(answer).also { adopt(stamp); ids = it }
+
+    /** The claim run is over: nothing is kept for anyone. */
+    fun forget() { at = null; runtime = null; ids = null }
+
+    /** A different file — or the same one rewritten — drops both answers at once, so the two can never
+     *  be held under stamps that disagree. */
+    private fun adopt(stamp: Stamp) {
+        if (at != stamp) { at = stamp; runtime = null; ids = null }
+    }
+}
+
+/**
  * Phase 317 — sound that runs ahead of (or behind) the picture: measured (by the sidecar, on GPU 1),
  * stored raw, and explained. 255's [TrackCoverageService] shape throughout; the one new thing is that the
  * measurement is an HTTP call to a process with a lip-sync model on a GPU, because nothing ffprobe reports
@@ -170,6 +226,18 @@ class AvSyncService(
     private val configStore: ConfigStore,
     private val store: MediaStore,
     private val history: MediaHistory? = null,
+    /**
+     * FR-317-31's test seam — the two pre-measure process probes as values, so that "one spawn per file,
+     * not one per attempt" is provable against a fake runner instead of against a library file. Nothing
+     * in production passes either.
+     *
+     * The asymmetry is Kotlin's and not a preference: a default parameter cannot call [readMkvAudioIds],
+     * a member of the object being constructed, so that one is nullable with the real call at the use
+     * site — while [probeRuntimeSeconds] must *not* be nullable-with-fallback, because a stand-in that
+     * legitimately answers `null` would then fall through to a real `ffprobe`.
+     */
+    private val probeRuntimeSeconds: suspend (String) -> Double? = { FfmpegRunner.probeDurationSeconds(it) },
+    private val probeMkvIds: (suspend (String) -> Map<String, Int>)? = null,
 ) {
     private val q get() = db.fileAvSyncQueries
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -516,11 +584,27 @@ class AvSyncService(
      * recorded as a finding under a stamp that no longer describes it.
      */
     suspend fun check(item: MediaItem, path: String): Result<AvSyncReading> {
+        val result = checkOnce(item, path)
+        // FR-317-31 — the kept probe answers belong to this claim run, and only a busy sidecar brings the
+        // same row back to it. Anything else ends their life: the row is done, and holding them past it
+        // would quietly defeat FR-317-23's ↻ retry, whose whole purpose is to ask `mkvmerge` again about
+        // a file that has not changed.
+        if (result.exceptionOrNull() !is AvSyncBusy) probeMemo.forget()
+        return result
+    }
+
+    /** FR-317-31 — one attempt. The memo above outlives it; everything else here does not. */
+    private suspend fun checkOnce(item: MediaItem, path: String): Result<AvSyncReading> {
         val before = FileIntegrityService.stampOf(path) ?: return Result.failure(AvSyncRefused("the file is no longer on disk"))
         // The row is stored under the sidecar's own model string (FR-317-7), so ask once if we have never
         // been told it — a row written under [PENDING_MODEL] would be measured all over again next pass.
         if (lastModel == null) health()
-        val runtimeS = FfmpegRunner.probeDurationSeconds(path) ?: knownRuntimeS(item, path)
+        // FR-317-31 — both probes below are asked once per file per claim run, not once per attempt: a
+        // busy sidecar re-queues this row in place, and until this amendment every cycle re-paid them.
+        val asked = AvSyncProbeMemo.Stamp(path, before.size, before.mtime)
+        val probed = probeMemo.runtimeS(asked) ?: probeMemo.keepRuntimeS(asked, probeRuntimeSeconds(path))
+        // Only the probe's own answer is kept; the fallback reads the [MediaItem] already in memory.
+        val runtimeS = probed.value ?: knownRuntimeS(item, path)
         skipReason(item, path, runtimeS)?.let { reason ->
             storeSkip(path, reason)
             return Result.success(AvSyncVerdict.of(emptyList(), zeroFrames(), runtimeS, reason))
@@ -529,8 +613,13 @@ class AvSyncService(
         val audio = chooseAudio(item, path) ?: return Result.failure(AvSyncRefused("the file has no audio track to measure"))
         val others = audioTracks(item, path).map { it.specifier }.filter { it != audio }
         // FR-317-5 — the mkvmerge ids are read ONCE here, at check time, so the advice (and the command on
-        // the title page) never reads a media file on the request path.
-        val mkvIds = if (AvSyncAdvice.isMatroska(path)) readMkvAudioIds(path) else emptyMap()
+        // the title page) never reads a media file on the request path. FR-317-31 — and once per claim
+        // run, not once per attempt: an empty map is an answer (FR-317-22, FR-317-26) and is not re-asked.
+        val mkvIds = if (AvSyncAdvice.isMatroska(path)) {
+            (probeMemo.mkvIds(asked) ?: probeMemo.keepMkvIds(asked, askMkvAudioIds(path))).value
+        } else {
+            emptyMap()
+        }
 
         var windows = measure(path, audio, others, runtimeS, firstWindows).getOrElse { return Result.failure(it) }
         if (AvSyncVerdict.wantsMoreWindows(AvSyncVerdict.of(windows.windows, zeroFrames(), runtimeS, null))) {
@@ -572,6 +661,14 @@ class AvSyncService(
         if (windows.isEmpty()) return Result.failure(AvSyncRefused("the file is too short to measure"))
         return measureOnce(path, audio, others, windows)
     }
+
+    /** FR-317-31 — the two probe answers for the file this lane has in flight. Written and read from
+     *  [checkOnce] only, which the `avsync` lane's single worker is the only caller of. */
+    private val probeMemo = AvSyncProbeMemo()
+
+    /** FR-317-31 — [readMkvAudioIds], or a test's stand-in runner where one was given. */
+    private suspend fun askMkvAudioIds(path: String): Map<String, Int> =
+        probeMkvIds?.let { it(path) } ?: readMkvAudioIds(path)
 
     /** `mkvmerge -J` → each `0:a:N`'s own mkvmerge track id (FR-317-5). The n-th audio track in the JSON is
      *  the n-th in ffmpeg's `0:a:<n>`, the same assumption [dev.jellystructure.filefix.parseTrackUids] makes. */
