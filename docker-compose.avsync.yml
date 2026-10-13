@@ -43,6 +43,12 @@ services:
       # decoders' own CUDA contexts put the real peak at ~3.9 GB of the 8 GB card.
       AVSYNC_VRAM_GB: "2"
       AVSYNC_DECODERS: "3"
+      # The bounds (FR-317-27, after DEB-897: two prefetched decoders slept at 0 % CPU for four hours and
+      # stopped the sweep). A decoder that reads nothing for this long has its process group killed and the
+      # call fails with the reason; the ceiling is a backstop on the whole call, not a schedule — a file is
+      # ~8 s and the worst measured one is far under a minute. Either at "0" disables that bound.
+      AVSYNC_DECODE_STALL_S: "60"
+      AVSYNC_MEASURE_MAX_S: "900"
       NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
     deploy:
       resources:

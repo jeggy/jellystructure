@@ -4,11 +4,12 @@ The whole service is three routes over [measure]'s functions, on the stdlib's ow
 for one file at a time and nothing else talks to this (no auth, no TLS — it is reachable only on the
 compose network, like every other sidecar in this stack).
 
-    GET  /health           → {ok, gpu, vram_total_gb, model, busy}
+    GET  /health           → {ok, gpu, vram_total_gb, model, busy, busy_for_s, current_path_basename}
     POST /stat    {path}   → {exists, size}                        — the mount check (FR-317-13)
     POST /measure {path, audio, others, windows:[{start_s, dur_s}]}
                            → 200 {windows, others, decode, seconds}
                              404 the path is not visible here · 422 undecodable (ffmpeg's last line)
+                             500 a decoder stalled, or the call passed its ceiling (FR-317-27)
                              503 {retry_after_s} a measurement is already running
 
 **One measurement at a time**: the GPU worker is single (FR-317-2's measured limits), so a second
@@ -71,6 +72,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, dict(error='path and windows are both required'))
         if not lock.acquire(blocking=False):
             return self.send_json(503, dict(error='a measurement is already running', retry_after_s=RETRY_AFTER_S))
+        measure.busy_started(path)                # FR-317-28: /health's `busy_for_s` starts here
         try:
             result = measure.measure(path, body.get('audio') or '0:a:0', body.get('others') or [], windows)
             self.send_json(200, result)
@@ -78,10 +80,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, dict(error=f'{path} is not visible to the sidecar'))
         except measure.Undecodable as e:
             self.send_json(422, dict(error=str(e)))
+        except (measure.DecodeStalled, measure.MeasureTimeout) as e:
+            # FR-317-27: a stall is a fault of the run, not of the file — 500 with the reason, and
+            # deliberately not 422, which already means *this file cannot be decoded*.
+            print(f'avsync {e}', flush=True)
+            self.send_json(500, dict(error=str(e)))
         except Exception as e:                    # a GPU OOM, a torch error: say it, stay up
             traceback.print_exc()
             self.send_json(500, dict(error=f'{type(e).__name__}: {e}'))
         finally:
+            measure.busy_done()
             lock.release()
 
 

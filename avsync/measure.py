@@ -16,9 +16,10 @@ distance curve), `window.frames` (face frames behind it).
 See specs/requirements/phase-317-sound-that-runs-ahead-of-the-picture-is-found-and-explained.md (FR-317-2,
 FR-317-3, FR-317-4) and specs/research-reports/av-sync-measurement-on-the-gpu-2026-10-10.md.
 """
-import argparse, json, os, subprocess, sys, time
+import argparse, json, os, subprocess, sys, threading, time
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from signal import SIGKILL, SIGTERM            # by name: `signal` below is scipy's, and it shadows this one
 
 import numpy as np, python_speech_features, torch, torch.nn.functional as F, torchvision
 from scipy import signal
@@ -35,6 +36,12 @@ MODEL = f'syncnet_v2+s3fd@{SYNCNET_COMMIT}/{PIPELINE_VERSION}'
 VRAM_GB = float(os.environ.get('AVSYNC_VRAM_GB', '2'))
 DECODERS = int(os.environ.get('AVSYNC_DECODERS', '3'))
 
+# FR-317-27, after DEB-897: two prefetched decoders slept at 0 % CPU for four hours holding the lock and the
+# card, and the sweep stopped. Nothing here may wait indefinitely — a child that stops producing is killed,
+# and the whole call has a backstop ceiling. Both ≤ 0 disable the bound.
+DECODE_STALL_S = float(os.environ.get('AVSYNC_DECODE_STALL_S', '60'))
+MEASURE_MAX_S = float(os.environ.get('AVSYNC_MEASURE_MAX_S', '900'))
+
 FPS = 25                  # every reading is in 25 fps frames: one frame = 40 ms
 VSHIFT = 15               # the distance curve spans −15…+15 frames, SyncNet's own range
 RES = 640                 # decoded width; the height keeps the aspect
@@ -49,6 +56,15 @@ dev, fp16 = 'cuda', not os.environ.get('AVSYNC_FP32')
 
 class Undecodable(Exception):
     """ffmpeg could not read the file (or the stream asked for): `str(e)` is its last line → HTTP 422."""
+
+
+class DecodeStalled(Exception):
+    """A child produced nothing for [DECODE_STALL_S] and was killed → HTTP **500**, never 422: 422 means
+    *this file cannot be decoded* (FR-317-16/FR-317-20) and a stall is a fault of the run (FR-317-27)."""
+
+
+class MeasureTimeout(Exception):
+    """The whole call passed [MEASURE_MAX_S] and every child was killed → HTTP 500 (FR-317-27)."""
 
 
 # ── models ──────────────────────────────────────────────────────────────────────────────────────
@@ -91,17 +107,161 @@ def models():
     return _models
 
 
+# ── children, bounded (FR-317-27) ────────────────────────────────────────────────────────────────
+
+def secs(x):
+    return f'{x:g}'
+
+
+def spawn(cmd, run=None):
+    """One child, in a session of its own so that killing it reaches ffmpeg's own children, with `stderr`
+    drained by a thread from the first byte.
+
+    Draining concurrently is not a nicety (DEB-897): both pipes are unbuffered, and reading `stdout` to
+    completion before touching `stderr` is a mutual wait the moment ffmpeg writes more than a pipe buffer
+    of errors — which `-v error` keeps rare right up until a stream errors once per frame."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                         start_new_session=True)
+    if run is not None: run.add(p)
+    tail = []
+    t = threading.Thread(target=_drain, args=(p.stderr, tail), daemon=True)
+    t.start()
+    return p, tail, t
+
+
+def _drain(f, tail, keep=8192):
+    """Reads `stderr` to EOF, keeping only its last [keep] bytes: all anyone asks of it is the last line,
+    and a stream that errors per frame would otherwise be held whole in memory."""
+    try:
+        while True:
+            b = f.read(65536)
+            if not b: return
+            tail.append(b)
+            if len(tail) > 1: tail[:] = [b''.join(tail)[-keep:]]
+    except (OSError, ValueError):                 # the pipe closed under us; the caller is shutting down
+        return
+    finally:
+        try: f.close()                            # a sweep is thousands of children: the fd goes back now
+        except OSError: pass
+
+
+def kill_group(p, grace=3.0):
+    """`SIGTERM` the child's whole process group, then `SIGKILL` whatever is left. The group is the point:
+    an `-hwaccel cuda` ffmpeg that has stopped answering is not reached by closing its stdout."""
+    for sig, wait in ((SIGTERM, grace), (SIGKILL, 1.0)):
+        try:
+            os.killpg(p.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            p.wait(timeout=wait); return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+class Stall:
+    """A no-output watchdog over one child: every read refreshes it, and [stall_s] with nothing read kills
+    the process group. `fired` is how the caller knows the silence was ours to report."""
+
+    def __init__(self, p, stall_s=None):
+        self.p = p
+        self.stall_s = DECODE_STALL_S if stall_s is None else stall_s
+        self.last, self.fired, self.done = time.monotonic(), False, threading.Event()
+        if self.stall_s > 0:
+            self.t = threading.Thread(target=self._watch, daemon=True); self.t.start()
+
+    def touch(self):
+        self.last = time.monotonic()
+
+    def _watch(self):
+        tick = min(1.0, max(0.05, self.stall_s / 10))
+        while not self.done.wait(tick):
+            if time.monotonic() - self.last < self.stall_s: continue
+            self.fired = True                     # set before the kill: the reader must not read EOF as data
+            kill_group(self.p)
+            return
+
+    def close(self):
+        self.done.set()
+
+
+class Run:
+    """The children of one `/measure` call, so the whole-call ceiling can kill every one of them — the
+    prefetched decoders included, which is what nothing could do on DEB-897."""
+
+    def __init__(self, max_s=None):
+        self.max_s = MEASURE_MAX_S if max_s is None else max_s
+        self.deadline = time.monotonic() + self.max_s if self.max_s > 0 else None
+        self.lock, self.children, self.expired = threading.Lock(), set(), False
+
+    def add(self, p):
+        with self.lock: self.children.add(p)
+
+    def remaining(self):
+        return None if self.deadline is None else self.deadline - time.monotonic()
+
+    def kill_all(self):
+        """Ends the run: every live child is killed, and the fetch threads still inside a decode learn from
+        `expired` that their answer is no longer wanted (and must not be retried on the CPU)."""
+        self.expired = True
+        with self.lock: kids = list(self.children)
+        for p in kids: kill_group(p)
+
+
+def stall_for(run):
+    """One child's no-output bound, clipped to whatever is left of the run's ceiling — so that even a child
+    spawned on the handler thread itself (`ffprobe`, before any future exists to time out) cannot push the
+    answer past [MEASURE_MAX_S]."""
+    left = None if run is None else run.remaining()
+    return DECODE_STALL_S if left is None else max(0.1, min(DECODE_STALL_S, left))
+
+
+def read_all(p, wd):
+    """The child's `stdout` to EOF, refreshing [wd] on every chunk that arrives."""
+    chunks = []
+    while True:
+        b = p.stdout.read(65536)
+        wd.touch()
+        if not b: return b''.join(chunks)
+        chunks.append(b)
+
+
+def finish(p, tail, t, wd):
+    """Closes one child down — watchdog off, pipe closed, process reaped, `stderr` reader joined — and
+    returns the tail of its `stderr`. `p.wait()` is bounded here too: it was not before."""
+    wd.close()
+    try:
+        p.stdout.close()
+    except OSError:
+        pass
+    try:
+        p.wait(timeout=5)
+    except subprocess.TimeoutExpired:             # it ignored EPIPE; it does not get to outlive the call
+        kill_group(p)
+    t.join(timeout=5)
+    return b''.join(tail).decode('utf-8', 'replace')
+
+
 # ── decode (NVDEC + scale_cuda + tonemap_cuda; AV1 on the CPU) ───────────────────────────────────
 
-def probe(path):
-    v = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries',
-                        'stream=codec_name,width,height,color_transfer', '-of', 'csv=p=0', path],
-                       capture_output=True, text=True).stdout.strip().split(',')
-    d = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path],
-                       capture_output=True, text=True).stdout.strip()
+def probe(path, run=None):
+    v = ffprobe(['-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,color_transfer'],
+                path, run).split(',')
+    d = ffprobe(['-show_entries', 'format=duration'], path, run)
     if len(v) < 3 or not v[1].isdigit():
         raise Undecodable('ffprobe found no video stream')
     return dict(codec=v[0], w=int(v[1]), h=int(v[2]), trc=v[3] if len(v) > 3 else '', dur=float(d or 0))
+
+
+def ffprobe(args, path, run=None):
+    """ffprobe under the same watchdog as the decoders: it is a child of ours too, and it runs on the
+    handler thread, so an ffprobe that never answers withholds the answer just as completely."""
+    p, tail, t = spawn(['ffprobe', '-v', 'error', *args, '-of', 'csv=p=0', path], run)
+    wd = Stall(p, stall_for(run))
+    out = read_all(p, wd)
+    finish(p, tail, t, wd)
+    if wd.fired: raise DecodeStalled(f'ffprobe stalled after {secs(wd.stall_s)}s')
+    return out.decode('utf-8', 'replace').strip()
 
 
 def video_filter(W, H, trc, gpu):
@@ -118,7 +278,7 @@ def video_filter(W, H, trc, gpu):
     return f'fps={FPS},scale={W}:{H}:flags=fast_bilinear'
 
 
-def decode_video(path, start, dur, W, H, trc, gpu):
+def decode_video(path, start, dur, W, H, trc, gpu, run=None):
     """The window's frames as a uint8 CPU tensor, and whether NVDEC really served them."""
     hw = ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] if gpu else ['-filter_threads', '8']
     cmd = ['ffmpeg', '-v', 'error', *hw, '-ss', str(start), '-i', path, '-t', str(dur), '-map', '0:v:0',
@@ -126,29 +286,41 @@ def decode_video(path, start, dur, W, H, trc, gpu):
     fsz, cap = W * H * 3, int(dur * FPS) + 5
     buf = torch.empty((cap, H, W, 3), dtype=torch.uint8)   # read straight into the tensor: no bytes copies
     mv, off = memoryview(buf.numpy()).cast('B'), 0
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+    p, tail, t = spawn(cmd, run)
+    wd = Stall(p, stall_for(run))
     while off < cap * fsz:
         k = p.stdout.readinto(mv[off:])
+        wd.touch()
         if not k: break
         off += k
-    p.stdout.close()
-    err = p.stderr.read().decode('utf-8', 'replace'); p.stderr.close(); p.wait()
+    err = finish(p, tail, t, wd)
+    if wd.fired:                                  # the silence was ours to report, and never a 422
+        raise DecodeStalled(f'decode stalled after {secs(wd.stall_s)}s on window {start}s')
+    if run is not None and run.expired:           # the ceiling killed us: no CPU retry, no verdict
+        raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling')
     if off < fsz and gpu:                         # a profile NVDEC refuses: the CPU decodes it instead
-        return decode_video(path, start, dur, W, H, trc, False)
+        return decode_video(path, start, dur, W, H, trc, False, run)
     if off < fsz:
         raise Undecodable(last_line(err) or 'ffmpeg produced no frames')
     return buf[:off // fsz], gpu
 
 
-def decode_audio(path, start, dur, spec='0:a:0'):
+def decode_audio(path, start, dur, spec='0:a:0', run=None):
     """One audio stream of the window as mono 16 kHz PCM. [spec] is an ffprobe/ffmpeg specifier
     (`0:a:N`, FR-317-2) — never Jellyfin's own numbering."""
     cmd = ['ffmpeg', '-v', 'error', '-ss', str(start), '-i', path, '-t', str(dur), '-map', spec, '-ac', '1',
            '-ar', '16000', '-f', 's16le', '-']
-    r = subprocess.run(cmd, capture_output=True)
-    pcm = np.frombuffer(r.stdout, np.int16)
+    p, tail, t = spawn(cmd, run)
+    wd = Stall(p, stall_for(run))
+    raw = read_all(p, wd)
+    err = finish(p, tail, t, wd)
+    if wd.fired:
+        raise DecodeStalled(f'decode stalled after {secs(wd.stall_s)}s on window {start}s audio {spec}')
+    if run is not None and run.expired:
+        raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling')
+    pcm = np.frombuffer(raw[:len(raw) // 2 * 2], np.int16)   # a child cut off mid-sample leaves an odd byte
     if pcm.size == 0:
-        raise Undecodable(last_line(r.stderr.decode('utf-8', 'replace')) or f'no audio decoded from {spec}')
+        raise Undecodable(last_line(err) or f'no audio decoded from {spec}')
     return pcm
 
 
@@ -319,25 +491,51 @@ def stat(path):
 
 
 def health():
+    """FR-317-28 — `busy` alone cannot tell *measuring the file in front of me* from *wedged since 04:39*,
+    so it is joined by how long the lock has been held and by the **basename** of what is being measured.
+    Both are additive; nothing here is removed or retyped, and no full library path is ever printed."""
     busy = _lock.locked() if _lock is not None else False
+    since, held = _busy_since, 0
+    if busy and since is not None: held = int(max(0.0, time.monotonic() - since))
+    state = dict(model=MODEL, busy=busy, busy_for_s=held,
+                 current_path_basename=os.path.basename(_busy_path) if busy and _busy_path else '')
     try:
         name = torch.cuda.get_device_name(0)
         vram = round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1)
     except Exception as e:                        # no card, no driver, the container without `video`
-        return dict(ok=False, gpu=f'unavailable: {e}', vram_total_gb=0.0, model=MODEL, busy=busy)
-    return dict(ok=True, gpu=name, vram_total_gb=vram, model=MODEL, busy=busy)
+        return dict(ok=False, gpu=f'unavailable: {e}', vram_total_gb=0.0, **state)
+    return dict(ok=True, gpu=name, vram_total_gb=vram, **state)
 
 
 _lock = None      # set by server.py to the measurement lock, so /health can report `busy`
+_busy_since = None       # monotonic seconds at which the current measurement took that lock (FR-317-28)
+_busy_path = None
 
 
-def measure(path, audio='0:a:0', others=(), windows=()):
+def busy_started(path):
+    """server.py says when a measurement takes the lock, so `/health` has one source of truth for both
+    `busy` and how long it has been so."""
+    global _busy_since, _busy_path
+    _busy_since, _busy_path = time.monotonic(), path
+
+
+def busy_done():
+    global _busy_since, _busy_path
+    _busy_since, _busy_path = None, None
+
+
+def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
     """FR-317-2/-3 — one file, its windows measured one after another on the one GPU worker, with
-    [DECODERS] windows of the SAME file decoded ahead. Raises [Undecodable] (→ 422) and leaves
-    `FileNotFoundError` (→ 404) to the caller."""
+    [DECODERS] windows of the SAME file decoded ahead. Raises [Undecodable] (→ 422), [DecodeStalled] and
+    [MeasureTimeout] (→ 500, FR-317-27), and leaves `FileNotFoundError` (→ 404) to the caller.
+
+    The call is bounded end to end: [max_s] (default [MEASURE_MAX_S]) from here to the answer, after which
+    every child is killed and every decoder thread abandoned. No path can leave the caller's `finally`
+    unreached — that is what held the lock for four hours on DEB-897."""
     if not os.path.exists(path): raise FileNotFoundError(path)
     t0 = time.time()
-    p = probe(path)
+    run = Run(max_s)
+    p = probe(path, run)
     W = RES; H = int(round(p['h'] * W / p['w'] / 2) * 2)
     gpu = p['codec'] != 'av1'                     # no AV1 in Pascal/Turing NVDEC: dav1d on the CPU
     wins = [(float(w['start_s']), float(w.get('dur_s', 45))) for w in windows]
@@ -345,14 +543,17 @@ def measure(path, audio='0:a:0', others=(), windows=()):
     others = list(others)
 
     def fetch(start, dur):
-        fr, used_gpu = decode_video(path, start, dur, W, H, p['trc'], gpu)
-        pcm = decode_audio(path, start, dur, audio)
-        extra = [decode_audio(path, start, dur, spec) if spec != audio else pcm for spec in others]
+        fr, used_gpu = decode_video(path, start, dur, W, H, p['trc'], gpu, run)
+        pcm = decode_audio(path, start, dur, audio, run)
+        extra = [decode_audio(path, start, dur, spec, run) if spec != audio else pcm for spec in others]
         return fr, pcm, extra, used_gpu
 
     out, nvdec = [], gpu
     ref_envs, other_envs = [], [[] for _ in others]
-    with ThreadPoolExecutor(max(1, DECODERS)) as ex:
+    # Not `with`: the context manager joins its threads on the way out, so an exception — the ceiling's
+    # included — could not free the handler thread while a decoder was stuck (DEB-897).
+    ex = ThreadPoolExecutor(max(1, DECODERS))
+    try:
         q = deque()
         it = iter(wins)
         pending = next(it, None)
@@ -362,7 +563,10 @@ def measure(path, audio='0:a:0', others=(), windows=()):
             (start, dur), fu = q.popleft()
             if pending is not None:
                 q.append((pending, ex.submit(fetch, *pending))); pending = next(it, None)
-            fr_cpu, pcm, extra, used_gpu = fu.result()
+            try:
+                fr_cpu, pcm, extra, used_gpu = fu.result(timeout=run.remaining())
+            except FutureTimeout:
+                raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling') from None
             nvdec = nvdec and used_gpu
             fr = fr_cpu.to(dev)
             dets = detect(fr, list(range(0, fr.shape[0], DETECT_EVERY)), W, H)
@@ -383,6 +587,11 @@ def measure(path, audio='0:a:0', others=(), windows=()):
             ref_envs.append(envelope(pcm))
             for i, pcm_other in enumerate(extra): other_envs[i].append(envelope(pcm_other))
             del fr, fr_cpu; torch.cuda.empty_cache()     # hand the card back between windows
+    except BaseException:
+        # Any failure ends the run: the windows still being prefetched are nobody's answer now, and a
+        # decoder left running would hold the card until it finished by itself.
+        run.kill_all(); ex.shutdown(wait=False, cancel_futures=True); raise
+    ex.shutdown(wait=True)
 
     others_out = []
     for i, spec in enumerate(others):
