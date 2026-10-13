@@ -13,6 +13,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -526,39 +527,19 @@ actual class RaviloPlayer actual constructor() {
     // R376 (FR-R376-3) — Media3 selects in place; the answer is always "switched".
     actual fun selectAudioTrack(index: Int): Boolean { selectAudioInEngine(index); return true }
 
+    // R382, amendment 2026-10-13 (FR-R382-8) — [index] is a row of [audioRows], i.e. a ticket position, and the
+    // group it selects is the one that row IS. R291's rendition names (`a{position} …`, the backend's composeMaster,
+    // which Media3 does not list in the ticket's order) are the first thing the pairing matches on, so a composed
+    // master still selects exactly the rendition it did before; a file's own tracks on direct play are matched by
+    // language, channels and codec instead of by their place in Media3's renderer-ordered list.
     private fun selectAudioInEngine(index: Int) {
         val exo = engine ?: return
         synchronized(qoeLock) { qoeCounter.trackSwitch() }   // R381 (FR-R381-2) — a switch's wait is not a stall
-        val tracks = exo.currentTracks
-        // R291 (FR-R291-2) — a composed master names every rendition `a{position} …` (the backend's
-        // composeMaster), because Media3 lists the muxed audio first and the audio-only renditions after
-        // it, not in the ticket's order. A rendition is found by that name; anything else (a file's own
-        // tracks on direct play) keeps the ordinal match below.
-        for (i in 0 until tracks.groups.size) {
-            val group = tracks.groups[i]
-            if (group.type != C.TRACK_TYPE_AUDIO) continue
-            if ((0 until group.length).any { t -> group.getTrackFormat(t).label?.startsWith("a$index ") == true || group.getTrackFormat(t).label == "a$index" }) {
-                exo.trackSelectionParameters = exo.trackSelectionParameters
-                    .buildUpon()
-                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
-                    .build()
-                return
-            }
-        }
-        var audioGroupIdx = 0
-        for (i in 0 until tracks.groups.size) {
-            val group = tracks.groups[i]
-            if (group.type == C.TRACK_TYPE_AUDIO) {
-                if (audioGroupIdx == index) {
-                    exo.trackSelectionParameters = exo.trackSelectionParameters
-                        .buildUpon()
-                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
-                        .build()
-                    return
-                }
-                audioGroupIdx++
-            }
-        }
+        val row = audioRows().getOrNull(index) ?: return
+        exo.trackSelectionParameters = exo.trackSelectionParameters
+            .buildUpon()
+            .setOverrideForType(TrackSelectionOverride(row.group.mediaTrackGroup, 0))
+            .build()
     }
 
     /** R291 — see [warmAudioRendition]. Reads the parsed master and the playhead here, on the player's thread. */
@@ -654,35 +635,52 @@ actual class RaviloPlayer actual constructor() {
     actual val isSeeking: Boolean get() = _isSeeking
     actual val soundBlockedByBrowser: Boolean get() = false   // R376 — no autoplay rule on Android
 
+    /** One picker row: the engine audio group, and the ticket entry it is (null for a group no entry claims). */
+    private class AudioRow(val group: Tracks.Group, val ticket: dev.jellystructure.shared.tv.AudioTrack?)
+
+    /**
+     * R382, amendment 2026-10-13 (FR-R382-8) — the rows the picker and [selectAudioInEngine] share: the ticket's
+     * audio tracks in the ticket's order, each paired with the engine group that IS it ([pairAudioToTicket]).
+     *
+     * `Tracks.groups` is in RENDERER order — media3's `TrackSelectionUtil.buildTracks` loops renderers outermost —
+     * and R379's `EXTENSION_RENDERER_MODE_ON` puts the FFmpeg extension renderer after the platform one, so a track
+     * only FFmpeg decodes (DTS, TrueHD on a Pixel) is listed after every other. The old `audioMeta.getOrNull(idx)`
+     * zip therefore gave each group its NEIGHBOUR's language, label, channels and `copyOf` from that track on, and
+     * the viewer tapped *Norsk* and heard Swedish (DEB-740).
+     */
+    private fun audioRows(): List<AudioRow> {
+        val tracks = engine?.currentTracks ?: return emptyList()
+        val groups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        if (audioMeta.isEmpty()) return groups.map { AudioRow(it, null) }
+        val engineTracks = groups.map { g ->
+            val f = g.mediaTrackGroup.getFormat(0)
+            EngineAudioTrack(f.language, f.label, f.channelCount.takeIf { it > 0 }, f.sampleMimeType)
+        }
+        return pairAudioToTicket(engineTracks, audioMeta).map { AudioRow(groups[it.enginePosition], it.ticketPosition?.let(audioMeta::get)) }
+    }
+
     actual val audioTracks: List<PlayerAudioTrack>
         get() {
-            val result = mutableListOf<PlayerAudioTrack>()
-            val tracks = engine?.currentTracks ?: return result
-            var idx = 0
-            for (i in 0 until tracks.groups.size) {
-                val group = tracks.groups[i]
-                if (group.type == C.TRACK_TYPE_AUDIO) {
-                    val format = group.mediaTrackGroup.getFormat(0)
-                    // Prefer the server-derived label (Jellyfin DisplayTitle), mapped by audio-stream
-                    // order; fall back to the container track name, then a humanized language, then
-                    // the raw code (R46). If stream counts differ, the container label still applies.
-                    val meta = audioMeta.getOrNull(idx)
-                    val label = meta?.label?.takeIf { it.isNotBlank() }
-                        ?: format.label
-                        ?: languageName(format.language)
-                        ?: format.language?.uppercase()
-                        ?: "Track ${idx + 1}"
-                    // R180 — prefer the server-derived meta (Jellyfin MediaStreams); fall back to the
-                    // container format's own channel count when meta lacks it.
-                    val channels = meta?.channels ?: format.channelCount.takeIf { it > 0 }
-                    // Phase 314b — a copy's source by its place in the ticket (the same order the player sees).
-                    val copyOf = meta?.copyOf?.let { src -> audioMeta.indexOfFirst { it.index == src } }?.takeIf { it >= 0 }
-                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language, channels, meta?.isDefault ?: false,
-                        copyOf = copyOf, supported = group.isTrackSupported(0))
-                    idx++
-                }
+            val rows = audioRows()
+            return rows.mapIndexed { idx, row ->
+                val format = row.group.mediaTrackGroup.getFormat(0)
+                // Prefer the server-derived label (Jellyfin DisplayTitle) of THIS row's own ticket entry; fall back
+                // to the container track name, then a humanized language, then the raw code (R46). A group no ticket
+                // entry claims keeps the container's own label, as a mismatched stream count always did.
+                val meta = row.ticket
+                val label = meta?.label?.takeIf { it.isNotBlank() }
+                    ?: format.label
+                    ?: languageName(format.language)
+                    ?: format.language?.uppercase()
+                    ?: "Track ${idx + 1}"
+                // R180 — prefer the server-derived meta (Jellyfin MediaStreams); fall back to the
+                // container format's own channel count when meta lacks it.
+                val channels = meta?.channels ?: format.channelCount.takeIf { it > 0 }
+                // Phase 314b — a copy's source by the ROW its ticket entry is on, which is where the picker folds it.
+                val copyOf = meta?.copyOf?.let { src -> rows.indexOfFirst { it.ticket?.index == src } }?.takeIf { it >= 0 }
+                PlayerAudioTrack(idx, label, meta?.language ?: format.language, channels, meta?.isDefault ?: false,
+                    copyOf = copyOf, supported = row.group.isTrackSupported(0))
             }
-            return result
         }
 
     actual val subtitleTracks: List<PlayerSubtitleTrack>
