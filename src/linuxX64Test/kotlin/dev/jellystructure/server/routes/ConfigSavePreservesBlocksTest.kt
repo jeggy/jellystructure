@@ -28,10 +28,10 @@ import kotlin.test.assertEquals
  * from that list, so any save from any tab wrote `EncoderConfig()`'s defaults over the operator's values.
  *
  * The body below is the shape the admin actually posts for the blocks under test: it has no `encoder`,
- * `ingest`, `subtitle_check` or `acquisition` key at all (the frontend `AppConfig` has no such fields), which
- * is exactly how kotlinx comes to fill in defaults. The assertions cover the family, not just the one bug, so
- * the next block added to `AppConfig` without a restore line fails a test rather than quietly resetting a
- * household value.
+ * `ingest`, `subtitle_check`, `acquisition` or `ravilo` key at all (the frontend `AppConfig` has no such
+ * fields), which is exactly how kotlinx comes to fill in defaults. The assertions cover the family, not just
+ * the one bug, so the next block added to `AppConfig` without a restore line fails a test rather than quietly
+ * resetting a household value.
  */
 class ConfigSavePreservesBlocksTest {
     private val path = "/tmp/jellystructure-test-config-save-${getpid()}.toml"
@@ -50,7 +50,7 @@ class ConfigSavePreservesBlocksTest {
     )
 
     // What a Settings save posts: form fields only. No `encoder`, no `ingest`, no `subtitle_check`, no
-    // `acquisition` — the admin's own AppConfig model does not carry them.
+    // `acquisition`, no `ravilo` — the admin's own AppConfig model does not carry them.
     private val formBody = """{"public_url":"https://media.example.org","scan_schedule":"","metadata":{"age_rating_cascade":["DK"]}}"""
 
     private fun savedOverA(before: (ConfigStore) -> Unit, then: (ConfigStore) -> Unit) = testApplication {
@@ -91,6 +91,9 @@ class ConfigSavePreservesBlocksTest {
                         ingest = store.current.ingest.copy(realtime = false, webhookSecret = "s3cret", jellyfinReachUrl = "http://192.0.2.10:9505"),
                         subtitleCheck = store.current.subtitleCheck.copy(action = "report", dailyDownloadBudget = 7),
                         acquisition = AcquisitionConfig(enabled = true, pollSeconds = 42),
+                        // Phase 304b (FR-304-7, amendment 2026-10-12 — DEB-731) — the household switch, turned on
+                        // through its own route. The only one of the family whose reset a viewer notices.
+                        ravilo = store.current.ravilo.copy(householdControl = true),
                     )
                 )
             }
@@ -101,6 +104,7 @@ class ConfigSavePreservesBlocksTest {
             assertEquals(listOf("report", 7), listOf(c.subtitleCheck.action, c.subtitleCheck.dailyDownloadBudget))
             assertEquals(AcquisitionConfig(enabled = true, pollSeconds = 42), c.acquisition)
             assertEquals(tuned, c.encoder)
+            assertEquals(true, c.ravilo.householdControl, "a Settings save must not turn household control back off")
         },
     )
 

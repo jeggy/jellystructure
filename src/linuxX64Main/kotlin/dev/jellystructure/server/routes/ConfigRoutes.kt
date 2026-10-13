@@ -248,6 +248,12 @@ fun Route.configureConfigRoutes(
         // over the operator's work_dir / max_disk_mb / cast_receivers — silently, since `enabled` defaults to
         // true, so nothing switched off and only tuned values reverted.
         config = config.copy(encoder = stored.encoder)
+        // Phase 304b (FR-304-7, amendment 2026-10-12 — DEB-731) — the household switch lives in the Sessions card's
+        // header and has its own route (PUT /api/tv/admin/playback/household-control), never a Settings field. The
+        // frontend model has no `ravilo` at all, so without this line every save from every tab wrote
+        // RaviloHouseholdConfig()'s `household_control = false` over an enabled switch — viewer-visible, since
+        // SessionCommands.controllableBy reads it live, and silent: no log line and nothing on screen.
+        config = config.copy(ravilo = stored.ravilo)
         // Phase 273 — the subtitle check's switch has its own route (PUT /api/subtitles/settings), so a Settings save
         // from any page, including one loaded before the switch existed, never resets it.
         config = config.copy(subtitleCheck = stored.subtitleCheck)
