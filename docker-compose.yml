@@ -12,6 +12,11 @@ services:
       SESSIONS_FILE: /config/sessions.json
       FRONTEND_DIR: /app/frontend
       SERVER_PORT: 9505
+      # Phase 318 (FR-318-1) — the Dockerfile sets this too, and that is the durable half; this line is
+      # what lets a RUNNING deployment pick it up by recreating the container from the image it already
+      # has, with no rebuild. Without it every MKVToolNix call (mkvmerge -J, mkvpropedit, mkvextract)
+      # mishandles a non-ASCII path -- 30 % of this library's matroska files. Same value in both places.
+      LANG: C.UTF-8
     restart: unless-stopped
     networks:
       - jellystructure

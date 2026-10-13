@@ -144,6 +144,16 @@ ENV SESSIONS_FILE=/config/sessions.json
 # directory (Main.kt), so this one variable fixes both.
 ENV DB_FILE=/config/jellystructure.db
 ENV SERVER_PORT=9505
+# Phase 318 (FR-318-1) — debian:bookworm-slim sets no locale, so every process this image spawns ran in
+# the C locale, and every MKVToolNix tool converts its arguments through the locale's charset: mkvmerge
+# -J on a non-ASCII path exits 2 with "could not be opened for reading", mkvpropedit refuses the same
+# file as "not a Matroska file" without writing it, and a non-ASCII string in mkvmerge's own output is
+# truncated at the first such byte with exit 0 and an empty stderr. 1 247 of 4 142 matroska files in the
+# household library carry one. ffmpeg/ffprobe are immune (they open paths as raw bytes). LANG, not
+# LC_ALL, so a call site can still override it; C.UTF-8 is in this base image already (`locale -a` →
+# C.utf8), so no locales package and no size cost. docker-compose.yml repeats it so a RUNNING deployment
+# can pick it up on a recreate, with no rebuild -- same value, they cannot disagree.
+ENV LANG=C.UTF-8
 # Phase 224 (FR-224-6) — the version this image was published as, from publish.yml's build-arg ("1.18"
 # on a release, the short sha on a push), read at runtime by JellyfinClient's own header and /api/health.
 # Declared HERE, after every compile layer, so a release build of an already-pushed commit stays a full
