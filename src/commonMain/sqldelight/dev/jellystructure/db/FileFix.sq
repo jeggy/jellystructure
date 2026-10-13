@@ -73,6 +73,13 @@ SELECT * FROM file_fix WHERE kind = :kind AND (:state IS NULL OR state = :state)
 countsForKind:
 SELECT state, COUNT(*) AS n, SUM(est_bytes) AS bytes FROM file_fix WHERE kind = :kind GROUP BY state;
 
+-- FR-314-18 — rows whose verdict only the beside-the-original placement could have produced: a rename waiting to be
+-- ticked, or a skip for the folder naming Jellyfin's grouping needed. With a versions root configured neither can be
+-- computed again, so a row still in one of them is a verdict from before the root and the card's counts predate it.
+countPreRootDvVerdicts:
+SELECT COUNT(*) FROM file_fix
+WHERE kind = :kind AND (state = 'needs_rename' OR (state = 'skipped' AND detail IN (:skip_file, :skip_other)));
+
 failedRows:
 SELECT * FROM file_fix WHERE state = 'failed' ORDER BY updated_at DESC LIMIT :lim;
 

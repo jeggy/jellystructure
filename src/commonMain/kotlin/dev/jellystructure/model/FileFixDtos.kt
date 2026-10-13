@@ -20,6 +20,12 @@ data class FileFixKindSummary(
     val counts: Map<String, Int> = emptyMap(),
     /** Bytes the eligible rows would add (would_add + sidecar), for the disk line. */
     @SerialName("eligible_bytes") val eligibleBytes: Long = 0,
+    /**
+     * FR-314-18 — set when [counts] are verdicts the live configuration can no longer produce, i.e. the dry run that
+     * wrote them ran under a different `dv_versions_root`. One sentence naming that, and the card shows it **instead
+     * of** the counts: a number nothing stands behind is worse than no number, because the switch is decided off it.
+     */
+    @SerialName("stale_note") val staleNote: String? = null,
 )
 
 @Serializable

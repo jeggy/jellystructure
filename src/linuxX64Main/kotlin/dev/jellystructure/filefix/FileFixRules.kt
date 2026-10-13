@@ -335,6 +335,15 @@ fun renamedToFolder(originalPath: String): String? {
 private val MULTI_VERSION_TAIL = Regex("""^(\[[^]]*]|[0-9]{2}[0-9]+[ip])""", RegexOption.IGNORE_CASE)
 
 /**
+ * FR-314-18 — the two kind C skip reasons that **only the beside-the-original placement can produce**: both are
+ * about Jellyfin grouping by folder, which a versions library replaces. Named so the card can recognise a stored
+ * row that was decided under `root == null` by the rule's own words rather than by a guessed substring; a skipped
+ * row's `detail` is its verdict's `reason` verbatim.
+ */
+const val DV_SKIP_FILE_NOT_NAMED_AFTER_FOLDER = "the file isn't named after its folder, so Jellyfin would show the copy as a second film"
+const val DV_SKIP_OTHER_VIDEO_NOT_NAMED = "another video in the folder isn't named after it, so Jellyfin would not group the versions"
+
+/**
  * FR-314-1 kind C: a film whose picture is Dolby Vision profile 7 (with its enhancement layer).
  *
  * FR-314-15 — with a [versionsRoot] configured the version does not live in the film's folder, so **Jellyfin's folder
@@ -363,9 +372,9 @@ fun planDolbyVision(
         return Verdict(k, "add", reason = reason)
     }
     if (otherVideosInFolder.any { it == target }) return Verdict(k, "done")
-    if (!namedAfterFolder(facts.path)) return Verdict(k, "skip", reason = "the file isn't named after its folder, so Jellyfin would show the copy as a second film")
+    if (!namedAfterFolder(facts.path)) return Verdict(k, "skip", reason = DV_SKIP_FILE_NOT_NAMED_AFTER_FOLDER)
     val others = otherVideosInFolder.filter { it != facts.path && it != target }
-    if (others.any { !namedAfterFolder(it) }) return Verdict(k, "skip", reason = "another video in the folder isn't named after it, so Jellyfin would not group the versions")
+    if (others.any { !namedAfterFolder(it) }) return Verdict(k, "skip", reason = DV_SKIP_OTHER_VIDEO_NOT_NAMED)
     return Verdict(k, "add", reason = reason)
 }
 

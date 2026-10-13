@@ -86,10 +86,15 @@ private fun renderFileFix(o: FileFixOverview) {
                ${if (!k.available) """<span class="badge warn">unavailable · ${k.unavailableReason?.esc() ?: ""}</span>""" else ""}
                <span class="spacer"></span>
                <span class="btn sm ghost ff-list" data-k="${k.kind}">Show the list</span>
-               <button class="btn sm ff-apply" data-k="${k.kind}"${if (!k.enabled || eligible + sidecar == 0) " disabled" else ""}>Apply</button>
+               <button class="btn sm ff-apply" data-k="${k.kind}"${if (!k.enabled || eligible + sidecar == 0 || k.staleNote != null) " disabled" else ""}>Apply</button>
              </div>
              <div class="tiny muted" style="margin-top:4px">${k.sentence.esc()}</div>
-             <div class="tiny" style="margin-top:4px">${parts.joinToString(" · ")}${if (k.eligibleBytes > 0) " · ~${gb(k.eligibleBytes)} to write" else ""}</div>
+             ${
+                 // FR-314-18 — a count the server cannot vouch for replaces the counts line rather than sitting
+                 // beside it: the switch is decided off this number, so a stale total is worse than none.
+                 if (k.staleNote != null) """<div class="note warn tiny" style="margin-top:6px">${k.staleNote.esc()}</div>"""
+                 else """<div class="tiny" style="margin-top:4px">${parts.joinToString(" · ")}${if (k.eligibleBytes > 0) " · ~${gb(k.eligibleBytes)} to write" else ""}</div>"""
+             }
              <label class="tiny muted row center" style="gap:6px;margin-top:6px"><input type="checkbox" class="ff-auto" data-k="${k.kind}"${if (k.autoNew) " checked" else ""}${if (!k.enabled) " disabled" else ""}>Apply automatically to new files</label>
              <div class="ff-rows" id="ff-rows-${k.kind}" style="display:none;margin-top:8px"></div>
            </div>"""

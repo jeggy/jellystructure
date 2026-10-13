@@ -557,4 +557,81 @@ class FileFixServiceTest {
         service().buildPlan()
         assertEquals("would_add", row(scene, FixKind.DOLBY_VISION)?.state, "a merged version groups whatever the original is called")
     }
+
+    // ── FR-314-18 (DEB-946) — a stored verdict is only as good as the configuration it was computed under ──
+
+    /**
+     * Test 16 — the gate the owner's tick goes through is re-derived from the configuration, not read off the row.
+     * The rows stay as the dry run left them (prod never re-plans by itself), the root is configured underneath
+     * them, and the rename that would have renamed 13 library files for nothing is refused.
+     */
+    @Test fun `a rename ticked on a verdict from before the versions root renames nothing - and corrects the row`() = runBlocking {
+        addLooseDv()
+        var asked = 0
+        renamer = { path -> asked++; dev.jellystructure.model.FileFixRenameResult(path, renamedDv, "renamed") }
+        service().buildPlan()
+        assertEquals("needs_rename", row(looseDv, FixKind.DOLBY_VISION)?.state, "planned with no root, as prod's rows were")
+
+        withVersionsRoot()
+        val out = service().renameAndQueue(listOf(looseDv)).single()
+        assertEquals(0, asked, "the mover is never called: nothing in the library is renamed")
+        assertEquals("failed", out.state)
+        assertTrue(out.detail!!.startsWith("no rename is needed any more"), out.detail!!)
+        assertEquals("would_add", row(looseDv, FixKind.DOLBY_VISION)?.state, "the refusal replans the film where the live rules put it")
+        assertTrue(looseDv in shell.files, "the original keeps its name")
+    }
+
+    /** Test 16, the other half — with no root configured the same tick still renames. */
+    @Test fun `with no versions root a ticked rename still happens`() = runBlocking {
+        addLooseDv()
+        var asked = 0
+        renamer = { path ->
+            asked++
+            shell.files[renamedDv] = shell.files.remove(path)!!; shell.probes[renamedDv] = shell.probes.remove(path)!!
+            store.addOrUpdate(store.resolve("third")!!.copy(path = renamedDv))
+            dev.jellystructure.model.FileFixRenameResult(path, renamedDv, "renamed")
+        }
+        val s = service()
+        s.buildPlan()
+        assertEquals("renamed", s.renameAndQueue(listOf(looseDv)).single().state)
+        assertEquals(1, asked)
+    }
+
+    /**
+     * Test 15 — the card does not report a count its own rules can no longer produce, and its headline sentence
+     * names the placement the configuration implies. Both states that only the beside-the-original placement can
+     * write are counted: the rename wait, and the skip for the folder's naming.
+     */
+    @Test fun `the card says its kind C counts predate the versions root - and names the configured placement`() = runBlocking {
+        addLooseDv()
+        val s = service()
+        s.buildPlan()
+        val before = s.overview().kinds.single { it.kind == "c" }
+        assertNull(before.staleNote, "with no root configured the verdicts are the live rules'")
+        assertTrue(before.sentence.contains("beside a profile 7 film"), before.sentence)
+
+        withVersionsRoot()
+        val after = service().overview().kinds.single { it.kind == "c" }
+        assertTrue(after.sentence.contains("into the versions library"), after.sentence)
+        assertTrue(after.sentence.contains("The original stays exactly as it is."), after.sentence)
+        assertTrue(after.staleNote!!.startsWith("These counts were worked out before the versions library was configured"), after.staleNote!!)
+        assertTrue(after.staleNote!!.contains("1 of the ${after.counts.values.sum()} films"), after.staleNote!!)
+        assertNull(service().overview().kinds.single { it.kind == "a" }.staleNote, "kinds A and B place nothing a root can move")
+
+        // The dry run is what clears it: the row leaves `needs_rename` and nothing predates the configuration.
+        service().buildPlan()
+        assertNull(service().overview().kinds.single { it.kind == "c" }.staleNote)
+    }
+
+    /** A kind C film skipped for its folder's naming is the other verdict the versions library can never produce. */
+    @Test fun `a skip for the folder naming also predates a configured versions root`() = runBlocking {
+        // A second video in the film's folder that does not start with the folder's name: with no root, Jellyfin
+        // would not group anything in that folder, so the film is skipped rather than offered.
+        shell.files["$dir/Other (2021)/Extra.1080p.mkv"] = 20_000_000
+        service().buildPlan()
+        assertEquals("skipped", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+        assertEquals(DV_SKIP_OTHER_VIDEO_NOT_NAMED, row(dvFilm, FixKind.DOLBY_VISION)?.detail)
+        withVersionsRoot()
+        assertTrue(service().overview().kinds.single { it.kind == "c" }.staleNote!!.contains("1 of the"))
+    }
 }

@@ -180,11 +180,25 @@ class FileFixService(
      */
     suspend fun renameAndQueue(paths: List<String>): List<dev.jellystructure.model.FileFixRenameResult> {
         val renamer = renameOriginal
+        // FR-314-18 — the precondition is re-derived here, not read off the row. `needs_rename` is written by one
+        // branch guarded by `root == null`, and a row's state is only ever recomputed by another dry run, so with a
+        // root configured the rows still in it are verdicts from before it — and this is the one write path whose
+        // gate was the stored state. Acting on them renames library files the live configuration needs no rename
+        // for: a `moviefile` row deleted and re-created under Radarr per film (FR-314-13, FR-314-14, DEB-869).
+        val root = versionsRoot()
         return paths.map { path ->
             val row = q.find(path, FixKind.DOLBY_VISION.id).executeAsOneOrNull()
             when {
                 renamer == null -> dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "renaming isn't available here")
                 row == null || row.state != "needs_rename" -> dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = "not waiting for a rename")
+                root != null -> {
+                    // The row is corrected in the same call, so the refusal both leaves the file alone and takes the
+                    // button away: the dry run's own rules put this film where it belongs (`would_add`).
+                    store.resolve(row.media_id)?.let { runCatching { planOne(FixTarget(it, path, true, row.label)) } }
+                    dev.jellystructure.model.FileFixRenameResult(path, state = "failed",
+                        detail = "no rename is needed any more: the versions library groups the film whatever its file is called. " +
+                            "Nothing was renamed, and this film is now listed as one to add.")
+                }
                 else -> {
                     val r = runCatching { renamer(path) }.getOrElse { dev.jellystructure.model.FileFixRenameResult(path, state = "failed", detail = it.message) }
                     val newPath = r.newPath
@@ -349,17 +363,40 @@ class FileFixService(
 
     private fun countsOf(kind: FixKind): Map<String, Int> = q.countsForKind(kind.id).executeAsList().associate { it.state to it.n.toInt() }
 
+    /**
+     * FR-314-18 — one sentence when [kind]'s stored verdicts were computed under a different `dv_versions_root`, else
+     * null. A row's state is written by the dry run and recomputed only by another one, and an installation with
+     * `scan_interval_hours = 0` never plans on its own, so nothing corrects these rows with time.
+     *
+     * What it keys on is a verdict the live rules **cannot produce**, not a timestamp: with a root configured no film
+     * waits on a rename and no film is skipped for its folder's naming (FR-314-15), so a row still in one of those
+     * states was decided when there was no root. The reverse — a root cleared, leaving verdicts computed under one —
+     * leaves no impossible state behind and is not detected here; it is also not a direction this installation takes.
+     */
+    private fun staleNote(kind: FixKind, root: String?, counts: Map<String, Int>): String? {
+        if (kind != FixKind.DOLBY_VISION || root == null) return null
+        val n = q.countPreRootDvVerdicts(kind.id, DV_SKIP_FILE_NOT_NAMED_AFTER_FOLDER, DV_SKIP_OTHER_VIDEO_NOT_NAMED).executeAsOne().toInt()
+        if (n == 0) return null
+        val others = counts.values.sum() - n
+        return "These counts were worked out before the versions library was configured, when a version had to go beside the film and " +
+            "a rename came first. $n of the ${n + others} films were decided under that rule and would be decided differently now. " +
+            "Press Find files to work them out again — Apply waits for that, and finding only reads."
+    }
+
     fun overview(): FileFixOverview {
+        val root = versionsRoot()
         val kinds = FixKind.entries.map { k ->
             val rows = q.countsForKind(k.id).executeAsList()
             val setting = q.settingFor(k.id).executeAsOneOrNull()
             val doviMissing = k == FixKind.DOLBY_VISION && !shell.exists(doviTool)
+            val counts = rows.associate { it.state to it.n.toInt() }
             FileFixKindSummary(
-                kind = k.id, label = k.label, sentence = SENTENCES.getValue(k),
+                kind = k.id, label = k.label, sentence = sentenceFor(k, root),
                 enabled = setting?.enabled == 1L, autoNew = setting?.auto_new == 1L,
                 available = !doviMissing, unavailableReason = if (doviMissing) "dovi_tool is not installed in this image" else null,
-                counts = rows.associate { it.state to it.n.toInt() },
+                counts = counts,
                 eligibleBytes = rows.filter { it.state == "would_add" || it.state == "sidecar" }.sumOf { it.bytes ?: 0L },
+                staleNote = staleNote(k, root, counts),
             )
         }
         return FileFixOverview(kinds, planStatus, readCapBytes(), q.readBytesSince(now() - 86_400).executeAsOne())
@@ -705,6 +742,18 @@ class FileFixService(
             FixKind.SURROUND to "Adds a 5.1 E-AC-3 track where a language has only TrueHD or DTS, for the Mac, an iPhone and receivers. The original tracks stay.",
             FixKind.DOLBY_VISION to "Writes a Dolby Vision 8.1 version beside a profile 7 film, so the TVs play it directly. The original stays exactly as it is.",
         )
+
+        /**
+         * FR-314-18 — the card's headline sentence takes the same `root != null` branch each row's detail already
+         * takes. *Beside a profile 7 film* describes the superseded placement, and it is the shape DEB-868 came out
+         * of, so with a versions root configured it advertises at the top of the card the hazard the root exists to
+         * avoid. Kinds A and B place nothing a root can move and read their sentence unchanged.
+         */
+        fun sentenceFor(kind: FixKind, versionsRoot: String?): String =
+            if (kind == FixKind.DOLBY_VISION && versionsRoot != null)
+                "Writes a Dolby Vision 8.1 version of a profile 7 film into the versions library, which Jellyfin shows as another " +
+                    "version of the same film, so the TVs play it directly. The original stays exactly as it is."
+            else SENTENCES.getValue(kind)
     }
 }
 
