@@ -1512,3 +1512,29 @@ touched, no Apply is run, Jellyfin is not called. It is the designed mechanism a
 *dry run first* in any case. So the order for turning kind C on is: **recompute → read the real counts → the switch
 decision → an Apply on one film (acceptance 9) → DEB-870**. Deciding the switch off today's card would be deciding
 off a fifth of the real reach, which is the one thing this amendment exists to prevent.
+
+### FR-314-18 as built (2026-10-13, commit `8574493d`)
+
+Three things worth keeping, one of them a limit.
+
+- **The invalidation is not a write on the config path, and not a timestamp.** *"Changing `dv_versions_root`
+  invalidates kind C's stored rows"* reads as a hook on the Settings save, and that was not built: a save that
+  deletes rows is a destructive side effect of a text field, and a *"when did the root last change"* timestamp is a
+  new stored datum (`file_fix` has no column for it, `file_fix_setting` no spare field, and this schema has no
+  generic key-value table — it would be a migration). What is built instead needs nothing stored: the card asks
+  **which stored verdicts the live rules cannot produce**. With a root configured there are exactly two — a row in
+  `needs_rename`, and a row `skipped` for its folder's naming — and both are recognised by the rule's own strings
+  (`DV_SKIP_FILE_NOT_NAMED_AFTER_FOLDER`, `DV_SKIP_OTHER_VIDEO_NOT_NAMED`, exported from `FileFixRules` so the card
+  compares the verdict's own words rather than a guessed substring; a skipped row's `detail` is its `reason`
+  verbatim). One aggregate query, `countPreRootDvVerdicts`, no schema change, nothing to go stale on its own.
+- **The limit, stated rather than hidden: the reverse direction is not detected.** Clearing or moving a root leaves
+  no impossible state behind — every state a rooted dry run writes is also a state the beside-the-original rules can
+  write — so a card whose verdicts were computed *under* a root and then has the root taken away reports them
+  unqualified. Detecting that is the stored-configuration column this deliberately did not add. It is not a
+  direction this installation takes (the root was configured once, towards the merged placement), and if it ever
+  becomes one, the column is the honest answer rather than a second pattern-match.
+- **The prod rows are not repaired by this.** The code stops the card lying and stops the rename acting; the 13 + 1
+  verdicts on prod stay as they are until the dry run in *Sequencing* above is run, which is the owner's gate, not
+  this requirement's. One thing does repair them piecemeal: the rename refusal replans each film it refuses, so a
+  tick-everything-and-press-rename — which is what the stale card invited and what would have renamed 13 library
+  files — now corrects all thirteen rows and touches nothing.
