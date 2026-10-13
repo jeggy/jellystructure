@@ -250,7 +250,17 @@ object OutboundHttp {
             // Deliberately narrow: idempotent methods only, and only when the call *threw* — a request
             // that reached the server and got an answer is never retried, so Phase 183's 429/AIMD
             // pacing and the 503 + Retry-After contract are untouched. One retry, no backoff stacking.
+            //
+            // FR-194-7 (DEB-914) — `noRetry()` is what makes the paragraph above true, and it was missing
+            // for five weeks. `HttpRequestRetryConfig`'s own `init` block is
+            // `retryOnExceptionOrServerErrors(3)`, which sets *both* predicates; `retryOnExceptionIf`
+            // replaces only `shouldRetryOnException`, so the inherited "re-send any 5xx on any method"
+            // survived and every outbound 5xx — POSTs included — was two requests 200 ms apart. Clearing
+            // both first also means a ktor upgrade that changes that default cannot widen us again in
+            // silence. The order is load-bearing: `noRetry()` sets `maxRetries = 0`, so the line below it
+            // must come after, or the connection-layer retry this block exists for disappears too.
             install(HttpRequestRetry) {
+                noRetry()
                 maxRetries = 1
                 retryOnExceptionIf { request, cause ->
                     request.method in IDEMPOTENT_METHODS && cause.isConnectionLayerFailure()

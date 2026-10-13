@@ -163,14 +163,13 @@ class AvSyncBusyGiveUpTest {
         val failure = result.exceptionOrNull()
         assertTrue(failure is AvSyncService.AvSyncBusy, "a 503 is busy and not a refusal: $failure")
         assertEquals(20, (failure as AvSyncService.AvSyncBusy).retryAfterS, "the sidecar's own retry_after_s")
-        // TWO POSTs for one busy answer, not one, and that is the shared client rather than this phase:
-        // `HttpRequestRetryConfig`'s own `init` calls `retryOnExceptionOrServerErrors(3)`, and
-        // `OutboundHttp`'s block replaces `retryOnExceptionIf`/`maxRetries` without replacing
-        // `shouldRetry` — so every 5xx is re-sent once, 200 ms later, POST or not. It does not change what
-        // the lane counts (one `AvSyncBusy` per `check`, so FR-317-29's thirty answers are still thirty
-        // waits of `retry_after_s`), and it is asserted here so that the day it is fixed this test says so
-        // instead of a sidecar quietly seeing half the traffic it used to. Reported out of DEB-902.
-        assertEquals(2, measures.value, "one busy answer, re-sent once by the shared client's 5xx retry")
+        // ONE POST for one busy answer, which is the contract: a 503 says *come back in retry_after_s*,
+        // so coming back in 200 ms would be the lane ignoring the number it just read. This asserted 2
+        // until FR-194-7 (DEB-914) — the shared client had inherited ktor's "re-send any 5xx" default and
+        // doubled every outbound 5xx on every method. It never changed what the lane counts (one
+        // `AvSyncBusy` per `check`, so FR-317-29's thirty answers are thirty waits either way); the only
+        // thing the fix changes is how much traffic the sidecar sees while it is wedged.
+        assertEquals(1, measures.value, "a 503 is honoured, not re-sent 200 ms later")
         // The whole point of failing the row rather than storing a reason: FR-317-8's NO_RESULT rule makes
         // the file due again, and a stored row would have hidden it from the next sweep.
         assertEquals(0, db.fileAvSyncQueries.all().executeAsList().size, "no reading, and no reason row either")
