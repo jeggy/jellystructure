@@ -27,7 +27,10 @@ from scipy import signal
 APP_DIR = os.environ.get('AVSYNC_APP_DIR', '/app')
 # The pipeline's own version, appended to the model name: a bump makes every stored result due again
 # (FR-317-2/FR-317-7). Raise it whenever a change here would move a reading.
-PIPELINE_VERSION = 1
+#   2 — FR-317-32: a window whose audio did not reach its picture is refused instead of measured against
+#       speech from somewhere else in the file. Every row written under 1 is due again, because the
+#       readings that moved are exactly the ones that cannot be identified without re-measuring.
+PIPELINE_VERSION = 2
 SYNCNET_COMMIT = '907c0b5'
 MODEL = f'syncnet_v2+s3fd@{SYNCNET_COMMIT}/{PIPELINE_VERSION}'
 
@@ -50,6 +53,18 @@ DET_SCALE = 0.5           # detector input, relative to the decoded frame
 MIN_TRACK = 50            # frames a face must stay on screen (2 s)
 ENV_BUCKET_MS = 20        # the loudness envelope's resolution for the `others` correlation (half a frame)
 ENV_MAX_LAG_S = 2.0       # FR-317-4: a dub is looked for within ±2 s of the measured track
+
+# FR-317-32 — how far short of the video the audio features of a HEALTHY window come, by construction:
+# `audio_feats` keeps `mfcc_frames // 4 - 5` windows of 20 MFCC columns, so a 45 s window's 1 125 video
+# frames meet 1 119 audio features, every time, whatever the file. The last ~0.24 s of every window has no
+# audio under it, the clamp in [distance_curve] truncates it, and that is correct.
+AUDIO_FEATURE_LAG = 6
+# Anything worse than this is a decode that lost audio (DEB-939): the shortfall of a healthy window is 0,
+# and one codec packet of 1 024 samples at the `-ss` seek is 1.6 frames. ffmpeg does not pad a dropped
+# packet — it hands over the samples that survived, end to end — so a gap mid-window does not merely
+# shorten the audio, it SHIFTS everything after it, and frame k's lips are then measured against speech
+# from k + the gap. That is not a measurement of this file's sync, and no number in the row said so.
+AUDIO_SHORT_TOL = 2
 
 dev, fp16 = 'cuda', not os.environ.get('AVSYNC_FP32')
 
@@ -404,6 +419,23 @@ def crops(fr, fi, bb, cs=0.4):                    # syncnet_python's crop geomet
 
 # ── SyncNet ─────────────────────────────────────────────────────────────────────────────────────
 
+def mfcc_frames(n_samples):
+    """How many frames `python_speech_features.mfcc(pcm, 16000)` will return for [n_samples] — its own
+    `sigproc.framesig` arithmetic at the default winlen 25 ms / winstep 10 ms, which at 16 kHz is a 400
+    sample window stepped by 160. Arithmetic rather than a call: FR-317-32 needs this per window, before
+    any model runs, and the MFCC of a 45 s window is not free."""
+    return 1 if n_samples <= 400 else 1 + math.ceil((n_samples - 400) / 160)
+
+
+def audio_feature_count(n_samples):
+    """How many audio features [audio_feats] will produce from [n_samples] of 16 kHz PCM, derived the same
+    way it does (`// 4 - 5`) — one per 40 ms, so it is directly comparable with a 25 fps frame count.
+
+    Signed on purpose: a window with almost no audio in it gives a NEGATIVE count, and FR-317-32's bar has
+    to see how far below zero rather than be handed a clamped 0."""
+    return mfcc_frames(n_samples) // 4 - 5
+
+
 @torch.no_grad()
 def audio_feats(pcm):                             # once per window, shared by every face in it
     _, sn, _, _ = models()
@@ -430,7 +462,23 @@ def lip_feats(cr, batch=64):
 
 
 def distance_curve(lf, af, f0):                  # mean lip↔speech distance at each shift −15…+15 frames
+    """The curve and the number of frames behind it, or `(None, n)` for a track with no audio under it.
+
+    `af[i]` and lip feature `i` are the same 40 ms of the same window by construction — the video is
+    decoded at exactly `fps=25` and `audio_feats` steps the MFCC by 4 columns of 10 ms — so clamping a
+    video frame index against `af_len` mixes no units, and `F.pad` is what makes the ±15 frame shifts legal
+    at the edges. The clamp's UPPER half is correct and nothing here moves it (FR-317-33).
+
+    What it was missing is a lower bound. `n == 0` makes every slice empty, `d.mean(0)` over an empty
+    dimension is `NaN`, and the window's `conf` is `NaN`; `n < 0` keeps `lf_len + n` lip rows against an
+    empty audio slice and PyTorch raises *"The size of tensor a (N) must match the size of tensor b (0)"*.
+    Both were in the 2026-10-13 sweep's failure list (DEB-939), and both are *not measured* rather than an
+    answer. This is a BACKSTOP, not the fix: inside a window FR-317-32 accepted it is unreachable
+    (`v − a ≤ 8`, a track piece is ≥ 30 frames, so `a − f0 ≥ 22 > 0`), and the fix for the silent wrong
+    answers is FR-317-32's refusal. If it is ever reached, the caller refuses the window — which carries an
+    `audio_short_frames` at or below the bar, a signature no healthy row can wear."""
     n = min(lf.shape[0], af.shape[0] - f0)
+    if n <= 0: return None, n
     afp = F.pad(af, (0, 0, VSHIFT, VSHIFT))
     d = torch.stack([F.pairwise_distance(lf[:n], afp[f0 + s: f0 + s + n]) for s in range(2 * VSHIFT + 1)], 1)
     return d.mean(0), n
@@ -600,24 +648,54 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             except FutureTimeout:
                 raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling') from None
             nvdec = nvdec and used_gpu
-            fr = fr_cpu.to(dev)
-            dets = detect(fr, list(range(0, fr.shape[0], DETECT_EVERY)), W, H)
-            trs = [t for s0, s1 in shots(fr) for t in tracks(dets, s0, s1, W)]
-            af = audio_feats(pcm)
+            # FR-317-32 — does the decoded audio reach the picture it would be compared against? Against
+            # `v − a` and never against the requested duration: a window clamped at the end of the file,
+            # and a file whose real length is under its header's, come back short in BOTH and are perfectly
+            # measurable. `v − a` is invariant to all of it. Decided from lengths alone, before any face
+            # work, so a refused window costs no detection, no crops and no lip features — the audio was
+            # decoded either way, and that is where the GPU is saved.
+            v = fr_cpu.shape[0]
+            short_frames = v - audio_feature_count(pcm.size) - AUDIO_FEATURE_LAG
+            short = short_frames > AUDIO_SHORT_TOL
+            fr = fr_cpu.to(dev) if not short else None
             curve, frames, faces = None, 0, []
-            for fi, bb in trs:
-                md, n = distance_curve(lip_feats(crops(fr, fi, bb)), af, int(fi[0]))
-                curve = md * n if curve is None else curve + md * n; frames += n
-                off, conf = verdict(md)
-                faces.append(dict(at_s=round(start + fi[0] / FPS, 1), frames=n, offset_frames=off, conf=conf))
-            torch.cuda.synchronize()
-            if curve is not None:                 # the window's answer: every face's curve, weighted by its length
+            if not short:
+                dets = detect(fr, list(range(0, v, DETECT_EVERY)), W, H)
+                trs = [t for s0, s1 in shots(fr) for t in tracks(dets, s0, s1, W)]
+                af = audio_feats(pcm)
+                for fi, bb in trs:
+                    # FR-317-33's backstop, read off the lengths before the crops are built: `lip_feats`
+                    # returns one feature per frame but the last four. Unreachable in an accepted window;
+                    # if it ever fires, the window is refused exactly as a short-audio one is.
+                    if min(len(fi) - 4, af.shape[0] - int(fi[0])) <= 0:
+                        short = True
+                        continue
+                    md, n = distance_curve(lip_feats(crops(fr, fi, bb)), af, int(fi[0]))
+                    if md is None:                # the same backstop, from the one place that owns the clamp
+                        short = True
+                        continue
+                    curve = md * n if curve is None else curve + md * n; frames += n
+                    off, conf = verdict(md)
+                    faces.append(dict(at_s=round(start + fi[0] / FPS, 1), frames=n, offset_frames=off, conf=conf))
+                torch.cuda.synchronize()
+            # A refused window reports exactly as a window with no face track does — `offset_frames: null`,
+            # `conf: 0.0`, `frames: 0`, no faces — because that is what it is: there is nothing to measure
+            # here, not *the measurement failed*. `audio_short_frames` is reported on EVERY window, refused
+            # or not, so the healthy distribution of `v − a` is readable out of `file_av_sync` without a new
+            # build and the bar can be re-drawn from evidence if 2 turns out to be wrong.
+            w = dict(start_s=round(start, 1), offset_frames=None, conf=0.0, frames=0, faces=[])
+            if curve is not None and not short:   # the window's answer: every face's curve, weighted by its length
                 off, conf = verdict(curve / frames)
-                out.append(dict(start_s=round(start, 1), offset_frames=off, conf=conf, frames=frames, faces=faces))
-            else:
-                out.append(dict(start_s=round(start, 1), offset_frames=None, conf=0.0, frames=0, faces=[]))
-            ref_envs.append(envelope(pcm))
-            for i, pcm_other in enumerate(extra): other_envs[i].append(envelope(pcm_other))
+                w.update(offset_frames=off, conf=conf, frames=frames, faces=faces)
+            w.update(audio_short=short, audio_short_frames=short_frames)
+            out.append(w)
+            # FR-317-4's zip stays aligned: a refused window contributes `None` to the measured track's
+            # envelope list AND to every `others` list, so it casts no vote in the cross-correlation either.
+            # An `others` stream short in this window alone contributes `None` for that stream only.
+            ref_envs.append(None if short else envelope(pcm))
+            for i, pcm_other in enumerate(extra):
+                other_short = short or v - audio_feature_count(pcm_other.size) - AUDIO_FEATURE_LAG > AUDIO_SHORT_TOL
+                other_envs[i].append(None if other_short else envelope(pcm_other))
             del fr, fr_cpu; torch.cuda.empty_cache()     # hand the card back between windows
     except BaseException:
         # Any failure ends the run: the windows still being prefetched are nobody's answer now, and a

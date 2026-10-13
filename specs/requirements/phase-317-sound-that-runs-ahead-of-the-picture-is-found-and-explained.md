@@ -1462,8 +1462,12 @@ that limit is here rather than in a guess at a second check.
   curve or a tensor-shape raise, driven by lengths alone — the shape both 2026-10-13 failures were
   reproduced from. **No library file is needed, and none is to be used.**
 - A refused window end to end in the sidecar: a window whose PCM is 36 s against 45 s of video reports
-  `audio_short: true`, `audio_short_frames ≈ 219`, `frames: 0`, `offset_frames: null`, an empty `faces`, and
-  **the detector is never called** (asserted by a stub, since that is the GPU saving).
+  `audio_short: true`, `audio_short_frames` **225**, `frames: 0`, `offset_frames: null`, an empty `faces`,
+  and **the detector is never called** (asserted by a stub, since that is the GPU saving).
+  *(Corrected while building, 2026-10-13: this line first said ≈ 219, which is `25 · 45 − 25 · 36 − 6`. The
+  rule above gives 225, because the 36 s that did arrive are themselves 6 features short of 36 × 25:
+  1 125 − 894 − 6. The estimate was wrong, not the requirement, and `v − a − AUDIO_FEATURE_LAG` is what is
+  built and tested.)*
 - A healthy window reports `audio_short: false` and an `audio_short_frames` of 0 or ±1 — the regression
   that would otherwise refuse the whole library.
 - `linuxX64Test` on hand-written response documents: a row with one refused window beside two confident ones
