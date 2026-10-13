@@ -159,3 +159,83 @@ playing.
 
 The same QA session found a playback session left `state='playing'` with `ended_at = NULL` on prod, which makes the
 app offer *"Already playing on Ravilo Web"* on every later play. That is the 310/312 writer's business, not R382's.
+
+## Amendment, 2026-10-13 — the measured cause: the ticket and the engine are two index spaces
+
+> Written before the Kotlin, from reading the code and the Media3 artifact on the build host; no device. The
+> 2026-10-12 amendment's requirements (FR-R382-5/-6) stand unchanged — only its **hunt note** is superseded, and it
+> is recorded here rather than edited out, because the arithmetic in it is what led to the right layer.
+
+### The suspected layer is not the defect
+
+`foldedAudioGroups` and R195's grouping are correct. `groupVersions` numbers every version with its own index into
+the list it was handed (`VersionCore.flatIndex`, `:shared`'s `TrackVariants.kt`), and `foldedAudioGroups` remaps only
+when a 314b copy is folded off the list — on a title with no added copies it returns `build(tracks)` untouched, which
+is the reported title. The remap `visible[v.flatIndex].index` is the first of the three possibilities the 10-12 note
+listed, so it is right. The defect is one layer below the picker, where the player's audio list is built.
+
+### What the engine actually reports
+
+Three facts, each read off this host rather than inferred from the report:
+
+1. Ravilo's audio renderer mode is `EXTENSION_RENDERER_MODE_ON` (`RaviloRenderers`, R379), and
+   `DefaultRenderersFactory.buildAudioRenderers` adds `MediaCodecAudioRenderer` first, then inserts the extension
+   renderers at `out.size()` for that mode. The jellyfin FFmpeg audio renderer is therefore **after** the platform one.
+2. `TrackSelectionUtil.buildTracks` (media3 1.8.0, disassembled from the cached `.aar`) builds `Tracks.groups` by
+   looping **renderers** outermost and each renderer's own `TrackGroupArray` inside. `Tracks.groups` is in renderer
+   order, not source order: every audio group a platform decoder takes is listed before every group that fell to
+   FFmpeg — DTS and TrueHD on a Pixel.
+3. `RaviloPlayerAndroid.audioTracks` zips the ticket's audio list onto those groups **by position**
+   (`audioMeta.getOrNull(idx)`) and takes each row's language, label, channel count, `isDefault` and 314b `copyOf`
+   from it. `selectAudioInEngine` counts audio groups the same way, so a pick lands on the group at that position.
+
+A title with one track the device cannot decode therefore attributes the ticket's metadata to the wrong group from
+that track on: the row the viewer reads is not the group the pick selects.
+
+This reproduces both reported titles exactly, and nothing else needs to be assumed:
+
+- **Title A** — the one English track only FFmpeg decodes sorts last, so the engine lists `da, fi, no, sv, en, en`
+  where the ticket says `en, da, fi, no, sv, en`. Row *Dansk* is the Finnish group and row *Norsk* is the Swedish
+  group: the "one track later" that was measured. The `[0, 5, 1, 2, 3, 4]` flattening coincides with this shift on
+  this one shape, which is why it fitted title A — and why it did not fit title B, where the two tracks sit in one
+  group and flattening predicts no error at all.
+- **Title B** — TrueHD (FFmpeg, `ffmpegLavc60.3.100-truehd` in the report) after AC-3 (MediaCodec,
+  `c2.dolby.eac3.decoder.ac3`), so the two rows' labels swap and `Now showing` names the other one in both
+  directions, with the selection itself self-consistent.
+
+It also accounts for what was **not** broken: every pick reached a real audio group, so each switch decoded in place
+and none restreamed.
+
+### FR-R382-8 — A row is a ticket entry, and its engine group is found by identity
+
+The audio picker's rows are the **ticket's** audio tracks in the ticket's order, and each row carries its own ticket
+entry's language, label, channels, `isDefault` and `copyOf`. The engine group a row plays is found from that entry's
+identity — a rendition's `a{position}` name on one of this server's composed masters (R291), else language, channel
+count and codec, else what is left over in order — and never from the group's position in the engine's own list.
+The web client already works this way (`audioTracksFromRenditions`: a row is a rendition's `a{position}`, never
+hls.js's list position), and the desktop reads mpv's own per-track metadata, so Android was the one platform where an
+index meant two different things at the two ends of the seam.
+
+A row is never invented. Where the engine reports fewer audio groups than the ticket lists — a single-audio session —
+the rows stay the engine's and R284's `sessionAudioTracks` substitution is untouched; an engine group that matches no
+ticket entry keeps its own container metadata and sorts after the matched rows.
+
+### FR-R382-9 — Tests
+
+1. Title A's shape: ticket `en, da, fi, no, sv, en` against an engine order with the FFmpeg track last — every row
+   pairs with its own group, and the row whose language is `no` plays the Norwegian group.
+2. Title B's shape: two `eng` tracks, TrueHD and AC-3, reported in the other order — each row pairs with its own
+   group, so no label and no `Now showing` badge can name the other one.
+3. A composed master: a group named `a{n}` pairs with ticket entry `n` whatever its position and whatever its
+   language says (R291's naming wins over every weaker signal).
+4. The common case is unchanged: an engine list that already agrees with the ticket pairs row *i* to group *i*.
+5. Degenerate shapes: fewer engine groups than ticket entries invents no row; an unmatched group keeps its own
+   metadata and sorts last; an empty ticket leaves the engine's list as it is.
+
+FR-R382-7's four tests cover the picker layer the 10-12 note suspected. They are kept as written — that layer's
+contract is worth holding even though it was not the defect — and they pass before this fix as well as after.
+
+### Acceptance
+
+Unchanged: acceptance 1 of the 10-12 amendment is still the proof, it still needs the Pixel 9 and the `.debug`
+package, and it cannot be closed from the engineering seat.
