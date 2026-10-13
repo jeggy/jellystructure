@@ -1229,3 +1229,30 @@ and 4 name the same folder on their own side of the mapping.
 14. `versionsRootOverlapsArrRoot` is fed the **translated** root: a root whose Jellyfin view is an arr root folder
     overlaps and is refused; `/mnt/media/jellyfin/versions` → `/media/versions` against the same arr roots does not;
     and a root that no mapping translates is refused by the rule above rather than compared raw.
+
+### FR-314-16 as built (2026-10-13, DEB-903)
+
+Built on `main` at `6e7c7ce7`. Nothing deployed, no switch turned on, no library file touched — and on a prod with
+no `dv_versions_root` configured there is no reachable behaviour change at all.
+
+- **`jellyfinViewOrNull` is the primitive now**, and `jellyfinViewOf` is that with the old fall-back-to-the-path-
+  unchanged. Every other caller — the grouping lambda, the un-grouping notification, the viewer-visibility pass —
+  is unchanged by construction; only the versions root uses the nullable form, because only there is being
+  unmapped the error rather than a legitimate same-mount installation.
+- **`runDolbyVision` refuses before the first write** when no mapping covers the root, naming the library row's
+  `local_path`, and only then compares the **translated** root against the arr roots. The overlap refusal carries
+  both names now (`the versions root <local> is <jellyfin view> to Jellyfin, which the media root <arr root> holds`),
+  because the whole mistake is that those are two different strings for one folder.
+- **The Settings ▸ Advanced hint and its placeholder** name the backend's path (`/mnt/media/jellyfin/versions`) and
+  send Jellyfin's name for the same folder to the Libraries card, where step 4 puts it.
+
+Verified: **1509/1509** native tests green from the relinked `test.kexe` (the 54 `filefix` tests include test 14 and
+a service-level test for acceptance 11: the job refuses, nothing is written, Jellyfin is never told about a path it
+has never heard of), and `compileKotlinWasmJs` green for the hint. The service suite's `withVersionsRoot` helper now
+sets the library mapping alongside the root, which is the configuration the host will have.
+
+Read against the live configuration, read-only, no write: `local_path = /mnt/media/jellyfin/movies/` ↔
+`jellyfin_path = /media/movies/`; Radarr's root folder `/media/movies` and Sonarr's `/media/series`, unchanged since
+the amendment. So **acceptance 12 holds as specced** — a root at `/mnt/media/jellyfin/movies` translates onto
+Radarr's own root and is refused — and `[file_fix]` carries no `dv_versions_root`, so the kind's switch is still
+shut and the first thing the owner's step 3 will meet, before step 4, is acceptance 11's refusal naming step 4.
