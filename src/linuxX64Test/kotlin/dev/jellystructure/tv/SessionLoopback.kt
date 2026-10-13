@@ -71,7 +71,12 @@ internal class SessionLoopback(tag: String) {
     val kinds = mutableMapOf<String, String>()
 
     init {
-        sessions.describe = { id, _ -> (kinds[id] ?: SessionKind.FILM) to SessionItem(id, "Title $id", null, null, 3_600_000L) }
+        // R380 (FR-R380-12) — a book is described by its own id, as the audiobooks store describes one: title, author
+        // and cover. An item described with no book is a film unless [kinds] says otherwise.
+        sessions.describe = { id, bookId ->
+            if (bookId != null) SessionKind.AUDIOBOOK to SessionItem(id, "Book $bookId", "An Author", "/api/tv/image/audiobook/$bookId", 7_200_000L)
+            else (kinds[id] ?: SessionKind.FILM) to SessionItem(id, "Title $id", null, null, 3_600_000L)
+        }
         control.householdControl = { household }
         publisher.control = control
         publisher.controlWidened = { true }

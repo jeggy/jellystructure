@@ -73,6 +73,24 @@ internal fun appCapabilities(features: Set<String>, platform: String?): TargetCa
 }
 
 /**
+ * R380 (FR-R380-11, DEB-919) — book time for [inPartMs] inside [partId]: the parts before it, end to end, plus the
+ * place in it. A part the book does not list (a file gone since the session started) keeps its own position, which is
+ * the closest honest answer and never a jump to the end of the book.
+ */
+internal fun bookTimeOf(parts: List<Pair<String, Long>>, partId: String, inPartMs: Long): Long {
+    val here = inPartMs.coerceAtLeast(0L)
+    if (parts.none { it.first == partId }) return here
+    return parts.takeWhile { it.first != partId }.sumOf { it.second.coerceAtLeast(0L) } + here
+}
+
+/**
+ * R380 (FR-R380-11, DEB-919) — the session kinds an app's `plays=` promises, as the apps' own handler reads them. The
+ * capability and the handler are then one set on both sides of the wire: a place is never sent a kind it did not offer.
+ */
+internal fun appKinds(features: Set<String>): Set<String> = dev.jellystructure.shared.tv.kindsPlayed(
+    features.filter { it.startsWith("plays:") }.map { it.removePrefix("plays:") }.joinToString(",").ifEmpty { null })
+
+/**
  * FR-R370-1/-2, review items 6, 7, 12; owner decisions 1–3 — the places [viewer] may start on: Ravilo apps holding their
  * socket (own anywhere, other members' when nearby), Cast devices a relay app on the viewer's network sees, and *Not
  * reachable* receivers seen in the last 24 h. Never a group. [busyOf] gives what plays on a place (as the viewer sees it).
@@ -173,6 +191,13 @@ class SessionStarter(
     /** Main: the music queue's facts for a relay LOAD (title, artist, cover …). */
     internal var trackItem: suspend (String) -> CastTrackItem? = { null }
 
+    /**
+     * R380 (FR-R380-11, DEB-919) — one book's parts in our order, `(part item id, length)`. A live book session's own
+     * position is the position in the **part** it plays (281's heartbeat), and a `session_load` carries book time, so
+     * the move needs the parts before this one to convert between the two.
+     */
+    internal var bookParts: suspend (bookId: String) -> List<Pair<String, Long>> = { emptyList() }
+
     internal suspend fun liveApps(): List<LiveApp> = bus.liveSockets().mapNotNull { (u, d, f) ->
         devices.listSessions(d).firstOrNull { it.jellyfinUserId == u }?.let { LiveApp(it, f) }
     }
@@ -182,7 +207,10 @@ class SessionStarter(
 
     internal suspend fun start(caller: DeviceData, req: SessionStartRequest): StartResult2 {
         if (req.items.isEmpty()) return StartResult2.BadRequest
-        val kind = req.kind
+        // R380 (FR-R380-11, DEB-919) — one kind, or none: `book` is read as `audiobook` (it is the `plays=` token, and
+        // QA's own repro used it), and an unknown kind is refused here rather than becoming a session in the video lane
+        // that no app has an arm for and the load watchdog ends `failed` 10 s later.
+        val kind = dev.jellystructure.shared.tv.sessionKindOf(req.kind) ?: return StartResult2.BadRequest
         // Owner decision 4 — books never cast.
         val castTarget = req.targetId.startsWith("cast:")
         if (castTarget && kind == SessionKind.AUDIOBOOK) return StartResult2.BadRequest
@@ -195,18 +223,23 @@ class SessionStarter(
                 if (bus.isConnected(busy.targetId)) bus.notifyPlaystateCommand(busy.ownerUserId, busy.targetId, "Stop", null)
             }
         }
-        val items = req.items.map { id -> sessions.describe(id, null)?.second ?: SessionItem(id) }
+        // R380 (FR-R380-12, DEB-919) — a book start's items ARE the book, so the book's own facts are asked for by its
+        // id: without this every book session's queue row was `{"id": …}` alone and the book showed as nameless.
+        val bookId = if (kind == SessionKind.AUDIOBOOK) req.items.getOrNull(req.index) ?: req.items.first() else null
+        val items = req.items.map { id -> sessions.describe(id, id.takeIf { kind == SessionKind.AUDIOBOOK })?.second ?: SessionItem(id) }
         val options = SessionOptions(shuffle = req.shuffle, repeat = req.repeat)
         val startMs = req.startMs ?: 0L
         if (!castTarget) {
             val target = liveApps().firstOrNull { it.device.deviceId == req.targetId }?.device ?: return StartResult2.Unreachable
             val busy = sessions.all().firstOrNull { it.live && it.targetId == target.deviceId && it.lane == sessionLane(kind) }
             if (busy != null && req.replace == null && req.moveOf == null) return StartResult2.Busy
-            val rec = sessions.createStarting(caller, "app", target.deviceId, sessions.placeNameOf(target), kind, items, req.index, startMs, options, caller)
+            val rec = sessions.createStarting(caller, "app", target.deviceId, sessions.placeNameOf(target), kind, items, req.index, startMs, options, caller, bookId = bookId)
             val tracks = if (kind == SessionKind.MUSIC) req.items.mapNotNull { trackItem(it) } else emptyList()
             val env = SessionLoadEnvelope(sessionId = rec.id, kind = kind, items = req.items, index = req.index, startMs = startMs,
                 shuffle = req.shuffle, repeat = req.repeat, title = items.getOrNull(req.index)?.title, tracks = tracks,
-                senderName = senderNameOf(caller))
+                senderName = senderNameOf(caller),
+                // FR-R380-11 — a book is named on the envelope, and its place is book time (the start request's own).
+                bookId = bookId, bookMs = req.startMs.takeIf { kind == SessionKind.AUDIOBOOK })
             bus.notifyDevice(target.jellyfinUserId, target.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             Logger.info("Playback sessions: ${rec.id} start $kind on ${target.deviceId} from ${caller.deviceId} → session_load", "tv")
             // R380 (found live 2026-10-09) — music the caller plays itself moves to the place it started it on: its own
@@ -283,13 +316,17 @@ class SessionStarter(
         val video = s.kind == SessionKind.FILM || s.kind == SessionKind.EPISODE
         if (!targetId.startsWith("cast:")) {
             val app = liveApps().firstOrNull { it.device.deviceId == targetId } ?: return StartResult2.Unreachable
-            val caps = appCapabilities(app.features, app.device.platform)
-            if (video && !caps.video || !video && !caps.audio && !caps.book) return StartResult2.BadRequest
+            // R380 (FR-R380-11, DEB-919) — the kind this session is must be one the place says it plays, not merely
+            // audio-ish: a move onto a place that does not play books is refused here instead of being dropped there.
+            if (s.kind !in appKinds(app.features)) return StartResult2.BadRequest
             val moving = sessions.beginMove(s.id, targetId, sessions.placeNameOf(app.device)) ?: return StartResult2.BadRequest
             val tracks = if (s.kind == SessionKind.MUSIC) ids.mapNotNull { trackItem(it) } else emptyList()
+            // FR-R380-11 — a book's place on the wire is book time; the row's own position is the part's.
+            val bookMs = if (s.kind == SessionKind.AUDIOBOOK && s.bookId != null)
+                moveStartMs(bookTimeOf(bookParts(s.bookId), s.itemId, pos)) else null
             val env = SessionLoadEnvelope(sessionId = s.id, kind = s.kind, items = ids, index = index, startMs = startMs,
                 shuffle = s.options.shuffle, repeat = s.options.repeat ?: "off", title = s.current?.title, tracks = tracks,
-                senderName = senderNameOf(caller).takeIf { !admin })
+                senderName = senderNameOf(caller).takeIf { !admin }, bookId = s.bookId, bookMs = bookMs)
             bus.notifyDevice(app.device.jellyfinUserId, app.device.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             sessions.record(s.id, "moving", caller.deviceId, app.device.displayName)
             Logger.info("Playback sessions: ${s.id} move to ${app.device.deviceId} from ${caller.deviceId} → session_load at $startMs ms", "tv")

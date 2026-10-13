@@ -109,6 +109,11 @@ suspend fun wirePlaybackSessions(
                 album = album?.title, coverUrl = album?.let { MusicTvService.albumImage(it) }, durationMs = t.durationMs)
         }
     }
+    // R380 (FR-R380-11, DEB-919) — a book's parts in our order, for the book time a `session_load` carries.
+    starter.bookParts = { bookId ->
+        musicPipeline?.audiobooks?.store?.parts(bookId).orEmpty()
+            .filter { it.missingSince == null }.sortedBy { it.position }.map { it.id to (it.durationMs ?: 0L) }
+    }
     publisher.starter = starter
     // R372 — the old place stops once the new one plays (its stop report then goes through stopPlayback as ever).
     sessions.stopPlace = { s, from ->

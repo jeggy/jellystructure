@@ -56,6 +56,10 @@ data class SessionReplace(
 /**
  * `POST /api/tv/playback/sessions` (FR-R370-3) — start [items] (in play order) at [index] on [targetId]. [kind] is
  * `film` · `episode` · `music` · `audiobook`; [startMs] null = the server's resume point.
+ *
+ * R380 (FR-R380-11, DEB-919) — a book's [items] are book ids and its [startMs] is **book time** (the parts before,
+ * end to end, plus the place in this one), never a part's own position. `book` is accepted for [kind] as a spelling
+ * of `audiobook`: it is the `plays=` token, and a sender that used it got a session nothing could play.
  */
 @Serializable
 data class SessionStartRequest(
@@ -103,6 +107,14 @@ data class SessionLoadEnvelope(
     /** R380 (found live 2026-10-09) — the device that started or moved it (*Pixel 9 Pro*), for the TV's *Playing from
      *  {device}*, as a Cast LOAD's `sender_name` does; null from an older server. */
     @SerialName("sender_name") val senderName: String? = null,
+    /**
+     * R380 (FR-R380-11, DEB-919) — a book: the book this session plays. [items] is the book on a start and the **part**
+     * being played on a move, so the book is named here or not at all. Null for every other kind, and from a server
+     * older than this (an app then resumes the book's own place, which is the server's anyway).
+     */
+    @SerialName("book_id") val bookId: String? = null,
+    /** R380 (FR-R380-11) — a book: the place to start, in **book time**; null = this viewer's stored place. */
+    @SerialName("book_ms") val bookMs: Long? = null,
 )
 
 /**
@@ -149,3 +161,31 @@ data class CastHandoffRequest(
 /** Review item 6 — the `plays=` an app declares on its events socket. */
 fun playsQuery(video: Boolean, music: Boolean, book: Boolean): String? =
     listOfNotNull("video".takeIf { video }, "music".takeIf { music }, "book".takeIf { book }).takeIf { it.isNotEmpty() }?.joinToString(",")
+
+/** What each `plays=` token promises, as session kinds. The two vocabularies differ: `book` is advertised, `audiobook`
+ *  is the kind a `session_load` carries. */
+private val PLAYS_KINDS: Map<String, List<String>> = mapOf(
+    "video" to listOf("film", "episode"),
+    "music" to listOf("music"),
+    "book" to listOf("audiobook"),
+)
+
+/**
+ * R380 (FR-R380-11, DEB-919) — the session kinds a `plays=` declaration promises to play (an app that declared nothing
+ * plays video, as the server's own reading of `plays=` has it). A capability that outran its handler is how a TV came
+ * to be offered as a book place and then dropped every book handed to it: a handler is held against this set.
+ */
+fun kindsPlayed(plays: String?): Set<String> =
+    (plays?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: listOf("video"))
+        .flatMapTo(mutableSetOf()) { PLAYS_KINDS[it].orEmpty() }
+
+/**
+ * R380 (FR-R380-11, DEB-919) — the one kind of a session, from whatever a caller spelled: `book` is the `plays=` token
+ * and QA's own repro used it, so it is read as `audiobook` rather than becoming a session in the video lane that no
+ * app has an arm for. Null = a kind this server does not know (the start is refused instead of failing 10 s later).
+ */
+fun sessionKindOf(kind: String): String? = when (kind) {
+    "film", "episode", "music", "audiobook" -> kind
+    "book" -> "audiobook"
+    else -> null
+}

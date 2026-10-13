@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.AdminSessionEvent
 import dev.jellystructure.model.AdminSessionList
 import dev.jellystructure.model.AdminSessionRow
@@ -144,7 +145,8 @@ class SessionPublisher(
 
     /**
      * R369 (dev review item 7) — `attach_session {id}` / `detach_session {id}` on the events socket. Only a session
-     * this viewer is listed is attachable.
+     * this viewer is listed is attachable. R380 (FR-R380-11) — and `session_load_failed {id, kind}`, a place saying it
+     * cannot play what it was handed.
      */
     suspend fun onSocketMessage(text: String, device: DeviceData) {
         val c = control ?: return
@@ -153,6 +155,17 @@ class SessionPublisher(
         if (type == "cast_devices_seen") { starter?.onCastDevicesSeen(device, text); return }
         val id = (obj["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return
         when (type) {
+            // R380 (FR-R380-11, DEB-919) — the place refuses the load, naming the kind it was handed: the session ends
+            // now, with the kind in its timeline, instead of standing `starting` until the 10 s watchdog ends it
+            // `failed` with nothing said. Only the session's own target may refuse it.
+            "session_load_failed" -> {
+                val s = sessions.get(id)?.takeIf { it.live && it.targetId == device.deviceId } ?: return
+                val kind = (obj["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: s.kind
+                sessions.record(s.id, "load_refused", device.deviceId, kind)
+                Logger.info("Playback sessions: ${s.id} refused by ${device.deviceId} — it does not play $kind", "tv")
+                sessions.end(s.id, "failed", by = device)
+                adminRefresh()
+            }
             "attach_session" -> {
                 val s = sessions.get(id) ?: return
                 if (viewFor(device, s) == null) return

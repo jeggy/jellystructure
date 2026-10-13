@@ -156,6 +156,16 @@ object SessionRemote {
         scope.launch { runCatching { a.reportSessionMembers(report) } }
     }
 
+    /**
+     * R380 (FR-R380-11, DEB-919) — this app cannot play what a `session_load` handed it: say so on the session, naming
+     * the kind, instead of dropping it and leaving the server's watchdog to end it `failed` 10 s later with nothing
+     * said. The frame goes out on the events socket the load came in on.
+     */
+    fun reportLoadRefused(sessionId: String, kind: String) {
+        _outgoing.tryEmit(loadRefusedFrame(sessionId, kind))
+        dev.jellystructure.ravilo.ui.seams.sessionLog("R380: refused a $kind session_load ($sessionId) — no arm for it here")
+    }
+
     /** R369 (dev review item 5) — this player's queue, on change only. */
     fun reportQueue(report: SessionQueueReport) {
         val a = api ?: return

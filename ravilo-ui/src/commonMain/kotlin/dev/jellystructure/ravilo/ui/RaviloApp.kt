@@ -1537,8 +1537,11 @@ fun RaviloApp(
                     dev.jellystructure.shared.tv.RaviloWireJson.decodeFromString(dev.jellystructure.shared.tv.SessionLoadEnvelope.serializer(), text)
                 }.getOrNull()?.let { env ->
                     val id = env.items.getOrNull(env.index) ?: env.items.firstOrNull() ?: return@let
-                    when (env.kind) {
-                        "music" -> if (env.tracks.isNotEmpty() && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) with(dev.jellystructure.ravilo.ui.music.MusicCast) {
+                    // R380 (FR-R380-11, DEB-919) — one arm per kind this app advertises in `plays=`, and an `else` that
+                    // refuses loudly: a kind with no arm here used to fall out of this `when` (a book did, on every TV),
+                    // nothing played, nothing was said, and the server's watchdog ended the session `failed` 11 s later.
+                    when (dev.jellystructure.ravilo.ui.sessions.sessionLoadArm(env.kind)) {
+                        dev.jellystructure.ravilo.ui.sessions.SessionLoadArm.MUSIC -> if (env.tracks.isNotEmpty() && dev.jellystructure.ravilo.ui.music.MusicEngine.supported) with(dev.jellystructure.ravilo.ui.music.MusicCast) {
                             // Found with two sessions (2026-10-05): *Play on this Mac* for Stue while the Mac drove
                             // Gæsteværelse loaded the songs paused and sent the play to Gæsteværelse — nothing happened and
                             // Stue played on. The session moved HERE, so this app lets go of the other speaker (it keeps
@@ -1551,8 +1554,30 @@ fun RaviloApp(
                             // R380 (FR-R380-3) — a TV shows what it now plays (it has no listening pages to show it in).
                             if (isTvPlatform && stack.lastOrNull() !is Dest.TvNowPlaying && acceptsRemoteCommand(onScreenNow, true))
                                 push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty()))
+                        } else dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportLoadRefused(env.sessionId, env.kind)
+                        // FR-R380-11 — a book: the book's own controls (FR-R380-3, and ◀ ▶ as ∓30 s, FR-R380-4) come
+                        // with the engine's book state, so this arm loads the book and the TV's Now playing follows.
+                        // The place is the envelope's book time, or — an older server, or a start that named none —
+                        // this viewer's own stored place, which is where the book's progress lives anyway (281).
+                        dev.jellystructure.ravilo.ui.sessions.SessionLoadArm.BOOK -> {
+                            val book = env.bookId?.takeIf { it.isNotBlank() } ?: id
+                            val detail = if (dev.jellystructure.ravilo.ui.music.MusicEngine.supported)
+                                runCatching { apiClient.getAudiobook(book) }.getOrNull() else null
+                            if (detail == null) dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportLoadRefused(env.sessionId, env.kind)
+                            else with(dev.jellystructure.ravilo.ui.music.MusicCast) {
+                                // As the music arm does: the session moved HERE, so this app lets go of the speaker it
+                                // was driving (it keeps playing) and plays on its own engine.
+                                if (linked.value) { dev.jellystructure.ravilo.ui.seams.sessionLog("R380: a book moved here while linked to ${deviceName.value}: leaving it playing"); leaveRelay() }
+                                val place = env.bookMs?.let { dev.jellystructure.ravilo.ui.music.BookMath.locate(detail, it) }
+                                    ?: detail.position?.takeIf { !it.finished }?.let { it.part to it.positionMs }
+                                    ?: (0 to 0L)
+                                dev.jellystructure.ravilo.ui.music.MusicEngine.playBook(detail, place.first, place.second)
+                                if (isTvPlatform) dev.jellystructure.ravilo.ui.seams.TvCastChannel.startServerMusic(env.senderName)
+                                if (isTvPlatform && stack.lastOrNull() !is Dest.TvNowPlaying && acceptsRemoteCommand(onScreenNow, true))
+                                    push(Dest.TvNowPlaying(MultiTokenStore.getActive()?.displayName.orEmpty()))
+                            }
                         }
-                        "film", "episode" -> if (acceptsRemoteCommand(onScreenNow, true)) {
+                        dev.jellystructure.ravilo.ui.sessions.SessionLoadArm.VIDEO -> if (acceptsRemoteCommand(onScreenNow, true)) {
                             // 309 (found live 2026-10-09) — a start from another app skips the detail page's speed test.
                             if (isTvPlatform) configScope.launch { apiClient.probe() }
                             // R370 (FR-R370-7, DEB-781) — the whole queue travels with the play, not just the entry
@@ -1572,6 +1597,9 @@ fun RaviloApp(
                             // after this one is the shuffle's, not the next episode in order (R343 FR-R343-8).
                             shuffled = env.shuffle,
                         )) } else println("R370: dropped session_load while off screen")
+                        // FR-R380-11 — a kind this app has no arm for: refused on the session, naming the kind, never
+                        // dropped in silence. The advertised set and the handled set are held equal by a test.
+                        null -> dev.jellystructure.ravilo.ui.sessions.SessionRemote.reportLoadRefused(env.sessionId, env.kind)
                     }
                 }
                 // R370 (owner decision 1) — launch the receiver for someone else's session, then leave it playing.
