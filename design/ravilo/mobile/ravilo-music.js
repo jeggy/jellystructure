@@ -392,7 +392,7 @@
 
   window.RaviloMusic = {
     MS, handles: tab => typeof tab === 'string' && tab.indexOf('m-') === 0, render, rerender, profileTop, profileRow, settingsRows, setMode, setQ, paintBar, paintChrome,
-    openDet, closeDet, closeAllDet, paintDet, firstTab, bar,
+    openDet, closeDet, closeAllDet, paintDet, firstTab, bar, CHIPS,
     reselect(tab) { if (!this.handles(tab)) return false;
       if ((tab === 'm-library' || tab === 'm-browse') && merged()) { const i = $('muSrch'); if (i) i.focus(); return true; }
       if (tab === 'm-library' || tab === 'm-browse') { const c = CHIPS(); MS.libChip = c[(c.indexOf(MS.libChip) + 1) % c.length]; MS.genre = null; rerender(); return true; }

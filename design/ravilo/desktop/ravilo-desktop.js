@@ -23,16 +23,32 @@
   if (!SIZES[S.size]) S.size = 'large';
   if (!SKINS.some(x => x[0] === S.skin)) S.skin = 'aurora';
 
-  /* ---- films stand-ins (fictional; the title sweep) ---- */
+  /* ---- films stand-ins (fictional; the title sweep) ----
+     The one Ravilo file (2026-10-04) also loads ../ravilo-data.js, so the desktop shows the SAME library as the TV and the phone and a
+     title travels between them. Drawn in the desktop's own poster style (DK.G gradients). Ravilo Desktop.html (legacy) does not load
+     it and keeps the old 15 stand-ins below. */
   const GEN = ['Drama', 'Thriller', 'Documentary', 'Crime', 'Adventure', 'Drama', 'Mystery', 'Romance'];
-  const FL = [{ t: 'Big Buck Bunny', img: 'bbb-backdrop-landscape.png', play: 'bbb-backdrop-rodents.png', logo: 'bbb-logo.png', year: 2008, len: '10 min', g: 5, k: 1, genre: 'Animation', kind: 'film', syn: 'A gentle giant rabbit takes on three bullies of the forest in a comedy with no words at all.' }]
-    .concat(DK.FILMS.map(([t, g, k], i) => ({ t, g, k, year: 2018 + i % 7, len: (86 + (i * 13) % 52) + ' min', genre: GEN[i], kind: 'film' })));
-  const SER = [['Mesterholdet', 4, 2, 10], ['The Lamp Keepers', 1, 1, 8], ['Lundin og vinir', 6, 3, 13], ['Kelp Station', 9, 1, 6], ['North Ferry', 2, 2, 8], ['Tide Clock', 7, 1, 10]]
-    .map(([t, g, s, e], i) => ({ t, g, seasons: s, eps: s * e, year: 2016 + i, genre: ['Reality', 'Drama', 'Kids', 'Documentary', 'Crime', 'Mystery'][i], kind: 'series' }));
+  const BBB = { t: 'Big Buck Bunny', img: 'bbb-backdrop-landscape.png', play: 'bbb-backdrop-rodents.png', logo: 'bbb-logo.png', year: 2008, len: '10 min', g: 5, k: 1, genre: 'Animation', kind: 'film', syn: 'A gentle giant rabbit takes on three bullies of the forest in a comedy with no words at all.' };
+  const RV = window.RAVILO;
+  let FL, SER;
+  if (RV) {
+    const hh = s => { let x = 2166136261; for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619); } return Math.abs(x); };
+    const seen = new Set(), all = [].concat(RV.hero, ...RV.rows.map(r => r.items)).filter(x => x && x.title && !seen.has(x.title) && seen.add(x.title));
+    const base = it => ({ t: it.title, g: hh(it.title) % 12, k: /4K/.test(it.badge || '') ? 1 : 0, year: it.year, genre: (RV.genresFor(it)[0] || 'Drama'), syn: RV.synFor(it), src: it });
+    FL = all.filter(x => x.kind !== 'series').map(it => it.title === BBB.t ? Object.assign(base(it), BBB, { src: it }) : Object.assign(base(it), { kind: 'film', len: (86 + hh(it.title) % 52) + ' min' }));
+    FL.sort((a, b) => (b.t === BBB.t) - (a.t === BBB.t));
+    SER = all.filter(x => x.kind === 'series').map(it => { const n = RV.seasonsFor(it); let e = 0; for (let s = 0; s < n; s++) e += RV.episodesFor(it, s).length; return Object.assign(base(it), { kind: 'series', seasons: n, eps: e }); });
+  } else {
+    FL = [BBB].concat(DK.FILMS.map(([t, g, k], i) => ({ t, g, k, year: 2018 + i % 7, len: (86 + (i * 13) % 52) + ' min', genre: GEN[i], kind: 'film' })));
+    SER = [['Mesterholdet', 4, 2, 10], ['The Lamp Keepers', 1, 1, 8], ['Lundin og vinir', 6, 3, 13], ['Kelp Station', 9, 1, 6], ['North Ferry', 2, 2, 8], ['Tide Clock', 7, 1, 10]]
+      .map(([t, g, s, e], i) => ({ t, g, seasons: s, eps: s * e, year: 2016 + i, genre: ['Reality', 'Drama', 'Kids', 'Documentary', 'Crime', 'Mystery'][i], kind: 'series' }));
+  }
+  const keyOf = title => { const fi = FL.findIndex(x => x.t === title); if (fi >= 0) return 'f:' + fi; const si = SER.findIndex(x => x.t === title); return si >= 0 ? 's:' + si : null; };
+  const ROWMAX = RV ? 14 : 99;
   const DISC = [['Fog Line', 3], ['The Quiet Year', 8], ['Ninefold', 2], ['Marrow Bay', 5], ['Last Lantern', 10], ['Iron Shore', 1]];
   const item = key => { const [k, i] = key.split(':'); return (k === 's' ? SER : FL)[+i]; };
   const CONT = [['f:0', 58, 'Film · 4 min left'], ['s:0', 30, 'S02E04 · 21 min left'], ['s:1', 72, 'S01E07 · 9 min left']];
-  const myList = new Set(['f:0', 's:2', 'f:4']);
+  const myList = new Set(RV ? ['Big Buck Bunny', 'Lundin og vinir', 'Havets Folk'].map(keyOf).filter(Boolean) : ['f:0', 's:2', 'f:4']);
 
   /* ---- runtime ---- */
   const R = { st: { films: [], music: [] }, playing: false, cur: 'salt-on-the-window-1', ctx: 'al:salt-on-the-window', queue: [], qi: 0, pos: 62,
@@ -100,14 +116,17 @@
   /* ---- pages: each returns { t: title, over: header over a hero, h: body html } ---- */
   const P = {};
   P.home = () => ({ t: '', over: true, h: `<div class="hero" style="background-image:url(${A}bbb-backdrop-landscape.png)"><div class="hb"><div class="kick">New in Films</div><img class="lg" src="${A}bbb-logo.png" alt="Big Buck Bunny"><div class="meta"><span>2008</span><span>10 min</span><span class="tg">Animation</span><span class="tg">4K</span></div><p class="syn">${esc(FL[0].syn)}</p><div class="btns"><button class="bt pri" data-act="playfilm" data-k="f:0">${ic('play')}Play</button><button class="bt" data-act="mylist" data-k="f:0">${ic('bookmark')}${myList.has('f:0') ? 'On My List' : 'My List'}</button></div></div></div>`
-    + `<div class="pad">${rh('Continue watching')}<div class="row">${CONT.map(contCard).join('')}</div>${rh('New in Films', 'films')}<div class="row">${FL.slice(1).map((x, i) => poster('f:' + (i + 1))).join('')}</div>${rh('Series', 'series')}<div class="row">${SER.map((x, i) => poster('s:' + i)).join('')}</div></div>` });
+    + `<div class="pad">${rh('Continue watching')}<div class="row">${CONT.map(contCard).join('')}</div>${rh('New in Films', 'films')}<div class="row">${FL.slice(1, ROWMAX + 1).map((x, i) => poster('f:' + (i + 1))).join('')}</div>${rh('Series', 'series')}<div class="row">${SER.slice(0, ROWMAX).map((x, i) => poster('s:' + i)).join('')}</div></div>` });
   P.discover = () => ({ t: 'Discover', h: `<div class="pad"><div class="h1">Discover</div><div class="meta-l">Suggested for you from Seerr — not in the library yet</div><div class="grid">${DISC.map(([t, g], i) => `<div class="po" data-act="request" data-i="${i}"><div class="a" style="${bg(g)}"><span style="position:relative">${esc(t)}</span></div><div class="t">${esc(t)}</div><div class="s">${R.requested.has(i) ? '✓ Requested' : 'Request'}</div></div>`).join('')}</div></div>` });
   P.mylist = () => ({ t: 'My List', h: `<div class="pad"><div class="h1">My List</div><div class="meta-l">${myList.size} title${myList.size === 1 ? '' : 's'}</div>${myList.size ? `<div class="grid">${[...myList].map(poster).join('')}</div>` : '<div class="dx-empty"><b>Nothing on My List</b>Add a film or a series from its page.</div>'}</div>` });
   P.films = () => ({ t: 'Films', h: `<div class="pad"><div class="h1">Films</div><div class="meta-l">${FL.length} films</div><div class="grid">${FL.map((x, i) => poster('f:' + i)).join('')}</div></div>` });
   P.series = () => ({ t: 'Series', h: `<div class="pad"><div class="h1">Series</div><div class="meta-l">${SER.length} series</div><div class="grid">${SER.map((x, i) => poster('s:' + i)).join('')}</div></div>` });
   P.film = key => {
     const it = item(key), ser = it.kind === 'series', on = myList.has(key);
-    const eps = ser ? `<div class="pad">${rh('Season 1')}<div class="row dx-eps">${Array.from({ length: Math.min(8, it.eps / it.seasons) }, (_, i) => `<div class="ls" data-act="playfilm" data-k="${key}"><div class="a" style="${bg(it.g + i)}">${i < 3 ? '<span class="pg"><i style="width:100%"></i></span>' : ''}</div><div class="t">${i + 1}. Episode ${i + 1}</div><div class="s">S01E${String(i + 1).padStart(2, '0')}${i < 3 ? ' · <b>✓</b>' : ''}</div></div>`).join('')}</div></div>` : '';
+    /* the shared library has real episodes (names, what is watched); the old stand-ins number them */
+    const e1 = ser && it.src ? RV.episodesFor(it.src, 0).slice(0, 8) : null;
+    const eps = !ser ? '' : e1 ? `<div class="pad">${rh('Season 1')}<div class="row dx-eps">${e1.map((e, i) => `<div class="ls" data-act="playfilm" data-k="${key}"><div class="a" style="${bg(it.g + i)}">${e.pct ? `<span class="pg"><i style="width:${Math.min(100, e.pct)}%"></i></span>` : ''}</div><div class="t">${e.n}. ${esc(e.title)}</div><div class="s">S01E${String(e.n).padStart(2, '0')}${e.pct >= 100 ? ' · <b>✓</b>' : ''}</div></div>`).join('')}</div></div>`
+      : `<div class="pad">${rh('Season 1')}<div class="row dx-eps">${Array.from({ length: Math.min(8, it.eps / it.seasons) }, (_, i) => `<div class="ls" data-act="playfilm" data-k="${key}"><div class="a" style="${bg(it.g + i)}">${i < 3 ? '<span class="pg"><i style="width:100%"></i></span>' : ''}</div><div class="t">${i + 1}. Episode ${i + 1}</div><div class="s">S01E${String(i + 1).padStart(2, '0')}${i < 3 ? ' · <b>✓</b>' : ''}</div></div>`).join('')}</div></div>`;
     return { t: it.t, over: true, h: `<div class="dx-fd"><div class="hero" style="${it.img ? `background-image:url(${A}${it.img})` : bg(it.g)}"><div class="hb"><div class="kick">${ser ? 'Series' : 'Film'}</div>${it.logo ? `<img class="lg" src="${A}${it.logo}" alt="${esc(it.t)}">` : `<div class="ttl">${esc(it.t)}</div>`}<div class="meta"><span>${it.year}</span><span>${ser ? it.seasons + ' season' + (it.seasons > 1 ? 's' : '') : it.len}</span><span class="tg">${it.genre}</span>${it.k ? '<span class="tg">4K</span>' : ''}</div>${it.syn ? `<p class="syn">${esc(it.syn)}</p>` : ''}<div class="btns"><button class="bt pri" data-act="playfilm" data-k="${key}">${ic('play')}${ser ? 'Play · S01E04' : 'Play'}</button><button class="bt" data-act="mylist" data-k="${key}">${ic('bookmark')}${on ? 'On My List' : 'My List'}</button></div></div></div>${eps}</div>` };
   };
   P.listen = () => {
@@ -305,7 +324,7 @@
 
   function winHTML() {
     const [w, h] = SIZES[S.size], cls = isMac() ? 'mac' : 'gn', lt = S.skin === 'daylight' ? ' lt' : '';
-    if (S.size === 'compact') return `<div class="win cwin ${cls} dx-win${lt}" data-skin="${S.skin}" style="height:${h}px"><div class="cstrip${isMac() ? '' : ' gnh'}">${isMac() ? '<div class="lights"><i></i><i></i><i></i></div>' : ''}<span class="tag">COMPACT · THE PHONE, UNCHANGED</span>${isMac() ? '' : `<span class="gx">${ic('x')}</span>`}</div><iframe title="Ravilo — compact window" src="Ravilo%20Mobile.html?frame=window&amp;skin=${S.skin}&amp;mode=${S.mode === 'music' ? 'music' : 'video'}"></iframe></div>`;
+    if (S.size === 'compact') return `<div class="win cwin ${cls} dx-win${lt}" data-skin="${S.skin}" style="height:${h}px"><div class="cstrip${isMac() ? '' : ' gnh'}">${isMac() ? '<div class="lights"><i></i><i></i><i></i></div>' : ''}<span class="tag">COMPACT · THE PHONE, UNCHANGED</span>${isMac() ? '' : `<span class="gx">${ic('x')}</span>`}</div><iframe title="Ravilo — compact window" src="${window.RAVILO_PHONE_SRC || 'Ravilo%20Mobile.html?'}frame=window&amp;carry=1&amp;skin=${S.skin}&amp;mode=${S.mode === 'music' ? 'music' : 'video'}"></iframe></div>`;
     const toast = R.toast ? `<div class="dx-toast">${esc(R.toast)}</div>` : '';
     if (R.film) return `<div class="win ${cls} noside dx-win${lt}" data-skin="${S.skin}" style="width:${w}px;height:${h}px"><div class="main">${filmHTML()}</div>${toast}</div>`;
     const rail = S.size === 'medium', side = rail ? railHTML() : S.side ? sideHTML() : '';
@@ -335,6 +354,10 @@
   /* ---- render ---- */
   let lastKey = '', toastT = null;
   function render() {
+    /* the compact window is the phone in a frame: take back where it got to before the frame is rebuilt, and hand it ours */
+    const ofr = document.querySelector('.dx-win iframe');
+    if (ofr) { try { const w = ofr.contentWindow; if (w && w.RaviloState) absorb(w.RaviloState.get()); } catch (e) {} }
+    if (S.size === 'compact') { try { localStorage.setItem('ravilo-carry', JSON.stringify(stateOwn())); } catch (e) {} }
     const body = $('dxBody'), key = S.mode + '|' + page() + '|' + JSON.stringify(top() || null);
     const st = body && key === lastKey ? body.scrollTop : 0;
     $('dxFence').innerHTML = fenceHTML();
@@ -488,6 +511,49 @@
     }, 1000);
   }
 
+  /* ---- the one Ravilo file: where you are + what is playing, in the shape every platform reads (see mobile/ravilo-phone-state.js) ---- */
+  const DPAGES = { films: ['home', 'discover', 'mylist', 'films', 'series', 'search', 'profile'], music: ['listen', 'playing', 'artists', 'albums', 'songs', 'genres', 'playlists', 'audiobooks', 'search', 'profile'] };
+  function stateOwn() {
+    return { mode: S.mode, page: page() === 'queue' ? 'playing' : page(), q: R.srch || '',
+      stack: stack().map(d => d.t === 'film' ? { kind: 'title', id: item(d.id).t } : { kind: d.t, id: d.id }),
+      play: { queue: R.queue.slice(), qi: R.qi, pos: R.pos, playing: R.playing, ctx: R.ctx } };
+  }
+  function stateGet() {
+    const fr = S.size === 'compact' && document.querySelector('.dx-win iframe');
+    try { if (fr && fr.contentWindow.RaviloState) return fr.contentWindow.RaviloState.get(); } catch (e) {}
+    return stateOwn();
+  }
+  function absorb(st) {
+    const miss = []; if (!st) return miss;
+    const m = st.mode === 'music' ? 'music' : 'films';
+    let pg = st.page === 'library' ? 'films' : st.page;
+    const stk = [];
+    (st.stack || []).forEach(d => {
+      if (d.kind === 'title') { const k = keyOf(d.id); if (k) stk.push({ t: 'film', id: k }); else miss.push(d.id); }
+      else if (d.kind === 'album' && M.album(d.id)) stk.push({ t: 'album', id: d.id });
+      else if (d.kind === 'artist' && M.artist(d.id)) stk.push({ t: 'artist', id: d.id });
+      else if (d.kind === 'genre') stk.push({ t: 'genre', id: d.id });
+      else if (d.kind === 'book' && B && B.book(d.id)) stk.push({ t: 'book', id: d.id });
+      else if (d.kind === 'bauthor') pg = 'audiobooks';
+      else if (d.kind === 'playlist') pg = 'playlists';
+    });
+    if (DPAGES[m].indexOf(pg) < 0) pg = m === 'music' ? 'listen' : 'home';
+    S.mode = m; if (m === 'music') S.mpage = pg; else S.fpage = pg;
+    R.st[m] = stk; R.film = null; R.menu = null; R.pop = null;
+    if (typeof st.q === 'string') R.srch = st.q;
+    const p = st.play;
+    if (p && Array.isArray(p.queue)) {
+      if (p.queue.length && p.queue.every(id => M.track(id))) { R.queue = p.queue.slice(); R.qi = Math.max(0, Math.min(p.qi || 0, R.queue.length - 1)); R.cur = R.queue[R.qi]; R.pos = Math.max(0, Math.min(p.pos || 0, M.track(R.cur).len - 1)); R.playing = !!p.playing; if (p.ctx) R.ctx = p.ctx; }
+      else if (!p.queue.length) R.playing = false;
+    }
+    window.RaviloState.miss = miss;
+    return miss;
+  }
+  window.RaviloState = { get: stateGet, set(st) { const miss = absorb(st); save(); render(); return miss; }, miss: [] };
+  if (U.get('carry') === '1') { try { absorb(JSON.parse(localStorage.getItem('ravilo-carry') || 'null')); } catch (e) {} }
+
+  /* Ravilo.html's fence drives the window through this (its own fence is hidden there) */
+  window.RaviloDesk = { get: () => S, set: (k, v) => { if (S[k] === v) return; S[k] = v; R.menu = null; save(); render(); } };
   document.body.insertAdjacentHTML('afterbegin', '<div class="dx-fence" id="dxFence"></div><div class="dx-stage" id="dxStage"><div class="dx-desk" id="dxDesk"></div></div>');
   render();
   if (document.fonts) document.fonts.ready.then(fit);

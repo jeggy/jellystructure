@@ -2392,7 +2392,15 @@
     // demo: simulate an admin sending a message from the Jellyfin dashboard (single message field)
     if (interactive) setTimeout(() => showServerMessage('Dinner in ten minutes — please pause your show and come to the kitchen.'), 2600);
 
-    return { go, setSkin: () => {}, openProfiles };
+    /* the one Ravilo file's hand-off (platform/tv-boot.js): what the TV shows, and the app bar's own destinations */
+    const navTo = k => {
+      if (k === 'films') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
+      else if (k === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
+      else if (k === 'discover') go(discDest(discTabs()[0]));
+      else if (k === 'mylist') go({ type: 'grid', kind: 'mylist', title: t('nav_mylist'), nav: 'mylist' });
+      else go({ type: 'home' });
+    };
+    return { go, setSkin: () => {}, openProfiles, view: () => view, catalog, navTo };
   }
 
   window.mountRavilo = mountRavilo;
