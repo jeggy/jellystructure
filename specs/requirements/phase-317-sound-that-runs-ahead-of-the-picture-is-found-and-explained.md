@@ -2131,3 +2131,51 @@ amendment's correction vindicated on live data rather than on a prediction.
 No tensor-shape failure, no bare `NaN` and no CUDA OOM has occurred since the swap; the 138 connection errors
 from the sidecar's own recreate are the only post-swap failures, and those files stored no row, so the hourly
 scan re-queues them.
+
+## Amendment (2026-10-14, first of the day) — acceptance 25 is met, and its baseline was two files out of five (FR-317-32, DEB-959)
+
+No code moves. The `/2` pass has now reached the files acceptance 25 was written about, and the answer is the
+one FR-317-32 wanted.
+
+**25's baseline was undercounted.** It names two files, by the jobs that failed on them
+(`mj-1791844302-556` and `-625`). The real set is **five**: a third *"must match the size of tensor"* file
+surfaced in the 2026-10-13 10:46Z re-run, and two *"Unexpected special floating-point value"* files sat
+beside them. DEB-950 handed all five to this pass rather than re-running them itself.
+
+**All five now carry a `/2` row** — measured 2026-10-14 06:00Z off a WAL-complete copy: three are `unknown`
+with reason `short_audio`, two carry a verdict from their healthy windows. That is exactly the disjunction
+25's second clause allows, for five files instead of two. **Resolve such a set by
+`json_extract(params,'$.filePath')` and never by job id**: each of these five had four jobs behind it
+(`failed, cancelled, failed, queued`) by the time it was measured, because every pass mints a new id and
+DEB-958's empty cancelled one in the middle.
+
+**25's first clause holds across the sweep so far**: 1 651 non-skip rows measured since 22:15:51Z, with
+**zero** tensor-shape and **zero** non-finite failures. Both classes stop dead at the swap — five and four
+rows respectively exist in `media_job`, and the newest of either is 2026-10-13 10:48:35Z.
+
+### The failure census, so the next reader does not file a live class as a regression
+
+| class | n | first | last |
+|---|---|---|---|
+| connection — the two sidecar recreates, 29 s and 5 s | 162 | 10-12 22:35:32Z | 10-14 00:00:15Z |
+| CUDA OOM | 148 | 10-12 22:51:50Z | **10-13 21:23:30Z** |
+| could not decode | 7 | 10-13 11:01:47Z | 10-14 03:05:47Z |
+| tensor shape | 5 | 10-13 00:50:26Z | 10-13 10:48:35Z |
+| non-finite / JSON | 4 | 10-13 00:50:03Z | 10-13 10:47:05Z |
+| sidecar never became free | 4 | 10-13 11:23:37Z | 10-13 11:55:33Z |
+
+Two rows there are worth saying out loud:
+
+- **CUDA OOM stops at 21:23:30Z**, before DEB-998's VRAM build came up at 00:00:10Z, and nothing has OOM'd in
+  the eight hours since. That is independent corroboration of DEB-1003 from the live lane rather than from
+  the census it was proved on.
+- **`could not decode` is not new and is not DEB-998's.** Four of the seven predate the VRAM build (from
+  10-13 11:01Z) and three followed it (02:57–03:05Z), on ordinary 327 MB–1.35 GB `.mkv` files — neither the
+  4 096-byte stub nor the non-Matroska container wearing `.mkv`. It is inside the ~1 % this phase already
+  budgets for. Such a file stores no row, so the hourly scan re-queues it and all three are `queued` again;
+  seven files cycling hourly against ~210 measured an hour does not earn a mechanism.
+
+### Acceptance (restated)
+
+- **25 is restated**: the baseline is **five** files, not two, and it is **met** — every one of the five
+  stores a `/2` row, and no tensor-shape or non-finite failure has occurred since the `/2` sidecar came up.
