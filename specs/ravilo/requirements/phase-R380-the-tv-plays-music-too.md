@@ -746,3 +746,10 @@ old `return SheetTap.NothingLoaded` sites now go through — `sessions.any { it.
 member and the draw site's new branch cost `PlayerScreen` nothing, and the zero headroom recorded there is still
 zero and still the board's fact rather than this fix's. `check-phases`, `check-ravilo-strings`, `check-theme-whites`,
 `check-deanonymization` and `check-play-device-filter` OK.
+
+**Left to a device, as DEB-1097 (`low`, the Pixel alone, foldable into DEB-1088's claim):** no unit test composes the
+sheet, so what the tests cannot say is whether the draw site renders what the decision decides. The ticket asks for
+the sentence's absence with a book playing and the app bar in video mode on a page with no film, the hint's presence
+when nothing is loaded, and — the half easiest to get backwards — the hint's presence when the only live session is
+**elsewhere**. The unresponsive row is named in that ticket as the accepted trade-off it is, so it is not reported
+back as a finding.
