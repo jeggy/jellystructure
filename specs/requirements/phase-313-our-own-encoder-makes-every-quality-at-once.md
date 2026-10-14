@@ -4,14 +4,16 @@
 > experience better."* (This reverses the same day's "stay on Jellyfin". Plan:
 > `specs/research-reports/ravilo-streaming-plan-2026-10-08.md`, step 4.)
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-10-08 on worktree branches (313a measured, 313b–313e built; the encoder is now on by default), not deployed, no device has played through it yet** (see Build notes and *Build notes — 313d / 313e*). Written 2026-10-08 (dev-authored), against `main` `79779ad1`. **Dev-reviewed 2026-10-08** (see the end). Backend (a new
-encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and compose files (GPU
-and ffmpeg), the admin's *Playing now*. No app release is needed for the backend half: every adaptive player already
-reads a composed master (308). Builds on **308** (the ladder table, the composed master, the players' ABR), **309**
-(the per-device record, the start rung, the prewarm and its leave signal), **R291** (our own ffmpeg runner and audio
-renditions), **180** (teardown), **310/312** (the stop path).
+Written 2026-10-08 (dev-authored), against `main` `79779ad1`; **dev-reviewed 2026-10-08** (see the end). Touches the
+backend (a new encoder beside R291's rendition jobs, the composed master, `PlaybackService`), the Docker image and
+compose files (GPU and ffmpeg), and the admin's *Playing now*. No app release is needed for the backend half: every
+adaptive player already reads a composed master (308). Builds on **308** (the ladder table, the composed master, the
+players' ABR), **309** (the per-device record, the start rung, the prewarm and its leave signal), **R291** (our own
+ffmpeg runner and audio renditions), **180** (teardown), **310/312** (the stop path). The build, live-test and
+amendment notes below are dated records of what was built, measured and found when — `STATUS.md`'s row is the status,
+here as everywhere.
 
 ## What happens today
 
@@ -721,3 +723,106 @@ the `age_rating_map` bug the route's own comment describes (fixed 2026-09-04).
 admin's body shape (no `encoder` key at all): every stored value survives, and the blocks already on the
 restore list (`ingest`, `subtitleCheck`, `acquisition`) survive beside it, so the next block added to
 `AppConfig` without a line here has a test that fails rather than a household value that quietly resets.
+
+## Amendment (2026-10-14) — the HEVC/HDR branch asks `hls_hevc`, which no app on Android can answer yes
+
+Found on DEB-788 QA-D and filed as DEB-1083 (QA, 2026-10-14); diagnosed here the same day against `main`
+`2068b7d8`. **FR-313-4 is not changed by this amendment.** It says what it should say; the code has never matched
+it, on any build, for any Android device.
+
+**What a viewer sees.** On the household's main panel — a BRAVIA, `kind=tv`, which FR-313-4 names as a device that
+qualifies for the HEVC rungs — a 4K HDR HEVC source that transcodes is served the **H.264 SDR branch**, tone-mapped,
+with the ladder capped at 1080p. QA measured it on **both** roads (the server road, and a Cast Connect load into the
+TV app, which plays as `tv`): `encoder=ours H264 rungs=1080p@12000k/1080p@8000k/720p@4000k/480p@1500k … tone-mapped`,
+and `playback_qoe` for the same device and item `video_decoder=OMX.MTK.VIDEO.DECODER.AVC`, `variant_height=1080`,
+`direct_play=0`. A 4K HDR film on a 4K HDR panel plays 1080p SDR whenever it transcodes.
+
+### The branch, sited
+
+1. **The gate.** `Encoder.planFor` chooses the codec family with
+   `encoderCodecFor(caps.hlsHevc, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)`
+   (`tv/Encoder.kt:122`; the function is `tv/EncoderPlan.kt:477`). Its first clause is
+   `hlsHevc && videoCodecs.contains("hevc")`, so a `false` `hls_hevc` returns `H264` before HDR is ever considered.
+2. **`hls_hevc` is not the flag FR-313-4 describes.** It is phase 253's **fMP4** opt-in
+   (`shared/.../tv/Models.kt:80` — *"this client plays HEVC in fMP4 HLS … a wrong yes is a black screen"*), and
+   saying yes also changes **Jellyfin's** transcoding profile to `{"Container":"mp4","VideoCodec":"hevc,h264"}`
+   (`auth/JellyfinClient.kt:114`). It is an opt-in for a different road, not a statement about the decoder.
+3. **The app cannot send it.** `currentClientCapabilities` sets
+   `hlsHevc = hlsOnly && !airplayHls && supportsHevcOverHls()` (`ravilo-ui/.../screens/PlayerStore.kt:194`), where
+   `hlsOnly = airplayHls || playsOnlyHls()` (`:189`) and Android's `playsOnlyHls()` is **`false`**
+   (`ravilo-ui/.../seams/AudioCapabilities.android.kt:39`) — R329 made `hlsOnly` the Mac/AirPlay gate, and its own
+   comment says so (*"Android and the web negotiate exactly as before (hlsHevc stays false)"*). So `hls_hevc` is
+   false on every Android build, phone and TV alike, and **both** devices FR-313-4 names (the BRAVIAs *and* the
+   Pixel) take the H.264 SDR branch on every transcode.
+4. **What the app does send is enough.** `hls_hevc_capable = true` (`PlayerStore.kt:205` ←
+   `supportsHevcOverHls()`, `AudioCapabilities.android.kt:18`, whose own doc is *"Media3's HLS source plays fMP4
+   segments, and HEVC decode is the platform's — the same MediaCodec path direct play already uses for every HEVC
+   title in the library"*); `video_codecs` containing `hevc` (`AudioCapabilities.kt:36`); and `supports_hdr10` from
+   the decoder probe, not the panel (`ravilo-ui/.../seams/HdrCapabilities.kt` — `HEVCProfileMain10HDR10`). R379
+   added `hls_hevc_capable` for exactly this reason: *"this player takes HEVC in fMP4 HLS, stated without opting
+   every transcode into it"* (`Models.kt:126`).
+5. **The exception proves the diagnosis.** The one road that *has* shown HEVC HDR rungs on this panel is its
+   built-in Chromecast (the 2026-10-10 live note above: `encoder=ours HEVC HDR rungs=2160p@20000k/…`), because the
+   web receiver is a different app and sets `hlsOnly = true` and `hlsHevc = <its own canDisplayType probe>`
+   (`ravilo-cast/.../cast/Receiver.kt:744`, `:750`) — and sets **no** `hls_hevc_capable`. The same panel, the same
+   SoC, two capability shapes, two branches.
+
+### Not the cause: the device's HEVC decode ceiling
+
+DEB-1083's second candidate was that `decode_max_bitrate_hevc = 60000000` against an 80.9 Mbps source is read as
+*cannot do HEVC at all*. It is not. The ceiling is computed **after** the family is chosen (`Encoder.kt:123`) and
+only caps rung bitrates — the top rung at `ceiling × 0.9` (`EncoderPlan.kt:84`) and a lower rung skipped if it sits
+above it (`:94`). With HEVC chosen, the 2160p top rung is capped at **20 Mbps** by `topCapBps` (`:55`) regardless, so
+the whole ladder sits inside a 60 Mbps ceiling and every rung would be made. Prod data says the same: on this device
+a **51.6 Mbps** 4K HDR HEVC source — *under* its own 60 Mbps HEVC ceiling — also got `encoder=ours` with
+`variant_height=1080` and the AVC decoder (`playback_qoe`, read 2026-10-14). The family is dropped whatever the
+source's bitrate is.
+
+### Why it was built, reviewed and live-tested without being caught
+
+`EncoderPlanTest`'s *a BRAVIA-like device gets HEVC HDR rungs and every audio rendition* builds
+`ClientCapabilities(hlsHevc = true, …)` — a shape **no Android build sends**, so the test proves the branch and not
+the device. And it was seen live once already: the 2026-10-09 Cast Connect note above records *"a 4K HEVC HDR film as
+an H.264 SDR ladder"* on this TV and attributes it to 309's no-record 8 Mbps cap. The cap explained the rung; it did
+not explain the codec.
+
+### FR-313-16 — the codec family asks whether the device decodes HEVC over HLS, not whether it opted into fMP4
+
+- **The family is chosen on `hls_hevc_capable` OR `hls_hevc`** (plus `hevc` in `video_codecs`, unchanged). Either
+  field is a device saying *"I decode HEVC over HLS"* — FR-313-4's own words — and neither is sufficient alone: the
+  apps send only the first, the Cast receiver only the second. A client that sends neither keeps H.264 SDR, exactly
+  as today.
+- **No client flag changes, and nothing changes on the Jellyfin road.** `hls_hevc` keeps 253's meaning and keeps
+  selecting Jellyfin's `hevc,h264` fMP4 transcoding profile; flipping it on for Android would change the Jellyfin
+  fallback and ask for fMP4, which 313's own *Found 1* measured as not playing on Media3. This is a server-side
+  gate only.
+- **The HDR half of FR-313-4 is unchanged.** HDR is kept only when the source's own form is declared
+  (`supports_hdr10`, `supports_hlg`; DV sent as its HDR10 base). An HEVC-capable device that declares neither still
+  gets tone-mapped H.264, and a burn-in play is still H.264 (`overlay_cuda` composites 8-bit frames).
+- **The segment format does not change.** Media3 keeps **MPEG-TS** (`encoderMuxFor`), so the TV and the phone get
+  HEVC in MPEG-TS. `media3-extractor` 1.8.0 reads it: `DefaultTsPayloadReaderFactory.createPayloadReader` maps
+  stream type **36 (0x24)** straight to `H265Reader`, with no flag guard (read from the cached `.aar`, 2026-10-14).
+  This panel's built-in Chromecast has already played HEVC HDR in TS from this encoder for 16 minutes with 0
+  rebuffers. fMP4 stays Apple's and the browsers'.
+- **A decoder that refuses degrades to Jellyfin, it does not break the play.** The 2026-10-09 evening fix stands: a
+  stream the player cannot play is restreamed **once** with `not_our_encoder: true` and answered by Jellyfin's
+  transcode, and a second failure ends on R237's Retry / Back. So the worst case of this change is the picture that
+  plays today, through the other encoder.
+
+**Tests.** `EncoderPlanTest`: the TV/phone shape **as the fleet really sends it** (`hls_hevc = false`,
+`hls_hevc_capable = true`, `supports_hdr10 = true`, `video_codecs` with `hevc`) gets HEVC Main 10 rungs with
+`keepsHdr`, a 2160p top rung and TS segments; the receiver's shape (`hls_hevc = true`, `hls_hevc_capable = false`)
+still gets HEVC, so the one working road does not regress; neither field → H.264 SDR, tone-mapped; HEVC-capable but
+no declared HDR form on an HDR source → H.264, tone-mapped; and a 60 Mbps `decode_max_bitrate_hevc` against an
+80.9 Mbps 4K HDR source → HEVC rungs with the top at 20 Mbps, proving the ceiling caps rungs and never the family.
+The existing *a BRAVIA-like device* test is **rewritten to the real shape** rather than left beside the new one: the
+invented shape is what hid this for six days.
+
+**Owed on a device** (QA, after the deploy — not provable from this seat): the same 4K HDR source on the Stue TV app
+on both roads shows `encoder=ours … HEVC HDR`, an HEVC `video_decoder` in `playback_qoe`, `variant_height=2160` and
+HDR on the panel; the Pixel too, since FR-313-4 names it; and one re-check of the panel's built-in Chromecast,
+because the fix touches the branch that road already uses. The one gate this diagnosis cannot read without a device
+is whether the TV app's `supports_hdr10` is true — the device reports a hardware HEVC decoder (its 60 Mbps ceiling
+comes from one), but `HEVCProfileMain10HDR10` specifically is the probe, and the on-device check settles it: an
+`encoder=ours H264 … tone-mapped` line *after* this fix means the HDR form was not declared, which is then a
+different finding against the app's probe, not against this amendment.
