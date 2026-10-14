@@ -19,19 +19,9 @@ internal const val MU_LYR = """<svg viewBox="0 0 24 24" fill="none" stroke="curr
 
 internal val MU_TYPE_LABEL = mapOf("album" to "Album", "single" to "Single / EP", "compilation" to "Compilation", "live" to "Live", "soundtrack" to "Soundtrack")
 
-/** The mockup's string hash (`h * 31 + c`, unsigned), so a title keeps its colour everywhere. */
-private fun muHash(s: String): Long {
-    var h = 0L
-    for (c in s) h = (h * 31 + c.code) and 0xFFFFFFFFL
-    return h
-}
-
-internal fun muWordmarkStyle(name: String): String {
-    val h = (muHash(name) % 360).toInt()
-    return "background:linear-gradient(150deg, hsl($h 46% 36%), hsl(${(h + 40) % 360} 52% 14%))"
-}
-
-internal fun muImageStyle(url: String): String = "background:#0c0e14 center/cover no-repeat url('${url.esc()}')"
+// `muHash`, `muWordmarkStyle`, `muImageStyle` and `muCoverHtml` moved to `commonMain`'s `MusicCoverHtml.kt`
+// with FR-278-16's correction (2026-10-14, DEB-1113) — same package, same visibility, so nothing here changed
+// but the file they are read from. They went there to be testable; keep them free of the DOM.
 
 internal fun muInitials(name: String): String =
     name.split(Regex("\\s+")).map { w -> w.filter { it.isLetter() } }.filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1) }.uppercase()
@@ -78,11 +68,6 @@ internal fun muRepeatedTitles(rows: List<dev.jellystructure.model.MusicAlbumRow>
 
 internal fun muFolderLine(a: dev.jellystructure.model.MusicAlbumRow, repeated: Set<String>): String =
     if (a.title.lowercase() in repeated && a.folder != null) """<div class="sub mono" style="font-size:.66rem" title="${a.folder.esc()}">${a.folder.esc()}</div>""" else ""
-
-/** An album cover or its wordmark (FR-277-3). [cls] is `mu-cov`; [extra] is appended to the style. */
-internal fun muCoverHtml(title: String, url: String?, extraClass: String = "", chip: String = "", extraStyle: String = ""): String =
-    if (url != null) """<div class="mu-cov $extraClass" style="${muImageStyle(url)}$extraStyle">$chip</div>"""
-    else """<div class="mu-cov $extraClass" style="${muWordmarkStyle(title)}$extraStyle"><span class="mu-wm">${title.esc()}</span><i class="mu-nocov" title="No cover on disk — a task on this side"></i>$chip</div>"""
 
 internal fun muToast(msg: String) {
     val t = document.createElement("div") as HTMLElement

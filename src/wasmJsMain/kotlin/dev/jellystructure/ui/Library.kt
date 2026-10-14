@@ -749,8 +749,8 @@ private fun posterCardHtml(item: MediaItem): String {
         </div>"""
 }
 
-internal fun String.esc(): String =
-    replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+// `String.esc()` moved to `commonMain`'s `MusicCoverHtml.kt` with FR-278-16's correction (2026-10-14,
+// DEB-1113) — same package, so every call site in this frontend reads it unchanged.
 
 // ── R32: Library ↔ workbench round-trip ─────────────────────────────────────────
 
