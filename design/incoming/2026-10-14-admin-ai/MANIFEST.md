@@ -1,0 +1,110 @@
+# Round 2 — the admin AI page — 2026-10-14
+
+Quarantine commit for DEB-1098. **Received only; nothing promoted.** Promotion is a separate
+hand-made commit, and `design/incoming/` is pruned at adoption (`design/PROCESS.md`).
+
+Lane A of `design/PROCESS.md` step 2: the owner designed, this seat pulls and triages. No brief was
+written for it — he said only *"We just got some new AI designs in the design tool"* (DEB-1076,
+2026-10-14 10:30Z) — so the round's intent is read off the canvas and one confirming question goes
+back on DEB-1098 rather than being guessed at in a spec.
+
+Source project — `6c4a911d-07c4-4053-9634-09186e24dd11`, name Jellystructure, owner Jógvan,
+type `PROJECT_TYPE_PROJECT`, `canEdit: true`. Read only; nothing was written or deleted there.
+
+## The round is three files, and the baseline named them in one step
+
+Diffed against the DEB-1078 baseline (09:23Z today) rather than re-derived:
+
+| | count |
+|---|---|
+| studio files, this pass | **620** |
+| named by hand in round 1's `MANIFEST.md` | 610 |
+| deliberately-unnamed captures (round 1, held in the studio) | 7 |
+| 610 + 7 | 617 — the DEB-1078 baseline, matched exactly |
+| **new this round** | **3** |
+
+`list_files` returned 648 entries; 28 of them are directories, which is how 648 reconciles to 620
+files. The three repo-only documents the baseline recorded (`PROCESS.md`,
+`design-project-notes-2026-06-to-2026-10.md`, `github.md`) are still studio-absent, as expected —
+they are repo-authored and the studio has no write path here. **No deletion anywhere in the studio.**
+
+The round:
+
+| path | bytes | sha256 (first 8) | `truncated` | verdict |
+|---|---|---|---|---|
+| `app/ai.css` | 9379 | `9f0a2144` | `false` | **landed** |
+| `app/ai.html` | 11187 | `6e44164f` | `false` | **dropped at the gate** — see below |
+| `app/ai.js` | 15321 | `54e61f40` | `false` | **dropped at the gate** — see below |
+
+All three came back whole — **nothing hit the 192 KiB wall, so this round needed no export.** Bytes
+were lifted out of the harness's own tool results by script and hashed on the way in, never
+retyped: a silent corruption in a copy reads later as a design change.
+
+## What was dropped, and why
+
+**`app/ai.html` and `app/ai.js` name a real series from the household's library.** Not in a
+filename and not in a capture — in the mockup's *stand-in data*, as the worked example the whole
+page is built around: the series name appears 10 times across the two files, together with a source
+URL whose path slug is that series' own slug, a Faroese episode name, and a TMDB id presented as
+live, including a deep link to that id's episode-edit page.
+
+The title is **not reproduced here, in the commit message, or on the board**, which is why this
+section counts and does not quote. It was confirmed against the live library read-only, not guessed:
+one row matches it as a whole word in `title`, `originalTitle` and `sortName`, across 19 `path` and
+18 `filename` fields — a series the household owns, with its episodes on disk.
+
+Three things are worth recording about how it was caught:
+
+- **`scripts/check-deanonymization.sh` is green on both files.** It matches hashed n-grams of values
+  somebody has already scrubbed, and this name was never in its list. The fence is not weaker than
+  it was yesterday; this is simply outside what it can see.
+- **A human reading every string literal is the only thing that stopped it** — the same sentence
+  round 1 had to write about `presentation/presentation-context.md`, and the second time in two
+  rounds that the eye caught what the fence structurally cannot.
+- **Precedent nearly hid it.** Two of the round's other three stand-in names are the established
+  corpus — `Nordvest` has 22 hits in the committed design tree, and `Babel Fish` is named in
+  `specs/constitution.md` as a mixed-language series fixture. Only one name in the file had no
+  precedent anywhere in the repo, and that was the one that was real. *A round that reuses the
+  stand-in corpus almost everywhere is not thereby safe; the exception is the finding.*
+
+Nothing was redacted and re-landed. A quarantine copy is the bytes as received or it is not a
+quarantine copy, and a hand-cleaned mockup is a design decision this seat does not get to make.
+Both files stay in the studio, whole — we delete nothing there.
+
+## What landed
+
+`app/ai.css` — 9379 B, page-local, every rule `af-`/`tq-` prefixed or under
+`main[data-page="ai"]` / `main[data-state=…]`. It holds no string literal of any kind: no title, no
+capture, no host, no network reference, no IP literal, no key. It is the one file in the round that
+the gate has nothing to say about.
+
+It is also, on its own, not promotable: it is the styling for markup that was dropped. It is
+committed because the gate is per file and because the bytes are worth having when the page comes
+back re-skinned — not as a half-round waiting to be finished.
+
+**At promotion, whenever that happens:** page-scoped CSS needs a `SCOPED_FILES` row in
+`scripts/check-css-scoping.sh` and a wrapper class declared (`design/PROCESS.md` line 155 — one
+unscoped file once leaked 160 bare selectors across every page). Not done here; nothing promotes in
+this task.
+
+## The fences
+
+Run on this quarantine commit, before anything moved:
+
+| fence | result |
+|---|---|
+| `scripts/check-deanonymization.sh` | green |
+| `scripts/check-css-scoping.sh` | green |
+| `scripts/check-mobile-css.sh` | green |
+| `scripts/check-phases.sh` | green |
+
+## Not in this round, deliberately
+
+- **`app/wf.css` is mildly stale in the studio again** — the repo moved to 59137 B in `1664a1ec`
+  (10-13 10:35), after the 10-13 write-back. One additive repo-only hunk; the studio holds nothing
+  of the owner's in that file. Bárður is routing it and the owner decides per file, so it is not
+  pushed as part of this round.
+- **The support-AI feature under investigation on DEB-1076** arrives as its own brief. It is a
+  different feature from this page's Auto-fetch and is not folded into this triage.
+- **No phase number anywhere.** Allocation happens at adoption, from `STATUS.md` and the board, and
+  numbers never leave the repo.
