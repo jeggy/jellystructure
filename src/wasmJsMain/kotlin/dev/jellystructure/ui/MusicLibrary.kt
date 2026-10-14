@@ -2,9 +2,12 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MusicApi
+import dev.jellystructure.elemNearViewportBottom
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.model.MusicBrowseDto
 import dev.jellystructure.model.MusicConvertRequest
+import dev.jellystructure.model.MusicSongRow
+import dev.jellystructure.observeSections
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -39,6 +42,22 @@ private var muPollJob: Job? = null
 private var muDocWired = false
 private var muScope: CoroutineScope? = null
 
+// Phase 278 (FR-278-14) — the Songs rows arrive a page at a time and are appended at `#mu-sentinel`, which is the
+// films Library's scroller (`Library.kt`: `LIB_SLICE`, `loadMore(reset)`, `libLoading`/`libPendingReset`) rather
+// than a second one. `muPage` counts the pages loaded for the current filter set, so the next fetch is `muPage + 1`;
+// a filter, facet, hidden value, search, sort, artist, version or *Show every copy* change goes through `muLoad`,
+// which starts a fresh sequence. Albums and Artists are not paged — 809 and 377 rows — so `muEnd` is true for them
+// as soon as the first answer lands.
+private const val MU_SLICE = 100   // Songs rows fetched per page
+private var muPage = 0
+private var muLoaded = 0           // Songs rows in the table
+private var muEnd = false
+private var muFetching = false
+/** A reset that arrives mid-fetch is remembered and run once the page in flight lands, never dropped. */
+private var muPendingReset = false
+/** Phase 292 (FR-292-12) — the ids *select all shown* can honestly reach: the rows loaded so far. */
+private val muLoadedIds = LinkedHashSet<String>()
+
 private fun muUrl(): String = buildList {
     add("kind=music")
     muFilter?.let { add("filter=${dev.jellystructure.encodeURIComponent(it)}") }
@@ -72,6 +91,8 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
           ${libraryKindSeg("music")}
         </div>
         <div id="mu-lib"><span class="muted tiny">Loading…</span></div>
+        <div class="row center" style="margin-top:14px;justify-content:center;min-height:22px;" id="mu-loadmore"></div>
+        <div id="mu-sentinel" style="height:1px;"></div>
     """.trimIndent()
     (document.getElementById("mu-search") as? HTMLInputElement)?.let { inp ->
         inp.value = muQuery
@@ -91,34 +112,128 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
     if (!muDocWired) {
         muDocWired = true
         document.addEventListener("click") { ev ->
-            if (muOpenFacet != null && (ev.target as? Element)?.closest(".mu-fc") == null && document.getElementById("mu-lib") != null) { muOpenFacet = null; muRender(muScope ?: return@addEventListener) }
+            // FR-278-15 — closing an open facet is a chrome change; it must not touch the rows.
+            if (muOpenFacet != null && (ev.target as? Element)?.closest(".mu-fc") == null && document.getElementById("mu-lib") != null) { muOpenFacet = null; muRenderFacets() }
         }
     }
+    // FR-278-14 — the load-more line and the sentinel live *outside* `#mu-lib` on purpose: `muRender` reassigns that
+    // element's `innerHTML`, and an IntersectionObserver whose target has been thrown away observes nothing. One
+    // observer per visit to the page, as the films Library does.
+    document.getElementById("mu-loadmore")?.addEventListener("click") { ev ->
+        if ((ev.target as? Element)?.closest("[data-mumore]") != null) scope.launch { muFetch(scope, reset = false) }
+    }
+    observeSections("mu-sentinel", "700px 0px 700px 0px") { _ -> scope.launch { muFetch(scope, reset = false) } }
     muScope = scope
     muLoad(scope)
 }
 
+/** Everything that changes what the list is — a filter, a facet, a search, a sort, an artist, a version, a view,
+ *  *Show every copy* — comes through here, and starts the sequence again at page 1 (FR-278-14). */
 private fun muLoad(scope: CoroutineScope) {
     muLoadJob?.cancel()
-    muLoadJob = scope.launch {
-        historyReplaceState(muUrl())
-        val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter, muHidden.mapValues { it.value.toSet() }, muArtist,
-            everyCopy = muView == "songs" && edEveryCopy)   // Phase 305 (FR-305-13) — *Show every copy*
-        if (dto == null) {
-            (document.getElementById("mu-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the music library from the server.</div>"""
-            return@launch
+    muLoadJob = scope.launch { muFetch(scope, reset = true) }
+}
+
+/**
+ * FR-278-14 — the films Library's `loadMore`, transcribed. With [reset] it clears the sequence and renders the page
+ * from scratch for the current filters; otherwise it fetches the next Songs page and **appends** it. After each page
+ * it keeps fetching while the sentinel is still near the viewport, so a partial last screen is never mistaken for
+ * the end. Re-entry is guarded by [muFetching], with [muPendingReset] so a filter change arriving mid-fetch is
+ * honoured rather than lost.
+ */
+private suspend fun muFetch(scope: CoroutineScope, reset: Boolean) {
+    if (muFetching) {
+        if (reset) muPendingReset = true
+        return
+    }
+    // Nothing loaded yet, or nothing left to load: an early sentinel fire has no sequence to continue.
+    if (!reset && (muPage == 0 || muEnd || muView != "songs")) return
+    muFetching = true
+    try {
+        if (reset) {
+            historyReplaceState(muUrl())
+            muPage = 0; muLoaded = 0; muEnd = false; muLoadedIds.clear()
+            muSetLoadMore("")
         }
-        // Phase 293 (FR-293-3/4) — the key chooses the view; an unknown key comes back without one and is dropped.
-        muFilter = dto.filter
-        muView = dto.view
-        historyReplaceState(muUrl())
-        vrRemember(dto.versionTypes)   // Phase 292 — chip names and colours
-        muDto = dto
-        muRender(scope)
-        if (dto.match.running) muPollMatch(scope)
+        var first = reset
+        while (true) {
+            if (!first) muSetLoadMore("""<span class="muted tiny">Loading more…</span>""")
+            val dto = MusicApi.browse(muView, muQuery, muFacets.mapValues { it.value.toSet() }, muSort, muFilter, muHidden.mapValues { it.value.toSet() }, muArtist,
+                everyCopy = muView == "songs" && edEveryCopy,   // Phase 305 (FR-305-13) — *Show every copy*
+                // The window is asked for on every view: the server applies it to the Songs rows only, which is what
+                // lets a Dashboard key — whose view the server chooses — arrive paged on its very first request.
+                page = muPage + 1, pageSize = MU_SLICE)
+            if (dto == null) {
+                if (first) (document.getElementById("mu-lib") as? HTMLElement)?.innerHTML = """<div class="note red">Couldn't read the music library from the server.</div>"""
+                else muSetLoadMore("""<span class="muted tiny">Couldn't load more — scroll to retry.</span>""")
+                return
+            }
+            if (first) {
+                // Phase 293 (FR-293-3/4) — the key chooses the view; an unknown key comes back without one and is dropped.
+                muFilter = dto.filter
+                muView = dto.view
+                historyReplaceState(muUrl())
+                vrRemember(dto.versionTypes)   // Phase 292 — chip names and colours
+                // `muDto` keeps the first page's answer: its counts are whole-set, and a full re-render then falls
+                // back to page 1 rather than to whichever page happened to land last.
+                muDto = dto
+                muRender(scope)
+                if (dto.match.running) muPollMatch(scope)
+            } else if (muView == "songs" && dto.songs.isNotEmpty()) muAppendSongs(dto.songs)
+
+            muPage++
+            muLoaded += dto.songs.size
+            muLoadedIds += dto.songs.map { it.id }
+            muEnd = muView != "songs" || dto.songs.isEmpty() || muLoaded >= dto.total
+            first = false
+            // Stop once the viewport is satisfied; the sentinel observer resumes the sequence on scroll.
+            if (muEnd || !elemNearViewportBottom("mu-sentinel", 700)) break
+        }
+        muSetLoadMore(muLoadMoreLine())
+    } finally {
+        muFetching = false
+        if (muPendingReset) {
+            muPendingReset = false
+            scope.launch { muFetch(scope, reset = true) }
+        }
     }
 }
 
+/** The line under the table: how far the sequence has got, and a way on without scrolling. */
+private fun muLoadMoreLine(): String {
+    val total = muDto?.total ?: muLoaded
+    return when {
+        muView != "songs" || (muEnd && muPage <= 1) -> ""
+        muEnd -> """<span class="muted tiny">All $muLoaded rows loaded</span>"""
+        else -> """<span class="btn sm ghost" data-mumore>Load more</span><span class="muted tiny" style="margin-left:8px">$muLoaded of $total</span>"""
+    }
+}
+
+private fun muSetLoadMore(html: String) {
+    (document.getElementById("mu-loadmore") as? HTMLElement)?.innerHTML = html
+}
+
+/**
+ * FR-278-14/15 — the next page's rows go into the `<tbody>` that is already there. Parsed inside a throwaway
+ * `<table>`, because a `<tr>` is only parsed as a row in table context.
+ */
+private fun muAppendSongs(rows: List<MusicSongRow>) {
+    val body = document.getElementById("mu-rows") ?: return
+    val tmp = document.createElement("div")
+    tmp.innerHTML = """<table><tbody>${rows.joinToString("") { songRowHtml(it) }}</tbody></table>"""
+    val src = tmp.querySelector("tbody") ?: return
+    while (true) {
+        val row = src.firstElementChild ?: break
+        body.appendChild(row)
+    }
+}
+
+/**
+ * The whole page. Called when the list itself changes — on arrival and at the head of every fresh sequence — and
+ * never for a click on the chrome: FR-278-15's four pieces (`#mu-stat`, `#mu-fbar`, `#mu-abar`, `#mu-sbar`) are
+ * re-rendered on their own by the `muRender*` functions below, so the Songs pages appended into `#mu-rows` stay
+ * where they are. Rebuilding the body for a dropdown is what made the Songs tab unusable at 10 723 rows (DEB-1107).
+ */
 private fun muRender(scope: CoroutineScope) {
     val root = document.getElementById("mu-lib") as? HTMLElement ?: return
     val d = muDto ?: return
@@ -129,7 +244,9 @@ private fun muRender(scope: CoroutineScope) {
         for ((k, l) in listOf("artists" to "Artists", "albums" to "Albums", "songs" to "Songs"))   // Phase 287 (FR-287-1)
             append("""<span data-mview="$k" class="${if (muView == k) "on" else ""}">$l</span>""")
         append("</span>")
-        if (live) append(statusLine(d))
+        // `display:contents` so the status line's spans and buttons stay direct flex children of `.mu-top` — the
+        // slot is there to be re-filled by `muRenderTop`, not to lay anything out.
+        append("""<span id="mu-stat" style="display:contents">${if (live) statusLine(d) else ""}</span>""")
         append("</div>")
         append("""<p class="page-sub" style="margin-top:0">Albums, artists and songs from Jellyfin’s <b>${d.libraries.joinToString(" · ") { it.name.esc() }.ifEmpty { "music" }}</b> library, matched against <b>MusicBrainz</b> — what this page maintains is written to <span class="mono">album.nfo</span> / <span class="mono">artist.nfo</span>${if (d.writeTags) ", and into the music files’ tags (<i>Write tags into music files</i> is on)" else ""}. Not the <b>Music videos</b> library: those are films and stay under their own kind.</p>""")
         when {
@@ -140,14 +257,50 @@ private fun muRender(scope: CoroutineScope) {
             }
             !live -> append("""<div class="mu-empty"><h3>Nothing filed as music yet</h3><p>The library is mapped but Jellyfin has no albums in it. Put folders under it as <span class="mono">Artist/Album/track</span> and scan.</p><a class="btn sm" href="#/settings?tab=libraries">Library card ›</a></div>""")
             else -> {
-                append(facetBar(d))
-                append("""<div class="mu-active">${activeBar(d)}</div>""")
-                append(selBar())
-                append(body(d))
+                append("""<div class="mu-facets" id="mu-fbar">${facetBar(d)}</div>""")
+                append("""<div class="mu-active" id="mu-abar">${activeBar(d)}</div>""")
+                append("""<div class="mu-selbar${if (selBarOn()) " on" else ""}" id="mu-sbar">${selBar()}</div>""")
+                append("""<div id="mu-body">${body(d)}</div>""")
             }
         }
     }
     muWireMenus(root)
+}
+
+/** FR-278-15 — the status line alone, for a `muPollMatch` tick that has no *Matching…* button to write into. */
+private fun muRenderTop() {
+    val d = muDto ?: return
+    val h = d.health
+    if (!(d.mapped && h != null && (h.albums > 0 || h.tracks > 0))) return
+    (document.getElementById("mu-stat") as? HTMLElement)?.innerHTML = statusLine(d)
+}
+
+/** FR-278-15 — the facet bar alone: opening, closing and ticking a facet never reaches the rows. */
+private fun muRenderFacets() {
+    val d = muDto ?: return
+    (document.getElementById("mu-fbar") as? HTMLElement)?.innerHTML = facetBar(d)
+}
+
+/** FR-278-15 — the selection bar alone, with the row ticks mutated in place by [muSyncSongTicks]. */
+private fun muRenderSel() {
+    val el = document.getElementById("mu-sbar") as? HTMLElement ?: return
+    el.innerHTML = selBar()
+    el.classList.toggle("on", selBarOn())
+    (document.getElementById("mu-scroll") as? HTMLElement)?.classList?.toggle("vr-selecting", muSongSel.isNotEmpty())
+}
+
+/** Every loaded row's tick read back off [muSongSel] — *select all loaded* and *clear* mutate, they do not rebuild. */
+private fun muSyncSongTicks() {
+    val rows = document.querySelectorAll("#mu-rows tr[data-sid]")
+    for (i in 0 until rows.length) {
+        val tr = rows.item(i) as? HTMLElement ?: continue
+        muMarkSongRow(tr, (tr.getAttribute("data-sid") ?: continue) in muSongSel)
+    }
+}
+
+private fun muMarkSongRow(tr: HTMLElement, on: Boolean) {
+    tr.classList.toggle("vr-on", on)
+    (tr.querySelector(".vr-sel") as? HTMLElement)?.let { it.classList.toggle("on", on); it.textContent = if (on) "✓" else "" }
 }
 
 private fun statusLine(d: MusicBrowseDto): String {
@@ -165,8 +318,9 @@ private fun statusLine(d: MusicBrowseDto): String {
     }
 }
 
+/** The contents of `#mu-fbar`; the `.mu-facets` element itself is the slot `muRender` writes, so it stays put. */
 private fun facetBar(d: MusicBrowseDto): String = buildString {
-    append("""<div class="mu-facets"><span class="muted tiny">filter:</span>""")
+    append("""<span class="muted tiny">filter:</span>""")
     for (f in d.facets) {
         val n = f.values.count { it.on || it.off }
         if (f.key == "version") { append(versionFacet(f, n)); continue }
@@ -190,7 +344,6 @@ private fun facetBar(d: MusicBrowseDto): String = buildString {
         val words = if (every) muPlural(d.total, "file") else "${muPlural(d.total, "song")} · ${muPlural(d.folded, "copy", "copies")} folded"
         append("""<span class="ed-sw${if (every) " on" else ""}" data-edevery title="${if (d.filter != null) "A Dashboard list always shows every file" else "Lists show every song once; the admin manages files"}"><i></i>Show every copy <span class="c">· $words</span></span>""")
     }
-    append("</div>")
 }
 
 /** Phase 292 (FR-292-11) — the Version facet: each type and *No version*, with its count, *Only* and *Hide*. */
@@ -216,15 +369,26 @@ private fun activeBar(d: MusicBrowseDto): String {
     }).joinToString(""" <span class="tiny muted">and</span> """) + """<span class="livecount" style="margin-left:6px;"><span class="n">${d.total}</span><span class="tiny muted"> ${muView} match</span></span><span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" data-fclear>clear all</span>"""
 }
 
+/** Whether `#mu-sbar` carries `on` — the class the sticky bar is shown by. */
+private fun selBarOn(): Boolean = if (muView == "songs") muSongSel.isNotEmpty() else muView == "albums" && muSelected.isNotEmpty()
+
+/** The contents of `#mu-sbar`. The element itself is `muRender`'s, so the bar keeps its sticky containing block. */
 private fun selBar(): String {
     // Phase 292 (FR-292-12) — a song selection, and *Set version…* on it.
-    if (muView == "songs" && muSongSel.isNotEmpty()) return """<div class="mu-selbar on"><b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span></div>"""
-    if (muView != "albums" || muSelected.isEmpty()) return """<div class="mu-selbar"></div>"""
+    if (muView == "songs" && muSongSel.isNotEmpty()) {
+        // Phase 278 (FR-278-14, DEB-1113) — the page holds a page at a time now, so *select all shown* says what it
+        // can honestly reach: the rows loaded so far, of the whole filtered set. What it *should* mean at ten
+        // thousand songs is the open owner question on DEB-1107, and the answer lands in 292's spec, not here.
+        val total = muDto?.total ?: muLoaded
+        val reach = if (muLoaded in 1 until total) "select all loaded · $muLoaded of $total" else "select all shown"
+        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>$reach</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+    }
+    if (muView != "albums" || muSelected.isEmpty()) return ""
     return buildString {
-        append("""<div class="mu-selbar on"><b>${muSelected.size}</b> selected""")
+        append("""<b>${muSelected.size}</b> selected""")
         for ((k, l) in listOf("match" to "Match now", "covers" to "Fetch covers", "nfo" to "Write NFOs", "tags" to "Write tags…", "lock" to "Lock match", "clear" to "Clear match"))   // Phase 284 — Write tags…
             append("""<span class="btn sm${if (k == "match") " primary" else if (k == "clear") " ghost" else ""}" data-bulk="$k">$l</span>""")
-        append("""<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span></div>""")
+        append("""<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="all">select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-bulk="none">✕ clear</span>""")
     }
 }
 
@@ -244,22 +408,11 @@ private fun body(d: MusicBrowseDto): String {
             }
             append("</div>")
         }
+        // Phase 278 (FR-278-14) — the table shell and the first page's rows; every later page is appended into
+        // `#mu-rows` by `muAppendSongs`, so the body is built once per sequence and then only mutated.
         "songs" -> buildString {
-            append("""<div class="mu-scroll${if (muSongSel.isNotEmpty()) " vr-selecting" else ""}"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody>""")
-            for (t in d.songs) {
-                val artists = t.artists.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }
-                // Phase 292 (FR-292-10/12) — chips after the title; the number turns into a checkbox on hover.
-                val on = t.id in muSongSel
-                // Phase 305 (FR-305-13) — *Bonus* after the version chips; folded: *also on N releases*; every copy: the
-                // other copies sit indented under their song with the reason.
-                val cls = listOfNotNull(if (on) "vr-on" else null, if (t.copyOf != null) "ed-cp" else null).joinToString(" ")
-                val also = if (t.alsoOn > 0) """<div><span class="ed-also" data-edcopies="${t.id}">also on ${muPlural(t.alsoOn, "release")}</span></div>""" else ""
-                val why = t.reason?.let { r -> """<div class="ed-cpw">↳ ${r.esc()} · <span class="ed-also" data-edcopies="${t.id}">why</span></div>""" } ?: ""
-                append("""<tr${if (cls.isNotEmpty()) " class=\"$cls\"" else ""}><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}${vrBadges(t.id, t.versions)}${edBonus(t.bonus)}${if (t.noWords) """<span class="tiny muted" style="margin-left:8px">no words</span>""" else ""}$also$why</td>""")
-                append("""<td class="dim">$artists</td><td class="dim">${t.albumId?.let { """<a class="dim" href="#/album/$it">${t.album.orEmpty().esc()}</a>""" } ?: ""}</td>""")
-                append("""<td class="num">${muLen(t.lengthMs)}</td><td><span class="mu-fmt${if (t.reencodes) " w" else ""}">${t.format.esc()}${if (t.reencodes) """<span class="re">re-encodes on a phone</span>""" else ""}</span></td>""")
-                append("<td>${lyricsCell(t.lyrics)}</td><td>${recordingCell(t.recording, t.albumMatched)}</td></tr>")
-            }
+            append("""<div class="mu-scroll${if (muSongSel.isNotEmpty()) " vr-selecting" else ""}" id="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody id="mu-rows">""")
+            for (t in d.songs) append(songRowHtml(t))
             append("</tbody></table></div>")
         }
         else -> buildString {
@@ -274,6 +427,22 @@ private fun body(d: MusicBrowseDto): String {
             append("</div>")
         }
     }
+}
+
+/** One Songs row. `data-sid` is what [muSyncSongTicks] reads a tick back onto without rebuilding the table. */
+private fun songRowHtml(t: MusicSongRow): String = buildString {
+    val artists = t.artists.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }
+    // Phase 292 (FR-292-10/12) — chips after the title; the number turns into a checkbox on hover.
+    val on = t.id in muSongSel
+    // Phase 305 (FR-305-13) — *Bonus* after the version chips; folded: *also on N releases*; every copy: the
+    // other copies sit indented under their song with the reason.
+    val cls = listOfNotNull(if (on) "vr-on" else null, if (t.copyOf != null) "ed-cp" else null).joinToString(" ")
+    val also = if (t.alsoOn > 0) """<div><span class="ed-also" data-edcopies="${t.id}">also on ${muPlural(t.alsoOn, "release")}</span></div>""" else ""
+    val why = t.reason?.let { r -> """<div class="ed-cpw">↳ ${r.esc()} · <span class="ed-also" data-edcopies="${t.id}">why</span></div>""" } ?: ""
+    append("""<tr data-sid="${t.id}"${if (cls.isNotEmpty()) " class=\"$cls\"" else ""}><td class="n"><span class="vr-num">${t.position ?: ""}</span><span class="vr-sel${if (on) " on" else ""}" data-vsel="${t.id}">${if (on) "✓" else ""}</span></td><td>${t.albumId?.let { """<a href="#/album/$it">${t.title.esc()}</a>""" } ?: t.title.esc()}${vrBadges(t.id, t.versions)}${edBonus(t.bonus)}${if (t.noWords) """<span class="tiny muted" style="margin-left:8px">no words</span>""" else ""}$also$why</td>""")
+    append("""<td class="dim">$artists</td><td class="dim">${t.albumId?.let { """<a class="dim" href="#/album/$it">${t.album.orEmpty().esc()}</a>""" } ?: ""}</td>""")
+    append("""<td class="num">${muLen(t.lengthMs)}</td><td><span class="mu-fmt${if (t.reencodes) " w" else ""}">${t.format.esc()}${if (t.reencodes) """<span class="re">re-encodes on a phone</span>""" else ""}</span></td>""")
+    append("<td>${lyricsCell(t.lyrics)}</td><td>${recordingCell(t.recording, t.albumMatched)}</td></tr>")
 }
 
 internal fun lyricsCell(state: String?): String = when (state) {
@@ -308,9 +477,18 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     if (t.closest("[data-edevery]") != null) { if (muDto?.filter == null) { edEveryCopy = !edEveryCopy; muLoad(scope) }; return }
     // Phase 292 — the chips open the version panel; a song's checkbox builds a selection for *Set version…*.
     t.closest("[data-ver]")?.let { v -> ev.preventDefault(); ev.stopPropagation(); vrOpenPanel(scope, v.getAttribute("data-ver")!!) { muLoad(scope) }; return }
-    t.closest("[data-vsel]")?.let { s -> ev.preventDefault(); val id = s.getAttribute("data-vsel")!!; if (!muSongSel.remove(id)) muSongSel += id; muRender(scope); return }
-    if (t.closest("[data-vall]") != null) { muDto?.songs?.forEach { muSongSel += it.id }; muRender(scope); return }
-    if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muRender(scope); return }
+    // FR-278-15 — ticking a song toggles its row's class and redraws the selection bar. Nothing else: a rebuild
+    // here would throw away every appended page.
+    t.closest("[data-vsel]")?.let { s ->
+        ev.preventDefault()
+        val id = s.getAttribute("data-vsel")!!
+        val on = if (muSongSel.remove(id)) false else { muSongSel += id; true }
+        (s.closest("tr") as? HTMLElement)?.let { muMarkSongRow(it, on) }
+        muRenderSel(); return
+    }
+    // *select all shown* reads the rows loaded so far (FR-278-14's note; the owner question is 292's).
+    if (t.closest("[data-vall]") != null) { muSongSel += muLoadedIds; muSyncSongTicks(); muRenderSel(); return }
+    if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muSyncSongTicks(); muRenderSel(); return }
     if (t.closest("[data-vbulk]") != null) { vrOpenBulk(scope, muSongSel.toList()) { muSongSel.clear(); muLoad(scope) }; return }
     t.closest("[data-vfi]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfi")!!, only = true); muSongSel.clear(); muLoad(scope); return }
     t.closest("[data-vfx]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfx")!!, only = false); muSongSel.clear(); muLoad(scope); return }
@@ -324,7 +502,7 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
         ev.stopPropagation()
         val k = f.getAttribute("data-fopen")
         muOpenFacet = if (muOpenFacet == k) null else k
-        muRender(scope); return
+        muRenderFacets(); return   // FR-278-15 — a dropdown is chrome; the rows stay where they are
     }
     t.closest("[data-fk]")?.let { f ->
         ev.stopPropagation()
@@ -402,7 +580,9 @@ private fun muPollMatch(scope: CoroutineScope) {
             val st = MusicApi.status() ?: continue
             val btn = document.getElementById("mu-matching") as? HTMLElement
             if (btn != null) btn.textContent = "Matching… ${st.match.done} of ${st.match.total}"
-            else { muDto = muDto?.copy(match = st.match); muRender(scope) }
+            // FR-278-15 — the button has gone, so the status line is redrawn on its own; a tick every 1.5 s must
+            // not rebuild ten thousand rows.
+            else { muDto = muDto?.copy(match = st.match); muRenderTop() }
             if (!st.match.running) {
                 st.match.lastSummary?.let { muToast(it) }
                 muLoad(scope); return@launch
