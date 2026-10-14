@@ -143,6 +143,14 @@ whole filtered set and not over the page. A hand-tick of individual rows is unch
 it is about to write and require the press, never act on the selection implicitly. FR-292-8's dialog already
 has the shape; it is the **number** that has changed by three orders of magnitude.
 
+**Two readings of FR-292-16, written down before the build (2026-10-14, DEB-1119).** The FR enumerates the filter
+as `q` / `f.<key>` / `x.<key>` / `artist` / `copies` and then says *i.e. whatever `GET /api/music/browse` was last
+asked for*; the second clause governs the first, so the filter carries the **Dashboard key** as well
+(`filter=<key>`, 293 FR-293-2) whenever one is active. Leaving it out would resolve to a wider set than the one on
+screen — the opposite of what this FR exists for — and it costs one field. And the **dialog's number comes from
+the same filter**: `POST /api/music/versions/preview` takes it too, because *N of M have it* over the whole set is
+unanswerable from one page, and a 10 723-id preview body is the very request this amendment removes.
+
 ### Metadata → Versions
 
 **FR-292-13 — A *Versions* tab** beside *Tags* and *Music genres*. It has one row per type:
