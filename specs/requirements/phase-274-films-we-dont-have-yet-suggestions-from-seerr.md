@@ -126,7 +126,7 @@ steering — is Seerr's, unchanged. The tile shows the state that comes back and
 (*leaves this list on the next build*). If Seerr refuses (requested by someone since the build, not found), the
 tile says so in one line and stays.
 
-**FR-274-10a — Download asks first** (amendment, `Planned` — written 2026-09-28 from the brief's §8 and the mockup
+**FR-274-10a — Download asks first** (amendment, written 2026-09-28 from the brief's §8 and the mockup
 `design/app/suggestions.js` / `suggestions.css`; dev-reviewed 2026-09-28, see §Dev review — FR-274-10a). Owner, 2026-09-28: the built *Download* sends the
 request too fast. It now opens a **confirm dialog** for that one film — **always a centred dialog, on every width**
 (owner, Q2) — and the request goes only from the dialog's own button. The tile's state chain after that is
@@ -445,3 +445,66 @@ DEB-731's open bug and is left to it. `ScanConfig` is now fully accounted for: `
 **Test.** `ConfigSavePreservesBlocksTest` gains a case that stores all six markers set (and `music_steps_seeded`
 non-empty), posts the admin's body shape, and asserts every one survives. It fails on `main` before the fix with
 `suggestions_step_seeded` alone wrong, which is the measurement reproduced in a test.
+
+## Amendment (2026-10-14) — the Download dialog answers its own controls
+
+Owner, 2026-10-14, with a phone screenshot of FR-274-10a's dialog open on a film: *"I can't select a different
+profile on the popup in suggestions. Also cancel nor download buttons have any effect. Let's fix all of this."*
+DEB-1200.
+
+**The bug, read from the code at `3b483e31`.** `renderSuggestions` puts the page's only click listener on
+`#sg-root` (`Suggestions.kt:71`, deliberately not on the shared route container, which outlives every page).
+`sgDlRender` mounts the dialog as `#sg-dlroot` **appended to `document.body`** (`:372`) — outside `#sg-root` — so
+no click inside it ever reaches `sgClick`, and `sgDlClick` (`:436`) is unreachable. Every control in the dialog is
+inert: the quality rows, the server buttons, *More* and its folders, *Try again*, *Cancel*, the primary, and a
+click on the backdrop. The page behind is covered by the backdrop, so the only way out is to leave the page — and
+nothing removes `#sg-dlroot` on a route change, so the dead dialog stays over whatever page comes next until a
+reload. It has been so since FR-274-10a was built (`3de0ffe1`, 2026-09-29), whose build notes record it was never
+tried. **Nothing was ever sent to Seerr from the dialog** — `SuggestionsApi.download` is only called from the
+unreachable handler — so there are no stray requests to clean up.
+
+Two more defects in the same dialog, which surface the moment the first is fixed:
+
+- **A pick throws the dialog back to its top.** `sgDlRender` replaces `#sg-dlroot`'s `innerHTML` on every pick,
+  so `.sg-dl` — which scrolls inside `max-height: calc(100vh − 60px)` — is a new element at scroll 0. On a phone
+  the owner had scrolled to reach the lower qualities and the buttons; each tap would jump them away.
+- **Escape does nothing.** FR-274-10a's rules say *"Escape / Cancel / outside sends nothing"*; the dialog has no
+  key handler, so Escape doesn't close it either.
+
+### FR-274-18 — Every control in the Download dialog works, and a pick leaves the dialog where it is
+
+1. **Every control reaches its handler.** A quality row selects that profile — the radio, the row's highlight,
+   `aria-checked` and the primary's *Download in {profile}* all follow. A server button re-lists the profiles
+   (FR-274-10a.3); *More* opens the folders and a folder selects (10a.4); *Try again* asks Seerr again.
+   *Cancel*, a click on the backdrop outside the dialog, and **Escape** close it and send nothing. The primary
+   sends `POST /api/suggestions/{tmdbId}/download` with the server and profile (and folder) the dialog shows,
+   closes, and the tile takes the state that comes back (FR-274-10).
+2. **The dialog lives exactly as long as it is open on this page.** Leaving the page with the dialog open removes
+   it; opening and closing it any number of times leaves no extra listener behind (one press sends one request).
+   Recommended build: mount `#sg-dlroot` **inside `#sg-root`**, so the existing listener covers it and the page's
+   replacement removes it; `.sg-dlb` is `position: fixed` and none of its new ancestors (`.shell`, `.app-main-col`,
+   `main.app-main2#page-content`) sets `transform` or `filter` in `app.css` / `wf.css` at `3b483e31`, but confirm the backdrop still covers the viewport at phone and desktop width. If it does not, keep it on
+   `body`, give `#sg-dlroot` its own listener when it is created, and close it on route change.
+3. **A pick never moves the dialog.** The dialog's scroll position is the same after any pick as before it —
+   update in place, or carry `.sg-dl`'s `scrollTop` across the re-render. The page behind does not move either.
+4. Nothing else changes: the dialog's look, its states, what it pre-selects and the wire are FR-274-10a's.
+
+**Acceptance (18).**
+
+1. Phone width (a 412 px CSS viewport, as the owner's screenshot), a server with ten profiles so the dialog
+   scrolls: scroll to the last profile and tap it — it is selected, the primary reads *Download in {it}*, and the
+   dialog has not scrolled. Tap a second one: the same.
+2. *Cancel* closes the dialog; so do a tap on the backdrop and Escape. None of the three sends a request.
+3. Pick a profile that is not the pre-selected one and press the primary: exactly one
+   `POST …/download` with that `profileId` and the server's `serverId`; the dialog closes; the tile says
+   *Requested*.
+4. Open and close the dialog three times, then download: still exactly one `POST`.
+5. Open the dialog and go to another page by the sidebar: no overlay on the next page.
+6. The same 1–3 at desktop width.
+
+**Test.** The admin frontend has no unit test target, so this is a Playwright spec,
+`tests/e2e/suggestions-download-dialog.spec.ts`, that stubs `GET /api/suggestions`,
+`GET /api/suggestions/request-options` and `POST /api/suggestions/*/download` with `page.route` (the e2e stack has
+no Seerr; the route renders without a gate, and the page shows server-pushed state only, so the stubs are the
+whole server) and runs acceptance 1–6 at a phone and a desktop viewport, counting the `POST`s. Stand-in titles and
+viewer names only. It fails on `3b483e31` at the first tap.
