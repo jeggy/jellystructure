@@ -1941,8 +1941,20 @@ Three things this deliberately is not:
   file behind it, and the tick returns before the assertion exactly as it returns today — FR-314-21's *one read when
   kind C has written anything, nothing at all when it has not* governs this too.
 
-The bound on staleness is therefore `GROUPING_RETRY_EVERY_MS`, fifteen minutes, and it is the same bound the
-grouping note already carries. Nothing asks for a second timer.
+**Two bounds, and they are different numbers for different events** — both read off the code, because one of them
+was stated as the only bound when the amendment was first written and that is wrong:
+
+- **After a restart: one grouping tick, fifteen minutes.** `assertNow` rate-limits on `if (lastRunAt != 0L && at -
+  lastRunAt < minIntervalS) return`, and a restart puts `lastRunAt` back to `0L`, so the *first* invitation after a
+  restart runs immediately whatever the rate limit says. The bound is therefore `GROUPING_RETRY_EVERY_MS`, the same
+  bound the grouping note already carries.
+- **A permission the owner changes in Jellyfin: one hour.** `minIntervalS = 3600` then applies, so a widened or
+  narrowed account takes up to an hour to leave or enter the row. That is the existing rate limit, written for
+  exactly this — *"Rate-limited, because it is asserted after every grouping and a grouping is asserted on every
+  pass"* — and it is unchanged here.
+
+Nothing asks for a second timer, and nothing asks for the rate limit to move: the fifteen-minute bound is the one
+acceptance 19 measures, and the hour is the self-healing bound on a configuration change.
 
 ### Acceptance (added)
 
@@ -1961,9 +1973,26 @@ grouping note already carries. Nothing asks for a second timer.
 Acceptance 10 is **not** met until this ships: FR-314-19's surface is built but has never rendered on prod. The row
 is reachable from CI (`FileFixServiceTest`), so nothing here needs a device; the one thing that stays on QA is the
 re-read of the card on prod after the deploy, which folds into DEB-870's pass rather than asking for its own device.
-DEB-1033 is where it was measured.
+DEB-1033 is where it was measured. **DEB-870 is otherwise unaffected** — it gates on the owner's grant and on a
+rebuilt version, not on this — and the row's wording, placement and silence-when-empty are all as built in
+`68ae6244`. `auto_new` stays `0` and the sixteen held films stay held.
 
-## Amendment 2026-10-14 (twelfth) — the restricted-account report is asserted on the same timer as the grouping, because a merge is not going to happen again (DEB-1033)
+### This amendment was written twice, and this is the surviving copy (reconciled 2026-10-14)
+
+Two sessions appended a *twelfth* amendment for DEB-1033 within minutes of each other and commit `ca019226` carried
+both, so the phase briefly specified **FR-314-22 twice** with two incompatible readings. The differences are
+recorded here because the losing copy is not in the file any more:
+
+- **Acceptance and test numbers.** The second copy numbered them 17 and 18, which collide with the eleventh
+  amendment's own acceptance 17-18 and test 18-19. The surviving numbers are **acceptance 19** and **test 20**, and
+  they are the ones `STATUS.md` carries.
+- **The staleness bound.** One copy said fifteen minutes and the other an hour. Both were half right, and the
+  two-bound paragraph above is the reconciliation: fifteen minutes after a restart because `lastRunAt == 0L` skips
+  the rate limit, an hour for a permission change because `minIntervalS = 3600` then applies.
+
+Nothing else differed in substance. `scripts/check-phases.sh` does not catch a duplicated amendment inside one
+file — it reconciles files against `STATUS.md` rows, not headings against each other — so this is a read, not a
+guard.
 
 FR-314-19 shipped as *a read of a field the merge path fills*, and its as-built note said so plainly: the field is
 in memory, a restart empties it, and the next grouping fills it again. On prod that last clause is false. Turið
