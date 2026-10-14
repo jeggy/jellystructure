@@ -1,12 +1,13 @@
 # Phase R292 — A player that is not on screen does not exist
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-25 from the dev review below (all nine items), **device-tried on the stue TV the same
-morning** (release build `1.38-17-g16709146-dirty`, dex guard 238/250): see *Trials* under Build. `Planned`
-when written 2026-09-24 from a household report and a same-day investigation on the stue TV. **Dev-reviewed
-2026-09-24 against `main` `9d2636bb`.** **Supersedes R220 FR-R220-4** and R192's *"resume without a full
-player rebuild"* code comments; keeps R220's detector and ladder for mid-playback loss (FR-R292-11).
+Written 2026-09-24 from a household report and a same-day investigation on the stue TV; **dev-reviewed
+2026-09-24 against `main` `9d2636bb`**; built 2026-09-25 from that review (all nine items) and device-tried on
+the stue TV the same morning — see *Trials* under Build. **Supersedes R220 FR-R220-4** and R192's *"resume
+without a full player rebuild"* code comments; keeps R220's detector and ladder for mid-playback loss
+(FR-R292-11). Amended 2026-10-09 (FR-R292-8a, standby) and 2026-10-14 (FR-R292-13, a return with no record —
+DEB-782). Phase status lives in `STATUS.md`.
 
 ### Build (2026-09-25)
 
@@ -257,6 +258,15 @@ the music, R322 FR-R322-12.)*
   return with no screen-off in between (HOME, an input switch). A background the screen-off itself caused records
   no play intent, so a restore after the process died (FR-R292-6) comes back paused too. Live TV keeps re-tuning
   (a channel has no place to hold).
+- **FR-R292-13 — A return with no record is paused** *(amendment 2026-10-14, DEB-782, see below)*. A return to
+  the foreground (`onForeground`, whichever platform calls it and whether or not the screen went off) that finds
+  **no resume record for the current item** is R290's one start moment **paused** at the server's place. It never
+  plays. FR-R292-3 already says *"`play()` only if the play intent says so"*; no record is no play intent, and
+  open question 2's 30-minute rule needs a record to measure from. Only a record whose play intent is *playing*,
+  inside the 30 minutes, with no screen-off in between, plays on return — unchanged. A fresh start from Home, a
+  binge's next episode and a restore from saved state (FR-R292-6) do not go through the return and are untouched.
+  The rule is in shared code, so it holds for every client that calls the return: the Android TV and phone, and the
+  web app (whose return never carries a screen-off, so it could never reach FR-R292-8a's protection).
 - **FR-R292-9 — Live TV follows the same rule.** `LiveTvPlayerScreen` gets the same lifecycle: pause on
   `ON_PAUSE`, release on `ON_STOP`/screen-off, and on return re-tune the channel it was on (the channel
   is its resume record). Pressing HOME during Live TV stops the audio.
@@ -359,6 +369,13 @@ Device trials need the owner's go-ahead for the TV. The phone rows run on the Pi
    `playback_qoe` row carries `video_output_recoveries ≥ 1` and `background_returns ≥ 1`.
 7. **Unit:** the resume record round-trips through saved state; the engine re-bind function attaches every
    binding listed in FR-R292-10 to a fresh engine (a fake engine records each call).
+8. **A return with no record does not play (FR-R292-13).** Unit: the return's play decision with no record is
+   *paused*, with and without a screen-off; with a record it is unchanged (playing inside 30 min ⇒ plays, paused ⇒
+   paused, after standby ⇒ paused). Device (one Android client, `.debug` of `main`): open a film and press HOME
+   inside ~1 s, before its picture is up, so nothing is recorded; bring the app back with no screen-off and touch
+   nothing for 20 s — the position does not advance (a new session row alone is not a failure; only a moving
+   position is). Controls on the same device: HOME while playing and back inside 30 min still plays; standby still
+   comes back paused.
 
 ## Dev review (2026-09-24, against `main` `9d2636bb`)
 
@@ -487,3 +504,26 @@ nullable ref with one re-bind function that owns every listener (item 6).
   SDK delivered a resume intent at wake (`ReceiverMediaUtils: … not a Cast resume session intent`) and the media
   session is handed to Cast Connect, so the phone's still-connected sender most likely resumed it. Not fixed: the
   cast path needs the same `afterStandby` rule on the Cast Connect side (ignore the sender's resume after standby).
+
+## Found 2026-10-12, amended 2026-10-14 (FR-R292-13, DEB-782)
+
+- **Seen once on the Stue TV (Play Store build v1.51, QA-C on DEB-700):** the app sat on a player that was not
+  playing (its last event was a pause, then its session ended `stopped` when another app came to the front). About
+  16 minutes later that other app was closed, Ravilo came back to the foreground with **no screen-off**, armed a new
+  session and **played ~21 s with nobody in the room**. The client counted the return (`playback_qoe.background_returns`),
+  and `restored_after_recreate` stayed 0, so it went through the return, not a saved-state restore. The same app
+  returned paused correctly earlier the same evening after a standby (FR-R292-8a).
+- **Cause, in the code at `cb47d7a5`:** the return's play decision is `resumePlayOn(record, now, afterStandby)`
+  (`PlayerResume.kt`), whose only production caller is `onForeground` (`PlayerScreen.kt`). With no record it
+  answers **play** (`?: true`) — documented as *"a fresh start"*, but a fresh start sets the latch directly and never
+  calls it, so the default's only reachable effect is a return that plays. `PlayerResumeTest` pins it (*"no record
+  and no standby: a fresh start plays"*). A record is missing on return when the background found the position not
+  yet fresh for the current item (`loadedForItemId` / `positionKnownForItemId`): a player left inside ~1 s of opening,
+  before its first poll, or one whose stream never loaded. A Stop does **not** produce it (both flags survive a stop,
+  so the record is captured with play intent *paused*). Back out of a player clears the store, so the next player
+  starts with none.
+- **Web:** the wasm return always passes `afterStandby = false`, so a hidden tab or a locked phone in the browser has
+  no FR-R292-8a path at all; FR-R292-13 is what covers it.
+- **Decided without a device repro**, on purpose: the spec already required it (FR-R292-3), the code contradicts it
+  in one default, and the whole estate was unticked from 2026-10-14 12:00Z. The device check is acceptance 8, after
+  the build. Open question 2's 30-minute rule (owner, 2026-09-24) is untouched.
