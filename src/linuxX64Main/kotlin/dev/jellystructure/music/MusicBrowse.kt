@@ -84,7 +84,9 @@ object MusicBrowse {
 
     class Result(val rowsTotal: Int, val facets: List<MusicFacet>, val albums: List<MusicAlbumRow>, val artists: List<MusicArtistRow>, val songs: List<MusicSongRow>, val sentence: String? = null,
                  /** Phase 305 — Songs: copies folded behind the rows shown, and whether every copy is listed. */
-                 val folded: Int = 0, val everyCopy: Boolean = false)
+                 val folded: Int = 0, val everyCopy: Boolean = false,
+                 /** Phase 278 (FR-278-14) — the Songs window served, echoed back. Null = the whole list. */
+                 val page: Int? = null, val pageSize: Int? = null)
 
     /**
      * One view. [selected] maps a facet key to the values ticked (OR within a facet, AND across facets); [query]
@@ -105,6 +107,14 @@ object MusicBrowse {
         artist: String? = null,
         /** Phase 305 (FR-305-13) — *Show every copy*. A Dashboard key always lists every file (293's promise). */
         everyCopy: Boolean = false,
+        /**
+         * Phase 278 (FR-278-14) — the Songs window: [page] is 1-based, [pageSize] its size. Both absent means the
+         * whole list, so no caller that never asked changes behaviour. The window is taken on the sorted rows and
+         * on nothing else: every count this returns — `rowsTotal`, `folded` and each facet value — is computed over
+         * the whole filtered set above it, because the page's numbers describe the library and not the window.
+         */
+        page: Int? = null,
+        pageSize: Int? = null,
     ): Result {
         val ctx = Ctx(snap, roots)
         val q = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
@@ -139,8 +149,11 @@ object MusicBrowse {
                     }
                 }
                 val folded = if (every) 0 else shown.sumOf { songs.copies(it).size - 1 }
-                Result(shown.size, facets(counts, universe, selected, libraryNames, excluded, songs = true), emptyList(), emptyList(), sorted.map { ctx.songRow(it, every) },
-                    songsSentence(snap, artist, selected[VERSION].orEmpty(), excluded[VERSION].orEmpty()), folded = folded, everyCopy = every)
+                // FR-278-14 — last of all, the window: after the comparator, and after every count above it.
+                val window = slice(sorted, page, pageSize)
+                Result(shown.size, facets(counts, universe, selected, libraryNames, excluded, songs = true), emptyList(), emptyList(), window.map { ctx.songRow(it, every) },
+                    songsSentence(snap, artist, selected[VERSION].orEmpty(), excluded[VERSION].orEmpty()), folded = folded, everyCopy = every,
+                    page = pageOf(page, pageSize), pageSize = sizeOf(pageSize))
             }
             else -> {
                 val all = ctx.albums.filter { a -> hit(a.title, a.albumArtists.joinToString(" ") { it.name }) && (tp == null || tp.album(tk!!, a)) }
@@ -196,6 +209,23 @@ object MusicBrowse {
     }
 
     // ── internals ──
+
+    /** FR-278-14 — a `page_size` of zero or less is not a window; anything else is taken as asked. */
+    private fun sizeOf(pageSize: Int?): Int? = pageSize?.takeIf { it > 0 }
+
+    /** The page served: 1-based and never below 1, and absent whenever the whole list was. */
+    private fun pageOf(page: Int?, pageSize: Int?): Int? = if (sizeOf(pageSize) == null) null else (page ?: 1).coerceAtLeast(1)
+
+    /**
+     * [page] of [rows], [pageSize] long. A page past the end is empty rather than an error — the admin's scroller
+     * reads an empty page as the end of the sequence. Arithmetic in `Long`, so a large `page` cannot wrap.
+     */
+    private fun <T> slice(rows: List<T>, page: Int?, pageSize: Int?): List<T> {
+        val size = sizeOf(pageSize) ?: return rows
+        val from = ((pageOf(page, pageSize)!! - 1).toLong() * size).coerceAtMost(rows.size.toLong()).toInt()
+        val to = (from.toLong() + size).coerceAtMost(rows.size.toLong()).toInt()
+        return rows.subList(from, to)
+    }
 
     private class Ctx(val snap: MusicStore.Snapshot, val roots: Set<String> = emptySet()) {
         val albums = snap.albums.values.filter { it.missingSince == null }

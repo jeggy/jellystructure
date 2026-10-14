@@ -198,10 +198,16 @@ object MusicApi {
         hidden: Map<String, Set<String>> = emptyMap(), artist: String? = null,
         /** Phase 305 (FR-305-13) — *Show every copy*. */
         everyCopy: Boolean = false,
+        /** Phase 278 (FR-278-14) — the Songs window; the server applies it to the Songs rows only, so it is safe to
+         *  ask for one before the server has said which view a Dashboard key chose. Null means the whole list. */
+        page: Int? = null,
+        pageSize: Int? = null,
     ): MusicBrowseDto? = runCatching {
         val qs = buildList {
             add("view=$view")
             if (everyCopy) add("copies=all")
+            page?.let { add("page=$it") }
+            pageSize?.let { add("page_size=$it") }
             filter?.let { add("filter=${it.encodeURLParameter()}") }   // Phase 293 — a Dashboard row's key
             // Phase 292 (FR-292-11) — *Hide* beside *Only*, and Songs by one artist.
             hidden.filterValues { it.isNotEmpty() }.forEach { (k, v) -> add("x.$k=${v.joinToString(",") { it.encodeURLParameter() }}") }

@@ -335,10 +335,15 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             // Phase 292 (FR-292-11) — *Hide* rides `x.<key>=` beside `f.<key>=`; `artist=` narrows Songs to one artist.
             val excluded = MusicBrowse.FACETS.mapNotNull { (k, _) -> qp["x.$k"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()?.let { k to it } }.toMap()
             val artist = qp["artist"]?.takeIf { it.isNotBlank() }
+            // Phase 278 (FR-278-14) — `page` (1-based) and `page_size` window the **Songs** rows and nothing else;
+            // absent means the whole list, so a caller that never asked is answered exactly as before.
+            val page = qp["page"]?.toIntOrNull()
+            val pageSize = qp["page_size"]?.toIntOrNull()
             val libs = MusicScanner.musicLibraries(cfg)
             val snap = music.store.snapshot()
             val r = MusicBrowse.browse(snap, view, selected, qp["q"], libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } }, qp["sort"], dev.jellystructure.music.MusicFlags.roots(cfg), triage,
-                excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS }, everyCopy = qp["copies"] == "all")
+                excluded = excluded, artist = artist.takeIf { view == MusicBrowse.SONGS }, everyCopy = qp["copies"] == "all",
+                page = page, pageSize = pageSize)
             call.respond(MusicBrowseDto(
                 mapped = libs.isNotEmpty(), scanned = music.scanner.lastScanAt != null || snap.albums.isNotEmpty() || snap.tracks.isNotEmpty(),
                 health = if (libs.isNotEmpty()) music.store.health() else null, match = matcher.status,
@@ -347,7 +352,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
                 musicbrainzEnabled = cfg.musicbrainz.enabled,
                 filter = triage, filterLabel = triage?.let { dev.jellystructure.music.MusicTriage.MUSIC[it]?.label }, writeTags = cfg.music.writeTags,
                 sentence = r.sentence, artist = artist.takeIf { view == MusicBrowse.SONGS }, versionTypes = music.versions.chipTypes(snap),
-                folded = r.folded, everyCopy = r.everyCopy,
+                folded = r.folded, everyCopy = r.everyCopy, page = r.page, pageSize = r.pageSize,
             ))
         }
 

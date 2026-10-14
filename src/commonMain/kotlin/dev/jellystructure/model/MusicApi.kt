@@ -294,6 +294,11 @@ data class MusicBrowseDto(
      *  is listed (`copies=all`, or a Dashboard key, which always opens every file). */
     val folded: Int = 0,
     @SerialName("every_copy") val everyCopy: Boolean = false,
+    /** Phase 278 (FR-278-14) — the Songs window served: the 1-based page and its size, echoing what was asked for.
+     *  Both null when the whole list was served — no `page_size`, or a view that does not page. `total` above is the
+     *  whole filtered set either way, and so is every facet count. */
+    val page: Int? = null,
+    @SerialName("page_size") val pageSize: Int? = null,
 )
 
 /** One row of the Album page's Tracks tab (FR-278-6). */
