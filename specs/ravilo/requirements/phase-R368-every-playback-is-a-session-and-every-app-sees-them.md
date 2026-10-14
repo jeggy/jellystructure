@@ -690,9 +690,21 @@ shipping the field in the app would not have helped. That is this phase's own de
 - With `book_id` NULL there is no book to convert, so *Move to…* has nothing to move and R372's `book_ms` road has
   nothing to work from.
 
-**Blast radius on prod: three rows, one viewer, one place, all within 13 minutes of the QA run, none still live.** No
-household viewer has hit it; the "Already playing" risk (DEB-747/DEB-895) is latent, not realised. Nothing is wedged,
-so this is a correctness fix on the next deploy, not a hotfix.
+**Blast radius on prod: four rows, one viewer, two places, none still live** — three inside 13 minutes of the first QA
+run and a fourth from a second run half an hour later. **Every one of them was minted by QA's own cleanup**, not by a
+listener: no household viewer has hit this, so the "Already playing" risk (DEB-747/DEB-895) is latent, not realised.
+Nothing is wedged, so this is a correctness fix on the next deploy, not a hotfix.
+
+**A fourth entry point, found 2026-10-14 after this amendment was written, and it is the reason for part (5).** The
+documented way to put a book's resume point back — one `PUT …/progress` with `paused: true` and no `session_id` — mints
+the ghost *in the same millisecond as the 200* (`created_at` equal to the response's `updated_at`), targeted at the
+phone that sent it rather than at any TV, carrying the reported part id as a `film` `item_id` and the reported position.
+It is a faithful mirror of a progress write that should not have been a session. Two runs on the same book each left one
+this way, by doing exactly what their test plan told them to do, which is how a latent bug became four prod rows. One of
+those ghosts then took an `offline` event when the phone app was force-stopped; **that half is already covered** —
+FR-R372-8's ten-minute offline reaper has been live on prod since 2026-10-12, so an offline ghost ends on its own. The
+shape that never ends is the other one, a ghost left `playing` with no clock against it, and that is FR-R372-14.
+**Nothing about a part change is needed to reproduce this**: the fourth case never crossed a part boundary.
 
 **FR-R368-12 — a book's session is found by its book, not by the part it is on.** Four parts, no wire change:
 
@@ -704,8 +716,8 @@ so this is a correctness fix on the next deploy, not a hotfix.
    (`PlaybackSessions.kt:596`, *"a book's next part"*). The progress path simply never implemented it.
 2. **The book travels with the report.** `AudiobooksTvService.progress()` already knows the book; it passes it on
    through the mirror lambda, `PlaybackService.reportProgress` and `onProgress` into `onStart`. A report that *does*
-   legitimately create a session then creates an `audiobook` one in the **audio** lane, with the book's title, author
-   and cover (R380 FR-R380-12's `queue_json` rule) and `book_id` set.
+   legitimately create a session (5 says which) then creates an `audiobook` one in the **audio** lane, with the book's
+   title, author and cover (R380 FR-R380-12's `queue_json` rule) and `book_id` set.
 3. **`session_id` stops being inert.** It is threaded route → service → mirror → `reportProgress` → `onProgress` the
    same way, so a client that sends it is honoured. The field is already on the wire
    (`shared/…/tv/Audiobooks.kt`, `AudiobookProgressRequest.session_id`, dev review item 8); nothing is added or
@@ -713,6 +725,16 @@ so this is a correctness fix on the next deploy, not a hotfix.
 4. **A floor under all of it.** `describe(itemId, bookId = null)` resolves an audiobook **part** to its book by
    reverse lookup over the store's `partsByBook`, so a part id alone describes as `audiobook` with the book's words.
    No caller — today's or a later one — can mint a nameless `film` from a part id again. A part is never a film.
+5. **A paused report that matches nothing is a bookmark, not a playback, and mints no session.** Added 2026-10-14
+   after a third reproduction from a *fourth* entry point (below): where `onProgress` finds no session to join
+   (`cur == null`, `PlaybackSessions.kt:747`) and the report carries `paused = true`, the book's place is written to
+   `audiobook_progress` and **no `playback_session` row is created at all**. Nobody is listening, so there is no
+   session to represent: a row minted here holds a place, appears in *Playing now*, and has to be stopped by hand. A
+   report with `paused = false` and no match still mints, by (2) — a book genuinely playing whose row was reaped is a
+   playback and deserves one. `paused` is already a parameter of `onProgress` at the mint site, so this is one
+   condition, not new plumbing, and it is **confined to the audiobook-part case**: the general mint at
+   `PlaybackSessions.kt:740` exists for a receiver whose skip outran its start (the Mac, 2026-10-05) and is not
+   narrowed by this amendment or by any other part of it.
 
 **What this amendment is explicitly not aimed at.** All measured exact on a real remote during DEB-1005, and none of it
 is to be touched: the ∓30 s key map (30 000 ms a press, both directions; 10 000 ms a long press), `start_ms`
@@ -731,18 +753,24 @@ purely in which session row the progress path finds or creates.
    book's own session carries the position, and **no new session appears**. The DB assertion is
    `select count(*) from playback_session where item_id in (select id from audiobook_part) and kind != 'audiobook'`
    — it must read **0**, before and after.
-2. **A forward roll** — a book left to run across a part boundary keeps **one** session, which continues into the next
+2. **The same call with the book not playing anywhere** (FR-R368-12(5), the restore path): the 200 carries the new
+   `position_ms` and `book_position_ms` as it does today, *Continue listening* resumes from it, and
+   `select count(*) from playback_session where created_at >= <the call>` reads **0**. QA's cleanup stops leaving
+   anything behind, so nothing has to be stopped by hand afterwards.
+3. **A forward roll** — a book left to run across a part boundary keeps **one** session, which continues into the next
    part with its title, author and cover intact, and leaves nothing behind.
-3. **The backward crossing on a device** — ◀ back across a part boundary from a few seconds into a part keeps one
+4. **The backward crossing on a device** — ◀ back across a part boundary from a few seconds into a part keeps one
    session, titled, `book_id` set, and does not end it. This one needs the Stue TV, a board claim and a fresh grant,
    so it stays on the QA queue as DEB-1054's device half and is **not** a condition of the build.
 
 ### Tests (this amendment)
 
 - `tv/PlaybackSessionsTest` — a progress report naming another part of the live book **joins** it (one session, the
-  `item_id` moved, the revision bumped); a report for a part with no live session mints an **`audiobook`** session in
-  the **audio** lane with the book's words and `book_id` set; a given `session_id` wins over both; the precedence of
-  FR-R368-12(1) is asserted as an order, not as four separate cases.
+  `item_id` moved, the revision bumped); a **playing** report for a part with no live session mints an **`audiobook`**
+  session in the **audio** lane with the book's words and `book_id` set; a **paused** report for a part with no live
+  session mints **nothing** (FR-R368-12(5)) while the progress write still lands; a given `session_id` wins over all of
+  them; the precedence of FR-R368-12(1) is asserted as an order, not as four separate cases. One case must also show a
+  non-book paused report with no match still minting, so (5) is not read as narrowing `PlaybackSessions.kt:740`.
 - `audiobooks/AudiobooksTvServiceTest` — `progress()` forwards the book and the `session_id` it was given to the
   mirror (a recording mirror lambda; no HTTP).
 - The `describe` floor: a part id with `bookId = null` describes as `audiobook` with the book's title.
