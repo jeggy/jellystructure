@@ -834,3 +834,35 @@ is whether the TV app's `supports_hdr10` is true — the device reports a hardwa
 comes from one), but `HEVCProfileMain10HDR10` specifically is the probe, and the on-device check settles it: an
 `encoder=ours H264 … tone-mapped` line *after* this fix means the HDR form was not declared, which is then a
 different finding against the app's probe, not against this amendment.
+
+### What the fix costs FR-313-8's budget (2026-10-14, read off the code at `02ae8b21`)
+
+The amendment above changes which family a device gets; it does not say that the family is also what a job **costs**
+a card. It does, and the apps are the surfaces that move, so this is written down rather than discovered on a busy
+evening. Nothing here is a new requirement — it is FR-313-8 and FR-313-3 arithmetic after FR-313-16, and it is
+load-shaped, not correctness-shaped.
+
+- **A 4K HEVC ladder costs 0.5 of a card; the 1080p H.264 ladder it replaces cost 0.25** (`jobLoad`: `HEVC` with a
+  top box ≥ 2160 → 0.5, anything else H.264 → 0.25, times `rungs / 4` floored at 0.5). Both ladders are four rungs
+  for a 4K source — H.264 stops at `maxBoxHeight` 1080 and still fills 1080p@12M / 1080p@8M / 720p@4M / 480p@1.5M —
+  so the multiplier is 1.0 either way and the cost doubles exactly. **A 1080p source is unaffected** (HEVC under
+  2160 costs 0.3, and nothing about a sub-4K play changed), and a **direct play costs nothing at all**: on this panel
+  only an above-the-60-Mbps-ceiling 4K source transcodes, so the set of plays this touches is small.
+- **The fallback does not begin at the third simultaneous play.** `placeJob` fills the P4000 (no session cap, so load
+  alone gates it) and then **spills to the 2060 SUPER**, and only then trims rungs; `EncoderPlanTest`'s *the budget
+  fills the P4000 — uses the consumer card within its cap — then gives fewer rungs* already asserts exactly that
+  (`placeJob(…, mapOf(0 to 1.0), HEVC, 2160, 4)` → card 1, four rungs). So the household's ceiling for concurrent
+  4K HEVC transcodes is **four** with the consumer card otherwise idle — two on the P4000, one on the 2060 SUPER,
+  then a fourth trimmed to two rungs by `sessionCap 8 − reservePerCard 2` — and **three** when Jellyfin or trickplay
+  already holds two sessions there. The play after that gets no placement and is answered by Jellyfin (FR-313-12),
+  which is a working picture through the other encoder, not a failure.
+- **Before the fix the same ceiling was six** (idle consumer card) or five (two sessions taken). So the change is
+  roughly halving a ceiling that sits above the household's simultaneous-4K habit, not lowering one it reaches
+  daily. **Still an owner-visible number**, because a Jellyfin fallback looks different on the panel; it is recorded
+  here so that a fallback on a fourth or fifth concurrent 4K play is read as this arithmetic and not as a new defect.
+
+**Owed on a device, and cheap because it rides the run above** (DEB-1094): `encoder.cards[].jobs` and `rungs` off
+`/api/health` at the start of each road, so the acceptance numbers (`rebuffer_count`, `dropped_frames`) are read
+against the load that actually existed. Two 4K HEVC ladders at once fill the P4000, so **the two roads go serially** —
+run simultaneously they measure contention rather than the fix. Whether the ceiling of four wants a cap of its own on
+this panel is a question for the owner **after** a measurement, not before one.
