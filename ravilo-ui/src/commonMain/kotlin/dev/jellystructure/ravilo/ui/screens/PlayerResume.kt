@@ -51,10 +51,13 @@ data class ResumeRecord(
 fun resumePlayIntent(record: ResumeRecord, nowMs: Long): Boolean =
     record.playIntent && nowMs - record.awayAtMs < RESUME_PLAY_WINDOW_MS
 
-/** R292 FR-R292-8a (found live 2026-10-09) — what coming back does: after the screen went off (TV standby, a
- *  phone's lock) always paused at the place; otherwise [resumePlayIntent]; no record ⇒ play (a fresh start). */
+/** R292 FR-R292-8a (found live 2026-10-09) and FR-R292-13 (DEB-782) — what COMING BACK does, and its one
+ *  production caller is the return (`onForeground`): after the screen went off (TV standby, a phone's lock)
+ *  always paused at the place; otherwise [resumePlayIntent]; **no record ⇒ paused** — no record is no play
+ *  intent, and the 30-minute rule has nothing to measure from. A fresh start (`playOnLatch = true` on open),
+ *  a binge's next episode and a restore from saved state never go through here. */
 fun resumePlayOn(record: ResumeRecord?, nowMs: Long, afterStandby: Boolean): Boolean =
-    !afterStandby && (record?.let { resumePlayIntent(it, nowMs) } ?: true)
+    !afterStandby && record != null && resumePlayIntent(record, nowMs)
 
 /** FR-R292-6 — a saved record older than this is not restored into the player (the viewer moved on). */
 fun resumeRestorable(record: ResumeRecord, nowMs: Long): Boolean = nowMs - record.awayAtMs < RESUME_RESTORE_MAX_MS

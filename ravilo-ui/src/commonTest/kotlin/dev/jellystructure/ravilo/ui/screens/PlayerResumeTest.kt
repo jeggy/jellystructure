@@ -53,6 +53,12 @@ class PlayerResumeTest {
         assertFalse(resumePlayOn(rec, rec.awayAtMs + 60_000, afterStandby = true))
         assertFalse(resumePlayOn(null, rec.awayAtMs + 60_000, afterStandby = true), "no record: still paused after standby")
         assertTrue(resumePlayOn(rec, rec.awayAtMs + 60_000, afterStandby = false), "HOME and back within 30 min still plays")
-        assertTrue(resumePlayOn(null, rec.awayAtMs, afterStandby = false), "no record and no standby: a fresh start plays")
+    }
+
+    @Test
+    fun `a return with no resume record is paused with or without a standby`() {
+        // R292 FR-R292-13 (DEB-782): no record is no play intent. A fresh start never calls resumePlayOn.
+        assertFalse(resumePlayOn(null, 1_000_000L, afterStandby = false), "no record, no standby: paused")
+        assertFalse(resumePlayOn(null, 1_000_000L, afterStandby = true), "no record, after standby: paused")
     }
 }
