@@ -473,9 +473,18 @@ internal class RefusedSources(private val ttlMs: Long = 6 * 3_600_000L) {
 /** 313 (2026-10-09) — the logged reason a cast receiver's transcode stays Jellyfin's. */
 internal const val CAST_RECEIVER_FALLBACK = "cast receivers use Jellyfin until the stall is diagnosed (313)"
 
-/** FR-313-4 — the codec family for a device: HEVC when it decodes HEVC over HLS and (for an HDR source) the source's HDR form. */
-internal fun encoderCodecFor(hlsHevc: Boolean, videoCodecs: List<String>, supportsHdr10: Boolean, supportsHlg: Boolean, source: EncoderSource): EncoderCodec {
-    val hevc = hlsHevc && videoCodecs.any { it.equals("hevc", true) || it.equals("h265", true) }
+/**
+ * FR-313-4 — the codec family for a device: HEVC when it decodes HEVC over HLS and (for an HDR source) the source's
+ * HDR form.
+ *
+ * FR-313-16 (2026-10-14, DEB-1083) — **either** capability field is that device saying it decodes HEVC over HLS, and
+ * neither is sufficient alone: the apps send only [hlsHevcCapable] (R379), while the Cast web receiver sends only
+ * [hlsHevc] (253's fMP4 opt-in) and no [hlsHevcCapable] at all. Asking [hlsHevc] alone — as this did until today —
+ * returns [EncoderCodec.H264] for every Android build, phone and TV alike, because [hlsHevc] is R329's Mac/AirPlay
+ * gate. A client that sends neither keeps H.264 SDR.
+ */
+internal fun encoderCodecFor(hlsHevc: Boolean, hlsHevcCapable: Boolean, videoCodecs: List<String>, supportsHdr10: Boolean, supportsHlg: Boolean, source: EncoderSource): EncoderCodec {
+    val hevc = (hlsHevc || hlsHevcCapable) && videoCodecs.any { it.equals("hevc", true) || it.equals("h265", true) }
     if (!hevc) return EncoderCodec.H264
     if (!source.hdr) return EncoderCodec.HEVC
     return if ((source.hlg && supportsHlg) || (!source.hlg && supportsHdr10)) EncoderCodec.HEVC else EncoderCodec.H264

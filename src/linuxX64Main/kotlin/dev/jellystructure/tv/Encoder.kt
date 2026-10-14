@@ -119,7 +119,7 @@ class Encoder(
         val order = fileAudioOrder(audio, tracks) ?: return null to "audio tracks don't match the file (R382)"
         // overlay_cuda composites 8-bit frames only: a burn-in play is H.264 SDR (tone-mapped once when HDR).
         val codec = if (burnSubtitleOrder != null) EncoderCodec.H264
-            else encoderCodecFor(caps.hlsHevc, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)
+            else encoderCodecFor(caps.hlsHevc, caps.hlsHevcCapable, caps.videoCodecs, caps.supportsHdr10, caps.supportsHlg, source)
         val ceiling = listOf(if (codec == EncoderCodec.HEVC) caps.maxHevcBitrate else caps.maxH264Bitrate, caps.maxVideoBitrate)
             .filter { it > 0 }.minOrNull()?.toLong()
         val carried = audio.indexOfFirst { it.index == carriedIndex }.let { if (it < 0) audio.indexOfFirst { a -> a.isDefault }.coerceAtLeast(0) else it }

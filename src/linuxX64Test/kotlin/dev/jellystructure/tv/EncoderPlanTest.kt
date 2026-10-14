@@ -62,11 +62,21 @@ class EncoderPlanTest {
         assertEquals(r.lastIndex, startRung(r, 100_000))
     }
 
-    @Test fun `the codec family follows the device and the source's HDR form`() {
-        assertEquals(EncoderCodec.HEVC, encoderCodecFor(true, listOf("hevc", "h264"), supportsHdr10 = true, supportsHlg = false, source = hdr4k))
-        assertEquals(EncoderCodec.H264, encoderCodecFor(true, listOf("hevc"), supportsHdr10 = false, supportsHlg = false, source = hdr4k))
-        assertEquals(EncoderCodec.H264, encoderCodecFor(false, listOf("hevc"), supportsHdr10 = true, supportsHlg = true, source = hdr4k))
-        assertEquals(EncoderCodec.HEVC, encoderCodecFor(true, listOf("hevc"), supportsHdr10 = false, supportsHlg = false, source = hdr4k.copy(hdr = false)))
+    @Test fun `the codec family follows either HEVC-over-HLS field and the source's HDR form`() {
+        // FR-313-16 — the shape the whole app fleet really sends: hls_hevc false (R329 left it the Mac/AirPlay gate),
+        // hls_hevc_capable true. Asking hls_hevc alone is what served a BRAVIA H.264 SDR (DEB-1083).
+        assertEquals(EncoderCodec.HEVC, encoderCodecFor(false, true, listOf("hevc", "h264"), supportsHdr10 = true, supportsHlg = false, source = hdr4k))
+        // The Cast web receiver's shape: hls_hevc only, no hls_hevc_capable at all. The one road that works today.
+        assertEquals(EncoderCodec.HEVC, encoderCodecFor(true, false, listOf("hevc", "h264"), supportsHdr10 = true, supportsHlg = false, source = hdr4k))
+        // Neither field: H.264 SDR, exactly as before.
+        assertEquals(EncoderCodec.H264, encoderCodecFor(false, false, listOf("hevc"), supportsHdr10 = true, supportsHlg = true, source = hdr4k))
+        // HEVC over HLS, but the source's own HDR form is not declared: H.264, tone-mapped.
+        assertEquals(EncoderCodec.H264, encoderCodecFor(false, true, listOf("hevc"), supportsHdr10 = false, supportsHlg = false, source = hdr4k))
+        assertEquals(EncoderCodec.H264, encoderCodecFor(true, true, listOf("hevc"), supportsHdr10 = true, supportsHlg = false, source = hdr4k.copy(hlg = true)))
+        // An SDR source asks for no HDR form.
+        assertEquals(EncoderCodec.HEVC, encoderCodecFor(false, true, listOf("hevc"), supportsHdr10 = false, supportsHlg = false, source = hdr4k.copy(hdr = false)))
+        // hevc missing from video_codecs is H.264 whichever field claims HLS.
+        assertEquals(EncoderCodec.H264, encoderCodecFor(true, true, listOf("h264"), supportsHdr10 = true, supportsHlg = true, source = hdr4k))
     }
 
     @Test fun `codec strings are exact per rung`() {
@@ -217,17 +227,69 @@ class EncoderPlanTest {
     private fun encoder(cards: List<EncoderCard> = listOf(EncoderCard(0, "Quadro P4000", null, 0)), enabled: Boolean = true, castReceivers: Boolean = true) =
         Encoder({ EncoderConfig(enabled = enabled, workDir = "/tmp/js-encoder-test", castReceivers = castReceivers) }, cardsOverride = { cards }, ffmpegOverride = { true })
 
+    /**
+     * FR-313-16 — the capability shape the TV and the phone apps really send: `hls_hevc` **false** (R329 left it the
+     * Mac/AirPlay fMP4 gate, and Android's `playsOnlyHls()` is false), `hls_hevc_capable` true, `hevc` in
+     * `video_codecs`, `supports_hdr10` from the decoder probe. The `hlsHevc = true` shape this test used to build is
+     * one no Android build can send, which is how DEB-1083 stayed hidden for six days — hence a rewrite, not an
+     * addition.
+     */
     @Test fun `a BRAVIA-like device gets HEVC HDR rungs and every audio rendition`() = runBlocking {
-        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true, maxAudioChannels = 6)
+        val caps = ClientCapabilities(hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true, hlsAudioRenditions = true, maxAudioChannels = 6)
+        assertFalse(caps.hlsHevc, "the fleet's shape: 253's fMP4 opt-in stays off")
         val (plan, why) = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10")
         assertEquals("ours", why)
         plan!!
         assertEquals(EncoderCodec.HEVC, plan.codec)
         assertTrue(plan.keepsHdr)
+        assertFalse(plan.tonemaps)
         assertEquals(4, plan.rungs.size)
+        assertEquals(2160, plan.rungs[0].boxHeight)
         assertEquals(listOf(0, 1), plan.audio.map { it.audioOrder })
         assertEquals(listOf(6, 6), plan.audio.map { it.channels })
         assertEquals(EncoderMux.TS, plan.mux, "Media3 (a BRAVIA, a phone) gets MPEG-TS")
+    }
+
+    /** FR-313-16 — the Cast web receiver sends `hls_hevc` and no `hls_hevc_capable`: the 2026-10-10 road must hold. */
+    @Test fun `the cast receiver's own shape still gets HEVC HDR rungs`() = runBlocking {
+        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        assertFalse(caps.hlsHevcCapable, "the receiver declares R379's field nowhere")
+        val plan = encoder().planFor(caps, "cast", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(EncoderCodec.HEVC, plan.codec)
+        assertTrue(plan.keepsHdr)
+        assertEquals(2160, plan.rungs[0].boxHeight)
+    }
+
+    /** FR-313-16 — neither field, and HEVC over HLS with no declared HDR form, both keep the H.264 SDR branch. */
+    @Test fun `a client that declares neither HEVC-over-HLS field keeps H_264 SDR`() = runBlocking {
+        val neither = ClientCapabilities(videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        val plain = encoder().planFor(neither, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(EncoderCodec.H264, plain.codec)
+        assertTrue(plain.tonemaps)
+        assertFalse(plain.keepsHdr)
+        // HEVC-capable, HDR source, but the source's own HDR form is not declared: H.264, tone-mapped once.
+        val noHdrForm = ClientCapabilities(hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), hlsAdaptive = true)
+        val sdr = encoder().planFor(noHdrForm, "tv", "/m/film.mkv", 7_200_000, tracks, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(EncoderCodec.H264, sdr.codec)
+        assertTrue(sdr.tonemaps)
+    }
+
+    /**
+     * FR-313-16 / DEB-1083's ruled-out candidate — a 60 Mbps `decode_max_bitrate_hevc` against an 80.9 Mbps 4K HDR
+     * source caps the rungs, never the family: HEVC is chosen and the 2160p top sits at `topCapBps`' 20 Mbps anyway.
+     */
+    @Test fun `an HEVC decode ceiling under the source's bitrate caps rungs — not the codec family`() = runBlocking {
+        val fat = tracks.map { if (it.kind == TrackKind.VIDEO) it.copy(videoBitrate = 80_900_000) else it }
+        val caps = ClientCapabilities(
+            hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true,
+            maxHevcBitrate = 60_000_000,
+        )
+        val plan = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, fat, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10").first!!
+        assertEquals(EncoderCodec.HEVC, plan.codec)
+        assertTrue(plan.keepsHdr)
+        assertEquals(2160, plan.rungs[0].boxHeight)
+        assertEquals(20_000_000L, plan.rungs[0].videoBps)
+        assertTrue(plan.rungs.all { it.videoBps <= 54_000_000L })
     }
 
     @Test fun `only Apple's and the browsers' players get fMP4 segments`() {
@@ -303,7 +365,8 @@ class EncoderPlanTest {
     // ── 313d (FR-313-6) — subtitles ───────────────────────────────────────────────────────────────────────────────
     @Test fun `a picked image subtitle is burned in by our job as H_264`() = runBlocking {
         val withSubs = tracks + Track(3, "s:0", TrackKind.SUBTITLE, "srt", "eng", null, false, false) + Track(4, "s:1", TrackKind.SUBTITLE, "hdmv_pgs_subtitle", "dan", null, false, false)
-        val caps = ClientCapabilities(hlsHevc = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
+        // The fleet's shape (FR-313-16), so this proves the burn-in override on a device that would otherwise get HEVC.
+        val caps = ClientCapabilities(hlsHevcCapable = true, videoCodecs = listOf("hevc", "h264"), supportsHdr10 = true, hlsAdaptive = true)
         val plan = encoder().planFor(caps, "tv", "/m/film.mkv", 7_200_000, withSubs, audio, 1, takeBps = null, noRecord = true, sourceVideoRange = "HDR10",
             burnSubtitleOrder = 1).first!!
         assertEquals(EncoderCodec.H264, plan.codec)
