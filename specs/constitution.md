@@ -278,6 +278,28 @@ The QA ticket is the handoff, not a formality: QA pulls it off the queue, runs i
 back as board tasks. The development task may be marked done once that ticket is filed — a red CI
 run or a missing QA ticket means the task is not done.
 
+### A deployment is not an owner decision
+Owner directive, 2026-10-14: *"Please stop asking me about deployments. Just do them together with
+Viti."* So **putting committed `main` on prod is the company's call, taken between the product owner
+and the devops seat, and it is never carded to the owner.** The deployment is filed as an ordinary
+task assigned to devops, naming the measured delta; it does not wait for a reply. The rule that
+produced three nights of stalled QA — a phase built, committed and CI-green, with its QA row parked
+because nobody would press the swap — is retired.
+
+What this directive does **not** move:
+
+- **Release timing is still the owner's**, and a release is a different act from a deployment: a
+  deployment puts today's `main` on prod, where a release cuts a public tag and ships artefacts that
+  installed clients and the download page see.
+- **Anything a viewer outside the household would notice as a break** remains an owner decision, and
+  a deployment that would cause one is still a question — about the change, not about the swap.
+- **Devices are still QA-only** (owner decision, DEB-681). A deployment claims the prod backend and
+  the Jellyfin library, never a TV or a phone.
+
+The delta is **measured, never summarised**: `git rev-list <prod sha>..<main sha>`, with the code
+commits separated from the spec and `STATUS.md` commits, and `/api/health` read for what prod is
+actually running — the image tag and `/health` have both lied before.
+
 ---
 
 ## Key Invariants (do not break)
