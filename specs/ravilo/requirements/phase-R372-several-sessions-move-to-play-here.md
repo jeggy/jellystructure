@@ -1,8 +1,8 @@
 # Phase R372 — Several sessions at once, *Move to…*, *Play here*, and how sessions end
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: moves are Ravilo's own LOAD + stop, no stream transfer; the watchdog leaves a session paused and offline, amending FR-R368-2; the TV bullets need fixing). **Phase 5 of 6** (see R368). Depends on
+Written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: moves are Ravilo's own LOAD + stop, no stream transfer; the watchdog leaves a session paused and offline, amending FR-R368-2; the TV bullets need fixing). **Phase 5 of 6** (see R368). Depends on
 R368–R371. Designs: `Playback Sessions - Directions.html` §B5 and §B7, and `… - Desktop, TV & Admin.html` §B9
 (the TV as a target) and §B11 (the 16-state strip).
 
@@ -656,3 +656,78 @@ existing body. No field added, retyped or removed, so an installed APK is unaffe
 **Not proved here.** A5 is a timed watch of the admin's *Playing now* on a real device, and so are the browser-tab,
 ⌘Q-versus-SIGTERM and swipe-away claims: all of them are DEB-775 on the QA queue, with no device touched from this
 seat. Nothing is deployed.
+
+## Amendment 2026-10-14 — two ways a session ends wrongly, and one way it never ends at all (DEB-1054)
+
+Found while QA proved R380 acceptance 4 on the Stue TV (DEB-1005 → DEB-1054) and measured against a read-only copy of
+prod's SQLite at prod's own commit `v1.51-174-g5b13710e`. The book half of that bug — a part change minting a nameless
+`film` session — is R368's, and is written up in its *Amendment 2026-10-14* (FR-R368-12). **Neither rule below is
+book-specific, and neither is fixed by that amendment.** Both are this phase's: they are ending rules.
+
+**FR-R372-13 — `failed` means a play that never reported, not a position that reads 0.** Today `onReaped`
+(`tv/PlaybackSessions.kt:816`, *found live 2026-10-09, evening*) ends the row `failed` whenever the reaped session's
+`position_ms <= 0`, instead of keeping it *paused · offline*. The rule was written for a load that never played, and
+for that it is right. But the stop watchdog's own forced stop writes the **tracker's** position into the session first
+(`PlaybackService.stopPlayback` → `onStop`, `:803`), so a row can reach the reap holding `0` for reasons that are not a
+failure at all. Measured on prod for `ps-9b84dae0c5257a6b`: `started` 07:57:38.446, `paused` 07:57:55.600, then
+`ended … failed` at 07:59:54.510 with `position_ms = 0` written at 07:59:54.509 — the two writes 1 ms apart in one
+tick, `revision 7`, and **no `offline` event**. That is `STOP_WATCHDOG_MS` (90 000 ms, `PlaybackService.kt:132`) to the
+millisecond after the last heartbeat for the part that was left behind; the load watchdog is eliminated on timing
+(its arm fires 10 s after a `starting`, and this death is 72 s after the mint and 119 s after the pause).
+
+The rule narrows to what it was written for: **a reap ends `failed` only when the session never had a report of its
+own — it never left `starting`.** A session that has been `playing` or `paused` goes `offline` and keeps its place on
+FR-R372-8's 10 min clock, whatever its position reads. For a book the old rule is doubly wrong: a part-relative `0` is
+a legitimate place (the head of a part), and the book's real place is `book_ms` / `audiobook_progress`, which the row
+never consulted. The cost of narrowing it is that a genuinely failed load which did manage one `playing` report at 0
+now waits out the 10 min offline window instead of ending at once — a row that lingers, against a row that lies. The
+lie is worse: `failed` is the one signal DEB-919 added for diagnosing this area, and it is useless if a session that
+played can carry it.
+
+**Open, and for the fix to confirm rather than assume:** why the tracker held `0` rather than the paused 26.038 s for
+the part being left. Position updates are not events, so prod has no row to read; it is a question about what the app
+reports for the old part as it crosses a boundary (DEB-1054's repro B shows the app does report `0` at a roll:
+`starting 0`, then `playing 0`). The rule above makes the answer harmless either way, which is why it is not a blocker.
+
+**FR-R372-14 — no live session may outlive every clock.** Each ending arm in `tick()` (`:980`) requires one of:
+`offline` (→ 10 min), `paused` with no stop-hold (→ 4 h), `starting` **with** a `load_deadline` (→ 10 s), or a
+`stop_hold_until`. A session that is **`playing`, not offline, with no `load_deadline` and no stop-hold matches no arm
+at all** — there is no stale-`playing` deadline anywhere, so nothing inside `PlaybackSessions` can ever end it. It ends
+only if something outside it reaps its tracker entry or drops its socket. DEB-1054's minted ghost sat `playing` at a
+position that never moved, was still there minutes later, and went only on an explicit `stop`.
+
+So: **a live session whose `position_at` has not moved for `SESSION_PLAYING_SILENT_MS` ends `idle`**, the same end as
+the paused arm. **4 h** — deliberately the same keep as FR-R372-8's paused window, and deliberately far longer than any
+reporting cadence this product has (10 s heartbeats, the 90 s stop watchdog, a receiver that reports on change). This
+is a floor against an immortal row, not a second watchdog, and nothing is exempt from it: `cast` and `screen` sessions
+are exempt from the **socket** test (FR-218-11, FR-236-8) because a quiet socket is not evidence there, but four hours
+without a single position report is not a cadence for anything. If a kind ever legitimately plays for 4 h in silence,
+that is a dev-review objection to raise against this number, not a reason to leave the gap.
+
+This requirement **outlives DEB-1054**. Fixing the mint (FR-R368-12) removes today's way of making such a row; it does
+not give `tick()` the ability to end one.
+
+**Also for the engineer, stated and not measured:** why the ghost outlived the 90 s stop watchdog at all is not known.
+A plausible mechanism is that `onReaped` and `findLocked` both pick with `lastOrNull { … it.itemId == itemId }`, so
+with two live sessions on one place and one item id a reap can land on the wrong row — which would also explain how
+the *book's* session took the `failed` that was due to the abandoned part. Confirm it from the code; FR-R368-12's
+match precedence must not make the ambiguity worse.
+
+### Acceptance (this amendment)
+
+Both are provable without a device, and that is the point of writing them this way:
+
+1. A session that reported `playing` and then `paused`, reaped by the watchdog with position 0, reads
+   `offline = 1`, `state = paused`, `end_reason` NULL — and ends `offline` 10 min later. A session that never left
+   `starting`, reaped the same way, still ends `failed` at once.
+2. A live `playing` session with no report for 4 h ends `idle`; at 3 h 59 m it is still live.
+3. On prod after the deploy, `select count(*) from playback_session where end_reason = 'failed'` gains no row for a
+   session whose events include a `paused` or a `resumed`.
+
+### Tests (this amendment)
+
+- `tv/SessionEndingTest` — the two reap cases of acceptance 1, and the 4 h stale-`playing` arm with its boundary, on
+  the injected clock. No sleeping.
+- `tv/PlaybackSessionsTest` — the `failed` arm still fires for a load that never reported, so DEB-919's signal is kept.
+- The device half of DEB-1054 (◀ back across a part boundary on the Stue TV, where the `failed` was seen) stays on the
+  QA queue and is **not** a condition of the build: the three cases above decide whether the fix is right.

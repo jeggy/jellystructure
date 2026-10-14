@@ -4,9 +4,9 @@
 > or in a google cast group etc. And multiple Ravilo clients can control a single session, but also have support to
 > create a new session, so having multiple sessions."* 2026-10-03, after round 1: *"Yes, lets write specs."*
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** against `main` `5210045a` (see *Dev review* at the end: the route name collides, session events need an opt-in, the receiver's queue reporting moves to R369, and two owner questions). Source: the brief
+Written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** against `main` `5210045a` (see *Dev review* at the end: the route name collides, session events need an opt-in, the receiver's queue reporting moves to R369, and two owner questions). Source: the brief
 `specs/ravilo/design-brief-playback-sessions-2026-10-02.md`, the report
 `specs/research-reports/ravilo-playback-sessions-and-casting-2026-10-02.md`, and the canvases
 `design/ravilo/Playback Sessions - Directions.html` (part 1) and `… - Desktop, TV & Admin.html` (part 2).
@@ -655,3 +655,95 @@ Found by running Gæsteværelse and Stue as two music sessions and managing both
   takes it from itself.
 - **FR-R368-8, untouched:** in music mode a playing music or book session is preferred over a newer playing film or
   episode; a film shows only when no music or book plays. (Films mode is unchanged: music and books only.)
+
+## Amendment 2026-10-14 — a book's part change joins the book's session instead of minting a nameless film (DEB-1054)
+
+Found by QA proving R380 acceptance 4 on the Stue TV (DEB-1005 → DEB-1054), then measured end to end against a
+read-only copy of prod's SQLite at prod's own commit `v1.51-174-g5b13710e`. **Reproduced from two independent entry
+points, one of which needs no device**: a single `PUT /api/tv/music/audiobook/{id}/progress` with no `session_id` mints
+a second session beside the book, `kind = film`, `book_id` NULL, no title, no subtitle and no artwork — the nameless row
+R380 FR-R380-12 exists to prevent. A part change is the common way in, because crossing a part boundary re-reports the
+position against a fresh part.
+
+**The mechanism, four links, each read at prod's commit:**
+
+- `routes/AudiobooksTvRoutes.kt:50` hands `req.part`, `req.positionMs`, `req.paused`, the volume and the mute to
+  `svc.progress(...)` and **never passes `req.sessionId`**.
+- `audiobooks/AudiobooksTvService.kt:119` — `progress()` has no `sessionId` parameter to pass it to, and mirrors on the
+  part's item id: `mirror(device, here.id, …)`.
+- `server/Server.kt:691` — the injected mirror calls `playbackService.reportProgress(device, partId, …)`, leaving
+  `reportProgress`'s own `sessionId` (dev review item 8, below) at its `null` default.
+- `tv/PlaybackSessions.kt:788` — `findLocked(device, itemId, null)` matches a live session **by `item_id` alone** (plus
+  the stop-hold fallback). A live book session carries the *part it is on* as its `item_id`, so a report naming any
+  other part of the same book misses, `onProgress` takes its `created` path, and `onStart(…, kindHint = null)` reaches
+  the classifier at `:607` with no `bookId` — which reads `FILM`, and `describe(partId, null)` resolves nothing
+  (`tv/SessionWiring.kt:46` can reach a book only when it is *given* the `bookId`), so the queue entry is a bare id.
+
+So `session_id` on this route is not merely optional, it is **inert**: a client that sends it changes nothing, and
+shipping the field in the app would not have helped. That is this phase's own dev review item 8 built halfway.
+
+**Two consequences beyond the duplicate row**, both read back from prod:
+
+- `sessionLane` puts `film` in the **video** lane, so the nameless row *occupies the TV's video lane*: `startDecision`
+  then makes the same viewer's next film **Join** it — keeping `kind = film` and the ghost's id — while another
+  viewer's film **Replaces** it. One of the three prod ghosts was in fact ended `replaced` from another device.
+- With `book_id` NULL there is no book to convert, so *Move to…* has nothing to move and R372's `book_ms` road has
+  nothing to work from.
+
+**Blast radius on prod: three rows, one viewer, one place, all within 13 minutes of the QA run, none still live.** No
+household viewer has hit it; the "Already playing" risk (DEB-747/DEB-895) is latent, not realised. Nothing is wedged,
+so this is a correctness fix on the next deploy, not a hotfix.
+
+**FR-R368-12 — a book's session is found by its book, not by the part it is on.** Four parts, no wire change:
+
+1. **The match.** `findLocked` resolves in a fixed, deterministic order: the given `session_id`; then the live session
+   on this place whose `item_id` is the reported item; then the live session on this place whose **`book_id` is the
+   reported item's book**, whatever part it holds; then today's stop-hold fallback. The matched row's `item_id` moves
+   to the reported part and its position is that part's position (281's heartbeat) — exactly what already happens when
+   a part change arrives as a *start*, which `onStart`'s own contract has promised since this phase shipped
+   (`PlaybackSessions.kt:596`, *"a book's next part"*). The progress path simply never implemented it.
+2. **The book travels with the report.** `AudiobooksTvService.progress()` already knows the book; it passes it on
+   through the mirror lambda, `PlaybackService.reportProgress` and `onProgress` into `onStart`. A report that *does*
+   legitimately create a session then creates an `audiobook` one in the **audio** lane, with the book's title, author
+   and cover (R380 FR-R380-12's `queue_json` rule) and `book_id` set.
+3. **`session_id` stops being inert.** It is threaded route → service → mirror → `reportProgress` → `onProgress` the
+   same way, so a client that sends it is honoured. The field is already on the wire
+   (`shared/…/tv/Audiobooks.kt`, `AudiobookProgressRequest.session_id`, dev review item 8); nothing is added or
+   retyped, and a client that omits it is still matched by (1).
+4. **A floor under all of it.** `describe(itemId, bookId = null)` resolves an audiobook **part** to its book by
+   reverse lookup over the store's `partsByBook`, so a part id alone describes as `audiobook` with the book's words.
+   No caller — today's or a later one — can mint a nameless `film` from a part id again. A part is never a film.
+
+**What this amendment is explicitly not aimed at.** All measured exact on a real remote during DEB-1005, and none of it
+is to be touched: the ∓30 s key map (30 000 ms a press, both directions; 10 000 ms a long press), `start_ms`
+book-time → part resolution, the boundary seek arithmetic (1 373 762 = part 3's 1 377 724 − 3 962, re-confirmed from
+the DB), and the TV's own screen, which reads the right chapter and the right book time throughout. The defect is
+purely in which session row the progress path finds or creates.
+
+**The `end_reason = failed` half of DEB-1054 is not here.** The backward crossing killed the book's own session with
+`failed`, and the ghost could never age out of `tick()`. Both of those are ending rules, which belong to R372 — see its
+*Amendment 2026-10-14* (FR-R372-13, FR-R372-14). Neither is book-specific, and neither is fixed by FR-R368-12.
+
+### Acceptance (this amendment)
+
+1. **No device, one call** — against a backend carrying the fix, `PUT /api/tv/music/audiobook/{book}/progress` with
+   `{"part":2,"position_ms":332610,"paused":true}` and **no** `session_id`, then `GET /api/tv/playback/sessions`: the
+   book's own session carries the position, and **no new session appears**. The DB assertion is
+   `select count(*) from playback_session where item_id in (select id from audiobook_part) and kind != 'audiobook'`
+   — it must read **0**, before and after.
+2. **A forward roll** — a book left to run across a part boundary keeps **one** session, which continues into the next
+   part with its title, author and cover intact, and leaves nothing behind.
+3. **The backward crossing on a device** — ◀ back across a part boundary from a few seconds into a part keeps one
+   session, titled, `book_id` set, and does not end it. This one needs the Stue TV, a board claim and a fresh grant,
+   so it stays on the QA queue as DEB-1054's device half and is **not** a condition of the build.
+
+### Tests (this amendment)
+
+- `tv/PlaybackSessionsTest` — a progress report naming another part of the live book **joins** it (one session, the
+  `item_id` moved, the revision bumped); a report for a part with no live session mints an **`audiobook`** session in
+  the **audio** lane with the book's words and `book_id` set; a given `session_id` wins over both; the precedence of
+  FR-R368-12(1) is asserted as an order, not as four separate cases.
+- `audiobooks/AudiobooksTvServiceTest` — `progress()` forwards the book and the `session_id` it was given to the
+  mirror (a recording mirror lambda; no HTTP).
+- The `describe` floor: a part id with `bookId = null` describes as `audiobook` with the book's title.
+- `WireCompatTest` must stay green with nothing added: this amendment reads a field that already ships.
