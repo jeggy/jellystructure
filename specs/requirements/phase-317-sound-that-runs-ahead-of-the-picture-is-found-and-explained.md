@@ -2043,6 +2043,40 @@ measured at.
   image if that deploy has not built yet and its own if it has. The model string does not move, so the
   eleventh amendment's `lastModel` hazard cannot arise, and nothing is re-measured on account of any of it.
 
+### FR-317-34 … FR-317-37 as deployed and proved (2026-10-14, DEB-998 and DEB-1003)
+
+Deployed in the order above — backend recreated 2026-10-13 23:59:25Z, sidecar 2026-10-14 00:00:11Z — and
+verified off prod's own tables at 00:11Z and again at 00:41Z. Prod carries `v1.51-161-g40dc33df` with the
+baked `/app/measure.py` md5 `49ac9144…`, which is `40dc33df:avsync/measure.py` exactly; `PIPELINE_VERSION`
+stayed 2 and no row was invalidated by any of it.
+
+- **Acceptance 29 met.** Of the **141** distinct files in DEB-979's OOM census, **111 carried a `/2` row
+  written after the recreate** within 41 minutes. Reasons: `no_faces` ×107 and `short_audio` ×4 — both of
+  which mean **decode and face detection ran to completion**, which is precisely the step that used to die
+  mid-detection. The remaining 27 were all `queued` behind 521 jobs in directories the sweep had not reached,
+  draining unattended at ~4.4 census files/min.
+- **Acceptance 31 met.** **Zero** `out of memory` rows on the lane after the recreate; the last failure of any
+  kind was 00:00:15Z, a 4-second-wide cluster of `CURLE_COULDNT_CONNECT` from the sidecar's own cold start,
+  which is infrastructure and not a measurement failure. The unrowed count fell **138 → 106 → 27**. Liveness
+  read off `max(file_av_sync.checked_at)`, never the lane counters (DEB-918/923).
+- **The margin, which is the number worth keeping.** Across **354** measurements on the census geometry
+  (640 × 490 ×192, 640 × 488 ×145, 640 × 360 ×17) the sidecar's peak was min **627 MB**, median **725 MB**,
+  max **768 MB of the 2.00 GB budget — 38 %**. FR-317-34 and FR-317-35 did not merely make these files fit:
+  they fit with 2.6× headroom on the exact geometry that used to exhaust the card.
+- **FR-317-36's `vram` row has not fired once, and FR-317-35's richer message has no instance on prod to
+  quote.** Zero `vram` rows anywhere. That is the right kind of nothing — the refusal path is for a budget
+  genuinely exhausted, and the budgeted chunking no longer comes near the cap. A `vram` row would have
+  satisfied acceptance 29 as well; not needing one is the stronger outcome.
+- **One reading trap, recorded because it produced a wrong finding before it was caught.**
+  `media_job.created_at` / `finished_at` and `file_av_sync.checked_at` are epoch **seconds**, unlike
+  `ravilo_device.last_seen`, which is milliseconds. Read as milliseconds, every row lands in January 2027 and
+  the query reports *no rows written after the deploy* **without erroring** — which reads exactly like a
+  failed deploy.
+
+Acceptance 30 and 32 were met before the deploy and are recorded above; 29 and 31 are the two that needed
+prod, and both are now closed. **This incident (DEB-979) is finished; 317 remains `⚠ Partial` for the sweep
+itself and the admin surfaces, not for the card.**
+
 ## Amendment (2026-10-13, fourteenth of the day) — the eleventh amendment's hazard fired on prod during the `/2` deploy, and the one-GET remedy is what cleared it (DEB-959)
 
 No code moves. The eleventh amendment predicted that a backend recreated *before* the sidecar swap would
