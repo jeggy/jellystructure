@@ -66,6 +66,89 @@ class ConfigSavePreservesBlocksTest {
         then(store)
     }
 
+    // ── FR-314-20 (DEB-1009) — the versions library's one validate, on the press that configures it ──────────────
+
+    /**
+     * Test 18, as corrected on 2026-10-14. The requirement asked for *"exactly once … and asks for nothing on the
+     * movies or series libraries"*; measured, no per-library call exists in any refresh mode, so the only call that
+     * resolves a never-scanned library is `POST /Library/Refresh`, which takes no library at all. What is asserted
+     * here is therefore the **trigger**, which is the whole of the decision: a save that changes the versions
+     * configuration validates once, a save that does not validates never, and nothing happens while no root is set.
+     */
+    private fun savesWithVersionsRoot(before: (ConfigStore) -> Unit, body: String, expectValidates: Int, hint: String) = testApplication {
+        runCatching { platform.posix.remove(path) }
+        val store = ConfigStore(path).also { runBlocking { it.load() } }
+        before(store)
+        var validates = 0
+        application {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            routing {
+                route("/api") {
+                    configureConfigRoutes(store, effectiveScanThreads = 4, validateJellyfinLibraries = { validates++; true })
+                }
+            }
+        }
+        val response = client.put("/api/config") { contentType(ContentType.Application.Json); setBody(body) }
+        assertEquals(HttpStatusCode.NoContent, response.status, "the save itself must succeed")
+        assertEquals(expectValidates, validates, hint)
+    }
+
+    /** The mapping FR-314-16 needs: the root in this server's view, and Jellyfin's name for the same folder. */
+    private val versionsLibrary = """{"jellyfin_id":"versions-lib","name":"library-versions","collection_type":"movies","jellyfin_path":"/media/versions","local_path":"/mnt/media/jellyfin/versions","skip":true}"""
+    private val otherLibrary = """{"jellyfin_id":"movies-lib","name":"library-movies","collection_type":"movies","jellyfin_path":"/media/movies","local_path":"/mnt/media/jellyfin/movies"}"""
+    private fun formWith(root: String, libraries: String) =
+        """{"public_url":"","scan_schedule":"","file_fix":{"dv_versions_root":"$root"},"libraries":[$libraries]}"""
+
+    @Test
+    fun setting_the_versions_root_asks_jellyfin_to_validate_its_libraries_once() = savesWithVersionsRoot(
+        before = {},
+        body = formWith("/mnt/media/jellyfin/versions", versionsLibrary),
+        expectValidates = 1,
+        hint = "step 3 — a root where there was none is the press that must make the library resolvable",
+    )
+
+    /**
+     * The seventh amendment's step 4: the root is already set and the owner now types the library's `local_path`.
+     * Until that mapping exists the root has no name in Jellyfin's view, so this is the press that **completes** the
+     * configuration on an installation set up in that order, and it has to fire too.
+     */
+    @Test
+    fun filling_in_the_librarys_local_path_afterwards_validates_too() = savesWithVersionsRoot(
+        before = { store ->
+            runBlocking { store.update(store.current.copy(fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = "/mnt/media/jellyfin/versions"))) }
+        },
+        body = formWith("/mnt/media/jellyfin/versions", versionsLibrary),
+        expectValidates = 1,
+        hint = "step 4 — the mapping that names the root to Jellyfin appeared, so the configuration is only now complete",
+    )
+
+    @Test
+    fun a_save_that_changes_nothing_about_the_versions_configuration_validates_nothing() = savesWithVersionsRoot(
+        before = { store ->
+            runBlocking {
+                store.update(store.current.copy(
+                    fileFix = dev.jellystructure.config.FileFixConfig(dvVersionsRoot = "/mnt/media/jellyfin/versions"),
+                    libraries = listOf(dev.jellystructure.config.LibraryMapping(
+                        jellyfinId = "versions-lib", name = "library-versions", collectionType = "movies",
+                        jellyfinPath = "/media/versions", localPath = "/mnt/media/jellyfin/versions", skip = true)),
+                ))
+            }
+        },
+        // The same versions configuration, with an unrelated library added beside it: a later Settings save, or the
+        // owner editing a different row. Neither the root nor the root's mapping moved.
+        body = formWith("/mnt/media/jellyfin/versions", "$versionsLibrary,$otherLibrary"),
+        expectValidates = 0,
+        hint = "every Settings save would otherwise validate the whole library — this must fire on a change, not on a save",
+    )
+
+    @Test
+    fun a_save_with_no_versions_root_validates_nothing() = savesWithVersionsRoot(
+        before = {},
+        body = formWith("", "$versionsLibrary,$otherLibrary"),
+        expectValidates = 0,
+        hint = "no root configured: kind C cannot run at all and there is nothing to make resolvable",
+    )
+
     @Test
     fun a_settings_save_leaves_every_encoder_value_as_the_config_file_set_it() = savedOverA(
         before = { store -> runBlocking { store.update(store.current.copy(encoder = tuned)) } },

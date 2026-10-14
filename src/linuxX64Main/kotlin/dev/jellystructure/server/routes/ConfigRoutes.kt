@@ -123,6 +123,13 @@ fun Route.configureConfigRoutes(
     tvEventBus: dev.jellystructure.tv.TvEventBus? = null,
     // Phase 221 — the Jellyfin webhook's own last delivery, for the deprecated-*arr finding's wording.
     realtimeIngest: dev.jellystructure.media.RealtimeIngestService? = null,
+    /**
+     * FR-314-20 (DEB-1009) — `POST /Library/Refresh`: Jellyfin validates its libraries once. A library Jellyfin has
+     * never scanned has no `BaseItem` anywhere along its path, so it cannot resolve its own first file from
+     * `Library/Media/Updated` — a property of the library, not of the file, which is why this belongs to configuring
+     * it and to nothing else. Measured (DEB-1009): no per-library call exists, in any refresh mode.
+     */
+    validateJellyfinLibraries: (suspend () -> Boolean)? = null,
 ) {
     // Phase 221 (FR-221-2) — a server-side test delivery: status code or connect error, elapsed ms.
     // Recorded like any delivery, so the status line under the field updates at once.
@@ -309,6 +316,28 @@ fun Route.configureConfigRoutes(
         val seerrOn = { c: dev.jellystructure.config.SeerrConfig? -> c != null && c.enabled && c.url.isNotBlank() && c.apiKey.isNotBlank() }
         if (ok && seerrOn(config.seerr) && !seerrOn(stored.seerr) && dev.jellystructure.suggestions.SuggestionService.current?.lastBuiltAt() == null) {
             dev.jellystructure.suggestions.SuggestionService.current?.queueBuild(dev.jellystructure.suggestions.SuggestionService.REASON_FIRST, dev.jellystructure.ai.AiJobs.BY_SYSTEM)
+        }
+        // FR-314-20 (DEB-1009) — the one scan this phase performs, on the press that configures the versions
+        // library and on nothing else: no job, no schedule, no retry, and never while a version is being written
+        // (candidate 2 is refused — eleventh amendment). Two presses can be the one that completes the
+        // configuration, because the owner's steps are ordered the way they are: step 3 sets the root and step 4
+        // types the library's `local_path`, and the library itself may be created after either. So it fires when a
+        // save leaves a root set **and** either the root or the mapping that names that root to Jellyfin changed.
+        // A save that edits an unrelated library changes neither and fires nothing.
+        val versionsRoot = config.fileFix.versionsRoot()
+        val rootChanged = versionsRoot != null && versionsRoot != stored.fileFix.versionsRoot()
+        val mappingChanged = versionsRoot != null &&
+            dev.jellystructure.filefix.jellyfinViewOrNull(versionsRoot, config.libraries) !=
+            dev.jellystructure.filefix.jellyfinViewOrNull(versionsRoot, stored.libraries)
+        if (ok && (rootChanged || mappingChanged)) {
+            // Never fails the save: the configuration is written either way, and FR-314-21's retry is what makes an
+            // unreachable Jellyfin cost minutes instead of a lost version.
+            val done = runCatching { validateJellyfinLibraries?.invoke() }.getOrNull()
+            dev.jellystructure.log.Logger.info(
+                "file fix: versions root configured ($versionsRoot) — asked Jellyfin to validate its libraries once so the " +
+                    "library can resolve its first version: ${if (done == true) "accepted" else "not done"} (314, FR-314-20)",
+                "jobs",
+            )
         }
         if (ok) call.respond(HttpStatusCode.NoContent)
         else call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Couldn't save — check the server log"))

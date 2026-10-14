@@ -633,7 +633,13 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore, loginRateLimiter)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, lidarrClient = lidarrClient, tvEventBus = tvEventBus, realtimeIngest = realtimeIngest)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, bazarrClient, tmdbClient, requestLanguageService, castService = castService, lidarrClient = lidarrClient, tvEventBus = tvEventBus, realtimeIngest = realtimeIngest,
+                    // FR-314-20 (DEB-1009) — the versions library's one validate, on the press that configures it.
+                    validateJellyfinLibraries = {
+                        val cfg = configStore.current
+                        cfg.apiKeys.jellyfinUrl.isNotBlank() &&
+                            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+                    })
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, mediaStore)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline)
