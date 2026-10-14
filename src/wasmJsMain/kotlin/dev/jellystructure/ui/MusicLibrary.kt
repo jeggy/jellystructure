@@ -33,6 +33,12 @@ private var muFilter: String? = null
 private val muHidden = LinkedHashMap<String, MutableSet<String>>()
 private var muArtist: String? = null
 private val muSongSel = LinkedHashSet<String>()
+/**
+ * Phase 292 (FR-292-16) — *select all shown* is a mode, not a list: with it on, the selection is **the filter**,
+ * the bar says the whole-set number, and the write sends the filter for the server to resolve. Ticking any row
+ * leaves the mode, so what the bar counts is always either the filter or the ticks, never a muddle of both.
+ */
+private var muSongAll = false
 private val muFacets = LinkedHashMap<String, MutableSet<String>>()
 private val muSelected = LinkedHashSet<String>()
 private var muOpenFacet: String? = null
@@ -55,8 +61,23 @@ private var muEnd = false
 private var muFetching = false
 /** A reset that arrives mid-fetch is remembered and run once the page in flight lands, never dropped. */
 private var muPendingReset = false
-/** Phase 292 (FR-292-12) — the ids *select all shown* can honestly reach: the rows loaded so far. */
+/** Phase 292 (FR-292-12) — the ids the rows loaded so far stand for; a hand-tick's set is built out of these. */
 private val muLoadedIds = LinkedHashSet<String>()
+
+/**
+ * Phase 292 (FR-292-16) — the Songs filter as this page is reading it, which is the same thing [muUrl] writes into
+ * the address bar and [muFetch] asks `GET /api/music/browse` for. Sent instead of a list of ids, so the set the
+ * server writes is the set on screen by construction. `page`/`page_size` are deliberately absent: the filter stands
+ * for the whole filtered set, not for the pages that happen to be loaded.
+ */
+private fun muSongFilter() = dev.jellystructure.model.MusicSongFilter(
+    q = muQuery.takeIf { it.isNotBlank() },
+    f = muFacets.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> v.toList() },
+    x = muHidden.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> v.toList() },
+    artist = muArtist,
+    copies = if (edEveryCopy) "all" else null,
+    filter = muFilter,
+)
 
 private fun muUrl(): String = buildList {
     add("kind=music")
@@ -74,7 +95,7 @@ fun renderMusicLibrary(container: Element, scope: CoroutineScope, query: Map<Str
     muQuery = query["q"].orEmpty()
     muSort = query["sort"]
     muFilter = query["filter"]?.takeIf { it.isNotBlank() }
-    muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null; muHidden.clear(); muSongSel.clear()
+    muFacets.clear(); muSelected.clear(); muOpenFacet = null; muDto = null; muHidden.clear(); muSongSel.clear(); muSongAll = false
     query.filterKeys { it.startsWith("f.") }.forEach { (k, v) -> muFacets[k.removePrefix("f.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
     query.filterKeys { it.startsWith("x.") }.forEach { (k, v) -> muHidden[k.removePrefix("x.")] = v.split(',').filter { it.isNotBlank() }.toMutableSet() }
     muArtist = query["artist"]?.takeIf { it.isNotBlank() }
@@ -153,6 +174,9 @@ private suspend fun muFetch(scope: CoroutineScope, reset: Boolean) {
         if (reset) {
             historyReplaceState(muUrl())
             muPage = 0; muLoaded = 0; muEnd = false; muLoadedIds.clear()
+            // FR-292-16 — a fresh sequence is a different list, so neither the ticks nor *select all shown* survive
+            // it: a selection that outlived its filter would write a set nobody is looking at.
+            muSongSel.clear(); muSongAll = false
             muSetLoadMore("")
         }
         var first = reset
@@ -286,17 +310,20 @@ private fun muRenderSel() {
     val el = document.getElementById("mu-sbar") as? HTMLElement ?: return
     el.innerHTML = selBar()
     el.classList.toggle("on", selBarOn())
-    (document.getElementById("mu-scroll") as? HTMLElement)?.classList?.toggle("vr-selecting", muSongSel.isNotEmpty())
+    (document.getElementById("mu-scroll") as? HTMLElement)?.classList?.toggle("vr-selecting", muSongSel.isNotEmpty() || muSongAll)
 }
 
-/** Every loaded row's tick read back off [muSongSel] — *select all loaded* and *clear* mutate, they do not rebuild. */
+/** Every loaded row's tick read back off the selection — *select all shown* and *clear* mutate, they do not rebuild. */
 private fun muSyncSongTicks() {
     val rows = document.querySelectorAll("#mu-rows tr[data-sid]")
     for (i in 0 until rows.length) {
         val tr = rows.item(i) as? HTMLElement ?: continue
-        muMarkSongRow(tr, (tr.getAttribute("data-sid") ?: continue) in muSongSel)
+        muMarkSongRow(tr, muSongTicked(tr.getAttribute("data-sid") ?: continue))
     }
 }
+
+/** FR-292-16 — in *select all shown* every row is in the set, so every row reads ticked, pages yet to come too. */
+private fun muSongTicked(id: String): Boolean = muSongAll || id in muSongSel
 
 private fun muMarkSongRow(tr: HTMLElement, on: Boolean) {
     tr.classList.toggle("vr-on", on)
@@ -370,18 +397,19 @@ private fun activeBar(d: MusicBrowseDto): String {
 }
 
 /** Whether `#mu-sbar` carries `on` — the class the sticky bar is shown by. */
-private fun selBarOn(): Boolean = if (muView == "songs") muSongSel.isNotEmpty() else muView == "albums" && muSelected.isNotEmpty()
+private fun selBarOn(): Boolean = if (muView == "songs") muSongSel.isNotEmpty() || muSongAll else muView == "albums" && muSelected.isNotEmpty()
 
 /** The contents of `#mu-sbar`. The element itself is `muRender`'s, so the bar keeps its sticky containing block. */
 private fun selBar(): String {
-    // Phase 292 (FR-292-12) — a song selection, and *Set version…* on it.
-    if (muView == "songs" && muSongSel.isNotEmpty()) {
-        // Phase 278 (FR-278-14, DEB-1113) — the page holds a page at a time now, so *select all shown* says what it
-        // can honestly reach: the rows loaded so far, of the whole filtered set. What it *should* mean at ten
-        // thousand songs is the open owner question on DEB-1107, and the answer lands in 292's spec, not here.
+    // Phase 292 (FR-292-12/16) — a song selection, and *Set version…* on it. Two shapes, and the bar says which:
+    // the ticks (a list of ids), or *every song matching this filter* — whose number is the server's whole-set
+    // `total`, which FR-278-14 computes over the filtered set and not over the pages loaded.
+    if (muView == "songs" && muSongAll) {
         val total = muDto?.total ?: muLoaded
-        val reach = if (muLoaded in 1 until total) "select all loaded · $muLoaded of $total" else "select all shown"
-        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>$reach</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+        return """<b>$total</b> song${if (total == 1) "" else "s"} selected<span class="tiny muted" style="margin-left:6px">every song matching this filter</span><span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+    }
+    if (muView == "songs" && muSongSel.isNotEmpty()) {
+        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
     }
     if (muView != "albums" || muSelected.isEmpty()) return ""
     return buildString {
@@ -411,7 +439,7 @@ private fun body(d: MusicBrowseDto): String {
         // Phase 278 (FR-278-14) — the table shell and the first page's rows; every later page is appended into
         // `#mu-rows` by `muAppendSongs`, so the body is built once per sequence and then only mutated.
         "songs" -> buildString {
-            append("""<div class="mu-scroll${if (muSongSel.isNotEmpty()) " vr-selecting" else ""}" id="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody id="mu-rows">""")
+            append("""<div class="mu-scroll${if (muSongSel.isNotEmpty() || muSongAll) " vr-selecting" else ""}" id="mu-scroll"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Length</th><th>Format</th><th>Lyrics</th><th>Match</th></tr></thead><tbody id="mu-rows">""")
             for (t in d.songs) append(songRowHtml(t))
             append("</tbody></table></div>")
         }
@@ -433,7 +461,7 @@ private fun body(d: MusicBrowseDto): String {
 private fun songRowHtml(t: MusicSongRow): String = buildString {
     val artists = t.artists.joinToString(" &amp; ") { """<a class="dim" href="#/artist/${it.artistId}">${it.name.esc()}</a>""" }
     // Phase 292 (FR-292-10/12) — chips after the title; the number turns into a checkbox on hover.
-    val on = t.id in muSongSel
+    val on = muSongTicked(t.id)
     // Phase 305 (FR-305-13) — *Bonus* after the version chips; folded: *also on N releases*; every copy: the
     // other copies sit indented under their song with the reason.
     val cls = listOfNotNull(if (on) "vr-on" else null, if (t.copyOf != null) "ed-cp" else null).joinToString(" ")
@@ -482,14 +510,20 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     t.closest("[data-vsel]")?.let { s ->
         ev.preventDefault()
         val id = s.getAttribute("data-vsel")!!
+        // FR-292-16 — a tick leaves *select all shown*: the set becomes the ids of the rows loaded, which is what
+        // the table has been showing ticked, with this one changed. The bar's number drops in plain sight.
+        if (muSongAll) { muSongAll = false; muSongSel += muLoadedIds }
         val on = if (muSongSel.remove(id)) false else { muSongSel += id; true }
         (s.closest("tr") as? HTMLElement)?.let { muMarkSongRow(it, on) }
         muRenderSel(); return
     }
-    // *select all shown* reads the rows loaded so far (FR-278-14's note; the owner question is 292's).
-    if (t.closest("[data-vall]") != null) { muSongSel += muLoadedIds; muSyncSongTicks(); muRenderSel(); return }
-    if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muSyncSongTicks(); muRenderSel(); return }
-    if (t.closest("[data-vbulk]") != null) { vrOpenBulk(scope, muSongSel.toList()) { muSongSel.clear(); muLoad(scope) }; return }
+    // FR-292-16 — *select all shown* is the filter, not the rows loaded: the server resolves it on the write.
+    if (t.closest("[data-vall]") != null) { muSongAll = true; muSyncSongTicks(); muRenderSel(); return }
+    if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muSongAll = false; muSyncSongTicks(); muRenderSel(); return }
+    if (t.closest("[data-vbulk]") != null) {
+        val filter = if (muSongAll) muSongFilter() else null
+        vrOpenBulk(scope, if (muSongAll) emptyList() else muSongSel.toList(), done = { muLoad(scope) }, filter = filter); return
+    }
     t.closest("[data-vfi]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfi")!!, only = true); muSongSel.clear(); muLoad(scope); return }
     t.closest("[data-vfx]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfx")!!, only = false); muSongSel.clear(); muLoad(scope); return }
     if (t.closest("[data-vwrm]") != null) { muFacets.remove("version"); muHidden.remove("version"); muArtist = null; muLoad(scope); return }

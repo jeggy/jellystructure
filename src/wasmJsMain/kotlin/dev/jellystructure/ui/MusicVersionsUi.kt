@@ -132,10 +132,15 @@ private fun vrPanelClick(t: Element, scope: CoroutineScope) {
 
 // ── *Set version…* (FR-292-8, FR-292-12) ──
 
-internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, done: () -> Unit) {
-    if (trackIds.isEmpty()) return
+/**
+ * FR-292-8/12, and FR-292-16 for [filter]: *every song matching the current filter* arrives as the filter itself,
+ * and the count in the heading and on the button is the server's own count over that whole set — the press is
+ * required either way, and at ten thousand songs that number is the whole point of the dialog.
+ */
+internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, filter: dev.jellystructure.model.MusicSongFilter? = null, done: () -> Unit) {
+    if (trackIds.isEmpty() && filter == null) return
     scope.launch {
-        val pv = MusicApi.versionPreview(trackIds) ?: return@launch muToast("The server didn’t answer")
+        val pv = MusicApi.versionPreview(trackIds, filter) ?: return@launch muToast("The server didn’t answer")
         val pick = LinkedHashMap<String, String>()   // key → leave · add · remove
         document.getElementById("vr-modal")?.remove()
         val m = document.createElement("div") as HTMLElement
@@ -173,7 +178,7 @@ internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, done: () 
                     val remove = pick.filterValues { it == "remove" }.keys.toList()
                     m.remove()
                     if (add.isEmpty() && remove.isEmpty()) { muToast("Nothing to change"); return@addEventListener }
-                    scope.launch { muToast(MusicApi.versionBulk(trackIds, add, remove) ?: "That didn’t save"); done() }
+                    scope.launch { muToast(MusicApi.versionBulk(trackIds, add, remove, filter) ?: "That didn’t save"); done() }
                 }
             }
         }

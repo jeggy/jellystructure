@@ -500,11 +500,12 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
         /** *Set version…*'s dialog: *N of M have it* per type, and the copies on other albums. */
         post("/versions/preview") {
             val req = call.receive<dev.jellystructure.model.MusicVersionBulkRequest>()
-            call.respond(music.versions.preview(req.trackIds))
+            call.respond(music.versions.preview(versionTargets(req, configStore.current, music.store.snapshot())))
         }
         post("/versions/bulk") {
             val req = call.receive<dev.jellystructure.model.MusicVersionBulkRequest>()
-            call.respond(MusicBulkResult(music.versions.bulk(req.trackIds, req.add.toSet(), req.remove.toSet())))
+            val ids = versionTargets(req, configStore.current, music.store.snapshot())
+            call.respond(MusicBulkResult(music.versions.bulk(ids, req.add.toSet(), req.remove.toSet())))
         }
         /** Metadata → Versions (FR-292-13): saved as the owner edits, like JS tags — not Settings. */
         get("/version-types") { call.respond(music.versions.types()) }
@@ -648,6 +649,26 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             call.respond(ProviderTestResult(check.message, check))
         }
     }
+}
+
+/**
+ * Phase 292 (FR-292-16) — the songs *Set version…* is about to write: the Songs filter resolved by the server
+ * through `MusicBrowse.songIdsOf` when one rides the body, and the ids as sent when it does not. A filter **is**
+ * the set when present — the set on screen by construction rather than by the client and the server agreeing
+ * about a list — so the ids beside it are not read; `track_ids` alone is still how a hand-ticked few arrive.
+ */
+private fun versionTargets(
+    req: dev.jellystructure.model.MusicVersionBulkRequest,
+    cfg: dev.jellystructure.config.AppConfig,
+    snap: dev.jellystructure.music.MusicStore.Snapshot,
+): List<String> {
+    val f = req.filter ?: return req.trackIds
+    val libs = dev.jellystructure.music.MusicScanner.musicLibraries(cfg)
+    return dev.jellystructure.music.MusicBrowse.songIdsOf(
+        snap, f,
+        libraryNames = libs.associate { it.jellyfinId to it.name.ifBlank { it.jellyfinId } },
+        roots = dev.jellystructure.music.MusicFlags.roots(cfg),
+    )
 }
 
 /** Where the album or artist opens in Jellyfin's own web UI (the External links menu). */

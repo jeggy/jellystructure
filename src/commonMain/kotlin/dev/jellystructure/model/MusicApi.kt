@@ -641,11 +641,33 @@ data class MusicVersionPanelDto(
 @Serializable
 data class MusicVersionSetRequest(val on: Boolean)
 
+/**
+ * Phase 292 (FR-292-16) — the Songs view's own filter, as `GET /api/music/browse` was last asked for it: the
+ * server resolves it to the song set itself, so *select all shown* is one sentence rather than 10 723 ids.
+ * [f] is *Only* per facet (`f.<key>=`), [x] is *Hide* (`x.<key>=`), [filter] a Dashboard key (293 FR-293-2),
+ * [copies] `"all"` for *Show every copy*. Every field absent = every song in the library.
+ */
+@Serializable
+data class MusicSongFilter(
+    val q: String? = null,
+    val f: Map<String, List<String>> = emptyMap(),
+    val x: Map<String, List<String>> = emptyMap(),
+    val artist: String? = null,
+    val copies: String? = null,
+    val filter: String? = null,
+)
+
+/**
+ * *Set version…* on a selection. One of two shapes: [trackIds] for a hand-ticked few, or [filter] (FR-292-16) for
+ * every song the Songs view's filter matches — when a filter rides along it **is** the set, and the ids are not
+ * read. `track_ids` stays and keeps working; an installed admin that never heard of `filter` is answered as before.
+ */
 @Serializable
 data class MusicVersionBulkRequest(
-    @SerialName("track_ids") val trackIds: List<String>,
+    @SerialName("track_ids") val trackIds: List<String> = emptyList(),
     val add: List<String> = emptyList(),
     val remove: List<String> = emptyList(),
+    val filter: MusicSongFilter? = null,
 )
 
 /** *Set version…*'s dialog: per type *N of M have it*, and how many copies on other albums change with it. */

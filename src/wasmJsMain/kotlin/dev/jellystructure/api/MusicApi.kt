@@ -271,13 +271,15 @@ object MusicApi {
         if (r.status.isSuccess()) r.body<MusicVersionPanelDto>() else null
     }.getOrNull()
 
-    suspend fun versionPreview(trackIds: List<String>): MusicVersionBulkPreview? = runCatching {
-        val r = httpClient.post("/api/music/versions/preview") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds)) }
+    /** FR-292-16 — with a [filter] the server counts the whole set itself, so the dialog's number is honest at 10 723. */
+    suspend fun versionPreview(trackIds: List<String>, filter: dev.jellystructure.model.MusicSongFilter? = null): MusicVersionBulkPreview? = runCatching {
+        val r = httpClient.post("/api/music/versions/preview") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds, filter = filter)) }
         if (r.status.isSuccess()) r.body<MusicVersionBulkPreview>() else null
     }.getOrNull()
 
-    suspend fun versionBulk(trackIds: List<String>, add: List<String>, remove: List<String>): String? = runCatching {
-        val r = httpClient.post("/api/music/versions/bulk") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds, add, remove)) }
+    /** FR-292-16 — a [filter] says in one sentence what a list of every shown id would say in ~350 KB. */
+    suspend fun versionBulk(trackIds: List<String>, add: List<String>, remove: List<String>, filter: dev.jellystructure.model.MusicSongFilter? = null): String? = runCatching {
+        val r = httpClient.post("/api/music/versions/bulk") { contentType(ContentType.Application.Json); setBody(MusicVersionBulkRequest(trackIds, add, remove, filter)) }
         if (r.status.isSuccess()) r.body<MusicBulkResult>().sentence else null
     }.getOrNull()
 

@@ -169,6 +169,27 @@ object MusicBrowse {
         }
     }
 
+    /**
+     * Phase 292 (FR-292-16) — the song set a Songs filter stands for. It is the Songs view asked for **with no
+     * window**, through this same [browse], so the ids are the rows the admin is looking at by construction; the
+     * filter is never reimplemented on the write path. A filter with nothing set is every song in the library,
+     * which is what *select all shown* means on an unfiltered Songs tab.
+     */
+    fun songIdsOf(
+        snap: MusicStore.Snapshot,
+        f: dev.jellystructure.model.MusicSongFilter,
+        libraryNames: Map<String, String> = emptyMap(),
+        roots: Set<String> = emptySet(),
+    ): List<String> = browse(
+        snap, SONGS,
+        selected = f.f.mapValues { (_, v) -> v.toSet() }.filterValues { it.isNotEmpty() },
+        query = f.q, libraryNames = libraryNames, roots = roots,
+        triage = f.filter?.takeIf { it in MusicTriage.MUSIC },
+        excluded = f.x.mapValues { (_, v) -> v.toSet() }.filterValues { it.isNotEmpty() },
+        artist = f.artist?.takeIf { it.isNotBlank() },
+        everyCopy = f.copies == "all",
+    ).songs.map { it.id }
+
     /** Metadata → Music genres (FR-278-13): every genre an album shows, with its albums and their songs. */
     fun genres(snap: MusicStore.Snapshot): List<MusicGenreRow> {
         val ctx = Ctx(snap)
