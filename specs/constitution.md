@@ -300,6 +300,28 @@ The delta is **measured, never summarised**: `git rev-list <prod sha>..<main sha
 commits separated from the spec and `STATUS.md` commits, and `/api/health` read for what prod is
 actually running — the image tag and `/health` have both lied before.
 
+### QA may induce a reversible state on prod without asking
+Owner answer, 2026-10-14, asked on DEB-1053 whether QA could deliberately unmerge one film on prod
+for a few minutes to prove FR-314-21's retry repairs a missed grouping:
+
+> "Yes, QA is always allowed to do stuff like this."
+
+So **a test state QA induces, scoped to the test and restored by the product or by QA itself, is
+QA's own call and is never carded.** That holds even when the state is briefly visible to a viewer —
+the unmerge leaves one film without its Dolby Vision version for the minutes until the timer
+re-merges it, and the owner granted it standingly rather than per run. The test plan still says what
+it will induce and how the state comes back, and QA still records both before and after.
+
+The line this draws is between a *state* and a *change*. What remains the owner's is unmoved:
+
+- **A change** a viewer outside the household would notice as a break — a configuration the product
+  keeps, data it rewrites, a behaviour that ships. Those are decisions about the change, and they do
+  not become QA's because a test would like them.
+- **Release timing**, exactly as above.
+- Anything the product itself is forbidden to do stays forbidden to the product. QA inducing a state
+  by hand is not a licence for a product path: `DELETE /Videos/{id}/AlternateSources` is still never
+  called by us (phase 314), and a hand-induced broken state is evidence, not a precedent.
+
 ---
 
 ## Key Invariants (do not break)
