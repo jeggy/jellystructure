@@ -78,6 +78,97 @@ fun PublishPagePlayTarget(itemId: String?) {
 /** FR-R265-7a — the hint a tap on a free place shows when the sheet has nothing to start there. */
 internal fun nothingToStartKey(music: Boolean): String = if (music) "screens.nothing_to_start_music" else "screens.nothing_to_start"
 
+/**
+ * R380 (FR-R380-15, DEB-1064) — what the open sheet is about, as the sheet itself can see it. Every branch of this
+ * sheet was written when it knew films and music queues, and a book is neither: it has no `queue`, it *is* the
+ * engine's loaded book. So the sheet asked [playOnTiers] about the **mode** it was in, offered a book to Cast
+ * speakers (owner decision 4 of R380 forbids a book on a Cast place outright), and raised *"Play something first"*
+ * on every tap — in the same sheet that was listing that very book on *Playing everywhere*.
+ *
+ * [book] is the loaded book and its place in **book time** (FR-R380-11 — the parts before, end to end, plus the
+ * place in this one), never a part's own position. [title] is this page's title (FR-R265-7a).
+ */
+internal data class SheetLoaded(
+    /** The music-mode sheet (R324): a book and a music queue live here, a film never does. */
+    val music: Boolean,
+    val book: SheetBook? = null,
+    val queue: List<String> = emptyList(),
+    val index: Int = 0,
+    val positionMs: Long = 0L,
+    val shuffle: Boolean = false,
+    val repeat: String = "off",
+    val title: ScreenPlayContext? = null,
+)
+
+/** The loaded book: which book, and where this viewer is in it in **book time**. */
+internal data class SheetBook(val id: String, val bookMs: Long)
+
+/**
+ * FR-R380-15 — the kind the sheet asks the four tiers about is the kind that is **loaded**, not the mode it is in.
+ * With `"audiobook"` [canPlay]'s own arm applies, so a Cast place and a place that plays music but not books are
+ * **absent, not greyed** (FR-R370-2's rule, unchanged).
+ */
+internal fun sheetKind(music: Boolean, bookLoaded: Boolean): String = when {
+    music && bookLoaded -> "audiobook"
+    music -> "music"
+    else -> "film"
+}
+
+/** FR-R380-15 — what a tap on a place in the four tiers does. */
+internal sealed interface SheetTap {
+    /** R372 — the live session on this device is handed over: same session, its id carried, 2 s back. */
+    data class Move(val session: dev.jellystructure.shared.tv.SessionView) : SheetTap
+    /** FR-R370-3 — a new session on that place. */
+    data class Start(val request: dev.jellystructure.shared.tv.SessionStartRequest) : SheetTap
+    /** Nothing is loaded at all — the only case in which [nothingToStartKey]'s hint tells the truth. */
+    data object NothingLoaded : SheetTap
+}
+
+/**
+ * FR-R380-15 — the whole decision, pure: a loaded thing playing **here** moves (R372), a loaded thing playing
+ * nowhere starts, and only a sheet with nothing loaded raises the hint. [replace] is what the viewer chose to stop
+ * on the tapped place (R370 review item 10), and a replace is always a start — never a move of this device's own
+ * session.
+ */
+internal fun sheetTap(
+    loaded: SheetLoaded,
+    targetId: String,
+    sessions: List<dev.jellystructure.shared.tv.SessionView>,
+    replace: dev.jellystructure.shared.tv.SessionView? = null,
+): SheetTap {
+    val kind = sheetKind(loaded.music, loaded.book != null)
+    val r = replace?.let { dev.jellystructure.shared.tv.SessionReplace(it.id, it.revision) }
+    // 2026-10-05 — from the player, the film already playing here is a session: it MOVES (R372 — same session, its
+    // place carried over 2 s back) instead of a second one starting at 0:00 beside it. FR-R380-15 — and so does the
+    // book, in book time; the move QA measured exact under DEB-1055 is the road this takes.
+    if (replace == null) {
+        val lane = when (kind) {
+            "audiobook" -> setOf("audiobook")
+            "film" -> if (loaded.title != null) setOf("film", "episode") else emptySet()
+            else -> emptySet()   // a music queue starts, as it always has
+        }
+        sessions.firstOrNull { it.here && it.state != "ended" && it.kind in lane }?.let { return SheetTap.Move(it) }
+    }
+    val book = loaded.book
+    if (kind == "audiobook" && book != null) return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
+        targetId = targetId, kind = "audiobook", items = listOf(book.id),
+        // A book's place is book time (FR-R380-11). 0 is sent as *null* — "this viewer's stored place": the engine
+        // answers 0 for a book it has loaded but not yet made ready, and that must not restart the book on the TV.
+        startMs = book.bookMs.takeIf { it > 0L }, replace = r,
+    ))
+    if (loaded.music) {
+        if (loaded.queue.isEmpty()) return SheetTap.NothingLoaded
+        return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
+            targetId = targetId, kind = "music", items = loaded.queue, index = loaded.index.coerceAtLeast(0),
+            startMs = loaded.positionMs, shuffle = loaded.shuffle, repeat = loaded.repeat, replace = r,
+        ))
+    }
+    val ctx = loaded.title ?: return SheetTap.NothingLoaded
+    return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
+        targetId = targetId, kind = "film", items = listOf(ctx.itemId), startMs = ctx.startPositionMs, replace = r,
+    ))
+}
+
 /** FR-R265-7a — whether the open sheet shows that hint. One sheet is drawn at a time (CastSheetHost). Held here, not as a
  *  local the sheet's lambdas capture: a new capture there moved R8's lambda merging and grew `PlayerScreen`'s widest
  *  method past R258's register budget (249 → 255). */
@@ -172,37 +263,32 @@ fun ScreensSheet(
     // FR-R265-7a (found live 2026-10-09) — a tap on a free place with nothing to start used to do nothing at all.
     LaunchedEffect(open) { nothingToStartShown.value = false; if (!open) asking = null }
     val musicNow by dev.jellystructure.ravilo.ui.music.MusicPlayback.state.collectAsState()
-    /** What to start on a place: this page's title, or the music queue that plays here; null = nothing to start. */
-    fun startRequestFor(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, replace: dev.jellystructure.shared.tv.SessionView?): dev.jellystructure.shared.tv.SessionStartRequest? {
-        val r = replace?.let { dev.jellystructure.shared.tv.SessionReplace(it.id, it.revision) }
-        if (music) {
-            val st = musicNow
-            if (st.queue.isEmpty() || st.book != null) return null
-            return dev.jellystructure.shared.tv.SessionStartRequest(targetId = row.id, kind = "music", items = st.queue.map { it.id }, index = st.index.coerceAtLeast(0),
-                startMs = dev.jellystructure.ravilo.ui.music.MusicPlayback.currentPositionMs(), shuffle = st.shuffle, repeat = st.repeat.name.lowercase(), replace = r)
-        }
-        val ctx = playContext ?: return null
-        return dev.jellystructure.shared.tv.SessionStartRequest(targetId = row.id, kind = "film", items = listOf(ctx.itemId), startMs = ctx.startPositionMs, replace = r)
+    /** What the sheet is about, read at the tap and not at composition: a position read a recomposition ago is stale. */
+    fun loadedNow(): SheetLoaded {
+        val st = musicNow
+        val book = st.book?.let { SheetBook(it.id, dev.jellystructure.ravilo.ui.music.MusicPlayback.bookPositionMs()) }
+        return SheetLoaded(music = music, book = book, queue = st.queue.map { it.id }, index = st.index,
+            positionMs = dev.jellystructure.ravilo.ui.music.MusicPlayback.currentPositionMs(), shuffle = st.shuffle,
+            repeat = st.repeat.name.lowercase(), title = playContext)
     }
     fun startOn(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow, replace: dev.jellystructure.shared.tv.SessionView?) {
         asking = null
         // A Cast device this app's own discovery sees: today's path (the SDK starts it; the receiver's first report
         // makes the session). Anything else goes through the server (a Ravilo app, or the relay — owner decision 1).
         row.route?.let { startRoute(it); return }
-        // 2026-10-05 — from the player, the film already playing here is a session: it MOVES (R372 — same session,
-        // its place carried over 2 s back) instead of a second one starting at 0:00 beside it.
-        val playingHere = if (!music && playContext != null && replace == null)
-            sessionsState.sessions.firstOrNull { it.here && it.state != "ended" && (it.kind == "film" || it.kind == "episode") } else null
-        if (playingHere != null) {
-            onClose()
-            dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(playingHere.id, row.id)
-            onOpenSession(playingHere)
-            return
+        when (val tap = sheetTap(loadedNow(), row.id, sessionsState.sessions, replace)) {
+            is SheetTap.Move -> {
+                onClose()
+                dev.jellystructure.ravilo.ui.sessions.SessionRemote.move(tap.session.id, row.id)
+                onOpenSession(tap.session)
+            }
+            is SheetTap.Start -> {
+                onClose()
+                dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(tap.request, onStarted = { r -> r.session?.let { onOpenSession(it) } },
+                    onRefused = { reason -> println("R370: start on ${row.name} refused: $reason") })
+            }
+            SheetTap.NothingLoaded -> nothingToStartShown.value = true
         }
-        val req = startRequestFor(row, replace) ?: run { nothingToStartShown.value = true; return }
-        onClose()
-        dev.jellystructure.ravilo.ui.sessions.PlayOnStore.start(req, onStarted = { r -> r.session?.let { onOpenSession(it) } },
-            onRefused = { reason -> println("R370: start on ${row.name} refused: $reason") })
     }
     fun tapRow(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow) {
         if (row.here) {
@@ -229,8 +315,12 @@ fun ScreensSheet(
                     PlayingEverywhereSection(sessionsState, onOpen = { onClose(); onOpenSession(it) }, onPlayPause = onSessionPlayPause)
                     // R370 (FR-R370-2) — the four tiers, when the server can say (otherwise today's list below).
                     if (tierRows != null) PlayOnTiersSection(
-                        tiers = dev.jellystructure.ravilo.ui.sessions.playOnTiers(tierRows, if (music) "music" else "film"),
-                        asking = asking, title = musicNow.current?.title ?: status?.title.orEmpty(),
+                        // FR-R380-15 — by the kind that is LOADED: a loaded book's places are a book's, so a Cast
+                        // place (owner decision 4) and a music-only place are absent from all four tiers.
+                        tiers = dev.jellystructure.ravilo.ui.sessions.playOnTiers(tierRows, sheetKind(music, musicNow.book != null)),
+                        // FR-R370-4 — a busy place asks *Play {title} here instead*, and a loaded book's title is the
+                        // book's: `current` is null with a book in the engine, and the button read with a hole in it.
+                        asking = asking, title = musicNow.book?.detail?.title ?: musicNow.current?.title ?: status?.title.orEmpty(),
                         onTap = ::tapRow, onReplace = { row -> startOn(row, row.busy) }, onCancel = { asking = null },
                     )
                     if (nothingToStartShown.value) Text(

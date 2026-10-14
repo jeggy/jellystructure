@@ -623,3 +623,31 @@ acceptance 4 test 3 — not as a new test.
 phase keeps a book off a Cast place, so obligation 1 enforces the decision rather than reopening it); and nothing in
 this amendment adds *Move to…* to the local book player's overflow — the app bar's sheet is reachable from that player
 and is the one route, so no new screen and no second affordance.
+
+### As built, 2026-10-14 (DEB-1066) — three decisions the four obligations left open
+
+The sheet's decision is now one pure function, `sheetTap`, with `sheetKind` in front of it (both in `ScreensSheet.kt`,
+both `internal`): the three branches that each knew half the answer — `startRequestFor`, `startOn`'s move gate and
+`:232`'s tier kind — read the same `SheetLoaded`, so the kind the tiers filter by and the kind a tap starts can no
+longer disagree. That is what made the bug possible: nothing in the old shape tied the hint to the tap.
+
+- **A book loaded while the sheet is in *video* mode leaves the video sheet alone** — it still asks `"film"`. A book
+  plays only behind *Music & audiobooks* (R323), so "the kind that is loaded" is read as the kind this sheet would
+  start; asking `"audiobook"` from a film page's sheet would take every Cast display out of it and break FR-R370-2
+  for films to fix nothing for books. The music-mode sheet is the one obligation 1 is about, and the hint obligation 4
+  names is `screens.nothing_to_start_music`, which only that sheet raises.
+- **A book time of 0 is sent as `start_ms: null`** — "this viewer's stored place", which the server already resolves
+  (FR-R370-3). The engine answers 0 for a book it has loaded but not yet made ready, and a literal 0 would have
+  restarted the book on the TV: the one way this affordance could still lose a viewer's place.
+- **A busy place's *Play {title} here instead* names the book.** `musicNow.current` is null with a book in the
+  engine, so that button rendered with a hole in it — the same "a book is neither" shape as the four obligations, in
+  the same sheet, found while building this.
+
+**Checks run here (this seat cannot reach CI):** `:ravilo-ui:desktopTest` 724 tests green, `:ravilo-ui:testDebugUnitTest`
+845 green, `:ravilo-player:testDebugUnitTest` green, `:shared:desktopTest` + `:ravilo-i18n:desktopTest` green,
+`:ravilo-ui:compileKotlinWasmJs` and `:ravilo-android:assembleRelease` clean; `check-ravilo-strings`,
+`check-theme-whites` and `check-phases` OK. The 15 new tests are `commonTest`, so they run in both the desktop and the
+Android job. `check-player-dex` reads **250 registers (limit 250)** on the release APK — and **250 on `83a4bc87`
+without this change**, measured in a detached worktree, so this change costs `PlayerScreen` nothing. The headroom this
+amendment's own build notes recorded (245 after the R380 closure, 246 after R376) is nevertheless gone on `main`
+today; that is a fact for the board, not for this fix.
