@@ -627,7 +627,9 @@ class FileFixServiceTest {
         clock += FileFixService.GROUPING_RETRY_WINDOW_SEC + 1
         grouped.clear()
         assertEquals(0, s.assertVersionGrouping())
-        assertTrue(grouped.isEmpty(), "past the bound, asking again is not what is missing")
+        // Thirteenth amendment: the bound gates the report, not the asking, so past it the tick still asks.
+        // `groupAnswer` refuses throughout this case, so the attempt fails and the report below lands as it always did.
+        assertEquals(1, grouped.size, "past the bound it still asks — the bound only decides whether to report")
         val detail = row(dvFilm, FixKind.DOLBY_VISION)!!.detail
         assertTrue(detail.endsWith(FileFixService.UNGROUPED_NOTE), detail)
         assertTrue(detail.startsWith("the Dolby Vision 8.1 version is"), "the row still says what it did: $detail")
@@ -644,6 +646,55 @@ class FileFixServiceTest {
         assertEquals(0, s.assertVersionGrouping())
         assertTrue(!row(dvFilm, FixKind.DOLBY_VISION)!!.detail.endsWith(FileFixService.UNGROUPED_NOTE),
             row(dvFilm, FixKind.DOLBY_VISION)!!.detail)
+    }
+
+    /**
+     * Test 21 — acceptance 20, the thirteenth amendment. The grouping **held** at the write and was lost later (a
+     * rescan that re-created the item, a rename, a 12.1 ancestor-index event), which the bound cannot tell apart
+     * from one Jellyfin never resolved because `updated_at` is the row's last state change. Well past the bound the
+     * timer repairs it, with no *Find files* press.
+     *
+     * The history count is the assertion this case exists for: it is what separates *report only if this tick's
+     * attempt failed* from *report at the bound and clear it on the same tick's merge*. Under the latter the card
+     * would look identical and one permanent line would say this title stopped being asked about a version that is
+     * grouped — `clearUngroupedNote` strips only the row's suffix and never retracts the history line.
+     */
+    @Test fun `a grouping lost long after the write is repaired by the timer - and nothing is reported for it`() = runBlocking {
+        withVersionsRoot()
+        val s = service()
+        s.buildPlan()
+        // The write groups it: this row never carried the ungrouped note.
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        val versionInJellyfinsView = "/media/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv", versionInJellyfinsView))
+        assertEquals(0, s.assertVersionGrouping(), "grouped already: a tick writes nothing")
+        val stamped = row(dvFilm, FixKind.DOLBY_VISION)!!.updated_at
+
+        // Jellyfin loses the grouping, and nobody is in the admin for a day — far past the bound off the row.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv"))
+        clock += FileFixService.GROUPING_RETRY_WINDOW_SEC * 4
+        grouped.clear(); groupPatience.clear()
+
+        assertEquals(1, s.assertVersionGrouping(), "past the bound the merge is still asserted, and it lands")
+        assertEquals(listOf("other" to "$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"), grouped)
+        assertEquals(listOf(false), groupPatience, "the retry asks impatiently at any age")
+        assertTrue(history.forItem("other").any { it.detail.contains("it is grouped now") },
+            history.forItem("other").joinToString { it.detail })
+
+        // Wording A: a tick whose attempt merges writes no report, at any age.
+        assertEquals(0, history.forItem("other").count { it.detail.contains("stopped being asked") },
+            history.forItem("other").joinToString { it.detail })
+        assertTrue(!row(dvFilm, FixKind.DOLBY_VISION)!!.detail.endsWith(FileFixService.UNGROUPED_NOTE),
+            row(dvFilm, FixKind.DOLBY_VISION)!!.detail)
+        // No dry run ran: `upsertPlanned` is the only thing that would re-stamp the row, so an unchanged clock is
+        // the proof the repair came off the timer and that the bound was not re-armed behind it.
+        assertEquals(stamped, row(dvFilm, FixKind.DOLBY_VISION)!!.updated_at, "the timer never re-stamps the row")
+
+        // And it converges: once Jellyfin shows the version again the next tick is one read and no write.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv", versionInJellyfinsView))
+        grouped.clear()
+        assertEquals(0, s.assertVersionGrouping())
+        assertTrue(grouped.isEmpty(), "the steady state asks nothing — this is why the per-tick cost is zero")
     }
 
     @Test fun `the retry merges nothing without a versions root - and nothing for a film Jellyfin does not know`() = runBlocking {

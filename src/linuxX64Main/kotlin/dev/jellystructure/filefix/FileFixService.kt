@@ -393,6 +393,11 @@ class FileFixService(
      * disk, and Jellyfin's own list of each film's sources. Nothing is stored and there is no queue of pending merges
      * to go stale — a version removed, rewritten, or re-created by Jellyfin under a new item converges on the next
      * tick either way. Returns how many films it merged (0 is the normal, quiet answer).
+     *
+     * The thirteenth amendment (DEB-1151) moved the bound off the front of the attempt: the merge is asserted every
+     * tick whatever the row's age, and `GROUPING_RETRY_WINDOW_SEC` decides only whether a version **still** absent
+     * after this tick's attempt is reported. That repairs a grouping Jellyfin resolved and later lost, which the
+     * bound cannot tell apart from one it never resolved.
      */
     suspend fun assertVersionGrouping(): Int {
         val root = versionsRoot() ?: return 0
@@ -425,20 +430,25 @@ class FileFixService(
                 clearUngroupedNote(t.row)
                 continue
             }
-            // The bound: a version Jellyfin has not resolved within this of the write is not going to be resolved by
-            // asking again — on an installation that validates its library at all, this is many chances — and the
-            // outcome FR-314-15 asks for then is a report against the title, not a retry that never ends.
-            if (now() - t.row.updated_at > GROUPING_RETRY_WINDOW_SEC) {
-                reportUngrouped(t)
-                continue
-            }
-            val grouped = groupAndKeepHidden(t.item, t.versionPath, patient = false) ?: continue
-            if (grouped.merged) {
+            // The thirteenth amendment: the bound gates the **report**, not the asking. The merge is asserted on
+            // every tick whatever the row's age, because `updated_at` is the row's last state change and not the
+            // moment the grouping went missing — so past the bound it cannot tell *Jellyfin never resolved this*
+            // from *the grouping held and was later lost*, and the second is one call away from being repaired.
+            val grouped = groupAndKeepHidden(t.item, t.versionPath, patient = false)
+            if (grouped?.merged == true) {
                 merged++
                 clearUngroupedNote(t.row)
                 history.record(t.item.id, "file_fix", "The version was on disk and not grouped with the film; it is grouped now (${grouped.detail}).")
                 Logger.info("file fix: grouping asserted off the timer for ${t.item.id} — ${grouped.detail} (314, FR-314-21)", "jobs")
-            } else {
+                continue
+            }
+            // Still absent after this tick's own attempt. Past the bound that is FR-314-15's report against the
+            // title; inside it the next pass simply tries again. A tick that merged never reaches here, so no
+            // report is written at any age for a version this tick grouped — including the tick the row crosses
+            // the bound, which keeps `reportUngrouped`'s history line (never retracted) off a grouped version.
+            if (now() - t.row.updated_at > GROUPING_RETRY_WINDOW_SEC) {
+                reportUngrouped(t)
+            } else if (grouped != null) {
                 Logger.info("file fix: version still not grouped for ${t.item.id} — ${grouped.detail}; the next pass tries again (314, FR-314-21)", "jobs")
             }
         }
