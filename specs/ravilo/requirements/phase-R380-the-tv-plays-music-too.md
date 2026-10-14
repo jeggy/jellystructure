@@ -753,3 +753,105 @@ the sentence's absence with a book playing and the app bar in video mode on a pa
 when nothing is loaded, and — the half easiest to get backwards — the hint's presence when the only live session is
 **elsewhere**. The unresponsive row is named in that ticket as the accepted trade-off it is, so it is not reported
 back as a finding.
+
+## Amendment, 2026-10-14 — a loaded-but-stopped book started on a TV resumes from this phone's parked engine position, and the stored place is rewritten backwards (DEB-1100)
+
+Found by QA running DEB-1088's acceptance 4 test 3, step 3, on hardware (a 14-part book on its third part; prod
+`v1.51-186-g83a4bc87`, phone `.debug` `1.51-189-gaa1ce188-debug`). A book is moved to a TV from *Play on…*, plays there
+for a few minutes, is **stopped** from the phone's session remote — which ends cleanly and writes the stored place
+correctly, 12:19 into the part — and is then started on that same TV from the sheet again. **It starts at 8:18**, the
+position the phone's own engine was parked at when the move happened, roughly four minutes behind what was actually
+listened to; and as the new session ticks, `audiobook_progress` is rewritten **backwards** to match. The listener
+replays four minutes they already heard, and the only copy of where they were is gone. The hole is invisible to anyone
+who moves and immediately starts again, and grows with however long the book played on the TV after the move.
+
+By DEB-1088's written criterion this is a pass — it is nowhere near 0:00 and it lands in the right chapter — and QA
+filed it against that letter deliberately. The product's rule is the one that decides: **a book must never lose a
+listener's place.** An ignored position is an annoyance; a rewritten one is the loss.
+
+**Not released, and that is why it is first rather than urgent.** The only road to it is *Play on… ▸ a TV* for a
+loaded-but-stopped book, which exists only in **FR-R380-15** — on `main`, not deployed, reachable by no installed
+client. No household listener and no user beyond the household can have lost a place to this. It is also the affordance
+this phase is about to make the main road for books, so **DEB-1100 gates releasing FR-R380-15**: shipping it as it
+stands ships place-loss as a feature.
+
+### The mechanism, read end to end
+
+No second device run was needed — QA's three measured positions and two session ids site it against the code:
+
+- `ScreensSheet.kt:286` builds the sheet's `SheetBook` with `MusicPlayback.bookPositionMs()` — the **local engine's**
+  position. After a hand-off that engine stays loaded and parked at the move point (R372 stops it; it does not forget
+  the book), so its answer goes stale the instant the TV advances past it.
+- `ScreensSheet.kt:174` sends that as the start's `startMs` whenever it is greater than zero.
+- `PlaybackTargets.kt:231`/`:236` make it the new row's own position and `:242` makes it the `session_load`
+  envelope's `book_ms`. The server passes a client's number through untouched.
+- `RaviloApp.kt:1571-1573` — **the TV's book arm is already written correctly**:
+  `env.bookMs?.let { BookMath.locate(detail, it) } ?: detail.position?.takeIf { !it.finished } ?: (0 to 0L)`. Had the
+  phone sent nothing, the TV would have resumed at the listener's stored place, which is 12:19 and exactly right.
+
+So nothing is missing from the receiving half, and nothing is wrong with the move: the defect is the phone answering a
+question it is not in a position to answer. The branch that reads `book.bookMs` is reached **only when the book is
+playing nowhere** — a book live on this device takes `SheetTap.Move` (`ScreensSheet.kt:161-167`) and moves exactly,
+which DEB-1055 and DEB-1088 both measured. By construction, at the line that reads it, this device is never where the
+book was last played: either the listener paused it here, in which case the server already holds that same position
+(the engine reports on pause and every 10 s, `MusicEngineAndroid.kt:398-409`, `:422`), or it was played somewhere else
+and the parked value is stale. The engine's position is therefore never the better source at that line, and sometimes
+much the worse.
+
+**The backward `audiobook_progress` write is this same defect's consequence, and is allocated no requirement of its
+own.** It is a second question, as it was filed, and the answer is that the store must keep accepting a backward write:
+`AudiobooksStore.saveProgress` (FR-280-4) cannot tell a stale start from a deliberate backward seek, and *Start over*
+writes `0` through the same store (`AudiobooksStore.setFinished`). A monotonicity rule there would break seeking in
+order to fix starting. The distinction between "where the listener is" and "where a device guesses they are" exists at
+the start and nowhere else, which is where this amendment puts it; with the start corrected, nothing writes the place
+backwards unasked.
+
+**FR-R380-17 — a book's place of record is the server's, and a start never carries a device's guess at it.** Two
+obligations, one on each side of the wire:
+
+1. **The sheet supplies no place for a book start.** A tap that starts a loaded-but-stopped book on another place sends
+   the book and no position; the sheet reads the local engine's book position nowhere. This **supersedes** the first of
+   DEB-1066's three *As built* decisions above ("a book time of 0 is sent as `null`"): zero was recognised there as an
+   answer the engine is not entitled to give, and the stale parked position is the same thing by the same road, so the
+   rule becomes *always* rather than *when it is zero*. `SessionStartRequest.startMs` is untouched on the wire — a film
+   and a music queue still carry theirs — so no field is added, removed or retyped.
+2. **The server resolves a book start's place from that listener's stored place.** A start whose kind is `audiobook`
+   and whose `start_ms` is absent **or zero** takes its place from `audiobook_progress` for the session's owner and
+   that book, in **book time** (`AudiobookProgress.bookPositionMs`, which the store already computes), and uses it
+   exactly where `req.startMs` would have gone — the row's position *and* the envelope's `book_ms`. A stored place
+   marked finished resolves to nothing, so a finished book starts at the beginning rather than at its end, mirroring
+   the TV arm's own `!it.finished`; no stored place at all is 0:00, as today. A book start's zero is read as absent
+   because the sheet is its only road and never means *restart* there — a genuine *Start over* has already written the
+   stored place to 0 and resolves to 0 through the store.
+
+Three things the second obligation deliberately does **not** do:
+
+- **It does not touch a move.** A move converts the live row's own position (`PlaybackTargets.kt:325-326`), which is
+  authoritative by definition, and QA has measured it exact twice. Only the start path reads a client's number.
+- **It does not override a place a client did supply.** That is the open question below, and it is separable: filling
+  an absent place is what the client already documents `null` to mean, while overriding a supplied one changes what a
+  client-set field means on the wire.
+- **It is not a new wire contract.** `book_ms` becomes non-null in a case where it used to be null; every app with a
+  book arm already handles a non-null `book_ms` on the ordinary road, and the arm's own stored-place fallback stays
+  where it is as the older-server path.
+
+The seam is the one FR-R380-11 already established: a lambda beside `bookParts` (`PlaybackTargets.kt:199`), wired at
+`SessionWiring.kt:127` off `musicPipeline?.audiobooks?.store`. The engineer's call is the spelling, not the shape.
+
+**Open question (owner, wire-visible) — should the server also refuse a place a client *did* supply that is behind the
+stored place?** Recommended **yes, at a start only and never on a heartbeat**: it makes the server the place of record
+for books whatever any client sends, and it costs nothing today, because the sheet offers no way to choose a place and
+a *Start over* resolves through the store anyway. Against it: it is the one change here that alters what a client-set
+field means, and a future "start this book from chapter 1 on the TV" would have to say so explicitly rather than by
+sending a smaller number. **Both obligations above are implementable and testable without this answer**, and the fix
+does not wait on it.
+
+**Tests (no device):** the sheet's start for a loaded book carries no position whatever the engine is parked at
+(`PlayOnBookTapTest`, `commonTest`, so it runs in both jobs — and the existing assertions on `startMs` there change
+with it); and on the server, a book start with no place resolves to the stored place in book time on both the row and
+the envelope, a zero resolves the same way, a finished place resolves to 0:00, no stored place resolves to 0:00, and a
+move is unaffected (`BookSessionLoadTest`, `:linuxX64Test`). `WireCompatTest` green with nothing added.
+
+**Owed on a device afterwards, and it is a re-run rather than a new test:** DEB-1088's acceptance 4 test 3 step 3 —
+move, let it play, stop, start again, and compare the TV's book-time readout against `audiobook_progress.position_ms`
+read just after the stop. One tap on a run that already holds a TV and the phone.
