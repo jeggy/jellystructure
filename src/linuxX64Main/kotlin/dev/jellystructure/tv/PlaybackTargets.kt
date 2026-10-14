@@ -198,6 +198,14 @@ class SessionStarter(
      */
     internal var bookParts: suspend (bookId: String) -> List<Pair<String, Long>> = { emptyList() }
 
+    /**
+     * R380 (FR-R380-17, DEB-1100) — one listener's stored place in one book, as `audiobook_progress` holds it. This is
+     * the place of record for a book: a start that carries no place of its own resolves from here (see [start]), so a
+     * *Play on… ▸ a TV* on a loaded-but-stopped book resumes where the listener really is rather than wherever the
+     * tapping device's engine happens to be parked.
+     */
+    internal var bookPlace: suspend (userId: String, bookId: String) -> dev.jellystructure.model.AudiobookProgress? = { _, _ -> null }
+
     internal suspend fun liveApps(): List<LiveApp> = bus.liveSockets().mapNotNull { (u, d, f) ->
         devices.listSessions(d).firstOrNull { it.jellyfinUserId == u }?.let { LiveApp(it, f) }
     }
@@ -228,7 +236,16 @@ class SessionStarter(
         val bookId = if (kind == SessionKind.AUDIOBOOK) req.items.getOrNull(req.index) ?: req.items.first() else null
         val items = req.items.map { id -> sessions.describe(id, id.takeIf { kind == SessionKind.AUDIOBOOK })?.second ?: SessionItem(id) }
         val options = SessionOptions(shuffle = req.shuffle, repeat = req.repeat)
-        val startMs = req.startMs ?: 0L
+        // R380 (FR-R380-17, DEB-1100) — a book's place of record is the server's, so a book start whose place is absent
+        // **or zero** takes it from this listener's own `audiobook_progress`, in book time. Zero is read as absent
+        // because the sheet is a book start's only road and never means *restart* there: a genuine *Start over* has
+        // already written the stored place to 0 and resolves to 0 back through the store. A stored place marked
+        // finished resolves to nothing, so a finished book starts at the beginning rather than at its end — the same
+        // `!it.finished` rule the app's own book arm applies, moved to in front of the wire. A move is untouched: it
+        // converts the live row's own position, which is authoritative by definition.
+        val stored = if (bookId != null && (req.startMs ?: 0L) == 0L)
+            bookPlace(caller.jellyfinUserId, bookId)?.takeIf { it.finishedAt == null }?.bookPositionMs else null
+        val startMs = stored ?: req.startMs ?: 0L
         if (!castTarget) {
             val target = liveApps().firstOrNull { it.device.deviceId == req.targetId }?.device ?: return StartResult2.Unreachable
             val busy = sessions.all().firstOrNull { it.live && it.targetId == target.deviceId && it.lane == sessionLane(kind) }
@@ -238,8 +255,9 @@ class SessionStarter(
             val env = SessionLoadEnvelope(sessionId = rec.id, kind = kind, items = req.items, index = req.index, startMs = startMs,
                 shuffle = req.shuffle, repeat = req.repeat, title = items.getOrNull(req.index)?.title, tracks = tracks,
                 senderName = senderNameOf(caller),
-                // FR-R380-11 — a book is named on the envelope, and its place is book time (the start request's own).
-                bookId = bookId, bookMs = req.startMs.takeIf { kind == SessionKind.AUDIOBOOK })
+                // FR-R380-11 — a book is named on the envelope, and its place is book time; FR-R380-17 — resolved from
+                // the store when the start carried none, exactly where the request's own number would have gone.
+                bookId = bookId, bookMs = (stored ?: req.startMs).takeIf { kind == SessionKind.AUDIOBOOK })
             bus.notifyDevice(target.jellyfinUserId, target.deviceId, json.encodeToString(SessionLoadEnvelope.serializer(), env))
             Logger.info("Playback sessions: ${rec.id} start $kind on ${target.deviceId} from ${caller.deviceId} → session_load", "tv")
             // R380 (found live 2026-10-09) — music the caller plays itself moves to the place it started it on: its own

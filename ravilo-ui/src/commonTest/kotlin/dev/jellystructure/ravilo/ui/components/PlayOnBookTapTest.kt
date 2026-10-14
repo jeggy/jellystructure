@@ -16,14 +16,17 @@ import kotlin.test.assertTrue
 /**
  * R380 (FR-R380-15, DEB-1064) — the app bar's *Play on…* sheet and a loaded book: the kind it asks the four tiers
  * about is the kind that is **loaded**, a book playing here moves instead of starting at 0:00, a book playing nowhere
- * starts in **book time**, and the *"Play something first"* hint is raised in neither book case.
+ * starts, and the *"Play something first"* hint is raised in neither book case.
+ *
+ * FR-R380-17 (DEB-1100) — and a book start carries **no place**: the engine's book position is a number only the
+ * device that is playing is entitled to give, and the stored place on the server is the book's place of record.
  *
  * The sheet's decision is a pure function of what is loaded and what plays where, so all of it is tested here and
  * none of it needs a device.
  */
 class PlayOnBookTapTest {
-    private val book = SheetBook("bk-7", bookMs = 571_948L)
-    private fun loadedBook(bookMs: Long = 571_948L) = SheetLoaded(music = true, book = SheetBook("bk-7", bookMs))
+    private val book = SheetBook("bk-7")
+    private fun loadedBook() = SheetLoaded(music = true, book = SheetBook("bk-7"))
     private fun loadedQueue() = SheetLoaded(music = true, queue = listOf("tr-1", "tr-2"), index = 1, positionMs = 42_000L)
     private fun loadedFilm() = SheetLoaded(music = false, title = ScreenPlayContext("film-3", 90_000L))
 
@@ -66,23 +69,27 @@ class PlayOnBookTapTest {
         assertTrue(musicTiers.free.map { it.name }.containsAll(listOf("Kitchen", "Office")))
     }
 
-    // ── Obligation 2 — a book playing nowhere starts, naming the book, in book time ──
+    // ── Obligation 2 — a book playing nowhere starts, naming the book and no place (FR-R380-17) ──
 
-    @Test fun `a loaded book builds an audiobook start naming the book at book time`() {
+    @Test fun `a loaded book builds an audiobook start naming the book and no place at all`() {
         val tap = sheetTap(loadedBook(), targetId = "tv-stue", sessions = emptyList())
         val req = (tap as SheetTap.Start).request
         assertEquals("audiobook", req.kind)
         assertEquals(listOf("bk-7"), req.items)
-        assertEquals(571_948L, req.startMs)
+        assertNull(req.startMs, "FR-R380-17 — the server resolves this listener's stored place; the sheet offers none")
         assertEquals(0, req.index)
         assertEquals("tv-stue", req.targetId)
         assertNull(req.replace)
     }
 
-    @Test fun `a book the engine has loaded but not made ready starts at this viewers stored place`() {
-        val req = (sheetTap(loadedBook(bookMs = 0L), "tv-stue", emptyList()) as SheetTap.Start).request
-        assertEquals("audiobook", req.kind)
-        assertNull(req.startMs, "0 is sent as null — the server's place — rather than restarting the book on the TV")
+    @Test fun `a book start carries no place while a music queue and a film beside it still carry theirs`() {
+        // FR-R380-17 — the defect this closes was a *number*, not a branch, so the fix is that [SheetBook] has nowhere
+        // to put one: whatever the engine is parked at is unsayable here now, and no value of anything restores it.
+        // What must NOT change is the field itself — `start_ms` is still how a film and a music queue say where to
+        // start, so the three arms are read together.
+        assertNull((sheetTap(SheetLoaded(music = true, book = book), "tv-stue", emptyList()) as SheetTap.Start).request.startMs)
+        assertEquals(42_000L, (sheetTap(loadedQueue(), "tv-stue", emptyList()) as SheetTap.Start).request.startMs)
+        assertEquals(90_000L, (sheetTap(loadedFilm(), "tv-stue", emptyList()) as SheetTap.Start).request.startMs)
     }
 
     // ── Obligation 3 — a book playing HERE moves; it does not start a second session at 0:00 ──

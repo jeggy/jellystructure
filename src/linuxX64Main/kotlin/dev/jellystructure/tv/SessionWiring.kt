@@ -128,6 +128,8 @@ suspend fun wirePlaybackSessions(
         musicPipeline?.audiobooks?.store?.parts(bookId).orEmpty()
             .filter { it.missingSince == null }.sortedBy { it.position }.map { it.id to (it.durationMs ?: 0L) }
     }
+    // R380 (FR-R380-17, DEB-1100) — this listener's stored place in this book; the store computes the book time.
+    starter.bookPlace = { userId, bookId -> musicPipeline?.audiobooks?.store?.progress(userId, bookId) }
     publisher.starter = starter
     // R372 — the old place stops once the new one plays (its stop report then goes through stopPlayback as ever).
     sessions.stopPlace = { s, from ->

@@ -86,8 +86,8 @@ internal fun nothingToStartKey(music: Boolean): String = if (music) "screens.not
  * speakers (owner decision 4 of R380 forbids a book on a Cast place outright), and raised *"Play something first"*
  * on every tap — in the same sheet that was listing that very book on *Playing everywhere*.
  *
- * [book] is the loaded book and its place in **book time** (FR-R380-11 — the parts before, end to end, plus the
- * place in this one), never a part's own position. [title] is this page's title (FR-R265-7a).
+ * [book] is the loaded book, and nothing else: FR-R380-17 (DEB-1100) took its place out of this type, because no
+ * place this sheet can read is the book's. [title] is this page's title (FR-R265-7a).
  */
 internal data class SheetLoaded(
     /** The music-mode sheet (R324): a book and a music queue live here, a film never does. */
@@ -101,8 +101,14 @@ internal data class SheetLoaded(
     val title: ScreenPlayContext? = null,
 )
 
-/** The loaded book: which book, and where this viewer is in it in **book time**. */
-internal data class SheetBook(val id: String, val bookMs: Long)
+/**
+ * FR-R380-17 (DEB-1100) — the loaded book, and **which** book is all of it. This used to carry the engine's book
+ * position too, and that number is only ever right while this device is the one playing: after a hand-off the local
+ * engine is parked at the move point and goes stale the instant the TV advances, so a one-tap *Play on… ▸ a TV* on a
+ * loaded-but-stopped book rewound the listener ~4 minutes and then wrote `audiobook_progress` backwards to match.
+ * A book's place of record is the server's, and it is the server that resolves it now.
+ */
+internal data class SheetBook(val id: String)
 
 /**
  * FR-R380-15 — the kind the sheet asks the four tiers about is the kind that is **loaded**, not the mode it is in.
@@ -169,9 +175,12 @@ internal fun sheetTap(
     val book = loaded.book
     if (kind == "audiobook" && book != null) return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
         targetId = targetId, kind = "audiobook", items = listOf(book.id),
-        // A book's place is book time (FR-R380-11). 0 is sent as *null* — "this viewer's stored place": the engine
-        // answers 0 for a book it has loaded but not yet made ready, and that must not restart the book on the TV.
-        startMs = book.bookMs.takeIf { it > 0L }, replace = r,
+        // FR-R380-17 (DEB-1100) — no place at all, ever: `start_ms` is absent and the server resolves this listener's
+        // stored place. This supersedes DEB-1066's "a book time of 0 is sent as null" — zero was already recognised
+        // there as an answer the engine is not entitled to give, and the stale parked position is the same answer by
+        // the same road, so the rule is *always* rather than *when it is zero*. A film and a music queue below still
+        // carry theirs: the field is untouched on the wire.
+        replace = r,
     ))
     if (loaded.music) {
         if (loaded.queue.isEmpty()) return nothingToStart()
@@ -283,7 +292,8 @@ fun ScreensSheet(
     /** What the sheet is about, read at the tap and not at composition: a position read a recomposition ago is stale. */
     fun loadedNow(): SheetLoaded {
         val st = musicNow
-        val book = st.book?.let { SheetBook(it.id, dev.jellystructure.ravilo.ui.music.MusicPlayback.bookPositionMs()) }
+        // FR-R380-17 — which book, and no position: the engine's book position is read nowhere in this sheet now.
+        val book = st.book?.let { SheetBook(it.id) }
         return SheetLoaded(music = music, book = book, queue = st.queue.map { it.id }, index = st.index,
             positionMs = dev.jellystructure.ravilo.ui.music.MusicPlayback.currentPositionMs(), shuffle = st.shuffle,
             repeat = st.repeat.name.lowercase(), title = playContext)
