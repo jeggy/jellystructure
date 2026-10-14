@@ -133,15 +133,39 @@ private fun vrPanelClick(t: Element, scope: CoroutineScope) {
 // ── *Set version…* (FR-292-8, FR-292-12) ──
 
 /**
+ * FR-292-17 — the preview press's pending state, read by every bar that draws `[data-vbulk]`.
+ *
+ * It is module state rather than an attribute on the button because `muRenderSel` repaints `#mu-sbar` on any row
+ * tick (FR-278-15): a disabled attribute would be drawn away mid-flight. The bars ask [vrBulkPressBusy], and
+ * [vrOpenBulk] refuses from the flag rather than from what is on screen.
+ */
+private val vrBulkPress = MuPendingPress()
+
+/** FR-292-17(a) — whether a *Set version…* preview is in flight, for the selection bars to draw. */
+internal fun vrBulkPressBusy(): Boolean = vrBulkPress.busy
+
+/**
  * FR-292-8/12, and FR-292-16 for [filter]: *every song matching the current filter* arrives as the filter itself,
  * and the count in the heading and on the button is the server's own count over that whole set — the press is
  * required either way, and at ten thousand songs that number is the whole point of the dialog.
+ *
+ * FR-292-17 — the pass takes 2.9–3.9 s over the household's library and was silent for all of it, so [repaint] is
+ * called the moment the press is taken and again when it has landed: the caller's own bar, which is where the
+ * pressed control lives (`muRenderSel` for Songs, `alPanel` for the album page).
  */
-internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, filter: dev.jellystructure.model.MusicSongFilter? = null, done: () -> Unit) {
+internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, filter: dev.jellystructure.model.MusicSongFilter? = null, repaint: () -> Unit = {}, done: () -> Unit) {
     if (trackIds.isEmpty() && filter == null) return
+    // FR-292-17 — synchronously, before the dispatch: `scope.launch` schedules, so a guard inside the coroutine
+    // would let every click inside the wait through, which is the amplification DEB-1156 measured.
+    if (!vrBulkPress.enter()) return
+    repaint()
     scope.launch {
-        val pv = MusicApi.versionPreview(trackIds, filter) ?: return@launch muToast("The server didn’t answer")
+        // `finally`, so a throw cannot strand the bar busy for the rest of the session (acceptance 13).
+        val pv = try { MusicApi.versionPreview(trackIds, filter) } finally { vrBulkPress.release(); repaint() }
+        if (pv == null) return@launch muToast("The server didn’t answer")
         val pick = LinkedHashMap<String, String>()   // key → leave · add · remove
+        // FR-292-17(b) — the write's pending state, beside the dialog it belongs to and read by `paint`.
+        val write = MuPendingPress()
         document.getElementById("vr-modal")?.remove()
         val m = document.createElement("div") as HTMLElement
         m.id = "vr-modal"; m.className = "mu-modal on"
@@ -158,12 +182,18 @@ internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, filter: d
                 append("</div>")
                 if (pick["session"] == "add") append("""<div class="tiny muted" style="margin-top:8px">Adding Session adds Live with it.</div>""")
                 if (pv.otherCopies > 0) append("""<div class="mu-note" style="margin:12px 0 0"><div class="t">${pv.otherCopies} other cop${if (pv.otherCopies == 1) "y" else "ies"} of these recordings${if (pv.otherAlbums > 0) ", on ${pv.otherAlbums} other album${if (pv.otherAlbums == 1) "" else "s"}," else ""} change with them — the same MusicBrainz recording carries one answer.</div></div>""")
-                append("""<div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><span class="btn ghost" data-vbx>Cancel</span><span class="btn primary" data-vbgo>Apply to ${pv.songs}</span></div></div>""")
+                // FR-292-17(b) — the confirmation stays up while the write it confirmed runs, and visibly works.
+                if (write.busy) append(muVersionBulkWritingHtml(pv.songs))
+                else append("""<div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><span class="btn ghost" data-vbx>Cancel</span><span class="btn primary" data-vbgo>Apply to ${pv.songs}</span></div>""")
+                append("</div>")
             }
         }
         paint()
         m.addEventListener("click") { ev ->
             val t = ev.target as? Element ?: return@addEventListener
+            // FR-292-17(b) — while the write is out the dialog has nothing to press: no backdrop dismiss, no
+            // Cancel, no second Apply, and no segment press — a `paint()` from one would draw a live footer back.
+            if (write.busy) return@addEventListener
             when {
                 t == m || t.closest("[data-vbx]") != null -> m.remove()
                 t.closest("[data-vbp]") != null -> {
@@ -176,9 +206,15 @@ internal fun vrOpenBulk(scope: CoroutineScope, trackIds: List<String>, filter: d
                 t.closest("[data-vbgo]") != null -> {
                     val add = pick.filterValues { it == "add" }.keys.toList()
                     val remove = pick.filterValues { it == "remove" }.keys.toList()
-                    m.remove()
-                    if (add.isEmpty() && remove.isEmpty()) { muToast("Nothing to change"); return@addEventListener }
-                    scope.launch { muToast(MusicApi.versionBulk(trackIds, add, remove, filter) ?: "That didn’t save"); done() }
+                    if (add.isEmpty() && remove.isEmpty()) { m.remove(); muToast("Nothing to change"); return@addEventListener }
+                    // FR-292-17(b) — the dialog is no longer removed before the write launches. It stays, its
+                    // footer spins, and it closes when the write answers; the rows redraw after that, not before.
+                    if (!write.enter()) return@addEventListener
+                    paint()
+                    scope.launch {
+                        val msg = try { MusicApi.versionBulk(trackIds, add, remove, filter) ?: "That didn’t save" } finally { write.release() }
+                        m.remove(); muToast(msg); done()
+                    }
                 }
             }
         }

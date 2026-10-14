@@ -419,7 +419,7 @@ private fun alTracks(p: MusicAlbumPageDto): String {
         append("</div>")
         if (!alMatched(p)) append("""<div class="note blue" style="margin-bottom:12px;">Positions come from the files’ tags. A match tells us how many tracks the release has — then the gaps show here.</div>""")
         // Phase 292 (FR-292-8) — the selection bar.
-        if (alSel.isNotEmpty()) append("""<div class="mu-selbar on"><b>${alSel.size}</b> song${if (alSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vall>select all</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vnone>✕ clear</span></div>""")
+        if (alSel.isNotEmpty()) append("""<div class="mu-selbar on"><b>${alSel.size}</b> song${if (alSel.size == 1) "" else "s"} selected${muVersionBulkBtnHtml(vrBulkPressBusy())}<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vall>select all</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft)" data-vnone>✕ clear</span></div>""")
         append("""<div class="mu-scroll${if (alSel.isNotEmpty()) " vr-selecting" else ""}"><table class="mu-tbl"><thead><tr><th>#</th><th>Title</th><th>Length</th><th>Format</th><th>Recording</th><th>Lyrics</th><th>Gain</th><th></th></tr></thead><tbody>$rows</tbody></table></div>""")
         if (oneDisc && official == null) append("""<div class="tiny muted" style="margin-top:10px;">No disc numbers in these files — every track is disc 1. Positions are the files’ own.</div>""")
         // Phase 305 (FR-305-12) — the singles that live under this album, and their B-sides.
@@ -542,7 +542,9 @@ private fun alClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     t.closest("[data-vsel]")?.let { s -> ev.preventDefault(); val tid = s.getAttribute("data-vsel")!!; if (!alSel.remove(tid)) alSel += tid; alPanel(scope); return }
     if (t.closest("[data-vall]") != null) { alSel += p.tracks.map { it.id }; alPanel(scope); return }
     if (t.closest("[data-vnone]") != null) { alSel.clear(); alPanel(scope); return }
-    if (t.closest("[data-vbulk]") != null) { vrOpenBulk(scope, alSel.toList()) { alSel.clear(); alReload(scope) }; return }
+    // FR-292-17 — the album's bar draws the same control, so it redraws on the same flag. A dozen songs resolve
+    // faster than ten thousand, but the press is the same press and silence is silence.
+    if (t.closest("[data-vbulk]") != null) { vrOpenBulk(scope, alSel.toList(), repaint = { alPanel(scope) }) { alSel.clear(); alReload(scope) }; return }
     t.closest("[data-play]")?.let { pl ->
         val tid = pl.getAttribute("data-play") ?: return
         val audio = alAudio ?: return

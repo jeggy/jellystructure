@@ -406,10 +406,10 @@ private fun selBar(): String {
     // `total`, which FR-278-14 computes over the filtered set and not over the pages loaded.
     if (muView == "songs" && muSongAll) {
         val total = muDto?.total ?: muLoaded
-        return """<b>$total</b> song${if (total == 1) "" else "s"} selected<span class="tiny muted" style="margin-left:6px">every song matching this filter</span><span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+        return """<b>$total</b> song${if (total == 1) "" else "s"} selected<span class="tiny muted" style="margin-left:6px">every song matching this filter</span>${muVersionBulkBtnHtml(vrBulkPressBusy())}<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
     }
     if (muView == "songs" && muSongSel.isNotEmpty()) {
-        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected<span class="btn sm primary" data-vbulk>Set version…</span><span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
+        return """<b>${muSongSel.size}</b> song${if (muSongSel.size == 1) "" else "s"} selected${muVersionBulkBtnHtml(vrBulkPressBusy())}<span class="spacer" style="flex:1"></span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vall>select all shown</span><span class="tiny" style="cursor:pointer;color:var(--ink-soft);" data-vnone>✕ clear</span>"""
     }
     if (muView != "albums" || muSelected.isEmpty()) return ""
     return buildString {
@@ -522,7 +522,9 @@ private fun muClick(t: Element, ev: org.w3c.dom.events.Event, scope: CoroutineSc
     if (t.closest("[data-vnone]") != null) { muSongSel.clear(); muSongAll = false; muSyncSongTicks(); muRenderSel(); return }
     if (t.closest("[data-vbulk]") != null) {
         val filter = if (muSongAll) muSongFilter() else null
-        vrOpenBulk(scope, if (muSongAll) emptyList() else muSongSel.toList(), done = { muLoad(scope) }, filter = filter); return
+        // FR-292-17 — the refusal and the *Reading the versions…* label are both `vrOpenBulk`'s flag; the bar is
+        // ours to redraw, and `muRenderSel` alone, because a rebuild would throw away every appended page.
+        vrOpenBulk(scope, if (muSongAll) emptyList() else muSongSel.toList(), filter = filter, repaint = { muRenderSel() }, done = { muLoad(scope) }); return
     }
     t.closest("[data-vfi]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfi")!!, only = true); muSongSel.clear(); muLoad(scope); return }
     t.closest("[data-vfx]")?.let { b -> ev.stopPropagation(); muToggleVersion(b.getAttribute("data-vfx")!!, only = false); muSongSel.clear(); muLoad(scope); return }
