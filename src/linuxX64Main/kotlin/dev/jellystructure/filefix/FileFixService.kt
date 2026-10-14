@@ -103,14 +103,18 @@ class FileFixService(
     /**
      * FR-314-15 — keeps the versions library off every viewer's home screen (their own `MyMediaExcludes` and
      * `LatestItemsExcludes`, the only thing we write on a viewer's account) and reports any restricted account that
-     * cannot see it. Called after a version is grouped, which is both when a write lands and on every later pass, so
-     * a viewer who appears later is covered; the wiring rate-limits it.
+     * cannot see it.
+     *
+     * FR-314-22 (DEB-1033) — invited on **every grouping tick that has a target**, not only when a merge lands: a
+     * merge is what FR-314-21 makes converge and then stop, so a report hanging off one stops with it. The wiring
+     * rate-limits the pass itself, so the extra invitations cost nothing.
      */
     private val assertViewerVisibility: (suspend () -> Unit)? = null,
     /**
      * FR-314-19 (DEB-986) — acceptance 10's surface: the accounts [assertViewerVisibility]'s pass last found cannot
      * see the versions library, for the kind C card. The same pass that writes the log line, read rather than
-     * re-run — no Jellyfin call of its own and nothing stored — so it is empty until that pass has run.
+     * re-run — no Jellyfin call of its own and nothing stored — so it is empty until that pass has run, which
+     * FR-314-22 makes a grouping tick with a target rather than a merge.
      */
     private val restrictedViewers: () -> List<String> = { emptyList() },
 ) {
@@ -406,6 +410,11 @@ class FileFixService(
             RetryTarget(row, item, versionPath, inJellyfinView)
         }
         if (targets.isEmpty()) return 0
+        // FR-314-22 (DEB-1033) — the viewer pass runs here, on the work list and not on a merge. A version exists, so
+        // who can see it is a live question every tick; the steady state this phase converges on merges nothing, and
+        // FR-314-19's row was therefore reported once and then emptied by the next restart. Never fails a tick, and
+        // never on an empty list: *nobody is shut out* and *nobody has looked* have to stay different answers.
+        runCatching { assertViewerVisibility?.invoke() }
         val sources = runCatching { read(targets.map { it.item }) }.getOrNull() ?: return 0
         var merged = 0
         for (t in targets) {

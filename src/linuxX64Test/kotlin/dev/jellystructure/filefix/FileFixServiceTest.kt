@@ -157,11 +157,15 @@ class FileFixServiceTest {
         },
         ungroupVersion = { versionPath -> ungrouped += versionPath },
         arrRootFolders = { arrRoots },
+        assertViewerVisibility = { visibilityPasses++ },
         restrictedViewers = { restrictedViewers },
     )
 
     /** FR-314-19 — what the FR-314-15 pass last found: the accounts that cannot see the versions library. */
     private var restrictedViewers: List<String> = emptyList()
+
+    /** FR-314-22 (DEB-1033) — how many times the service invited the viewer visibility pass. */
+    private var visibilityPasses = 0
 
     /**
      * FR-314-15 — the versions root this suite writes into, as the owner would configure it.
@@ -656,6 +660,56 @@ class FileFixServiceTest {
         jellyfinSources = emptyMap()   // Jellyfin answers for no film: the id it had is gone
         assertEquals(0, withRoot.assertVersionGrouping())
         assertTrue(grouped.isEmpty(), "a film Jellyfin does not know is not a film to merge a version onto")
+    }
+
+    // ── FR-314-22 (DEB-1033) — the viewer visibility pass runs on the grouping tick, not on a merge ───────────────
+
+    /**
+     * Test 20 — acceptance 19. The merge has already happened and will not happen again (kind C with `auto_new = 0`
+     * and one grouped film is prod's own steady state), and the restart that empties FR-314-19's field is modelled by
+     * a fresh counter: the tick that merges nothing still invites the pass, every tick, because that field is the
+     * only thing the kind C card reads.
+     */
+    @Test fun `a grouping tick that merges nothing still asserts viewer visibility - every tick`() = runBlocking {
+        withVersionsRoot()
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        val versionInJellyfinsView = "/media/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        assertTrue(shell.exists(version), "the version is on disk, which is what makes it a target")
+
+        // The steady state: Jellyfin already shows the version, so the tick merges nothing at all.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv", versionInJellyfinsView))
+        grouped.clear()
+        visibilityPasses = 0   // the restart: FR-314-19's field goes back to empty and only a pass refills it
+        assertEquals(0, s.assertVersionGrouping())
+        assertTrue(grouped.isEmpty(), "nothing merged, which is the whole condition this covers")
+        assertEquals(1, visibilityPasses, "a tick with a version on disk asks who can see it")
+
+        assertEquals(0, s.assertVersionGrouping())
+        assertEquals(2, visibilityPasses, "every tick, not once — the pass itself holds the rate limit")
+    }
+
+    /** Test 20's other half: no target, no pass — *nobody is shut out* and *nobody has looked* stay different. */
+    @Test fun `a grouping tick with no version on disk asserts no viewer visibility`() = runBlocking {
+        val noRoot = service()
+        noRoot.buildPlan()
+        visibilityPasses = 0
+        assertEquals(0, noRoot.assertVersionGrouping(), "no versions root: there is no versions library to be shut out of")
+        assertEquals(0, visibilityPasses)
+
+        withVersionsRoot()
+        val s = service()
+        s.buildPlan()
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        shell.remove("$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv")
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv"))
+        visibilityPasses = 0
+        val reads = sourceReads
+        assertEquals(0, s.assertVersionGrouping())
+        assertEquals(0, visibilityPasses, "a done row whose version is gone is not a version anyone can be shut out of")
+        assertEquals(reads, sourceReads, "and Jellyfin is asked nothing either")
     }
 
     @Test fun `with a versions root no film waits for a rename - and without one it still does`() = runBlocking {

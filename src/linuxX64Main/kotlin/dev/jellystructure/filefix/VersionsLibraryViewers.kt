@@ -80,8 +80,16 @@ class VersionsLibraryVisibility(
      * those accounts on the original is deliberate and indefinite, so it has to be visible where the switch is.
      *
      * Written by the pass and nowhere else — no stored state and no Jellyfin call of its own, which is why it is
-     * empty until a pass has run (a pass runs when a version is grouped, i.e. once kind C has written one). A pass
-     * that finds none clears it, so a permission the owner widens in Jellyfin takes the row away on the next pass.
+     * empty until a pass has run. A pass that finds none clears it, so a permission the owner widens in Jellyfin
+     * takes the row away on the next pass.
+     *
+     * FR-314-22 (DEB-1033) — a pass runs on **every grouping tick that has a version on disk**, which is what makes
+     * that *until* bounded: the earlier mechanism ran it only when kind C merged, and the steady state FR-314-21
+     * converges on merges nothing, so on prod this field was emptied by a restart and nothing refilled it. Two
+     * different bounds come out of the rate limit below, and both are deliberate: after a restart `lastRunAt == 0L`
+     * skips it, so the row is back within one grouping tick (fifteen minutes); a permission the owner changes in
+     * Jellyfin enters or leaves the row within [minIntervalS], an hour. Still nothing stored — a remembered list
+     * would keep naming an account after the owner had widened it, which is the worse failure of the two.
      */
     var restricted: List<String> = emptyList()
         private set
