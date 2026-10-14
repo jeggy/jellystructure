@@ -719,3 +719,30 @@ video sheet (decided the other way in the *As built* block above and confirmed 2
 everywhere* by mode (it is the true affordance and the viewer's route to the fixed sheet), and any change to
 `screens.nothing_to_start` / `screens.nothing_to_start_music` themselves. **Devices: none** — DEB-1088 already owns the
 one device tap this phase owes.
+
+### As built, 2026-10-14 (DEB-1092) — the outcome is spelled `NothingStartableWhileLiveHere`
+
+The outcome the amendment left to the engineer is a fourth `SheetTap` member,
+`SheetTap.NothingStartableWhileLiveHere`, and the condition is one local function inside `sheetTap` that both of the
+old `return SheetTap.NothingLoaded` sites now go through — `sessions.any { it.here && it.isLive() }`, reusing
+`PlaybackSessions.kt`'s `isLive()` rather than repeating `state != "ended"` a third time. So:
+
+- **The hint is still set by exactly one branch.** `startOn`'s `when` gained `NothingStartableWhileLiveHere -> Unit`
+  beside the untouched `NothingLoaded -> nothingToStartShown.value = true`; the draw site reads no second condition,
+  and `nothingToStartShown` is still the only state the hint depends on.
+- **Both empty-handed paths are covered, not just the video one.** The music-mode sheet's empty-queue return
+  (`loaded.queue.isEmpty()`) goes through the same function, so a music-mode sheet with nothing loaded and a live
+  session here is silent too. FR-R380-16 is written on the sheet, and that is the whole point of it.
+- **One pre-existing test changed its assertion**, `the join-only sheet moves nothing and starts nothing`: it asserted
+  `NothingLoaded` for a video sheet with `title = null` and a live **film** session here, which is exactly the case the
+  amendment says reads the same false sentence through the same line. It now asserts what it was written to assert —
+  that nothing is moved and nothing is started — and the hint for that case is covered by the new tests instead.
+
+**Checks run here (this seat cannot reach CI):** `:ravilo-ui:desktopTest` **727 tests green**,
+`:ravilo-ui:testDebugUnitTest` **848 green** (the three new tests are `commonTest`, so they run in both jobs),
+`:ravilo-player:testDebugUnitTest`, `:shared:desktopTest` and `:ravilo-i18n:desktopTest` green,
+`:ravilo-ui:compileKotlinWasmJs` and `:ravilo-android:assembleRelease` clean. `check-player-dex` reads
+**250 registers (limit 250)** on the release APK — unchanged from the DEB-1066 measurement above, so the fourth
+member and the draw site's new branch cost `PlayerScreen` nothing, and the zero headroom recorded there is still
+zero and still the board's fact rather than this fix's. `check-phases`, `check-ravilo-strings`, `check-theme-whites`,
+`check-deanonymization` and `check-play-device-filter` OK.

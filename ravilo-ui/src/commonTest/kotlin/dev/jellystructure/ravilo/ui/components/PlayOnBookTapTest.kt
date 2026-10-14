@@ -125,6 +125,39 @@ class PlayOnBookTapTest {
         assertEquals("screens.nothing_to_start_music", nothingToStartKey(music = true))
     }
 
+    // ── FR-R380-16 (DEB-1090) — a sheet listing something live on THIS device says neither hint ──
+
+    @Test fun `the video sheet with a book playing here raises neither hint`() {
+        // The defect QA photographed: the book plays audibly on the phone, the mode is persisted, and the app bar's
+        // sheet is opened in video mode from a page with no film — so nothing is startable and the hint used to be
+        // raised underneath the sheet's own *Playing everywhere* row for that very book.
+        val videoSheet = SheetLoaded(music = false, title = null)
+        val tap = sheetTap(videoSheet, "tv-stue", listOf(session("audiobook", here = true, id = "s-book")))
+        assertEquals(SheetTap.NothingStartableWhileLiveHere, tap)
+        assertTrue(tap !is SheetTap.NothingLoaded, "the hint is driven by the decision, and this is not that branch")
+    }
+
+    @Test fun `a live film session on this device suppresses the hint through the same line`() {
+        // Written on `here` + live and never on `audiobook`: the film case was always the same false sentence.
+        assertEquals(SheetTap.NothingStartableWhileLiveHere,
+            sheetTap(SheetLoaded(music = false), "tv-stue", listOf(session("film", here = true))))
+        // And in music mode with no queue and no book, for the same reason.
+        assertEquals(SheetTap.NothingStartableWhileLiveHere,
+            sheetTap(SheetLoaded(music = true), "tv-stue", listOf(session("music", here = true))))
+    }
+
+    @Test fun `the true case is kept - nothing loaded and nothing live here still raises the hint`() {
+        assertEquals(SheetTap.NothingLoaded, sheetTap(SheetLoaded(music = false), "tv-stue", emptyList()))
+        // A live session ELSEWHERE does not suppress it: nothing is loaded here, so the sentence is true (FR-R265-7a).
+        assertEquals(SheetTap.NothingLoaded,
+            sheetTap(SheetLoaded(music = false), "tv-stue", listOf(session("audiobook", here = false))))
+        assertEquals(SheetTap.NothingLoaded,
+            sheetTap(SheetLoaded(music = true), "tv-stue", listOf(session("music", here = false))))
+        // Nor does a session on this device that has ended.
+        assertEquals(SheetTap.NothingLoaded,
+            sheetTap(SheetLoaded(music = false), "tv-stue", listOf(session("audiobook", here = true, state = "ended"))))
+    }
+
     // ── What was already there, unchanged ──
 
     @Test fun `a music queue still starts with its place in the song and its modes`() {
@@ -149,8 +182,12 @@ class PlayOnBookTapTest {
         assertEquals("s1", (sheetTap(loadedFilm(), "tv-stue", listOf(session("episode", here = true))) as SheetTap.Move).session.id)
     }
 
-    @Test fun `the join-only sheet moves nothing and starts nothing`() =
-        assertEquals(SheetTap.NothingLoaded, sheetTap(SheetLoaded(music = false), "tv-stue", listOf(session("film", here = true))))
+    @Test fun `the join-only sheet moves nothing and starts nothing`() {
+        // A page with no film publishes no title, so the film lane is empty and this device's own film session is not
+        // handed anywhere. FR-R380-16 only changes which silent answer comes back, never that it is silent.
+        val tap = sheetTap(SheetLoaded(music = false), "tv-stue", listOf(session("film", here = true)))
+        assertTrue(tap !is SheetTap.Move && tap !is SheetTap.Start, "nothing is moved and nothing is started: $tap")
+    }
 
     @Test fun `a books queue is empty and that is not nothing loaded`() {
         // The shipped gate was `st.queue.isEmpty() || st.book != null` → null → the hint. A book has no queue by

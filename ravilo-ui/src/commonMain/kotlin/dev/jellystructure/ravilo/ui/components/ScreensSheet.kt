@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import dev.jellystructure.ravilo.ui.seams.CastRoute
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.castRouteInSession
+import dev.jellystructure.ravilo.ui.sessions.isLive
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -122,11 +123,20 @@ internal sealed interface SheetTap {
     data class Start(val request: dev.jellystructure.shared.tv.SessionStartRequest) : SheetTap
     /** Nothing is loaded at all — the only case in which [nothingToStartKey]'s hint tells the truth. */
     data object NothingLoaded : SheetTap
+    /**
+     * FR-R380-16 (DEB-1090) — nothing this sheet can start, but the sheet is listing a live session on **this**
+     * device: a sheet that is listing something live here never says there is nothing to play, so **neither** hint
+     * is raised and nothing else happens. Written on `here` + live and never on a kind, so it cannot rot the next
+     * time a kind is added: a book outliving the screen that started it is only the first such thing, and a film
+     * session left live on this device reads the same false sentence through the same line.
+     */
+    data object NothingStartableWhileLiveHere : SheetTap
 }
 
 /**
  * FR-R380-15 — the whole decision, pure: a loaded thing playing **here** moves (R372), a loaded thing playing
- * nowhere starts, and only a sheet with nothing loaded raises the hint. [replace] is what the viewer chose to stop
+ * nowhere starts, and only a sheet with nothing loaded raises the hint — and, FR-R380-16, not even then while this
+ * sheet is listing a live session on this device. [replace] is what the viewer chose to stop
  * on the tapped place (R370 review item 10), and a replace is always a start — never a move of this device's own
  * session.
  */
@@ -138,6 +148,13 @@ internal fun sheetTap(
 ): SheetTap {
     val kind = sheetKind(loaded.music, loaded.book != null)
     val r = replace?.let { dev.jellystructure.shared.tv.SessionReplace(it.id, it.revision) }
+    // FR-R380-16 — what a tap that finds nothing to start answers. The hint is the truth only when the sheet is not
+    // itself listing something live on this device; the session list *Playing everywhere* draws is right here, so the
+    // whole condition is decidable in this pure function and needs no new input. A live session **elsewhere** does
+    // not suppress it — nothing is loaded here then, and the sentence is true.
+    fun nothingToStart(): SheetTap =
+        if (sessions.any { it.here && it.isLive() }) SheetTap.NothingStartableWhileLiveHere
+        else SheetTap.NothingLoaded
     // 2026-10-05 — from the player, the film already playing here is a session: it MOVES (R372 — same session, its
     // place carried over 2 s back) instead of a second one starting at 0:00 beside it. FR-R380-15 — and so does the
     // book, in book time; the move QA measured exact under DEB-1055 is the road this takes.
@@ -157,13 +174,13 @@ internal fun sheetTap(
         startMs = book.bookMs.takeIf { it > 0L }, replace = r,
     ))
     if (loaded.music) {
-        if (loaded.queue.isEmpty()) return SheetTap.NothingLoaded
+        if (loaded.queue.isEmpty()) return nothingToStart()
         return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
             targetId = targetId, kind = "music", items = loaded.queue, index = loaded.index.coerceAtLeast(0),
             startMs = loaded.positionMs, shuffle = loaded.shuffle, repeat = loaded.repeat, replace = r,
         ))
     }
-    val ctx = loaded.title ?: return SheetTap.NothingLoaded
+    val ctx = loaded.title ?: return nothingToStart()
     return SheetTap.Start(dev.jellystructure.shared.tv.SessionStartRequest(
         targetId = targetId, kind = "film", items = listOf(ctx.itemId), startMs = ctx.startPositionMs, replace = r,
     ))
@@ -288,6 +305,9 @@ fun ScreensSheet(
                     onRefused = { reason -> println("R370: start on ${row.name} refused: $reason") })
             }
             SheetTap.NothingLoaded -> nothingToStartShown.value = true
+            // FR-R380-16 — the sheet is listing something live on this device: neither hint, and nothing else. The
+            // decision keeps `nothingToStartShown` set by exactly one branch, so no second condition is read here.
+            SheetTap.NothingStartableWhileLiveHere -> Unit
         }
     }
     fun tapRow(row: dev.jellystructure.ravilo.ui.sessions.PlayOnRow) {
