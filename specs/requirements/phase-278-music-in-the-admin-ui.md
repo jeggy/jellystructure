@@ -1,12 +1,13 @@
 # Phase 278 — Music in the admin UI: the Music kind, the Album and Artist pages, and everywhere else music shows
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-28, **not deployed** (build notes at the end). Written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A–§G, the §H
+Written 2026-09-28 from `specs/design-brief-music-in-the-admin-2026-09-27.md` (§A–§G, the §H
 questions) and the round-1 mockups. **Dev-reviewed 2026-09-28 against `main` `728f22ea`** (below). Builds on **275–277**, the Library workbench's facet
 idiom, `media.html`'s pagebar/tabs, and the triage dock. The seven §H questions are drawn as one live panel at the
 foot of every music page (`design/app/music-qs.js`, localStorage `js-music-q`). The leans below are the spec's
-defaults until the owner picks.
+defaults until the owner picks. **Amended 2026-10-14** (FR-278-14/15, at the foot of *Requirements*) — the Songs
+view's uncapped list, found when the library outgrew it by 180×.
 
 ## Decisions (round 1 — leans; not yet answered)
 
@@ -122,6 +123,47 @@ match… open; *no cover* → its Artwork tab; artist *no picture* → the artis
 linking to the Music kind filtered by genre. There are no logos and no merging with TMDB's genres (a film's
 *Comedy* is not an album's *comedy rock*).
 
+### Amendment 2026-10-14 — the Songs view at eleven thousand songs (DEB-1107)
+
+FR-278-2's *dense table* and FR-278-3's *select all shown* were written against the library this phase was
+measured on: **60 tracks, 30 albums**. The library is now **11 011 track rows**, and neither
+`GET /api/music/browse` nor `MusicLibrary.kt` caps the list, so the Songs view hands the browser every song at
+once: a ~4.8 MiB response, an ≈ 8.9 MiB HTML string built inside Wasm, ≈ 340 000 DOM nodes in one table — and
+`muRender` rebuilds all of it for a click as small as opening a filter dropdown. The owner reports the tab as
+*very long*, crashing or near it. The measurements, the per-stage costs and the rejected alternatives are in
+[`../research-reports/admin-songs-tab-list-size-2026-10-14.md`](../research-reports/admin-songs-tab-list-size-2026-10-14.md).
+
+Two requirements. Both are a transcription of what the **films** Library already does in this same frontend
+(`Library.kt`: `LIB_SLICE`, `loadMore(reset)`, `#lib-sentinel`, `elemNearViewportBottom`, `libLoading` /
+`libPendingReset`, `#lib-total`, delegated clicks) — reuse that code's shape rather than inventing a second
+scroller, and no new design is needed because the affordance is already drawn on this page.
+
+**FR-278-14 — The Songs rows arrive a page at a time.** `GET /api/music/browse` takes `page` (1-based) and
+`page_size`, and applies them to the **Songs rows only**, *after* the facet values, `total` and `folded` are
+computed — those are computed over the whole filtered set today (`apply()`, then `shown.size`) and must stay
+whole-set, so every count on the page keeps telling the truth about the library rather than about the page.
+Absent parameters mean the whole list, so no existing caller changes behaviour; the wire gains fields and
+retypes none (the admin is the only caller, but the rule is the rule). `MusicBrowseDto` gains `page` and
+`page_size` echoing what was served. The admin requests the Songs view in pages and **appends** them at a
+sentinel; a filter, facet, search, sort, artist, version or *Show every copy* change starts a fresh sequence.
+The Albums and Artists views are unchanged — 809 and 377 rows, measured, and not what was reported.
+
+**FR-278-15 — A click on the chrome does not rebuild the rows.** `muRender` is split: the facet bar, the
+active-filter bar and the selection bar re-render on their own, and the rows are appended once and then mutated
+in place. Specifically, none of these may rebuild the table body — opening or closing a filter dropdown, a
+click outside an open facet, ticking or unticking a song (toggle the `<tr>`'s class and update the selection
+bar), *clear*, or a `muPollMatch` tick. Without this, FR-278-14 buys nothing: the first dropdown throws every
+appended page away.
+
+**Open, for the owner — what *select all shown* means at 10 723 songs.** FR-278-3's phrase, and 292's
+*Set version…* that reads it, currently mean *every row in the response* and send the ids (≈ 350 KB of request
+body at this size). Once the page holds a page at a time, it must mean either **every song matching the current
+filters** — the server takes the filter, not a list of ids; the lean, because it is the only reading that keeps
+the sentence true and the only one that can set a version on a whole facet — or **every song loaded so far**,
+with the number stated as *N loaded of M* so it is at least not misleading. The second is what ships if the
+question goes unanswered, and the first belongs in **292**'s spec as its own dated amendment, because 292 owns
+the selection and the bulk call. Not a blocker for FR-278-14/15.
+
 ## Acceptance
 
 1. `library.html?kind=music` on the household library, before the first match: 30 *unmatched* cells, one cover,
@@ -131,6 +173,15 @@ linking to the Music kind filtered by genre. There are no logos and no merging w
 3. The Songs view's Format facet shows 38 WMA with the re-encode note.
 4. Settings, Activity, Dashboard, Metadata and the dock show the entries above and link to the right tab.
 5. Every H question's non-lean answer is also drawn, so the owner's pick needs no new design.
+
+Added by the 2026-10-14 amendment:
+
+6. **(FR-278-14)** On the real library, `view=songs` with `page_size=100` answers with **100** rows and a
+   `total` of **10 723** (not 100), and every facet count is the same number it was without paging. Scrolling
+   to the foot loads the next page and appends it; the previous rows are still in the DOM. Switching a facet
+   starts again at page 1.
+7. **(FR-278-15)** With three pages loaded, opening a filter dropdown, clicking outside it and ticking a song
+   each leave all three pages in the DOM — i.e. the row count in the table does not change.
 
 ## Mockup
 
