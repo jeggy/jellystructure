@@ -1849,3 +1849,49 @@ report being taken back; and the two cases that must do nothing at all — no ve
 no answer for. **Acceptance 17 is met off prod and acceptance 18 is covered in CI; what neither can reach is a
 viewer's device**, so the one thing that stays on the QA ticket is that the film still plays its version on a device
 that cannot decode the original after a merge that the timer made rather than the write.
+
+### FR-314-20 decided and built (2026-10-14, DEB-1009) — the validate is `POST /Library/Refresh`, on the owner's press
+
+The open question above went to the owner on card `40bcd9d1` as (a) keep FR-314-20 with the only call that works, or
+(b) drop it and leave the whole job to FR-314-21. He answered at **06:12:37Z**: *"You decide what's best"* — a
+delegation, not an option. **(a) is taken**, and three things decide it:
+
+- **(b) cannot reach the case FR-314-20 exists for.** On an installation that validates its library at all, film 1
+  heals by itself and FR-314-21 merges it; on one that never validates — no `scan_schedule`, `scan_interval_hours =
+  0`, nobody in the admin — the path is never resolved and the first version stays ungrouped forever.
+- **On this host (a) is a weaker act than the status quo.** The installation already issues the identical call twice
+  an hour of its own accord (`PipelineEngine.signalPipelineComplete`), so a validate on a configuration press
+  introduces no kind of load prod does not already take, and one fewer than an ordinary hour.
+- **It is the sanctioned lever.** `/Library/Refresh` is the one Jellyfin call this household's rules already name
+  for "we changed something on disk, tell Jellyfin"; what they forbid is the **per-item** refresh that fights
+  jellystructure for an item's metadata, and this is not that.
+
+**The sentence this corrects.** FR-314-20 said *"it is a scan of the versions library only — our own generated
+files, nothing of the household's."* That is withdrawn as unbuildable: it reads **every** library, once, on the
+owner's press. Nothing else about FR-314-20 changes, and the refusal of candidate 2 stands exactly as written — this
+fires from a configuration write and from nothing else: no job, no schedule, no retry, and never while a version is
+being written.
+
+**Test 18 is corrected with it.** It asked for *"exactly once, asserted on the request rather than on a log line,
+and asks for nothing on the movies or series libraries"*. The last clause cannot be asserted of a call that takes no
+library, so what is asserted instead is the trigger: **exactly one validate on a save that changes the versions
+configuration, none on a save that does not, and none at all while no root is set.** Acceptance 17 is unchanged and
+is now reachable rather than aspirational — the library has items before the first version is written, so the
+notification resolves it inside FR-314-15's own wait with no refresh from the write path.
+
+**Two presses fire it, because the owner's steps are ordered the way they are.** The seventh amendment's step 3 sets
+the root and step 4 types the library's `local_path`, and step 2 (create the library, no scan) can come after either
+on an installation that is set up in a different order. So the validate fires when a save leaves the root non-blank
+**and** either the root itself changed or the mapping that gives that root a name in Jellyfin's view changed
+(`jellyfinViewOrNull(root, libraries)`). A save that edits an unrelated library does not fire it; neither does a
+save that changes nothing about the versions configuration. At most one validate per configuration change, and the
+save never fails on it — an unreachable Jellyfin is logged and the configuration is still written.
+
+**Where the owner can see it**, which this amendment asks for and is the one part that is not server-side: the
+*Dolby Vision versions root* field on Settings ▸ Advanced says that saving a new root asks Jellyfin to validate its
+libraries once, and why — so the one scan this phase performs is on the screen that performs it rather than only in
+a log line.
+
+Test 18 is `ConfigSavePreservesBlocksTest` extended with the four cases above (the two that fire, the two that must
+not). What CI cannot reach is the owner's own press against the live Jellyfin, which is on the QA ticket with the
+rest of DEB-1009.
