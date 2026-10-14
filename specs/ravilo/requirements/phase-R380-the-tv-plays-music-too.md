@@ -549,3 +549,77 @@ quietly freed, because a reused requirement number is worse than a gap: DEB-1033
 (`5dad383b`) is three commits old and began the same way. The substance was not lost — FR-R368-12 and FR-R372-13/-14
 say everything those two said and more, and they corrected one thing this phase's version had wrong: the fix is the
 book-aware match, not the `session_id` threading, which on its own would have fixed nothing.
+
+## Amendment, 2026-10-14 — the phone's *Play on…* sheet has no book arm, so acceptance 4 has no road from the phone either (DEB-1064)
+
+Found by QA proving this phase's **acceptance 4, test 3** (DEB-1055 → DEB-1064, `pixel-9` + `stue-tv`, prod
+`v1.51-174-g5b13710e`, both apps `.debug` `1.51-177-g5dad383b`). With the audiobook **playing on the Pixel**
+(`kind=audiobook`, position advancing), the app bar's *Play on…* sheet → **Stue TV** prints, at its own foot,
+*"Play something first, then pick where it plays."* — directly under its own **PLAYING EVERYWHERE** section, which in
+the same screenshot lists that very book on *Pixel 9 Pro* with playing bars and a pause button. Nothing moves and
+nothing starts: no `playback_session` row was created and the Pixel's row was untouched across the tap
+(571 948 → 591 956 ms).
+
+**DEB-919 gave the TV a book arm; nothing gave the sheet one.** FR-R380-11 closed the receiving half — the TV now takes
+a `book` envelope — and QA then measured the move itself correct through the endpoint the button would have called
+(`POST …/{id}/move`: the TV took the book over in **335 ms**, resumed exactly 2 000 ms behind the phone *in book time*,
+right chapter, *Playing from Pixel 9 Pro*, listed once in *Playing everywhere*). So R372's move is not broken and
+`6c5925e4`'s `book_ms` is not broken. What is broken is the only affordance a viewer has: in
+`ScreensSheet.kt` every branch of this sheet was written when it knew films and music queues, and a book is neither —
+it has no `queue`, it *is* `st.book`.
+
+Three gates, all verified against `main` at this amendment's commit, and a fourth QA did not reach:
+
+1. `startRequestFor` (`:178-184`) returns `null` in music mode whenever a book is loaded —
+   `if (st.queue.isEmpty() || st.book != null) return null` — and that `null` is what raises
+   `screens.nothing_to_start_music`, the string above.
+2. `startOn`'s move branch (`:190-199`) is gated `!music && playContext != null` and then on `kind == "film" ||
+   kind == "episode"`, so a book session never qualifies for the move that is this card's whole point.
+3. The other way in is shut too: a *Playing everywhere* row for **this** device deliberately opens the local player
+   rather than `SessionRemoteScreen` (`RaviloApp.kt:1786-1789`), and `SessionRemoteScreen` is the only screen that
+   renders *Move to…*. The local book player's overflow offers *Start over*, *Mark as finished*, *Go to author*.
+4. **Not in QA's filing, found writing this amendment, and it is the one a viewer could be hurt by:** line `:232` asks
+   `playOnTiers(tierRows, if (music) "music" else "film")` — the mode, never the kind. With a book loaded the tiers are
+   therefore filtered by `canPlay(…, "music", …)` = `c.audio`, not by `"audiobook"` = `!castPlace && c.book`. So the
+   sheet **offers a book to Cast speakers**, which owner decision 4 of this phase forbids outright, and to any place
+   that plays music but not books. Nobody has hit it because gate 1 refuses every tap before it reaches a start — fix
+   gates 1–2 without this one and a viewer gets a dead receiver instead of a wrong hint.
+
+**FR-R380-15 — *Play on…* offers a book exactly where a book can play, and a tap does what the sheet already shows.**
+Four obligations, and the first is a precondition of the rest:
+
+- **The kind the sheet asks about is the kind that is loaded**, not the mode it is in: a loaded book asks
+  `"audiobook"`, so `canPlay`'s own rule applies and a Cast place and a music-only place are **absent, not greyed**
+  (FR-R370-2's rule, unchanged). `canPlay` already answers this correctly — it is not called with the right kind.
+- **A book playing here moves.** With the book live on this device, tapping a free book place hands that **same
+  session** over — R372's move, its id and its place carried across, 2 s back in book time — exactly as a film already
+  does. It does not start a second session at 0:00.
+- **A book that is loaded but playing nowhere starts there**, at this viewer's place in **book time**.
+- **The hint tells the truth.** `screens.nothing_to_start_music` appears only when there is genuinely nothing loaded.
+  It may never appear in the same sheet that is listing the thing on *Playing everywhere*.
+
+**No wire change, and this is the reason the requirement is small.** Everything the sheet needs shipped with DEB-919
+and is already documented in `shared/…/tv/Targets.kt`: `SessionStartRequest.kind` accepts `audiobook` (and `book` as a
+spelling of it), a book's `items` are book ids with `start_ms` in **book time**, `canPlay` has the `audiobook` arm with
+owner decision 4's Cast exclusion in it, `playOnTiers` already filters by the kind it is handed, and
+`SessionLoadEnvelope` carries `book_id` / `book_ms`. The server also already refuses a move to a place whose `plays=`
+does not cover the kind, so obligation 1 is the client agreeing with a rule prod enforces rather than a new rule.
+Client-only, `ravilo-ui/commonMain`, so every Ravilo app that shows this sheet gets it at once and no installed client
+is affected.
+
+**Tests:** `startRequestFor` with a book loaded builds an `audiobook` start naming the book at book time (and still
+`null` with nothing loaded at all); `startOn` with a live book session on this device calls the **move**, not a start;
+the tier kind is `audiobook` whenever a book is loaded, so a Cast speaker and a music-only place are filtered out of
+all four tiers; and the hint is raised in neither of the two book cases. All four are
+`:ravilo-ui:desktopTest` / `:ravilo-ui:testDebugUnitTest` — none of them needs a device, because the sheet's decision
+is a pure function of the loaded state and the places.
+
+**What a device still owes, and it is one tap:** that the tap on a real phone against a real TV lands the book audibly
+on the TV at the right place. The arithmetic and the TV's screen were already measured exact under DEB-1055 and are
+not to be re-measured. That goes on the QA queue with `pixel-9`, `stue-tv` and `prod-backend` named, as the re-run of
+acceptance 4 test 3 — not as a new test.
+
+**Out of scope here:** the Cast road for a book stays closed and stays R323's to decide (owner decision 4 of this
+phase keeps a book off a Cast place, so obligation 1 enforces the decision rather than reopening it); and nothing in
+this amendment adds *Move to…* to the local book player's overflow — the app bar's sheet is reachable from that player
+and is the one route, so no new screen and no second affordance.
