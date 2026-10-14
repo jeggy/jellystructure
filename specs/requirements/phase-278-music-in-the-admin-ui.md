@@ -155,14 +155,25 @@ click outside an open facet, ticking or unticking a song (toggle the `<tr>`'s cl
 bar), *clear*, or a `muPollMatch` tick. Without this, FR-278-14 buys nothing: the first dropdown throws every
 appended page away.
 
-**Open, for the owner — what *select all shown* means at 10 723 songs.** FR-278-3's phrase, and 292's
-*Set version…* that reads it, currently mean *every row in the response* and send the ids (≈ 350 KB of request
-body at this size). Once the page holds a page at a time, it must mean either **every song matching the current
-filters** — the server takes the filter, not a list of ids; the lean, because it is the only reading that keeps
-the sentence true and the only one that can set a version on a whole facet — or **every song loaded so far**,
-with the number stated as *N loaded of M* so it is at least not misleading. The second is what ships if the
-question goes unanswered, and the first belongs in **292**'s spec as its own dated amendment, because 292 owns
-the selection and the bulk call. Not a blocker for FR-278-14/15.
+**Owner, 2026-10-14 (DEB-1107), approving the shape and settling the rest:** *"Just make the website performant
+so there is no need to sending all songs to the frontend, we much rather would like a endless scrolling page
+etc."* Endless scrolling is FR-278-14 as written, so nothing in it changes. The question that had been queued
+about *select all shown* is answered by the same sentence — a list of 10 723 ids is the same mistake pointing
+the other way — and is **decided, not asked again**: it means every song matching the current filter, and the
+bulk call takes the filter. That half lands in **292**'s spec (FR-292-16, dated amendment 2026-10-14), because
+292 owns the selection and the bulk route. It is sequenced **after** FR-278-14/15, not folded into them.
+
+**FR-278-16 — The Albums view stops fetching 809 covers at once.** Taken under the same directive, because it
+is the only other measured cost on this page and it is one attribute. `muCoverHtml`'s cover carries
+`loading="lazy"`, so arriving on Albums no longer fires one request per cell (809, measured) at
+`/api/music/image/album/{id}` against the server that is also serving playback. Nothing else about the view
+changes, and the Artists view already mostly renders wordmarks rather than images.
+
+**For the record, the rest of the admin is not in this state.** Checked rather than assumed, at the same
+sitting: the films Library is paged (`/api/media` takes `page`/`pageSize`), Activity caps at 200, the
+audiobooks library holds **1 book / 14 parts**, the Metadata genres wall is **294** cells, Albums is 809 and
+Artists 377. **Songs is the only admin list that is both uncapped and large** — so the directive above is
+satisfied by FR-278-14/15/16 and does not imply a wider sweep.
 
 ## Acceptance
 
@@ -182,6 +193,7 @@ Added by the 2026-10-14 amendment:
    starts again at page 1.
 7. **(FR-278-15)** With three pages loaded, opening a filter dropdown, clicking outside it and ticking a song
    each leave all three pages in the DOM — i.e. the row count in the table does not change.
+8. **(FR-278-16)** Arriving on the Albums view issues cover requests for the cells in the viewport, not 809.
 
 ## Mockup
 

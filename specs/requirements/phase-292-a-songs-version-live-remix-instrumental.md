@@ -4,9 +4,9 @@
 > We want to be able to manage and see this information within jellystructure."* And: *"Badges should be part of the
 > first implementation."* On the badge's directions: *"Yes lets go with direction A."*
 
-## Status
+## Scope
 
-`⚠ Partial` 2026-10-01 (see *Build notes*: everything built; *Tell LRCLIB* not tried against the live API) · **Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
+**Dev-reviewed 2026-10-01** against `main` `44e26871` (see *Dev review* below). Written 2026-10-01 (design-authored) from `specs/design-brief-music-song-versions-2026-10-01.md` (owner answered §G) and the mockups built from it:
 - `design/app/versions.js` + `versions.css` (`vr-*`), loaded by `album.html`, `library.html`, `metadata.html`, `artist.html` and `index.html`
 - the directions canvas `design/app/Song Versions - Directions.html`, where Q1 = **A · words** is picked and B/C are kept as declined
 
@@ -113,6 +113,35 @@ The URL carries the filter:
 - `lyr=1` — *has lyrics*, used by the Dashboard row
 
 **FR-292-12 — Bulk *Set version…*** on a selection in Songs, using FR-292-8's dialog.
+
+#### Amendment 2026-10-14 — *select all shown* means the filter, not a list of ids (DEB-1107)
+
+278's 2026-10-14 amendment pages the Songs rows (FR-278-14), so the page no longer holds the library. That
+breaks FR-292-12's selection in two ways: *select all shown* has no honest meaning when "shown" is one page,
+and `POST /api/music/versions/bulk { track_ids, … }` would need **10 723 ids — a ~350 KB request body** — to
+express what one sentence of filter already says.
+
+**Owner, 2026-10-14 (DEB-1107):** *"Just make the website performant so there is no need to sending all songs
+to the frontend, we much rather would like a endless scrolling page etc."* The principle decides this on its
+own: a 350 KB id list is the same mistake pointing the other way, so the fork I had queued as a question is
+answered by the directive and does not need asking again.
+
+**FR-292-16 — The bulk call takes the filter.** `POST /api/music/versions/bulk` additively accepts a
+**filter** in place of `track_ids`: the same `q` / `f.<key>` / `x.<key>` / `artist` / `copies` the Songs view
+is reading at that moment, i.e. whatever `GET /api/music/browse` was last asked for. The server resolves the
+filter to the song set itself — the same `MusicBrowse.browse` path the list came from, so the set is the one
+on screen by construction rather than by agreement — then writes each recording once, in one transaction,
+with one History line per album touched, exactly as the dev review's item 12 already specifies. `track_ids`
+**stays and keeps working**: it is how a hand-picked selection of a few songs is still sent, and removing it
+would break nothing today but would retype the route for no gain.
+
+*Select all shown* therefore means **every song matching the current filter**, and the bar says the whole-set
+number (*Set version on 10 723 songs*) — which FR-278-14 keeps honest, because `total` is computed over the
+whole filtered set and not over the page. A hand-tick of individual rows is unchanged and still sends ids.
+
+**Confirm before writing.** At this size the dialog is a destructive action in disguise: it must say the count
+it is about to write and require the press, never act on the selection implicitly. FR-292-8's dialog already
+has the shape; it is the **number** that has changed by three orders of magnitude.
 
 ### Metadata → Versions
 

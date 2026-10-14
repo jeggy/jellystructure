@@ -19,7 +19,14 @@ The one thing that needs a decision rather than a patch is what *select all show
 the page no longer holds the whole library — that is the single owner question at the foot of this note.
 
 Specced as a dated amendment inside [phase 278's spec](../requirements/phase-278-music-in-the-admin-ui.md)
-(FR-278-14/15); 278's `STATUS.md` row carries the dated gap.
+(FR-278-14/15/16); 278's `STATUS.md` row carries the dated gap.
+
+**Decided the same day.** Owner, 2026-10-14: *"Just make the website performant so there is no need to sending
+all songs to the frontend, we much rather would like a endless scrolling page etc."* — which is option A below,
+and which also settles the open question at the foot of this note without it needing to be asked again: a list
+of 10 723 ids is the same mistake pointing the other way, so *select all shown* means the filter
+(**FR-292-16**, a dated amendment in 292). Under the same directive the Albums view's 809 cover requests became
+**FR-278-16**; the check that followed it — the rest of the admin, below — found no third offender.
 
 ## What was measured
 
@@ -147,9 +154,17 @@ over today's markup: a virtualised table needs `table-layout: fixed` and declare
 **Recommendation: A**, with the row-render split landing in the same piece — without it, appending is pointless,
 because the first facet click throws the appended pages away.
 
-## The owner question
+## The owner question — asked, and answered by a directive instead
 
-One, and it is a real fork rather than a detail:
+**Answered 2026-10-14, before it was read as written.** The owner's reply was *"I'm confused what you are
+asking? Just make the website performant so there is no need to sending all songs to the frontend, we much
+rather would like a endless scrolling page etc."* — a fair verdict on the question as well as an answer to it.
+The fork below is real, but it was pitched at the wrong altitude for a discovery card: it asked him to
+adjudicate the semantics of a selection bar when what he had reported was a page that falls over. **The
+directive decides it:** option (i), because a 10 723-id request body is the same mistake the directive names.
+Kept as written for the record of what was asked, and specced as **FR-292-16**.
+
+The fork, as it was put:
 
 > **At 10 723 songs, what should *select all shown* and *Set version…* mean?**
 >
