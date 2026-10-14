@@ -28,6 +28,13 @@ class MusicVersionIndex(private val snap: MusicStore.Snapshot) {
     /** Every live song holding the same recording as [t] (itself included). */
     fun copies(t: MusicTrack): List<MusicTrack> = byKey[key(t)] ?: listOf(t)
 
+    /**
+     * Every live song under [key]. FR-292-16 makes a write over the whole library one press, so the caller that
+     * walks the keys it just wrote ([MusicVersionService]'s `afterChange`) asks the index rather than filtering
+     * every track per key — 10 723 keys against 11 011 tracks is 118 million `keyOf` calls, and this is one lookup.
+     */
+    fun copiesOf(key: String): List<MusicTrack> = byKey[key].orEmpty()
+
     /** [t]'s answer; a song no longer in the library is answered on its own. */
     fun of(t: MusicTrack): MusicVersions.Answer = answers[key(t)] ?: answer(key(t), t, listOf(t))
 

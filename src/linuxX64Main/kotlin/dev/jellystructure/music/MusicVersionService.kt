@@ -148,7 +148,7 @@ class MusicVersionService(private val store: MusicStore, private val history: Me
         val reset = ArrayList<MusicTrack>()
         val albums = LinkedHashSet<String>()
         for ((key, was) in answers) {
-            val copies = before.tracks.values.filter { it.missingSince == null && MusicVersions.keyOf(it) == key }
+            val copies = before.versions.copiesOf(key)
             copies.mapNotNullTo(albums) { it.albumId }
             val now = copies.firstOrNull()?.let { after.tracks[it.id] }?.let { after.versions.of(it) } ?: continue
             if (was.blocksLyrics && !now.blocksLyrics)
