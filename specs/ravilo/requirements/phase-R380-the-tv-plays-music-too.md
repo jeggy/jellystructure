@@ -511,3 +511,75 @@ session is only moved to a place whose `plays=` covers its kind.
 - **The queue panel and controls (fix-tv-live) passed:** *Now playing* over the song, **Up next from {album}** over
   the rest (an album started through the server, no context), opaque panel; ▼ raises ⏮ ⏯ ⏭ *Lyrics on* *Queue*, nothing
   clipped, hint *▲ Queue · ▼ Lyrics off*.
+
+## Amendment, 2026-10-14 — a book heartbeat with no `session_id` mints a nameless film session (DEB-1054)
+
+Found on the Stue TV during DEB-1005 (R380 acceptance 4, the server road), prod `v1.51-174-g5b13710e`, TV `.debug`
+`1.51-177-g5dad383b` — both carrying DEB-919's `6c5925e4`. Reproduced three times from two independent entry points,
+**one of which needs no device at all**: one `PUT /api/tv/music/audiobook/{id}/progress` with a part the row is not on
+is enough to make a second session appear. This is the same wire-reading class of bug DEB-919 fixed on the **start**
+route, still standing on the **heartbeat** route, so it reads as a regression of the fix the QA was there to prove —
+and it is a viewer's problem, not only QA's: a listener crossing a part boundary is listed twice in *Playing now*, one
+row nameless.
+
+What the listener hears is correct throughout, and QA measured that deliberately: the ∓30 s key map is exact in both
+directions, the book-time → part resolution is exact, the boundary seek arithmetic is exact, and the TV's own screen
+draws the right chapter at the right book time. **This is server-side session bookkeeping only.**
+
+### What is measured, and what the code says
+
+A book's heartbeat already carries the session it belongs to, and **both ends of the chain already have the field** —
+the three links in the middle drop it on the floor:
+
+| | | |
+|---|---|---|
+| `AudiobookProgressRequest.sessionId` | `shared/.../tv/Audiobooks.kt:122` | on the wire since R368 dev review item 8, optional |
+| the route | `server/routes/AudiobooksTvRoutes.kt:51-53` | receives the body, passes `part`/`position`/`paused`/`volume`/`muted` — **not `sessionId`** |
+| the service | `audiobooks/AudiobooksTvService.kt:119-128` | `progress()` has no `sessionId` parameter at all |
+| the `mirror` lambda | `server/Server.kt:691` | its shape has no session, so `reportProgress` is always called with `sessionId = null` |
+| `PlaybackService.reportProgress` | `tv/PlaybackService.kt:1314-1328` | **already takes `sessionId` and already threads it** into `onProgress` |
+| `PlaybackSessions.onProgress` | `tv/PlaybackSessions.kt:736-753` | `findLocked(device, itemId, sessionId)`; with no session it matches by **item**, and a part change is a different item, so nothing matches and line 751 mints a new one |
+
+A minted session takes its identity from a bare Jellyfin item id, so the audiobook part classifies in the **film** lane
+with `book_id` NULL and no title, subtitle or artwork — precisely the nameless row FR-R380-12 exists to forbid.
+
+The `end_reason: failed` on the backward crossing is the same root cause one step further on, and the chain is
+consistent with every number QA recorded: a part change puts the book's row at position 0 in the new part's index
+space, the heartbeat that would have moved it off 0 goes to the minted session instead, and `onReaped`
+(`PlaybackSessions.kt:825`) ends a live session standing at `positionMs <= 0` as `failed` — R372's rule that *a play
+that never got past 0:00 has no place to keep*. The rule is right; a part change is not such a play. **The one link
+here that is read off the code rather than measured is which reap fires**, and the test below is what settles it.
+
+**FR-R380-13 — A book's heartbeat joins the session it names, and never mints one.** The `session_id` the app already
+sends is carried the whole way — route, service, `mirror` — to `PlaybackSessions.onProgress`, which joins that session
+whatever part the heartbeat names. Crossing a part boundary therefore **moves the book's own row** rather than creating
+a second one. Two guards go with it, because an older app need not send the field at all and the wire stays backwards
+compatible: a heartbeat whose item is an **audiobook part** never creates a session — with no match it still writes our
+own position and Jellyfin's mirror, which is all 281's heartbeat is for — and a session is never created in the film
+lane for an audiobook part under any route. The general mint path stays: it is deliberate (`PlaybackSessions.kt:740`,
+a receiver whose skip outran its start, the Mac 2026-10-05) and only the audiobook-part case is carved out of it.
+
+**FR-R380-14 — A part change is not a new load, and nothing ends `failed` because of one.** A live book session whose
+part changes keeps the book's place across the change and is never ended `failed` by the 0:00 reap: a session that did
+not fail is not recorded as having failed, because that `end_reason` is the one signal DEB-919 added for diagnosing
+this area and a false one poisons it. And no row is left reporting `playing` at a position that never moves: such a row
+held the TV as a place and never ended on its own — only an explicit `{"op":"stop"}` cleared it — which is the shape of
+the *Already playing* wedge (DEB-747, DEB-895). After this, one listening is **one** session, for its whole length,
+across every part boundary in either direction.
+
+**Tests.** The no-device reproduction is the test to write first, because it is the cheapest and it is exact: a
+heartbeat naming a part the session is not on joins the session and mints nothing, with and without `session_id`; a
+backward crossing leaves one `audiobook` session, live, at the converted position, with no `failed` end and no second
+row; a forward roll leaves no row behind reporting a frozen position; and the film-lane classification of an audiobook
+part is refused wherever it can be reached. The existing `BookSessionLoadTest` family is the place for them.
+
+**What is not covered automatically, and why** (the delivery process of 2026-10-14): all of the above is reachable from
+a test — the whole chain is server-side, and repro C is one HTTP call — so **this amendment owes no device proof of its
+own**. What still stands on a device is what already stood: R380 acceptance 4 on the server road, and DEB-1005's test 3
+asserting the book is listed **once** in *Playing now*, which is the acceptance this bug breaks and the one that
+re-runs when it is fixed.
+
+**Scope.** The fix is in this phase because the requirement it breaks is FR-R380-12 and the symptom is a book on the
+TV, but it touches two others' plumbing and neither changes: R368's optional `session_id` is the field being carried,
+not altered, and 281's heartbeat keeps doing exactly what FR-281-10 says — our position first, then the mirror. No
+field is added to the wire and none is retyped, so no installed client is affected.
