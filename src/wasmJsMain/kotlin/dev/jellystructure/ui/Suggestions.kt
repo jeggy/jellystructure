@@ -49,7 +49,8 @@ private val REASONS = listOf(
 
 fun renderSuggestions(container: Element, scope: CoroutineScope, query: Map<String, String>) {
     sgView = if (query["view"] == "dismissed") "dismissed" else "list"
-    sgPick = null; sgOther = null; sgShowMore = false
+    sgPick = null; sgOther = null; sgShowMore = false; sgDl = null
+    sgEscapeOnce()
     container.innerHTML = """
         <div id="sg-root">
         <div class="pagebar">
@@ -365,11 +366,25 @@ private fun sgDlPickDefaults(d: SgDl) {
     d.more = false
 }
 
+private var sgEscapeBound = false
+
+/** FR-274-18 — Escape closes the open dialog and sends nothing. One document listener for the app's life; it acts only while a dialog is mounted. */
+private fun sgEscapeOnce() {
+    if (sgEscapeBound) return
+    sgEscapeBound = true
+    document.addEventListener("keydown", { ev ->
+        if ((ev as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape" && sgDl != null && document.getElementById("sg-dlroot") != null) sgDlClose()
+    })
+}
+
 private fun sgDlClose() { sgDl = null; document.getElementById("sg-dlroot")?.remove() }
 
 private fun sgDlRender() {
     val d = sgDl ?: run { document.getElementById("sg-dlroot")?.remove(); return }
-    val root = document.getElementById("sg-dlroot") as? HTMLElement ?: (document.createElement("div") as HTMLElement).also { it.id = "sg-dlroot"; document.body?.appendChild(it) }
+    // FR-274-18 — inside the page's root, so its one click listener covers the dialog and the page's replacement removes it.
+    val root = document.getElementById("sg-dlroot") as? HTMLElement
+        ?: (document.createElement("div") as HTMLElement).also { it.id = "sg-dlroot"; (document.getElementById("sg-root") ?: document.body)?.appendChild(it) }
+    val scrolled = root.querySelector(".sg-dl")?.scrollTop ?: 0.0
     val it = (sgPage?.items.orEmpty()).firstOrNull { x -> x.tmdbId == d.id } ?: run { sgDlClose(); return }
     val o = d.opts
     val down = !d.loading && (o == null || !o.seerrOk)
@@ -431,6 +446,8 @@ private fun sgDlRender() {
         <div class="sg-dlf">${if (down) """<span class="tiny muted" style="flex:1">Nothing is sent while Seerr is away.</span>""" else """<span style="flex:1"></span>"""}<span class="btn ghost" data-dlcancel="1">Cancel</span><span class="btn primary" data-dlgo="1"${if (disabled) """ aria-disabled="true" style="opacity:.55"""" else ""}>$primary</span></div>
         </div></div>"""
     if (!disabled) (root.querySelector("[data-dlgo]") as? HTMLElement)?.focus()
+    // A pick re-renders the dialog; it keeps its place (the focus above can scroll it, so restore last).
+    if (scrolled > 0.0) root.querySelector(".sg-dl")?.scrollTop = scrolled
 }
 
 private fun sgDlClick(t: Element, scope: CoroutineScope) {
