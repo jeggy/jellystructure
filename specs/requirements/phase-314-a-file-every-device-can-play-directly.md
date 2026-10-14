@@ -1993,3 +1993,127 @@ recorded here because the losing copy is not in the file any more:
 Nothing else differed in substance. `scripts/check-phases.sh` does not catch a duplicated amendment inside one
 file — it reconciles files against `STATUS.md` rows, not headings against each other — so this is a read, not a
 guard.
+
+## Amendment 2026-10-14 (thirteenth) — the retry's bound gates the report, not the asking, so a grouping Jellyfin loses later is repaired and not only reported (DEB-1147)
+
+FR-314-21's retry is bounded `now − file_fix.updated_at > 6 h` (`FileFixService.kt:431`, the constant at `:864`).
+That one bound covers two cases the row cannot tell apart, because `updated_at` is the row's last state change and
+not the moment the grouping went missing:
+
+- **Jellyfin never resolved the version into an item.** The write's own window passed with nothing to merge onto,
+  asking again forever is futile, and this is the case the eleventh amendment argues and the one acceptance 18
+  approves — *"a version whose grouping window passes with no item resolved"*.
+- **The grouping held and was later lost** — a rescan that re-created the item, a rename of the film's own file, a
+  12.1 ancestor-index event. Here asking again is one call that succeeds.
+
+Past six hours the second case gets the first case's outcome: the note on the card, and a history line reading
+*"… has stopped being asked. Press Find files once Jellyfin can see …"*. That is the human press this FR exists to
+remove, so as built the phase displaces its own problem rather than solving it — from *never resolved* to *lost
+later*. **Case 2 is in scope**, and it was spec-silent rather than refused: it appears nowhere in FR-314-21 and in
+none of test 19's three cases.
+
+### Why that silence is an omission and not a refusal
+
+- **A press already repairs what the timer declines.** FR-314-15's write path merges a version that is on disk and
+  ungrouped with no bound at all, and its own comment names the trigger: *"a library rescan that re-created the
+  item, a merge that never landed"* (`FileFixService.kt:356-359`). One of the two mechanisms healing a month-old
+  loss while the other declines it is not a decision this phase ever took.
+- **Nothing periodic re-arms the bound, so the refusal is final rather than slow.** `reportUngrouped` (`:458`) and
+  `clearUngroupedNote` (`:466`) write the row back with `row.updated_at` unchanged — deliberately, since that is
+  what keeps *once* derivable with nothing stored. Every path that does stamp a fresh `now()` is a press: the kind
+  C write's own completion (`:807`, nine lines above its own `groupAndKeepHidden`), an Apply, a *Remove*, and the
+  plan path's `updatePlanned`, where `updated_at` sits **outside** the `CASE` that guards `state` and `detail`, so
+  a dry run re-stamps a `done` row and changes nothing else. The hourly sweep reaches none of them — the same fact
+  as the eleventh amendment's *`auto_new = 1` fires on a press, not on the clock*. So past its first six hours the
+  bound does not measure how long Jellyfin has been failing to resolve a version; it measures **how long since
+  somebody last pressed a button** — and each of those presses asserts the merge itself, so the only events that
+  reopen the window are the ones that make it unnecessary. The 13.69 h-old row measured on DEB-1014 is that fact
+  read from the other end, and that same `:807` re-stamp is why DEB-1014's hand-unmerge step is re-runnable by
+  chaining it onto a kind C write.
+- **The report was built to self-correct, not to stand in for the repair.** The as-built note above says the
+  ungrouped note *"is taken away again the moment Jellyfin does show the version, so it can never outlive what it
+  describes"*. A report with that property was never meant to be the terminal outcome for a version that is
+  mergeable right now.
+- **Case 2 is not hypothetical on this installation.** Jellyfin 12.1's ancestor-index corruption has re-created
+  items here, and DEB-868 has kind C's own version write unlinking Radarr's `movieFile`, with the rename that
+  follows taking the film's artwork until the next `:30`. Both move an item long after the write.
+- **The cost of declining lands on a viewer**, not on the admin: the film serves the original its TV cannot decode
+  until somebody is in the admin, on a prod with users beyond the household.
+
+### What FR-314-21 says from here
+
+1. **A `done` kind C version that is on disk and is not among the film's sources is asserted on every tick,
+   whatever the row's age.** The `now − updated_at` gate no longer stands in front of the merge attempt.
+2. **The report at the bound is otherwise unchanged** — once, at six hours from the row, FR-314-15's report
+   against the title and the row's `· not grouped with the film yet`, and the row's note taken away again the
+   moment Jellyfin shows the version. A tick writes that report only when the version is **still** absent after
+   that tick's own attempt; **a tick whose attempt merges the version writes no report, at any age, including the
+   tick on which the row crosses the bound.** **Acceptance 18 therefore stands exactly as written**: the bound
+   says when the title is reported, not that the asking stops, and a tick that merges has resolved an item — so
+   the report that tick does not write falls outside acceptance 18's *"with no item resolved"* antecedent rather
+   than being an exception to it.
+
+Three things that are behaviour and not the implementation's choice:
+
+- **`reportUngrouped` stays idempotent and stays stateless.** One history line per lost grouping, not one every
+  fifteen minutes; the *a row already carrying the note has already been reported* derivation is load-bearing, and
+  nothing new is stored for it. FR-314-15's **asserted, never remembered** governs the retry exactly as before.
+- **The per-tick cost is named and bounded.** Past the bound an ungrouped film now pays one impatient attempt —
+  one `notifyMediaUpdated` and one `findVersionItem` — per tick, where today it pays nothing. The ceiling is the
+  number of `done` kind C rows whose version is on disk and ungrouped; the steady state is zero, because a
+  resolved item merges on the first ask and the note is then taken back. If that stops being small it comes back
+  to the phase rather than being tuned in place.
+- **It converges and never loops into a write.** A resolved item Jellyfin refuses to merge keeps today's outcome:
+  reported once at the bound, nothing stored, and no escalation to a library refresh — the eleventh amendment's
+  refusal of that stands.
+
+**The boundary tick is ruled this way because of what each wording leaves behind, not as a preference.**
+`reportUngrouped` writes a `history.record` — *"… has stopped being asked"* — and `clearUngroupedNote` strips only
+the row's `UNGROUPED_NOTE` suffix (`:464-467`), so **the history line is never taken back.** Reporting at the bound
+and clearing it on the same tick's merge would therefore leave the card unchanged, invisible to anyone reading it,
+and leave one permanent line on the film saying a title stopped being asked about a version that is grouped — a
+worse artefact than the one the report exists to raise. What the as-built *"taken away again the moment Jellyfin
+does show the version"* has always described is **the note on the row**, not the history line, and this is where
+that distinction starts to matter.
+
+Whether the never-resolved case keeps paying that attempt past the bound is **mechanism, not shape**: the merge
+answer already separates *Jellyfin has not resolved it into an item yet* from a refusal, and a typed reason on
+`VersionGrouping` may carry it — it is internal to `filefix` and on no wire, so no installed client reads it. Two
+things are not available. A branch on the wording of the two prose `detail` strings (`Main.kt:488-493`), which
+differ only in prose and would trap the next person to edit a sentence; and a claim that reading the futile case is
+free — `groupAndKeepHidden(patient = false)` notifies and *then* looks, so *not resolved into an item* cannot be
+learned without asking, and the choice is worth one notification per tick per never-resolved film, not a lookup.
+
+### Acceptance (added)
+
+20. A `done` kind C row whose version is on disk, whose film Jellyfin knows, and whose grouping is missing **more
+    than the retry's bound after the row's last state change** is grouped again by the timer — no *Find files*
+    press and no other human action — and the row's note goes with it in the same tick.
+
+### Tests (added)
+
+21. A row well past `GROUPING_RETRY_WINDOW_SEC` whose version is on disk and absent from the film's sources merges
+    on the next tick with `buildPlan()` never called and the note cleared, and that tick writes **no** history
+    line containing *stopped being asked*; test 19's bound case keeps its single report and its retraction. The
+    one existing assertion that inverts is `FileFixServiceTest.kt:630` — *past the bound, asking again is not what
+    is missing* — and it is the only one of test 19's three cases this touches.
+
+### Who decided what
+
+Case 2's scope was Tróndur's call on DEB-1147, and the owner was asked for the veto on it because it changes what
+prod does unattended: card `083a3311`, answered by the owner **2026-10-14 14:13:09Z**. He picked the recommended
+option and wrote nothing beside it, so what is on the record is that option's own label — *"Scope it in — the timer
+repairs a lost grouping too; the report at 6 h stays as it is"* — and not a sentence of his. Both halves of the
+label are written above; nothing further should be read into it as his reasoning.
+
+The boundary-tick wording came back from the build row as a question rather than being decided there (DEB-1151 →
+DEB-1150), which is why it is in this amendment at all: it refines *the report at the bound is unchanged*, and
+acceptance 18 is the acceptance being amended. The `:807` correction to the re-stamp paragraph came the same way,
+against the draft and before it reached this file.
+
+### What this does not change
+
+- **`auto_new` stays `0`** and the sixteen held films stay held. Nothing here touches the hold.
+- **Acceptance 18 is untouched and still open on one read.** It is case 1, which this does not move, and the
+  Kotlin lands after that read so the target does not move under it.
+- **Not a deploy.** It lands on `main`, and prod is the owner's timing.
