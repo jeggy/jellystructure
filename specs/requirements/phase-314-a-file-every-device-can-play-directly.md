@@ -1895,3 +1895,124 @@ a log line.
 Test 18 is `ConfigSavePreservesBlocksTest` extended with the four cases above (the two that fire, the two that must
 not). What CI cannot reach is the owner's own press against the live Jellyfin, which is on the QA ticket with the
 rest of DEB-1009.
+
+## Amendment 2026-10-14 (twelfth) — acceptance 10's row is reported off the timer, because the event it waited for is configured never to happen again (DEB-1033)
+
+Turið measured FR-314-19's row absent on prod while the condition it reports is still true (DEB-1033, 07:1x–07:29Z
+against `v1.51-171-gd4229c0a`). Three accounts have `EnableAllFolders: false` and none of them has the versions
+library in `EnabledFolders` — DEB-985's own measurement — so their devices are served the original rather than the
+version, and the card says nothing. Both halves were read: `GET /api/file-fix` carries no `restricted_viewers`, and
+the only `.note` on Settings is the Dashboard's findings line. The build is not the explanation; FR-314-19's code is
+inside prod's own commit.
+
+**The eleventh amendment's own mechanism is what emptied it.** FR-314-19 as built reaches the visibility pass from
+one place — `FileFixService.groupAndKeepHidden` calls it `if (grouped.merged)` — so the field fills when kind C
+merges a version and at no other moment. The backend restarted at 06:42:44Z for DEB-1021's swap, the last merge was
+23:42:17Z the night before (and before FR-314-19 was deployed at all), and the designed steady state merges nothing
+further: kind C is `enabled = 1, auto_new = 0`, film 1 is grouped, and films 2–17 are deliberately held pending
+DEB-870, so every tick takes `clearUngroupedNote(); continue`. The row has therefore most likely never rendered on
+prod, and on the configuration the owner chose it never will.
+
+**The as-built note is the sentence this corrects**, and it is worth quoting because it was not careless — it was
+true of the phase as it then stood: *"a restart empties it, and the next grouping fills it again."* FR-314-21 made
+grouping a thing that converges and then stops. A report whose only trigger is an event the configuration is
+designed to stop producing is not a report.
+
+### FR-314-22 — the visibility pass runs on the grouping timer, not on a merge
+
+`assertVersionGrouping`'s tick asserts viewer visibility **once per tick when it has at least one target** — a
+`done` kind C row whose version really is on disk — whether or not anything merged. Nothing else about FR-314-19
+changes: it is still a report and not a control, it still renders nothing when the list is empty, and the card still
+*reads* the field rather than re-running the pass in the request path. What changes is which event fills it.
+
+Three things this deliberately is not:
+
+- **It is not stored.** The ninth amendment settled that a stored verdict is only as good as the configuration it
+  was computed under, and this verdict is computed from Jellyfin's account table, which changes without telling us.
+  A persisted list would go silently wrong the moment the owner widened a permission; an in-memory field refilled
+  every quarter of an hour goes right by itself, which is FR-314-15's **asserted, never remembered** applied to the
+  report exactly as it is already applied to the merge. The cost of not storing it is that the row is absent for up
+  to one tick after a restart, and that is the correct trade: absent reads as *nobody has looked*, which is what is
+  true, and a stale name read as *this account is shut out* when the owner had already fixed it is not.
+- **It is not a new call in the request path.** The pass's two reads (`/Library/VirtualFolders`, `/Users`) stay on
+  the background loop. The card polls every two seconds during a dry run; that is why FR-314-19 reads a field, and
+  it still does.
+- **It is not louder on an installation that has no versions.** No versions root, or no `done` kind C row with a
+  file behind it, and the tick returns before the assertion exactly as it returns today — FR-314-21's *one read when
+  kind C has written anything, nothing at all when it has not* governs this too.
+
+The bound on staleness is therefore `GROUPING_RETRY_EVERY_MS`, fifteen minutes, and it is the same bound the
+grouping note already carries. Nothing asks for a second timer.
+
+### Acceptance (added)
+
+19. With kind C enabled, one version written and grouped, and an account that cannot see the versions library, the
+    admin UI names that account **after a backend restart with no merge in between** — within one grouping tick,
+    not on the next Apply.
+
+### Tests (added)
+
+20. A grouping tick that merges nothing still asserts viewer visibility when it has a target, and asserts nothing
+    when it has none (no versions root, and no `done` row with a file on disk) — asserted on the invocation, not on
+    a log string.
+
+### What this leaves on the phase
+
+Acceptance 10 is **not** met until this ships: FR-314-19's surface is built but has never rendered on prod. The row
+is reachable from CI (`FileFixServiceTest`), so nothing here needs a device; the one thing that stays on QA is the
+re-read of the card on prod after the deploy, which folds into DEB-870's pass rather than asking for its own device.
+DEB-1033 is where it was measured.
+
+## Amendment 2026-10-14 (twelfth) — the restricted-account report is asserted on the same timer as the grouping, because a merge is not going to happen again (DEB-1033)
+
+FR-314-19 shipped as *a read of a field the merge path fills*, and its as-built note said so plainly: the field is
+in memory, a restart empties it, and the next grouping fills it again. On prod that last clause is false. Turið
+measured it against `v1.51-171-gd4229c0a` on 2026-10-14: no note on the kind C card, no `restricted_viewers` in
+`GET /api/file-fix`, and the DOM agreeing with the API, while the condition the row exists to report is still true —
+three of nine accounts have `EnableAllFolders: false` and none of them has the versions library in `EnabledFolders`.
+
+Nothing is broken in the code. Three configuration facts close the loop and none of them is going away:
+
+1. The backend restarts (06:42:44Z, the FR-314-21 swap), so `restricted` returns to `emptyList()`.
+2. The one kind C merge predates the restart **and** predates FR-314-19 reaching prod, so the note has most likely
+   never rendered there at all.
+3. Kind C is `enabled = 1, auto_new = 0` with the remaining films deliberately held, and the one grouped film takes
+   `clearUngroupedNote(); continue` every tick — so **the steady state contains no further merge**. A report behind
+   an event that is configured not to happen is not a report.
+
+### FR-314-22 — the visibility pass runs on the grouping timer, not only on a merge
+
+`FileFixService.assertVersionGrouping()` asserts the viewer visibility pass once per tick, when its work list is
+non-empty — i.e. when kind C has at least one `done` row whose version is on disk and whose film Jellyfin knows.
+`VersionsLibraryVisibility.assertNow` keeps its own `minIntervalS = 3600`, so the cost is bounded at the two
+Jellyfin reads (`/Library/VirtualFolders`, `/Users`) it already makes, at most once an hour, on a timer that is
+already running. Everything else about FR-314-19 is unchanged: still a read in the request path, still nothing in
+SQLite, still nothing rendered when the list is empty, still no control that widens a permission.
+
+Three things this deliberately keeps:
+
+- **The empty-until-a-version-exists promise.** The assertion hangs off the same non-empty work list the grouping
+  retry uses, so before kind C has written anything the pass still does not run and the card still says nothing.
+  *Nobody is shut out* and *nobody has looked* stay distinguishable.
+- **Asserted, never remembered.** Persisting `restricted` in SQLite was the other candidate and is rejected: a
+  stored snapshot keeps claiming three accounts are shut out after the owner has widened them in Jellyfin, which is
+  the one failure mode worse than an empty row. The timer's version self-heals in both directions within the hour.
+- **No new Jellyfin call per the tenth amendment** — this adds no call the pass did not already make; it changes
+  only how often the existing pass is invited to run, under a rate limit that was written for exactly this ("Rate-
+  limited, because it is asserted after every grouping and a grouping is asserted on every pass").
+
+### Acceptance (added)
+
+17. With kind C enabled, one version grouped, and at least one restricted account, the kind C card names that
+    account within an hour of a backend restart, with nobody in the admin and no further merge having happened.
+
+### Tests (added)
+
+18. `assertVersionGrouping` asserts the viewer visibility pass when its work list is non-empty and does not assert
+    it when the list is empty — on the service, with the pass faked, not against a live Jellyfin.
+
+### What this does not change
+
+Acceptance 10 stays open until acceptance 17 is observed on prod; the row's wording, placement and silence-when-
+empty are all as built in `68ae6244`. DEB-870 is unaffected — it gates on the owner's grant and a rebuilt version,
+not on this.
