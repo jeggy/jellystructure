@@ -651,3 +651,71 @@ Android job. `check-player-dex` reads **250 registers (limit 250)** on the relea
 without this change**, measured in a detached worktree, so this change costs `PlayerScreen` nothing. The headroom this
 amendment's own build notes recorded (245 after the R380 closure, 246 after R376) is nevertheless gone on `main`
 today; that is a fact for the board, not for this fix.
+
+## Amendment, 2026-10-14 — the *video*-mode sheet still says *"Play something first"* over a book playing on this device (DEB-1090)
+
+The residue of the narrowing recorded in the *As built* block above, and the sentence QA photographed under DEB-1064
+is still on screen in one case. It is **not** a reopening of that decision: the video-mode sheet keeps asking `"film"`,
+because asking `"audiobook"` from a film page would take every Cast display out of the film tiers and break FR-R370-2
+for films to fix nothing for books. What the narrowing leaves behind is the **hint**, not the kind.
+
+The case, verified against `main` at `2068b7d8`:
+
+- a book is playing audibly on the phone — the mode is **persisted** and leaving *Music & audiobooks* does not stop the
+  playback, so a viewer listening while browsing films is the ordinary way to reach this;
+- the app bar's *Play on…* is opened in **video** mode from a page with no film, so `playContext == null`;
+- `sheetTap` computes `kind = "film"` (`ScreensSheet.kt:139`), the film/episode lane is `emptySet()` because
+  `loaded.title == null` (`:147`), the book is skipped because the kind is not `"audiobook"` (`:153`), `loaded.music`
+  is false (`:159`), and the last line returns `SheetTap.NothingLoaded` (`:166`);
+- the sheet raises `screens.nothing_to_start` (`:326-329`) **underneath its own *Playing everywhere* row for that very
+  book** — the session list that section draws is not filtered by mode (`:229`, `:306`, `:315`).
+
+FR-R380-15's obligation 4 named `screens.nothing_to_start_music`, so its letter is kept: the string raised here is the
+other one. Its **second** sentence is not — *"It may never appear in the same sheet that is listing the thing on
+Playing everywhere."*
+
+**The viewer is not stuck, which is why this is `low`.** Tapping the book's *Playing everywhere* row opens the local
+book player (`RaviloApp.kt:1786-1789`), and that player's own *Play on…* is the music-mode sheet FR-R380-15 fixed. So
+this is a false sentence on the way to a working road, not a dead end, and it must not jump DEB-1088 or anything the
+one engineer is holding.
+
+**FR-R380-16 — a sheet that is listing something live on this device never says there is nothing to play.** When the
+open sheet's session list holds a live session (`state != "ended"`) whose target is **this device** (`SessionView.here`),
+a tap that finds nothing this sheet can start raises **neither** hint — not `screens.nothing_to_start` and not
+`screens.nothing_to_start_music` — and does nothing else. In every other case FR-R265-7a's hint stands exactly as it
+is, including when the only live session is somewhere **else**: nothing is loaded here then, and the sentence is true.
+
+Three things make this the narrowest shape rather than a second mode rule:
+
+- **It is a property of the sheet, not of the mode or the kind.** The condition is written on `here` and live, never on
+  `audiobook`, so it cannot rot the next time a kind is added — the same reason DEB-1066 collapsed three branches into
+  one `sheetTap`. A book is simply the first loaded thing that outlives the screen that started it; a film session left
+  live on this device would read the same false sentence through the same line.
+- **It needs no new input.** `sheetTap` is already handed `sessionsState.sessions` (`:279`), which is the list
+  *Playing everywhere* is drawn from, so the whole condition is decidable inside the pure function.
+- **The hint stays driven by the decision.** The outcome must be distinguishable from `SheetTap.NothingLoaded`, so that
+  `nothingToStartShown` is still set by exactly one branch at the draw site and no second condition is evaluated there.
+  How that outcome is spelled is the engineer's call; what the spec requires is that the sheet cannot raise the hint for
+  it.
+
+**The trade-off, recorded rather than hidden:** a tap that does nothing at all is what FR-R265-7a was written to stop.
+It is accepted here because this sheet is not silent — the live row sits directly above the tiers, is tappable, and is
+two taps from the TV — so the choice is between a sentence that contradicts the screen and an unresponsive row on a
+screen that is visibly playing something. A third, truer sentence would mean a new string in every language table for a
+cosmetic defect, which is deliberately not taken now; if the unresponsive row is ever itself reported, that is the line
+to pick up, and it is a new requirement rather than a change to this one.
+
+**Tests** (`commonTest`, alongside `PlayOnBookTapTest`'s fifteen; the decision is a pure function, so neither needs a
+device):
+
+1. **The defect.** Video mode, `title = null`, a live `audiobook` session with `here = true` in the list → the decision
+   is **not** `NothingLoaded`, so the hint is not raised.
+2. **The true case kept.** The same video sheet with nothing loaded and no live session on this device → still
+   `NothingLoaded` and the hint still appears, *and* a live session **elsewhere** (`here = false`) does not suppress it.
+
+**Scope.** Client-only, `ravilo-ui/commonMain`, one condition inside `sheetTap` plus its outcome; **no wire change, no
+new string, no field added or retyped**, so no installed client is affected. Not in scope: offering the book from the
+video sheet (decided the other way in the *As built* block above and confirmed 2026-10-14), filtering *Playing
+everywhere* by mode (it is the true affordance and the viewer's route to the fixed sheet), and any change to
+`screens.nothing_to_start` / `screens.nothing_to_start_music` themselves. **Devices: none** — DEB-1088 already owns the
+one device tap this phase owes.
