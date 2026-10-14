@@ -92,6 +92,8 @@ In total, 193 of 487 songs get at least one type.
 - *Add Session* adds Live with it.
 - When copies on other albums will change too, a note says how many.
 - Apply writes `user` rows for every recording in the selection.
+- **Amended 2026-10-14** (the second amendment below, FR-292-17): neither press is silent while its server pass
+  runs, and neither can be pressed twice — the dialog's Apply stays on screen and spins while it writes.
 
 **FR-292-9 — The album header summary.** When at least half of an album's songs share a type, the header's facts line gains one quiet phrase: *Live · all 14 songs* or *Live · 12 of 14 songs*. Otherwise there is no phrase.
 
@@ -151,6 +153,90 @@ screen — the opposite of what this FR exists for — and it costs one field. A
 the same filter**: `POST /api/music/versions/preview` takes it too, because *N of M have it* over the whole set is
 unanswerable from one page, and a 10 723-id preview body is the very request this amendment removes.
 
+#### Amendment 2026-10-14 (second) — both version-bulk presses must show their pass, and refuse a second press (DEB-1156)
+
+QA of FR-292-16 (DEB-1144) found that the mechanism the amendment above built is **silent for the whole of its
+own server pass**. Over the household's library: *Set version…* shows nothing at all for **2.9–3.9 s** before its
+dialog appears, and *Apply to N* removes the dialog at once and then shows nothing for **6.5–8.0 s** until one
+toast — no spinner, no `aria-busy`, no disabled control, and every row still showing the old answer. The wait is
+inherent work and not a defect to optimise away: the write itself measured 6.4–7.5 s, of which 2–3 s is the ~799
+one-per-album History lines and their trims. What is missing is the **indication**.
+
+It matters more than slowness would, because *Confirm before writing* above calls this press **a destructive
+action in disguise**, and a confirmation nobody can see has confirmed nothing: the one moment the press most
+needs to be seen to land is the moment the page says nothing. The natural reaction — press it again — is not
+free. Three clicks inside the preview's own silence fired **three** whole-set `MusicBrowse.browse` resolves and
+left one dialog. The write is re-entrant-safe only by accident, the modal being gone before it launches, so the
+amplification is on the preview.
+
+**FR-292-17 — A version-bulk press says it is working, and refuses a second press until its pass has landed.**
+Both presses of FR-292-8's dialog — the one that opens it (`[data-vbulk]`, in Songs' selection bar and in the
+album's) and the one that writes (`[data-vbgo]`, in its footer) — carry a pending state for exactly as long as
+their server pass is in flight. The state is **state, not markup**: it lives beside the dialog's own code, so a
+repaint of the selection bar during the wait cannot put a live button back, and the second press is refused from
+the flag rather than from what is drawn. It is cleared on **every** exit, the failures included — a pass that
+fails leaves the control pressable and says so in the toast that already exists.
+
+**(a) The preview press — on the control itself.** While `POST /api/music/versions/preview` is out, the pressed
+control reads ***Reading the versions…*** in place of *Set version…*, carries `aria-disabled="true"` and
+`aria-busy="true"`, is dimmed, and a further press returns at once: one press, one `browse` resolve, however many
+clicks land in those three seconds. That is `MusicFilesTab.kt:64/83`'s shipped shape — the attribute, and the
+handler refusing the click while it is set — with the dimming the Seerr download dialog's primary already uses
+(`Suggestions.kt:431`) and the present-participle label swap the admin uses elsewhere (`TrackEditor.kt:625`,
+`BulkReorderWizard.kt:313`).
+
+**(b) The write — the dialog stays, and it spins.** *Apply to N* no longer removes the dialog before launching
+the write. The dialog stays on screen, and its footer's *Cancel* and *Apply to N* are replaced by one line —
+***Setting the version on {n} songs…*** — drawn with `music.css`'s own `.mu-busy` + `.sp` spinner, the same
+component the album page has shown since 2026-10-01 for *Searching MusicBrainz for recordings of …* and *Reading
+its pressings…* (`MusicAlbum.kt:709/719`). When the write answers, the dialog closes and the existing toast
+reports what landed, exactly as today; the rows redraw after it, not before.
+
+The two halves differ **because the two waits differ**. Three seconds in front of a dialog is a press that has
+not opened yet, and a dimmed control with a working label says so without moving a sticky bar. Seven seconds
+*after* a confirmation, with every row on screen still reading the old answer, is the wait that earns something
+moving: the confirmation stays up, and it is visibly working.
+
+**What this is not.**
+- **No progress bar.** The write is one transaction and the server has no honest fraction to report; `wf.css`'s
+  determinate `.bar` would state one it does not have. A spinner says *working*, which is all that is true.
+- **Not a toast on its own.** A toast is the outcome. It lands when the pass is over, so it cannot be the sign
+  that the pass began.
+- **Not new CSS.** Both halves reuse shipped classes and attributes, so nothing under `design/` and nothing in a
+  served stylesheet changes, and the CSS guards have nothing new to check. `music.css` is linked on every admin
+  page (`index.html:17`), so `.mu-busy` is reachable inside `#vr-modal`.
+
+**No design round (Bárður, 2026-10-14).** The gap read the two shared stylesheets and found no spinner; the
+component is one file over. `music.css:144–146` ships `.mu-busy` with its `.sp` spinner and the `muspin`
+keyframes, written for exactly this situation — an admin waiting on a music server pass — and in use on the
+album page already. So the indication is a **reuse on this feature's own pages**, not a new component, and a
+design round would be asking for something the design already contains. Two consequences: this is one hop to the
+engineer, and the owner is not wanted in a round for it — the surface is admin-only, nothing a viewer sees
+changes, and nothing here touches the constitution. The mockup's own bulk handler (`design/app/versions.js`)
+carries no pending state either; like dev review item 7's coupling it follows on the next design pass, and is
+not a round of its own.
+
+**Two shapes declined.**
+- **Open the dialog at once and fill its numbers in afterwards.** It answers the three seconds by putting the
+  count — the whole reason *Confirm before writing* keeps this dialog — on screen late, under a cursor already
+  over *Apply*, and by shifting the rows under it as each number lands. A confirmation whose number arrives after
+  its button does is worse than a slow one.
+- **Shrink the wait instead of showing it.** The preview resolves the filter through `MusicBrowse.songIdsOf`
+  because the set written must be the set on screen *by construction* (FR-292-16); a cheaper count would be a
+  second answer to the same question, which is the mistake that amendment removed. The wait is the work.
+
+**Acceptance (11–13, continuing the list below).**
+11. In Songs over the whole library, *Set version…* reads *Reading the versions…* and is dimmed within the same
+    repaint as the press, with no server answer in between. Four clicks on it inside the wait produce **one**
+    `MusicBrowse.browse` resolve in the server's log and **one** dialog. Ticking a row during the wait does not
+    put a pressable button back.
+12. *Apply to N* leaves the dialog on screen, its footer reading *Setting the version on N songs…* beside a
+    turning spinner with nothing to press, until the write answers. Then the dialog closes, the toast says what
+    landed, and the rows redraw with the new answer.
+13. A failed pass clears the state. With the route made to fail, the control returns to *Set version…* and is
+    pressable, and the toast says the server did not answer; no pending state survives a failure. The same holds
+    for the write: a failed `bulk` closes the dialog with its toast and leaves nothing stuck.
+
 ### Metadata → Versions
 
 **FR-292-13 — A *Versions* tab** beside *Tags* and *Music genres*. It has one row per type:
@@ -187,6 +273,8 @@ recording is also on {n} other albums — the change applies there too* · *Only
 {types}* · *Lyrics on an instrumental* · *Remove the lyrics* · *Tell LRCLIB it is instrumental* · *songs without Live
 and Remix →*.
 
+Added 2026-10-14 by FR-292-17: *Reading the versions…* · *Setting the version on {n} songs…*.
+
 ## Non-goals
 
 - Writing a version into the music files. No player found yet reads a free-text *version* or *subtitle* field (brief §C). 284's tag writing leaves it alone.
@@ -206,6 +294,8 @@ and Remix →*.
 8. ***Songs · Hide Live, Remix*** for *Harbour Lights* lists no live, session or remix songs. The artist page's *songs without Live and Remix →* opens the same list.
 9. The Dashboard's *Lyrics on an instrumental* row counts 10. *Remove the lyrics* deletes only our sidecars, and the count goes to 0 and the row disappears. Nothing was removed before the button was pressed.
 10. Changing Live's colour in Metadata → Versions recolours every Live chip in the admin and in Ravilo (R344).
+
+11–13 are FR-292-17's, written in the second 2026-10-14 amendment above, where the behaviour they check is.
 
 ## Open questions (for the dev review)
 
