@@ -169,6 +169,28 @@ is the only other measured cost on this page and it is one attribute. `muCoverHt
 `/api/music/image/album/{id}` against the server that is also serving playback. Nothing else about the view
 changes, and the Artists view already mostly renders wordmarks rather than images.
 
+**Correction 2026-10-14 (DEB-1113) — the mechanism, not the outcome.** The cover is not an `<img>`.
+`muCoverHtml` renders a `<div class="mu-cov">` whose picture is a CSS `background-image` (`muImageStyle`),
+and `loading="lazy"` is defined for `<img>` and `<iframe>` alone: on a `<div>` the attribute is inert, and a
+background image is fetched as soon as its element is laid out, in the viewport or not — which is why all 809
+were measured in the first place. So the attribute is carried by an actual image. The cover branch of
+`muCoverHtml` emits `<img loading="lazy" decoding="async" alt="">` positioned to fill the same `.mu-cov` box
+with `object-fit:cover` — which is what `center/cover` was already doing — and the `#0c0e14` backdrop stays on
+the div. The positioning is an inline style, so **`design/app/music.css` is untouched**: the box, the radius,
+the `overflow:hidden`, the hover ring, `.mu-pb`'s 160px hero and `.mu-mchip` all keep their existing rules,
+and the chip still paints over the picture because it follows the image in document order. The wordmark branch
+does not change. The album page's lightbox is unaffected — it builds its own node from `coverUrl` rather than
+reading the cell's style — and so is the Artists view, whose `.mu-circ` cells are built inline and are not
+this function. **Acceptance 8 stands exactly as written**; only the way of reaching it is corrected.
+
+Two consequences worth recording. The cover is now a replaced element rather than a painted background, so a
+cover that 404s shows the backdrop instead of a broken-image glyph only because `alt` is empty — it is
+decorative, and the title is already its sibling `.ttl`. And the pure helpers that build this HTML (`muHash`,
+`muWordmarkStyle`, `muImageStyle`, `muCoverHtml`) together with `String.esc()` move from `wasmJsMain` to
+`commonMain` — same package, same `internal` visibility, so every call site compiles unchanged. That move is
+what puts the markup under `linuxX64Test`: the admin frontend has no test target of its own, so without it the
+only coverage available for this change would be none.
+
 **For the record, the rest of the admin is not in this state.** Checked rather than assumed, at the same
 sitting: the films Library is paged (`/api/media` takes `page`/`pageSize`), Activity caps at 200, the
 audiobooks library holds **1 book / 14 parts**, the Metadata genres wall is **294** cells, Albums is 809 and
