@@ -1783,3 +1783,69 @@ waited for a human rather than healing.
   the state that broke.
 - **FR-314-19 is a deploy, not a fix.** The restricted-account row is built and in `main`, behind prod; it is
   mentioned here only so the two are not confused.
+
+### Corrections to this amendment, measured 2026-10-14 (DEB-1009)
+
+The diagnosis above holds and was reproduced off prod. Two of the facts it rests on do not, and one prediction in it
+is now a measurement. All of it comes from a throwaway `jellyfin/jellyfin:12.1` — two synthetic libraries, four
+one-second films from the image's own ffmpeg, the versions library created `refreshLibrary=false` *after* the movies
+library's scan so that it had never been validated — plus a read of prod's own Jellyfin log. No prod write, no
+library file, no device.
+
+- **`POST /Items/{libraryId}/Refresh` does not resolve a never-scanned library, in any mode.** `None`,
+  `ValidationOnly` and `Default`, with and without `Recursive=true`, with `ImageRefreshMode` set to each: 204,
+  nothing resolved, **and no log line at all**. The call credited above with resolving film 1 does nothing.
+- **What resolved film 1 was our own hourly pass.** `POST /Library/Refresh` — Jellyfin's `ValidateMediaLibrary`,
+  every library — resolves the file in under six seconds and logs *Validating media library*. Prod logs that line
+  **twice an hour, every hour**: `21:31:35`, `21:36:28`, `22:32:57`, `22:40:10`, `23:30:53`, `23:35:31` …, because
+  `PipelineEngine.signalPipelineComplete` posts `/Library/Refresh` at the end of every pipeline run and
+  `scan_schedule = "30 */1 * * *"`. The `23:30:53Z` line is one of that series, 20 s after the hand call — not its
+  answer. So **this installation validates its whole library twice an hour of its own accord**, and a dropped
+  notification already heals within the hour with nothing new from us; what was missing was only our side asserting
+  the merge afterwards, which is FR-314-21.
+- **Therefore FR-314-20 cannot be built as written.** *"Asks Jellyfin to validate that library once"* and *"it is a
+  scan of the **versions** library only"* name a call that does not exist: the only one that works is
+  `/Library/Refresh`, which validates every library. The decision stands either way — the choice between keeping
+  FR-314-20 as one `POST /Library/Refresh` on the owner's configuration press, and dropping it to leave the whole
+  job to FR-314-21 — but it is the owner's, and it is open. **FR-314-20 is not built.**
+- **Films 2–17 are measured, not predicted** (the amendment's own acceptance 17, met off prod). With *any* item in
+  that library, a reported path resolves from the notification alone in **50–60 s**, logging
+  `LibraryMonitor: versions (/media/versions) will be refreshed` — `LibraryMonitor` walks up to the **library root**
+  item, so what it needs is an item in the library and not the film's own folder. FR-314-15's 8 × 15 s window is
+  about twice what that case needs.
+- **Two more of FR-314-15's claims reproduced on the same lab**, both from the notification alone and both in
+  50–60 s: a version rewritten into a folder that still exists after a *Remove* resolves again, and a *Remove*
+  (`{"UpdateType": "Deleted"}`) takes the alternate off the film while the film keeps its own file — acceptance 9's
+  last sentence, off prod.
+- **Reported as data, not as a defect:** *Remove* leaves the film's now-empty folder under the versions root, and
+  Jellyfin keeps an item for that folder (its `Path` is the folder, it has no video). It is **not** a source of the
+  film, and the write path matches on the exact path, so nothing reads it or breaks on it — but the versions library
+  gains one such item per removed film.
+
+### FR-314-21 as built (2026-10-14, DEB-1009)
+
+One `BACKGROUND` loop every 15 minutes (`FileFixService.assertVersionGrouping`), and three decisions worth writing
+down:
+
+- **The work list is re-derived, every tick.** The `done` kind C rows, the version file on disk, and Jellyfin's own
+  answer for which files it already shows as each film's sources — one `GET /Items?Ids=…&Fields=MediaSources` for the
+  whole set. Nothing is stored, so there is no pending-merge queue to go stale, which is FR-314-15's *asserted,
+  never remembered* governing the retry exactly as the amendment says it should. A film **absent** from Jellyfin's
+  answer is left alone: *Jellyfin does not know this film* and *this film has no sources* are different facts and
+  only the second one means merge.
+- **The retry asks impatiently.** `groupVersion` grew a `patient` flag: a write keeps FR-314-15's 8 × 15 s, and the
+  retry sends the one notification and looks once. A quarter of an hour later the item that the notification
+  resolved in about a minute is there and is merged. Waiting minutes per film inside the tick would have made the
+  tick outlast its own interval the moment more than a few films were ungrouped.
+- **The bound is read off the row, not off a counter** — `now − file_fix.updated_at > 6 h` — so a restart neither
+  forgets it nor repeats it, and it needs nothing stored for itself. At the bound the title gets FR-314-15's report
+  and the row's detail carries *· not grouped with the film yet*, which is also what makes *once* derivable with no
+  state: a row already carrying the note has already been reported. The note is **taken away again** the moment
+  Jellyfin does show the version, so it can never outlive what it describes.
+
+Test 19 is three cases in `FileFixServiceTest`: the window passing and the merge landing off the timer with no dry
+run in between (and a tick that finds everything grouped writing nothing); the bound, its one report, and that
+report being taken back; and the two cases that must do nothing at all — no versions root, and a film Jellyfin has
+no answer for. **Acceptance 17 is met off prod and acceptance 18 is covered in CI; what neither can reach is a
+viewer's device**, so the one thing that stays on the QA ticket is that the film still plays its version on a device
+that cannot decode the original after a merge that the timer made rather than the write.
