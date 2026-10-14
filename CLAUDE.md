@@ -64,6 +64,16 @@ repository: a design round is received, read and committed by someone who looked
 designer briefing the tool, and the owner designing and handing a round over. Read it before
 touching anything under `design/`.
 
+**Push `main` to GitHub as you go** (owner, DEB-1173). When you have committed a finished piece of
+work, run `scripts/check-deanonymization.sh` and `scripts/check-phases.sh`; if both pass,
+`git push origin main`. A push to `main` runs the full CI and publishes images tagged with the commit
+SHA only — it never moves `latest`, cuts a release or deploys anything, so it is not a release call,
+and it is how the constitution's "CI green" becomes something you can actually read. Fast-forward
+`main` only: never `--force`, never `--tags`, never another branch. If the push is rejected, stop and
+say so — never rebase or merge the shared checkout to make it go. A newer push cancels the CI run of
+the one before, so there is no point pushing more often than once a finished task. Tags and GitHub
+Releases stay the owner's.
+
 ## Building locally
 
 See [`README.md`](README.md#building-from-source) for the task list. Two local gotchas it does not
