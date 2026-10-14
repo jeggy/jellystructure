@@ -100,12 +100,21 @@ fun drawnPositionMs(view: SessionView, serverNowMs: Long, receivedAtMs: Long, no
 /** FR-R368-10, review item 2 — the phone, the computer and the web app ask for sessions. R369 adds `session_control`
  *  where the app obeys `session_command`. R372 (owner decision 3) — the TV obeys too, and asks for the list since its
  *  player's *Speakers* panel needs the viewer's group session (an installed TV without this build asks for neither). */
-fun eventsFeaturesFor(isTv: Boolean, obeysSessionCommands: Boolean = false, groupControl: Boolean = false): Set<String> = when {
-    isTv -> if (obeysSessionCommands) setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL) else emptySet()
-    // R371 — an app that can grow a Cast session room by room says so; the server sends room ops only to such an app.
-    obeysSessionCommands && groupControl -> setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)
-    obeysSessionCommands -> setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL)
-    else -> setOf(EVENTS_FEATURE_SESSIONS)
+fun eventsFeaturesFor(
+    isTv: Boolean, obeysSessionCommands: Boolean = false, groupControl: Boolean = false,
+    /** R369 (FR-R369-9, DEB-1099) — this app obeys a **book-time** `seek` on a book session (it has a music engine, so
+     *  `seekBook` crosses the book's parts). The web app has none and must not declare it. */
+    bookSeek: Boolean = false,
+): Set<String> {
+    val base = when {
+        isTv -> if (obeysSessionCommands) setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL) else emptySet()
+        // R371 — an app that can grow a Cast session room by room says so; the server sends room ops only to such an app.
+        obeysSessionCommands && groupControl -> setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)
+        obeysSessionCommands -> setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL)
+        else -> setOf(EVENTS_FEATURE_SESSIONS)
+    }
+    // Additive, and only beside `session_control`: a socket that obeys no command obeys no seek either.
+    return if (bookSeek && EVENTS_FEATURE_SESSION_CONTROL in base) base + dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK else base
 }
 
 /** `S01E05` rows read *Title · S01E05*; music rows read the title (FR-R368-7). */

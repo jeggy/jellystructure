@@ -62,6 +62,16 @@ suspend fun wirePlaybackSessions(
     val sessions = PlaybackSessions(db)
     // FR-R368-12 — a book's session is found by its book, not by the part it is on.
     sessions.bookOfPart = { itemId -> musicPipeline?.audiobooks?.store?.bookOfPart(itemId) }
+    /** R380 (FR-R380-11) + R368 (FR-R368-13) — a book's parts in our order with their lengths: the one list the server's
+     *  book clock is built on, for a `session_load`'s `book_ms` and for the projection's book time alike. */
+    fun bookPartsOf(bookId: String): List<Pair<String, Long>> =
+        musicPipeline?.audiobooks?.store?.parts(bookId).orEmpty()
+            .filter { it.missingSince == null }.sortedBy { it.position }.map { it.id to (it.durationMs ?: 0L) }
+    // FR-R368-13 (DEB-1099) — a book's session is drawn in book time, so its projection needs the book's parts.
+    sessions.bookPartsOf = { s ->
+        if (s.kind != SessionKind.AUDIOBOOK) emptyList()
+        else (s.bookId ?: musicPipeline?.audiobooks?.store?.bookOfPart(s.itemId))?.let { bookPartsOf(it) }.orEmpty()
+    }
     sessions.describe = describe@{ itemId, bookId ->
         describeAudiobookPart(musicPipeline?.audiobooks?.store, itemId, bookId)?.let { return@describe it }
         musicPipeline?.store?.track(itemId)?.let { t ->
@@ -124,10 +134,7 @@ suspend fun wirePlaybackSessions(
         }
     }
     // R380 (FR-R380-11, DEB-919) — a book's parts in our order, for the book time a `session_load` carries.
-    starter.bookParts = { bookId ->
-        musicPipeline?.audiobooks?.store?.parts(bookId).orEmpty()
-            .filter { it.missingSince == null }.sortedBy { it.position }.map { it.id to (it.durationMs ?: 0L) }
-    }
+    starter.bookParts = { bookId -> bookPartsOf(bookId) }
     // R380 (FR-R380-17, DEB-1100) — this listener's stored place in this book; the store computes the book time.
     starter.bookPlace = { userId, bookId -> musicPipeline?.audiobooks?.store?.progress(userId, bookId) }
     publisher.starter = starter

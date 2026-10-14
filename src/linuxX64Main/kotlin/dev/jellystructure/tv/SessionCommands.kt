@@ -110,11 +110,21 @@ internal fun roomOpRoute(linkHolderControl: Boolean, relayControl: Boolean): Roo
     else -> RoomRoute.Unreachable
 }
 
+/**
+ * R369 (FR-R369-9, amendment 2026-10-14, DEB-1099) — may this target be asked to seek on this session? A book's seek
+ * is **book** time (the base FR-R368-13 projects and FR-R380-11 already starts a book in), and `MusicEngine.seekTo`
+ * applies a position **inside the playing part**, so a build that does not declare [EVENTS_FEATURE_BOOK_SEEK] is not
+ * offered the op at all: its remote draws the read-only bar and ±30 s keeps moving the book. One predicate for the
+ * offer ([opsFor]) and for the command itself, so the two cannot disagree.
+ */
+internal fun bookSeekAllowed(kind: String, bookSeek: Boolean): Boolean = kind != SessionKind.AUDIOBOOK || bookSeek
+
 /** The ops a target obeys — the remote shows a control for these only (absent, never greyed). Shuffle and repeat are a
  *  queue of songs' (2026-10-05: an episode's remote showed both). */
-internal fun opsFor(targetControl: Boolean, music: Boolean = true): List<String> =
+internal fun opsFor(targetControl: Boolean, music: Boolean = true, kind: String = SessionKind.MUSIC, bookSeek: Boolean = false): List<String> =
     (if (targetControl) SESSION_OPS_LEGACY + SESSION_OPS_CONTROL else SESSION_OPS_LEGACY)
         .filter { music || (it != "set_shuffle" && it != "set_repeat") }
+        .filter { it != "seek" || bookSeekAllowed(kind, bookSeek) }   // FR-R369-9
 
 /** R371 — a music session's room ops, offered while an app can reach the speakers (the link holder or a relay). */
 internal fun roomOps(music: Boolean, reachable: Boolean): List<String> = if (music && reachable) listOf("add_room", "remove_room", "room_volume") else emptyList()
@@ -207,8 +217,14 @@ class SessionControl(
     internal suspend fun opsOf(s: SessionRec): List<String> {
         val minter = sessions.castMinterOf(s.targetId)
         val reach = (minter != null && holdsGroupControl(minter)) || relayAppFor(s) != null
-        return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL), music = s.kind == SessionKind.MUSIC) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
+        return opsFor(bus.hasFeature(s.targetId, EVENTS_FEATURE_SESSION_CONTROL), music = s.kind == SessionKind.MUSIC,
+            kind = s.kind, bookSeek = bookSeekTarget(s)) + roomOps(s.kind == SessionKind.MUSIC && s.targetKind != "app", reach)
     }
+
+    /** FR-R369-9 — does the place this session plays at obey a book-time seek? A book never casts (R380 owner decision
+     *  4), so the target's own socket is the only one that can answer. */
+    private suspend fun bookSeekTarget(s: SessionRec): Boolean =
+        bus.hasFeature(s.targetId, dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK)
 
     /** R371 — the app that can act on a room: the one holding the Cast link, else a relay app on that network. */
     internal var relayAppFor: suspend (SessionRec) -> DeviceData? = { null }
@@ -260,6 +276,9 @@ class SessionControl(
         val s = sessions.get(sessionId)?.takeIf { it.live } ?: return CommandResult.NotFound
         if (!mayControl(caller, admin, s)) return CommandResult.Forbidden
         if (sessionCommandVerdict(c.op, c.revision, s) == CommandVerdict.Stale) return CommandResult.Stale(s)
+        // FR-R369-9 — the op was never offered on this session (the same predicate `opsOf` uses); a sender that asks
+        // anyway is refused rather than obeyed in the wrong time base.
+        if (c.op == "seek" && !bookSeekAllowed(s.kind, bookSeekTarget(s))) return CommandResult.NotOffered
         val source = if (admin) "admin" else caller?.deviceId
         if (isRoomOp(c)) return roomCommand(s, c, source)
         val targetSocket = bus.isConnected(s.targetId)

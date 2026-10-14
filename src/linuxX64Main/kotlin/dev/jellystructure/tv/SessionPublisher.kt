@@ -70,8 +70,19 @@ class SessionPublisher(
         return sessionViewFor(
             SessionViewer(viewer, viewer.lastPublicAddress, householdControl()), s, target?.lastPublicAddress, visible,
             sessions.castMinterOf(s.targetId), target?.platform, target?.kind, widened = controlWidened(),
+            bookParts = sessions.bookPartsOf,   // FR-R368-13
         )
     }
+
+    /**
+     * The row as someone who sees everything sees it: the admin's list, a 409's `session` for the admin, and a
+     * `SessionDetail` built without a viewer. FR-R368-13 — the one place the whole-row projection calls [toView], so
+     * the admin's numbers cannot drift from a viewer's (DEB-1099 was exactly that drift, in the other direction).
+     */
+    private fun wholeView(s: SessionRec, index: Map<String, DeviceData>, controllable: Boolean): SessionView =
+        toView(s, mine = false, here = false, controllable = controllable, visible = true,
+            targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind,
+            bookParts = sessions.bookPartsOf)
 
     /** R369 sets this: from then on `controllable` covers the viewer's own sessions everywhere (and, with the switch,
      *  a household member's); in R368 alone only `here` and the minting phone control (FR-R368-9). */
@@ -132,8 +143,7 @@ class SessionPublisher(
     /** R369 — a 409's `session`: the row as [viewer] sees it (the admin, null, sees it whole). */
     internal suspend fun viewFor(viewer: DeviceData?, s: SessionRec): SessionView? {
         val index = deviceIndex()
-        return if (viewer == null) toView(s, mine = false, here = false, controllable = s.live, visible = true,
-            targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind)
+        return if (viewer == null) wholeView(s, index, controllable = s.live)
         else viewOf(viewer, s, index)
     }
 
@@ -202,8 +212,7 @@ class SessionPublisher(
      */
     internal suspend fun detailFor(viewer: DeviceData?, s: SessionRec, admin: Boolean = false): SessionDetail? {
         val index = deviceIndex()
-        val view = if (admin || viewer == null) toView(s, mine = false, here = false, controllable = s.live, visible = true,
-            targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind)
+        val view = if (admin || viewer == null) wholeView(s, index, controllable = s.live)
         else viewOf(viewer, s, index) ?: return null
         val visible = view.title != null || s.current?.title == null
         val ids = s.options.queueIds.ifEmpty { listOf(s.itemId) }
@@ -233,11 +242,13 @@ class SessionPublisher(
         val since = endedTodaySince(now, zoneOffsetMs(now))
         val index = deviceIndex()
         val rows = sessions.adminRows(since).sortedWith(compareBy<SessionRec> { !it.live }.thenByDescending { it.updatedAt }).map { s ->
-            val v = toView(s, mine = false, here = false, controllable = false, visible = true, targetPlatform = index[s.targetId]?.platform, targetDeviceKind = index[s.targetId]?.kind)
+            val v = wholeView(s, index, controllable = false)
             AdminSessionRow(
                 id = s.id, revision = s.revision, ownerId = s.ownerUserId, ownerName = s.ownerName, kind = s.kind,
                 title = v.title, subtitle = v.subtitle, artwork = v.artwork, targetKind = v.target.kind, targetId = s.targetId,
-                targetName = v.target.name, targetIcon = v.target.icon, state = s.state, positionMs = s.positionMs,
+                // FR-R368-13 — the view's position, never the row's: 304's page drew a book's part offset against the
+                // book's duration until this line took the pair from one projection.
+                targetName = v.target.name, targetIcon = v.target.icon, state = s.state, positionMs = v.positionMs ?: s.positionMs,
                 positionAt = s.positionAt, durationMs = v.durationMs, createdAt = s.createdAt, updatedAt = s.updatedAt,
                 endedAt = s.endedAt, endReason = s.endReason, endedBy = s.endedBy,
                 startedFrom = s.startedByDeviceId?.let { id -> index[id]?.let { sessions.placeNameOf(it) } ?: id },

@@ -99,7 +99,9 @@ internal fun shouldForceStop(heartbeatStale: Boolean, needsSocket: Boolean, sock
 internal fun parseEventFeatures(raw: String?): Set<String> =
     raw.orEmpty().split(',').map { it.trim().lowercase() }.filter { it in KNOWN_FEATURES }.toSet()
 
-private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL, dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL)   // R371 — group_control
+private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL,
+    dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL,   // R371 — group_control
+    dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK)       // R369 (FR-R369-9) — a book-time seek
 
 /** R380 (owner decision 2) — a TV's name as Cast shows it (`cast_name=`), kept beside its features as `castname:<name>`. */
 internal fun parseCastName(raw: String?): Set<String> {
@@ -264,6 +266,10 @@ internal fun sessionViewFor(
     /** R369 (FR-R369-3) — from R369 on, a viewer controls their own sessions anywhere, and with 304's household
      *  switch on, another member's; in R368 alone only `here` and the minting phone do (FR-R368-9). */
     widened: Boolean = false,
+    /** FR-R368-13 — the book's parts (id to length, in our order), for the book time a book's session is drawn in. The
+     *  one production caller is `SessionPublisher.viewOf`, which passes [PlaybackSessions.bookPartsOf]; a test's film or
+     *  song needs none. */
+    bookParts: (SessionRec) -> List<Pair<String, Long>> = { emptyList() },
 ): SessionView? {
     val mine = s.ownerUserId == viewer.device.jellyfinUserId
     if (!mine && !isNearby(viewer.address, targetAddress)) return null
@@ -271,13 +277,35 @@ internal fun sessionViewFor(
     val visible = mine || canSee
     val controllable = visible && s.live && (here || (castMintedBy != null && castMintedBy == viewer.device.deviceId) ||
         widened && (mine || viewer.householdControl))
-    return toView(s, mine = mine, here = here, controllable = controllable, visible = visible, targetPlatform = targetPlatform, targetDeviceKind = targetDeviceKind)
+    return toView(s, mine = mine, here = here, controllable = controllable, visible = visible, targetPlatform = targetPlatform,
+        targetDeviceKind = targetDeviceKind, bookParts = bookParts)
+}
+
+/**
+ * R368 (FR-R368-13, amendment 2026-10-14, DEB-1099) — the position a session is **drawn** at. A book's row carries the
+ * position in the **part** it is on (FR-R368-12 made `item_id` the part, and the seek tolerance, `moveStartMs` and the
+ * `audiobook_progress` mirror all read it that way), while the queue entry carries the **book's** duration by design
+ * (R380 FR-R380-12). Drawing the pair would print a part offset against a book's length — one view, two clocks — so the
+ * conversion happens here, in the projection the per-viewer list and the admin's both pass through, and never on the
+ * row. Not cached in `queue_json` either (amendment part 3): a session rebuilt from the DB would read part time again
+ * until the next describe. A row with no book (DEB-1054's ghosts) or a part the book no longer has keeps the position
+ * it has rather than failing.
+ *
+ * The arithmetic is [bookTimeOf] — the one a book's `session_load` already starts in (R380 FR-R380-11), so the server
+ * has one book clock and not two.
+ */
+internal fun viewPositionMs(s: SessionRec, bookParts: (SessionRec) -> List<Pair<String, Long>>): Long {
+    if (s.kind != SessionKind.AUDIOBOOK) return s.positionMs
+    return bookTimeOf(bookParts(s), s.itemId, s.positionMs)
 }
 
 /** The wire form of [s] — shared by the per-viewer projection and the admin's (which sees everything). */
 internal fun toView(
     s: SessionRec, mine: Boolean, here: Boolean, controllable: Boolean, visible: Boolean,
     targetPlatform: String? = null, targetDeviceKind: String? = null,
+    /** FR-R368-13 — the book's parts, for [viewPositionMs]. No default: both projections must pass the same resolver,
+     *  or one of them silently draws part time again (the whole of DEB-1099). */
+    bookParts: (SessionRec) -> List<Pair<String, Long>>,
 ): SessionView {
     val cur = s.current
     val targetKind = if (s.options.rooms.size > 1) "cast_group" else s.targetKind
@@ -295,7 +323,8 @@ internal fun toView(
             castDeviceId = s.castDeviceId,
         ),
         state = s.state,
-        positionMs = s.positionMs.takeIf { visible },
+        // FR-R368-13 — a book's is book time against the book's duration; everything else is the position it has.
+        positionMs = viewPositionMs(s, bookParts).takeIf { visible },
         positionAt = s.positionAt,
         durationMs = cur?.durationMs?.takeIf { visible },
         here = here, controllable = controllable,
@@ -435,6 +464,14 @@ class PlaybackSessions(
      * rather than the nameless `film` row R380 FR-R380-12 forbids.
      */
     internal var bookOfPart: (itemId: String) -> String? = { null }
+
+    /**
+     * R368 (FR-R368-13, DEB-1099) — the parts of the book a session is on, each with its length, in our order, for the
+     * book time its view is drawn in ([viewPositionMs]). Wired to the audiobooks store, by the row's `book_id` with
+     * [bookOfPart] as the floor; empty for anything that is not a book, so a film or a song costs no store read. The
+     * same shape (and the same store read) as `SessionStarter.bookParts`, which a book's `session_load` starts from.
+     */
+    internal var bookPartsOf: (SessionRec) -> List<Pair<String, Long>> = { emptyList() }
 
     /** Main: a device's display name for [SessionRec.targetName]; the receiver's name drops the *Chromecast via* prefix. */
     internal var placeNameOf: (DeviceData) -> String = { it.displayName.removePrefix("${CastService.DEVICE_PREFIX} · ").ifBlank { it.deviceId } }

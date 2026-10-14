@@ -20,6 +20,14 @@ const val EVENTS_FEATURE_SESSION_CONTROL = "session_control"
  */
 const val EVENTS_FEATURE_GROUP_CONTROL = "group_control"
 
+/**
+ * R369 (FR-R369-9, amendment 2026-10-14, DEB-1099) — a target that obeys a **book-time** `seek` on a book session
+ * declares this. Additive: an installed build that does not is simply not offered the op (FR-R369-6 — a control the
+ * target does not obey is absent, never greyed), and its remote draws the read-only bar while ±30 s keeps moving the
+ * book. The web app must not declare it: it has no music engine, and its `seekBook` is a no-op.
+ */
+const val EVENTS_FEATURE_BOOK_SEEK = "book_seek"
+
 /** Whose playback a row is. [name] is the first name the household knows them by. */
 @Serializable
 data class SessionOwner(val id: String, val name: String)

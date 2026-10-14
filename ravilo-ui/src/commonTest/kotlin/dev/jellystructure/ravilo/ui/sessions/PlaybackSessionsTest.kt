@@ -138,6 +138,24 @@ class PlaybackSessionsTest {
         assertEquals(setOf("sessions", "session_control"), eventsFeaturesFor(isTv = false, obeysSessionCommands = true))
     }
 
+    /**
+     * R369 (FR-R369-9, DEB-1099) — an app with a music engine says it obeys a **book-time** seek; the web app, which has
+     * none, must not, and the server then offers a book session no `seek` at all (its remote draws the read-only bar).
+     */
+    @Test fun `only an app that obeys a book-time seek declares the token`() {
+        assertEquals(setOf("sessions", "session_control", "book_seek"),
+            eventsFeaturesFor(isTv = true, obeysSessionCommands = true, bookSeek = true))
+        assertEquals(setOf("sessions", "session_control", "group_control", "book_seek"),
+            eventsFeaturesFor(isTv = false, obeysSessionCommands = true, groupControl = true, bookSeek = true))
+        // The web app: `MusicEngine.supported` is false there, so the set is exactly today's.
+        assertEquals(setOf("sessions", "session_control"), eventsFeaturesFor(isTv = false, obeysSessionCommands = true, bookSeek = false))
+        // Additive, and never alone: a socket that obeys no command obeys no seek either.
+        assertFalse("book_seek" in eventsFeaturesFor(isTv = false, obeysSessionCommands = false, bookSeek = true))
+        assertTrue(eventsFeaturesFor(isTv = true, obeysSessionCommands = false, bookSeek = true).isEmpty())
+        // FR-R380-11's rule, for this token too: what the app advertises it must have an arm for.
+        assertTrue("audiobook" in SESSION_LOAD_KINDS, "the token promises a book-time seek, so the app needs its book arm")
+    }
+
     @Test fun `an episode row reads title and code`() = assertEquals("T-a · S01E05", sessionRowTitle(v("a", kind = "episode")))
 
     @Test fun `the session strings exist in every language and never say session or a product`() {

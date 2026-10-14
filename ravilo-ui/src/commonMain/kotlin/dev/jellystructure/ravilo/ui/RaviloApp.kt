@@ -563,8 +563,10 @@ fun RaviloApp(
                     // R368 (dev review item 2) — the phone, the computer and the web app opt into session events; the TV
                     // does not (FR-R368-10), and an installed app without this never receives one.
                     // R369 — every app obeys `session_command` (`session_control`); the TV declares only that (a place).
+                    // R369 (FR-R369-9) — and a book-time seek where this app has a music engine to obey it in.
                     features = dev.jellystructure.shared.tv.eventsFeaturesQuery(dev.jellystructure.ravilo.ui.sessions.eventsFeaturesFor(isTvPlatform, obeysSessionCommands = true,
-                        groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null)),
+                        groupControl = dev.jellystructure.ravilo.ui.seams.platformGroupController() != null,
+                        bookSeek = dev.jellystructure.ravilo.ui.music.MusicEngine.supported)),
                     onSessionList = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onList(it) },
                     onSessionState = { dev.jellystructure.ravilo.ui.sessions.PlaybackSessions.onState(it) },
                     onSessionCommand = { text ->

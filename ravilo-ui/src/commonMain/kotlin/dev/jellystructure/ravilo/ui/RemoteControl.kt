@@ -117,13 +117,24 @@ object MusicRemotePlayer : RemotePlayer {
     override fun toggle() = MusicPlayback.togglePlay()
     /** The song stops and the queue stays, paused where it was (FR-R322-12): the mini bar stays and Play resumes. */
     override fun stop() { if (MusicCast.linked.value) MusicCast.stop() else MusicEngine.stopForVideo() }
-    override fun seekTo(positionMs: Long) = MusicPlayback.seekTo(positionMs)
-    override fun seekBy(deltaMs: Long) {
-        val st = MusicPlayback.state.value
-        if (st.book != null) { MusicPlayback.skipBy(deltaMs); return }
-        val end = st.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
-        MusicPlayback.seekTo((MusicPlayback.currentPositionMs() + deltaMs).coerceIn(0L, end))
+    /**
+     * R369 (FR-R369-9, amendment 2026-10-14, DEB-1099) — a **book's** seek is book time, and crosses parts through the
+     * door R323's own whole-book scrubber uses. Until this arm existed, `seekTo` applied a book's position *inside the
+     * playing part*: a drag past the part's share of the remote's bar skipped the unheard rest of the part and rewrote
+     * the stored place forward. Its sibling [seekBy] has had the arm since R323; the asymmetry is what hid this.
+     */
+    override fun seekTo(positionMs: Long) {
+        if (doors.bookPlaying) doors.seekBook(positionMs.coerceAtLeast(0L)) else doors.seekTo(positionMs)
     }
+    override fun seekBy(deltaMs: Long) {
+        if (doors.bookPlaying) { doors.skipBy(deltaMs); return }
+        val end = doors.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+        doors.seekTo((doors.currentPositionMs() + deltaMs).coerceIn(0L, end))
+    }
+
+    /** The player doors a remote seek takes; [MusicPlaybackDoors] in the app, a recorder in the test that holds the two
+     *  arms above to one predicate. Not a general seam — the seek pair only. */
+    internal var doors: MusicSeekDoors = MusicPlaybackDoors
     /** R322's rules: previous restarts the song after 3 s; a book's next/previous are its ±30 s. */
     override fun next() = MusicPlayback.next()
     override fun previous() = MusicPlayback.previous()
@@ -150,4 +161,32 @@ object MusicRemotePlayer : RemotePlayer {
             else -> MusicEngine.setUserVolume(out)
         }
     }
+}
+
+/**
+ * R369 (FR-R369-9) — the four player calls a remote seek can make, behind one interface so the book arm of `seekTo` and
+ * of `seekBy` are held to the same predicate by a test. The app's implementation is [MusicPlaybackDoors]; nothing else
+ * in the app goes through here.
+ */
+internal interface MusicSeekDoors {
+    /** Is a book playing (not a song)? The player state's `book`. */
+    val bookPlaying: Boolean
+    /** The playing item's own length, for [MusicRemotePlayer.seekBy]'s clamp on a song. */
+    val durationMs: Long
+    fun currentPositionMs(): Long
+    /** A position in the playing song. */
+    fun seekTo(positionMs: Long)
+    /** A position in the **book**, across its parts (R323's whole-book scrubber). */
+    fun seekBook(bookMs: Long)
+    /** A book's ±delta, in book time, R322's rule (the engine crosses the part boundary). */
+    fun skipBy(deltaMs: Long)
+}
+
+internal object MusicPlaybackDoors : MusicSeekDoors {
+    override val bookPlaying: Boolean get() = MusicPlayback.state.value.book != null
+    override val durationMs: Long get() = MusicPlayback.state.value.durationMs
+    override fun currentPositionMs(): Long = MusicPlayback.currentPositionMs()
+    override fun seekTo(positionMs: Long) = MusicPlayback.seekTo(positionMs)
+    override fun seekBook(bookMs: Long) = MusicPlayback.seekBook(bookMs)
+    override fun skipBy(deltaMs: Long) = MusicPlayback.skipBy(deltaMs)
 }
