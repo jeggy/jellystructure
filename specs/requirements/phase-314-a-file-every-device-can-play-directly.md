@@ -1676,3 +1676,110 @@ since only kind C puts a file in that library. The one line the suite cannot rea
 pass itself: `JellyfinClient` is concrete over the shared outbound pool, so a pass that answers cannot be faked
 without a live Jellyfin. What it assigns is `plan.restricted`, which
 `VersionsLibraryViewersTest` already covers as a pure function.
+
+## Amendment 2026-10-14 (eleventh) — a library Jellyfin has never scanned cannot resolve its own first file, so the no-scan promise is about the *media* libraries (DEB-1009)
+
+Written before any Kotlin. Acceptance 9 ran on prod on 2026-10-13 (DEB-985, `v1.51-145-gfa567030`) and met every
+claim but one: the film did **not** become one title with two versions from the notification alone. FR-314-15 says
+the grouping step sends `POST /Library/Media/Updated` and **never a library scan**; on a library Jellyfin has never
+scanned, that notification is dropped silently and the version stays on disk, written, verified and invisible.
+Because the written design is what failed, the amendment comes before the fix.
+
+### What was measured, and why the earlier measurement did not carry
+
+- The write path sent its one trigger (`{"Path": "/media/versions/…", "UpdateType": "Created"}`), waited the full
+  8 × 15 s and gave up with exactly the warning FR-314-15 asks for — *version written but not grouped*. So the
+  requirement's own failure path worked; what it reported was not a transient.
+- Re-sending the identical body by hand: **204**, nothing logged, nothing resolved, 0 items in the library ten
+  minutes later. A 204 is what that endpoint answers whether it acted or not.
+- Ruled out by measurement rather than by argument: `EnableRealtimeMonitor` (set `true` on the versions library,
+  re-sent, two minutes, still 0 items; set back, so the seventh amendment's configuration is as it was),
+  permissions (`docker exec jellyfin ls -la` shows the file `1000:1000` and the container runs as uid 1000), and a
+  scan-free refresh (`POST /Items/{versionsLibraryId}/Refresh?Recursive=true&metadataRefreshMode=None&imageRefreshMode=None`
+  → 204, three minutes, 0 items, no log line — that mode is a no-op here).
+- What resolved it: the same call with `metadataRefreshMode=Default&imageRefreshMode=Default` → *Validating media
+  library* in Jellyfin's own log, and the item resolved **19 s** later.
+- The reading: `Library/Media/Updated` is routed through `LibraryMonitor`, which walks **up** the reported path
+  looking for a `BaseItem` it already knows. The versions library was created with `refreshLibrary=false` (seventh
+  amendment, step 2) and had never been scanned, so no item existed anywhere along the path and there was nothing
+  to attach the report to.
+- The DEB-875 measurement FR-314-15 rests on — *under a minute, with no scan task run at all* — was taken in a
+  throwaway Jellyfin whose library **had** been scanned. It is not wrong; it was taken on the only case that
+  works. **This is a first-file problem, not a per-film one**: the folder items exist on prod now, so films 2–17
+  are expected to resolve from the notification alone, and that expectation is acceptance below rather than an
+  assumption to build on.
+
+### The decision, and the candidate that is refused
+
+Three candidates were put with the finding — scan once at configuration, escalate to a refresh when the wait
+expires, retry on a timer. **The first and the third are taken; the second is refused.**
+
+#### FR-314-20 — a library jellystructure writes into is scanned once when it is configured, never from the write path
+
+The one-off scan belongs to the act of creating the library, next to the root check and the `skip = true` config
+the seventh amendment's steps already cover: a library that has never been scanned has no item for any later
+notification to hang from, and that is a property of the library, not of the file. Configuring the versions root
+therefore asks Jellyfin to validate that library once, and the step **says so where the owner can see it** — it is
+a scan of the versions library only, which holds our own generated files and nothing of the household's.
+
+FR-314-15's *never a library scan* stands as written **for the write path**, and that is the sentence it was
+always about: no scan per version, no admin session per version, nothing on an installation that sets
+`scan_interval_hours = 0` deliberately. Acceptance 9's *no library scan is run* reads, from today, as **no scan is
+run by the write path** — the configuration-time validation of the versions library is not one of its claims
+either way.
+
+#### FR-314-21 — grouping is retried on a timer, so a missed window costs minutes and not a human press
+
+Today the assertion is reachable only from a press. `buildPlan()` has exactly one production caller — the
+*Find files* route (`FileFixRoutes.kt:27`) — and `planOne`'s only other production call sites are inside
+`renameAndQueue` and `runRemove`, the *Rename* and *Remove* buttons. So a version that misses its grouping window
+stays ungrouped until somebody is in the admin; on prod that cost about thirty minutes and a full dry run to
+recover. A bounded retry on a timer re-asserts the merge for a version that is on disk with no matching source,
+and only when its bound is exhausted does FR-314-15's report-against-the-title stand as the outcome.
+
+This changes no state anybody has to keep: FR-314-15's *the merge is asserted, never remembered* governs the retry
+too, which re-derives its work from the file on disk and Jellyfin's answer rather than from a stored queue of
+pending merges.
+
+#### Refused — escalating to a library refresh from the write path
+
+It puts an unattended library validation inside a job, on an installation whose owner turned self-scanning off on
+purpose; and with FR-314-20 in place the condition that needs it cannot recur except when a library is deleted and
+re-created, which is a configuration event and is exactly where FR-314-20 already lives. If a bounded retry still
+cannot resolve a path, that is a finding worth a human reading it — a version Jellyfin will not resolve is not
+something to escalate privileges over on a schedule.
+
+### What this corrects in the tenth amendment — the hazard is real, its trigger is not a clock
+
+The tenth amendment says `auto_new = 1` *"would start all 17 films / 1.100 TB at the next `:30`"*. The reach is
+right; the trigger is wrong, and the difference matters because it decides whether the hold can be lost while
+nobody is looking. Read in the tree today, `planOne` — the only thing that promotes a `would_add` to `pending` —
+is reachable in production from three presses and from nothing else: *Find files* (via `buildPlan()`), *Rename*
+and *Remove*. The hourly sweep (`scan_schedule = "30 */1 * * *"`) reaches none of them. So **`auto_new = 1` fires
+on a press, not on the clock**: it is still one field away from committing all 17 films, and it still gets no
+warning in the UI, but it cannot fire itself overnight. The same fact is why the missed grouping window above
+waited for a human rather than healing.
+
+### Acceptance (added)
+
+17. On an installation where the versions library has just been configured and never scanned, the **first** kind C
+    version is grouped within FR-314-15's own wait, from the notification alone, with no refresh issued by the
+    write path.
+18. A version whose grouping window passes with no item resolved is grouped by the retry — no *Find files* press
+    and no other human action — and the title is reported only once the retry's bound is exhausted.
+
+### Tests (added)
+
+18. Configuring the versions root asks Jellyfin to validate that library exactly once, asserted on the request
+    rather than on a log line, and asks for nothing on the movies or series libraries.
+19. A write whose first grouping attempt resolves no item merges on a later retry with `buildPlan()` never called,
+    and reports against the title when the bound is exhausted.
+
+### What this does not change
+
+- **`auto_new` stays `0`** and the other 16 films stay held until DEB-870 passes. Nothing here touches the hold.
+- **Prod owes no new scan for film 1.** The 2026-10-13 23:30:53Z validation resolved it and the folder items now
+  exist. Acceptance 17 is written for a freshly configured library precisely because prod can no longer reproduce
+  the state that broke.
+- **FR-314-19 is a deploy, not a fix.** The restricted-account row is built and in `main`, behind prod; it is
+  mentioned here only so the two are not confused.
