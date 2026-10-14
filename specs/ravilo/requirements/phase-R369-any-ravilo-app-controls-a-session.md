@@ -1,8 +1,8 @@
 # Phase R369 — Any Ravilo app controls a session
 
-## Status
+## Scope
 
-`Planned` — written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: the backend reaches a loaded receiver over its own events socket, not a Cast channel; the revision check runs at the target with `expect_index`; routes move to `/api/tv/playback/sessions`; 304b ships with it). **Phase 2 of 6** (see R368). Depends on
+Written 2026-10-03 (design-authored), **dev-reviewed 2026-10-04** (see the end: the backend reaches a loaded receiver over its own events socket, not a Cast channel; the revision check runs at the target with `expect_index`; routes move to `/api/tv/playback/sessions`; 304b ships with it). **Phase 2 of 6** (see R368). Depends on
 R368. Designs: `Playback Sessions - Directions.html` §B2 (the bar as a remote) and §B5 (the remote).
 
 ## The rule
@@ -425,3 +425,77 @@ computer); two `next`s pressed together skip once.
   Ravilo open on the TV, *Play on…* a film from the phone → the session remote lists the TV's tracks; a pick applies
   on the TV and the remote's ✓ follows. Not covered: a film playing on a phone or computer as a session's place (the
   picker lists are built for the TV only).
+
+## Amendment 2026-10-14 — a seek on a book session is book time, or it is not offered (DEB-1099)
+
+Sited with R368's *Amendment 2026-10-14* (FR-R368-13), which fixes what a book's session **shows**. This is the other
+half, found while siting it and **not** what QA reported: what happens when the bar it shows is **dragged**. Derived
+from the code at prod's commit `83a4bc87`, not measured on a device — the device check is in the acceptance below.
+
+**The four links.** `seek` is in `SESSION_OPS_LEGACY`, and `opsFor` (`tv/SessionCommands.kt:115-117`) narrows a
+non-music kind by dropping shuffle and repeat only — so a book session's remote draws a **draggable** slider
+(`SessionRemoteScreen.kt:177-181`) whose press sends `positionMs = fraction × duration`, and after FR-R368-13 that
+duration is honestly the **book's**. At the target, a `session_command` seek becomes `RemoteCommand.SeekTo`
+(`shared/…/Sessions.kt:193`) and is applied by `shared/…/RemoteCommand.kt:170` → `MusicRemotePlayer.seekTo` →
+`MusicPlayback.seekTo` → `MusicEngine.seekTo`, which is a position **inside the part that is playing**. The same
+object's `seekBy` one line above (`RemoteControl.kt:121-126`) already has the book arm this one lacks
+(`if (st.book != null) skipBy(delta)`), which is how the asymmetry survived: a book's ±30 s is book-aware and its
+scrubber is not.
+
+So a drag past roughly the part's own share of the bar asks the engine for a position beyond the part's end: what the
+listener gets is the end of that part and the start of the next, the unheard remainder skipped and the stored place
+rewritten forward. It is the same family as DEB-1100 — a book losing a place — and the thumb the remote draws today
+invites exactly that gesture. **This is why DEB-1099 is not cosmetic**, and it is a reason not to ship FR-R368-13's
+honest numbers without the clause below.
+
+**FR-R369-9 — a book's seek is book time, and is offered only where it is obeyed in book time.**
+
+1. **The base.** A `seek` on a session whose `kind` is `audiobook` carries **book** time — the same base FR-R368-13
+   projects and the same base FR-R380-15 already sends as a book's `start_ms`. One base per kind, server and client.
+2. **Obeyed through the door that already exists.** The target applies it with `MusicEngine.seekBook(bookMs)`, which
+   crosses part boundaries and is what R323's own whole-book scrubber uses. `seekTo` gains the book arm its sibling
+   `seekBy` has had since R323; nothing new is written to do the arithmetic.
+3. **Gated, additively.** The server offers `seek` on a book session only to a target that says it obeys a book-time
+   seek — one new token beside the events socket's existing features and `plays=` list. Nothing is deleted or
+   retyped, and a target that does not advertise it is simply not offered the op, so FR-R369-6's standing rule
+   applies unchanged: a control the target does not obey is **absent, never greyed**. The remote then draws its
+   read-only bar, and ±30 s (`next` / `previous` — R322's book rule, FR-R380-4's key map) stays the way a book moves
+   from a remote. The web app must not advertise the token: it has no music engine, and its `seekBook` is a no-op
+   (`MusicEngineWasm`).
+4. **Unchanged:** `seek` stays revision-checked (`revisionChecked`, FR-R369-1's 409), the legacy `playstate_command`
+   carrier is untouched, and a film's or a song's seek is exactly as today.
+
+**The one prod-visible consequence, stated plainly.** Until an installed build carries (2), a book session's remote
+shows a bar that cannot be dragged where today it shows one that can. That is a control taken away from a viewer, and
+the reason it is written here as a decision rather than carried to the owner is that **he has already answered the
+question it turns on**: R323, 2026-09-28, *"the hairline becomes a small scrubber for the whole book (label Book,
+knob, elapsed / total, tap to seek)"* — a book's scrubber is a **book-time** scrubber, so this restores his decision
+on the remote rather than removing it, and the gate is what keeps a wrong seek off builds that cannot honour it. The
+interim is Tróndur's to reverse if he reads it the other way.
+
+**One symptom of DEB-1099 that this amendment does not claim to fix.** QA also reported the scrub thumb *"pinned at
+the far right-hand end of the track regardless"*, at the same instant as the numbers that gave ~3.5%. The pairing
+alone cannot draw both: `drawnPositionMs` + the slider put the thumb where the fraction is, and nothing in either
+explains a thumb at the end while the left-hand number reads a part offset. It is left **open and unexplained** —
+re-read on the fix (acceptance 2), and if it survives it is its own finding, not this one half-fixed.
+
+### Acceptance (this amendment)
+
+1. **No device** — a book session's `ops` (`GET /api/tv/playback/sessions/{id}`) carry **no** `seek` for a target
+   that does not advertise the token, and carry it for one that does. A film's and a song's `ops` are unchanged.
+2. **On a device, both ends carrying the build** (the sender and the TV): with a book playing on the TV, the remote's
+   bar reads the same fraction the TV's own screen reads, and a drag into a **different part** lands there — the TV
+   on the dragged chapter, `audiobook_progress` holding the dragged place, nothing between skipped. The pinned-thumb
+   symptom above is re-read in the same run and reported either way. Owed to QA; not a condition of the build.
+3. **An old build as the target** (a release APK without the token): the remote draws the read-only bar, ±30 s still
+   moves the book, and no `seek` is sent.
+
+### Tests (this amendment)
+
+- `tv/SessionCommandsTest` — `opsOf` for an `audiobook` session excludes `seek` without the token and includes it
+  with it; `film`, `episode` and `music` unchanged, with and without the token.
+- `ravilo-ui` `commonTest` — a `session_command` `seek` on a book session reaches `seekBook` (book time) and not
+  `seekTo`; on a song it still reaches `seekTo`. Written beside the existing `seekBy` book case so the asymmetry
+  cannot come back.
+- The capability/handler set equality R380 FR-R380-11 holds for `session_load` arms covers the new token the same
+  way: a build that advertises it must have the arm.

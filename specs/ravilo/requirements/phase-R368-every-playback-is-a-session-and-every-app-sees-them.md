@@ -775,3 +775,78 @@ purely in which session row the progress path finds or creates.
   mirror (a recording mirror lambda; no HTTP).
 - The `describe` floor: a part id with `bookId = null` describes as `audiobook` with the book's title.
 - `WireCompatTest` must stay green with nothing added: this amendment reads a field that already ships.
+
+## Amendment 2026-10-14 — a book's session is projected in two time bases at once (DEB-1099)
+
+Found by QA running R380 acceptance 4 test 3 on the Stue TV and the Pixel (DEB-1088 → DEB-1099), then sited against
+`main` at prod's own commit `83a4bc87`. **One session row, two clocks.** At one instant the TV's own Now playing read
+the book ~13% in while the phone's session remote read ~3.5% in, against a duration both agreed on; the row's
+`position_ms` was 675578 and the part was the third, which identifies the remote's number as the **part's** position
+printed against the **book's** duration.
+
+**The mechanism, two links, both in the projection and neither in the wire:**
+
+- `tv/SessionWiring.kt:41` — `describeAudiobookPart` builds the queue entry for a book's **part** and fills its
+  `duration_ms` from `b.durationMs`, the **whole book's** length. That is right for the title, the author, the cover
+  and the duration a listener wants; it is the book, not the part, by design (R380 FR-R380-12).
+- `tv/PlaybackSessions.kt:298-300` — `toView` then pairs that duration with `s.positionMs`, which for a book is the
+  **part's** position: FR-R368-12 made the row's `item_id` the part it is on, and the heartbeat reports against that
+  part. Neither line is wrong on its own; the pair is.
+
+**Why the row keeps part time and the projection is where this is fixed.** The row's part base is load-bearing and
+measured: `isSessionChange`'s seek tolerance (`:64-70`), `moveStartMs` (`:367` — DEB-1055's 2 000 ms, re-confirmed
+under DEB-1088 and not to be touched), FR-R368-12's `findLocked` precedence, and the `audiobook_progress` mirror all
+read it as the position *in the part*. Converting on write would move every one of them; converting in the view moves
+nothing but what is drawn.
+
+**FR-R368-13 — a book's session is seen in book time, both numbers.** A `SessionView` whose `kind` is `audiobook`
+carries `position_ms` in **book** time — the parts before the one it is on, plus the row's position in that part —
+against the `duration_ms` it already carries, which is the book's. `position_at` keeps its meaning, so FR-R369-7's
+smooth extrapolation and `drawnPositionMs`'s clamp are unchanged and now clamp book time against the book.
+
+1. **The arithmetic already exists on the server**, and is the same one `audiobook_progress` is stored with:
+   `AudiobookRules.bookPosition(store.parts(bookId), partIndex, positionMs)`. The book is the row's `book_id`
+   (FR-R368-12 guarantees it is set on a book's session) or `bookOfPart(item_id)` as the floor; the part index is that
+   part's place in `parts(bookId)`.
+2. **One seam, both projections.** The conversion sits where the per-viewer projection and the admin's both pass, so
+   the two cannot disagree. The admin's row is **not** fixed by `toView` alone: `tv/SessionPublisher.kt:240-241` pairs
+   `s.positionMs` raw with `v.durationMs`, so 304's session page carries this same defect today and must take the
+   view's position.
+3. **The offset is not cached in `queue_json`.** Hanging it on the stored `SessionItem` would read part time again for
+   any session rebuilt from the DB after a restart until the next describe — a correct-looking fix that is wrong for
+   ten minutes at a time. It is computed where the view is built.
+4. **Nothing else moves.** A `music`, `film` or `episode` session is projected exactly as today (its item's duration
+   is its own). A pre-fix row with `book_id` NULL (DEB-1054's ghosts) falls back to the position it has rather than
+   failing. The TV's own Now playing already computes book time itself (`MusicEngine.bookPositionMs`) and is not
+   touched, nor is the book player's chapter bar, nor `audiobook_progress`.
+
+**No wire change, no field added or retyped, and no client release.** Every surface that draws a session reads this
+one view, so the fix reaches an installed client the moment the backend is deployed: the session remote's two numbers
+and its bar (R369 FR-R369-6), *Playing everywhere*'s 3 dp line and the mini bar (FR-R368-7/-8,
+`PlayingEverywhere.kt:140-146` and `:177-181`), the place-offline line, the desktop bar, the web app and the admin.
+**Checked for a client that reads `position_ms` as part time: there is none.** The one client use that is not drawing
+is `SessionRemote.move`'s Cast LOAD (`onLoadHere`, 2 s back), and a book never reaches a Cast place — owner decision 4
+of R380, held by `canPlay` (`PlayOnList.kt:34`) in `moveTargets`.
+
+**Reachable today, on released builds — this is not latent behind FR-R380-15.** The defect is in what the server
+projects, so any book session whose place is **not** the device looking shows it: a book playing on a computer, on the
+web app, on another phone, or on a TV through the server road DEB-919 already deployed. The *Playing everywhere* row
+and the mini bar draw the wrong fraction without the remote being opened at all, and the admin's session page draws it
+for the owner. FR-R380-15 adds one more way in, not the only one.
+
+### Acceptance (this amendment)
+
+1. **No device, two calls** — with a book's session live on any place, `PUT /api/tv/music/audiobook/{book}/progress`
+   for a part that is not the first, then `GET /api/tv/playback/sessions`: the session's `position_ms` equals
+   `book_position_ms` as the same call's own 200 reports it, and `position_ms / duration_ms` is the fraction the TV's
+   own screen draws. On the first part the two are equal, as they are today.
+2. **The admin** (`GET /api/sessions` for 304's page) reports the same pair for the same row.
+3. **A film and a song are unchanged**, numbers and fraction, in both lists.
+
+### Tests (this amendment)
+
+- `tv/PlaybackSessionsTest` — a book row on a later part projects book time against the book's duration; the same row
+  on the first part is unchanged; a row rebuilt from the DB with no fresh describe still projects book time (part 3
+  above); `book_id` NULL projects the position it has; a `film` and a `music` row project exactly as before.
+- The admin projection asserts the pair it publishes, so `SessionPublisher`'s raw `s.positionMs` cannot come back.
+- `WireCompatTest` green with nothing added: no field is added, removed or retyped by this amendment.
