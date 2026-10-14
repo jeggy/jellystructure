@@ -808,6 +808,14 @@ not explain the codec.
   stream the player cannot play is restreamed **once** with `not_our_encoder: true` and answered by Jellyfin's
   transcode, and a second failure ends on R237's Retry / Back. So the worst case of this change is the picture that
   plays today, through the other encoder.
+- **Which surfaces this moves**, read off each platform's own `supportsHevcOverHls()` (the probe `hls_hevc_capable`
+  carries): the **TV and phone apps gain** the HEVC branch (Android's probe is `true`); **mpv on Linux gains it too**
+  — `DesktopCapabilities.kt`'s probe is `mpv || hevc` while mpv's `playsOnlyHls()` is false, so its `hls_hevc` was
+  false; it decodes HEVC in MPEG-TS natively and takes one rung (FR-308-4), and no device has played it yet; the
+  **Mac's AVPlayer and the Cast web receiver are unchanged**, both having sent `hls_hevc` all along; and the **web and
+  the Tizen screen app are unchanged**, because their probe answers `false` (R284 FR-R284-6, R285 FR-R285-5). Nothing
+  gains the branch that had not already told us it decodes HEVC over HLS — which is the whole point of reading the
+  statement rather than the opt-in.
 
 **Tests.** `EncoderPlanTest`: the TV/phone shape **as the fleet really sends it** (`hls_hevc = false`,
 `hls_hevc_capable = true`, `supports_hdr10 = true`, `video_codecs` with `hevc`) gets HEVC Main 10 rungs with
