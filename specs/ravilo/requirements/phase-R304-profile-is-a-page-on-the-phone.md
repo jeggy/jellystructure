@@ -1,12 +1,13 @@
 # Phase R304 — Profile is a page on the phone
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-25 from the dev review below (all five items). `Planned` when written 2026-09-25 from the
-owner's ask and the mockup in `design/ravilo/Ravilo Mobile.html` (`?tab=profile`), drawn the same day; owner
-answered the design questions before this was written. **Dev-reviewed 2026-09-25 against `main` `e7991df3`.**
+Written 2026-09-25 from the owner's ask and the mockup in `design/ravilo/Ravilo Mobile.html` (`?tab=profile`),
+drawn the same day; owner answered the design questions before this was written. **Dev-reviewed 2026-09-25
+against `main` `e7991df3`**; built 2026-09-25 from that review (all five items) — see *Build* below.
 Handset only (**R256**'s `isHandset` seam); the TV's avatar dropdown is unchanged. Uses **R267**'s bottom bar,
-**187**'s photo and password screens, **R161/R162**'s viewer language.
+**187**'s photo and password screens, **R161/R162**'s viewer language. Amended 2026-10-14 (FR-R304-7, My List
+moves the page while it loads — DEB-1174). Phase status lives in `STATUS.md`.
 
 ### Build (2026-09-25)
 
@@ -73,6 +74,27 @@ person's). No *Unpair*.
 **FR-R304-6 — no Jellyfin in any viewer-facing string.** Owner rule, applied to this page and its sheet:
 the role reads *Admin*, the sign-out copy says *your name and password*.
 
+**FR-R304-7 — My List never moves the page while it loads** *(amendment 2026-10-14, DEB-1174, see below)*.
+From the moment the Profile page draws, nothing below the My List heading — Account, Sign out, the version
+line — changes position because the list arrived. On the phone and in R337's desktop layout alike.
+1. **Until the first answer, the slot is the loaded row's height.** It holds placeholder tiles with the
+   geometry of a loaded tile — the poster box, the 8 dp gap and the one title line under it — taken from
+   the same size source the loaded row uses, so the two cannot drift apart again. A plain poster shape in
+   the surface colour; no text, no spinner. (Composing the row's own `Tile` with no title and no image is
+   one way to get that by construction.)
+2. **The heading line has one height.** The count and *See all ›* reserve their space before the count is
+   known; they appear, the line does not grow.
+3. **The page remembers the last list it read, for this viewer, while the app runs** — R40's kept-store
+   pattern, keyed by the viewer so a second profile on the same device never sees the first one's list.
+   A second and later visit draws that list on its first frame and refreshes in place, the way R364's My
+   List page does. A refresh that changes which titles are in the list changes the tiles, not the row's
+   height. What is drawn is always the server's last answer — nothing is added or removed locally.
+4. **The one height change allowed** is the first read of an app run coming back **empty**: the reserved
+   row gives way to FR-R304-2's empty sentence, once. A remembered empty list draws the sentence at once.
+   A failed read keeps today's behaviour (the empty sentence) and is not remembered.
+5. **What a loaded tile looks like does not change in this fix** — the slot is made to match it, not the
+   other way round (see *Found 2026-10-14* for the poster's shape, which is a separate question).
+
 **New strings × en/da/fo:** `pf_mylist_empty`, `pf_account`, `pf_app_language`, `pf_app_language_note`,
 `pf_signout_title`, `pf_signout_body`, `pf_signout_confirm`, `pf_signout_cancel`, `pf_signed_in_to`,
 `pf_lang_changed`. Reuse existing keys for *My List*, *See all*, *Change password*, *Sign out*, *Admin*.
@@ -99,6 +121,13 @@ the role reads *Admin*, the sign-out copy says *your name and password*.
 On a handset the avatar opens a page, not a menu; the pill sits under it; the photo opens the photo
 screen; Sign out asks first; there is no Switch profile and no *Jellyfin* anywhere on the page. On a TV
 nothing changes.
+
+**FR-R304-7 (2026-10-14).** Unit: the My List section measures the same height loading and loaded with
+titles, in the phone and the desktop layout, and its heading line measures the same with and without a
+count. Device (the Pixel, `.debug` of `main`, a viewer with titles in My List), recorded on screen: after a
+fresh launch, tap Profile — the *Account* heading is at the same place on the first frame and once the
+posters are in; leave to Home and tap Profile again — the posters are there on the first frame. A viewer
+with an empty My List: at most one change, on the first visit of the run, and none on the second.
 
 ## Dev review (2026-09-25, against `main` `e7991df3`)
 
@@ -137,3 +166,32 @@ from `is_admin`, never from a Jellyfin policy fetch.
 **Net effect.** A `Dest.Profile` page on the handset stack replacing `profileMenuOpen` there, a Settings
 row rather than a deleted screen, the language row on the existing write, ten `profile.*` strings ×
 three languages plus the lexicon, and the avatar ring in the bottom bar. No backend change.
+
+## Found 2026-10-14, amended 2026-10-14 (FR-R304-7, DEB-1174)
+
+> *"On mobile and clicking the profile tab it provides bad ui. As the my list is loading and then it hops in
+> its height so everything below it moves, which is super annoying"* — the owner, 2026-10-14.
+
+Decided from the code at `main` `8134a340`, without a device repro; FR-R304-7's acceptance is the device check
+after the build.
+
+- **The placeholder is shorter than what replaces it.** `ProfileScreen` holds `myList` in a plain `remember`
+  and reads it in a `LaunchedEffect(Unit)`, so every arrival on the page starts from *unknown*. While unknown
+  the phone draws an empty `Box` of `TILE_HEIGHT` = 168 dp (the desktop branch: 207 dp). A loaded tile is
+  taller on both: `Tile` draws the poster **plus an 8 dp gap and a title line** under it, which the
+  placeholder leaves out; and on the phone the poster's own height is not 168 dp — `Tile` sizes it from the
+  TV's 232 dp × the operator's `ui_density` scale (0.82 / 0.91 / 1), and the 112 dp box clamps only its
+  width. By reading, the row grows by roughly 45–90 dp on the phone and ~25 dp on the desktop when the
+  posters arrive, and Account, Sign out and the version line move down by that much.
+- **The heading line grows too.** *See all ›* (13 sp, 6 dp vertical padding) is laid out only once
+  `myListTotal > 0`, so the line beside the 17 sp heading gains a few dp in the same frame.
+- **An empty list moves it the other way.** The empty sentence is shorter than 168 dp, so for a viewer with
+  nothing in My List the page shrinks on arrival instead.
+- **Every visit repeats it.** Nothing is kept between visits (unlike R40's kept stores and R364's My List
+  page), so tapping Profile, leaving and coming back shows the jump again.
+- **Not a cause:** R321's mode card above My List depends on the music answer, which the app asks for at
+  launch, not on opening Profile.
+- **Seen on the way, not changed here:** by the reading above, the phone tile's poster is 112 dp wide and
+  190–232 dp tall — not 2:3 — because `Tile`'s width yields to the 112 dp box and its height does not.
+  Whether that is what the Pixel actually shows needs a look on the device before anyone calls it a defect;
+  if it is one, it is its own amendment, since it changes what a viewer sees.
