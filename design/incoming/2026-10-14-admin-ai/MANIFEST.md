@@ -105,6 +105,24 @@ Run on this quarantine commit, before anything moved:
   of the owner's in that file. Bárður is routing it and the owner decides per file, so it is not
   pushed as part of this round.
 - **The support-AI feature under investigation on DEB-1076** arrives as its own brief. It is a
-  different feature from this page's Auto-fetch and is not folded into this triage.
+  different feature from this page's Auto-fetch and is not folded into this triage. **Confirmed by
+  Bárður on 2026-10-14**, after this round was triaged: it is a *second AI feature on the same
+  page*, so the inference above is now a decision and not a reading of the canvas.
 - **No phase number anywhere.** Allocation happens at adoption, from `STATUS.md` and the board, and
   numbers never leave the repo.
+
+## Routing — 2026-10-14, after triage
+
+Both questions this round raised went to Bárður, who owns the owner channel, and both are answered.
+
+- **The two dropped files go back to the owner for a re-skin, asked as written.** The question put to
+  him is the one in the triage report, unchanged: re-skin the worked example to the stand-in corpus
+  and hand it back, or say why the real title was deliberate. The design itself is not in question —
+  the recommendation was to change nothing but the example data. Nothing further happens to this
+  quarantine directory until a re-skinned page arrives, and that arrival is a new lane-A round with
+  its own pull, its own gate and its own manifest; this one is not reopened or patched.
+- **Auto-fetch and the support-AI feature are two features sharing one page.** The consequence for
+  design, recorded here because it outlives this round: the AI page's shell — the segment switcher,
+  the `No AI key` gate that *removes* the sidebar entry rather than greying it, the narrow
+  breakpoint — is **shared chrome**, not Auto-fetch's own. A later round that adds the second
+  feature extends that shell; it does not draw a second one.
