@@ -145,6 +145,10 @@ fun Tile(
      *  states the title). Never true together with a [FocusRequester] on this tile or any ancestor
      *  reaching into it via `focusRestorer()` — FR-R240-5 forbids both. */
     open: Boolean = false,
+    /** R304 (FR-R304-7) — a loading stand-in: this tile's exact box (poster, 8 dp gap, title line) with a plain
+     *  surface-coloured poster, no image and no focus target. Pass an empty [title]; a row of these measures what
+     *  the same row of loaded tiles measures, because it is the same composable. */
+    placeholder: Boolean = false,
     onFocused: () -> Unit = {},
     onBlurred: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
@@ -181,11 +185,13 @@ fun Tile(
     Column(
         modifier = Modifier
             .width(w)
-            .dpadFocusable(
-                focusRequester = focusRequester,
-                onFocused = { focused = true; onFocused() },
-                onBlurred = { focused = false; onBlurred() },
-                onSelect = onSelect,
+            .then(
+                if (placeholder) Modifier else Modifier.dpadFocusable(
+                    focusRequester = focusRequester,
+                    onFocused = { focused = true; onFocused() },
+                    onBlurred = { focused = false; onBlurred() },
+                    onSelect = onSelect,
+                ),
             ),
     ) {
         Box(
@@ -222,7 +228,9 @@ fun Tile(
                         }
                     },
             ) {
-            if (posterUrl != null) {
+            if (placeholder) {
+                Box(modifier = Modifier.matchParentSize().background(colors.surface))
+            } else if (posterUrl != null) {
                 // A persistent backdrop under the image, not just a load-time placeholder: a Crop
                 // image fully covers it either way, but a Fit image (a logo) only paints its fitted
                 // area, and without this the rest of the tile — and the progress bar's semi-transparent

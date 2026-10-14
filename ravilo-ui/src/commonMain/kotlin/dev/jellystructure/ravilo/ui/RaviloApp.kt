@@ -2772,8 +2772,11 @@ fun RaviloApp(
             // R304 — the phone's Profile page and its App language screen.
             is Dest.Profile -> {
                 val active = MultiTokenStore.getActive()
+                // FR-R304-7 — kept per viewer for the app run, so a second visit draws the last list on its first frame.
+                val myListStore = keptStore("profile-mylist:${dest.displayName}") { dev.jellystructure.ravilo.ui.screens.ProfileMyListStore(apiClient) }
                 dev.jellystructure.ravilo.ui.screens.ProfileScreen(
                     apiClient = apiClient,
+                    myListStore = myListStore,
                     displayName = dest.displayName,
                     isAdmin = active?.isAdmin == true,
                     avatarUrl = activeAvatarUrl,

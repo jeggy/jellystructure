@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,7 +37,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +81,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileScreen(
     apiClient: TvApiClient,
+    /** FR-R304-7 — the viewer's last My List answer, kept for the app run (R40) so the row is drawn on the first frame. */
+    myListStore: ProfileMyListStore,
     displayName: String,
     isAdmin: Boolean,
     avatarUrl: String?,
@@ -97,16 +104,18 @@ fun ProfileScreen(
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
-    var myList by remember { mutableStateOf<List<MediaCard>?>(null) }
-    var myListTotal by remember { mutableStateOf(0) }
+    // FR-R304-7 — what is drawn is the store's last server answer: null until the viewer's first read of this app
+    // run. A failed read with nothing remembered draws the empty sentence (as before) and is held here, not in the
+    // store, so it is not remembered: the next visit starts from placeholders again.
+    var readFailed by remember { mutableStateOf(false) }
+    val myList = myListStore.cards ?: if (readFailed) emptyList() else null
+    val myListTotal = myListStore.total
     var showSignOut by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(myListStore) {
         // Dev review item 4 — My List is the browse kind that already exists; the row reads it with a
         // small page, *See all* opens the same kind as a grid.
-        runCatching { apiClient.browse(kind = "mylist", page = 1, pageSize = MY_LIST_ROW_SIZE) }
-            .onSuccess { myList = it.items; myListTotal = it.total }
-            .onFailure { myList = emptyList() }
+        readFailed = !myListStore.refresh()
     }
     dev.jellystructure.ravilo.ui.components.OnReselect(scrollToTopTick) { scroll.animateScrollTo(0) }
     // FR-R304-3 — Back with the sheet up closes the sheet, not the page (seen on the Pixel 9: R275's
@@ -143,30 +152,17 @@ fun ProfileScreen(
                     }
                 }
             }
-            Row(Modifier.padding(horizontal = hPad).padding(top = 30.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(str("nav.my_list"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                if (myListTotal > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(myListTotal.toString(), color = colors.textDim, fontSize = 13.sp, fontFamily = SpaceGrotesk)
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "${str("browse.see_all_short")} ›", color = colors.textSecondary, fontSize = 12.5.sp, fontFamily = Sora,
-                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onMyListSeeAll).padding(vertical = 4.dp),
-                    )
-                }
-            }
-            val list = myList
-            when {
-                list == null -> Box(Modifier.fillMaxWidth().height(207.dp))
-                list.isEmpty() -> Text(
+            Column(Modifier.testTag(PROFILE_MY_LIST_TAG)) {
+                MyListHeadingLine(myListTotal, desk = true, onSeeAll = onMyListSeeAll, modifier = Modifier.padding(horizontal = hPad).padding(top = 30.dp, bottom = 10.dp))
+                val list = myList
+                if (list != null && list.isEmpty()) Text(
                     str("profile.mylist_empty"), color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 20.sp, fontFamily = Sora,
                     modifier = Modifier.padding(horizontal = hPad).widthIn(max = 520.dp).background(colors.surface, RoundedCornerShape(12.dp)).padding(14.dp),
+                ) else MyListRow(
+                    list, tileWidth = 138.dp, onItemSelect = onItemSelect,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = hPad),
+                    spacing = dev.jellystructure.ravilo.ui.theme.raviloItemSpacing,
                 )
-                else -> ArrowRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = hPad), horizontalArrangement = Arrangement.spacedBy(dev.jellystructure.ravilo.ui.theme.raviloItemSpacing)) {
-                    items(list, key = { it.id }) { card ->
-                        Box(Modifier.width(138.dp)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
-                    }
-                }
             }
         } else Column(
             Modifier
@@ -207,36 +203,20 @@ fun ProfileScreen(
 
             // ── My List ──
             Spacer(Modifier.height(26.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(str("nav.my_list"), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
-                if (myListTotal > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(myListTotal.toString(), color = colors.textDim, fontSize = 12.sp, fontFamily = Sora)
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "${str("browse.see_all_short")} ›", color = colors.accentSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
-                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onMyListSeeAll).padding(vertical = 6.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            val list = myList
-            when {
-                list == null -> Box(Modifier.fillMaxWidth().height(TILE_HEIGHT))
-                list.isEmpty() -> Text(
+            Column(Modifier.testTag(PROFILE_MY_LIST_TAG)) {
+                MyListHeadingLine(myListTotal, desk = false, onSeeAll = onMyListSeeAll)
+                Spacer(Modifier.height(10.dp))
+                val list = myList
+                if (list != null && list.isEmpty()) Text(
                     str("profile.mylist_empty"), color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 20.sp, fontFamily = Sora,
                     modifier = Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(12.dp)).padding(14.dp),
-                )
-                else -> ArrowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(list, key = { it.id }) { card ->
-                        Box(Modifier.width(TILE_WIDTH)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
-                    }
-                }
+                ) else MyListRow(list, tileWidth = TILE_WIDTH, onItemSelect = onItemSelect, spacing = 10.dp)
             }
 
             // ── Account ──
             Spacer(Modifier.height(26.dp))
-            Text(str("profile.account").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
+            Text(str("profile.account").uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp,
+                modifier = Modifier.testTag(PROFILE_ACCOUNT_TAG))
             Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(14.dp))) {
                 val currentLang = LocalLang.current
@@ -367,5 +347,96 @@ private fun SheetButton(label: String, primary: Boolean, onClick: () -> Unit) {
 private val DANGER = Color(0xFFF5667A)
 private val AVATAR = 76.dp
 private val TILE_WIDTH = 112.dp
-private val TILE_HEIGHT = 168.dp
 private const val MY_LIST_ROW_SIZE = 12
+
+/** The *Account* heading — what FR-R304-7's test reads to see whether anything above it moved. */
+internal const val PROFILE_ACCOUNT_TAG = "profile-account"
+
+/** The My List section (heading line and row) — what the test measures on the desktop layout, which has no Account heading. */
+internal const val PROFILE_MY_LIST_TAG = "profile-my-list"
+
+/** How many placeholder tiles the loading row draws — more than any phone's width holds; the row clips. */
+private const val MY_LIST_PLACEHOLDERS = 6
+
+/**
+ * FR-R304-7 (2) — the My List heading line, one height whether or not the count is known. The count and
+ * *See all ›* are always laid out; until [total] says there is a list they are invisible and unreachable (no
+ * semantics, no click), so the line neither grows when they appear nor needs a second layout of its own.
+ */
+@Composable
+internal fun MyListHeadingLine(total: Int, desk: Boolean, onSeeAll: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = RaviloTheme.colors
+    val known = total > 0
+    val hidden = if (known) Modifier else Modifier.alpha(0f).clearAndSetSemantics {}
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            str("nav.my_list"), color = colors.text, fontSize = if (desk) 18.sp else 17.sp, fontWeight = FontWeight.Bold,
+            fontFamily = SpaceGrotesk,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(total.toString(), color = colors.textDim, fontSize = if (desk) 13.sp else 12.sp, fontFamily = if (desk) SpaceGrotesk else Sora, modifier = hidden)
+        Spacer(Modifier.weight(1f))
+        Text(
+            "${str("browse.see_all_short")} ›",
+            color = if (desk) colors.textSecondary else colors.accentSecondary,
+            fontSize = if (desk) 12.5.sp else 13.sp,
+            fontWeight = if (desk) null else FontWeight.SemiBold,
+            fontFamily = Sora,
+            modifier = hidden
+                .clickable(enabled = known, interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSeeAll)
+                .padding(vertical = if (desk) 4.dp else 6.dp),
+        )
+    }
+}
+
+/**
+ * FR-R304-7 (1) — the My List row. [cards] null is "not read yet": the same row, with [MY_LIST_PLACEHOLDERS]
+ * poster-shaped blanks in the cells the loaded tiles use — the same `ArrowRow`, the same cell box and the row's
+ * own [Tile] (`placeholder = true`) — so the loading row and the loaded row are one layout, not two that agree.
+ */
+@Composable
+internal fun MyListRow(
+    cards: List<MediaCard>?,
+    tileWidth: Dp,
+    spacing: Dp,
+    onItemSelect: (MediaCard) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    ArrowRow(contentPadding = contentPadding, horizontalArrangement = Arrangement.spacedBy(spacing)) {
+        if (cards == null) {
+            items(MY_LIST_PLACEHOLDERS) {
+                Box(Modifier.width(tileWidth)) { Tile(title = "", posterUrl = null, placeholder = true) }
+            }
+        } else {
+            items(cards, key = { it.id }) { card ->
+                Box(Modifier.width(tileWidth)) { Tile(title = card.title, posterUrl = card.posterUrl, onSelect = { onItemSelect(card) }) }
+            }
+        }
+    }
+}
+
+/**
+ * FR-R304-7 (3) — the viewer's last My List answer, kept for the app run through R40's `keptStore`, keyed by the
+ * viewer (the registry is never cleared on a user switch). Holds only what the server last said: [refresh] replaces
+ * it, nothing is inserted or removed locally.
+ */
+class ProfileMyListStore(private val apiClient: TvApiClient) {
+    /** The first [MY_LIST_ROW_SIZE] titles of the last successful read; null until the first one this run. */
+    var cards by mutableStateOf<List<MediaCard>?>(null)
+        private set
+    /** The whole list's size from the same read (the heading's count); 0 while unknown. */
+    var total by mutableStateOf(0)
+        private set
+
+    /** Reads My List and replaces the kept answer. False on a failed read, which leaves the kept answer as it was. */
+    suspend fun refresh(): Boolean = try {
+        val r = apiClient.browse(kind = "mylist", page = 1, pageSize = MY_LIST_ROW_SIZE)
+        cards = r.items
+        total = r.total
+        true
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+}
