@@ -444,8 +444,9 @@ fun main() = runBlocking {
         // Phase 314 (FR-314-15, DEB-875) — the version lives in the versions library, and Jellyfin groups it with the
         // film by an explicit merge. Asserted, never remembered: the item is looked up by path first (so a version
         // written months ago is still mergeable), and only a path Jellyfin does not know yet is reported and waited
-        // for. No library scan is triggered anywhere on this path — prod sets `scan_interval_hours = 0`.
-        groupVersion = { item, versionPath ->
+        // for. No library scan is triggered anywhere on this path, so the kind needs no admin session per version —
+        // and FR-314-21's retry keeps that true for the write whose report Jellyfin drops.
+        groupVersion = { item, versionPath, patient ->
             val cfg = configStore.current
             val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
             val token = cfg.apiKeys.jellyfinToken
@@ -469,10 +470,13 @@ fun main() = runBlocking {
                 else -> {
                     var versionId = findVersionItem()
                     if (versionId == null) {
-                        // Measured on 12.1 (DEB-875): reporting the one created path resolves it into an item in
-                        // under a minute, with no scan. Two minutes of patience, then it is reported and retried.
+                        // Measured on 12.1 (DEB-875, DEB-1009): reporting the one created path resolves it into an
+                        // item in under a minute **once that library holds any item at all** — `LibraryMonitor` walks
+                        // up the reported path for a `BaseItem` it already knows, so a library Jellyfin has never
+                        // scanned drops the report with a 204 and no log line. Two minutes of patience after a write;
+                        // FR-314-21's retry asks impatiently, because it comes back in a quarter of an hour.
                         jellyfinClient.notifyMediaUpdated(base, token, listOf(jfPath to "Created"))
-                        repeat(8) {
+                        if (patient) repeat(8) {
                             if (versionId == null) {
                                 kotlinx.coroutines.delay(15_000)
                                 versionId = findVersionItem()
@@ -490,6 +494,14 @@ fun main() = runBlocking {
                     }
                 }
             }
+        },
+        // FR-314-21 (DEB-1009) — the retry's one read: which files Jellyfin already shows as these films' sources.
+        // One request for every film, so a tick that finds everything grouped — the normal case — costs exactly one.
+        groupedSourcePaths = { films ->
+            val cfg = configStore.current
+            val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+            if (base.isBlank()) emptyMap()
+            else jellyfinClient.sourcePathsOfItems(base, cfg.apiKeys.jellyfinToken, films.mapNotNull { it.jellyfinId })
         },
         // FR-314-15 — a deleted version is reported as deleted and Jellyfin drops the alternate itself.
         ungroupVersion = { versionPath ->
@@ -525,6 +537,18 @@ fun main() = runBlocking {
                     mediaJobQueue.enqueueFileFix(row.media_id, "Make file play directly · ${row.label}", row.path, row.kind)
                 }
             }.onFailure { Logger.warn("file fix: queue tick failed: ${it.message} (314)", "jobs") }
+        }
+    }
+    // FR-314-21 (DEB-1009) — the pass FR-314-15's "the next pass tries again" always meant. Until this, the merge
+    // assertion was reachable only from `planOne`, i.e. from the *Find files*, *Rename* and *Remove* presses, so a
+    // version whose grouping window passed stayed on disk and ungrouped until somebody was in the admin — which on
+    // prod cost half an hour and a full dry run. It triggers no scan: one read when kind C has written anything,
+    // nothing at all when it has not.
+    rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+        while (true) {
+            kotlinx.coroutines.delay(dev.jellystructure.filefix.FileFixService.GROUPING_RETRY_EVERY_MS)
+            runCatching { fileFix.assertVersionGrouping() }
+                .onFailure { Logger.warn("file fix: grouping retry failed: ${it.message} (314, FR-314-21)", "jobs") }
         }
     }
     // Phase 281 — the book editor: suggestions from four providers, the cover, Save (tags only with the switch on).

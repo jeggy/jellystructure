@@ -310,6 +310,12 @@ data class JellyfinMediaSourceInfo(
     // the VOD case). `RequiresOpening`/`RequiresClosing` gate the LiveStreams/Open+Close lifecycle
     // (dev-review addendum D — Live TV is NOT a branch of the VOD PlaybackInfo→stream flow).
     @SerialName("Protocol") val protocol: String? = null,
+    /**
+     * ⚠ Not a Live TV field, although it sits in their group: a **VOD** source carries this too — the source's file
+     * in Jellyfin's own view of the media. FR-314-21 (DEB-1009) reads it off `/Items?Ids=…&Fields=MediaSources` to
+     * answer *does this film already have a source whose path is our version*, which is the grouping assertion's
+     * whole question (measured on 12.1, including a merged alternate's path with no `/Users/{id}` context).
+     */
     @SerialName("Path") val path: String? = null,
     @SerialName("IsInfiniteStream") val isInfiniteStream: Boolean = false,
     @SerialName("RequiresOpening") val requiresOpening: Boolean = false,

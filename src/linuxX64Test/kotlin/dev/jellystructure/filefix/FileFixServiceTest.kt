@@ -123,6 +123,20 @@ class FileFixServiceTest {
     private val grouped = ArrayList<Pair<String, String>>()
     private var groupAnswer: () -> VersionGrouping = { VersionGrouping(true, "grouped with the film as a version") }
 
+    /**
+     * FR-314-21 (DEB-1009) — was each grouping call the patient one (after a write, FR-314-15's own 8 × 15 s) or the
+     * retry's impatient one? A retry that waited minutes per film would outlast its own interval.
+     */
+    private val groupPatience = ArrayList<Boolean>()
+
+    /**
+     * FR-314-21 — what Jellyfin answers for the films the retry asks about: source paths in its own view, keyed by
+     * Jellyfin item id. A film **absent** from this map is one Jellyfin does not know, which is a different fact from
+     * a film with no sources, so the fake only answers for the ids it has.
+     */
+    private var jellyfinSources: Map<String, Set<String>> = emptyMap()
+    private var sourceReads = 0
+
     /** FR-314-15 — the version paths the service reported as gone. */
     private val ungrouped = ArrayList<String>()
 
@@ -136,7 +150,11 @@ class FileFixServiceTest {
         afterWrite = { item, nudgeArr -> afterWrites += item.id to nudgeArr }, reassertAssets = { item -> reasserted += item.id; emptyList() },
         playbackActive = { playing }, shell = shell, now = { clock }, today = { "2026-10-08" },
         renameOriginal = renamer, radarrLink = radarrLink,
-        groupVersion = { item, versionPath -> grouped += item.id to versionPath; groupAnswer() },
+        groupVersion = { item, versionPath, patient -> grouped += item.id to versionPath; groupPatience += patient; groupAnswer() },
+        groupedSourcePaths = { films ->
+            sourceReads++
+            films.mapNotNull { it.jellyfinId }.filter { it in jellyfinSources }.associateWith { jellyfinSources.getValue(it) }
+        },
         ungroupVersion = { versionPath -> ungrouped += versionPath },
         arrRootFolders = { arrRoots },
         restrictedViewers = { restrictedViewers },
@@ -189,8 +207,11 @@ class FileFixServiceTest {
         shell.files[dvFilm] = 50_000_000; shell.probes[dvFilm] = dv7
         store.addOrUpdate(MediaItem(id = "film", title = "Film", year = 2020, kind = MediaKind.MOVIE, path = film, tmdbId = null,
             originalLanguage = "da", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList()))
+        // FR-314-21 — the kind C film carries a Jellyfin id, because the grouping retry asks Jellyfin about the film
+        // and a film Jellyfin has no id for is one it cannot be asked about.
         store.addOrUpdate(MediaItem(id = "other", title = "Other", year = 2021, kind = MediaKind.MOVIE, path = dvFilm, tmdbId = null,
-            originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList()))
+            originalLanguage = "en", posterPath = null, overview = null, issueCount = 0, scannedAt = 0L, tracks = emptyList(),
+            jellyfinId = "jf-other"))
     }
 
     @AfterTest fun tearDown() { for (s in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$dir/test.db$s") } }
@@ -546,6 +567,95 @@ class FileFixServiceTest {
         s.buildPlan()
         assertEquals(listOf("other" to version), grouped)
         assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+    }
+
+    // ── FR-314-21 (DEB-1009) — the grouping is retried on a timer, not only from a press ─────────────────────────
+
+    /**
+     * Test 19 — acceptance 18's first half. The write's own window passes with nothing resolved (on prod: a versions
+     * library Jellyfin had never scanned, which drops `Library/Media/Updated` with a 204 and no log line), and the
+     * merge then lands off the timer with **no dry run in between** — no `buildPlan()` is called anywhere between the
+     * write and the merge below, which is the whole point: until FR-314-21 the only pass was a *Find files* press.
+     */
+    @Test fun `a version whose grouping window passed is grouped by the retry - with no dry run in between`() = runBlocking {
+        withVersionsRoot()
+        groupAnswer = { VersionGrouping(false, "Jellyfin has not resolved it into an item yet") }
+        val s = service()
+        s.buildPlan()
+        val version = "$dir/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        val versionInJellyfinsView = "/media/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }), "an ungrouped version is still a written version")
+        assertEquals(listOf(true), groupPatience, "the write itself waits for the item — FR-314-15's own window")
+        grouped.clear(); groupPatience.clear()
+
+        // The retry. Jellyfin knows the film and shows only the film's own file as a source.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv"))
+        groupAnswer = { VersionGrouping(true, "grouped with the film as a version") }
+        assertEquals(1, s.assertVersionGrouping(), "the version on disk with no matching source is merged")
+        assertEquals(listOf("other" to version), grouped)
+        assertEquals(listOf(false), groupPatience, "the retry asks impatiently: it comes back in a quarter of an hour")
+        assertTrue(history.forItem("other").any { it.detail.contains("it is grouped now") },
+            history.forItem("other").joinToString { it.detail })
+        assertEquals("done", row(dvFilm, FixKind.DOLBY_VISION)?.state)
+
+        // And once Jellyfin shows it, a tick is one read and no write at all.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv", versionInJellyfinsView))
+        grouped.clear()
+        val reads = sourceReads
+        assertEquals(0, s.assertVersionGrouping())
+        assertTrue(grouped.isEmpty(), "a merge that already holds is not written again every quarter of an hour")
+        assertEquals(reads + 1, sourceReads, "one read for the whole set, per tick")
+    }
+
+    /** Test 19 — acceptance 18's second half: the bound, the report at it, and the report taken back. */
+    @Test fun `the retry stops at its bound and reports the title - and takes that back when Jellyfin does group it`() = runBlocking {
+        withVersionsRoot()
+        groupAnswer = { VersionGrouping(false, "Jellyfin has not resolved it into an item yet") }
+        val s = service()
+        s.buildPlan()
+        assertIs<FixOutcome.Done>(s.runJob(dvFilm, "c", { false }))
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv"))
+        grouped.clear()
+        assertEquals(0, s.assertVersionGrouping(), "inside the bound it keeps asking")
+        assertEquals(1, grouped.size)
+        assertTrue(!row(dvFilm, FixKind.DOLBY_VISION)!!.detail.endsWith(FileFixService.UNGROUPED_NOTE), "and says nothing yet")
+
+        clock += FileFixService.GROUPING_RETRY_WINDOW_SEC + 1
+        grouped.clear()
+        assertEquals(0, s.assertVersionGrouping())
+        assertTrue(grouped.isEmpty(), "past the bound, asking again is not what is missing")
+        val detail = row(dvFilm, FixKind.DOLBY_VISION)!!.detail
+        assertTrue(detail.endsWith(FileFixService.UNGROUPED_NOTE), detail)
+        assertTrue(detail.startsWith("the Dolby Vision 8.1 version is"), "the row still says what it did: $detail")
+        assertEquals(1, history.forItem("other").count { it.detail.contains("stopped being asked") },
+            history.forItem("other").joinToString { it.detail })
+
+        // Said once, not once a tick.
+        assertEquals(0, s.assertVersionGrouping())
+        assertEquals(1, history.forItem("other").count { it.detail.contains("stopped being asked") })
+
+        // And taken back the moment Jellyfin does show the version — the note can never outlive what it describes.
+        jellyfinSources = mapOf("jf-other" to setOf("/media/films/Other (2021)/Other (2021).mkv",
+            "/media/versions/Other (2021)/Other (2021) - Dolby Vision.mkv"))
+        assertEquals(0, s.assertVersionGrouping())
+        assertTrue(!row(dvFilm, FixKind.DOLBY_VISION)!!.detail.endsWith(FileFixService.UNGROUPED_NOTE),
+            row(dvFilm, FixKind.DOLBY_VISION)!!.detail)
+    }
+
+    @Test fun `the retry merges nothing without a versions root - and nothing for a film Jellyfin does not know`() = runBlocking {
+        val s = service()
+        s.buildPlan()
+        assertEquals(0, s.assertVersionGrouping(), "no root configured: kind C writes beside the original and this is not its problem")
+        assertEquals(0, sourceReads, "and Jellyfin is not asked anything")
+
+        withVersionsRoot()
+        val withRoot = service()
+        withRoot.buildPlan()
+        assertIs<FixOutcome.Done>(withRoot.runJob(dvFilm, "c", { false }))
+        grouped.clear()
+        jellyfinSources = emptyMap()   // Jellyfin answers for no film: the id it had is gone
+        assertEquals(0, withRoot.assertVersionGrouping())
+        assertTrue(grouped.isEmpty(), "a film Jellyfin does not know is not a film to merge a version onto")
     }
 
     @Test fun `with a versions root no film waits for a rename - and without one it still does`() = runBlocking {

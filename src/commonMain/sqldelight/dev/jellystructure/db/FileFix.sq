@@ -80,6 +80,12 @@ countPreRootDvVerdicts:
 SELECT COUNT(*) FROM file_fix
 WHERE kind = :kind AND (state = 'needs_rename' OR (state = 'skipped' AND detail IN (:skip_file, :skip_other)));
 
+-- FR-314-21 (DEB-1009) — the grouping retry's work list: what this kind has written and finished. It is the file on
+-- disk and Jellyfin's answer that decide whether anything is done with a row, never the row itself, so this stays a
+-- plain read of `done` and nothing here remembers a pending merge.
+doneForKind:
+SELECT * FROM file_fix WHERE kind = :kind AND state = 'done' ORDER BY path;
+
 failedRows:
 SELECT * FROM file_fix WHERE state = 'failed' ORDER BY updated_at DESC LIMIT :lim;
 

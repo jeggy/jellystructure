@@ -24,6 +24,10 @@ import kotlinx.coroutines.CancellationException
 // needs. Not a cap: every paged fetch below loops until TotalRecordCount is reached.
 private const val JF_PAGE_SIZE = 200
 
+// FR-314-21 (DEB-1009) — how many item ids go into one `?Ids=` read. A bound on the URL, not on the answer: the
+// caller chunks and merges, so a library with more kind C versions than this costs another request and nothing else.
+private const val JF_IDS_PER_READ = 50
+
 private const val DEVICE_ID = "jellystructure-server-v01"
 // Phase 224 (FR-224-1) — the server's own identity carries its real version (was a literal "0.1.0").
 private val AUTH_HEADER: String by lazy {
@@ -874,6 +878,35 @@ class JellyfinClient {
             "/Items?ParentId=${parentId.encodeURLParameter()}&Recursive=true&IncludeItemTypes=$includeItemTypes&Fields=Path"
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("itemsOfLibrary")?.items ?: emptyList()
     }.getOrElse { Logger.warn("Jellyfin itemsOfLibrary failed: ${it.message}"); emptyList() }
+
+    /**
+     * FR-314-21 (DEB-1009) — which files Jellyfin already shows as each film's sources, for every film in one read:
+     * `GET /Items?Ids=…&Fields=MediaSources`, keyed by item id, each value the source paths in Jellyfin's own view.
+     *
+     * This is the *read* half of FR-314-15's **asserted, never remembered**: the retry has to know which versions are
+     * already grouped, and merging blind every pass would write to Jellyfin once per film per tick for nothing. An id
+     * that answers nothing is absent from the map rather than present and empty — "Jellyfin does not know this film"
+     * and "this film has no sources" are different facts, and only the second one means *merge*. A chunk whose read
+     * fails is absent for that same reason, so an unreachable Jellyfin makes the retry skip rather than merge blind.
+     *
+     * Measured on 12.1 (DEB-1009): the list shape carries a merged alternate's `Path` and its `Type: "Grouping"` with
+     * no `/Users/{id}` context, so this needs the admin token and no viewer.
+     */
+    suspend fun sourcePathsOfItems(baseUrl: String, token: String, jellyfinIds: List<String>): Map<String, Set<String>> {
+        if (jellyfinIds.isEmpty()) return emptyMap()
+        val out = HashMap<String, Set<String>>()
+        for (chunk in jellyfinIds.chunked(JF_IDS_PER_READ)) {
+            val url = baseUrl.trimEnd('/') + "/Items?Ids=" + chunk.joinToString(",") { it.encodeURLParameter() } + "&Fields=MediaSources"
+            val items = runCatching {
+                httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemDetailsResponse>("sourcePathsOfItems")?.items
+            }.getOrElse { e ->
+                if (e is CancellationException) throw e
+                Logger.warn("Jellyfin sourcePathsOfItems failed: ${e.message}"); null
+            } ?: continue
+            for (i in items) out[i.id] = i.mediaSources.mapNotNull { it.path }.toSet()
+        }
+        return out
+    }
 
     /**
      * Phase 314 (FR-314-15, DEB-875) — group a kind C version with its film: Jellyfin's own

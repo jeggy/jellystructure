@@ -85,7 +85,13 @@ class FileFixService(
      * is called after a write and again from the dry run while the file is there, and a merge that already holds is a
      * no-op. Null where it isn't wired (tests, and an installation with no versions root).
      */
-    private val groupVersion: (suspend (item: MediaItem, versionPath: String) -> VersionGrouping)? = null,
+    private val groupVersion: (suspend (item: MediaItem, versionPath: String, patient: Boolean) -> VersionGrouping)? = null,
+    /**
+     * FR-314-21 (DEB-1009) — which files Jellyfin already shows as each of these films' sources, in its own view of
+     * the media, keyed by Jellyfin item id. The retry's read: a film absent from the answer is one Jellyfin does not
+     * know, which is **not** a reason to merge. Null where it isn't wired (tests, no versions root).
+     */
+    private val groupedSourcePaths: (suspend (films: List<MediaItem>) -> Map<String, Set<String>>)? = null,
     /**
      * FR-314-15 — tells Jellyfin our version is gone, so it drops the alternate item and leaves the film its own file
      * and its watch data (measured, DEB-875). Never `DELETE /Videos/{id}/AlternateSources`: that drops a film's
@@ -358,11 +364,97 @@ class FileFixService(
     /**
      * FR-314-15 — group the version with its film and, once it is grouped, keep that library out of every viewer's
      * way. Null when grouping isn't wired. Never throws: the file is written and good whatever Jellyfin answers.
+     *
+     * [patient] is FR-314-15's own wait for the item to appear, which belongs to a write that has just happened.
+     * FR-314-21's retry asks impatiently: it runs again shortly, so waiting minutes per film inside one tick would
+     * only make the tick outlast its own interval.
      */
-    private suspend fun groupAndKeepHidden(item: MediaItem, versionPath: String): VersionGrouping? {
-        val grouped = runCatching { groupVersion?.invoke(item, versionPath) }.getOrNull() ?: return null
+    private suspend fun groupAndKeepHidden(item: MediaItem, versionPath: String, patient: Boolean = true): VersionGrouping? {
+        val grouped = runCatching { groupVersion?.invoke(item, versionPath, patient) }.getOrNull() ?: return null
         if (grouped.merged) runCatching { assertViewerVisibility?.invoke() }
         return grouped
+    }
+
+    /**
+     * FR-314-21 (DEB-1009) — assert the kind C merges off a timer, so a version that missed its grouping window
+     * costs minutes instead of a human press.
+     *
+     * Acceptance 9 on prod found the first version written, verified and ungrouped: on a versions library Jellyfin
+     * has never scanned, `POST /Library/Media/Updated` is accepted with a 204 and dropped (`LibraryMonitor` walks
+     * **up** the reported path for an item it already knows, and there was none). FR-314-15's own answer to that is
+     * *the next pass tries again* — but the only pass is `planOne`, which production reaches from the *Find files*,
+     * *Rename* and *Remove* presses and from nothing else, so "next pass" meant "next time somebody is in the admin".
+     *
+     * It re-derives everything it does, per FR-314-15's **asserted, never remembered**: the `done` rows, the file on
+     * disk, and Jellyfin's own list of each film's sources. Nothing is stored and there is no queue of pending merges
+     * to go stale — a version removed, rewritten, or re-created by Jellyfin under a new item converges on the next
+     * tick either way. Returns how many films it merged (0 is the normal, quiet answer).
+     */
+    suspend fun assertVersionGrouping(): Int {
+        val root = versionsRoot() ?: return 0
+        val read = groupedSourcePaths ?: return 0
+        val libraries = config().libraries
+        // The work list: a `done` kind C row whose version really is on disk, for a film Jellyfin knows and whose
+        // version path we can name in Jellyfin's view. An unmapped root is FR-314-16's refusal, reported by the write
+        // path with the library row to fill in; saying it again here every tick would only be noise.
+        val targets = q.doneForKind(FixKind.DOLBY_VISION.id).executeAsList().mapNotNull { row ->
+            val item = store.resolve(row.media_id) ?: return@mapNotNull null
+            if (item.jellyfinId.isNullOrBlank()) return@mapNotNull null
+            val versionPath = dvVersionPath(row.path, root)
+            if (!shell.exists(versionPath)) return@mapNotNull null
+            val inJellyfinView = jellyfinViewOrNull(versionPath, libraries) ?: return@mapNotNull null
+            RetryTarget(row, item, versionPath, inJellyfinView)
+        }
+        if (targets.isEmpty()) return 0
+        val sources = runCatching { read(targets.map { it.item }) }.getOrNull() ?: return 0
+        var merged = 0
+        for (t in targets) {
+            // Absent means Jellyfin does not know this film at all — there is nothing to merge onto, and merging
+            // against an id Jellyfin has forgotten would write a pairing nobody asked for.
+            val have = sources[t.item.jellyfinId] ?: continue
+            if (t.inJellyfinView in have) {
+                clearUngroupedNote(t.row)
+                continue
+            }
+            // The bound: a version Jellyfin has not resolved within this of the write is not going to be resolved by
+            // asking again — on an installation that validates its library at all, this is many chances — and the
+            // outcome FR-314-15 asks for then is a report against the title, not a retry that never ends.
+            if (now() - t.row.updated_at > GROUPING_RETRY_WINDOW_SEC) {
+                reportUngrouped(t)
+                continue
+            }
+            val grouped = groupAndKeepHidden(t.item, t.versionPath, patient = false) ?: continue
+            if (grouped.merged) {
+                merged++
+                clearUngroupedNote(t.row)
+                history.record(t.item.id, "file_fix", "The version was on disk and not grouped with the film; it is grouped now (${grouped.detail}).")
+                Logger.info("file fix: grouping asserted off the timer for ${t.item.id} — ${grouped.detail} (314, FR-314-21)", "jobs")
+            } else {
+                Logger.info("file fix: version still not grouped for ${t.item.id} — ${grouped.detail}; the next pass tries again (314, FR-314-21)", "jobs")
+            }
+        }
+        return merged
+    }
+
+    private data class RetryTarget(val row: File_fix, val item: MediaItem, val versionPath: String, val inJellyfinView: String)
+
+    /**
+     * FR-314-21 — the bound's outcome, said once: the title's history gets the report FR-314-15 asks for and the row
+     * carries [UNGROUPED_NOTE] so the kind's card says it too. The note is also what makes *once* derivable with
+     * nothing stored for it — a row already carrying it has already been reported — and [clearUngroupedNote] takes it
+     * away again the moment Jellyfin does show the version, so it can never outlive what it describes.
+     */
+    private suspend fun reportUngrouped(t: RetryTarget) {
+        if (t.row.detail.endsWith(UNGROUPED_NOTE)) return
+        q.setState("done", t.row.detail + UNGROUPED_NOTE, t.row.read_bytes, t.row.updated_at, t.row.path, t.row.kind)
+        history.record(t.item.id, "file_fix", "The version is written and on disk, but Jellyfin has not grouped it with the film and has stopped being asked. " +
+            "Press Find files once Jellyfin can see ${t.inJellyfinView.substringBeforeLast('/')}.")
+        Logger.warn("file fix: giving up on grouping ${t.versionPath} — Jellyfin never resolved it (314, FR-314-21)", "jobs")
+    }
+
+    private fun clearUngroupedNote(row: File_fix) {
+        if (!row.detail.endsWith(UNGROUPED_NOTE)) return
+        q.setState("done", row.detail.removeSuffix(UNGROUPED_NOTE), row.read_bytes, row.updated_at, row.path, row.kind)
     }
 
     // ── The card ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -745,6 +837,25 @@ class FileFixService(
         const val DEFAULT_DOVI_TOOL = "/usr/local/bin/dovi_tool"
         /** FR-314-10 — 2 TB read per 24 h, so a backlog spreads over nights instead of saturating the disks. */
         const val DEFAULT_NIGHTLY_READ_CAP = 2_000_000_000_000L
+
+        /**
+         * FR-314-21 (DEB-1009) — how often the grouping assertion runs. Costs one Jellyfin read when kind C has
+         * written anything and nothing at all when it has not, so the interval is set by how long a missed window
+         * may stay missed, not by what it costs: the normal path is already covered by FR-314-15's own wait after
+         * the write, and this is what catches the write whose notification Jellyfin dropped.
+         */
+        const val GROUPING_RETRY_EVERY_MS = 15 * 60 * 1000L
+
+        /**
+         * FR-314-21 — the bound, measured from the row's own `updated_at` rather than from a counter, so a restart
+         * neither forgets it nor repeats it. Jellyfin resolves a reported path in about a minute **once any item
+         * exists in that library** (measured, DEB-1009), and an installation that validates its library at all gets
+         * many more chances than this; past it, asking again is not what is missing.
+         */
+        const val GROUPING_RETRY_WINDOW_SEC = 6 * 3600L
+
+        /** FR-314-21 — what a `done` row's detail carries while Jellyfin has not grouped its version, on the card. */
+        const val UNGROUPED_NOTE = " · not grouped with the film yet"
         private val VIDEO_EXT = listOf(".mkv", ".mp4", ".m4v", ".avi", ".ts", ".m2ts", ".mov", ".wmv")
         val SENTENCES: Map<FixKind, String> = mapOf(
             FixKind.STEREO to "Adds a stereo AAC track where a file has none a Chromecast, a browser or a phone without Dolby can play. The original tracks stay.",
