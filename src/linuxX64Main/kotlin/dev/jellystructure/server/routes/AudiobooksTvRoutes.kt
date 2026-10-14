@@ -49,7 +49,9 @@ fun Route.audiobooksTvRoutes(
     }
     put("/tv/music/audiobook/{id}/progress") {
         val req = call.receive<AudiobookProgressRequest>()
-        call.respond(svc.progress(call.attributes[DeviceKey], call.parameters["id"]!!, req.part, req.positionMs, req.paused, req.volumePercent, req.muted)   // R357
+        // R368 (FR-R368-12) — `session_id` is passed on from here: it shipped on the request and stopped at this line.
+        call.respond(svc.progress(call.attributes[DeviceKey], call.parameters["id"]!!, req.part, req.positionMs, req.paused,
+            req.volumePercent, req.muted, req.sessionId)   // R357 · R368
             ?: return@put call.respond(HttpStatusCode.NotFound))
     }
     put("/tv/music/audiobook/{id}/speed") {

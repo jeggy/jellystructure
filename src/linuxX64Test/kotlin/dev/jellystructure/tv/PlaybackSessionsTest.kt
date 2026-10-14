@@ -41,9 +41,11 @@ class PlaybackSessionsTest {
 
     private fun service(): PlaybackSessions = PlaybackSessions(db) { now }.also { s ->
         s.notify = { pushes += it }
+        // FR-R368-12 — the store's reverse lookup, as the wiring gives it: `part-N` is a part of `book-1`.
+        s.bookOfPart = { id -> if (id.startsWith("part-")) "book-1" else null }
         s.describe = { id, bookId ->
             when {
-                bookId != null -> SessionKind.AUDIOBOOK to SessionItem(id, "The Long Ferry")
+                bookId != null -> SessionKind.AUDIOBOOK to SessionItem(id, "The Long Ferry", "Ingrid Lykke", "/api/tv/image/audiobook/book-1", 7_200_000)
                 id.startsWith("song") -> SessionKind.MUSIC to SessionItem(id, "Song $id", "The Lanterns · Paper Harbour")
                 id.startsWith("ep") -> SessionKind.EPISODE to SessionItem(id, "Little Foxes", "S01E0${id.last()}")
                 else -> SessionKind.FILM to SessionItem(id, "Night Train")
@@ -198,6 +200,131 @@ class PlaybackSessionsTest {
         assertEquals(id, s.onStart(phone, "part-2", 0, bookId = "book-1"))
     }
 
+    // ── FR-R368-12 (DEB-1054) — a book's session is found by its book, not by the part it is on ──
+
+    /**
+     * The whole bug, from the entry point that needs no device: one progress report naming another part of the book
+     * being listened to. Before the fix `findLocked` matched on `item_id` alone, so this missed, `onProgress` took its
+     * `created` path, and a second session appeared beside the book — `kind = film`, video lane, `book_id` NULL, no
+     * title (three such rows measured on prod at `v1.51-174-g5b13710e`).
+     */
+    @Test fun `a progress report for another part of the live book joins it and mints nothing`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "part-1", 0, bookId = "book-1")
+        s.onProgress(phone, "part-1", 26_038, paused = false, bookId = "book-1")
+        val rev = s.get(id)!!.revision
+        s.onProgress(phone, "part-2", 332_610, paused = true, bookId = "book-1")
+        assertEquals(1, s.all().count { it.live }, "one session, not a second one beside the book")
+        val r = s.get(id)!!
+        assertEquals("part-2", r.itemId, "the matched row moves to the part that reported")
+        assertEquals(332_610, r.positionMs)
+        assertEquals("book-1", r.bookId)
+        assertEquals(SessionKind.AUDIOBOOK, r.kind)
+        assertEquals("audio", r.lane)
+        assertEquals(rev + 1, r.revision, "a new item is a change")
+    }
+
+    /** The same report with the book left off the call: the part id alone resolves to its book (the store's floor). */
+    @Test fun `a part id with no book given still joins the book's session`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "part-1", 0, bookId = "book-1")
+        s.onProgress(phone, "part-1", 26_038, paused = false)
+        s.onProgress(phone, "part-3", 1_373_762, paused = false)
+        assertEquals(1, s.all().count { it.live })
+        assertEquals("part-3", s.get(id)!!.itemId)
+    }
+
+    /** FR-R368-12(2) — a **playing** report that legitimately creates a session creates an `audiobook`, with the book's words. */
+    @Test fun `a playing report for a part with no live session mints an audiobook in the audio lane`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        s.onProgress(phone, "part-2", 332_610, paused = false, bookId = "book-1")
+        val r = assertNotNull(s.all().singleOrNull { it.live })
+        assertEquals(SessionKind.AUDIOBOOK, r.kind, "never film: the nameless row R380 FR-R380-12 forbids")
+        assertEquals("audio", r.lane)
+        assertEquals("book-1", r.bookId)
+        assertEquals("part-2", r.itemId)
+        assertEquals("The Long Ferry", r.current?.title)
+        assertEquals("Ingrid Lykke", r.current?.subtitle)
+        assertEquals("/api/tv/image/audiobook/book-1", r.current?.artwork)
+        assertEquals(332_610, r.positionMs)
+        assertEquals(SessionState.PLAYING, r.state)
+    }
+
+    /**
+     * FR-R368-12(5) (added 2026-10-14) — a **paused** report that matches nothing is a bookmark, not a playback: the
+     * documented restore call (one `PUT …/progress`, `paused`, no `session_id`) minted a row in the same millisecond as
+     * its 200, which nobody was listening to and only a hand could end. Four prod rows came this way, all from QA's own
+     * cleanup, and the fourth crossed no part boundary at all.
+     */
+    @Test fun `a paused report for a part with no live session mints nothing`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        pushes.clear()
+        s.onProgress(phone, "part-2", 332_610, paused = true, bookId = "book-1")
+        assertTrue(s.all().isEmpty(), "no session row at all, not even a titled one")
+        assertTrue(pushes.isEmpty(), "and nothing to push")
+        // The same call with the book left off the arguments: the part id alone still says it is a book.
+        s.onProgress(phone, "part-2", 332_610, paused = true)
+        assertTrue(s.all().isEmpty())
+    }
+
+    /**
+     * FR-R368-12(5) is confined to a book's part: the general mint is there for a receiver whose skip outran its start
+     * (the Mac, 2026-10-05) and is not narrowed by it.
+     */
+    @Test fun `a paused report with no match still mints for anything that is not a book part`() = runBlocking {
+        val s = service()
+        val mac = device("mac")
+        s.onProgress(mac, "song-5", 45_000, paused = true)
+        val song = assertNotNull(s.all().singleOrNull { it.live })
+        assertEquals(SessionKind.MUSIC, song.kind)
+        assertEquals(SessionState.PAUSED, song.state)
+        s.onProgress(mac, "film-1", 90_000, paused = true)
+        assertEquals(2, s.all().count { it.live })
+        assertEquals(SessionKind.FILM, s.all().last { it.live }.kind)
+    }
+
+    /** The same, with the book left off: the part id alone is enough — a part is never a film. */
+    @Test fun `a minted session for a bare part id is still an audiobook`() = runBlocking {
+        val s = service()
+        s.onProgress(device("pixel"), "part-2", 1_000, paused = false)
+        val r = assertNotNull(s.all().singleOrNull { it.live })
+        assertEquals(SessionKind.AUDIOBOOK, r.kind)
+        assertEquals("book-1", r.bookId)
+        assertEquals("audio", r.lane)
+    }
+
+    /**
+     * FR-R368-12(1) asserted as an order, not as four cases: the `session_id` beats the item, the item beats the book,
+     * and the book beats the stop-hold. Two live rows on one place, one on the book and one on a film with a hold.
+     */
+    @Test fun `the match precedence is session id then item then book then the stop hold`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val book = s.onStart(phone, "part-1", 0, bookId = "book-1")
+        s.onProgress(phone, "part-1", 10_000, paused = false, bookId = "book-1")
+        val film = s.onStart(phone, "film-1", 0)
+        s.onProgress(phone, "film-1", 20_000, paused = false)
+        s.onStop(phone, "film-1", 20_000)           // the film now holds the 15 s stop-hold, and is the newer row
+        assertNotNull(s.get(film)!!.stopHoldUntil)
+        // The book's own part: the item match wins over the newer row's hold.
+        s.onProgress(phone, "part-1", 11_000, paused = false)
+        assertEquals(11_000, s.get(book)!!.positionMs)
+        // Another part of the book: no item match anywhere, so the book arm wins over the hold.
+        s.onProgress(phone, "part-2", 500, paused = false)
+        assertEquals("part-2", s.get(book)!!.itemId)
+        assertEquals("film-1", s.get(film)!!.itemId, "the film beside it is untouched")
+        assertEquals(2, s.all().count { it.live })
+        // A given session_id wins over both: the row it names takes the report, and the book's row does not move.
+        val bookPos = s.get(book)!!.positionMs
+        s.onProgress(phone, "part-2", 900, paused = false, sessionId = film)
+        assertEquals(900, s.get(film)!!.positionMs)
+        assertEquals(bookPos, s.get(book)!!.positionMs, "the named session took it, not the book's")
+    }
+
     @Test fun `a stop with no start for fifteen seconds ends it`() = runBlocking {
         val s = service()
         val phone = device("pixel")
@@ -273,7 +400,8 @@ class PlaybackSessionsTest {
         val s = service()
         val phone = device("pixel")
         val id = s.onStart(phone, "film-1", 0)
-        s.onStop(phone, "film-1", 30_000)
+        s.onProgress(phone, "film-1", 30_000, paused = false)
+        s.onStop(phone, "film-1", 30_000)   // the watchdog's own forced stop, with the tracker's position
         s.onReaped(phone, "film-1")
         val r = s.get(id)!!
         assertTrue(r.live)
@@ -285,13 +413,19 @@ class PlaybackSessionsTest {
         assertFalse(s.get(id)!!.offline)
     }
 
-    /** R372 — found live 2026-10-09 (evening, Mac): a failed play stayed *paused · offline* at 0:00 for hours. */
-    @Test fun `a watchdog reap of a play that never got past zero ends it as failed`() = runBlocking {
+    /**
+     * R372 — found live 2026-10-09 (evening, Mac): a failed play stayed *paused · offline* at 0:00 for hours.
+     *
+     * FR-R372-13 (amendment 2026-10-14) — the arm is kept, so DEB-919's one diagnostic signal still fires, but it is
+     * now the **load that never reported** that carries it, not a position that reads 0. The watchdog's forced stop
+     * runs first here, as it does on the real path.
+     */
+    @Test fun `a watchdog reap of a load that never reported ends it as failed`() = runBlocking {
         val s = service()
         val phone = device("pixel")
         val id = s.onStart(phone, "film-1", 0)
-        s.onProgress(phone, "film-1", 0, paused = true)
         pushes.clear()
+        s.onStop(phone, "film-1", 0)
         s.onReaped(phone, "film-1")
         val r = s.get(id)!!
         assertFalse(r.live)

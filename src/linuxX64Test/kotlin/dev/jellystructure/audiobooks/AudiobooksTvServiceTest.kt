@@ -24,6 +24,8 @@ class AudiobooksTvServiceTest {
     private val mirrored = mutableListOf<Pair<String, Long>>()
     private val played = mutableListOf<String>()
     private val volumes = mutableListOf<Pair<Int?, Boolean?>>()
+    /** R368 (FR-R368-12) — the book and the heartbeat's own `session_id`, as the mirror was given them. */
+    private val books = mutableListOf<Pair<String, String?>>()
 
     private val open = device(null)
     private val other = device(setOf("libother"))
@@ -39,7 +41,9 @@ class AudiobooksTvServiceTest {
             AudiobookPart(id = "q0", bookId = "F2", number = 1, position = 0, durationMs = 4 * min)
         store.replaceLibrary(AudiobooksRows("lib", listOf(book, short), parts, emptyList(), 0))
         svc = AudiobooksTvService(store,
-            mirror = { _, part, pos, _, vol, muted -> mirrored += part to pos; volumes += vol to muted },
+            mirror = { _, part, book, pos, _, vol, muted, session ->
+                mirrored += part to pos; volumes += vol to muted; books += book to session
+            },
             markPlayed = { _, ids -> played += ids })
     }
 
@@ -76,6 +80,17 @@ class AudiobooksTvServiceTest {
         svc.progress(open, "F1", 0, 3 * min, paused = false, volumePercent = 35, muted = true)
         svc.progress(open, "F1", 0, 4 * min, paused = false)
         assertEquals(listOf<Pair<Int?, Boolean?>>(35 to true, null to null), volumes)
+    }
+
+    @Test
+    fun a_heartbeat_forwards_the_book_and_its_session_id_to_the_mirror() = runBlocking {
+        // R368 (FR-R368-12, DEB-1054) — `session_id` shipped on AudiobookProgressRequest and stopped at this service,
+        // which had no parameter to put it in: a client that sent it changed nothing. The book goes with it, so the
+        // playback session behind the mirror is found by the book and not by the part the row happens to hold.
+        svc.progress(open, "F1", 1, 2 * min, paused = false, sessionId = "ps-abc123")
+        svc.progress(open, "F1", 2, 1 * min, paused = true)
+        assertEquals(listOf("F1" to "ps-abc123", "F1" to null), books)
+        assertEquals(listOf("p1" to 2 * min, "p2" to 1 * min), mirrored, "still the part's own item id to Jellyfin")
     }
 
     @Test

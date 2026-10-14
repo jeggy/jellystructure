@@ -233,6 +233,15 @@ internal data class SessionRec(
      * a restart reads it back from the timeline's last `offline` event (the spell writes exactly one).
      */
     val offlineSince: Long? = null,
+    /**
+     * R372 (FR-R372-13, amendment 2026-10-14) — has this session ever had a position report of its own, i.e. did it
+     * ever leave `starting`? Only [PlaybackSessions.onProgress] sets it, and only a reap reads it: `failed` is for a
+     * play that never reported, never for a position that happens to read 0. **Not the row's `state`**, because a
+     * book's next part (and an episode's auto-advance) puts a session that has played for an hour back into
+     * `starting`; and not a column, because a restart reads it back from the state it comes back in — a row restored
+     * `playing` or `paused` has plainly reported.
+     */
+    val everReported: Boolean = false,
 ) {
     val live: Boolean get() = endedAt == null
     // The item that plays, by id: a queue report moves [queueIndex] into the app's whole queue while [queue] may hold only the
@@ -329,6 +338,20 @@ internal const val SESSION_STOP_HOLD_MS = 15_000L
 internal const val SESSION_PAUSED_KEEP_MS = 4L * 60 * 60_000
 
 /**
+ * R372 (FR-R372-14, amendment 2026-10-14) — a live session whose position has not moved for this long ends `idle`.
+ *
+ * Every other ending arm in [PlaybackSessions.tick] needs `offline`, or `paused` with no stop-hold, or `starting`
+ * **with** a load deadline, or a stop-hold — so a session that is `playing`, not offline, with none of those matched
+ * no arm at all and could never end from inside the service. Deliberately the same 4 h as
+ * [SESSION_PAUSED_KEEP_MS] and deliberately far longer than any cadence this product has (10 s heartbeats, the 90 s
+ * stop watchdog, a receiver that reports on change): this is a floor against an immortal row, not a second watchdog,
+ * and nothing is exempt from it — `cast` and `screen` are exempt from the **socket** test (FR-218-11, FR-236-8)
+ * because a quiet socket is not evidence there, but four hours without a single position report is not a cadence for
+ * anything.
+ */
+internal const val SESSION_PLAYING_SILENT_MS = 4L * 60 * 60_000
+
+/**
  * R372 (FR-R372-8) — a session whose place has gone away ends this long after the **first** `offline` of that offline
  * spell ([SessionRec.offlineSince]), `end_reason = offline`. So a quit app's row is gone within roughly 11½ minutes
  * (90 s of silence plus this) and a closed browser tab's within about 10.
@@ -404,6 +427,14 @@ class PlaybackSessions(
     /** Main: resolve what an item is (kind + facts) — films and episodes from the library, songs from the music
      *  store, a book part from the audiobooks store. Null = unknown (the session still exists, untitled). */
     internal var describe: suspend (itemId: String, bookId: String?) -> Pair<String, SessionItem>? = { _, _ -> null }
+
+    /**
+     * R368 (FR-R368-12, DEB-1054) — the book a reported item belongs to, when it is a book's part. Wired to the
+     * audiobooks store; the floor under every path that only ever gets a part id: the match finds the book's own
+     * session whatever part it is on, and a session this path does create is an `audiobook` with its `book_id` set
+     * rather than the nameless `film` row R380 FR-R380-12 forbids.
+     */
+    internal var bookOfPart: (itemId: String) -> String? = { null }
 
     /** Main: a device's display name for [SessionRec.targetName]; the receiver's name drops the *Chromecast via* prefix. */
     internal var placeNameOf: (DeviceData) -> String = { it.displayName.removePrefix("${CastService.DEVICE_PREFIX} · ").ifBlank { it.deviceId } }
@@ -549,7 +580,10 @@ class PlaybackSessions(
         val t = now()
         val rows = db.playbackSessionQueries.liveOrEndedSince(t - SESSION_ENDED_LINGER_MS).executeAsList().map { it.toRec() }
         val restored = mutableListOf<SessionRec>()
-        for (r in rows) {
+        for (row in rows) {
+            // FR-R372-13 — a row that comes back `playing` or `paused` reported while it was alive, so a reap after the
+            // restart must not read it as a load that never did.
+            val r = row.copy(everReported = row.state == SessionState.PLAYING || row.state == SessionState.PAUSED)
             val rec = when {
                 !r.live -> r
                 r.offline -> r.copy(offlineSince = offlineSpellStart(r), reconnecting = false, reconnectDeadline = null,
@@ -603,9 +637,11 @@ class PlaybackSessions(
         bookId: String? = null, plan: SessionPlan? = null, directPlay: Boolean = false,
         startedBy: DeviceData? = null, kindHint: String? = null,
     ): String {
-        val described = runCatching { describe(itemId, bookId) }.getOrNull()
+        // FR-R368-12 — a part id names its book even when the caller did not: a part is never a film.
+        val book = bookId ?: bookOfPart(itemId)
+        val described = runCatching { describe(itemId, book) }.getOrNull()
         val kind = when {
-            bookId != null -> SessionKind.AUDIOBOOK
+            book != null -> SessionKind.AUDIOBOOK
             kindHint != null -> kindHint
             else -> described?.first ?: SessionKind.FILM
         }
@@ -659,7 +695,7 @@ class PlaybackSessions(
                     // queue yet, and the row then had no title (the Mac, 2026-10-05).
                     val queue = if (sameItem && cur.queue.any { it.id == itemId && it.title != null }) cur.queue else listOf(item)
                     val next = cur.copy(
-                        kind = kind, itemId = itemId, bookId = bookId ?: cur.bookId, queue = queue, queueIndex = if (cur.options.queueKnown) cur.queueIndex else 0,
+                        kind = kind, itemId = itemId, bookId = book ?: cur.bookId, queue = queue, queueIndex = if (cur.options.queueKnown) cur.queueIndex else 0,
                         loadDeadline = null,
                         positionMs = positionMs, positionAt = t, state = SessionState.STARTING,
                         options = cur.options.withPlan(plan).copy(directPlay = directPlay),
@@ -689,7 +725,7 @@ class PlaybackSessions(
                     val rec = SessionRec(
                         id = newId(), ownerUserId = device.jellyfinUserId, ownerName = firstName(device.jellyfinUsername),
                         targetKind = if (device.kind == "cast") "cast" else "app", targetId = device.deviceId,
-                        targetName = placeNameOf(device), lane = lane, kind = kind, itemId = itemId, bookId = bookId,
+                        targetName = placeNameOf(device), lane = lane, kind = kind, itemId = itemId, bookId = book,
                         queue = listOf(item), queueIndex = 0, positionMs = positionMs, positionAt = t,
                         state = SessionState.STARTING, options = SessionOptions(directPlay = directPlay).withPlan(plan),
                         revision = 1, startedByDeviceId = (if (device.kind == "cast") castMinter[device.deviceId] else null) ?: starter.deviceId,
@@ -734,22 +770,36 @@ class PlaybackSessions(
      * no session (one that started before this server knew sessions, or a receiver's first report) creates one.
      */
     suspend fun onProgress(device: DeviceData, itemId: String, positionMs: Long, paused: Boolean, sessionId: String? = null,
-                           volumePercent: Int? = null, muted: Boolean? = null) {
+                           volumePercent: Int? = null, muted: Boolean? = null,
+                           /** R368 (FR-R368-12) — the book this report is for, carried from the audiobook route. */
+                           bookId: String? = null) {
         var created = false
         var change: SessionChange? = null
+        // FR-R368-12 — a part id names its book even when the caller did not.
+        val book = bookId ?: bookOfPart(itemId)
         // A report that names another song than the session holds (the receiver skipped, and its progress came before its
         // start): what that song is, so the row and the remote keep a title (the Mac, 2026-10-05).
-        val peek = mutex.withLock { findLocked(device, itemId, sessionId) }
-        val newItem = if (peek != null && peek.itemId != itemId) runCatching { describe(itemId, peek.bookId)?.second }.getOrNull() else null
+        val peek = mutex.withLock { findLocked(device, itemId, sessionId, book) }
+        val newItem = if (peek != null && peek.itemId != itemId) runCatching { describe(itemId, book ?: peek.bookId)?.second }.getOrNull() else null
         mutex.withLock {
             val t = now()
-            val cur = findLocked(device, itemId, sessionId)
+            val cur = findLocked(device, itemId, sessionId, book)
             if (cur == null) {
                 // A report racing a stop that already ended this session (a server-side *Stop*, R369 item 12) must not
                 // start a new one: only a report with no recent end on this place and item does — nor one from the place
                 // a session just moved away from (R372).
+                //
+                // FR-R368-12(5) (added 2026-10-14) — and not a **paused** report for a book's part that matches
+                // nothing: that is a bookmark, not a playback. The documented way to put a book's resume point back is
+                // one `PUT …/progress` with `paused: true` and no `session_id`, and it minted a row in the same
+                // millisecond as its 200 — a place nobody was listening to, shown in *Playing now* and endable only by
+                // hand (four prod rows, all from QA's own cleanup). The book's place is written by
+                // `AudiobooksTvService.progress` before this mirror runs, so the 200 is unchanged. A **playing** report
+                // with no match still mints by (2) — a book that is genuinely playing deserves a session — and the
+                // general mint is untouched for everything else: it exists for a receiver whose skip outran its start
+                // (the Mac, 2026-10-05), which is a playing report for a song.
                 created = sessions.values.none { !it.live && it.targetId == device.deviceId && it.itemId == itemId } &&
-                    (movedFrom[device.deviceId] ?: 0L) < t
+                    (movedFrom[device.deviceId] ?: 0L) < t && !(paused && book != null)
                 return@withLock
             }
             // R372 (found live 2026-10-09, evening) — a paused report of the same item that lands after the stop (it was
@@ -762,7 +812,10 @@ class PlaybackSessions(
             val volumeChanged = volumePercent != null && (volumePercent != cur.options.volume || muted != cur.options.muted)
             val queue = if (cur.itemId != itemId && cur.queue.none { it.id == itemId }) listOf(newItem ?: SessionItem(itemId)) else cur.queue
             val next = cur.copy(
-                itemId = itemId, queue = queue, positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
+                itemId = itemId, bookId = book ?: cur.bookId, queue = queue,
+                // FR-R372-13 — the row has reported for itself now, so a later reap may not read it as a failed load.
+                everReported = true,
+                positionMs = positionMs, positionAt = t, state = state, loadDeadline = null,
                 options = if (volumePercent != null) cur.options.copy(volume = volumePercent, muted = muted) else cur.options,
                 revision = if (changed) cur.revision + 1 else cur.revision,
                 // R372 (FR-R372-8) — a report from the place clears `offline` and, with it, the 10 min clock: the
@@ -780,17 +833,32 @@ class PlaybackSessions(
             else if (volumeChanged) change = SessionChange.Detail(next.id)   // R371 — a level is not a revision
         }
         if (created) {
-            onStart(device, itemId, positionMs, kindHint = null)
-            onProgress(device, itemId, positionMs, paused)
+            // FR-R368-12 — a report that legitimately creates a session creates the one its item deserves: a book's
+            // part makes an `audiobook` in the audio lane with the book's words and its `book_id`, never a bare film.
+            onStart(device, itemId, positionMs, bookId = book, kindHint = null)
+            onProgress(device, itemId, positionMs, paused, bookId = book)
             return
         }
         change?.let { notify(it) }
     }
 
-    private fun findLocked(device: DeviceData, itemId: String, sessionId: String?): SessionRec? {
+    /**
+     * R368 (FR-R368-12, DEB-1054) — which live session on this place a report is for, in a fixed order and nothing
+     * else: the `session_id` the report gave, then the session on the reported item, then the session on the reported
+     * item's **book** whatever part it holds, then the stop-hold fallback (review item 6's 15 s).
+     *
+     * The third arm is the fix: a book's parts are separate item ids, so before it a position reported for any part
+     * but the one the row happened to hold missed every arm and minted a nameless `film` session beside the book
+     * (four such rows measured on prod at `v1.51-174-g5b13710e`). The order is deterministic, so the ambiguity
+     * R372's amendment asks about — two live rows on one place, `lastOrNull` landing on the wrong one — is narrowed
+     * rather than widened: an exact item match always beats the book, and the book always beats a stop-hold.
+     */
+    private fun findLocked(device: DeviceData, itemId: String, sessionId: String?, bookId: String? = null): SessionRec? {
         sessionId?.let { id -> sessions[id]?.takeIf { it.live && it.targetId == device.deviceId }?.let { return it } }
-        return sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && it.itemId == itemId }
-            ?: sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && it.ownerUserId == device.jellyfinUserId && it.stopHoldUntil != null }
+        val here = sessions.values.filter { it.live && it.targetId == device.deviceId }
+        here.lastOrNull { it.itemId == itemId }?.let { return it }
+        (bookId ?: bookOfPart(itemId))?.let { book -> here.lastOrNull { it.bookId == book }?.let { return it } }
+        return here.lastOrNull { it.ownerUserId == device.jellyfinUserId && it.stopHoldUntil != null }
     }
 
     /**
@@ -815,14 +883,25 @@ class PlaybackSessions(
      * R372 (FR-R372-8, amendment 2026-10-12) — a **re-reap** of a session that is already `offline` does nothing at
      * all: no second `offline` event, no revision bump, and above all no new clock. Prod re-armed 27 of 46 offline rows
      * this way, one of them for 122 h (DEB-758).
+     *
+     * R372 (FR-R372-13, amendment 2026-10-14) — and it picks its row through [findLocked], the one precedence every
+     * path now uses. It used to take the last row matching `item_id == itemId` **or** holding any stop-hold, so with
+     * two live rows on one place a reap could land on the newer row rather than the reported one. That was the
+     * amendment's candidate for DEB-1054's book session taking the `failed`, and reading it back it is **not** what
+     * happened: the watchdog's stop for the abandoned part matched the book's row correctly on `item_id`, and the
+     * rule below is what killed it. The pick is unified anyway, so the ambiguity cannot be the next bug.
      */
     suspend fun onReaped(device: DeviceData, itemId: String) {
         val change: SessionChange? = mutex.withLock {
-            val cur = sessions.values.lastOrNull { it.live && it.targetId == device.deviceId && (it.itemId == itemId || it.stopHoldUntil != null) } ?: return@withLock null
+            val cur = findLocked(device, itemId, null) ?: return@withLock null
             if (cur.offline) return@withLock null
-            // R372 (found live 2026-10-09, evening) — a play that never got past 0:00 (it failed) has no place to keep:
-            // it ends, rather than staying *paused · offline*.
-            if (cur.positionMs <= 0L) return@withLock endLocked(cur.id, "failed")?.let { SessionChange.List }
+            // R372 (FR-R372-13, amendment 2026-10-14) — `failed` is for a play that never reported at all (DEB-919's
+            // signal), not for a position that reads 0. The watchdog's own forced stop writes the tracker's position
+            // into the row just before this, so a session that played and paused reached here holding a 0 it never
+            // earned and was killed `failed` (measured on prod, 90 s to the millisecond after the last heartbeat). One
+            // that has reported goes *paused · offline* and keeps its place on FR-R372-8's 10 min clock, at whatever
+            // position it holds — a part-relative 0 is the head of a part, a legitimate place for a book.
+            if (!cur.everReported) return@withLock endLocked(cur.id, "failed")?.let { SessionChange.List }
             event(cur.id, "offline", null, cur.targetName)
             val t = now()
             val next = cur.copy(state = SessionState.PAUSED, offline = true, offlineSince = t, stopHoldUntil = null,
@@ -985,6 +1064,12 @@ class PlaybackSessions(
                     endLocked(s.id, "offline")?.let { changes += SessionChange.List }
                 } else if (s.live && !s.offline && s.state == SessionState.PAUSED && s.stopHoldUntil == null && t - s.updatedAt >= SESSION_PAUSED_KEEP_MS) {
                     // R372 (FR-R372-8) — paused on a place that is still there: 4 h after the last change.
+                    endLocked(s.id, "idle")?.let { changes += SessionChange.List }
+                } else if (s.live && !s.offline && !s.reconnecting && s.stopHoldUntil == null && t - s.positionAt >= SESSION_PLAYING_SILENT_MS) {
+                    // R372 (FR-R372-14, amendment 2026-10-14) — the floor under every other arm: a session still
+                    // `playing` whose position has not moved for 4 h matched nothing above and could never end. A row
+                    // still *reconnecting* after a restart is left to its own 2 min deadline below (FR-R368-4): its
+                    // stored position can be hours old through no fault of the place, so it has a clock already.
                     endLocked(s.id, "idle")?.let { changes += SessionChange.List }
                 } else if (s.live && s.state == SessionState.STARTING && s.loadDeadline != null && t >= s.loadDeadline) {
                     // R370 (review item 8) — a load that brought no report within 10 s failed.

@@ -54,6 +54,10 @@ class AudiobooksStore(private val db: JellystructureDb) {
         val partsByBook: Map<String, List<AudiobookPart>> by lazy {
             parts.values.filter { it.missingSince == null }.groupBy { it.bookId }.mapValues { (_, l) -> l.sortedBy { it.position } }
         }
+        /** R368 (FR-R368-12) — [partsByBook] read the other way: a part id to the book it belongs to. */
+        val bookByPart: Map<String, String> by lazy {
+            partsByBook.flatMap { (book, ps) -> ps.map { it.id to book } }.toMap()
+        }
     }
 
     fun snapshot(): Snapshot = cache.value ?: load().also { cache.value = it }
@@ -69,6 +73,11 @@ class AudiobooksStore(private val db: JellystructureDb) {
 
     fun book(id: String) = snapshot().books[id]
     fun parts(bookId: String) = snapshot().partsByBook[bookId].orEmpty()
+    /**
+     * R368 (FR-R368-12) — the book a part belongs to, so a progress report naming a part id alone finds the book's
+     * session and describes as a book. A part a scan has lost ([AudiobookPart.missingSince]) is not one.
+     */
+    fun bookOfPart(partId: String): String? = snapshot().bookByPart[partId]
     fun author(id: String) = snapshot().authors[id]
 
     suspend fun replaceLibrary(rows: AudiobooksRows) = writeLock.withLock {

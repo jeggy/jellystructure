@@ -26,6 +26,23 @@ internal fun episodeCode(season: Int?, episode: Int?): String? =
     if (season != null && episode != null) "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}" else null
 
 /**
+ * R368 (FR-R368-12, DEB-1054) — the floor under [PlaybackSessions.describe]: an audiobook's **part**, by its item id
+ * alone, is the book it belongs to. [bookId] is used when the caller knows it; when it does not, the store's
+ * `partsByBook` is read the other way ([dev.jellystructure.audiobooks.AudiobooksStore.bookOfPart]), so no caller —
+ * today's or a later one — can describe a part as a `film` and leave a session carrying a bare id. A part is never a
+ * film. Null when [itemId] is not a part of a known book, and the caller goes on to music, films and episodes.
+ */
+internal fun describeAudiobookPart(
+    books: dev.jellystructure.audiobooks.AudiobooksStore?, itemId: String, bookId: String?,
+): Pair<String, SessionItem>? {
+    val store = books ?: return null
+    val id = bookId ?: store.bookOfPart(itemId) ?: return null
+    val b = store.book(id) ?: return SessionKind.AUDIOBOOK to SessionItem(itemId)
+    return SessionKind.AUDIOBOOK to SessionItem(itemId, b.title, b.authors.joinToString(", ").ifBlank { null },
+        dev.jellystructure.audiobooks.AudiobooksTvService.coverUrl(b), b.durationMs.takeIf { it > 0 })
+}
+
+/**
  * R368 + 304a — builds the sessions, their publisher and the clock, and connects them to the rest of the server:
  * what an item is (the library, the music store, the audiobooks store), who may see it (the same rules as playback),
  * the cast hand-off's minter, an address change, the boot restore and the admin's `/ws`.
@@ -43,13 +60,10 @@ suspend fun wirePlaybackSessions(
     configStore: dev.jellystructure.config.ConfigStore,
 ): SessionPublisher {
     val sessions = PlaybackSessions(db)
+    // FR-R368-12 — a book's session is found by its book, not by the part it is on.
+    sessions.bookOfPart = { itemId -> musicPipeline?.audiobooks?.store?.bookOfPart(itemId) }
     sessions.describe = describe@{ itemId, bookId ->
-        val books = musicPipeline?.audiobooks?.store
-        if (bookId != null && books != null) {
-            val b = books.book(bookId) ?: return@describe SessionKind.AUDIOBOOK to SessionItem(itemId)
-            return@describe SessionKind.AUDIOBOOK to SessionItem(itemId, b.title, b.authors.joinToString(", ").ifBlank { null },
-                dev.jellystructure.audiobooks.AudiobooksTvService.coverUrl(b), b.durationMs.takeIf { it > 0 })
-        }
+        describeAudiobookPart(musicPipeline?.audiobooks?.store, itemId, bookId)?.let { return@describe it }
         musicPipeline?.store?.track(itemId)?.let { t ->
             val album = t.albumId?.let { musicPipeline.store.album(it) }
             val sub = listOfNotNull(t.artists.joinToString(", ") { it.name }.ifBlank { null }, album?.title).joinToString(" · ").ifBlank { null }
