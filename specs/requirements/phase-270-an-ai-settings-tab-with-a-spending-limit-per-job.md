@@ -6,13 +6,13 @@
 > type of job. So let's add this as an optional feature ontop of the standard recommended algorithm that
 > we are gonna build."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-09-27 (see *Build notes* at the end). Written 2026-09-26, **dev-reviewed 2026-09-26** against `main` `0e5e434f` (see *Dev review*
-at the end). Backend (a provider client, a job runner, a usage ledger) and the admin (a new Settings
-tab). It sits **on top of Phase 269**: with AI off, or when a limit is reached, 269's standard list is
-what every viewer gets, unchanged. **Numbering:** verified against `STATUS.md` the same day — admin
-taken through **269**.
+Backend (a provider client, a job runner, a usage ledger) and the admin (a new Settings tab). It sits
+**on top of Phase 269**: with AI off, or when a limit is reached, 269's standard list is what every
+viewer gets, unchanged. Written 2026-09-26 and dev-reviewed the same day against `main` `0e5e434f`
+(see *Dev review* at the end); built 2026-09-27 (see *Build notes* at the end). Later jobs on the same
+rail: `clusters`, and `support` (phase 321, see the amendment of 2026-10-15 below).
 
 Facts about the Claude API below come from Anthropic's API reference as bundled with Claude Code (model
 table cached 2026-06-24). Prices must be re-checked before this ships (FR-270-6).
@@ -256,3 +256,19 @@ Built off by default; nothing has been sent to Anthropic from production (no key
     job in flight, and the TOML round-trip. The full backend suite passes (686).
 
 **Verified 2026-09-27:** production: Settings → AI renders with three models, the prices' date and estimates (re-rank ≈ $1.60 / $0.64 / $0.32 a month for 4 viewers; themes for the 1 title TMDB answered with no keywords); AI stays off.
+
+## Amendment 2026-10-15 — a `support` job, whose input is written by viewers (phase 321)
+
+Phase 321 adds a fourth job, `support`, which reads a viewer's support-ticket thread and drafts
+`AI Agent`'s reply. It is the first job whose input someone outside the household wrote, so two of
+this phase's promises change:
+
+- **FR-270-1:** the tab gains a **Support** card, with the same controls as the other cards.
+- **FR-270-8:** the *what leaves the house* paragraph gains a support line: *the text of a ticket's
+  thread as the viewer and the replies wrote it, and the viewer's language — never their name, id or
+  device; a viewer may type anything into a ticket, including names.* The rest of FR-270-8 stands
+  unchanged for `support`: nothing from Jellyfin's user records is sent.
+
+Everything else in this phase holds for `support` as written. That covers the monthly limit as a hard
+stop, the ledger, nothing trusted blindly, and *off sends nothing*. Phase 321 adds per-viewer and
+per-ticket limits on top of the monthly one, never instead of it.
