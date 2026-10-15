@@ -121,9 +121,9 @@ are never confused.
 **FR-320-3 — The viewer is the session, never the body.** Every viewer route takes the user from
 `call.attributes[DeviceKey].jellyfinUserId` (FR-187-2's rule), never from a parameter. A viewer reads
 and writes **only their own tickets**. Another viewer's ticket number answers **404**, never 403, so a
-number reveals nothing about whether it exists. *(The owner card on DEB-1238 asks whether a bug report
-should be visible to other viewers. This phase is written for the recommended answer, strictly
-private. A different answer comes back as a dated amendment here.)*
+number reveals nothing about whether it exists. **Settled by the owner, 2026-10-15 (DEB-1076): tickets
+are private. A viewer only ever sees their own.** Two viewers with the same fault file two tickets, and
+an admin links them by eye. On a TV, *same here* means "still happening" on that profile's own ticket.
 
 **FR-320-4 — Filing, and the receipt that needs no model.** `POST /api/tv/support/tickets` with
 `{ "body": "…" }` creates the ticket and its first message, and answers **201** with the whole thread

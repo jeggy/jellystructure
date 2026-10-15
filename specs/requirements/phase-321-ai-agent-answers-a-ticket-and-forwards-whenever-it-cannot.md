@@ -172,8 +172,10 @@ Batches still show on 272's Activity card like every other job's.
 **FR-321-11 — What leaves the house, stated on the tab.** 270's FR-270-8 paragraph gains a support line:
 *the text of a ticket's thread as the viewer and the replies wrote it, and the viewer's language — never
 their name, id or device; a viewer may type anything into a ticket, including names*. The Support card
-says the same in one line. Viewers are told in the composer that an AI reads their ticket. The owner
-card on DEB-1238 asks for that; the wording belongs to the Ravilo client phase.
+says the same in one line. **The composer carries no line telling viewers that an AI reads their
+ticket.** Owner, 2026-10-15 (DEB-1076): *the `AI Agent` label on replies is enough.* That label is
+therefore the only disclosure a viewer gets, and FR-320-8 already makes it the literal `AI Agent` on
+every reply it writes. No later phase may rename it, shorten it, or hide it behind a name.
 
 **FR-321-12 — Tests.** These run in `linuxX64Test`, against a mocked Anthropic:
 
