@@ -5,11 +5,11 @@
 > exist anymore. Let's just make sure that even though the item is not there anymore, we should go back in a nice
 > way."*
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-04 (build notes at the end). Was `Planned` — written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release build
-`1.49-11-g76f351b4`, the same code as `main` for these screens; first seen on `1.47-34`). Dev-reviewed 2026-10-04 against `main` `5210045a` (see the end; still `Planned`). Client
-only (`:ravilo-ui`). The Recommended row's own rule (a watched title stays until the weekly build) is the server's,
+Written 2026-10-04 (dev-authored) from a D-pad sweep on the living-room Sony BRAVIA (release build
+`1.49-11-g76f351b4`, the same code as `main` for these screens; first seen on `1.47-34`). Dev-reviewed 2026-10-04
+against `main` `5210045a` (see the end). Client only (`:ravilo-ui`). The Recommended row's own rule (a watched title stays until the weekly build) is the server's,
 written as a 2026-10-04 amendment to **phase 269**; this phase is what the client does whenever a title it returns
 to is no longer there, whatever the reason.
 
@@ -283,3 +283,85 @@ Built as specified and as the dev review lays it out. Client only (`:ravilo-ui` 
   finds only `ChannelScreen`'s `.onFailure`, which R365 FR-6 removes.
 - Device only: the page not moving on the TV, and the order of `home_changed` against Back on a slow network
   (Back at once / after 5 s), Continue Watching after finishing an episode.
+
+## Amendment (2026-10-15) — FR-R361-7: a refresh during the restore re-resolves; it never ends it
+
+**Found by the CI watch (DEB-1212 → DEB-1218).** `Publish` run 38307455802 on `main` @ `7573d8c0` (2026-10-12) failed
+`ci / android-release` on one test: `BrowseFocusTest` *an empty grid on return lands on the facet bar, never the app
+bar*, `AssertionError` at `inFacetBar()`, with no focused node under the facet bar. The same job passed on `ab473b93`
+and `3b483e31`, and no commit in between touched the test or the browse screen. It looks flaky, but the flake comes
+from the product.
+
+**The spec question was whether focus settling is part of the contract.** It is. FR-R361-1 says a Back-return
+*always* resolves, and FR-R361-4 says an empty grid sends focus to the facet bar. Neither depends on when the refetch
+lands. The test's 500 ms of virtual clock is the bounded retry: 30 frames, R200 FR-RV-NAV1-2. That bound is correct.
+What is wrong is the point the bound is counted from (see FR-R361-7).
+
+**Cause (code-traced on `main` `188154f2`).** On Back, a kept store renders its **old** list. R40 says so, and
+`SeededBrowseStore.load()` does not go through `Loading` once the store is loaded. Then it refetches. The grid's
+restore (`SeededBrowseScreen.kt` `BrowseCardGrid`, the `LaunchedEffect(items)` at ~`:1122`) runs on that old list:
+1. It sets `restoredOnce = true` and calls `onRestoreResolved()` (which clears `store.focusItemKey`) **before** focus
+   has moved.
+2. `gridFocus.restore(…)` then suspends: a frame in `focusIndex`, the scroll, and `requestFocusAwaiting`'s per-frame
+   retry.
+3. If the refetch lands inside that window, `items` changes. The keyed `LaunchedEffect` is **cancelled** mid-restore.
+   The new effect returns at once because `restoredOnce` is set and the key is already gone.
+   `FollowGridRefresh` → `followRefresh` returns early too: `focusedKey` is null and `gridFocused` is false, because
+   focus never landed.
+4. Nothing asks for focus. The arrival focus was skipped because `returning` is true. Compose's own recovery then
+   parks focus wherever it parks it: the app bar, which is the original R361 symptom.
+
+The other two orderings are covered. If the refetch lands before the return composes, `restore` sees the new list.
+If it lands after focus has settled, `followRefresh` sees a focused tile. Only a refetch inside the window is lost. In
+the test, the fetch runs on a real OkHttp thread (`FakeTvApi.kt`), so which frame it lands in is a race. On a TV the
+window is a few frames on every Back, and the refetch is a real network call, so this can happen to a viewer. It
+covers both FR-R361-4 cases: the gone title (→ neighbour) and the empty grid (→ facet bar). `a title gone from the
+grid lands on the tile now at its index` has the same hole, even though CI has not caught it yet. `BrowseScreen.kt`'s
+`BrowseGrid` (My List, ~`:492`) has the same shape (`restoredOnce` set first, `onRestoreResolved()` called before the
+restore). Its empty target is `arrivalFR` (R364 FR-3).
+
+### FR-R361-7 — A restore is spent when it lands, not when it starts
+
+1. A Back-return restore is **pending** until one of these happens: focus is on a grid tile, or the resolve has said
+   *empty* and the empty target (FR-R361-1.3) has been asked for focus. Only then is `focusItemKey` cleared and the
+   restore marked done. FR-R361-4's *"cleared once the restore has resolved, found or not"* means resolved in this
+   sense.
+2. If the grid's list changes while a restore is pending, the restore **starts again on the new list** with the same
+   rule: the opened title by key, else the tile now at the stored index (`fallbackIndex`), else the empty target. The
+   key and index it uses are the ones captured at arrival, not the store's (which may already be cleared). A
+   cancelled attempt leaves no requester armed: `GridFocus.targetKey` is reset on cancellation.
+3. The bound in FR-R361-1 (scroll, await the layout, the bounded retry) is counted from the **last** list change
+   during the restore, not from the return.
+4. This applies to both grids that use the R361 restore: `SeededBrowseScreen.BrowseCardGrid` (Movies, Series,
+   seeded) and `BrowseScreen.BrowseGrid` (My List). Home and collections are not affected: they resolve once on
+   entry against the feed they are about to lay out, and a later change goes through FR-R361-3. `HomeFocusTest`'s
+   *late timing* walk already pins that.
+
+No wire change. Client only (`:ravilo-ui`).
+
+### Acceptance (FR-R361-7)
+
+7. Movies, Back from an opened title, with the refetch landing at each of three moments: before the return composes,
+   while the restore is in flight (old list on screen, focus not yet landed), and after focus has settled on the
+   old list. The refetch drops the opened title → focus on the tile now at its index. The refetch is empty → focus
+   on the facet bar. In every case the app bar is never focused, and `focusItemKey == null` afterwards.
+8. Each case in 7 holds within the bounded retry (30 frames) of the last list change.
+
+### Tests (FR-R361-7)
+
+- **The fake pins the timing; a thread does not.** `BrowseFocusTest`'s second `/api/tv/browse/seeded` answer is held
+  until the test releases it (a latch or a gated `served`), so the test picks the frame. The *in flight* case
+  returns over the old list, advances exactly enough frames for the restore to have aimed but not landed, then
+  releases the answer. Use `rule.mainClock.autoAdvance = false` with explicit `advanceTimeByFrame()`, as
+  `FocusRetryTest` does. Then it waits for the count to change. One test per moment × outcome (3 × 2): the existing
+  two walks become the *settled* rows, and the *in flight* rows go **red on `188154f2`** before the fix.
+- After the last list change the assertion waits **at most** the bound (`advanceTimeBy(500)`, as now) and then
+  asserts. It never waits for focus with an open-ended `waitUntil`, because that would hide a restore that never
+  lands.
+- My List's twin: `MyListFocusTest` (R364) gains the *in flight* empty case → `arrivalFR`'s target.
+- Whole-suite gate: `:ravilo-ui:testDebugUnitTest --tests '*BrowseFocusTest*' --rerun` passes 20 consecutive runs
+  locally, where a flake would show.
+
+**Out of scope.** The same `Publish` run also failed `ci / checks` on the phase-310 guard *"Only the caller's own
+cancellation is rethrown"*. It passed on the next full run. It is noted on DEB-1218 and gets no ticket unless it
+recurs.
