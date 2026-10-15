@@ -9,7 +9,8 @@ spec's location or body does not encode status.
 - Ravilo specs: [`../ravilo/requirements/`](../ravilo/requirements/)
 
 After an "updated designs" sync, run [`scripts/check-phases.sh`](../../scripts/check-phases.sh): it
-flags a spec here whose filename does not parse, and any phase number used twice.
+flags a spec here whose filename does not parse, a legacy phase number used twice or above the
+frozen maximum (321), and a `<slug>.md` spec with no `Task: DEB-<n>` line in its first five lines.
 
 Also run [`scripts/check-fd-hygiene.sh`](../../scripts/check-fd-hygiene.sh) (Phase 134 — unclosed
 `SystemFileSystem.source()`/`.sink()` file-descriptor leaks) and

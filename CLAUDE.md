@@ -91,8 +91,9 @@ calls, every time.
 
 ## Consistency checks
 
-[`scripts/`](scripts/) holds the guards — `check-phases.sh` checks that every spec filename parses
-and no phase number is used twice (it cannot reach the board, so it says nothing about status), and
+[`scripts/`](scripts/) holds the guards — `check-phases.sh` checks that every spec is a legacy
+`phase-…` file whose number is unique and not above the frozen maximum, or a `<slug>.md` that names
+its task on a `Task: DEB-n` line (it cannot reach the board, so it says nothing about status), and
 the rest check CSS scoping, mobile CSS, the hand-written language/country tables, de-anonymisation
 and more. Run the ones that touch what you changed.
 

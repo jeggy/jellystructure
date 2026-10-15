@@ -7,4 +7,5 @@ One file per phase (`phase-RNN-*.md`), flat in this directory. These are **conte
 - Admin specs: [`../../requirements/`](../../requirements/)
 
 After an "updated designs" sync, run [`scripts/check-phases.sh`](../../../scripts/check-phases.sh):
-it flags a spec whose filename does not parse and any phase number used twice.
+it flags a spec whose filename does not parse, a legacy phase number used twice or above the frozen
+maximum (R388), and a `<slug>.md` spec with no `Task: DEB-<n>` line in its first five lines.
