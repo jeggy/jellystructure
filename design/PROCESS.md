@@ -97,7 +97,13 @@ Works today; the only machine in the loop is the owner's clipboard.
    strength of the task existing.
 4. **One brief out at a time.** A second cannot leave while a round is still out. Concurrent context
    is what produced every October renumbering collision.
-5. From here it is lane A from step 3.
+5. **A queued brief waits in `backlog`, and the designer moves it to `todo` in the same heartbeat the
+   lane clears — and comments.** `todo` is the only thing the owner reads as *mine to do now*; a
+   `backlog` row with a comment explaining that it is ready leaves him unsure whether it is his yet,
+   and he asked why one was sitting there (owner via DEB-799, Bárður's rule, 2026-10-15). The row's
+   state carries the lane rule, so the queue cannot disagree with the board. The comment still goes
+   with it — the move is the handover, the comment is why.
+6. From here it is lane A from step 3.
 
 ## Lane A — the owner designs, the designer takes over
 
