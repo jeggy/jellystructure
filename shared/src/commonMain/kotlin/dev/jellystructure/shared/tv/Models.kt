@@ -1329,6 +1329,10 @@ data class RaviloConfig(
     // itself without a request per Home. [ScreensCapability.paired] is this viewer's own device list,
     // never the whole household's — a device token is per (device, user) throughout this codebase.
     val screens: ScreensCapability? = null,
+    // 320 (FR-320-1) — server-resolved, never stored, like [cast]: true only while `[support] enabled` is set AND an AI
+    // key is. False means no Ravilo app draws a support entry. The wire name is the spec's own (camelCase), not this
+    // DTO's usual snake_case.
+    val supportEnabled: Boolean = false,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin

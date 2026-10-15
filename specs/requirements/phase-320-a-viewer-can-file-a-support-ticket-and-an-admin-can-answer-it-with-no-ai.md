@@ -299,3 +299,40 @@ unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them f
 - **A Requests queue** for accepted feature requests (the Seerr-lane shape the investigation proposed).
   A request is a ticket with `class = REQUEST` until that exists.
 - **Push notifications** outside the app. The unread marker is in-app only.
+
+## Build notes — where the spec was silent (2026-10-15, DEB-1240)
+
+Decisions the build had to make, recorded so the next reader does not have to rediscover them. None changes what
+an FR above promises; each is open to Bárður's correction.
+
+- **`support_message.device_id`** is a column FR-320-2's list does not name. FR-320-7's "once per ticket per device"
+  needs the device, and a platform name cannot tell two phones of one viewer apart. It is never on any wire.
+- **`supportEnabled`** is written under that exact name (the spec's), not the `support_enabled` the rest of
+  `RaviloConfig` would suggest. No client reads it yet, so this is the cheap moment to change it if the owner prefers
+  the snake form.
+- **The support DTOs write every non-null field** (`@EncodeDefault`), so `GET …/unread` is `{"tickets":0}` and never
+  `{}`. The server's `Json` omits defaults, which would otherwise have made an empty list an empty object.
+- **Unread** counts `FORWARDED` and `STATE_CHANGED` and nothing else among `SYSTEM` lines. `RECEIVED` and `REOPENED`
+  are the echo of the viewer's own act, and `CLASSIFIED` changes neither state nor holder.
+- **`owed_since` keeps its age.** A viewer's message sets `owed_since` only when the obligation changes (from `NONE`,
+  or to another party, or on a reopen). A viewer writing again while an admin still owes them a reply must not push
+  the ticket back out of *overdue*.
+- **`RESOLVED` owes nothing** (`owes = NONE`), so a resolved ticket is never overdue. Leaving `RESOLVED` by an
+  admin's state change hands the obligation back to the holder by FR-320-13's rule.
+- **A forward starts a new obligation** (`owes` as sent, `owed_since = now`). `owes` defaults to `ADMIN` when absent.
+  Setting the state, class or flag to the value it already has writes nothing and pushes nothing.
+- **A holder of `HERVOR` may answer only while `hervor_enabled`.** With it off, a viewer's message to a Hervør-held
+  ticket is owed by `ADMIN`, the same as a seat-held one.
+- **Filing counts as a message** against `messages_per_day`, since it writes one. `SAME_HERE` is bounded by its own
+  window and is not counted.
+- **A deleted ticket leaves no count behind.** FR-320-11 counts from the store, so a viewer who files and deletes in a
+  loop is not stopped by `tickets_per_day`. What bounds them is `messages_per_day` while their tickets exist, and the
+  work being theirs alone; closing this fully would need a tombstone, which FR-320-17's "deletes … every message on
+  it" forbids.
+- **Flagging does not touch `updated_at`**, because that is the viewer's last-activity time and FR-320-12 says a
+  flagged ticket looks exactly as it did to them.
+- **`config_changed` is emitted on the lane's availability changing**, not on every key save: replacing one key with
+  another leaves `supportEnabled` where it was and is not pushed. Every writer reaches it through
+  `ConfigStore.update`, so the admin phase's own toggle gets it for free.
+- **`PUT /api/config` restores `[support]`** from the stored config until the admin phase gives the form its own
+  fields; the admin's form model has no `support` key.

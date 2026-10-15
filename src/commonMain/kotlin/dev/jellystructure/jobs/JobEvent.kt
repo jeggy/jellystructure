@@ -60,6 +60,17 @@ sealed class JobEvent {
      *  it is a few rows). Pushed whenever R368 pushes to the apps; the page seeds from the GET and follows these. */
     @Serializable @SerialName("playback_sessions")
     data class PlaybackSessions(val list: dev.jellystructure.model.AdminSessionList) : JobEvent()
+
+    /** 320 (FR-320-10) — a support ticket changed: its admin row (null once it is deleted) and the summary counts. The admin
+     *  renders the pushed row and counts; it never accumulates any of its own. */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @Serializable @SerialName("support_ticket")
+    data class SupportTicketChanged(
+        val number: Long,
+        val ticket: dev.jellystructure.model.SupportAdminTicket? = null,
+        @kotlinx.serialization.EncodeDefault val summary: dev.jellystructure.model.SupportSummary = dev.jellystructure.model.SupportSummary(),
+        @kotlinx.serialization.EncodeDefault val deleted: Boolean = false,
+    ) : JobEvent()
 }
 
 /** Phase 109 — everything the Activity ▸ Jobs page needs to render one row, in one shape shared by the

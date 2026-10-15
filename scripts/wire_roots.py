@@ -22,14 +22,17 @@ RESPONSES = ['AccountPasswordResult', 'AccountPhotoResult', 'AcquisitionChangedE
     # R369 — commands, the remote's detail
     'SessionDetail', 'SessionDetailEnvelope', 'SessionCommandEnvelope', 'SessionCommandRefusal',
     # R370 — places, starts, loads, the relay
-    'TargetList', 'PlaybackTarget', 'SessionStartResponse', 'SessionLoadEnvelope', 'CastRelayLoadEnvelope']
+    'TargetList', 'PlaybackTarget', 'SessionStartResponse', 'SessionLoadEnvelope', 'CastRelayLoadEnvelope',
+    # 320 — the support lane
+    'SupportTicketRow', 'SupportTicketList', 'SupportMessageView', 'SupportThread', 'SupportUnread', 'SupportChangedEnvelope']
 REQUESTS =['CastRedeemRequest', 'FavoriteRequest', 'LiveTvStopRequest', 'LiveTvTuneRequest', 'MarkRequest',
     'PlaybackProgressRequest', 'PlaybackQoeReport', 'PlaybackRestreamRequest', 'PlaybackStartRequest',
     'PlaybackStopRequest', 'PlayedRequest', 'RemoteCommandRequest', 'RemotePairRequest', 'RemotePlayRequest',
     'ScreenClaimRequest', 'ScreenCodeRequest', 'ScreenStatus', 'SeededBrowseRequest', 'TvLoginRequest',
     'ViewerSettingsRequest', 'MusicPlayRequest', 'MusicFavoriteRequest',
     'AudiobookProgressRequest', 'AudiobookSpeedRequest', 'AudiobookFinishedRequest', 'AudiobookBookmarkRequest',
-    'SessionCommandRequest', 'SessionQueueReport', 'SessionStartRequest', 'SessionMembersReport', 'CastHandoffRequest', 'SessionMoveRequest']
+    'SessionCommandRequest', 'SessionQueueReport', 'SessionStartRequest', 'SessionMembersReport', 'CastHandoffRequest', 'SessionMoveRequest',
+    'SupportPostRequest', 'SupportReadRequest']
 
 src = ''.join(open(f).read() for f in glob.glob(sys.argv[1] + '/shared/src/commonMain/kotlin/**/*.kt', recursive=True))
 def has(n):   # a @Serializable class in package dev.jellystructure.shared.tv

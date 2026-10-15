@@ -1,0 +1,40 @@
+-- 320 (FR-320-2) — the support lane's store: a ticket per filing and the messages on it. Must stay byte-for-byte in
+-- sync with Support.sq's CREATE statements (the SQLDelight-migration rule). 78 is 317's: this one is 79. Times are
+-- epoch SECONDS. `device_id` is not in FR-320-2's column list: FR-320-7's "once per ticket per device" needs the
+-- device, and a platform name alone cannot tell two phones of one viewer apart. Never on the viewer wire.
+CREATE TABLE support_ticket (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    owner_user_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    holder TEXT NOT NULL,
+    holder_seat TEXT,
+    owes TEXT NOT NULL,
+    owed_since INTEGER NOT NULL,
+    class TEXT,
+    english_summary TEXT,
+    viewer_language TEXT NOT NULL,
+    flagged INTEGER NOT NULL DEFAULT 0,
+    admin_read_message_id INTEGER NOT NULL DEFAULT 0,
+    viewer_read_message_id INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX support_ticket_owner ON support_ticket(owner_user_id, created_at);
+
+CREATE TABLE support_message (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    author TEXT,
+    author_label TEXT,
+    body TEXT,
+    event TEXT,
+    event_args TEXT,
+    visibility TEXT NOT NULL,
+    device_platform TEXT,
+    device_id TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX support_message_ticket ON support_message(ticket_id, id);

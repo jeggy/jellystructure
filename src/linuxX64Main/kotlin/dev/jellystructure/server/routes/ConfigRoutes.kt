@@ -264,6 +264,10 @@ fun Route.configureConfigRoutes(
         // Phase 273 — the subtitle check's switch has its own route (PUT /api/subtitles/settings), so a Settings save
         // from any page, including one loaded before the switch existed, never resets it.
         config = config.copy(subtitleCheck = stored.subtitleCheck)
+        // Phase 320 — `[support]` is config-file-only until the admin phase adds its toggle: the frontend model has no
+        // `support` at all, so without this line every save from every tab wrote SupportConfig()'s `enabled = false`
+        // over the owner's switch — and, with a key set, quietly took the lane away from viewers.
+        config = config.copy(support = stored.support)
         // Phase 276 — the Metadata providers card saves through PUT /api/music/providers, so a Settings save (whose
         // form model has no such fields) never resets the MusicBrainz contact or wipes the AcoustID/fanart.tv keys.
         config = config.copy(

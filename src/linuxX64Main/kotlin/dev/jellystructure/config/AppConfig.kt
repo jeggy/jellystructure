@@ -55,6 +55,8 @@ data class AppConfig(
     // Phase 314 (FR-314-15) — where a kind C Dolby Vision version lives. Blank means nowhere, and nowhere keeps the
     // kind's switch shut: the only other placement is beside the original, which is the DEB-868 defect.
     @SerialName("file_fix") val fileFix: FileFixConfig = FileFixConfig(),
+    // Phase 320 — the support lane. Off by default; available only while it is on AND an AI key is set (FR-320-1).
+    val support: SupportConfig = SupportConfig(),
 )
 
 /**
@@ -196,6 +198,26 @@ data class AiConfig(
     /** Phase 274 (FR-274-5, Q7) — names the groups of the household's suggestions on every build. */
     val clusters: AiJobConfig = AiJobConfig(effort = "low"),
 )
+
+/**
+ * Phase 320 (FR-320-1/11/13/17) — the support lane's switch and limits. [enabled] is false by default: turning an inbox
+ * on for viewers beyond the household is the owner's call, not a deploy's side effect. The lane is [availableWith] only
+ * while an AI key is set as well — deliberately that test and nothing else (not `ai.enabled`, not the key's validity,
+ * not the monthly limit), because the key's presence is what decides whether the admin's AI page exists.
+ */
+@Serializable
+data class SupportConfig(
+    val enabled: Boolean = false,
+    @SerialName("tickets_per_day") val ticketsPerDay: Int = 5,
+    @SerialName("messages_per_day") val messagesPerDay: Int = 50,
+    @SerialName("max_body_chars") val maxBodyChars: Int = 4_000,
+    @SerialName("owed_reply_hours") val owedReplyHours: Int = 24,
+    @SerialName("retention_days") val retentionDays: Int = 365,
+    /** Hervør's reach into this API is not built (phase 320, *Not in this phase*): false until it is. */
+    @SerialName("hervor_enabled") val hervorEnabled: Boolean = false,
+) {
+    fun availableWith(ai: AiConfig): Boolean = enabled && ai.apiKey.isNotBlank()
+}
 
 @Serializable
 data class AiJobConfig(

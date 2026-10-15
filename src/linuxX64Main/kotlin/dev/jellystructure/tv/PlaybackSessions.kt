@@ -101,7 +101,8 @@ internal fun parseEventFeatures(raw: String?): Set<String> =
 
 private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSION_CONTROL,
     dev.jellystructure.shared.tv.EVENTS_FEATURE_GROUP_CONTROL,   // R371 — group_control
-    dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK)       // R369 (FR-R369-9) — a book-time seek
+    dev.jellystructure.shared.tv.EVENTS_FEATURE_BOOK_SEEK,       // R369 (FR-R369-9) — a book-time seek
+    dev.jellystructure.shared.tv.EVENTS_FEATURE_SUPPORT)         // 320 (FR-320-10) — support_changed
 
 /** R380 (owner decision 2) — a TV's name as Cast shows it (`cast_name=`), kept beside its features as `castname:<name>`. */
 internal fun parseCastName(raw: String?): Set<String> {

@@ -120,6 +120,22 @@ class TvEventBus(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * 320 (FR-320-10) — `{"type":"support_changed","ticket":n}` to [userId]'s sockets that opened with `features=support`,
+     * and only those: an installed app reads an unknown event as "the config changed" and re-fetches its config. The event
+     * carries no content; the client re-fetches the ticket. Non-blocking.
+     */
+    fun notifySupportChanged(userId: String, ticket: Long) {
+        scope.launch {
+            val targets = mutex.withLock {
+                sessions[userId]?.values?.filter { dev.jellystructure.shared.tv.EVENTS_FEATURE_SUPPORT in (socketFeatures[it] ?: emptySet()) }.orEmpty()
+            }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"support_changed","ticket":$ticket}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
+        }
+    }
+
     /** R369 (dev review item 3) — `session_command` to the session's target, found the way [notifyPlayerCommand] finds it. */
     fun notifySessionCommand(userId: String, deviceId: String, json: String) {
         scope.launch {

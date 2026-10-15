@@ -192,6 +192,28 @@ class ConfigSavePreservesBlocksTest {
     )
 
     /**
+     * Phase 320 — `[support]` is config-file-only until the admin phase adds its toggle, and the admin's form model has no
+     * `support` key. Without a restore line a Settings save wrote `SupportConfig()`'s `enabled = false` and its default
+     * limits over the owner's switch, which with a key set quietly takes the lane away from viewers.
+     */
+    @Test
+    fun a_settings_save_leaves_the_support_block_as_the_config_file_set_it() = savedOverA(
+        before = { store ->
+            runBlocking {
+                store.update(store.current.copy(support = dev.jellystructure.config.SupportConfig(
+                    enabled = true, ticketsPerDay = 2, messagesPerDay = 9, maxBodyChars = 500, owedReplyHours = 6, retentionDays = 30, hervorEnabled = true,
+                )))
+            }
+        },
+        then = { store ->
+            assertEquals(
+                dev.jellystructure.config.SupportConfig(enabled = true, ticketsPerDay = 2, messagesPerDay = 9, maxBodyChars = 500, owedReplyHours = 6, retentionDays = 30, hervorEnabled = true),
+                store.current.support, "a Settings save must not touch [support]",
+            )
+        },
+    )
+
+    /**
      * Phase 274 (FR-274-17, amendment 2026-10-13 — DEB-936) — the same class one level down. `ScanConfig`'s
      * seed markers are server-owned ("a step the operator removes stays removed"), and the admin's own
      * `ScanConfig` carries `pipeline` and `defer_while_playing` and nothing else, so every marker arrives as

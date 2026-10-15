@@ -21,6 +21,7 @@ import dev.jellystructure.server.routes.seedingRoutes
 import dev.jellystructure.server.routes.fileFixRoutes
 import dev.jellystructure.server.routes.looseFilmRoutes
 import dev.jellystructure.server.routes.playbackSessionRoutes
+import dev.jellystructure.server.routes.supportRoutes
 import dev.jellystructure.server.routes.audiobooksRoutes
 import dev.jellystructure.server.routes.audiobooksTvRoutes
 import dev.jellystructure.server.routes.musicRoutes
@@ -202,6 +203,8 @@ fun startServer(
     musicPipeline: dev.jellystructure.media.MusicPipeline? = null,
     // R368 — the playback sessions' per-viewer lists and fan-out; null in contexts that build none.
     sessionPublisher: dev.jellystructure.tv.SessionPublisher? = null,
+    // 320 — the support lane; null in contexts that build none. Its routes answer 404/409 while unavailable (FR-320-1).
+    supportService: dev.jellystructure.support.SupportService? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -680,6 +683,7 @@ fun startServer(
                     seerrDiscoverService?.suggestions = s
                     suggestionsRoutes(s)
                 }
+                supportService?.let { supportRoutes(it) }   // Phase 320 — /api/tv/support/** and /api/support/**
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService)
                 // Phase 279 — the phone's music (new paths, new DTOs; an app without music never asks).

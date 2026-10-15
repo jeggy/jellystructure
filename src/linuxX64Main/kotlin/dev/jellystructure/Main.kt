@@ -240,6 +240,7 @@ fun main() = runBlocking {
                 paired = raviloDeviceService.listByUser(userId).any { it.kind == "screen" },
             )
         },
+        supportAvailable = { configStore.supportAvailable },   // 320 (FR-320-1)
     )
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     raviloConfigService.migrateThemeDefaults()             // R338 (FR-R338-6): one-time, idempotent — follow OFF on an existing server
@@ -708,6 +709,25 @@ fun main() = runBlocking {
         }
     }
     // R368 + 304a — every playback is a session; restored after a restart, published to the apps and the admin.
+    // 320 — the support lane. Available only while `[support] enabled` AND an AI key is set (FR-320-1); a change to either
+    // is pushed as the `config_changed` Ravilo already re-fetches on, so an entry appears and disappears without a restart.
+    val supportService = dev.jellystructure.support.SupportService(
+        db, { configStore.current },
+        languageOf = { userId -> raviloConfigService.getConfig(userId).uiLanguage },
+        nameOf = { userId -> raviloDeviceService.allDevices().firstOrNull { it.jellyfinUserId == userId }?.jellyfinUsername },
+    )
+    dev.jellystructure.support.wireSupport(supportService, configStore, tvEventBus) { event -> rootScope.launch { broadcaster.broadcast(event) } }
+    // FR-320-17 — tickets resolved with no activity for `retention_days`. Daily, and it runs while the lane is unavailable:
+    // an absent key must not turn a retention policy into keeping personal data forever.
+    rootScope.launch {
+        delay(5 * 60_000L)
+        while (shutdownRequested.value == 0) {
+            runCatching { supportService.retentionPass() }
+                .onSuccess { if (it > 0) Logger.info("Support: retention removed $it resolved ticket(s)", "support") }
+                .onFailure { Logger.warn("Support retention pass failed: ${it.message}", "support") }
+            delay(24 * 3_600_000L)
+        }
+    }
     val sessionPublisher = dev.jellystructure.tv.wirePlaybackSessions(db, rootScope, mediaStore, musicPipeline, raviloDeviceService, tvEventBus, playbackService, castService, broadcaster, configStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
@@ -722,6 +742,7 @@ fun main() = runBlocking {
         subtitleCheckWiring = dev.jellystructure.server.SubtitleCheckWiring(db, subtitleChecks, bazarrSteering, subtitleHook, bazarrAdvisor),
         musicPipeline = musicPipeline,
         sessionPublisher = sessionPublisher,
+        supportService = supportService,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

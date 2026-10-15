@@ -57,6 +57,8 @@ class MusicEditionsStoreTest {
         raw.execute(null, "ALTER TABLE playback_qoe DROP COLUMN audio_decoder", 0)
         // …and 317's 78 creates file_av_sync.
         raw.execute(null, "DROP TABLE IF EXISTS file_av_sync", 0)
+        // …and 320's 79 creates support_ticket and support_message.
+        for (t in listOf("support_message", "support_ticket")) raw.execute(null, "DROP TABLE IF EXISTS $t", 0)
         raw.execute(null, "PRAGMA user_version = ${MIGRATION_305}", 0)
         raw.close()
 

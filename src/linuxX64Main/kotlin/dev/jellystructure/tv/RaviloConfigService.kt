@@ -68,6 +68,9 @@ class RaviloConfigService(
     // `RaviloConfig.screens` reached every phone as null, so the sheet's TV tiers, *Add a TV* and R265's
     // reconnect were unreachable in production (found 2026-09-25 finishing R265). Null = not wired.
     private val screensCapability: ((userId: String) -> dev.jellystructure.shared.tv.ScreensCapability?)? = null,
+    // 320 (FR-320-1) — whether the support lane is available, resolved on every read path like [castCapability] and
+    // never stored: a stale stored `true` must not draw an entry once the AI key is gone. Null = never.
+    private val supportAvailable: (() -> Boolean)? = null,
 ) {
 
     /**
@@ -122,7 +125,7 @@ class RaviloConfigService(
 
     /** FR-202-2 — never trust a stored/round-tripped `focus_detail` value; always recompute it from the
      *  two admin-side booleans before a config leaves the server, on every read path. */
-    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke())
+    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke(), supportEnabled = supportAvailable?.invoke() ?: false)
 
     fun hasCustomConfig(userId: String): Boolean =
         userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
@@ -155,6 +158,7 @@ class RaviloConfigService(
         // Phase 218 — server-resolved on read, never persisted (a stale stored value could resurrect a
         // cast button after the admin switched Chromecast off).
         cast = null,
+        supportEnabled = false,   // 320 — server-resolved on read, like cast
         // R338 — the viewer's resolved theme fields are written on every read, never stored; the global defaults are
         // kept only when they name a theme of the right kind, and default_skin follows default_theme as its mirror.
         theme = null, themeFollow = null, themeLight = null, themeDark = null,

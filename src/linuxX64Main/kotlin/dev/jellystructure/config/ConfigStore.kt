@@ -190,9 +190,21 @@ class ConfigStore(private val filePath: String) {
      *  a return value) — this is purely additive; see `ConfigRoutes.kt`/`WebhookRoutes.kt`/
      *  `MetadataRoutes.kt` for the call sites now surfacing it. */
     suspend fun update(config: AppConfig): Boolean = mutex.withLock {
+        val supportWas = supportAvailable
         _config = config
-        persist()
+        val ok = persist()
+        // Phase 320 (FR-320-1) — saving or removing the AI key, and changing `[support] enabled`, both change what
+        // `supportEnabled` reports. Here rather than in the one route that happens to carry the key today: every writer
+        // goes through update(), including the admin phase's own toggle when it arrives.
+        if (supportAvailable != supportWas) onSupportAvailabilityChanged?.invoke()
+        ok
     }
+
+    /** Phase 320 (FR-320-1) — `[support] enabled` and a non-blank `[ai] api_key`; nothing else decides it. */
+    val supportAvailable: Boolean get() = _config.support.availableWith(_config.ai)
+
+    /** Phase 320 (FR-320-1) — called after an update that flipped [supportAvailable]; wired to `config_changed`. */
+    @kotlin.concurrent.Volatile var onSupportAvailabilityChanged: (() -> Unit)? = null
 
     private suspend fun persist(): Boolean {
         val tmp = "$filePath.tmp"

@@ -1,0 +1,134 @@
+-- 320 (FR-320-2) — the support lane's store: a ticket per filing and the messages on it. The ticket's id IS the
+-- number a viewer sees (`#41`). Times are epoch SECONDS (like media_job and file_av_sync). Every name carries
+-- `support_`/`Support` because "ticket" already means a stream ticket here. Must stay byte-for-byte in sync with
+-- 79.sqm (the SQLDelight-migration rule). `device_id` is FR-320-7's "per device" and never leaves the server.
+CREATE TABLE support_ticket (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    owner_user_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    holder TEXT NOT NULL,
+    holder_seat TEXT,
+    owes TEXT NOT NULL,
+    owed_since INTEGER NOT NULL,
+    class TEXT,
+    english_summary TEXT,
+    viewer_language TEXT NOT NULL,
+    flagged INTEGER NOT NULL DEFAULT 0,
+    admin_read_message_id INTEGER NOT NULL DEFAULT 0,
+    viewer_read_message_id INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX support_ticket_owner ON support_ticket(owner_user_id, created_at);
+
+CREATE TABLE support_message (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    author TEXT,
+    author_label TEXT,
+    body TEXT,
+    event TEXT,
+    event_args TEXT,
+    visibility TEXT NOT NULL,
+    device_platform TEXT,
+    device_id TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX support_message_ticket ON support_message(ticket_id, id);
+
+insertTicket:
+INSERT INTO support_ticket(owner_user_id, state, holder, holder_seat, owes, owed_since, viewer_language, created_at, updated_at)
+VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?);
+
+lastInsertId:
+SELECT last_insert_rowid();
+
+insertMessage:
+INSERT INTO support_message(ticket_id, kind, author, author_label, body, event, event_args, visibility, device_platform, device_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+ticket:
+SELECT * FROM support_ticket WHERE id = :id;
+
+ticketsOf:
+SELECT * FROM support_ticket WHERE owner_user_id = :owner ORDER BY updated_at DESC, id DESC;
+
+allTickets:
+SELECT * FROM support_ticket ORDER BY updated_at DESC, id DESC;
+
+messages:
+SELECT * FROM support_message WHERE ticket_id = :ticket ORDER BY id;
+
+lastMessageId:
+SELECT COALESCE(MAX(id), 0) FROM support_message WHERE ticket_id = :ticket;
+
+firstMessage:
+SELECT body FROM support_message WHERE ticket_id = :ticket AND kind = 'MESSAGE' AND visibility = 'VIEWER' ORDER BY id LIMIT 1;
+
+touch:
+UPDATE support_ticket SET updated_at = :now WHERE id = :id;
+
+setRouting:
+UPDATE support_ticket SET state = :state, holder = :holder, holder_seat = :seat, owes = :owes, owed_since = :owed_since, updated_at = :now
+WHERE id = :id;
+
+setOwes:
+UPDATE support_ticket SET owes = :owes, owed_since = :owed_since, updated_at = :now WHERE id = :id;
+
+setClass:
+UPDATE support_ticket SET class = :ticket_class, updated_at = :now WHERE id = :id;
+
+-- Deliberately does not touch updated_at: a flagged ticket must look exactly as it did to the viewer (FR-320-12).
+setFlag:
+UPDATE support_ticket SET flagged = :flagged WHERE id = :id;
+
+setEnglishSummary:
+UPDATE support_ticket SET english_summary = :summary WHERE id = :id;
+
+moveViewerRead:
+UPDATE support_ticket SET viewer_read_message_id = :up_to WHERE id = :id AND viewer_read_message_id < :up_to;
+
+moveAdminRead:
+UPDATE support_ticket SET admin_read_message_id = :up_to WHERE id = :id AND admin_read_message_id < :up_to;
+
+deleteMessages:
+DELETE FROM support_message WHERE ticket_id = :ticket;
+
+deleteTicket:
+DELETE FROM support_ticket WHERE id = :id;
+
+ticketsSince:
+SELECT COUNT(*) FROM support_ticket WHERE owner_user_id = :owner AND created_at > :since;
+
+oldestTicketSince:
+SELECT MIN(created_at) FROM support_ticket WHERE owner_user_id = :owner AND created_at > :since;
+
+messagesSince:
+SELECT COUNT(*) FROM support_message
+WHERE kind = 'MESSAGE' AND author = 'VIEWER' AND created_at > :since
+  AND ticket_id IN (SELECT id FROM support_ticket WHERE owner_user_id = :owner);
+
+oldestMessageSince:
+SELECT MIN(created_at) FROM support_message
+WHERE kind = 'MESSAGE' AND author = 'VIEWER' AND created_at > :since
+  AND ticket_id IN (SELECT id FROM support_ticket WHERE owner_user_id = :owner);
+
+sameHereSince:
+SELECT COUNT(*) FROM support_message
+WHERE ticket_id = :ticket AND kind = 'SAME_HERE' AND device_id = :device AND created_at > :since;
+
+staleResolved:
+SELECT id FROM support_ticket WHERE state = 'RESOLVED' AND updated_at < :before;
+
+viewerUnread:
+SELECT COUNT(*) FROM support_message
+WHERE ticket_id = :ticket AND id > :after AND visibility = 'VIEWER'
+  AND ((kind = 'MESSAGE' AND author <> 'VIEWER') OR (kind = 'SYSTEM' AND event IN ('FORWARDED', 'STATE_CHANGED')));
+
+adminUnread:
+SELECT COUNT(*) FROM support_message
+WHERE ticket_id = :ticket AND id > :after
+  AND ((kind = 'MESSAGE' AND author = 'VIEWER' AND visibility = 'VIEWER') OR kind = 'SAME_HERE');
