@@ -212,3 +212,26 @@ no episode name to show. Round 2 landed them and its gate cleared them; left as 
   only disclosure, per `ad7505a5`.
 - **Still not promoted.** `ai.css` needs its `SCOPED_FILES` row and wrapper class, as round 2 noted,
   and promotion is a separate hand-written commit. **No phase number here either.**
+
+### The write-back — 2026-10-15, approved and verified
+
+The owner approved it on DEB-1246 at 08:30:41Z, one request covering both files, as his decision
+specified. The push followed the four verified steps and **is proven, not assumed**:
+
+| step | result |
+|---|---|
+| re-pull both files and hash, to re-prove the precondition | `app/ai.html` `3639f188` (11 642 B), `app/ai.js` `54e61f40` (15 321 B) — **byte-identical to the export**, so the studio had not moved since 09:43Z and the write clobbered nothing of his |
+| `finalize_plan` | `localDir` scoped to **this quarantine directory**, writes exactly `app/ai.html` and `app/ai.js`, `deletes: []` |
+| `write_files` by `localPath` | 2 written, bytes read from disk |
+| re-pull both and compare | `app/ai.html` `121f46d7` (11 653 B), `app/ai.js` `633d69b7` (15 385 B) — **equal to the committed copies here**, both `truncated: false` |
+
+`localDir` was pointed at `design/incoming/2026-10-14-admin-ai/` rather than `design/`, which is the
+safer form of the write-back recipe: with the plan's local root inside the quarantine directory, a
+mistyped `localPath` cannot reach a production `design/app/` file and push it to the studio. Worth
+keeping for every future write-back — the studio and the production tree use the same relative
+paths, so `design/` as `localDir` makes `app/ai.html` ambiguous between the two in exactly the way
+that matters.
+
+Nothing else in the studio was read, written or deleted, and no file was deleted anywhere. The
+studio and this directory now hold the same two files; `ai.css` was not part of the write-back and
+is untouched in both.
