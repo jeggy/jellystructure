@@ -270,3 +270,144 @@ and the second film's Radarr mismatch is still left alone.
 `upgradeAllowed: false` on this library's quality profile, so the lost labels cannot start a replacement today (the
 reasoning is in FR-314-14). Pressing Move before FR-316-6 is built costs provenance on the films it moves and nothing
 else; the fix is worth building either way, because the hazard arrives the moment any movie profile turns upgrades on.
+
+## Amendment 2026-10-15 — Move bound four films to one music album; the repair (DEB-1251)
+
+The owner pressed **Move the ticked films** at 08:29:05Z on 2026-10-15. Turið's read-back is on DEB-785: disk,
+qBittorrent, Radarr and the image backups came out right; **the Jellyfin half did not**. Jellyfin 12.1 ignores
+`GET /Items?Path=` and returns the whole library, `JellyfinClient.getItemByPath` took `Items[0]`, and every film was
+bound to the same item — a **music album**. Step 7 passed because the album has a file. The ids are on DEB-785 and
+nowhere in this repository.
+
+Fixing the lookup itself (step 5 binds the item **at the path it asked for**, step 7 asserts that path) only makes the
+code do what FR-316-4 steps 5 and 7 already say. It needs no amendment here. This amendment is the repair of what has
+already been written wrong, plus two rules that would have stopped it costing more than one id.
+
+### What the prod database says (read-only copy of 08:31:56Z, read 2026-10-15 for this amendment)
+
+Four facts change what the repair can and must do:
+
+1. **The history `before_snapshot` is empty.** `LooseFilmMover` writes its history line with no `beforeSnapshot`, so
+   all four `moved_into_folder` entries carry `''`. The only per-film record is each line's `detail`: the steps, the row
+   count moved and whether watch data was written. Nothing keeps the old ids. The newest database backup on the host
+   is from 2026-09-27, so the old ids cannot be recovered from a backup either. **The repair does not need them**:
+   every row it moves carries its own evidence (below).
+2. **It is four films, not three.** 314c's DV rename of **2026-10-13 02:26Z** runs through this mover (FR-316-6) and
+   its history line says *"Found it under a new id; watch data put back for 1 viewer · 6 rows moved to the new id"*.
+   It was bound to **the same album**. Its media row healed on its own three minutes later (`jellyfin_missing` and then
+   `realtime_ingest` with the real id). Its six rows and its one viewer's watch data did not heal.
+3. **36 rows sit on the album's id, and the four history lines account for exactly 36** (6 + 4 + 20 + 6):
+   `playback_session` 10, `playback_start_sample` 6, `playback_qoe` 4, `starter_list` 13, and
+   `recommendation.reason_item_id` 3. Turið's 33 left out the last of these. The 20 playback rows all belong to the
+   4K REMUX (its line says 20), and every one of them carries evidence of that. The 16 derived rows belong to the
+   other three films in a split that nothing records.
+4. **The 2026-10-15 press wrote no watch data onto the album.** None of its three lines says *"watch data put back"*,
+   and the counter only moves on a 2xx. Nine viewers cannot read the album, so their writes were refused. The one who
+   can already had data on it and was skipped. **That data is the 2026-10-13 rename's single write** — the
+   `Played: true` Turið read.
+
+### FR-316-7 — the repair: re-bind every film the mover bound to the wrong item
+
+**Shape: a one-off run, by hand, that does a dry run unless told otherwise.** It is not a durable action. Once the
+lookup asserts its path the binding cannot recur, and nothing schedules the run. Two admin routes:
+`GET /api/loose-films/repair?wrongId=<id>` prints the plan and changes nothing; `POST` with the same `wrongId` and the
+plan's digest applies it. The `POST` refuses when a fresh plan differs from the digest, so only a plan someone has
+read gets applied. Any seat may run the dry run, because it is read-only. **The apply is the owner's call, given on the
+build ticket**, as Move was. The run is idempotent: a second dry run after an apply says there is nothing to do.
+
+**Inputs.** The wrong id is given, not inferred. The dry run then confirms it: Jellyfin reports that id as an item that
+is not a film, at a path that is no moved film's path. If it cannot confirm that, the plan stops there. The films are
+every `moved_into_folder` history entry, which today means the four above. For each film, the plan finds its video
+path now: the media row's path when the row exists, or else the single video in the folder its history line names
+under the films root. It then finds **the item Jellyfin has at that path**, using the fixed, path-asserting lookup.
+A film with no item yet is listed as *waiting for the scan*. Nothing is moved for it, and a later run picks it up.
+
+**Partitioning the rows (question 2).** Only rows still keyed to the wrong id are considered. Each row is attributed
+**by evidence it carries itself**. The plan names the rule used for each row:
+
+| Table | Evidence | Rule |
+|---|---|---|
+| `playback_session` | `queue_json` entries carry the film's slug in their artwork URL (`/api/tv/image/<slug>/…`) and its title | The row goes to the film whose slug its `item_id`'s entry names. Each **queue entry** whose `id` is the wrong id is rewritten by its own slug, not by a blind `replace()`. |
+| `playback_start_sample` | `file_id` is the file's path at the time of the sample | The film whose video, before the move, had that path (the library root plus the moved video's basename; a move into a folder keeps the basename). |
+| `playback_qoe` | none of its own | The film of the attributed `playback_session` on the same device whose `[created_at, ended_at]` holds the QoE row's `updated_at` (QoE in **seconds**, sessions in **milliseconds**). Only when exactly one film's sessions match. |
+| `starter_list`, `recommendation`, `playback_outbox`, `dirty_item`, `ai_order`, `ai_theme` | none | **Not attributed.** These rows are derived. The run queues the existing full recommendations build (FR-269-8's, the pipeline's own step, not a new writer), which rewrites every scope from the library's real ids. The run hand-edits none of them. |
+
+**A row the evidence cannot account for stays where it is.** That covers a playback row with no slug, a path that
+matches no film, or a QoE row matching no session or more than one film. The plan lists each such row by table and
+key, and it might be the album's own row. Guessing is never an option. The plan also checks the count: rows attributed
+plus derived rows, against the history lines' total. A mismatch is printed, and it does not block the rest.
+
+**The album's own watch data (question 3).** The mover writes only where the target item reads empty or cannot be read
+at all. A write that landed means the viewer could read the item, so it read empty. The album's row for any viewer the
+mover wrote to was therefore **empty before**. The plan reads the album for every viewer who can read it. **Exactly one
+non-empty row is expected** (the 2026-10-13 write). If there is exactly one, the run does two things:
+
+1. **Carries it to the film it came from** (question 5's write, two days late). That film is the one whose history line
+   says *"put back for 1 viewer"*. The write happens only when the film's real item reads empty for that viewer.
+2. **Resets the album's row for that viewer to empty**, read back. It does this only when the row's `LastPlayedDate` is
+   no later than the history line's timestamp. A later date means the viewer has used the album since, and the row is
+   left alone and reported.
+
+With zero or several non-empty rows, the run resets none and carries none, and the plan says why. The nine viewers who
+cannot read the album have nothing on it: their writes were refused.
+
+**The media rows (question 4).** The run **does not recreate the two swept rows**. Ingest recreates them from Jellyfin,
+as it did for the 2026-10-13 film. The run checks each film's media row instead: there is exactly one, at the film's
+path now, bound to the item Jellyfin has at that path. A row bound elsewhere (today, the 1080p film's) gets its
+`jellyfinId` corrected through the store, with no other field touched. A missing row is reported as *waiting for the
+scan*. Anything that lived only in a swept row is gone, because the newest backup predates it. So the plan lists the
+two films' history entries since that backup that edited metadata by hand, and the owner can see what to re-check.
+
+**Film watch data on the real items (question 5).** For the three films of 2026-10-15, the mover's per-viewer read
+lived only in memory and was never written anywhere. The run therefore **reports and does not reconstruct**. For each
+film and each viewer, it says whether the real item carries watch data. When Jellyfin moved the data by provider keys
+(dev review 6), the item carries it already. When it did not, the plan gives the count of viewers left empty. The run
+never derives a watched flag or a resume point from our session rows, since that would be inventing values it did not
+read. A non-zero count goes to the owner as a decision card. It is not a silent loss, and the run itself does not
+settle it.
+
+**Records.** Each film's apply writes one history entry (`rebound_jellyfin_id`). Its `before_snapshot` holds the wrong
+id, the right id, and every row it moved with its table, key and old value, so the repair itself can be undone by hand.
+
+### FR-316-8 — a move and a sweep never cost a film its row
+
+The 2026-10-15 press raced the 08:30 pipeline. Its sweep deleted two films' media rows on paths the move had just
+emptied (*"Movie file not found on disk"*), while step 6 was giving them their new paths. **A film being moved is never
+deleted by a sweep.** Either the sweep re-reads a row from the store immediately before deleting it and skips a row
+whose file exists at the re-read path, or moves and sweeps never overlap. The engineer chooses. The outcome is what is
+specified. The exact interleaving has not been read, so the test is the outcome: a sweep that read the old path before
+step 6 ran deletes nothing.
+
+### FR-316-9 — the mover keeps the record it was assumed to keep
+
+Every `moved_into_folder` history entry whose step 6 moved rows writes a `before_snapshot` holding the old id, the new
+id, and the table and key of every row moved. The record is written whoever called the mover (316's Move, 314c's
+rename). Had this existed, question 2 would have been a lookup.
+
+### Tests added to FR-316-5
+
+7. The lookup: a Jellyfin fake that ignores `Path=` and returns another item first makes step 5 fail the film
+   (`partial`, *"Jellyfin hasn't found it in the new folder yet"*). It never binds the other item, and step 7 checks
+   the bound item's path.
+8. The repair, with fakes: sessions attributed by slug, queue entries rewritten one by one, samples by path, QoE by
+   device and window (mixed units), derived rows left to the build, a row with no evidence left and listed, the album
+   row reset only on exactly one candidate with a `LastPlayedDate` at or before the write, the carry only onto an empty
+   film row, a `POST` refused on a stale digest, and a second run planning nothing.
+9. FR-316-8: a sweep holding a pre-move read of a film being moved deletes no row.
+10. FR-316-9: the history entry's `before_snapshot` names old id, new id and every moved row.
+
+### Acceptance added
+
+5. After the apply, a fresh dry run plans nothing. No playback row keys to the album's id except rows the plan listed as
+   unaccounted. Each moved film's media row, where it exists, is bound to the item Jellyfin has at its path. After the
+   full recommendations build, no `starter_list` or `recommendation` row keys to the album's id.
+6. The album's own watch data for the viewer the 2026-10-13 rename wrote to reads empty again, or the plan said why it
+   was left. That film's real item carries the carried values for that viewer.
+
+### Hold, until FR-316-7's apply is read back
+
+- **Move stays unpressed**, and nobody hand-edits the rows on the album's id. A hand fix would rewrite the evidence the
+  repair attributes by.
+- **314c's DV rename goes through this mover.** Any rename it makes before the lookup fix ships binds to the album
+  again. That is the 2026-10-13 case. 314c renames are held under the same rule as Move until the build that carries
+  the lookup fix is deployed.
