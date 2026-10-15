@@ -59,3 +59,18 @@ fun raviloNewerRelease(app: String?, server: String?): RaviloVersion? {
     val s = parseRaviloRelease(server?.trim()?.removePrefix("v")) ?: return null
     return s.takeIf { it > a }
 }
+
+/** `v1.51`, `1.51`, and the build between releases — `v1.51-238-g188154f2`, with or without `-dirty`. */
+private val FLOOR_RE = Regex("""^v?(\d+)\.(\d+)(?:-\d+-g[0-9a-f]{6,}(?:-dirty)?)?$""")
+
+/**
+ * R386 (FR-R386-3, D12) — the release a server's build is based on: the floor of what a Mac may be updated to.
+ * Prod normally runs a build between releases, reported as `v1.51-238-g188154f2`; that build contains everything in
+ * 1.51, so 1.51 is not newer than it. Unlike [raviloNewerRelease], which reads a dev build as *no release at all*
+ * and stays as it is for its other callers, this reads the release a dev build sits on. Null — unknown — for a
+ * blank, `dev` or anything else that does not parse.
+ */
+fun raviloServerFloor(server: String?): RaviloVersion? {
+    val m = FLOOR_RE.matchEntire(server?.trim() ?: return null) ?: return null
+    return RaviloVersion(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+}

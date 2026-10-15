@@ -57,4 +57,33 @@ class RaviloVersionTest {
         assertNull(raviloNewerRelease("1.45", null))
         assertNull(raviloNewerRelease("1.45", ""))
     }
+
+    @Test
+    fun `the server floor is the release a build sits on`() {
+        assertEquals(RaviloVersion(1, 51), raviloServerFloor("v1.51"))
+        assertEquals(RaviloVersion(1, 51), raviloServerFloor("1.51"))
+        assertEquals(RaviloVersion(1, 51), raviloServerFloor(" 1.51 "))
+        assertEquals(RaviloVersion(1, 51), raviloServerFloor("v1.51-238-g188154f2"), "a build between releases is based on 1.51 (D12)")
+        assertEquals(RaviloVersion(1, 51), raviloServerFloor("1.51-238-g188154f2-dirty"))
+        assertEquals(RaviloVersion(2, 0), raviloServerFloor("v2.0"))
+    }
+
+    @Test
+    fun `the server floor is unknown for anything that is not a release or a build on one`() {
+        assertNull(raviloServerFloor(null))
+        assertNull(raviloServerFloor(""))
+        assertNull(raviloServerFloor("   "))
+        assertNull(raviloServerFloor("dev"))
+        assertNull(raviloServerFloor("1.51.2"))
+        assertNull(raviloServerFloor("v1.51-beta"))
+        assertNull(raviloServerFloor("1.51-238"), "a count without its commit is not a git-describe")
+        assertNull(raviloServerFloor("latest"))
+    }
+
+    @Test
+    fun `the server floor leaves raviloNewerRelease's reading of a dev build alone`() {
+        assertNull(raviloNewerRelease("1.45", "v1.46-49-g429cffe9"), "the older function still says nothing about a dev build")
+        assertEquals(RaviloVersion(1, 46), raviloServerFloor("v1.46-49-g429cffe9"))
+    }
 }
+

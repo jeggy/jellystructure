@@ -84,6 +84,19 @@ object MacNative {
         fun ravilo_bonjour_start()
         fun ravilo_bonjour_stop()
         fun ravilo_bonjour_snapshot(): Pointer?
+
+        // ── R386 — Sparkle (Update.swift; see MacUpdater). Added without an ABI bump: a library from before it throws
+        // `UnsatisfiedLinkError` and MacUpdater reports the updater unavailable. ──
+        fun ravilo_update_start()
+        fun ravilo_update_set_auto_download(on: Int)
+        /** A background check against [feedUrl]: no Sparkle window. */
+        fun ravilo_update_check_background(feedUrl: String)
+        /** A user-initiated check: Sparkle's own window takes over (R386 D9). */
+        fun ravilo_update_check_window(feedUrl: String)
+        /** Installs the downloaded update and relaunches. */
+        fun ravilo_update_install()
+        /** `key=value` lines — see [SparkleSnapshot.parse]. Free it. */
+        fun ravilo_update_snapshot(): Pointer?
     }
 
     /** A media key or Control Center: `command` as NowPlaying.swift numbers them, `value` in seconds. */

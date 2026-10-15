@@ -99,6 +99,47 @@ gh secret set MACOS_SIGNING_P12_PASSWORD --repo jeggy/jellystructure    # paste 
 
 `deploy-macos.yml` refuses to build without both secrets; it never falls back to an ad-hoc signature.
 
+## The update (R386)
+
+The app updates itself with [Sparkle 2](https://sparkle-project.org) from the release it came from. Three pieces:
+
+- **Sparkle in the bundle.** `fetchSparkle` downloads the pinned release (`build.gradle.kts` holds the version and its
+  SHA-256), `bundleSparkle` copies `Sparkle.framework` into `Ravilo.app/Contents/Frameworks`, and `native/Update.swift`
+  drives one `SPUUpdater` through the same C bridge as everything else. The Swift library links Sparkle *weakly*: a
+  bundle without it still loads and the updater reports itself unavailable.
+- **An appcast on every release.** `deploy-macos.yml` signs the `.dmg` with the update key and writes
+  `appcast.xml` — one item, the release itself — beside it (`gh release upload --clobber`; on a by-hand run, into the
+  run's artifact). It then checks the appcast's signature against the public key the bundle carries.
+- **The server floor.** `UpdateCheck` points Sparkle at `releases/download/v<S>/appcast.xml`, where S is the release
+  the server is based on, so a Mac never moves past its server (`UpdateRules.plan`, tested in `UpdatePlanTest`).
+
+### The update key (once, on a Mac)
+
+The EdDSA key pair that signs every appcast. Its public half is committed and baked into every bundle; its private
+half is one more repository secret, `SPARKLE_ED_PRIVATE_KEY`. Losing it means no installed Mac can ever verify another
+update — **back it up where the signing certificate's `.p12` lives.** From the repository root, on the MacBook:
+
+```sh
+./gradlew :ravilo-desktop:fetchSparkle
+BIN=ravilo-desktop/build/sparkle/Sparkle-2.10.0/bin
+
+$BIN/generate_keys --account ravilo                        # makes the pair in the login Keychain
+$BIN/generate_keys --account ravilo -p > ravilo-desktop/sparkle/SUPublicEDKey.txt   # the public half — commit this
+(umask 077; $BIN/generate_keys --account ravilo -x "$HOME/ravilo-sparkle.key")      # the private half, one line
+gh secret set SPARKLE_ED_PRIVATE_KEY --repo jeggy/jellystructure < "$HOME/ravilo-sparkle.key"
+```
+
+Put `ravilo-sparkle.key` in the password manager beside `ravilo-signing.p12`, then delete the file. **The private key
+never goes in the repository, an issue, a comment or a log**; the workflow reads it from the secret on standard input.
+
+### Trying an update without a release
+
+A `workflow_dispatch` run builds with `-Pravilo.updateFeedOverride=true`: that build honours
+`RAVILO_UPDATE_FEED=<appcast url>` (or `-Dravilo.update.feed`) in place of the server-floor logic, and may read a feed
+over plain `http` on the local network. A release is never built that way, and ignores both. Serve a later build's
+`.dmg` and its `appcast.xml` from a folder (`python3 -m http.server`), edit the appcast's enclosure `url` to the
+local address (the signature covers the file, not its URL), and start the older build with the variable set.
+
 
 ## The Flatpak (Linux)
 

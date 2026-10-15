@@ -17,6 +17,14 @@ name: Deploy — Ravilo for Mac (.dmg)
 # The certificate is made once, on a Mac, with the steps in ravilo-desktop/README.md (a 20-year self-signed
 # code-signing certificate named "Ravilo"). Losing it costs every Mac one more Open Anyway.
 #
+# ── The update (R386) ────────────────────────────────────────────────────────────────────────────────────────────
+# The app updates itself with Sparkle 2, from the release it was installed from. Every .dmg therefore has a sibling,
+# `appcast.xml` — one item, the release itself — signed with an EdDSA key whose public half is committed
+# (ravilo-desktop/sparkle/SUPublicEDKey.txt, baked into the bundle) and whose private half is one more secret:
+#   SPARKLE_ED_PRIVATE_KEY      the file `generate_keys -x` writes (ravilo-desktop/README.md, "The update key")
+# Sparkle's own helpers are signed with the Ravilo identity like everything else: a missing secret fails here, by name,
+# and nothing is uploaded.
+#
 # ── When it runs (R331 D1) ───────────────────────────────────────────────────────────────────────────────────────
 # By hand (workflow_dispatch on an existing vX.Y tag, or on `main` via the `ref` input before any tag carries the
 # Mac app) it keeps the .dmg as this run's artifact and touches no release. It attaches to a GitHub release only when
@@ -109,12 +117,19 @@ jobs:
         env:
           P12_B64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
           P12_PW: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           missing=()
           [ -n "$P12_B64" ] || missing+=("MACOS_SIGNING_P12_BASE64")
           [ -n "$P12_PW" ] || missing+=("MACOS_SIGNING_P12_PASSWORD")
+          [ -n "$SPARKLE_KEY" ] || missing+=("SPARKLE_ED_PRIVATE_KEY")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing repository secret(s): ${missing[*]}. The Mac app is signed with the Ravilo certificate, never ad hoc (R331 FR-R331-3) — an ad-hoc build would make every Mac approve every update again. See ravilo-desktop/README.md for how to create them."
+            echo "::error::Missing repository secret(s): ${missing[*]}. The Mac app is signed with the Ravilo certificate, never ad hoc (R331 FR-R331-3) — an ad-hoc build would make every Mac approve every update again — and every release carries an appcast signed with the update key (R386 FR-R386-2). See ravilo-desktop/README.md for how to create them."
+            exit 1
+          fi
+          # R386 — the public half is committed; a bundle without it could never verify an update.
+          if ! grep -Eq '^[A-Za-z0-9+/]{43}=$' ravilo-desktop/sparkle/SUPublicEDKey.txt 2>/dev/null; then
+            echo "::error::ravilo-desktop/sparkle/SUPublicEDKey.txt is missing or is not a Sparkle public key (44 base64 characters). Make the key pair once — ravilo-desktop/README.md, \"The update key\"."
             exit 1
           fi
           echo "KEYCHAIN=$RUNNER_TEMP/ravilo-signing.keychain-db" >> "$GITHUB_ENV"
@@ -168,8 +183,10 @@ jobs:
 
       - name: Build the Swift library and the app
         run: |
+          # R386 — only a by-hand run (never a release) is built to honour the debug feed override and a local feed.
           ./gradlew :ravilo-desktop:buildMacNative :ravilo-desktop:createDistributable \
             -Pravilo.macPackageVersion=${{ needs.version.outputs.package_version }} \
+            -Pravilo.updateFeedOverride=${{ github.event_name == 'workflow_dispatch' }} \
             -Pjellystructure.version=$VERSION --no-daemon
           APP=ravilo-desktop/build/compose/binaries/main/app/Ravilo.app
           test -d "$APP" || { echo "::error::createDistributable produced no Ravilo.app"; exit 1; }
@@ -177,6 +194,21 @@ jobs:
           test -n "$LIB" || { echo "::error::libravilo-mac.dylib is not in the bundle (R328 FR-R328-4)"; exit 1; }
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "Swift library: $LIB"
+          # R386 (FR-R386-1) — Sparkle is in the bundle, the update key is in its Info.plist, and there is no feed URL.
+          SPARKLE_DIR=$(echo "$PWD"/ravilo-desktop/build/sparkle/Sparkle-*)
+          test -d "$APP/Contents/Frameworks/Sparkle.framework" || { echo "::error::Sparkle.framework is not in Contents/Frameworks (R386 FR-R386-1)"; exit 1; }
+          test -x "$SPARKLE_DIR/bin/sign_update" || { echo "::error::Sparkle's sign_update was not fetched into $SPARKLE_DIR"; exit 1; }
+          PLIST="$APP/Contents/Info.plist"
+          PUBKEY=$(tr -d '[:space:]' < ravilo-desktop/sparkle/SUPublicEDKey.txt)
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$PLIST")" = "$PUBKEY" ] \
+            || { echo "::error::Info.plist's SUPublicEDKey is not ravilo-desktop/sparkle/SUPublicEDKey.txt"; exit 1; }
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' "$PLIST")" = "false" ] \
+            || { echo "::error::Info.plist must carry SUEnableAutomaticChecks = NO (R386 FR-R386-1)"; exit 1; }
+          if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$PLIST" >/dev/null 2>&1; then
+            echo "::error::Info.plist carries an SUFeedURL; the feed is set per check (R386 FR-R386-1)"; exit 1
+          fi
+          echo "SPARKLE_DIR=$SPARKLE_DIR" >> "$GITHUB_ENV"
+          echo "SPARKLE_PUBLIC_KEY=$PUBKEY" >> "$GITHUB_ENV"
 
       # R331 dev review 2 — every binary signed with our identity: the nested code first (the Swift library and the
       # runtime's own libraries, which --deep does not reach when they sit outside Frameworks), then the bundle.
@@ -188,6 +220,15 @@ jobs:
           set -euo pipefail
           find "$APP/Contents" -type f \( -name '*.dylib' -o -name '*.jnilib' -o -name '*.so' \) -print0 \
             | xargs -0 -n 20 codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY"
+          # R386 (FR-R386-1) — Sparkle's nested code, inside-out, before the framework and before the bundle:
+          # the two XPC services, the installer helper and the updater app, then Sparkle.framework itself. Hardened
+          # runtime stays off (R331), so Library Validation never stops Sparkle loading.
+          FW="$APP/Contents/Frameworks/Sparkle.framework"
+          FWV=$(cd "$FW/Versions/Current" && pwd -P)
+          for nested in "$FWV/XPCServices/Installer.xpc" "$FWV/XPCServices/Downloader.xpc" "$FWV/Autoupdate" "$FWV/Updater.app"; do
+            [ -e "$nested" ] && codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$nested"
+          done
+          codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$FW"
           # jpackage's runtime is a bundle of its own (Contents/runtime/Contents/Info.plist): sealed before the app.
           if [ -d "$APP/Contents/runtime" ]; then
             codesign --force --timestamp=none --keychain "$KEYCHAIN" --sign "$IDENTITY" "$APP/Contents/runtime"
@@ -224,6 +265,46 @@ jobs:
             echo "- self-test: $(cat "$RUNNER_TEMP/self-test.txt")"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # R386 (FR-R386-2) — sign the .dmg with the update key, write the one-item appcast, and prove it verifies
+      # against the SUPublicEDKey the bundle carries. The private key is read from the secret on stdin: never in a
+      # file, an argument or a log line.
+      - name: Sign the .dmg and write appcast.xml
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          DMG="$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg"
+          SIG=$(printf '%s' "$SPARKLE_KEY" | "$SPARKLE_DIR/bin/sign_update" --ed-key-file - -p "$DMG")
+          if ! printf '%s' "$SIG" | grep -Eq '^[A-Za-z0-9+/]{86}==$'; then
+            echo "::error::sign_update did not return an EdDSA signature for the .dmg."
+            exit 1
+          fi
+          LENGTH=$(stat -f%z "$DMG")
+          BASE="https://github.com/$REPO/releases"
+          cat > "$RUNNER_TEMP/out/appcast.xml" <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Ravilo for Mac</title>
+              <item>
+                <title>Ravilo $VERSION</title>
+                <sparkle:version>$PACKAGE_VERSION</sparkle:version>
+                <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                <sparkle:releaseNotesLink>$BASE/tag/v$VERSION</sparkle:releaseNotesLink>
+                <enclosure url="$BASE/download/v$VERSION/ravilo-mac-$VERSION.dmg" length="$LENGTH" type="application/octet-stream" sparkle:edSignature="$SIG"/>
+              </item>
+            </channel>
+          </rss>
+          XML
+          xmllint --noout "$RUNNER_TEMP/out/appcast.xml"
+          swift ravilo-desktop/sparkle/verify-appcast.swift "$RUNNER_TEMP/out/appcast.xml" "$DMG" "$SPARKLE_PUBLIC_KEY"
+          {
+            echo "- \`appcast.xml\`: signature verifies against the bundle's SUPublicEDKey (sparkle:version $PACKAGE_VERSION)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Delete the temporary keychain
         if: always()
         run: security delete-keychain "$KEYCHAIN" 2>/dev/null || true
@@ -232,11 +313,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ravilo-mac-dmg
-          path: ${{ runner.temp }}/out/*.dmg
+          path: |
+            ${{ runner.temp }}/out/*.dmg
+            ${{ runner.temp }}/out/appcast.xml
           retention-days: 30
 
       # R331 FR-R331-5 — only when publish.yml's `mac` job calls this for a published release; by hand, never.
-      # The file only: the release notes say what the release contains, not how to install it (owner, 2026-09-30).
+      # The files only: the release notes say what the release contains, not how to install it (owner, 2026-09-30).
       - name: Attach to the GitHub Release
         if: github.event_name == 'release'
         env:
@@ -244,4 +327,6 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" "$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg" --clobber
+          # R386 (FR-R386-2) — the appcast beside the .dmg, so `releases/latest/download/appcast.xml` and
+          # `releases/download/v<N>/appcast.xml` both resolve. On a by-hand run it is in the artifact above instead.
+          gh release upload "$TAG" "$RUNNER_TEMP/out/ravilo-mac-$VERSION.dmg" "$RUNNER_TEMP/out/appcast.xml" --clobber
