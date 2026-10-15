@@ -24,10 +24,12 @@ is a query, not a recollection. Three separate renumbering collisions in October
 someone reading a free number out of a prose summary that had gone stale. No document in this repo
 other than `STATUS.md` is allowed to claim what is free.
 
-**Every change starts as a spec, bug fixes included.** A new behaviour gets a new numbered file under
+**Every change in behaviour starts as a spec.** A new behaviour gets a new numbered file under
 [`specs/requirements/`](specs/requirements/) (backend/admin) or
-[`specs/ravilo/requirements/`](specs/ravilo/requirements/) (clients). A fix to something already
-shipped gets a **dated amendment inside that phase's existing spec**, written before the Kotlin.
+[`specs/ravilo/requirements/`](specs/ravilo/requirements/) (clients). A fix that changes what a
+shipped phase promises gets a **dated amendment inside that phase's existing spec**, written before
+the Kotlin. A fix that only makes the code do what the spec already says needs no amendment: the
+commit names the FR it restores (owner decision, 2026-10-15).
 `STATUS.md` is the only place a status lives — not the spec body, not a comment.
 
 **A spec body that still carries a `## Status` heading is fixed the next time that spec is touched,
