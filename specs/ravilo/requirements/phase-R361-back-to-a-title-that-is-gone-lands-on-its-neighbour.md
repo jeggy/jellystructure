@@ -365,3 +365,22 @@ No wire change. Client only (`:ravilo-ui`).
 **Out of scope.** The same `Publish` run also failed `ci / checks` on the phase-310 guard *"Only the caller's own
 cancellation is rethrown"*. It passed on the next full run. It is noted on DEB-1218 and gets no ticket unless it
 recurs.
+
+### Build notes (FR-R361-7, 2026-10-15)
+
+Built in `:ravilo-ui` commonMain, as specified. The restore's state moved out of the two grids and into `GridFocus`.
+- **`RestoreOnReturn`** (`focus/GridFocus.kt`) replaces the `restoredOnce` + `LaunchedEffect(items)` block in
+  `BrowseCardGrid` and `BrowseGrid`. It captures the key and index at arrival, keeps `GridFocus.restorePending` set
+  until `restore()` has returned, and only then calls `onRestoreResolved()` (and `onEmpty()` for an empty target). The
+  effect is keyed on the key list, so a change restarts it on the new list. `FollowGridRefresh` leaves a pending
+  restore to it.
+- **`GridFocus.focusIndex` resets `targetKey` in a `finally`** (FR-R361-7.2).
+- **One thing the spec did not name:** `followRefresh` read `focusedKey` in the effect, after the removed tile's
+  detach had let Compose's own recovery focus tile 1 and overwrite it. It is now read in the composition that applies
+  the new list, beside the existing `gridFocused` flag. Without it a refetch one frame after focus landed on the
+  opened title ended on the first tile.
+- Tests: `RestoreOnReturnTest` (new, the frame is a number: 0 and 1 frames in, neighbour and empty, two refetches,
+  a new index), `BrowseFocusTest` (3 moments × 2 outcomes, the answer held on a latch), `MyListFocusTest` (*in flight*,
+  neighbour and avatar). The four *in flight* screen rows are red on `188154f2` and green here; 20 of 20 consecutive
+  `--rerun`s of the three classes pass.
+- Not covered by CI: the order of the real `home_changed`/refetch against Back on a TV. That is the QA ticket.
