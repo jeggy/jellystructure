@@ -1,8 +1,14 @@
 # Requirements (admin) — spec content
 
-One file per phase (`phase-NN-*.md`), flat in this directory. These are **content only** — a phase's
-**status is tracked on the phase's board task**, the single source of truth for both products. A
-spec's location or body does not encode status.
+One file per piece of work, flat in this directory. These are **content only** — a spec's **status
+is tracked on its board task**, the single source of truth for both products. A spec's location or
+body does not encode status.
+
+- **New work** (owner, DEB-799, 2026-10-15): `<slug>.md`, with `Task: DEB-n` on the line under the
+  title. The task is the identity and carries the `jellystructure-admin` label; FRs are numbered
+  inside the spec (`FR-1`, `FR-2`, …) and commits cite `(DEB-n, FR-k)`. No phase number.
+- **Legacy phases**: `phase-NN-*.md`, numbers frozen at 321. Commits, FR ids and the constitution
+  cite them; an amendment to one stays in its file.
 
 - Architecture: [`../constitution.md`](../constitution.md) · [`../plan.md`](../plan.md)
 - Cross-cutting findings: [`_investigation-findings.md`](_investigation-findings.md)

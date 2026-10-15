@@ -1,7 +1,13 @@
 # Ravilo — Requirements (spec content)
 
-One file per phase (`phase-RNN-*.md`), flat in this directory. These are **content only** — phase
-**status is tracked on the phase's board task**, the single source of truth.
+One file per piece of work, flat in this directory. These are **content only** — a spec's **status
+is tracked on its board task**, the single source of truth.
+
+- **New work** (owner, DEB-799, 2026-10-15): `<slug>.md`, with `Task: DEB-n` on the line under the
+  title. The task is the identity and carries the `ravilo-client` label; FRs are numbered inside the
+  spec (`FR-1`, `FR-2`, …) and commits cite `(DEB-n, FR-k)`. No phase number.
+- **Legacy phases**: `phase-RNN-*.md`, numbers frozen at R388 — the last number issued. Commits, FR
+  ids and the constitution cite them; an amendment to one stays in its file.
 
 - Ravilo architecture: [`../constitution.md`](../constitution.md) · [`../plan.md`](../plan.md)
 - Admin specs: [`../../requirements/`](../../requirements/)
