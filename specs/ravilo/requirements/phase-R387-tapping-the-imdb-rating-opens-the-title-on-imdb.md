@@ -91,6 +91,10 @@ visible: no error, no toast, no crash. For a series the URL is the show's page, 
 and gains the link role and a click action labelled by a new string `imdb.open`. This is accessibility semantics
 only: it adds nothing to the D-pad / keyboard focus order.
 
+*Amendment 2026-10-15 (DEB-1290):* Compose Multiplatform 1.9 has no link role (`Role` offers Button, Checkbox,
+Switch, RadioButton, Tab, Image, DropdownList, ValuePicker, Carousel). The chip takes `Role.Button` — the nearest —
+and the click action's label, *Open on IMDb*, is what a screen reader says. Nothing else in this requirement changes.
+
 | Key | en | da (draft) | fo (draft) |
 |---|---|---|---|
 | `imdb.open` | Open on IMDb | Åbn på IMDb | Opna á IMDb |

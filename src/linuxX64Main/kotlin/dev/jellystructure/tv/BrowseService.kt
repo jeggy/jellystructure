@@ -21,7 +21,6 @@ import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
 import dev.jellystructure.shared.tv.SeededBrowseResponse
-import dev.jellystructure.shared.tv.TvImdbRating
 import dev.jellystructure.shared.tv.effectiveQuery
 import dev.jellystructure.shared.tv.ALL_KIND
 import dev.jellystructure.shared.tv.MUSIC_KIND
@@ -149,7 +148,7 @@ class BrowseService(
                 quality = item.qualityLabel(),
                 people = (item.cast + item.crew).map { it.tmdbId }.distinct().take(60),   // R325 (FR-R325-4)
                 channels = channels.filter { ch -> ConditionEvaluator.matches(item, ch.effectiveQuery(), heroIds, cascade) }.map { it.id },
-                imdbRating = item.imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
+                imdbRating = item.tvImdbRating(),   // Phase 131 / R387
                 sortName = item.sortName,   // R253 (FR-R253-3)
             )
         }

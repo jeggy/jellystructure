@@ -318,7 +318,7 @@ class HomeFeedService(
             episodes = if (isSeries) episodes.distinctBy { (it.seasonNumber ?: 0) to (it.episodeNumber ?: 0) }.size.takeIf { it > 0 } else null,
             runtimeMinutes = if (!isSeries) runtime else null,
             ratingBadge = cert?.let { RatingBadge(region = it.region, code = it.code, tier = it.tier, fallback = it.fallback) },
-            imdbRating = imdbRating?.let { dev.jellystructure.shared.tv.TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) },
+            imdbRating = tvImdbRating(),
             // Phase 271 — English here; relabelled per viewer after the cache read (GenreLabels.kt).
             genres = GenreCatalog.displayNames(this, GenreCatalog.ENGLISH, withTitle = false),
             audioLanguages = allTracks.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }

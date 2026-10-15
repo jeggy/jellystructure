@@ -24,7 +24,6 @@ import dev.jellystructure.shared.tv.NextAiring
 import dev.jellystructure.shared.tv.oneIdPerFile
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
-import dev.jellystructure.shared.tv.TvImdbRating
 import dev.jellystructure.shared.tv.TvSegmentMarkers
 import dev.jellystructure.shared.tv.TvStinger
 import dev.jellystructure.shared.tv.TvTrailer
@@ -337,10 +336,6 @@ class DetailService(
      *  (no TMDB/Jellyfin round-trip at detail-read time). */
     private fun MediaItem.tvTrailer(): TvTrailer? =
         trailer?.let { TvTrailer(site = it.site, key = it.key, name = it.name.takeIf { n -> n.isNotBlank() }) }
-
-    /** Phase 131: catalog-only — the item's stored IMDb rating; never fetched at detail-read time. */
-    private fun MediaItem.tvImdbRating(): TvImdbRating? =
-        imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) }
 
     /** Phase 150, rewritten Phase 163 — the resolved intro/credits markers off `media_segment`
      *  (`episodeKey`/`episodeNumber` = `""`/`0` for a movie, matching the table's own sentinel

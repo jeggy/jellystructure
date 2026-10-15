@@ -596,6 +596,10 @@
     "text": "IMDb {rating} ud af 10, {votes} stemmer",
     "note": "Draft Danish — review before release."
   },
+  "imdb.open": {
+    "text": "Åbn på IMDb",
+    "note": "Draft Danish — review before release."
+  },
   "date.month_day_year": {
     "text": "{day}. {month} {year}",
     "note": "Draft Danish — review before release."

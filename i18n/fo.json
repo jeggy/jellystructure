@@ -596,6 +596,10 @@
     "text": "IMDb {rating} av 10, {votes} atkvøður",
     "note": "Draft Faroese — review before release."
   },
+  "imdb.open": {
+    "text": "Opna á IMDb",
+    "note": "Draft Faroese — review before release."
+  },
   "date.month_day_year": {
     "text": "{day}. {month} {year}",
     "note": "Draft Faroese — review before release."

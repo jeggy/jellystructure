@@ -592,7 +592,7 @@ internal fun SeriesDetailLoaded(
                                 // Phase 106/R153: server-resolved age-rating badge.
                                 if (detail.ratingBadge != null) CertBadge(detail.ratingBadge)
                                 // R164: server-pushed IMDb rating chip (show-level), after the cert badge.
-                                if (detail.imdbRating != null) ImdbChip(detail.imdbRating)
+                                if (detail.imdbRating != null) ImdbChip(detail.imdbRating, openable = true)   // R387
                             }
                         }
                         if (detail.genres.isNotEmpty()) {

@@ -253,7 +253,7 @@ private fun MovieDetailLoaded(
                                 // Phase 106/R153: server-resolved age-rating badge.
                                 if (detail.ratingBadge != null) CertBadge(detail.ratingBadge)
                                 // R164: server-pushed IMDb rating chip, after the certification badge.
-                                if (detail.imdbRating != null) ImdbChip(detail.imdbRating)
+                                if (detail.imdbRating != null) ImdbChip(detail.imdbRating, openable = true)   // R387
                                 // R142: ✓ Watched chip when the movie is played.
                                 if (overlay[detail.card.id]?.played == true) {
                                     Text(

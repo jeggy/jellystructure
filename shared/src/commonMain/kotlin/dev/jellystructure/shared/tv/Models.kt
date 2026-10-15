@@ -816,6 +816,9 @@ data class TvTrailer(
 data class TvImdbRating(
     @SerialName("aggregate_rating") val aggregateRating: Double,
     @SerialName("vote_count") val voteCount: Long,
+    /** R387 (FR-R387-1) — the title's IMDb id (`tt` + digits), null when absent or malformed; [imdbTitleUrl]
+     *  turns it into the page the detail chip opens. Additive: an older server sends none. */
+    @SerialName("imdb_id") val imdbId: String? = null,
 )
 
 @Serializable

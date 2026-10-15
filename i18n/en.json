@@ -665,6 +665,10 @@
     "text": "IMDb {rating} out of 10, {votes} votes",
     "note": "R279 — read aloud by a screen reader for the IMDb chip; never drawn. {votes} is already abbreviated, e.g. 1.2M."
   },
+  "imdb.open": {
+    "text": "Open on IMDb",
+    "note": "R387 — read aloud as the action on the IMDb chip on a title's page; never drawn."
+  },
   "date.month_day_year": {
     "text": "{month} {day}, {year}",
     "note": "R279 — an episode's air date. Reorder the parts as your language writes a date; {month} comes from the month.* keys."
