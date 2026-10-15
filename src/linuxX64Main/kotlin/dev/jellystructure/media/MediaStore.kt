@@ -798,6 +798,12 @@ class MediaStore(
         return map
     }
 
+    /** FR-316-8 — [twin] (freshly read) is a different film from [incoming]: its own file is at a path other than
+     *  [incoming]'s and exists. Never a reason to delete it. */
+    internal fun isDistinctFileOnDisk(twin: MediaItem, incoming: MediaItem): Boolean =
+        twin.path.isNotBlank() && twin.path != incoming.path &&
+            kotlinx.io.files.SystemFileSystem.exists(kotlinx.io.files.Path(twin.path))
+
     suspend fun addOrUpdate(item: MediaItem) {
         val existing = get(item.id)
         // If other rows already hold the same Jellyfin ID under different slugs (e.g. the year was
@@ -807,7 +813,13 @@ class MediaStore(
         // (Phase 122; the previous single-victim deletion was last-wins and could never see more
         // than one twin at a time).
         val jellyfinId = item.jellyfinId
-        val twins = if (jellyfinId != null) allItems().filter { it.jellyfinId == jellyfinId && it.id != item.id } else emptyList()
+        // FR-316-8 (DEB-1252) — `allItems()` is a snapshot, and a film move (phase 316 step 6) rewrites a row's path while
+        // a sweep holds the old read. A twin is only a *stale duplicate* when it is the same file under another slug or
+        // its file is gone; a row whose own, different file is on disk right now is another film that happens to share
+        // the id (the 2026-10-15 press bound three films to one id, and each scan write then deleted the other two as
+        // "duplicates"). Re-read it from the store, and keep it when its file exists at the re-read path.
+        val twins = if (jellyfinId != null) allItems().filter { it.jellyfinId == jellyfinId && it.id != item.id }
+            .filterNot { t -> isDistinctFileOnDisk(get(t.id) ?: return@filterNot false, item) } else emptyList()
         val stale = twins.firstOrNull()
         if (twins.isNotEmpty()) {
             // A real deletion (not the common upsertItem patch path below) — full invalidate.

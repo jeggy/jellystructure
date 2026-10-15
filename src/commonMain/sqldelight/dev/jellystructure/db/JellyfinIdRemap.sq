@@ -34,3 +34,36 @@ UPDATE OR IGNORE ai_theme SET item_id = :new_id WHERE item_id = :old_id;
 
 changes:
 SELECT changes();
+
+-- FR-316-9 (DEB-1252) — the key of every row that sits on an id, read before and after each remap above so the move
+-- can write down exactly which rows it carried (`before_snapshot`). `OR IGNORE` skips a collision, so a row that is
+-- still on the old id after its update was not moved. Key columns are each table's own primary key.
+sessionKeysOn:
+SELECT id, queue_json FROM playback_session WHERE item_id = :old_id;
+
+sampleKeysOn:
+SELECT id FROM playback_start_sample WHERE item_id = :old_id;
+
+qoeKeysOn:
+SELECT device_id, play_session_id FROM playback_qoe WHERE jellyfin_id = :old_id;
+
+outboxKeysOn:
+SELECT device_id FROM playback_outbox WHERE jellyfin_id = :old_id;
+
+dirtyKeysOn:
+SELECT id FROM dirty_item WHERE jellyfin_id = :old_id;
+
+recommendationKeysOn:
+SELECT user_id, scope_key, rank FROM recommendation WHERE item_id = :old_id;
+
+recommendationReasonKeysOn:
+SELECT user_id, scope_key, rank FROM recommendation WHERE reason_item_id = :old_id;
+
+starterKeysOn:
+SELECT scope_key, rank FROM starter_list WHERE item_id = :old_id;
+
+aiOrderKeysOn:
+SELECT user_id, scope_key, rank FROM ai_order WHERE item_id = :old_id;
+
+aiThemeKeysOn:
+SELECT item_id FROM ai_theme WHERE item_id = :old_id;

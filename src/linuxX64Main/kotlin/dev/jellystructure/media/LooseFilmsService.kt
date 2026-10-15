@@ -372,29 +372,18 @@ class LooseFilmsService(
         override suspend fun findJellyfinItem(videoPath: String): String? {
             val jf = toJellyfinView(videoPath, cfg)
             repeat(40) {   // up to two minutes for Jellyfin to pick the folder up
-                jellyfin.getItemByPath(base, token, jf)?.id?.let { return it.replace("-", "") }
+                // DEB-1252 — Jellyfin 12.1 ignores `Path=`, so the lookup matches the path itself and only ever
+                // returns the item AT it (FR-316-4 step 5). A miss is a miss: never "the first item".
+                jellyfin.findRecentItemByPath(base, token, jf, FIND_RECENT_LIMIT)?.id?.let { return it.replace("-", "") }
                 delay(3_000)
             }
             return null
         }
 
-        override fun remapJellyfinId(oldId: String, newId: String): Int {
-            var n = 0
-            val q = db.jellyfinIdRemapQueries
-            db.transaction {
-                q.remapPlaybackSession(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapStartSample(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapQoe(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapOutbox(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapDirtyItem(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapRecommendation(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapRecommendationReason(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapStarterList(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapAiOrder(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-                q.remapAiTheme(new_id = newId, old_id = oldId); n += q.changes().executeAsOne().toInt()
-            }
-            return n
-        }
+        override suspend fun jellyfinItemPath(jellyfinId: String): String? =
+            jellyfin.getItem(base, token, jellyfinId)?.path?.let { fromJellyfinView(it, cfg) }
+
+        override fun remapJellyfinId(oldId: String, newId: String): RemapResult = remapRows(db, oldId, newId)
 
         override suspend fun updateMedia(mediaId: String, newVideoPath: String, newJellyfinId: String?) {
             val item = store.get(mediaId) ?: return
@@ -409,10 +398,14 @@ class LooseFilmsService(
 
         override fun rootStillHas(root: String, base: String) = listNames(root).any { it.startsWith("$base.") || it.startsWith("$base-") }
 
-        override fun history(mediaId: String, detail: String) = history.record(mediaId, "moved_into_folder", detail)
+        override fun history(mediaId: String, detail: String, beforeSnapshot: String) =
+            history.record(mediaId, "moved_into_folder", detail, beforeSnapshot = beforeSnapshot)
     }
 
     companion object {
+        /** How many of Jellyfin's newest films a path lookup reads; a moved or renamed film is among the newest. */
+        const val FIND_RECENT_LIMIT = 500
+
         /** The running instance, for the Dashboard row (set when constructed in `Main.kt`). */
         @kotlin.concurrent.Volatile
         var current: LooseFilmsService? = null
@@ -429,4 +422,57 @@ internal fun sameBytes(a: String, b: String): Boolean {
     val sb = SystemFileSystem.metadataOrNull(Path(b))?.size ?: return false
     if (sa != sb || sa > 64L * 1024 * 1024) return false
     return runCatching { FileIo.readBytes(Path(a)).contentEquals(FileIo.readBytes(Path(b))) }.getOrDefault(false)
+}
+
+/**
+ * FR-316-4 step 6 / FR-316-9 (DEB-1252) — every table that keys a video by its Jellyfin id follows [oldId] to [newId],
+ * and each row it carried is returned with its key and the value it held, for the history entry's `before_snapshot`.
+ * Keys are read before and after each update: a row still on [oldId] afterwards was a collision `OR IGNORE` skipped.
+ * One transaction, so a reader never sees half of a remap.
+ */
+internal fun remapRows(db: JellystructureDb, oldId: String, newId: String): RemapResult {
+    val q = db.jellyfinIdRemapQueries
+    val moved = ArrayList<MovedRow>()
+    fun carried(table: String, before: List<Pair<String, Map<String, String>>>, after: List<Pair<String, Map<String, String>>>) {
+        val left = after.map { it.first }.toSet()
+        before.filter { it.first !in left }.forEach { (key, old) -> moved += MovedRow(table, key, old) }
+    }
+    db.transaction {
+        val item = mapOf("item_id" to oldId)
+        val jf = mapOf("jellyfin_id" to oldId)
+
+        val sBefore = q.sessionKeysOn(oldId).executeAsList().map { it.id to mapOf("item_id" to oldId, "queue_json" to it.queue_json) }
+        q.remapPlaybackSession(new_id = newId, old_id = oldId)
+        carried("playback_session", sBefore, q.sessionKeysOn(oldId).executeAsList().map { it.id to emptyMap() })
+
+        val smBefore = q.sampleKeysOn(oldId).executeAsList().map { it.toString() to item }
+        q.remapStartSample(new_id = newId, old_id = oldId)
+        carried("playback_start_sample", smBefore, q.sampleKeysOn(oldId).executeAsList().map { it.toString() to item })
+
+        fun qoeKeys() = q.qoeKeysOn(oldId).executeAsList().map { "${it.device_id}|${it.play_session_id}" to jf }
+        val qBefore = qoeKeys(); q.remapQoe(new_id = newId, old_id = oldId); carried("playback_qoe", qBefore, qoeKeys())
+
+        fun outboxKeys() = q.outboxKeysOn(oldId).executeAsList().map { it to jf }
+        val oBefore = outboxKeys(); q.remapOutbox(new_id = newId, old_id = oldId); carried("playback_outbox", oBefore, outboxKeys())
+
+        fun dirtyKeys() = q.dirtyKeysOn(oldId).executeAsList().map { it.toString() to jf }
+        val dBefore = dirtyKeys(); q.remapDirtyItem(new_id = newId, old_id = oldId); carried("dirty_item", dBefore, dirtyKeys())
+
+        fun recKeys() = q.recommendationKeysOn(oldId).executeAsList().map { "${it.user_id}|${it.scope_key}|${it.rank}" to item }
+        val rBefore = recKeys(); q.remapRecommendation(new_id = newId, old_id = oldId); carried("recommendation", rBefore, recKeys())
+
+        val reason = mapOf("reason_item_id" to oldId)
+        fun reasonKeys() = q.recommendationReasonKeysOn(oldId).executeAsList().map { "${it.user_id}|${it.scope_key}|${it.rank}" to reason }
+        val rrBefore = reasonKeys(); q.remapRecommendationReason(new_id = newId, old_id = oldId); carried("recommendation", rrBefore, reasonKeys())
+
+        fun starterKeys() = q.starterKeysOn(oldId).executeAsList().map { "${it.scope_key}|${it.rank}" to item }
+        val stBefore = starterKeys(); q.remapStarterList(new_id = newId, old_id = oldId); carried("starter_list", stBefore, starterKeys())
+
+        fun aiOrderKeys() = q.aiOrderKeysOn(oldId).executeAsList().map { "${it.user_id}|${it.scope_key}|${it.rank}" to item }
+        val aoBefore = aiOrderKeys(); q.remapAiOrder(new_id = newId, old_id = oldId); carried("ai_order", aoBefore, aiOrderKeys())
+
+        fun aiThemeKeys() = q.aiThemeKeysOn(oldId).executeAsList().map { it to item }
+        val atBefore = aiThemeKeys(); q.remapAiTheme(new_id = newId, old_id = oldId); carried("ai_theme", atBefore, aiThemeKeys())
+    }
+    return RemapResult(moved)
 }

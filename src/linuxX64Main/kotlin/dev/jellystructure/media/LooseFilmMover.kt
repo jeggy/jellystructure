@@ -3,6 +3,9 @@ package dev.jellystructure.media
 import dev.jellystructure.arr.RadarrProvenance
 import dev.jellystructure.arr.provenanceGaps
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Phase 316 (FR-316-4) — moves one loose film into its own folder, in the spec's order, with every outside effect behind
@@ -21,10 +24,12 @@ import kotlinx.coroutines.delay
  * 4c. Phase 314 (FR-314-14) — the provenance Radarr rebuilds from the new filename (quality, languages, edition,
  *    release group, scene name, indexer flags), read before step 2 and written onto the row Radarr creates after it.
  * 5. Jellyfin: told exactly which paths changed, the new item found by path, each user's data written back where the new
- *    item lacks it.
- * 6. Our own data: the media record gets the new path (and id); rows keyed by the old Jellyfin id move to the new one.
- * 7. Verify: Jellyfin has the new item, Radarr has its file (when updated), every torrent that seeded it is still fine,
- *    and the root holds nothing of it any more.
+ *    item lacks it. An item is only bound when Jellyfin reports it **at the path asked for** (DEB-1252: 12.1 ignores the
+ *    `Path=` filter, and the first item of the whole library was bound to three films).
+ * 6. Our own data: the media record gets the new path (and id); rows keyed by the old Jellyfin id move to the new one,
+ *    and each is written to the history entry's `before_snapshot` (FR-316-9).
+ * 7. Verify: Jellyfin's item for the film is at its new path, Radarr has its file (when updated), every torrent that
+ *    seeded it is still fine, and the root holds nothing of it any more.
  *
  * After step 2 the film plays from its new folder; a failure in steps 3–7 marks it `partial` with what didn't finish.
  */
@@ -147,7 +152,11 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
 
         // ── 5 — Jellyfin ──
         ports.jellyfinNotify(film.key, film.targetFolder)
-        val newId = ports.findJellyfinItem(newVideo)
+        val found = ports.findJellyfinItem(newVideo)
+        // DEB-1252 — what the lookup returns is only taken when Jellyfin reports that item at the path it was asked
+        // for. A lookup that fails this is "not found yet", never a binding: nothing below runs on the wrong item.
+        val foundAt = found?.let { ports.jellyfinItemPath(it) }
+        val newId = found?.takeIf { foundAt == newVideo }
         if (newId == null) {
             step("jellyfin", false, "Jellyfin hasn't found it in the new folder yet")
             problems += "Jellyfin"
@@ -163,13 +172,19 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
         }
 
         // ── 6 — our own data ──
-        val remapped = if (newId != null && film.jellyfinId != null && newId != film.jellyfinId) ports.remapJellyfinId(film.jellyfinId, newId) else 0
+        val remap = if (newId != null && film.jellyfinId != null && newId != film.jellyfinId) ports.remapJellyfinId(film.jellyfinId, newId) else RemapResult.NONE
         if (film.mediaId != null) ports.updateMedia(film.mediaId, newVideo, newId)
-        step("records", true, "Path updated" + if (remapped > 0) "; $remapped rows moved to the new id" else "")
+        step("records", true, "Path updated" + if (remap.count > 0) "; ${remap.count} rows moved to the new id" else "")
 
         // ── 7 — verify ──
         val checks = ArrayList<String>()
         if (newId == null) checks += "Jellyfin has no item yet"
+        else {
+            // DEB-1252 — read again, not carried from step 5: the album passed "a file is there"; what has to hold is
+            // that the item bound to this film is the film's own file.
+            val at = ports.jellyfinItemPath(newId)
+            if (at != newVideo) checks += "Jellyfin's item for it is at ${at ?: "no path"}, not ${newVideo.substringAfterLast('/')}"
+        }
         if (film.radarr == RadarrPlan.UPDATE && film.radarrId != null) {
             val f = ports.radarrFilePath(film.radarrId)
             if (f == null || f.substringBeforeLast('/') != film.targetFolder) checks += "Radarr has no file there yet"
@@ -186,10 +201,38 @@ class LooseFilmMover(private val ports: LooseFilmPorts) {
             error = (problems + checks).distinct().takeIf { it.isNotEmpty() }?.joinToString("; "),
         )
         val what = if (inPlace) "Renamed to ${newVideo.substringAfterLast('/')}" else "Moved into its own folder ${film.targetFolder.substringAfterLast('/')}"
-        film.mediaId?.let { ports.history(it, "$what: " + steps.joinToString(" · ") { s -> "${s.step} ${if (s.ok) "✓" else "✗"} ${s.detail}" }) }
+        film.mediaId?.let {
+            ports.history(
+                it, "$what: " + steps.joinToString(" · ") { s -> "${s.step} ${if (s.ok) "✓" else "✗"} ${s.detail}" },
+                // FR-316-9 — only when step 6 moved rows: old id, new id and every row, so a repair is a lookup.
+                if (remap.count > 0 && film.jellyfinId != null && newId != null) movedRowsSnapshot(film.jellyfinId, newId, remap.rows) else "",
+            )
+        }
         return result
     }
 }
+
+/** FR-316-9 — one row [LooseFilmPorts.remapJellyfinId] carried to a new id: [old] is column → the value it held before. */
+data class MovedRow(val table: String, val key: String, val old: Map<String, String>)
+
+/** What step 6 moved; [count] is rows, not columns. */
+data class RemapResult(val rows: List<MovedRow>) {
+    val count: Int get() = rows.size
+    companion object { val NONE = RemapResult(emptyList()) }
+}
+
+/** FR-316-9 / FR-316-7 — the `before_snapshot` of a rebinding: both ids and every row moved, with its key and old values. */
+fun movedRowsSnapshot(oldId: String, newId: String, rows: List<MovedRow>): String = JsonObject(mapOf(
+    "oldId" to JsonPrimitive(oldId),
+    "newId" to JsonPrimitive(newId),
+    "rows" to JsonArray(rows.map { r ->
+        JsonObject(mapOf(
+            "table" to JsonPrimitive(r.table),
+            "key" to JsonPrimitive(r.key),
+            "old" to JsonObject(r.old.mapValues { JsonPrimitive(it.value) }),
+        ))
+    }),
+)).toString()
 
 /** FR-314-14 — what became of one film's provenance across Radarr's drop and re-create. */
 data class ProvenanceCarry(
@@ -280,12 +323,15 @@ interface LooseFilmPorts {
     suspend fun readUserDataFor(userId: String, jellyfinId: String): ViewerData?
     suspend fun writeUserData(userId: String, jellyfinId: String, data: ViewerData): Boolean
     suspend fun jellyfinNotify(oldVideoPath: String, newFolder: String)
-    /** The new item's id once Jellyfin has it at [videoPath] (waits a while), else null. */
+    /** The id of the item Jellyfin has **at** [videoPath] (waits a while), else null — never another item. */
     suspend fun findJellyfinItem(videoPath: String): String?
-    fun remapJellyfinId(oldId: String, newId: String): Int
+    /** DEB-1252 — the local path Jellyfin reports for item [jellyfinId] now; null when it cannot be read. */
+    suspend fun jellyfinItemPath(jellyfinId: String): String?
+    /** Every row keyed by [oldId] that now follows [newId], each with its key and old value (FR-316-9). */
+    fun remapJellyfinId(oldId: String, newId: String): RemapResult
     suspend fun updateMedia(mediaId: String, newVideoPath: String, newJellyfinId: String?)
     /** Of [hashes], those that are now in an error or missing-files state. */
     suspend fun torrentsNotFine(hashes: List<String>): List<String>
     fun rootStillHas(root: String, base: String): Boolean
-    fun history(mediaId: String, detail: String)
+    fun history(mediaId: String, detail: String, beforeSnapshot: String = "")
 }

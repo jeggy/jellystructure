@@ -626,14 +626,9 @@ class JellyfinClient {
         result.getOrNull()
     }
 
-    /** Phase 114 (FR A.3) — the webhook fallback poll: has Jellyfin picked up this exact path yet?
-     *  Cheap compared to fetching every item — `Path=` is an exact-match filter Jellyfin's `/Items`
-     *  endpoint supports alongside `Ids=`. */
-    suspend fun getItemByPath(baseUrl: String, token: String, path: String): JellyfinItem? = runCatching {
-        val url = baseUrl.trimEnd('/') +
-            "/Items?Path=${path.encodeURLParameter()}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName,SeriesId"
-        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemByPath")?.items?.firstOrNull()
-    }.getOrElse { Logger.warn("Jellyfin getItemByPath failed: ${it.message}"); null }
+    // `getItemByPath` (Phase 114) is gone: it took `Items[0]` of `GET /Items?Path=…`, and Jellyfin 12.1 ignores that
+    // filter and answers with the whole library, so it handed back an arbitrary item — which phase 316's Move then
+    // bound three films to (DEB-1252). The one path lookup is [findRecentItemByPath], which matches the path itself.
 
     /** Phase 163 (step 6) — Jellyfin's own MediaSegments API (`GetItemSegments`), confirmed live against
      *  this server's OpenAPI: no provider field, `Type` one of Unknown/Intro/Outro/Recap/Preview/
@@ -756,10 +751,11 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/ScheduledTasks/Running/$taskId") { jellyfinAuth(token) }.status.isSuccess()
     }.getOrElse { Logger.warn("Jellyfin runScheduledTask failed: ${it.message}"); false }
 
-    /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter
-     *  ([getItemByPath] then returns an arbitrary item), so instead pull the most-recently-added
+    /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter (it answers with the
+     *  whole library, 55 951 items on 2026-10-15, the first an album), so instead pull the most-recently-added
      *  Movie/Episode items and match the path **ourselves**. Bounded (last [limit] additions) and safe to
-     *  poll after a `notifyLibraryMediaUpdated` nudge. Returns the exact-path match, or null if not there yet. */
+     *  poll after a `notifyLibraryMediaUpdated` nudge. Returns **only** the item whose `Path` equals [path], or null
+     *  if it is not there yet — never another item (phase 316 FR-316-4 step 5, DEB-1252). */
     suspend fun findRecentItemByPath(baseUrl: String, token: String, path: String, limit: Int = 200): JellyfinItem? = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DateCreated&SortOrder=Descending&Limit=$limit" +

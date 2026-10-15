@@ -164,12 +164,25 @@ class LooseFilmsTest {
         override suspend fun readUserDataFor(userId: String, jellyfinId: String) = newItemData
         override suspend fun writeUserData(userId: String, jellyfinId: String, data: ViewerData) = true.also { calls += "writeUserData:$userId" }
         override suspend fun jellyfinNotify(oldVideoPath: String, newFolder: String) { calls += "jellyfinNotify" }
-        override suspend fun findJellyfinItem(videoPath: String) = newId.also { calls += "findJellyfinItem" }
-        override fun remapJellyfinId(oldId: String, newId: String) = 3.also { calls += "remap:$oldId>$newId" }
+        override suspend fun findJellyfinItem(videoPath: String) = newId.also { lookedUp = videoPath; calls += "findJellyfinItem" }
+        /** DEB-1252 — where Jellyfin says an item is: the path asked for unless a test overrides it. */
+        var pathOf: (String, Int) -> String? = { _, _ -> lookedUp }
+        private var pathReads = 0
+        var lookedUp: String? = null
+        override suspend fun jellyfinItemPath(jellyfinId: String) = pathOf(jellyfinId, ++pathReads).also { calls += "jellyfinItemPath:$jellyfinId" }
+        val snapshots = ArrayList<String>()
+        override fun remapJellyfinId(oldId: String, newId: String): RemapResult {
+            calls += "remap:$oldId>$newId"
+            return RemapResult(listOf(
+                MovedRow("playback_session", "s1", mapOf("item_id" to oldId, "queue_json" to "[]")),
+                MovedRow("starter_list", "all|3", mapOf("item_id" to oldId)),
+                MovedRow("playback_start_sample", "9", mapOf("item_id" to oldId)),
+            ))
+        }
         override suspend fun updateMedia(mediaId: String, newVideoPath: String, newJellyfinId: String?) { calls += "updateMedia:$newJellyfinId" }
         override suspend fun torrentsNotFine(hashes: List<String>) = emptyList<String>()
         override fun rootStillHas(root: String, base: String) = false
-        override fun history(mediaId: String, detail: String) { calls += "history" }
+        override fun history(mediaId: String, detail: String, beforeSnapshot: String) { calls += "history"; snapshots += beforeSnapshot }
     }
 
     @Test fun `a move follows the spec's order and only renames`() = runBlocking {
@@ -190,6 +203,60 @@ class LooseFilmsTest {
         assertTrue("writeUserData:u1" in fake.calls && "writeUserData:u2" !in fake.calls)
         assertTrue("remap:old>new" in fake.calls && "updateMedia:new" in fake.calls)
         assertEquals("$root/Some Film (2023)/$video", out.key)
+    }
+
+    // ── DEB-1252 — FR-316-4 step 5 binds the item AT the path, step 7 asserts it (test 7) ──
+
+    @Test fun `a lookup that answers another item at another path is never bound`() = runBlocking {
+        // Jellyfin 12.1 ignores `Path=` and puts an unrelated item first: the port hands back its id, and the item's
+        // own path is not the film's. Step 5 must fail the film and bind nothing, move nothing, write nothing.
+        val fake = Fake()
+        fake.pathOf = { _, _ -> "/lib/music/An Artist/An Album" }
+        val out = LooseFilmMover(fake).move(looseFilm())
+        assertEquals("partial", out.state)
+        assertTrue(out.steps.any { it.step == "jellyfin" && !it.ok && "hasn't found it in the new folder" in it.detail }, out.steps.toString())
+        assertTrue(fake.calls.none { it.startsWith("remap") || it.startsWith("writeUserData") }, fake.calls.toString())
+        assertTrue("updateMedia:null" in fake.calls, "the row is given the new path but never the wrong id: ${fake.calls}")
+        assertEquals("old", out.jellyfinId, "the film keeps the id it had")
+    }
+
+    @Test fun `the verify step asserts the bound item's path and not only that a file plays`() = runBlocking {
+        // The lookup was right at step 5; by step 7 Jellyfin reports the id at another path (the album passed a bare
+        // "a file is there" check). The film is reported partial, with what it saw.
+        val fake = Fake()
+        fake.pathOf = { _, n -> if (n == 1) fake.lookedUp else "/lib/music/An Artist/An Album/01.flac" }
+        val out = LooseFilmMover(fake).move(looseFilm())
+        assertEquals("partial", out.state)
+        assertTrue(out.steps.last { it.step == "verify" }.let { !it.ok && "/lib/music/An Artist/An Album/01.flac" in it.detail }, out.steps.toString())
+    }
+
+    @Test fun `a lookup that finds the item at the path binds it and verifies it twice`() = runBlocking {
+        val fake = Fake()
+        val out = LooseFilmMover(fake).move(looseFilm())
+        assertEquals("moved", out.state, out.error)
+        assertEquals(2, fake.calls.count { it == "jellyfinItemPath:new" }, "once to bind, once to verify")
+    }
+
+    // ── FR-316-9 — the history entry keeps what step 6 moved (test 10) ──
+
+    @Test fun `the history entry names the old id the new id and every row moved`() = runBlocking {
+        val fake = Fake()
+        LooseFilmMover(fake).move(looseFilm())
+        val snap = kotlinx.serialization.json.Json.parseToJsonElement(fake.snapshots.single()) as kotlinx.serialization.json.JsonObject
+        assertEquals("old", (snap["oldId"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("new", (snap["newId"] as kotlinx.serialization.json.JsonPrimitive).content)
+        val rows = snap["rows"] as kotlinx.serialization.json.JsonArray
+        assertEquals(3, rows.size)
+        val first = rows[0] as kotlinx.serialization.json.JsonObject
+        assertEquals("playback_session", (first["table"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("s1", (first["key"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("old", ((first["old"] as kotlinx.serialization.json.JsonObject)["item_id"] as kotlinx.serialization.json.JsonPrimitive).content)
+    }
+
+    @Test fun `a move that moved no rows writes no snapshot`() = runBlocking {
+        val fake = Fake(newId = "old")   // Jellyfin kept the id: nothing to remap
+        LooseFilmMover(fake).move(looseFilm())
+        assertEquals(listOf(""), fake.snapshots)
     }
 
     @Test fun `user data already on the new item is not written again`() = runBlocking {
