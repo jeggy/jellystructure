@@ -162,8 +162,9 @@ test.describe.serial("Suggestions — the Download dialog answers its controls (
         page = await openSuggestions(ctx, posts, OPTIONS_LONG);
         await openDialog(page);
         // A phone browser's fixed box is shorter than 100vh while its toolbar shows. Headless Chromium has no
-        // toolbar, so take the same 100 px off the bottom of the backdrop to get that geometry.
-        await page.locator("#sg-dlroot .sg-dlb").evaluate((el) => { (el as HTMLElement).style.bottom = "100px"; });
+        // toolbar, so take the same 100 px off the bottom of the backdrop to get that geometry. A style tag, not
+        // an inline style: a pick re-renders the backdrop element.
+        await page.addStyleTag({ content: "#sg-dlroot .sg-dlb{bottom:100px !important}" });
         const inside = async () => {
           const b = (await page.locator("#sg-dlroot .sg-dlb").boundingBox())!;
           const d = (await dialog(page).boundingBox())!;
