@@ -155,8 +155,9 @@ waiting for the limit, which suits background jobs; a person is waiting here.
 `[support] enabled` going false forwards every ticket that `AI Agent` holds to `ADMIN`. The `FORWARDED`
 line and an `ADMIN_ONLY` reason are written, but no forward notice: `AI Agent` cannot speak once it is
 off. A result that arrives for a ticket that has since been forwarded, flagged, deleted or answered by
-a person is **discarded** and its cost still entered in the ledger. With no key at all, phase 320 is
-unchanged, line for line.
+a person is **discarded** and its cost still entered in the ledger. Removing the key also makes the
+whole support lane unavailable (FR-320-1, amended 2026-10-15). The forward above still runs first, so
+that when a key returns, every ticket is held by someone who can answer it.
 
 **FR-321-10 — A transcript per ticket, kept with the ticket.** 272 keeps the last five batches. Support
 keeps **every** turn for the ticket's life in `support_ai_turn`:

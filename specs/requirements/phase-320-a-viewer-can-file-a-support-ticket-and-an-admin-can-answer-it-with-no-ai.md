@@ -1,26 +1,37 @@
-# Phase 320 — A viewer can file a support ticket, and an admin can answer it with no AI at all
+# Phase 320 — A viewer can file a support ticket, and an admin can answer it by hand
 
 > Owner, 2026-10-14 (DEB-1076), the ask behind the support lane: a viewer reports a problem, asks a
 > question or requests a feature from inside Ravilo, and gets a real answer — usually from an AI, and
 > always truthfully. Owner, 2026-10-15 (DEB-799, via DEB-1238): make the support lane the team's next
 > focus.
+>
+> Owner, 2026-10-15 (DEB-1076): *"If no AI key, then the support feature will not be available in
+> jellystructure nor on the ravilo apps."*
 
 **Two lines come before everything else in the support lane, and every later phase inherits them:**
 
 1. **Auto applies to talking, never to acting.** A reply may send itself. Nothing a viewer writes may
    create a spec, a phase, a board task, a code change or a deploy without the owner.
-2. **This is a support lane that an AI usually answers — not an AI feature with a manual fallback.**
-   The queue, the thread and an admin's reply work with no AI key, with AI switched off, and with the
-   key revoked mid-flight.
+2. **The support lane exists only while an AI key is set.** With no key there is no support anywhere:
+   no admin surface, no Ravilo entry. With a key set, the queue, the thread and an admin's reply keep
+   working when AI is switched off, when the key is revoked, and when the month's limit is reached.
+   `AI Agent` usually answers, and an admin can always answer by hand.
+
+> **Amended 2026-10-15, before any code (DEB-1076).** This spec was adopted at `71e46346` with line 2
+> reading *"the queue, the thread and an admin's reply work with no AI key"*. That came from the
+> design brief's amendment (DEB-1117), not from the owner, and the owner reversed it the same day.
+> FR-320-1, FR-320-19 and the acceptance list were rewritten to match. The file name keeps its
+> original slug so that links from the board keep working. The heading above is the phase's title.
 
 ## Scope
 
 The backend only: a ticket store, the viewer routes under `/api/tv/support/**`, the admin routes under
 `/api/support/**`, and the pushes that let both kinds of client render server state. **No admin page
 and no Ravilo screen** — both are drawn (design round 3, `support-lane`, received 2026-10-14) and are
-adopted as their own phases once the round is pulled and gated (DEB-803, waiting on DEB-1236) and the
-admin half's home is settled (the owner card on DEB-1238). **No AI** — `AI Agent`'s reply is phase 321,
-which builds on this one.
+adopted as their own phases once the round is pulled and gated (DEB-803, waiting on DEB-1236). The admin
+half's home is settled: it is the studio's pick, a Support tab on the AI page. It needs no exception
+for the no-key state, because with no key there is no support to show (FR-320-1). **No `AI Agent`**
+— its reply is phase 321, which builds on this one.
 
 What it supersedes: nothing; no support, ticket or feedback surface existed before it. What it does
 not touch: phase 270/272's AI rail, the Seerr request lane, R152's server-message toast.
@@ -53,12 +64,42 @@ drew.
 
 ## Requirements
 
-**FR-320-1 — Off until the owner switches it on.** A new `[support]` section in `config.toml`,
-`enabled = false` by default. While it is off, every `/api/tv/support/**` route answers **404** and
-`/api/tv/config` reports `supportEnabled: false`, so no client draws an entry. The admin routes answer
-while it is off, so an admin can read what is already there. Prod serves viewers beyond the household;
-turning a new inbox on for them is the owner's call, not a deploy's side effect. The settings toggle
-arrives with the admin phase; until then the switch is the file.
+**FR-320-1 — Available only while the owner switches it on and an AI key is set.** A new
+`[support]` section in `config.toml`, `enabled = false` by default. Support is **available** when both
+of these hold:
+
+- `[support] enabled` is true, and
+- `[ai] api_key` is non-blank.
+
+The key test is the same one that decides whether the admin's AI page exists. It is deliberately
+**not** `ai.enabled`, the key's validity, or the monthly limit. Switching AI off, a revoked key and a
+spent limit leave support available, and phase 321 forwards to an admin whatever `AI Agent` cannot
+answer. Only a missing key removes the lane.
+
+While support is unavailable, for either reason:
+
+- every `/api/tv/support/**` route answers **404**;
+- `/api/tv/config` reports `supportEnabled: false`, so no Ravilo app draws an entry;
+- the admin's `GET` routes still answer, so the data stays readable for a later admin surface and
+  for tests;
+- every admin write (reply, forward, state, class, flag, read, delete) answers **409**
+  `support_unavailable`, because a reply no viewer can see is worse than none;
+- no `support_changed` push is sent.
+
+**Nothing is deleted when support becomes unavailable.** Tickets, messages and markers stay in the
+store. FR-320-17's retention pass keeps running. When the key returns, every ticket reappears exactly
+as it was. A viewer whose ticket was open when the key went is told nothing, because no surface is left
+to tell them on. That is the owner's call, and it is written here so that nobody adds a notice later
+by accident.
+
+Saving or removing the key, and changing `[support] enabled`, both change `supportEnabled`. Either
+change is pushed as the `config_changed` event that Ravilo already re-fetches on (`TvEventBus`), so the
+entry appears and disappears without a restart.
+
+Prod serves viewers beyond the household, and turning a new inbox on for them is the owner's call, not
+a deploy's side effect. Prod has no AI key today (phase 270, *Verified*), so support stays dark there
+until the owner sets one. The settings toggle arrives with the admin phase. Until then, the switch is
+the file.
 
 **FR-320-2 — The store.** Two tables, added in the next migration (`79.sqm` at the time of writing —
 re-check, and keep the `.sqm` byte-identical to the `.sq`):
@@ -223,20 +264,26 @@ unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them f
 - `owes` and overdue across forward, reply and viewer message.
 - The flag invisible to the viewer.
 - Delete and the retention pass.
-- **Every route passing with `[ai]` absent from the config.**
+- **Availability (FR-320-1), across four configs:** `[ai]` absent, a blank key, `[support] enabled =
+  false`, and a key set with `ai.enabled = false`. In the first three, every viewer route answers 404,
+  every admin write answers 409, admin reads answer, and `supportEnabled` is false. The fourth is
+  fully available, with no Anthropic call made.
+- Removing the key and putting it back loses nothing, and each change emits `config_changed`.
 - `WireCompatTest` over the new roots.
 
 ## Acceptance
 
-- With `[support] enabled = true`, a phone-platform viewer files a ticket. The 201 carries the thread
+- With `[support] enabled = true` and a key set, a phone-platform viewer files a ticket. The 201 carries the thread
   with the `RECEIVED` line and ticket number. An admin sees the row arrive on `/ws` without a reload,
   replies, and the viewer's next `GET` shows the reply with an unread count of 1.
 - The same `POST` from a `tv` platform answers 403. Same-here from that TV lands in the thread.
 - An admin forwards to a seat. The viewer sees holder `TEAM` and never the seat's name. `owes` is
   `HERVOR` or `ADMIN`, and after `owed_reply_hours` the admin row is `overdue`.
-- With `[ai]` removed entirely, every acceptance line above still holds.
-- With `enabled = false`, every viewer route answers 404 and `/api/tv/config` reports
-  `supportEnabled: false`.
+- With a key set and `ai.enabled = false`, every acceptance line above still holds. No admin ever
+  needs AI switched on to answer.
+- With the key removed, or `enabled = false`, every viewer route answers 404 and `/api/tv/config`
+  reports `supportEnabled: false`. A connected Ravilo app drops its entry without a restart, and an
+  admin reply answers 409. With the key put back, the open ticket is there unchanged.
 
 ## Not in this phase
 
@@ -246,8 +293,9 @@ unharmed. The new viewer DTOs join `WIRE_ROOTS` so `WireCompatTest` holds them f
   section does not have: a seat that is neither an admin's browser session nor a viewer's device. It
   goes to Tróndur as its own thread, because it touches the constitution. Until it exists, `HERVOR`
   is a valid holder and author in the schema and on the wire, and no route can post as Hervør.
-- **The admin page and the Ravilo screens** — adopted from round 3 once it is pulled. The admin half's
-  home waits on the owner's `No AI key` answer.
+- **The admin page and the Ravilo screens** — adopted from round 3 once it is pulled. The admin half
+  is the Support tab on the AI page, and it goes when the page goes (FR-320-1). No no-key state needs
+  drawing.
 - **A Requests queue** for accepted feature requests (the Seerr-lane shape the investigation proposed).
   A request is a ticket with `class = REQUEST` until that exists.
 - **Push notifications** outside the app. The unread marker is in-app only.
