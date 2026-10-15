@@ -1,0 +1,48 @@
+/* Ravilo phone — motion layer (2026-10-14). Loaded after ravilo-phone.css; touches transitions, transforms and
+   keyframes only, never layout. Honours prefers-reduced-motion. One easing family throughout. */
+:root{ --rv-ease:cubic-bezier(.2,.8,.2,1); --rv-fast:.18s; --rv-med:.32s; }
+
+/* pushed layers — Profile › pages (.acct) and the title sheet (.detail) slide in over the stack.
+   Both are display:none when off in the base CSS, so the entrance is an animation on .on. */
+.acct.on, .detail.on{ animation:rvPush var(--rv-med) var(--rv-ease) both; }
+@keyframes rvPush{ from{ opacity:0; transform:translateX(28px); } to{ opacity:1; transform:none; } }
+
+/* profile sheet + scrim (also display-toggled) */
+.psheet.on{ animation:rvSheet var(--rv-med) var(--rv-ease) both; }
+@keyframes rvSheet{ from{ opacity:0; transform:translateY(28px); } to{ opacity:1; transform:none; } }
+.sheet-scrim.on{ animation:rvFade var(--rv-med) ease both; }
+@keyframes rvFade{ from{ opacity:0; } to{ opacity:1; } }
+
+/* tab panes — a short rise + fade when a pane becomes current */
+.pane.on{ animation:rvPage var(--rv-med) var(--rv-ease) both; }
+@keyframes rvPage{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+
+/* bottom bar — the lit pill eases between items, the glyph settles */
+.tabbar .tab{ transition:color var(--rv-fast); }
+.tabbar .tab .pill{ transition:background-color var(--rv-med) var(--rv-ease), transform var(--rv-fast) var(--rv-ease), box-shadow var(--rv-med); }
+.tabbar .tab:active .pill{ transform:scale(.9); }
+.tabbar .tab.on .pill{ animation:rvPill var(--rv-med) var(--rv-ease); }
+@keyframes rvPill{ 0%{ transform:scale(.82); } 60%{ transform:scale(1.06); } 100%{ transform:none; } }
+.tabbar .tab .avatar{ transition:box-shadow var(--rv-med) var(--rv-ease), transform var(--rv-fast) var(--rv-ease); }
+
+/* rows, tiles, posters — press feedback */
+.pft-row, .pm-row, .acct-body button, .psheet button{ transition:background-color var(--rv-fast), transform var(--rv-fast) var(--rv-ease), opacity var(--rv-fast); }
+.pft-row:active, .pm-row:active{ transform:scale(.985); }
+.pft-row .chev{ transition:transform var(--rv-fast) var(--rv-ease); }
+.pft-row:active .chev{ transform:translateX(3px); }
+.tile, .poster, .card, .hero{ transition:transform var(--rv-med) var(--rv-ease), box-shadow var(--rv-med) var(--rv-ease), opacity var(--rv-med); }
+.tile:active, .poster:active{ transform:scale(.96); }
+
+/* top-bar avatar + buttons */
+#avatarBtn{ transition:transform var(--rv-fast) var(--rv-ease), box-shadow var(--rv-fast); }
+#avatarBtn:active{ transform:scale(.9); }
+.btn, .cta{ transition:transform var(--rv-fast) var(--rv-ease), background-color var(--rv-fast), opacity var(--rv-fast), box-shadow var(--rv-fast); }
+.btn:active, .cta:active{ transform:scale(.96); }
+
+/* cast / music mini bar docking */
+.mini, .minibar{ transition:transform var(--rv-med) var(--rv-ease), opacity var(--rv-med); }
+
+@media (prefers-reduced-motion: reduce){
+  .tabbar .tab .pill, .pft-row, .pm-row, .tile, .poster, .card, .btn, .mini{ transition-duration:0s !important; }
+  .acct.on, .detail.on, .psheet.on, .sheet-scrim.on, .pane.on, .tabbar .tab.on .pill{ animation:none !important; }
+}

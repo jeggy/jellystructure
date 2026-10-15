@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<title>Ravilo — Support lane: directions (round support-lane)</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="mobile-directions.css">
+<style>
+/* Self-hosted type — no CDN. The same woff2 files the admin ships. */
+@font-face{font-family:'Sora';font-weight:300 800;font-display:swap;src:url('../app/fonts/sora.woff2') format('woff2')}
+@font-face{font-family:'Space Grotesk';font-weight:400 700;font-display:swap;src:url('../app/fonts/space-grotesk.woff2') format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-weight:400 800;font-display:swap;src:url('../app/fonts/jetbrains-mono.woff2') format('woff2')}
+a{color:#4a3fc4}a:hover{color:#12141b}
+:root{--chip:rgba(255,255,255,.10)}
+.dv.day{--bg:#fbfbfd;--bg-2:#f1f2f6;--ink:#15171f;--ink-soft:#4a4f63;--ink-dim:#6d7286;--line:rgba(16,18,30,.09);--line-2:rgba(16,18,30,.16);--card:#f1f2f6;--card-2:#e8eaf0;--accent:#5b4ee0;--accent-2:#0f73c2;--grad:linear-gradient(120deg,#6a5cf0,#1f8fdc);--chip:rgba(16,18,30,.07);--good:#15966a}
+.js{--bg:#16181f;--bg-2:#1a1d25;--fill:#262a37;--fill-2:#20242f;--fill-3:#2f3441;--ink:#dde1ec;--ink-soft:#9aa0b4;--ink-dim:rgba(221,225,236,.38);--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);--grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%);--hi:#7b6ef0;--hi-soft:rgba(123,110,240,.16);--acc-ink:#c6bcfb;--ok:#2dd49a;--ok-soft:rgba(45,212,154,.15);--warn:#f5b542;--bad:#ff6f61;--bad-soft:rgba(255,111,97,.15);--info:#3fb6f5;--info-soft:rgba(63,182,245,.15);--card:#262a37;--card-2:#2f3441;--accent:#7b6ef0;--accent-2:#3fb6f5;--good:#2dd49a;--chip:rgba(255,255,255,.08)}
+.panel .tbl td{font-size:.82rem}
+.panel.w{width:1400px}.panel.m{width:940px}.panel.c{width:820px}
+.panel.dec{width:940px;padding:28px 32px 26px}.panel.dec .dq h2{font-size:1.3rem;margin:4px 0 0;line-height:1.3;text-wrap:balance}.panel.dec .tag{margin-bottom:4px}
+.dcols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.dc{border:1px solid #e6e8ef;border-radius:11px;padding:14px 16px;background:#f8f9fc}.dc.lean{background:#eef7f2;border-color:#b9dfcc}.dc h4{margin:2px 0 6px;font-size:1rem}.dc p{margin:0;font-size:.82rem}
+.dv2{margin-top:14px;padding:13px 15px;border-radius:10px;background:#171923;color:#dfe2ec;font-size:.86rem;line-height:1.65}.dv2 b{color:#fff}
+.sec{position:absolute;color:#12141b;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:2rem;letter-spacing:-.02em;display:flex;align-items:baseline;gap:16px;white-space:nowrap;width:max-content}
+.sec small{font-family:'Sora',sans-serif;font-weight:500;font-size:.95rem;color:#4a4f5e;letter-spacing:0}
+/* ============ phone screens ============ */
+.scn{position:absolute;inset:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;font-family:'Sora',sans-serif}
+.scn.short{position:relative;height:auto;width:412px;border-radius:14px;overflow:hidden}
+.sl-sb{height:38px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 24px 0 26px;font-size:13px;font-weight:600}
+.sl-sb .ic{display:flex;gap:6px;align-items:center}
+.sl-sb .bat{width:22px;height:11px;border:1.5px solid currentColor;border-radius:3.5px;position:relative;display:inline-block}
+.sl-sb .bat::after{content:'';position:absolute;left:2px;top:2px;bottom:2px;width:13px;border-radius:1.5px;background:currentColor}
+.sl-hd{flex:none;display:flex;align-items:center;gap:8px;padding:4px 16px 10px 6px;border-bottom:1px solid var(--line)}
+.bk{width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center}
+.bk svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sl-hd .tx{flex:1;min-width:0}
+.kk{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim);letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+.cl{font-family:'Sora',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--ink-soft);white-space:nowrap}
+.sl-hd h1{margin:2px 0 0;font-family:'Space Grotesk',sans-serif;font-size:16.5px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25}
+.sl-pres{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-soft);margin-top:4px;min-width:0}
+.sl-pres span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl-pres i{width:8px;height:8px;border-radius:50%;background:var(--accent-2);flex:none}
+.sl-pres.ok i{background:var(--good)}.sl-pres.wait i{background:var(--ink-dim)}.sl-pres.own i{background:transparent;box-shadow:inset 0 0 0 2px var(--accent-2)}
+.av{position:relative;width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;color:#fff;background:#3b4160;flex:none}
+.av.me{background:var(--grad)}.av.hv{background:#1f7a8c;border-radius:9px}.av.ad{background:#4a5170}
+.av.ai{border-radius:9px;background:var(--card-2);border:1.5px solid var(--accent);color:var(--accent)}
+.av.ai i{width:10px;height:10px;background:var(--grad);transform:rotate(45deg);border-radius:2px}
+.av.none{background:transparent;border:1.5px dashed var(--line-2)}
+.av.okc{background:transparent;border:1.5px solid var(--good);color:var(--good)}
+.av.okc svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.av.lg{width:40px;height:40px;font-size:15px}.av.lg.ai i{width:13px;height:13px}
+.av.sm{width:24px;height:24px;font-size:10px}.av.sm.ai,.av.sm.hv{border-radius:7px}.av.sm.ai i{width:8px;height:8px}
+.av.hold{margin-left:auto}
+.av u{position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 0 2px var(--bg-2)}
+.bdg{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(123,110,240,.2);color:#c6bcfb}
+.bdg.ai{background:transparent;border:1px solid var(--accent);color:var(--accent);padding:1px 5px}
+.dv.day .bdg{background:rgba(91,78,224,.12);color:#4a3fc4}
+.th{flex:1;min-height:0;overflow:hidden;padding:14px 14px 10px;display:flex;flex-direction:column;gap:14px;justify-content:flex-end}
+.m{display:flex;gap:9px;max-width:86%;align-self:flex-start}
+.m.me{align-self:flex-end;flex-direction:row-reverse}
+.m.me>.av{display:none}
+.m .b{min-width:0;display:flex;flex-direction:column}
+.m .w{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-bottom:5px;padding:0 2px}
+.m .w b{color:var(--ink);font-weight:600}
+.m .w time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim);margin-left:2px}
+.m .w .wr{color:var(--ink-dim);font-size:12px}
+.m.me .w{justify-content:flex-end}
+.m .t{padding:10px 13px;border-radius:16px;border-top-left-radius:5px;background:var(--card);font-size:14.5px;line-height:1.42;color:var(--ink);overflow-wrap:anywhere}
+.m .t b{font-weight:600}
+.m.me .t{background:var(--grad);color:#fff;border-radius:16px;border-top-right-radius:5px}
+.m .t.typing{display:flex;gap:5px;align-items:center;padding:15px 16px;width:max-content}
+.t.typing i{width:7px;height:7px;border-radius:50%;background:var(--ink-soft)}
+.t.typing i:nth-child(1){opacity:.35}.t.typing i:nth-child(2){opacity:.65}
+.t.clamp{display:-webkit-box;-webkit-line-clamp:14;-webkit-box-orient:vertical;overflow:hidden}
+.m .more{background:none;border:0;color:var(--accent-2);font:600 13px 'Sora',sans-serif;padding:7px 4px 0;align-self:flex-end;cursor:pointer}
+.m.me .more{color:var(--accent-2)}
+.sys{position:relative;display:flex;justify-content:center;padding:0 6px}
+.sys::before{content:'';position:absolute;left:10px;right:10px;top:50%;height:1px;background:var(--line)}
+.sys>span{position:relative;display:inline-block;padding:0 10px;background:var(--bg);font-size:12.5px;color:var(--ink-soft);text-align:center;line-height:1.5;max-width:100%}
+.sys>span b{color:var(--ink);font-weight:600}
+.sys i{display:inline-block;vertical-align:middle;width:6px;height:6px;border-radius:50%;background:var(--ink-dim);margin:0 7px 0 0}
+.sys.hand i,.sys.fwd i{background:var(--accent-2)}.sys.ok i{background:var(--good)}.sys.reopen i{background:#f5b542}.sys.owner i{background:transparent;box-shadow:inset 0 0 0 2px var(--accent-2)}.sys.same i{background:var(--accent)}
+.sys .av{width:20px;height:20px;font-size:9px;vertical-align:middle;margin-right:6px}.sys .av.hv{border-radius:6px}
+.sys time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim);margin-left:7px}
+.cp{flex:none;position:relative;padding:10px 12px 26px;border-top:1px solid var(--line);background:var(--bg);display:flex;gap:8px;align-items:flex-end}
+.cp .f{flex:1;min-height:46px;border-radius:23px;background:var(--chip);border:1px solid var(--line);padding:12px 16px;font-size:15px;color:var(--ink-dim);line-height:1.35;overflow-wrap:anywhere}
+.cp .f.has{color:var(--ink)}.cp .f.lock{color:var(--ink-dim)}
+.cp .s{width:46px;height:46px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.cp .s.off{background:var(--chip);color:var(--ink-dim)}
+.cp .s svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.cp .s .rg{width:20px;height:20px;border-radius:50%;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;display:block}
+.cp .prog{position:absolute;left:0;top:-1px;height:2px;width:42%;background:var(--grad)}
+.cpn{flex:none;display:flex;align-items:center;gap:10px;padding:9px 18px;font-size:13px;color:var(--ink-soft);background:var(--card)}
+.cpn.nsent{color:#ffb4aa;background:rgba(255,111,97,.12)}
+.cpn b{margin-left:auto;font-weight:700;color:var(--ink);font-size:13px;white-space:nowrap}
+.cpn.nsent b{color:#fff;background:rgba(255,255,255,.12);padding:6px 11px;border-radius:9px}
+.dv.day .cpn.nsent{color:#8a2a1f}.dv.day .cpn.nsent b{color:#15171f;background:rgba(16,18,30,.08)}
+.offb{flex:none;display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:13px;color:var(--ink-soft);background:var(--card-2);border-bottom:1px solid var(--line)}
+.offb i{width:8px;height:8px;border-radius:50%;background:var(--ink-dim)}
+.intro{margin-top:auto;padding:0 6px 10px}
+.intro h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.intro p{margin:8px 0 0;font-size:14.5px;line-height:1.5;color:var(--ink-soft)}
+.intro small{display:block;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim)}
+.chs{display:flex;gap:8px;margin-top:12px}.chs b{height:38px;padding:0 16px;border-radius:19px;display:flex;align-items:center;font-size:13.5px;font-weight:600;background:var(--chip);color:var(--ink-soft)}.chs b.on{background:var(--ink);color:var(--bg)}
+.cbar{position:absolute;left:50%;right:auto;bottom:auto;top:112px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 6px;border-radius:18px;background:var(--card-2);border:1px solid var(--line-2);font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap}
+.cbar time{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim);font-weight:400}
+.sl-hd.b{padding-bottom:12px}
+.scard{flex:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px;padding:12px 18px 14px;border-bottom:1px solid var(--line);background:var(--card)}
+.scard s{display:block;text-decoration:none;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+.scard b{display:block;font-size:14px;margin-top:3px;font-weight:600}
+.scard .stv{color:var(--accent-2)}
+.sl-top{flex:none;display:flex;align-items:center;gap:6px;padding:4px 16px 10px 6px}
+.sl-top h1{margin:0;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.sl-pg{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.tk{display:flex;gap:12px;padding:14px 18px 15px;border-top:1px solid var(--line);align-items:flex-start}
+.tk .b{flex:1;min-width:0}
+.tk .r1{display:flex;align-items:center;gap:8px}
+.tk .num{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim)}
+.tk .r1 time{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-dim)}
+.tk .ti{font-size:15px;font-weight:500;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-soft)}
+.tk.un .ti{font-weight:700;color:var(--ink)}
+.tk .ti u{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent-2);margin-right:7px;vertical-align:middle}
+.tk .sl-pres{margin-top:4px}
+.cta{margin:16px 18px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;background:var(--ink);color:var(--bg);flex:none}
+.cta.ghost{background:var(--chip);color:var(--ink);margin-top:auto}
+.emp{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 40px}
+.emp .eic{width:64px;height:64px;border-radius:20px;background:var(--chip);display:flex;align-items:center;justify-content:center;color:var(--accent-2)}
+.emp .eic svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.emp h2{margin:18px 0 0;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700}
+.emp p{margin:8px 0 0;font-size:14.5px;line-height:1.5;color:var(--ink-soft)}
+.sk{background:var(--chip);border-radius:8px;display:block}
+.sk.av{width:32px;height:32px;border-radius:50%}
+.sk.l1{height:12px;width:40%;margin-top:4px}.sk.l2{height:14px;width:88%;margin-top:9px}.sk.l3{height:12px;width:60%;margin-top:9px}
+.sl-bn{flex:none;margin-top:auto;background:var(--bg-2);border-top:1px solid var(--line);padding:10px 0 22px;display:flex;position:relative;z-index:30}
+.scn.short .sl-bn{padding-bottom:14px;margin-top:0}
+.sl-bn .it{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--ink-dim)}
+.sl-bn .p{width:56px;height:36px;border-radius:18px;display:flex;align-items:center;justify-content:center;position:relative}
+.sl-bn svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sl-bn b{font-size:11.5px;font-weight:600;line-height:16px}
+.sl-bn .on{color:#fff}.sl-bn .on b{color:var(--ink)}.sl-bn .on .p{background:var(--grad)}
+.sl-bn .p .ct{position:absolute;top:-2px;right:6px;min-width:18px;height:18px;border-radius:9px;background:#ff6f61;color:#fff;font:700 11px 'Sora',sans-serif;display:flex;align-items:center;justify-content:center;text-decoration:none;padding:0 5px}
+.sl-ab{flex:none;display:flex;align-items:center;gap:12px;padding:8px 18px 10px}
+.sl-ab .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;letter-spacing:-.02em}
+.sl-ab .sp{flex:1}
+.sl-ab .ib{width:38px;height:38px;border-radius:50%;background:var(--chip);display:flex;align-items:center;justify-content:center}
+.sl-ab .ib svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+.sl-ab .av{width:34px;height:34px}
+.hsk{margin:4px 18px 0;height:470px;border-radius:20px;background:linear-gradient(160deg,#1c2338,#2b2550 55%,#123047)}
+.rsk{display:flex;gap:11px;padding:0 18px;margin-top:24px}
+.rsk i{width:118px;height:177px;border-radius:12px;background:var(--chip);flex:none}
+.sheet.pm{padding-bottom:30px}
+.pmh{display:flex;align-items:center;gap:12px;padding:14px 20px 10px}
+.pmh b{display:block;font-size:16px}.pmh small{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-dim)}
+.pmr{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 20px;border-top:1px solid var(--line);font-size:15.5px}
+.pmr em{font-style:normal;font-size:13px;color:var(--accent-2);margin-left:auto}
+.pmr u{width:9px;height:9px;border-radius:50%;background:var(--accent-2)}
+.pmr.mute{color:var(--ink-soft)}
+.pmr.hot span{font-weight:600}
+/* ============ vocabulary frame ============ */
+.vf{position:absolute;width:1460px;background:#0a0c13;border-radius:18px;padding:30px 34px 34px;box-shadow:0 24px 60px rgba(0,0,0,.4);color:var(--ink)}
+.vf .scn.vocab{position:static;display:grid;grid-template-columns:1fr 1.1fr .9fr;gap:36px;overflow:visible;background:transparent}
+.vg{display:flex;flex-direction:column;gap:14px;min-width:0}
+.vg h4{margin:0 0 2px;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--ink)}
+.vg h4~h4{margin-top:14px}
+.vg .m{max-width:100%}
+.vg .prl{display:flex;flex-direction:column;gap:10px}
+.vg .prl.row{flex-direction:row}
+.vg .sys>span{background:#0a0c13}
+.vg .sl-pres{margin:0}
+/* ============ TV (1920×1080 inside .shot.w2) ============ */
+.tv{width:1920px;height:1080px;background:var(--bg);color:var(--ink);display:grid;grid-template-columns:640px minmax(0,1fr);font-family:'Sora',sans-serif;position:relative}
+.tvl{padding:110px 64px 96px 96px;display:flex;flex-direction:column;gap:22px;border-right:1px solid var(--line)}
+.tvl .kk{font-size:22px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2);font-weight:600}
+.tvl h1{margin:0;font-family:'Space Grotesk',sans-serif;font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1.12;text-wrap:balance}
+.tvl .sl-pres{font-size:26px;gap:12px;margin:0}
+.tvl .sl-pres span{white-space:normal}
+.tvl .sl-pres i{width:14px;height:14px}
+.tvl .filed{display:flex;gap:14px;align-items:center;font-size:23px;color:var(--ink-soft)}
+.tvl .filed .av{width:44px;height:44px;font-size:18px}
+.tvl .ro{margin:auto 0 0;font-size:24px;color:var(--ink-soft);line-height:1.5}
+.tvl .same{height:84px;border-radius:20px;display:flex;align-items:center;justify-content:center;gap:16px;font-size:30px;font-weight:700;background:var(--chip);border:2px solid var(--line-2);color:var(--ink)}
+.tvl .same svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.tvl .same.focus{background:#fff;color:#0a0c13;border-color:transparent;box-shadow:0 0 0 6px var(--ring),0 0 0 16px rgba(142,130,255,.28)}
+.tvl .same.done{color:var(--good);border-color:var(--good);background:rgba(45,212,154,.08)}
+.tvl .hint{font-size:21px;color:var(--ink-dim);text-align:center}
+.tvr{padding:96px 96px 80px;display:flex;flex-direction:column;position:relative;min-height:0}
+.tvr .prof{position:absolute;top:36px;right:96px;display:flex;align-items:center;gap:12px;font-size:22px;font-weight:600;color:var(--ink-soft)}
+.tvr .prof .av{width:40px;height:40px;font-size:16px}
+.tv .th{gap:24px;padding:0}
+.tv .m{gap:16px;max-width:84%}
+.tv .av{width:56px;height:56px;font-size:22px}
+.tv .av.ai,.tv .av.hv{border-radius:14px}.tv .av.ai{border-width:2px}.tv .av.ai i{width:18px;height:18px;border-radius:3px}
+.tv .m .w{font-size:22px;gap:10px;margin-bottom:8px}
+.tv .m .w time{font-size:18px}
+.tv .bdg{font-size:16px;padding:4px 10px;border-radius:7px}
+.tv .m .t{font-size:28px;padding:18px 26px;border-radius:24px;border-top-left-radius:8px;line-height:1.4}
+.tv .m.me .t{border-radius:24px;border-top-right-radius:8px}
+.tv .sys>span{font-size:22px;padding:0 16px}
+.tv .sys i{width:10px;height:10px;margin-right:12px}.tv .sys .av{width:34px;height:34px;font-size:14px;margin-right:10px}
+.tv .sys time{font-size:18px}
+/* ============ admin (1260×800 inside .ashot) ============ */
+.ashot{position:absolute;width:907px;height:576px;overflow:hidden;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.08);background:#16181f}
+.ashot>.inner{width:1260px;height:800px;transform:scale(.72);transform-origin:top left}
+.ashot.alt{height:360px}.ashot.alt>.inner{height:500px}
+.adm{width:1260px;height:800px;background:var(--bg);color:var(--ink);font-family:'Sora',sans-serif;font-size:14px}
+.adm.alt{height:500px}
+.adm-shell{display:grid;grid-template-columns:232px minmax(0,1fr);height:100%}
+.adm.alt .adm-shell{grid-template-columns:1fr}
+.adm-side{background:var(--fill-2);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:2px}
+.adm-side .logo{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;padding:4px 8px 18px;display:flex;align-items:center;gap:10px}
+.adm-side .logo i{width:26px;height:26px;border-radius:8px;background:var(--grad)}
+.adm-side a{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-radius:10px;color:var(--ink-soft);font-size:13.5px;font-weight:500;position:relative;text-decoration:none}
+.adm-side a.on{color:var(--ink);background:var(--hi-soft);font-weight:600}
+.adm-side a.on::before{content:'';position:absolute;left:-14px;top:50%;transform:translateY(-50%);width:3px;height:22px;border-radius:0 3px 3px 0;background:var(--grad)}
+.cnt{font-size:11px;background:var(--bad);color:#fff;border-radius:20px;padding:1px 7px;font-weight:600;min-width:20px;text-align:center;font-style:normal;line-height:16px}
+.adm-side .gl{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim);padding:16px 11px 6px;font-weight:600}
+.adm-main{padding:28px 34px;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.adm-main .pb{display:flex;align-items:center;gap:14px}
+.adm-main h1{font-family:'Space Grotesk',sans-serif;font-size:26px;margin:0;letter-spacing:-.01em}
+.adm-main .sp{flex:1}
+.flt{display:flex;gap:4px;padding:3px;border:1px solid var(--line-2);border-radius:10px;background:var(--fill-2)}
+.flt b{font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:7px;color:var(--ink-soft)}
+.flt b.on{background:var(--hi-soft);color:var(--acc-ink)}
+.adm-main .sub{color:var(--ink-soft);font-size:13.5px;line-height:1.55;margin:8px 0 18px;max-width:80ch}
+.adm-tbl{width:100%;border-collapse:collapse}
+.adm-tbl th{text-align:left;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding:0 12px 9px 0;font-weight:600}
+.adm-tbl td{padding:13px 12px 13px 0;border-top:1px solid var(--line);vertical-align:middle;font-size:13.5px}
+.adm-tbl td.tt{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-soft)}
+.adm-tbl tr.un td.tt{color:var(--ink);font-weight:600}
+.adm-tbl td b{font-weight:600;display:block;white-space:nowrap}
+.hnd{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-dim);font-weight:400}
+.adm-tbl .mono{font-family:'JetBrains Mono',monospace;font-size:12.5px}
+.adm-tbl u{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--info);margin-right:6px;vertical-align:middle}
+.st{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;letter-spacing:.02em}
+.st.open{background:var(--info-soft);color:var(--info)}.st.ok{background:var(--ok-soft);color:var(--ok)}.st.bad{background:var(--bad-soft);color:var(--bad)}
+.adm .hold{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.adm-tbl td.mono{white-space:nowrap}
+.adm .mute{color:var(--ink-soft)}
+.bkr{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft);margin-bottom:10px}
+.bkr svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.dgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:26px;flex:1;min-height:0}
+.dgrid section{display:flex;flex-direction:column;min-height:0}
+.dh .kk{font-size:11.5px;color:var(--ink-soft)}
+.dh h1{font-size:21px;margin:5px 0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm .th{flex:1;padding:6px 4px;gap:12px}
+.adm .m{max-width:78%}
+.adm .m .w .hnd{margin-left:2px}
+.adm .cp{padding:12px 0 0;border-top:1px solid var(--line);background:transparent}
+.adm .cp .f{font-size:13.5px}
+.adm .cp .f b{color:var(--ink);font-weight:600}
+.cp.dead .f{color:var(--ink-dim);font-style:italic}
+.flagb{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:var(--bad-soft);border:1px solid rgba(255,111,97,.35);font-size:13px;line-height:1.5;color:var(--ink);margin-bottom:8px}
+.flagb i{width:9px;height:9px;border-radius:50%;background:var(--bad);flex:none;margin-top:6px}
+.rail{display:flex;flex-direction:column;gap:12px;min-height:0}
+.rc{padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--fill-2)}
+.rc.off{opacity:.45}
+.rc h4{margin:0 0 10px;font-family:'Space Grotesk',sans-serif;font-size:13.5px}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.kv:first-child{border-top:0;padding-top:0}
+.kv s{text-decoration:none;color:var(--ink-soft);flex:none}
+.kv b{display:flex;align-items:center;gap:7px;font-weight:600;text-align:right;min-width:0}
+.kv b.mute{font-weight:500;font-size:12px;line-height:1.35}
+.kv .dd{width:16px;height:16px;display:inline-flex}.kv .dd svg{width:16px;height:16px;fill:none;stroke:var(--ink-soft);stroke-width:2;transform:rotate(90deg)}
+.ro{display:flex;align-items:flex-start;gap:9px;padding:8px 0;font-size:13px}
+.ro i{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line-2);flex:none;margin-top:4px}
+.ro.on i{border-color:var(--hi);box-shadow:inset 0 0 0 4px var(--hi)}
+.ro span{display:flex;flex-direction:column;gap:2px;padding-top:3px}
+.ro small{font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+.acts{display:flex;gap:8px;margin-top:10px}
+.acts b,.rc .wide{flex:1;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;border:1px solid var(--line-2);color:var(--ink)}
+.acts .pri{background:var(--hi);border-color:transparent;color:#fff}
+.acts .ok{color:var(--ok);border-color:rgba(45,212,154,.4)}
+.rc .bad{color:var(--bad);border-color:rgba(255,111,97,.4)}
+.rc .ghost{color:var(--ink-soft)}
+.rc .wide+small{display:block;margin-top:8px;font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+.tl{font-size:12.5px;color:var(--acc-ink)}
+.tabs{display:flex;gap:4px;margin:12px 0 4px;border-bottom:1px solid var(--line)}
+.tabs b{display:flex;gap:8px;align-items:center;padding:10px 14px;font-size:13.5px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs b.on{color:var(--ink);border-bottom-color:var(--hi)}
+.tabs.top{margin:14px 0 10px}
+.lgs{display:flex;flex-direction:column;margin-top:10px}
+.lg{display:grid;grid-template-columns:90px 160px minmax(0,1fr) 50px;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:13px}
+.lg b{display:flex;align-items:center;font-weight:600}
+.lg time{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft)}
+.lg .av{margin-right:8px}
+.lg i{font-style:normal;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-soft);text-align:right}
+</style>
+</head>
+<body>
+
+<!-- ============ 0 · what is fixed ============ -->
+<div class="lbl w3" style="left:60px;top:40px"><span class="tag">Round · support-lane · no phase number</span><h2>Support lane — where a ticket’s state lives while the chat scrolls</h2><small>One question: a viewer reads a support ticket on a phone. Where do the ticket’s state and its holder sit while the thread scrolls, and how does a change of state appear without the thing stopping being a chat? Three directions below, one carried through every state, then the TV, the admin, the decided rows and the strings. Read left to right, top to bottom.</small></div>
+
+<div class="panel w" style="left:60px;top:230px"><h2>What is fixed (owner, 2026-10-14) — drawn as given, not reopened</h2>
+<div class="tbl" style="display:grid;grid-template-columns:1fr 1fr;gap:0 40px">
+<ul>
+<li><b>Filed on phone, desktop or web — never the TV.</b> The TV shows the thread read-only plus one tap: <span class="mono">Same here</span>.</li>
+<li><b>Four author kinds</b>: the viewer · <span class="mono">AI Agent</span> · <span class="mono">Hervør · support</span> · <span class="mono">Hallur · admin</span>. Only the last three may post a user-visible message. Other seats receive a forward and never answer into the thread.</li>
+<li><b>AI Agent has no name and no face.</b> Hervør is a named AI agent: she carries her name plus the AI badge and her seat badge, so a first name never reads as a human being.</li>
+<li><b>A reply sends itself or forwards.</b> No “waiting for approval” the viewer can see. When a reply cannot send itself, AI Agent says <i>“I’ll forward this and they will answer you soon”</i> and the ticket moves to a holder.</li>
+</ul>
+<ul>
+<li><b>The viewer sees the real state and the real holder</b>, in user-facing words only — never a phase number, internal name or path.</li>
+<li><b>Auto applies to talking, never to acting.</b> A request is logged with an honest “needs the owner’s decision”; acceptance is a human act in the admin. In the drawings AI Agent never resolves anything either — Hervør does.</li>
+<li><b>Server-pushed state only.</b> A sent message appears when the server echoes it. The pending instant is drawn as a composer-local state, not as a bubble.</li>
+<li><b>Dark-primary, light toggle; purple→blue accent; Space Grotesk · Sora · JetBrains Mono; <span class="mono">--ok</span> / <span class="mono">--warn</span> / <span class="mono">--bad</span>.</b> Admin CSS is production CSS: everything new extends the existing token set, no new file.</li>
+</ul>
+</div>
+<div class="good"><b>How the tension is held.</b> The ticket half lives in exactly two places: the header’s second line (where a chat app shows presence) and the system lines inside the thread (where a chat app says “X joined”). Nothing else is added to the chat. The thing that bends is the <i>ticket</i>: no fields, no status box, no assignee row — state is spoken in presence words and ledger lines, and the only hard “ticket” artefact is the number in the kicker.</div>
+</div>
+
+<!-- ============ 1 · directions ============ -->
+<div class="sec" style="left:60px;top:1060px">1 · The named directions<small>same thread, same moment: Hervør has just replied</small></div>
+
+<div class="lbl" style="left:60px;top:1130px"><span class="tag pick">Recommended</span><h3>A · Presence — the ticket header is a chat header</h3><small>Pinned. Line one is the ticket (number, inferred class, a short title AI Agent writes from the first message). Line two is <b>presence</b>: “Open · with Hervør · replied in 12 minutes”. The holder’s mark sits where a chat shows the contact. State changes are inline system lines <i>and</i> the presence line follows — you can read the thread without ever looking up, and look up without ever reading the thread.</small></div>
+<div class="dv and" style="left:60px;top:1400px" id="png-presence-thread"><div class="pnch"></div><div data-scr="A-thread"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:560px;top:1130px"><span class="tag">Direction</span><h3>B · Ledger — state lives only in the thread</h3><small>Nothing pinned but the number and the title. Every state change is a system line in the ledger; when the latest one scrolls off the top, it <b>returns as a compact pill</b> under the header. Purest chat. Costs: on first open you must scroll to learn who holds it, and the pill is a third kind of thing between header and message.</small></div>
+<div class="dv and" style="left:560px;top:1400px" id="png-ledger-thread"><div class="pnch"></div><div data-scr="B-thread"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1060px;top:1130px"><span class="tag no">The foil</span><h3>C · Status card — the helpdesk foil</h3><small>A pinned card of fields — Status, Assigned to, Type, Opened, Last reply, Device — and a plain message list beneath with no system lines. The card <b>mutates silently</b>. Drawn so the owner can see the shape we are refusing: it answers every question at a glance and reads as a helpdesk in the first second.</small></div>
+<div class="dv and" style="left:1060px;top:1400px" id="png-statuscard-thread"><div class="pnch"></div><div data-scr="C-thread"></div><div class="gpill"></div></div>
+
+<div class="panel c" style="left:1560px;top:1130px"><h2>How they compare</h2>
+<table class="tbl"><tr><th></th><th>A · Presence</th><th>B · Ledger</th><th>C · Status card</th></tr>
+<tr><td><b>Where state lives</b></td><td>Header line two + system lines</td><td>System lines only; pill when scrolled</td><td>Six fields in a pinned card</td></tr>
+<tr><td><b>How a change appears</b></td><td>A new system line; the presence line follows it</td><td>A new system line; the pill changes when it scrolls out</td><td>A field changes, nothing in the thread</td></tr>
+<tr><td><b>What it bends</b></td><td>The ticket — spoken, not boxed</td><td>The ticket — almost gone</td><td>The chat — it becomes a log under a form</td></tr>
+<tr><td><b>Who holds it, at a glance</b></td><td>Yes, always</td><td>Only after a scroll or a pill</td><td>Yes</td></tr>
+<tr><td><b>Feels like</b></td><td>A conversation with someone whose status you can see</td><td>A group chat with join/leave lines</td><td>A helpdesk</td></tr>
+<tr><td><b>Risk</b></td><td>Presence line must stay one line in fo/da — it is clamped, and the system line carries the full sentence</td><td>Pill is a new component; first-open ambiguity</td><td>Silent mutation: the viewer never sees <i>when</i> it changed</td></tr>
+</table>
+<div class="good"><b>Recommendation: A.</b> It is the only one where both halves are true at once, and it adds exactly one component the phone does not already have (the system line). B is a fine fallback if the owner wants the header thinner still; C should not ship.</div>
+<h4>What A refuses to add</h4><ul><li>No status box, no assignee row, no priority, no SLA clock.</li><li>No “Ticket #41” as a title — AI Agent writes a short title from the first message (owner, 2026-10-14: the message is never lifted into the title; it stays the first message, and the receipt line says what the case was titled); the number is the kicker.</li><li>No colour for state beyond the presence dot and the system-line dot: blue while someone holds it, green when resolved, hollow when the holder is a seat that cannot answer, grey while nobody holds it.</li></ul>
+</div>
+
+<!-- ============ 2 · vocabulary ============ -->
+<div class="sec" style="left:60px;top:2400px">2 · The vocabulary<small>authors, system lines, presence, class chips, composer-local states — one frame</small></div>
+<div class="vf" style="left:60px;top:2470px" id="png-presence-vocabulary"><div data-scr="vocab"></div></div>
+<div class="lbl w2" style="left:1560px;top:2470px"><span class="tag">Rules</span><h3>Reading the marks</h3><small><b>Circles are people, squares are software.</b> The viewer and Hallur get round marks with an initial; AI Agent and Hervør get rounded squares — Hervør’s with her initial, AI Agent’s with a diamond and never an initial. <b>Badges</b>: <span class="mono">AI</span> outlined on both agents, then the seat badge (<span class="mono">support</span>, <span class="mono">admin</span>) filled — the AI badge, not the mark, is what stops “Hervør” reading as a human being. <b>System lines</b> sit on a hairline, centred, with a dot that carries the state colour; the holder’s small mark appears inline when the line names a holder. <b>Presence</b> is one line, clamped; it is never the only place a state is told — every presence change has a matching system line that holds the whole sentence. <b>Composer-local</b> strips (“Sending…”, “Not sent”) are never system lines, because nothing the server has not echoed may look like thread state.</small></div>
+
+<!-- ============ 3 · A through the states ============ -->
+<div class="sec" style="left:60px;top:3380px">3 · A, through every state<small>row one: the life of ticket #41</small></div>
+
+<div class="lbl" style="left:60px;top:3450px"><span class="tag new">State</span><h3>Composing the first ticket</h3><small>Nothing is asked first — no title field either. The thread is empty, the page says what helps, and the device is attached by the server and shown as a mono line. Class and title are both AI Agent’s work after the first message arrives (decision 2).</small></div>
+<div class="dv and" style="left:60px;top:3650px" id="png-presence-first-composer"><div class="pnch"></div><div data-scr="first-composer"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:560px;top:3450px"><span class="tag new">State</span><h3>Sending — the pending instant</h3><small>No optimistic bubble. The field locks and dims with the text still in it, the send button becomes a static ring, a thin progress line runs along the composer’s top edge, and a composer-local strip says “Sending…”. The bubble appears only when the server echoes it.</small></div>
+<div class="dv and" style="left:560px;top:3650px" id="png-presence-sending"><div class="pnch"></div><div data-scr="sending"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1060px;top:3450px"><span class="tag new">State</span><h3>Waiting for the first reply</h3><small>The echo brought the bubble, the deterministic receipt — number, inferred class, and the title AI Agent wrote from the message — and the header takes that title. The viewer’s message stays a message. Presence is grey: “Open · waiting for a first reply”. No holder mark yet (dashed).</small></div>
+<div class="dv and" style="left:1060px;top:3650px" id="png-presence-waiting-first-reply"><div class="pnch"></div><div data-scr="waiting-first-reply"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1560px;top:3450px"><span class="tag new">State</span><h3>AI Agent is composing</h3><small>A bubble-shaped working indicator with three static dots and the words “AI Agent is writing” in the author row. The holder mark becomes the square. (Static in the canvas; in the app the dots may pulse.)</small></div>
+<div class="dv and" style="left:1560px;top:3650px" id="png-presence-ai-composing"><div class="pnch"></div><div data-scr="ai-composing"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:2060px;top:3450px"><span class="tag new">State</span><h3>AI Agent answered, auto</h3><small>A plain reply, same bubble as a human’s, the square mark and the outlined <span class="mono">AI</span> badge doing the telling. Presence: “Open · with AI Agent”. The class chip has appeared in the kicker.</small></div>
+<div class="dv and" style="left:2060px;top:3650px" id="png-presence-ai-answered"><div class="pnch"></div><div data-scr="ai-answered"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:2560px;top:3450px"><span class="tag new">State</span><h3>The forward</h3><small>“I’ll forward this and they will answer you soon” is a normal AI Agent message; the state change is the system line under it, and the header’s holder mark and presence follow: “Open · with Hervør”.</small></div>
+<div class="dv and" style="left:2560px;top:3650px" id="png-presence-forward"><div class="pnch"></div><div data-scr="forward"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:3060px;top:3450px"><span class="tag new">State</span><h3>A state change as an inline system line</h3><small>Scrolled mid-thread: “Hervør is handling this” sits between AI Agent’s forward and Hervør’s first message, with her small mark inline. The header above has not moved; it already says the same thing in presence words, with the timing.</small></div>
+<div class="dv and" style="left:3060px;top:3650px" id="png-presence-system-line"><div class="pnch"></div><div data-scr="system-line"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:3560px;top:3450px"><span class="tag new">State</span><h3>Held by a seat that may not answer</h3><small>Ticket #38. The owner holds it, but the owner cannot post; Hervør owes the next visible message. The presence dot goes hollow, the line says both things, and the holder mark stays Hervør’s — the viewer’s contact is the agent who will write, not the seat that decides.</small></div>
+<div class="dv and" style="left:3560px;top:3650px" id="png-presence-held-by-owner"><div class="pnch"></div><div data-scr="held-by-owner"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:4060px;top:3450px"><span class="tag new">State</span><h3>Resolved</h3><small>Green dot, “Resolved · by Hervør”, a green-check holder mark, and the composer stays — its placeholder says what typing does: “Write here again to reopen”.</small></div>
+<div class="dv and" style="left:4060px;top:3650px" id="png-presence-resolved"><div class="pnch"></div><div data-scr="resolved"></div><div class="gpill"></div></div>
+
+<!-- row 2 -->
+<div class="sec" style="left:60px;top:4660px">3 · A, through every state<small>row two: around the thread</small></div>
+
+<div class="lbl" style="left:60px;top:4730px"><span class="tag new">State</span><h3>Reopened by a new message</h3><small>The viewer wrote under a resolved ticket. The echo brings the bubble and an amber “Reopened — you wrote again” line; presence returns to “Open · with Hervør” because the last holder keeps it.</small></div>
+<div class="dv and" style="left:60px;top:4930px" id="png-presence-reopened"><div class="pnch"></div><div data-scr="reopened"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:560px;top:4730px"><span class="tag new">State</span><h3>Flagged as abuse — the viewer’s side</h3><small>Identical to “waiting for the first reply”, forever. No line, no colour, no holder. The flag exists only in the admin (section 4).</small></div>
+<div class="dv and" style="left:560px;top:4930px" id="png-presence-abuse-viewer"><div class="pnch"></div><div data-scr="abuse-viewer"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1060px;top:4730px"><span class="tag new">State</span><h3>“My tickets” on the phone</h3><small>Three rows, each a miniature of the header: number, class, AI Agent’s title, presence. The unread one is bold with a dot; the holder mark leads the row. Reached from the Profile sheet; the bottom bar stays.</small></div>
+<div class="dv and" style="left:1060px;top:4930px" id="png-presence-my-tickets"><div class="pnch"></div><div data-scr="my-tickets"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1560px;top:4730px"><span class="tag new">State</span><h3>An unread reply, and where its marker lives</h3><small>Decision 3, the lean: a dot on the Profile avatar — in the app bar and in the bottom bar — and inside the Profile sheet a “Support · 1 new reply” row. No new nav item. The alternative is drawn in section 5.</small></div>
+<div class="dv and" style="left:1560px;top:4930px" id="png-presence-unread-nav"><div class="pnch"></div><div data-scr="unread-nav"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:2060px;top:4730px"><span class="tag new">State</span><h3>Empty — no ticket ever filed</h3><small>One sentence of invitation and the primary button. Nothing else on the page.</small></div>
+<div class="dv and" style="left:2060px;top:4930px" id="png-presence-empty"><div class="pnch"></div><div data-scr="empty"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:2560px;top:4730px"><span class="tag new">State</span><h3>Loading</h3><small>Three skeleton rows in the list’s own shape. The thread loads the same way (header skeleton + two bubbles) and is not drawn separately.</small></div>
+<div class="dv and" style="left:2560px;top:4930px" id="png-presence-loading"><div class="pnch"></div><div data-scr="loading"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:3060px;top:4730px"><span class="tag new">State</span><h3>Error — send failed, offline</h3><small>The text stays in the field, editable. The strip above the composer turns to <span class="mono">--bad</span>-tinted “Not sent — you’re offline. Your message is kept here.” with “Try again”. Nothing enters the thread, because the server never saw it.</small></div>
+<div class="dv and" style="left:3060px;top:4930px" id="png-presence-error-send-failed"><div class="pnch"></div><div data-scr="error-send-failed"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:3560px;top:4730px"><span class="tag new">State</span><h3>Offline</h3><small>A quiet bar under the header: “Offline — showing what was last loaded”. The thread and header are the last pushed state, unchanged; the composer stays open and fails honestly (previous frame).</small></div>
+<div class="dv and" style="left:3560px;top:4930px" id="png-presence-offline"><div class="pnch"></div><div data-scr="offline"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:4060px;top:4730px"><span class="tag new">State</span><h3>Longest string — 2 000 characters</h3><small>One viewer message of 2 000 characters. The bubble clamps at 14 lines with “Show the rest”; the receipt still lands under it and the header carries AI Agent’s short title, so nothing long ever has to fit one line. Nothing truncates on the server side.</small></div>
+<div class="dv and" style="left:4060px;top:4930px" id="png-presence-longest-string"><div class="pnch"></div><div data-scr="longest-string"></div><div class="gpill"></div></div>
+
+<!-- row 3 -->
+<div class="sec" style="left:60px;top:5940px">3 · A, through every state<small>row three: languages, light, the TV</small></div>
+
+<div class="lbl" style="left:60px;top:6010px"><span class="tag new">State</span><h3>Faroese</h3><small>Drafts. Presence “Opin · hjá Hervør · svaraði á 12 minuttum” fits one line; “AI Agent” stays untranslated as a name.</small></div>
+<div class="dv and" style="left:60px;top:6180px" id="png-presence-faroese"><div class="pnch"></div><div data-scr="faroese"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:560px;top:6010px"><span class="tag new">State</span><h3>Danish</h3><small>Drafts. “Åben · hos Hervør · svarede på 12 minutter”.</small></div>
+<div class="dv and" style="left:560px;top:6180px" id="png-presence-danish"><div class="pnch"></div><div data-scr="danish"></div><div class="gpill"></div></div>
+
+<div class="lbl" style="left:1060px;top:6010px"><span class="tag new">State</span><h3>Light toggle</h3><small>Daylight tokens. The viewer bubble keeps the gradient; the badge tint and the fail strip re-ink for the light ground.</small></div>
+<div class="dv and day" style="left:1060px;top:6180px" id="png-presence-light"><div class="pnch"></div><div data-scr="light"></div><div class="gpill"></div></div>
+
+<div class="lbl w2" style="left:1560px;top:6010px"><span class="tag new">State</span><h3>The TV — read-only thread, 10-foot focus, “Same here”</h3><small>Left: the ticket as a title card (kicker, the first sentence, presence, who filed it) and the one thing a remote may do. Right: the thread at 28px, same vocabulary. The signed-in profile on this TV is Ása; the button is focused with the ring. Pressing OK adds one system line — “Ása said same here · from the TV in the sitting room” — and the button turns into its receipt. No typing exists on this surface; the left card says where to reply.</small></div>
+<div class="shot w2" style="left:1560px;top:6180px" id="png-presence-10-foot-focus"><div class="inner" data-scr="tv-focus"></div></div>
+<div class="shot w2" style="left:2560px;top:6180px" id="png-presence-tv-same-here"><div class="inner" data-scr="tv-same-here"></div></div>
+<div class="cap" style="left:1560px;top:6740px">Before OK · focus on “Same here”</div>
+<div class="cap" style="left:2560px;top:6740px">After OK · the line is in the thread, the button is its receipt</div>
+
+<!-- ============ 4 · admin ============ -->
+<div class="sec" style="left:60px;top:7200px">4 · The admin<small>jellystructure · Support under AI · open-ticket count on the AI sidebar entry · logs under Activity</small></div>
+
+<div class="lbl" style="left:60px;top:7270px"><span class="tag new">State</span><h3>Ticket list across all viewers</h3><small>Decision 4, as decided: Support is a tab on the <b>AI</b> page (Fetchers · Support), and the <b>AI</b> sidebar entry carries the count of open tickets — the first badge on the left menu, drawn with the existing red count style. One table: number, viewer with handle, the first sentence, class, state, holder, last. Unread-for-you rows carry the dot.</small></div>
+<div class="ashot js" style="left:60px;top:7520px" id="png-presence-admin-list"><div class="inner" data-scr="admin-list"></div></div>
+
+<div class="lbl" style="left:1010px;top:7270px"><span class="tag new">State</span><h3>One ticket, and the forward control</h3><small>The same thread the viewer sees — same marks, same system lines — with the viewer named in full. The right rail is the only place “ticket” is allowed to look like a ticket: state, class, holder, <b>what the viewer currently sees</b> (so the admin never guesses), and <b>Forward to</b> as a radio list where the owner row says plainly that it cannot answer and Hervør keeps the thread. Hallur’s reply sends itself.</small></div>
+<div class="ashot js" style="left:1010px;top:7520px" id="png-presence-admin-detail"><div class="inner" data-scr="admin-detail"></div></div>
+
+<div class="lbl" style="left:1960px;top:7270px"><span class="tag new">State</span><h3>Flagged as abuse — the admin’s side</h3><small>A <span class="mono">--bad</span> banner, state “Flagged”, holder “Nobody · no reply will be sent”, forwarding greyed, the composer off. The rail still shows what the viewer sees: “Open · waiting for a first reply”. Ticket #36 is used as the stand-in; the flag is Hallur’s judgement, not the text.</small></div>
+<div class="ashot js" style="left:1960px;top:7520px" id="png-presence-abuse-admin"><div class="inner" data-scr="abuse-admin"></div></div>
+
+<!-- ============ 5 · decided rows ============ -->
+<div class="sec" style="left:60px;top:8160px">5 · The four decisions — decided by the owner<small>one row each · the pick is drawn in sections 1–4 · the alternative stays here for the record</small></div>
+<div class="lbl w2" style="left:60px;top:8230px"><small>All four rows were decided on 2026-10-14. Each row names the pick and where it is drawn, keeps the alternative beside it for the record, and notes what the pick changed in the mockups.</small></div>
+
+<div class="panel dec" style="left:60px;top:8330px"><div class="dq"><span class="tag">Decision 1</span><h2>Does the ticket header pin above the thread, or scroll away and return as a compact bar?</h2></div><div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>Pinned</h4><p>Direction A — section 1, left phone. The header stays; presence and holder are always one glance up.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>Scrolls away, returns as a pill</h4><p>Direction B — section 1, middle phone, and again to the right. The latest state line comes back as a floating pill once it scrolls off.</p></div></div><div class="dv2"><b>Decided: pinned.</b> The pinned header is 86px and is the only at-a-glance answer to “who has this”. The pill is a third kind of thing between header and message, and it has to re-explain itself every time it appears.</div></div>
+<div class="dv and" style="left:1060px;top:8330px" id="png-presence-alt-pill"><div class="pnch"></div><div data-scr="B-thread"></div><div class="gpill"></div></div>
+<div class="cap" style="left:1060px;top:9270px">Not picked · B, scrolled: the pill under the header</div>
+
+<div class="panel dec" style="left:60px;top:9420px"><div class="dq"><span class="tag">Decision 2</span><h2>Is the class (bug · request · question) picked by the viewer before writing, or inferred and shown afterwards?</h2></div><div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>Inferred, shown after the receipt</h4><p>Every A frame — section 3, row one. The chip appears in the header kicker together with the “Received · #41 · logged as a bug” line.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>A chooser before writing</h4><p>To the right: three chips above the empty thread. Honest and small — and the one element that turns the first screen into a form.</p></div></div><div class="dv2"><b>Decided: inferred, shown after the receipt.</b> A viewer with a bug does not know it is a bug. Classification is the server’s job and correction is Hervør’s, in the admin rail where class is a dropdown.</div></div>
+<div class="dv and" style="left:1060px;top:9420px" id="png-presence-alt-chooser"><div class="pnch"></div><div data-scr="chooser"></div><div class="gpill"></div></div>
+<div class="cap" style="left:1060px;top:10360px">Not picked · the class chooser before the first message</div>
+
+<div class="panel dec" style="left:60px;top:10510px"><div class="dq"><span class="tag">Decision 3</span><h2>On a phone, where does the unread marker live?</h2></div><div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>On the Profile entry that already exists</h4><p>Section 3, row two, “An unread reply”: a dot on the Profile avatar in the app bar and the bottom bar, and a “Support · 1 new reply” row inside the Profile sheet.</p></div><div class="dc"><span class="tag no">Not picked</span><h4>A new Support item in the bottom bar</h4><p>To the right: a fifth slot with a red count. On a 393dp phone it displaces Discover or Profile.</p></div></div><div class="dv2"><b>Decided: on the Profile entry that already exists — no Support tab on the bar.</b> The bar’s slots are spoken for, and a red support count would outrank Continue Watching on every day there is one reply. The Profile dot is quiet and already where account things live.</div></div>
+<div style="position:absolute;left:1060px;top:10510px;width:412px;border-radius:14px;overflow:hidden;box-shadow:0 14px 34px rgba(0,0,0,.35)" id="png-presence-alt-navitem"><div data-scr="altnav"></div></div>
+<div class="cap" style="left:1060px;top:10610px">Not picked · Support as a bottom-bar item</div>
+
+<div class="panel dec" style="left:60px;top:10880px"><div class="dq"><span class="tag">Decision 4</span><h2>Does the admin’s Support page sit beside Activity, or take its own top-level entry?</h2></div><div class="dcols"><div class="dc lean"><span class="tag pick">Decided</span><h4>Under AI, with the count on the AI sidebar entry</h4><p>Section 4: the AI page gains a tab row (Fetchers · Support); the AI sidebar entry shows the number of open tickets. No new menu item on the left.</p></div><div class="dc"><span class="tag no">Also decided</span><h4>Activity gets a “Support log” tab — logs only</h4><p>To the right: a history of what every agent did and every action taken, one line each. Nothing on it is actionable; the tickets live under AI › Support.</p></div></div><div class="dv2"><b>Decided: no own entry, no own page.</b> Support sits inside AI because AI Agent and Hervør answer the tickets; the sidebar learns to carry count badges so open tickets are visible from the left menu; Activity keeps only the log.</div></div>
+<div class="ashot alt js" style="left:1060px;top:10880px" id="png-presence-alt-activity-tab"><div class="inner" data-scr="admin-alt"></div></div>
+<div class="cap" style="left:1060px;top:11260px">Decision 4 · Activity › Support log — history only</div>
+
+<div class="panel m" style="left:60px;top:11300px"><h2>Two things the brief did not decide — we had to draw them one way</h2><div class="opt"><div><h5>Who taps “Same here” on a shared TV?</h5><p>Drawn: the signed-in TV profile (Ása) adds a line to Jákup’s ticket about that TV. If tickets are strictly private per viewer, the TV should instead list only the signed-in profile’s own tickets, and “Same here” means “it happened again”.</p></div><div><h5>Does a resolved ticket keep its composer?</h5><p>Drawn: yes, with the placeholder “Write here again to reopen”. The alternative is a “Write again” button that opens a new ticket referencing the old number.</p></div></div></div>
+
+<!-- ============ 6 · strings ============ -->
+<div class="sec" style="left:60px;top:11760px">6 · New strings<small>en shipped wording · da and fo drafts · shipped i18n/*.json wins where a key already exists</small></div>
+<div class="panel" style="left:60px;top:11860px;width:1560px"><h2>Every new user-facing string</h2><p class="lead">Keys are suggestions; <span class="mono">AI Agent</span>, <span class="mono">Hervør</span>, <span class="mono">Ravilo</span> and ticket numbers are never translated. Existing keys reused unchanged: <span class="mono">pm_settings</span>, <span class="mono">pm_profile</span>, <span class="mono">admin</span>, <span class="mono">err_retry</span> (we propose the softer “Try again” below only if a new key is wanted).</p>
+<table class="tbl"><tr><th>key</th><th>en</th><th>da</th><th>fo</th></tr>
+<tr><td class="mono">sup_title</td><td>Support</td><td>Support</td><td>Support</td></tr>
+<tr><td class="mono">sup_my_tickets</td><td>My tickets</td><td>Mine sager</td><td>Mínar sakir</td></tr>
+<tr><td class="mono">sup_write</td><td>Write to support</td><td>Skriv til support</td><td>Skriva til supportina</td></tr>
+<tr><td class="mono">sup_placeholder</td><td>Write to support…</td><td>Skriv til support…</td><td>Skriva til supportina…</td></tr>
+<tr><td class="mono">sup_placeholder_reopen</td><td>Write here again to reopen</td><td>Skriv her igen for at genåbne</td><td>Skriva her aftur fyri at lata upp aftur</td></tr>
+<tr><td class="mono">sup_first_hint</td><td>Tell us what happened and where — which TV or phone helps.</td><td>Fortæl hvad der skete og hvor — hvilket tv eller hvilken telefon hjælper.</td><td>Sig frá, hvat hendi og hvar — hvat sjónvarp ella fartelefon hjálpir.</td></tr>
+<tr><td class="mono">sup_sent_from_phone</td><td>Sent from Ravilo on the phone · {name}</td><td>Sendt fra Ravilo på telefonen · {name}</td><td>Sent frá Ravilo á fartelefonini · {name}</td></tr>
+<tr><td class="mono">sup_you</td><td>{name} · you</td><td>{name} · du</td><td>{name} · tú</td></tr>
+<tr><td class="mono">sup_badge_support</td><td>support</td><td>support</td><td>support</td></tr>
+<tr><td class="mono">sup_badge_ai</td><td>AI (on AI Agent and on Hervør)</td><td>AI</td><td>AI</td></tr>
+<tr><td class="mono">sup_ai_writing</td><td>AI Agent is writing</td><td>AI Agent skriver</td><td>AI Agent skrivar</td></tr>
+<tr><td class="mono">sup_state_open</td><td>Open</td><td>Åben</td><td>Opin</td></tr>
+<tr><td class="mono">sup_state_resolved</td><td>Resolved</td><td>Løst</td><td>Loyst</td></tr>
+<tr><td class="mono">sup_class_bug</td><td>Bug</td><td>Fejl</td><td>Feilur</td></tr>
+<tr><td class="mono">sup_class_request</td><td>Request</td><td>Ønske</td><td>Ynski</td></tr>
+<tr><td class="mono">sup_class_question</td><td>Question</td><td>Spørgsmål</td><td>Spurningur</td></tr>
+<tr><td class="mono">sup_pres_waiting</td><td>Open · waiting for a first reply</td><td>Åben · venter på første svar</td><td>Opin · bíðar eftir fyrsta svari</td></tr>
+<tr><td class="mono">sup_pres_with</td><td>Open · with {name}</td><td>Åben · hos {name}</td><td>Opin · hjá {name}</td></tr>
+<tr><td class="mono">sup_pres_with_owner</td><td>Open · with the owner · {name} will answer here</td><td>Åben · hos ejeren · {name} svarer her</td><td>Opin · hjá eigaranum · {name} svarar her</td></tr>
+<tr><td class="mono">sup_pres_resolved_by</td><td>Resolved · by {name}</td><td>Løst · af {name}</td><td>Loyst · av {name}</td></tr>
+<tr><td class="mono">sup_replied_in</td><td>replied in {n} minutes</td><td>svarede på {n} minutter</td><td>svaraði á {n} minuttum</td></tr>
+<tr><td class="mono">sup_forwarded_ago</td><td>forwarded {time}</td><td>sendt videre {time}</td><td>sent víðari {time}</td></tr>
+<tr><td class="mono">sup_sys_received</td><td>Received · #{n} · logged as a {class} · titled “{title}”</td><td>Modtaget · #{n} · registreret som {class} · med titlen “{title}”</td><td>Móttikið · #{n} · skrásett sum {class} · við heitinum “{title}”</td></tr>
+<tr><td class="mono">sup_sys_forwarded</td><td>AI Agent forwarded this to {name}</td><td>AI Agent sendte det videre til {name}</td><td>AI Agent sendi hetta víðari til {name}</td></tr>
+<tr><td class="mono">sup_sys_handling</td><td>{name} is handling this</td><td>{name} tager sig af det</td><td>{name} tekur sær av hesum</td></tr>
+<tr><td class="mono">sup_sys_owner</td><td>Forwarded to the owner · {name} will answer here</td><td>Sendt videre til ejeren · {name} svarer her</td><td>Sent víðari til eigaran · {name} svarar her</td></tr>
+<tr><td class="mono">sup_sys_resolved</td><td>Resolved by {name}</td><td>Løst af {name}</td><td>Loyst av {name}</td></tr>
+<tr><td class="mono">sup_sys_reopened</td><td>Reopened — you wrote again</td><td>Genåbnet — du skrev igen</td><td>Latið upp aftur — tú skrivaði aftur</td></tr>
+<tr><td class="mono">sup_sys_same_here</td><td>{name} said same here · from {device}</td><td>{name} sagde det samme · fra {device}</td><td>{name} segði sama her · frá {device}</td></tr>
+<tr><td class="mono">sup_ai_forward_msg</td><td>I’ll forward this and they will answer you soon.</td><td>Jeg sender det videre, og de svarer dig snart.</td><td>Eg sendi hetta víðari, og tey svara tær skjótt.</td></tr>
+<tr><td class="mono">sup_sending</td><td>Sending…</td><td>Sender…</td><td>Sendir…</td></tr>
+<tr><td class="mono">sup_not_sent_offline</td><td>Not sent — you’re offline. Your message is kept here.</td><td>Ikke sendt — du er offline. Din besked er gemt her.</td><td>Ikki sent — tú ert uttan samband. Boðini eru goymd her.</td></tr>
+<tr><td class="mono">sup_try_again</td><td>Try again</td><td>Prøv igen</td><td>Royn aftur</td></tr>
+<tr><td class="mono">sup_offline_bar</td><td>Offline — showing what was last loaded</td><td>Offline — viser det senest hentede</td><td>Uttan samband — vísir tað seinast heinta</td></tr>
+<tr><td class="mono">sup_show_rest</td><td>Show the rest</td><td>Vis resten</td><td>Vís restina</td></tr>
+<tr><td class="mono">sup_empty_title</td><td>No tickets yet</td><td>Ingen sager endnu</td><td>Ongar sakir enn</td></tr>
+<tr><td class="mono">sup_empty_body</td><td>Something wrong, or something you wish Ravilo did? Write to support — a reply usually comes within minutes.</td><td>Er noget galt, eller ønsker du dig noget af Ravilo? Skriv til support — svaret kommer som regel inden for få minutter.</td><td>Er okkurt galið, ella ynskir tú tær okkurt av Ravilo? Skriva til supportina — svar kemur vanliga innan fáar minuttir.</td></tr>
+<tr><td class="mono">sup_unread_one</td><td>1 new reply</td><td>1 nyt svar</td><td>1 nýtt svar</td></tr>
+<tr><td class="mono">sup_tv_same_here</td><td>Same here</td><td>Det samme her</td><td>Sama her</td></tr>
+<tr><td class="mono">sup_tv_said_same_here</td><td>You said same here</td><td>Du sagde det samme</td><td>Tú segði sama her</td></tr>
+<tr><td class="mono">sup_tv_readonly</td><td>Reply from Ravilo on the phone or the web.</td><td>Svar fra Ravilo på telefonen eller nettet.</td><td>Svara frá Ravilo á fartelefonini ella á netinum.</td></tr>
+<tr><td class="mono">sup_tv_hint_ok</td><td>OK on the remote · adds one line, no typing</td><td>OK på fjernbetjeningen · tilføjer én linje, ingen indtastning</td><td>OK á fjarstýringini · leggur eina linju afturat, einki at skriva</td></tr>
+</table>
+<h4>Admin (English only, as the rest of the admin)</h4>
+<p>AI › Support (tab) · Activity › Support log (tab) · All · Open · With me · Resolved · Flagged · Viewer · Ticket · Class · State · Holder · Last · Viewer sees · Forward to · Forward · Resolve · Flag as abuse · Remove flag · “Owner — cannot answer here. Hervør keeps the thread and owes the next reply.” · “Stops every reply, including AI Agent’s. The viewer is told nothing.” · “Flagged as abuse by {name} · {time}. No reply will be sent, not even AI Agent’s. The viewer sees an open ticket and nothing about the flag.” · “Replies are off while this ticket is flagged.” · “Reply as {name} · admin” · “AI transcript for #{n} →” · “Nobody · no reply will be sent” · “Owner · {name} answers”.</p>
+</div>
+
+<script src="support-lane.js"></script>
+</body>
+</html>
