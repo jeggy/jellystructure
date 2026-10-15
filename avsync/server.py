@@ -8,7 +8,8 @@ compose network, like every other sidecar in this stack).
     POST /stat    {path}   → {exists, size}                        — the mount check (FR-317-13)
     POST /measure {path, audio, others, windows:[{start_s, dur_s}]}
                            → 200 {windows, others, decode, seconds}
-                             404 the path is not visible here · 422 undecodable (ffmpeg's last line)
+                             404 the path is not visible here · 422 not one requested window had a picture (ffmpeg's last
+                                 line, FR-317-38/40)
                              500 a decoder stalled, or the call passed its ceiling (FR-317-27), or the
                                  card could not hold one frame — `error_kind: "vram"` (FR-317-35)
                              503 {retry_after_s} a measurement is already running
@@ -84,6 +85,9 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.send_json(404, dict(error=f'{path} is not visible to the sidecar'))
         except measure.Undecodable as e:
+            # FR-317-40 — the job succeeds on the backend after FR-317-39 and its `error` stays empty, so
+            # this line is the only place the reason is still readable.
+            print(f'avsync {e}', flush=True)
             self.send_json(422, dict(error=str(e)))
         except (measure.DecodeStalled, measure.MeasureTimeout) as e:
             # FR-317-27: a stall is a fault of the run, not of the file — 500 with the reason, and

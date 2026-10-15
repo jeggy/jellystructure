@@ -16,7 +16,7 @@ distance curve), `window.frames` (face frames behind it).
 See specs/requirements/phase-317-sound-that-runs-ahead-of-the-picture-is-found-and-explained.md (FR-317-2,
 FR-317-3, FR-317-4) and specs/research-reports/av-sync-measurement-on-the-gpu-2026-10-10.md.
 """
-import argparse, json, math, os, subprocess, sys, threading, time
+import argparse, json, math, os, re, subprocess, sys, threading, time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from signal import SIGKILL, SIGTERM            # by name: `signal` below is scipy's, and it shadows this one
@@ -367,8 +367,9 @@ def decode_video(path, start, dur, W, H, trc, gpu, run=None):
 
 
 def decode_audio(path, start, dur, spec='0:a:0', run=None):
-    """One audio stream of the window as mono 16 kHz PCM. [spec] is an ffprobe/ffmpeg specifier
-    (`0:a:N`, FR-317-2) — never Jellyfin's own numbering."""
+    """One audio stream of the window as mono 16 kHz PCM — **empty when the stream has nothing in this
+    window** (FR-317-38). [spec] is an ffprobe/ffmpeg specifier (`0:a:N`, FR-317-2) — never Jellyfin's
+    own numbering."""
     cmd = ['ffmpeg', '-v', 'error', '-ss', str(start), '-i', path, '-t', str(dur), '-map', spec, '-ac', '1',
            '-ar', '16000', '-f', 's16le', '-']
     p, tail, t = spawn(cmd, run)
@@ -379,14 +380,21 @@ def decode_audio(path, start, dur, spec='0:a:0', run=None):
         raise DecodeStalled(f'decode stalled after {secs(wd.stall_s)}s on window {start}s audio {spec}')
     if run is not None and run.expired:
         raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling')
-    pcm = np.frombuffer(raw[:len(raw) // 2 * 2], np.int16)   # a child cut off mid-sample leaves an odd byte
-    if pcm.size == 0:
-        raise Undecodable(last_line(err) or f'no audio decoded from {spec}')
-    return pcm
+    # FR-317-38 — a stream with nothing in this window is an EMPTY window, not an unreadable file: the
+    # caller's own length test (FR-317-32) refuses the window, and an `others` stream contributes `None`.
+    # A child cut off mid-sample leaves an odd byte, which is dropped. Zero bytes is the limit of *short*.
+    return np.frombuffer(raw[:len(raw) // 2 * 2], np.int16)
+
+
+# FR-317-40 — ffmpeg's log de-duplication ends a repeated tail with this line, which says nothing on its
+# own: the line it stands for is the one before it.
+_REPEAT = re.compile(r"^(\[[^\]]*\]\s*)?Last message repeated \d+ times?$")
 
 
 def last_line(text):
-    lines = [l.strip() for l in (text or '').splitlines() if l.strip()]
+    """The last line of [text] that says something: blank lines and ffmpeg's `Last message repeated N
+    times` are skipped (FR-317-40). `''` when nothing is left."""
+    lines = [l.strip() for l in (text or '').splitlines() if l.strip() and not _REPEAT.match(l.strip())]
     return lines[-1] if lines else ''
 
 
@@ -798,7 +806,8 @@ def busy_done():
 
 def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
     """FR-317-2/-3 — one file, its windows measured one after another on the one GPU worker, with
-    [DECODERS] windows of the SAME file decoded ahead. Raises [Undecodable] (→ 422), [DecodeStalled] and
+    [DECODERS] windows of the SAME file decoded ahead. Raises [Undecodable] (→ 422) only when no window of
+    the request has a picture (FR-317-38), [DecodeStalled] and
     [MeasureTimeout] (→ 500, FR-317-27), and leaves `FileNotFoundError` (→ 404) to the caller.
 
     The call is bounded end to end: [max_s] (default [MEASURE_MAX_S]) from here to the answer, after which
@@ -819,13 +828,20 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
     others = list(others)
 
     def fetch(start, dur):
-        fr, used_gpu = decode_video(path, start, dur, W, H, p['trc'], gpu, run)
+        # FR-317-38 — the video decides whether the audio is decoded at all: a window with no picture has
+        # nothing to be compared against, and its ffmpeg line is carried back instead of raised, so one
+        # window past the end of a stream refuses that window and not the file.
+        try:
+            fr, used_gpu = decode_video(path, start, dur, W, H, p['trc'], gpu, run)
+        except Undecodable as e:
+            return None, None, [], gpu, str(e)
         pcm = decode_audio(path, start, dur, audio, run)
         extra = [decode_audio(path, start, dur, spec, run) if spec != audio else pcm for spec in others]
-        return fr, pcm, extra, used_gpu
+        return fr, pcm, extra, used_gpu, None
 
     out, nvdec = [], gpu
     ref_envs, other_envs = [], [[] for _ in others]
+    no_picture_why = []                           # FR-317-38: the ffmpeg line of every window with no picture
     # Not `with`: the context manager joins its threads on the way out, so an exception — the ceiling's
     # included — could not free the handler thread while a decoder was stuck (DEB-897).
     ex = ThreadPoolExecutor(max(1, DECODERS))
@@ -840,9 +856,22 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             if pending is not None:
                 q.append((pending, ex.submit(fetch, *pending))); pending = next(it, None)
             try:
-                fr_cpu, pcm, extra, used_gpu = fu.result(timeout=run.remaining())
+                fr_cpu, pcm, extra, used_gpu, why = fu.result(timeout=run.remaining())
             except FutureTimeout:
                 raise MeasureTimeout(f'measurement exceeded the {secs(run.max_s)}s ceiling') from None
+            if fr_cpu is None:
+                # FR-317-38 — nothing to measure in this window, reported the way a refused window is, with
+                # one additive key so a row can tell it from a window with no faces in it. It is not
+                # `audio_short` (the audio was never asked for), it casts no vote in FR-317-4's envelopes,
+                # and no detection, crop or lip work is done for it. The reason goes to the log: the 422 path
+                # is the only other place it would be readable, and a file with a healthy window never takes it.
+                no_picture_why.append(why)
+                print(f'avsync window {round(start, 1)}s has no picture — {why}', flush=True)
+                out.append(dict(start_s=round(start, 1), offset_frames=None, conf=0.0, frames=0, faces=[],
+                                no_picture=True, audio_short=False, audio_short_frames=0))
+                ref_envs.append(None)
+                for i in range(len(others)): other_envs[i].append(None)
+                continue
             nvdec = nvdec and used_gpu
             # FR-317-32 — does the decoded audio reach the picture it would be compared against? Against
             # `v − a` and never against the requested duration: a window clamped at the end of the file,
@@ -852,7 +881,10 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             # decoded either way, and that is where the GPU is saved.
             v = fr_cpu.shape[0]
             short_frames = v - audio_feature_count(pcm.size) - AUDIO_FEATURE_LAG
-            short = short_frames > AUDIO_SHORT_TOL
+            # `pcm.size == 0` is FR-317-38's own: audio_feature_count(0) is −5, so any window of more than
+            # three frames is already over the bar — this is the guard for the 1–3 frame sliver at a clamped
+            # end, where no audio at all must still never reach `audio_feats`.
+            short = pcm.size == 0 or short_frames > AUDIO_SHORT_TOL
             # FR-317-34 — the window is NOT moved to the card. It stays the CPU tensor it was decoded into
             # and `shots`, `detect` and `crops` each move only the slice they are about to compute on, so
             # the peak is set by the chunk rather than by 1 125 frames of whatever geometry this file has.
@@ -892,7 +924,8 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
             # An `others` stream short in this window alone contributes `None` for that stream only.
             ref_envs.append(None if short else envelope(pcm))
             for i, pcm_other in enumerate(extra):
-                other_short = short or v - audio_feature_count(pcm_other.size) - AUDIO_FEATURE_LAG > AUDIO_SHORT_TOL
+                other_short = (short or pcm_other.size == 0
+                               or v - audio_feature_count(pcm_other.size) - AUDIO_FEATURE_LAG > AUDIO_SHORT_TOL)
                 other_envs[i].append(None if other_short else envelope(pcm_other))
             del fr_cpu; release_card()                   # hand the card back between windows
     except BaseException:
@@ -900,6 +933,11 @@ def measure(path, audio='0:a:0', others=(), windows=(), max_s=None):
         # decoder left running would hold the card until it finished by itself.
         run.kill_all(); ex.shutdown(wait=False, cancel_futures=True); raise
     ex.shutdown(wait=True)
+
+    # FR-317-38 — the file is refused only when not one window of the request had a picture, and then with
+    # the FIRST window's line (FR-317-40's message). One window with a picture is an answer.
+    if no_picture_why and len(no_picture_why) == len(out):
+        raise Undecodable(no_picture_why[0])
 
     others_out = []
     for i, spec in enumerate(others):

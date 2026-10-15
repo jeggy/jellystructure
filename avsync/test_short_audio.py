@@ -198,6 +198,32 @@ class RefusedWindow(unittest.TestCase):
         finally:
             measure.envelope_lag = real_lag
 
+    def test_no_audio_at_all_is_refused_even_on_a_sliver_of_video(self):
+        """FR-317-38 — `decode_audio` returns an EMPTY stream instead of raising, and the length test
+        refuses it: −5 features leave any window of more than three frames over the bar, and a window of
+        one to three frames (the clamped end of a file) is refused by the explicit size check, so no empty
+        PCM can ever reach `audio_feats`."""
+        reached = []
+        measure.audio_feats = lambda pcm: reached.append(pcm.size)
+        for frames in (1, 3, 4, FULL):
+            self.video_frames, self.audio['0:a:0'] = frames, pcm_n(0)
+            w = self.measure_one()['windows'][0]
+            self.assertTrue(w['audio_short'], f'{frames} frames over no audio')
+            self.assertEqual(w['audio_short_frames'], frames + 5 - measure.AUDIO_FEATURE_LAG)
+        self.assertEqual(reached, [], 'an empty PCM never reaches the MFCC')
+        self.assertEqual(self.detections, [])
+
+    def test_an_empty_others_stream_contributes_none_on_a_sliver_too(self):
+        self.video_frames = 2
+        self.audio = {'0:a:0': pcm_of(1), '0:a:1': pcm_n(0)}
+        seen, real = [], measure.envelope_lag
+        measure.envelope_lag = lambda ref, other, **k: seen.append(list(other)) or real(ref, other, **k)
+        try:
+            self.measure_one(others=['0:a:1'])
+        finally:
+            measure.envelope_lag = real
+        self.assertEqual(seen[-1], [None])
+
     def test_the_document_still_serialises_strictly(self):
         """FR-317-30 — the two new fields go through `jsonable` like everything else, and neither is a
         float that could arrive non-finite. `audio_short_frames` is on every window, refused or not: the
