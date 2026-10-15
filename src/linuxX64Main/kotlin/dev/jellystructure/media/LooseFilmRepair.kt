@@ -163,7 +163,6 @@ internal class RepairWork(
 private val repairJson = Json { encodeDefaults = true; ignoreUnknownKeys = true }
 private val SLUG_RE = Regex("""/api/tv/image/([^/?#]+)/""")
 private val FOLDER_RE = Regex("""^Moved into its own folder (.+?): check [✓✗]""")
-private val RENAME_RE = Regex("""^Renamed to (.+?): check [✓✗]""")
 private val ROWS_RE = Regex("""(\d+) rows moved to the new id""")
 private val PUT_BACK_ONE_RE = Regex("""watch data put back for 1 viewer\b""")
 

@@ -17,7 +17,7 @@ data class HistoryEntry(
     val beforeSnapshot: String = "",
 )
 
-class MediaHistory(private val db: JellystructureDb) {
+class MediaHistory(private val db: JellystructureDb, private val cap: Long = HISTORY_CAP) {
 
     fun record(
         mediaId: String,
@@ -34,7 +34,7 @@ class MediaHistory(private val db: JellystructureDb) {
             revertable = if (revertable) 1L else 0L,
             before_snapshot = beforeSnapshot,
         )
-        db.mediaHistoryQueries.trimToMax(HISTORY_CAP)
+        db.mediaHistoryQueries.trimToMax(cap)
     }
 
     fun findById(entryId: Long): HistoryEntry? =

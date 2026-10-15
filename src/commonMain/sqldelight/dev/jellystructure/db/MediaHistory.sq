@@ -31,9 +31,13 @@ SELECT COUNT(*) FROM media_history;
 since:
 SELECT * FROM media_history WHERE ts > :since ORDER BY ts DESC LIMIT :limit;
 
+-- FR-316-10 (DEB-1330) — the ring never deletes the mover's or the repair's record, however old: FR-316-7 reads
+-- `moved_into_folder` lines as its only input, and those lines and `rebound_jellyfin_id` are the undo record of
+-- FR-316-9 and FR-316-7. Every other action is trimmed to the newest [max_rows] as before; ties on `ts` break by id.
 trimToMax:
-DELETE FROM media_history WHERE id NOT IN (
-    SELECT id FROM media_history ORDER BY ts DESC LIMIT :max_rows
+DELETE FROM media_history
+WHERE action NOT IN ('moved_into_folder', 'rebound_jellyfin_id') AND id NOT IN (
+    SELECT id FROM media_history ORDER BY ts DESC, id DESC LIMIT :max_rows
 );
 
 -- FR-316-7 (DEB-1252) — every entry of one action, oldest first: the repair reads each `moved_into_folder` line.

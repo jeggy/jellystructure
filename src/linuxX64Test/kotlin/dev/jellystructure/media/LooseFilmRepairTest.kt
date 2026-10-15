@@ -338,6 +338,26 @@ class LooseFilmRepairTest {
         assertEquals(wrong, f.itemOfSession["s-c"])
     }
 
+    @Test fun `a Renamed to line is a ready film at its media row's path and waiting without the row`() = runBlocking<Unit> {
+        // FR-316-5 test 12 (DEB-1330): the line names no folder, so the media row's path is the film's only source.
+        val ready = world()
+        val (readyPlan, _) = planRepair(ready, wrong)
+        val d = readyPlan.films.single { it.mediaId == "film-d" }
+        assertEquals("ready", d.state)
+        assertEquals(null, d.folder)
+        assertEquals("$root/Film D (2024)/D.mkv", d.path)
+        assertEquals("real-film-d", d.rightId)
+
+        val waiting = world()
+        waiting.media.remove("film-d")
+        val (waitingPlan, work) = planRepair(waiting, wrong)
+        val w = waitingPlan.films.single { it.mediaId == "film-d" }
+        assertEquals("waiting", w.state)
+        assertEquals(null, w.path)
+        applyRepair(waiting, waitingPlan, work)
+        assertTrue(waiting.writes.none { it.contains("film-d") && it.startsWith("media:") })
+    }
+
     @Test fun `a media row bound to the wrong item is corrected and the others are left`() = runBlocking<Unit> {
         val f = world()
         f.media.remove("film-d")   // swept; ingest has not recreated it
