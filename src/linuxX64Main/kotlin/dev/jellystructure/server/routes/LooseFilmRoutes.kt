@@ -18,6 +18,10 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class LooseFilmsApplyRequest(val keys: List<String> = emptyList())
 
+/** FR-316-7 — the apply of the repair: the wrong id again, and the digest of the plan that was read. */
+@Serializable
+data class LooseFilmsRepairRequest(val wrongId: String = "", val digest: String = "")
+
 /**
  * Phase 316 (FR-316-3/-4) — films with no folder of their own. `GET` returns the last overview; `POST /scan` rebuilds it in
  * the background (it reads the disks once, at low priority, and asks qBittorrent and Radarr read-only); `POST /apply` is
@@ -33,6 +37,21 @@ fun Route.looseFilmRoutes(service: LooseFilmsService, scope: CoroutineScope) {
             if (!service.beginScan()) { call.respond(HttpStatusCode.Conflict, mapOf("error" to "A scan or a move is already running")); return@post }
             scope.launch(GateClass.BACKGROUND) { service.scan() }
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))
+        }
+        // FR-316-7 — the repair of films the mover bound to the wrong Jellyfin item. GET is the dry run and changes nothing;
+        // POST applies the plan whose digest it carries, and only if a fresh plan still has that digest.
+        get("/repair") {
+            val wrong = call.request.queryParameters["wrongId"]?.trim().orEmpty()
+            if (wrong.isEmpty()) { call.respond(HttpStatusCode.BadRequest, mapOf("error" to "wrongId is required")); return@get }
+            call.respond(service.repairPlan(wrong))
+        }
+        post("/repair") {
+            val req = runCatching { call.receive<LooseFilmsRepairRequest>() }.getOrDefault(LooseFilmsRepairRequest())
+            if (req.wrongId.isBlank() || req.digest.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "wrongId and the digest of the plan that was read are required")); return@post
+            }
+            val r = service.repairApply(req.wrongId.trim(), req.digest.trim(), scope)
+            call.respond(if (r.applied) HttpStatusCode.OK else HttpStatusCode.Conflict, r)
         }
         post("/apply") {
             val req = runCatching { call.receive<LooseFilmsApplyRequest>() }.getOrDefault(LooseFilmsApplyRequest())

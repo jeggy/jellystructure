@@ -67,3 +67,45 @@ SELECT user_id, scope_key, rank FROM ai_order WHERE item_id = :old_id;
 
 aiThemeKeysOn:
 SELECT item_id FROM ai_theme WHERE item_id = :old_id;
+
+-- FR-316-7 (DEB-1252) — the repair of rows the mover bound to the wrong id. Each row carries its own evidence, so
+-- these read the rows the evidence is in, and a repair write only ever applies where the row is still on the wrong id.
+sessionsOn:
+SELECT id, target_id, started_by_device_id, queue_json, queue_index, created_at, updated_at, ended_at
+FROM playback_session WHERE item_id = :old_id;
+
+samplesOn:
+SELECT id, device_id, file_id FROM playback_start_sample WHERE item_id = :old_id;
+
+qoeOn:
+SELECT device_id, play_session_id, updated_at FROM playback_qoe WHERE jellyfin_id = :old_id;
+
+countStarterOn:
+SELECT COUNT(*) FROM starter_list WHERE item_id = :old_id;
+
+countRecommendationOn:
+SELECT COUNT(*) FROM recommendation WHERE item_id = :old_id;
+
+countRecommendationReasonOn:
+SELECT COUNT(*) FROM recommendation WHERE reason_item_id = :old_id;
+
+countOutboxOn:
+SELECT COUNT(*) FROM playback_outbox WHERE jellyfin_id = :old_id;
+
+countDirtyOn:
+SELECT COUNT(*) FROM dirty_item WHERE jellyfin_id = :old_id;
+
+countAiOrderOn:
+SELECT COUNT(*) FROM ai_order WHERE item_id = :old_id;
+
+countAiThemeOn:
+SELECT COUNT(*) FROM ai_theme WHERE item_id = :old_id;
+
+repairSession:
+UPDATE playback_session SET item_id = :new_id, queue_json = :queue_json WHERE id = :id AND item_id = :old_id;
+
+repairSample:
+UPDATE playback_start_sample SET item_id = :new_id WHERE id = :id AND item_id = :old_id;
+
+repairQoe:
+UPDATE OR IGNORE playback_qoe SET jellyfin_id = :new_id WHERE device_id = :device_id AND play_session_id = :play_session_id AND jellyfin_id = :old_id;

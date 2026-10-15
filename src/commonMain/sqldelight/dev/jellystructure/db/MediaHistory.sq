@@ -35,3 +35,7 @@ trimToMax:
 DELETE FROM media_history WHERE id NOT IN (
     SELECT id FROM media_history ORDER BY ts DESC LIMIT :max_rows
 );
+
+-- FR-316-7 (DEB-1252) — every entry of one action, oldest first: the repair reads each `moved_into_folder` line.
+byAction:
+SELECT * FROM media_history WHERE action = :action ORDER BY ts, id;

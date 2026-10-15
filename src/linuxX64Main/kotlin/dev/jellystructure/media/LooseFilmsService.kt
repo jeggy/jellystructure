@@ -20,6 +20,7 @@ import dev.jellystructure.torrent.qbDisplayState
 import dev.jellystructure.torrent.translateLocalToRemote
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.json.Json
@@ -237,6 +238,137 @@ class LooseFilmsService(
         )
     }
 
+    // ── FR-316-7 — the repair of films bound to the wrong Jellyfin item ─────────────────────────────────────
+
+    private val repairLock = dev.jellystructure.ops.SpinLock()
+    private var repairing = false
+
+    /** The dry run: reads everything, changes nothing. */
+    suspend fun repairPlan(wrongId: String): RepairPlan = planRepair(RepairPortsImpl(configStore.current, null), wrongId).first
+
+    /**
+     * The apply: plans afresh and refuses unless that plan's digest is [digest], so only a plan someone has read is
+     * applied. Not while a scan or a move runs, and never two at once.
+     */
+    suspend fun repairApply(wrongId: String, digest: String, scope: kotlinx.coroutines.CoroutineScope): RepairApplyResponse {
+        val l = last()
+        val ports = RepairPortsImpl(configStore.current, scope)
+        if (l?.running == true || l?.applying == true)
+            return RepairApplyResponse(false, "A scan or a move is running", plan = planRepair(ports, wrongId).first)
+        val busy = repairLock.withLock { if (repairing) true else { repairing = true; false } }
+        if (busy) return RepairApplyResponse(false, "A repair is already running", plan = planRepair(ports, wrongId).first)
+        try {
+            val (plan, work) = planRepair(ports, wrongId)
+            val refusal = repairRefusal(plan, digest)
+            if (refusal != null) return RepairApplyResponse(false, refusal, plan = plan)
+            val report = applyRepair(ports, plan, work)
+            Logger.info("Loose films repair: ${report.moved} rows re-bound from $wrongId (316)", "media")
+            return RepairApplyResponse(true, report = report, plan = plan)
+        } finally {
+            repairLock.withLock { repairing = false }
+        }
+    }
+
+    /** Production [RepairPorts]. [scope] is only needed to queue the recommendations build on an apply. */
+    private inner class RepairPortsImpl(private val cfg: AppConfig, private val scope: kotlinx.coroutines.CoroutineScope?) : RepairPorts {
+        private val base = cfg.apiKeys.jellyfinUrl.trimEnd('/')
+        private val token = cfg.apiKeys.jellyfinToken
+        private val q = db.jellyfinIdRemapQueries
+        private var recent: Map<String, String>? = null   // path (Jellyfin's view) → id, one read for every film
+
+        override fun movedEntries(): List<MovedEntry> =
+            db.mediaHistoryQueries.byAction("moved_into_folder").executeAsList().map { MovedEntry(it.media_id, it.ts, it.detail) }
+
+        override fun mediaRowById(id: String): RepairMediaRow? = store.get(id)?.let { RepairMediaRow(it.id, it.path, it.jellyfinId) }
+
+        override suspend fun mediaRowAtPath(path: String): RepairMediaRow? =
+            store.allItems().firstOrNull { it.kind == MediaKind.MOVIE && it.path == path }?.let { RepairMediaRow(it.id, it.path, it.jellyfinId) }
+
+        override fun fileExists(path: String) = SystemFileSystem.exists(Path(path))
+
+        override fun videoInFolder(folderName: String): String? {
+            val hits = movieRoots(cfg).flatMap { root ->
+                listNames("$root/$folderName").filter { !it.startsWith(".") && isVideoFile(it) }.map { "$root/$folderName/$it" }
+            }
+            return hits.singleOrNull()
+        }
+
+        override suspend fun jellyfinItem(id: String): RepairItem? =
+            jellyfin.getItem(base, token, id)?.let { RepairItem(it.type, it.path?.let { p -> fromJellyfinView(p, cfg) }) }
+
+        override suspend fun itemIdAt(path: String): String? {
+            val index = recent ?: (jellyfin.recentMediaItems(base, token, REPAIR_RECENT_LIMIT) ?: return null)
+                .mapNotNull { i -> i.path?.let { it to i.id.replace("-", "") } }.toMap().also { recent = it }
+            return index[toJellyfinView(path, cfg)]   // the item AT the path, or nothing — never another item
+        }
+
+        override fun sessionsOn(id: String) = q.sessionsOn(id).executeAsList().map {
+            RepairSessionRow(it.id, it.target_id, it.started_by_device_id, it.queue_json, it.queue_index.toInt(), it.created_at, it.updated_at, it.ended_at)
+        }
+
+        override fun samplesOn(id: String) = q.samplesOn(id).executeAsList().map { RepairSampleRow(it.id, it.device_id, it.file_id) }
+
+        override fun qoeOn(id: String) = q.qoeOn(id).executeAsList().map { RepairQoeRow(it.device_id, it.play_session_id, it.updated_at) }
+
+        override fun derivedOn(id: String): Map<String, Int> = mapOf(
+            "starter_list" to q.countStarterOn(id).executeAsOne(),
+            "recommendation.item_id" to q.countRecommendationOn(id).executeAsOne(),
+            "recommendation.reason_item_id" to q.countRecommendationReasonOn(id).executeAsOne(),
+            "playback_outbox" to q.countOutboxOn(id).executeAsOne(),
+            "dirty_item" to q.countDirtyOn(id).executeAsOne(),
+            "ai_order" to q.countAiOrderOn(id).executeAsOne(),
+            "ai_theme" to q.countAiThemeOn(id).executeAsOne(),
+        ).filterValues { it > 0L }.mapValues { it.value.toInt() }
+
+        override suspend fun viewers(): List<String> = jellyfin.getUsersOrNull(base, token)?.map { it.id }.orEmpty()
+
+        override suspend fun watchData(userId: String, itemId: String): ViewerData? =
+            runCatching { jellyfin.getUserDataBulk(base, token, userId, listOf(itemId)).firstOrNull()?.userData }.getOrNull()?.let {
+                ViewerData(it.played, it.playbackPositionTicks, it.isFavorite, it.playCount, it.lastPlayedDate)
+            }
+
+        override suspend fun writeWatchData(userId: String, itemId: String, data: ViewerData): Boolean = runCatching {
+            jellyfin.setUserData(base, token, userId, itemId, data.played, data.positionTicks, data.lastPlayedDate, data.isFavorite, data.playCount)
+        }.getOrDefault(false)
+
+        override fun repairSession(id: String, oldId: String, newId: String, queueJson: String): Boolean {
+            q.repairSession(new_id = newId, queue_json = queueJson, id = id, old_id = oldId)
+            return q.changes().executeAsOne() > 0L
+        }
+
+        override fun repairSample(id: Long, oldId: String, newId: String): Boolean {
+            q.repairSample(new_id = newId, id = id, old_id = oldId)
+            return q.changes().executeAsOne() > 0L
+        }
+
+        override fun repairQoe(deviceId: String, playSessionId: String, oldId: String, newId: String): Boolean {
+            q.repairQoe(new_id = newId, device_id = deviceId, play_session_id = playSessionId, old_id = oldId)
+            return q.changes().executeAsOne() > 0L
+        }
+
+        override suspend fun setMediaJellyfinId(rowId: String, jellyfinId: String): Boolean {
+            val item = store.get(rowId) ?: return false
+            store.updateOne(item.copy(jellyfinId = jellyfinId))   // no other field is touched
+            return true
+        }
+
+        override fun history(mediaId: String, detail: String, beforeSnapshot: String) {
+            this@LooseFilmsService.history.record(mediaId, "rebound_jellyfin_id", detail, beforeSnapshot = beforeSnapshot)
+        }
+
+        override fun handEditsSince(mediaId: String, sinceSec: Long): List<String> =
+            this@LooseFilmsService.history.forItem(mediaId).filter { it.timestamp >= sinceSec && it.action in BY_HAND_ACTIONS }
+                .sortedBy { it.timestamp }.map { "${dev.jellystructure.util.epochTicksToIso(it.timestamp * 10_000_000L).take(10)} ${it.action}" }
+
+        override fun queueRecommendationsBuild() {
+            val service = dev.jellystructure.tv.RecommendationService.current ?: return
+            scope?.launch(dev.jellystructure.ops.GateClass.BACKGROUND) {
+                runCatching { service.buildAll(dev.jellystructure.tv.RecommendationService.REASON_RUN_BY_HAND) }
+                    .onFailure { Logger.warn("Loose films repair: the recommendations build failed: ${it.message}", "media") }
+            }
+        }
+    }
+
     private fun updateFilm(key: String, f: (LooseFilm) -> LooseFilm) = lock.withLock {
         val l = last ?: return@withLock
         last = l.copy(films = l.films.map { if (it.key == key) f(it) else it })
@@ -405,6 +537,15 @@ class LooseFilmsService(
     companion object {
         /** How many of Jellyfin's newest films a path lookup reads; a moved or renamed film is among the newest. */
         const val FIND_RECENT_LIMIT = 500
+
+        /** The repair's one read of Jellyfin's newest films: wide enough to hold every film the mover has ever moved. */
+        const val REPAIR_RECENT_LIMIT = 5000
+
+        /** History actions that are the owner's own edit of a title, for FR-316-7's list of what a swept row lost. */
+        val BY_HAND_ACTIONS = setOf(
+            "metadata_edit", "set_tmdb_id", "tmdb_match_clear", "language_override", "artwork_save", "artwork_clear",
+            "set_language", "set_default", "set_forced", "assign_language", "reorder_tracks", "remove_track", "trailer_clear",
+        )
 
         /** The running instance, for the Dashboard row (set when constructed in `Main.kt`). */
         @kotlin.concurrent.Volatile
